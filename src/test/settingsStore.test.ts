@@ -1,0 +1,202 @@
+/**
+ * Settings store tests
+ * Tests the Zustand store logic in isolation — no Tauri, no DOM.
+ */
+
+import { describe, it, expect, beforeEach } from 'vitest';
+import { useSettingsStore, defaultSettings, mergeSettingsWithDefaults } from '../store/settingsStore';
+
+beforeEach(() => {
+  useSettingsStore.getState().resetToDefaults();
+});
+
+describe('useSettingsStore — initial state', () => {
+  it('has the correct default terminal settings', () => {
+    const { settings } = useSettingsStore.getState();
+    expect(settings.terminal.cursorBlink).toBe(true);
+    expect(settings.terminal.scrollback).toBe(10000);
+    expect(settings.terminal.overlayHeight).toBe(420);
+    expect(settings.terminal.fontSize).toBe(13);
+    expect(settings.terminal.preferredOpenMode).toBe('integrated');
+    expect(settings.terminal.externalTerminalProfile).toBe('auto');
+  });
+
+  it('has the correct default explorer settings', () => {
+    const { settings } = useSettingsStore.getState();
+    expect(settings.explorer.showHiddenFiles).toBe(false);
+    expect(settings.explorer.sortBy).toBe('name');
+    expect(settings.explorer.sortOrder).toBe('asc');
+    expect(settings.explorer.viewMode).toBe('list');
+  });
+
+  it('has the correct default appearance settings', () => {
+    const { settings } = useSettingsStore.getState();
+    expect(settings.appearance.theme).toBe('dark');
+    expect(settings.appearance.activeThemeId).toBe('operator');
+    expect(settings.appearance.uiFontFamily).toBe('Inter, system-ui, sans-serif');
+    expect(settings.appearance.animations).toBe(true);
+    expect(settings.appearance.appOpenAnimation).toBe('spring-lift');
+    expect(settings.appearance.appCloseAnimation).toBe('burn');
+    expect(settings.appearance.appAnimationDurationMs).toBe(320);
+    expect(settings.appearance.appAnimationIntensity).toBe(1);
+  });
+});
+
+describe('useSettingsStore.updateTerminal()', () => {
+  it('updates a single terminal setting without touching others', () => {
+    const store = useSettingsStore.getState();
+    store.updateTerminal({ preferredOpenMode: 'external' });
+
+    const { settings } = useSettingsStore.getState();
+    expect(settings.terminal.preferredOpenMode).toBe('external');
+    expect(settings.terminal.fontSize).toBe(13);
+    expect(settings.terminal.cursorBlink).toBe(true);
+  });
+
+  it('updates overlayHeight and overlayWidth independently', () => {
+    const store = useSettingsStore.getState();
+    store.updateTerminal({ overlayHeight: 600 });
+    expect(useSettingsStore.getState().settings.terminal.overlayHeight).toBe(600);
+    expect(useSettingsStore.getState().settings.terminal.overlayWidth).toBe(-1);
+
+    store.updateTerminal({ overlayWidth: 1400 });
+    expect(useSettingsStore.getState().settings.terminal.overlayWidth).toBe(1400);
+  });
+
+  it('updates external terminal fields together', () => {
+    const store = useSettingsStore.getState();
+    store.updateTerminal({
+      preferredOpenMode: 'external',
+      externalTerminalProfile: 'custom',
+      externalTerminalCommand: 'wt.exe',
+      externalTerminalArgs: '--focus',
+    });
+
+    const { settings } = useSettingsStore.getState();
+    expect(settings.terminal.preferredOpenMode).toBe('external');
+    expect(settings.terminal.externalTerminalProfile).toBe('custom');
+    expect(settings.terminal.externalTerminalCommand).toBe('wt.exe');
+    expect(settings.terminal.externalTerminalArgs).toBe('--focus');
+  });
+
+  it('updates cursor settings', () => {
+    const store = useSettingsStore.getState();
+    store.updateTerminal({ cursorBlink: false, cursorStyle: 'block' });
+    const { settings } = useSettingsStore.getState();
+    expect(settings.terminal.cursorBlink).toBe(false);
+    expect(settings.terminal.cursorStyle).toBe('block');
+  });
+});
+
+describe('useSettingsStore.updateExplorer()', () => {
+  it('toggles hidden files', () => {
+    const store = useSettingsStore.getState();
+    store.updateExplorer({ showHiddenFiles: true });
+    expect(useSettingsStore.getState().settings.explorer.showHiddenFiles).toBe(true);
+  });
+
+  it('updates viewMode', () => {
+    const store = useSettingsStore.getState();
+    store.updateExplorer({ viewMode: 'grid' });
+    expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('grid');
+  });
+
+  it('does not mutate other setting sections', () => {
+    const store = useSettingsStore.getState();
+    const beforeTerminal = { ...useSettingsStore.getState().settings.terminal };
+    store.updateExplorer({ showHiddenFiles: true });
+    expect(useSettingsStore.getState().settings.terminal).toEqual(beforeTerminal);
+  });
+});
+
+describe('useSettingsStore.resetToDefaults()', () => {
+  it('restores all settings to defaults after changes', () => {
+    const store = useSettingsStore.getState();
+    store.updateTerminal({ preferredOpenMode: 'external', fontSize: 16 });
+    store.updateAppearance({ activeThemeId: 'dracula' });
+    store.updateExplorer({ showHiddenFiles: true });
+    store.resetToDefaults();
+
+    const { settings } = useSettingsStore.getState();
+    expect(settings.terminal.preferredOpenMode).toBe(defaultSettings.terminal.preferredOpenMode);
+    expect(settings.terminal.fontSize).toBe(defaultSettings.terminal.fontSize);
+    expect(settings.appearance.activeThemeId).toBe(defaultSettings.appearance.activeThemeId);
+    expect(settings.explorer.showHiddenFiles).toBe(defaultSettings.explorer.showHiddenFiles);
+  });
+});
+
+describe('useSettingsStore.importSettings()', () => {
+  it('imports partial settings without losing unspecified sections', () => {
+    const store = useSettingsStore.getState();
+    store.importSettings({
+      terminal: { ...defaultSettings.terminal, fontSize: 15 },
+      appearance: { ...defaultSettings.appearance, activeThemeId: 'nord' },
+    });
+
+    const { settings } = useSettingsStore.getState();
+    expect(settings.terminal.fontSize).toBe(15);
+    expect(settings.appearance.activeThemeId).toBe('nord');
+    expect(settings.explorer).toEqual(defaultSettings.explorer);
+  });
+
+  it('migrates legacy terminal theme and font fields on import', () => {
+    const store = useSettingsStore.getState();
+    store.importSettings({
+      terminal: {
+        ...defaultSettings.terminal,
+        fontSize: 15,
+        colorTheme: 'catppuccin',
+        uiFont: 'Geist, Inter, system-ui, sans-serif',
+      } as typeof defaultSettings.terminal & { colorTheme: string; uiFont: string },
+    });
+
+    const { settings } = useSettingsStore.getState();
+    expect(settings.terminal.fontSize).toBe(15);
+    expect(settings.appearance.activeThemeId).toBe('catppuccin');
+    expect(settings.appearance.uiFontFamily).toBe('Geist, Inter, system-ui, sans-serif');
+  });
+});
+
+describe('useSettingsStore.exportSettings()', () => {
+  it('returns a deep copy of the current settings', () => {
+    const store = useSettingsStore.getState();
+    store.updateAppearance({ activeThemeId: 'catppuccin', appCloseAnimation: 'fizzle' });
+    const exported = store.exportSettings();
+
+    expect(exported.appearance.activeThemeId).toBe('catppuccin');
+    expect(exported.appearance.appCloseAnimation).toBe('fizzle');
+    expect(exported).toEqual(useSettingsStore.getState().settings);
+  });
+});
+
+describe('mergeSettingsWithDefaults()', () => {
+  it('fills in newly added sections for older persisted settings', () => {
+    const merged = mergeSettingsWithDefaults({
+      terminal: {
+        ...defaultSettings.terminal,
+        colorTheme: 'dracula',
+        uiFont: 'Geist, Inter, system-ui, sans-serif',
+      } as typeof defaultSettings.terminal & { colorTheme: string; uiFont: string },
+      appearance: { appZoom: 1.1 } as typeof defaultSettings.appearance,
+    });
+
+    expect(merged.appearance.activeThemeId).toBe('dracula');
+    expect(merged.appearance.uiFontFamily).toBe('Geist, Inter, system-ui, sans-serif');
+    expect(merged.appearance.appZoom).toBe(1.1);
+    expect(merged.appearance.appOpenAnimation).toBe(defaultSettings.appearance.appOpenAnimation);
+    expect(merged.appearance.appCloseAnimation).toBe(defaultSettings.appearance.appCloseAnimation);
+    expect(merged.screenshots).toEqual(defaultSettings.screenshots);
+  });
+
+  it('clamps imported animation tuning into a supported range', () => {
+    const merged = mergeSettingsWithDefaults({
+      appearance: {
+        appAnimationDurationMs: 5000,
+        appAnimationIntensity: 0.1,
+      } as typeof defaultSettings.appearance,
+    });
+
+    expect(merged.appearance.appAnimationDurationMs).toBeLessThanOrEqual(1200);
+    expect(merged.appearance.appAnimationIntensity).toBeGreaterThanOrEqual(0.55);
+  });
+});

@@ -1,0 +1,1 @@
+chmod +x mac-release/build-overlayterm-macos.command mac-release/package-macos.sh

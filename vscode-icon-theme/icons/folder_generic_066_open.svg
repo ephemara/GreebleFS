@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none"><defs><clipPath id="folder-open-clip"><path d="M8 96L24 208C25.3215 216.3912 32.4738 224 40.9442 224H215.056C223.526 224 230.678 216.3912 232 208L248 96H8Z" /></clipPath></defs><path d="M16 48C16 39.1634 23.1634 32 32 32H96L112 56H224C232.837 56 240 63.1634 240 72V96H16V48Z" fill="#2dd4bf" /><path d="M8 96L24 208C25.3215 216.3912 32.4738 224 40.9442 224H215.056C223.526 224 230.678 216.3912 232 208L248 96H8Z" fill="#0f766e" fill-opacity="0.92" /><path d="M20 112H232" stroke="#99f6e4" stroke-width="10" stroke-linecap="round" stroke-opacity="0.2" /><path d="M26 192H226L218 220H36L26 192Z" fill="#042f2e" fill-opacity="0.12" /><g clip-path="url(#folder-open-clip)" transform="translate(0 16)"><rect x="48" y="138" width="10" height="48" rx="4" fill="#042f2e" opacity="0.26" stroke="none" />
+  <rect x="72" y="138" width="10" height="48" rx="4" fill="#042f2e" opacity="0.26" stroke="none" />
+  <rect x="96" y="138" width="10" height="48" rx="4" fill="#042f2e" opacity="0.26" stroke="none" />
+  <rect x="120" y="138" width="10" height="48" rx="4" fill="#042f2e" opacity="0.26" stroke="none" />
+  <rect x="144" y="138" width="10" height="48" rx="4" fill="#042f2e" opacity="0.26" stroke="none" />
+  <rect x="64" y="102" width="4" height="84" rx="2" fill="#042f2e" opacity="0.12" stroke="none" />
+  <rect x="98" y="102" width="4" height="84" rx="2" fill="#042f2e" opacity="0.12" stroke="none" />
+  <rect x="132" y="102" width="4" height="84" rx="2" fill="#042f2e" opacity="0.12" stroke="none" />
+  <rect x="166" y="102" width="4" height="84" rx="2" fill="#042f2e" opacity="0.12" stroke="none" />
+  <rect x="200" y="102" width="4" height="84" rx="2" fill="#042f2e" opacity="0.12" stroke="none" />
+  <rect x="46" y="114" width="168" height="4" rx="2" fill="#042f2e" opacity="0.12" stroke="none" />
+  <rect x="46" y="138" width="168" height="4" rx="2" fill="#042f2e" opacity="0.12" stroke="none" />
+  <rect x="46" y="162" width="168" height="4" rx="2" fill="#042f2e" opacity="0.12" stroke="none" />
+  <rect x="40" y="114" width="176" height="70" rx="18" fill="#99f6e4" opacity="0.05" stroke="none" />
+  <circle cx="160" cy="146" r="20" fill="#ffffff" stroke="#042f2e" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="4.0" />
+  <circle cx="160" cy="146" r="8" fill="#2dd4bf" stroke="none" />
+</g><path d="M16 48C16 39.1634 23.1634 32 32 32H96L112 56H224C232.837 56 240 63.1634 240 72V96M8 96L24 208C25.3215 216.3912 32.4738 224 40.9442 224H215.056C223.526 224 230.678 216.3912 232 208L248 96H8Z" stroke="#042f2e" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.34" fill="none" /></svg>

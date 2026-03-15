@@ -1,0 +1,199 @@
+import React from 'react';
+import { Terminal as TerminalIcon, FolderOpen, GitBranch, StickyNote, Camera, Puzzle, SlidersHorizontal } from 'lucide-react';
+import type { ResolvedOverlayAppearance } from '../config/appearance';
+import TerminalOverlay from '../components/TerminalOverlay';
+import { FileExplorer } from '../components/FileExplorer';
+import { GitManager } from '../components/GitManager';
+import { NotesManager } from '../components/NotesManager';
+import { ScreenshotsManager } from '../components/ScreenshotsManager';
+import { FolderPluginRenderer } from '../components/PluginsManager';
+import { SettingsPage } from '../components/SettingsPage';
+import type {
+  LoadedOverlayPlugin,
+  OverlayPluginApi,
+  OverlayPluginContext,
+} from '../components/pluginRuntime';
+
+export interface PanelCatalogEntry {
+  id: string;
+  label: string;
+  description: string;
+  kind: 'built-in-panel' | 'folder-plugin';
+  example?: boolean;
+}
+
+export interface OverlayPanelDefinition {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  description: string;
+  defaultOpen: boolean;
+  keepMounted?: boolean;
+  render: () => React.ReactNode;
+}
+
+export function createBuiltInPanelDefinitions({
+  appearance,
+  isOpen,
+  hideOverlay,
+  onOpenInTerminal,
+  onAddBookmark,
+  renderPluginsManager,
+}: {
+  appearance: ResolvedOverlayAppearance;
+  isOpen: boolean;
+  hideOverlay: () => void;
+  onOpenInTerminal: (path: string) => void;
+  onAddBookmark: (name: string, path: string) => Promise<void>;
+  renderPluginsManager: () => React.ReactNode;
+}): OverlayPanelDefinition[] {
+  const accent = appearance.theme.palette.accent;
+
+  return [
+    {
+      id: 'terminal',
+      label: 'Terminal',
+      icon: <TerminalIcon size={12} />,
+      description: 'Primary command workspace.',
+      defaultOpen: true,
+      keepMounted: true,
+      render: () => <TerminalOverlay isOpen={isOpen} onClose={hideOverlay} embedded appearance={appearance} />,
+    },
+    {
+      id: 'explorer',
+      label: 'Explorer',
+      icon: <FolderOpen size={12} />,
+      description: 'File browser and asset navigation.',
+      defaultOpen: true,
+      render: () => (
+        <FileExplorer
+          appearance={appearance}
+          theme={{
+            accent,
+            bg: appearance.theme.palette.appBackground,
+            bgPanel: appearance.theme.palette.panelBackground,
+            text: appearance.theme.palette.textPrimary,
+            border: appearance.theme.palette.border,
+            textMuted: appearance.theme.palette.textMuted,
+          }}
+          onOpenInTerminal={onOpenInTerminal}
+          onAddBookmark={onAddBookmark}
+        />
+      ),
+    },
+    {
+      id: 'git',
+      label: 'Source',
+      icon: <GitBranch size={12} />,
+      description: 'Git tools and diff management.',
+      defaultOpen: true,
+      render: () => <GitManager appearance={appearance} />,
+    },
+    {
+      id: 'notes',
+      label: 'Notes',
+      icon: <StickyNote size={12} />,
+      description: 'Scratchpads and structured notes.',
+      defaultOpen: true,
+      render: () => <NotesManager appearance={appearance} />,
+    },
+    {
+      id: 'screenshots',
+      label: 'Screenshots',
+      icon: <Camera size={12} />,
+      description: 'Built-in example plugin for capture and clipboard workflows.',
+      defaultOpen: true,
+      render: () => <ScreenshotsManager appearance={appearance} />,
+    },
+    {
+      id: 'settings',
+      label: 'Settings',
+      icon: <SlidersHorizontal size={12} />,
+      description: 'Application-wide appearance, terminal, and explorer settings.',
+      defaultOpen: false,
+      render: () => <SettingsPage appearance={appearance} />,
+    },
+    {
+      id: 'plugins',
+      label: 'Plugins',
+      icon: <Puzzle size={12} />,
+      description: 'Plugin browser and drop-in loader workspace.',
+      defaultOpen: true,
+      render: renderPluginsManager,
+    },
+  ];
+}
+
+export function createFolderPluginPanelDefinitions({
+  appearance,
+  plugins,
+  createPluginApi,
+}: {
+  appearance: ResolvedOverlayAppearance;
+  plugins: LoadedOverlayPlugin[];
+  createPluginApi: (plugin: OverlayPluginContext) => OverlayPluginApi;
+}): OverlayPanelDefinition[] {
+  return plugins.map(plugin => ({
+    id: plugin.id,
+    label: plugin.name,
+    icon: <Puzzle size={12} />,
+    description: plugin.description ?? `Folder plugin loaded from ${plugin.filePath}.`,
+    defaultOpen: plugin.defaultOpen,
+    keepMounted: plugin.keepMounted,
+    render: () => (
+      <FolderPluginRenderer
+        plugin={plugin}
+        appearance={appearance}
+        createPluginApi={createPluginApi}
+      />
+    ),
+  }));
+}
+
+export function buildBuiltInCatalog(): PanelCatalogEntry[] {
+  return [
+    {
+      id: 'terminal',
+      label: 'Terminal',
+      description: 'Built-in panel plugin for terminal sessions.',
+      kind: 'built-in-panel',
+    },
+    {
+      id: 'explorer',
+      label: 'Explorer',
+      description: 'Built-in panel plugin for file browsing.',
+      kind: 'built-in-panel',
+    },
+    {
+      id: 'git',
+      label: 'Source',
+      description: 'Built-in panel plugin for Git workflows.',
+      kind: 'built-in-panel',
+    },
+    {
+      id: 'notes',
+      label: 'Notes',
+      description: 'Built-in panel plugin for note taking.',
+      kind: 'built-in-panel',
+    },
+    {
+      id: 'screenshots',
+      label: 'Screenshots',
+      description: 'Built-in example plugin showing capture, clipboard, and file IO.',
+      kind: 'built-in-panel',
+      example: true,
+    },
+    {
+      id: 'settings',
+      label: 'Settings',
+      description: 'Built-in panel plugin for application-wide settings.',
+      kind: 'built-in-panel',
+    },
+    {
+      id: 'plugins',
+      label: 'Plugins',
+      description: 'Built-in panel plugin for managing folder plugins.',
+      kind: 'built-in-panel',
+    },
+  ];
+}
