@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import { getFolderIconSrc } from '../config/folderIcons';
+import type { ExplorerLayoutMode } from '../config/layoutProfiles';
 import { detectClientPlatform, getFallbackExplorerPath, joinPlatformPath } from '../config/platform';
 import { useSettingsStore } from '../store/settingsStore';
 
@@ -391,24 +392,27 @@ interface FileExplorerProps {
   appearance?: ResolvedOverlayAppearance;
   onOpenInTerminal: (path: string) => void;
   onAddBookmark: (name: string, path: string) => void;
+  layoutMode?: ExplorerLayoutMode;
 }
 
-export function FileExplorer({ theme, onOpenInTerminal, onAddBookmark }: FileExplorerProps) {
+export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmark, layoutMode = 'full' }: FileExplorerProps) {
   const accent = theme.accent;
   const explorerSettings = useSettingsStore(s => s.settings.explorer);
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
+  const isCompactDock = layoutMode === 'compact-dock';
+  const uiFont = appearance?.fonts.ui ?? 'Inter,system-ui,sans-serif';
 
   const [currentPath,  setCurrentPath]  = useState('');
   const [history,      setHistory]      = useState<string[]>([]);
   const [historyIdx,   setHistoryIdx]   = useState(-1);
-  const [sidebarWidth, setSidebarWidth] = useState(220);
+  const [sidebarWidth, setSidebarWidth] = useState(isCompactDock ? 180 : 220);
   const [entries,      setEntries]      = useState<FileEntry[]>([]);
   const [drives,       setDrives]       = useState<DriveInfo[]>([]);
   const [bookmarks,    setBookmarks]    = useState<FsBookmark[]>([]);
   const [loading,      setLoading]      = useState(false);
   const [error,        setError]        = useState<string|null>(null);
   const [selected,     setSelected]     = useState<Set<string>>(new Set());
-  const [viewMode,     setViewMode]     = useState<'grid'|'list'>('grid');
+  const [viewMode,     setViewMode]     = useState<'grid'|'list'>(isCompactDock ? 'list' : 'grid');
   const [search,       setSearch]       = useState('');
   const [showHidden,   setShowHidden]   = useState(false);
   const [preview,      setPreview]      = useState<PreviewState>({ type:'none', path:'' });
@@ -424,6 +428,14 @@ export function FileExplorer({ theme, onOpenInTerminal, onAddBookmark }: FileExp
   const lastSelected   = useRef<string|null>(null);
 
   const mainRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isCompactDock) {
+      setSidebarWidth(current => Math.min(current, 200));
+      setViewMode('list');
+      setPreview({ type: 'none', path: '' });
+    }
+  }, [isCompactDock]);
 
   // ── Boot ──
   useEffect(() => {
@@ -790,11 +802,12 @@ export function FileExplorer({ theme, onOpenInTerminal, onAddBookmark }: FileExp
     } catch(e) { setError(String(e)); }
   };
 
-  const hasPreview = preview.type !== 'none';
+  const effectiveViewMode = isCompactDock ? 'list' : viewMode;
+  const hasPreview = !isCompactDock && preview.type !== 'none';
 
   return (
     <div
-      style={{ flex:1, display:'flex', overflow:'hidden', background:EXP.bg, color:EXP.text, fontFamily:'Inter,system-ui,sans-serif', position:'relative' }}
+      style={{ flex:1, display:'flex', overflow:'hidden', background:EXP.bg, color:EXP.text, fontFamily:uiFont, position:'relative' }}
       onClick={() => { setSelected(new Set()); setCtxMenu(c => ({...c, visible:false})); }}
       onContextMenu={e => { e.preventDefault(); setCtxMenu(c => ({...c, visible:false})); }}
     >
@@ -807,7 +820,9 @@ export function FileExplorer({ theme, onOpenInTerminal, onAddBookmark }: FileExp
             e.preventDefault();
             const startX = e.clientX;
             const startW = sidebarWidth;
-            const onMouseMove = (me: MouseEvent) => setSidebarWidth(Math.max(150, Math.min(600, startW + (me.clientX - startX))));
+            const onMouseMove = (me: MouseEvent) => setSidebarWidth(
+              Math.max(isCompactDock ? 160 : 150, Math.min(isCompactDock ? 320 : 600, startW + (me.clientX - startX))),
+            );
             const onMouseUp = () => { window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onMouseUp); };
             window.addEventListener('mousemove', onMouseMove); window.addEventListener('mouseup', onMouseUp);
           }}
@@ -817,7 +832,7 @@ export function FileExplorer({ theme, onOpenInTerminal, onAddBookmark }: FileExp
         />
 
         {/* Drives */}
-        <div style={{ padding:'10px 12px 4px' }}>
+        <div style={{ padding:isCompactDock ? '8px 10px 4px' : '10px 12px 4px' }}>
           <span style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:EXP.muted }}>Drives</span>
         </div>
         {drives.map(d => {
@@ -825,7 +840,7 @@ export function FileExplorer({ theme, onOpenInTerminal, onAddBookmark }: FileExp
           const isActive = currentPath.toUpperCase().startsWith(d.letter.toUpperCase());
           return (
             <button key={d.letter} onClick={() => navigate(d.letter)}
-              style={{ display:'flex', alignItems:'center', gap:8, width:'100%', padding:'5px 12px', background: isActive ? `${accent}18` : 'transparent', borderLeft:`2px solid ${isActive ? accent : 'transparent'}`, border:'none', cursor:'pointer', color:EXP.text, textAlign:'left' }}
+              style={{ display:'flex', alignItems:'center', gap:8, width:'100%', padding:isCompactDock ? '5px 10px' : '5px 12px', background: isActive ? `${accent}18` : 'transparent', borderLeft:`2px solid ${isActive ? accent : 'transparent'}`, border:'none', cursor:'pointer', color:EXP.text, textAlign:'left' }}
             >
               <HardDrive size={13} style={{ color: isActive ? accent : EXP.muted, flexShrink:0 }} />
               <div style={{ flex:1, minWidth:0 }}>
@@ -844,14 +859,14 @@ export function FileExplorer({ theme, onOpenInTerminal, onAddBookmark }: FileExp
         <div style={{ height:1, background:EXP.border, margin:'6px 0' }} />
 
         {/* Bookmarks */}
-        <div style={{ padding:'4px 12px' }}>
+        <div style={{ padding:isCompactDock ? '4px 10px' : '4px 12px' }}>
           <span style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:EXP.muted }}>Bookmarks</span>
         </div>
         <div style={{ flex:1, overflowY:'auto' }}>
           {/* Home quick-link */}
           <button
             onClick={() => invoke<string>('fs_get_home_dir').then(p => navigate(p)).catch(() => {})}
-            style={{ display:'flex', alignItems:'center', gap:8, width:'100%', padding:'5px 12px', background:'transparent', border:'none', cursor:'pointer', color:EXP.muted, textAlign:'left' }}
+            style={{ display:'flex', alignItems:'center', gap:8, width:'100%', padding:isCompactDock ? '5px 10px' : '5px 12px', background:'transparent', border:'none', cursor:'pointer', color:EXP.muted, textAlign:'left' }}
             onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
           >
@@ -863,7 +878,7 @@ export function FileExplorer({ theme, onOpenInTerminal, onAddBookmark }: FileExp
             <div key={bk.id} style={{ display:'flex', alignItems:'center' }}>
               <button
                 onClick={() => navigate(bk.path)}
-                style={{ display:'flex', alignItems:'center', gap:8, flex:1, padding:'5px 12px', background: currentPath === bk.path ? `${accent}18` : 'transparent', border:'none', cursor:'pointer', color: currentPath === bk.path ? EXP.text : EXP.muted, textAlign:'left', borderLeft:`2px solid ${currentPath===bk.path ? accent : 'transparent'}` }}
+                style={{ display:'flex', alignItems:'center', gap:8, flex:1, padding:isCompactDock ? '5px 10px' : '5px 12px', background: currentPath === bk.path ? `${accent}18` : 'transparent', border:'none', cursor:'pointer', color: currentPath === bk.path ? EXP.text : EXP.muted, textAlign:'left', borderLeft:`2px solid ${currentPath===bk.path ? accent : 'transparent'}` }}
                 onMouseEnter={e => { if(currentPath!==bk.path) e.currentTarget.style.background='rgba(255,255,255,0.04)'; }}
                 onMouseLeave={e => { if(currentPath!==bk.path) e.currentTarget.style.background='transparent'; }}
               >
@@ -888,7 +903,7 @@ export function FileExplorer({ theme, onOpenInTerminal, onAddBookmark }: FileExp
       <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
 
         {/* Toolbar */}
-        <div style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 10px', background:EXP.panel, borderBottom:`1px solid ${EXP.border}`, flexShrink:0 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:6, padding:isCompactDock ? '6px 8px' : '6px 10px', background:EXP.panel, borderBottom:`1px solid ${EXP.border}`, flexShrink:0 }}>
           {[
             { icon:<ChevronLeft size={14}/>,  action:goBack,    disabled:historyIdx<=0,                  title:'Back' },
             { icon:<ChevronRight size={14}/>, action:goForward, disabled:historyIdx>=history.length-1,   title:'Forward' },
@@ -912,7 +927,7 @@ export function FileExplorer({ theme, onOpenInTerminal, onAddBookmark }: FileExp
           </div>
 
           {/* Search */}
-          <div style={{ display:'flex', alignItems:'center', gap:6, background:EXP.bg, border:`1px solid ${EXP.border}`, borderRadius:6, padding:'3px 8px', width:180 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:6, background:EXP.bg, border:`1px solid ${EXP.border}`, borderRadius:6, padding:'3px 8px', width:isCompactDock ? 132 : 180 }}>
             <Search size={12} style={{ color:EXP.muted2 }} />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search files…"
               style={{ background:'none', border:'none', outline:'none', color:EXP.text, fontSize:11, width:'100%' }} />
@@ -920,11 +935,13 @@ export function FileExplorer({ theme, onOpenInTerminal, onAddBookmark }: FileExp
           </div>
 
           {/* Toolbar buttons */}
-          <button onClick={() => setViewMode(v => v==='grid'?'list':'grid')} title="Toggle view (Grid/List)"
-            style={{ background:'none', border:'none', cursor:'pointer', color:EXP.muted, padding:5, borderRadius:5, display:'flex' }}
-            onMouseEnter={e=>(e.currentTarget.style.background='rgba(255,255,255,0.06)')}
-            onMouseLeave={e=>(e.currentTarget.style.background='transparent')}
-          >{viewMode==='grid' ? <List size={14}/> : <Grid size={14}/>}</button>
+          {!isCompactDock && (
+            <button onClick={() => setViewMode(v => v==='grid'?'list':'grid')} title="Toggle view (Grid/List)"
+              style={{ background:'none', border:'none', cursor:'pointer', color:EXP.muted, padding:5, borderRadius:5, display:'flex' }}
+              onMouseEnter={e=>(e.currentTarget.style.background='rgba(255,255,255,0.06)')}
+              onMouseLeave={e=>(e.currentTarget.style.background='transparent')}
+            >{viewMode==='grid' ? <List size={14}/> : <Grid size={14}/>}</button>
+          )}
 
           <button onClick={() => setShowHidden(h=>!h)} title="Toggle hidden files"
             style={{ background:showHidden?`${accent}22`:'none', border:'none', cursor:'pointer', color:showHidden?accent:EXP.muted, padding:5, borderRadius:5, display:'flex' }}
@@ -971,7 +988,7 @@ export function FileExplorer({ theme, onOpenInTerminal, onAddBookmark }: FileExp
         {/* File area + preview */}
         <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
           <div ref={mainRef} tabIndex={0}
-            style={{ flex:1, overflowY:'auto', padding: viewMode==='grid'?12:0, outline:'none' }}
+            style={{ flex:1, overflowY:'auto', padding: effectiveViewMode==='grid'?12:0, outline:'none' }}
             onDragOver={e => { e.preventDefault(); setDragOver('__main__'); }}
             onDragLeave={() => setDragOver(null)}
             onDrop={e => onDrop(e, currentPath)}
@@ -1017,7 +1034,7 @@ export function FileExplorer({ theme, onOpenInTerminal, onAddBookmark }: FileExp
 
             {/* Grid view */}
             {/* Inline new-item row */}
-            {newItem.visible && viewMode === 'grid' && (
+            {newItem.visible && effectiveViewMode === 'grid' && (
               <div style={{ background:EXP.card, border:`1px solid ${accent}`, borderRadius:8, padding:8, display:'flex', flexDirection:'column', alignItems:'center', gap:6 }}>
                 <SvgIcon src={newItem.kind==='folder' ? '/icons/folder.svg' : '/icons/txt.svg'} size={36} />
                 <input
@@ -1029,7 +1046,7 @@ export function FileExplorer({ theme, onOpenInTerminal, onAddBookmark }: FileExp
               </div>
             )}
 
-            {!loading && viewMode === 'grid' && (
+            {!loading && effectiveViewMode === 'grid' && (
               <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(100px,1fr))', gap:6 }}>
                 {filtered.map(entry => {
                   const isSel = selected.has(entry.path);
@@ -1074,7 +1091,7 @@ export function FileExplorer({ theme, onOpenInTerminal, onAddBookmark }: FileExp
             )}
 
             {/* Inline new-item row in list mode */}
-            {newItem.visible && viewMode === 'list' && (
+            {newItem.visible && effectiveViewMode === 'list' && (
               <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}><tbody>
                 <tr style={{ background:`${accent}11`, borderBottom:`1px solid ${EXP.border}` }}>
                   <td style={{ padding:'4px 12px' }}>
@@ -1092,7 +1109,7 @@ export function FileExplorer({ theme, onOpenInTerminal, onAddBookmark }: FileExp
               </tbody></table>
             )}
 
-            {!loading && viewMode === 'list' && (
+            {!loading && effectiveViewMode === 'list' && (
               <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
                 <thead>
                   <tr style={{ background:EXP.panel, position:'sticky', top:0, zIndex:2 }}>

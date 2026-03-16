@@ -40,6 +40,12 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.appearance.appAnimationDurationMs).toBe(320);
     expect(settings.appearance.appAnimationIntensity).toBe(1);
   });
+
+  it('has the correct default layout settings', () => {
+    const { settings } = useSettingsStore.getState();
+    expect(settings.layout.activeProfileId).toBe(defaultSettings.layout.activeProfileId);
+    expect(settings.layout.configPath).toBe('');
+  });
 });
 
 describe('useSettingsStore.updateTerminal()', () => {
@@ -106,6 +112,23 @@ describe('useSettingsStore.updateExplorer()', () => {
     const beforeTerminal = { ...useSettingsStore.getState().settings.terminal };
     store.updateExplorer({ showHiddenFiles: true });
     expect(useSettingsStore.getState().settings.terminal).toEqual(beforeTerminal);
+  });
+});
+
+describe('useSettingsStore.updateLayout()', () => {
+  it('updates layout settings without mutating unrelated sections', () => {
+    const store = useSettingsStore.getState();
+    const beforeAppearance = { ...store.settings.appearance };
+
+    store.updateLayout({
+      activeProfileId: 'navigator-bottom',
+      configPath: 'M:\\layouts\\snapyard.layouts.toml',
+    });
+
+    const { settings } = useSettingsStore.getState();
+    expect(settings.layout.activeProfileId).toBe('navigator-bottom');
+    expect(settings.layout.configPath).toBe('M:\\layouts\\snapyard.layouts.toml');
+    expect(settings.appearance).toEqual(beforeAppearance);
   });
 });
 
@@ -186,6 +209,7 @@ describe('mergeSettingsWithDefaults()', () => {
     expect(merged.appearance.appOpenAnimation).toBe(defaultSettings.appearance.appOpenAnimation);
     expect(merged.appearance.appCloseAnimation).toBe(defaultSettings.appearance.appCloseAnimation);
     expect(merged.screenshots).toEqual(defaultSettings.screenshots);
+    expect(merged.layout).toEqual(defaultSettings.layout);
   });
 
   it('clamps imported animation tuning into a supported range', () => {

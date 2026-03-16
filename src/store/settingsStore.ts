@@ -22,6 +22,7 @@ import {
   type OverlayAnimationPresetId,
 } from '../config/overlayAnimations';
 import { screenshotFeatureConfig } from '../config/screenshots';
+import { getDefaultLayoutProfile } from '../config/layoutProfiles';
 
 // ============================================================================
 // TYPES
@@ -114,6 +115,11 @@ export interface PolyGeminiSettings {
   maxTokens: number;
 }
 
+export interface LayoutSettings {
+  activeProfileId: string;
+  configPath: string;
+}
+
 export interface Settings {
   editor: EditorSettings;
   terminal: TerminalSettings;
@@ -123,6 +129,7 @@ export interface Settings {
   screenshots: ScreenshotSettings;
   keybindings: KeybindingSettings;
   polygemini: PolyGeminiSettings;
+  layout: LayoutSettings;
 }
 
 type LegacyImportedTerminalSettings = Partial<TerminalSettings> & {
@@ -229,6 +236,10 @@ export const defaultSettings: Settings = {
     temperature: 0.7,
     maxTokens: 8192,
   },
+  layout: {
+    activeProfileId: getDefaultLayoutProfile().id,
+    configPath: '',
+  },
 };
 
 function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Settings {
@@ -259,6 +270,7 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
     screenshots: { ...base.screenshots, ...imported?.screenshots },
     keybindings: { ...base.keybindings, ...imported?.keybindings },
     polygemini: { ...base.polygemini, ...imported?.polygemini },
+    layout: { ...base.layout, ...(imported as Partial<Settings> | undefined)?.layout },
   };
 }
 
@@ -289,6 +301,7 @@ interface SettingsState {
   updateScreenshots: (updates: Partial<ScreenshotSettings>) => void;
   updateKeybindings: (updates: Partial<KeybindingSettings>) => void;
   updatePolyGemini: (updates: Partial<PolyGeminiSettings>) => void;
+  updateLayout: (updates: Partial<LayoutSettings>) => void;
   
   // Bulk operations
   resetToDefaults: () => void;
@@ -360,6 +373,13 @@ export const useSettingsStore = create<SettingsState>()(
         settings: {
           ...state.settings,
           polygemini: { ...state.settings.polygemini, ...updates },
+        },
+      })),
+
+      updateLayout: (updates) => set((state) => ({
+        settings: {
+          ...state.settings,
+          layout: { ...state.settings.layout, ...updates },
         },
       })),
       

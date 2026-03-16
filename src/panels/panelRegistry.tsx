@@ -8,6 +8,7 @@ import { NotesManager } from '../components/NotesManager';
 import { ScreenshotsManager } from '../components/ScreenshotsManager';
 import { FolderPluginRenderer } from '../components/PluginsManager';
 import { SettingsPage } from '../components/SettingsPage';
+import type { ExplorerLayoutMode } from '../config/layoutProfiles';
 import type {
   LoadedOverlayPlugin,
   OverlayPluginApi,
@@ -34,6 +35,7 @@ export interface OverlayPanelDefinition {
 
 export function createBuiltInPanelDefinitions({
   appearance,
+  explorerLayoutMode,
   isOpen,
   hideOverlay,
   onOpenInTerminal,
@@ -41,6 +43,7 @@ export function createBuiltInPanelDefinitions({
   renderPluginsManager,
 }: {
   appearance: ResolvedOverlayAppearance;
+  explorerLayoutMode?: ExplorerLayoutMode;
   isOpen: boolean;
   hideOverlay: () => void;
   onOpenInTerminal: (path: string) => void;
@@ -68,6 +71,7 @@ export function createBuiltInPanelDefinitions({
       render: () => (
         <FileExplorer
           appearance={appearance}
+          layoutMode={explorerLayoutMode}
           theme={{
             accent,
             bg: appearance.theme.palette.appBackground,

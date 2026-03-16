@@ -32,6 +32,18 @@ import { listen } from '@tauri-apps/api/event';
 import { Check, Droplet, GripVertical, LayoutGrid, Settings2, Terminal as TerminalIcon, X } from 'lucide-react';
 import { ensureFontFamilyLoaded, resolveOverlayAppearance, type ResolvedOverlayAppearance } from './config/appearance';
 import {
+  BUILT_IN_LAYOUT_MANIFEST,
+  getNextLayoutProfileId,
+  getPanelsBySide,
+  getPinnedPanelIds,
+  getTabbedOpenPanelIds,
+  loadExternalLayoutManifest,
+  resolveLayoutProfile,
+  type LayoutDockSide,
+  type LayoutPinnedPanel,
+  type LayoutProfile,
+} from './config/layoutProfiles';
+import {
   clampOverlayAnimationDuration,
   clampOverlayAnimationIntensity,
   getOverlayAnimationStyle,
@@ -135,6 +147,30 @@ function computeOverlayWindowLayout(args: {
   };
 }
 
+function LayoutPinnedPanelSlot({
+  panel,
+  definition,
+}: {
+  panel: LayoutPinnedPanel;
+  definition: OverlayPanelDefinition;
+}) {
+  return (
+    <div
+      style={{
+        flexBasis: panel.size,
+        width: panel.size,
+        minWidth: panel.size,
+        maxWidth: panel.size,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }}
+    >
+      {definition.render()}
+    </div>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 function App() {
@@ -158,10 +194,14 @@ function App() {
   const hasInitializedPanelLayoutRef = useRef(false);
   const refreshFolderPluginsRef = useRef<(force?: boolean) => Promise<void>>(async () => undefined);
   const [openPanelIds, setOpenPanelIds] = useState<string[]>([]);
+  const [layoutManifest, setLayoutManifest] = useState(BUILT_IN_LAYOUT_MANIFEST);
+  const [layoutConfigSource, setLayoutConfigSource] = useState<string | null>(null);
 
   const settings = useSettingsStore(s => s.settings.terminal);
   const appearance = useSettingsStore(s => s.settings.appearance);
+  const layoutSettings = useSettingsStore(s => s.settings.layout);
   const updateAppearance = useSettingsStore(s => s.updateAppearance);
+  const updateLayout = useSettingsStore(s => s.updateLayout);
   const updateSystem = useSettingsStore(s => s.updateSystem);
   const { initStore, addDirectoryBookmark } = useTerminalStore();
   const resolvedAppearance = useMemo(
@@ -211,6 +251,14 @@ function App() {
   const combinedShellTransform = typeof shellAnimationStyle.transform === 'string'
     ? `${shellAnimationStyle.transform} scale(${clampedAppZoom})`
     : `scale(${clampedAppZoom})`;
+  const activeLayoutProfile = useMemo(
+    () => resolveLayoutProfile(layoutManifest, layoutSettings.activeProfileId),
+    [layoutManifest, layoutSettings.activeProfileId],
+  );
+  const pinnedExplorerPanel = useMemo(
+    () => activeLayoutProfile.pinnedPanels.find(panel => panel.panelId === 'explorer') ?? null,
+    [activeLayoutProfile],
+  );
 
   // ── Boot store ──
   useEffect(() => { initStore(); }, [initStore]);
@@ -237,6 +285,37 @@ function App() {
     ensureFontFamilyLoaded(resolvedAppearance.fonts.ui);
     ensureFontFamilyLoaded(resolvedAppearance.fonts.mono);
   }, [resolvedAppearance.fonts.mono, resolvedAppearance.fonts.ui]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    loadExternalLayoutManifest(layoutSettings.configPath)
+      .then(result => {
+        if (cancelled) {
+          return;
+        }
+        setLayoutManifest(result.manifest);
+        setLayoutConfigSource(result.sourcePath);
+      })
+      .catch(error => {
+        if (!cancelled) {
+          console.warn('OverlayTerm: failed to load layout manifest', error);
+          setLayoutManifest(BUILT_IN_LAYOUT_MANIFEST);
+          setLayoutConfigSource(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [layoutSettings.configPath]);
+
+  useEffect(() => {
+    if (layoutSettings.activeProfileId === activeLayoutProfile.id) {
+      return;
+    }
+    updateLayout({ activeProfileId: activeLayoutProfile.id });
+  }, [activeLayoutProfile.id, layoutSettings.activeProfileId, updateLayout]);
 
   const clearAnimationClock = useCallback(() => {
     if (animationTimerRef.current !== null) {
@@ -497,6 +576,7 @@ function App() {
     () => [
       ...createBuiltInPanelDefinitions({
         appearance: resolvedAppearance,
+        explorerLayoutMode: pinnedExplorerPanel?.mode ?? 'full',
         isOpen: isOverlayVisible,
         hideOverlay,
         onOpenInTerminal: handleOpenInTerminal,
@@ -530,6 +610,7 @@ function App() {
       hideOverlay,
       isOverlayVisible,
       openPluginsFolder,
+      pinnedExplorerPanel?.mode,
       refreshFolderPlugins,
       resolvedAppearance,
     ],
@@ -538,13 +619,41 @@ function App() {
     () => new Map(panelDefinitions.map(panel => [panel.id, panel])),
     [panelDefinitions],
   );
-  const defaultOpenPanelIds = useMemo(
-    () => panelDefinitions.filter(panel => panel.defaultOpen).map(panel => panel.id),
-    [panelDefinitions],
+  const pinnedPanelIds = useMemo(
+    () => getPinnedPanelIds(activeLayoutProfile),
+    [activeLayoutProfile],
   );
-  const openPanels = openPanelIds
-    .map(id => panelLookup.get(id))
-    .filter((panel): panel is OverlayPanelDefinition => Boolean(panel));
+  const defaultOpenPanelIds = useMemo(
+    () => Array.from(
+      new Set([
+        ...panelDefinitions.filter(panel => panel.defaultOpen).map(panel => panel.id),
+        ...activeLayoutProfile.behavior.enforcedOpenPanelIds,
+      ]),
+    ).filter(panelId => panelLookup.has(panelId)),
+    [activeLayoutProfile.behavior.enforcedOpenPanelIds, panelDefinitions, panelLookup],
+  );
+  const tabbedOpenPanelIds = useMemo(
+    () => getTabbedOpenPanelIds(activeLayoutProfile, openPanelIds),
+    [activeLayoutProfile, openPanelIds],
+  );
+  const openPanels = useMemo(
+    () => tabbedOpenPanelIds
+      .map(id => panelLookup.get(id))
+      .filter((panel): panel is OverlayPanelDefinition => Boolean(panel)),
+    [panelLookup, tabbedOpenPanelIds],
+  );
+  const leftPinnedPanels = useMemo(
+    () => getPanelsBySide(activeLayoutProfile, 'left')
+      .map(panel => ({ panel, definition: panelLookup.get(panel.panelId) }))
+      .filter((entry): entry is { panel: LayoutPinnedPanel; definition: OverlayPanelDefinition } => Boolean(entry.definition)),
+    [activeLayoutProfile, panelLookup],
+  );
+  const rightPinnedPanels = useMemo(
+    () => getPanelsBySide(activeLayoutProfile, 'right')
+      .map(panel => ({ panel, definition: panelLookup.get(panel.panelId) }))
+      .filter((entry): entry is { panel: LayoutPinnedPanel; definition: OverlayPanelDefinition } => Boolean(entry.definition)),
+    [activeLayoutProfile, panelLookup],
+  );
 
   useEffect(() => {
     if (hasInitializedPanelLayoutRef.current) {
@@ -561,19 +670,35 @@ function App() {
   useEffect(() => {
     const availablePanelIds = panelDefinitions.map(panel => panel.id);
     setOpenPanelIds(current => syncOpenPanelIds(current, availablePanelIds, defaultOpenPanelIds));
-    setActivePanelId(current => {
-      if (!current) return null;
-      return panelLookup.has(current) ? current : null;
-    });
-  }, [defaultOpenPanelIds, panelDefinitions, panelLookup]);
+  }, [defaultOpenPanelIds, panelDefinitions]);
 
   useEffect(() => {
-    if (activePanelId) return;
-    if (openPanelIds.length === 0) return;
-    setActivePanelId(openPanelIds[0]);
-  }, [activePanelId, openPanelIds]);
+    if (tabbedOpenPanelIds.length === 0) {
+      if (activePanelId !== null) {
+        setActivePanelId(null);
+      }
+      return;
+    }
+
+    if (activePanelId && tabbedOpenPanelIds.includes(activePanelId) && panelLookup.has(activePanelId)) {
+      return;
+    }
+
+    const preferredPanelId = tabbedOpenPanelIds.includes(activeLayoutProfile.behavior.defaultActivePanelId)
+      ? activeLayoutProfile.behavior.defaultActivePanelId
+      : tabbedOpenPanelIds[0];
+
+    if (preferredPanelId && activePanelId !== preferredPanelId) {
+      setActivePanelId(preferredPanelId);
+    }
+  }, [activeLayoutProfile.behavior.defaultActivePanelId, activePanelId, panelLookup, tabbedOpenPanelIds]);
 
   const handleTogglePanel = useCallback((panelId: string) => {
+    if (pinnedPanelIds.includes(panelId)) {
+      setOpenPanelIds(current => (current.includes(panelId) ? current : [...current, panelId]));
+      return;
+    }
+
     setOpenPanelIds(current => {
       const next = togglePanelId(current, panelId);
       const isOpening = !current.includes(panelId);
@@ -586,15 +711,19 @@ function App() {
 
       return next;
     });
-  }, []);
+  }, [pinnedPanelIds]);
 
   const handleClosePanel = useCallback((panelId: string) => {
+    if (pinnedPanelIds.includes(panelId)) {
+      return;
+    }
+
     setOpenPanelIds(current => {
       const next = current.filter(id => id !== panelId);
       setActivePanelId(active => (active === panelId ? getNextActivePanelId(current, panelId) : active));
       return next;
     });
-  }, []);
+  }, [pinnedPanelIds]);
 
   const handleReorderPanels = useCallback((draggedId: string, targetId: string) => {
     setOpenPanelIds(current => reorderPanelIds(current, draggedId, targetId));
@@ -604,6 +733,12 @@ function App() {
     setOpenPanelIds(current => (current.includes('settings') ? current : [...current, 'settings']));
     setActivePanelId('settings');
   }, []);
+
+  const handleCycleLayout = useCallback(() => {
+    updateLayout({
+      activeProfileId: getNextLayoutProfileId(layoutManifest, activeLayoutProfile.id),
+    });
+  }, [activeLayoutProfile.id, layoutManifest, updateLayout]);
 
   useEffect(() => {
     const windowEffects = getNativeWindowEffects(runtimePlatform);
@@ -636,6 +771,47 @@ function App() {
       cancelled = true;
     };
   }, [appBlur, overlayPhase, runtimePlatform]);
+
+  const activeContentPanel = activePanelId ? panelLookup.get(activePanelId) ?? null : null;
+  const chromeBar = (
+    <TopBar
+      appearance={resolvedAppearance}
+      layoutProfile={activeLayoutProfile}
+      layoutSourcePath={layoutConfigSource}
+      panels={panelDefinitions}
+      openPanelIds={openPanelIds}
+      pinnedPanelIds={pinnedPanelIds}
+      activePanelId={activePanelId}
+      onPanelSelect={setActivePanelId}
+      onPanelToggle={handleTogglePanel}
+      onPanelClose={handleClosePanel}
+      onPanelReorder={handleReorderPanels}
+      onOpenSettings={handleOpenSettings}
+      onCycleLayout={handleCycleLayout}
+      onClose={() => { void hideOverlay(); }}
+      accent={accent}
+      blur={appBlur}
+      onBlurChange={(v) => updateAppearance({ appBlur: v })}
+      blurPlatform={runtimePlatform}
+    />
+  );
+  const viewportDock = activeLayoutProfile.controlDock.enabled ? (
+    <OverlayViewportDock
+      accent={accent}
+      border={theme.palette.border}
+      muted={theme.palette.textMuted}
+      text={theme.palette.textPrimary}
+      opacity={clampedAppOpacity}
+      onOpacityChange={(v) => updateAppearance({ appOpacity: clampValue(v, APP_OPACITY_MIN, APP_OPACITY_MAX) })}
+      zoom={clampedAppZoom}
+      onZoomChange={(v) => updateAppearance({ appZoom: clampValue(v, APP_ZOOM_MIN, APP_ZOOM_MAX) })}
+      blur={appBlur}
+      onBlurChange={(v) => updateAppearance({ appBlur: v })}
+      blurPlatform={runtimePlatform}
+      side={activeLayoutProfile.controlDock.side}
+      inset={activeLayoutProfile.controlDock.inset}
+    />
+  ) : null;
 
   return (
     <div
@@ -685,77 +861,63 @@ function App() {
               }}
             />
 
-            {/* ══ App-level Top Bar ══ */}
-            <TopBar
-              appearance={resolvedAppearance}
-              panels={panelDefinitions}
-              openPanelIds={openPanelIds}
-              activePanelId={activePanelId}
-              onPanelSelect={setActivePanelId}
-              onPanelToggle={handleTogglePanel}
-              onPanelClose={handleClosePanel}
-              onPanelReorder={handleReorderPanels}
-              onOpenSettings={handleOpenSettings}
-              onClose={() => { void hideOverlay(); }}
-              accent={accent}
-              blur={appBlur}
-              onBlurChange={(v) => updateAppearance({ appBlur: v })}
-              blurPlatform={runtimePlatform}
-            />
+            {activeLayoutProfile.chrome.barPosition === 'top' && chromeBar}
 
             {/* ══ Content ══ */}
             <div style={{ position: 'relative', display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-              <OverlayViewportDock
-                accent={accent}
-                border={theme.palette.border}
-                muted={theme.palette.textMuted}
-                text={theme.palette.textPrimary}
-                opacity={clampedAppOpacity}
-                onOpacityChange={(v) => updateAppearance({ appOpacity: clampValue(v, APP_OPACITY_MIN, APP_OPACITY_MAX) })}
-                zoom={clampedAppZoom}
-                onZoomChange={(v) => updateAppearance({ appZoom: clampValue(v, APP_ZOOM_MIN, APP_ZOOM_MAX) })}
-                blur={appBlur}
-                onBlurChange={(v) => updateAppearance({ appBlur: v })}
-                blurPlatform={runtimePlatform}
-              />
-              {panelDefinitions.map(panel => {
-                const isPanelOpen = openPanelIds.includes(panel.id);
-                const isActive = panel.id === activePanelId;
-                const shouldMount = panel.keepMounted ? true : isPanelOpen && isActive;
+              {leftPinnedPanels.map(({ panel, definition }) => (
+                <LayoutPinnedPanelSlot key={`${panel.side}:${panel.panelId}`} panel={panel} definition={definition} />
+              ))}
 
-                if (!shouldMount) return null;
+              <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+                {viewportDock}
 
-                return (
-                  <div
-                    key={panel.id}
-                    style={{
-                      flex: 1,
-                      display: isPanelOpen && isActive ? 'flex' : 'none',
-                      flexDirection: 'column',
-                      overflow: 'hidden',
-                    }}
+                {panelDefinitions.map(panel => {
+                  const isPanelOpen = openPanelIds.includes(panel.id);
+                  const isActive = panel.id === activePanelId;
+                  const isPinned = pinnedPanelIds.includes(panel.id);
+                  const shouldMount = !isPinned && (panel.keepMounted ? true : isPanelOpen && isActive);
+
+                  if (!shouldMount) return null;
+
+                  return (
+                    <div
+                      key={panel.id}
+                      style={{
+                        flex: 1,
+                        display: isPanelOpen && isActive ? 'flex' : 'none',
+                        flexDirection: 'column',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {panel.render()}
+                    </div>
+                  );
+                })}
+
+                {!activeContentPanel && openPanels.length === 0 && (
+                  <div style={{
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: theme.palette.textMuted,
+                    fontSize: 13,
+                    background: theme.palette.appBackground,
+                    fontFamily: resolvedAppearance.fonts.ui,
+                  }}
                   >
-                    {panel.render()}
+                    No tabbed panels are open. Use the panel menu to bring one back.
                   </div>
-                );
-              })}
+                )}
+              </div>
 
-              {openPanels.length === 0 && (
-                <div style={{
-                  flex: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: theme.palette.textMuted,
-                  fontSize: 13,
-                  background: theme.palette.appBackground,
-                  fontFamily: resolvedAppearance.fonts.ui,
-                }}
-                >
-                  No panels are open. Use the panel menu to bring one back.
-                </div>
-              )}
+              {rightPinnedPanels.map(({ panel, definition }) => (
+                <LayoutPinnedPanelSlot key={`${panel.side}:${panel.panelId}`} panel={panel} definition={definition} />
+              ))}
             </div>
+
+            {activeLayoutProfile.chrome.barPosition === 'bottom' && chromeBar}
           </div>
         </div>
       </div>
@@ -953,6 +1115,8 @@ function OverlayViewportDock({
   blur,
   onBlurChange,
   blurPlatform,
+  side,
+  inset,
 }: {
   accent: string;
   border: string;
@@ -965,6 +1129,8 @@ function OverlayViewportDock({
   blur: boolean;
   onBlurChange: (v: boolean) => void;
   blurPlatform: RuntimePlatform;
+  side: LayoutDockSide;
+  inset: number;
 }) {
   const supportsNativeBlur = blurPlatform === 'macos' || blurPlatform === 'windows';
   const [activeControl, setActiveControl] = useState<'opacity' | 'zoom' | null>(null);
@@ -973,8 +1139,9 @@ function OverlayViewportDock({
     <div
       style={{
         position: 'absolute',
-        top: 12,
-        right: 12,
+        top: inset,
+        right: side === 'right' ? inset : 'auto',
+        left: side === 'left' ? inset : 'auto',
         zIndex: 12,
         display: 'flex',
         flexDirection: 'column',
@@ -1049,16 +1216,39 @@ function OverlayViewportDock({
   );
 }
 
-function TopBar({ appearance, panels, openPanelIds, activePanelId, onPanelSelect, onPanelToggle, onPanelClose, onPanelReorder, onOpenSettings, onClose, accent, blur, onBlurChange, blurPlatform }: {
+function TopBar({
+  appearance,
+  layoutProfile,
+  layoutSourcePath,
+  panels,
+  openPanelIds,
+  pinnedPanelIds,
+  activePanelId,
+  onPanelSelect,
+  onPanelToggle,
+  onPanelClose,
+  onPanelReorder,
+  onOpenSettings,
+  onCycleLayout,
+  onClose,
+  accent,
+  blur,
+  onBlurChange,
+  blurPlatform,
+}: {
   appearance: ResolvedOverlayAppearance;
+  layoutProfile: LayoutProfile;
+  layoutSourcePath: string | null;
   panels: OverlayPanelDefinition[];
   openPanelIds: string[];
+  pinnedPanelIds: string[];
   activePanelId: string | null;
   onPanelSelect: (panelId: string | null) => void;
   onPanelToggle: (panelId: string) => void;
   onPanelClose: (panelId: string) => void;
   onPanelReorder: (draggedId: string, targetId: string) => void;
   onOpenSettings: () => void;
+  onCycleLayout: () => void;
   onClose: () => void;
   accent: string;
   blur: boolean;
@@ -1081,15 +1271,19 @@ function TopBar({ appearance, panels, openPanelIds, activePanelId, onPanelSelect
   }));
   const isSettingsActive = activePanelId === 'settings';
   const supportsNativeBlur = blurPlatform === 'macos' || blurPlatform === 'windows';
+  const isBottomBar = layoutProfile.chrome.barPosition === 'bottom';
   const openPanels = useMemo(
-    () => openPanelIds
+    () => getTabbedOpenPanelIds(layoutProfile, openPanelIds)
       .map(id => panels.find(panel => panel.id === id))
       .filter((panel): panel is OverlayPanelDefinition => Boolean(panel)),
-    [openPanelIds, panels],
+    [layoutProfile, openPanelIds, panels],
   );
   const panelMenuWidth = Math.max(220, Math.min(320, viewportSize.width - 28));
   const panelMenuMaxHeight = Math.max(220, Math.min(540, viewportSize.height - 96));
   const compactPanelMenu = panelMenuWidth < 250;
+  const layoutButtonTitle = layoutSourcePath
+    ? `Cycle Layout (${layoutProfile.label})\n${layoutSourcePath}`
+    : `Cycle Layout (${layoutProfile.label})`;
 
   useEffect(() => {
     if (!isMenuOpen) return;
@@ -1119,7 +1313,8 @@ function TopBar({ appearance, panels, openPanelIds, activePanelId, onPanelSelect
   const panelMenu = (
     <div style={{
       position: 'absolute',
-      top: 'calc(100% + 8px)',
+      top: isBottomBar ? 'auto' : 'calc(100% + 8px)',
+      bottom: isBottomBar ? 'calc(100% + 8px)' : 'auto',
       right: 0,
       width: panelMenuWidth,
       maxWidth: 'calc(100vw - 16px)',
@@ -1150,6 +1345,8 @@ function TopBar({ appearance, panels, openPanelIds, activePanelId, onPanelSelect
         {panels.map(panel => {
           const isOpen = openPanelIds.includes(panel.id);
           const isActive = panel.id === activePanelId;
+          const isPinned = pinnedPanelIds.includes(panel.id);
+          const helperLabel = isPinned ? `Pinned by ${layoutProfile.label}` : panel.description;
           return (
             <button
               key={panel.id}
@@ -1185,10 +1382,23 @@ function TopBar({ appearance, panels, openPanelIds, activePanelId, onPanelSelect
               </span>
               <span style={{ display: 'flex', color: isActive ? accent : MUTED, flexShrink: 0 }}>{panel.icon}</span>
               <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ display: 'block', fontSize: compactPanelMenu ? 11 : 12, fontWeight: 700 }}>{panel.label}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: compactPanelMenu ? 11 : 12, fontWeight: 700 }}>{panel.label}</span>
+                  {isPinned && (
+                    <span style={{
+                      fontSize: 9,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      color: accent,
+                    }}
+                    >
+                      Pinned
+                    </span>
+                  )}
+                </span>
                 {!compactPanelMenu && (
                   <span style={{ display: 'block', marginTop: 3, fontSize: 11, color: MUTED, lineHeight: 1.4 }}>
-                    {panel.description}
+                    {helperLabel}
                   </span>
                 )}
               </span>
@@ -1206,18 +1416,27 @@ function TopBar({ appearance, panels, openPanelIds, activePanelId, onPanelSelect
       height: 44,
       flexShrink: 0,
       background: `linear-gradient(180deg, ${BG}, ${appearance.theme.palette.appBackgroundAlt})`,
-      borderBottom: `1px solid ${accent}24`,
-      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 18px rgba(0,0,0,0.2)',
+      borderBottom: isBottomBar ? 'none' : `1px solid ${accent}24`,
+      borderTop: isBottomBar ? `1px solid ${accent}24` : 'none',
+      boxShadow: isBottomBar
+        ? 'inset 0 -1px 0 rgba(255,255,255,0.04), 0 -8px 18px rgba(0,0,0,0.2)'
+        : 'inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 18px rgba(0,0,0,0.2)',
     }}>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        padding: '0 14px',
-        borderRight: `1px solid ${BORDER}`,
-        flexShrink: 0,
-        background: 'linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.01))',
-      }}>
+      <button
+        onClick={onCycleLayout}
+        title={layoutButtonTitle}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '0 14px',
+          border: 'none',
+          borderRight: `1px solid ${BORDER}`,
+          flexShrink: 0,
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.01))',
+          cursor: 'pointer',
+        }}
+      >
         <div style={{
           width: 22,
           height: 22,
@@ -1236,36 +1455,38 @@ function TopBar({ appearance, panels, openPanelIds, activePanelId, onPanelSelect
             Snapyard
           </span>
           <span style={{ marginTop: 4, fontSize: 9, letterSpacing: '0.14em', textTransform: 'uppercase', color: MUTED, userSelect: 'none' }}>
-            Overlay Shell
+            {layoutProfile.label}
           </span>
         </div>
-      </div>
+      </button>
 
       <div style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0 }}>
-        <button
-          onClick={onOpenSettings}
-          title="Open Settings"
-          style={{
-            height: '100%',
-            width: 48,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: isSettingsActive
-              ? `linear-gradient(180deg, ${accent}32, ${accent}14)`
-              : 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02))',
-            border: 'none',
-            borderRight: `1px solid ${BORDER}`,
-            borderLeft: `1px solid ${isSettingsActive ? `${accent}40` : BORDER}`,
-            color: isSettingsActive ? TEXT : MUTED,
-            cursor: 'pointer',
-            flexShrink: 0,
-            boxShadow: isSettingsActive ? `inset 0 -2px 0 ${accent}, inset 0 0 0 1px ${accent}18` : 'inset 0 -2px 0 transparent',
-            transition: 'background 0.15s, color 0.15s, box-shadow 0.15s, border-color 0.15s',
-          }}
-        >
-          <Settings2 size={14} style={{ color: isSettingsActive ? accent : MUTED }} />
-        </button>
+        {layoutProfile.chrome.showSettingsShortcut && (
+          <button
+            onClick={onOpenSettings}
+            title="Open Settings"
+            style={{
+              height: '100%',
+              width: 48,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: isSettingsActive
+                ? `linear-gradient(180deg, ${accent}32, ${accent}14)`
+                : 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02))',
+              border: 'none',
+              borderRight: `1px solid ${BORDER}`,
+              borderLeft: `1px solid ${isSettingsActive ? `${accent}40` : BORDER}`,
+              color: isSettingsActive ? TEXT : MUTED,
+              cursor: 'pointer',
+              flexShrink: 0,
+              boxShadow: isSettingsActive ? `inset 0 -2px 0 ${accent}, inset 0 0 0 1px ${accent}18` : 'inset 0 -2px 0 transparent',
+              transition: 'background 0.15s, color 0.15s, box-shadow 0.15s, border-color 0.15s',
+            }}
+          >
+            <Settings2 size={14} style={{ color: isSettingsActive ? accent : MUTED }} />
+          </button>
+        )}
 
         <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0, overflowX: 'auto', overflowY: 'hidden', background: 'rgba(0,0,0,0.08)' }}>
           {openPanels.map(panel => {
@@ -1296,7 +1517,8 @@ function TopBar({ appearance, panels, openPanelIds, activePanelId, onPanelSelect
                   cursor: 'pointer',
                   background: isActive ? `linear-gradient(180deg, ${accent}18, transparent)` : 'transparent',
                   border: 'none',
-                  borderBottom: `2px solid ${isActive ? accent : 'transparent'}`,
+                  borderBottom: isBottomBar ? 'none' : `2px solid ${isActive ? accent : 'transparent'}`,
+                  borderTop: isBottomBar ? `2px solid ${isActive ? accent : 'transparent'}` : 'none',
                   borderRight: `1px solid ${BORDER}`,
                   color: isActive ? TEXT : MUTED,
                   fontSize: 12,
@@ -1347,66 +1569,72 @@ function TopBar({ appearance, panels, openPanelIds, activePanelId, onPanelSelect
         flexShrink: 0,
         background: 'linear-gradient(180deg, rgba(0,0,0,0.14), rgba(255,255,255,0.02))',
       }}>
-        <div ref={menuRef} style={{ position: 'relative', flexShrink: 0, marginRight: 4 }}>
+        {layoutProfile.chrome.showPanelMenu && (
+          <div ref={menuRef} style={{ position: 'relative', flexShrink: 0, marginRight: 4 }}>
+            <button
+              onClick={() => setIsMenuOpen(open => !open)}
+              title="Toggle Panels"
+              style={{
+                width: 24,
+                height: 24,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: isMenuOpen
+                  ? `linear-gradient(180deg, ${accent}22, ${accent}12)`
+                  : 'rgba(255,255,255,0.02)',
+                border: `1px solid ${isMenuOpen ? `${accent}55` : BORDER}`,
+                borderRadius: 6,
+                color: isMenuOpen ? TEXT : MUTED,
+                cursor: 'pointer',
+                boxShadow: isMenuOpen ? `0 0 0 1px ${accent}22 inset` : 'none',
+                transition: 'background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s',
+              }}
+            >
+              <LayoutGrid size={12} style={{ color: isMenuOpen ? accent : MUTED }} />
+            </button>
+
+            {isMenuOpen && panelMenu}
+          </div>
+        )}
+
+        {layoutProfile.chrome.showBlurToggle && (
           <button
-            onClick={() => setIsMenuOpen(open => !open)}
-            title="Toggle Panels"
+            onClick={() => onBlurChange(!blur)}
+            title={supportsNativeBlur
+              ? (blur ? 'Disable native window blur' : 'Enable native window blur')
+              : 'Native blur is currently only available on macOS and Windows'}
             style={{
               width: 24,
               height: 24,
+              padding: 0,
+              background: blur ? `${accent}22` : 'rgba(255,255,255,0.025)',
+              border: `1px solid ${blur ? accent : BORDER}`,
+              color: blur ? accent : MUTED,
+              borderRadius: 6,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              background: isMenuOpen
-                ? `linear-gradient(180deg, ${accent}22, ${accent}12)`
-                : 'rgba(255,255,255,0.02)',
-              border: `1px solid ${isMenuOpen ? `${accent}55` : BORDER}`,
-              borderRadius: 6,
-              color: isMenuOpen ? TEXT : MUTED,
               cursor: 'pointer',
-              boxShadow: isMenuOpen ? `0 0 0 1px ${accent}22 inset` : 'none',
-              transition: 'background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s',
+              transition: 'all 0.15s',
+              opacity: supportsNativeBlur ? 1 : 0.65,
             }}
           >
-            <LayoutGrid size={12} style={{ color: isMenuOpen ? accent : MUTED }} />
+            <Droplet size={12} />
           </button>
+        )}
 
-          {isMenuOpen && panelMenu}
-        </div>
-
-        <button
-          onClick={() => onBlurChange(!blur)}
-          title={supportsNativeBlur
-            ? (blur ? 'Disable native window blur' : 'Enable native window blur')
-            : 'Native blur is currently only available on macOS and Windows'}
-          style={{
-            width: 24,
-            height: 24,
-            padding: 0,
-            background: blur ? `${accent}22` : 'rgba(255,255,255,0.025)',
-            border: `1px solid ${blur ? accent : BORDER}`,
-            color: blur ? accent : MUTED,
-            borderRadius: 6,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            transition: 'all 0.15s',
-            opacity: supportsNativeBlur ? 1 : 0.65,
-          }}
-        >
-          <Droplet size={12} />
-        </button>
-
-        <kbd style={{
-          fontSize: 9, fontFamily: monoFont,
-          background: 'rgba(255,255,255,0.04)',
-          padding: '2px 6px', borderRadius: 999,
-          border: `1px solid rgba(255,255,255,0.07)`,
-          color: MUTED, userSelect: 'none', marginRight: 2,
-        }}>
-          Ctrl+Space
-        </kbd>
+        {layoutProfile.chrome.showShortcutBadge && (
+          <kbd style={{
+            fontSize: 9, fontFamily: monoFont,
+            background: 'rgba(255,255,255,0.04)',
+            padding: '2px 6px', borderRadius: 999,
+            border: `1px solid rgba(255,255,255,0.07)`,
+            color: MUTED, userSelect: 'none', marginRight: 2,
+          }}>
+            Ctrl+Space
+          </kbd>
+        )}
         <button
           onClick={onClose}
           title="Close (Esc)"
