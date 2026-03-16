@@ -328,6 +328,190 @@ fn escape_applescript_string(value: &str) -> String {
     value.replace('\\', "\\\\").replace('\"', "\\\"")
 }
 
+fn normalized_extension(path: &Path) -> String {
+    path.extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+}
+
+fn should_execute_path(path: &Path) -> bool {
+    if path.is_dir() {
+        return false;
+    }
+
+    let extension = normalized_extension(path);
+    if matches!(
+        extension.as_str(),
+        "exe" | "msi" | "com" | "bat" | "cmd" | "ps1" | "sh" | "bash" | "zsh" | "fish"
+    ) {
+        return true;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        return std::fs::metadata(path)
+            .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false);
+    }
+
+    #[cfg(not(unix))]
+    {
+        false
+    }
+}
+
+fn open_with_default_application(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use file_opening::{FileOpener, OpenResult};
+        use file_opening_windows::WindowsFileOpener;
+
+        let opener = WindowsFileOpener;
+        return match opener
+            .open_with_default(path)
+            .map_err(|error| error.to_string())?
+        {
+            OpenResult::Success => Ok(()),
+            OpenResult::FileNotFound { path } => Err(format!("File not found: {}", path)),
+            OpenResult::AppNotFound { app_id } => {
+                Err(format!("Application not found for file open request: {}", app_id))
+            }
+            OpenResult::PermissionDenied { path } => {
+                Err(format!("Permission denied while opening: {}", path))
+            }
+            OpenResult::PlatformError { message } => Err(message),
+        };
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        Err("Opening files is not supported on this platform.".to_string())
+    }
+}
+
+fn execute_path(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let extension = normalized_extension(path);
+
+        if extension == "ps1" {
+            let mut command = std::process::Command::new("powershell");
+            command
+                .arg("-NoProfile")
+                .arg("-ExecutionPolicy")
+                .arg("Bypass")
+                .arg("-File")
+                .arg(path);
+            if let Some(parent) = path.parent() {
+                command.current_dir(parent);
+            }
+            command.spawn().map_err(|error| error.to_string())?;
+            return Ok(());
+        }
+
+        if matches!(extension.as_str(), "sh" | "bash" | "zsh" | "fish") {
+            for shell in ["bash", "sh"] {
+                let mut command = std::process::Command::new(shell);
+                command.arg(path);
+                if let Some(parent) = path.parent() {
+                    command.current_dir(parent);
+                }
+
+                match command.spawn() {
+                    Ok(_) => return Ok(()),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                    Err(error) => return Err(error.to_string()),
+                }
+            }
+
+            return Err("No supported shell interpreter was found in PATH for this script.".to_string());
+        }
+
+        return open_with_default_application(path);
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        let extension = normalized_extension(path);
+
+        if matches!(extension.as_str(), "sh" | "bash" | "zsh" | "fish") {
+            let interpreter = match extension.as_str() {
+                "bash" => "bash",
+                "zsh" => "zsh",
+                "fish" => "fish",
+                _ => "sh",
+            };
+
+            let mut command = std::process::Command::new(interpreter);
+            command.arg(path);
+            if let Some(parent) = path.parent() {
+                command.current_dir(parent);
+            }
+            command.spawn().map_err(|error| error.to_string())?;
+            return Ok(());
+        }
+
+        if extension == "ps1" {
+            for shell in ["pwsh", "powershell"] {
+                let mut command = std::process::Command::new(shell);
+                command
+                    .arg("-NoProfile")
+                    .arg("-ExecutionPolicy")
+                    .arg("Bypass")
+                    .arg("-File")
+                    .arg(path);
+                if let Some(parent) = path.parent() {
+                    command.current_dir(parent);
+                }
+
+                match command.spawn() {
+                    Ok(_) => return Ok(()),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                    Err(error) => return Err(error.to_string()),
+                }
+            }
+
+            return Err(
+                "No supported PowerShell interpreter was found in PATH for this script."
+                    .to_string(),
+            );
+        }
+
+        let mut command = std::process::Command::new(path);
+        if let Some(parent) = path.parent() {
+            command.current_dir(parent);
+        }
+        command.spawn().map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        Err("Executing files is not supported on this platform.".to_string())
+    }
+}
+
 // ─── fs_read_text_file ────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -344,30 +528,16 @@ pub async fn fs_read_text_file(path: String) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn fs_open_file(path: String) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("explorer")
-            .arg(&path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        return Ok(());
+    let target = PathBuf::from(&path);
+    if !target.exists() {
+        return Err(format!("Path does not exist: {}", path));
     }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(&path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        return Ok(());
+
+    if should_execute_path(&target) {
+        return execute_path(&target);
     }
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(&path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        return Ok(());
-    }
+
+    open_with_default_application(&target)
 }
 
 // ─── fs_open_as_admin (Windows runas) ────────────────────────────────────────

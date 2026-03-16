@@ -103,10 +103,13 @@ function CanvasPad({
   };
 
   const getPoint = (event: React.PointerEvent<HTMLCanvasElement>): Point => {
-    const rect = event.currentTarget.getBoundingClientRect();
+    const canvas = event.currentTarget;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width > 0 ? canvas.clientWidth / rect.width : 1;
+    const scaleY = rect.height > 0 ? canvas.clientHeight / rect.height : 1;
     return {
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
+      x: (event.clientX - rect.left) * scaleX,
+      y: (event.clientY - rect.top) * scaleY,
     };
   };
 
@@ -141,7 +144,10 @@ function CanvasPad({
       return;
     }
 
+    context.save();
+    context.setTransform(1, 0, 0, 1, 0, 0);
     context.clearRect(0, 0, canvas.width, canvas.height);
+    context.restore();
   };
 
   return (

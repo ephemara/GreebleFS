@@ -1056,6 +1056,10 @@ function TopBar({ appearance, panels, openPanelIds, activePanelId, onPanelSelect
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [draggedPanelId, setDraggedPanelId] = useState<string | null>(null);
+  const [viewportSize, setViewportSize] = useState(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }));
   const isSettingsActive = activePanelId === 'settings';
   const supportsNativeBlur = blurPlatform === 'macos' || blurPlatform === 'windows';
   const openPanels = useMemo(
@@ -1064,6 +1068,9 @@ function TopBar({ appearance, panels, openPanelIds, activePanelId, onPanelSelect
       .filter((panel): panel is OverlayPanelDefinition => Boolean(panel)),
     [openPanelIds, panels],
   );
+  const panelMenuWidth = Math.max(220, Math.min(320, viewportSize.width - 28));
+  const panelMenuMaxHeight = Math.max(220, Math.min(540, viewportSize.height - 96));
+  const compactPanelMenu = panelMenuWidth < 250;
 
   useEffect(() => {
     if (!isMenuOpen) return;
@@ -1078,18 +1085,34 @@ function TopBar({ appearance, panels, openPanelIds, activePanelId, onPanelSelect
     return () => window.removeEventListener('pointerdown', handlePointerDown);
   }, [isMenuOpen]);
 
+  useEffect(() => {
+    const handleResize = () => {
+      setViewportSize({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const panelMenu = (
     <div style={{
       position: 'absolute',
       top: 'calc(100% + 8px)',
       right: 0,
-      width: 260,
+      width: panelMenuWidth,
+      maxWidth: 'calc(100vw - 16px)',
+      maxHeight: panelMenuMaxHeight,
       background: MENU_BG,
       border: `1px solid ${BORDER}`,
       borderRadius: 12,
       boxShadow: appearance.theme.effects.shadow,
       padding: 8,
       zIndex: 50,
+      display: 'flex',
+      flexDirection: 'column',
     }}
     >
       <div style={{
@@ -1104,51 +1127,56 @@ function TopBar({ appearance, panels, openPanelIds, activePanelId, onPanelSelect
         Available Panels
       </div>
 
-      {panels.map(panel => {
-        const isOpen = openPanelIds.includes(panel.id);
-        const isActive = panel.id === activePanelId;
-        return (
-          <button
-            key={panel.id}
-            onClick={() => {
-              onPanelToggle(panel.id);
-              setIsMenuOpen(false);
-            }}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              padding: '10px 12px',
-              border: 'none',
-              borderRadius: 10,
-              background: isActive ? `${accent}16` : 'transparent',
-              color: TEXT,
-              cursor: 'pointer',
-              textAlign: 'left',
-              marginBottom: 4,
-            }}
-          >
-            <span style={{
-              width: 16,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: isOpen ? accent : 'transparent',
-            }}
+      <div className="custom-scrollbar" style={{ overflowY: 'auto', minHeight: 0, paddingRight: 2 }}>
+        {panels.map(panel => {
+          const isOpen = openPanelIds.includes(panel.id);
+          const isActive = panel.id === activePanelId;
+          return (
+            <button
+              key={panel.id}
+              onClick={() => {
+                onPanelToggle(panel.id);
+                setIsMenuOpen(false);
+              }}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: compactPanelMenu ? 8 : 10,
+                padding: compactPanelMenu ? '9px 10px' : '10px 12px',
+                border: 'none',
+                borderRadius: 10,
+                background: isActive ? `${accent}16` : 'transparent',
+                color: TEXT,
+                cursor: 'pointer',
+                textAlign: 'left',
+                marginBottom: 4,
+              }}
             >
-              <Check size={13} />
-            </span>
-            <span style={{ display: 'flex', color: isActive ? accent : MUTED }}>{panel.icon}</span>
-            <span style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ display: 'block', fontSize: 12, fontWeight: 700 }}>{panel.label}</span>
-              <span style={{ display: 'block', marginTop: 3, fontSize: 11, color: MUTED, lineHeight: 1.4 }}>
-                {panel.description}
+              <span style={{
+                width: 16,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: isOpen ? accent : 'transparent',
+                flexShrink: 0,
+              }}
+              >
+                <Check size={13} />
               </span>
-            </span>
-          </button>
-        );
-      })}
+              <span style={{ display: 'flex', color: isActive ? accent : MUTED, flexShrink: 0 }}>{panel.icon}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: 'block', fontSize: compactPanelMenu ? 11 : 12, fontWeight: 700 }}>{panel.label}</span>
+                {!compactPanelMenu && (
+                  <span style={{ display: 'block', marginTop: 3, fontSize: 11, color: MUTED, lineHeight: 1.4 }}>
+                    {panel.description}
+                  </span>
+                )}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 

@@ -185,6 +185,10 @@ function formatDate(ms: number): string {
   return new Date(ms).toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' });
 }
 
+function normalizeExplorerPath(path: string): string {
+  return /^[A-Za-z]:$/.test(path) ? `${path}\\` : path;
+}
+
 // ─── SvgIcon ──────────────────────────────────────────────────────────────────
 
 function SvgIcon({ src, size = 20 }: { src: string; size?: number }) {
@@ -446,10 +450,11 @@ export function FileExplorer({ theme, onOpenInTerminal, onAddBookmark }: FileExp
 
   // ── Navigate ──
   const navigate = useCallback(async (path: string, push = true) => {
-    setCurrentPath(path); setSelected(new Set()); setSearch(''); setError(null);
-    if (push) { setHistory(h => [...h.slice(0, historyIdx + 1), path]); setHistoryIdx(i => i + 1); }
+    const normalizedPath = normalizeExplorerPath(path);
+    setCurrentPath(normalizedPath); setSelected(new Set()); setSearch(''); setError(null);
+    if (push) { setHistory(h => [...h.slice(0, historyIdx + 1), normalizedPath]); setHistoryIdx(i => i + 1); }
     setLoading(true);
-    try { setEntries(await invoke<FileEntry[]>('fs_list_dir', { path, showHidden })); }
+    try { setEntries(await invoke<FileEntry[]>('fs_list_dir', { path: normalizedPath, showHidden })); }
     catch (e) { setError(String(e)); setEntries([]); }
     finally { setLoading(false); }
   }, [historyIdx, showHidden]);
@@ -555,6 +560,11 @@ export function FileExplorer({ theme, onOpenInTerminal, onAddBookmark }: FileExp
   const openEntry = useCallback(async (entry: FileEntry) => {
     if (entry.is_dir) { navigate(entry.path); return; }
     const ext = entry.extension;
+
+    if (EXEC_EXTS.has(ext)) {
+      await invoke('fs_open_file', { path: entry.path }).catch(e => setError(String(e)));
+      return;
+    }
 
     if (IMAGE_EXTS.has(ext)) {
       setPreviewLoading(true);
