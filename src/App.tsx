@@ -162,6 +162,7 @@ function App() {
   const settings = useSettingsStore(s => s.settings.terminal);
   const appearance = useSettingsStore(s => s.settings.appearance);
   const updateAppearance = useSettingsStore(s => s.updateAppearance);
+  const updateSystem = useSettingsStore(s => s.updateSystem);
   const { initStore, addDirectoryBookmark } = useTerminalStore();
   const resolvedAppearance = useMemo(
     () => resolveOverlayAppearance({
@@ -213,6 +214,24 @@ function App() {
 
   // ── Boot store ──
   useEffect(() => { initStore(); }, [initStore]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    invoke<boolean>('startup_get_launch_at_startup')
+      .then(enabled => {
+        if (!cancelled) {
+          updateSystem({ launchAtStartup: enabled });
+        }
+      })
+      .catch(error => {
+        console.warn('OverlayTerm: failed to sync startup registration', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [updateSystem]);
 
   useEffect(() => {
     ensureFontFamilyLoaded(resolvedAppearance.fonts.ui);

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Palette, Plus, RotateCcw, Search, SlidersHorizontal, TerminalSquare, Trash2, FolderOpen, Type } from 'lucide-react';
+import { FolderOpen, Palette, Plus, RotateCcw, Search, Settings2, SlidersHorizontal, TerminalSquare, Trash2, Type } from 'lucide-react';
 import {
   ensureFontFamilyLoaded,
   overlayFontCatalog,
@@ -123,12 +123,15 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
   const updateTerminal = useSettingsStore(s => s.updateTerminal);
   const updateExplorer = useSettingsStore(s => s.updateExplorer);
   const updateAppearance = useSettingsStore(s => s.updateAppearance);
+  const updateSystem = useSettingsStore(s => s.updateSystem);
   const resetToDefaults = useSettingsStore(s => s.resetToDefaults);
   const { directoryBookmarks, addDirectoryBookmark } = useTerminalStore();
 
   const profileOptions = useMemo(() => getExternalTerminalProfileOptions(platform), [platform]);
   const [themeDraft, setThemeDraft] = useState(() => serializeTheme(appearance.theme));
   const [folderIconSearch, setFolderIconSearch] = useState('');
+  const [startupSyncPending, setStartupSyncPending] = useState(false);
+  const [startupSyncError, setStartupSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     ensureFontFamilyLoaded(appearance.fonts.ui);
@@ -228,6 +231,19 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
       },
     ]);
   }, [patchFolderRules, settings.explorer.defaultFolderIcon, settings.explorer.folderIconRules]);
+
+  const setLaunchAtStartup = useCallback(async (enabled: boolean) => {
+    setStartupSyncPending(true);
+    setStartupSyncError(null);
+    try {
+      const nextValue = await invoke<boolean>('startup_set_launch_at_startup', { enabled });
+      updateSystem({ launchAtStartup: nextValue });
+    } catch (error) {
+      setStartupSyncError(String(error));
+    } finally {
+      setStartupSyncPending(false);
+    }
+  }, [updateSystem]);
 
   return (
     <div
@@ -595,6 +611,38 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
         </div>
 
         <div className="space-y-4">
+          <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+            <SectionTitle
+              icon={<Settings2 size={12} />}
+              title="System"
+              subtitle="Machine-level startup behavior and OS integration state."
+            />
+
+            <div className="mt-4 space-y-3">
+              <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                <div>
+                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Launch At Startup</div>
+                  <p className="mt-1 text-[11px] opacity-40">
+                    Registers OverlayTerm as a login item so the tray and overlay are available after sign-in.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={settings.system.launchAtStartup}
+                  disabled={startupSyncPending}
+                  onChange={event => void setLaunchAtStartup(event.target.checked)}
+                />
+              </label>
+              <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: startupSyncError ? '#fda4af' : muted }}>
+                {startupSyncPending
+                  ? 'Updating OS startup registration...'
+                  : startupSyncError
+                    ? `Startup registration failed: ${startupSyncError}`
+                    : `Current status: ${settings.system.launchAtStartup ? 'enabled' : 'disabled'}`}
+              </div>
+            </div>
+          </section>
+
           <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
             <SectionTitle
               icon={<FolderOpen size={12} />}

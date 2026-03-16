@@ -335,6 +335,21 @@ fn normalized_extension(path: &Path) -> String {
         .to_ascii_lowercase()
 }
 
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn map_default_open_result(result: file_opening::OpenResult) -> Result<(), String> {
+    match result {
+        file_opening::OpenResult::Success => Ok(()),
+        file_opening::OpenResult::FileNotFound { path } => Err(format!("File not found: {}", path)),
+        file_opening::OpenResult::AppNotFound { app_id } => {
+            Err(format!("Application not found for file open request: {}", app_id))
+        }
+        file_opening::OpenResult::PermissionDenied { path } => {
+            Err(format!("Permission denied while opening: {}", path))
+        }
+        file_opening::OpenResult::PlatformError { message } => Err(message),
+    }
+}
+
 fn should_execute_path(path: &Path) -> bool {
     if path.is_dir() {
         return false;
@@ -366,33 +381,28 @@ fn should_execute_path(path: &Path) -> bool {
 fn open_with_default_application(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        use file_opening::{FileOpener, OpenResult};
+        use file_opening::FileOpener;
         use file_opening_windows::WindowsFileOpener;
 
         let opener = WindowsFileOpener;
-        return match opener
-            .open_with_default(path)
-            .map_err(|error| error.to_string())?
-        {
-            OpenResult::Success => Ok(()),
-            OpenResult::FileNotFound { path } => Err(format!("File not found: {}", path)),
-            OpenResult::AppNotFound { app_id } => {
-                Err(format!("Application not found for file open request: {}", app_id))
-            }
-            OpenResult::PermissionDenied { path } => {
-                Err(format!("Permission denied while opening: {}", path))
-            }
-            OpenResult::PlatformError { message } => Err(message),
-        };
+        return map_default_open_result(
+            opener
+                .open_with_default(path)
+                .map_err(|error| error.to_string())?,
+        );
     }
 
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open")
-            .arg(path)
-            .spawn()
-            .map_err(|error| error.to_string())?;
-        return Ok(());
+        use file_opening::FileOpener;
+        use file_opening_macos::MacFileOpener;
+
+        let opener = MacFileOpener;
+        return map_default_open_result(
+            opener
+                .open_with_default(path)
+                .map_err(|error| error.to_string())?,
+        );
     }
 
     #[cfg(target_os = "linux")]

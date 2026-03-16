@@ -1,6 +1,7 @@
 pub mod fs_commands;
 pub mod plugin_commands;
 pub mod screenshot_commands;
+pub mod startup_commands;
 pub mod terminal;
 
 use fs_commands::{
@@ -12,6 +13,7 @@ use plugin_commands::plugin_run_backend;
 use screenshot_commands::{
     screenshot_capture_preview, screenshot_copy_image_to_clipboard, screenshot_save_region,
 };
+use startup_commands::{startup_get_launch_at_startup, startup_set_launch_at_startup};
 use tauri::{
     menu::{MenuBuilder, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -37,6 +39,10 @@ fn toggle_overlay(app: &tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
@@ -129,6 +135,8 @@ pub fn run() {
             screenshot_save_region,
             screenshot_copy_image_to_clipboard,
             plugin_run_backend,
+            startup_get_launch_at_startup,
+            startup_set_launch_at_startup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -87,6 +87,10 @@ export interface AppearanceSettings {
   appAnimationIntensity: number;
 }
 
+export interface SystemSettings {
+  launchAtStartup: boolean;
+}
+
 export interface ScreenshotSettings {
   saveDirectory: string;
 }
@@ -115,6 +119,7 @@ export interface Settings {
   terminal: TerminalSettings;
   explorer: ExplorerSettings;
   appearance: AppearanceSettings;
+  system: SystemSettings;
   screenshots: ScreenshotSettings;
   keybindings: KeybindingSettings;
   polygemini: PolyGeminiSettings;
@@ -201,6 +206,9 @@ export const defaultSettings: Settings = {
     appAnimationDurationMs: 320,
     appAnimationIntensity: 1.0,
   },
+  system: {
+    launchAtStartup: false,
+  },
   screenshots: {
     saveDirectory: screenshotFeatureConfig.defaultSaveDirectory,
   },
@@ -247,6 +255,7 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
       appAnimationDurationMs: clampOverlayAnimationDuration(importedAppearance?.appAnimationDurationMs ?? base.appearance.appAnimationDurationMs),
       appAnimationIntensity: clampOverlayAnimationIntensity(importedAppearance?.appAnimationIntensity ?? base.appearance.appAnimationIntensity),
     },
+    system: { ...base.system, ...(imported as Partial<Settings> | undefined)?.system },
     screenshots: { ...base.screenshots, ...imported?.screenshots },
     keybindings: { ...base.keybindings, ...imported?.keybindings },
     polygemini: { ...base.polygemini, ...imported?.polygemini },
@@ -276,6 +285,7 @@ interface SettingsState {
   updateTerminal: (updates: Partial<TerminalSettings>) => void;
   updateExplorer: (updates: Partial<ExplorerSettings>) => void;
   updateAppearance: (updates: Partial<AppearanceSettings>) => void;
+  updateSystem: (updates: Partial<SystemSettings>) => void;
   updateScreenshots: (updates: Partial<ScreenshotSettings>) => void;
   updateKeybindings: (updates: Partial<KeybindingSettings>) => void;
   updatePolyGemini: (updates: Partial<PolyGeminiSettings>) => void;
@@ -325,6 +335,13 @@ export const useSettingsStore = create<SettingsState>()(
         },
       })),
 
+      updateSystem: (updates) => set((state) => ({
+        settings: {
+          ...state.settings,
+          system: { ...state.settings.system, ...updates },
+        },
+      })),
+
       updateScreenshots: (updates) => set((state) => ({
         settings: {
           ...state.settings,
@@ -346,7 +363,12 @@ export const useSettingsStore = create<SettingsState>()(
         },
       })),
       
-      resetToDefaults: () => set({ settings: defaultSettings }),
+      resetToDefaults: () => set((state) => ({
+        settings: {
+          ...defaultSettings,
+          system: state.settings.system,
+        },
+      })),
       
       importSettings: (imported) => set((state) => ({
         settings: mergeSettings(state.settings, imported),
