@@ -334,6 +334,7 @@ export interface LoadedLayoutManifest {
   manifest: LayoutManifest;
   sourcePath: string | null;
   sourceType: 'built-in' | 'file';
+  sourceError: string | null;
 }
 
 export async function loadExternalLayoutManifest(preferredPath?: string | null): Promise<LoadedLayoutManifest> {
@@ -341,6 +342,7 @@ export async function loadExternalLayoutManifest(preferredPath?: string | null):
   const candidatePaths = requestedPath
     ? [requestedPath]
     : buildDefaultLayoutConfigCandidates(await invoke<string>('fs_get_home_dir'));
+  let lastError: string | null = null;
 
   for (const candidatePath of candidatePaths) {
     try {
@@ -349,8 +351,10 @@ export async function loadExternalLayoutManifest(preferredPath?: string | null):
         manifest: parseLayoutManifestText(text, candidatePath),
         sourcePath: candidatePath,
         sourceType: 'file',
+        sourceError: null,
       };
-    } catch {
+    } catch (error) {
+      lastError = String(error);
       continue;
     }
   }
@@ -359,5 +363,6 @@ export async function loadExternalLayoutManifest(preferredPath?: string | null):
     manifest: BUILT_IN_LAYOUT_MANIFEST,
     sourcePath: null,
     sourceType: 'built-in',
+    sourceError: requestedPath ? lastError ?? `Unable to load layout manifest from ${requestedPath}` : null,
   };
 }

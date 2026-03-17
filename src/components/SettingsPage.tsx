@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { FolderOpen, Palette, Plus, RotateCcw, Search, Settings2, SlidersHorizontal, TerminalSquare, Trash2, Type } from 'lucide-react';
+import { FolderOpen, LayoutGrid, Palette, Plus, RotateCcw, Search, Settings2, SlidersHorizontal, TerminalSquare, Trash2, Type } from 'lucide-react';
 import {
   ensureFontFamilyLoaded,
   overlayFontCatalog,
@@ -25,6 +25,12 @@ import {
   type FolderIconRule,
   type FolderIconValue,
 } from '../config/folderIcons';
+import {
+  BUILT_IN_LAYOUT_MANIFEST,
+  loadExternalLayoutManifest,
+  resolveLayoutProfile,
+  type LoadedLayoutManifest,
+} from '../config/layoutProfiles';
 import {
   clampOverlayAnimationDuration,
   clampOverlayAnimationIntensity,
@@ -117,12 +123,20 @@ function stringifyMatchers(matchers: string[]): string {
   return matchers.join(', ');
 }
 
+const DEFAULT_LOADED_LAYOUT_MANIFEST: LoadedLayoutManifest = {
+  manifest: BUILT_IN_LAYOUT_MANIFEST,
+  sourcePath: null,
+  sourceType: 'built-in',
+  sourceError: null,
+};
+
 export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppearance }) {
   const platform = useMemo(() => detectClientPlatform(), []);
   const settings = useSettingsStore(s => s.settings);
   const updateTerminal = useSettingsStore(s => s.updateTerminal);
   const updateExplorer = useSettingsStore(s => s.updateExplorer);
   const updateAppearance = useSettingsStore(s => s.updateAppearance);
+  const updateLayout = useSettingsStore(s => s.updateLayout);
   const updateSystem = useSettingsStore(s => s.updateSystem);
   const resetToDefaults = useSettingsStore(s => s.resetToDefaults);
   const { directoryBookmarks, addDirectoryBookmark } = useTerminalStore();
@@ -132,6 +146,7 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
   const [folderIconSearch, setFolderIconSearch] = useState('');
   const [startupSyncPending, setStartupSyncPending] = useState(false);
   const [startupSyncError, setStartupSyncError] = useState<string | null>(null);
+  const [layoutManifestState, setLayoutManifestState] = useState<LoadedLayoutManifest>(DEFAULT_LOADED_LAYOUT_MANIFEST);
 
   useEffect(() => {
     ensureFontFamilyLoaded(appearance.fonts.ui);
@@ -141,6 +156,30 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
   useEffect(() => {
     setThemeDraft(serializeTheme(appearance.theme));
   }, [appearance.theme]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    loadExternalLayoutManifest(settings.layout.configPath)
+      .then(result => {
+        if (!cancelled) {
+          setLayoutManifestState(result);
+        }
+      })
+      .catch(error => {
+        if (!cancelled) {
+          console.warn('OverlayTerm: failed to load layout manifest in settings', error);
+          setLayoutManifestState({
+            ...DEFAULT_LOADED_LAYOUT_MANIFEST,
+            sourceError: String(error),
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [settings.layout.configPath]);
 
   const persistTheme = useCallback((nextTheme: OverlayThemeDefinition) => {
     const builtinIds = new Set(overlayThemePresets.map(themeDef => themeDef.id));
@@ -197,6 +236,19 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
   const text = appearance.theme.palette.textPrimary;
   const muted = appearance.theme.palette.textMuted;
   const accent = appearance.theme.palette.accent;
+  const activeLayoutProfile = useMemo(
+    () => resolveLayoutProfile(layoutManifestState.manifest, settings.layout.activeProfileId),
+    [layoutManifestState.manifest, settings.layout.activeProfileId],
+  );
+  const layoutSourceSummary = useMemo(() => {
+    if (layoutManifestState.sourceType === 'file' && layoutManifestState.sourcePath) {
+      return `Loaded from ${layoutManifestState.sourcePath}`;
+    }
+    if (settings.layout.configPath.trim()) {
+      return 'Custom path failed, using built-in layouts';
+    }
+    return 'Using built-in layouts with home-directory auto-probe';
+  }, [layoutManifestState.sourcePath, layoutManifestState.sourceType, settings.layout.configPath]);
   const filteredFolderIconOptions = useMemo(() => {
     const query = folderIconSearch.trim().toLowerCase();
     if (!query) {
@@ -611,6 +663,112 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
         </div>
 
         <div className="space-y-4">
+          <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+            <SectionTitle
+              icon={<LayoutGrid size={12} />}
+              title="Layouts"
+              subtitle="Drive the whole shell from a manifest instead of a single hardcoded chrome layout."
+            />
+
+            <div className="mt-4 space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Manifest Path</label>
+                <input
+                  value={settings.layout.configPath}
+                  onChange={event => updateLayout({ configPath: event.target.value })}
+                  placeholder="Leave blank to probe ~/.overlayterm/snapyard.layouts.json or .toml"
+                  className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                  style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text, fontFamily: appearance.fonts.mono }}
+                />
+                <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                  <button
+                    onClick={() => updateLayout({ configPath: '' })}
+                    className="rounded px-2 py-1 font-semibold uppercase tracking-[0.14em]"
+                    style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                  >
+                    Use Auto Probe
+                  </button>
+                  <span
+                    className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.14em]"
+                    style={{
+                      borderColor: layoutManifestState.sourceError ? '#f97316' : accent,
+                      background: layoutManifestState.sourceError ? 'rgba(249,115,22,0.12)' : `${accent}12`,
+                      color: layoutManifestState.sourceError ? '#fdba74' : text,
+                    }}
+                  >
+                    {layoutManifestState.sourceType === 'file' ? 'External Manifest' : 'Built In'}
+                  </span>
+                </div>
+                <p className="text-[11px] opacity-40">
+                  {layoutSourceSummary}
+                </p>
+                {layoutManifestState.sourceError && (
+                  <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.18)', color: '#fecaca' }}>
+                    Manifest load failed: {layoutManifestState.sourceError}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Profiles</div>
+                    <p className="mt-1 text-[11px] opacity-40">
+                      Click a profile to switch the entire workbench layout. The Snapyard button still cycles this same ordered set.
+                    </p>
+                  </div>
+                  <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                    {layoutManifestState.manifest.profiles.length} loaded
+                  </span>
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  {layoutManifestState.manifest.profiles.map(profile => {
+                    const active = profile.id === activeLayoutProfile.id;
+                    return (
+                      <button
+                        key={profile.id}
+                        onClick={() => updateLayout({ activeProfileId: profile.id })}
+                        className="w-full rounded border px-3 py-3 text-left transition-colors"
+                        style={{
+                          borderColor: active ? accent : border,
+                          background: active ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                          color: text,
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-[11px] font-semibold">{profile.label}</div>
+                            <p className="mt-1 text-[11px] opacity-45">{profile.description}</p>
+                          </div>
+                          {active && (
+                            <span className="rounded border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ borderColor: accent, color: accent }}>
+                              Live
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2 text-[9px] font-semibold uppercase tracking-[0.12em] opacity-70">
+                          <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
+                            Bar {profile.chrome.barPosition}
+                          </span>
+                          <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
+                            Dock {profile.controlDock.enabled ? profile.controlDock.side : 'off'}
+                          </span>
+                          <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
+                            Pinned {profile.pinnedPanels.length}
+                          </span>
+                          <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
+                            Default {profile.behavior.defaultActivePanelId}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </section>
+
           <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
             <SectionTitle
               icon={<Settings2 size={12} />}

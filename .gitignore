@@ -2,6 +2,9 @@
 
 # --- Node / npm / React / Frontend ---
 node_modules/
+node_modules-linux/
+node_modules-win32/
+node_modules-darwin/
 dist/
 dist-ssr/
 build/

@@ -8,7 +8,7 @@
     "dev": "npm run icons:folders && vite",
     "build": "npm run icons:folders && tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri",
+    "tauri": "node scripts/run-platform-tauri.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",

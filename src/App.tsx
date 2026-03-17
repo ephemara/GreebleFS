@@ -2,8 +2,6 @@ import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties }
 import { invoke } from '@tauri-apps/api/core';
 import * as TauriEvent from '@tauri-apps/api/event';
 import {
-  Effect,
-  EffectState,
   getCurrentWindow,
   PhysicalSize,
   PhysicalPosition,
@@ -69,27 +67,6 @@ function clampValue(value: number, min: number, max: number): number {
 
 function formatPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
-}
-
-function getNativeWindowEffects(platform: RuntimePlatform): {
-  effects: Effect[];
-  state?: EffectState;
-  radius?: number;
-} | null {
-  switch (platform) {
-    case 'macos':
-      return {
-        effects: [Effect.Sidebar],
-        state: EffectState.Active,
-        radius: 14,
-      };
-    case 'windows':
-      return {
-        effects: [Effect.Blur],
-      };
-    default:
-      return null;
-  }
 }
 
 function parseExternalArgs(raw: string): string[] {
@@ -192,6 +169,7 @@ function App() {
   const interactionLockUntilRef = useRef(0);
   const pluginSignatureRef = useRef('');
   const hasInitializedPanelLayoutRef = useRef(false);
+  const lastAppliedLayoutProfileIdRef = useRef<string | null>(null);
   const refreshFolderPluginsRef = useRef<(force?: boolean) => Promise<void>>(async () => undefined);
   const [openPanelIds, setOpenPanelIds] = useState<string[]>([]);
   const [layoutManifest, setLayoutManifest] = useState(BUILT_IN_LAYOUT_MANIFEST);
@@ -661,6 +639,7 @@ function App() {
     }
 
     hasInitializedPanelLayoutRef.current = true;
+    lastAppliedLayoutProfileIdRef.current = activeLayoutProfile.id;
     setOpenPanelIds(defaultOpenPanelIds);
     if (defaultOpenPanelIds.length > 0) {
       setActivePanelId(current => current ?? defaultOpenPanelIds[0]);
@@ -671,6 +650,38 @@ function App() {
     const availablePanelIds = panelDefinitions.map(panel => panel.id);
     setOpenPanelIds(current => syncOpenPanelIds(current, availablePanelIds, defaultOpenPanelIds));
   }, [defaultOpenPanelIds, panelDefinitions]);
+
+  useEffect(() => {
+    if (!hasInitializedPanelLayoutRef.current) {
+      return;
+    }
+
+    if (lastAppliedLayoutProfileIdRef.current === activeLayoutProfile.id) {
+      return;
+    }
+
+    lastAppliedLayoutProfileIdRef.current = activeLayoutProfile.id;
+
+    const availablePanelIds = panelDefinitions.map(panel => panel.id);
+    setOpenPanelIds(current => syncOpenPanelIds(current, availablePanelIds, defaultOpenPanelIds));
+    setActivePanelId(current => {
+      if (current && (tabbedOpenPanelIds.includes(current) || pinnedPanelIds.includes(current))) {
+        return current;
+      }
+
+      return activeLayoutProfile.behavior.defaultActivePanelId && panelLookup.has(activeLayoutProfile.behavior.defaultActivePanelId)
+        ? activeLayoutProfile.behavior.defaultActivePanelId
+        : defaultOpenPanelIds[0] ?? null;
+    });
+  }, [
+    activeLayoutProfile.behavior.defaultActivePanelId,
+    activeLayoutProfile.id,
+    defaultOpenPanelIds,
+    panelDefinitions,
+    panelLookup,
+    pinnedPanelIds,
+    tabbedOpenPanelIds,
+  ]);
 
   useEffect(() => {
     if (tabbedOpenPanelIds.length === 0) {
@@ -741,23 +752,13 @@ function App() {
   }, [activeLayoutProfile.id, layoutManifest, updateLayout]);
 
   useEffect(() => {
-    const windowEffects = getNativeWindowEffects(runtimePlatform);
-
-    if (!windowEffects) {
-      return;
-    }
-
     let cancelled = false;
 
-    const syncWindowEffects = async () => {
+    const syncNativeBlur = async () => {
       try {
-        const win = getCurrentWindow();
-        const shouldApplyEffects = appBlur && overlayPhase === 'open';
-        if (!shouldApplyEffects) {
-          await win.clearEffects();
-          return;
-        }
-        await win.setEffects(windowEffects);
+        await invoke('window_set_blur', {
+          enabled: appBlur && overlayPhase !== 'closed',
+        });
       } catch (error) {
         if (!cancelled) {
           console.warn('OverlayTerm: failed to apply native window blur', error);
@@ -765,12 +766,12 @@ function App() {
       }
     };
 
-    syncWindowEffects();
+    syncNativeBlur();
 
     return () => {
       cancelled = true;
     };
-  }, [appBlur, overlayPhase, runtimePlatform]);
+  }, [appBlur, overlayPhase]);
 
   const activeContentPanel = activePanelId ? panelLookup.get(activePanelId) ?? null : null;
   const chromeBar = (

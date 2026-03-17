@@ -3,6 +3,7 @@ pub mod plugin_commands;
 pub mod screenshot_commands;
 pub mod startup_commands;
 pub mod terminal;
+pub mod window_commands;
 
 use fs_commands::{
     fs_copy, fs_create_dir, fs_delete, fs_get_drives, fs_get_home_dir, fs_list_dir, fs_move,
@@ -24,6 +25,7 @@ use terminal::{
     terminal_kill, terminal_open_external, terminal_resize, terminal_spawn, terminal_write,
     TerminalManager,
 };
+use window_commands::window_set_blur;
 
 fn toggle_overlay(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
@@ -137,6 +139,7 @@ pub fn run() {
             plugin_run_backend,
             startup_get_launch_at_startup,
             startup_set_launch_at_startup,
+            window_set_blur,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

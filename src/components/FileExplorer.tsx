@@ -46,6 +46,16 @@ interface NewItemState   { visible: boolean; kind: 'file'|'folder'; }
 interface ExplorerClipboard { action:'copy'|'cut'; entries: FileEntry[]; }
 interface FileTransferResult { source_path: string; destination_path: string; operation: 'copy' | 'move'; }
 type FileTransferOperation = 'copy' | 'move';
+interface ExplorerEditorTab {
+  path: string;
+  name: string;
+  language: string;
+  content: string;
+  isDirty: boolean;
+  isSaving: boolean;
+  lastSavedAt: number | null;
+  error: string | null;
+}
 
 // ─── Palette ─────────────────────────────────────────────────────────────────
 
@@ -158,7 +168,7 @@ function getIconSrc(
 // ─── Extension sets (for preview logic only) ─────────────────────────────────
 
 const IMAGE_EXTS = new Set(['jpg','jpeg','png','gif','webp','svg','bmp','ico','tiff','tif','avif']);
-const CODE_EXTS  = new Set(['ts','tsx','js','jsx','rs','py','go','c','cpp','h','hpp','cs','java','rb','php','swift','kt','vue','html','css','scss','json','toml','yaml','yml','xml','md','sh','ps1','bat','lua','sql','zig','env','dart','glsl','wgsl','hlsl','ini','txt']);
+const CODE_EXTS  = new Set(['ts','tsx','js','jsx','rs','py','go','c','cpp','h','hpp','cs','java','rb','php','swift','kt','vue','html','css','scss','json','toml','yaml','yml','xml','md','sh','ps1','bat','lua','sql','zig','env','dart','glsl','wgsl','hlsl','ini','txt','kain','ink','log']);
 const EXEC_EXTS  = new Set(['exe','msi','bat','cmd','ps1','sh','app','dmg']);
 
 function monacoLang(ext: string): string {
@@ -170,8 +180,16 @@ function monacoLang(ext: string): string {
     yaml:'yaml', yml:'yaml', xml:'xml', md:'markdown', sh:'shell',
     ps1:'powershell', bat:'bat', lua:'lua', sql:'sql', zig:'zig', ini:'ini',
     env:'shell', dart:'dart', glsl:'glsl', wgsl:'wgsl', hlsl:'hlsl',
+    kain:'plaintext', ink:'plaintext', log:'plaintext',
   };
   return map[ext] || 'plaintext';
+}
+
+function isEditableTextEntry(entry: FileEntry): boolean {
+  if (entry.is_dir) return false;
+  const ext = entry.extension.toLowerCase();
+  if (IMAGE_EXTS.has(ext) || EXEC_EXTS.has(ext)) return false;
+  return CODE_EXTS.has(ext) || entry.size < 2 * 1024 * 1024;
 }
 
 function formatSize(bytes: number): string {
@@ -341,6 +359,132 @@ function PreviewPanel({ preview, onClose }: { preview: PreviewState; onClose: ()
   );
 }
 
+function EditorTabsPanel({
+  tabs,
+  activePath,
+  onSelect,
+  onCloseTab,
+  onChangeContent,
+}: {
+  tabs: ExplorerEditorTab[];
+  activePath: string | null;
+  onSelect: (path: string) => void;
+  onCloseTab: (path: string) => void;
+  onChangeContent: (path: string, content: string) => void;
+}) {
+  const [width, setWidth] = useState(540);
+  const dragging = useRef(false);
+  const startX = useRef(0);
+  const startW = useRef(540);
+  const activeTab = tabs.find(tab => tab.path === activePath) ?? null;
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    dragging.current = true;
+    startX.current = e.clientX;
+    startW.current = width;
+    e.preventDefault();
+  };
+
+  useEffect(() => {
+    const move = (e: MouseEvent) => {
+      if (!dragging.current) return;
+      const delta = startX.current - e.clientX;
+      setWidth(Math.max(320, Math.min(1000, startW.current + delta)));
+    };
+    const up = () => {
+      dragging.current = false;
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    return () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+  }, []);
+
+  return (
+    <div style={{ width, background: EXP.panel, borderLeft: `1px solid ${EXP.border}`, display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden', position: 'relative' }}>
+      <div
+        onMouseDown={onMouseDown}
+        style={{
+          position: 'absolute', left: 0, top: 0, bottom: 0, width: 4,
+          cursor: 'col-resize', zIndex: 10,
+          background: 'transparent',
+        }}
+        onMouseEnter={e => (e.currentTarget.style.background = `${EXP.accent}55`)}
+        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+      />
+      <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'stretch', minHeight: 38, overflowX: 'auto', overflowY: 'hidden', borderBottom: `1px solid ${EXP.border}`, background: EXP.sidebar }}>
+        {tabs.map(tab => {
+          const isActive = tab.path === activePath;
+          return (
+            <button
+              key={tab.path}
+              onClick={() => onSelect(tab.path)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                minWidth: 150,
+                maxWidth: 260,
+                padding: '0 10px',
+                border: 'none',
+                borderRight: `1px solid ${EXP.border}`,
+                borderTop: `2px solid ${isActive ? EXP.accent : 'transparent'}`,
+                background: isActive ? `${EXP.accent}20` : 'transparent',
+                color: isActive ? EXP.text : EXP.muted,
+                cursor: 'pointer',
+                fontSize: 11,
+              }}
+            >
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>{tab.name}</span>
+              {tab.isSaving && <span style={{ width: 6, height: 6, borderRadius: '50%', background: EXP.accent, opacity: 0.85 }} />}
+              {tab.isDirty && !tab.isSaving && <span style={{ width: 6, height: 6, borderRadius: '50%', background: EXP.yellow, opacity: 0.85 }} />}
+              <span
+                onClick={event => {
+                  event.stopPropagation();
+                  onCloseTab(tab.path);
+                }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: 4, color: EXP.muted }}
+              >
+                <X size={10} />
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ flex: 1, overflow: 'hidden' }}>
+        {activeTab && (
+          <Editor
+            height="100%"
+            language={activeTab.language || 'plaintext'}
+            value={activeTab.content}
+            theme="vs-dark"
+            onChange={value => onChangeContent(activeTab.path, value ?? '')}
+            options={{
+              readOnly: false,
+              minimap: { enabled: false },
+              scrollBeyondLastLine: false,
+              fontSize: 12,
+              lineNumbers: 'on',
+              wordWrap: 'on',
+              padding: { top: 8 },
+            }}
+          />
+        )}
+      </div>
+      {activeTab && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '4px 10px', borderTop: `1px solid ${EXP.border}`, background: EXP.sidebar, fontSize: 10, color: EXP.muted }}>
+          <span>{activeTab.content.length} chars · {activeTab.content.split(/\s+/).filter(Boolean).length} words · {activeTab.content.split('\n').length} lines</span>
+          <span style={{ color: activeTab.error ? EXP.red : activeTab.isDirty ? EXP.yellow : EXP.green }}>
+            {activeTab.error ? 'Save failed' : activeTab.isSaving ? 'Saving…' : activeTab.isDirty ? 'Pending auto-save' : 'Auto-saved'}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Inline rename ────────────────────────────────────────────────────────────
 
 function RenameInput({ state, onCommit, onCancel }: { state: RenameState; onCommit: (n: string) => void; onCancel: () => void }) {
@@ -421,13 +565,28 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const [deleteTarget, setDeleteTarget] = useState<FileEntry|null>(null);
   const [clipboard,    setClipboard]    = useState<ExplorerClipboard|null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [editorTabs, setEditorTabs] = useState<ExplorerEditorTab[]>([]);
+  const [activeEditorPath, setActiveEditorPath] = useState<string | null>(null);
   const [newItem,      setNewItem]      = useState<NewItemState>({ visible:false, kind:'folder' });
   const [newItemName,  setNewItemName]  = useState('');
   const [dragOver,     setDragOver]     = useState<string|null>(null); // path being dragged over
   const [windowDropState, setWindowDropState] = useState<{ active: boolean; count: number }>({ active: false, count: 0 });
   const lastSelected   = useRef<string|null>(null);
+  const editorTabsRef = useRef<ExplorerEditorTab[]>([]);
+  const editorSaveTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const mainRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    editorTabsRef.current = editorTabs;
+  }, [editorTabs]);
+
+  useEffect(() => {
+    return () => {
+      editorSaveTimers.current.forEach(timer => window.clearTimeout(timer));
+      editorSaveTimers.current.clear();
+    };
+  }, []);
 
   useEffect(() => {
     if (isCompactDock) {
@@ -436,6 +595,16 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
       setPreview({ type: 'none', path: '' });
     }
   }, [isCompactDock]);
+
+  useEffect(() => {
+    if (editorTabs.length === 0) {
+      setActiveEditorPath(null);
+      return;
+    }
+    if (!activeEditorPath || !editorTabs.some(tab => tab.path === activeEditorPath)) {
+      setActiveEditorPath(editorTabs[editorTabs.length - 1].path);
+    }
+  }, [editorTabs, activeEditorPath]);
 
   // ── Boot ──
   useEffect(() => {
@@ -569,14 +738,12 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   }, [currentPath, refresh, transferIntoDirectory]);
 
   // ── Open ──
-  const openEntry = useCallback(async (entry: FileEntry) => {
-    if (entry.is_dir) { navigate(entry.path); return; }
-    const ext = entry.extension;
-
-    if (EXEC_EXTS.has(ext)) {
-      await invoke('fs_open_file', { path: entry.path }).catch(e => setError(String(e)));
+  const previewEntry = useCallback(async (entry: FileEntry) => {
+    if (entry.is_dir) {
+      setPreview({ type: 'none', path: '' });
       return;
     }
+    const ext = entry.extension.toLowerCase();
 
     if (IMAGE_EXTS.has(ext)) {
       setPreviewLoading(true);
@@ -588,20 +755,150 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
       return;
     }
 
-    if (CODE_EXTS.has(ext) || entry.size < 2*1024*1024) {
+    if (isEditableTextEntry(entry)) {
       setPreviewLoading(true);
       try {
         const content = await invoke<string>('fs_read_text_file', { path: entry.path });
         setPreview({ type:'text', path:entry.path, content, language:monacoLang(ext) });
       } catch {
-        await invoke('fs_open_file', { path: entry.path }).catch(() => {});
+        setPreview({ type: 'none', path: '' });
       }
       finally { setPreviewLoading(false); }
       return;
     }
 
+    setPreview({ type: 'none', path: '' });
+  }, []);
+
+  const persistEditorTab = useCallback(async (path: string) => {
+    const tab = editorTabsRef.current.find(candidate => candidate.path === path);
+    if (!tab) return;
+
+    const contentAtSave = tab.content;
+    setEditorTabs(prev => prev.map(candidate => (
+      candidate.path === path
+        ? { ...candidate, isSaving: true, error: null }
+        : candidate
+    )));
+
+    try {
+      await invoke('fs_write_file', { path, content: contentAtSave });
+      setEditorTabs(prev => prev.map(candidate => {
+        if (candidate.path !== path) return candidate;
+        const isStillSame = candidate.content === contentAtSave;
+        return {
+          ...candidate,
+          isSaving: false,
+          isDirty: !isStillSame,
+          lastSavedAt: isStillSame ? Date.now() : candidate.lastSavedAt,
+          error: null,
+        };
+      }));
+    } catch (saveError) {
+      setEditorTabs(prev => prev.map(candidate => (
+        candidate.path === path
+          ? { ...candidate, isSaving: false, error: String(saveError) }
+          : candidate
+      )));
+      setError(`Save failed for ${tab.name}: ${saveError}`);
+    }
+  }, []);
+
+  const queueEditorSave = useCallback((path: string) => {
+    const existing = editorSaveTimers.current.get(path);
+    if (existing) window.clearTimeout(existing);
+    const timer = window.setTimeout(() => {
+      editorSaveTimers.current.delete(path);
+      void persistEditorTab(path);
+    }, 700);
+    editorSaveTimers.current.set(path, timer);
+  }, [persistEditorTab]);
+
+  const openEditorTab = useCallback(async (entry: FileEntry) => {
+    const existing = editorTabsRef.current.find(tab => tab.path === entry.path);
+    if (existing) {
+      setActiveEditorPath(existing.path);
+      return;
+    }
+    const ext = entry.extension.toLowerCase();
+    setPreviewLoading(true);
+    try {
+      const content = await invoke<string>('fs_read_text_file', { path: entry.path });
+      setEditorTabs(prev => [...prev, {
+        path: entry.path,
+        name: entry.name,
+        language: monacoLang(ext),
+        content,
+        isDirty: false,
+        isSaving: false,
+        lastSavedAt: Date.now(),
+        error: null,
+      }]);
+      setActiveEditorPath(entry.path);
+    } catch (openError) {
+      setError(`Failed to open editor tab: ${openError}`);
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, []);
+
+  const closeEditorTab = useCallback((path: string) => {
+    const timer = editorSaveTimers.current.get(path);
+    if (timer) {
+      window.clearTimeout(timer);
+      editorSaveTimers.current.delete(path);
+    }
+    const target = editorTabsRef.current.find(tab => tab.path === path);
+    if (target?.isDirty) {
+      void invoke('fs_write_file', { path, content: target.content }).catch(saveError => {
+        setError(`Save failed while closing ${target.name}: ${saveError}`);
+      });
+    }
+    setEditorTabs(prev => {
+      const idx = prev.findIndex(tab => tab.path === path);
+      if (idx < 0) return prev;
+      const next = prev.filter(tab => tab.path !== path);
+      if (activeEditorPath === path) {
+        const fallback = next[Math.max(0, idx - 1)] ?? next[idx] ?? null;
+        setActiveEditorPath(fallback ? fallback.path : null);
+      }
+      return next;
+    });
+  }, [activeEditorPath]);
+
+  const updateEditorTabContent = useCallback((path: string, content: string) => {
+    setEditorTabs(prev => prev.map(tab => (
+      tab.path === path
+        ? { ...tab, content, isDirty: true, error: null }
+        : tab
+    )));
+    queueEditorSave(path);
+  }, [queueEditorSave]);
+
+  const openEntry = useCallback(async (entry: FileEntry) => {
+    if (entry.is_dir) {
+      navigate(entry.path);
+      return;
+    }
+    const ext = entry.extension.toLowerCase();
+
+    if (isEditableTextEntry(entry)) {
+      await openEditorTab(entry);
+      return;
+    }
+
+    if (IMAGE_EXTS.has(ext)) {
+      await previewEntry(entry);
+      return;
+    }
+
+    if (EXEC_EXTS.has(ext)) {
+      await invoke('fs_open_file', { path: entry.path }).catch(e => setError(String(e)));
+      return;
+    }
+
     await invoke('fs_open_file', { path: entry.path }).catch(e => setError(String(e)));
-  }, [navigate]);
+  }, [navigate, openEditorTab, previewEntry]);
 
   // ── Duplicate ──
   const duplicate = useCallback(async (entry: FileEntry) => {
@@ -637,7 +934,26 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const commitRename = async (newName: string) => {
     const dir = rename.path.replace(/[/\\][^/\\]+$/, '');
     const sep = rename.path.includes('/') ? '/' : '\\';
-    try { await invoke('fs_rename', { oldPath: rename.path, newPath: dir + sep + newName }); setRename({ active:false, path:'', name:'' }); refresh(); }
+    const oldPath = rename.path;
+    const newPath = dir + sep + newName;
+    try {
+      await invoke('fs_rename', { oldPath, newPath });
+      const pendingTimer = editorSaveTimers.current.get(oldPath);
+      if (pendingTimer) {
+        window.clearTimeout(pendingTimer);
+        editorSaveTimers.current.delete(oldPath);
+      }
+      setEditorTabs(prev => prev.map(tab => (
+        tab.path === oldPath
+          ? { ...tab, path: newPath, name: newName, error: null }
+          : tab
+      )));
+      if (activeEditorPath === oldPath) {
+        setActiveEditorPath(newPath);
+      }
+      setRename({ active:false, path:'', name:'' });
+      refresh();
+    }
     catch(e) { setError(String(e)); }
   };
 
@@ -647,6 +963,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     try {
       await invoke('fs_delete', { path: deleteTarget.path, recursive: deleteTarget.is_dir });
       if (preview.path === deleteTarget.path) setPreview({ type:'none', path:'' });
+      closeEditorTab(deleteTarget.path);
       setDeleteTarget(null); refresh();
     } catch(e) { setError(String(e)); }
   };
@@ -675,6 +992,15 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     ];
   }, [bookmarks, openEntry, duplicate, onOpenInTerminal, onAddBookmark, paste, queueClipboard]);
 
+  const buildEmptyCtxItems = useCallback((): CtxItem[] => {
+    return [
+      { label:'New Folder', icon:<FolderPlus size={13}/>, action:() => openNew('folder') },
+      { label:'New File...', icon:<FilePlus size={13}/>, action:() => openNew('file') },
+      ...(clipboard ? [{ label:'Paste', icon:<Clipboard size={13}/>, action:() => paste() }] : []),
+      { label:'Refresh', icon:<RefreshCw size={13}/>, action:() => refresh() },
+    ];
+  }, [clipboard, paste, refresh]);
+
   // ── Right-click ──
   const onRightClick = (e: React.MouseEvent, entry: FileEntry) => {
     e.preventDefault(); e.stopPropagation();
@@ -686,6 +1012,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   // ── Click with shift-select support ──
   const onEntryClick = (e: React.MouseEvent, entry: FileEntry) => {
     e.stopPropagation();
+    const plainClick = !e.shiftKey && !e.ctrlKey && !e.metaKey;
     if (e.shiftKey && lastSelected.current) {
       const idx1 = filtered.findIndex(f => f.path === lastSelected.current);
       const idx2 = filtered.findIndex(f => f.path === entry.path);
@@ -701,6 +1028,9 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
       setSelected(new Set([entry.path]));
     }
     lastSelected.current = entry.path;
+    if (plainClick && !entry.is_dir) {
+      void previewEntry(entry);
+    }
   };
 
   // ── Keyboard ──
@@ -747,7 +1077,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
 
   // ── Inline new item creation ──
   const openNew = (kind: 'file' | 'folder') => {
-    setNewItemName(kind === 'folder' ? 'New Folder' : 'new-file.txt');
+    setNewItemName(kind === 'folder' ? 'New Folder' : 'untitled.txt');
     setNewItem({ visible:true, kind });
   };
 
@@ -802,8 +1132,13 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     } catch(e) { setError(String(e)); }
   };
 
+  const activeEditorTab = useMemo(
+    () => editorTabs.find(tab => tab.path === activeEditorPath) ?? null,
+    [editorTabs, activeEditorPath],
+  );
   const effectiveViewMode = isCompactDock ? 'list' : viewMode;
-  const hasPreview = !isCompactDock && preview.type !== 'none';
+  const showEditorPane = !isCompactDock && editorTabs.length > 0;
+  const hasPreview = !isCompactDock && !showEditorPane && preview.type !== 'none';
 
   return (
     <div
@@ -992,6 +1327,12 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
             onDragOver={e => { e.preventDefault(); setDragOver('__main__'); }}
             onDragLeave={() => setDragOver(null)}
             onDrop={e => onDrop(e, currentPath)}
+            onContextMenu={e => {
+              if (e.target !== e.currentTarget) return;
+              e.preventDefault();
+              e.stopPropagation();
+              setCtxMenu({ visible:true, x:e.clientX, y:e.clientY, entry:null });
+            }}
           >
             {windowDropState.active && (
               <div style={{
@@ -1041,6 +1382,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                   autoFocus value={newItemName} onChange={e=>setNewItemName(e.target.value)}
                   onKeyDown={e => { if(e.key==='Enter') commitNew(); if(e.key==='Escape') setNewItem({visible:false,kind:'folder'}); }}
                   onBlur={commitNew}
+                  placeholder={newItem.kind === 'folder' ? 'folder name' : 'name.ext'}
                   style={{ background:'#1e2130', border:`1px solid ${accent}`, borderRadius:4, color:EXP.text, fontSize:11, padding:'2px 6px', outline:'none', width:'100%', boxSizing:'border-box' as const }}
                 />
               </div>
@@ -1100,6 +1442,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                       <input autoFocus value={newItemName} onChange={e=>setNewItemName(e.target.value)}
                         onKeyDown={e=>{ if(e.key==='Enter') commitNew(); if(e.key==='Escape') setNewItem({visible:false,kind:'folder'}); }}
                         onBlur={commitNew}
+                        placeholder={newItem.kind === 'folder' ? 'folder name' : 'notes.md / app.py'}
                         style={{ background:'#1e2130', border:`1px solid ${accent}`, borderRadius:4, color:EXP.text, fontSize:12, padding:'2px 6px', outline:'none', flex:1 }}
                       />
                     </div>
@@ -1162,7 +1505,16 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
             )}
           </div>
 
-          {/* Preview */}
+          {/* Side pane */}
+          {showEditorPane && (
+            <EditorTabsPanel
+              tabs={editorTabs}
+              activePath={activeEditorTab?.path ?? null}
+              onSelect={setActiveEditorPath}
+              onCloseTab={closeEditorTab}
+              onChangeContent={updateEditorTabContent}
+            />
+          )}
           {hasPreview && <PreviewPanel preview={preview} onClose={() => setPreview({ type:'none', path:'' })} />}
         </div>
 
@@ -1183,7 +1535,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
       </div>
 
       {/* Context menu */}
-      <ContextMenu state={ctxMenu} items={ctxMenu.entry ? buildCtxItems(ctxMenu.entry) : []} onClose={() => setCtxMenu(c => ({...c, visible:false}))} />
+      <ContextMenu state={ctxMenu} items={ctxMenu.entry ? buildCtxItems(ctxMenu.entry) : buildEmptyCtxItems()} onClose={() => setCtxMenu(c => ({...c, visible:false}))} />
 
       {/* Delete dialog */}
       {deleteTarget && <DeleteDialog entry={deleteTarget} onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)} />}
