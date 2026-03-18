@@ -51,7 +51,10 @@ pub async fn screenshot_capture_preview(
 
     Ok(ScreenshotPreview {
         capture_id,
-        preview_url: format!("data:image/png;base64,{}", BASE64_STANDARD.encode(preview_png)),
+        preview_url: format!(
+            "data:image/png;base64,{}",
+            BASE64_STANDARD.encode(preview_png)
+        ),
         image_width: width,
         image_height: height,
     })
@@ -224,10 +227,9 @@ fn load_capture_image(capture_id: &str) -> Result<RgbaImage, String> {
     let cache = SCREENSHOT_CAPTURE_CACHE
         .lock()
         .map_err(|_| "Failed to lock screenshot capture cache.".to_string())?;
-    cache
-        .get(capture_id)
-        .cloned()
-        .ok_or_else(|| "The screenshot capture preview expired. Take a new screenshot preview.".to_string())
+    cache.get(capture_id).cloned().ok_or_else(|| {
+        "The screenshot capture preview expired. Take a new screenshot preview.".to_string()
+    })
 }
 
 fn validate_crop_region(
@@ -237,7 +239,9 @@ fn validate_crop_region(
     width: u32,
     height: u32,
 ) -> Result<(), String> {
-    let within_width = x.checked_add(width).is_some_and(|end_x| end_x <= image.width());
+    let within_width = x
+        .checked_add(width)
+        .is_some_and(|end_x| end_x <= image.width());
     let within_height = y
         .checked_add(height)
         .is_some_and(|end_y| end_y <= image.height());

@@ -346,9 +346,7 @@ fn app_exists(app_name: &str) -> bool {
         format!("/Applications/{}.app", app_name),
         format!(
             "{}/Applications/{}.app",
-            dirs::home_dir()
-                .unwrap_or_default()
-                .to_string_lossy(),
+            dirs::home_dir().unwrap_or_default().to_string_lossy(),
             app_name
         ),
     ];
@@ -500,7 +498,9 @@ fn build_unix_external_command(
                 .executable
                 .clone()
                 .filter(|value| !value.trim().is_empty())
-                .ok_or_else(|| "Custom external terminal profile requires an executable.".to_string())?;
+                .ok_or_else(|| {
+                    "Custom external terminal profile requires an executable.".to_string()
+                })?;
 
             let mut command = ProcessCommand::new(executable);
             for arg in user_args {
@@ -610,9 +610,8 @@ end tell"#,
                     .clone()
                     .filter(|value| !value.trim().is_empty())
                     .unwrap_or_else(|| TerminalManager::get_shell().0);
-                let mut command = ProcessCommand::new(
-                    executable_override.unwrap_or_else(|| "xterm".to_string()),
-                );
+                let mut command =
+                    ProcessCommand::new(executable_override.unwrap_or_else(|| "xterm".to_string()));
                 command.arg("-e").arg(format!(
                     "cd {} && exec {}",
                     shell_quote_single(&working_dir.to_string_lossy()),

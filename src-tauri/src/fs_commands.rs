@@ -380,11 +380,11 @@ fn is_hidden_entry(entry: &std::fs::DirEntry, name: &str) -> bool {
 
 fn is_searchable_text_file(path: &Path) -> bool {
     const EXTENSIONS: &[&str] = &[
-        "txt", "md", "mdx", "log", "json", "yaml", "yml", "toml", "xml", "ini", "cfg", "csv",
-        "ts", "tsx", "js", "jsx", "mjs", "cjs", "rs", "py", "go", "c", "h", "cpp", "hpp", "cc",
-        "cxx", "cs", "java", "kt", "kts", "rb", "php", "swift", "dart", "lua", "zig", "html",
-        "htm", "css", "scss", "sass", "less", "sh", "bash", "zsh", "ps1", "bat", "cmd", "env",
-        "glsl", "hlsl", "wgsl", "sql", "kain", "ink",
+        "txt", "md", "mdx", "log", "json", "yaml", "yml", "toml", "xml", "ini", "cfg", "csv", "ts",
+        "tsx", "js", "jsx", "mjs", "cjs", "rs", "py", "go", "c", "h", "cpp", "hpp", "cc", "cxx",
+        "cs", "java", "kt", "kts", "rb", "php", "swift", "dart", "lua", "zig", "html", "htm",
+        "css", "scss", "sass", "less", "sh", "bash", "zsh", "ps1", "bat", "cmd", "env", "glsl",
+        "hlsl", "wgsl", "sql", "kain", "ink",
     ];
 
     let ext = normalized_extension(path);
@@ -550,7 +550,10 @@ pub async fn fs_search_entries(
             let mut snippet = String::new();
             let mut line_number = None;
 
-            if include_content && meta.len() <= MAX_CONTENT_BYTES && is_searchable_text_file(&path_buf) {
+            if include_content
+                && meta.len() <= MAX_CONTENT_BYTES
+                && is_searchable_text_file(&path_buf)
+            {
                 if let Ok(file) = std::fs::File::open(&path_buf) {
                     let reader = std::io::BufReader::new(file);
                     use std::io::BufRead;
@@ -613,8 +616,16 @@ pub async fn fs_search_entries(
 
         rank(a.match_kind)
             .cmp(&rank(b.match_kind))
-            .then_with(|| a.path.to_ascii_lowercase().cmp(&b.path.to_ascii_lowercase()))
-            .then_with(|| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()))
+            .then_with(|| {
+                a.path
+                    .to_ascii_lowercase()
+                    .cmp(&b.path.to_ascii_lowercase())
+            })
+            .then_with(|| {
+                a.name
+                    .to_ascii_lowercase()
+                    .cmp(&b.name.to_ascii_lowercase())
+            })
     });
     results.truncate(max_results);
     Ok(results)
@@ -625,9 +636,10 @@ fn map_default_open_result(result: file_opening::OpenResult) -> Result<(), Strin
     match result {
         file_opening::OpenResult::Success => Ok(()),
         file_opening::OpenResult::FileNotFound { path } => Err(format!("File not found: {}", path)),
-        file_opening::OpenResult::AppNotFound { app_id } => {
-            Err(format!("Application not found for file open request: {}", app_id))
-        }
+        file_opening::OpenResult::AppNotFound { app_id } => Err(format!(
+            "Application not found for file open request: {}",
+            app_id
+        )),
         file_opening::OpenResult::PermissionDenied { path } => {
             Err(format!("Permission denied while opening: {}", path))
         }
@@ -740,7 +752,9 @@ fn execute_path(path: &Path) -> Result<(), String> {
                 }
             }
 
-            return Err("No supported shell interpreter was found in PATH for this script.".to_string());
+            return Err(
+                "No supported shell interpreter was found in PATH for this script.".to_string(),
+            );
         }
 
         return open_with_default_application(path);
@@ -1804,7 +1818,10 @@ mod tests {
         assert_eq!(result.len(), 1);
         let copied_path = PathBuf::from(&result[0].destination_path);
         assert!(copied_path.exists(), "copied file should exist");
-        assert_ne!(copied_path, original, "copy should not overwrite existing file");
+        assert_ne!(
+            copied_path, original,
+            "copy should not overwrite existing file"
+        );
         assert_eq!(fs::read(copied_path).unwrap(), b"external");
         assert_eq!(fs::read(original).unwrap(), b"original");
     }
@@ -1836,8 +1853,14 @@ mod tests {
 
         assert_eq!(result.len(), 2);
         assert!(!file_a.exists(), "moved file should be removed from source");
-        assert!(!folder_b.exists(), "moved folder should be removed from source");
-        assert!(target_dir.join("a.txt").exists(), "target should contain moved file");
+        assert!(
+            !folder_b.exists(),
+            "moved folder should be removed from source"
+        );
+        assert!(
+            target_dir.join("a.txt").exists(),
+            "target should contain moved file"
+        );
         assert!(
             target_dir.join("folder-b").join("nested.txt").exists(),
             "target should contain moved folder contents"
