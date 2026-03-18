@@ -67,10 +67,15 @@ describe('layoutProfiles', () => {
     expect(getNextLayoutProfileId(BUILT_IN_LAYOUT_MANIFEST, secondId)).toBe(firstId);
   });
 
-  it('filters pinned panels out of tab strips', () => {
+  it('keeps navigator-bottom as classic dock with only the bar flipped', () => {
+    const classicProfile = resolveLayoutProfile(BUILT_IN_LAYOUT_MANIFEST, 'overlay-classic');
     const profile = resolveLayoutProfile(BUILT_IN_LAYOUT_MANIFEST, 'navigator-bottom');
 
-    expect(getPinnedPanelIds(profile)).toEqual(['explorer']);
-    expect(getTabbedOpenPanelIds(profile, ['explorer', 'terminal', 'notes'])).toEqual(['terminal', 'notes']);
+    expect(profile.chrome.barPosition).toBe('bottom');
+    expect(profile.controlDock).toEqual(classicProfile.controlDock);
+    expect(profile.pinnedPanels).toEqual([]);
+    expect(profile.behavior.enforcedOpenPanelIds).toEqual(classicProfile.behavior.enforcedOpenPanelIds);
+    expect(getPinnedPanelIds(profile)).toEqual([]);
+    expect(getTabbedOpenPanelIds(profile, ['explorer', 'terminal', 'notes'])).toEqual(['explorer', 'terminal', 'notes']);
   });
 });

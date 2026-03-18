@@ -24,7 +24,7 @@ import {
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import { getFolderIconSrc } from '../config/folderIcons';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
-import { detectClientPlatform, getFallbackExplorerPath, joinPlatformPath } from '../config/platform';
+import { detectClientPlatform, getFallbackExplorerPath, getPlatformPathSeparator, joinPlatformPath } from '../config/platform';
 import { useSettingsStore } from '../store/settingsStore';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -33,6 +33,12 @@ interface FileEntry {
   name: string; path: string; is_dir: boolean;
   size: number; modified: number; extension: string;
   is_hidden: boolean; is_symlink: boolean;
+}
+interface FileSearchResult extends FileEntry {
+  relative_path: string;
+  snippet: string;
+  line_number: number | null;
+  match_kind: 'name' | 'content' | 'name_and_content';
 }
 interface DriveInfo {
   letter: string; label: string;
@@ -206,6 +212,41 @@ function formatDate(ms: number): string {
 
 function normalizeExplorerPath(path: string): string {
   return /^[A-Za-z]:$/.test(path) ? `${path}\\` : path;
+}
+
+function isLikelyExplorerPathInput(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (/^[A-Za-z]:[\\/]/.test(trimmed) || /^[A-Za-z]:$/.test(trimmed)) return true;
+  if (trimmed.startsWith('\\\\')) return true;
+  if (trimmed.startsWith('~')) return true;
+  if (/^[.]{1,2}[\\/]/.test(trimmed) || trimmed === '.' || trimmed === '..') return true;
+  return /[\\/]/.test(trimmed);
+}
+
+function resolveExplorerPathInput(
+  input: string,
+  currentPath: string,
+  runtimePlatform: ReturnType<typeof detectClientPlatform>,
+): string {
+  const trimmed = input.trim();
+  const separator = getPlatformPathSeparator(runtimePlatform);
+  const normalizedSeparators = trimmed.replace(/[\\/]+/g, separator);
+
+  if (/^[A-Za-z]:$/.test(normalizedSeparators)) {
+    return `${normalizedSeparators}${separator}`;
+  }
+
+  if (/^[A-Za-z]:[\\/]/.test(trimmed) || trimmed.startsWith('\\\\')) {
+    return normalizeExplorerPath(normalizedSeparators);
+  }
+
+  if (runtimePlatform !== 'windows' && trimmed.startsWith('/')) {
+    return normalizeExplorerPath(normalizedSeparators);
+  }
+
+  const basePath = currentPath || getFallbackExplorerPath(runtimePlatform);
+  return normalizeExplorerPath(joinPlatformPath(basePath, normalizedSeparators, runtimePlatform));
 }
 
 // ─── SvgIcon ──────────────────────────────────────────────────────────────────
@@ -551,6 +592,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const [historyIdx,   setHistoryIdx]   = useState(-1);
   const [sidebarWidth, setSidebarWidth] = useState(isCompactDock ? 180 : 220);
   const [entries,      setEntries]      = useState<FileEntry[]>([]);
+  const [searchResults, setSearchResults] = useState<FileSearchResult[]>([]);
   const [drives,       setDrives]       = useState<DriveInfo[]>([]);
   const [bookmarks,    setBookmarks]    = useState<FsBookmark[]>([]);
   const [loading,      setLoading]      = useState(false);
@@ -558,6 +600,8 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const [selected,     setSelected]     = useState<Set<string>>(new Set());
   const [viewMode,     setViewMode]     = useState<'grid'|'list'>(isCompactDock ? 'list' : 'grid');
   const [search,       setSearch]       = useState('');
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchIncludeContent, setSearchIncludeContent] = useState(true);
   const [showHidden,   setShowHidden]   = useState(false);
   const [preview,      setPreview]      = useState<PreviewState>({ type:'none', path:'' });
   const [ctxMenu,      setCtxMenu]      = useState<ContextMenuState>({ visible:false, x:0, y:0, entry:null });
@@ -574,6 +618,10 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const lastSelected   = useRef<string|null>(null);
   const editorTabsRef = useRef<ExplorerEditorTab[]>([]);
   const editorSaveTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const searchRequestIdRef = useRef(0);
+  const addressInputRef = useRef<HTMLInputElement>(null);
+  const [addressEditing, setAddressEditing] = useState(false);
+  const [addressDraft, setAddressDraft] = useState('');
 
   const mainRef = useRef<HTMLDivElement>(null);
 
@@ -632,7 +680,9 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   // ── Navigate ──
   const navigate = useCallback(async (path: string, push = true) => {
     const normalizedPath = normalizeExplorerPath(path);
-    setCurrentPath(normalizedPath); setSelected(new Set()); setSearch(''); setError(null);
+    setCurrentPath(normalizedPath); setSelected(new Set()); setSearch(''); setSearchResults([]); setSearchLoading(false); setError(null);
+    setAddressEditing(false);
+    setAddressDraft('');
     if (push) { setHistory(h => [...h.slice(0, historyIdx + 1), normalizedPath]); setHistoryIdx(i => i + 1); }
     setLoading(true);
     try { setEntries(await invoke<FileEntry[]>('fs_list_dir', { path: normalizedPath, showHidden })); }
@@ -640,15 +690,91 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     finally { setLoading(false); }
   }, [historyIdx, showHidden]);
 
+  const runSearch = useCallback(async (query: string, requestId: number) => {
+    const trimmed = query.trim();
+    if (!trimmed || !currentPath) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+
+    setSearchLoading(true);
+    try {
+      const results = await invoke<FileSearchResult[]>('fs_search_entries', {
+        path: currentPath,
+        query: trimmed,
+        showHidden,
+        includeContent: searchIncludeContent,
+        limit: 250,
+      });
+      if (searchRequestIdRef.current === requestId) {
+        setSearchResults(results);
+      }
+    } catch (searchError) {
+      if (searchRequestIdRef.current === requestId) {
+        setSearchResults([]);
+        setError(`Search failed: ${searchError}`);
+      }
+    } finally {
+      if (searchRequestIdRef.current === requestId) {
+        setSearchLoading(false);
+      }
+    }
+  }, [currentPath, searchIncludeContent, showHidden]);
+
   const refresh = useCallback(async () => {
     if (!currentPath) return;
     setLoading(true);
     try { setEntries(await invoke<FileEntry[]>('fs_list_dir', { path: currentPath, showHidden })); }
     catch (e) { setError(String(e)); }
     finally { setLoading(false); }
-  }, [currentPath, showHidden]);
+    if (search.trim()) {
+      const requestId = ++searchRequestIdRef.current;
+      void runSearch(search, requestId);
+    }
+  }, [currentPath, showHidden, search, runSearch]);
 
   useEffect(() => { refresh(); }, [showHidden]);
+
+  useEffect(() => {
+    if (addressEditing) {
+      return;
+    }
+    setAddressDraft(search.trim() ? search : currentPath);
+  }, [addressEditing, currentPath, search]);
+
+  useEffect(() => {
+    if (!addressEditing) return;
+    const timer = window.setTimeout(() => {
+      addressInputRef.current?.focus();
+      addressInputRef.current?.select();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [addressEditing]);
+
+  useEffect(() => {
+    const trimmed = search.trim();
+    if (!trimmed) {
+      searchRequestIdRef.current += 1;
+      setSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+
+    const requestId = ++searchRequestIdRef.current;
+    setSearchResults([]);
+    setSearchLoading(true);
+    const timer = window.setTimeout(() => {
+      void runSearch(trimmed, requestId);
+    }, 220);
+
+    return () => {
+      window.clearTimeout(timer);
+      if (searchRequestIdRef.current === requestId) {
+        setSearchLoading(false);
+      }
+    };
+  }, [search, runSearch]);
 
   const goBack    = () => { if (historyIdx > 0) { setHistoryIdx(i=>i-1); navigate(history[historyIdx-1], false); } };
   const goForward = () => { if (historyIdx < history.length-1) { setHistoryIdx(i=>i+1); navigate(history[historyIdx+1], false); } };
@@ -659,15 +785,47 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     if (parts.length > 1) { parts.pop(); const p = parts.join(sep); navigate(p.endsWith(':') ? p+'\\' : p || sep); }
   };
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return entries;
-    const q = search.toLowerCase();
-    return entries.filter(e => e.name.toLowerCase().includes(q));
-  }, [entries, search]);
+  const beginAddressEdit = useCallback(() => {
+    setAddressDraft(search.trim() ? search : currentPath);
+    setAddressEditing(true);
+  }, [currentPath, search]);
+
+  const clearSearch = useCallback(() => {
+    searchRequestIdRef.current += 1;
+    setSearch('');
+    setSearchResults([]);
+    setSearchLoading(false);
+  }, []);
+
+  const submitAddressDraft = useCallback(async (rawValue: string) => {
+    const trimmed = rawValue.trim();
+    setAddressEditing(false);
+
+    if (!trimmed) {
+      setAddressDraft(search.trim() ? search : currentPath);
+      return;
+    }
+
+    if (isLikelyExplorerPathInput(trimmed)) {
+      const resolvedPath = resolveExplorerPathInput(trimmed, currentPath, runtimePlatform);
+      setAddressDraft(resolvedPath);
+      await navigate(resolvedPath);
+      return;
+    }
+
+    setAddressDraft(trimmed);
+    setSearch(trimmed);
+  }, [currentPath, navigate, runtimePlatform, search]);
+
+  const isSearchActive = search.trim().length > 0;
+  const visibleEntries = useMemo(
+    () => (isSearchActive ? searchResults : entries),
+    [isSearchActive, searchResults, entries],
+  );
 
   const selectedEntries = useMemo(
-    () => entries.filter(entry => selected.has(entry.path)),
-    [entries, selected],
+    () => visibleEntries.filter(entry => selected.has(entry.path)),
+    [visibleEntries, selected],
   );
 
   const resolveEntriesForAction = useCallback((entry?: FileEntry) => {
@@ -683,6 +841,10 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     if (entriesForAction.length === 0) return;
     setClipboard({ action, entries: entriesForAction });
   }, [resolveEntriesForAction]);
+
+  const openAsAdmin = useCallback(async (path: string) => {
+    await invoke('fs_open_as_admin', { path }).catch(e => setError(String(e)));
+  }, []);
 
   const transferIntoDirectory = useCallback(async (
     targetDir: string,
@@ -973,7 +1135,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     const isBookmarked = bookmarks.some(b => b.path === entry.path);
     return [
       { label:'Open',               icon:<ExternalLink size={13}/>, action:() => openEntry(entry) },
-      ...(!entry.is_dir && EXEC_EXTS.has(entry.extension) ? [{ label:'Run as Administrator', icon:<Shield size={13}/>, action:() => invoke('fs_open_as_admin', { path:entry.path }).catch(e=>setError(String(e))) }] : []),
+      { label: entry.is_dir ? 'Open Folder as Admin' : 'Open as Admin', icon:<Shield size={13}/>, action:() => openAsAdmin(entry.path) },
       ...(entry.is_dir ? [{ label:'Open in Terminal', icon:<Terminal size={13}/>, action:() => onOpenInTerminal(entry.path) }] : []),
       { label:'Reveal in Explorer', icon:<Eye size={13}/>,          action:() => invoke('fs_reveal_in_explorer', { path:entry.path }).catch(e=>setError(String(e))) },
       { label:'Copy Path',          icon:<Copy size={13}/>,         action:() => copyToSysClipboard(entry.path) },
@@ -990,16 +1152,17 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
       { label: '', icon:null, divider:true, action:()=>{} },
       { label:'Delete', icon:<Trash2 size={13}/>, danger:true, action:() => setDeleteTarget(entry) },
     ];
-  }, [bookmarks, openEntry, duplicate, onOpenInTerminal, onAddBookmark, paste, queueClipboard]);
+  }, [bookmarks, openAsAdmin, openEntry, duplicate, onOpenInTerminal, onAddBookmark, paste, queueClipboard]);
 
   const buildEmptyCtxItems = useCallback((): CtxItem[] => {
     return [
       { label:'New Folder', icon:<FolderPlus size={13}/>, action:() => openNew('folder') },
       { label:'New File...', icon:<FilePlus size={13}/>, action:() => openNew('file') },
+      { label:'Open Folder as Admin', icon:<Shield size={13}/>, action:() => openAsAdmin(currentPath) },
       ...(clipboard ? [{ label:'Paste', icon:<Clipboard size={13}/>, action:() => paste() }] : []),
       { label:'Refresh', icon:<RefreshCw size={13}/>, action:() => refresh() },
     ];
-  }, [clipboard, paste, refresh]);
+  }, [clipboard, currentPath, openAsAdmin, paste, refresh]);
 
   // ── Right-click ──
   const onRightClick = (e: React.MouseEvent, entry: FileEntry) => {
@@ -1014,10 +1177,14 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     e.stopPropagation();
     const plainClick = !e.shiftKey && !e.ctrlKey && !e.metaKey;
     if (e.shiftKey && lastSelected.current) {
-      const idx1 = filtered.findIndex(f => f.path === lastSelected.current);
-      const idx2 = filtered.findIndex(f => f.path === entry.path);
-      const [lo, hi] = idx1 < idx2 ? [idx1, idx2] : [idx2, idx1];
-      setSelected(new Set(filtered.slice(lo, hi + 1).map(f => f.path)));
+      const idx1 = visibleEntries.findIndex(f => f.path === lastSelected.current);
+      const idx2 = visibleEntries.findIndex(f => f.path === entry.path);
+      if (idx1 >= 0 && idx2 >= 0) {
+        const [lo, hi] = idx1 < idx2 ? [idx1, idx2] : [idx2, idx1];
+        setSelected(new Set(visibleEntries.slice(lo, hi + 1).map(f => f.path)));
+      } else {
+        setSelected(new Set([entry.path]));
+      }
     } else if (e.ctrlKey || e.metaKey) {
       setSelected(prev => {
         const next = new Set(prev);
@@ -1036,21 +1203,31 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   // ── Keyboard ──
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (rename.active || newItem.visible) return;
+      if (rename.active || newItem.visible || addressEditing) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
+        e.preventDefault();
+        beginAddressEdit();
+        return;
+      }
+      if (e.altKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        beginAddressEdit();
+        return;
+      }
       if (e.key === 'Backspace' && document.activeElement === mainRef.current) goUp();
       if (e.key === 'F5') refresh();
       if (e.key === 'F2' && selected.size === 1) {
-        const entry = entries.find(en => selected.has(en.path));
+        const entry = visibleEntries.find(en => selected.has(en.path));
         if (entry) setRename({ active:true, path:entry.path, name:entry.name });
       }
       if (e.key === 'Escape') { setClipboard(null); setNewItem({ visible:false, kind:'folder' }); }
       if (e.key === 'Delete' && selected.size > 0) {
-        const first = entries.find(en => selected.has(en.path));
+        const first = visibleEntries.find(en => selected.has(en.path));
         if (first) setDeleteTarget(first);
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
         e.preventDefault();
-        setSelected(new Set(filtered.map(f => f.path)));
+        setSelected(new Set(visibleEntries.map(f => f.path)));
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
         queueClipboard('copy');
@@ -1062,7 +1239,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [rename.active, newItem.visible, selected, entries, filtered, paste, refresh, queueClipboard]);
+  }, [addressEditing, beginAddressEdit, newItem.visible, paste, queueClipboard, refresh, rename.active, selected, visibleEntries]);
 
   // ── Breadcrumbs ──
   const crumbs: { label:string; path:string }[] = [];
@@ -1101,7 +1278,15 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     const dragEntries = resolveEntriesForAction(entry);
     e.dataTransfer.setData('text/plain', dragEntries[0]?.path ?? entry.path);
     e.dataTransfer.setData('application/x-overlayterm-paths', JSON.stringify(dragEntries.map(item => item.path)));
-    e.dataTransfer.effectAllowed = 'move';
+    const toFileUri = (value: string) => {
+      const normalized = value.replace(/\\/g, '/');
+      return normalized.startsWith('/')
+        ? `file://${encodeURI(normalized)}`
+        : `file:///${encodeURI(normalized)}`;
+    };
+    const uriList = dragEntries.map(item => toFileUri(item.path)).join('\r\n');
+    e.dataTransfer.setData('text/uri-list', uriList);
+    e.dataTransfer.effectAllowed = 'copyMove';
   };
 
   const onDragOver = (e: React.DragEvent, targetPath: string) => {
@@ -1136,9 +1321,54 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     () => editorTabs.find(tab => tab.path === activeEditorPath) ?? null,
     [editorTabs, activeEditorPath],
   );
-  const effectiveViewMode = isCompactDock ? 'list' : viewMode;
+  const effectiveViewMode = isCompactDock || isSearchActive ? 'list' : viewMode;
   const showEditorPane = !isCompactDock && editorTabs.length > 0;
   const hasPreview = !isCompactDock && !showEditorPane && preview.type !== 'none';
+  const searchModeLabel = searchIncludeContent ? 'Recursive search + text' : 'Recursive search (names only)';
+
+  const renderSearchMetadata = (entry: FileEntry) => {
+    if (!isSearchActive) return null;
+    const searchEntry = entry as FileSearchResult;
+    const matchLabel = searchEntry.match_kind === 'name_and_content'
+      ? 'Name + content'
+      : searchEntry.match_kind === 'content'
+        ? 'Content match'
+        : 'Name match';
+
+    return (
+      <div style={{ display:'flex', flexDirection:'column', gap:2, marginTop:4, minWidth:0 }}>
+        <div style={{ fontSize:9, color:EXP.muted2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+          {searchEntry.relative_path || searchEntry.path}
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:6, minWidth:0 }}>
+          {searchEntry.line_number != null && (
+            <span style={{ fontSize:9, color:accent, fontFamily:'monospace', flexShrink:0 }}>L{searchEntry.line_number}</span>
+          )}
+          {searchEntry.snippet && (
+            <span style={{ fontSize:9, color:EXP.text, opacity:0.88, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+              {searchEntry.snippet}
+            </span>
+          )}
+        </div>
+        <div style={{ fontSize:9, color:EXP.muted, letterSpacing:'0.03em', textTransform:'uppercase' }}>
+          {matchLabel}
+        </div>
+      </div>
+    );
+  };
+
+  const getSearchTooltip = (entry: FileEntry) => {
+    if (!isSearchActive) return undefined;
+    const searchEntry = entry as FileSearchResult;
+    const parts = [searchEntry.relative_path || searchEntry.path];
+    if (searchEntry.line_number != null) {
+      parts.push(`Line ${searchEntry.line_number}`);
+    }
+    if (searchEntry.snippet) {
+      parts.push(searchEntry.snippet);
+    }
+    return parts.join('\n');
+  };
 
   return (
     <div
@@ -1251,23 +1481,151 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
             >{btn.icon}</button>
           ))}
 
-          {/* Breadcrumb */}
-          <div style={{ flex:1, display:'flex', alignItems:'center', gap:2, background:EXP.bg, borderRadius:6, border:`1px solid ${EXP.border}`, padding:'3px 10px', overflow:'hidden' }}>
-            {crumbs.map((c, i) => (
-              <React.Fragment key={c.path}>
-                {i>0 && <ChevronRight size={10} style={{ color:EXP.muted2, flexShrink:0 }} />}
-                <button onClick={() => navigate(c.path)} style={{ background:'none', border:'none', cursor:'pointer', color: i===crumbs.length-1?EXP.text:EXP.muted, fontSize:11, fontWeight: i===crumbs.length-1?600:400, padding:'0 2px', whiteSpace:'nowrap' }}>{c.label}</button>
-              </React.Fragment>
-            ))}
+          {/* Omnibox */}
+          <div
+            onClick={() => {
+              if (!addressEditing) {
+                beginAddressEdit();
+              }
+            }}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: EXP.bg,
+              borderRadius: 6,
+              border: `1px solid ${EXP.border}`,
+              padding: '3px 10px',
+              overflow: 'hidden',
+              cursor: addressEditing ? 'text' : 'pointer',
+              minWidth: 0,
+            }}
+          >
+            {addressEditing ? (
+              <input
+                ref={addressInputRef}
+                value={addressDraft}
+                onChange={e => setAddressDraft(e.target.value)}
+                onBlur={() => { void submitAddressDraft(addressDraft); }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void submitAddressDraft(addressDraft);
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setAddressEditing(false);
+                    setAddressDraft(search.trim() ? search : currentPath);
+                  }
+                }}
+                placeholder="Search or enter path…"
+                style={{
+                  flex: 1,
+                  background: 'none',
+                  border: 'none',
+                  outline: 'none',
+                  color: EXP.text,
+                  fontSize: 11,
+                  minWidth: 0,
+                }}
+              />
+            ) : (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flex: 1, overflow: 'hidden' }}>
+                  {crumbs.length > 0 ? (
+                    crumbs.map((c, i) => (
+                      <React.Fragment key={c.path}>
+                        {i > 0 && <ChevronRight size={10} style={{ color: EXP.muted2, flexShrink: 0 }} />}
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            navigate(c.path);
+                          }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            color: i === crumbs.length - 1 ? EXP.text : EXP.muted,
+                            fontSize: 11,
+                            fontWeight: i === crumbs.length - 1 ? 600 : 400,
+                            padding: '0 2px',
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {c.label}
+                        </button>
+                      </React.Fragment>
+                    ))
+                  ) : (
+                    <span style={{ fontSize: 11, color: EXP.muted, whiteSpace: 'nowrap' }}>Search or enter a path</span>
+                  )}
+                </div>
+                {isSearchActive && (
+                  <>
+                    <div style={{ width: 1, height: 14, background: EXP.border, flexShrink: 0 }} />
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        maxWidth: isCompactDock ? 140 : 260,
+                        padding: '2px 8px',
+                        borderRadius: 999,
+                        border: `1px solid ${EXP.border}`,
+                        background: `${accent}12`,
+                        color: EXP.text,
+                        fontSize: 10,
+                        flexShrink: 0,
+                        minWidth: 0,
+                      }}
+                    >
+                      {searchLoading && <Loader size={10} style={{ color: EXP.muted2, animation: 'spin 1s linear infinite', flexShrink: 0 }} />}
+                      <Search size={10} style={{ color: EXP.muted2, flexShrink: 0 }} />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                        {search.trim()}
+                      </span>
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          clearSearch();
+                        }}
+                        title="Clear search"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: EXP.muted2, padding: 0, display: 'flex', flexShrink: 0 }}
+                      >
+                        <X size={10} />
+                      </button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
           </div>
 
-          {/* Search */}
-          <div style={{ display:'flex', alignItems:'center', gap:6, background:EXP.bg, border:`1px solid ${EXP.border}`, borderRadius:6, padding:'3px 8px', width:isCompactDock ? 132 : 180 }}>
-            <Search size={12} style={{ color:EXP.muted2 }} />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search files…"
-              style={{ background:'none', border:'none', outline:'none', color:EXP.text, fontSize:11, width:'100%' }} />
-            {search && <button onClick={() => setSearch('')} style={{ background:'none', border:'none', cursor:'pointer', color:EXP.muted2, padding:0, display:'flex' }}><X size={10}/></button>}
-          </div>
+          {/* Include text */}
+          <button
+            onClick={() => setSearchIncludeContent(v => !v)}
+            title={searchIncludeContent ? 'Include file text in search (on)' : 'Include file text in search (off)'}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              background: searchIncludeContent ? `${accent}22` : 'none',
+              border: `1px solid ${searchIncludeContent ? `${accent}66` : EXP.border}`,
+              cursor: 'pointer',
+              color: searchIncludeContent ? accent : EXP.muted,
+              padding: '4px 8px',
+              borderRadius: 6,
+              fontSize: 11,
+              flexShrink: 0,
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = searchIncludeContent ? `${accent}28` : 'rgba(255,255,255,0.06)')}
+            onMouseLeave={e => (e.currentTarget.style.background = searchIncludeContent ? `${accent}22` : 'transparent')}
+          >
+            <span style={{ fontWeight: 700, letterSpacing: '0.02em' }}>Aa</span>
+            <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Text</span>
+          </button>
 
           {/* Toolbar buttons */}
           {!isCompactDock && (
@@ -1367,9 +1725,16 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
               </div>
             )}
 
-            {!loading && filtered.length === 0 && (
+            {!loading && searchLoading && isSearchActive && (
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:120, gap:10, color:EXP.muted }}>
+                <Loader size={16} style={{ animation:'spin 1s linear infinite' }} />
+                <span style={{ fontSize:12 }}>Searching recursively…</span>
+              </div>
+            )}
+
+            {!loading && !searchLoading && visibleEntries.length === 0 && (
               <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:120, color:EXP.muted, fontSize:12 }}>
-                {search ? `No files matching "${search}"` : 'Empty folder'}
+                {isSearchActive ? `No results for "${search.trim()}"` : 'Empty folder'}
               </div>
             )}
 
@@ -1390,7 +1755,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
 
             {!loading && effectiveViewMode === 'grid' && (
               <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(100px,1fr))', gap:6 }}>
-                {filtered.map(entry => {
+                {visibleEntries.map(entry => {
                   const isSel = selected.has(entry.path);
                   const isDrop = dragOver === entry.path && entry.is_dir;
                   const isRenaming = rename.active && rename.path === entry.path;
@@ -1401,6 +1766,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                   return (
                     <div key={entry.path}
                       draggable
+                      data-overlay-drag-source="file"
                       onDragStart={e => onDragStart(e, entry)}
                       onDragOver={entry.is_dir ? e => onDragOver(e, entry.path) : undefined}
                       onDragLeave={() => setDragOver(null)}
@@ -1408,6 +1774,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                       onClick={e => onEntryClick(e, entry)}
                       onDoubleClick={() => openEntry(entry)}
                       onContextMenu={e => onRightClick(e, entry)}
+                      title={getSearchTooltip(entry)}
                       style={{
                         background: isDrop ? `${accent}33` : isSel ? EXP.selected : EXP.card,
                         border:`1px solid ${isDrop ? accent : isSel ? EXP.selBord : EXP.border}`,
@@ -1418,17 +1785,18 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                       }}
                       onMouseEnter={e => { if(!isSel && !isDrop)(e.currentTarget as HTMLDivElement).style.background=EXP.cardHov; }}
                       onMouseLeave={e => { if(!isSel && !isDrop)(e.currentTarget as HTMLDivElement).style.background=EXP.card; }}
-                    >
-                      <div style={{ width:48, height:48, display:'flex', alignItems:'center', justifyContent:'center', borderRadius:6, overflow:'hidden', flexShrink:0 }}>
-                        <SvgIcon src={iconSrc} size={36} />
+                      >
+                        <div style={{ width:48, height:48, display:'flex', alignItems:'center', justifyContent:'center', borderRadius:6, overflow:'hidden', flexShrink:0 }}>
+                          <SvgIcon src={iconSrc} size={36} />
+                        </div>
+                        {isRenaming
+                          ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active:false, path:'', name:'' })} />
+                          : <span style={{ fontSize:10, textAlign:'center', color:EXP.text, overflow:'hidden', textOverflow:'ellipsis', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', width:'100%', lineHeight:1.3 }}>{entry.name}</span>
+                        }
+                        {renderSearchMetadata(entry)}
                       </div>
-                      {isRenaming
-                        ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active:false, path:'', name:'' })} />
-                        : <span style={{ fontSize:10, textAlign:'center', color:EXP.text, overflow:'hidden', textOverflow:'ellipsis', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', width:'100%', lineHeight:1.3 }}>{entry.name}</span>
-                      }
-                    </div>
-                  );
-                })}
+                    );
+                  })}
               </div>
             )}
 
@@ -1462,7 +1830,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(entry => {
+                  {visibleEntries.map(entry => {
                     const isSel = selected.has(entry.path);
                     const isDrop = dragOver === entry.path && entry.is_dir;
                     const isRenaming = rename.active && rename.path === entry.path;
@@ -1471,8 +1839,9 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                       defaultIcon: explorerSettings.defaultFolderIcon,
                     });
                     return (
-                      <tr key={entry.path}
+                    <tr key={entry.path}
                         draggable
+                        data-overlay-drag-source="file"
                         onDragStart={e => onDragStart(e, entry)}
                         onDragOver={entry.is_dir ? e => onDragOver(e, entry.path) : undefined}
                         onDragLeave={() => setDragOver(null)}
@@ -1480,6 +1849,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                         onClick={e => onEntryClick(e, entry)}
                         onDoubleClick={() => openEntry(entry)}
                         onContextMenu={e => onRightClick(e, entry)}
+                        title={getSearchTooltip(entry)}
                         style={{ background:isDrop?`${accent}22`:isSel?EXP.selected:'transparent', cursor:'pointer', opacity:entry.is_hidden?0.5:1, userSelect:'none', borderBottom:`1px solid ${EXP.border}` }}
                         onMouseEnter={e => { if(!isSel && !isDrop)(e.currentTarget as HTMLTableRowElement).style.background=EXP.cardHov; }}
                         onMouseLeave={e => { if(!isSel && !isDrop)(e.currentTarget as HTMLTableRowElement).style.background='transparent'; }}
@@ -1493,6 +1863,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                             }
                             {entry.is_symlink && <span style={{ fontSize:9, color:EXP.muted, background:'rgba(255,255,255,0.06)', borderRadius:3, padding:'1px 4px' }}>symlink</span>}
                           </div>
+                          {renderSearchMetadata(entry)}
                         </td>
                         <td style={{ padding:'4px 12px', color:EXP.muted, fontFamily:'monospace', whiteSpace:'nowrap' }}>{entry.is_dir ? '—' : formatSize(entry.size)}</td>
                         <td style={{ padding:'4px 12px', color:EXP.muted, whiteSpace:'nowrap' }}>{formatDate(entry.modified)}</td>
@@ -1520,9 +1891,9 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
 
         {/* Status bar */}
         <div style={{ display:'flex', alignItems:'center', gap:12, padding:'3px 12px', background:EXP.sidebar, borderTop:`1px solid ${EXP.border}`, fontSize:10, color:EXP.muted, flexShrink:0 }}>
-          <span>{filtered.length} item{filtered.length!==1?'s':''}</span>
+          <span>{visibleEntries.length} item{visibleEntries.length!==1?'s':''}</span>
           {selected.size > 0 && <span style={{ color:accent }}>{selected.size} selected</span>}
-          {search && <span>Filter: "<span style={{ color:EXP.text }}>{search}</span>"</span>}
+          {search && <span>{searchModeLabel}: "<span style={{ color:EXP.text }}>{search}</span>"</span>}
           <div style={{ flex:1 }} />
           {clipboard && (
             <span style={{ color:EXP.muted2 }}>

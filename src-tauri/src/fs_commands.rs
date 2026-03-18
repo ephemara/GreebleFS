@@ -42,6 +42,30 @@ pub struct FileTransferResult {
     pub operation: FileTransferOperation,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FileSearchMatchKind {
+    Name,
+    Content,
+    NameAndContent,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FileSearchResult {
+    pub name: String,
+    pub path: String,
+    pub relative_path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub modified: u64,
+    pub extension: String,
+    pub is_hidden: bool,
+    pub is_symlink: bool,
+    pub match_kind: FileSearchMatchKind,
+    pub snippet: String,
+    pub line_number: Option<u64>,
+}
+
 // ─── fs_list_dir ─────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -318,7 +342,7 @@ fn deduplicate_drives(drives: Vec<DriveInfo>) -> Vec<DriveInfo> {
     unique
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn shell_quote_single(value: &str) -> String {
     format!("'{}'", value.replace('\'', r#"'\''"#))
 }
@@ -333,6 +357,267 @@ fn normalized_extension(path: &Path) -> String {
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase()
+}
+
+fn is_hidden_name(name: &str) -> bool {
+    name.starts_with('.')
+}
+
+fn is_hidden_entry(entry: &std::fs::DirEntry, name: &str) -> bool {
+    let is_hidden = is_hidden_name(name);
+
+    #[cfg(target_os = "windows")]
+    let is_hidden = is_hidden || {
+        use std::os::windows::fs::MetadataExt;
+        entry
+            .metadata()
+            .map(|metadata| metadata.file_attributes() & 0x2 != 0)
+            .unwrap_or(false)
+    };
+
+    is_hidden
+}
+
+fn is_searchable_text_file(path: &Path) -> bool {
+    const EXTENSIONS: &[&str] = &[
+        "txt", "md", "mdx", "log", "json", "yaml", "yml", "toml", "xml", "ini", "cfg", "csv",
+        "ts", "tsx", "js", "jsx", "mjs", "cjs", "rs", "py", "go", "c", "h", "cpp", "hpp", "cc",
+        "cxx", "cs", "java", "kt", "kts", "rb", "php", "swift", "dart", "lua", "zig", "html",
+        "htm", "css", "scss", "sass", "less", "sh", "bash", "zsh", "ps1", "bat", "cmd", "env",
+        "glsl", "hlsl", "wgsl", "sql", "kain", "ink",
+    ];
+
+    let ext = normalized_extension(path);
+    if EXTENSIONS.contains(&ext.as_str()) {
+        return true;
+    }
+
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    matches!(
+        name.as_str(),
+        "dockerfile"
+            | "makefile"
+            | "readme"
+            | "license"
+            | "changelog"
+            | ".gitignore"
+            | ".gitattributes"
+            | ".env"
+            | ".env.local"
+            | ".env.development"
+            | ".env.production"
+    )
+}
+
+fn build_search_snippet(line: &str, query_lower: &str) -> String {
+    let normalized = line.trim().replace('\t', " ");
+    if normalized.is_empty() {
+        return String::new();
+    }
+
+    let lower = normalized.to_ascii_lowercase();
+    if let Some(pos) = lower.find(query_lower) {
+        let mut start = pos.saturating_sub(40);
+        let mut end = (pos + query_lower.len() + 80).min(normalized.len());
+
+        while start > 0 && !normalized.is_char_boundary(start) {
+            start -= 1;
+        }
+        while end < normalized.len() && !normalized.is_char_boundary(end) {
+            end += 1;
+        }
+
+        let mut snippet = normalized[start..end].trim().to_string();
+        if start > 0 {
+            snippet = format!("…{}", snippet);
+        }
+        if end < normalized.len() {
+            snippet.push('…');
+        }
+        return snippet;
+    }
+
+    let mut snippet: String = normalized.chars().take(180).collect();
+    if normalized.chars().count() > 180 {
+        snippet.push('…');
+    }
+    snippet
+}
+
+#[tauri::command]
+pub async fn fs_search_entries(
+    path: String,
+    query: String,
+    show_hidden: bool,
+    include_content: bool,
+    limit: Option<usize>,
+) -> Result<Vec<FileSearchResult>, String> {
+    let root = PathBuf::from(&path);
+    if !root.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+    if !root.is_dir() {
+        return Err(format!("Path is not a directory: {}", path));
+    }
+
+    let query = query.trim().to_string();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let query_lower = query.to_ascii_lowercase();
+    let max_results = limit.unwrap_or(250).clamp(1, 1000);
+    const MAX_CONTENT_BYTES: u64 = 8 * 1024 * 1024;
+
+    let mut stack = vec![root.clone()];
+    let mut combined_matches: Vec<FileSearchResult> = Vec::new();
+    let mut content_matches: Vec<FileSearchResult> = Vec::new();
+    let mut name_matches: Vec<FileSearchResult> = Vec::new();
+
+    while let Some(current_dir) = stack.pop() {
+        let read_dir = match std::fs::read_dir(&current_dir) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+
+        for entry_result in read_dir {
+            let entry = match entry_result {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+
+            let name = entry.file_name().to_string_lossy().to_string();
+            let is_hidden = is_hidden_entry(&entry, &name);
+            if is_hidden && !show_hidden {
+                continue;
+            }
+
+            let meta = match entry.metadata() {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+
+            let path_buf = entry.path();
+            let is_dir = meta.is_dir();
+            let is_symlink = meta.file_type().is_symlink();
+            let modified = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let extension = if is_dir {
+                String::new()
+            } else {
+                normalized_extension(&path_buf)
+            };
+            let relative_path = path_buf
+                .strip_prefix(&root)
+                .map(|relative| relative.to_string_lossy().to_string())
+                .unwrap_or_else(|_| path_buf.to_string_lossy().to_string());
+            let name_hit = name.to_ascii_lowercase().contains(&query_lower);
+
+            if is_dir {
+                if name_hit {
+                    name_matches.push(FileSearchResult {
+                        name,
+                        path: path_buf.to_string_lossy().to_string(),
+                        relative_path,
+                        is_dir,
+                        size: 0,
+                        modified,
+                        extension,
+                        is_hidden,
+                        is_symlink,
+                        match_kind: FileSearchMatchKind::Name,
+                        snippet: String::new(),
+                        line_number: None,
+                    });
+                }
+
+                if !is_symlink {
+                    stack.push(path_buf);
+                }
+                continue;
+            }
+
+            let mut content_hit = false;
+            let mut snippet = String::new();
+            let mut line_number = None;
+
+            if include_content && meta.len() <= MAX_CONTENT_BYTES && is_searchable_text_file(&path_buf) {
+                if let Ok(file) = std::fs::File::open(&path_buf) {
+                    let reader = std::io::BufReader::new(file);
+                    use std::io::BufRead;
+                    for (idx, line_result) in reader.lines().enumerate() {
+                        let line = match line_result {
+                            Ok(value) => value,
+                            Err(_) => break,
+                        };
+                        if line.to_ascii_lowercase().contains(&query_lower) {
+                            content_hit = true;
+                            snippet = build_search_snippet(&line, &query_lower);
+                            line_number = Some((idx + 1) as u64);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if !name_hit && !content_hit {
+                continue;
+            }
+
+            let result = FileSearchResult {
+                name,
+                path: path_buf.to_string_lossy().to_string(),
+                relative_path,
+                is_dir,
+                size: meta.len(),
+                modified,
+                extension,
+                is_hidden,
+                is_symlink,
+                match_kind: match (name_hit, content_hit) {
+                    (true, true) => FileSearchMatchKind::NameAndContent,
+                    (false, true) => FileSearchMatchKind::Content,
+                    _ => FileSearchMatchKind::Name,
+                },
+                snippet,
+                line_number,
+            };
+
+            match result.match_kind {
+                FileSearchMatchKind::NameAndContent => combined_matches.push(result),
+                FileSearchMatchKind::Content => content_matches.push(result),
+                FileSearchMatchKind::Name => name_matches.push(result),
+            }
+        }
+    }
+
+    let mut results = Vec::new();
+    results.extend(combined_matches);
+    results.extend(content_matches);
+    results.extend(name_matches);
+    results.sort_by(|a, b| {
+        let rank = |kind: FileSearchMatchKind| match kind {
+            FileSearchMatchKind::NameAndContent => 0u8,
+            FileSearchMatchKind::Content => 1u8,
+            FileSearchMatchKind::Name => 2u8,
+        };
+
+        rank(a.match_kind)
+            .cmp(&rank(b.match_kind))
+            .then_with(|| a.path.to_ascii_lowercase().cmp(&b.path.to_ascii_lowercase()))
+            .then_with(|| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()))
+    });
+    results.truncate(max_results);
+    Ok(results)
 }
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
@@ -589,8 +874,21 @@ pub async fn fs_open_as_admin(path: String) -> Result<(), String> {
     }
     #[cfg(target_os = "linux")]
     {
+        let display = std::env::var("DISPLAY").unwrap_or_default();
+        let xauthority = std::env::var("XAUTHORITY").unwrap_or_default();
+        let runtime_dir = std::env::var("XDG_RUNTIME_DIR").unwrap_or_default();
+        let command = format!(
+            "DISPLAY={} XAUTHORITY={} XDG_RUNTIME_DIR={} xdg-open {}",
+            shell_quote_single(&display),
+            shell_quote_single(&xauthority),
+            shell_quote_single(&runtime_dir),
+            shell_quote_single(&path)
+        );
+
         std::process::Command::new("pkexec")
-            .arg(&path)
+            .arg("sh")
+            .arg("-lc")
+            .arg(command)
             .spawn()
             .map_err(|e| e.to_string())?;
         return Ok(());
@@ -1344,6 +1642,56 @@ mod tests {
             result.unwrap_err().contains("too large"),
             "wrong error message"
         );
+    }
+
+    #[tokio::test]
+    async fn search_entries_finds_nested_content_matches() {
+        let dir = tmp_dir();
+        let nested = dir.path().join("src").join("deep");
+        fs::create_dir_all(&nested).unwrap();
+        let file_path = nested.join("notes.kain");
+        fs::write(&file_path, "alpha\nbeta search term gamma\nomega").unwrap();
+
+        let result = fs_search_entries(
+            dir.path().to_string_lossy().into(),
+            "search term".to_string(),
+            true,
+            true,
+            Some(50),
+        )
+        .await;
+
+        assert!(result.is_ok(), "search_entries failed: {:?}", result);
+        let results = result.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].path, file_path.to_string_lossy());
+        assert_eq!(results[0].line_number, Some(2));
+        assert!(results[0].snippet.contains("search term"));
+    }
+
+    #[tokio::test]
+    async fn search_entries_can_skip_content_matches() {
+        let dir = tmp_dir();
+        let named = dir.path().join("search-term-note.txt");
+        let content_only = dir.path().join("other-note.txt");
+        fs::write(&named, "no match in body").unwrap();
+        fs::write(&content_only, "alpha\nsearch-term beta\nomega").unwrap();
+
+        let result = fs_search_entries(
+            dir.path().to_string_lossy().into(),
+            "search-term".to_string(),
+            true,
+            false,
+            Some(50),
+        )
+        .await;
+
+        assert!(result.is_ok(), "search_entries failed: {:?}", result);
+        let results = result.unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].path, named.to_string_lossy());
+        assert!(results[0].snippet.is_empty());
+        assert_eq!(results[0].line_number, None);
     }
 
     #[tokio::test]

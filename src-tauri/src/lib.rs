@@ -8,6 +8,7 @@ pub mod window_commands;
 use fs_commands::{
     fs_copy, fs_create_dir, fs_delete, fs_get_drives, fs_get_home_dir, fs_list_dir, fs_move,
     fs_open_as_admin, fs_open_file, fs_read_file_base64, fs_read_text_file, fs_rename,
+    fs_search_entries,
     fs_reveal_in_explorer, fs_transfer_items, fs_write_file, git_exec,
 };
 use plugin_commands::plugin_run_backend;
@@ -131,6 +132,7 @@ pub fn run() {
             fs_create_dir,
             fs_read_file_base64,
             fs_write_file,
+            fs_search_entries,
             git_exec,
             fs_get_home_dir,
             screenshot_capture_preview,

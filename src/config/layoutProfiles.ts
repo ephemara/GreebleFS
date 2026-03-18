@@ -199,7 +199,7 @@ const BUILT_IN_PROFILES: LayoutProfile[] = sortProfiles([
   {
     id: 'navigator-bottom',
     label: 'Navigator Bottom',
-    description: 'Bottom chrome with a locked explorer rail and a focused content stage.',
+    description: 'Classic dock workspace with the chrome bar flipped to the bottom edge.',
     chrome: {
       barPosition: 'bottom',
       showSettingsShortcut: true,
@@ -209,21 +209,14 @@ const BUILT_IN_PROFILES: LayoutProfile[] = sortProfiles([
     },
     controlDock: {
       enabled: true,
-      side: 'left',
+      side: 'right',
       inset: 12,
     },
-    pinnedPanels: [
-      {
-        panelId: 'explorer',
-        side: 'left',
-        size: 360,
-        mode: 'compact-dock',
-      },
-    ],
+    pinnedPanels: [],
     behavior: {
       cycleOrder: 20,
       defaultActivePanelId: 'terminal',
-      enforcedOpenPanelIds: ['explorer', 'terminal', 'git', 'notes', 'plugins'],
+      enforcedOpenPanelIds: ['terminal', 'explorer', 'git', 'notes', 'screenshots', 'plugins'],
     },
   },
 ]);

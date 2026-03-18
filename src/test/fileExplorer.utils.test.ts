@@ -430,3 +430,33 @@ describe('Windows path breadcrumb parsing', () => {
     expect(crumbs[crumbs.length - 1].label).toBe('src');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Address bar heuristics', () => {
+  function isLikelyExplorerPathInput(value: string): boolean {
+    const trimmed = value.trim();
+    if (!trimmed) return false;
+    if (/^[A-Za-z]:[\\/]/.test(trimmed) || /^[A-Za-z]:$/.test(trimmed)) return true;
+    if (trimmed.startsWith('\\\\')) return true;
+    if (trimmed.startsWith('~')) return true;
+    if (/^[.]{1,2}[\\/]/.test(trimmed) || trimmed === '.' || trimmed === '..') return true;
+    return /[\\/]/.test(trimmed);
+  }
+
+  it('treats drive paths as navigation candidates', () => {
+    expect(isLikelyExplorerPathInput('M:\\OverlayTerm')).toBe(true);
+    expect(isLikelyExplorerPathInput('M:')).toBe(true);
+  });
+
+  it('treats relative path syntax as navigation candidates', () => {
+    expect(isLikelyExplorerPathInput('.\\src')).toBe(true);
+    expect(isLikelyExplorerPathInput('..\\..\\packages')).toBe(true);
+    expect(isLikelyExplorerPathInput('folder/subfolder')).toBe(true);
+  });
+
+  it('keeps plain words available for search', () => {
+    expect(isLikelyExplorerPathInput('openai')).toBe(false);
+    expect(isLikelyExplorerPathInput('   search term   ')).toBe(false);
+  });
+});

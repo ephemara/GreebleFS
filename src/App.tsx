@@ -170,6 +170,7 @@ function App() {
   const pluginSignatureRef = useRef('');
   const hasInitializedPanelLayoutRef = useRef(false);
   const lastAppliedLayoutProfileIdRef = useRef<string | null>(null);
+  const dragHideRestoreRef = useRef(false);
   const refreshFolderPluginsRef = useRef<(force?: boolean) => Promise<void>>(async () => undefined);
   const [openPanelIds, setOpenPanelIds] = useState<string[]>([]);
   const [layoutManifest, setLayoutManifest] = useState(BUILT_IN_LAYOUT_MANIFEST);
@@ -388,6 +389,47 @@ function App() {
       }
     }, appAnimationDurationMs);
   }, [appAnimationDurationMs, appCloseAnimation, clearAnimationClock, markOverlayRuntimePhase]);
+
+  const hideOverlayForDrag = useCallback(async () => {
+    const currentPhase = overlayPhaseRef.current;
+    if (currentPhase !== 'open') {
+      return;
+    }
+
+    dragHideRestoreRef.current = true;
+    clearAnimationClock();
+    markOverlayRuntimePhase('closed', false);
+    setOverlayPhase('closed');
+    try {
+      await getCurrentWindow().hide();
+    } catch {
+      // Ignore hide failures during drag teardown.
+    }
+  }, [clearAnimationClock, markOverlayRuntimePhase]);
+
+  const restoreOverlayAfterDrag = useCallback(() => {
+    if (!dragHideRestoreRef.current) {
+      return;
+    }
+    dragHideRestoreRef.current = false;
+    void positionAndShow();
+  }, [positionAndShow]);
+
+  const handleDragStartCapture = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    const source = (event.target as HTMLElement | null)?.closest('[data-overlay-drag-source="file"]');
+    if (!source) {
+      return;
+    }
+    void hideOverlayForDrag();
+  }, [hideOverlayForDrag]);
+
+  const handleDragEndCapture = useCallback(() => {
+    restoreOverlayAfterDrag();
+  }, [restoreOverlayAfterDrag]);
+
+  const handleDropCapture = useCallback(() => {
+    restoreOverlayAfterDrag();
+  }, [restoreOverlayAfterDrag]);
 
   const toggle = useCallback(() => {
     const now = Date.now();
@@ -821,6 +863,9 @@ function App() {
         ...(resolvedAppearance.cssVars as CSSProperties),
         backgroundColor: 'transparent',
       }}
+      onDragStartCapture={handleDragStartCapture}
+      onDragEndCapture={handleDragEndCapture}
+      onDropCapture={handleDropCapture}
     >
       <div
         className="absolute left-0 bottom-0"
