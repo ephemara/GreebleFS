@@ -724,3 +724,195 @@ pub async fn terminal_open_external(request: ExternalTerminalRequest) -> Result<
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+    use std::sync::{LazyLock, Mutex};
+    use tempfile::tempdir;
+
+    static ENV_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+    #[test]
+    fn command_exists_rejects_empty_input() {
+        assert!(!command_exists(""));
+        assert!(!command_exists("   "));
+    }
+
+    #[test]
+    fn command_exists_accepts_existing_absolute_path() {
+        let temp = tempdir().expect("tempdir");
+        let file = temp.path().join("tool.exe");
+        std::fs::write(&file, "binary").expect("write fake executable");
+        assert!(command_exists(file.to_str().expect("utf8 path")));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn command_exists_uses_path_and_pathext_lookup() {
+        let _guard = ENV_TEST_LOCK.lock().expect("env lock");
+        let temp = tempdir().expect("tempdir");
+        let tool = temp.path().join("overlay-test-tool.cmd");
+        std::fs::write(&tool, "@echo off\r\necho ok\r\n").expect("write tool");
+
+        let original_path = std::env::var_os("PATH");
+        let original_pathext = std::env::var_os("PATHEXT");
+        std::env::set_var("PATH", temp.path());
+        std::env::set_var("PATHEXT", ".CMD;.EXE");
+
+        assert!(command_exists("overlay-test-tool"));
+        assert!(command_exists("overlay-test-tool.cmd"));
+        assert!(!command_exists("overlay-test-tool-missing"));
+
+        if let Some(path) = original_path {
+            std::env::set_var("PATH", path);
+        } else {
+            std::env::remove_var("PATH");
+        }
+        if let Some(path_ext) = original_pathext {
+            std::env::set_var("PATHEXT", path_ext);
+        } else {
+            std::env::remove_var("PATHEXT");
+        }
+    }
+
+    #[test]
+    fn resolve_working_dir_accepts_existing_directories() {
+        let dir = tempfile::tempdir().expect("tempdir should be created");
+        let path_with_forward_slashes = dir.path().to_string_lossy().replace('\\', "/");
+
+        let resolved = resolve_working_dir(&path_with_forward_slashes)
+            .expect("existing directory should resolve");
+
+        assert_eq!(resolved, dir.path());
+    }
+
+    #[test]
+    fn resolve_working_dir_rejects_missing_directories() {
+        let missing = std::env::temp_dir().join(format!(
+            "overlayterm-missing-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock should be monotonic")
+                .as_nanos(),
+        ));
+
+        let error = resolve_working_dir(&missing.to_string_lossy())
+            .expect_err("missing directory should fail");
+        assert!(error.contains("Working directory does not exist"));
+    }
+
+    #[test]
+    fn optional_args_defaults_to_empty_vec() {
+        assert!(optional_args(&None).is_empty());
+    }
+
+    #[test]
+    fn optional_args_clones_the_input_vector() {
+        let args = Some(vec!["--flag".to_string(), "value".to_string()]);
+        assert_eq!(
+            optional_args(&args),
+            vec!["--flag".to_string(), "value".to_string()]
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn build_windows_external_command_uses_cmd_profile_defaults() {
+        let working_dir = std::env::temp_dir();
+        let request = ExternalTerminalRequest {
+            working_dir: working_dir.to_string_lossy().to_string(),
+            profile: Some("cmd".to_string()),
+            executable: None,
+            args: None,
+            shell: None,
+        };
+
+        let command = build_windows_external_command(&request, &working_dir)
+            .expect("cmd profile should build");
+
+        assert_eq!(command.get_program(), OsStr::new("cmd.exe"));
+        let args: Vec<_> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect();
+        assert_eq!(args, vec!["/K".to_string()]);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn build_windows_external_command_keeps_custom_executable_and_args() {
+        let working_dir = std::env::temp_dir();
+        let request = ExternalTerminalRequest {
+            working_dir: working_dir.to_string_lossy().to_string(),
+            profile: Some("custom".to_string()),
+            executable: Some("C:\\Tools\\launcher.exe".to_string()),
+            args: Some(vec!["--alpha".to_string(), "beta".to_string()]),
+            shell: Some("ignored.exe".to_string()),
+        };
+
+        let command = build_windows_external_command(&request, &working_dir)
+            .expect("custom profile should build");
+
+        assert_eq!(command.get_program(), OsStr::new("C:\\Tools\\launcher.exe"));
+        let args: Vec<_> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect();
+        assert_eq!(args, vec!["--alpha".to_string(), "beta".to_string()]);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_command_builder_rejects_invalid_profiles() {
+        let temp = tempdir().expect("tempdir");
+        let request = ExternalTerminalRequest {
+            working_dir: temp.path().to_string_lossy().to_string(),
+            profile: Some("not-a-profile".to_string()),
+            executable: None,
+            args: None,
+            shell: None,
+        };
+
+        let error = build_windows_external_command(&request, temp.path())
+            .expect_err("invalid profile should fail");
+        assert!(error.contains("Unsupported external terminal profile"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_command_builder_requires_custom_executable() {
+        let temp = tempdir().expect("tempdir");
+        let request = ExternalTerminalRequest {
+            working_dir: temp.path().to_string_lossy().to_string(),
+            profile: Some("custom".to_string()),
+            executable: Some("   ".to_string()),
+            args: Some(vec!["--foo".to_string()]),
+            shell: None,
+        };
+
+        let error = build_windows_external_command(&request, temp.path())
+            .expect_err("custom profile without executable should fail");
+        assert!(error.contains("requires an executable"));
+    }
+
+    #[tokio::test]
+    async fn terminal_open_external_rejects_missing_working_dir() {
+        let temp = tempdir().expect("tempdir");
+        let missing = temp.path().join("definitely-missing-working-dir");
+        let request = ExternalTerminalRequest {
+            working_dir: missing.to_string_lossy().to_string(),
+            profile: Some("auto".to_string()),
+            executable: None,
+            args: None,
+            shell: None,
+        };
+
+        let error = terminal_open_external(request)
+            .await
+            .expect_err("missing working dir should fail");
+        assert!(error.contains("Working directory does not exist"));
+    }
+}

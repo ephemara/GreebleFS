@@ -14,6 +14,7 @@ import {
   type RectSelection,
   type ScreenshotEntryLike,
 } from './screenshotsUtils';
+import { OverlayScrollArea } from './OverlayScrollArea';
 
 type FileEntry = ScreenshotEntryLike & {
   size: number;
@@ -341,7 +342,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
         )}
 
         {mode === 'gallery' && (
-          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 16 }}>
+          <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 16 }}>
             {isLoadingGallery ? (
               <GalleryLoading accent={accent} />
             ) : items.length === 0 ? (
@@ -425,7 +426,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
                 })}
               </div>
             )}
-          </div>
+          </OverlayScrollArea>
         )}
 
         {mode === 'capture' && (

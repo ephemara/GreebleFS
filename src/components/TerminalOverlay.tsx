@@ -48,6 +48,7 @@ import {
 } from '../config/appearance';
 import { useTerminalStore, type Bookmark } from '../store/terminalStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { OverlayScrollArea } from './OverlayScrollArea';
 
 export type ThemeId = 'operator' | 'dracula' | 'nord' | 'monokai' | 'github-dark' | 'catppuccin';
 
@@ -393,7 +394,7 @@ function SidebarContent({ panel, theme, appearance, injectCmd, injectCd }: Sideb
           <Plus size={11} />
         </button>
       </div>
-      <div className="custom-scrollbar flex-1 overflow-y-auto py-1">
+      <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ paddingTop: 4, paddingBottom: 4 }}>
         {addingDir && (
           <MiniAdder ph1="Name (e.g. Project)" ph2="Path (e.g. ~/code/project)" accent={theme.accent}
             onConfirm={async (n, v) => { await addDirectoryBookmark({ id: crypto.randomUUID(), name: n, value: v }); setAddingDir(false); }}
@@ -407,7 +408,7 @@ function SidebarContent({ panel, theme, appearance, injectCmd, injectCd }: Sideb
             onPrimary={() => injectCd(bm.value)}
             onDelete={() => removeDirectoryBookmark(bm.id)} />
         ))}
-      </div>
+      </OverlayScrollArea>
     </div>
   );
 
@@ -420,7 +421,7 @@ function SidebarContent({ panel, theme, appearance, injectCmd, injectCd }: Sideb
           <Plus size={11} />
         </button>
       </div>
-      <div className="custom-scrollbar flex-1 overflow-y-auto py-1">
+      <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ paddingTop: 4, paddingBottom: 4 }}>
         {addingCmd && (
           <MiniAdder ph1="Name (e.g. Build)" ph2="Command (e.g. npm run build)" accent={theme.accent}
             onConfirm={async (n, v) => { await addCommandBookmark({ id: crypto.randomUUID(), name: n, value: v }); setAddingCmd(false); }}
@@ -435,7 +436,7 @@ function SidebarContent({ panel, theme, appearance, injectCmd, injectCd }: Sideb
             onRun={() => injectCmd(bm.value + '\r')}
             onDelete={() => removeCommandBookmark(bm.id)} />
         ))}
-      </div>
+      </OverlayScrollArea>
     </div>
   );
 
@@ -567,7 +568,7 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
             })}
           </div>
           {/* Tabs */}
-          <div className="hide-scrollbar flex items-stretch flex-1 overflow-x-auto">
+          <OverlayScrollArea direction="horizontal" style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0 }} contentStyle={{ display: 'flex', alignItems: 'stretch', minWidth: 'max-content' }}>
             {tabs.map(tab => {
               const isActive = tab.id === activeId;
               return (
@@ -610,7 +611,7 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
               style={{ color: theme.textMuted }} title="New Terminal">
               <Plus size={11} />
             </button>
-          </div>
+          </OverlayScrollArea>
         </div>
 
         {/* ══ Body ══ */}
@@ -700,7 +701,7 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
         </div>
 
         {/* Tabs */}
-        <div className="hide-scrollbar flex items-stretch flex-1 overflow-x-auto">
+        <OverlayScrollArea direction="horizontal" style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0 }} contentStyle={{ display: 'flex', alignItems: 'stretch', minWidth: 'max-content' }}>
           {tabs.map(tab => {
             const isActive = tab.id === activeId;
             return (
@@ -747,7 +748,7 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
             style={{ color: theme.textMuted }} title="New Terminal (Ctrl+T)">
             <Plus size={12} />
           </button>
-        </div>
+        </OverlayScrollArea>
 
         {/* Controls */}
         <div className="flex items-center gap-0.5 px-2 border-l shrink-0" style={{ borderColor: theme.border }}>

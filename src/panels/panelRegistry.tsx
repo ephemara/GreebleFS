@@ -68,6 +68,7 @@ export function createBuiltInPanelDefinitions({
       icon: <FolderOpen size={12} />,
       description: 'File browser and asset navigation.',
       defaultOpen: true,
+      keepMounted: true,
       render: () => (
         <FileExplorer
           appearance={appearance}

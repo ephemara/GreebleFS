@@ -145,3 +145,144 @@ fn ensure_unix_executable_permissions(executable: &Path) -> Result<(), String> {
         )
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn plugin_run_backend_executes_windows_cmd_backends() {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let plugins_root = tempdir.path();
+        let backend_dir = plugins_root.join("sample-plugin").join("backend");
+        fs::create_dir_all(&backend_dir).expect("backend dir should be created");
+
+        let script_path = backend_dir.join("echo-backend.cmd");
+        fs::write(&script_path, "@echo off\r\necho backend:%1\r\n")
+            .expect("backend script should be written");
+
+        let result = plugin_run_backend(
+            plugins_root.to_string_lossy().to_string(),
+            "sample-plugin".to_string(),
+            "echo-backend.cmd".to_string(),
+            vec!["world".to_string()],
+        )
+        .await
+        .expect("backend should execute successfully");
+
+        assert_eq!(result.status, 0);
+        assert!(result.stdout.to_lowercase().contains("backend:world"));
+    }
+
+    #[tokio::test]
+    async fn plugin_run_backend_rejects_path_traversal() {
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let plugins_root = tempdir.path();
+        let plugin_dir = plugins_root.join("sample-plugin");
+        let backend_dir = plugin_dir.join("backend");
+        fs::create_dir_all(&backend_dir).expect("backend dir should be created");
+        fs::write(
+            plugin_dir.join("outside.cmd"),
+            "@echo off\r\necho outside\r\n",
+        )
+        .expect("traversal target should exist");
+
+        let error = plugin_run_backend(
+            plugins_root.to_string_lossy().to_string(),
+            "sample-plugin".to_string(),
+            "..\\outside.cmd".to_string(),
+            vec![],
+        )
+        .await
+        .expect_err("path traversal should be rejected");
+
+        assert!(error.contains("stay inside"));
+    }
+
+    #[test]
+    fn resolve_backend_entry_rejects_empty_fields() {
+        let error = resolve_backend_entry("C:\\does-not-matter", "", "entry.cmd")
+            .expect_err("empty plugin_id should fail");
+        assert!(error.contains("plugin_id cannot be empty"));
+
+        let error = resolve_backend_entry("C:\\does-not-matter", "plugin-a", "  ")
+            .expect_err("empty entry should fail");
+        assert!(error.contains("entry cannot be empty"));
+    }
+
+    #[test]
+    fn resolve_backend_entry_resolves_valid_path() {
+        let temp = tempdir().expect("tempdir");
+        let plugins_root = temp.path().join("plugins");
+        let backend_dir = plugins_root.join("plugin-a").join("backend");
+        std::fs::create_dir_all(&backend_dir).expect("create backend dir");
+        let entry = backend_dir.join("worker.cmd");
+        std::fs::write(&entry, "@echo off\r\necho ok\r\n").expect("write backend entry");
+
+        let resolved = resolve_backend_entry(
+            plugins_root.to_str().expect("plugins root utf8"),
+            "plugin-a",
+            "worker.cmd",
+        )
+        .expect("entry should resolve");
+
+        assert_eq!(
+            resolved,
+            std::fs::canonicalize(entry).expect("canonical entry")
+        );
+    }
+
+    #[test]
+    fn resolve_backend_entry_blocks_traversal_outside_backend() {
+        let temp = tempdir().expect("tempdir");
+        let plugins_root = temp.path().join("plugins");
+        let backend_dir = plugins_root.join("plugin-a").join("backend");
+        std::fs::create_dir_all(&backend_dir).expect("create backend dir");
+
+        let outside = plugins_root.join("escape.cmd");
+        std::fs::write(&outside, "@echo off\r\necho escaped\r\n").expect("write outside file");
+
+        let escape_entry = format!(
+            "..{}..{}escape.cmd",
+            std::path::MAIN_SEPARATOR,
+            std::path::MAIN_SEPARATOR
+        );
+        let error = resolve_backend_entry(
+            plugins_root.to_str().expect("plugins root utf8"),
+            "plugin-a",
+            &escape_entry,
+        )
+        .expect_err("traversal should be rejected");
+
+        assert!(error.contains("must stay inside"));
+    }
+
+    #[test]
+    fn run_backend_command_returns_error_for_missing_executable() {
+        let temp = tempdir().expect("tempdir");
+        let missing = temp.path().join("definitely-missing-plugin-backend.exe");
+        let error = run_backend_command(&missing, &[]).expect_err("missing executable should fail");
+        assert!(error.contains("Failed to run plugin backend"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn run_backend_command_executes_cmd_and_captures_output() {
+        let temp = tempdir().expect("tempdir");
+        let script = temp.path().join("backend.cmd");
+        std::fs::write(
+            &script,
+            "@echo off\r\necho out:%1\r\necho errline 1>&2\r\nexit /b 7\r\n",
+        )
+        .expect("write script");
+
+        let result = run_backend_command(&script, &[String::from("hello")])
+            .expect("cmd execution should succeed");
+
+        assert_eq!(result.status, 7);
+        assert!(result.stdout.contains("out:hello"));
+        assert!(result.stderr.contains("errline"));
+    }
+}

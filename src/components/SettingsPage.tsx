@@ -25,6 +25,7 @@ import {
   type FolderIconRule,
   type FolderIconValue,
 } from '../config/folderIcons';
+import { OverlayScrollArea } from './OverlayScrollArea';
 import {
   BUILT_IN_LAYOUT_MANIFEST,
   loadExternalLayoutManifest,
@@ -298,9 +299,11 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
   }, [updateSystem]);
 
   return (
-    <div
-      className="custom-scrollbar flex h-full flex-col overflow-y-auto"
+    <OverlayScrollArea
       style={{
+        display: 'flex',
+        height: '100%',
+        flexDirection: 'column',
         fontFamily: appearance.fonts.ui,
         background: `linear-gradient(180deg, ${appearance.theme.palette.appBackgroundAlt} 0%, ${panelBackground} 100%)`,
       }}
@@ -958,7 +961,8 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
                     className="mt-2 w-full rounded border px-3 py-2 text-[11px] outline-none"
                     style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
                   />
-                  <div className="custom-scrollbar mt-3 grid max-h-[220px] grid-cols-2 gap-2 overflow-y-auto pr-1 md:grid-cols-3">
+                  <OverlayScrollArea style={{ marginTop: 12, maxHeight: 220 }} viewportStyle={{ paddingRight: 4 }}>
+                  <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
                     {filteredFolderIconOptions.map(option => (
                       <button
                         key={option.value}
@@ -976,6 +980,7 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
                       </button>
                     ))}
                   </div>
+                  </OverlayScrollArea>
                 </div>
               </div>
 
@@ -1023,6 +1028,6 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
           </section>
         </div>
       </div>
-    </div>
+    </OverlayScrollArea>
   );
 }

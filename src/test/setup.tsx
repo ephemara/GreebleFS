@@ -38,11 +38,13 @@ vi.mock('@tauri-apps/api/window', () => ({
 }));
 
 vi.mock('@tauri-apps/plugin-store', () => ({
-  LazyStore: vi.fn().mockImplementation(() => ({
-    get: vi.fn().mockResolvedValue(null),
-    set: vi.fn().mockResolvedValue(undefined),
-    save: vi.fn().mockResolvedValue(undefined),
-  })),
+  LazyStore: class {
+    get = vi.fn().mockResolvedValue(null);
+    set = vi.fn().mockResolvedValue(undefined);
+    save = vi.fn().mockResolvedValue(undefined);
+
+    constructor(_name: string) {}
+  },
 }));
 
 vi.mock('@tauri-apps/plugin-global-shortcut', () => ({

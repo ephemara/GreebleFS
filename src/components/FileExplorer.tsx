@@ -25,6 +25,8 @@ import type { ResolvedOverlayAppearance } from '../config/appearance';
 import { getFolderIconSrc } from '../config/folderIcons';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
 import { detectClientPlatform, getFallbackExplorerPath, getPlatformPathSeparator, joinPlatformPath } from '../config/platform';
+import { OverlayScrollArea } from './OverlayScrollArea';
+import { useExplorerStore } from '../store/explorerStore';
 import { useSettingsStore } from '../store/settingsStore';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -455,7 +457,7 @@ function EditorTabsPanel({
         onMouseEnter={e => (e.currentTarget.style.background = `${EXP.accent}55`)}
         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
       />
-      <div className="hide-scrollbar" style={{ display: 'flex', alignItems: 'stretch', minHeight: 38, overflowX: 'auto', overflowY: 'hidden', borderBottom: `1px solid ${EXP.border}`, background: EXP.sidebar }}>
+      <OverlayScrollArea direction="horizontal" style={{ display: 'flex', alignItems: 'stretch', minHeight: 38, borderBottom: `1px solid ${EXP.border}`, background: EXP.sidebar }} contentStyle={{ display: 'flex', alignItems: 'stretch', minWidth: 'max-content' }}>
         {tabs.map(tab => {
           const isActive = tab.path === activePath;
           return (
@@ -493,7 +495,7 @@ function EditorTabsPanel({
             </button>
           );
         })}
-      </div>
+      </OverlayScrollArea>
       <div style={{ flex: 1, overflow: 'hidden' }}>
         {activeTab && (
           <Editor
@@ -583,14 +585,25 @@ interface FileExplorerProps {
 export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmark, layoutMode = 'full' }: FileExplorerProps) {
   const accent = theme.accent;
   const explorerSettings = useSettingsStore(s => s.settings.explorer);
+  const updateExplorerSettings = useSettingsStore(s => s.updateExplorer);
+  const explorerSession = useExplorerStore(s => s.session);
+  const updateExplorerSession = useExplorerStore(s => s.updateSession);
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
   const isCompactDock = layoutMode === 'compact-dock';
   const uiFont = appearance?.fonts.ui ?? 'Inter,system-ui,sans-serif';
+  const showHidden = explorerSettings.showHiddenFiles;
+  const viewMode = explorerSettings.viewMode;
+  const initialSessionPathRef = useRef(explorerSession.currentPath.trim());
 
-  const [currentPath,  setCurrentPath]  = useState('');
-  const [history,      setHistory]      = useState<string[]>([]);
-  const [historyIdx,   setHistoryIdx]   = useState(-1);
-  const [sidebarWidth, setSidebarWidth] = useState(isCompactDock ? 180 : 220);
+  const [currentPath,  setCurrentPath]  = useState(() => explorerSession.currentPath);
+  const [history,      setHistory]      = useState<string[]>(() => explorerSession.history);
+  const [historyIdx,   setHistoryIdx]   = useState(() => explorerSession.historyIdx);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof explorerSession.sidebarWidth === 'number') {
+      return isCompactDock ? Math.min(explorerSession.sidebarWidth, 200) : explorerSession.sidebarWidth;
+    }
+    return isCompactDock ? 180 : 220;
+  });
   const [entries,      setEntries]      = useState<FileEntry[]>([]);
   const [searchResults, setSearchResults] = useState<FileSearchResult[]>([]);
   const [drives,       setDrives]       = useState<DriveInfo[]>([]);
@@ -598,11 +611,9 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const [loading,      setLoading]      = useState(false);
   const [error,        setError]        = useState<string|null>(null);
   const [selected,     setSelected]     = useState<Set<string>>(new Set());
-  const [viewMode,     setViewMode]     = useState<'grid'|'list'>(isCompactDock ? 'list' : 'grid');
-  const [search,       setSearch]       = useState('');
+  const [search,       setSearch]       = useState(() => explorerSession.search);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [searchIncludeContent, setSearchIncludeContent] = useState(true);
-  const [showHidden,   setShowHidden]   = useState(false);
+  const [searchIncludeContent, setSearchIncludeContent] = useState(() => explorerSession.searchIncludeContent);
   const [preview,      setPreview]      = useState<PreviewState>({ type:'none', path:'' });
   const [ctxMenu,      setCtxMenu]      = useState<ContextMenuState>({ visible:false, x:0, y:0, entry:null });
   const [rename,       setRename]       = useState<RenameState>({ active:false, path:'', name:'' });
@@ -639,10 +650,28 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   useEffect(() => {
     if (isCompactDock) {
       setSidebarWidth(current => Math.min(current, 200));
-      setViewMode('list');
       setPreview({ type: 'none', path: '' });
     }
   }, [isCompactDock]);
+
+  useEffect(() => {
+    updateExplorerSession({
+      currentPath,
+      history,
+      historyIdx,
+      sidebarWidth,
+      search,
+      searchIncludeContent,
+    });
+  }, [
+    currentPath,
+    history,
+    historyIdx,
+    search,
+    searchIncludeContent,
+    sidebarWidth,
+    updateExplorerSession,
+  ]);
 
   useEffect(() => {
     if (editorTabs.length === 0) {
@@ -657,6 +686,40 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   // ── Boot ──
   useEffect(() => {
     invoke<DriveInfo[]>('fs_get_drives').then(ds => setDrives(ds)).catch(() => {});
+    const restoredPath = initialSessionPathRef.current;
+
+    if (restoredPath) {
+      navigate(restoredPath, false).catch(() => {
+        initialSessionPathRef.current = '';
+        setCurrentPath('');
+        setHistory([]);
+        setHistoryIdx(-1);
+        updateExplorerSession({
+          currentPath: '',
+          history: [],
+          historyIdx: -1,
+        });
+
+        const preferredPath = explorerSettings.defaultPath.trim();
+        const bootstrapPath = preferredPath && preferredPath !== '.' ? preferredPath : null;
+
+        if (bootstrapPath) {
+          navigate(bootstrapPath).catch(() => {
+            invoke<string>('fs_get_home_dir')
+              .then(home => navigate(home))
+              .catch(() => navigate(getFallbackExplorerPath(runtimePlatform)));
+          });
+        } else {
+          invoke<string>('fs_get_home_dir')
+            .then(home => navigate(home))
+            .catch(() => navigate(getFallbackExplorerPath(runtimePlatform)));
+        }
+      });
+
+      try { const s = localStorage.getItem('fs-bookmarks-v2'); if (s) setBookmarks(JSON.parse(s)); } catch {}
+      return;
+    }
+
     const preferredPath = explorerSettings.defaultPath.trim();
     const bootstrapPath = preferredPath && preferredPath !== '.' ? preferredPath : null;
 
@@ -1427,7 +1490,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
         <div style={{ padding:isCompactDock ? '4px 10px' : '4px 12px' }}>
           <span style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:EXP.muted }}>Bookmarks</span>
         </div>
-        <div style={{ flex:1, overflowY:'auto' }}>
+        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }}>
           {/* Home quick-link */}
           <button
             onClick={() => invoke<string>('fs_get_home_dir').then(p => navigate(p)).catch(() => {})}
@@ -1461,7 +1524,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
             </div>
           ))}
           {bookmarks.length === 0 && <p style={{ fontSize:10, color:EXP.muted2, padding:'4px 14px' }}>Right-click folder → Bookmark</p>}
-        </div>
+        </OverlayScrollArea>
       </div>
 
       {/* ══ MAIN ══ */}
@@ -1629,14 +1692,14 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
 
           {/* Toolbar buttons */}
           {!isCompactDock && (
-            <button onClick={() => setViewMode(v => v==='grid'?'list':'grid')} title="Toggle view (Grid/List)"
+            <button onClick={() => updateExplorerSettings({ viewMode: viewMode === 'grid' ? 'list' : 'grid' })} title="Toggle view (Grid/List)"
               style={{ background:'none', border:'none', cursor:'pointer', color:EXP.muted, padding:5, borderRadius:5, display:'flex' }}
               onMouseEnter={e=>(e.currentTarget.style.background='rgba(255,255,255,0.06)')}
               onMouseLeave={e=>(e.currentTarget.style.background='transparent')}
             >{viewMode==='grid' ? <List size={14}/> : <Grid size={14}/>}</button>
           )}
 
-          <button onClick={() => setShowHidden(h=>!h)} title="Toggle hidden files"
+          <button onClick={() => updateExplorerSettings({ showHiddenFiles: !showHidden })} title="Toggle hidden files"
             style={{ background:showHidden?`${accent}22`:'none', border:'none', cursor:'pointer', color:showHidden?accent:EXP.muted, padding:5, borderRadius:5, display:'flex' }}
             onMouseEnter={e=>(e.currentTarget.style.background='rgba(255,255,255,0.06)')}
             onMouseLeave={e=>(e.currentTarget.style.background=showHidden?`${accent}22`:'transparent')}
@@ -1680,8 +1743,9 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
 
         {/* File area + preview */}
         <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
+          <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: effectiveViewMode === 'grid' ? 12 : 0 }}>
           <div ref={mainRef} tabIndex={0}
-            style={{ flex:1, overflowY:'auto', padding: effectiveViewMode==='grid'?12:0, outline:'none' }}
+            style={{ minHeight: '100%', outline:'none' }}
             onDragOver={e => { e.preventDefault(); setDragOver('__main__'); }}
             onDragLeave={() => setDragOver(null)}
             onDrop={e => onDrop(e, currentPath)}
@@ -1875,6 +1939,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
               </table>
             )}
           </div>
+          </OverlayScrollArea>
 
           {/* Side pane */}
           {showEditorPane && (

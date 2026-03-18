@@ -12,7 +12,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:rust": "node scripts/run-cargo-tests.mjs",
+    "test:all": "npm run test && npm run test:rust"
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",

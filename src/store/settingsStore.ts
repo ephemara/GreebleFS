@@ -52,6 +52,7 @@ export interface TerminalSettings {
   scrollback: number;
   overlayHeight: number;
   overlayWidth: number;  // -1 means "full monitor work area width minus padding"
+  overlayAnchor: OverlayWindowAnchor;
   preferredOpenMode: 'integrated' | 'external';
   externalTerminalProfile: ExternalTerminalProfile;
   externalTerminalCommand: string;
@@ -115,6 +116,8 @@ export interface PolyGeminiSettings {
   maxTokens: number;
 }
 
+export type OverlayWindowAnchor = 'top' | 'bottom';
+
 export interface LayoutSettings {
   activeProfileId: string;
   configPath: string;
@@ -156,6 +159,10 @@ const getDefaultPath = (): string => {
   return '.';
 };
 
+export function normalizeOverlayWindowAnchor(value: unknown): OverlayWindowAnchor {
+  return value === 'top' ? 'top' : 'bottom';
+}
+
 export const defaultSettings: Settings = {
   editor: {
     fontSize: 14,
@@ -180,6 +187,7 @@ export const defaultSettings: Settings = {
     scrollback: 10000,
     overlayHeight: 420,
     overlayWidth: -1,
+    overlayAnchor: 'bottom',
     preferredOpenMode: 'integrated',
     externalTerminalProfile: 'auto',
     externalTerminalCommand: '',
@@ -255,6 +263,7 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
     terminal: {
       ...base.terminal,
       ...importedTerminal,
+      overlayAnchor: normalizeOverlayWindowAnchor(importedTerminal?.overlayAnchor ?? base.terminal.overlayAnchor),
     },
     explorer: { ...base.explorer, ...imported?.explorer },
     appearance: {

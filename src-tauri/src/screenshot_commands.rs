@@ -283,3 +283,94 @@ fn encode_png(image: &RgbaImage) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("Failed to encode screenshot preview as PNG: {}", e))?;
     Ok(png_bytes)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        build_preview_image, create_capture_id, encode_png, load_capture_image,
+        store_capture_image, validate_capture_region, validate_crop_region, MAX_PREVIEW_HEIGHT,
+        MAX_PREVIEW_WIDTH,
+    };
+    use image::{load_from_memory, Rgba, RgbaImage};
+    use std::sync::{LazyLock, Mutex};
+
+    static CACHE_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+    #[test]
+    fn validate_capture_region_rejects_zero_and_oversized_values() {
+        assert!(validate_capture_region(0, 100).is_err());
+        assert!(validate_capture_region(100, 0).is_err());
+        assert!(validate_capture_region(16_385, 100).is_err());
+        assert!(validate_capture_region(100, 16_385).is_err());
+    }
+
+    #[test]
+    fn validate_capture_region_accepts_supported_bounds() {
+        assert!(validate_capture_region(1, 1).is_ok());
+        assert!(validate_capture_region(16_384, 16_384).is_ok());
+    }
+
+    #[test]
+    fn build_preview_image_does_not_upscale_small_images() {
+        let image = RgbaImage::from_pixel(800, 600, Rgba([12, 34, 56, 255]));
+        let preview = build_preview_image(&image);
+        assert_eq!(preview.width(), 800);
+        assert_eq!(preview.height(), 600);
+    }
+
+    #[test]
+    fn build_preview_image_scales_large_images_into_bounds() {
+        let image = RgbaImage::from_pixel(4_000, 2_000, Rgba([255, 0, 0, 255]));
+        let preview = build_preview_image(&image);
+
+        assert!(preview.width() <= MAX_PREVIEW_WIDTH);
+        assert!(preview.height() <= MAX_PREVIEW_HEIGHT);
+        assert_eq!(preview.width(), 1_920);
+        assert_eq!(preview.height(), 960);
+    }
+
+    #[test]
+    fn validate_crop_region_checks_image_bounds() {
+        let image = RgbaImage::from_pixel(640, 480, Rgba([0, 0, 0, 255]));
+        assert!(validate_crop_region(&image, 0, 0, 640, 480).is_ok());
+        assert!(validate_crop_region(&image, 639, 0, 2, 1).is_err());
+        assert!(validate_crop_region(&image, 0, 479, 1, 2).is_err());
+    }
+
+    #[test]
+    fn create_capture_id_is_unique_and_prefixed() {
+        let first = create_capture_id();
+        let second = create_capture_id();
+        assert!(first.starts_with("capture-"));
+        assert!(second.starts_with("capture-"));
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn encode_png_round_trip_preserves_dimensions() {
+        let image = RgbaImage::from_pixel(12, 8, Rgba([1, 2, 3, 255]));
+        let bytes = encode_png(&image).expect("PNG encoding should work");
+        let decoded = load_from_memory(&bytes)
+            .expect("encoded PNG should decode")
+            .to_rgba8();
+        assert_eq!(decoded.width(), 12);
+        assert_eq!(decoded.height(), 8);
+    }
+
+    #[test]
+    fn store_capture_image_replaces_previous_capture() {
+        let _guard = CACHE_TEST_LOCK.lock().expect("cache test lock");
+        let first_image = RgbaImage::from_pixel(16, 16, Rgba([10, 10, 10, 255]));
+        let second_image = RgbaImage::from_pixel(32, 8, Rgba([20, 20, 20, 255]));
+
+        let first_id = store_capture_image(first_image).expect("store first image");
+        let second_id = store_capture_image(second_image.clone()).expect("store second image");
+
+        let loaded_second = load_capture_image(&second_id).expect("load second image");
+        assert_eq!(loaded_second.width(), second_image.width());
+        assert_eq!(loaded_second.height(), second_image.height());
+
+        let first_error = load_capture_image(&first_id).expect_err("old capture should expire");
+        assert!(first_error.contains("expired"));
+    }
+}

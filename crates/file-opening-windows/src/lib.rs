@@ -161,3 +161,49 @@ fn list_apps_for_extension(ext: &str) -> std::result::Result<Vec<OpenWithApp>, S
 		Ok(apps)
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use super::{FileOpener, OpenResult, WindowsFileOpener};
+	use std::fs;
+
+	fn unique_temp_path(name: &str) -> std::path::PathBuf {
+		let stamp = std::time::SystemTime::now()
+			.duration_since(std::time::UNIX_EPOCH)
+			.expect("clock should be monotonic")
+			.as_nanos();
+		std::env::temp_dir().join(format!("overlayterm-{name}-{stamp}"))
+	}
+
+	#[test]
+	fn get_apps_for_file_returns_empty_for_files_without_extensions() {
+		let opener = WindowsFileOpener;
+		let path = unique_temp_path("no-ext");
+		fs::write(&path, b"").expect("temp file should be written");
+
+		let apps = opener.get_apps_for_file(&path).expect("lookup should succeed");
+		assert!(apps.is_empty());
+
+		let _ = fs::remove_file(&path);
+	}
+
+	#[test]
+	fn open_with_app_reports_missing_file_or_missing_extension() {
+		let opener = WindowsFileOpener;
+
+		let missing = unique_temp_path("missing-file");
+		let missing_result = opener
+			.open_with_app(&missing, "AnyApp")
+			.expect("missing file should not hard fail");
+		assert!(matches!(missing_result, OpenResult::FileNotFound { .. }));
+
+		let no_ext = unique_temp_path("no-ext-app");
+		fs::write(&no_ext, b"").expect("temp file should be written");
+		let no_ext_result = opener
+			.open_with_app(&no_ext, "AnyApp")
+			.expect("missing extension path should not hard fail");
+		assert!(matches!(no_ext_result, OpenResult::PlatformError { message } if message.contains("no extension")));
+
+		let _ = fs::remove_file(&no_ext);
+	}
+}

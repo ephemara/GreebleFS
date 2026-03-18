@@ -11,6 +11,7 @@ export type OverlayAnimationPresetId =
 
 export type OverlayAnimationDirection = 'enter' | 'exit';
 export type OverlayAnimationPhase = 'closed' | 'opening' | 'open' | 'closing';
+export type OverlayAnimationVerticalOrigin = 'top' | 'bottom';
 
 interface MotionShape {
   translateYPercent: number;
@@ -151,6 +152,10 @@ function scaleMotionShape(shape: MotionShape, intensity: number): MotionShape {
   };
 }
 
+function getVerticalDirectionSign(origin: OverlayAnimationVerticalOrigin | undefined): number {
+  return origin === 'top' ? -1 : 1;
+}
+
 export function getOverlayAnimationTransition(args: {
   phase: OverlayAnimationPhase;
   direction: OverlayAnimationDirection;
@@ -178,10 +183,12 @@ export function getOverlayAnimationStyle(args: {
   baseOpacity: number;
   intensity: number;
   durationMs: number;
+  verticalOrigin?: OverlayAnimationVerticalOrigin;
 }): CSSProperties {
   const preset = getOverlayAnimationPreset(args.presetId);
   const enterFrom = scaleMotionShape(preset.enterFrom, args.intensity);
   const exitTo = scaleMotionShape(preset.exitTo, args.intensity);
+  const verticalDirectionSign = getVerticalDirectionSign(args.verticalOrigin);
   const shape = args.phase === 'closed'
     ? (args.direction === 'enter' ? enterFrom : exitTo)
     : args.phase === 'closing'
@@ -189,7 +196,7 @@ export function getOverlayAnimationStyle(args: {
       : OPEN_STATE;
 
   return {
-    transform: `translate3d(0, ${shape.translateYPercent}%, 0) scale(${shape.scale}) rotate(${shape.rotateDeg}deg)`,
+    transform: `translate3d(0, ${shape.translateYPercent * verticalDirectionSign}%, 0) scale(${shape.scale}) rotate(${shape.rotateDeg}deg)`,
     opacity: shape.opacity === 0 ? 0 : args.baseOpacity * shape.opacity,
     filter: `blur(${shape.blurPx}px) saturate(${shape.saturate})`,
     transition: getOverlayAnimationTransition(args),
@@ -204,6 +211,7 @@ export function getOverlayEffectStyle(args: {
   durationMs: number;
   intensity: number;
   accentColor: string;
+  verticalOrigin?: OverlayAnimationVerticalOrigin;
 }): CSSProperties | null {
   const preset = getOverlayAnimationPreset(args.presetId);
   if (preset.effect === 'none') {
@@ -216,7 +224,7 @@ export function getOverlayEffectStyle(args: {
     ? args.phase === 'closed'
     : args.phase === 'closing' || args.phase === 'closed';
   const opacity = active ? Math.min(0.92, 0.42 + intensity * 0.18) : 0;
-  const lift = 12 * intensity;
+  const lift = 12 * intensity * getVerticalDirectionSign(args.verticalOrigin);
 
   if (preset.effect === 'dissolve') {
     return {

@@ -16,6 +16,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.terminal.cursorBlink).toBe(true);
     expect(settings.terminal.scrollback).toBe(10000);
     expect(settings.terminal.overlayHeight).toBe(420);
+    expect(settings.terminal.overlayAnchor).toBe('bottom');
     expect(settings.terminal.fontSize).toBe(13);
     expect(settings.terminal.preferredOpenMode).toBe('integrated');
     expect(settings.terminal.externalTerminalProfile).toBe('auto');
@@ -67,6 +68,16 @@ describe('useSettingsStore.updateTerminal()', () => {
 
     store.updateTerminal({ overlayWidth: 1400 });
     expect(useSettingsStore.getState().settings.terminal.overlayWidth).toBe(1400);
+  });
+
+  it('updates overlayAnchor without disturbing the saved size', () => {
+    const store = useSettingsStore.getState();
+    store.updateTerminal({ overlayHeight: 600, overlayWidth: 1400, overlayAnchor: 'top' });
+
+    const { settings } = useSettingsStore.getState();
+    expect(settings.terminal.overlayAnchor).toBe('top');
+    expect(settings.terminal.overlayHeight).toBe(600);
+    expect(settings.terminal.overlayWidth).toBe(1400);
   });
 
   it('updates external terminal fields together', () => {
@@ -208,6 +219,7 @@ describe('mergeSettingsWithDefaults()', () => {
     expect(merged.appearance.appZoom).toBe(1.1);
     expect(merged.appearance.appOpenAnimation).toBe(defaultSettings.appearance.appOpenAnimation);
     expect(merged.appearance.appCloseAnimation).toBe(defaultSettings.appearance.appCloseAnimation);
+    expect(merged.terminal.overlayAnchor).toBe(defaultSettings.terminal.overlayAnchor);
     expect(merged.screenshots).toEqual(defaultSettings.screenshots);
     expect(merged.layout).toEqual(defaultSettings.layout);
   });

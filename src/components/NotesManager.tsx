@@ -7,6 +7,7 @@ import {
   ArrowUpDown,
 } from 'lucide-react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
+import { OverlayScrollArea } from './OverlayScrollArea';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -531,7 +532,8 @@ export function NotesManager({ appearance }: { appearance?: ResolvedOverlayAppea
 
           {/* Tag filter pills */}
           {allTags.length > 0 && (
-            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', maxHeight: 52, overflowY: 'auto' }}>
+            <OverlayScrollArea style={{ maxHeight: 52 }} viewportStyle={{ maxHeight: 52 }}>
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
               {allTags.map((tag, i) => (
                 <button
                   key={tag}
@@ -548,11 +550,12 @@ export function NotesManager({ appearance }: { appearance?: ResolvedOverlayAppea
                 </button>
               ))}
             </div>
+            </OverlayScrollArea>
           )}
         </div>
 
         {/* Entry List */}
-        <div style={{ flex: 1, overflowY: 'auto' }} className="custom-scrollbar">
+        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }}>
           {loading ? (
             <div style={{ padding: 24, textAlign: 'center', color: PALETTE.muted, fontSize: 12 }}>Loading…</div>
           ) : filtered.length === 0 ? (
@@ -595,7 +598,7 @@ export function NotesManager({ appearance }: { appearance?: ResolvedOverlayAppea
               />
             ))
           )}
-        </div>
+        </OverlayScrollArea>
       </div>
 
       {/* ══ RIGHT: Editor ══ */}

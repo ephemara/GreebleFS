@@ -8,6 +8,7 @@ import type {
   OverlayPluginApi,
   OverlayPluginContext,
 } from './pluginRuntime';
+import { OverlayScrollArea } from './OverlayScrollArea';
 
 const PANEL = 'var(--overlay-bg-panel)';
 const PANEL_ALT = 'var(--overlay-bg-panel-alt)';
@@ -105,7 +106,7 @@ export function PluginsManager({
           </div>
         </div>
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 10 }}>
+        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 10 }}>
           {builtInCatalog.length > 0 && (
             <div style={{ marginBottom: 14 }}>
               <div style={{ padding: '4px 8px 10px', fontSize: 11, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
@@ -196,7 +197,7 @@ export function PluginsManager({
               );
             })
           )}
-        </div>
+        </OverlayScrollArea>
       </aside>
 
       <main style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
