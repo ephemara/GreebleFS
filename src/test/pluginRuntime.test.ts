@@ -1,3 +1,4 @@
+import { readFile } from 'fs/promises';
 import { describe, expect, it } from 'vitest';
 import {
   definePlugin,
@@ -78,6 +79,36 @@ describe('pluginRuntime helpers', () => {
     expect(loaded.id).toBe('source-plugin');
     expect(loaded.defaultOpen).toBe(true);
     expect(loaded.keepMounted).toBe(false);
+    expect(typeof loaded.component).toBe('function');
+  });
+
+  it('loads the drawable canvas plugin from disk through the runtime transpiler', async () => {
+    const source = await readFile('M:\\OverlayTerm\\plugins\\drawable-canvas.tsx', 'utf8');
+
+    const loaded = await loadPluginFromSource(
+      source,
+      {
+        name: 'drawable-canvas.tsx',
+        path: 'M:\\OverlayTerm\\plugins\\drawable-canvas.tsx',
+        is_dir: false,
+        modified: 99,
+        extension: 'tsx',
+      },
+      () => ({
+        invoke: async <T,>() => null as T,
+        event: {} as never,
+        window: {} as never,
+        fs: {} as never,
+        refreshPlugins: async () => undefined,
+        openPluginsFolder: async () => undefined,
+        runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),
+      }),
+    );
+
+    expect(loaded.error).toBeNull();
+    expect(loaded.id).toBe('drawable-canvas');
+    expect(loaded.name).toBe('Drawable Canvas');
+    expect(loaded.description).toContain('shader-style paint effects');
     expect(typeof loaded.component).toBe('function');
   });
 });

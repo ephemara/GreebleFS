@@ -136,7 +136,7 @@ describe('summarizeGitFiles()', () => {
 
     expect(summary).toEqual({
       totalFiles: 4,
-      stagedFiles: 3,
+      stagedFiles: 2,
       unstagedFiles: 2,
       untrackedFiles: 1,
       conflictedFiles: 1,

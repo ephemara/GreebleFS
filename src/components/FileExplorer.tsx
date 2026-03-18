@@ -617,7 +617,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const [windowDropState, setWindowDropState] = useState<{ active: boolean; count: number }>({ active: false, count: 0 });
   const lastSelected   = useRef<string|null>(null);
   const editorTabsRef = useRef<ExplorerEditorTab[]>([]);
-  const editorSaveTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const editorSaveTimers = useRef<Map<string, number>>(new Map());
   const searchRequestIdRef = useRef(0);
   const addressInputRef = useRef<HTMLInputElement>(null);
   const [addressEditing, setAddressEditing] = useState(false);

@@ -239,7 +239,7 @@ export function NotesManager({ appearance }: { appearance?: ResolvedOverlayAppea
   const [showStarredOnly, setShowStarredOnly] = useState(false);
 
   const editorRef = useRef<HTMLTextAreaElement>(null);
-  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSaveTimer = useRef<number | null>(null);
 
   const selected = entries.find(e => e.id === selectedId) ?? null;
   const catConfig = CATEGORIES.find(c => c.id === category)!;
@@ -262,8 +262,8 @@ export function NotesManager({ appearance }: { appearance?: ResolvedOverlayAppea
 
   // ── Auto-save debounced ──
   const scheduleAutoSave = useCallback((note: NoteEntry) => {
-    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    autoSaveTimer.current = setTimeout(async () => {
+    if (autoSaveTimer.current) window.clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = window.setTimeout(async () => {
       await saveNote(note);
     }, 800);
   }, []);

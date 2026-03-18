@@ -215,12 +215,12 @@ function splitGitRenamePath(rawPath: string): [string | null, string] {
 }
 
 function normalizeGitPath(path: string): string {
-  return unquoteGitPath(path).replaceAll('\\', '/');
+  return unquoteGitPath(path).replace(/\\/g, '/');
 }
 
 function unquoteGitPath(path: string): string {
   if (path.startsWith('"') && path.endsWith('"')) {
-    return path.slice(1, -1).replaceAll('\\"', '"');
+    return path.slice(1, -1).replace(/\\"/g, '"');
   }
   return path;
 }
