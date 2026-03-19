@@ -1,7 +1,7 @@
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { DiffEditor } from '@monaco-editor/react';
-import { Download, FolderGit2, GitBranch, GitCommit, Plus, RefreshCw, Search, Upload, X } from 'lucide-react';
+import { Download, FolderGit2, GitBranch, GitCommit, Plus, RefreshCw, Rocket, Search, Upload, X } from 'lucide-react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import {
@@ -199,6 +199,22 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
     await runRepoAction(() => runGit(selectedRepo, ['push']).then(() => undefined));
   }, [runGit, runRepoAction, selectedRepo]);
 
+  const handleQuickShip = useCallback(async () => {
+    if (!selectedRepo || !repoState) return;
+    if (repoState.status.length === 0) {
+      setError('No changes to ship.');
+      return;
+    }
+
+    const message = commitMsg.trim() || 'Update changes';
+    await runRepoAction(async () => {
+      await runGit(selectedRepo, ['add', '-A']);
+      await runGit(selectedRepo, ['commit', '-m', message]);
+      await runGit(selectedRepo, ['push']);
+      setCommitMsg('');
+    });
+  }, [commitMsg, repoState, runGit, runRepoAction, selectedRepo]);
+
   const selectedFile = repoState?.status.find(file => file.file === selectedFilePath) ?? null;
 
   const loadDiff = useCallback(async (repoPath: string, file: GitFileStatus) => {
@@ -301,9 +317,46 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
                 <button key={filter} onClick={() => setChangeFilter(filter)} style={{ ...pillStyle(filter === changeFilter ? alpha(palette.accent, 0.16) : alpha(palette.panel, 0.84), filter === changeFilter ? palette.accent : palette.muted), border: `1px solid ${filter === changeFilter ? alpha(palette.accent, 0.5) : palette.border}`, cursor: 'pointer' }}>{FILTERS[filter]}</button>
               ))}
               <div style={{ flex: 1 }} />
-              <textarea value={commitMsg} onChange={event => setCommitMsg(event.target.value)} placeholder="Commit message" className="hide-scrollbar" style={{ height: 30, minWidth: 220, maxWidth: 420, flex: '1 1 220px', resize: 'none', borderRadius: 8, border: `1px solid ${palette.border}`, background: alpha(palette.bg, 0.5), color: palette.text, padding: '7px 10px', fontSize: 11, outline: 'none' }} />
+              <textarea value={commitMsg} onChange={event => setCommitMsg(event.target.value)} placeholder="Commit message for Quick Ship" className="hide-scrollbar" style={{ height: 30, minWidth: 220, maxWidth: 420, flex: '1 1 220px', resize: 'none', borderRadius: 8, border: `1px solid ${palette.border}`, background: alpha(palette.bg, 0.5), color: palette.text, padding: '7px 10px', fontSize: 11, outline: 'none' }} />
               <button onClick={() => void runRepoAction(() => runGit(selectedRepo!, ['add', '-A']).then(() => undefined))} disabled={loading || !repoState.status.length} style={toolbarButtonStyle(palette)}>Stage All</button>
               <button onClick={() => void runRepoAction(async () => { if (commitMsg.trim()) { await runGit(selectedRepo!, ['commit', '-m', commitMsg.trim()]); setCommitMsg(''); } })} disabled={loading || !commitMsg.trim() || !repoState.status.length} style={{ ...toolbarButtonStyle(palette), background: palette.accent, borderColor: palette.accent, color: '#fff' }}>Commit</button>
+              <button
+                onClick={() => void handleQuickShip()}
+                disabled={loading || !repoState.status.length}
+                title="Stage all, commit, and push in one step"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  minHeight: 30,
+                  padding: '0 12px 0 10px',
+                  borderRadius: 999,
+                  border: `1px solid ${alpha(palette.green, 0.45)}`,
+                  background: `linear-gradient(180deg, ${alpha(palette.green, 0.20)}, ${alpha(palette.green, 0.10)})`,
+                  color: palette.text,
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  boxShadow: `inset 0 0 0 1px ${alpha(palette.green, 0.10)}`,
+                }}
+              >
+                <span style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: 999,
+                  display: 'grid',
+                  placeItems: 'center',
+                  background: alpha(palette.green, 0.18),
+                  color: palette.green,
+                  flexShrink: 0,
+                }}>
+                  <Rocket size={11} />
+                </span>
+                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1 }}>
+                  <span>Quick Ship</span>
+                  <span style={{ fontSize: 9, color: palette.muted, fontWeight: 600, letterSpacing: '0.04em' }}>Stage • Commit • Push</span>
+                </span>
+              </button>
             </div>
 
             {error && <div style={{ padding: '7px 14px', borderBottom: `1px solid ${palette.border}`, fontSize: 11, color: palette.red, background: alpha(palette.red, 0.10) }}>{error}</div>}

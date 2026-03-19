@@ -210,6 +210,18 @@
                 └── 📂 examples
                 └── 📂 icons
                 └── 📂 incremental
+        └── 📂 target-tests-ci
+            └── 📂 debug
+                └── 📂 deps
+                └── 📂 examples
+                └── 📂 icons
+                └── 📂 incremental
+    └── 📂 target-tests
+        └── 📂 cargo
+            └── 📂 win32
+                └── 📂 file-opening
+                └── 📂 file-opening-windows
+                └── 📂 src-tauri
     └── 📂 vscode-icon-theme
         └── 📂 icons
 ```

@@ -18,6 +18,7 @@ describe('useExplorerStore', () => {
       history: ['M:\\OverlayTerm', 'M:\\OverlayTerm\\src'],
       historyIdx: 1,
       sidebarWidth: 260,
+      previewWidth: 520,
     });
     store.updateSession({
       search: 'zustand',
@@ -28,6 +29,7 @@ describe('useExplorerStore', () => {
       history: ['M:\\OverlayTerm', 'M:\\OverlayTerm\\src'],
       historyIdx: 1,
       sidebarWidth: 260,
+      previewWidth: 520,
       search: 'zustand',
       searchIncludeContent: true,
     });

@@ -5,6 +5,7 @@ export interface ExplorerSessionSnapshot {
   history: string[];
   historyIdx: number;
   sidebarWidth: number | null;
+  previewWidth: number | null;
   search: string;
   searchIncludeContent: boolean;
 }
@@ -14,6 +15,7 @@ export const defaultExplorerSession: ExplorerSessionSnapshot = {
   history: [],
   historyIdx: -1,
   sidebarWidth: null,
+  previewWidth: null,
   search: '',
   searchIncludeContent: true,
 };

@@ -1,6 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { resolve } from 'path';
 import { describe, expect, it, vi } from 'vitest';
 import PluginsManager from '../components/PluginsManager';
+import { pluginSystemConfig } from '../config/plugins';
+import { joinPlatformPath } from '../config/platform';
 
 function makeAppearance() {
   return {
@@ -52,10 +55,13 @@ describe('PluginsManager', () => {
       {
         id: 'alpha',
         name: 'Alpha',
-        filePath: 'M:\\OverlayTerm\\plugins\\alpha.tsx',
-        pluginRoot: 'M:\\OverlayTerm\\plugins',
-        pluginDirectory: 'M:\\OverlayTerm\\plugins\\alpha',
-        backendDirectory: 'M:\\OverlayTerm\\plugins\\alpha\\backend',
+        filePath: resolve(pluginSystemConfig.pluginsDirectory, 'alpha.tsx'),
+        pluginRoot: pluginSystemConfig.pluginsDirectory,
+        pluginDirectory: joinPlatformPath(pluginSystemConfig.pluginsDirectory, 'alpha'),
+        backendDirectory: joinPlatformPath(
+          joinPlatformPath(pluginSystemConfig.pluginsDirectory, 'alpha'),
+          pluginSystemConfig.backendDirectoryName,
+        ),
         modified: 1,
         defaultOpen: true,
         keepMounted: false,
@@ -65,10 +71,13 @@ describe('PluginsManager', () => {
       {
         id: 'beta',
         name: 'Beta',
-        filePath: 'M:\\OverlayTerm\\plugins\\beta.tsx',
-        pluginRoot: 'M:\\OverlayTerm\\plugins',
-        pluginDirectory: 'M:\\OverlayTerm\\plugins\\beta',
-        backendDirectory: 'M:\\OverlayTerm\\plugins\\beta\\backend',
+        filePath: resolve(pluginSystemConfig.pluginsDirectory, 'beta.tsx'),
+        pluginRoot: pluginSystemConfig.pluginsDirectory,
+        pluginDirectory: joinPlatformPath(pluginSystemConfig.pluginsDirectory, 'beta'),
+        backendDirectory: joinPlatformPath(
+          joinPlatformPath(pluginSystemConfig.pluginsDirectory, 'beta'),
+          pluginSystemConfig.backendDirectoryName,
+        ),
         modified: 2,
         defaultOpen: true,
         keepMounted: false,

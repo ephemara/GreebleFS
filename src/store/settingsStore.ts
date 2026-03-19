@@ -17,6 +17,11 @@ import {
   type ExternalTerminalProfile,
 } from '../config/platform';
 import {
+  createDefaultKeybindingSettings,
+  normalizeKeybindingSettings,
+  type HotkeyBindingSettings,
+} from '../config/hotkeys';
+import {
   clampOverlayAnimationDuration,
   clampOverlayAnimationIntensity,
   type OverlayAnimationPresetId,
@@ -97,15 +102,7 @@ export interface ScreenshotSettings {
   saveDirectory: string;
 }
 
-export interface KeybindingSettings {
-  commandPalette: string;
-  terminalToggle: string;
-  saveFile: string;
-  newFile: string;
-  closeTab: string;
-  find: string;
-  replace: string;
-}
+export type KeybindingSettings = HotkeyBindingSettings;
 
 export interface PolyGeminiSettings {
   serverUrl: string;
@@ -121,6 +118,13 @@ export type OverlayWindowAnchor = 'top' | 'bottom';
 export interface LayoutSettings {
   activeProfileId: string;
   configPath: string;
+  panelStateByProfile: Record<string, LayoutPanelState>;
+}
+
+export interface LayoutPanelState {
+  openPanelIds: string[];
+  activePanelId: string | null;
+  dismissedPanelIds: string[];
 }
 
 export interface Settings {
@@ -227,15 +231,7 @@ export const defaultSettings: Settings = {
   screenshots: {
     saveDirectory: screenshotFeatureConfig.defaultSaveDirectory,
   },
-  keybindings: {
-    commandPalette: 'Ctrl+K',
-    terminalToggle: 'Ctrl+Space',
-    saveFile: 'Ctrl+S',
-    newFile: 'Ctrl+N',
-    closeTab: 'Ctrl+W',
-    find: 'Ctrl+F',
-    replace: 'Ctrl+H',
-  },
+  keybindings: createDefaultKeybindingSettings(),
   polygemini: {
     serverUrl: 'http://localhost',
     serverPort: 8090,
@@ -247,8 +243,35 @@ export const defaultSettings: Settings = {
   layout: {
     activeProfileId: getDefaultLayoutProfile().id,
     configPath: '',
+    panelStateByProfile: {},
   },
 };
+
+function normalizeLayoutPanelState(value: unknown): LayoutPanelState {
+  const source = value && typeof value === 'object' ? value as Partial<LayoutPanelState> : {};
+  return {
+    openPanelIds: Array.isArray(source.openPanelIds)
+      ? source.openPanelIds.filter((entry): entry is string => typeof entry === 'string')
+      : [],
+    activePanelId: typeof source.activePanelId === 'string' ? source.activePanelId : null,
+    dismissedPanelIds: Array.isArray(source.dismissedPanelIds)
+      ? source.dismissedPanelIds.filter((entry): entry is string => typeof entry === 'string')
+      : [],
+  };
+}
+
+function normalizePanelStateByProfile(value: unknown): Record<string, LayoutPanelState> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([profileId, panelState]) => [
+      profileId,
+      normalizeLayoutPanelState(panelState),
+    ]),
+  );
+}
 
 function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Settings {
   const importedAppearance = imported?.appearance;
@@ -277,9 +300,15 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
     },
     system: { ...base.system, ...(imported as Partial<Settings> | undefined)?.system },
     screenshots: { ...base.screenshots, ...imported?.screenshots },
-    keybindings: { ...base.keybindings, ...imported?.keybindings },
+    keybindings: normalizeKeybindingSettings({ ...base.keybindings, ...imported?.keybindings }),
     polygemini: { ...base.polygemini, ...imported?.polygemini },
-    layout: { ...base.layout, ...(imported as Partial<Settings> | undefined)?.layout },
+    layout: {
+      ...base.layout,
+      ...(imported as Partial<Settings> | undefined)?.layout,
+      panelStateByProfile: normalizePanelStateByProfile(
+        (imported as Partial<Settings> | undefined)?.layout?.panelStateByProfile ?? base.layout.panelStateByProfile,
+      ),
+    },
   };
 }
 
@@ -374,7 +403,7 @@ export const useSettingsStore = create<SettingsState>()(
       updateKeybindings: (updates) => set((state) => ({
         settings: {
           ...state.settings,
-          keybindings: { ...state.settings.keybindings, ...updates },
+          keybindings: normalizeKeybindingSettings({ ...state.settings.keybindings, ...updates }),
         },
       })),
       

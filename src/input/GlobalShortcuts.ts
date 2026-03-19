@@ -1,33 +1,44 @@
 import { useEffect } from 'react';
-import { listen } from '@tauri-apps/api/event';
+import { isTauri } from '@tauri-apps/api/core';
+import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
+import { normalizeKeybindingValue } from '../config/hotkeys';
 
-/**
- * useGlobalShortcut
- *
- * Ctrl+Space is registered natively in the Rust backend (lib.rs) so it works
- * even when the window is hidden. The backend emits 'overlay://toggle-request'
- * when the shortcut fires, so we just listen for that event here instead of
- * double-registering from the frontend (which caused a startup crash).
- *
- * The `shortcut` parameter is kept for API compatibility but ignored — only
- * the 'overlay://toggle-request' event is used.
- */
-export function useGlobalShortcut(_shortcut: string, callback: () => void, enabled: boolean = true) {
-    useEffect(() => {
-        if (!enabled || typeof window === 'undefined' || !(window as any).__TAURI__) return;
+export function useGlobalShortcut(shortcut: string, callback: () => void, enabled: boolean = true) {
+  useEffect(() => {
+    if (!enabled || typeof window === 'undefined' || !isTauri()) {
+      return;
+    }
 
-        let unlisten: (() => void) | null = null;
+    const normalizedShortcut = normalizeKeybindingValue(shortcut, 'Ctrl+Space');
+    let didRegister = false;
+    let cancelled = false;
 
-        listen('overlay://toggle-request', () => {
-            callback();
-        }).then(fn => {
-            unlisten = fn;
-        }).catch(err => {
-            console.warn('Failed to listen for overlay toggle event:', err);
-        });
+    register(normalizedShortcut, event => {
+      if (event.state === 'Pressed') {
+        callback();
+      }
+    })
+      .then(() => {
+        didRegister = true;
+        if (cancelled) {
+          void unregister(normalizedShortcut).catch(error => {
+            console.warn(`Failed to unregister global shortcut "${normalizedShortcut}":`, error);
+          });
+        }
+      })
+      .catch(error => {
+        console.warn(`Failed to register global shortcut "${normalizedShortcut}":`, error);
+      });
 
-        return () => {
-            unlisten?.();
-        };
-    }, [callback, enabled]);
+    return () => {
+      cancelled = true;
+      if (!didRegister) {
+        return;
+      }
+
+      void unregister(normalizedShortcut).catch(error => {
+        console.warn(`Failed to unregister global shortcut "${normalizedShortcut}":`, error);
+      });
+    };
+  }, [callback, enabled, shortcut]);
 }

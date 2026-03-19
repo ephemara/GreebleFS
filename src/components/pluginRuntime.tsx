@@ -4,7 +4,11 @@ import * as TauriEvent from '@tauri-apps/api/event';
 import * as TauriWindow from '@tauri-apps/api/window';
 import * as TauriFs from '@tauri-apps/plugin-fs';
 import * as LucideReact from 'lucide-react';
-import { pluginSystemConfig } from '../config/plugins';
+import {
+  getPluginBackendDirectory,
+  getPluginDirectory,
+  pluginSystemConfig,
+} from '../config/plugins';
 import type { OverlayThemeDefinition } from '../config/appearance';
 
 export interface PluginFileEntry {
@@ -29,14 +33,32 @@ export interface OverlayPluginApi {
   event: typeof TauriEvent;
   window: typeof TauriWindow;
   fs: typeof TauriFs;
+  storage?: OverlayPluginStorageApi;
   refreshPlugins: () => Promise<void>;
   openPluginsFolder: () => Promise<void>;
   runBackend: (entry: string, args?: string[]) => Promise<PluginBackendResult>;
 }
 
+export interface OverlayPluginStorageApi {
+  rootDir: string;
+  ensureDir: (relativePath?: string) => Promise<string>;
+  readTextFile: (relativePath: string) => Promise<string>;
+  writeTextFile: (relativePath: string, data: string) => Promise<void>;
+  writeFile: (relativePath: string, data: Uint8Array) => Promise<void>;
+}
+
+export interface OverlayPluginHostContext {
+  mode: 'panel-tab' | 'manager-preview';
+  width: number;
+  height: number;
+  compact: boolean;
+  density: 'compact' | 'regular';
+}
+
 export interface OverlayPluginProps {
   plugin: OverlayPluginContext;
   api: OverlayPluginApi;
+  host?: OverlayPluginHostContext;
   appearance: {
     theme: OverlayThemeDefinition;
     fonts: {
@@ -111,8 +133,8 @@ export async function loadPluginFromSource(
     name: derivePluginName(entry.name),
     filePath: entry.path,
     pluginRoot: pluginSystemConfig.pluginsDirectory,
-    pluginDirectory: `${pluginSystemConfig.pluginsDirectory}\\${fileId}`,
-    backendDirectory: `${pluginSystemConfig.pluginsDirectory}\\${fileId}\\${pluginSystemConfig.backendDirectoryName}`,
+    pluginDirectory: getPluginDirectory(fileId),
+    backendDirectory: getPluginBackendDirectory(fileId),
   };
 
   try {

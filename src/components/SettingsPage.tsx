@@ -37,6 +37,13 @@ import {
   clampOverlayAnimationIntensity,
   overlayAnimationPresets,
 } from '../config/overlayAnimations';
+import {
+  formatHotkeyLabel,
+  getHotkeyBindingDefinition,
+  hotkeyBindingDefinitions,
+  normalizeKeybindingValue,
+  type HotkeyBindingKey,
+} from '../config/hotkeys';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTerminalStore } from '../store/terminalStore';
 
@@ -113,6 +120,74 @@ function RangeField({
   );
 }
 
+function ShortcutField({
+  bindingKey,
+  value,
+  onCommit,
+}: {
+  bindingKey: HotkeyBindingKey;
+  value: string;
+  onCommit: (value: string) => void;
+}) {
+  const definition = getHotkeyBindingDefinition(bindingKey);
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  const commit = useCallback(() => {
+    const normalized = normalizeKeybindingValue(draft, definition.defaultValue);
+    setDraft(normalized);
+    onCommit(normalized);
+  }, [definition.defaultValue, draft, onCommit]);
+
+  return (
+    <label className="rounded border border-white/8 bg-white/[0.03] p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">{definition.label}</div>
+          <p className="mt-1 text-[11px] opacity-40">{definition.description}</p>
+        </div>
+        <span className="rounded border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-80">
+          {definition.scope}
+        </span>
+      </div>
+      <input
+        value={draft}
+        onChange={event => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={event => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            commit();
+          }
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            setDraft(value);
+          }
+        }}
+        className="mt-3 w-full rounded border px-3 py-2 text-[11px] outline-none"
+        style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)' }}
+      />
+      <div className="mt-2 flex items-center justify-between gap-3 text-[10px] opacity-45">
+        <span>Live value: {formatHotkeyLabel(value)}</span>
+        <button
+          type="button"
+          onClick={() => {
+            setDraft(definition.defaultValue);
+            onCommit(definition.defaultValue);
+          }}
+          className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.14em]"
+          style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)' }}
+        >
+          Reset
+        </button>
+      </div>
+    </label>
+  );
+}
+
 function parseMatcherInput(value: string): string[] {
   return value
     .split(',')
@@ -138,6 +213,7 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
   const updateExplorer = useSettingsStore(s => s.updateExplorer);
   const updateAppearance = useSettingsStore(s => s.updateAppearance);
   const updateLayout = useSettingsStore(s => s.updateLayout);
+  const updateKeybindings = useSettingsStore(s => s.updateKeybindings);
   const updateSystem = useSettingsStore(s => s.updateSystem);
   const resetToDefaults = useSettingsStore(s => s.resetToDefaults);
   const { directoryBookmarks, addDirectoryBookmark } = useTerminalStore();
@@ -531,6 +607,27 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
                   />
                 </div>
               </div>
+            </div>
+          </section>
+
+          <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+            <SectionTitle
+              icon={<TerminalSquare size={12} />}
+              title="Hotkeys"
+              subtitle="Keep the overlay opener configurable and expose the first global gesture controls."
+            />
+
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+              {hotkeyBindingDefinitions
+                .filter(definition => definition.scope === 'global' || definition.scope === 'gesture')
+                .map(definition => (
+                  <ShortcutField
+                    key={definition.key}
+                    bindingKey={definition.key}
+                    value={settings.keybindings[definition.key]}
+                    onCommit={value => updateKeybindings({ [definition.key]: value })}
+                  />
+                ))}
             </div>
           </section>
 

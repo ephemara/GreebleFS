@@ -19,13 +19,38 @@ export function togglePanelId(ids: string[], panelId: string): string[] {
 }
 
 export function syncOpenPanelIds(
-  currentIds: string[],
+  openIds: string[],
   availableIds: string[],
   defaultOpenIds: string[],
 ): string[] {
-  const currentAvailable = currentIds.filter(id => availableIds.includes(id));
-  const missingDefaults = defaultOpenIds.filter(id => !currentAvailable.includes(id));
-  return [...currentAvailable, ...missingDefaults];
+  return derivePanelOpenState({
+    savedOpenIds: openIds,
+    dismissedPanelIds: [],
+    availableIds,
+    defaultOpenIds,
+    enforcedOpenIds: [],
+  });
+}
+
+export function derivePanelOpenState(args: {
+  savedOpenIds: string[];
+  dismissedPanelIds: string[];
+  availableIds: string[],
+  defaultOpenIds: string[],
+  enforcedOpenIds: string[],
+}): string[] {
+  const availableSet = new Set(args.availableIds);
+  const savedOpenIds = args.savedOpenIds.filter(id => availableSet.has(id));
+  const dismissedSet = new Set(args.dismissedPanelIds.filter(id => availableSet.has(id)));
+  const defaultOpenIds = args.defaultOpenIds
+    .filter(id => availableSet.has(id) && !dismissedSet.has(id));
+  const enforcedOpenIds = args.enforcedOpenIds.filter(id => availableSet.has(id));
+
+  return Array.from(new Set([
+    ...savedOpenIds,
+    ...defaultOpenIds,
+    ...enforcedOpenIds,
+  ]));
 }
 
 export function getNextActivePanelId(openIds: string[], closedId: string): string | null {

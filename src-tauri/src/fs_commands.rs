@@ -1233,7 +1233,7 @@ pub async fn git_exec(repo_path: String, args: Vec<String>) -> Result<String, St
 pub async fn fs_read_file_base64(path: String) -> Result<String, String> {
     use std::io::Read;
     let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
-    // Cap at 50 MB — large enough for most images
+    // Cap at 50 MB so previews stay responsive while still covering large images and meshes.
     if meta.len() > 50 * 1024 * 1024 {
         return Err("File is too large to preview (> 50 MB)".to_string());
     }
@@ -1256,6 +1256,11 @@ pub async fn fs_read_file_base64(path: String) -> Result<String, String> {
         "svg" => "image/svg+xml",
         "tiff" | "tif" => "image/tiff",
         "avif" => "image/avif",
+        "glb" => "model/gltf-binary",
+        "gltf" => "model/gltf+json",
+        "obj" => "text/plain",
+        "stl" => "model/stl",
+        "fbx" => "application/octet-stream",
         _ => "application/octet-stream",
     };
 

@@ -3,7 +3,7 @@ import { loadPluginFromSource } from '../components/pluginRuntime';
 
 const entry = {
   name: 'broken-plugin.tsx',
-  path: 'M:\\OverlayTerm\\plugins\\broken-plugin.tsx',
+  path: 'plugins/broken-plugin.tsx',
   is_dir: false,
   modified: 1,
   extension: 'tsx',

@@ -8,6 +8,7 @@ import '@testing-library/jest-dom';
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn().mockResolvedValue(null),
   convertFileSrc: (path: string) => `asset://localhost/${path}`,
+  isTauri: vi.fn(() => true),
 }));
 
 vi.mock('@tauri-apps/api/event', () => ({
@@ -51,6 +52,7 @@ vi.mock('@tauri-apps/plugin-global-shortcut', () => ({
   register: vi.fn().mockResolvedValue(undefined),
   unregister: vi.fn().mockResolvedValue(undefined),
   isRegistered: vi.fn().mockResolvedValue(false),
+  unregisterAll: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Monaco editor — heavy and irrelevant for unit tests

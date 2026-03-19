@@ -1,0 +1,50 @@
+import { describe, expect, it } from 'vitest';
+import {
+  getModelPreviewFormat,
+  getMonacoLanguage,
+  isEditableTextExtension,
+  isExecutableExtension,
+  isImagePreviewExtension,
+} from '../config/filePreview';
+
+describe('filePreview config', () => {
+  it('detects image preview extensions', () => {
+    expect(isImagePreviewExtension('png')).toBe(true);
+    expect(isImagePreviewExtension('.webp')).toBe(true);
+    expect(isImagePreviewExtension('obj')).toBe(false);
+  });
+
+  it('detects executable extensions', () => {
+    expect(isExecutableExtension('exe')).toBe(true);
+    expect(isExecutableExtension('ps1')).toBe(true);
+    expect(isExecutableExtension('glb')).toBe(false);
+  });
+
+  it('maps supported 3d extensions to model formats', () => {
+    expect(getModelPreviewFormat('fbx')).toBe('fbx');
+    expect(getModelPreviewFormat('glb')).toBe('glb');
+    expect(getModelPreviewFormat('.gltf')).toBe('gltf');
+    expect(getModelPreviewFormat('obj')).toBe('obj');
+    expect(getModelPreviewFormat('stl')).toBe('stl');
+    expect(getModelPreviewFormat('png')).toBeNull();
+  });
+
+  it('keeps 3d assets out of editable text mode even when small', () => {
+    expect(isEditableTextExtension('obj', 1024)).toBe(false);
+    expect(isEditableTextExtension('fbx', 1024)).toBe(false);
+    expect(isEditableTextExtension('glb', 1024)).toBe(false);
+  });
+
+  it('still allows normal source files to open in the editor', () => {
+    expect(isEditableTextExtension('ts', 1024)).toBe(true);
+    expect(isEditableTextExtension('txt', 1024)).toBe(true);
+    expect(isEditableTextExtension('', 1024)).toBe(true);
+  });
+
+  it('returns monaco language hints with sensible fallbacks', () => {
+    expect(getMonacoLanguage('ts')).toBe('typescript');
+    expect(getMonacoLanguage('wgsl')).toBe('wgsl');
+    expect(getMonacoLanguage('obj')).toBe('plaintext');
+    expect(getMonacoLanguage('')).toBe('plaintext');
+  });
+});

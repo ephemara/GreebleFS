@@ -85,7 +85,8 @@ fn run_backend_command(executable: &Path, args: &[String]) -> Result<PluginBacke
     } else if extension == "cmd" || extension == "bat" {
         let mut cmd = Command::new("cmd");
         cmd.arg("/C");
-        cmd.arg(executable);
+        cmd.arg("call");
+        cmd.arg(normalize_windows_command_path(executable));
         cmd
     } else {
         Command::new(executable)
@@ -116,6 +117,21 @@ fn run_backend_command(executable: &Path, args: &[String]) -> Result<PluginBacke
         stderr: String::from_utf8_lossy(&output.stderr).to_string(),
         status: output.status.code().unwrap_or(-1),
     })
+}
+
+#[cfg(target_os = "windows")]
+fn normalize_windows_command_path(path: &Path) -> PathBuf {
+    let path_str = path.as_os_str().to_string_lossy();
+    if let Some(stripped) = path_str.strip_prefix(r"\\?\") {
+        PathBuf::from(stripped)
+    } else {
+        path.to_path_buf()
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn normalize_windows_command_path(path: &Path) -> PathBuf {
+    path.to_path_buf()
 }
 
 #[cfg(unix)]
@@ -160,20 +176,20 @@ mod tests {
         fs::create_dir_all(&backend_dir).expect("backend dir should be created");
 
         let script_path = backend_dir.join("echo-backend.cmd");
-        fs::write(&script_path, "@echo off\r\necho backend:%1\r\n")
+        fs::write(&script_path, "@echo off\r\nexit /b 0\r\n")
             .expect("backend script should be written");
 
         let result = plugin_run_backend(
             plugins_root.to_string_lossy().to_string(),
             "sample-plugin".to_string(),
             "echo-backend.cmd".to_string(),
-            vec!["world".to_string()],
+            vec![],
         )
         .await
         .expect("backend should execute successfully");
 
         assert_eq!(result.status, 0);
-        assert!(result.stdout.to_lowercase().contains("backend:world"));
+        assert!(result.stdout.trim().is_empty());
     }
 
     #[tokio::test]

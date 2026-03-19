@@ -448,6 +448,7 @@ function SidebarContent({ panel, theme, appearance, injectCmd, injectCd }: Sideb
 export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance: appearanceProp }: TerminalOverlayProps) {
   const settings = useSettingsStore(s => s.settings.terminal);
   const appearanceSettings = useSettingsStore(s => s.settings.appearance);
+  const keybindings = useSettingsStore(s => s.settings.keybindings);
   const appearance = useMemo(
     () => appearanceProp ?? resolveOverlayAppearance({
       activeThemeId: appearanceSettings.activeThemeId,
@@ -754,7 +755,7 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
         <div className="flex items-center gap-0.5 px-2 border-l shrink-0" style={{ borderColor: theme.border }}>
           <kbd className="text-[9px] font-mono bg-white/[0.04] px-1.5 py-0.5 rounded border border-white/5 select-none mr-1"
             style={{ color: theme.textMuted }}>
-            Ctrl+Space
+            {keybindings.terminalToggle}
           </kbd>
           <button onClick={onClose} className="p-1.5 rounded hover:bg-red-500/12 hover:text-red-400 transition-all"
             style={{ color: theme.textMuted }} title="Close (Esc)">

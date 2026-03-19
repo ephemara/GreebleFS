@@ -9,7 +9,7 @@
  */
 
 import React, {
-  useState, useEffect, useRef, useCallback, useMemo,
+  Suspense, useState, useEffect, useRef, useCallback, useMemo,
 } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -28,6 +28,24 @@ import { detectClientPlatform, getFallbackExplorerPath, getPlatformPathSeparator
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { useExplorerStore } from '../store/explorerStore';
 import { useSettingsStore } from '../store/settingsStore';
+import {
+  getModelPreviewFormat,
+  getMonacoLanguage,
+  isEditableTextExtension,
+  isExecutableExtension,
+  isImagePreviewExtension,
+  type ModelPreviewFormat,
+} from '../config/filePreview';
+import {
+  clampSearchFocusLine,
+  createEditorSearchFocus,
+  findSearchFocusColumns,
+  type EditorSearchFocusTarget,
+} from './fileExplorerSearchFocus';
+
+const LazyModelPreview = React.lazy(() =>
+  import('./ModelPreview').then(module => ({ default: module.ModelPreview })),
+);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -49,7 +67,11 @@ interface DriveInfo {
 interface FsBookmark { id: string; name: string; path: string; }
 interface ContextMenuState { visible: boolean; x: number; y: number; entry: FileEntry | null; }
 interface RenameState    { active: boolean; path: string; name: string; }
-interface PreviewState   { type: 'image'|'text'|'none'; path: string; content?: string; language?: string; }
+type PreviewState =
+  | { type: 'none'; path: string }
+  | { type: 'image'; path: string; content: string }
+  | { type: 'text'; path: string; content: string; language: string; focusTarget: EditorSearchFocusTarget | null }
+  | { type: 'model3d'; path: string; format: ModelPreviewFormat; name: string };
 interface NewItemState   { visible: boolean; kind: 'file'|'folder'; }
 interface ExplorerClipboard { action:'copy'|'cut'; entries: FileEntry[]; }
 interface FileTransferResult { source_path: string; destination_path: string; operation: 'copy' | 'move'; }
@@ -59,6 +81,7 @@ interface ExplorerEditorTab {
   name: string;
   language: string;
   content: string;
+  focusTarget: EditorSearchFocusTarget | null;
   isDirty: boolean;
   isSaving: boolean;
   lastSavedAt: number | null;
@@ -155,6 +178,168 @@ const FILENAME_ICON: Record<string, string> = {
   'cargo.lock': 'rust',
 };
 
+const EXT_TYPE_LABEL: Record<string, string> = {
+  rs: 'Rust',
+  py: 'Python',
+  js: 'JavaScript',
+  jsx: 'JavaScript',
+  ts: 'TypeScript',
+  tsx: 'TypeScript',
+  cpp: 'C++',
+  cc: 'C++',
+  cxx: 'C++',
+  c: 'C',
+  h: 'C Header',
+  hpp: 'C++ Header',
+  cs: 'C#',
+  java: 'Java',
+  go: 'Go',
+  rb: 'Ruby',
+  php: 'PHP',
+  swift: 'Swift',
+  kt: 'Kotlin',
+  dart: 'Dart',
+  lua: 'Lua',
+  zig: 'Zig',
+  html: 'HTML',
+  htm: 'HTML',
+  css: 'CSS',
+  scss: 'SCSS',
+  sass: 'Sass',
+  less: 'Less',
+  json: 'JSON',
+  yaml: 'YAML',
+  yml: 'YAML',
+  toml: 'TOML',
+  xml: 'XML',
+  ini: 'Config',
+  cfg: 'Config',
+  md: 'Markdown',
+  mdx: 'Markdown',
+  txt: 'Text',
+  pdf: 'PDF',
+  glsl: 'GLSL',
+  hlsl: 'HLSL',
+  wgsl: 'WGSL',
+  vert: 'Shader',
+  frag: 'Shader',
+  ps1: 'PowerShell',
+  sh: 'Shell',
+  bash: 'Shell',
+  zsh: 'Shell',
+  bat: 'Batch',
+  cmd: 'Command',
+  exe: 'Executable',
+  msi: 'Installer',
+  dmg: 'Disk Image',
+  dll: 'Library',
+  so: 'Library',
+  dylib: 'Library',
+  zip: 'Archive',
+  rar: 'Archive',
+  '7z': 'Archive',
+  tar: 'Archive',
+  gz: 'Archive',
+  bz2: 'Archive',
+  xz: 'Archive',
+  jpg: 'Image',
+  jpeg: 'Image',
+  png: 'Image',
+  gif: 'Image',
+  webp: 'Image',
+  bmp: 'Image',
+  ico: 'Image',
+  svg: 'Vector',
+  tiff: 'Image',
+  tif: 'Image',
+  avif: 'Image',
+  mp4: 'Video',
+  mkv: 'Video',
+  avi: 'Video',
+  mov: 'Video',
+  wmv: 'Video',
+  flv: 'Video',
+  webm: 'Video',
+  mp3: 'Audio',
+  wav: 'Audio',
+  flac: 'Audio',
+  ogg: 'Audio',
+  m4a: 'Audio',
+  aac: 'Audio',
+  opus: 'Audio',
+  ttf: 'Font',
+  otf: 'Font',
+  woff: 'Font',
+  woff2: 'Font',
+  fbx: '3D Model',
+  obj: '3D Model',
+  glb: '3D Model',
+  gltf: '3D Model',
+  uasset: 'UE Asset',
+  uproject: 'UE Project',
+  sql: 'SQL',
+  db: 'Database',
+  sqlite: 'Database',
+  csv: 'CSV',
+  log: 'Log',
+  lock: 'Lockfile',
+  kain: 'Kain',
+  ink: 'Ink',
+};
+
+const FILENAME_TYPE_LABEL: Record<string, string> = {
+  'dockerfile': 'Docker',
+  'makefile': 'Makefile',
+  'rakefile': 'Ruby',
+  'cmake': 'CMake',
+  '.gitignore': 'Git',
+  '.gitattributes': 'Git',
+  '.gitmodules': 'Git',
+  '.env': 'Environment',
+  '.env.local': 'Environment',
+  '.editorconfig': 'EditorConfig',
+  'package.json': 'NPM Package',
+  'package-lock.json': 'NPM Lockfile',
+  'cargo.toml': 'Cargo Manifest',
+  'cargo.lock': 'Cargo Lockfile',
+};
+
+function getEntryExtension(entry: Pick<FileEntry, 'is_dir' | 'name' | 'extension'>): string {
+  if (entry.is_dir) {
+    return '';
+  }
+
+  const normalizedExtension = (entry.extension ?? '').trim().replace(/^\./, '').toLowerCase();
+  if (normalizedExtension) {
+    return normalizedExtension;
+  }
+
+  const lastDotIndex = entry.name.lastIndexOf('.');
+  if (lastDotIndex <= 0 || lastDotIndex === entry.name.length - 1) {
+    return '';
+  }
+
+  return entry.name.slice(lastDotIndex + 1).toLowerCase();
+}
+
+function getEntryTypeLabel(entry: Pick<FileEntry, 'is_dir' | 'name' | 'extension'>): string {
+  if (entry.is_dir) {
+    return 'Folder';
+  }
+
+  const filename = entry.name.toLowerCase();
+  if (FILENAME_TYPE_LABEL[filename]) {
+    return FILENAME_TYPE_LABEL[filename];
+  }
+
+  const extension = getEntryExtension(entry);
+  if (!extension) {
+    return 'File';
+  }
+
+  return EXT_TYPE_LABEL[extension] ?? `${extension.toUpperCase()} File`;
+}
+
 function getIconSrc(
   entry: FileEntry,
   open = false,
@@ -167,7 +352,7 @@ function getIconSrc(
   const fnLower = entry.name.toLowerCase();
   if (FILENAME_ICON[fnLower]) return `${ICON_BASE}${FILENAME_ICON[fnLower]}.svg`;
   // Check extension
-  const ext = entry.extension.toLowerCase();
+  const ext = getEntryExtension(entry);
   const extIcon = EXT_ICON[ext];
   if (extIcon) return `${ICON_BASE}${extIcon}.svg`;
   return `${ICON_BASE}txt.svg`;
@@ -175,29 +360,10 @@ function getIconSrc(
 
 // ─── Extension sets (for preview logic only) ─────────────────────────────────
 
-const IMAGE_EXTS = new Set(['jpg','jpeg','png','gif','webp','svg','bmp','ico','tiff','tif','avif']);
-const CODE_EXTS  = new Set(['ts','tsx','js','jsx','rs','py','go','c','cpp','h','hpp','cs','java','rb','php','swift','kt','vue','html','css','scss','json','toml','yaml','yml','xml','md','sh','ps1','bat','lua','sql','zig','env','dart','glsl','wgsl','hlsl','ini','txt','kain','ink','log']);
-const EXEC_EXTS  = new Set(['exe','msi','bat','cmd','ps1','sh','app','dmg']);
-
-function monacoLang(ext: string): string {
-  const map: Record<string, string> = {
-    ts:'typescript', tsx:'typescript', js:'javascript', jsx:'javascript',
-    rs:'rust', py:'python', go:'go', c:'c', cpp:'cpp', h:'cpp',
-    cs:'csharp', java:'java', rb:'ruby', php:'php', swift:'swift', kt:'kotlin',
-    vue:'html', html:'html', css:'css', scss:'scss', json:'json', toml:'toml',
-    yaml:'yaml', yml:'yaml', xml:'xml', md:'markdown', sh:'shell',
-    ps1:'powershell', bat:'bat', lua:'lua', sql:'sql', zig:'zig', ini:'ini',
-    env:'shell', dart:'dart', glsl:'glsl', wgsl:'wgsl', hlsl:'hlsl',
-    kain:'plaintext', ink:'plaintext', log:'plaintext',
-  };
-  return map[ext] || 'plaintext';
-}
-
 function isEditableTextEntry(entry: FileEntry): boolean {
   if (entry.is_dir) return false;
-  const ext = entry.extension.toLowerCase();
-  if (IMAGE_EXTS.has(ext) || EXEC_EXTS.has(ext)) return false;
-  return CODE_EXTS.has(ext) || entry.size < 2 * 1024 * 1024;
+  const ext = getEntryExtension(entry);
+  return isEditableTextExtension(ext, entry.size);
 }
 
 function formatSize(bytes: number): string {
@@ -332,13 +498,119 @@ function ContextMenu({ state, items, onClose }: { state: ContextMenuState; items
   );
 }
 
+const MONACO_FIND_WITH_ARGS_ACTION = 'editor.actions.findWithArgs';
+
+type MonacoEditorOptions = React.ComponentProps<typeof Editor>['options'];
+
+function applyEditorSearchFocus(editor: any, monaco: any, focusTarget: EditorSearchFocusTarget | null) {
+  editor.layout?.();
+
+  if (!focusTarget) {
+    return;
+  }
+
+  const model = editor.getModel?.();
+  if (!model) {
+    return;
+  }
+
+  const lineNumber = clampSearchFocusLine(focusTarget.lineNumber, model.getLineCount());
+  const lineContent = model.getLineContent(lineNumber);
+  const { startColumn, endColumn } = findSearchFocusColumns(lineContent, focusTarget.searchString);
+
+  if (focusTarget.searchString) {
+    const range = new monaco.Range(lineNumber, startColumn, lineNumber, endColumn);
+    editor.setSelection?.(range);
+    editor.revealRangeInCenter?.(range);
+    editor.focus?.();
+    void editor.getAction?.(MONACO_FIND_WITH_ARGS_ACTION)?.run({
+      searchString: focusTarget.searchString,
+      isRegex: false,
+      matchWholeWord: false,
+      isCaseSensitive: false,
+      findInSelection: false,
+    });
+    return;
+  }
+
+  editor.setPosition?.({ lineNumber, column: 1 });
+  editor.revealLineInCenter?.(lineNumber);
+  editor.focus?.();
+}
+
+function SearchAwareCodeView({
+  value,
+  language,
+  readOnly,
+  focusTarget,
+  onChange,
+  options,
+}: {
+  value: string;
+  language: string;
+  readOnly: boolean;
+  focusTarget: EditorSearchFocusTarget | null;
+  onChange?: (value: string) => void;
+  options: MonacoEditorOptions;
+}) {
+  const editorRef = useRef<any>(null);
+  const monacoRef = useRef<any>(null);
+
+  const handleMount = useCallback((editor: any, monaco: any) => {
+    editorRef.current = editor;
+    monacoRef.current = monaco;
+    window.requestAnimationFrame(() => {
+      applyEditorSearchFocus(editor, monaco, focusTarget);
+    });
+  }, [focusTarget]);
+
+  useEffect(() => {
+    if (!editorRef.current || !monacoRef.current) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      applyEditorSearchFocus(editorRef.current, monacoRef.current, focusTarget);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [focusTarget?.requestId, value]);
+
+  return (
+    <Editor
+      height="100%"
+      language={language || 'plaintext'}
+      value={value}
+      theme="vs-dark"
+      onMount={handleMount}
+      onChange={onChange ? nextValue => onChange(nextValue ?? '') : undefined}
+      options={{
+        automaticLayout: true,
+        readOnly,
+        ...options,
+      }}
+    />
+  );
+}
+
 // ─── Resizable Preview Panel ──────────────────────────────────────────────────
 
-function PreviewPanel({ preview, onClose }: { preview: PreviewState; onClose: () => void }) {
-  const [width, setWidth] = useState(380);
+function PreviewPanel({
+  preview,
+  width,
+  onClose,
+  onWidthChange,
+}: {
+  preview: PreviewState;
+  width: number;
+  onClose: () => void;
+  onWidthChange: (width: number) => void;
+}) {
   const dragging = useRef(false);
   const startX   = useRef(0);
-  const startW   = useRef(380);
+  const startW   = useRef(width);
 
   const onMouseDown = (e: React.MouseEvent) => {
     dragging.current = true;
@@ -351,13 +623,13 @@ function PreviewPanel({ preview, onClose }: { preview: PreviewState; onClose: ()
     const move = (e: MouseEvent) => {
       if (!dragging.current) return;
       const delta = startX.current - e.clientX; // dragging left grows the panel
-      setWidth(Math.max(220, Math.min(800, startW.current + delta)));
+      onWidthChange(Math.max(220, Math.min(800, startW.current + delta)));
     };
     const up = () => { dragging.current = false; };
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
     return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
-  }, []);
+  }, [onWidthChange]);
 
   return (
     <div style={{ width, background:EXP.panel, borderLeft:`1px solid ${EXP.border}`, display:'flex', flexDirection:'column', flexShrink:0, overflow:'hidden', position:'relative' }}>
@@ -389,14 +661,41 @@ function PreviewPanel({ preview, onClose }: { preview: PreviewState; onClose: ()
           </div>
         )}
         {preview.type === 'text' && (
-          <Editor
-            height="100%"
-            language={preview.language || 'plaintext'}
+          <SearchAwareCodeView
             value={preview.content || ''}
-            theme="vs-dark"
+            language={preview.language || 'plaintext'}
+            readOnly
+            focusTarget={preview.focusTarget}
             options={{ readOnly:true, minimap:{enabled:false}, scrollBeyondLastLine:false, fontSize:12, lineNumbers:'on', wordWrap:'on', padding:{top:8}, renderLineHighlight:'none', overviewRulerLanes:0 }}
           />
         )}
+        {preview.type === 'model3d' && (
+          <Suspense fallback={<ModelPreviewFallback entryName={preview.name} format={preview.format} />}>
+            <LazyModelPreview
+              entryName={preview.name}
+              format={preview.format}
+              sourcePath={preview.path}
+            />
+          </Suspense>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ModelPreviewFallback({
+  entryName,
+  format,
+}: {
+  entryName: string;
+  format: ModelPreviewFormat;
+}) {
+  return (
+    <div style={{ width: '100%', height: '100%', background: '#090d12', display: 'grid', placeItems: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: EXP.muted, fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+        <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} />
+        <span>Loading {format.toUpperCase()} Preview</span>
+        <span style={{ color: EXP.muted2, textTransform: 'none', letterSpacing: 0, fontSize: 10 }}>{entryName}</span>
       </div>
     </div>
   );
@@ -408,18 +707,28 @@ function EditorTabsPanel({
   onSelect,
   onCloseTab,
   onChangeContent,
+  preferWideLayout,
 }: {
   tabs: ExplorerEditorTab[];
   activePath: string | null;
   onSelect: (path: string) => void;
   onCloseTab: (path: string) => void;
   onChangeContent: (path: string, content: string) => void;
+  preferWideLayout: boolean;
 }) {
-  const [width, setWidth] = useState(540);
+  const baseWidth = preferWideLayout ? 760 : 540;
+  const minWidth = preferWideLayout ? 460 : 320;
+  const [width, setWidth] = useState(baseWidth);
   const dragging = useRef(false);
   const startX = useRef(0);
-  const startW = useRef(540);
+  const startW = useRef(baseWidth);
   const activeTab = tabs.find(tab => tab.path === activePath) ?? null;
+
+  useEffect(() => {
+    if (preferWideLayout) {
+      setWidth(current => Math.max(current, baseWidth));
+    }
+  }, [baseWidth, preferWideLayout]);
 
   const onMouseDown = (e: React.MouseEvent) => {
     dragging.current = true;
@@ -432,7 +741,7 @@ function EditorTabsPanel({
     const move = (e: MouseEvent) => {
       if (!dragging.current) return;
       const delta = startX.current - e.clientX;
-      setWidth(Math.max(320, Math.min(1000, startW.current + delta)));
+      setWidth(Math.max(minWidth, Math.min(1200, startW.current + delta)));
     };
     const up = () => {
       dragging.current = false;
@@ -498,14 +807,13 @@ function EditorTabsPanel({
       </OverlayScrollArea>
       <div style={{ flex: 1, overflow: 'hidden' }}>
         {activeTab && (
-          <Editor
-            height="100%"
-            language={activeTab.language || 'plaintext'}
+          <SearchAwareCodeView
             value={activeTab.content}
-            theme="vs-dark"
-            onChange={value => onChangeContent(activeTab.path, value ?? '')}
+            language={activeTab.language || 'plaintext'}
+            readOnly={false}
+            focusTarget={activeTab.focusTarget}
+            onChange={value => onChangeContent(activeTab.path, value)}
             options={{
-              readOnly: false,
               minimap: { enabled: false },
               scrollBeyondLastLine: false,
               fontSize: 12,
@@ -604,6 +912,12 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     }
     return isCompactDock ? 180 : 220;
   });
+  const [previewWidth, setPreviewWidth] = useState(() => {
+    if (typeof explorerSession.previewWidth === 'number') {
+      return Math.max(220, Math.min(800, explorerSession.previewWidth));
+    }
+    return 380;
+  });
   const [entries,      setEntries]      = useState<FileEntry[]>([]);
   const [searchResults, setSearchResults] = useState<FileSearchResult[]>([]);
   const [drives,       setDrives]       = useState<DriveInfo[]>([]);
@@ -630,6 +944,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const editorTabsRef = useRef<ExplorerEditorTab[]>([]);
   const editorSaveTimers = useRef<Map<string, number>>(new Map());
   const searchRequestIdRef = useRef(0);
+  const searchFocusRequestIdRef = useRef(0);
   const addressInputRef = useRef<HTMLInputElement>(null);
   const [addressEditing, setAddressEditing] = useState(false);
   const [addressDraft, setAddressDraft] = useState('');
@@ -660,6 +975,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
       history,
       historyIdx,
       sidebarWidth,
+      previewWidth,
       search,
       searchIncludeContent,
     });
@@ -667,6 +983,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     currentPath,
     history,
     historyIdx,
+    previewWidth,
     search,
     searchIncludeContent,
     sidebarWidth,
@@ -963,14 +1280,40 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   }, [currentPath, refresh, transferIntoDirectory]);
 
   // ── Open ──
-  const previewEntry = useCallback(async (entry: FileEntry) => {
+  const getSearchFocusTarget = useCallback((entry: FileEntry): EditorSearchFocusTarget | null => {
+    if (!isSearchActive) {
+      return null;
+    }
+
+    const searchEntry = entry as FileSearchResult;
+    const nextRequestId = searchFocusRequestIdRef.current + 1;
+    const target = createEditorSearchFocus(nextRequestId, search.trim(), {
+      line_number: searchEntry.line_number ?? null,
+      match_kind: searchEntry.match_kind,
+    });
+
+    if (target) {
+      searchFocusRequestIdRef.current = nextRequestId;
+    }
+
+    return target;
+  }, [isSearchActive, search]);
+
+  const previewEntry = useCallback(async (entry: FileEntry, focusTarget: EditorSearchFocusTarget | null = null) => {
     if (entry.is_dir) {
       setPreview({ type: 'none', path: '' });
       return;
     }
-    const ext = entry.extension.toLowerCase();
+    const ext = getEntryExtension(entry);
 
-    if (IMAGE_EXTS.has(ext)) {
+    const modelFormat = getModelPreviewFormat(ext);
+
+    if (modelFormat) {
+      setPreview({ type:'model3d', path:entry.path, format:modelFormat, name:entry.name });
+      return;
+    }
+
+    if (isImagePreviewExtension(ext)) {
       setPreviewLoading(true);
       try {
         const dataUri = await invoke<string>('fs_read_file_base64', { path: entry.path });
@@ -984,7 +1327,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
       setPreviewLoading(true);
       try {
         const content = await invoke<string>('fs_read_text_file', { path: entry.path });
-        setPreview({ type:'text', path:entry.path, content, language:monacoLang(ext) });
+        setPreview({ type:'text', path:entry.path, content, language:getMonacoLanguage(ext), focusTarget });
       } catch {
         setPreview({ type: 'none', path: '' });
       }
@@ -1039,21 +1382,27 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     editorSaveTimers.current.set(path, timer);
   }, [persistEditorTab]);
 
-  const openEditorTab = useCallback(async (entry: FileEntry) => {
+  const openEditorTab = useCallback(async (entry: FileEntry, focusTarget: EditorSearchFocusTarget | null = null) => {
     const existing = editorTabsRef.current.find(tab => tab.path === entry.path);
     if (existing) {
+      setEditorTabs(prev => prev.map(tab => (
+        tab.path === entry.path
+          ? { ...tab, focusTarget }
+          : tab
+      )));
       setActiveEditorPath(existing.path);
       return;
     }
-    const ext = entry.extension.toLowerCase();
+    const ext = getEntryExtension(entry);
     setPreviewLoading(true);
     try {
       const content = await invoke<string>('fs_read_text_file', { path: entry.path });
       setEditorTabs(prev => [...prev, {
         path: entry.path,
         name: entry.name,
-        language: monacoLang(ext),
+        language: getMonacoLanguage(ext),
         content,
+        focusTarget,
         isDirty: false,
         isSaving: false,
         lastSavedAt: Date.now(),
@@ -1105,25 +1454,27 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
       navigate(entry.path);
       return;
     }
-    const ext = entry.extension.toLowerCase();
+    const ext = getEntryExtension(entry);
+    const focusTarget = getSearchFocusTarget(entry);
 
     if (isEditableTextEntry(entry)) {
-      await openEditorTab(entry);
+      setPreview({ type: 'none', path: '' });
+      await openEditorTab(entry, focusTarget);
       return;
     }
 
-    if (IMAGE_EXTS.has(ext)) {
-      await previewEntry(entry);
+    if (getModelPreviewFormat(ext) || isImagePreviewExtension(ext)) {
+      await previewEntry(entry, focusTarget);
       return;
     }
 
-    if (EXEC_EXTS.has(ext)) {
+    if (isExecutableExtension(ext)) {
       await invoke('fs_open_file', { path: entry.path }).catch(e => setError(String(e)));
       return;
     }
 
     await invoke('fs_open_file', { path: entry.path }).catch(e => setError(String(e)));
-  }, [navigate, openEditorTab, previewEntry]);
+  }, [getSearchFocusTarget, navigate, openEditorTab, previewEntry]);
 
   // ── Duplicate ──
   const duplicate = useCallback(async (entry: FileEntry) => {
@@ -1259,7 +1610,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     }
     lastSelected.current = entry.path;
     if (plainClick && !entry.is_dir) {
-      void previewEntry(entry);
+      void previewEntry(entry, getSearchFocusTarget(entry));
     }
   };
 
@@ -1931,7 +2282,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                         </td>
                         <td style={{ padding:'4px 12px', color:EXP.muted, fontFamily:'monospace', whiteSpace:'nowrap' }}>{entry.is_dir ? '—' : formatSize(entry.size)}</td>
                         <td style={{ padding:'4px 12px', color:EXP.muted, whiteSpace:'nowrap' }}>{formatDate(entry.modified)}</td>
-                        <td style={{ padding:'4px 12px', color:EXP.muted2 }}>{entry.is_dir ? 'Folder' : (entry.extension.toUpperCase()||'File')}</td>
+                        <td style={{ padding:'4px 12px', color:EXP.muted2 }}>{getEntryTypeLabel(entry)}</td>
                       </tr>
                     );
                   })}
@@ -1949,9 +2300,17 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
               onSelect={setActiveEditorPath}
               onCloseTab={closeEditorTab}
               onChangeContent={updateEditorTabContent}
+              preferWideLayout={isSearchActive}
             />
           )}
-          {hasPreview && <PreviewPanel preview={preview} onClose={() => setPreview({ type:'none', path:'' })} />}
+          {hasPreview && (
+            <PreviewPanel
+              preview={preview}
+              width={previewWidth}
+              onWidthChange={setPreviewWidth}
+              onClose={() => setPreview({ type:'none', path:'' })}
+            />
+          )}
         </div>
 
         {/* Status bar */}

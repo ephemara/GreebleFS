@@ -1,74 +1,69 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { listen } from '@tauri-apps/api/event';
+import { isTauri } from '@tauri-apps/api/core';
+import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
 import { useGlobalShortcut } from '../input/GlobalShortcuts';
 
 describe('useGlobalShortcut', () => {
-  let previousTauriValue: unknown;
-
   beforeEach(() => {
-    previousTauriValue = (window as Window & { __TAURI__?: unknown }).__TAURI__;
-    delete (window as Window & { __TAURI__?: unknown }).__TAURI__;
+    vi.mocked(isTauri).mockReturnValue(true);
   });
 
   afterEach(() => {
-    if (previousTauriValue === undefined) {
-      delete (window as Window & { __TAURI__?: unknown }).__TAURI__;
-    } else {
-      (window as Window & { __TAURI__?: unknown }).__TAURI__ = previousTauriValue;
-    }
+    vi.mocked(isTauri).mockReturnValue(true);
   });
 
   it('does not register an event listener when disabled', () => {
-    (window as Window & { __TAURI__?: unknown }).__TAURI__ = {};
     const callback = vi.fn();
 
     renderHook(() => useGlobalShortcut('Ctrl+Space', callback, false));
 
-    expect(vi.mocked(listen)).not.toHaveBeenCalled();
+    expect(vi.mocked(register)).not.toHaveBeenCalled();
   });
 
-  it('does not register an event listener outside tauri runtime', () => {
+  it('does not register a shortcut outside tauri runtime', () => {
     const callback = vi.fn();
+    vi.mocked(isTauri).mockReturnValue(false);
 
     renderHook(() => useGlobalShortcut('Ctrl+Space', callback, true));
 
-    expect(vi.mocked(listen)).not.toHaveBeenCalled();
+    expect(vi.mocked(register)).not.toHaveBeenCalled();
   });
 
-  it('listens for overlay toggle events, invokes callback, and unsubscribes on unmount', async () => {
+  it('registers the shortcut, invokes callback on press, and unregisters on unmount', async () => {
     const callback = vi.fn();
-    const unlisten = vi.fn();
-    let eventHandler: (() => void) | undefined;
+    let eventHandler: ((event: { state: 'Pressed' | 'Released'; shortcut: string; id: number }) => void) | undefined;
 
-    vi.mocked(listen).mockImplementation(async (_eventName, handler) => {
-      eventHandler = handler as () => void;
-      return unlisten;
+    vi.mocked(register).mockImplementation(async (_shortcut, handler) => {
+      eventHandler = handler;
     });
-    (window as Window & { __TAURI__?: unknown }).__TAURI__ = {};
 
     const { unmount } = renderHook(() => useGlobalShortcut('Ctrl+Space', callback, true));
 
     await waitFor(() => {
-      expect(vi.mocked(listen)).toHaveBeenCalledWith('overlay://toggle-request', expect.any(Function));
+      expect(vi.mocked(register)).toHaveBeenCalledWith('Ctrl+Space', expect.any(Function));
     });
 
-    eventHandler?.();
+    eventHandler?.({ state: 'Released', shortcut: 'Ctrl+Space', id: 1 });
+    expect(callback).not.toHaveBeenCalled();
+
+    eventHandler?.({ state: 'Pressed', shortcut: 'Ctrl+Space', id: 1 });
     expect(callback).toHaveBeenCalledTimes(1);
 
     unmount();
-    expect(unlisten).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(vi.mocked(unregister)).toHaveBeenCalledWith('Ctrl+Space');
+    });
   });
 
-  it('logs a warning when listener registration fails', async () => {
-    vi.mocked(listen).mockRejectedValueOnce(new Error('failed to listen'));
-    (window as Window & { __TAURI__?: unknown }).__TAURI__ = {};
+  it('logs a warning when shortcut registration fails', async () => {
+    vi.mocked(register).mockRejectedValueOnce(new Error('failed to register'));
 
     renderHook(() => useGlobalShortcut('Ctrl+Space', vi.fn(), true));
 
     await waitFor(() => {
       expect(console.warn).toHaveBeenCalledWith(
-        'Failed to listen for overlay toggle event:',
+        'Failed to register global shortcut "Ctrl+Space":',
         expect.any(Error),
       );
     });

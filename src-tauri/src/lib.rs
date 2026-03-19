@@ -20,7 +20,6 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager,
 };
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use terminal::{
     terminal_kill, terminal_open_external, terminal_resize, terminal_spawn, terminal_write,
     TerminalManager,
@@ -52,25 +51,13 @@ pub fn run() {
         .setup(|app| {
             app.manage(TerminalManager::new());
 
-            // ── Global shortcut: Ctrl+Space (works even when window is hidden) ──
-            if let Err(err) =
-                app.global_shortcut()
-                    .on_shortcut("Ctrl+Space", |app, _shortcut, event| {
-                        if event.state == ShortcutState::Pressed {
-                            toggle_overlay(app);
-                        }
-                    })
-            {
-                eprintln!("failed to register Ctrl+Space global shortcut: {err}");
-            }
-
             // ── System Tray ──
             let tray_icon = app.default_window_icon().cloned();
 
             let toggle_item = MenuItem::with_id(
                 app,
                 "toggle",
-                "Toggle Terminal  (Ctrl+Space)",
+                "Toggle Terminal",
                 true,
                 None::<&str>,
             )?;
@@ -83,7 +70,7 @@ pub fn run() {
 
             let mut tray_builder = TrayIconBuilder::new()
                 .menu(&menu)
-                .tooltip("OverlayTerm  —  Ctrl+Space to toggle")
+                .tooltip("OverlayTerm")
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "toggle" => toggle_overlay(app),

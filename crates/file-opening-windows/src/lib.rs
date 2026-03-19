@@ -40,11 +40,17 @@ impl FileOpener for WindowsFileOpener {
 		list_apps_for_extension(&ext)
 	}
 
-	fn open_with_default(&self, path: &Path) -> std::result::Result<OpenResult, String> {
-		ensure_com_initialized();
+    fn open_with_default(&self, path: &Path) -> std::result::Result<OpenResult, String> {
+        ensure_com_initialized();
 
-		let path_str = path.to_string_lossy();
-		let h_path = HSTRING::from(&*path_str);
+        if !path.exists() {
+            return Ok(OpenResult::FileNotFound {
+                path: path.to_string_lossy().to_string(),
+            });
+        }
+
+        let path_str = path.to_string_lossy();
+        let h_path = HSTRING::from(&*path_str);
 
 		unsafe {
 			let result = ShellExecuteW(None, w!("open"), &h_path, None, None, SW_SHOWNORMAL);
@@ -59,12 +65,18 @@ impl FileOpener for WindowsFileOpener {
 		}
 	}
 
-	fn open_with_app(&self, path: &Path, app_id: &str) -> std::result::Result<OpenResult, String> {
-		ensure_com_initialized();
+    fn open_with_app(&self, path: &Path, app_id: &str) -> std::result::Result<OpenResult, String> {
+        ensure_com_initialized();
 
-		let ext = path
-			.extension()
-			.and_then(|e| e.to_str())
+        if !path.exists() {
+            return Ok(OpenResult::FileNotFound {
+                path: path.to_string_lossy().to_string(),
+            });
+        }
+
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
 			.map(|e| format!(".{}", e))
 			.unwrap_or_default();
 

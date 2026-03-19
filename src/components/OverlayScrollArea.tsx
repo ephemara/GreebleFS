@@ -44,7 +44,17 @@ export function OverlayScrollArea({
   }, [direction]);
 
   return (
-    <div className={joinClassNames('overlay-scroll-area', className)} style={{ minWidth: 0, minHeight: 0, ...style }}>
+    <div
+      className={joinClassNames('overlay-scroll-area', className)}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        flex: '1 1 auto',
+        minWidth: 0,
+        minHeight: 0,
+        ...style,
+      }}
+    >
       <div
         ref={viewportRef}
         onWheel={handleWheel}
@@ -53,9 +63,23 @@ export function OverlayScrollArea({
           `overlay-scroll-area__viewport--${direction}`,
           viewportClassName,
         )}
-        style={{ minWidth: 0, minHeight: 0, ...viewportStyle }}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          flex: '1 1 auto',
+          minWidth: 0,
+          minHeight: 0,
+          ...viewportStyle,
+        }}
       >
-        <div className={joinClassNames('overlay-scroll-area__content', contentClassName)} style={{ minWidth: 0, ...contentStyle }}>
+        <div
+          className={joinClassNames('overlay-scroll-area__content', contentClassName)}
+          style={{
+            flex: '0 0 auto',
+            minWidth: 0,
+            ...contentStyle,
+          }}
+        >
           {children}
         </div>
       </div>

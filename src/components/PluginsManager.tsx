@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Blocks, FolderOpen, LoaderCircle, Puzzle, RefreshCw, TriangleAlert } from 'lucide-react';
 import { pluginSystemConfig } from '../config/plugins';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
@@ -7,6 +7,7 @@ import type {
   LoadedOverlayPlugin,
   OverlayPluginApi,
   OverlayPluginContext,
+  OverlayPluginHostContext,
 } from './pluginRuntime';
 import { OverlayScrollArea } from './OverlayScrollArea';
 
@@ -15,6 +16,30 @@ const PANEL_ALT = 'var(--overlay-bg-panel-alt)';
 const BORDER = 'var(--overlay-border)';
 const MUTED = 'var(--overlay-text-muted)';
 const TEXT = 'var(--overlay-text-primary)';
+
+type FolderPluginHostMode = 'panel-tab' | 'manager-preview';
+
+type FolderPluginHostLayout = {
+  viewportPadding: number;
+  maxWidth: number;
+  framed: boolean;
+};
+
+const FOLDER_PLUGIN_HOST_LAYOUT: Record<FolderPluginHostMode, FolderPluginHostLayout> = {
+  'panel-tab': {
+    viewportPadding: 0,
+    maxWidth: 0,
+    framed: false,
+  },
+  'manager-preview': {
+    viewportPadding: 16,
+    maxWidth: 1760,
+    framed: true,
+  },
+};
+
+const PLUGIN_HOST_COMPACT_WIDTH = 1040;
+const PLUGIN_HOST_DENSE_WIDTH = 820;
 
 export interface PluginsManagerProps {
   appearance?: ResolvedOverlayAppearance;
@@ -31,6 +56,7 @@ export interface FolderPluginRendererProps {
   plugin: LoadedOverlayPlugin;
   appearance?: ResolvedOverlayAppearance;
   createPluginApi: (plugin: OverlayPluginContext) => OverlayPluginApi;
+  hostMode?: FolderPluginHostMode;
 }
 
 export function PluginsManager({
@@ -237,14 +263,17 @@ export function PluginsManager({
           </div>
         )}
 
-        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 16 }}>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {!selectedPlugin ? (
-            <EmptyPluginsState accent={accent} onOpenFolder={onOpenPluginsFolder} />
+            <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 16 }}>
+              <EmptyPluginsState accent={accent} onOpenFolder={onOpenPluginsFolder} />
+            </div>
           ) : (
             <FolderPluginRenderer
               plugin={selectedPlugin}
               appearance={appearance}
               createPluginApi={createPluginApi}
+              hostMode="manager-preview"
             />
           )}
         </div>
@@ -257,20 +286,150 @@ export function FolderPluginRenderer({
   plugin,
   appearance,
   createPluginApi,
+  hostMode = 'panel-tab',
 }: FolderPluginRendererProps) {
-  if (plugin.error || !plugin.component) {
+  const PluginComponent = plugin.component;
+  if (plugin.error || !PluginComponent) {
     return <PluginErrorPanel plugin={plugin} />;
   }
 
   return (
+    <FolderPluginHostFrame
+      plugin={plugin}
+      appearance={appearance}
+      createPluginApi={createPluginApi}
+      hostMode={hostMode}
+    />
+  );
+}
+
+function FolderPluginHostFrame({
+  plugin,
+  appearance,
+  createPluginApi,
+  hostMode,
+}: {
+  plugin: LoadedOverlayPlugin;
+  appearance?: ResolvedOverlayAppearance;
+  createPluginApi: (plugin: OverlayPluginContext) => OverlayPluginApi;
+  hostMode: FolderPluginHostMode;
+}) {
+  const PluginComponent = plugin.component;
+  if (!PluginComponent) {
+    return <PluginErrorPanel plugin={plugin} />;
+  }
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const [hostSize, setHostSize] = useState({ width: 0, height: 0 });
+  const hostLayout = FOLDER_PLUGIN_HOST_LAYOUT[hostMode];
+
+  useEffect(() => {
+    const hostElement = hostRef.current;
+    if (!hostElement) {
+      return;
+    }
+
+    const syncHostSize = () => {
+      const nextWidth = Math.max(Math.round(hostElement.clientWidth), 0);
+      const nextHeight = Math.max(Math.round(hostElement.clientHeight), 0);
+      setHostSize(current => {
+        if (current.width === nextWidth && current.height === nextHeight) {
+          return current;
+        }
+        return { width: nextWidth, height: nextHeight };
+      });
+    };
+
+    syncHostSize();
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver(syncHostSize);
+    observer.observe(hostElement);
+    return () => observer.disconnect();
+  }, []);
+
+  const hostContext = buildPluginHostContext(hostMode, hostSize.width, hostSize.height);
+  const hostStyle = {
+    '--overlay-plugin-host-width': `${hostContext.width}px`,
+    '--overlay-plugin-host-height': `${hostContext.height}px`,
+    '--overlay-plugin-host-padding': `${hostLayout.viewportPadding}px`,
+  } as React.CSSProperties;
+  const pluginElement = (
+    <PluginComponent
+      plugin={plugin}
+      api={createPluginApi(plugin)}
+      host={hostContext}
+      appearance={getPluginAppearance(appearance)}
+    />
+  );
+
+  return (
     <PluginErrorBoundary pluginName={plugin.name}>
-      <plugin.component
-        plugin={plugin}
-        api={createPluginApi(plugin)}
-        appearance={getPluginAppearance(appearance)}
-      />
+      <div
+        ref={hostRef}
+        data-overlay-plugin-host
+        data-overlay-plugin-mode={hostMode}
+        style={{
+          ...hostStyle,
+          display: 'flex',
+          flex: 1,
+          minWidth: 0,
+          minHeight: 0,
+          overflow: 'hidden',
+          background: hostMode === 'panel-tab' ? 'transparent' : 'var(--overlay-bg-app)',
+        }}
+      >
+        {hostMode === 'panel-tab' ? (
+          <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
+            {pluginElement}
+          </div>
+        ) : (
+          <OverlayScrollArea
+            style={{ flex: 1, minHeight: 0 }}
+            viewportStyle={{ padding: hostLayout.viewportPadding }}
+            contentStyle={{
+              minHeight: '100%',
+              display: 'flex',
+              justifyContent: 'center',
+            }}
+          >
+            <div
+              style={{
+                width: '100%',
+                maxWidth: hostLayout.maxWidth,
+                minWidth: 0,
+                minHeight: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+                borderRadius: hostLayout.framed ? 16 : 0,
+                border: hostLayout.framed ? `1px solid ${BORDER}` : 'none',
+                background: hostLayout.framed ? PANEL_ALT : 'transparent',
+                boxShadow: hostLayout.framed ? '0 18px 48px rgba(0,0,0,0.22)' : 'none',
+              }}
+            >
+              {pluginElement}
+            </div>
+          </OverlayScrollArea>
+        )}
+      </div>
     </PluginErrorBoundary>
   );
+}
+
+function buildPluginHostContext(
+  mode: FolderPluginHostMode,
+  width: number,
+  height: number,
+): OverlayPluginHostContext {
+  const compact = width > 0 && width <= PLUGIN_HOST_COMPACT_WIDTH;
+  return {
+    mode,
+    width,
+    height,
+    compact,
+    density: width > 0 && width <= PLUGIN_HOST_DENSE_WIDTH ? 'compact' : 'regular',
+  };
 }
 
 function getPluginAppearance(appearance?: ResolvedOverlayAppearance) {
@@ -312,7 +471,8 @@ function EmptyPluginsState({ accent, onOpenFolder }: { accent: string; onOpenFol
       <div style={{ fontSize: 16, fontWeight: 700 }}>Drop-in plugins become tabs</div>
       <div style={{ fontSize: 12, color: MUTED, maxWidth: 520, lineHeight: 1.6 }}>
         Put a self-contained TSX file into `{pluginSystemConfig.pluginsDirectory}` and OverlayTerm will load it as a top-bar panel.
-        If a plugin needs its own native helper, place it in `{pluginSystemConfig.pluginsDirectory}\plugin-name\backend`.
+        If a plugin needs its own native helper, place it in{' '}
+        <code>{`${pluginSystemConfig.pluginsDirectory}/plugin-name/backend`}</code>.
       </div>
       <button onClick={() => void onOpenFolder()} style={toolbarButton(accent, true)}>
         <FolderOpen size={14} />
