@@ -22,6 +22,15 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.terminal.externalTerminalProfile).toBe('auto');
   });
 
+  it('has the correct default python settings', () => {
+    const { settings } = useSettingsStore.getState();
+    expect(settings.python.preferredInterpreterPath).toBe('');
+    expect(settings.python.runtimeRoot).toBe('');
+    expect(settings.python.bootstrapPackages).toBe('');
+    expect(settings.python.autoUpgradePip).toBe(true);
+    expect(settings.python.createBoilerplate).toBe(true);
+  });
+
   it('has the correct default explorer settings', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.explorer.showHiddenFiles).toBe(false);
@@ -102,6 +111,23 @@ describe('useSettingsStore.updateTerminal()', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.terminal.cursorBlink).toBe(false);
     expect(settings.terminal.cursorStyle).toBe('block');
+  });
+});
+
+describe('useSettingsStore.updatePython()', () => {
+  it('updates python runtime settings without mutating other sections', () => {
+    const store = useSettingsStore.getState();
+    const beforeTerminal = { ...store.settings.terminal };
+
+    store.updatePython({
+      preferredInterpreterPath: 'C:\\Python311\\python.exe',
+      bootstrapPackages: 'numpy\nonnxruntime',
+    });
+
+    const { settings } = useSettingsStore.getState();
+    expect(settings.python.preferredInterpreterPath).toBe('C:\\Python311\\python.exe');
+    expect(settings.python.bootstrapPackages).toBe('numpy\nonnxruntime');
+    expect(settings.terminal).toEqual(beforeTerminal);
   });
 });
 

@@ -1,11 +1,12 @@
 import React from 'react';
-import { Terminal as TerminalIcon, FolderOpen, GitBranch, StickyNote, Camera, Puzzle, SlidersHorizontal } from 'lucide-react';
+import { Terminal as TerminalIcon, FolderOpen, GitBranch, StickyNote, Camera, Puzzle, SlidersHorizontal, Bot } from 'lucide-react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import TerminalOverlay from '../components/TerminalOverlay';
 import { FileExplorer } from '../components/FileExplorer';
 import { GitManager } from '../components/GitManager';
 import { NotesManager } from '../components/NotesManager';
 import { ScreenshotsManager } from '../components/ScreenshotsManager';
+import { PythonWorkbench } from '../components/PythonWorkbench';
 import { FolderPluginRenderer } from '../components/PluginsManager';
 import { SettingsPage } from '../components/SettingsPage';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
@@ -130,6 +131,15 @@ export function createBuiltInPanelDefinitions({
       render: () => <ScreenshotsManager appearance={appearance} />,
     },
     {
+      id: 'python',
+      label: 'Python',
+      kind: 'built-in-panel',
+      icon: <Bot size={12} />,
+      description: 'Managed Python runtime, package installation, and script execution.',
+      defaultOpen: true,
+      render: () => <PythonWorkbench appearance={appearance} />,
+    },
+    {
       id: 'settings',
       label: 'Settings',
       kind: 'built-in-panel',
@@ -220,6 +230,12 @@ export function buildBuiltInCatalog(): PanelCatalogEntry[] {
       description: 'Built-in example plugin showing capture, clipboard, and file IO.',
       kind: 'built-in-panel',
       example: true,
+    },
+    {
+      id: 'python',
+      label: 'Python',
+      description: 'Built-in panel plugin for managed Python runtime workflows.',
+      kind: 'built-in-panel',
     },
     {
       id: 'settings',

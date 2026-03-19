@@ -64,6 +64,14 @@ export interface TerminalSettings {
   externalTerminalArgs: string;
 }
 
+export interface PythonSettings {
+  preferredInterpreterPath: string;
+  runtimeRoot: string;
+  bootstrapPackages: string;
+  autoUpgradePip: boolean;
+  createBoilerplate: boolean;
+}
+
 export interface ExplorerSettings {
   defaultPath: string;
   showHiddenFiles: boolean;
@@ -130,6 +138,7 @@ export interface LayoutPanelState {
 export interface Settings {
   editor: EditorSettings;
   terminal: TerminalSettings;
+  python: PythonSettings;
   explorer: ExplorerSettings;
   appearance: AppearanceSettings;
   system: SystemSettings;
@@ -196,6 +205,13 @@ export const defaultSettings: Settings = {
     externalTerminalProfile: 'auto',
     externalTerminalCommand: '',
     externalTerminalArgs: '',
+  },
+  python: {
+    preferredInterpreterPath: '',
+    runtimeRoot: '',
+    bootstrapPackages: '',
+    autoUpgradePip: true,
+    createBoilerplate: true,
   },
   explorer: {
     defaultPath: getDefaultPath(),
@@ -288,6 +304,7 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
       ...importedTerminal,
       overlayAnchor: normalizeOverlayWindowAnchor(importedTerminal?.overlayAnchor ?? base.terminal.overlayAnchor),
     },
+    python: { ...base.python, ...(imported as Partial<Settings> | undefined)?.python },
     explorer: { ...base.explorer, ...imported?.explorer },
     appearance: {
       ...base.appearance,
@@ -333,6 +350,7 @@ interface SettingsState {
   // Update settings
   updateEditor: (updates: Partial<EditorSettings>) => void;
   updateTerminal: (updates: Partial<TerminalSettings>) => void;
+  updatePython: (updates: Partial<PythonSettings>) => void;
   updateExplorer: (updates: Partial<ExplorerSettings>) => void;
   updateAppearance: (updates: Partial<AppearanceSettings>) => void;
   updateSystem: (updates: Partial<SystemSettings>) => void;
@@ -369,6 +387,13 @@ export const useSettingsStore = create<SettingsState>()(
         settings: {
           ...state.settings,
           terminal: { ...state.settings.terminal, ...updates },
+        },
+      })),
+
+      updatePython: (updates) => set((state) => ({
+        settings: {
+          ...state.settings,
+          python: { ...state.settings.python, ...updates },
         },
       })),
       

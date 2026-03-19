@@ -222,6 +222,16 @@
                 └── 📂 file-opening
                 └── 📂 file-opening-windows
                 └── 📂 src-tauri
+    └── 📂 themes
+        └── 📂 aqua-light
+            └── 📂 assets
+            └── 📂 icons
+        └── 📂 plasma-flow
+            └── 📂 assets
+            └── 📂 icons
+        └── 📂 vista-glass
+            └── 📂 assets
+            └── 📂 icons
     └── 📂 vscode-icon-theme
         └── 📂 icons
 ```

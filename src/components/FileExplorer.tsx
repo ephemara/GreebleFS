@@ -69,24 +69,24 @@ interface ContextMenuState { visible: boolean; x: number; y: number; entry: File
 interface RenameState    { active: boolean; path: string; name: string; }
 type PreviewState =
   | { type: 'none'; path: string }
-  | { type: 'image'; path: string; content: string }
-  | { type: 'text'; path: string; content: string; language: string; focusTarget: EditorSearchFocusTarget | null }
+  | { type: 'image'; path: string; name: string; content: string }
+  | {
+      type: 'text';
+      path: string;
+      name: string;
+      content: string;
+      language: string;
+      focusTarget: EditorSearchFocusTarget | null;
+      isDirty: boolean;
+      isSaving: boolean;
+      lastSavedAt: number | null;
+      error: string | null;
+    }
   | { type: 'model3d'; path: string; format: ModelPreviewFormat; name: string };
 interface NewItemState   { visible: boolean; kind: 'file'|'folder'; }
 interface ExplorerClipboard { action:'copy'|'cut'; entries: FileEntry[]; }
 interface FileTransferResult { source_path: string; destination_path: string; operation: 'copy' | 'move'; }
 type FileTransferOperation = 'copy' | 'move';
-interface ExplorerEditorTab {
-  path: string;
-  name: string;
-  language: string;
-  content: string;
-  focusTarget: EditorSearchFocusTarget | null;
-  isDirty: boolean;
-  isSaving: boolean;
-  lastSavedAt: number | null;
-  error: string | null;
-}
 
 // ─── Palette ─────────────────────────────────────────────────────────────────
 
@@ -617,15 +617,20 @@ function PreviewPanel({
   width,
   onClose,
   onWidthChange,
+  onTextChange,
+  onCopyPath,
 }: {
   preview: PreviewState;
   width: number;
   onClose: () => void;
   onWidthChange: (width: number) => void;
+  onTextChange: (path: string, content: string) => void;
+  onCopyPath: (path: string) => void;
 }) {
   const dragging = useRef(false);
   const startX   = useRef(0);
   const startW   = useRef(width);
+  const [copiedPath, setCopiedPath] = useState<string | null>(null);
 
   const onMouseDown = (e: React.MouseEvent) => {
     dragging.current = true;
@@ -646,6 +651,13 @@ function PreviewPanel({
     return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
   }, [onWidthChange]);
 
+  useEffect(() => {
+    setCopiedPath(null);
+  }, [preview.path]);
+
+  const previewTitle = preview.type === 'none' ? 'Preview' : preview.name;
+  const copyPathLabel = copiedPath === preview.path ? 'Copied' : 'Copy Path';
+
   return (
     <div style={{ width, background:EXP.panel, borderLeft:`1px solid ${EXP.border}`, display:'flex', flexDirection:'column', flexShrink:0, overflow:'hidden', position:'relative' }}>
       {/* Drag handle */}
@@ -660,9 +672,35 @@ function PreviewPanel({
         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
       />
       {/* Header */}
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 12px 8px 16px', borderBottom:`1px solid ${EXP.border}`, background:EXP.sidebar, flexShrink:0 }}>
-        <span style={{ fontSize:10, color:EXP.muted, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase' }}>Preview</span>
-        <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:EXP.muted, padding:2 }}><X size={13} /></button>
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:10, padding:'8px 12px 8px 16px', borderBottom:`1px solid ${EXP.border}`, background:EXP.sidebar, flexShrink:0 }}>
+        <div style={{ minWidth:0, flex:1 }}>
+          <div style={{ fontSize:11, color:EXP.text, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+            {previewTitle}
+          </div>
+          {preview.type !== 'none' && (
+            <div
+              title={preview.path}
+              style={{ marginTop:2, fontSize:9, color:EXP.muted2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontFamily:'monospace' }}
+            >
+              {preview.path}
+            </div>
+          )}
+        </div>
+        <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
+          {preview.type !== 'none' && (
+            <button
+              onClick={() => {
+                onCopyPath(preview.path);
+                setCopiedPath(preview.path);
+              }}
+              style={{ display:'flex', alignItems:'center', gap:4, background:'none', border:`1px solid ${EXP.border}`, borderRadius:6, cursor:'pointer', color:EXP.muted, padding:'4px 8px', fontSize:10 }}
+            >
+              <Copy size={11} />
+              {copyPathLabel}
+            </button>
+          )}
+          <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:EXP.muted, padding:2 }}><X size={13} /></button>
+        </div>
       </div>
       {/* Content */}
       <div style={{ flex:1, overflow:'hidden', position:'relative' }}>
@@ -679,9 +717,10 @@ function PreviewPanel({
           <SearchAwareCodeView
             value={preview.content || ''}
             language={preview.language || 'plaintext'}
-            readOnly
+            readOnly={false}
             focusTarget={preview.focusTarget}
-            options={{ readOnly:true, minimap:{enabled:false}, scrollBeyondLastLine:false, fontSize:12, lineNumbers:'on', wordWrap:'on', padding:{top:8}, renderLineHighlight:'none', overviewRulerLanes:0 }}
+            onChange={value => onTextChange(preview.path, value)}
+            options={{ minimap:{enabled:false}, scrollBeyondLastLine:false, fontSize:12, lineNumbers:'on', wordWrap:'on', padding:{top:8}, overviewRulerLanes:0 }}
           />
         )}
         {preview.type === 'model3d' && (
@@ -694,6 +733,14 @@ function PreviewPanel({
           </Suspense>
         )}
       </div>
+      {preview.type === 'text' && (
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, padding:'4px 10px', borderTop:`1px solid ${EXP.border}`, background:EXP.sidebar, fontSize:10, color:EXP.muted }}>
+          <span>{preview.content.length} chars · {preview.content.split(/\s+/).filter(Boolean).length} words · {preview.content.split('\n').length} lines</span>
+          <span style={{ color: preview.error ? EXP.red : preview.isDirty ? EXP.yellow : EXP.green }}>
+            {preview.error ? 'Save failed' : preview.isSaving ? 'Saving…' : preview.isDirty ? 'Pending auto-save' : 'Auto-saved'}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -712,141 +759,6 @@ function ModelPreviewFallback({
         <span>Loading {format.toUpperCase()} Preview</span>
         <span style={{ color: EXP.muted2, textTransform: 'none', letterSpacing: 0, fontSize: 10 }}>{entryName}</span>
       </div>
-    </div>
-  );
-}
-
-function EditorTabsPanel({
-  tabs,
-  activePath,
-  onSelect,
-  onCloseTab,
-  onChangeContent,
-  preferWideLayout,
-}: {
-  tabs: ExplorerEditorTab[];
-  activePath: string | null;
-  onSelect: (path: string) => void;
-  onCloseTab: (path: string) => void;
-  onChangeContent: (path: string, content: string) => void;
-  preferWideLayout: boolean;
-}) {
-  const baseWidth = preferWideLayout ? 760 : 540;
-  const minWidth = preferWideLayout ? 460 : 320;
-  const [width, setWidth] = useState(baseWidth);
-  const dragging = useRef(false);
-  const startX = useRef(0);
-  const startW = useRef(baseWidth);
-  const activeTab = tabs.find(tab => tab.path === activePath) ?? null;
-
-  useEffect(() => {
-    if (preferWideLayout) {
-      setWidth(current => Math.max(current, baseWidth));
-    }
-  }, [baseWidth, preferWideLayout]);
-
-  const onMouseDown = (e: React.MouseEvent) => {
-    dragging.current = true;
-    startX.current = e.clientX;
-    startW.current = width;
-    e.preventDefault();
-  };
-
-  useEffect(() => {
-    const move = (e: MouseEvent) => {
-      if (!dragging.current) return;
-      const delta = startX.current - e.clientX;
-      setWidth(Math.max(minWidth, Math.min(1200, startW.current + delta)));
-    };
-    const up = () => {
-      dragging.current = false;
-    };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-    return () => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-    };
-  }, []);
-
-  return (
-    <div style={{ width, background: EXP.panel, borderLeft: `1px solid ${EXP.border}`, display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden', position: 'relative' }}>
-      <div
-        onMouseDown={onMouseDown}
-        style={{
-          position: 'absolute', left: 0, top: 0, bottom: 0, width: 4,
-          cursor: 'col-resize', zIndex: 10,
-          background: 'transparent',
-        }}
-        onMouseEnter={e => (e.currentTarget.style.background = `${EXP.accent}55`)}
-        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-      />
-      <OverlayScrollArea direction="horizontal" style={{ display: 'flex', alignItems: 'stretch', minHeight: 38, borderBottom: `1px solid ${EXP.border}`, background: EXP.sidebar }} contentStyle={{ display: 'flex', alignItems: 'stretch', minWidth: 'max-content' }}>
-        {tabs.map(tab => {
-          const isActive = tab.path === activePath;
-          return (
-            <button
-              key={tab.path}
-              onClick={() => onSelect(tab.path)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 7,
-                minWidth: 150,
-                maxWidth: 260,
-                padding: '0 10px',
-                border: 'none',
-                borderRight: `1px solid ${EXP.border}`,
-                borderTop: `2px solid ${isActive ? EXP.accent : 'transparent'}`,
-                background: isActive ? `${EXP.accent}20` : 'transparent',
-                color: isActive ? EXP.text : EXP.muted,
-                cursor: 'pointer',
-                fontSize: 11,
-              }}
-            >
-              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'left' }}>{tab.name}</span>
-              {tab.isSaving && <span style={{ width: 6, height: 6, borderRadius: '50%', background: EXP.accent, opacity: 0.85 }} />}
-              {tab.isDirty && !tab.isSaving && <span style={{ width: 6, height: 6, borderRadius: '50%', background: EXP.yellow, opacity: 0.85 }} />}
-              <span
-                onClick={event => {
-                  event.stopPropagation();
-                  onCloseTab(tab.path);
-                }}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 14, height: 14, borderRadius: 4, color: EXP.muted }}
-              >
-                <X size={10} />
-              </span>
-            </button>
-          );
-        })}
-      </OverlayScrollArea>
-      <div style={{ flex: 1, overflow: 'hidden' }}>
-        {activeTab && (
-          <SearchAwareCodeView
-            value={activeTab.content}
-            language={activeTab.language || 'plaintext'}
-            readOnly={false}
-            focusTarget={activeTab.focusTarget}
-            onChange={value => onChangeContent(activeTab.path, value)}
-            options={{
-              minimap: { enabled: false },
-              scrollBeyondLastLine: false,
-              fontSize: 12,
-              lineNumbers: 'on',
-              wordWrap: 'on',
-              padding: { top: 8 },
-            }}
-          />
-        )}
-      </div>
-      {activeTab && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '4px 10px', borderTop: `1px solid ${EXP.border}`, background: EXP.sidebar, fontSize: 10, color: EXP.muted }}>
-          <span>{activeTab.content.length} chars · {activeTab.content.split(/\s+/).filter(Boolean).length} words · {activeTab.content.split('\n').length} lines</span>
-          <span style={{ color: activeTab.error ? EXP.red : activeTab.isDirty ? EXP.yellow : EXP.green }}>
-            {activeTab.error ? 'Save failed' : activeTab.isSaving ? 'Saving…' : activeTab.isDirty ? 'Pending auto-save' : 'Auto-saved'}
-          </span>
-        </div>
-      )}
     </div>
   );
 }
@@ -950,15 +862,13 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const [deleteTarget, setDeleteTarget] = useState<FileEntry|null>(null);
   const [clipboard,    setClipboard]    = useState<ExplorerClipboard|null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [editorTabs, setEditorTabs] = useState<ExplorerEditorTab[]>([]);
-  const [activeEditorPath, setActiveEditorPath] = useState<string | null>(null);
   const [newItem,      setNewItem]      = useState<NewItemState>({ visible:false, kind:'folder' });
   const [newItemName,  setNewItemName]  = useState('');
   const [dragOver,     setDragOver]     = useState<string|null>(null); // path being dragged over
   const [windowDropState, setWindowDropState] = useState<{ active: boolean; count: number }>({ active: false, count: 0 });
   const lastSelected   = useRef<string|null>(null);
-  const editorTabsRef = useRef<ExplorerEditorTab[]>([]);
-  const editorSaveTimers = useRef<Map<string, number>>(new Map());
+  const previewRef = useRef(preview);
+  const previewSaveTimer = useRef<number | null>(null);
   const searchRequestIdRef = useRef(0);
   const searchFocusRequestIdRef = useRef(0);
   const addressInputRef = useRef<HTMLInputElement>(null);
@@ -968,13 +878,15 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const mainRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    editorTabsRef.current = editorTabs;
-  }, [editorTabs]);
+    previewRef.current = preview;
+  }, [preview]);
 
   useEffect(() => {
     return () => {
-      editorSaveTimers.current.forEach(timer => window.clearTimeout(timer));
-      editorSaveTimers.current.clear();
+      if (previewSaveTimer.current) {
+        window.clearTimeout(previewSaveTimer.current);
+        previewSaveTimer.current = null;
+      }
     };
   }, []);
 
@@ -1005,16 +917,6 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     sidebarWidth,
     updateExplorerSession,
   ]);
-
-  useEffect(() => {
-    if (editorTabs.length === 0) {
-      setActiveEditorPath(null);
-      return;
-    }
-    if (!activeEditorPath || !editorTabs.some(tab => tab.path === activeEditorPath)) {
-      setActiveEditorPath(editorTabs[editorTabs.length - 1].path);
-    }
-  }, [editorTabs, activeEditorPath]);
 
   // ── Boot ──
   useEffect(() => {
@@ -1315,11 +1217,93 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     return target;
   }, [isSearchActive, search]);
 
+  const persistPreviewText = useCallback(async (path: string) => {
+    const currentPreview = previewRef.current;
+    if (currentPreview.type !== 'text' || currentPreview.path !== path) return;
+
+    const contentAtSave = currentPreview.content;
+    setPreview(prev => (
+      prev.type === 'text' && prev.path === path
+        ? { ...prev, isSaving: true, error: null }
+        : prev
+    ));
+
+    try {
+      await invoke('fs_write_file', { path, content: contentAtSave });
+      setPreview(prev => {
+        if (prev.type !== 'text' || prev.path !== path) return prev;
+        const isStillSame = prev.content === contentAtSave;
+        return {
+          ...prev,
+          isSaving: false,
+          isDirty: !isStillSame,
+          lastSavedAt: isStillSame ? Date.now() : prev.lastSavedAt,
+          error: null,
+        };
+      });
+    } catch (saveError) {
+      setPreview(prev => (
+        prev.type === 'text' && prev.path === path
+          ? { ...prev, isSaving: false, error: String(saveError) }
+          : prev
+      ));
+      setError(`Save failed for ${currentPreview.name}: ${saveError}`);
+    }
+  }, []);
+
+  const queuePreviewSave = useCallback((path: string) => {
+    if (previewSaveTimer.current) {
+      window.clearTimeout(previewSaveTimer.current);
+    }
+    previewSaveTimer.current = window.setTimeout(() => {
+      previewSaveTimer.current = null;
+      void persistPreviewText(path);
+    }, 700);
+  }, [persistPreviewText]);
+
+  const flushPreviewTextSave = useCallback(async () => {
+    const currentPreview = previewRef.current;
+    if (currentPreview.type !== 'text' || !currentPreview.isDirty) {
+      if (previewSaveTimer.current) {
+        window.clearTimeout(previewSaveTimer.current);
+        previewSaveTimer.current = null;
+      }
+      return;
+    }
+
+    if (previewSaveTimer.current) {
+      window.clearTimeout(previewSaveTimer.current);
+      previewSaveTimer.current = null;
+    }
+
+    await persistPreviewText(currentPreview.path);
+  }, [persistPreviewText]);
+
+  const updatePreviewTextContent = useCallback((path: string, content: string) => {
+    setPreview(prev => (
+      prev.type === 'text' && prev.path === path
+        ? { ...prev, content, isDirty: true, error: null }
+        : prev
+    ));
+    queuePreviewSave(path);
+  }, [queuePreviewSave]);
+
+  const closePreview = useCallback(async () => {
+    await flushPreviewTextSave();
+    setPreview({ type: 'none', path: '' });
+  }, [flushPreviewTextSave]);
+
   const previewEntry = useCallback(async (entry: FileEntry, focusTarget: EditorSearchFocusTarget | null = null) => {
     if (entry.is_dir) {
       setPreview({ type: 'none', path: '' });
       return;
     }
+
+    const currentPreview = previewRef.current;
+    if (currentPreview.type === 'text' && currentPreview.path !== entry.path) {
+      await flushPreviewTextSave();
+    }
+
     const ext = getEntryExtension(entry);
 
     const modelFormat = getModelPreviewFormat(ext);
@@ -1333,17 +1317,36 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
       setPreviewLoading(true);
       try {
         const dataUri = await invoke<string>('fs_read_file_base64', { path: entry.path });
-        setPreview({ type:'image', path:entry.path, content:dataUri });
+        setPreview({ type:'image', path:entry.path, name:entry.name, content:dataUri });
       } catch(e) { setError(`Image load failed: ${e}`); }
       finally { setPreviewLoading(false); }
       return;
     }
 
     if (isEditableTextEntry(entry)) {
+      if (currentPreview.type === 'text' && currentPreview.path === entry.path) {
+        setPreview(prev => (
+          prev.type === 'text' && prev.path === entry.path
+            ? { ...prev, name: entry.name, language: getMonacoLanguage(ext), focusTarget }
+            : prev
+        ));
+        return;
+      }
       setPreviewLoading(true);
       try {
         const content = await invoke<string>('fs_read_text_file', { path: entry.path });
-        setPreview({ type:'text', path:entry.path, content, language:getMonacoLanguage(ext), focusTarget });
+        setPreview({
+          type:'text',
+          path:entry.path,
+          name:entry.name,
+          content,
+          language:getMonacoLanguage(ext),
+          focusTarget,
+          isDirty: false,
+          isSaving: false,
+          lastSavedAt: Date.now(),
+          error: null,
+        });
       } catch {
         setPreview({ type: 'none', path: '' });
       }
@@ -1352,118 +1355,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     }
 
     setPreview({ type: 'none', path: '' });
-  }, []);
-
-  const persistEditorTab = useCallback(async (path: string) => {
-    const tab = editorTabsRef.current.find(candidate => candidate.path === path);
-    if (!tab) return;
-
-    const contentAtSave = tab.content;
-    setEditorTabs(prev => prev.map(candidate => (
-      candidate.path === path
-        ? { ...candidate, isSaving: true, error: null }
-        : candidate
-    )));
-
-    try {
-      await invoke('fs_write_file', { path, content: contentAtSave });
-      setEditorTabs(prev => prev.map(candidate => {
-        if (candidate.path !== path) return candidate;
-        const isStillSame = candidate.content === contentAtSave;
-        return {
-          ...candidate,
-          isSaving: false,
-          isDirty: !isStillSame,
-          lastSavedAt: isStillSame ? Date.now() : candidate.lastSavedAt,
-          error: null,
-        };
-      }));
-    } catch (saveError) {
-      setEditorTabs(prev => prev.map(candidate => (
-        candidate.path === path
-          ? { ...candidate, isSaving: false, error: String(saveError) }
-          : candidate
-      )));
-      setError(`Save failed for ${tab.name}: ${saveError}`);
-    }
-  }, []);
-
-  const queueEditorSave = useCallback((path: string) => {
-    const existing = editorSaveTimers.current.get(path);
-    if (existing) window.clearTimeout(existing);
-    const timer = window.setTimeout(() => {
-      editorSaveTimers.current.delete(path);
-      void persistEditorTab(path);
-    }, 700);
-    editorSaveTimers.current.set(path, timer);
-  }, [persistEditorTab]);
-
-  const openEditorTab = useCallback(async (entry: FileEntry, focusTarget: EditorSearchFocusTarget | null = null) => {
-    const existing = editorTabsRef.current.find(tab => tab.path === entry.path);
-    if (existing) {
-      setEditorTabs(prev => prev.map(tab => (
-        tab.path === entry.path
-          ? { ...tab, focusTarget }
-          : tab
-      )));
-      setActiveEditorPath(existing.path);
-      return;
-    }
-    const ext = getEntryExtension(entry);
-    setPreviewLoading(true);
-    try {
-      const content = await invoke<string>('fs_read_text_file', { path: entry.path });
-      setEditorTabs(prev => [...prev, {
-        path: entry.path,
-        name: entry.name,
-        language: getMonacoLanguage(ext),
-        content,
-        focusTarget,
-        isDirty: false,
-        isSaving: false,
-        lastSavedAt: Date.now(),
-        error: null,
-      }]);
-      setActiveEditorPath(entry.path);
-    } catch (openError) {
-      setError(`Failed to open editor tab: ${openError}`);
-    } finally {
-      setPreviewLoading(false);
-    }
-  }, []);
-
-  const closeEditorTab = useCallback((path: string) => {
-    const timer = editorSaveTimers.current.get(path);
-    if (timer) {
-      window.clearTimeout(timer);
-      editorSaveTimers.current.delete(path);
-    }
-    const target = editorTabsRef.current.find(tab => tab.path === path);
-    if (target?.isDirty) {
-      void invoke('fs_write_file', { path, content: target.content }).catch(saveError => {
-        setError(`Save failed while closing ${target.name}: ${saveError}`);
-      });
-    }
-    setEditorTabs(prev => {
-      const idx = prev.findIndex(tab => tab.path === path);
-      if (idx < 0) return prev;
-      const next = prev.filter(tab => tab.path !== path);
-      if (activeEditorPath === path) {
-        const fallback = next[Math.max(0, idx - 1)] ?? next[idx] ?? null;
-        setActiveEditorPath(fallback ? fallback.path : null);
-      }
-      return next;
-    });
-  }, [activeEditorPath]);
-
-  const updateEditorTabContent = useCallback((path: string, content: string) => {
-    setEditorTabs(prev => prev.map(tab => (
-      tab.path === path
-        ? { ...tab, content, isDirty: true, error: null }
-        : tab
-    )));
-    queueEditorSave(path);
-  }, [queueEditorSave]);
+  }, [flushPreviewTextSave]);
 
   const openEntry = useCallback(async (entry: FileEntry) => {
     if (entry.is_dir) {
@@ -1474,8 +1366,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     const focusTarget = getSearchFocusTarget(entry);
 
     if (isEditableTextEntry(entry)) {
-      setPreview({ type: 'none', path: '' });
-      await openEditorTab(entry, focusTarget);
+      await previewEntry(entry, focusTarget);
       return;
     }
 
@@ -1490,7 +1381,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     }
 
     await invoke('fs_open_file', { path: entry.path }).catch(e => setError(String(e)));
-  }, [getSearchFocusTarget, navigate, openEditorTab, previewEntry]);
+  }, [getSearchFocusTarget, navigate, previewEntry]);
 
   // ── Duplicate ──
   const duplicate = useCallback(async (entry: FileEntry) => {
@@ -1529,19 +1420,26 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     const oldPath = rename.path;
     const newPath = dir + sep + newName;
     try {
+      const shouldResaveRenamedPreview = previewRef.current.type === 'text'
+        && previewRef.current.path === oldPath
+        && previewRef.current.isDirty;
       await invoke('fs_rename', { oldPath, newPath });
-      const pendingTimer = editorSaveTimers.current.get(oldPath);
-      if (pendingTimer) {
-        window.clearTimeout(pendingTimer);
-        editorSaveTimers.current.delete(oldPath);
+      if (previewSaveTimer.current) {
+        window.clearTimeout(previewSaveTimer.current);
+        previewSaveTimer.current = null;
       }
-      setEditorTabs(prev => prev.map(tab => (
-        tab.path === oldPath
-          ? { ...tab, path: newPath, name: newName, error: null }
-          : tab
-      )));
-      if (activeEditorPath === oldPath) {
-        setActiveEditorPath(newPath);
+      setPreview(prev => {
+        if (prev.type === 'none' || prev.path !== oldPath) return prev;
+        if (prev.type === 'text') {
+          return { ...prev, path: newPath, name: newName, error: null };
+        }
+        if (prev.type === 'image') {
+          return { ...prev, path: newPath, name: newName };
+        }
+        return { ...prev, path: newPath, name: newName };
+      });
+      if (shouldResaveRenamedPreview) {
+        queuePreviewSave(newPath);
       }
       setRename({ active:false, path:'', name:'' });
       refresh();
@@ -1555,7 +1453,10 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     try {
       await invoke('fs_delete', { path: deleteTarget.path, recursive: deleteTarget.is_dir });
       if (preview.path === deleteTarget.path) setPreview({ type:'none', path:'' });
-      closeEditorTab(deleteTarget.path);
+      if (previewSaveTimer.current) {
+        window.clearTimeout(previewSaveTimer.current);
+        previewSaveTimer.current = null;
+      }
       setDeleteTarget(null); refresh();
     } catch(e) { setError(String(e)); }
   };
@@ -1747,13 +1648,8 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     } catch(e) { setError(String(e)); }
   };
 
-  const activeEditorTab = useMemo(
-    () => editorTabs.find(tab => tab.path === activeEditorPath) ?? null,
-    [editorTabs, activeEditorPath],
-  );
   const effectiveViewMode = isCompactDock || isSearchActive ? 'list' : viewMode;
-  const showEditorPane = !isCompactDock && editorTabs.length > 0;
-  const hasPreview = !isCompactDock && !showEditorPane && preview.type !== 'none';
+  const hasPreview = !isCompactDock && preview.type !== 'none';
   const searchModeLabel = searchIncludeContent ? 'Recursive search + text' : 'Recursive search (names only)';
 
   const renderSearchMetadata = (entry: FileEntry) => {
@@ -2312,22 +2208,14 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
           </OverlayScrollArea>
 
           {/* Side pane */}
-          {showEditorPane && (
-            <EditorTabsPanel
-              tabs={editorTabs}
-              activePath={activeEditorTab?.path ?? null}
-              onSelect={setActiveEditorPath}
-              onCloseTab={closeEditorTab}
-              onChangeContent={updateEditorTabContent}
-              preferWideLayout={isSearchActive}
-            />
-          )}
           {hasPreview && (
             <PreviewPanel
               preview={preview}
               width={previewWidth}
               onWidthChange={setPreviewWidth}
-              onClose={() => setPreview({ type:'none', path:'' })}
+              onTextChange={updatePreviewTextContent}
+              onCopyPath={copyToSysClipboard}
+              onClose={() => { void closePreview(); }}
             />
           )}
         </div>

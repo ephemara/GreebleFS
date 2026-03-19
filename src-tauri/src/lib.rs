@@ -1,5 +1,6 @@
 pub mod fs_commands;
 pub mod plugin_commands;
+pub mod python_commands;
 pub mod screenshot_commands;
 pub mod startup_commands;
 pub mod terminal;
@@ -11,6 +12,9 @@ use fs_commands::{
     fs_reveal_in_explorer, fs_search_entries, fs_transfer_items, fs_write_file, git_exec,
 };
 use plugin_commands::plugin_run_backend;
+use python_commands::{
+    python_bootstrap_runtime, python_execute, python_get_runtime_status, python_install_packages,
+};
 use screenshot_commands::{
     screenshot_capture_preview, screenshot_copy_image_to_clipboard, screenshot_save_region,
 };
@@ -124,6 +128,10 @@ pub fn run() {
             screenshot_capture_preview,
             screenshot_save_region,
             screenshot_copy_image_to_clipboard,
+            python_get_runtime_status,
+            python_bootstrap_runtime,
+            python_install_packages,
+            python_execute,
             plugin_run_backend,
             startup_get_launch_at_startup,
             startup_set_launch_at_startup,

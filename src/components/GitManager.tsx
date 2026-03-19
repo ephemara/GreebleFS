@@ -21,6 +21,13 @@ interface RepoState {
   loadedAt: number;
 }
 
+interface RepoBadgeState {
+  changeCount: number;
+  conflictedCount: number;
+  loadedAt: number;
+  error: string | null;
+}
+
 interface DiffViewState {
   original: string;
   modified: string;
@@ -74,6 +81,7 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
   const [repos, setRepos] = useState<string[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
   const [repoState, setRepoState] = useState<RepoState | null>(null);
+  const [repoBadges, setRepoBadges] = useState<Record<string, RepoBadgeState>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [diffLoading, setDiffLoading] = useState(false);
@@ -101,6 +109,10 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
     localStorage.setItem('overlayterm-git-repos', JSON.stringify(repos));
   }, [repos]);
 
+  useEffect(() => {
+    setRepoBadges(current => Object.fromEntries(Object.entries(current).filter(([path]) => repos.includes(path))));
+  }, [repos]);
+
   const runGit = useCallback(async (repo: string, args: string[]) => {
     return invoke<string>('git_exec', { repoPath: repo, args });
   }, []);
@@ -112,6 +124,36 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
       return fallback;
     }
   }, [runGit]);
+
+  const loadRepoBadge = useCallback(async (path: string): Promise<RepoBadgeState> => {
+    try {
+      await runGit(path, ['rev-parse', '--is-inside-work-tree']);
+      const statusText = await safeGit(path, ['status', '--porcelain'], '');
+      return buildRepoBadgeState(parseGitStatus(statusText));
+    } catch (loadError) {
+      return {
+        changeCount: 0,
+        conflictedCount: 0,
+        loadedAt: Date.now(),
+        error: String(loadError),
+      };
+    }
+  }, [runGit, safeGit]);
+
+  const refreshRepoBadges = useCallback(async (targetRepos: string[] = repos) => {
+    if (targetRepos.length === 0) {
+      return;
+    }
+
+    const nextEntries = await Promise.all(
+      targetRepos.map(async repo => [repo, await loadRepoBadge(repo)] as const),
+    );
+
+    setRepoBadges(current => ({
+      ...current,
+      ...Object.fromEntries(nextEntries),
+    }));
+  }, [loadRepoBadge, repos]);
 
   const loadRepoState = useCallback(async (path: string) => {
     setLoading(true);
@@ -125,18 +167,29 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
         safeGit(path, ['diff', '--numstat', '--no-ext-diff'], ''),
         safeGit(path, ['diff', '--cached', '--numstat', '--no-ext-diff'], ''),
       ]);
+      const status = mergeGitStatusWithStats(parseGitStatus(statusText), parseGitNumstat(unstagedStats), parseGitNumstat(stagedStats));
 
       setRepoState({
         path,
         name: path.split(/[/\\]/).pop() || path,
         branch: branch.trim() || 'unknown',
-        status: mergeGitStatusWithStats(parseGitStatus(statusText), parseGitNumstat(unstagedStats), parseGitNumstat(stagedStats)),
+        status,
         lastCommit: lastCommit.trim() || 'No commits yet',
         loadedAt: Date.now(),
       });
+      setRepoBadges(current => ({ ...current, [path]: buildRepoBadgeState(status) }));
     } catch (loadError) {
       setError(String(loadError));
       setRepoState(null);
+      setRepoBadges(current => ({
+        ...current,
+        [path]: {
+          changeCount: 0,
+          conflictedCount: 0,
+          loadedAt: Date.now(),
+          error: String(loadError),
+        },
+      }));
     } finally {
       setLoading(false);
     }
@@ -150,10 +203,44 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
     void loadRepoState(selectedRepo);
   }, [loadRepoState, selectedRepo]);
 
+  useEffect(() => {
+    if (repos.length === 0) {
+      return;
+    }
+
+    let disposed = false;
+
+    const syncBadges = async () => {
+      const targetRepos = [...repos];
+      const nextEntries = await Promise.all(
+        targetRepos.map(async repo => [repo, await loadRepoBadge(repo)] as const),
+      );
+
+      if (disposed) {
+        return;
+      }
+
+      setRepoBadges(current => ({
+        ...current,
+        ...Object.fromEntries(nextEntries),
+      }));
+    };
+
+    void syncBadges();
+    const intervalId = window.setInterval(() => {
+      void syncBadges();
+    }, 30000);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+    };
+  }, [loadRepoBadge, repos]);
+
   const refreshRepo = useCallback(async () => {
     if (!selectedRepo) return;
-    await loadRepoState(selectedRepo);
-  }, [loadRepoState, selectedRepo]);
+    await Promise.all([loadRepoState(selectedRepo), refreshRepoBadges()]);
+  }, [loadRepoState, refreshRepoBadges, selectedRepo]);
 
   const runRepoAction = useCallback(async (action: () => Promise<void>) => {
     setLoading(true);
@@ -185,6 +272,11 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
     const nextRepos = repos.filter(repo => repo !== path);
     setRepos(nextRepos);
     setSelectedRepo(current => (current === path ? nextRepos[0] ?? null : current));
+    setRepoBadges(current => {
+      const next = { ...current };
+      delete next[path];
+      return next;
+    });
     setSelectedFilePath(null);
     setDiffView(null);
   }, [repos]);
@@ -237,6 +329,10 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
   }, [loadDiff, repoState, selectedFile]);
 
   const summary = repoState ? summarizeGitFiles(repoState.status) : null;
+  const dirtyRepoCount = useMemo(
+    () => repos.reduce((count, repo) => count + ((repoBadges[repo]?.changeCount ?? 0) > 0 ? 1 : 0), 0),
+    [repoBadges, repos],
+  );
   const filteredFiles = useMemo(() => {
     if (!repoState) return [];
     const query = deferredQuery.trim().toLowerCase();
@@ -255,13 +351,21 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderBottom: `1px solid ${palette.border}` }}>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: palette.muted }}>Source Control</div>
-            <div style={{ marginTop: 4, fontSize: 15, fontWeight: 700 }}>Repositories</div>
+            <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>Repositories</div>
+              {dirtyRepoCount > 0 && (
+                <span title={`${dirtyRepoCount} repos currently have changes`} style={repoNotificationBadgeStyle(palette, false)}>
+                  {dirtyRepoCount > 99 ? '99+' : dirtyRepoCount}
+                </span>
+              )}
+            </div>
           </div>
           <button onClick={addRepo} style={iconButtonStyle(palette)}><Plus size={13} /></button>
         </div>
         <OverlayScrollArea style={{ flex: 1, minHeight: 0 }}>
           {repos.map(repo => {
             const active = repo === selectedRepo;
+            const badge = repoBadges[repo];
             return (
               <button key={repo} onClick={() => setSelectedRepo(repo)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', gap: 8, padding: '10px 12px', border: 'none', borderBottom: `1px solid ${palette.border}`, background: active ? alpha(palette.accent, 0.14) : 'transparent', color: palette.text, cursor: 'pointer', textAlign: 'left' }}>
                 <div style={{ display: 'flex', gap: 8, minWidth: 0 }}>
@@ -271,7 +375,17 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
                     <div style={{ marginTop: 3, fontSize: 10, color: palette.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{repo}</div>
                   </div>
                 </div>
-                <button onClick={event => removeRepo(repo, event)} style={{ ...iconButtonStyle(palette), opacity: active ? 1 : 0.3 }}><X size={11} /></button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                  {badge?.changeCount ? (
+                    <span
+                      title={badge.conflictedCount > 0 ? `${badge.changeCount} changed files, ${badge.conflictedCount} conflicted` : `${badge.changeCount} changed files`}
+                      style={repoNotificationBadgeStyle(palette, badge.conflictedCount > 0)}
+                    >
+                      {badge.changeCount > 99 ? '99+' : badge.changeCount}
+                    </span>
+                  ) : null}
+                  <button onClick={event => removeRepo(repo, event)} style={{ ...iconButtonStyle(palette), opacity: active ? 1 : 0.3 }}><X size={11} /></button>
+                </div>
               </button>
             );
           })}
@@ -424,8 +538,41 @@ function joinRepoPath(repoPath: string, filePath: string): string {
   return `${repoPath.replace(/[\\/]+$/, '')}/${filePath.replace(/\\/g, '/')}`;
 }
 
+function buildRepoBadgeState(files: GitFileStatus[]): RepoBadgeState {
+  return {
+    changeCount: files.length,
+    conflictedCount: files.filter(file => file.kind === 'conflicted').length,
+    loadedAt: Date.now(),
+    error: null,
+  };
+}
+
 function iconButtonStyle(palette: { border: string; panel: string; muted?: string; text?: string }): React.CSSProperties {
   return { width: 24, height: 24, display: 'grid', placeItems: 'center', borderRadius: 7, border: `1px solid ${palette.border}`, background: alpha(palette.panel, 0.8), color: palette.muted || palette.text || 'inherit', cursor: 'pointer', flexShrink: 0 };
+}
+
+function repoNotificationBadgeStyle(
+  palette: { red: string; border: string },
+  hasConflicts: boolean,
+): React.CSSProperties {
+  return {
+    minWidth: 18,
+    height: 18,
+    padding: '0 6px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 999,
+    background: hasConflicts ? '#ef4444' : palette.red,
+    border: `1px solid ${hasConflicts ? '#fca5a5' : alpha(palette.red, 0.55)}`,
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 800,
+    lineHeight: 1,
+    letterSpacing: '0.02em',
+    boxShadow: `0 0 0 1px ${alpha('#ffffff', 0.08)}`,
+    flexShrink: 0,
+  };
 }
 
 function toolbarButtonStyle(palette: { border: string; panel: string; text: string }): React.CSSProperties {
