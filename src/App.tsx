@@ -10,7 +10,6 @@ import {
 import * as TauriWindow from '@tauri-apps/api/window';
 import * as TauriFs from '@tauri-apps/plugin-fs';
 import {
-  buildBuiltInCatalog,
   createBuiltInPanelDefinitions,
   createFolderPluginPanelDefinitions,
   type OverlayPanelDefinition,
@@ -29,6 +28,7 @@ import {
 import { listen } from '@tauri-apps/api/event';
 import { Check, Droplet, GripVertical, LayoutGrid, Settings2, Terminal as TerminalIcon, X } from 'lucide-react';
 import { ensureFontFamilyLoaded, resolveOverlayAppearance, type ResolvedOverlayAppearance } from './config/appearance';
+import { loadThemePackages as discoverThemePackages, themeSystemConfig, type LoadedOverlayThemePackage } from './config/themePackages';
 import { formatHotkeyLabel, matchesWheelHotkey } from './config/hotkeys';
 import {
   BUILT_IN_LAYOUT_MANIFEST,
@@ -186,6 +186,34 @@ function sanitizeLayoutPanelState(
   };
 }
 
+function getThemeVisualAnimation(layer: NonNullable<ResolvedOverlayAppearance['theme']['visuals']>[number]): string | undefined {
+  if (!layer.animation) {
+    return undefined;
+  }
+
+  const durationMs = typeof layer.animation.durationMs === 'number' ? layer.animation.durationMs : 18000;
+  const easing = layer.animation.easing ?? 'ease-in-out';
+  const direction = layer.animation.direction ?? 'alternate';
+  return `overlay-theme-visual-${layer.animation.kind} ${durationMs}ms ${easing} infinite ${direction}`;
+}
+
+function buildThemeVisualStyle(layer: NonNullable<ResolvedOverlayAppearance['theme']['visuals']>[number]): CSSProperties {
+  return {
+    position: 'absolute',
+    inset: layer.inset ?? '0',
+    pointerEvents: 'none',
+    backgroundImage: layer.backgroundImage,
+    backgroundSize: layer.backgroundSize ?? 'cover',
+    backgroundPosition: layer.backgroundPosition ?? 'center',
+    backgroundRepeat: layer.backgroundRepeat ?? 'no-repeat',
+    opacity: typeof layer.opacity === 'number' ? layer.opacity : 1,
+    filter: layer.filter ?? 'none',
+    mixBlendMode: (layer.blendMode as CSSProperties['mixBlendMode']) ?? 'normal',
+    animation: getThemeVisualAnimation(layer),
+    willChange: layer.animation ? 'transform, opacity' : undefined,
+  };
+}
+
 function resolveActiveTabPanelId(args: {
   activePanelId: string | null;
   openPanelIds: string[];
@@ -253,6 +281,9 @@ function App() {
   const refreshFolderPluginsRef = useRef<(force?: boolean) => Promise<void>>(async () => undefined);
   const [layoutManifest, setLayoutManifest] = useState(BUILT_IN_LAYOUT_MANIFEST);
   const [layoutConfigSource, setLayoutConfigSource] = useState<string | null>(null);
+  const [themePackages, setThemePackages] = useState<LoadedOverlayThemePackage[]>([]);
+  const [themePackagesLoading, setThemePackagesLoading] = useState(true);
+  const [themePackagesError, setThemePackagesError] = useState<string | null>(null);
 
   const settings = useSettingsStore(s => s.settings.terminal);
   const appearance = useSettingsStore(s => s.settings.appearance);
@@ -263,14 +294,19 @@ function App() {
   const updateLayout = useSettingsStore(s => s.updateLayout);
   const updateSystem = useSettingsStore(s => s.updateSystem);
   const { initStore, addDirectoryBookmark } = useTerminalStore();
+  const resolvedPackageThemes = useMemo(
+    () => themePackages.map(pkg => pkg.theme),
+    [themePackages],
+  );
   const resolvedAppearance = useMemo(
     () => resolveOverlayAppearance({
       activeThemeId: appearance.activeThemeId,
       customThemes: appearance.customThemes,
+      packageThemes: resolvedPackageThemes,
       uiFontFamily: appearance.uiFontFamily,
       monoFontFamily: settings.fontFamily,
     }),
-    [appearance.activeThemeId, appearance.customThemes, appearance.uiFontFamily, settings.fontFamily],
+    [appearance.activeThemeId, appearance.customThemes, appearance.uiFontFamily, resolvedPackageThemes, settings.fontFamily],
   );
   const theme = resolvedAppearance.theme;
   const accent = theme.palette.accent;
@@ -702,6 +738,37 @@ function App() {
     await invoke('fs_open_file', { path: pluginSystemConfig.pluginsDirectory });
   }, []);
 
+  const refreshThemePackages = useCallback(async () => {
+    if (!isTauri()) {
+      setThemePackages([]);
+      setThemePackagesError(null);
+      setThemePackagesLoading(false);
+      return;
+    }
+
+    setThemePackagesLoading(true);
+    try {
+      await ensureDir(themeSystemConfig.themesDirectory);
+      const result = await discoverThemePackages();
+      setThemePackages(result.packages);
+      setThemePackagesError(result.sourceError);
+    } catch (error) {
+      setThemePackages([]);
+      setThemePackagesError(String(error));
+    } finally {
+      setThemePackagesLoading(false);
+    }
+  }, []);
+
+  const openThemesFolder = useCallback(async () => {
+    if (!isTauri()) {
+      return;
+    }
+
+    await ensureDir(themeSystemConfig.themesDirectory);
+    await invoke('fs_open_file', { path: themeSystemConfig.themesDirectory });
+  }, []);
+
   const createPluginApi = useCallback((plugin: OverlayPluginContext): OverlayPluginApi => {
     const appLocalData = TauriFs.BaseDirectory.AppLocalData;
     const separator = getPlatformPathSeparator(runtimePlatform);
@@ -809,6 +876,10 @@ function App() {
     return () => window.clearInterval(interval);
   }, [refreshFolderPlugins]);
 
+  useEffect(() => {
+    void refreshThemePackages();
+  }, [refreshThemePackages]);
+
   const panelDefinitions = useMemo<OverlayPanelDefinition[]>(
     () => [
       ...createBuiltInPanelDefinitions({
@@ -818,10 +889,15 @@ function App() {
         hideOverlay,
         onOpenInTerminal: handleOpenInTerminal,
         onAddBookmark: handleAddBookmark,
+        themePackages,
+        themePackagesDirectory: themeSystemConfig.themesDirectory,
+        themePackagesLoading,
+        themePackagesError,
+        onRefreshThemes: refreshThemePackages,
+        onOpenThemesFolder: openThemesFolder,
         renderPluginsManager: () => (
           <PluginsManager
             appearance={resolvedAppearance}
-            builtInCatalog={buildBuiltInCatalog()}
             plugins={folderPlugins}
             isLoading={folderPluginsLoading}
             error={folderPluginsError}
@@ -847,9 +923,14 @@ function App() {
       hideOverlay,
       isOverlayVisible,
       openPluginsFolder,
+      openThemesFolder,
       pinnedExplorerPanel?.mode,
+      refreshThemePackages,
       refreshFolderPlugins,
       resolvedAppearance,
+      themePackages,
+      themePackagesError,
+      themePackagesLoading,
     ],
   );
   const panelLookup = useMemo(
@@ -1154,6 +1235,9 @@ function App() {
               borderBottomRightRadius: isTopAnchored ? 18 : 0,
             }}
           >
+            {(theme.visuals ?? []).map(layer => (
+              <div key={layer.id} aria-hidden style={buildThemeVisualStyle(layer)} />
+            ))}
             {shellEffectStyle && <div aria-hidden style={shellEffectStyle} />}
 
             <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>

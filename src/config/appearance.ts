@@ -65,6 +65,41 @@ export interface OverlayThemeEffects {
   overlayShadow: string;
 }
 
+export type OverlayThemeSource = 'built-in' | 'custom' | 'package';
+
+export interface OverlayThemeVisualAnimation {
+  kind: 'drift' | 'pulse' | 'pan';
+  durationMs?: number;
+  easing?: string;
+  direction?: 'normal' | 'reverse' | 'alternate' | 'alternate-reverse';
+}
+
+export interface OverlayThemeVisualLayer {
+  id: string;
+  backgroundImage: string;
+  backgroundSize?: string;
+  backgroundPosition?: string;
+  backgroundRepeat?: string;
+  opacity?: number;
+  blendMode?: string;
+  filter?: string;
+  inset?: string;
+  animation?: OverlayThemeVisualAnimation;
+}
+
+export interface OverlayThemeAssets {
+  packageRoot?: string;
+  manifestPath?: string;
+  backgroundUrl?: string;
+  previewUrl?: string;
+  iconEntries?: Record<string, string>;
+}
+
+export interface OverlayThemeFonts {
+  ui?: string;
+  mono?: string;
+}
+
 export interface OverlayThemeDefinition {
   id: string;
   name: string;
@@ -72,11 +107,18 @@ export interface OverlayThemeDefinition {
   palette: OverlayThemePalette;
   effects: OverlayThemeEffects;
   xterm: OverlayXTermTheme;
+  source?: OverlayThemeSource;
+  extendsThemeId?: string;
+  fonts?: OverlayThemeFonts;
+  assets?: OverlayThemeAssets;
+  visuals?: OverlayThemeVisualLayer[];
+  cssVars?: Record<string, string>;
 }
 
 export interface OverlayAppearanceSelection {
   activeThemeId?: string;
   customThemes?: OverlayThemeDefinition[];
+  packageThemes?: OverlayThemeDefinition[];
   uiFontFamily?: string;
   monoFontFamily?: string;
 }
@@ -144,6 +186,7 @@ function createTheme(
     id,
     name,
     description,
+    source: 'built-in',
     palette: {
       appBackground: '#07070f',
       appBackgroundAlt: '#0b0b18',
@@ -579,14 +622,63 @@ export const overlayThemePresets: OverlayThemeDefinition[] = [
 
 const presetMap = new Map(overlayThemePresets.map(theme => [theme.id, theme]));
 
-export function normalizeThemeDefinition(theme: Partial<OverlayThemeDefinition>): OverlayThemeDefinition {
-  const fallback = presetMap.get('operator') ?? overlayThemePresets[0];
+function normalizeThemeVisualLayer(
+  layer: OverlayThemeVisualLayer,
+  index: number,
+): OverlayThemeVisualLayer {
+  return {
+    ...layer,
+    id: String(layer.id ?? `visual-${index}`),
+    backgroundImage: String(layer.backgroundImage ?? '').trim(),
+    backgroundSize: layer.backgroundSize ?? 'cover',
+    backgroundPosition: layer.backgroundPosition ?? 'center',
+    backgroundRepeat: layer.backgroundRepeat ?? 'no-repeat',
+    opacity: typeof layer.opacity === 'number' ? layer.opacity : 1,
+    blendMode: layer.blendMode ?? 'normal',
+    filter: layer.filter ?? 'none',
+    inset: layer.inset ?? '0',
+    animation: layer.animation
+      ? {
+          kind: layer.animation.kind,
+          durationMs: typeof layer.animation.durationMs === 'number' ? layer.animation.durationMs : 18000,
+          easing: layer.animation.easing ?? 'ease-in-out',
+          direction: layer.animation.direction ?? 'alternate',
+        }
+      : undefined,
+  };
+}
+
+function mergeThemeAssets(
+  fallbackAssets?: OverlayThemeAssets,
+  themeAssets?: OverlayThemeAssets,
+): OverlayThemeAssets | undefined {
+  if (!fallbackAssets && !themeAssets) {
+    return undefined;
+  }
+
+  return {
+    ...fallbackAssets,
+    ...themeAssets,
+    iconEntries: {
+      ...(fallbackAssets?.iconEntries ?? {}),
+      ...(themeAssets?.iconEntries ?? {}),
+    },
+  };
+}
+
+export function normalizeThemeDefinition(
+  theme: Partial<OverlayThemeDefinition>,
+  fallbackTheme?: OverlayThemeDefinition,
+): OverlayThemeDefinition {
+  const fallback = fallbackTheme ?? presetMap.get('operator') ?? overlayThemePresets[0];
   return {
     ...fallback,
     ...theme,
     id: String(theme.id ?? fallback.id),
     name: String(theme.name ?? fallback.name),
     description: theme.description ?? fallback.description,
+    source: theme.source ?? fallback.source ?? 'custom',
+    extendsThemeId: theme.extendsThemeId ?? fallback.extendsThemeId,
     palette: {
       ...fallback.palette,
       ...(theme.palette ?? {}),
@@ -598,6 +690,18 @@ export function normalizeThemeDefinition(theme: Partial<OverlayThemeDefinition>)
     xterm: {
       ...fallback.xterm,
       ...(theme.xterm ?? {}),
+    },
+    fonts: {
+      ...(fallback.fonts ?? {}),
+      ...(theme.fonts ?? {}),
+    },
+    assets: mergeThemeAssets(fallback.assets, theme.assets),
+    visuals: (theme.visuals ?? fallback.visuals ?? [])
+      .filter(layer => Boolean(layer?.backgroundImage))
+      .map((layer, index) => normalizeThemeVisualLayer(layer, index)),
+    cssVars: {
+      ...(fallback.cssVars ?? {}),
+      ...(theme.cssVars ?? {}),
     },
   };
 }
@@ -629,22 +733,24 @@ export function serializeTheme(theme: OverlayThemeDefinition): string {
 }
 
 export function resolveOverlayAppearance(selection?: OverlayAppearanceSelection): ResolvedOverlayAppearance {
-  const customThemes = (selection?.customThemes ?? []).map(normalizeThemeDefinition);
+  const customThemes = (selection?.customThemes ?? []).map(theme => normalizeThemeDefinition(theme));
+  const packageThemes = (selection?.packageThemes ?? []).map(theme => normalizeThemeDefinition(theme, presetMap.get(theme.extendsThemeId ?? '') ?? undefined));
   const activeThemeId = selection?.activeThemeId ?? 'operator';
   const themeLookup = new Map<string, OverlayThemeDefinition>([
     ...overlayThemePresets.map(theme => [theme.id, theme] as const),
+    ...packageThemes.map(theme => [theme.id, theme] as const),
     ...customThemes.map(theme => [theme.id, theme] as const),
   ]);
 
   const theme = themeLookup.get(activeThemeId) ?? overlayThemePresets[0];
   const fonts = {
-    ui: selection?.uiFontFamily ?? defaultUiFont,
-    mono: selection?.monoFontFamily ?? defaultMonoFont,
+    ui: selection?.uiFontFamily?.trim() || theme.fonts?.ui || defaultUiFont,
+    mono: selection?.monoFontFamily?.trim() || theme.fonts?.mono || defaultMonoFont,
   };
 
   return {
     theme,
-    themes: [...overlayThemePresets, ...customThemes],
+    themes: [...overlayThemePresets, ...packageThemes, ...customThemes],
     fonts,
     cssVars: {
       '--overlay-font-ui': fonts.ui,
@@ -688,6 +794,18 @@ export function resolveOverlayAppearance(selection?: OverlayAppearanceSelection)
       '--overlay-background-position': theme.effects.backgroundPosition,
       '--overlay-shadow': theme.effects.shadow,
       '--overlay-overlay-shadow': theme.effects.overlayShadow,
+      ...(theme.cssVars ?? {}),
     },
   };
+}
+
+export function getThemeSourceLabel(theme: OverlayThemeDefinition): string {
+  switch (theme.source) {
+    case 'package':
+      return 'Package';
+    case 'custom':
+      return 'Custom';
+    default:
+      return 'Built In';
+  }
 }

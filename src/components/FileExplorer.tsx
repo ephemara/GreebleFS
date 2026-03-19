@@ -344,18 +344,33 @@ function getIconSrc(
   entry: FileEntry,
   open = false,
   folderConfig?: Parameters<typeof getFolderIconSrc>[2],
+  iconEntries?: Record<string, string>,
 ): string {
   if (entry.is_dir) {
-    return getFolderIconSrc(entry.path, open, folderConfig);
+    return getFolderIconSrc(entry.path, open, { ...folderConfig, iconEntries });
   }
   // Check exact filename first
   const fnLower = entry.name.toLowerCase();
-  if (FILENAME_ICON[fnLower]) return `${ICON_BASE}${FILENAME_ICON[fnLower]}.svg`;
+  if (FILENAME_ICON[fnLower]) {
+    const iconName = FILENAME_ICON[fnLower];
+    return iconEntries?.[`file:${iconName}`]
+      ?? iconEntries?.[`file-${iconName}`]
+      ?? iconEntries?.[iconName]
+      ?? `${ICON_BASE}${iconName}.svg`;
+  }
   // Check extension
   const ext = getEntryExtension(entry);
   const extIcon = EXT_ICON[ext];
-  if (extIcon) return `${ICON_BASE}${extIcon}.svg`;
-  return `${ICON_BASE}txt.svg`;
+  if (extIcon) {
+    return iconEntries?.[`file:${extIcon}`]
+      ?? iconEntries?.[`file-${extIcon}`]
+      ?? iconEntries?.[extIcon]
+      ?? `${ICON_BASE}${extIcon}.svg`;
+  }
+  return iconEntries?.['file:txt']
+    ?? iconEntries?.['file-txt']
+    ?? iconEntries?.txt
+    ?? `${ICON_BASE}txt.svg`;
 }
 
 // ─── Extension sets (for preview logic only) ─────────────────────────────────
@@ -899,6 +914,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
   const isCompactDock = layoutMode === 'compact-dock';
   const uiFont = appearance?.fonts.ui ?? 'Inter,system-ui,sans-serif';
+  const themeIconEntries = appearance?.theme.assets?.iconEntries;
   const showHidden = explorerSettings.showHiddenFiles;
   const viewMode = explorerSettings.viewMode;
   const initialSessionPathRef = useRef(explorerSession.currentPath.trim());
@@ -2177,7 +2193,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                   const iconSrc = getIconSrc(entry, isSel || isDrop, {
                     rules: explorerSettings.folderIconRules,
                     defaultIcon: explorerSettings.defaultFolderIcon,
-                  });
+                  }, themeIconEntries);
                   return (
                     <div key={entry.path}
                       draggable
@@ -2221,7 +2237,10 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                 <tr style={{ background:`${accent}11`, borderBottom:`1px solid ${EXP.border}` }}>
                   <td style={{ padding:'4px 12px' }}>
                     <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                      <SvgIcon src={newItem.kind==='folder' ? '/icons/folder.svg' : '/icons/txt.svg'} size={16} />
+                      <SvgIcon src={newItem.kind === 'folder' ? getIconSrc({ name: 'folder', path: currentPath, is_dir: true, size: 0, modified: 0, extension: '', is_hidden: false, is_symlink: false }, false, {
+                        rules: explorerSettings.folderIconRules,
+                        defaultIcon: explorerSettings.defaultFolderIcon,
+                      }, themeIconEntries) : (themeIconEntries?.['file:txt'] ?? themeIconEntries?.['file-txt'] ?? themeIconEntries?.txt ?? '/icons/txt.svg')} size={16} />
                       <input autoFocus value={newItemName} onChange={e=>setNewItemName(e.target.value)}
                         onKeyDown={e=>{ if(e.key==='Enter') commitNew(); if(e.key==='Escape') setNewItem({visible:false,kind:'folder'}); }}
                         onBlur={commitNew}
@@ -2252,7 +2271,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                     const iconSrc = getIconSrc(entry, isSel || isDrop, {
                       rules: explorerSettings.folderIconRules,
                       defaultIcon: explorerSettings.defaultFolderIcon,
-                    });
+                    }, themeIconEntries);
                     return (
                     <tr key={entry.path}
                         draggable

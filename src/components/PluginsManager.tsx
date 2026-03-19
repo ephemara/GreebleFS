@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Blocks, FolderOpen, LoaderCircle, Puzzle, RefreshCw, TriangleAlert } from 'lucide-react';
 import { pluginSystemConfig } from '../config/plugins';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
-import type { PanelCatalogEntry } from '../panels/panelRegistry';
 import type {
   LoadedOverlayPlugin,
   OverlayPluginApi,
@@ -43,7 +42,6 @@ const PLUGIN_HOST_DENSE_WIDTH = 820;
 
 export interface PluginsManagerProps {
   appearance?: ResolvedOverlayAppearance;
-  builtInCatalog?: PanelCatalogEntry[];
   plugins: LoadedOverlayPlugin[];
   isLoading: boolean;
   error: string | null;
@@ -61,7 +59,6 @@ export interface FolderPluginRendererProps {
 
 export function PluginsManager({
   appearance,
-  builtInCatalog = [],
   plugins,
   isLoading,
   error,
@@ -116,7 +113,7 @@ export function PluginsManager({
             </div>
             <div>
               <div style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>Plugins</div>
-              <div style={{ fontSize: 11, color: MUTED }}>Folder plugins now become real top-bar tabs.</div>
+              <div style={{ fontSize: 11, color: MUTED }}>Available plugins now become real top-bar tabs.</div>
             </div>
           </div>
 
@@ -133,49 +130,9 @@ export function PluginsManager({
         </div>
 
         <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 10 }}>
-          {builtInCatalog.length > 0 && (
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ padding: '4px 8px 10px', fontSize: 11, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                Built-in Panel Plugins
-              </div>
-              {builtInCatalog.map(panel => (
-                <div
-                  key={panel.id}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: 12,
-                    border: `1px solid ${panel.example ? `${accent}66` : BORDER}`,
-                    background: panel.example ? `${accent}12` : 'transparent',
-                    marginBottom: 8,
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: TEXT }}>{panel.label}</div>
-                    <div
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        color: panel.example ? accent : MUTED,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.08em',
-                      }}
-                    >
-                      {panel.example ? 'Example' : 'Built-in'}
-                    </div>
-                  </div>
-                  <div style={{ marginTop: 5, fontSize: 11, color: MUTED, lineHeight: 1.5 }}>
-                    {panel.description}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {builtInCatalog.length > 0 && (
-            <div style={{ padding: '4px 8px 10px', fontSize: 11, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Folder Plugins
-            </div>
-          )}
+          <div style={{ padding: '4px 8px 10px', fontSize: 11, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            Available Plugins
+          </div>
 
           {plugins.length === 0 && !isLoading ? (
             <div

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { FolderOpen, LayoutGrid, Palette, Plus, RotateCcw, Search, Settings2, SlidersHorizontal, TerminalSquare, Trash2, Type } from 'lucide-react';
+import { FolderOpen, LayoutGrid, Palette, Plus, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, TerminalSquare, Trash2, Type } from 'lucide-react';
 import {
   ensureFontFamilyLoaded,
+  getThemeSourceLabel,
   overlayFontCatalog,
   overlayThemePresets,
   parseImportedTheme,
@@ -32,6 +33,7 @@ import {
   resolveLayoutProfile,
   type LoadedLayoutManifest,
 } from '../config/layoutProfiles';
+import type { LoadedOverlayThemePackage } from '../config/themePackages';
 import {
   clampOverlayAnimationDuration,
   clampOverlayAnimationIntensity,
@@ -206,7 +208,100 @@ const DEFAULT_LOADED_LAYOUT_MANIFEST: LoadedLayoutManifest = {
   sourceError: null,
 };
 
-export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppearance }) {
+type SettingsSectionKey =
+  | 'appearance'
+  | 'terminal'
+  | 'explorer'
+  | 'layouts'
+  | 'hotkeys'
+  | 'system'
+  | 'theme-json';
+
+function SettingsRailButton({
+  active,
+  icon,
+  label,
+  subtitle,
+  summary,
+  accent,
+  border,
+  text,
+  muted,
+  onClick,
+}: {
+  active: boolean;
+  icon: ReactNode;
+  label: string;
+  subtitle: string;
+  summary: string;
+  accent: string;
+  border: string;
+  text: string;
+  muted: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded px-3 py-3 text-left transition-colors"
+      style={{
+        border: `1px solid ${active ? `${accent}88` : border}`,
+        background: active ? `${accent}16` : 'rgba(255,255,255,0.025)',
+        color: text,
+        boxShadow: active ? `inset 0 0 0 1px ${accent}22` : 'none',
+      }}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded"
+          style={{
+            background: active ? `${accent}20` : 'rgba(255,255,255,0.04)',
+            color: active ? accent : muted,
+            border: `1px solid ${active ? `${accent}55` : 'rgba(255,255,255,0.06)'}`,
+          }}
+        >
+          {icon}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-[11px] font-semibold">{label}</div>
+            {active && (
+              <span
+                className="rounded px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em]"
+                style={{ background: `${accent}18`, color: accent, border: `1px solid ${accent}44` }}
+              >
+                Open
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-[11px] leading-4" style={{ color: muted }}>{subtitle}</p>
+          <div className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: active ? accent : muted }}>
+            {summary}
+          </div>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+export function SettingsPage({
+  appearance,
+  themePackages,
+  themePackagesDirectory,
+  themePackagesLoading,
+  themePackagesError,
+  onRefreshThemes,
+  onOpenThemesFolder,
+}: {
+  appearance: ResolvedOverlayAppearance;
+  themePackages: LoadedOverlayThemePackage[];
+  themePackagesDirectory: string;
+  themePackagesLoading: boolean;
+  themePackagesError: string | null;
+  onRefreshThemes: () => Promise<void>;
+  onOpenThemesFolder: () => Promise<void>;
+}) {
   const platform = useMemo(() => detectClientPlatform(), []);
   const settings = useSettingsStore(s => s.settings);
   const updateTerminal = useSettingsStore(s => s.updateTerminal);
@@ -221,6 +316,7 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
   const profileOptions = useMemo(() => getExternalTerminalProfileOptions(platform), [platform]);
   const [themeDraft, setThemeDraft] = useState(() => serializeTheme(appearance.theme));
   const [folderIconSearch, setFolderIconSearch] = useState('');
+  const [activeSection, setActiveSection] = useState<SettingsSectionKey>('appearance');
   const [startupSyncPending, setStartupSyncPending] = useState(false);
   const [startupSyncError, setStartupSyncError] = useState<string | null>(null);
   const [layoutManifestState, setLayoutManifestState] = useState<LoadedLayoutManifest>(DEFAULT_LOADED_LAYOUT_MANIFEST);
@@ -313,6 +409,7 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
   const text = appearance.theme.palette.textPrimary;
   const muted = appearance.theme.palette.textMuted;
   const accent = appearance.theme.palette.accent;
+  const themeIconEntries = appearance.theme.assets?.iconEntries;
   const activeLayoutProfile = useMemo(
     () => resolveLayoutProfile(layoutManifestState.manifest, settings.layout.activeProfileId),
     [layoutManifestState.manifest, settings.layout.activeProfileId],
@@ -374,42 +471,174 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
     }
   }, [updateSystem]);
 
+  const settingsSections: Array<{
+    key: SettingsSectionKey;
+    label: string;
+    subtitle: string;
+    summary: string;
+    detail: string;
+    icon: ReactNode;
+  }> = [
+    {
+      key: 'appearance',
+      label: 'Appearance',
+      subtitle: 'Theme, opacity, zoom, and motion.',
+      summary: `${appearance.theme.name} · ${Math.round(settings.appearance.appOpacity * 100)}% OP · ${Math.round(settings.appearance.appZoom * 100)}% ZM`,
+      detail: 'Tune how the whole shell looks and feels, from presets and palette tokens to blur and motion behavior.',
+      icon: <Palette size={14} />,
+    },
+    {
+      key: 'terminal',
+      label: 'Terminal',
+      subtitle: 'Shell defaults and external handoff.',
+      summary: `${settings.terminal.preferredOpenMode} · ${settings.terminal.cursorStyle} cursor`,
+      detail: 'Control the integrated terminal, its typography, and how commands hand off to external shells.',
+      icon: <TerminalSquare size={14} />,
+    },
+    {
+      key: 'explorer',
+      label: 'Explorer',
+      subtitle: 'Startup path, file visibility, and folder rules.',
+      summary: `${settings.explorer.showHiddenFiles ? 'Hidden on' : 'Hidden off'} · ${settings.explorer.folderIconRules.length} icon rules`,
+      detail: 'Shape the file browser around your machine, your folder taxonomy, and the icon logic that makes the browser readable.',
+      icon: <FolderOpen size={14} />,
+    },
+    {
+      key: 'layouts',
+      label: 'Layouts',
+      subtitle: 'Workbench profiles and shell chrome.',
+      summary: `${activeLayoutProfile.label} · ${layoutManifestState.manifest.profiles.length} profiles`,
+      detail: 'Switch between shell profiles, point at external manifests, and control the workbench shape at the layout level.',
+      icon: <LayoutGrid size={14} />,
+    },
+    {
+      key: 'hotkeys',
+      label: 'Hotkeys',
+      subtitle: 'Overlay opener and gesture bindings.',
+      summary: formatHotkeyLabel(settings.keybindings.terminalToggle),
+      detail: 'Keep the overlay easy to summon and remap the first global gestures without digging through raw config.',
+      icon: <SlidersHorizontal size={14} />,
+    },
+    {
+      key: 'system',
+      label: 'System',
+      subtitle: 'Startup and OS integration status.',
+      summary: settings.system.launchAtStartup ? 'Launch at startup enabled' : 'Launch at startup disabled',
+      detail: 'Handle machine-level behavior like login launch and other desktop integration concerns in one place.',
+      icon: <Settings2 size={14} />,
+    },
+    {
+      key: 'theme-json',
+      label: 'Theme JSON',
+      subtitle: 'Raw theme authoring and import.',
+      summary: 'Direct JSON editing',
+      detail: 'Paste, tweak, and version full theme definitions directly when presets and token pickers are not enough.',
+      icon: <Type size={14} />,
+    },
+  ];
+  const activeSectionMeta = settingsSections.find(section => section.key === activeSection) ?? settingsSections[0];
+
   return (
-    <OverlayScrollArea
+    <div
       style={{
         display: 'flex',
         height: '100%',
-        flexDirection: 'column',
+        minHeight: 0,
+        minWidth: 0,
         fontFamily: appearance.fonts.ui,
         background: `linear-gradient(180deg, ${appearance.theme.palette.appBackgroundAlt} 0%, ${panelBackground} 100%)`,
       }}
     >
-      <div className="border-b px-5 py-4" style={{ borderColor: border }}>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em]" style={{ color: muted }}>
-              <SlidersHorizontal size={13} />
-              <span>Application Settings</span>
-            </div>
-            <h1 className="mt-2 text-[24px] font-semibold" style={{ color: text }}>Tune the whole overlay from one place.</h1>
-            <p className="mt-2 max-w-[720px] text-[12px] leading-5" style={{ color: muted }}>
-              Platform-aware defaults, terminal behavior, explorer startup, and theme editing all live here now.
-            </p>
+      <aside className="flex min-h-0 w-[292px] shrink-0 flex-col border-r" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+        <div className="border-b px-5 py-5" style={{ borderColor: border }}>
+          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: muted }}>
+            <SlidersHorizontal size={12} />
+            <span>Workbench Settings</span>
           </div>
-          <button
-            onClick={() => resetToDefaults()}
-            className="inline-flex items-center gap-2 rounded px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors"
-            style={{ border: `1px solid ${border}`, color: text, background: 'rgba(255,255,255,0.04)' }}
-          >
-            <RotateCcw size={12} />
-            Reset Defaults
-          </button>
+          <h1 className="mt-3 text-[22px] font-semibold leading-none" style={{ color: text }}>Tune the shell.</h1>
+          <p className="mt-2 text-[11px] leading-5" style={{ color: muted }}>
+            Navigate one settings group at a time instead of wading through one giant stack.
+          </p>
         </div>
-      </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-        <div className="space-y-4">
-          <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+        <div className="px-4 pt-4">
+          <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+            <div className="grid grid-cols-1 gap-2">
+              <div className="rounded border px-3 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ color: muted }}>Theme</div>
+                <div className="mt-1 text-[11px] font-semibold" style={{ color: text }}>{appearance.theme.name}</div>
+              </div>
+              <div className="rounded border px-3 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ color: muted }}>Layout</div>
+                <div className="mt-1 text-[11px] font-semibold" style={{ color: text }}>{activeLayoutProfile.label}</div>
+              </div>
+              <div className="rounded border px-3 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                <div className="text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ color: muted }}>Startup</div>
+                <div className="mt-1 text-[11px] font-semibold" style={{ color: text }}>
+                  {settings.system.launchAtStartup ? 'Enabled' : 'Disabled'}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: '14px 16px 16px 16px' }}>
+          <div className="space-y-2">
+            {settingsSections.map(section => (
+              <SettingsRailButton
+                key={section.key}
+                active={activeSection === section.key}
+                icon={section.icon}
+                label={section.label}
+                subtitle={section.subtitle}
+                summary={section.summary}
+                accent={accent}
+                border={border}
+                text={text}
+                muted={muted}
+                onClick={() => setActiveSection(section.key)}
+              />
+            ))}
+          </div>
+        </OverlayScrollArea>
+      </aside>
+
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="border-b px-5 py-4" style={{ borderColor: border }}>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: muted }}>
+                {activeSectionMeta.icon}
+                <span>{activeSectionMeta.label}</span>
+              </div>
+              <h2 className="mt-2 text-[23px] font-semibold" style={{ color: text }}>{activeSectionMeta.label}</h2>
+              <p className="mt-2 max-w-[760px] text-[12px] leading-5" style={{ color: muted }}>
+                {activeSectionMeta.detail}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <span
+                className="hidden rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] md:inline-flex"
+                style={{ border: `1px solid ${border}`, color: muted, background: 'rgba(255,255,255,0.03)' }}
+              >
+                {activeSectionMeta.summary}
+              </span>
+              <button
+                onClick={() => resetToDefaults()}
+                className="inline-flex items-center gap-2 rounded px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors"
+                style={{ border: `1px solid ${border}`, color: text, background: 'rgba(255,255,255,0.04)' }}
+              >
+                <RotateCcw size={12} />
+                Reset Defaults
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 20 }}>
+          <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-4 pb-6">
+            {activeSection === 'appearance' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
             <SectionTitle
               icon={<Palette size={12} />}
               title="Appearance"
@@ -417,6 +646,51 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
             />
 
             <div className="mt-4 space-y-4">
+              <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Theme Packages</div>
+                    <p className="mt-1 text-[11px] opacity-40">
+                      Drop packaged themes into <code>{themePackagesDirectory}</code> and Snapyard will discover them as first-class themes with assets and visuals.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void onOpenThemesFolder()}
+                      className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                      style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                    >
+                      Open Folder
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void onRefreshThemes()}
+                      className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                      style={{ border: `1px solid ${accent}`, background: `${accent}18`, color: text }}
+                    >
+                      <RefreshCw size={10} />
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
+                  <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                    {themePackagesLoading ? 'Scanning Packages' : `${themePackages.length} Package${themePackages.length === 1 ? '' : 's'} Loaded`}
+                  </span>
+                  <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+                    Active Source: {getThemeSourceLabel(appearance.theme)}
+                  </span>
+                </div>
+
+                {themePackagesError && (
+                  <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.18)', color: '#fecaca' }}>
+                    Theme package scan failed: {themePackagesError}
+                  </div>
+                )}
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Theme Presets</label>
                 <div className="grid grid-cols-2 gap-2">
@@ -434,7 +708,10 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
                         }}
                       >
                         <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: themeOption.palette.accent }} />
-                        <span className="truncate text-[11px] font-medium">{themeOption.name}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[11px] font-medium">{themeOption.name}</div>
+                          <div className="truncate text-[9px] uppercase tracking-[0.12em] opacity-45">{getThemeSourceLabel(themeOption)}</div>
+                        </div>
                         {active && <span className="ml-auto text-[9px] opacity-60">LIVE</span>}
                       </button>
                     );
@@ -609,8 +886,10 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
               </div>
             </div>
           </section>
+            )}
 
-          <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+            {activeSection === 'hotkeys' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
             <SectionTitle
               icon={<TerminalSquare size={12} />}
               title="Hotkeys"
@@ -630,8 +909,10 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
                 ))}
             </div>
           </section>
+            )}
 
-          <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+            {activeSection === 'terminal' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
             <SectionTitle
               icon={<TerminalSquare size={12} />}
               title="Terminal"
@@ -760,10 +1041,10 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
               </label>
             </div>
           </section>
-        </div>
+            )}
 
-        <div className="space-y-4">
-          <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+            {activeSection === 'layouts' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
             <SectionTitle
               icon={<LayoutGrid size={12} />}
               title="Layouts"
@@ -868,8 +1149,10 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
               </div>
             </div>
           </section>
+            )}
 
-          <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+            {activeSection === 'system' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
             <SectionTitle
               icon={<Settings2 size={12} />}
               title="System"
@@ -896,12 +1179,14 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
                   ? 'Updating OS startup registration...'
                   : startupSyncError
                     ? `Startup registration failed: ${startupSyncError}`
-                    : `Current status: ${settings.system.launchAtStartup ? 'enabled' : 'disabled'}`}
+                  : `Current status: ${settings.system.launchAtStartup ? 'enabled' : 'disabled'}`}
               </div>
             </div>
           </section>
+            )}
 
-          <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+            {activeSection === 'explorer' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
             <SectionTitle
               icon={<FolderOpen size={12} />}
               title="Explorer"
@@ -960,7 +1245,7 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
                   <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Default Fallback</label>
                   <div className="flex items-center gap-3 rounded border px-3 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)' }}>
                     <img
-                      src={getNamedFolderIconSrc(settings.explorer.defaultFolderIcon)}
+                      src={getNamedFolderIconSrc(settings.explorer.defaultFolderIcon, false, themeIconEntries)}
                       width={22}
                       height={22}
                       style={{ objectFit: 'contain', flexShrink: 0 }}
@@ -987,7 +1272,7 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
                       <div className="grid grid-cols-1 gap-2 xl:grid-cols-[120px_minmax(0,1.1fr)_minmax(0,0.9fr)_36px]">
                         <div className="flex items-center gap-2 rounded border px-2 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)' }}>
                           <img
-                            src={getNamedFolderIconSrc(rule.icon)}
+                            src={getNamedFolderIconSrc(rule.icon, false, themeIconEntries)}
                             width={18}
                             height={18}
                             style={{ objectFit: 'contain', flexShrink: 0 }}
@@ -1060,11 +1345,11 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
                   />
                   <OverlayScrollArea style={{ marginTop: 12, maxHeight: 220 }} viewportStyle={{ paddingRight: 4 }}>
                   <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-                    {filteredFolderIconOptions.map(option => (
-                      <button
-                        key={option.value}
-                        onClick={() => updateExplorer({ defaultFolderIcon: option.value })}
-                        className="flex items-center gap-2 rounded border px-2 py-2 text-left text-[10px]"
+                      {filteredFolderIconOptions.map(option => (
+                        <button
+                          key={option.value}
+                          onClick={() => updateExplorer({ defaultFolderIcon: option.value })}
+                          className="flex items-center gap-2 rounded border px-2 py-2 text-left text-[10px]"
                         style={{
                           borderColor: settings.explorer.defaultFolderIcon === option.value ? accent : border,
                           background: settings.explorer.defaultFolderIcon === option.value ? `${accent}14` : 'rgba(255,255,255,0.03)',
@@ -1075,8 +1360,8 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
                         <img src={option.closedSrc} width={18} height={18} style={{ objectFit: 'contain', flexShrink: 0 }} draggable={false} />
                         <span className="truncate">{option.label}</span>
                       </button>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
                   </OverlayScrollArea>
                 </div>
               </div>
@@ -1090,8 +1375,10 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
               </button>
             </div>
           </section>
+            )}
 
-          <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+            {activeSection === 'theme-json' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
             <SectionTitle
               icon={<Palette size={12} />}
               title="Theme JSON"
@@ -1123,8 +1410,10 @@ export function SettingsPage({ appearance }: { appearance: ResolvedOverlayAppear
               </div>
             </div>
           </section>
-        </div>
-      </div>
-    </OverlayScrollArea>
+            )}
+          </div>
+        </OverlayScrollArea>
+      </main>
+    </div>
   );
 }

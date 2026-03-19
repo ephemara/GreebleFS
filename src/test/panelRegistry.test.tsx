@@ -50,6 +50,12 @@ describe('createBuiltInPanelDefinitions', () => {
       hideOverlay: () => {},
       onOpenInTerminal: () => {},
       onAddBookmark: async () => {},
+      themePackages: [],
+      themePackagesDirectory: 'themes',
+      themePackagesLoading: false,
+      themePackagesError: null,
+      onRefreshThemes: async () => {},
+      onOpenThemesFolder: async () => {},
       renderPluginsManager: () => null,
     });
 

@@ -294,7 +294,7 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
       ...importedAppearance,
       activeThemeId: legacyThemeId ?? base.appearance.activeThemeId,
       uiFontFamily: legacyUiFont ?? base.appearance.uiFontFamily,
-      customThemes: (importedAppearance?.customThemes ?? base.appearance.customThemes).map(normalizeThemeDefinition),
+      customThemes: (importedAppearance?.customThemes ?? base.appearance.customThemes).map(theme => normalizeThemeDefinition(theme)),
       appAnimationDurationMs: clampOverlayAnimationDuration(importedAppearance?.appAnimationDurationMs ?? base.appearance.appAnimationDurationMs),
       appAnimationIntensity: clampOverlayAnimationIntensity(importedAppearance?.appAnimationIntensity ?? base.appearance.appAnimationIntensity),
     },

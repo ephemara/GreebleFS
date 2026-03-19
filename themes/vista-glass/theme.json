@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "id": "vista-glass",
+  "name": "Vista Glass",
+  "description": "A glossy Aero-inspired shell with blue glass, bloom, and bevel-heavy iconography.",
+  "extends": "github-dark",
+  "assets": {
+    "background": "assets/wallpaper.svg",
+    "iconsDirectory": "icons"
+  },
+  "theme": {
+    "palette": {
+      "appBackground": "#0a1220",
+      "appBackgroundAlt": "#10203a",
+      "shellBackground": "rgba(20, 42, 72, 0.62)",
+      "shellBackgroundSolid": "rgba(17, 34, 58, 0.94)",
+      "topBarBackground": "#173253",
+      "topBarMenuBackground": "#1a3b63",
+      "sidebarBackground": "rgba(16, 40, 67, 0.82)",
+      "panelBackground": "rgba(18, 44, 73, 0.78)",
+      "panelAltBackground": "rgba(23, 53, 87, 0.86)",
+      "cardBackground": "rgba(33, 68, 110, 0.58)",
+      "cardHoverBackground": "rgba(49, 91, 141, 0.7)",
+      "contextMenuBackground": "rgba(16, 41, 71, 0.94)",
+      "inputBackground": "rgba(225, 239, 255, 0.12)",
+      "terminalBackground": "#08111c",
+      "selectionBackground": "rgba(140, 210, 255, 0.26)",
+      "textPrimary": "#eef7ff",
+      "textSecondary": "#dbeeff",
+      "textMuted": "rgba(225, 241, 255, 0.7)",
+      "textDim": "rgba(225, 241, 255, 0.38)",
+      "border": "rgba(163, 214, 255, 0.2)",
+      "borderStrong": "rgba(180, 228, 255, 0.36)",
+      "accent": "#7dd3ff",
+      "accentSoft": "rgba(125, 211, 255, 0.18)",
+      "accentContrast": "#062237",
+      "success": "#8ef0b9",
+      "warning": "#ffd36d",
+      "danger": "#ff9db2",
+      "info": "#7dd3ff",
+      "note": "#9fdfff",
+      "todo": "#8ef0b9",
+      "bug": "#ff9db2",
+      "prompt": "#c9b6ff"
+    },
+    "effects": {
+      "backgroundSize": "cover",
+      "backgroundPosition": "center",
+      "shadow": "0 20px 64px rgba(0, 0, 0, 0.44)",
+      "overlayShadow": "0 -4px 0 0 #7dd3ff, 0 -30px 90px rgba(2, 11, 24, 0.95)"
+    },
+    "xterm": {
+      "background": "#08111c",
+      "foreground": "#dff2ff",
+      "cursor": "#7dd3ff",
+      "blue": "#65c8ff",
+      "cyan": "#7dd3ff",
+      "brightBlue": "#9fe0ff",
+      "brightCyan": "#b9ebff"
+    },
+    "cssVars": {
+      "--snapyard-chrome-style": "vista-glass"
+    }
+  },
+  "visuals": [
+    {
+      "id": "vista-sheen",
+      "backgroundImage": "linear-gradient(180deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.04) 18%, rgba(255,255,255,0) 42%)",
+      "opacity": 0.75,
+      "blendMode": "screen"
+    },
+    {
+      "id": "vista-bloom",
+      "backgroundImage": "radial-gradient(circle at 18% 12%, rgba(170, 225, 255, 0.42), transparent 30%), radial-gradient(circle at 78% 10%, rgba(117, 196, 255, 0.24), transparent 22%), radial-gradient(circle at 52% 120%, rgba(48, 120, 198, 0.34), transparent 28%)",
+      "opacity": 0.72,
+      "blendMode": "screen",
+      "animation": {
+        "kind": "drift",
+        "durationMs": 22000
+      }
+    }
+  ]
+}

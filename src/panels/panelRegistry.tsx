@@ -9,6 +9,7 @@ import { ScreenshotsManager } from '../components/ScreenshotsManager';
 import { FolderPluginRenderer } from '../components/PluginsManager';
 import { SettingsPage } from '../components/SettingsPage';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
+import type { LoadedOverlayThemePackage } from '../config/themePackages';
 import type {
   LoadedOverlayPlugin,
   OverlayPluginApi,
@@ -41,6 +42,12 @@ export function createBuiltInPanelDefinitions({
   hideOverlay,
   onOpenInTerminal,
   onAddBookmark,
+  themePackages,
+  themePackagesDirectory,
+  themePackagesLoading,
+  themePackagesError,
+  onRefreshThemes,
+  onOpenThemesFolder,
   renderPluginsManager,
 }: {
   appearance: ResolvedOverlayAppearance;
@@ -49,6 +56,12 @@ export function createBuiltInPanelDefinitions({
   hideOverlay: () => void;
   onOpenInTerminal: (path: string) => void;
   onAddBookmark: (name: string, path: string) => Promise<void>;
+  themePackages: LoadedOverlayThemePackage[];
+  themePackagesDirectory: string;
+  themePackagesLoading: boolean;
+  themePackagesError: string | null;
+  onRefreshThemes: () => Promise<void>;
+  onOpenThemesFolder: () => Promise<void>;
   renderPluginsManager: () => React.ReactNode;
 }): OverlayPanelDefinition[] {
   const accent = appearance.theme.palette.accent;
@@ -123,7 +136,17 @@ export function createBuiltInPanelDefinitions({
       icon: <SlidersHorizontal size={12} />,
       description: 'Application-wide appearance, terminal, and explorer settings.',
       defaultOpen: false,
-      render: () => <SettingsPage appearance={appearance} />,
+      render: () => (
+        <SettingsPage
+          appearance={appearance}
+          themePackages={themePackages}
+          themePackagesDirectory={themePackagesDirectory}
+          themePackagesLoading={themePackagesLoading}
+          themePackagesError={themePackagesError}
+          onRefreshThemes={onRefreshThemes}
+          onOpenThemesFolder={onOpenThemesFolder}
+        />
+      ),
     },
     {
       id: 'plugins',

@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "id": "plasma-flow",
+  "name": "Plasma Flow",
+  "description": "A KDE-like neon dark shell with crisp panels, cyan-magenta motion, and techy folder overrides.",
+  "extends": "catppuccin",
+  "assets": {
+    "background": "assets/wallpaper.svg",
+    "iconsDirectory": "icons"
+  },
+  "theme": {
+    "palette": {
+      "appBackground": "#111520",
+      "appBackgroundAlt": "#151b2a",
+      "shellBackground": "rgba(17, 21, 32, 0.7)",
+      "shellBackgroundSolid": "rgba(17, 21, 32, 0.95)",
+      "topBarBackground": "#181f31",
+      "topBarMenuBackground": "#1d2740",
+      "sidebarBackground": "#182132",
+      "panelBackground": "rgba(23, 31, 48, 0.84)",
+      "panelAltBackground": "#202b43",
+      "cardBackground": "rgba(30, 39, 59, 0.84)",
+      "cardHoverBackground": "#273452",
+      "contextMenuBackground": "#1d2740",
+      "inputBackground": "#202b43",
+      "terminalBackground": "#0f1420",
+      "selectionBackground": "rgba(89, 227, 255, 0.18)",
+      "textPrimary": "#edf3ff",
+      "textSecondary": "#d8e4ff",
+      "textMuted": "rgba(237, 243, 255, 0.64)",
+      "textDim": "rgba(237, 243, 255, 0.28)",
+      "border": "rgba(116, 199, 255, 0.16)",
+      "borderStrong": "rgba(166, 122, 255, 0.28)",
+      "accent": "#59e3ff",
+      "accentSoft": "rgba(89, 227, 255, 0.16)",
+      "accentContrast": "#07161b",
+      "success": "#5ef1a9",
+      "warning": "#ffca62",
+      "danger": "#ff7db5",
+      "info": "#59e3ff",
+      "note": "#79dcff",
+      "todo": "#5ef1a9",
+      "bug": "#ff7db5",
+      "prompt": "#b88cff"
+    },
+    "effects": {
+      "backgroundSize": "cover",
+      "backgroundPosition": "center",
+      "shadow": "0 18px 64px rgba(0, 0, 0, 0.42)",
+      "overlayShadow": "0 -4px 0 0 #59e3ff, 0 -32px 90px rgba(5, 8, 16, 0.95)"
+    },
+    "xterm": {
+      "background": "#0f1420",
+      "foreground": "#e9f3ff",
+      "cursor": "#59e3ff",
+      "magenta": "#b88cff",
+      "brightMagenta": "#cfacff",
+      "cyan": "#59e3ff",
+      "brightCyan": "#9ff2ff"
+    },
+    "cssVars": {
+      "--snapyard-chrome-style": "plasma-flow"
+    }
+  },
+  "visuals": [
+    {
+      "id": "plasma-grid",
+      "backgroundImage": "linear-gradient(90deg, rgba(255,255,255,0.02) 0, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 140px), linear-gradient(180deg, rgba(255,255,255,0.02) 0, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 140px)",
+      "backgroundSize": "140px 140px",
+      "opacity": 0.36
+    },
+    {
+      "id": "plasma-glow",
+      "backgroundImage": "radial-gradient(circle at 12% 14%, rgba(89, 227, 255, 0.34), transparent 28%), radial-gradient(circle at 84% 18%, rgba(184, 140, 255, 0.28), transparent 24%), radial-gradient(circle at 48% 84%, rgba(94, 241, 169, 0.16), transparent 18%)",
+      "opacity": 0.8,
+      "blendMode": "screen",
+      "animation": {
+        "kind": "pan",
+        "durationMs": 24000
+      }
+    }
+  ]
+}

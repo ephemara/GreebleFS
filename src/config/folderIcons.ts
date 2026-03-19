@@ -24,6 +24,7 @@ export interface FolderIconOption {
 export interface FolderIconResolverConfig {
   rules?: readonly FolderIconRule[];
   defaultIcon?: FolderIconValue;
+  iconEntries?: Record<string, string>;
 }
 
 const ICON_BASE = '/icons/';
@@ -148,6 +149,44 @@ function getIconPair(icon: FolderIconValue): GeneratedFolderIconPair {
   return CUSTOM_FOLDER_ICONS[icon] ?? DEFAULT_FOLDER_ICON;
 }
 
+function findThemeIconEntry(
+  iconEntries: Record<string, string> | undefined,
+  candidates: string[],
+): string | undefined {
+  if (!iconEntries) {
+    return undefined;
+  }
+
+  for (const candidate of candidates) {
+    const matched = iconEntries[candidate.toLowerCase()];
+    if (matched) {
+      return matched;
+    }
+  }
+
+  return undefined;
+}
+
+function getThemedFolderIconSrc(
+  icon: FolderIconValue,
+  open: boolean,
+  iconEntries?: Record<string, string>,
+): string | undefined {
+  const variants = icon === 'folder'
+    ? (
+        open
+          ? ['folder:default-open', 'folder-default-open', 'folder_open', 'folder-open', 'folderopen']
+          : ['folder:default', 'folder-default', 'folder']
+      )
+    : (
+        open
+          ? [`folder:${icon}-open`, `folder-${icon}-open`, `folder_${icon}_open`]
+          : [`folder:${icon}`, `folder-${icon}`, `folder_${icon}`]
+      );
+
+  return findThemeIconEntry(iconEntries, variants);
+}
+
 function getOptionLabel(icon: FolderIconValue): string {
   if (icon === 'folder') {
     return 'Default Folder';
@@ -178,7 +217,12 @@ export const FOLDER_ICON_OPTIONS: readonly FolderIconOption[] = [
     }),
 ] as const;
 
-export function getNamedFolderIconSrc(icon: FolderIconValue, open = false): string {
+export function getNamedFolderIconSrc(icon: FolderIconValue, open = false, iconEntries?: Record<string, string>): string {
+  const themed = getThemedFolderIconSrc(icon, open, iconEntries);
+  if (themed) {
+    return themed;
+  }
+
   const pair = getIconPair(icon);
   return `${ICON_BASE}${open ? (pair.open ?? pair.closed) : pair.closed}`;
 }
@@ -212,6 +256,8 @@ export function resolveFolderIconPair(folderPath: string, config: FolderIconReso
 }
 
 export function getFolderIconSrc(folderPath: string, open = false, config: FolderIconResolverConfig = {}): string {
-  const pair = resolveFolderIconPair(folderPath, config);
-  return `${ICON_BASE}${open ? (pair.open ?? pair.closed) : pair.closed}`;
+  const rules = config.rules ?? BUILT_IN_FOLDER_ICON_RULES;
+  const matchedRule = findMatchingRule(folderPath.trim(), rules);
+  const icon = matchedRule?.icon ?? config.defaultIcon ?? DEFAULT_FOLDER_ICON_VALUE;
+  return getNamedFolderIconSrc(icon, open, config.iconEntries);
 }

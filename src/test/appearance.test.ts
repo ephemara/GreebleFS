@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ensureFontFamilyLoaded,
+  getThemeSourceLabel,
   normalizeThemeDefinition,
   overlayThemePresets,
   parseImportedTheme,
@@ -105,6 +106,43 @@ describe('appearance config helpers', () => {
     expect(resolved.cssVars['--overlay-accent']).toBe('#00ffaa');
     expect(resolved.cssVars['--overlay-bg-app']).toBe('#010203');
     expect(resolved.themes).toHaveLength(overlayThemePresets.length + 1);
+  });
+
+  it('includes package themes in the resolved catalog and preserves package metadata', () => {
+    const packageTheme = normalizeThemeDefinition({
+      id: 'vista-glass',
+      name: 'Vista Glass',
+      source: 'package',
+      assets: {
+        backgroundUrl: 'asset://localhost/themes/vista-glass/assets/wallpaper.svg',
+        iconEntries: {
+          folder: 'asset://localhost/themes/vista-glass/icons/folder.svg',
+        },
+      },
+      visuals: [
+        {
+          id: 'glow',
+          backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.3), transparent)',
+        },
+      ],
+      palette: {
+        accent: '#7dd3ff',
+      },
+    } as unknown as Partial<OverlayThemeDefinition>);
+
+    const resolved = resolveOverlayAppearance({
+      activeThemeId: 'vista-glass',
+      packageThemes: [packageTheme],
+      customThemes: [],
+    });
+
+    expect(resolved.theme.id).toBe('vista-glass');
+    expect(resolved.theme.source).toBe('package');
+    expect(resolved.theme.assets?.backgroundUrl).toContain('wallpaper.svg');
+    expect(resolved.theme.assets?.iconEntries?.folder).toContain('folder.svg');
+    expect(resolved.theme.visuals).toHaveLength(1);
+    expect(resolved.themes.some(theme => theme.id === 'vista-glass')).toBe(true);
+    expect(getThemeSourceLabel(resolved.theme)).toBe('Package');
   });
 
   it('falls back to the first preset when selected theme id is unknown', () => {

@@ -1,0 +1,380 @@
+import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core';
+import { parse as parseToml } from '@iarna/toml';
+import {
+  normalizeThemeDefinition,
+  overlayThemePresets,
+  type OverlayThemeAssets,
+  type OverlayThemeDefinition,
+  type OverlayThemeVisualLayer,
+} from './appearance';
+import { joinPlatformPath } from './platform';
+
+interface FileEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  extension: string;
+}
+
+type LooseRecord = Record<string, unknown>;
+
+export interface OverlayThemePackageManifest {
+  version?: number;
+  id?: string;
+  name?: string;
+  description?: string;
+  extends?: string;
+  theme?: Partial<OverlayThemeDefinition>;
+  assets?: {
+    background?: string;
+    preview?: string;
+    iconsDirectory?: string;
+    iconAliases?: Record<string, string>;
+  };
+  visuals?: OverlayThemeVisualLayer[];
+  cssVars?: Record<string, string>;
+  fonts?: {
+    ui?: string;
+    mono?: string;
+  };
+}
+
+interface OverlayThemePackageRecord {
+  directoryName: string;
+  directoryPath: string;
+  manifestPath: string;
+  manifest: OverlayThemePackageManifest;
+}
+
+export interface LoadedOverlayThemePackage {
+  id: string;
+  name: string;
+  version: number;
+  directoryPath: string;
+  manifestPath: string;
+  theme: OverlayThemeDefinition;
+}
+
+export interface ThemePackageLoadResult {
+  packages: LoadedOverlayThemePackage[];
+  directory: string;
+  sourceError: string | null;
+}
+
+export const themeSystemConfig = {
+  themesDirectory: resolveThemesDirectory(),
+  manifestNames: ['theme.json', 'theme.toml', 'manifest.json', 'manifest.toml'] as const,
+} as const;
+
+function resolveThemesDirectory(): string {
+  const configured = (import.meta.env as {
+    VITE_OVERLAYTERM_THEMES_DIR?: string;
+  }).VITE_OVERLAYTERM_THEMES_DIR?.trim();
+  return configured && configured.length > 0 ? configured : 'themes';
+}
+
+function asRecord(value: unknown): LooseRecord | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return value as LooseRecord;
+}
+
+function asString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback;
+}
+
+function asStringRecord(value: unknown): Record<string, string> {
+  const source = asRecord(value);
+  if (!source) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(source)
+      .filter(([, entry]) => typeof entry === 'string' && entry.trim().length > 0)
+      .map(([key, entry]) => [key, String(entry).trim()]),
+  );
+}
+
+function derivePackageId(record: OverlayThemePackageRecord): string {
+  const explicitId = asString(record.manifest.id) || asString(record.manifest.theme?.id);
+  if (explicitId) {
+    return explicitId;
+  }
+
+  return record.directoryName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'theme-package';
+}
+
+function derivePackageName(record: OverlayThemePackageRecord): string {
+  return asString(record.manifest.name)
+    || asString(record.manifest.theme?.name)
+    || record.directoryName
+      .replace(/[-_]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/\b\w/g, letter => letter.toUpperCase());
+}
+
+function toAssetUrl(filePath: string): string {
+  if (typeof window === 'undefined') {
+    return filePath;
+  }
+
+  try {
+    return convertFileSrc(filePath);
+  } catch {
+    const normalized = filePath.replace(/\\/g, '/');
+    return normalized.startsWith('/') ? `file://${encodeURI(normalized)}` : `file:///${encodeURI(normalized)}`;
+  }
+}
+
+function parseThemeManifestText(text: string, filePath: string): OverlayThemePackageManifest {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    throw new Error(`Theme manifest is empty: ${filePath}`);
+  }
+
+  const lowerPath = filePath.toLowerCase();
+  const parsed = lowerPath.endsWith('.toml')
+    ? parseToml(trimmed)
+    : JSON.parse(trimmed);
+  const source = asRecord(parsed);
+  if (!source) {
+    throw new Error(`Theme manifest must be an object: ${filePath}`);
+  }
+
+  return {
+    version: typeof source.version === 'number' ? source.version : 1,
+    id: asString(source.id),
+    name: asString(source.name),
+    description: asString(source.description),
+    extends: asString(source.extends),
+    theme: asRecord(source.theme) as Partial<OverlayThemeDefinition> | undefined,
+    assets: {
+      background: asString(asRecord(source.assets)?.background),
+      preview: asString(asRecord(source.assets)?.preview),
+      iconsDirectory: asString(asRecord(source.assets)?.iconsDirectory),
+      iconAliases: asStringRecord(asRecord(source.assets)?.iconAliases),
+    },
+    visuals: Array.isArray(source.visuals) ? source.visuals as OverlayThemeVisualLayer[] : undefined,
+    cssVars: asStringRecord(source.cssVars),
+    fonts: {
+      ui: asString(asRecord(source.fonts)?.ui),
+      mono: asString(asRecord(source.fonts)?.mono),
+    },
+  };
+}
+
+async function readPackageManifest(directoryPath: string): Promise<{ manifestPath: string; manifest: OverlayThemePackageManifest } | null> {
+  const candidates = themeSystemConfig.manifestNames.map(name => joinPlatformPath(directoryPath, name));
+
+  for (const candidatePath of candidates) {
+    try {
+      const text = await invoke<string>('fs_read_text_file', { path: candidatePath });
+      return {
+        manifestPath: candidatePath,
+        manifest: parseThemeManifestText(text, candidatePath),
+      };
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+async function resolveIconEntries(directoryPath: string, iconsDirectory: string, aliases: Record<string, string>): Promise<Record<string, string>> {
+  const iconsPath = joinPlatformPath(directoryPath, iconsDirectory);
+  const entries = await invoke<FileEntry[]>('fs_list_dir', { path: iconsPath, showHidden: false });
+  const resolved = Object.fromEntries(
+    entries
+      .filter(entry => !entry.is_dir)
+      .map(entry => {
+        const baseName = entry.name.replace(/\.[^.]+$/, '').toLowerCase();
+        return [baseName, toAssetUrl(entry.path)] as const;
+      }),
+  );
+
+  Object.entries(aliases).forEach(([alias, target]) => {
+    const resolvedTarget = resolved[target.toLowerCase()];
+    if (resolvedTarget) {
+      resolved[alias.toLowerCase()] = resolvedTarget;
+    }
+  });
+
+  return resolved;
+}
+
+function mergeVisualLayers(
+  baseVisuals: OverlayThemeVisualLayer[] | undefined,
+  packageVisuals: OverlayThemeVisualLayer[] | undefined,
+): OverlayThemeVisualLayer[] | undefined {
+  const next = [...(baseVisuals ?? []), ...(packageVisuals ?? [])].filter(layer => Boolean(layer?.backgroundImage));
+  return next.length > 0 ? next : undefined;
+}
+
+function mergeThemeAssets(
+  baseAssets: OverlayThemeAssets | undefined,
+  packageAssets: OverlayThemeAssets | undefined,
+): OverlayThemeAssets | undefined {
+  if (!baseAssets && !packageAssets) {
+    return undefined;
+  }
+
+  return {
+    ...baseAssets,
+    ...packageAssets,
+    iconEntries: {
+      ...(baseAssets?.iconEntries ?? {}),
+      ...(packageAssets?.iconEntries ?? {}),
+    },
+  };
+}
+
+async function buildPackageTheme(
+  record: OverlayThemePackageRecord,
+  packageMap: Map<string, OverlayThemePackageRecord>,
+  cache: Map<string, OverlayThemeDefinition>,
+  stack: string[] = [],
+): Promise<OverlayThemeDefinition> {
+  const packageId = derivePackageId(record);
+  const cached = cache.get(packageId);
+  if (cached) {
+    return cached;
+  }
+
+  if (stack.includes(packageId)) {
+    throw new Error(`Circular theme package extends chain: ${[...stack, packageId].join(' -> ')}`);
+  }
+
+  const builtInBase = overlayThemePresets.find(theme => theme.id === record.manifest.extends);
+  let baseTheme = builtInBase ?? overlayThemePresets[0];
+
+  if (!builtInBase && record.manifest.extends) {
+    const extendedPackage = packageMap.get(record.manifest.extends);
+    if (extendedPackage) {
+      baseTheme = await buildPackageTheme(extendedPackage, packageMap, cache, [...stack, packageId]);
+    }
+  }
+
+  const packageAssetsSource = record.manifest.assets;
+  const backgroundPath = asString(packageAssetsSource?.background);
+  const previewPath = asString(packageAssetsSource?.preview);
+  const iconsDirectory = asString(packageAssetsSource?.iconsDirectory);
+  const iconAliases = packageAssetsSource?.iconAliases ?? {};
+  const resolvedAssets: OverlayThemeAssets = {
+    packageRoot: record.directoryPath,
+    manifestPath: record.manifestPath,
+    backgroundUrl: backgroundPath ? toAssetUrl(joinPlatformPath(record.directoryPath, backgroundPath)) : undefined,
+    previewUrl: previewPath ? toAssetUrl(joinPlatformPath(record.directoryPath, previewPath)) : undefined,
+    iconEntries: iconsDirectory
+      ? await resolveIconEntries(record.directoryPath, iconsDirectory, iconAliases)
+      : undefined,
+  };
+
+  const themePatch = record.manifest.theme ?? {};
+  const backgroundImage = themePatch.effects?.backgroundImage
+    ?? (resolvedAssets.backgroundUrl ? `url("${resolvedAssets.backgroundUrl}")` : undefined);
+  const mergedTheme = normalizeThemeDefinition({
+    ...baseTheme,
+    ...themePatch,
+    id: packageId,
+    name: derivePackageName(record),
+    description: asString(record.manifest.description) || themePatch.description || baseTheme.description,
+    source: 'package',
+    extendsThemeId: record.manifest.extends || baseTheme.id,
+    palette: {
+      ...baseTheme.palette,
+      ...(themePatch.palette ?? {}),
+    },
+    effects: {
+      ...baseTheme.effects,
+      ...(themePatch.effects ?? {}),
+      ...(backgroundImage ? { backgroundImage } : {}),
+    },
+    xterm: {
+      ...baseTheme.xterm,
+      ...(themePatch.xterm ?? {}),
+    },
+    fonts: {
+      ...(baseTheme.fonts ?? {}),
+      ...(themePatch.fonts ?? {}),
+      ...(record.manifest.fonts ?? {}),
+    },
+    assets: mergeThemeAssets(baseTheme.assets, resolvedAssets),
+    visuals: mergeVisualLayers(baseTheme.visuals, record.manifest.visuals ?? themePatch.visuals),
+    cssVars: {
+      ...(baseTheme.cssVars ?? {}),
+      ...(themePatch.cssVars ?? {}),
+      ...(record.manifest.cssVars ?? {}),
+    },
+  }, baseTheme);
+
+  cache.set(packageId, mergedTheme);
+  return mergedTheme;
+}
+
+export async function loadThemePackages(): Promise<ThemePackageLoadResult> {
+  const directory = themeSystemConfig.themesDirectory;
+  if (!isTauri()) {
+    return {
+      packages: [],
+      directory,
+      sourceError: null,
+    };
+  }
+
+  try {
+    const rootEntries = await invoke<FileEntry[]>('fs_list_dir', { path: directory, showHidden: false });
+    const packageDirectories = rootEntries.filter(entry => entry.is_dir);
+    const packageRecords: OverlayThemePackageRecord[] = [];
+
+    for (const entry of packageDirectories) {
+      const manifest = await readPackageManifest(entry.path);
+      if (!manifest) {
+        continue;
+      }
+
+      packageRecords.push({
+        directoryName: entry.name,
+        directoryPath: entry.path,
+        manifestPath: manifest.manifestPath,
+        manifest: manifest.manifest,
+      });
+    }
+
+    const packageMap = new Map(packageRecords.map(record => [derivePackageId(record), record] as const));
+    const cache = new Map<string, OverlayThemeDefinition>();
+    const packages: LoadedOverlayThemePackage[] = [];
+
+    for (const record of packageRecords) {
+      const theme = await buildPackageTheme(record, packageMap, cache);
+      packages.push({
+        id: theme.id,
+        name: theme.name,
+        version: typeof record.manifest.version === 'number' ? record.manifest.version : 1,
+        directoryPath: record.directoryPath,
+        manifestPath: record.manifestPath,
+        theme,
+      });
+    }
+
+    packages.sort((left, right) => left.name.localeCompare(right.name));
+
+    return {
+      packages,
+      directory,
+      sourceError: null,
+    };
+  } catch (error) {
+    return {
+      packages: [],
+      directory,
+      sourceError: String(error),
+    };
+  }
+}

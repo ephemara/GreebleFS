@@ -89,7 +89,6 @@ describe('PluginsManager', () => {
     render(
       <PluginsManager
         appearance={makeAppearance()}
-        builtInCatalog={[{ id: 'terminal', label: 'Terminal', description: 'Built in', kind: 'built-in-panel' }]}
         plugins={plugins}
         isLoading={false}
         error="runtime warning"
