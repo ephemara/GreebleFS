@@ -129,8 +129,9 @@ describe('appearance config helpers', () => {
     expect(resolved.panelTransparency).toBe(0.5);
     expect(resolved.baseTheme.palette.panelBackground).toBe('#334455');
     expect(resolved.theme.palette.panelBackground).toBe('rgba(51, 68, 85, 0.5)');
-    expect(resolved.theme.palette.appBackground).toBe('rgba(17, 34, 51, 0.5)');
+    expect(resolved.theme.palette.appBackground).toBe('#112233');
     expect(resolved.cssVars['--overlay-bg-panel']).toBe('rgba(51, 68, 85, 0.5)');
+    expect(resolved.cssVars['--overlay-bg-app']).toBe('#112233');
     expect(resolved.cssVars['--overlay-panel-opacity']).toBe('0.5');
   });
 

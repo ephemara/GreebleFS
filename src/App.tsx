@@ -77,6 +77,89 @@ function clampValue(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+function clampUnit(value: number): number {
+  return clampValue(value, 0, 1);
+}
+
+function parseHexColor(color: string): { red: number; green: number; blue: number; alpha: number } | null {
+  const match = color.trim().match(/^#([\da-f]{3,4}|[\da-f]{6}|[\da-f]{8})$/i);
+  if (!match) {
+    return null;
+  }
+
+  const value = match[1];
+  if (value.length === 3 || value.length === 4) {
+    const [red, green, blue, alpha = 'f'] = value.split('');
+    return {
+      red: parseInt(red + red, 16),
+      green: parseInt(green + green, 16),
+      blue: parseInt(blue + blue, 16),
+      alpha: parseInt(alpha + alpha, 16) / 255,
+    };
+  }
+
+  return {
+    red: parseInt(value.slice(0, 2), 16),
+    green: parseInt(value.slice(2, 4), 16),
+    blue: parseInt(value.slice(4, 6), 16),
+    alpha: value.length === 8 ? parseInt(value.slice(6, 8), 16) / 255 : 1,
+  };
+}
+
+function parseFunctionalColor(color: string): { red: number; green: number; blue: number; alpha: number } | null {
+  const match = color.trim().match(/^rgba?\((.+)\)$/i);
+  if (!match) {
+    return null;
+  }
+
+  const parts = match[1].split(',').map(part => part.trim());
+  if (parts.length < 3) {
+    return null;
+  }
+
+  const red = Number(parts[0]);
+  const green = Number(parts[1]);
+  const blue = Number(parts[2]);
+  const alpha = parts[3] === undefined ? 1 : Number(parts[3]);
+  if ([red, green, blue, alpha].some(part => Number.isNaN(part))) {
+    return null;
+  }
+
+  return { red, green, blue, alpha };
+}
+
+function parseColor(color: string): { red: number; green: number; blue: number; alpha: number } | null {
+  return parseFunctionalColor(color) ?? parseHexColor(color);
+}
+
+function withColorAlpha(color: string, alpha: number): string {
+  const parsed = parseColor(color);
+  if (!parsed) {
+    return color;
+  }
+
+  return `rgba(${parsed.red}, ${parsed.green}, ${parsed.blue}, ${clampUnit(alpha).toFixed(3)})`;
+}
+
+function getColorAlpha(color: string, fallback: number): number {
+  return parseColor(color)?.alpha ?? fallback;
+}
+
+function resolveShellBackgroundColor(
+  translucentColor: string,
+  solidColor: string,
+  blurStrength: number,
+): string {
+  const normalizedStrength = overlayVisualControls.blurStrength.max > 0
+    ? clampOverlayVisualControlValue('blurStrength', blurStrength) / overlayVisualControls.blurStrength.max
+    : 0;
+  const solidAlpha = getColorAlpha(solidColor, 0.96);
+  const translucentAlpha = getColorAlpha(translucentColor, Math.min(0.82, solidAlpha));
+  const minimumGlassAlpha = Math.max(0.16, translucentAlpha * 0.45);
+  const targetAlpha = solidAlpha - ((solidAlpha - minimumGlassAlpha) * normalizedStrength);
+  return withColorAlpha(translucentColor, targetAlpha);
+}
+
 function parseExternalArgs(raw: string): string[] {
   return raw
     .split(/\r?\n/g)
@@ -284,6 +367,7 @@ function App() {
   const overlayVisibleRef = useRef(false);
   const animationTimerRef = useRef<number | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const animationCommitTimerRef = useRef<number | null>(null);
   const progressFrameRef = useRef<number | null>(null);
   const lastToggleAtRef = useRef(0);
   const isProgrammaticResizeRef = useRef(false);
@@ -350,7 +434,9 @@ function App() {
   const isTopAnchored = overlayAnchor === 'top';
   const scaledWidth = `${100 / clampedAppZoom}%`;
   const scaledHeight = `${100 / clampedAppZoom}%`;
-  const shellBackgroundColor = appBlur ? theme.palette.shellBackground : theme.palette.shellBackgroundSolid;
+  const shellBackgroundColor = appBlur
+    ? resolveShellBackgroundColor(theme.palette.shellBackground, theme.palette.shellBackgroundSolid, clampedAppBlurStrength)
+    : theme.palette.shellBackgroundSolid;
   const blurStrengthRatio = overlayVisualControls.blurStrength.max > 0
     ? clampedAppBlurStrength / overlayVisualControls.blurStrength.max
     : 0;
@@ -499,6 +585,10 @@ function App() {
       window.cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
     }
+    if (animationCommitTimerRef.current !== null) {
+      window.clearTimeout(animationCommitTimerRef.current);
+      animationCommitTimerRef.current = null;
+    }
     if (progressFrameRef.current !== null) {
       window.cancelAnimationFrame(progressFrameRef.current);
       progressFrameRef.current = null;
@@ -574,8 +664,20 @@ function App() {
       await win.show();
       await win.setPosition(new PhysicalPosition(layout.x, layout.y));
       await win.setFocus();
-      animationFrameRef.current = window.requestAnimationFrame(() => {
-        animationFrameRef.current = null;
+      let committedOpenPhase = false;
+      const commitOpenPhase = () => {
+        if (committedOpenPhase) {
+          return;
+        }
+        committedOpenPhase = true;
+        if (animationFrameRef.current !== null) {
+          window.cancelAnimationFrame(animationFrameRef.current);
+          animationFrameRef.current = null;
+        }
+        if (animationCommitTimerRef.current !== null) {
+          window.clearTimeout(animationCommitTimerRef.current);
+          animationCommitTimerRef.current = null;
+        }
         void win.setPosition(new PhysicalPosition(layout.x, layout.y)).catch(() => {});
         isProgrammaticResizeRef.current = false;
         markOverlayRuntimePhase('opening', true);
@@ -587,7 +689,13 @@ function App() {
           setAnimationProgress(1);
           animationTimerRef.current = null;
         }, nextDurationMs);
+      };
+      animationFrameRef.current = window.requestAnimationFrame(() => {
+        commitOpenPhase();
       });
+      animationCommitTimerRef.current = window.setTimeout(() => {
+        commitOpenPhase();
+      }, 24);
     } catch (e) {
       isProgrammaticResizeRef.current = false;
       markOverlayRuntimePhase('closed', false);
@@ -1340,6 +1448,7 @@ function App() {
       try {
         await invoke('window_set_blur', {
           enabled: appBlur && overlayPhase !== 'closed',
+          strength: clampedAppBlurStrength,
         });
       } catch (error) {
         if (!cancelled) {
@@ -1353,7 +1462,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [appBlur, overlayPhase]);
+  }, [appBlur, clampedAppBlurStrength, overlayPhase]);
 
   const activeContentPanel = activePanelId ? panelLookup.get(activePanelId) ?? null : null;
   const chromeBar = (

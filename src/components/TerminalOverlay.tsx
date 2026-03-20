@@ -248,7 +248,7 @@ function XTermPane({ id, visible, theme }: XTermPaneProps) {
       cursorBlink:       settings.cursorBlink  ?? true,
       cursorStyle:       settings.cursorStyle   || 'bar',
       scrollback:        settings.scrollback    || 10000,
-      allowTransparency: /rgba|hsla|color-mix/i.test(theme.bgTerm),
+      allowTransparency: false,
       convertEol:        true,
       scrollOnUserInput: true,
     });

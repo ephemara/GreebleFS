@@ -1,4 +1,4 @@
-import { readFile } from 'fs/promises';
+import { readdir, readFile } from 'fs/promises';
 import { resolve } from 'path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -61,20 +61,30 @@ describe('animationRuntime', () => {
     expect(loaded.close).toBeTruthy();
   });
 
-  it('loads the bundled vortex swirl animation module from disk', async () => {
-    const source = await readFile(resolve('animations/vortex-swirl.tsx'), 'utf8');
-    const loaded = await loadAnimationFromSource(source, {
-      name: 'vortex-swirl.tsx',
-      path: resolve('animations/vortex-swirl.tsx'),
-      is_dir: false,
-      modified: 101,
-      extension: 'tsx',
-    });
+  it('loads every bundled animation module from disk', async () => {
+    const animationDirectory = resolve('animations');
+    const entries = await readdir(animationDirectory, { withFileTypes: true });
+    const files = entries
+      .filter(entry => entry.isFile() && /\.(tsx|ts|jsx|js)$/i.test(entry.name))
+      .sort((left, right) => left.name.localeCompare(right.name));
 
-    expect(loaded.error).toBeNull();
-    expect(loaded.name).toBe('Vortex Swirl');
-    expect(loaded.open).toBeTruthy();
-    expect(loaded.close).toBeTruthy();
+    expect(files.length).toBeGreaterThanOrEqual(11);
+
+    for (const file of files) {
+      const fullPath = resolve(animationDirectory, file.name);
+      const source = await readFile(fullPath, 'utf8');
+      const loaded = await loadAnimationFromSource(source, {
+        name: file.name,
+        path: fullPath,
+        is_dir: false,
+        modified: 101,
+        extension: file.name.split('.').pop() ?? 'tsx',
+      });
+
+      expect(loaded.error).toBeNull();
+      expect(loaded.name).toBeTruthy();
+      expect(loaded.open || loaded.close).toBeTruthy();
+    }
   });
 
   it('keeps built-ins available when a custom module fails to load', () => {

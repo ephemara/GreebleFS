@@ -262,8 +262,6 @@ function applyPanelTransparency(
     ...theme,
     palette: {
       ...theme.palette,
-      appBackground: multiplyColorAlpha(theme.palette.appBackground, panelOpacity),
-      appBackgroundAlt: multiplyColorAlpha(theme.palette.appBackgroundAlt, panelOpacity),
       topBarBackground: multiplyColorAlpha(theme.palette.topBarBackground, panelOpacity),
       topBarMenuBackground: multiplyColorAlpha(theme.palette.topBarMenuBackground, panelOpacity),
       sidebarBackground: multiplyColorAlpha(theme.palette.sidebarBackground, panelOpacity),
@@ -273,8 +271,6 @@ function applyPanelTransparency(
       cardHoverBackground: multiplyColorAlpha(theme.palette.cardHoverBackground, panelOpacity),
       contextMenuBackground: multiplyColorAlpha(theme.palette.contextMenuBackground, panelOpacity),
       inputBackground: multiplyColorAlpha(theme.palette.inputBackground, panelOpacity),
-      terminalBackground: multiplyColorAlpha(theme.palette.terminalBackground, panelOpacity),
-      scrimBackground: multiplyColorAlpha(theme.palette.scrimBackground, panelOpacity),
       border: multiplyColorAlpha(theme.palette.border, panelOpacity),
       borderStrong: multiplyColorAlpha(theme.palette.borderStrong, panelOpacity),
     },

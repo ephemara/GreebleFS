@@ -281,6 +281,67 @@ function SettingsRailButton({
   );
 }
 
+function MotionRailButton({
+  active,
+  label,
+  summary,
+  badges,
+  accent,
+  border,
+  text,
+  muted,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  summary: string;
+  badges: string[];
+  accent: string;
+  border: string;
+  text: string;
+  muted: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded px-2.5 py-2 text-left transition-colors"
+      style={{
+        border: `1px solid ${active ? `${accent}88` : border}`,
+        background: active ? `${accent}12` : 'rgba(255,255,255,0.02)',
+        color: text,
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[11px] font-semibold">{label}</div>
+          <div className="mt-1 truncate text-[10px]" style={{ color: active ? accent : muted }}>
+            {summary}
+          </div>
+        </div>
+        {badges.length > 0 && (
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+            {badges.map(badge => (
+              <span
+                key={`${label}-${badge}`}
+                className="rounded px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.14em]"
+                style={{
+                  border: `1px solid ${active ? `${accent}66` : border}`,
+                  background: active ? `${accent}18` : 'rgba(255,255,255,0.04)',
+                  color: active ? accent : muted,
+                }}
+              >
+                {badge}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </button>
+  );
+}
+
 export function SettingsPage({
   appearance,
   themePackages,
@@ -593,22 +654,74 @@ export function SettingsPage({
         </div>
 
         <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: '10px 12px 12px 12px' }}>
-          <div className="space-y-2">
-            {settingsSections.map(section => (
-              <SettingsRailButton
-                key={section.key}
-                active={activeSection === section.key}
-                icon={section.icon}
-                label={section.label}
-                subtitle={section.subtitle}
-                summary={section.summary}
-                accent={accent}
-                border={border}
-                text={text}
-                muted={muted}
-                onClick={() => setActiveSection(section.key)}
-              />
-            ))}
+          <div className="space-y-4">
+            <div className="space-y-2">
+              {settingsSections.map(section => (
+                <SettingsRailButton
+                  key={section.key}
+                  active={activeSection === section.key}
+                  icon={section.icon}
+                  label={section.label}
+                  subtitle={section.subtitle}
+                  summary={section.summary}
+                  accent={accent}
+                  border={border}
+                  text={text}
+                  muted={muted}
+                  onClick={() => setActiveSection(section.key)}
+                />
+              ))}
+            </div>
+
+            <div className="space-y-2">
+              <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: muted }}>
+                Motion Modules
+              </div>
+              {availableAnimations.map(animation => {
+                const badges = [
+                  settings.appearance.appOpenAnimation === animation.id ? 'Open' : null,
+                  settings.appearance.appCloseAnimation === animation.id ? 'Close' : null,
+                  animation.source === 'folder' ? 'Custom' : 'Built-In',
+                ].filter((badge): badge is string => Boolean(badge));
+
+                return (
+                  <MotionRailButton
+                    key={`motion-${animation.id}`}
+                    active={activeSection === 'appearance' && (
+                      settings.appearance.appOpenAnimation === animation.id
+                      || settings.appearance.appCloseAnimation === animation.id
+                    )}
+                    label={animation.name}
+                    summary={animation.group}
+                    badges={badges}
+                    accent={accent}
+                    border={border}
+                    text={text}
+                    muted={muted}
+                    onClick={() => setActiveSection('appearance')}
+                  />
+                );
+              })}
+              {animationFailures.map(animation => (
+                <MotionRailButton
+                  key={`motion-failure-${animation.filePath}`}
+                  active={activeSection === 'appearance'}
+                  label={animation.name}
+                  summary="Load error"
+                  badges={['Error']}
+                  accent={accent}
+                  border={border}
+                  text={text}
+                  muted={muted}
+                  onClick={() => setActiveSection('appearance')}
+                />
+              ))}
+              {availableAnimations.length === 0 && animationFailures.length === 0 && (
+                <div className="rounded border px-3 py-2 text-[10px] opacity-45" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                  No motion modules loaded.
+                </div>
+              )}
+            </div>
           </div>
         </OverlayScrollArea>
       </aside>

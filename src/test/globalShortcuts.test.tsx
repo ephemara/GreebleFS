@@ -68,4 +68,31 @@ describe('useGlobalShortcut', () => {
       );
     });
   });
+
+  it('keeps the registration stable while invoking the latest callback after rerenders', async () => {
+    let eventHandler: ((event: { state: 'Pressed' | 'Released'; shortcut: string; id: number }) => void) | undefined;
+    const firstCallback = vi.fn();
+    const secondCallback = vi.fn();
+
+    vi.mocked(register).mockImplementation(async (_shortcut, handler) => {
+      eventHandler = handler;
+    });
+
+    const { rerender } = renderHook(
+      ({ callback }) => useGlobalShortcut('Ctrl+Space', callback, true),
+      { initialProps: { callback: firstCallback } },
+    );
+
+    await waitFor(() => {
+      expect(vi.mocked(register).mock.calls.length).toBeGreaterThan(0);
+    });
+    const registerCountBeforeRerender = vi.mocked(register).mock.calls.length;
+
+    rerender({ callback: secondCallback });
+
+    eventHandler?.({ state: 'Pressed', shortcut: 'Ctrl+Space', id: 1 });
+    expect(firstCallback).not.toHaveBeenCalled();
+    expect(secondCallback).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(register).mock.calls.length).toBe(registerCountBeforeRerender);
+  });
 });

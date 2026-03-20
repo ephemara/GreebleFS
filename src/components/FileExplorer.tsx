@@ -911,7 +911,6 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const navigate = useCallback(async (path: string, push = true) => {
     const normalizedPath = normalizeExplorerPath(path);
     setCurrentPath(normalizedPath); setSelected(new Set()); setSearch(''); setSearchResults([]); setSearchLoading(false); setError(null);
-    setEntrySizes({});
     setEntrySizeLoadingPaths(new Set());
     setAddressEditing(false);
     setAddressDraft('');
@@ -956,8 +955,22 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
 
   const refresh = useCallback(async () => {
     if (!currentPath) return;
+    const entriesToInvalidate = search.trim() ? searchResults : entries;
     setLoading(true);
-    setEntrySizes({});
+    setEntrySizes(current => {
+      if (entriesToInvalidate.length === 0) {
+        return current;
+      }
+      const next = { ...current };
+      let changed = false;
+      for (const entry of entriesToInvalidate) {
+        if (next[entry.path]) {
+          delete next[entry.path];
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
     setEntrySizeLoadingPaths(new Set());
     try { setEntries(await invoke<FileEntry[]>('fs_list_dir', { path: currentPath, showHidden })); }
     catch (e) { setError(String(e)); }
@@ -966,7 +979,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
       const requestId = ++searchRequestIdRef.current;
       void runSearch(search, requestId);
     }
-  }, [currentPath, showHidden, search, runSearch]);
+  }, [currentPath, entries, search, searchResults, showHidden, runSearch]);
 
   useEffect(() => { refresh(); }, [showHidden]);
 
@@ -1257,19 +1270,6 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     themeIconTheme,
     useNativeOsIcons,
   ]);
-
-  const startNativeFileDrag = useCallback((entry?: FileEntry) => {
-    const entriesForAction = resolveEntriesForAction(entry);
-    if (entriesForAction.length === 0) {
-      return;
-    }
-
-    void invoke('fs_start_native_file_drag', {
-      paths: entriesForAction.map(item => item.path),
-    }).catch(error => {
-      setError(String(error));
-    });
-  }, [resolveEntriesForAction]);
 
   const queueClipboard = useCallback((action: 'copy' | 'cut', entry?: FileEntry) => {
     const entriesForAction = resolveEntriesForAction(entry);
@@ -2285,35 +2285,8 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                       onMouseEnter={e => { if(!isSel && !isDrop)(e.currentTarget as HTMLDivElement).style.background=EXP.cardHov; }}
                       onMouseLeave={e => { if(!isSel && !isDrop)(e.currentTarget as HTMLDivElement).style.background=EXP.card; }}
                       >
-                        <div style={{ width:48, height:48, display:'flex', alignItems:'center', justifyContent:'center', borderRadius:6, overflow:'hidden', flexShrink:0, position:'relative' }}>
+                        <div style={{ width:48, height:48, display:'flex', alignItems:'center', justifyContent:'center', borderRadius:6, overflow:'hidden', flexShrink:0 }}>
                           <SvgIcon src={iconSrc} size={36} />
-                          <button
-                            type="button"
-                            title="Drag to another app or the desktop"
-                            onMouseDown={event => {
-                              if (event.button !== 0) return;
-                              event.preventDefault();
-                              event.stopPropagation();
-                              startNativeFileDrag(entry);
-                            }}
-                            style={{
-                              position:'absolute',
-                              right:2,
-                              bottom:2,
-                              width:16,
-                              height:16,
-                              borderRadius:999,
-                              border:`1px solid ${EXP.border}`,
-                              background:'rgba(15,18,28,0.9)',
-                              color:EXP.muted,
-                              display:'flex',
-                              alignItems:'center',
-                              justifyContent:'center',
-                              cursor:'grab',
-                            }}
-                          >
-                            <ExternalLink size={9} />
-                          </button>
                         </div>
                         {isRenaming
                           ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active:false, path:'', name:'' })} />
@@ -2386,31 +2359,6 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                         <td style={{ padding:'4px 12px' }}>
                           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                             <SvgIcon src={iconSrc} size={16} />
-                            <button
-                              type="button"
-                              title="Drag to another app or the desktop"
-                              onMouseDown={event => {
-                                if (event.button !== 0) return;
-                                event.preventDefault();
-                                event.stopPropagation();
-                                startNativeFileDrag(entry);
-                              }}
-                              style={{
-                                display:'inline-flex',
-                                alignItems:'center',
-                                justifyContent:'center',
-                                width:16,
-                                height:16,
-                                borderRadius:999,
-                                border:`1px solid ${EXP.border}`,
-                                background:'rgba(255,255,255,0.04)',
-                                color:EXP.muted,
-                                cursor:'grab',
-                                flexShrink:0,
-                              }}
-                            >
-                              <ExternalLink size={9} />
-                            </button>
                             {isRenaming
                               ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active:false, path:'', name:'' })} />
                               : <span style={{ color: isSel?EXP.text:entry.is_dir?EXP.yellow:EXP.text, fontWeight:entry.is_dir?500:400 }}>{entry.name}</span>
