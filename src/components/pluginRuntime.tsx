@@ -10,14 +10,17 @@ import {
   pluginSystemConfig,
 } from '../config/plugins';
 import type { OverlayThemeDefinition } from '../config/appearance';
+import {
+  deriveRuntimeModuleId,
+  deriveRuntimeModuleName,
+  executeRuntimeModule,
+  isSupportedRuntimeFile,
+  transpileRuntimeModuleSource,
+  type RuntimeFileEntry,
+  unwrapRuntimeModuleExport,
+} from '../runtime/moduleRuntime';
 
-export interface PluginFileEntry {
-  name: string;
-  path: string;
-  is_dir: boolean;
-  modified: number;
-  extension: string;
-}
+export interface PluginFileEntry extends RuntimeFileEntry {}
 
 export interface OverlayPluginContext {
   id: string;
@@ -98,28 +101,15 @@ export function definePlugin(definition: OverlayPluginDefinition): OverlayPlugin
 }
 
 export function isFrontendPluginFile(entry: PluginFileEntry): boolean {
-  return !entry.is_dir
-    && pluginSystemConfig.frontendExtensions.includes(
-      entry.extension.toLowerCase() as (typeof pluginSystemConfig.frontendExtensions)[number],
-    );
+  return isSupportedRuntimeFile(entry, pluginSystemConfig.frontendExtensions);
 }
 
 export function derivePluginId(name: string): string {
-  return name
-    .replace(/\.[^.]+$/, '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'plugin';
+  return deriveRuntimeModuleId(name, 'plugin');
 }
 
 export function derivePluginName(name: string): string {
-  const base = name.replace(/\.[^.]+$/, '');
-  return base
-    .replace(/[-_]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/\b\w/g, char => char.toUpperCase()) || 'Plugin';
+  return deriveRuntimeModuleName(name, 'Plugin');
 }
 
 export async function loadPluginFromSource(
@@ -173,32 +163,10 @@ export async function loadPluginFromSource(
 }
 
 async function transpilePluginSource(source: string): Promise<string> {
-  const ts = await import('typescript');
-  const transpiled = ts.transpileModule(source, {
-    compilerOptions: {
-      target: ts.ScriptTarget.ES2020,
-      module: ts.ModuleKind.CommonJS,
-      jsx: ts.JsxEmit.React,
-      esModuleInterop: true,
-      allowSyntheticDefaultImports: true,
-    },
-    reportDiagnostics: true,
-  });
-
-  const diagnostics = transpiled.diagnostics
-    ?.map(diag => typeof diag.messageText === 'string' ? diag.messageText : diag.messageText.messageText)
-    .filter(Boolean);
-
-  if (diagnostics && diagnostics.length > 0) {
-    throw new Error(diagnostics.join('\n'));
-  }
-
-  return `const React = require('react');\n${transpiled.outputText}`;
+  return transpileRuntimeModuleSource(source, `const React = require('react');\n`);
 }
 
 function executePluginModule(code: string): unknown {
-  const module = { exports: {} as Record<string, unknown> };
-
   const allowedModules: Record<string, unknown> = {
     react: React,
     'lucide-react': LucideReact,
@@ -211,18 +179,7 @@ function executePluginModule(code: string): unknown {
     },
   };
 
-  const require = (specifier: string) => {
-    if (!(specifier in allowedModules)) {
-      throw new Error(
-        `Unsupported import "${specifier}". Allowed imports: ${Object.keys(allowedModules).join(', ')}`,
-      );
-    }
-    return allowedModules[specifier];
-  };
-
-  const runner = new Function('module', 'exports', 'require', code);
-  runner(module, module.exports, require);
-  return module.exports;
+  return executeRuntimeModule(code, allowedModules);
 }
 
 function normalizePluginExport(
@@ -250,10 +207,5 @@ function normalizePluginExport(
 }
 
 function unwrapModuleExport(exported: unknown): unknown {
-  if (!exported || typeof exported !== 'object') {
-    return exported;
-  }
-
-  const record = exported as Record<string, unknown>;
-  return record.default ?? record.plugin ?? record;
+  return unwrapRuntimeModuleExport(exported, ['plugin']);
 }

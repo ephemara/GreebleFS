@@ -45,7 +45,10 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.appearance.theme).toBe('dark');
     expect(settings.appearance.activeThemeId).toBe('operator');
     expect(settings.appearance.uiFontFamily).toBe('Inter, system-ui, sans-serif');
+    expect(settings.appearance.useNativeOsIcons).toBe(false);
     expect(settings.appearance.animations).toBe(true);
+    expect(settings.appearance.panelTransparency).toBe(0);
+    expect(settings.appearance.appBlurStrength).toBe(18);
     expect(settings.appearance.appOpenAnimation).toBe('spring-lift');
     expect(settings.appearance.appCloseAnimation).toBe('burn');
     expect(settings.appearance.appAnimationDurationMs).toBe(320);
@@ -192,6 +195,31 @@ describe('useSettingsStore.resetToDefaults()', () => {
   });
 });
 
+describe('useSettingsStore.updateAppearance()', () => {
+  it('updates the native OS icon preference', () => {
+    const store = useSettingsStore.getState();
+    store.updateAppearance({ useNativeOsIcons: true });
+
+    expect(useSettingsStore.getState().settings.appearance.useNativeOsIcons).toBe(true);
+  });
+
+  it('clamps visual tuning into the supported range', () => {
+    const store = useSettingsStore.getState();
+    store.updateAppearance({
+      appOpacity: 8,
+      panelTransparency: 4,
+      appZoom: -3,
+      appBlurStrength: 400,
+    });
+
+    const { appearance } = useSettingsStore.getState().settings;
+    expect(appearance.appOpacity).toBe(1);
+    expect(appearance.panelTransparency).toBe(1);
+    expect(appearance.appZoom).toBe(0.7);
+    expect(appearance.appBlurStrength).toBe(32);
+  });
+});
+
 describe('useSettingsStore.importSettings()', () => {
   it('imports partial settings without losing unspecified sections', () => {
     const store = useSettingsStore.getState();
@@ -250,6 +278,9 @@ describe('mergeSettingsWithDefaults()', () => {
     expect(merged.appearance.activeThemeId).toBe('dracula');
     expect(merged.appearance.uiFontFamily).toBe('Geist, Inter, system-ui, sans-serif');
     expect(merged.appearance.appZoom).toBe(1.1);
+    expect(merged.appearance.useNativeOsIcons).toBe(defaultSettings.appearance.useNativeOsIcons);
+    expect(merged.appearance.panelTransparency).toBe(defaultSettings.appearance.panelTransparency);
+    expect(merged.appearance.appBlurStrength).toBe(defaultSettings.appearance.appBlurStrength);
     expect(merged.appearance.appOpenAnimation).toBe(defaultSettings.appearance.appOpenAnimation);
     expect(merged.appearance.appCloseAnimation).toBe(defaultSettings.appearance.appCloseAnimation);
     expect(merged.terminal.overlayAnchor).toBe(defaultSettings.terminal.overlayAnchor);

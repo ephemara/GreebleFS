@@ -101,11 +101,37 @@ describe('appearance config helpers', () => {
     });
 
     expect(resolved.theme.id).toBe('custom-active');
+    expect(resolved.baseTheme.id).toBe('custom-active');
     expect(resolved.fonts.ui).toContain('Space Grotesk');
     expect(resolved.fonts.mono).toContain('JetBrains Mono');
     expect(resolved.cssVars['--overlay-accent']).toBe('#00ffaa');
     expect(resolved.cssVars['--overlay-bg-app']).toBe('#010203');
     expect(resolved.themes).toHaveLength(overlayThemePresets.length + 1);
+  });
+
+  it('applies panel transparency to the resolved runtime theme without mutating the base theme', () => {
+    const customTheme = normalizeThemeDefinition({
+      id: 'glass-lab',
+      name: 'Glass Lab',
+      palette: {
+        appBackground: '#112233',
+        panelBackground: '#334455',
+        border: 'rgba(255,255,255,0.2)',
+      },
+    } as Partial<OverlayThemeDefinition>);
+
+    const resolved = resolveOverlayAppearance({
+      activeThemeId: 'glass-lab',
+      customThemes: [customTheme],
+      panelTransparency: 0.5,
+    });
+
+    expect(resolved.panelTransparency).toBe(0.5);
+    expect(resolved.baseTheme.palette.panelBackground).toBe('#334455');
+    expect(resolved.theme.palette.panelBackground).toBe('rgba(51, 68, 85, 0.5)');
+    expect(resolved.theme.palette.appBackground).toBe('rgba(17, 34, 51, 0.5)');
+    expect(resolved.cssVars['--overlay-bg-panel']).toBe('rgba(51, 68, 85, 0.5)');
+    expect(resolved.cssVars['--overlay-panel-opacity']).toBe('0.5');
   });
 
   it('includes package themes in the resolved catalog and preserves package metadata', () => {

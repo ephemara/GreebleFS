@@ -25,6 +25,12 @@ import type { ResolvedOverlayAppearance } from '../config/appearance';
 import { getFolderIconSrc } from '../config/folderIcons';
 import { getBuiltInIconTheme, resolveFileIconSrc, resolveIconSrc } from '../config/iconTheme';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
+import {
+  DEFAULT_NATIVE_ICON_SIZE,
+  getNativeIconCacheKey,
+  type OverlayNativeIconRequest,
+  type OverlayNativeIconResponse,
+} from '../config/nativeIcons';
 import { detectClientPlatform, getFallbackExplorerPath, getPlatformPathSeparator, joinPlatformPath } from '../config/platform';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { useExplorerStore } from '../store/explorerStore';
@@ -70,6 +76,7 @@ interface EntryStorageInfo {
   path: string;
   bytes: number;
   is_dir: boolean;
+  is_complete: boolean;
 }
 interface FsBookmark { id: string; name: string; path: string; }
 interface ContextMenuState { visible: boolean; x: number; y: number; entry: FileEntry | null; }
@@ -279,6 +286,13 @@ function getIconSrc(
     return getFolderIconSrc(entry.path, open, { ...folderConfig, iconTheme });
   }
   return resolveFileIconSrc(entry.name, getEntryExtension(entry), iconTheme);
+}
+
+function getNativeIconRequest(entry: FileEntry): OverlayNativeIconRequest {
+  return {
+    path: entry.path,
+    size: DEFAULT_NATIVE_ICON_SIZE,
+  };
 }
 
 // ─── Extension sets (for preview logic only) ─────────────────────────────────
@@ -729,6 +743,7 @@ interface FileExplorerProps {
 export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmark, layoutMode = 'full' }: FileExplorerProps) {
   const accent = theme.accent;
   const explorerSettings = useSettingsStore(s => s.settings.explorer);
+  const appearanceSettings = useSettingsStore(s => s.settings.appearance);
   const updateExplorerSettings = useSettingsStore(s => s.updateExplorer);
   const explorerSession = useExplorerStore(s => s.session);
   const updateExplorerSession = useExplorerStore(s => s.updateSession);
@@ -736,6 +751,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const isCompactDock = layoutMode === 'compact-dock';
   const uiFont = appearance?.fonts.ui ?? 'Inter,system-ui,sans-serif';
   const themeIconTheme = appearance?.theme.assets?.iconTheme ?? getBuiltInIconTheme();
+  const useNativeOsIcons = appearanceSettings.useNativeOsIcons;
   const showHidden = explorerSettings.showHiddenFiles;
   const viewMode = explorerSettings.viewMode;
   const folderClickMode = explorerSettings.folderClickMode;
@@ -757,8 +773,10 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     return 380;
   });
   const [entries,      setEntries]      = useState<FileEntry[]>([]);
-  const [entrySizes,   setEntrySizes]   = useState<Record<string, number>>({});
+  const [entrySizes,   setEntrySizes]   = useState<Record<string, EntryStorageInfo>>({});
   const [entrySizeLoadingPaths, setEntrySizeLoadingPaths] = useState<Set<string>>(() => new Set());
+  const [nativeIconMap, setNativeIconMap] = useState<Record<string, string | null>>({});
+  const [nativeIconLoadingKeys, setNativeIconLoadingKeys] = useState<Set<string>>(() => new Set());
   const [searchResults, setSearchResults] = useState<FileSearchResult[]>([]);
   const [drives,       setDrives]       = useState<DriveInfo[]>([]);
   const [bookmarks,    setBookmarks]    = useState<FsBookmark[]>([]);
@@ -784,6 +802,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const searchRequestIdRef = useRef(0);
   const searchFocusRequestIdRef = useRef(0);
   const entrySizeRequestIdRef = useRef(0);
+  const nativeIconRequestIdRef = useRef(0);
   const addressInputRef = useRef<HTMLInputElement>(null);
   const [addressEditing, setAddressEditing] = useState(false);
   const [addressDraft, setAddressDraft] = useState('');
@@ -1044,9 +1063,14 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
       return;
     }
 
-    const unresolvedPaths = visibleEntries
-      .map(entry => entry.path)
-      .filter(path => typeof entrySizes[path] !== 'number');
+    const pendingFiles = visibleEntries
+      .filter(entry => !entry.is_dir && !entrySizes[entry.path] && !entrySizeLoadingPaths.has(entry.path))
+      .slice(0, 12);
+    const pendingDirectories = visibleEntries
+      .filter(entry => entry.is_dir && !entrySizes[entry.path] && !entrySizeLoadingPaths.has(entry.path))
+      .slice(0, 2);
+    const nextBatch = [...pendingFiles, ...pendingDirectories].slice(0, 12);
+    const unresolvedPaths = nextBatch.map(entry => entry.path);
 
     if (unresolvedPaths.length === 0) {
       setEntrySizeLoadingPaths(current => (current.size === 0 ? current : new Set()));
@@ -1054,7 +1078,13 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     }
 
     const requestId = ++entrySizeRequestIdRef.current;
-    setEntrySizeLoadingPaths(new Set(unresolvedPaths));
+    setEntrySizeLoadingPaths(current => {
+      const next = new Set(current);
+      for (const path of unresolvedPaths) {
+        next.add(path);
+      }
+      return next;
+    });
 
     let cancelled = false;
     void invoke<EntryStorageInfo[]>('fs_measure_entry_sizes', {
@@ -1068,17 +1098,35 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
         setEntrySizes(current => {
           const next = { ...current };
           for (const result of results) {
-            next[result.path] = result.bytes;
+            next[result.path] = result;
           }
           return next;
         });
-        setEntrySizeLoadingPaths(current => (current.size === 0 ? current : new Set()));
+        setEntrySizeLoadingPaths(current => {
+          if (current.size === 0) {
+            return current;
+          }
+          const next = new Set(current);
+          for (const path of unresolvedPaths) {
+            next.delete(path);
+          }
+          return next.size === current.size ? current : next;
+        });
       })
       .catch(() => {
         if (cancelled || entrySizeRequestIdRef.current !== requestId) {
           return;
         }
-        setEntrySizeLoadingPaths(current => (current.size === 0 ? current : new Set()));
+        setEntrySizeLoadingPaths(current => {
+          if (current.size === 0) {
+            return current;
+          }
+          const next = new Set(current);
+          for (const path of unresolvedPaths) {
+            next.delete(path);
+          }
+          return next.size === current.size ? current : next;
+        });
       });
 
     return () => {
@@ -1086,15 +1134,95 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     };
   }, [entrySizes, loading, visibleEntries]);
 
+  useEffect(() => {
+    if (!useNativeOsIcons || loading || visibleEntries.length === 0) {
+      setNativeIconLoadingKeys(current => (current.size === 0 ? current : new Set()));
+      return;
+    }
+
+    const pendingEntries = visibleEntries
+      .map(entry => ({
+        entry,
+        key: getNativeIconCacheKey(entry.path, DEFAULT_NATIVE_ICON_SIZE),
+      }))
+      .filter(({ key }) => nativeIconMap[key] === undefined && !nativeIconLoadingKeys.has(key))
+      .slice(0, 48);
+
+    if (pendingEntries.length === 0) {
+      setNativeIconLoadingKeys(current => (current.size === 0 ? current : new Set()));
+      return;
+    }
+
+    const requestId = ++nativeIconRequestIdRef.current;
+    const pendingKeys = pendingEntries.map(item => item.key);
+    const requests = pendingEntries.map(item => getNativeIconRequest(item.entry));
+
+    setNativeIconLoadingKeys(current => {
+      const next = new Set(current);
+      for (const key of pendingKeys) {
+        next.add(key);
+      }
+      return next;
+    });
+
+    let cancelled = false;
+    void invoke<OverlayNativeIconResponse[]>('fs_resolve_native_icons', { requests })
+      .then(results => {
+        if (cancelled || nativeIconRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setNativeIconMap(current => {
+          const next = { ...current };
+          for (const result of results) {
+            next[getNativeIconCacheKey(result.path, DEFAULT_NATIVE_ICON_SIZE)] = result.src ?? null;
+          }
+          return next;
+        });
+        setNativeIconLoadingKeys(current => {
+          const next = new Set(current);
+          for (const key of pendingKeys) {
+            next.delete(key);
+          }
+          return next.size === current.size ? current : next;
+        });
+      })
+      .catch(() => {
+        if (cancelled || nativeIconRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setNativeIconMap(current => {
+          const next = { ...current };
+          for (const key of pendingKeys) {
+            next[key] = null;
+          }
+          return next;
+        });
+        setNativeIconLoadingKeys(current => {
+          const next = new Set(current);
+          for (const key of pendingKeys) {
+            next.delete(key);
+          }
+          return next.size === current.size ? current : next;
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, nativeIconLoadingKeys, nativeIconMap, useNativeOsIcons, visibleEntries]);
+
   const selectedEntries = useMemo(
     () => visibleEntries.filter(entry => selected.has(entry.path)),
     [visibleEntries, selected],
   );
 
   const getEntryStorageLabel = useCallback((entry: FileEntry) => {
-    const measuredSize = entrySizes[entry.path];
-    if (typeof measuredSize === 'number') {
-      return formatSize(measuredSize);
+    const measuredInfo = entrySizes[entry.path];
+    if (measuredInfo) {
+      const formatted = formatSize(measuredInfo.bytes);
+      return measuredInfo.is_complete || !entry.is_dir ? formatted : `${formatted}+`;
     }
     if (!entry.is_dir) {
       return formatSize(entry.size);
@@ -1109,6 +1237,39 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     }
     return [entry];
   }, [selected, selectedEntries]);
+
+  const getRenderableIconSrc = useCallback((entry: FileEntry, open = false) => {
+    if (useNativeOsIcons) {
+      const nativeIconSrc = nativeIconMap[getNativeIconCacheKey(entry.path, DEFAULT_NATIVE_ICON_SIZE)];
+      if (nativeIconSrc) {
+        return nativeIconSrc;
+      }
+    }
+
+    return getIconSrc(entry, open, {
+      rules: explorerSettings.folderIconRules,
+      defaultIcon: explorerSettings.defaultFolderIcon,
+    }, themeIconTheme);
+  }, [
+    explorerSettings.defaultFolderIcon,
+    explorerSettings.folderIconRules,
+    nativeIconMap,
+    themeIconTheme,
+    useNativeOsIcons,
+  ]);
+
+  const startNativeFileDrag = useCallback((entry?: FileEntry) => {
+    const entriesForAction = resolveEntriesForAction(entry);
+    if (entriesForAction.length === 0) {
+      return;
+    }
+
+    void invoke('fs_start_native_file_drag', {
+      paths: entriesForAction.map(item => item.path),
+    }).catch(error => {
+      setError(String(error));
+    });
+  }, [resolveEntriesForAction]);
 
   const queueClipboard = useCallback((action: 'copy' | 'cut', entry?: FileEntry) => {
     const entriesForAction = resolveEntriesForAction(entry);
@@ -2100,10 +2261,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                   const isSel = selected.has(entry.path);
                   const isDrop = dragOver === entry.path && entry.is_dir;
                   const isRenaming = rename.active && rename.path === entry.path;
-                  const iconSrc = getIconSrc(entry, isSel || isDrop, {
-                    rules: explorerSettings.folderIconRules,
-                    defaultIcon: explorerSettings.defaultFolderIcon,
-                  }, themeIconTheme);
+                  const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
                   return (
                     <div key={entry.path}
                       draggable
@@ -2127,8 +2285,35 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                       onMouseEnter={e => { if(!isSel && !isDrop)(e.currentTarget as HTMLDivElement).style.background=EXP.cardHov; }}
                       onMouseLeave={e => { if(!isSel && !isDrop)(e.currentTarget as HTMLDivElement).style.background=EXP.card; }}
                       >
-                        <div style={{ width:48, height:48, display:'flex', alignItems:'center', justifyContent:'center', borderRadius:6, overflow:'hidden', flexShrink:0 }}>
+                        <div style={{ width:48, height:48, display:'flex', alignItems:'center', justifyContent:'center', borderRadius:6, overflow:'hidden', flexShrink:0, position:'relative' }}>
                           <SvgIcon src={iconSrc} size={36} />
+                          <button
+                            type="button"
+                            title="Drag to another app or the desktop"
+                            onMouseDown={event => {
+                              if (event.button !== 0) return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              startNativeFileDrag(entry);
+                            }}
+                            style={{
+                              position:'absolute',
+                              right:2,
+                              bottom:2,
+                              width:16,
+                              height:16,
+                              borderRadius:999,
+                              border:`1px solid ${EXP.border}`,
+                              background:'rgba(15,18,28,0.9)',
+                              color:EXP.muted,
+                              display:'flex',
+                              alignItems:'center',
+                              justifyContent:'center',
+                              cursor:'grab',
+                            }}
+                          >
+                            <ExternalLink size={9} />
+                          </button>
                         </div>
                         {isRenaming
                           ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active:false, path:'', name:'' })} />
@@ -2181,10 +2366,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                     const isSel = selected.has(entry.path);
                     const isDrop = dragOver === entry.path && entry.is_dir;
                     const isRenaming = rename.active && rename.path === entry.path;
-                    const iconSrc = getIconSrc(entry, isSel || isDrop, {
-                      rules: explorerSettings.folderIconRules,
-                      defaultIcon: explorerSettings.defaultFolderIcon,
-                    }, themeIconTheme);
+                    const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
                     return (
                     <tr key={entry.path}
                         draggable
@@ -2204,6 +2386,31 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                         <td style={{ padding:'4px 12px' }}>
                           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                             <SvgIcon src={iconSrc} size={16} />
+                            <button
+                              type="button"
+                              title="Drag to another app or the desktop"
+                              onMouseDown={event => {
+                                if (event.button !== 0) return;
+                                event.preventDefault();
+                                event.stopPropagation();
+                                startNativeFileDrag(entry);
+                              }}
+                              style={{
+                                display:'inline-flex',
+                                alignItems:'center',
+                                justifyContent:'center',
+                                width:16,
+                                height:16,
+                                borderRadius:999,
+                                border:`1px solid ${EXP.border}`,
+                                background:'rgba(255,255,255,0.04)',
+                                color:EXP.muted,
+                                cursor:'grab',
+                                flexShrink:0,
+                              }}
+                            >
+                              <ExternalLink size={9} />
+                            </button>
                             {isRenaming
                               ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active:false, path:'', name:'' })} />
                               : <span style={{ color: isSel?EXP.text:entry.is_dir?EXP.yellow:EXP.text, fontWeight:entry.is_dir?500:400 }}>{entry.name}</span>

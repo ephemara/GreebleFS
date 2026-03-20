@@ -1,3 +1,4 @@
+pub mod desktop_integration;
 pub mod fs_commands;
 pub mod plugin_commands;
 pub mod python_commands;
@@ -6,6 +7,7 @@ pub mod startup_commands;
 pub mod terminal;
 pub mod window_commands;
 
+use desktop_integration::{fs_resolve_native_icons, fs_start_native_file_drag};
 use fs_commands::{
     fs_copy, fs_create_dir, fs_delete, fs_get_drives, fs_get_home_dir, fs_list_dir,
     fs_measure_entry_sizes, fs_move, fs_open_as_admin, fs_open_file, fs_read_file_base64,
@@ -127,6 +129,8 @@ pub fn run() {
             fs_search_entries,
             git_exec,
             fs_get_home_dir,
+            fs_resolve_native_icons,
+            fs_start_native_file_drag,
             screenshot_capture_preview,
             screenshot_save_region,
             screenshot_copy_image_to_clipboard,

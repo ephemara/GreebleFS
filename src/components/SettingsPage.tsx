@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { FolderOpen, LayoutGrid, Palette, Plus, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, TerminalSquare, Trash2, Type } from 'lucide-react';
+import type { LoadedOverlayAnimation } from './animationRuntime';
 import {
   ensureFontFamilyLoaded,
   getThemeSourceLabel,
@@ -38,8 +39,12 @@ import type { LoadedOverlayThemePackage } from '../config/themePackages';
 import {
   clampOverlayAnimationDuration,
   clampOverlayAnimationIntensity,
-  overlayAnimationPresets,
 } from '../config/overlayAnimations';
+import {
+  clampOverlayVisualControlValue,
+  formatOverlayVisualControlValue,
+  overlayVisualControls,
+} from '../config/overlayWindow';
 import {
   formatHotkeyLabel,
   getHotkeyBindingDefinition,
@@ -284,6 +289,13 @@ export function SettingsPage({
   themePackagesError,
   onRefreshThemes,
   onOpenThemesFolder,
+  animations,
+  animationDiagnostics,
+  animationsDirectory,
+  animationsLoading,
+  animationsError,
+  onRefreshAnimations,
+  onOpenAnimationsFolder,
 }: {
   appearance: ResolvedOverlayAppearance;
   themePackages: LoadedOverlayThemePackage[];
@@ -292,8 +304,21 @@ export function SettingsPage({
   themePackagesError: string | null;
   onRefreshThemes: () => Promise<void>;
   onOpenThemesFolder: () => Promise<void>;
+  animations: LoadedOverlayAnimation[];
+  animationDiagnostics: LoadedOverlayAnimation[];
+  animationsDirectory: string;
+  animationsLoading: boolean;
+  animationsError: string | null;
+  onRefreshAnimations: () => Promise<void>;
+  onOpenAnimationsFolder: () => Promise<void>;
 }) {
   const platform = useMemo(() => detectClientPlatform(), []);
+  const platformLabel = useMemo(() => {
+    if (platform === 'windows') return 'Windows';
+    if (platform === 'macos') return 'macOS';
+    if (platform === 'linux') return 'Linux';
+    return 'the OS';
+  }, [platform]);
   const settings = useSettingsStore(s => s.settings);
   const updateTerminal = useSettingsStore(s => s.updateTerminal);
   const updateExplorer = useSettingsStore(s => s.updateExplorer);
@@ -305,12 +330,28 @@ export function SettingsPage({
   const { directoryBookmarks, addDirectoryBookmark } = useTerminalStore();
 
   const profileOptions = useMemo(() => getExternalTerminalProfileOptions(platform), [platform]);
-  const [themeDraft, setThemeDraft] = useState(() => serializeTheme(appearance.theme));
+  const [themeDraft, setThemeDraft] = useState(() => serializeTheme(appearance.baseTheme));
   const [folderIconSearch, setFolderIconSearch] = useState('');
   const [activeSection, setActiveSection] = useState<SettingsSectionKey>('appearance');
   const [startupSyncPending, setStartupSyncPending] = useState(false);
   const [startupSyncError, setStartupSyncError] = useState<string | null>(null);
   const [layoutManifestState, setLayoutManifestState] = useState<LoadedLayoutManifest>(DEFAULT_LOADED_LAYOUT_MANIFEST);
+  const availableAnimations = useMemo(
+    () => animations.filter(animation => !animation.error),
+    [animations],
+  );
+  const openAnimationOptions = useMemo(
+    () => availableAnimations.filter(animation => animation.open),
+    [availableAnimations],
+  );
+  const closeAnimationOptions = useMemo(
+    () => availableAnimations.filter(animation => animation.close),
+    [availableAnimations],
+  );
+  const animationFailures = useMemo(
+    () => animationDiagnostics.filter(animation => Boolean(animation.error)),
+    [animationDiagnostics],
+  );
 
   useEffect(() => {
     ensureFontFamilyLoaded(appearance.fonts.ui);
@@ -318,8 +359,8 @@ export function SettingsPage({
   }, [appearance.fonts.ui, settings.terminal.fontFamily]);
 
   useEffect(() => {
-    setThemeDraft(serializeTheme(appearance.theme));
-  }, [appearance.theme]);
+    setThemeDraft(serializeTheme(appearance.baseTheme));
+  }, [appearance.baseTheme]);
 
   useEffect(() => {
     let cancelled = false;
@@ -364,13 +405,13 @@ export function SettingsPage({
 
   const updateThemePalette = useCallback((patch: Partial<OverlayThemeDefinition['palette']>) => {
     persistTheme({
-      ...appearance.theme,
+      ...appearance.baseTheme,
       palette: {
-        ...appearance.theme.palette,
+        ...appearance.baseTheme.palette,
         ...patch,
       },
     });
-  }, [appearance.theme, persistTheme]);
+  }, [appearance.baseTheme, persistTheme]);
 
   const applyThemeDraft = useCallback(() => {
     try {
@@ -395,12 +436,14 @@ export function SettingsPage({
     }
   }, [addDirectoryBookmark, directoryBookmarks, platform]);
 
-  const panelBackground = appearance.theme.palette.panelBackground;
-  const border = appearance.theme.palette.border;
-  const text = appearance.theme.palette.textPrimary;
-  const muted = appearance.theme.palette.textMuted;
-  const accent = appearance.theme.palette.accent;
-  const themeIconTheme = appearance.theme.assets?.iconTheme ?? getBuiltInIconTheme();
+  const effectiveTheme = appearance.theme;
+  const editableTheme = appearance.baseTheme;
+  const panelBackground = effectiveTheme.palette.panelBackground;
+  const border = effectiveTheme.palette.border;
+  const text = effectiveTheme.palette.textPrimary;
+  const muted = effectiveTheme.palette.textMuted;
+  const accent = effectiveTheme.palette.accent;
+  const themeIconTheme = editableTheme.assets?.iconTheme ?? getBuiltInIconTheme();
   const activeLayoutProfile = useMemo(
     () => resolveLayoutProfile(layoutManifestState.manifest, settings.layout.activeProfileId),
     [layoutManifestState.manifest, settings.layout.activeProfileId],
@@ -473,8 +516,8 @@ export function SettingsPage({
     {
       key: 'appearance',
       label: 'Appearance',
-      subtitle: 'Theme, opacity, zoom, and motion.',
-      summary: `${appearance.theme.name} · ${Math.round(settings.appearance.appOpacity * 100)}% OP · ${Math.round(settings.appearance.appZoom * 100)}% ZM`,
+      subtitle: 'Theme, opacity, panel transparency, blur, zoom, and motion.',
+      summary: `${effectiveTheme.name} · ${settings.appearance.useNativeOsIcons ? 'OS Icons' : 'Theme Icons'} · ${availableAnimations.length} motion modules · ${formatOverlayVisualControlValue('opacity', settings.appearance.appOpacity)} OP · ${formatOverlayVisualControlValue('panelTransparency', settings.appearance.panelTransparency)} PT · ${formatOverlayVisualControlValue('zoom', settings.appearance.appZoom)} ZM · ${formatOverlayVisualControlValue('blurStrength', settings.appearance.appBlurStrength)} BL`,
       detail: 'Tune how the whole shell looks and feels, from presets and palette tokens to blur and motion behavior.',
       icon: <Palette size={14} />,
     },
@@ -537,7 +580,7 @@ export function SettingsPage({
         minHeight: 0,
         minWidth: 0,
         fontFamily: appearance.fonts.ui,
-        background: `linear-gradient(180deg, ${appearance.theme.palette.appBackgroundAlt} 0%, ${panelBackground} 100%)`,
+        background: `linear-gradient(180deg, ${effectiveTheme.palette.appBackgroundAlt} 0%, ${panelBackground} 100%)`,
       }}
     >
       <aside className="flex min-h-0 w-[236px] shrink-0 flex-col border-r" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
@@ -588,7 +631,7 @@ export function SettingsPage({
                 className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
                 style={{ border: `1px solid ${border}`, color: muted, background: 'rgba(255,255,255,0.03)' }}
               >
-                Theme · {appearance.theme.name}
+                Theme · {effectiveTheme.name}
               </span>
               <span
                 className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
@@ -665,7 +708,7 @@ export function SettingsPage({
                     {themePackagesLoading ? 'Scanning Packages' : `${themePackages.length} Package${themePackages.length === 1 ? '' : 's'} Loaded`}
                   </span>
                   <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
-                    Active Source: {getThemeSourceLabel(appearance.theme)}
+                    Active Source: {getThemeSourceLabel(editableTheme)}
                   </span>
                 </div>
 
@@ -731,40 +774,74 @@ export function SettingsPage({
                 </div>
               </div>
 
+              <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                <div>
+                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Native OS Icons</div>
+                  <p className="mt-1 text-[11px] opacity-40">
+                    Use {platformLabel}&apos;s current file and folder icons in the explorer when available. Theme icons stay in place as the fallback layer.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={settings.appearance.useNativeOsIcons}
+                  onChange={event => updateAppearance({ useNativeOsIcons: event.target.checked })}
+                />
+              </label>
+
               <div className="grid grid-cols-2 gap-2">
-                <ColorToken label="Accent" value={appearance.theme.palette.accent} onChange={value => updateThemePalette({ accent: value, accentSoft: `${value}22` })} />
-                <ColorToken label="App Background" value={appearance.theme.palette.appBackground} onChange={value => updateThemePalette({ appBackground: value, shellBackgroundSolid: value })} />
-                <ColorToken label="Panel" value={appearance.theme.palette.panelBackground} onChange={value => updateThemePalette({ panelBackground: value, sidebarBackground: value })} />
-                <ColorToken label="Text" value={appearance.theme.palette.textPrimary} onChange={value => updateThemePalette({ textPrimary: value })} />
+                <ColorToken label="Accent" value={editableTheme.palette.accent} onChange={value => updateThemePalette({ accent: value, accentSoft: `${value}22` })} />
+                <ColorToken label="App Background" value={editableTheme.palette.appBackground} onChange={value => updateThemePalette({ appBackground: value, shellBackgroundSolid: value })} />
+                <ColorToken label="Panel" value={editableTheme.palette.panelBackground} onChange={value => updateThemePalette({ panelBackground: value, sidebarBackground: value })} />
+                <ColorToken label="Text" value={editableTheme.palette.textPrimary} onChange={value => updateThemePalette({ textPrimary: value })} />
               </div>
 
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-2 xl:grid-cols-4">
                 <RangeField
                   label="Window Opacity"
                   description="How translucent the overlay surface should feel."
-                  min={0.15}
-                  max={1}
-                  step={0.02}
+                  min={overlayVisualControls.opacity.min}
+                  max={overlayVisualControls.opacity.max}
+                  step={overlayVisualControls.opacity.step}
                   value={settings.appearance.appOpacity}
-                  valueLabel={`${Math.round(settings.appearance.appOpacity * 100)}%`}
-                  onChange={value => updateAppearance({ appOpacity: value })}
+                  valueLabel={formatOverlayVisualControlValue('opacity', settings.appearance.appOpacity)}
+                  onChange={value => updateAppearance({ appOpacity: clampOverlayVisualControlValue('opacity', value) })}
+                />
+                <RangeField
+                  label="Panel Transparency"
+                  description="Fade panel chrome away while keeping the actual panel content readable."
+                  min={overlayVisualControls.panelTransparency.min}
+                  max={overlayVisualControls.panelTransparency.max}
+                  step={overlayVisualControls.panelTransparency.step}
+                  value={settings.appearance.panelTransparency}
+                  valueLabel={formatOverlayVisualControlValue('panelTransparency', settings.appearance.panelTransparency)}
+                  onChange={value => updateAppearance({ panelTransparency: clampOverlayVisualControlValue('panelTransparency', value) })}
+                />
+                <RangeField
+                  label="Blur Strength"
+                  description="Scale the glass softness separately from overall opacity so fully opaque shells can still feel frosted."
+                  min={overlayVisualControls.blurStrength.min}
+                  max={overlayVisualControls.blurStrength.max}
+                  step={overlayVisualControls.blurStrength.step}
+                  value={settings.appearance.appBlurStrength}
+                  valueLabel={formatOverlayVisualControlValue('blurStrength', settings.appearance.appBlurStrength)}
+                  onChange={value => updateAppearance({ appBlurStrength: clampOverlayVisualControlValue('blurStrength', value) })}
                 />
                 <RangeField
                   label="Window Zoom"
                   description="Scale the full overlay shell without changing monitor placement."
-                  min={0.7}
-                  max={1.35}
-                  step={0.025}
+                  min={overlayVisualControls.zoom.min}
+                  max={overlayVisualControls.zoom.max}
+                  step={overlayVisualControls.zoom.step}
                   value={settings.appearance.appZoom}
-                  valueLabel={`${Math.round(settings.appearance.appZoom * 100)}%`}
-                  onChange={value => updateAppearance({ appZoom: value })}
+                  valueLabel={formatOverlayVisualControlValue('zoom', settings.appearance.appZoom)}
+                  onChange={value => updateAppearance({ appZoom: clampOverlayVisualControlValue('zoom', value) })}
                 />
               </div>
 
               <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
                 <div>
                   <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Native Glass Blur</div>
-                  <p className="mt-1 text-[11px] opacity-40">Use compositor-backed window blur when the platform supports it.</p>
+                  <p className="mt-1 text-[11px] opacity-40">Use compositor-backed window blur when the platform supports it, then tune the glass amount with Blur Strength.</p>
                 </div>
                 <input
                   type="checkbox"
@@ -778,7 +855,7 @@ export function SettingsPage({
                   <div>
                     <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Window Motion</div>
                     <p className="mt-1 text-[11px] opacity-40">
-                      Swap how the overlay arrives and leaves without rewiring the shell again.
+                      Built-ins and authored TS/TSX modules all flow through one motion pipeline, so users can ship anything from subtle lift to full-on shatter or vortex effects.
                     </p>
                   </div>
                   <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
@@ -786,16 +863,71 @@ export function SettingsPage({
                   </span>
                 </div>
 
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px]">
+                  <div className="opacity-45">
+                    {availableAnimations.length} ready modules
+                    {animationFailures.length > 0 ? ` · ${animationFailures.length} failed loads` : ''}
+                    {animationsLoading ? ' · refreshing…' : ''}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => void onRefreshAnimations()}
+                      className="inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 transition-colors"
+                      style={{ borderColor: border, background: 'rgba(255,255,255,0.03)', color: text }}
+                    >
+                      <RefreshCw size={12} />
+                      Refresh Motion
+                    </button>
+                    <button
+                      onClick={() => void onOpenAnimationsFolder()}
+                      className="inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 transition-colors"
+                      style={{ borderColor: accent, background: `${accent}16`, color: text }}
+                    >
+                      <FolderOpen size={12} />
+                      Open Folder
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Authoring Folder</div>
+                  <div className="mt-1 break-all opacity-55">{animationsDirectory}</div>
+                  {animationsError && (
+                    <div className="mt-2 rounded border px-2 py-1.5 text-[10px]" style={{ borderColor: 'rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.08)', color: text }}>
+                      {animationsError}
+                    </div>
+                  )}
+                </div>
+
+                {animationFailures.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {animationFailures.map(animation => (
+                      <div
+                        key={`animation-error-${animation.filePath}`}
+                        className="rounded border px-3 py-2"
+                        style={{ borderColor: 'rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.08)', color: text }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-[11px] font-semibold">{animation.name}</div>
+                          <span className="text-[9px] uppercase tracking-[0.12em] opacity-55">Load Error</span>
+                        </div>
+                        <div className="mt-1 break-all text-[10px] opacity-55">{animation.filePath}</div>
+                        <pre className="mt-2 whitespace-pre-wrap text-[10px] leading-4 opacity-80">{animation.error}</pre>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Open Preset</label>
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Open Motion</label>
                     <div className="grid grid-cols-1 gap-2">
-                      {overlayAnimationPresets.map(preset => {
-                        const active = settings.appearance.appOpenAnimation === preset.id;
+                      {openAnimationOptions.map(animation => {
+                        const active = settings.appearance.appOpenAnimation === animation.id;
                         return (
                           <button
-                            key={`open-${preset.id}`}
-                            onClick={() => updateAppearance({ appOpenAnimation: preset.id })}
+                            key={`open-${animation.id}`}
+                            onClick={() => updateAppearance({ appOpenAnimation: animation.id })}
                             className="rounded px-3 py-2 text-left transition-colors"
                             style={{
                               border: `1px solid ${active ? accent : border}`,
@@ -804,27 +936,32 @@ export function SettingsPage({
                             }}
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <span className="text-[11px] font-semibold">{preset.label}</span>
+                              <span className="text-[11px] font-semibold">{animation.name}</span>
                               <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: active ? accent : muted }}>
-                                {preset.group}
+                                {animation.group}
                               </span>
                             </div>
-                            <p className="mt-1 text-[11px] opacity-45">{preset.description}</p>
+                            <p className="mt-1 text-[11px] opacity-45">{animation.description ?? 'Authored window opening motion module.'}</p>
                           </button>
                         );
                       })}
+                      {openAnimationOptions.length === 0 && (
+                        <div className="rounded border px-3 py-2 text-[11px] opacity-45" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                          No open-capable motion modules loaded yet.
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Close Preset</label>
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Close Motion</label>
                     <div className="grid grid-cols-1 gap-2">
-                      {overlayAnimationPresets.map(preset => {
-                        const active = settings.appearance.appCloseAnimation === preset.id;
+                      {closeAnimationOptions.map(animation => {
+                        const active = settings.appearance.appCloseAnimation === animation.id;
                         return (
                           <button
-                            key={`close-${preset.id}`}
-                            onClick={() => updateAppearance({ appCloseAnimation: preset.id })}
+                            key={`close-${animation.id}`}
+                            onClick={() => updateAppearance({ appCloseAnimation: animation.id })}
                             className="rounded px-3 py-2 text-left transition-colors"
                             style={{
                               border: `1px solid ${active ? accent : border}`,
@@ -833,15 +970,20 @@ export function SettingsPage({
                             }}
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <span className="text-[11px] font-semibold">{preset.label}</span>
+                              <span className="text-[11px] font-semibold">{animation.name}</span>
                               <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: active ? accent : muted }}>
-                                {preset.group}
+                                {animation.group}
                               </span>
                             </div>
-                            <p className="mt-1 text-[11px] opacity-45">{preset.description}</p>
+                            <p className="mt-1 text-[11px] opacity-45">{animation.description ?? 'Authored window closing motion module.'}</p>
                           </button>
                         );
                       })}
+                      {closeAnimationOptions.length === 0 && (
+                        <div className="rounded border px-3 py-2 text-[11px] opacity-45" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                          No close-capable motion modules loaded yet.
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1426,7 +1568,7 @@ export function SettingsPage({
               />
               <div className="grid grid-cols-2 gap-2">
                 <button
-                  onClick={() => setThemeDraft(serializeTheme(appearance.theme))}
+                  onClick={() => setThemeDraft(serializeTheme(appearance.baseTheme))}
                   className="rounded px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em]"
                   style={{ background: 'rgba(255,255,255,0.06)', color: text, border: `1px solid ${border}` }}
                 >

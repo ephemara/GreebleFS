@@ -1,4 +1,5 @@
 import { mergeResolvedIconThemes, type OverlayResolvedIconTheme } from './iconTheme';
+import { clampOverlayVisualControlValue } from './overlayWindow';
 
 export interface OverlayXTermTheme {
   background: string;
@@ -124,16 +125,19 @@ export interface OverlayAppearanceSelection {
   packageThemes?: OverlayThemeDefinition[];
   uiFontFamily?: string;
   monoFontFamily?: string;
+  panelTransparency?: number;
 }
 
 export interface ResolvedOverlayAppearance {
   theme: OverlayThemeDefinition;
+  baseTheme: OverlayThemeDefinition;
   themes: OverlayThemeDefinition[];
   fonts: {
     ui: string;
     mono: string;
   };
   cssVars: Record<string, string>;
+  panelTransparency: number;
 }
 
 export interface OverlayFontOption {
@@ -175,6 +179,106 @@ export function ensureFontFamilyLoaded(fontFamily: string): void {
   link.rel = 'stylesheet';
   link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(familyName)}:wght@400;500;600;700&display=swap`;
   document.head.appendChild(link);
+}
+
+function clampUnitInterval(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.min(Math.max(value, 0), 1);
+}
+
+function formatAlphaComponent(value: number): string {
+  return String(Math.round(clampUnitInterval(value) * 1000) / 1000);
+}
+
+export function multiplyColorAlpha(color: string, alphaMultiplier: number): string {
+  const multiplier = clampUnitInterval(alphaMultiplier);
+  const trimmed = color.trim();
+  if (!trimmed) {
+    return color;
+  }
+  if (multiplier >= 0.999) {
+    return trimmed;
+  }
+  if (trimmed === 'transparent') {
+    return 'rgba(0, 0, 0, 0)';
+  }
+
+  if (trimmed.startsWith('#')) {
+    const hex = trimmed.slice(1);
+    if (![3, 4, 6, 8].includes(hex.length)) {
+      return `color-mix(in srgb, ${trimmed} ${Math.round(multiplier * 100)}%, transparent)`;
+    }
+    const expanded = hex.length <= 4
+      ? hex.split('').map(char => `${char}${char}`).join('')
+      : hex;
+    const red = Number.parseInt(expanded.slice(0, 2), 16);
+    const green = Number.parseInt(expanded.slice(2, 4), 16);
+    const blue = Number.parseInt(expanded.slice(4, 6), 16);
+    const sourceAlpha = expanded.length === 8
+      ? Number.parseInt(expanded.slice(6, 8), 16) / 255
+      : 1;
+    return `rgba(${red}, ${green}, ${blue}, ${formatAlphaComponent(sourceAlpha * multiplier)})`;
+  }
+
+  const rgbaMatch = trimmed.match(/^rgba\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)$/i);
+  if (rgbaMatch) {
+    const [, red, green, blue, alpha] = rgbaMatch;
+    return `rgba(${red.trim()}, ${green.trim()}, ${blue.trim()}, ${formatAlphaComponent(Number.parseFloat(alpha) * multiplier)})`;
+  }
+
+  const rgbMatch = trimmed.match(/^rgb\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)$/i);
+  if (rgbMatch) {
+    const [, red, green, blue] = rgbMatch;
+    return `rgba(${red.trim()}, ${green.trim()}, ${blue.trim()}, ${formatAlphaComponent(multiplier)})`;
+  }
+
+  const hslaMatch = trimmed.match(/^hsla\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)$/i);
+  if (hslaMatch) {
+    const [, hue, saturation, lightness, alpha] = hslaMatch;
+    return `hsla(${hue.trim()}, ${saturation.trim()}, ${lightness.trim()}, ${formatAlphaComponent(Number.parseFloat(alpha) * multiplier)})`;
+  }
+
+  const hslMatch = trimmed.match(/^hsl\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^)]+)\)$/i);
+  if (hslMatch) {
+    const [, hue, saturation, lightness] = hslMatch;
+    return `hsla(${hue.trim()}, ${saturation.trim()}, ${lightness.trim()}, ${formatAlphaComponent(multiplier)})`;
+  }
+
+  return `color-mix(in srgb, ${trimmed} ${Math.round(multiplier * 100)}%, transparent)`;
+}
+
+function applyPanelTransparency(
+  theme: OverlayThemeDefinition,
+  panelTransparency: number,
+): OverlayThemeDefinition {
+  const panelOpacity = 1 - clampOverlayVisualControlValue('panelTransparency', panelTransparency);
+  if (panelOpacity >= 0.999) {
+    return theme;
+  }
+
+  return {
+    ...theme,
+    palette: {
+      ...theme.palette,
+      appBackground: multiplyColorAlpha(theme.palette.appBackground, panelOpacity),
+      appBackgroundAlt: multiplyColorAlpha(theme.palette.appBackgroundAlt, panelOpacity),
+      topBarBackground: multiplyColorAlpha(theme.palette.topBarBackground, panelOpacity),
+      topBarMenuBackground: multiplyColorAlpha(theme.palette.topBarMenuBackground, panelOpacity),
+      sidebarBackground: multiplyColorAlpha(theme.palette.sidebarBackground, panelOpacity),
+      panelBackground: multiplyColorAlpha(theme.palette.panelBackground, panelOpacity),
+      panelAltBackground: multiplyColorAlpha(theme.palette.panelAltBackground, panelOpacity),
+      cardBackground: multiplyColorAlpha(theme.palette.cardBackground, panelOpacity),
+      cardHoverBackground: multiplyColorAlpha(theme.palette.cardHoverBackground, panelOpacity),
+      contextMenuBackground: multiplyColorAlpha(theme.palette.contextMenuBackground, panelOpacity),
+      inputBackground: multiplyColorAlpha(theme.palette.inputBackground, panelOpacity),
+      terminalBackground: multiplyColorAlpha(theme.palette.terminalBackground, panelOpacity),
+      scrimBackground: multiplyColorAlpha(theme.palette.scrimBackground, panelOpacity),
+      border: multiplyColorAlpha(theme.palette.border, panelOpacity),
+      borderStrong: multiplyColorAlpha(theme.palette.borderStrong, panelOpacity),
+    },
+  };
 }
 
 function createTheme(
@@ -742,22 +846,26 @@ export function resolveOverlayAppearance(selection?: OverlayAppearanceSelection)
   const customThemes = (selection?.customThemes ?? []).map(theme => normalizeThemeDefinition(theme));
   const packageThemes = (selection?.packageThemes ?? []).map(theme => normalizeThemeDefinition(theme, presetMap.get(theme.extendsThemeId ?? '') ?? undefined));
   const activeThemeId = selection?.activeThemeId ?? 'operator';
+  const panelTransparency = clampOverlayVisualControlValue('panelTransparency', selection?.panelTransparency ?? 0);
   const themeLookup = new Map<string, OverlayThemeDefinition>([
     ...overlayThemePresets.map(theme => [theme.id, theme] as const),
     ...packageThemes.map(theme => [theme.id, theme] as const),
     ...customThemes.map(theme => [theme.id, theme] as const),
   ]);
 
-  const theme = themeLookup.get(activeThemeId) ?? overlayThemePresets[0];
+  const baseTheme = themeLookup.get(activeThemeId) ?? overlayThemePresets[0];
+  const theme = applyPanelTransparency(baseTheme, panelTransparency);
   const fonts = {
-    ui: selection?.uiFontFamily?.trim() || theme.fonts?.ui || defaultUiFont,
-    mono: selection?.monoFontFamily?.trim() || theme.fonts?.mono || defaultMonoFont,
+    ui: selection?.uiFontFamily?.trim() || baseTheme.fonts?.ui || defaultUiFont,
+    mono: selection?.monoFontFamily?.trim() || baseTheme.fonts?.mono || defaultMonoFont,
   };
 
   return {
     theme,
+    baseTheme,
     themes: [...overlayThemePresets, ...packageThemes, ...customThemes],
     fonts,
+    panelTransparency,
     cssVars: {
       '--overlay-font-ui': fonts.ui,
       '--overlay-font-mono': fonts.mono,
@@ -800,6 +908,8 @@ export function resolveOverlayAppearance(selection?: OverlayAppearanceSelection)
       '--overlay-background-position': theme.effects.backgroundPosition,
       '--overlay-shadow': theme.effects.shadow,
       '--overlay-overlay-shadow': theme.effects.overlayShadow,
+      '--overlay-panel-transparency': String(panelTransparency),
+      '--overlay-panel-opacity': formatAlphaComponent(1 - panelTransparency),
       ...(theme.cssVars ?? {}),
     },
   };

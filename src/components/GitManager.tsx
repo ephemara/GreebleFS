@@ -2,7 +2,7 @@ import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } fr
 import { invoke } from '@tauri-apps/api/core';
 import { DiffEditor } from '@monaco-editor/react';
 import { Download, FolderGit2, GitBranch, GitCommit, Plus, RefreshCw, Rocket, Search, Upload, X } from 'lucide-react';
-import type { ResolvedOverlayAppearance } from '../config/appearance';
+import { multiplyColorAlpha, type ResolvedOverlayAppearance } from '../config/appearance';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import {
   type GitFileStatus,
@@ -602,14 +602,5 @@ function statusColor(file: GitFileStatus, palette: { accent: string; green: stri
 }
 
 function alpha(color: string, opacity: number): string {
-  if (color.startsWith('rgba(')) return color.replace(/rgba\((.+),\s*[\d.]+\)/, `rgba($1, ${opacity})`);
-  if (color.startsWith('rgb(')) return color.replace('rgb(', 'rgba(').replace(')', `, ${opacity})`);
-  if (color.startsWith('#')) {
-    const normalized = color.length === 4 ? color.slice(1).split('').map(char => `${char}${char}`).join('') : color.slice(1);
-    const red = Number.parseInt(normalized.slice(0, 2), 16);
-    const green = Number.parseInt(normalized.slice(2, 4), 16);
-    const blue = Number.parseInt(normalized.slice(4, 6), 16);
-    return `rgba(${red}, ${green}, ${blue}, ${opacity})`;
-  }
-  return color;
+  return multiplyColorAlpha(color, opacity);
 }

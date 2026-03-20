@@ -26,6 +26,10 @@ import {
   clampOverlayAnimationIntensity,
   type OverlayAnimationPresetId,
 } from '../config/overlayAnimations';
+import {
+  clampOverlayVisualControlValue,
+  overlayVisualControls,
+} from '../config/overlayWindow';
 import { screenshotFeatureConfig } from '../config/screenshots';
 import { getDefaultLayoutProfile } from '../config/layoutProfiles';
 
@@ -91,14 +95,17 @@ export interface AppearanceSettings {
   activeThemeId: string;
   customThemes: OverlayThemeDefinition[];
   uiFontFamily: string;
+  useNativeOsIcons: boolean;
   accentColor: string;
   sidebarPosition: 'left' | 'right';
   activityBarPosition: 'side' | 'top';
   compactMode: boolean;
   animations: boolean;
   appOpacity: number;
+  panelTransparency: number;
   appZoom: number;
   appBlur: boolean;
+  appBlurStrength: number;
   appOpenAnimation: OverlayAnimationPresetId;
   appCloseAnimation: OverlayAnimationPresetId;
   appAnimationDurationMs: number;
@@ -183,6 +190,23 @@ export function normalizeExplorerFolderClickMode(value: unknown): ExplorerFolder
   return value === 'single' ? 'single' : 'double';
 }
 
+function normalizeAppearanceSettings(
+  base: AppearanceSettings,
+  updates?: Partial<AppearanceSettings>,
+): AppearanceSettings {
+  const merged = { ...base, ...updates };
+  return {
+    ...merged,
+    customThemes: (merged.customThemes ?? base.customThemes).map(theme => normalizeThemeDefinition(theme)),
+    appOpacity: clampOverlayVisualControlValue('opacity', merged.appOpacity),
+    panelTransparency: clampOverlayVisualControlValue('panelTransparency', merged.panelTransparency),
+    appZoom: clampOverlayVisualControlValue('zoom', merged.appZoom),
+    appBlurStrength: clampOverlayVisualControlValue('blurStrength', merged.appBlurStrength),
+    appAnimationDurationMs: clampOverlayAnimationDuration(merged.appAnimationDurationMs),
+    appAnimationIntensity: clampOverlayAnimationIntensity(merged.appAnimationIntensity),
+  };
+}
+
 export const defaultSettings: Settings = {
   editor: {
     fontSize: 14,
@@ -236,14 +260,17 @@ export const defaultSettings: Settings = {
     activeThemeId: 'operator',
     customThemes: [],
     uiFontFamily: 'Inter, system-ui, sans-serif',
+    useNativeOsIcons: false,
     accentColor: '#6366f1',
     sidebarPosition: 'left',
     activityBarPosition: 'side',
     compactMode: false,
     animations: true,
-    appOpacity: 1.0,
-    appZoom: 1.0,
+    appOpacity: overlayVisualControls.opacity.defaultValue,
+    panelTransparency: overlayVisualControls.panelTransparency.defaultValue,
+    appZoom: overlayVisualControls.zoom.defaultValue,
     appBlur: true,
+    appBlurStrength: overlayVisualControls.blurStrength.defaultValue,
     appOpenAnimation: 'spring-lift',
     appCloseAnimation: 'burn',
     appAnimationDurationMs: 320,
@@ -302,6 +329,7 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
   const importedTerminal = imported?.terminal;
   const legacyThemeId = importedAppearance?.activeThemeId ?? importedTerminal?.colorTheme;
   const legacyUiFont = importedAppearance?.uiFontFamily ?? importedAppearance?.uiFont ?? importedTerminal?.uiFont;
+  const { uiFont: _legacyAppearanceUiFont, ...importedAppearanceSettings } = importedAppearance ?? {};
 
   return {
     ...base,
@@ -319,13 +347,11 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
       folderClickMode: normalizeExplorerFolderClickMode(imported?.explorer?.folderClickMode ?? base.explorer.folderClickMode),
     },
     appearance: {
-      ...base.appearance,
-      ...importedAppearance,
-      activeThemeId: legacyThemeId ?? base.appearance.activeThemeId,
-      uiFontFamily: legacyUiFont ?? base.appearance.uiFontFamily,
-      customThemes: (importedAppearance?.customThemes ?? base.appearance.customThemes).map(theme => normalizeThemeDefinition(theme)),
-      appAnimationDurationMs: clampOverlayAnimationDuration(importedAppearance?.appAnimationDurationMs ?? base.appearance.appAnimationDurationMs),
-      appAnimationIntensity: clampOverlayAnimationIntensity(importedAppearance?.appAnimationIntensity ?? base.appearance.appAnimationIntensity),
+      ...normalizeAppearanceSettings(base.appearance, {
+        ...importedAppearanceSettings,
+        activeThemeId: legacyThemeId ?? base.appearance.activeThemeId,
+        uiFontFamily: legacyUiFont ?? base.appearance.uiFontFamily,
+      }),
     },
     system: { ...base.system, ...(imported as Partial<Settings> | undefined)?.system },
     screenshots: { ...base.screenshots, ...imported?.screenshots },
@@ -419,7 +445,7 @@ export const useSettingsStore = create<SettingsState>()(
       updateAppearance: (updates) => set((state) => ({
         settings: {
           ...state.settings,
-          appearance: { ...state.settings.appearance, ...updates },
+          appearance: normalizeAppearanceSettings(state.settings.appearance, updates),
         },
       })),
 

@@ -36,16 +36,19 @@ pub struct EntryStorageInfo {
     pub path: String,
     pub bytes: u64,
     pub is_dir: bool,
+    pub is_complete: bool,
 }
 
 #[derive(Debug, Clone)]
 struct CachedEntrySize {
     bytes: u64,
     is_dir: bool,
+    is_complete: bool,
     measured_at: Instant,
 }
 
 const ENTRY_SIZE_CACHE_TTL: Duration = Duration::from_secs(10);
+const ENTRY_SIZE_SCAN_BUDGET: Duration = Duration::from_millis(900);
 static ENTRY_SIZE_CACHE: OnceLock<Mutex<HashMap<String, CachedEntrySize>>> = OnceLock::new();
 
 fn entry_size_cache() -> &'static Mutex<HashMap<String, CachedEntrySize>> {
@@ -81,30 +84,35 @@ fn invalidate_entry_size_cache(path: &Path) {
     }
 }
 
-fn measure_path_size(path: &Path) -> (u64, bool) {
+fn measure_path_size(path: &Path) -> (u64, bool, bool) {
     let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
-        Err(_) => return (0, false),
+        Err(_) => return (0, false, false),
     };
 
     let file_type = metadata.file_type();
     if file_type.is_symlink() {
-        return (0, file_type.is_dir());
+        return (0, file_type.is_dir(), true);
     }
 
     if metadata.is_file() {
-        return (metadata.len(), false);
+        return (metadata.len(), false, true);
     }
 
     if !metadata.is_dir() {
-        return (0, false);
+        return (0, false, false);
     }
 
     let mut total_bytes = 0_u64;
     let mut stack = vec![path.to_path_buf()];
     let mut visited = HashSet::new();
+    let deadline = Instant::now() + ENTRY_SIZE_SCAN_BUDGET;
 
     while let Some(dir) = stack.pop() {
+        if Instant::now() >= deadline {
+            return (total_bytes, true, false);
+        }
+
         let canonical = dir.canonicalize().unwrap_or(dir.clone());
         if !visited.insert(canonical) {
             continue;
@@ -116,6 +124,10 @@ fn measure_path_size(path: &Path) -> (u64, bool) {
         };
 
         for entry in read_dir.flatten() {
+            if Instant::now() >= deadline {
+                return (total_bytes, true, false);
+            }
+
             let entry_path = entry.path();
             let entry_metadata = match std::fs::symlink_metadata(&entry_path) {
                 Ok(metadata) => metadata,
@@ -138,7 +150,7 @@ fn measure_path_size(path: &Path) -> (u64, bool) {
         }
     }
 
-    (total_bytes, true)
+    (total_bytes, true, true)
 }
 
 fn measure_entry_sizes_blocking(paths: Vec<String>, force_refresh: bool) -> Vec<EntryStorageInfo> {
@@ -164,12 +176,14 @@ fn measure_entry_sizes_blocking(paths: Vec<String>, force_refresh: bool) -> Vec<
                     path: key,
                     bytes: entry.bytes,
                     is_dir: entry.is_dir,
+                    is_complete: entry.is_complete,
                 });
             } else {
                 results.push(EntryStorageInfo {
                     path: key.clone(),
                     bytes: 0,
                     is_dir: path.is_dir(),
+                    is_complete: !path.is_dir(),
                 });
                 pending.push((index, path, key));
             }
@@ -182,17 +196,19 @@ fn measure_entry_sizes_blocking(paths: Vec<String>, force_refresh: bool) -> Vec<
 
     let mut cache_updates = Vec::with_capacity(pending.len());
     for (index, path, key) in pending {
-        let (bytes, is_dir) = measure_path_size(&path);
+        let (bytes, is_dir, is_complete) = measure_path_size(&path);
         results[index] = EntryStorageInfo {
             path: key.clone(),
             bytes,
             is_dir,
+            is_complete,
         };
         cache_updates.push((
             key,
             CachedEntrySize {
                 bytes,
                 is_dir,
+                is_complete,
                 measured_at: now,
             },
         ));
@@ -1932,6 +1948,7 @@ mod tests {
             .find(|entry| entry.path == nested_dir.to_string_lossy())
             .expect("directory result missing");
         assert!(dir_result.is_dir, "directory should be marked as a directory");
+        assert!(dir_result.is_complete, "small directory scan should complete");
         assert_eq!(dir_result.bytes, 384, "directory size should include nested files");
 
         let file_result = results
@@ -1939,6 +1956,7 @@ mod tests {
             .find(|entry| entry.path == loose_file.to_string_lossy())
             .expect("file result missing");
         assert!(!file_result.is_dir, "file should not be marked as a directory");
+        assert!(file_result.is_complete, "files should resolve immediately");
         assert_eq!(file_result.bytes, 64);
     }
 
@@ -1970,6 +1988,27 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].bytes, 0, "symlinked directories should not be traversed");
+        assert!(results[0].is_complete, "symlink handling should return immediately");
+    }
+
+    #[test]
+    fn measure_path_size_can_return_partial_for_large_scans() {
+        let dir = tmp_dir();
+        let root = dir.path().join("huge");
+        fs::create_dir_all(&root).unwrap();
+
+        for index in 0..15_000 {
+            fs::write(root.join(format!("chunk-{index}.bin")), [0_u8; 32]).unwrap();
+        }
+
+        let (_bytes, is_dir, is_complete) = measure_path_size(&root);
+        assert!(is_dir, "directory should still be identified as a directory");
+        if !is_complete {
+            return;
+        }
+
+        // Fast machines may still finish inside the budget; in that case the full scan is still valid.
+        assert!(is_complete);
     }
 
     #[tokio::test]

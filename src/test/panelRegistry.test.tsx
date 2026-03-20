@@ -56,6 +56,13 @@ describe('createBuiltInPanelDefinitions', () => {
       themePackagesError: null,
       onRefreshThemes: async () => {},
       onOpenThemesFolder: async () => {},
+      animations: [],
+      animationDiagnostics: [],
+      animationsDirectory: 'animations',
+      animationsLoading: false,
+      animationsError: null,
+      onRefreshAnimations: async () => {},
+      onOpenAnimationsFolder: async () => {},
       renderPluginsManager: () => null,
     });
 

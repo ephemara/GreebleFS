@@ -1,13 +1,6 @@
 import type { CSSProperties } from 'react';
 
-export type OverlayAnimationPresetId =
-  | 'none'
-  | 'slide'
-  | 'spring-lift'
-  | 'lift'
-  | 'dissolve'
-  | 'burn'
-  | 'fizzle';
+export type OverlayAnimationPresetId = string;
 
 export type OverlayAnimationDirection = 'enter' | 'exit';
 export type OverlayAnimationPhase = 'closed' | 'opening' | 'open' | 'closing';
@@ -22,7 +15,7 @@ interface MotionShape {
   saturate: number;
 }
 
-interface OverlayAnimationPreset {
+export interface OverlayAnimationPreset {
   id: OverlayAnimationPresetId;
   label: string;
   description: string;

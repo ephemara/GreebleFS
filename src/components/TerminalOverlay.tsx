@@ -248,7 +248,7 @@ function XTermPane({ id, visible, theme }: XTermPaneProps) {
       cursorBlink:       settings.cursorBlink  ?? true,
       cursorStyle:       settings.cursorStyle   || 'bar',
       scrollback:        settings.scrollback    || 10000,
-      allowTransparency: false,
+      allowTransparency: /rgba|hsla|color-mix/i.test(theme.bgTerm),
       convertEol:        true,
       scrollOnUserInput: true,
     });
@@ -455,8 +455,9 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
       customThemes: appearanceSettings.customThemes,
       uiFontFamily: appearanceSettings.uiFontFamily,
       monoFontFamily: settings.fontFamily,
+      panelTransparency: appearanceSettings.panelTransparency,
     }),
-    [appearanceProp, appearanceSettings.activeThemeId, appearanceSettings.customThemes, appearanceSettings.uiFontFamily, settings.fontFamily],
+    [appearanceProp, appearanceSettings.activeThemeId, appearanceSettings.customThemes, appearanceSettings.panelTransparency, appearanceSettings.uiFontFamily, settings.fontFamily],
   );
   const theme = useMemo(() => themeFromAppearance(appearance.theme), [appearance.theme]);
   const uiFont = appearance.fonts.ui;

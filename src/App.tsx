@@ -15,7 +15,19 @@ import {
   type OverlayPanelDefinition,
 } from './panels/panelRegistry';
 import { PluginsManager } from './components/PluginsManager';
+import { animationSystemConfig } from './config/animations';
 import { getPluginStorageDirectory, pluginSystemConfig } from './config/plugins';
+import {
+  AnimationOverlayLayer,
+  createBuiltInOverlayAnimations,
+  isFrontendAnimationFile,
+  loadAnimationFromSource,
+  mergeOverlayAnimations,
+  resolveAnimationDurationMs,
+  resolveAnimationShellStyle,
+  type AnimationFileEntry,
+  type LoadedOverlayAnimation,
+} from './components/animationRuntime';
 import {
   isFrontendPluginFile,
   loadPluginFromSource,
@@ -44,12 +56,14 @@ import {
 import {
   clampOverlayAnimationDuration,
   clampOverlayAnimationIntensity,
-  getOverlayAnimationStyle,
-  getOverlayEffectStyle,
   type OverlayAnimationDirection,
   type OverlayAnimationPhase,
-  type OverlayAnimationPresetId,
 } from './config/overlayAnimations';
+import {
+  clampOverlayVisualControlValue,
+  formatOverlayVisualControlValue,
+  overlayVisualControls,
+} from './config/overlayWindow';
 import { detectClientPlatform, getPlatformPathSeparator, joinPlatformPath, type RuntimePlatform } from './config/platform';
 import { derivePanelOpenState, reorderPanelIds } from './components/panelUtils';
 import { OverlayScrollArea } from './components/OverlayScrollArea';
@@ -58,17 +72,9 @@ import { useSettingsStore, type LayoutPanelState, type OverlayWindowAnchor } fro
 import { useTerminalStore } from './store/terminalStore';
 
 const LOGICAL_PADDING = 12;
-const APP_OPACITY_MIN = 0.15;
-const APP_OPACITY_MAX = 1;
-const APP_ZOOM_MIN = 0.7;
-const APP_ZOOM_MAX = 1.35;
 
 function clampValue(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
-}
-
-function formatPercent(value: number): string {
-  return `${Math.round(value * 100)}%`;
 }
 
 function parseExternalArgs(raw: string): string[] {
@@ -263,19 +269,26 @@ function LayoutPinnedPanelSlot({
 function App() {
   const [overlayPhase, setOverlayPhase] = useState<OverlayAnimationPhase>('closed');
   const [overlayAnimationDirection, setOverlayAnimationDirection] = useState<OverlayAnimationDirection>('enter');
-  const [activeAnimationPresetId, setActiveAnimationPresetId] = useState<OverlayAnimationPresetId>('spring-lift');
+  const [activeAnimation, setActiveAnimation] = useState<LoadedOverlayAnimation | null>(null);
+  const [animationProgress, setAnimationProgress] = useState(0);
+  const [authoredAnimations, setAuthoredAnimations] = useState<LoadedOverlayAnimation[]>([]);
+  const [authoredAnimationsError, setAuthoredAnimationsError] = useState<string | null>(null);
+  const [authoredAnimationsLoading, setAuthoredAnimationsLoading] = useState(true);
   const [folderPlugins, setFolderPlugins] = useState<LoadedOverlayPlugin[]>([]);
   const [folderPluginsError, setFolderPluginsError] = useState<string | null>(null);
   const [folderPluginsLoading, setFolderPluginsLoading] = useState(true);
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
+  const builtInAnimations = useMemo(() => createBuiltInOverlayAnimations(), []);
   const overlayPhaseRef = useRef<OverlayAnimationPhase>('closed');
   overlayPhaseRef.current = overlayPhase;
   const overlayVisibleRef = useRef(false);
   const animationTimerRef = useRef<number | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const progressFrameRef = useRef<number | null>(null);
   const lastToggleAtRef = useRef(0);
   const isProgrammaticResizeRef = useRef(false);
   const interactionLockUntilRef = useRef(0);
+  const animationSignatureRef = useRef('');
   const pluginSignatureRef = useRef('');
   const dragHideRestoreRef = useRef(false);
   const refreshFolderPluginsRef = useRef<(force?: boolean) => Promise<void>>(async () => undefined);
@@ -305,48 +318,109 @@ function App() {
       packageThemes: resolvedPackageThemes,
       uiFontFamily: appearance.uiFontFamily,
       monoFontFamily: settings.fontFamily,
+      panelTransparency: appearance.panelTransparency,
     }),
-    [appearance.activeThemeId, appearance.customThemes, appearance.uiFontFamily, resolvedPackageThemes, settings.fontFamily],
+    [appearance.activeThemeId, appearance.customThemes, appearance.panelTransparency, appearance.uiFontFamily, resolvedPackageThemes, settings.fontFamily],
   );
   const theme = resolvedAppearance.theme;
   const accent = theme.palette.accent;
   const isOverlayVisible = overlayPhase !== 'closed';
   overlayVisibleRef.current = isOverlayVisible;
   const appOpacity = appearance.appOpacity ?? 1.0;
+  const panelTransparency = appearance.panelTransparency ?? overlayVisualControls.panelTransparency.defaultValue;
   const appZoom = appearance.appZoom ?? 1.0;
   const appBlur = appearance.appBlur ?? true;
+  const appBlurStrength = appearance.appBlurStrength ?? overlayVisualControls.blurStrength.defaultValue;
   const animationsEnabled = appearance.animations ?? true;
-  const appOpenAnimation = animationsEnabled ? (appearance.appOpenAnimation ?? 'spring-lift') : 'none';
-  const appCloseAnimation = animationsEnabled ? (appearance.appCloseAnimation ?? 'burn') : 'none';
+  const appOpenAnimation = animationsEnabled
+    ? (appearance.appOpenAnimation ?? animationSystemConfig.defaultOpenAnimationId)
+    : 'none';
+  const appCloseAnimation = animationsEnabled
+    ? (appearance.appCloseAnimation ?? animationSystemConfig.defaultCloseAnimationId)
+    : 'none';
   const appAnimationDurationMs = animationsEnabled
     ? clampOverlayAnimationDuration(appearance.appAnimationDurationMs ?? 320)
     : 140;
   const appAnimationIntensity = clampOverlayAnimationIntensity(appearance.appAnimationIntensity ?? 1);
-  const clampedAppOpacity = clampValue(appOpacity, APP_OPACITY_MIN, APP_OPACITY_MAX);
-  const clampedAppZoom = clampValue(appZoom, APP_ZOOM_MIN, APP_ZOOM_MAX);
-  const overlayAnchor = settings.overlayAnchor === 'top' ? 'top' : 'bottom';
+  const clampedAppOpacity = clampOverlayVisualControlValue('opacity', appOpacity);
+  const clampedPanelTransparency = clampOverlayVisualControlValue('panelTransparency', panelTransparency);
+  const clampedAppZoom = clampOverlayVisualControlValue('zoom', appZoom);
+  const clampedAppBlurStrength = clampOverlayVisualControlValue('blurStrength', appBlurStrength);
+  const overlayAnchor: OverlayWindowAnchor = settings.overlayAnchor === 'top' ? 'top' : 'bottom';
   const isTopAnchored = overlayAnchor === 'top';
   const scaledWidth = `${100 / clampedAppZoom}%`;
   const scaledHeight = `${100 / clampedAppZoom}%`;
   const shellBackgroundColor = appBlur ? theme.palette.shellBackground : theme.palette.shellBackgroundSolid;
-  const shellAnimationStyle = getOverlayAnimationStyle({
+  const blurStrengthRatio = overlayVisualControls.blurStrength.max > 0
+    ? clampedAppBlurStrength / overlayVisualControls.blurStrength.max
+    : 0;
+  const shellBackdropFilter = appBlur && clampedAppBlurStrength > 0
+    ? `blur(${clampedAppBlurStrength}px) saturate(${(1.05 + blurStrengthRatio * 0.35).toFixed(2)})`
+    : 'none';
+  const availableAnimations = useMemo(
+    () => mergeOverlayAnimations(builtInAnimations, authoredAnimations),
+    [authoredAnimations, builtInAnimations],
+  );
+  const availableAnimationsById = useMemo(
+    () => new Map(availableAnimations.map(animation => [animation.id, animation])),
+    [availableAnimations],
+  );
+  const resolveAnimationById = useCallback((id: string, fallbackId: string) => (
+    availableAnimationsById.get(id)
+      ?? availableAnimationsById.get(fallbackId)
+      ?? builtInAnimations[0]
+      ?? null
+  ), [availableAnimationsById, builtInAnimations]);
+  const shellAnimation = activeAnimation ?? resolveAnimationById(
+    overlayAnimationDirection === 'exit' ? appCloseAnimation : appOpenAnimation,
+    overlayAnimationDirection === 'exit'
+      ? animationSystemConfig.defaultCloseAnimationId
+      : animationSystemConfig.defaultOpenAnimationId,
+  );
+  const shellAnimationDurationMs = resolveAnimationDurationMs(
+    shellAnimation,
+    overlayAnimationDirection,
+    appAnimationDurationMs,
+  );
+  const shellAnimationContext = useMemo(() => ({
+    animation: shellAnimation ?? {
+      id: animationSystemConfig.defaultOpenAnimationId,
+      name: 'Animation',
+      filePath: 'builtin:animation',
+      animationRoot: 'builtin',
+      source: 'built-in' as const,
+    },
     phase: overlayPhase,
     direction: overlayAnimationDirection,
-    presetId: activeAnimationPresetId,
+    progress: animationProgress,
+    durationMs: shellAnimationDurationMs,
     baseOpacity: clampedAppOpacity,
     intensity: appAnimationIntensity,
-    durationMs: appAnimationDurationMs,
     verticalOrigin: overlayAnchor,
-  });
-  const shellEffectStyle = getOverlayEffectStyle({
-    phase: overlayPhase,
-    direction: overlayAnimationDirection,
-    presetId: activeAnimationPresetId,
-    durationMs: appAnimationDurationMs,
-    intensity: appAnimationIntensity,
     accentColor: accent,
-    verticalOrigin: overlayAnchor,
-  });
+    blurStrength: clampedAppBlurStrength,
+    zoom: clampedAppZoom,
+    theme,
+    viewport: {
+      width: typeof window === 'undefined' ? 0 : window.innerWidth,
+      height: typeof window === 'undefined' ? 0 : window.innerHeight,
+      anchoredTo: overlayAnchor,
+    },
+  }), [
+    accent,
+    animationProgress,
+    appAnimationIntensity,
+    clampedAppBlurStrength,
+    clampedAppOpacity,
+    clampedAppZoom,
+    overlayAnimationDirection,
+    overlayAnchor,
+    overlayPhase,
+    shellAnimation,
+    shellAnimationDurationMs,
+    theme,
+  ]);
+  const shellAnimationStyle = resolveAnimationShellStyle(shellAnimation, shellAnimationContext);
   const combinedShellTransform = typeof shellAnimationStyle.transform === 'string'
     ? `${shellAnimationStyle.transform} scale(${clampedAppZoom})`
     : `scale(${clampedAppZoom})`;
@@ -425,6 +499,28 @@ function App() {
       window.cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
     }
+    if (progressFrameRef.current !== null) {
+      window.cancelAnimationFrame(progressFrameRef.current);
+      progressFrameRef.current = null;
+    }
+  }, []);
+
+  const startAnimationProgress = useCallback((durationMs: number) => {
+    setAnimationProgress(0);
+    const safeDurationMs = Math.max(durationMs, 1);
+    const startedAt = performance.now();
+
+    const tick = (frameNow: number) => {
+      const nextProgress = clampValue((frameNow - startedAt) / safeDurationMs, 0, 1);
+      setAnimationProgress(nextProgress);
+      if (nextProgress >= 1) {
+        progressFrameRef.current = null;
+        return;
+      }
+      progressFrameRef.current = window.requestAnimationFrame(tick);
+    };
+
+    progressFrameRef.current = window.requestAnimationFrame(tick);
   }, []);
 
   const markOverlayRuntimePhase = useCallback((phase: OverlayAnimationPhase, visible: boolean) => {
@@ -453,11 +549,21 @@ function App() {
         overlayWidth: store.overlayWidth,
         overlayAnchor: store.overlayAnchor === 'top' ? 'top' : 'bottom',
       });
+      const nextAnimation = resolveAnimationById(
+        appOpenAnimation,
+        animationSystemConfig.defaultOpenAnimationId,
+      );
+      const nextDurationMs = resolveAnimationDurationMs(
+        nextAnimation,
+        'enter',
+        appAnimationDurationMs,
+      );
 
       setOverlayAnimationDirection('enter');
-      setActiveAnimationPresetId(appOpenAnimation);
+      setActiveAnimation(nextAnimation);
+      setAnimationProgress(0);
       markOverlayRuntimePhase('opening', true);
-      interactionLockUntilRef.current = Date.now() + appAnimationDurationMs + 80;
+      interactionLockUntilRef.current = Date.now() + nextDurationMs + 80;
       setOverlayPhase('closed');
       if (layout.healedHeight !== null && layout.healedHeight !== store.overlayHeight) {
         useSettingsStore.getState().updateTerminal({ overlayHeight: layout.healedHeight });
@@ -474,18 +580,21 @@ function App() {
         isProgrammaticResizeRef.current = false;
         markOverlayRuntimePhase('opening', true);
         setOverlayPhase('opening');
+        startAnimationProgress(nextDurationMs);
         animationTimerRef.current = window.setTimeout(() => {
           markOverlayRuntimePhase('open', true);
           setOverlayPhase('open');
+          setAnimationProgress(1);
           animationTimerRef.current = null;
-        }, appAnimationDurationMs);
+        }, nextDurationMs);
       });
     } catch (e) {
       isProgrammaticResizeRef.current = false;
       markOverlayRuntimePhase('closed', false);
+      setAnimationProgress(0);
       console.warn('OverlayTerm: failed to position/show', e);
     }
-  }, [appAnimationDurationMs, appOpenAnimation, clearAnimationClock, markOverlayRuntimePhase]);
+  }, [appAnimationDurationMs, appOpenAnimation, clearAnimationClock, markOverlayRuntimePhase, resolveAnimationById, startAnimationProgress]);
 
   const handleToggleOverlayAnchor = useCallback(() => {
     updateTerminal({
@@ -500,22 +609,34 @@ function App() {
     }
 
     clearAnimationClock();
+    const nextAnimation = resolveAnimationById(
+      appCloseAnimation,
+      animationSystemConfig.defaultCloseAnimationId,
+    );
+    const nextDurationMs = resolveAnimationDurationMs(
+      nextAnimation,
+      'exit',
+      appAnimationDurationMs,
+    );
     setOverlayAnimationDirection('exit');
-    setActiveAnimationPresetId(appCloseAnimation);
+    setActiveAnimation(nextAnimation);
+    setAnimationProgress(0);
     markOverlayRuntimePhase('closing', true);
-    interactionLockUntilRef.current = Date.now() + appAnimationDurationMs + 80;
+    interactionLockUntilRef.current = Date.now() + nextDurationMs + 80;
     setOverlayPhase('closing');
+    startAnimationProgress(nextDurationMs);
     animationTimerRef.current = window.setTimeout(async () => {
       animationTimerRef.current = null;
       markOverlayRuntimePhase('closed', false);
       setOverlayPhase('closed');
+      setAnimationProgress(0);
       try {
         await getCurrentWindow().hide();
       } catch {
         // Ignore hide failures during teardown.
       }
-    }, appAnimationDurationMs);
-  }, [appAnimationDurationMs, appCloseAnimation, clearAnimationClock, markOverlayRuntimePhase]);
+    }, nextDurationMs);
+  }, [appAnimationDurationMs, appCloseAnimation, clearAnimationClock, markOverlayRuntimePhase, resolveAnimationById, startAnimationProgress]);
 
   const hideOverlayForDrag = useCallback(async () => {
     const currentPhase = overlayPhaseRef.current;
@@ -527,6 +648,7 @@ function App() {
     clearAnimationClock();
     markOverlayRuntimePhase('closed', false);
     setOverlayPhase('closed');
+    setAnimationProgress(0);
     try {
       await getCurrentWindow().hide();
     } catch {
@@ -658,7 +780,11 @@ function App() {
       const direction = event.deltaY < 0 ? 1 : -1;
       const multiplier = event.shiftKey ? 3 : 1;
       const currentZoom = useSettingsStore.getState().settings.appearance.appZoom ?? 1;
-      const nextZoom = clampValue(currentZoom + (0.025 * direction * multiplier), APP_ZOOM_MIN, APP_ZOOM_MAX);
+      const nextZoom = clampValue(
+        currentZoom + (overlayVisualControls.zoom.step * direction * multiplier),
+        overlayVisualControls.zoom.min,
+        overlayVisualControls.zoom.max,
+      );
       useSettingsStore.getState().updateAppearance({ appZoom: nextZoom });
     };
 
@@ -769,6 +895,60 @@ function App() {
     await invoke('fs_open_file', { path: themeSystemConfig.themesDirectory });
   }, []);
 
+  const openAnimationsFolder = useCallback(async () => {
+    if (!isTauri()) {
+      return;
+    }
+
+    await ensureDir(animationSystemConfig.animationsDirectory);
+    await invoke('fs_open_file', { path: animationSystemConfig.animationsDirectory });
+  }, []);
+
+  const refreshAuthoredAnimations = useCallback(async (force = false) => {
+    if (!isTauri()) {
+      setAuthoredAnimations([]);
+      setAuthoredAnimationsError(null);
+      setAuthoredAnimationsLoading(false);
+      return;
+    }
+
+    if (force) {
+      animationSignatureRef.current = '';
+    }
+
+    setAuthoredAnimationsLoading(prev => prev && !force);
+    setAuthoredAnimationsError(null);
+    try {
+      await ensureDir(animationSystemConfig.animationsDirectory);
+      const listed = await invoke<AnimationFileEntry[]>('fs_list_dir', {
+        path: animationSystemConfig.animationsDirectory,
+        showHidden: false,
+      });
+      const files = listed
+        .filter(isFrontendAnimationFile)
+        .sort((left, right) => left.name.localeCompare(right.name));
+      const nextSignature = files.map(file => `${file.path}:${file.modified}`).join('|');
+
+      if (!force && nextSignature === animationSignatureRef.current) {
+        setAuthoredAnimationsLoading(false);
+        return;
+      }
+
+      animationSignatureRef.current = nextSignature;
+      const loaded = await Promise.all(files.map(async file => {
+        const source = await invoke<string>('fs_read_text_file', { path: file.path });
+        return loadAnimationFromSource(source, file);
+      }));
+
+      setAuthoredAnimations(loaded);
+    } catch (error) {
+      setAuthoredAnimations([]);
+      setAuthoredAnimationsError(String(error));
+    } finally {
+      setAuthoredAnimationsLoading(false);
+    }
+  }, []);
+
   const createPluginApi = useCallback((plugin: OverlayPluginContext): OverlayPluginApi => {
     const appLocalData = TauriFs.BaseDirectory.AppLocalData;
     const separator = getPlatformPathSeparator(runtimePlatform);
@@ -861,6 +1041,18 @@ function App() {
   }, [createPluginApi]);
 
   useEffect(() => {
+    void refreshAuthoredAnimations(true);
+  }, [refreshAuthoredAnimations]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void refreshAuthoredAnimations();
+    }, animationSystemConfig.scanIntervalMs);
+
+    return () => window.clearInterval(interval);
+  }, [refreshAuthoredAnimations]);
+
+  useEffect(() => {
     refreshFolderPluginsRef.current = refreshFolderPlugins;
   }, [refreshFolderPlugins]);
 
@@ -895,6 +1087,13 @@ function App() {
         themePackagesError,
         onRefreshThemes: refreshThemePackages,
         onOpenThemesFolder: openThemesFolder,
+        animations: availableAnimations,
+        animationDiagnostics: authoredAnimations.filter(animation => Boolean(animation.error)),
+        animationsDirectory: animationSystemConfig.animationsDirectory,
+        animationsLoading: authoredAnimationsLoading,
+        animationsError: authoredAnimationsError,
+        onRefreshAnimations: () => refreshAuthoredAnimations(true),
+        onOpenAnimationsFolder: openAnimationsFolder,
         renderPluginsManager: () => (
           <PluginsManager
             appearance={resolvedAppearance}
@@ -922,10 +1121,16 @@ function App() {
       handleOpenInTerminal,
       hideOverlay,
       isOverlayVisible,
+      authoredAnimations,
+      authoredAnimationsError,
+      authoredAnimationsLoading,
+      availableAnimations,
+      openAnimationsFolder,
       openPluginsFolder,
       openThemesFolder,
       pinnedExplorerPanel?.mode,
       refreshThemePackages,
+      refreshAuthoredAnimations,
       refreshFolderPlugins,
       resolvedAppearance,
       themePackages,
@@ -1170,12 +1375,16 @@ function App() {
       onClose={() => { void hideOverlay(); }}
       accent={accent}
       opacity={clampedAppOpacity}
-      onOpacityChange={(v) => updateAppearance({ appOpacity: clampValue(v, APP_OPACITY_MIN, APP_OPACITY_MAX) })}
+      onOpacityChange={(v) => updateAppearance({ appOpacity: clampOverlayVisualControlValue('opacity', v) })}
+      panelTransparency={clampedPanelTransparency}
+      onPanelTransparencyChange={(v) => updateAppearance({ panelTransparency: clampOverlayVisualControlValue('panelTransparency', v) })}
       zoom={clampedAppZoom}
-      onZoomChange={(v) => updateAppearance({ appZoom: clampValue(v, APP_ZOOM_MIN, APP_ZOOM_MAX) })}
+      onZoomChange={(v) => updateAppearance({ appZoom: clampOverlayVisualControlValue('zoom', v) })}
       showViewportControls={activeLayoutProfile.controlDock.enabled}
       blur={appBlur}
       onBlurChange={(v) => updateAppearance({ appBlur: v })}
+      blurStrength={clampedAppBlurStrength}
+      onBlurStrengthChange={(v) => updateAppearance({ appBlurStrength: clampOverlayVisualControlValue('blurStrength', v) })}
       blurPlatform={runtimePlatform}
       overlayAnchor={overlayAnchor}
       toggleShortcutLabel={formatHotkeyLabel(keybindings.terminalToggle)}
@@ -1224,6 +1433,8 @@ function App() {
               backgroundImage: theme.effects.backgroundImage,
               backgroundSize: theme.effects.backgroundSize,
               backgroundPosition: theme.effects.backgroundPosition,
+              backdropFilter: shellBackdropFilter,
+              WebkitBackdropFilter: shellBackdropFilter,
               color: theme.palette.textPrimary,
               fontFamily: resolvedAppearance.fonts.ui,
               boxShadow: theme.effects.overlayShadow,
@@ -1238,7 +1449,10 @@ function App() {
             {(theme.visuals ?? []).map(layer => (
               <div key={layer.id} aria-hidden style={buildThemeVisualStyle(layer)} />
             ))}
-            {shellEffectStyle && <div aria-hidden style={shellEffectStyle} />}
+            <AnimationOverlayLayer
+              animation={shellAnimation}
+              context={shellAnimationContext}
+            />
 
             <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
               {!isTopAnchored && (
@@ -1337,6 +1551,7 @@ function CompactScrubberControl({
   border,
   muted,
   text,
+  formatValue,
   active,
   onActiveChange,
   onChange,
@@ -1352,6 +1567,7 @@ function CompactScrubberControl({
   border: string;
   muted: string;
   text: string;
+  formatValue: (value: number) => string;
   active: boolean;
   onActiveChange: (next: boolean) => void;
   onChange: (value: number) => void;
@@ -1410,7 +1626,7 @@ function CompactScrubberControl({
           {label}
         </span>
         <span style={{ fontSize: 8, lineHeight: 1, color: active ? accent : text }}>
-          {formatPercent(value)}
+          {formatValue(value)}
         </span>
       </button>
 
@@ -1509,10 +1725,14 @@ function OverlayViewportDock({
   text,
   opacity,
   onOpacityChange,
+  panelTransparency,
+  onPanelTransparencyChange,
   zoom,
   onZoomChange,
   blur,
   onBlurChange,
+  blurStrength,
+  onBlurStrengthChange,
   blurPlatform,
 }: {
   accent: string;
@@ -1521,14 +1741,18 @@ function OverlayViewportDock({
   text: string;
   opacity: number;
   onOpacityChange: (v: number) => void;
+  panelTransparency: number;
+  onPanelTransparencyChange: (v: number) => void;
   zoom: number;
   onZoomChange: (v: number) => void;
   blur: boolean;
   onBlurChange: (v: boolean) => void;
+  blurStrength: number;
+  onBlurStrengthChange: (v: number) => void;
   blurPlatform: RuntimePlatform;
 }) {
   const supportsNativeBlur = blurPlatform === 'macos' || blurPlatform === 'windows';
-  const [activeControl, setActiveControl] = useState<'opacity' | 'zoom' | null>(null);
+  const [activeControl, setActiveControl] = useState<'opacity' | 'panelTransparency' | 'zoom' | 'blur' | null>(null);
 
   return (
     <div
@@ -1566,34 +1790,72 @@ function OverlayViewportDock({
         label="Op"
         title="Adjust window opacity."
         value={opacity}
-        min={APP_OPACITY_MIN}
-        max={APP_OPACITY_MAX}
-        step={0.02}
+        min={overlayVisualControls.opacity.min}
+        max={overlayVisualControls.opacity.max}
+        step={overlayVisualControls.opacity.step}
         accent={accent}
         border={border}
         muted={muted}
         text={text}
+        formatValue={value => formatOverlayVisualControlValue('opacity', value)}
         active={activeControl === 'opacity'}
         onActiveChange={next => setActiveControl(next ? 'opacity' : null)}
         onChange={onOpacityChange}
-        onReset={() => onOpacityChange(1)}
+        onReset={() => onOpacityChange(overlayVisualControls.opacity.defaultValue)}
+      />
+
+      <CompactScrubberControl
+        label="Pt"
+        title="Adjust panel transparency without dimming the panel content."
+        value={panelTransparency}
+        min={overlayVisualControls.panelTransparency.min}
+        max={overlayVisualControls.panelTransparency.max}
+        step={overlayVisualControls.panelTransparency.step}
+        accent={accent}
+        border={border}
+        muted={muted}
+        text={text}
+        formatValue={value => formatOverlayVisualControlValue('panelTransparency', value)}
+        active={activeControl === 'panelTransparency'}
+        onActiveChange={next => setActiveControl(next ? 'panelTransparency' : null)}
+        onChange={onPanelTransparencyChange}
+        onReset={() => onPanelTransparencyChange(overlayVisualControls.panelTransparency.defaultValue)}
+      />
+
+      <CompactScrubberControl
+        label="Bl"
+        title="Adjust glass blur strength."
+        value={blurStrength}
+        min={overlayVisualControls.blurStrength.min}
+        max={overlayVisualControls.blurStrength.max}
+        step={overlayVisualControls.blurStrength.step}
+        accent={accent}
+        border={border}
+        muted={muted}
+        text={text}
+        formatValue={value => formatOverlayVisualControlValue('blurStrength', value)}
+        active={activeControl === 'blur'}
+        onActiveChange={next => setActiveControl(next ? 'blur' : null)}
+        onChange={onBlurStrengthChange}
+        onReset={() => onBlurStrengthChange(overlayVisualControls.blurStrength.defaultValue)}
       />
 
       <CompactScrubberControl
         label="Zm"
         title="Adjust window zoom."
         value={zoom}
-        min={APP_ZOOM_MIN}
-        max={APP_ZOOM_MAX}
-        step={0.025}
+        min={overlayVisualControls.zoom.min}
+        max={overlayVisualControls.zoom.max}
+        step={overlayVisualControls.zoom.step}
         accent={accent}
         border={border}
         muted={muted}
         text={text}
+        formatValue={value => formatOverlayVisualControlValue('zoom', value)}
         active={activeControl === 'zoom'}
         onActiveChange={next => setActiveControl(next ? 'zoom' : null)}
         onChange={onZoomChange}
-        onReset={() => onZoomChange(1)}
+        onReset={() => onZoomChange(overlayVisualControls.zoom.defaultValue)}
       />
     </div>
   );
@@ -1618,11 +1880,15 @@ function TopBar({
   accent,
   opacity,
   onOpacityChange,
+  panelTransparency,
+  onPanelTransparencyChange,
   zoom,
   onZoomChange,
   showViewportControls,
   blur,
   onBlurChange,
+  blurStrength,
+  onBlurStrengthChange,
   blurPlatform,
   overlayAnchor,
   toggleShortcutLabel,
@@ -1645,11 +1911,15 @@ function TopBar({
   accent: string;
   opacity: number;
   onOpacityChange: (value: number) => void;
+  panelTransparency: number;
+  onPanelTransparencyChange: (value: number) => void;
   zoom: number;
   onZoomChange: (value: number) => void;
   showViewportControls: boolean;
   blur: boolean;
   onBlurChange: (v: boolean) => void;
+  blurStrength: number;
+  onBlurStrengthChange: (value: number) => void;
   blurPlatform: RuntimePlatform;
   overlayAnchor: OverlayWindowAnchor;
   toggleShortcutLabel: string;
@@ -2096,10 +2366,14 @@ function TopBar({
             text={TEXT}
             opacity={opacity}
             onOpacityChange={onOpacityChange}
+            panelTransparency={panelTransparency}
+            onPanelTransparencyChange={onPanelTransparencyChange}
             zoom={zoom}
             onZoomChange={onZoomChange}
             blur={blur}
             onBlurChange={onBlurChange}
+            blurStrength={blurStrength}
+            onBlurStrengthChange={onBlurStrengthChange}
             blurPlatform={blurPlatform}
           />
         )}
@@ -2138,10 +2412,14 @@ function TopBar({
             text={TEXT}
             opacity={opacity}
             onOpacityChange={onOpacityChange}
+            panelTransparency={panelTransparency}
+            onPanelTransparencyChange={onPanelTransparencyChange}
             zoom={zoom}
             onZoomChange={onZoomChange}
             blur={blur}
             onBlurChange={onBlurChange}
+            blurStrength={blurStrength}
+            onBlurStrengthChange={onBlurStrengthChange}
             blurPlatform={blurPlatform}
           />
         )}

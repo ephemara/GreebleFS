@@ -9,6 +9,7 @@ import { ScreenshotsManager } from '../components/ScreenshotsManager';
 import { PythonWorkbench } from '../components/PythonWorkbench';
 import { FolderPluginRenderer } from '../components/PluginsManager';
 import { SettingsPage } from '../components/SettingsPage';
+import type { LoadedOverlayAnimation } from '../components/animationRuntime';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
 import type {
@@ -49,6 +50,13 @@ export function createBuiltInPanelDefinitions({
   themePackagesError,
   onRefreshThemes,
   onOpenThemesFolder,
+  animations,
+  animationDiagnostics,
+  animationsDirectory,
+  animationsLoading,
+  animationsError,
+  onRefreshAnimations,
+  onOpenAnimationsFolder,
   renderPluginsManager,
 }: {
   appearance: ResolvedOverlayAppearance;
@@ -63,6 +71,13 @@ export function createBuiltInPanelDefinitions({
   themePackagesError: string | null;
   onRefreshThemes: () => Promise<void>;
   onOpenThemesFolder: () => Promise<void>;
+  animations: LoadedOverlayAnimation[];
+  animationDiagnostics: LoadedOverlayAnimation[];
+  animationsDirectory: string;
+  animationsLoading: boolean;
+  animationsError: string | null;
+  onRefreshAnimations: () => Promise<void>;
+  onOpenAnimationsFolder: () => Promise<void>;
   renderPluginsManager: () => React.ReactNode;
 }): OverlayPanelDefinition[] {
   const accent = appearance.theme.palette.accent;
@@ -155,6 +170,13 @@ export function createBuiltInPanelDefinitions({
           themePackagesError={themePackagesError}
           onRefreshThemes={onRefreshThemes}
           onOpenThemesFolder={onOpenThemesFolder}
+          animations={animations}
+          animationDiagnostics={animationDiagnostics}
+          animationsDirectory={animationsDirectory}
+          animationsLoading={animationsLoading}
+          animationsError={animationsError}
+          onRefreshAnimations={onRefreshAnimations}
+          onOpenAnimationsFolder={onOpenAnimationsFolder}
         />
       ),
     },

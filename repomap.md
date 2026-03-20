@@ -2,6 +2,7 @@
 
 ```text
 📂 OverlayTerm
+    └── 📂 animations
     └── 📂 AppleCommand
         └── 📂 public
     └── 📂 crates
@@ -196,6 +197,7 @@
         └── 📂 config
         └── 📂 input
         └── 📂 panels
+        └── 📂 runtime
         └── 📂 store
         └── 📂 test
     └── 📂 src-tauri
@@ -211,6 +213,12 @@
                 └── 📂 icons
                 └── 📂 incremental
         └── 📂 target-tests-ci
+            └── 📂 debug
+                └── 📂 deps
+                └── 📂 examples
+                └── 📂 icons
+                └── 📂 incremental
+        └── 📂 target-tests-size
             └── 📂 debug
                 └── 📂 deps
                 └── 📂 examples
