@@ -223,6 +223,7 @@
                 └── 📂 file-opening-windows
                 └── 📂 src-tauri
     └── 📂 themes
+        └── 📂 _starter
         └── 📂 aqua-light
             └── 📂 assets
             └── 📂 icons

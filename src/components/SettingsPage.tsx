@@ -26,6 +26,7 @@ import {
   type FolderIconRule,
   type FolderIconValue,
 } from '../config/folderIcons';
+import { getBuiltInIconTheme } from '../config/iconTheme';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import {
   BUILT_IN_LAYOUT_MANIFEST,
@@ -244,19 +245,20 @@ function SettingsRailButton({
     <button
       type="button"
       onClick={onClick}
-      className="w-full rounded px-3 py-3 text-left transition-colors"
+      title={subtitle}
+      className="w-full rounded px-2.5 py-2.5 text-left transition-colors"
       style={{
         border: `1px solid ${active ? `${accent}88` : border}`,
-        background: active ? `${accent}16` : 'rgba(255,255,255,0.025)',
+        background: active ? `${accent}12` : 'rgba(255,255,255,0.02)',
         color: text,
         boxShadow: active ? `inset 0 0 0 1px ${accent}22` : 'none',
       }}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-center gap-2.5">
         <div
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded"
           style={{
-            background: active ? `${accent}20` : 'rgba(255,255,255,0.04)',
+            background: active ? `${accent}18` : 'rgba(255,255,255,0.035)',
             color: active ? accent : muted,
             border: `1px solid ${active ? `${accent}55` : 'rgba(255,255,255,0.06)'}`,
           }}
@@ -264,19 +266,8 @@ function SettingsRailButton({
           {icon}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-[11px] font-semibold">{label}</div>
-            {active && (
-              <span
-                className="rounded px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em]"
-                style={{ background: `${accent}18`, color: accent, border: `1px solid ${accent}44` }}
-              >
-                Open
-              </span>
-            )}
-          </div>
-          <p className="mt-1 text-[11px] leading-4" style={{ color: muted }}>{subtitle}</p>
-          <div className="mt-2 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: active ? accent : muted }}>
+          <div className="text-[11px] font-semibold">{label}</div>
+          <div className="mt-1 text-[10px] leading-4" style={{ color: active ? accent : muted }}>
             {summary}
           </div>
         </div>
@@ -409,7 +400,7 @@ export function SettingsPage({
   const text = appearance.theme.palette.textPrimary;
   const muted = appearance.theme.palette.textMuted;
   const accent = appearance.theme.palette.accent;
-  const themeIconEntries = appearance.theme.assets?.iconEntries;
+  const themeIconTheme = appearance.theme.assets?.iconTheme ?? getBuiltInIconTheme();
   const activeLayoutProfile = useMemo(
     () => resolveLayoutProfile(layoutManifestState.manifest, settings.layout.activeProfileId),
     [layoutManifestState.manifest, settings.layout.activeProfileId],
@@ -499,8 +490,8 @@ export function SettingsPage({
       key: 'explorer',
       label: 'Explorer',
       subtitle: 'Startup path, file visibility, and folder rules.',
-      summary: `${settings.explorer.showHiddenFiles ? 'Hidden on' : 'Hidden off'} · ${settings.explorer.folderIconRules.length} icon rules`,
-      detail: 'Shape the file browser around your machine, your folder taxonomy, and the icon logic that makes the browser readable.',
+      summary: `${settings.explorer.folderClickMode === 'single' ? 'Single-click folders' : 'Double-click folders'} · ${settings.explorer.folderIconRules.length} icon rules`,
+      detail: 'Shape the file browser around your machine, including startup path, folder activation behavior, and icon rules.',
       icon: <FolderOpen size={14} />,
     },
     {
@@ -549,40 +540,16 @@ export function SettingsPage({
         background: `linear-gradient(180deg, ${appearance.theme.palette.appBackgroundAlt} 0%, ${panelBackground} 100%)`,
       }}
     >
-      <aside className="flex min-h-0 w-[292px] shrink-0 flex-col border-r" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-        <div className="border-b px-5 py-5" style={{ borderColor: border }}>
+      <aside className="flex min-h-0 w-[236px] shrink-0 flex-col border-r" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
+        <div className="border-b px-4 py-4" style={{ borderColor: border }}>
           <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: muted }}>
             <SlidersHorizontal size={12} />
             <span>Workbench Settings</span>
           </div>
-          <h1 className="mt-3 text-[22px] font-semibold leading-none" style={{ color: text }}>Tune the shell.</h1>
-          <p className="mt-2 text-[11px] leading-5" style={{ color: muted }}>
-            Navigate one settings group at a time instead of wading through one giant stack.
-          </p>
+          <h1 className="mt-2 text-[18px] font-semibold leading-none" style={{ color: text }}>Settings</h1>
         </div>
 
-        <div className="px-4 pt-4">
-          <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-            <div className="grid grid-cols-1 gap-2">
-              <div className="rounded border px-3 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                <div className="text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ color: muted }}>Theme</div>
-                <div className="mt-1 text-[11px] font-semibold" style={{ color: text }}>{appearance.theme.name}</div>
-              </div>
-              <div className="rounded border px-3 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                <div className="text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ color: muted }}>Layout</div>
-                <div className="mt-1 text-[11px] font-semibold" style={{ color: text }}>{activeLayoutProfile.label}</div>
-              </div>
-              <div className="rounded border px-3 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                <div className="text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ color: muted }}>Startup</div>
-                <div className="mt-1 text-[11px] font-semibold" style={{ color: text }}>
-                  {settings.system.launchAtStartup ? 'Enabled' : 'Disabled'}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: '14px 16px 16px 16px' }}>
+        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: '10px 12px 12px 12px' }}>
           <div className="space-y-2">
             {settingsSections.map(section => (
               <SettingsRailButton
@@ -616,7 +583,25 @@ export function SettingsPage({
                 {activeSectionMeta.detail}
               </p>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+              <span
+                className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                style={{ border: `1px solid ${border}`, color: muted, background: 'rgba(255,255,255,0.03)' }}
+              >
+                Theme · {appearance.theme.name}
+              </span>
+              <span
+                className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                style={{ border: `1px solid ${border}`, color: muted, background: 'rgba(255,255,255,0.03)' }}
+              >
+                Layout · {activeLayoutProfile.label}
+              </span>
+              <span
+                className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                style={{ border: `1px solid ${border}`, color: muted, background: 'rgba(255,255,255,0.03)' }}
+              >
+                Startup · {settings.system.launchAtStartup ? 'Enabled' : 'Disabled'}
+              </span>
               <span
                 className="hidden rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] md:inline-flex"
                 style={{ border: `1px solid ${border}`, color: muted, background: 'rgba(255,255,255,0.03)' }}
@@ -635,7 +620,7 @@ export function SettingsPage({
           </div>
         </div>
 
-        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 20 }}>
+        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 16 }}>
           <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-4 pb-6">
             {activeSection === 'appearance' && (
               <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
@@ -1190,10 +1175,57 @@ export function SettingsPage({
             <SectionTitle
               icon={<FolderOpen size={12} />}
               title="Explorer"
-              subtitle="Startup path, visibility rules, and bookmark quality-of-life."
+              subtitle="Startup path, folder activation, visibility rules, and bookmark quality-of-life."
             />
 
             <div className="mt-4 space-y-3">
+              <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">File Clicking</div>
+                    <p className="mt-1 text-[11px] opacity-40">
+                      Choose how folders activate in the browser. Files still preview on single click and open on double click.
+                    </p>
+                  </div>
+                  <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                    {settings.explorer.folderClickMode === 'single' ? 'Single Click' : 'Double Click'}
+                  </span>
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                  {([
+                    {
+                      value: 'single',
+                      label: 'Single Click',
+                      description: 'Open folders on the first plain click, closer to a content-browser flow.',
+                    },
+                    {
+                      value: 'double',
+                      label: 'Double Click',
+                      description: 'Keep folders selection-first and require a second click to enter them.',
+                    },
+                  ] as const).map(option => {
+                    const active = settings.explorer.folderClickMode === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => updateExplorer({ folderClickMode: option.value })}
+                        className="rounded px-3 py-3 text-left transition-colors"
+                        style={{
+                          border: `1px solid ${active ? accent : border}`,
+                          background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                          color: text,
+                        }}
+                      >
+                        <div className="text-[11px] font-semibold">{option.label}</div>
+                        <p className="mt-1 text-[11px] opacity-45">{option.description}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Startup Path</label>
                 <input
@@ -1245,7 +1277,7 @@ export function SettingsPage({
                   <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Default Fallback</label>
                   <div className="flex items-center gap-3 rounded border px-3 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)' }}>
                     <img
-                      src={getNamedFolderIconSrc(settings.explorer.defaultFolderIcon, false, themeIconEntries)}
+                      src={getNamedFolderIconSrc(settings.explorer.defaultFolderIcon, false, themeIconTheme)}
                       width={22}
                       height={22}
                       style={{ objectFit: 'contain', flexShrink: 0 }}
@@ -1272,7 +1304,7 @@ export function SettingsPage({
                       <div className="grid grid-cols-1 gap-2 xl:grid-cols-[120px_minmax(0,1.1fr)_minmax(0,0.9fr)_36px]">
                         <div className="flex items-center gap-2 rounded border px-2 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)' }}>
                           <img
-                            src={getNamedFolderIconSrc(rule.icon, false, themeIconEntries)}
+                            src={getNamedFolderIconSrc(rule.icon, false, themeIconTheme)}
                             width={18}
                             height={18}
                             style={{ objectFit: 'contain', flexShrink: 0 }}

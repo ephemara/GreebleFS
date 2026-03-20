@@ -1,3 +1,5 @@
+import { mergeResolvedIconThemes, type OverlayResolvedIconTheme } from './iconTheme';
+
 export interface OverlayXTermTheme {
   background: string;
   foreground: string;
@@ -92,6 +94,7 @@ export interface OverlayThemeAssets {
   manifestPath?: string;
   backgroundUrl?: string;
   previewUrl?: string;
+  iconTheme?: OverlayResolvedIconTheme;
   iconEntries?: Record<string, string>;
 }
 
@@ -659,6 +662,9 @@ function mergeThemeAssets(
   return {
     ...fallbackAssets,
     ...themeAssets,
+    iconTheme: fallbackAssets?.iconTheme && themeAssets?.iconTheme
+      ? mergeResolvedIconThemes(fallbackAssets.iconTheme, themeAssets.iconTheme)
+      : (themeAssets?.iconTheme ?? fallbackAssets?.iconTheme),
     iconEntries: {
       ...(fallbackAssets?.iconEntries ?? {}),
       ...(themeAssets?.iconEntries ?? {}),

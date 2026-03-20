@@ -2,7 +2,7 @@
  * FileExplorer — UE5-feel file explorer
  *
  * v2 changes vs v1:
- *  ✓ Custom SVG icon theme (user's K_OS Icons — one SVG per file type + folder variants)
+ *  ✓ Theme-aware SVG icon system with canonical file and folder ids
  *  ✓ Ctrl+C / Ctrl+V system clipboard (navigator.clipboard)
  *  ✓ Resizable preview pane (drag handle)
  *  ✓ Images loaded via fs_read_file_base64 (data-URI) — no asset-protocol issues
@@ -23,11 +23,13 @@ import {
 } from 'lucide-react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import { getFolderIconSrc } from '../config/folderIcons';
+import { getBuiltInIconTheme, resolveFileIconSrc, resolveIconSrc } from '../config/iconTheme';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
 import { detectClientPlatform, getFallbackExplorerPath, getPlatformPathSeparator, joinPlatformPath } from '../config/platform';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { useExplorerStore } from '../store/explorerStore';
 import { useSettingsStore } from '../store/settingsStore';
+import { shouldOpenExplorerEntryOnTrigger } from './fileExplorerClickBehavior';
 import {
   getModelPreviewFormat,
   getMonacoLanguage,
@@ -98,84 +100,6 @@ const EXP = {
   text:    'var(--overlay-text-primary)', muted:   'var(--overlay-text-muted)', muted2: 'var(--overlay-text-dim)',
   selected:'var(--overlay-bg-selection)', selBord: 'var(--overlay-accent)',
   red:     'var(--overlay-danger)', green:   'var(--overlay-success)', yellow:  'var(--overlay-warning)',
-};
-
-// ─── Icon theme mapping ───────────────────────────────────────────────────────
-// Maps extension / special filename → icon filename (no path, no ext — we add /icons/*.svg)
-
-const ICON_BASE = '/icons/';
-
-const EXT_ICON: Record<string, string> = {
-  // Languages
-  rs: 'rust', py: 'python', js: 'javascript', jsx: 'javascript',
-  ts: 'typescript', tsx: 'typescript',
-  cpp: 'cpp', cc: 'cpp', cxx: 'cpp', c: 'c', h: 'c', hpp: 'cpp',
-  cs: 'csharp', java: 'java', go: 'go', rb: 'ruby', php: 'php',
-  swift: 'swift', kt: 'kotlin', dart: 'dart', lua: 'lua',
-  zig: 'zig', ex: 'elixir', exs: 'elixir', hs: 'haskell',
-  r: 'r', rmd: 'r', scala: 'scala', sc: 'scala',
-  clj: 'clojure', cljs: 'clojure', erl: 'erlang', hrl: 'erlang',
-  ml: 'ocaml', mli: 'ocaml',
-  // Web
-  html: 'html', htm: 'html', css: 'css', scss: 'scss',
-  sass: 'sass', less: 'less',
-  // Data / config
-  json: 'json', yaml: 'yaml', yml: 'yaml',
-  toml: 'toml', xml: 'xml', ini: 'ini', cfg: 'ini',
-  // Docs
-  md: 'markdown', mdx: 'markdown', txt: 'txt', pdf: 'pdf',
-  // Shaders / graphics
-  glsl: 'glsl', hlsl: 'hlsl', wgsl: 'wgsl', vert: 'glsl', frag: 'glsl', spv: 'spv',
-  // Build / infra
-  dockerfile: 'dockerfile', makefile: 'makefile',
-  gitignore: 'gitignore', env: 'env', editorconfig: 'editorconfig',
-  // Scripts
-  sh: 'shell', bash: 'shell', zsh: 'shell',
-  ps1: 'powershell', psm1: 'powershell',
-  bat: 'exe', cmd: 'exe',
-  // Executables / packages
-  exe: 'exe', msi: 'exe', dmg: 'dmg',
-  deb: 'deb', rpm: 'deb', app: 'app',
-  dll: 'dll', so: 'dll', dylib: 'dll',
-  // Archives
-  zip: 'zip', rar: 'zip', '7z': 'zip', tar: 'zip', gz: 'zip', bz2: 'zip', xz: 'zip',
-  // Images
-  jpg: 'image', jpeg: 'image', png: 'image', gif: 'image',
-  webp: 'image', bmp: 'image', ico: 'image', svg: 'image',
-  tiff: 'image', tif: 'image', avif: 'image',
-  // Video
-  mp4: 'video', mkv: 'video', avi: 'video', mov: 'video',
-  wmv: 'video', flv: 'video', webm: 'video',
-  // Audio
-  mp3: 'audio', wav: 'audio', flac: 'audio', ogg: 'audio',
-  m4a: 'audio', aac: 'audio', opus: 'audio',
-  // Fonts
-  ttf: 'font', otf: 'font', woff: 'font', woff2: 'font',
-  // 3D / UE5
-  fbx: 'model3d', obj: 'model3d', glb: 'model3d', gltf: 'model3d',
-  uasset: 'uasset', uproject: 'uproject',
-  // Data
-  sql: 'sql', db: 'database', sqlite: 'database', csv: 'database',
-  // Misc
-  log: 'log', lock: 'lock', kain: 'kain', ink: 'ink', gradle: 'gradle',
-  npm: 'npm',
-};
-
-const FILENAME_ICON: Record<string, string> = {
-  'dockerfile': 'dockerfile',
-  'makefile': 'makefile',
-  'rakefile': 'ruby',
-  'cmake': 'cmake',
-  '.gitignore': 'gitignore',
-  '.gitattributes': 'git',
-  '.gitmodules': 'git',
-  '.env': 'env',
-  '.env.local': 'env',
-  '.editorconfig': 'editorconfig',
-  'package.json': 'npm',
-  'package-lock.json': 'npm',
-  'cargo.toml': 'rust',
-  'cargo.lock': 'rust',
 };
 
 const EXT_TYPE_LABEL: Record<string, string> = {
@@ -344,33 +268,12 @@ function getIconSrc(
   entry: FileEntry,
   open = false,
   folderConfig?: Parameters<typeof getFolderIconSrc>[2],
-  iconEntries?: Record<string, string>,
+  iconTheme = getBuiltInIconTheme(),
 ): string {
   if (entry.is_dir) {
-    return getFolderIconSrc(entry.path, open, { ...folderConfig, iconEntries });
+    return getFolderIconSrc(entry.path, open, { ...folderConfig, iconTheme });
   }
-  // Check exact filename first
-  const fnLower = entry.name.toLowerCase();
-  if (FILENAME_ICON[fnLower]) {
-    const iconName = FILENAME_ICON[fnLower];
-    return iconEntries?.[`file:${iconName}`]
-      ?? iconEntries?.[`file-${iconName}`]
-      ?? iconEntries?.[iconName]
-      ?? `${ICON_BASE}${iconName}.svg`;
-  }
-  // Check extension
-  const ext = getEntryExtension(entry);
-  const extIcon = EXT_ICON[ext];
-  if (extIcon) {
-    return iconEntries?.[`file:${extIcon}`]
-      ?? iconEntries?.[`file-${extIcon}`]
-      ?? iconEntries?.[extIcon]
-      ?? `${ICON_BASE}${extIcon}.svg`;
-  }
-  return iconEntries?.['file:txt']
-    ?? iconEntries?.['file-txt']
-    ?? iconEntries?.txt
-    ?? `${ICON_BASE}txt.svg`;
+  return resolveFileIconSrc(entry.name, getEntryExtension(entry), iconTheme);
 }
 
 // ─── Extension sets (for preview logic only) ─────────────────────────────────
@@ -826,9 +729,10 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
   const isCompactDock = layoutMode === 'compact-dock';
   const uiFont = appearance?.fonts.ui ?? 'Inter,system-ui,sans-serif';
-  const themeIconEntries = appearance?.theme.assets?.iconEntries;
+  const themeIconTheme = appearance?.theme.assets?.iconTheme ?? getBuiltInIconTheme();
   const showHidden = explorerSettings.showHiddenFiles;
   const viewMode = explorerSettings.viewMode;
+  const folderClickMode = explorerSettings.folderClickMode;
   const initialSessionPathRef = useRef(explorerSession.currentPath.trim());
 
   const [currentPath,  setCurrentPath]  = useState(() => explorerSession.currentPath);
@@ -1526,10 +1430,32 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
       setSelected(new Set([entry.path]));
     }
     lastSelected.current = entry.path;
+    if (shouldOpenExplorerEntryOnTrigger({
+      isDirectory: entry.is_dir,
+      trigger: 'click',
+      plainClick,
+      folderClickMode,
+    })) {
+      void openEntry(entry);
+      return;
+    }
     if (plainClick && !entry.is_dir) {
       void previewEntry(entry, getSearchFocusTarget(entry));
     }
   };
+
+  const onEntryDoubleClick = useCallback((entry: FileEntry) => {
+    if (!shouldOpenExplorerEntryOnTrigger({
+      isDirectory: entry.is_dir,
+      trigger: 'double-click',
+      plainClick: true,
+      folderClickMode,
+    })) {
+      return;
+    }
+
+    void openEntry(entry);
+  }, [folderClickMode, openEntry]);
 
   // ── Keyboard ──
   useEffect(() => {
@@ -2069,7 +1995,12 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
             {/* Inline new-item row */}
             {newItem.visible && effectiveViewMode === 'grid' && (
               <div style={{ background:EXP.card, border:`1px solid ${accent}`, borderRadius:8, padding:8, display:'flex', flexDirection:'column', alignItems:'center', gap:6 }}>
-                <SvgIcon src={newItem.kind==='folder' ? '/icons/folder.svg' : '/icons/txt.svg'} size={36} />
+                <SvgIcon
+                  src={newItem.kind === 'folder'
+                    ? (resolveIconSrc(themeIconTheme.folder, themeIconTheme) ?? '/icons/folder.svg')
+                    : resolveFileIconSrc('new-file.txt', 'txt', themeIconTheme)}
+                  size={36}
+                />
                 <input
                   autoFocus value={newItemName} onChange={e=>setNewItemName(e.target.value)}
                   onKeyDown={e => { if(e.key==='Enter') commitNew(); if(e.key==='Escape') setNewItem({visible:false,kind:'folder'}); }}
@@ -2089,7 +2020,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                   const iconSrc = getIconSrc(entry, isSel || isDrop, {
                     rules: explorerSettings.folderIconRules,
                     defaultIcon: explorerSettings.defaultFolderIcon,
-                  }, themeIconEntries);
+                  }, themeIconTheme);
                   return (
                     <div key={entry.path}
                       draggable
@@ -2099,7 +2030,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                       onDragLeave={() => setDragOver(null)}
                       onDrop={entry.is_dir ? e => onDrop(e, entry.path) : undefined}
                       onClick={e => onEntryClick(e, entry)}
-                      onDoubleClick={() => openEntry(entry)}
+                      onDoubleClick={() => onEntryDoubleClick(entry)}
                       onContextMenu={e => onRightClick(e, entry)}
                       title={getSearchTooltip(entry)}
                       style={{
@@ -2136,7 +2067,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                       <SvgIcon src={newItem.kind === 'folder' ? getIconSrc({ name: 'folder', path: currentPath, is_dir: true, size: 0, modified: 0, extension: '', is_hidden: false, is_symlink: false }, false, {
                         rules: explorerSettings.folderIconRules,
                         defaultIcon: explorerSettings.defaultFolderIcon,
-                      }, themeIconEntries) : (themeIconEntries?.['file:txt'] ?? themeIconEntries?.['file-txt'] ?? themeIconEntries?.txt ?? '/icons/txt.svg')} size={16} />
+                      }, themeIconTheme) : resolveFileIconSrc('new-file.txt', 'txt', themeIconTheme)} size={16} />
                       <input autoFocus value={newItemName} onChange={e=>setNewItemName(e.target.value)}
                         onKeyDown={e=>{ if(e.key==='Enter') commitNew(); if(e.key==='Escape') setNewItem({visible:false,kind:'folder'}); }}
                         onBlur={commitNew}
@@ -2167,7 +2098,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                     const iconSrc = getIconSrc(entry, isSel || isDrop, {
                       rules: explorerSettings.folderIconRules,
                       defaultIcon: explorerSettings.defaultFolderIcon,
-                    }, themeIconEntries);
+                    }, themeIconTheme);
                     return (
                     <tr key={entry.path}
                         draggable
@@ -2177,7 +2108,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                         onDragLeave={() => setDragOver(null)}
                         onDrop={entry.is_dir ? e => onDrop(e, entry.path) : undefined}
                         onClick={e => onEntryClick(e, entry)}
-                        onDoubleClick={() => openEntry(entry)}
+                        onDoubleClick={() => onEntryDoubleClick(entry)}
                         onContextMenu={e => onRightClick(e, entry)}
                         title={getSearchTooltip(entry)}
                         style={{ background:isDrop?`${accent}22`:isSel?EXP.selected:'transparent', cursor:'pointer', opacity:entry.is_hidden?0.5:1, userSelect:'none', borderBottom:`1px solid ${EXP.border}` }}

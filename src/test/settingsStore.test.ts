@@ -37,6 +37,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.explorer.sortBy).toBe('name');
     expect(settings.explorer.sortOrder).toBe('asc');
     expect(settings.explorer.viewMode).toBe('list');
+    expect(settings.explorer.folderClickMode).toBe('double');
   });
 
   it('has the correct default appearance settings', () => {
@@ -142,6 +143,12 @@ describe('useSettingsStore.updateExplorer()', () => {
     const store = useSettingsStore.getState();
     store.updateExplorer({ viewMode: 'grid' });
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('grid');
+  });
+
+  it('updates folderClickMode', () => {
+    const store = useSettingsStore.getState();
+    store.updateExplorer({ folderClickMode: 'single' });
+    expect(useSettingsStore.getState().settings.explorer.folderClickMode).toBe('single');
   });
 
   it('does not mutate other setting sections', () => {
@@ -260,5 +267,15 @@ describe('mergeSettingsWithDefaults()', () => {
 
     expect(merged.appearance.appAnimationDurationMs).toBeLessThanOrEqual(1200);
     expect(merged.appearance.appAnimationIntensity).toBeGreaterThanOrEqual(0.55);
+  });
+
+  it('normalizes unsupported explorer folder click modes back to the default', () => {
+    const merged = mergeSettingsWithDefaults({
+      explorer: {
+        folderClickMode: 'triple-click',
+      } as unknown as typeof defaultSettings.explorer,
+    });
+
+    expect(merged.explorer.folderClickMode).toBe(defaultSettings.explorer.folderClickMode);
   });
 });

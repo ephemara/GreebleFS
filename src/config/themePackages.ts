@@ -7,6 +7,14 @@ import {
   type OverlayThemeDefinition,
   type OverlayThemeVisualLayer,
 } from './appearance';
+import {
+  createResolvedIconThemeFromEntries,
+  getBuiltInIconTheme,
+  mergeResolvedIconThemes,
+  parseIconThemeManifest,
+  resolveIconThemeManifest,
+  type OverlayResolvedIconTheme,
+} from './iconTheme';
 import { joinPlatformPath } from './platform';
 
 interface FileEntry {
@@ -29,6 +37,7 @@ export interface OverlayThemePackageManifest {
     background?: string;
     preview?: string;
     iconsDirectory?: string;
+    iconTheme?: string;
     iconAliases?: Record<string, string>;
   };
   visuals?: OverlayThemeVisualLayer[];
@@ -132,6 +141,10 @@ function toAssetUrl(filePath: string): string {
   }
 }
 
+function normalizePackageAssetPath(assetPath: string): string {
+  return assetPath.trim().replace(/^\.(?:\/|\\)/, '');
+}
+
 function parseThemeManifestText(text: string, filePath: string): OverlayThemePackageManifest {
   const trimmed = text.trim();
   if (!trimmed) {
@@ -158,6 +171,7 @@ function parseThemeManifestText(text: string, filePath: string): OverlayThemePac
       background: asString(asRecord(source.assets)?.background),
       preview: asString(asRecord(source.assets)?.preview),
       iconsDirectory: asString(asRecord(source.assets)?.iconsDirectory),
+      iconTheme: asString(asRecord(source.assets)?.iconTheme),
       iconAliases: asStringRecord(asRecord(source.assets)?.iconAliases),
     },
     visuals: Array.isArray(source.visuals) ? source.visuals as OverlayThemeVisualLayer[] : undefined,
@@ -188,7 +202,7 @@ async function readPackageManifest(directoryPath: string): Promise<{ manifestPat
 }
 
 async function resolveIconEntries(directoryPath: string, iconsDirectory: string, aliases: Record<string, string>): Promise<Record<string, string>> {
-  const iconsPath = joinPlatformPath(directoryPath, iconsDirectory);
+  const iconsPath = joinPlatformPath(directoryPath, normalizePackageAssetPath(iconsDirectory));
   const entries = await invoke<FileEntry[]>('fs_list_dir', { path: iconsPath, showHidden: false });
   const resolved = Object.fromEntries(
     entries
@@ -207,6 +221,20 @@ async function resolveIconEntries(directoryPath: string, iconsDirectory: string,
   });
 
   return resolved;
+}
+
+async function resolvePackageIconTheme(
+  directoryPath: string,
+  iconThemePath: string,
+): Promise<OverlayResolvedIconTheme> {
+  const absolutePath = joinPlatformPath(directoryPath, iconThemePath);
+  const text = await invoke<string>('fs_read_text_file', { path: absolutePath });
+  const manifest = parseIconThemeManifest(text);
+  const resolved = resolveIconThemeManifest(
+    manifest,
+    iconPath => toAssetUrl(joinPlatformPath(directoryPath, normalizePackageAssetPath(iconPath))),
+  );
+  return mergeResolvedIconThemes(getBuiltInIconTheme(), resolved);
 }
 
 function mergeVisualLayers(
@@ -228,6 +256,12 @@ function mergeThemeAssets(
   return {
     ...baseAssets,
     ...packageAssets,
+    iconTheme: packageAssets?.iconTheme
+      ? mergeResolvedIconThemes(
+          baseAssets?.iconTheme ?? getBuiltInIconTheme(),
+          packageAssets.iconTheme,
+        )
+      : baseAssets?.iconTheme,
     iconEntries: {
       ...(baseAssets?.iconEntries ?? {}),
       ...(packageAssets?.iconEntries ?? {}),
@@ -265,15 +299,31 @@ async function buildPackageTheme(
   const backgroundPath = asString(packageAssetsSource?.background);
   const previewPath = asString(packageAssetsSource?.preview);
   const iconsDirectory = asString(packageAssetsSource?.iconsDirectory);
+  const iconThemePath = asString(packageAssetsSource?.iconTheme);
   const iconAliases = packageAssetsSource?.iconAliases ?? {};
+  let iconTheme: OverlayResolvedIconTheme | undefined;
+
+  if (iconThemePath) {
+    iconTheme = await resolvePackageIconTheme(record.directoryPath, iconThemePath);
+  } else if (iconsDirectory) {
+    const resolvedEntries = await resolveIconEntries(record.directoryPath, iconsDirectory, iconAliases);
+    iconTheme = mergeResolvedIconThemes(
+      getBuiltInIconTheme(),
+      createResolvedIconThemeFromEntries(resolvedEntries),
+    );
+  }
+
   const resolvedAssets: OverlayThemeAssets = {
     packageRoot: record.directoryPath,
     manifestPath: record.manifestPath,
-    backgroundUrl: backgroundPath ? toAssetUrl(joinPlatformPath(record.directoryPath, backgroundPath)) : undefined,
-    previewUrl: previewPath ? toAssetUrl(joinPlatformPath(record.directoryPath, previewPath)) : undefined,
-    iconEntries: iconsDirectory
-      ? await resolveIconEntries(record.directoryPath, iconsDirectory, iconAliases)
+    backgroundUrl: backgroundPath
+      ? toAssetUrl(joinPlatformPath(record.directoryPath, normalizePackageAssetPath(backgroundPath)))
       : undefined,
+    previewUrl: previewPath
+      ? toAssetUrl(joinPlatformPath(record.directoryPath, normalizePackageAssetPath(previewPath)))
+      : undefined,
+    iconTheme,
+    iconEntries: iconTheme?.iconDefinitions,
   };
 
   const themePatch = record.manifest.theme ?? {};

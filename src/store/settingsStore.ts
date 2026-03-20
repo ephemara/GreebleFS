@@ -72,12 +72,15 @@ export interface PythonSettings {
   createBoilerplate: boolean;
 }
 
+export type ExplorerFolderClickMode = 'single' | 'double';
+
 export interface ExplorerSettings {
   defaultPath: string;
   showHiddenFiles: boolean;
   sortBy: 'name' | 'size' | 'date' | 'type';
   sortOrder: 'asc' | 'desc';
   viewMode: 'list' | 'grid';
+  folderClickMode: ExplorerFolderClickMode;
   confirmDelete: boolean;
   defaultFolderIcon: FolderIconValue;
   folderIconRules: FolderIconRule[];
@@ -176,6 +179,10 @@ export function normalizeOverlayWindowAnchor(value: unknown): OverlayWindowAncho
   return value === 'top' ? 'top' : 'bottom';
 }
 
+export function normalizeExplorerFolderClickMode(value: unknown): ExplorerFolderClickMode {
+  return value === 'single' ? 'single' : 'double';
+}
+
 export const defaultSettings: Settings = {
   editor: {
     fontSize: 14,
@@ -219,6 +226,7 @@ export const defaultSettings: Settings = {
     sortBy: 'name',
     sortOrder: 'asc',
     viewMode: 'list',
+    folderClickMode: 'double',
     confirmDelete: true,
     defaultFolderIcon: DEFAULT_FOLDER_ICON_VALUE,
     folderIconRules: createDefaultFolderIconRules(),
@@ -305,7 +313,11 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
       overlayAnchor: normalizeOverlayWindowAnchor(importedTerminal?.overlayAnchor ?? base.terminal.overlayAnchor),
     },
     python: { ...base.python, ...(imported as Partial<Settings> | undefined)?.python },
-    explorer: { ...base.explorer, ...imported?.explorer },
+    explorer: {
+      ...base.explorer,
+      ...imported?.explorer,
+      folderClickMode: normalizeExplorerFolderClickMode(imported?.explorer?.folderClickMode ?? base.explorer.folderClickMode),
+    },
     appearance: {
       ...base.appearance,
       ...importedAppearance,

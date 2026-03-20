@@ -6,7 +6,11 @@
   "extends": "github-dark",
   "assets": {
     "background": "assets/wallpaper.svg",
-    "iconsDirectory": "icons"
+    "iconTheme": "icon-theme.json"
+  },
+  "fonts": {
+    "ui": "\"Segoe UI\", \"Trebuchet MS\", sans-serif",
+    "mono": "\"Consolas\", \"Cascadia Mono\", monospace"
   },
   "theme": {
     "palette": {

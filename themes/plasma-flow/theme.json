@@ -6,7 +6,7 @@
   "extends": "catppuccin",
   "assets": {
     "background": "assets/wallpaper.svg",
-    "iconsDirectory": "icons"
+    "iconTheme": "icon-theme.json"
   },
   "theme": {
     "palette": {

@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "icons:folders": "node scripts/generate-folder-icon-manifest.mjs",
+    "icons:folders": "node scripts/sync-canonical-icons.mjs",
     "dev": "npm run icons:folders && vite",
     "build": "npm run icons:folders && tsc && vite build",
     "preview": "vite preview",

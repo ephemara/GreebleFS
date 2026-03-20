@@ -1,11 +1,25 @@
 import {
-  CUSTOM_FOLDER_ICONS,
-  DEFAULT_FOLDER_ICON,
-  type GeneratedFolderIconPair,
-} from './generatedFolderIconManifest';
+  getBuiltInIconTheme,
+  resolveIconSrc,
+  type OverlayResolvedIconTheme,
+} from './iconTheme';
 
-export type FolderIconSlug = keyof typeof CUSTOM_FOLDER_ICONS;
-export type FolderIconValue = 'folder' | FolderIconSlug;
+export type GeneratedFolderIconPair = {
+  closed: string;
+  open: string | null;
+};
+
+const BUILT_IN_ICON_THEME = getBuiltInIconTheme();
+
+function isFolderIconId(iconId: string): boolean {
+  return iconId === BUILT_IN_ICON_THEME.folder || iconId.startsWith('folder_');
+}
+
+const BUILT_IN_FOLDER_ICON_IDS = Object.keys(BUILT_IN_ICON_THEME.iconDefinitions)
+  .filter(iconId => isFolderIconId(iconId) && !iconId.endsWith('_open'))
+  .sort((left, right) => left.localeCompare(right));
+
+export type FolderIconValue = typeof BUILT_IN_FOLDER_ICON_IDS[number];
 
 export interface FolderIconRule {
   id: string;
@@ -24,10 +38,8 @@ export interface FolderIconOption {
 export interface FolderIconResolverConfig {
   rules?: readonly FolderIconRule[];
   defaultIcon?: FolderIconValue;
-  iconEntries?: Record<string, string>;
+  iconTheme?: OverlayResolvedIconTheme;
 }
-
-const ICON_BASE = '/icons/';
 
 function titleCase(value: string): string {
   return value
@@ -117,114 +129,121 @@ function cloneRule(rule: FolderIconRule): FolderIconRule {
   };
 }
 
-export const DEFAULT_FOLDER_ICON_VALUE: FolderIconValue = 'folder';
+function buildLabelForIcon(iconId: string): string {
+  if (iconId === BUILT_IN_ICON_THEME.folder) {
+    return 'Default Folder';
+  }
 
-export const BUILT_IN_FOLDER_ICON_RULES: readonly FolderIconRule[] = [
-  { id: 'source', label: 'Source', matchers: ['src', 'source', 'sources'], icon: 'src' },
-  { id: 'docs', label: 'Docs', matchers: ['doc', 'docs', 'documentation', 'manual', 'reference'], icon: 'docs' },
-  { id: 'crates', label: 'Crates', matchers: ['crate', 'crates'], icon: 'crates' },
-  { id: 'node-modules', label: 'Node Modules', matchers: ['node_modules', 'dependencies', 'deps'], icon: 'node_modules' },
-  { id: 'components', label: 'Components', matchers: ['component', 'components'], icon: 'components' },
-  { id: 'scripts', label: 'Scripts', matchers: ['script', 'scripts', 'cli'], icon: 'scripts' },
-  { id: 'config', label: 'Config', matchers: ['config', 'configs', 'configuration', 'settings', 'cfg', 'conf'], icon: 'config' },
-  { id: 'assets', label: 'Assets', matchers: ['asset', 'assets', 'resource', 'resources', 'res', 'static', 'media'], icon: 'assets' },
-  { id: 'public', label: 'Public', matchers: ['public'], icon: 'public' },
-  { id: 'packages', label: 'Packages', matchers: ['package', 'packages', 'vendor', 'third_party'], icon: 'packages' },
-  { id: 'plugins', label: 'Plugins', matchers: ['plugin', 'plugins'], icon: 'plugins' },
-  { id: 'build', label: 'Build', matchers: ['build', 'dist', 'out', 'output', 'target', 'bin', 'release', 'debug'], icon: 'build' },
-  { id: 'tests', label: 'Tests', matchers: ['test', 'tests', '__tests__', 'spec', 'specs', 'fixture', 'fixtures'], icon: 'tests' },
-  { id: 'database', label: 'Database', matchers: ['db', 'database', 'databases', 'sql'], icon: 'database' },
-  { id: 'api', label: 'API', matchers: ['api', 'service', 'services'], icon: 'api' },
-];
+  const labelSource = iconId.replace(/^folder_/, '').replace(/_/g, ' ');
+  return titleCase(labelSource);
+}
+
+function buildRuleId(iconId: string): string {
+  return iconId === BUILT_IN_ICON_THEME.folder
+    ? 'default-folder'
+    : iconId.replace(/^folder_/, '').replace(/_/g, '-');
+}
+
+function groupMatchersByIcon(folderNames: Record<string, string>): Map<FolderIconValue, string[]> {
+  const grouped = new Map<FolderIconValue, string[]>();
+
+  for (const [matcher, iconId] of Object.entries(folderNames)) {
+    if (!isFolderIconId(iconId)) {
+      continue;
+    }
+
+    const normalizedMatcher = normalizeFolderIconMatcher(matcher);
+    if (!normalizedMatcher) {
+      continue;
+    }
+
+    const existing = grouped.get(iconId as FolderIconValue) ?? [];
+    if (!existing.includes(normalizedMatcher)) {
+      existing.push(normalizedMatcher);
+      grouped.set(iconId as FolderIconValue, existing);
+    }
+  }
+
+  return grouped;
+}
+
+function createFolderRulesFromNames(folderNames: Record<string, string>): FolderIconRule[] {
+  return [...groupMatchersByIcon(folderNames).entries()]
+    .map(([icon, matchers]) => ({
+      id: buildRuleId(icon),
+      label: buildLabelForIcon(icon),
+      matchers: [...matchers].sort((left, right) => left.localeCompare(right)),
+      icon,
+    }))
+    .sort((left, right) => left.label.localeCompare(right.label));
+}
+
+export const DEFAULT_FOLDER_ICON_VALUE: FolderIconValue = BUILT_IN_ICON_THEME.folder as FolderIconValue;
+
+export const BUILT_IN_FOLDER_ICON_RULES: readonly FolderIconRule[] = createFolderRulesFromNames(BUILT_IN_ICON_THEME.folderNames);
 
 export function createDefaultFolderIconRules(): FolderIconRule[] {
   return BUILT_IN_FOLDER_ICON_RULES.map(cloneRule);
 }
 
-function getIconPair(icon: FolderIconValue): GeneratedFolderIconPair {
-  if (icon === 'folder') {
-    return DEFAULT_FOLDER_ICON;
-  }
-
-  return CUSTOM_FOLDER_ICONS[icon] ?? DEFAULT_FOLDER_ICON;
+function resolveOpenFolderIconId(icon: FolderIconValue, iconTheme: OverlayResolvedIconTheme): string {
+  const openIconId = icon === iconTheme.folder ? iconTheme.folderExpanded : `${icon}_open`;
+  return iconTheme.iconDefinitions[openIconId] ? openIconId : icon;
 }
 
-function findThemeIconEntry(
-  iconEntries: Record<string, string> | undefined,
-  candidates: string[],
-): string | undefined {
-  if (!iconEntries) {
-    return undefined;
-  }
+function getIconPair(icon: FolderIconValue, iconTheme?: OverlayResolvedIconTheme): GeneratedFolderIconPair {
+  const theme = iconTheme ?? BUILT_IN_ICON_THEME;
+  const closedIconId = resolveIconSrc(icon, theme) ? icon : theme.folder;
+  const openIconId = resolveOpenFolderIconId(closedIconId as FolderIconValue, theme);
 
-  for (const candidate of candidates) {
-    const matched = iconEntries[candidate.toLowerCase()];
-    if (matched) {
-      return matched;
-    }
-  }
-
-  return undefined;
+  return {
+    closed: resolveIconSrc(closedIconId, theme) ?? resolveIconSrc(theme.folder, BUILT_IN_ICON_THEME) ?? '/icons/folder.svg',
+    open: resolveIconSrc(openIconId, theme) ?? resolveIconSrc(closedIconId, theme) ?? null,
+  };
 }
 
-function getThemedFolderIconSrc(
-  icon: FolderIconValue,
-  open: boolean,
-  iconEntries?: Record<string, string>,
-): string | undefined {
-  const variants = icon === 'folder'
-    ? (
-        open
-          ? ['folder:default-open', 'folder-default-open', 'folder_open', 'folder-open', 'folderopen']
-          : ['folder:default', 'folder-default', 'folder']
-      )
-    : (
-        open
-          ? [`folder:${icon}-open`, `folder-${icon}-open`, `folder_${icon}_open`]
-          : [`folder:${icon}`, `folder-${icon}`, `folder_${icon}`]
-      );
+function buildThemeRules(iconTheme?: OverlayResolvedIconTheme): FolderIconRule[] {
+  if (!iconTheme) {
+    return [];
+  }
 
-  return findThemeIconEntry(iconEntries, variants);
+  return createFolderRulesFromNames(iconTheme.folderNames);
+}
+
+function getEffectiveRules(
+  rules: readonly FolderIconRule[] | undefined,
+  iconTheme?: OverlayResolvedIconTheme,
+): readonly FolderIconRule[] {
+  const baseRules = rules ?? BUILT_IN_FOLDER_ICON_RULES;
+  const themeRules = buildThemeRules(iconTheme);
+  if (!themeRules.length) {
+    return baseRules;
+  }
+
+  return [...themeRules, ...baseRules];
 }
 
 function getOptionLabel(icon: FolderIconValue): string {
-  if (icon === 'folder') {
-    return 'Default Folder';
-  }
-
-  return titleCase(icon.replace(/_/g, ' '));
+  return buildLabelForIcon(icon);
 }
 
-const folderIconSlugs = Object.keys(CUSTOM_FOLDER_ICONS) as FolderIconSlug[];
+export const FOLDER_ICON_OPTIONS: readonly FolderIconOption[] = BUILT_IN_FOLDER_ICON_IDS.map(icon => {
+  const pair = getIconPair(icon as FolderIconValue, BUILT_IN_ICON_THEME);
+  return {
+    value: icon as FolderIconValue,
+    label: getOptionLabel(icon),
+    closedSrc: pair.closed,
+    openSrc: pair.open ?? pair.closed,
+  };
+});
 
-export const FOLDER_ICON_OPTIONS: readonly FolderIconOption[] = [
-  {
-    value: 'folder',
-    label: getOptionLabel('folder'),
-    closedSrc: `${ICON_BASE}${DEFAULT_FOLDER_ICON.closed}`,
-    openSrc: `${ICON_BASE}${DEFAULT_FOLDER_ICON.open ?? DEFAULT_FOLDER_ICON.closed}`,
-  },
-  ...folderIconSlugs
-    .sort((left, right) => left.localeCompare(right))
-    .map(icon => {
-      const pair = getIconPair(icon);
-      return {
-        value: icon,
-        label: getOptionLabel(icon),
-        closedSrc: `${ICON_BASE}${pair.closed}`,
-        openSrc: `${ICON_BASE}${pair.open ?? pair.closed}`,
-      };
-    }),
-] as const;
-
-export function getNamedFolderIconSrc(icon: FolderIconValue, open = false, iconEntries?: Record<string, string>): string {
-  const themed = getThemedFolderIconSrc(icon, open, iconEntries);
-  if (themed) {
-    return themed;
-  }
-
-  const pair = getIconPair(icon);
-  return `${ICON_BASE}${open ? (pair.open ?? pair.closed) : pair.closed}`;
+export function getNamedFolderIconSrc(
+  icon: FolderIconValue,
+  open = false,
+  iconTheme?: OverlayResolvedIconTheme,
+): string {
+  const pair = getIconPair(icon, iconTheme);
+  return open ? (pair.open ?? pair.closed) : pair.closed;
 }
 
 function findMatchingRule(folderPath: string, rules: readonly FolderIconRule[]): FolderIconRule | null {
@@ -244,20 +263,20 @@ function findMatchingRule(folderPath: string, rules: readonly FolderIconRule[]):
 }
 
 export function resolveFolderIconPair(folderPath: string, config: FolderIconResolverConfig = {}): GeneratedFolderIconPair {
-  const rules = config.rules ?? BUILT_IN_FOLDER_ICON_RULES;
+  const rules = getEffectiveRules(config.rules, config.iconTheme);
   const defaultIcon = config.defaultIcon ?? DEFAULT_FOLDER_ICON_VALUE;
   const matchedRule = findMatchingRule(folderPath.trim(), rules);
 
   if (matchedRule) {
-    return getIconPair(matchedRule.icon);
+    return getIconPair(matchedRule.icon, config.iconTheme);
   }
 
-  return getIconPair(defaultIcon);
+  return getIconPair(defaultIcon, config.iconTheme);
 }
 
 export function getFolderIconSrc(folderPath: string, open = false, config: FolderIconResolverConfig = {}): string {
-  const rules = config.rules ?? BUILT_IN_FOLDER_ICON_RULES;
+  const rules = getEffectiveRules(config.rules, config.iconTheme);
   const matchedRule = findMatchingRule(folderPath.trim(), rules);
   const icon = matchedRule?.icon ?? config.defaultIcon ?? DEFAULT_FOLDER_ICON_VALUE;
-  return getNamedFolderIconSrc(icon, open, config.iconEntries);
+  return getNamedFolderIconSrc(icon, open, config.iconTheme);
 }

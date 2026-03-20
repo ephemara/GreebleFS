@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { loadThemePackages, themeSystemConfig } from '../config/themePackages';
 
 describe('theme package loader', () => {
-  it('loads packaged themes, resolves icon assets, and preserves extends metadata', async () => {
+  it('loads packaged themes, resolves icon theme assets, and preserves extends metadata', async () => {
     vi.mocked(invoke).mockImplementation(async (command, args) => {
       const params = args as { path?: string; showHidden?: boolean } | undefined;
 
@@ -26,7 +26,7 @@ describe('theme package loader', () => {
           extends: 'github-dark',
           assets: {
             background: 'assets/wallpaper.svg',
-            iconsDirectory: 'icons',
+            iconTheme: 'icon-theme.json',
           },
           theme: {
             palette: {
@@ -42,21 +42,25 @@ describe('theme package loader', () => {
         });
       }
 
-      if (command === 'fs_list_dir' && String(params?.path).replace(/\\/g, '/') === 'themes/vista-glass/icons') {
-        return [
-          {
-            name: 'folder.svg',
-            path: 'themes/vista-glass/icons/folder.svg',
-            is_dir: false,
-            extension: 'svg',
+      if (command === 'fs_read_text_file' && String(params?.path).replace(/\\/g, '/') === 'themes/vista-glass/icon-theme.json') {
+        return JSON.stringify({
+          version: 1,
+          file: 'txt',
+          folder: 'folder',
+          folderExpanded: 'folder_open',
+          iconDefinitions: {
+            folder: { iconPath: './icons/folder.svg' },
+            folder_open: { iconPath: './icons/folder-open.svg' },
+            txt: { iconPath: './icons/txt.svg' },
+            typescript: { iconPath: './icons/typescript.svg' },
           },
-          {
-            name: 'txt.svg',
-            path: 'themes/vista-glass/icons/txt.svg',
-            is_dir: false,
-            extension: 'svg',
+          fileExtensions: {
+            ts: 'typescript',
           },
-        ];
+          folderNames: {
+            src: 'folder',
+          },
+        });
       }
 
       throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
@@ -71,6 +75,7 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.theme.extendsThemeId).toBe('github-dark');
     expect(result.packages[0]?.theme.assets?.backgroundUrl?.replace(/\\/g, '/')).toBe('asset://localhost/themes/vista-glass/assets/wallpaper.svg');
     expect(result.packages[0]?.theme.assets?.iconEntries?.folder?.replace(/\\/g, '/')).toBe('asset://localhost/themes/vista-glass/icons/folder.svg');
+    expect(result.packages[0]?.theme.assets?.iconTheme?.fileExtensions.ts).toBe('typescript');
     expect(result.packages[0]?.theme.visuals).toHaveLength(1);
   });
 });

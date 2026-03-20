@@ -19,20 +19,8 @@ sudo apt install -y curl wget file build-essential \
 echo "[2/4] Installing Project Node Dependencies..."
 npm install
 
-# 3. Build Icons
-echo "[3/4] Building Icons Manifest..."
-mkdir -p public/icons
-# Copy all generated SVG icon tools over and rename them to match the expected format
-if [ -d "output/folder-icon-library" ]; then
-    find output/folder-icon-library -name "folder-*.svg" -exec sh -c 'cp "$1" "public/icons/folder_custom_$(basename "$1" | sed "s/^folder-//")"' _ {} \;
-    find output/folder-icon-library -name "generic-*.svg" -exec sh -c 'cp "$1" "public/icons/folder_generic_$(basename "$1" | sed "s/^generic-//")"' _ {} \;
-else
-    echo "Warning: output/folder-icon-library not found. Falling back to python script..."
-    python3 generate_folder_icons.py || true
-    find output/folder-icon-library -name "folder-*.svg" -exec sh -c 'cp "$1" "public/icons/folder_custom_$(basename "$1" | sed "s/^folder-//")"' _ {} \;
-    find output/folder-icon-library -name "generic-*.svg" -exec sh -c 'cp "$1" "public/icons/folder_generic_$(basename "$1" | sed "s/^generic-//")"' _ {} \;
-fi
-
+# 3. Sync Stock Icons
+echo "[3/4] Syncing Canonical Icon Catalog..."
 npm run icons:folders
 
 # 4. Build Tauri App

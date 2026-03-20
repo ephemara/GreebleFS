@@ -1,0 +1,30 @@
+{
+  "name": "Community Starter Icons",
+  "version": 1,
+  "description": "Copy this file into a theme folder and add only the icon ids or matcher overrides your theme needs.",
+  "file": "txt",
+  "folder": "folder",
+  "folderExpanded": "folder_open",
+  "iconDefinitions": {
+    "folder": { "iconPath": "./icons/folder.svg" },
+    "folder_open": { "iconPath": "./icons/folder_open.svg" },
+    "folder_src": { "iconPath": "./icons/folder_src.svg" },
+    "folder_src_open": { "iconPath": "./icons/folder_src_open.svg" },
+    "txt": { "iconPath": "./icons/txt.svg" },
+    "typescript": { "iconPath": "./icons/typescript.svg" }
+  },
+  "fileExtensions": {
+    "spec": "txt"
+  },
+  "fileNames": {
+    "dockerfile.local": "dockerfile"
+  },
+  "folderNames": {
+    "source_code": "folder_src",
+    "guides": "folder_docs"
+  },
+  "folderNamesExpanded": {
+    "source_code": "folder_src_open",
+    "guides": "folder_docs_open"
+  }
+}

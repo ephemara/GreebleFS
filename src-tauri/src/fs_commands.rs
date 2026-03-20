@@ -3,7 +3,10 @@
 // open-with-default-app, open-as-admin (runas), delete, rename, copy.
 
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 // ─── Data types ───────────────────────────────────────────────────────────────
 
@@ -26,6 +29,180 @@ pub struct DriveInfo {
     pub total_bytes: u64,
     pub free_bytes: u64,
     pub drive_type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EntryStorageInfo {
+    pub path: String,
+    pub bytes: u64,
+    pub is_dir: bool,
+}
+
+#[derive(Debug, Clone)]
+struct CachedEntrySize {
+    bytes: u64,
+    is_dir: bool,
+    measured_at: Instant,
+}
+
+const ENTRY_SIZE_CACHE_TTL: Duration = Duration::from_secs(10);
+static ENTRY_SIZE_CACHE: OnceLock<Mutex<HashMap<String, CachedEntrySize>>> = OnceLock::new();
+
+fn entry_size_cache() -> &'static Mutex<HashMap<String, CachedEntrySize>> {
+    ENTRY_SIZE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn path_cache_key(path: &Path) -> String {
+    path.to_string_lossy().to_string()
+}
+
+fn invalidate_entry_size_cache(path: &Path) {
+    let key = path_cache_key(path);
+    let key_with_separator = if key.ends_with(std::path::MAIN_SEPARATOR) {
+        key.clone()
+    } else {
+        format!("{key}{}", std::path::MAIN_SEPARATOR)
+    };
+
+    if let Ok(mut cache) = entry_size_cache().lock() {
+        cache.retain(|cached_path, _| {
+            cached_path != &key
+                && !cached_path.starts_with(&key_with_separator)
+                && !key.starts_with(
+                    if cached_path.ends_with(std::path::MAIN_SEPARATOR) {
+                        cached_path
+                    } else {
+                        &format!("{cached_path}{}", std::path::MAIN_SEPARATOR)
+                    },
+                )
+        });
+    }
+}
+
+fn measure_path_size(path: &Path) -> (u64, bool) {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(_) => return (0, false),
+    };
+
+    let file_type = metadata.file_type();
+    if file_type.is_symlink() {
+        return (0, file_type.is_dir());
+    }
+
+    if metadata.is_file() {
+        return (metadata.len(), false);
+    }
+
+    if !metadata.is_dir() {
+        return (0, false);
+    }
+
+    let mut total_bytes = 0_u64;
+    let mut stack = vec![path.to_path_buf()];
+    let mut visited = HashSet::new();
+
+    while let Some(dir) = stack.pop() {
+        let canonical = dir.canonicalize().unwrap_or(dir.clone());
+        if !visited.insert(canonical) {
+            continue;
+        }
+
+        let read_dir = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+
+        for entry in read_dir.flatten() {
+            let entry_path = entry.path();
+            let entry_metadata = match std::fs::symlink_metadata(&entry_path) {
+                Ok(metadata) => metadata,
+                Err(_) => continue,
+            };
+
+            let entry_type = entry_metadata.file_type();
+            if entry_type.is_symlink() {
+                continue;
+            }
+
+            if entry_type.is_dir() {
+                stack.push(entry_path);
+                continue;
+            }
+
+            if entry_type.is_file() {
+                total_bytes = total_bytes.saturating_add(entry_metadata.len());
+            }
+        }
+    }
+
+    (total_bytes, true)
+}
+
+fn measure_entry_sizes_blocking(paths: Vec<String>, force_refresh: bool) -> Vec<EntryStorageInfo> {
+    let now = Instant::now();
+    let mut results = Vec::with_capacity(paths.len());
+    let mut pending: Vec<(usize, PathBuf, String)> = Vec::new();
+
+    if let Ok(cache) = entry_size_cache().lock() {
+        for (index, raw_path) in paths.iter().enumerate() {
+            let path = PathBuf::from(raw_path);
+            let key = path_cache_key(&path);
+            let cached = if force_refresh {
+                None
+            } else {
+                cache
+                    .get(&key)
+                    .filter(|entry| now.duration_since(entry.measured_at) <= ENTRY_SIZE_CACHE_TTL)
+                    .cloned()
+            };
+
+            if let Some(entry) = cached {
+                results.push(EntryStorageInfo {
+                    path: key,
+                    bytes: entry.bytes,
+                    is_dir: entry.is_dir,
+                });
+            } else {
+                results.push(EntryStorageInfo {
+                    path: key.clone(),
+                    bytes: 0,
+                    is_dir: path.is_dir(),
+                });
+                pending.push((index, path, key));
+            }
+        }
+    }
+
+    if pending.is_empty() {
+        return results;
+    }
+
+    let mut cache_updates = Vec::with_capacity(pending.len());
+    for (index, path, key) in pending {
+        let (bytes, is_dir) = measure_path_size(&path);
+        results[index] = EntryStorageInfo {
+            path: key.clone(),
+            bytes,
+            is_dir,
+        };
+        cache_updates.push((
+            key,
+            CachedEntrySize {
+                bytes,
+                is_dir,
+                measured_at: now,
+            },
+        ));
+    }
+
+    if let Ok(mut cache) = entry_size_cache().lock() {
+        for (key, entry) in cache_updates {
+            cache.insert(key, entry);
+        }
+    }
+
+    results
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
@@ -153,6 +330,23 @@ pub async fn fs_list_dir(path: String, show_hidden: bool) -> Result<Vec<FileEntr
     });
 
     Ok(entries)
+}
+
+#[tauri::command]
+pub async fn fs_measure_entry_sizes(
+    paths: Vec<String>,
+    force_refresh: Option<bool>,
+) -> Result<Vec<EntryStorageInfo>, String> {
+    let deduped_paths = paths
+        .into_iter()
+        .filter(|path| !path.trim().is_empty())
+        .collect::<Vec<_>>();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        measure_entry_sizes_blocking(deduped_paths, force_refresh.unwrap_or(false))
+    })
+    .await
+    .map_err(|error| format!("Failed to measure entry sizes: {error}"))
 }
 
 // ─── fs_get_drives (Windows) ──────────────────────────────────────────────────
