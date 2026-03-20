@@ -66,6 +66,11 @@ interface DriveInfo {
   letter: string; label: string;
   total_bytes: number; free_bytes: number; drive_type: string;
 }
+interface EntryStorageInfo {
+  path: string;
+  bytes: number;
+  is_dir: boolean;
+}
 interface FsBookmark { id: string; name: string; path: string; }
 interface ContextMenuState { visible: boolean; x: number; y: number; entry: FileEntry | null; }
 interface RenameState    { active: boolean; path: string; name: string; }
@@ -288,7 +293,8 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024*1024) return `${(bytes/1024).toFixed(1)} KB`;
   if (bytes < 1024**3)   return `${(bytes/1024**2).toFixed(1)} MB`;
-  return `${(bytes/1024**3).toFixed(2)} GB`;
+  if (bytes < 1024**4)   return `${(bytes/1024**3).toFixed(2)} GB`;
+  return `${(bytes/1024**4).toFixed(2)} TB`;
 }
 
 function formatDate(ms: number): string {
@@ -751,6 +757,8 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     return 380;
   });
   const [entries,      setEntries]      = useState<FileEntry[]>([]);
+  const [entrySizes,   setEntrySizes]   = useState<Record<string, number>>({});
+  const [entrySizeLoadingPaths, setEntrySizeLoadingPaths] = useState<Set<string>>(() => new Set());
   const [searchResults, setSearchResults] = useState<FileSearchResult[]>([]);
   const [drives,       setDrives]       = useState<DriveInfo[]>([]);
   const [bookmarks,    setBookmarks]    = useState<FsBookmark[]>([]);
@@ -775,6 +783,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const previewSaveTimer = useRef<number | null>(null);
   const searchRequestIdRef = useRef(0);
   const searchFocusRequestIdRef = useRef(0);
+  const entrySizeRequestIdRef = useRef(0);
   const addressInputRef = useRef<HTMLInputElement>(null);
   const [addressEditing, setAddressEditing] = useState(false);
   const [addressDraft, setAddressDraft] = useState('');
@@ -883,6 +892,8 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const navigate = useCallback(async (path: string, push = true) => {
     const normalizedPath = normalizeExplorerPath(path);
     setCurrentPath(normalizedPath); setSelected(new Set()); setSearch(''); setSearchResults([]); setSearchLoading(false); setError(null);
+    setEntrySizes({});
+    setEntrySizeLoadingPaths(new Set());
     setAddressEditing(false);
     setAddressDraft('');
     if (push) { setHistory(h => [...h.slice(0, historyIdx + 1), normalizedPath]); setHistoryIdx(i => i + 1); }
@@ -927,6 +938,8 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const refresh = useCallback(async () => {
     if (!currentPath) return;
     setLoading(true);
+    setEntrySizes({});
+    setEntrySizeLoadingPaths(new Set());
     try { setEntries(await invoke<FileEntry[]>('fs_list_dir', { path: currentPath, showHidden })); }
     catch (e) { setError(String(e)); }
     finally { setLoading(false); }
@@ -1025,10 +1038,69 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     [isSearchActive, searchResults, entries],
   );
 
+  useEffect(() => {
+    if (loading || visibleEntries.length === 0) {
+      setEntrySizeLoadingPaths(current => (current.size === 0 ? current : new Set()));
+      return;
+    }
+
+    const unresolvedPaths = visibleEntries
+      .map(entry => entry.path)
+      .filter(path => typeof entrySizes[path] !== 'number');
+
+    if (unresolvedPaths.length === 0) {
+      setEntrySizeLoadingPaths(current => (current.size === 0 ? current : new Set()));
+      return;
+    }
+
+    const requestId = ++entrySizeRequestIdRef.current;
+    setEntrySizeLoadingPaths(new Set(unresolvedPaths));
+
+    let cancelled = false;
+    void invoke<EntryStorageInfo[]>('fs_measure_entry_sizes', {
+      paths: unresolvedPaths,
+      forceRefresh: false,
+    })
+      .then(results => {
+        if (cancelled || entrySizeRequestIdRef.current !== requestId) {
+          return;
+        }
+        setEntrySizes(current => {
+          const next = { ...current };
+          for (const result of results) {
+            next[result.path] = result.bytes;
+          }
+          return next;
+        });
+        setEntrySizeLoadingPaths(current => (current.size === 0 ? current : new Set()));
+      })
+      .catch(() => {
+        if (cancelled || entrySizeRequestIdRef.current !== requestId) {
+          return;
+        }
+        setEntrySizeLoadingPaths(current => (current.size === 0 ? current : new Set()));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [entrySizes, loading, visibleEntries]);
+
   const selectedEntries = useMemo(
     () => visibleEntries.filter(entry => selected.has(entry.path)),
     [visibleEntries, selected],
   );
+
+  const getEntryStorageLabel = useCallback((entry: FileEntry) => {
+    const measuredSize = entrySizes[entry.path];
+    if (typeof measuredSize === 'number') {
+      return formatSize(measuredSize);
+    }
+    if (!entry.is_dir) {
+      return formatSize(entry.size);
+    }
+    return entrySizeLoadingPaths.has(entry.path) ? 'Calculating…' : '—';
+  }, [entrySizeLoadingPaths, entrySizes]);
 
   const resolveEntriesForAction = useCallback((entry?: FileEntry) => {
     if (!entry) return selectedEntries;
@@ -1654,6 +1726,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
         </div>
         {drives.map(d => {
           const used = d.total_bytes > 0 ? (d.total_bytes - d.free_bytes) / d.total_bytes : 0;
+          const usedBytes = Math.max(d.total_bytes - d.free_bytes, 0);
           const isActive = currentPath.toUpperCase().startsWith(d.letter.toUpperCase());
           return (
             <button key={d.letter} onClick={() => navigate(d.letter)}
@@ -1667,6 +1740,16 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                 </div>
                 <div style={{ height:2, background:'rgba(255,255,255,0.06)', borderRadius:1, marginTop:3, overflow:'hidden' }}>
                   <div style={{ height:'100%', width:`${used*100}%`, background: used>0.9 ? EXP.red : accent, borderRadius:1 }} />
+                </div>
+                <div style={{ display:'flex', justifyContent:'space-between', gap:8, marginTop:4, fontSize:9, color:EXP.muted2 }}>
+                  {d.total_bytes > 0 ? (
+                    <>
+                      <span>{formatSize(usedBytes)} used</span>
+                      <span>{formatSize(d.total_bytes)} total</span>
+                    </>
+                  ) : (
+                    <span>Storage unavailable</span>
+                  )}
                 </div>
               </div>
             </button>
@@ -2051,6 +2134,9 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                           ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active:false, path:'', name:'' })} />
                           : <span style={{ fontSize:10, textAlign:'center', color:EXP.text, overflow:'hidden', textOverflow:'ellipsis', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', width:'100%', lineHeight:1.3 }}>{entry.name}</span>
                         }
+                        <span style={{ fontSize:9, textAlign:'center', color:EXP.muted2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', width:'100%' }}>
+                          {getEntryStorageLabel(entry)}
+                        </span>
                         {renderSearchMetadata(entry)}
                       </div>
                     );
@@ -2126,7 +2212,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
                           </div>
                           {renderSearchMetadata(entry)}
                         </td>
-                        <td style={{ padding:'4px 12px', color:EXP.muted, fontFamily:'monospace', whiteSpace:'nowrap' }}>{entry.is_dir ? '—' : formatSize(entry.size)}</td>
+                        <td style={{ padding:'4px 12px', color:EXP.muted, fontFamily:'monospace', whiteSpace:'nowrap' }}>{getEntryStorageLabel(entry)}</td>
                         <td style={{ padding:'4px 12px', color:EXP.muted, whiteSpace:'nowrap' }}>{formatDate(entry.modified)}</td>
                         <td style={{ padding:'4px 12px', color:EXP.muted2 }}>{getEntryTypeLabel(entry)}</td>
                       </tr>

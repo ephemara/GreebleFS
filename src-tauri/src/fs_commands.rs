@@ -66,15 +66,17 @@ fn invalidate_entry_size_cache(path: &Path) {
 
     if let Ok(mut cache) = entry_size_cache().lock() {
         cache.retain(|cached_path, _| {
-            cached_path != &key
-                && !cached_path.starts_with(&key_with_separator)
-                && !key.starts_with(
-                    if cached_path.ends_with(std::path::MAIN_SEPARATOR) {
-                        cached_path
-                    } else {
-                        &format!("{cached_path}{}", std::path::MAIN_SEPARATOR)
-                    },
-                )
+            if cached_path == &key || cached_path.starts_with(&key_with_separator) {
+                return false;
+            }
+
+            let cached_path_with_separator = if cached_path.ends_with(std::path::MAIN_SEPARATOR) {
+                cached_path.clone()
+            } else {
+                format!("{cached_path}{}", std::path::MAIN_SEPARATOR)
+            };
+
+            !key.starts_with(&cached_path_with_separator)
         });
     }
 }
@@ -1165,7 +1167,7 @@ pub async fn fs_reveal_in_explorer(path: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn fs_delete(path: String, recursive: bool) -> Result<(), String> {
     let p = Path::new(&path);
-    if p.is_dir() {
+    let result = if p.is_dir() {
         if recursive {
             std::fs::remove_dir_all(p).map_err(|e| e.to_string())
         } else {
@@ -1173,19 +1175,54 @@ pub async fn fs_delete(path: String, recursive: bool) -> Result<(), String> {
         }
     } else {
         std::fs::remove_file(p).map_err(|e| e.to_string())
+    };
+
+    if result.is_ok() {
+        invalidate_entry_size_cache(p);
+        if let Some(parent) = p.parent() {
+            invalidate_entry_size_cache(parent);
+        }
     }
+
+    result
 }
 
 // ─── fs_rename ────────────────────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn fs_rename(old_path: String, new_path: String) -> Result<(), String> {
-    std::fs::rename(&old_path, &new_path).map_err(|e| e.to_string())
+    let result = std::fs::rename(&old_path, &new_path).map_err(|e| e.to_string());
+    if result.is_ok() {
+        let old_path_ref = Path::new(&old_path);
+        let new_path_ref = Path::new(&new_path);
+        invalidate_entry_size_cache(old_path_ref);
+        invalidate_entry_size_cache(new_path_ref);
+        if let Some(parent) = old_path_ref.parent() {
+            invalidate_entry_size_cache(parent);
+        }
+        if let Some(parent) = new_path_ref.parent() {
+            invalidate_entry_size_cache(parent);
+        }
+    }
+    result
 }
 
 #[tauri::command]
 pub async fn fs_move(src: String, dst: String) -> Result<(), String> {
-    move_path(Path::new(&src), Path::new(&dst)).map_err(|e| e.to_string())
+    let src_path = Path::new(&src);
+    let dst_path = Path::new(&dst);
+    let result = move_path(src_path, dst_path).map_err(|e| e.to_string());
+    if result.is_ok() {
+        invalidate_entry_size_cache(src_path);
+        invalidate_entry_size_cache(dst_path);
+        if let Some(parent) = src_path.parent() {
+            invalidate_entry_size_cache(parent);
+        }
+        if let Some(parent) = dst_path.parent() {
+            invalidate_entry_size_cache(parent);
+        }
+    }
+    result
 }
 
 // ─── fs_copy ─────────────────────────────────────────────────────────────────
@@ -1193,13 +1230,23 @@ pub async fn fs_move(src: String, dst: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn fs_copy(src: String, dst: String) -> Result<(), String> {
     let src_path = Path::new(&src);
-    if src_path.is_dir() {
+    let result = if src_path.is_dir() {
         copy_dir_all(src_path, Path::new(&dst)).map_err(|e| e.to_string())
     } else {
         std::fs::copy(&src, &dst)
             .map(|_| ())
             .map_err(|e| e.to_string())
+    };
+
+    if result.is_ok() {
+        let dst_path = Path::new(&dst);
+        invalidate_entry_size_cache(dst_path);
+        if let Some(parent) = dst_path.parent() {
+            invalidate_entry_size_cache(parent);
+        }
     }
+
+    result
 }
 
 fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -1264,6 +1311,17 @@ pub async fn fs_transfer_items(
             destination_path: destination.to_string_lossy().to_string(),
             operation,
         });
+    }
+
+    for result in &results {
+        invalidate_entry_size_cache(Path::new(&result.source_path));
+        invalidate_entry_size_cache(Path::new(&result.destination_path));
+        if let Some(parent) = Path::new(&result.source_path).parent() {
+            invalidate_entry_size_cache(parent);
+        }
+        if let Some(parent) = Path::new(&result.destination_path).parent() {
+            invalidate_entry_size_cache(parent);
+        }
     }
 
     Ok(results)
@@ -1378,7 +1436,15 @@ fn numbered_destination(
 
 #[tauri::command]
 pub async fn fs_create_dir(path: String) -> Result<(), String> {
-    std::fs::create_dir_all(&path).map_err(|e| e.to_string())
+    let result = std::fs::create_dir_all(&path).map_err(|e| e.to_string());
+    if result.is_ok() {
+        let path_ref = Path::new(&path);
+        invalidate_entry_size_cache(path_ref);
+        if let Some(parent) = path_ref.parent() {
+            invalidate_entry_size_cache(parent);
+        }
+    }
+    result
 }
 
 // ─── fs_write_file ────────────────────────────────────────────────────────────
@@ -1388,7 +1454,15 @@ pub async fn fs_write_file(path: String, content: String) -> Result<(), String> 
     if let Some(parent) = std::path::Path::new(&path).parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    std::fs::write(&path, content.as_bytes()).map_err(|e| e.to_string())
+    let result = std::fs::write(&path, content.as_bytes()).map_err(|e| e.to_string());
+    if result.is_ok() {
+        let path_ref = Path::new(&path);
+        invalidate_entry_size_cache(path_ref);
+        if let Some(parent) = path_ref.parent() {
+            invalidate_entry_size_cache(parent);
+        }
+    }
+    result
 }
 
 // ─── git_exec ─────────────────────────────────────────────────────────────────
@@ -1827,6 +1901,75 @@ mod tests {
             result.is_err(),
             "expected Err when path is a file, not a dir"
         );
+    }
+
+    #[tokio::test]
+    async fn measure_entry_sizes_reports_files_and_nested_directory_totals() {
+        let dir = tmp_dir();
+        let nested_dir = dir.path().join("assets");
+        let deep_dir = nested_dir.join("nested");
+        let loose_file = dir.path().join("note.txt");
+
+        fs::create_dir_all(&deep_dir).unwrap();
+        fs::write(nested_dir.join("a.bin"), vec![0_u8; 128]).unwrap();
+        fs::write(deep_dir.join("b.bin"), vec![0_u8; 256]).unwrap();
+        fs::write(&loose_file, vec![0_u8; 64]).unwrap();
+
+        let results = fs_measure_entry_sizes(
+            vec![
+                nested_dir.to_string_lossy().into_owned(),
+                loose_file.to_string_lossy().into_owned(),
+            ],
+            Some(true),
+        )
+        .await
+        .expect("fs_measure_entry_sizes failed");
+
+        assert_eq!(results.len(), 2);
+
+        let dir_result = results
+            .iter()
+            .find(|entry| entry.path == nested_dir.to_string_lossy())
+            .expect("directory result missing");
+        assert!(dir_result.is_dir, "directory should be marked as a directory");
+        assert_eq!(dir_result.bytes, 384, "directory size should include nested files");
+
+        let file_result = results
+            .iter()
+            .find(|entry| entry.path == loose_file.to_string_lossy())
+            .expect("file result missing");
+        assert!(!file_result.is_dir, "file should not be marked as a directory");
+        assert_eq!(file_result.bytes, 64);
+    }
+
+    #[tokio::test]
+    async fn measure_entry_sizes_skips_symlink_targets() {
+        #[cfg(not(any(target_family = "windows", target_family = "unix")))]
+        {
+            return;
+        }
+
+        let dir = tmp_dir();
+        let real_dir = dir.path().join("real");
+        let linked_dir = dir.path().join("linked");
+        fs::create_dir_all(&real_dir).unwrap();
+        fs::write(real_dir.join("payload.bin"), vec![0_u8; 512]).unwrap();
+
+        #[cfg(target_family = "unix")]
+        std::os::unix::fs::symlink(&real_dir, &linked_dir).unwrap();
+
+        #[cfg(target_family = "windows")]
+        std::os::windows::fs::symlink_dir(&real_dir, &linked_dir).unwrap();
+
+        let results = fs_measure_entry_sizes(
+            vec![linked_dir.to_string_lossy().into_owned()],
+            Some(true),
+        )
+        .await
+        .expect("fs_measure_entry_sizes failed");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].bytes, 0, "symlinked directories should not be traversed");
     }
 
     #[tokio::test]

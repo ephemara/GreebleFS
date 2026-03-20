@@ -63,7 +63,8 @@ function formatSize(bytes: number): string {
   if (bytes < 1024)         return `${bytes} B`;
   if (bytes < 1024 * 1024)  return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 ** 3)    return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-  return                           `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+  if (bytes < 1024 ** 4)    return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+  return                           `${(bytes / 1024 ** 4).toFixed(2)} TB`;
 }
 
 function formatDate(ms: number): string {
@@ -223,6 +224,11 @@ describe('formatSize()', () => {
     expect(formatSize(1024 ** 3)).toBe('1.00 GB');
     expect(formatSize(1024 ** 3 * 1.5)).toBe('1.50 GB');
     expect(formatSize(1024 ** 3 * 512)).toBe('512.00 GB');
+  });
+
+  it('formats terabytes correctly', () => {
+    expect(formatSize(1024 ** 4)).toBe('1.00 TB');
+    expect(formatSize(1024 ** 4 * 2.5)).toBe('2.50 TB');
   });
 });
 
