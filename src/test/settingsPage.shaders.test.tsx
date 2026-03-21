@@ -30,6 +30,16 @@ describe('SettingsPage shaders section', () => {
       description: 'A soft aurora wash with glossy chrome highlights for all three shell surfaces.',
       group: 'Authoring Samples',
       tags: ['aurora'],
+      controls: [
+        {
+          id: 'intensity',
+          label: 'Intensity',
+          min: 0,
+          max: 1,
+          step: 0.05,
+          defaultValue: 0.4,
+        },
+      ],
       resolveSharedUniforms: undefined,
       background: { resolveStyle: () => ({ opacity: 0.6 }) },
       topBar: { resolveStyle: () => ({ opacity: 0.4 }) },
@@ -69,11 +79,14 @@ describe('SettingsPage shaders section', () => {
     expect(screen.getAllByText('Nebula Flow').length).toBeGreaterThan(0);
     expect(screen.getByText('Aurora Ribbon')).toBeInTheDocument();
     expect(screen.getByText('Surface Coverage')).toBeInTheDocument();
+    expect(screen.getByText('Shader Controls')).toBeInTheDocument();
     expect(screen.getAllByText('Soft volumetric glows drift across the full shell with chrome shimmer and accent rails.').length).toBeGreaterThan(0);
 
     fireEvent.click(findButtonByText('Aurora Ribbon'));
+    fireEvent.change(screen.getByRole('slider', { name: /Intensity/i }), { target: { value: '0.8' } });
 
     expect(useSettingsStore.getState().settings.appearance.activeShaderId).toBe('aurora-ribbon');
+    expect(useSettingsStore.getState().settings.appearance.shaderControlValues['aurora-ribbon']?.intensity).toBe(0.8);
     expect(screen.getAllByText('A soft aurora wash with glossy chrome highlights for all three shell surfaces.').length).toBeGreaterThan(0);
   }, 30000);
 });

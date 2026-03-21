@@ -15,9 +15,6 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
 
-#[cfg(target_os = "windows")]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
 pub struct TerminalInstance {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
@@ -56,7 +53,8 @@ impl TerminalManager {
                 "{}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
                 system_root
             );
-            let pwsh_path = std::env::var("ProgramFiles").unwrap_or_default() + "\\PowerShell\\7\\pwsh.exe";
+            let pwsh_path =
+                std::env::var("ProgramFiles").unwrap_or_default() + "\\PowerShell\\7\\pwsh.exe";
 
             let default_shell = || {
                 if Path::new(&pwsh_path).exists() {
@@ -163,11 +161,6 @@ impl TerminalManager {
         let mut cmd = CommandBuilder::new(&shell);
         for arg in args {
             cmd.arg(arg);
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            cmd.creation_flags(CREATE_NO_WINDOW);
         }
 
         if let Some(dir) = &working_dir {
@@ -423,7 +416,7 @@ fn build_windows_external_command(
         .shell
         .clone()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| TerminalManager::get_shell().0);
+        .unwrap_or_else(|| TerminalManager::get_shell(None).0);
 
     let working_dir_string = working_dir.to_string_lossy().to_string();
 
@@ -562,7 +555,7 @@ fn build_unix_external_command(
             .shell
             .clone()
             .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| TerminalManager::get_shell().0);
+            .unwrap_or_else(|| TerminalManager::get_shell(None).0);
         let user_args = optional_args(&request.args).join(" ");
         let shell_command = if user_args.trim().is_empty() {
             format!("cd {}", shell_quote_single(&working_dir.to_string_lossy()))
@@ -654,7 +647,7 @@ end tell"#,
                     .shell
                     .clone()
                     .filter(|value| !value.trim().is_empty())
-                    .unwrap_or_else(|| TerminalManager::get_shell().0);
+                    .unwrap_or_else(|| TerminalManager::get_shell(None).0);
                 let mut command =
                     ProcessCommand::new(executable_override.unwrap_or_else(|| "xterm".to_string()));
                 command.arg("-e").arg(format!(
@@ -694,7 +687,7 @@ end tell"#,
                 .clone()
                 .filter(|value| !value.trim().is_empty())
         })
-        .unwrap_or_else(|| TerminalManager::get_shell().0);
+        .unwrap_or_else(|| TerminalManager::get_shell(None).0);
 
     let mut command = ProcessCommand::new(executable);
     for arg in user_args {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from 'react';
+import { useState, useEffect, useEffectEvent, useRef, useCallback, useMemo, type CSSProperties } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import * as TauriEvent from '@tauri-apps/api/event';
 import {
@@ -35,6 +35,7 @@ import {
   isFrontendShaderFile,
   loadShaderFromSource,
   mergeOverlayShaders,
+  resolveShaderControlValues,
   type LoadedOverlayShader,
   type OverlayShaderShellContext,
   type ShaderFileEntry,
@@ -228,6 +229,12 @@ interface OverlayWindowLayout {
   healedHeight: number | null;
 }
 
+interface PluginDirectoryWatchEvent {
+  root: string;
+  kind: string;
+  paths: string[];
+}
+
 function computeOverlayWindowLayout(args: {
   workArea: { position: PhysicalPosition; size: PhysicalSize };
   scaleFactor: number;
@@ -417,16 +424,21 @@ function App() {
   const pluginSignatureRef = useRef('');
   const dragHideRestoreRef = useRef(false);
   const refreshFolderPluginsRef = useRef<(force?: boolean) => Promise<void>>(async () => undefined);
+  const pluginWatchDebounceTimerRef = useRef<number | null>(null);
   const [layoutManifest, setLayoutManifest] = useState(BUILT_IN_LAYOUT_MANIFEST);
   const [layoutConfigSource, setLayoutConfigSource] = useState<string | null>(null);
   const [themePackages, setThemePackages] = useState<LoadedOverlayThemePackage[]>([]);
   const [themePackagesLoading, setThemePackagesLoading] = useState(true);
   const [themePackagesError, setThemePackagesError] = useState<string | null>(null);
+  const [repositoryPickerRequestId, setRepositoryPickerRequestId] = useState(0);
+  const [isRepositoryPickerActive, setIsRepositoryPickerActive] = useState(false);
+  const [pendingRepositoryImports, setPendingRepositoryImports] = useState<string[]>([]);
 
   const settings = useSettingsStore(s => s.settings.terminal);
   const appearance = useSettingsStore(s => s.settings.appearance);
   const keybindings = useSettingsStore(s => s.settings.keybindings);
   const layoutSettings = useSettingsStore(s => s.settings.layout);
+  const systemSettings = useSettingsStore(s => s.settings.system);
   const updateTerminal = useSettingsStore(s => s.updateTerminal);
   const updateAppearance = useSettingsStore(s => s.updateAppearance);
   const updateLayout = useSettingsStore(s => s.updateLayout);
@@ -513,6 +525,13 @@ function App() {
     ?? availableShadersById.get(shaderSystemConfig.fallbackShaderId)
     ?? builtInShaders[0]
     ?? null;
+  const activeShaderControlValues = useMemo(
+    () => resolveShaderControlValues(
+      activeShader,
+      appearance.shaderControlValues?.[resolvedShaderId],
+    ),
+    [activeShader, appearance.shaderControlValues, resolvedShaderId],
+  );
   const resolveAnimationById = useCallback((id: string, fallbackId: string) => (
     availableAnimationsById.get(id)
       ?? availableAnimationsById.get(fallbackId)
@@ -580,6 +599,51 @@ function App() {
     () => activeLayoutProfile.pinnedPanels.find(panel => panel.panelId === 'explorer') ?? null,
     [activeLayoutProfile],
   );
+  const setPanelOpenStateDirectly = useCallback((panelId: string) => {
+    const settingsState = useSettingsStore.getState();
+    const currentByProfile = settingsState.settings.layout.panelStateByProfile;
+    const currentState = currentByProfile[activeLayoutProfile.id] ?? EMPTY_LAYOUT_PANEL_STATE;
+    const openPanelIds = Array.isArray(currentState.openPanelIds)
+      ? currentState.openPanelIds.filter((value): value is string => typeof value === 'string')
+      : [];
+    const dismissedPanelIds = Array.isArray(currentState.dismissedPanelIds)
+      ? currentState.dismissedPanelIds.filter((value): value is string => typeof value === 'string')
+      : [];
+    const activePanelId = typeof currentState.activePanelId === 'string' ? currentState.activePanelId : null;
+    const isPinned = activeLayoutProfile.pinnedPanels.some(panel => panel.panelId === panelId);
+
+    settingsState.updateLayout({
+      panelStateByProfile: {
+        ...currentByProfile,
+        [activeLayoutProfile.id]: {
+          openPanelIds: uniquePanelIds([...openPanelIds, panelId]),
+          activePanelId: isPinned ? activePanelId : panelId,
+          dismissedPanelIds: dismissedPanelIds.filter(id => id !== panelId),
+        },
+      },
+    });
+  }, [activeLayoutProfile.id, activeLayoutProfile.pinnedPanels]);
+  const handleRequestRepositoryImport = useCallback(() => {
+    setPendingRepositoryImports([]);
+    setRepositoryPickerRequestId(current => current + 1);
+    setIsRepositoryPickerActive(true);
+    setPanelOpenStateDirectly('explorer');
+  }, [setPanelOpenStateDirectly]);
+  const handleCancelRepositoryImport = useCallback(() => {
+    setIsRepositoryPickerActive(false);
+  }, []);
+  const handleConfirmRepositoryImport = useCallback((paths: string[]) => {
+    const normalizedPaths = Array.from(new Set(paths.map(path => path.trim()).filter(Boolean)));
+    setIsRepositoryPickerActive(false);
+    if (normalizedPaths.length === 0) {
+      return;
+    }
+    setPendingRepositoryImports(normalizedPaths);
+    setPanelOpenStateDirectly('git');
+  }, [setPanelOpenStateDirectly]);
+  const handleRepositoryImportsHandled = useCallback(() => {
+    setPendingRepositoryImports([]);
+  }, []);
 
   // ── Boot store ──
   useEffect(() => { initStore(); }, [initStore]);
@@ -607,20 +671,20 @@ function App() {
       return;
     }
 
-    invoke('tray_set_visible', { visible: settings.system.hideAppInTray }).catch(error => {
+    invoke('tray_set_visible', { visible: systemSettings.hideAppInTray }).catch(error => {
       console.warn('OverlayTerm: failed to sync tray visibility', error);
     });
-  }, [settings.system.hideAppInTray]);
+  }, [systemSettings.hideAppInTray]);
 
   useEffect(() => {
     if (!isTauri()) {
       return;
     }
 
-    invoke('window_set_taskbar_visibility', { visible: settings.system.showInTaskbar }).catch(error => {
+    invoke('window_set_taskbar_visibility', { visible: systemSettings.showInTaskbar }).catch(error => {
       console.warn('OverlayTerm: failed to sync taskbar visibility', error);
     });
-  }, [settings.system.showInTaskbar]);
+  }, [systemSettings.showInTaskbar]);
 
   useEffect(() => {
     ensureFontFamilyLoaded(resolvedAppearance.fonts.ui);
@@ -854,13 +918,47 @@ function App() {
     void positionAndShow();
   }, [positionAndShow]);
 
-  const handleDragStartCapture = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+  const handleDragStart = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     const source = (event.target as HTMLElement | null)?.closest('[data-overlay-drag-source="file"]');
     if (!source) {
       return;
     }
-    void hideOverlayForDrag();
-  }, [hideOverlayForDrag]);
+
+    const dragIntent = event.dataTransfer.getData('application/x-overlayterm-drag-intent');
+    if (dragIntent !== 'native-out') {
+      return;
+    }
+
+    const payload = event.dataTransfer.getData('application/x-overlayterm-paths');
+    if (!payload) {
+      return;
+    }
+
+    let paths: string[] = [];
+    try {
+      const parsed = JSON.parse(payload);
+      if (Array.isArray(parsed)) {
+        paths = parsed.filter((entry): entry is string => typeof entry === 'string');
+      }
+    } catch {
+      paths = [];
+    }
+
+    if (paths.length === 0) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        await hideOverlayForDrag();
+        await invoke('fs_start_native_file_drag', { paths });
+      } catch (error) {
+        console.warn('OverlayTerm: failed to start native file drag', error);
+      } finally {
+        restoreOverlayAfterDrag();
+      }
+    })();
+  }, [hideOverlayForDrag, restoreOverlayAfterDrag]);
 
   const handleDragEndCapture = useCallback(() => {
     restoreOverlayAfterDrag();
@@ -1347,17 +1445,82 @@ function App() {
     refreshFolderPluginsRef.current = refreshFolderPlugins;
   }, [refreshFolderPlugins]);
 
+  const schedulePluginRefresh = useEffectEvent((force = true) => {
+    if (pluginWatchDebounceTimerRef.current !== null) {
+      window.clearTimeout(pluginWatchDebounceTimerRef.current);
+    }
+
+    pluginWatchDebounceTimerRef.current = window.setTimeout(() => {
+      pluginWatchDebounceTimerRef.current = null;
+      void refreshFolderPluginsRef.current(force);
+    }, pluginSystemConfig.watchDebounceMs);
+  });
+
   useEffect(() => {
     void refreshFolderPlugins(true);
   }, [refreshFolderPlugins]);
 
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      void refreshFolderPlugins();
-    }, pluginSystemConfig.scanIntervalMs);
+    if (typeof window === 'undefined' || !isTauri()) {
+      return;
+    }
 
-    return () => window.clearInterval(interval);
-  }, [refreshFolderPlugins]);
+    let fallbackInterval: number | null = null;
+    let unlistenPlugins: (() => void) | null = null;
+    let disposed = false;
+
+    const clearFallbackPolling = () => {
+      if (fallbackInterval !== null) {
+        window.clearInterval(fallbackInterval);
+        fallbackInterval = null;
+      }
+    };
+
+    const startFallbackPolling = () => {
+      if (fallbackInterval !== null) {
+        return;
+      }
+
+      fallbackInterval = window.setInterval(() => {
+        void refreshFolderPluginsRef.current();
+      }, pluginSystemConfig.fallbackScanIntervalMs);
+    };
+
+    const startPluginWatcher = async () => {
+      try {
+        await ensureDir(pluginSystemConfig.pluginsDirectory);
+        unlistenPlugins = await listen<PluginDirectoryWatchEvent>(pluginSystemConfig.watchEventName, () => {
+          schedulePluginRefresh(true);
+        });
+
+        await invoke('plugin_watch_directory', { path: pluginSystemConfig.pluginsDirectory });
+
+        if (disposed) {
+          unlistenPlugins?.();
+          unlistenPlugins = null;
+          await invoke('plugin_unwatch_directory');
+        }
+      } catch (error) {
+        unlistenPlugins?.();
+        unlistenPlugins = null;
+        console.warn('Plugin watcher unavailable, falling back to polling:', error);
+        startFallbackPolling();
+      }
+    };
+
+    void startPluginWatcher();
+
+    return () => {
+      disposed = true;
+      if (pluginWatchDebounceTimerRef.current !== null) {
+        window.clearTimeout(pluginWatchDebounceTimerRef.current);
+        pluginWatchDebounceTimerRef.current = null;
+      }
+      clearFallbackPolling();
+      unlistenPlugins?.();
+      void invoke('plugin_unwatch_directory').catch(() => undefined);
+    };
+  }, [schedulePluginRefresh]);
 
   useEffect(() => {
     void refreshThemePackages();
@@ -1368,10 +1531,22 @@ function App() {
       ...createBuiltInPanelDefinitions({
         appearance: resolvedAppearance,
         explorerLayoutMode: pinnedExplorerPanel?.mode ?? 'full',
+        explorerRepoPicker: isRepositoryPickerActive
+          ? {
+              active: true,
+              allowMultiple: true,
+              requestId: repositoryPickerRequestId,
+              onConfirm: handleConfirmRepositoryImport,
+              onCancel: handleCancelRepositoryImport,
+            }
+          : null,
         isOpen: isOverlayVisible,
         hideOverlay,
         onOpenInTerminal: handleOpenInTerminal,
         onAddBookmark: handleAddBookmark,
+        onRequestRepositoryImport: handleRequestRepositoryImport,
+        pendingRepositoryImports,
+        onPendingRepositoryImportsHandled: handleRepositoryImportsHandled,
         themePackages,
         themePackagesDirectory: themeSystemConfig.themesDirectory,
         themePackagesLoading,
@@ -1416,9 +1591,14 @@ function App() {
       folderPluginsError,
       folderPluginsLoading,
       handleAddBookmark,
+      handleCancelRepositoryImport,
+      handleConfirmRepositoryImport,
       handleOpenInTerminal,
+      handleRepositoryImportsHandled,
+      handleRequestRepositoryImport,
       hideOverlay,
       isOverlayVisible,
+      isRepositoryPickerActive,
       authoredAnimations,
       authoredAnimationsError,
       authoredAnimationsLoading,
@@ -1431,11 +1611,13 @@ function App() {
       openShadersFolder,
       openPluginsFolder,
       openThemesFolder,
+      pendingRepositoryImports,
       pinnedExplorerPanel?.mode,
       refreshThemePackages,
       refreshAuthoredAnimations,
       refreshAuthoredShaders,
       refreshFolderPlugins,
+      repositoryPickerRequestId,
       resolvedAppearance,
       themePackages,
       themePackagesError,
@@ -1679,9 +1861,11 @@ function App() {
     blurStrength: clampedAppBlurStrength,
     zoom: clampedAppZoom,
     isSettingsActive: activePanelId === 'settings',
+    shaderControlValues: activeShaderControlValues,
   }), [
     activePanelId,
     activeShader,
+    activeShaderControlValues,
     accent,
     clampedAppBlurStrength,
     clampedAppZoom,
@@ -1737,7 +1921,7 @@ function App() {
         ...(resolvedAppearance.cssVars as CSSProperties),
         backgroundColor: 'transparent',
       }}
-      onDragStartCapture={handleDragStartCapture}
+      onDragStart={handleDragStart}
       onDragEndCapture={handleDragEndCapture}
       onDropCapture={handleDropCapture}
     >

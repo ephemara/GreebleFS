@@ -14,12 +14,16 @@ use fs_commands::{
     fs_read_text_file, fs_rename, fs_reveal_in_explorer, fs_search_entries, fs_transfer_items,
     fs_write_file, git_exec,
 };
-use plugin_commands::plugin_run_backend;
+use plugin_commands::{
+    plugin_run_backend, plugin_unwatch_directory, plugin_watch_directory, PluginWatcherState,
+};
 use python_commands::{
     python_bootstrap_runtime, python_execute, python_get_runtime_status, python_install_packages,
 };
 use screenshot_commands::{
-    screenshot_capture_preview, screenshot_copy_image_to_clipboard, screenshot_save_region,
+    screenshot_capture_preview, screenshot_copy_image_to_clipboard,
+    screenshot_copy_region_to_clipboard, screenshot_read_gallery_thumbnail,
+    screenshot_save_region,
 };
 use startup_commands::{startup_get_launch_at_startup, startup_set_launch_at_startup};
 use tauri::{
@@ -59,6 +63,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .setup(|app| {
             app.manage(TerminalManager::new());
+            app.manage(PluginWatcherState::default());
 
             if let Some(window) = app.get_webview_window("main") {
                 if cfg!(debug_assertions) {
@@ -138,12 +143,16 @@ pub fn run() {
             fs_start_native_file_drag,
             screenshot_capture_preview,
             screenshot_save_region,
+            screenshot_copy_region_to_clipboard,
             screenshot_copy_image_to_clipboard,
+            screenshot_read_gallery_thumbnail,
             python_get_runtime_status,
             python_bootstrap_runtime,
             python_install_packages,
             python_execute,
             plugin_run_backend,
+            plugin_watch_directory,
+            plugin_unwatch_directory,
             startup_get_launch_at_startup,
             startup_set_launch_at_startup,
             tray_set_visible,

@@ -130,6 +130,11 @@ export default defineShader({
   description: 'Chromatic glass caustics and spectral rail highlights that make the shell feel machined from moving crystal.',
   group: 'Authoring Extremes',
   tags: ['prism', 'glass', 'caustic', 'chrome'],
+  controls: [
+    { id: 'accentWeight', label: 'Edge Weight', description: 'Strengthen the outer chrome edge energy.', min: 0, max: 1, step: 0.02 },
+    { id: 'chroma', label: 'Chroma Split', description: 'Push the spectral separation in the prism body.', min: 0, max: 1, step: 0.02 },
+    { id: 'railEnergy', label: 'Rail Energy', description: 'Increase the brightness and pressure in the rails.', min: 0, max: 1, step: 0.02 },
+  ],
   resolveSharedUniforms: context => ({
     accentWeight: context.zoom > 1 ? 0.7 : 0.56,
     chroma: clamp01(0.28 + context.blurStrength / 40 + context.zoom * 0.12),

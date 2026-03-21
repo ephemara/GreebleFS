@@ -30,7 +30,13 @@ import {
   clampOverlayVisualControlValue,
   overlayVisualControls,
 } from '../config/overlayWindow';
-import { screenshotFeatureConfig } from '../config/screenshots';
+import {
+  isScreenshotCaptureModeId,
+  isScreenshotOutputActionId,
+  screenshotFeatureConfig,
+  type ScreenshotCaptureModeId,
+  type ScreenshotOutputActionId,
+} from '../config/screenshots';
 import { getDefaultLayoutProfile } from '../config/layoutProfiles';
 
 // ============================================================================
@@ -95,6 +101,7 @@ export interface AppearanceSettings {
   activeThemeId: string;
   customThemes: OverlayThemeDefinition[];
   activeShaderId?: string | null;
+  shaderControlValues: Record<string, Record<string, number>>;
   uiFontFamily: string;
   useNativeOsIcons: boolean;
   accentColor: string;
@@ -121,6 +128,10 @@ export interface SystemSettings {
 
 export interface ScreenshotSettings {
   saveDirectory: string;
+  defaultCaptureMode: ScreenshotCaptureModeId;
+  defaultOutputAction: ScreenshotOutputActionId;
+  showGrid: boolean;
+  closeEditorAfterAction: boolean;
 }
 
 export type KeybindingSettings = HotkeyBindingSettings;
@@ -230,12 +241,69 @@ function normalizeAppearanceSettings(
       : merged.activeShaderId === null
         ? null
         : base.activeShaderId ?? null,
+    shaderControlValues: normalizeShaderControlValuesMap(merged.shaderControlValues ?? base.shaderControlValues),
     appOpacity: clampOverlayVisualControlValue('opacity', merged.appOpacity),
     panelTransparency: clampOverlayVisualControlValue('panelTransparency', merged.panelTransparency),
     appZoom: clampOverlayVisualControlValue('zoom', merged.appZoom),
     appBlurStrength: clampOverlayVisualControlValue('blurStrength', merged.appBlurStrength),
     appAnimationDurationMs: clampOverlayAnimationDuration(merged.appAnimationDurationMs),
     appAnimationIntensity: clampOverlayAnimationIntensity(merged.appAnimationIntensity),
+  };
+}
+
+function normalizeShaderControlValuesMap(
+  value: unknown,
+): Record<string, Record<string, number>> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const normalizedEntries = Object.entries(value as Record<string, unknown>)
+    .map(([shaderId, controlMap]) => {
+      const trimmedShaderId = shaderId.trim();
+      if (!trimmedShaderId || !controlMap || typeof controlMap !== 'object' || Array.isArray(controlMap)) {
+        return null;
+      }
+
+      const normalizedControls = Object.fromEntries(
+        Object.entries(controlMap as Record<string, unknown>)
+          .filter(([controlId, controlValue]) => (
+            typeof controlId === 'string'
+            && controlId.trim().length > 0
+            && typeof controlValue === 'number'
+            && Number.isFinite(controlValue)
+          ))
+          .map(([controlId, controlValue]) => [controlId.trim(), controlValue as number]),
+      );
+
+      return Object.keys(normalizedControls).length > 0
+        ? [trimmedShaderId, normalizedControls]
+        : null;
+    })
+    .filter((entry): entry is [string, Record<string, number>] => Array.isArray(entry));
+
+  return Object.fromEntries(normalizedEntries);
+}
+
+function normalizeScreenshotSettings(
+  base: ScreenshotSettings,
+  updates?: Partial<ScreenshotSettings>,
+): ScreenshotSettings {
+  const merged = { ...base, ...updates };
+  const trimmedSaveDirectory = typeof merged.saveDirectory === 'string'
+    ? merged.saveDirectory.trim()
+    : '';
+
+  return {
+    saveDirectory: trimmedSaveDirectory || base.saveDirectory,
+    defaultCaptureMode: isScreenshotCaptureModeId(merged.defaultCaptureMode)
+      ? merged.defaultCaptureMode
+      : base.defaultCaptureMode,
+    defaultOutputAction: isScreenshotOutputActionId(merged.defaultOutputAction)
+      ? merged.defaultOutputAction
+      : base.defaultOutputAction,
+    showGrid: merged.showGrid !== false,
+    closeEditorAfterAction: merged.closeEditorAfterAction !== false,
   };
 }
 
@@ -292,6 +360,7 @@ export const defaultSettings: Settings = {
     activeThemeId: 'operator',
     customThemes: [],
     activeShaderId: null,
+    shaderControlValues: {},
     uiFontFamily: 'Inter, system-ui, sans-serif',
     useNativeOsIcons: false,
     accentColor: '#6366f1',
@@ -316,6 +385,10 @@ export const defaultSettings: Settings = {
   },
   screenshots: {
     saveDirectory: screenshotFeatureConfig.defaultSaveDirectory,
+    defaultCaptureMode: screenshotFeatureConfig.defaultCaptureMode,
+    defaultOutputAction: screenshotFeatureConfig.defaultOutputAction,
+    showGrid: true,
+    closeEditorAfterAction: true,
   },
   keybindings: createDefaultKeybindingSettings(),
   polygemini: {
@@ -389,7 +462,7 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
       }),
     },
     system: normalizeSystemSettings(base.system, (imported as Partial<Settings> | undefined)?.system),
-    screenshots: { ...base.screenshots, ...imported?.screenshots },
+    screenshots: normalizeScreenshotSettings(base.screenshots, imported?.screenshots),
     keybindings: normalizeKeybindingSettings({ ...base.keybindings, ...imported?.keybindings }),
     polygemini: { ...base.polygemini, ...imported?.polygemini },
     layout: {
@@ -494,7 +567,7 @@ export const useSettingsStore = create<SettingsState>()(
       updateScreenshots: (updates) => set((state) => ({
         settings: {
           ...state.settings,
-          screenshots: { ...state.settings.screenshots, ...updates },
+          screenshots: normalizeScreenshotSettings(state.settings.screenshots, updates),
         },
       })),
       

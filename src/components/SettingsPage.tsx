@@ -2,7 +2,14 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { invoke } from '@tauri-apps/api/core';
 import { FolderOpen, LayoutGrid, Palette, Plus, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Type } from 'lucide-react';
 import type { LoadedOverlayAnimation } from './animationRuntime';
-import type { LoadedOverlayShader } from './shaderRuntime';
+import {
+  normalizeShaderControlValue,
+  resolveShaderComputedUniforms,
+  resolveShaderControlValues,
+  type LoadedOverlayShader,
+  type OverlayShaderControlDefinition,
+  type OverlayShaderShellContext,
+} from './shaderRuntime';
 import {
   ensureFontFamilyLoaded,
   getThemeSourceLabel,
@@ -133,6 +140,19 @@ function RangeField({
       />
     </label>
   );
+}
+
+function formatShaderControlValue(control: OverlayShaderControlDefinition, value: number): string {
+  if (control.formatValue) {
+    return control.formatValue(value);
+  }
+
+  if (control.step >= 1) {
+    return `${Math.round(value)}`;
+  }
+
+  const decimals = `${control.step}`.split('.')[1]?.length ?? 2;
+  return value.toFixed(Math.min(decimals, 3));
 }
 
 function ShortcutField({
@@ -405,6 +425,57 @@ export function SettingsPage({
     () => getShaderEnabledSurfaceIds(effectiveShader),
     [effectiveShader],
   );
+  const effectiveShaderControlOverrides = useMemo(
+    () => effectiveShader
+      ? (settings.appearance.shaderControlValues[effectiveShader.id] ?? {})
+      : {},
+    [effectiveShader, settings.appearance.shaderControlValues],
+  );
+  const shaderSettingsShellContext = useMemo<OverlayShaderShellContext | null>(() => {
+    if (!effectiveShader) {
+      return null;
+    }
+
+    return {
+      id: effectiveShader.id,
+      name: effectiveShader.name,
+      filePath: effectiveShader.filePath,
+      shaderRoot: effectiveShader.shaderRoot,
+      source: effectiveShader.source,
+      viewport: {
+        width: typeof window === 'undefined' ? 0 : window.innerWidth,
+        height: typeof window === 'undefined' ? 0 : window.innerHeight,
+      },
+      accentColor: appearance.theme.palette.accent,
+      theme: appearance.theme,
+      panelTransparency: settings.appearance.panelTransparency,
+      blurStrength: settings.appearance.appBlurStrength,
+      zoom: settings.appearance.appZoom,
+      isSettingsActive: true,
+      shaderControlValues: effectiveShaderControlOverrides,
+    };
+  }, [
+    appearance.theme,
+    effectiveShader,
+    effectiveShaderControlOverrides,
+    settings.appearance.appBlurStrength,
+    settings.appearance.appZoom,
+    settings.appearance.panelTransparency,
+  ]);
+  const effectiveShaderComputedUniforms = useMemo(
+    () => shaderSettingsShellContext
+      ? resolveShaderComputedUniforms(effectiveShader, shaderSettingsShellContext)
+      : {},
+    [effectiveShader, shaderSettingsShellContext],
+  );
+  const effectiveShaderControlValues = useMemo(
+    () => resolveShaderControlValues(
+      effectiveShader,
+      effectiveShaderControlOverrides,
+      effectiveShaderComputedUniforms,
+    ),
+    [effectiveShader, effectiveShaderComputedUniforms, effectiveShaderControlOverrides],
+  );
   const shaderSelectionSummary = settings.appearance.activeShaderId
     ? 'Settings Override'
     : appearance.baseTheme.defaultShaderId
@@ -571,6 +642,39 @@ export function SettingsPage({
     updateSystem({ showInTaskbar: enabled });
   }, [updateSystem]);
 
+  const setShaderControlValue = useCallback((
+    shader: LoadedOverlayShader,
+    control: OverlayShaderControlDefinition,
+    rawValue: number,
+  ) => {
+    const existingShaderValues = settings.appearance.shaderControlValues[shader.id] ?? {};
+    const fallbackValue = typeof effectiveShaderComputedUniforms[control.id] === 'number'
+      ? effectiveShaderComputedUniforms[control.id] as number
+      : control.defaultValue;
+    const normalizedValue = normalizeShaderControlValue(control, rawValue, fallbackValue);
+    const defaultValue = resolveShaderControlValues(shader, undefined, effectiveShaderComputedUniforms)[control.id];
+    const nextShaderValues = { ...existingShaderValues };
+
+    if (typeof defaultValue === 'number' && Math.abs(normalizedValue - defaultValue) < Number.EPSILON * 10) {
+      delete nextShaderValues[control.id];
+    } else {
+      nextShaderValues[control.id] = normalizedValue;
+    }
+
+    const nextShaderControlValues = { ...settings.appearance.shaderControlValues };
+    if (Object.keys(nextShaderValues).length === 0) {
+      delete nextShaderControlValues[shader.id];
+    } else {
+      nextShaderControlValues[shader.id] = nextShaderValues;
+    }
+
+    updateAppearance({ shaderControlValues: nextShaderControlValues });
+  }, [
+    effectiveShaderComputedUniforms,
+    settings.appearance.shaderControlValues,
+    updateAppearance,
+  ]);
+
   const settingsSections: Array<{
     key: SettingsSectionKey;
     label: string;
@@ -709,13 +813,7 @@ export function SettingsPage({
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="border-b px-4 py-3" style={{ borderColor: border }}>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1.5">
-              <div className="flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.16em]" style={{ color: muted }}>
-                {activeSectionMeta.icon}
-                <span>{activeSectionMeta.label}</span>
-              </div>
-              <h2 className="text-[18px] font-semibold leading-none" style={{ color: text }}>{activeSectionMeta.label}</h2>
-              <div className="hidden h-3 w-px lg:block" style={{ background: border }} />
+            <div className="min-w-0 flex-1">
               <p className="min-w-[240px] flex-1 text-[11px] leading-4" style={{ color: muted }}>
                 {activeSectionMeta.detail}
               </p>
@@ -1090,6 +1188,7 @@ export function SettingsPage({
                           <p className="mt-1 text-[11px] opacity-45">{shader.description ?? 'Shell shader profile.'}</p>
                           <div className="mt-2 flex flex-wrap items-center gap-2 text-[9px] uppercase tracking-[0.12em] opacity-55">
                             <span>{surfaceSummary || 'No Surfaces'}</span>
+                            {shader.controls.length > 0 && <span>{shader.controls.length} Controls</span>}
                             {effectiveActive && <span style={{ color: accent }}>Live</span>}
                           </div>
                         </button>
@@ -1123,6 +1222,58 @@ export function SettingsPage({
                         <span className="opacity-45">No metadata tags</span>
                       )}
                     </div>
+                  </div>
+
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shader Controls</div>
+                        <p className="mt-1 text-[11px] opacity-45">
+                          Shaders can expose their own live tweak set. Overrides are stored per shader, so changing profiles does not wipe a tuned setup for another one.
+                        </p>
+                      </div>
+                      {effectiveShader && effectiveShader.controls.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextShaderControlValues = { ...settings.appearance.shaderControlValues };
+                            delete nextShaderControlValues[effectiveShader.id];
+                            updateAppearance({ shaderControlValues: nextShaderControlValues });
+                          }}
+                          className="rounded border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]"
+                          style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}
+                        >
+                          Reset Shader
+                        </button>
+                      )}
+                    </div>
+
+                    {effectiveShader && effectiveShader.controls.length > 0 ? (
+                      <div className="mt-3 space-y-2">
+                        {effectiveShader.controls.map(control => (
+                          <RangeField
+                            key={`shader-control-${effectiveShader.id}-${control.id}`}
+                            label={control.label}
+                            description={control.description ?? `Live ${effectiveShader.name} control.`}
+                            min={control.min}
+                            max={control.max}
+                            step={control.step}
+                            value={effectiveShaderControlValues[control.id] ?? control.defaultValue ?? control.min}
+                            valueLabel={formatShaderControlValue(
+                              control,
+                              effectiveShaderControlValues[control.id] ?? control.defaultValue ?? control.min,
+                            )}
+                            onChange={value => setShaderControlValue(effectiveShader, control, value)}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px] opacity-55" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                        {effectiveShader
+                          ? `${effectiveShader.name} does not expose live controls yet. Add a \`controls\` array in the shader module to surface tweakable sliders here.`
+                          : 'No shader is currently active, so there are no live controls to show.'}
+                      </div>
+                    )}
                   </div>
 
                   <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>

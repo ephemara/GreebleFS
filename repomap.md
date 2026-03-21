@@ -5,6 +5,15 @@
     └── 📂 animations
     └── 📂 AppleCommand
         └── 📂 public
+    └── 📂 coverage
+        └── 📂 src
+            └── 📂 components
+                └── 📂 explorer
+            └── 📂 config
+            └── 📂 input
+            └── 📂 panels
+            └── 📂 runtime
+            └── 📂 store
     └── 📂 crates
         └── 📂 explorer
         └── 📂 file-opening
@@ -202,6 +211,8 @@
         └── 📂 runtime
         └── 📂 store
         └── 📂 test
+            └── 📂 browser
+            └── 📂 helpers
     └── 📂 src-tauri
         └── 📂 capabilities
         └── 📂 gen
@@ -226,6 +237,12 @@
                 └── 📂 examples
                 └── 📂 icons
                 └── 📂 incremental
+        └── 📂 target-tests-explorer-fileops
+            └── 📂 debug
+                └── 📂 deps
+                └── 📂 examples
+                └── 📂 icons
+                └── 📂 incremental
         └── 📂 target-tests-size
             └── 📂 debug
                 └── 📂 deps
@@ -238,6 +255,18 @@
                 └── 📂 file-opening
                 └── 📂 file-opening-windows
                 └── 📂 src-tauri
+    └── 📂 target-tests-plugin-watch
+        └── 📂 debug
+            └── 📂 deps
+            └── 📂 examples
+            └── 📂 icons
+            └── 📂 incremental
+                └── 📂 build_script_build-0ln0qh7rtzvsi
+                └── 📂 file_opening-1n6pxno77ar7w
+                └── 📂 file_opening_windows-28ue4kvg2j0h8
+                └── 📂 greeble-1255ny848iybk
+                └── 📂 greeble_lib-0jlgi5j74w4bs
+                └── 📂 greeble_lib-2ookanzd8f57w
     └── 📂 themes
         └── 📂 _starter
         └── 📂 aqua-light

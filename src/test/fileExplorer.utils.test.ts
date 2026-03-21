@@ -81,6 +81,50 @@ function sortEntries(entries: FileEntry[]): FileEntry[] {
   });
 }
 
+function typeLabel(entry: FileEntry): string {
+  if (entry.is_dir) return 'Folder';
+  const labels: Record<string, string> = {
+    py: 'Python',
+    ts: 'TypeScript',
+    txt: 'Text',
+    md: 'Markdown',
+  };
+  return labels[entry.extension] ?? `${entry.extension.toUpperCase()} File`;
+}
+
+function sortEntriesBy(
+  entries: FileEntry[],
+  sortBy: 'name' | 'size' | 'date' | 'type',
+  sortOrder: 'asc' | 'desc',
+): FileEntry[] {
+  return [...entries].sort((left, right) => {
+    if (left.is_dir !== right.is_dir) return left.is_dir ? -1 : 1;
+
+    let comparison = 0;
+    switch (sortBy) {
+      case 'size':
+        comparison = left.size - right.size;
+        break;
+      case 'date':
+        comparison = left.modified - right.modified;
+        break;
+      case 'type':
+        comparison = typeLabel(left).localeCompare(typeLabel(right), undefined, { sensitivity: 'base', numeric: true });
+        break;
+      case 'name':
+      default:
+        comparison = left.name.localeCompare(right.name, undefined, { sensitivity: 'base', numeric: true });
+        break;
+    }
+
+    if (comparison === 0) {
+      comparison = left.name.localeCompare(right.name, undefined, { sensitivity: 'base', numeric: true });
+    }
+
+    return sortOrder === 'asc' ? comparison : -comparison;
+  });
+}
+
 // Simulates search filter
 function filterEntries(entries: FileEntry[], query: string): FileEntry[] {
   if (!query.trim()) return entries;
@@ -302,6 +346,52 @@ describe('sortEntries() — directory-first sort', () => {
     const orig   = [...input];
     sortEntries(input);
     expect(input).toEqual(orig);
+  });
+});
+
+describe('sortEntriesBy() — explorer sort modes', () => {
+  const dir = (name: string, modified = 1000) => makeEntry({ name, is_dir: true, extension: '', size: 0, modified });
+  const file = (name: string, extension: string, size: number, modified: number) => makeEntry({ name, extension, size, modified });
+
+  it('keeps directories ahead of files when sorting by size', () => {
+    const result = sortEntriesBy([
+      file('large.py', 'py', 9000, 10),
+      dir('folder-a'),
+      file('small.txt', 'txt', 100, 20),
+    ], 'size', 'desc');
+
+    expect(result[0].is_dir).toBe(true);
+    expect(result.slice(1).map(entry => entry.name)).toEqual(['large.py', 'small.txt']);
+  });
+
+  it('sorts by modified date descending', () => {
+    const result = sortEntriesBy([
+      file('older.txt', 'txt', 100, 10),
+      file('newer.txt', 'txt', 100, 50),
+      file('middle.txt', 'txt', 100, 30),
+    ], 'date', 'desc');
+
+    expect(result.map(entry => entry.name)).toEqual(['newer.txt', 'middle.txt', 'older.txt']);
+  });
+
+  it('sorts by type ascending with stable name fallback', () => {
+    const result = sortEntriesBy([
+      file('zeta.py', 'py', 10, 10),
+      file('alpha.py', 'py', 20, 20),
+      file('notes.txt', 'txt', 30, 30),
+    ], 'type', 'asc');
+
+    expect(result.map(entry => entry.name)).toEqual(['alpha.py', 'zeta.py', 'notes.txt']);
+  });
+
+  it('applies the same sort to search-style subsets', () => {
+    const result = sortEntriesBy([
+      file('audio_to_audio.py', 'py', 891, 20),
+      file('audio.py', 'py', 3700, 30),
+      file('audio_capture.py', 'py', 7800, 40),
+    ], 'size', 'desc');
+
+    expect(result.map(entry => entry.name)).toEqual(['audio_capture.py', 'audio.py', 'audio_to_audio.py']);
   });
 });
 

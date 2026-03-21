@@ -189,6 +189,12 @@ export default defineShader({
   description: 'Soft volumetric aurora ribbons with restrained chrome glow and a cleaner glass-sky atmosphere.',
   group: 'Authoring Extremes',
   tags: ['aurora', 'volumetric', 'chrome', 'caustic'],
+  controls: [
+    { id: 'intensity', label: 'Ribbon Intensity', description: 'Push the body glow and overall aurora mass.', min: 0, max: 1, step: 0.02 },
+    { id: 'bloom', label: 'Bloom', description: 'Control the amount of glossy spectral bloom.', min: 0, max: 1, step: 0.02 },
+    { id: 'drift', label: 'Drift', description: 'Change how much the ribbon field glides across the shell.', min: 0, max: 1, step: 0.02 },
+    { id: 'railAlpha', label: 'Rail Glow', description: 'Tune the chrome intensity in the top bar.', min: 0.2, max: 1, step: 0.02 },
+  ],
   resolveSharedUniforms: context => ({
     intensity: clamp01(0.42 + context.blurStrength / 34 + context.panelTransparency * 0.3),
     bloom: clamp01(0.18 + context.zoom * 0.16 + (context.isSettingsActive ? 0.12 : 0)),

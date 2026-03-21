@@ -1313,6 +1313,8 @@ pub async fn fs_transfer_items(
             continue;
         }
 
+        validate_transfer_destination(&source_path, &destination, operation)?;
+
         match operation {
             FileTransferOperation::Copy => {
                 copy_path(&source_path, &destination).map_err(|e| e.to_string())?;
@@ -1341,6 +1343,42 @@ pub async fn fs_transfer_items(
     }
 
     Ok(results)
+}
+
+fn validate_transfer_destination(
+    source_path: &Path,
+    destination: &Path,
+    operation: FileTransferOperation,
+) -> Result<(), String> {
+    if !source_path.is_dir() {
+        return Ok(());
+    }
+
+    let normalized_source = if source_path.is_absolute() {
+        source_path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map(|cwd| cwd.join(source_path))
+            .unwrap_or_else(|_| source_path.to_path_buf())
+    };
+    let normalized_destination = if destination.is_absolute() {
+        destination.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map(|cwd| cwd.join(destination))
+            .unwrap_or_else(|_| destination.to_path_buf())
+    };
+
+    if normalized_destination.starts_with(&normalized_source) {
+        return Err(format!(
+            "Cannot {:?} a folder into itself or one of its descendants: {} -> {}",
+            operation,
+            source_path.display(),
+            destination.display()
+        ));
+    }
+
+    Ok(())
 }
 
 fn copy_path(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -2264,6 +2302,30 @@ mod tests {
         assert!(
             target_dir.join("folder-b").join("nested.txt").exists(),
             "target should contain moved folder contents"
+        );
+    }
+
+    #[tokio::test]
+    async fn transfer_items_rejects_moving_folder_into_its_descendant() {
+        let dir = tmp_dir();
+        let source_dir = dir.path().join("source");
+        let nested_target = source_dir.join("nested");
+        fs::create_dir(&source_dir).unwrap();
+        fs::create_dir(&nested_target).unwrap();
+        fs::write(source_dir.join("root.txt"), b"root").unwrap();
+
+        let result = fs_transfer_items(
+            nested_target.to_string_lossy().into(),
+            vec![source_dir.to_string_lossy().into()],
+            FileTransferOperation::Move,
+        )
+        .await;
+
+        assert!(result.is_err(), "self-nesting move should be rejected");
+        let message = result.err().unwrap();
+        assert!(
+            message.contains("descendants"),
+            "unexpected error message: {message}"
         );
     }
 

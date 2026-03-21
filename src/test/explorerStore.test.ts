@@ -33,12 +33,14 @@ describe('explorerStore persistence', () => {
       historyIdx: 1,
       sidebarWidth: 244,
       previewWidth: 420,
+      documentViewMode: 'preview',
     });
     store.replaceRail(folderResult.snapshot);
 
     const hydrated = loadExplorerPersistedState(window.localStorage);
     expect(hydrated.session.currentPath).toBe('M:\\OverlayTerm\\src');
     expect(hydrated.session.sidebarWidth).toBe(244);
+    expect(hydrated.session.documentViewMode).toBe('preview');
     expect(hydrated.rail.nodes).toHaveLength(1);
     expect(hydrated.rail.nodes[0].kind).toBe('folder');
   });

@@ -40,10 +40,14 @@ export interface OverlayPanelDefinition {
 export function createBuiltInPanelDefinitions({
   appearance,
   explorerLayoutMode,
+  explorerRepoPicker,
   isOpen,
   hideOverlay,
   onOpenInTerminal,
   onAddBookmark,
+  onRequestRepositoryImport,
+  pendingRepositoryImports,
+  onPendingRepositoryImportsHandled,
   themePackages,
   themePackagesDirectory,
   themePackagesLoading,
@@ -68,10 +72,20 @@ export function createBuiltInPanelDefinitions({
 }: {
   appearance: ResolvedOverlayAppearance;
   explorerLayoutMode?: ExplorerLayoutMode;
+  explorerRepoPicker?: {
+    active: boolean;
+    allowMultiple: boolean;
+    requestId: number;
+    onConfirm: (paths: string[]) => void;
+    onCancel: () => void;
+  } | null;
   isOpen: boolean;
   hideOverlay: () => void;
   onOpenInTerminal: (path: string) => void;
   onAddBookmark: (name: string, path: string) => Promise<void>;
+  onRequestRepositoryImport: () => void;
+  pendingRepositoryImports: string[];
+  onPendingRepositoryImportsHandled: () => void;
   themePackages: LoadedOverlayThemePackage[];
   themePackagesDirectory: string;
   themePackagesLoading: boolean;
@@ -119,6 +133,7 @@ export function createBuiltInPanelDefinitions({
         <FileExplorer
           appearance={appearance}
           layoutMode={explorerLayoutMode}
+          repositoryPicker={explorerRepoPicker}
           theme={{
             accent,
             bg: appearance.theme.palette.shellBackground,
@@ -139,7 +154,14 @@ export function createBuiltInPanelDefinitions({
       icon: <GitBranch size={12} />,
       description: 'Git tools and diff management.',
       defaultOpen: true,
-      render: () => <GitManager appearance={appearance} />,
+      render: () => (
+        <GitManager
+          appearance={appearance}
+          pendingRepositoryImports={pendingRepositoryImports}
+          onPendingRepositoryImportsHandled={onPendingRepositoryImportsHandled}
+          onRequestRepositoryImport={onRequestRepositoryImport}
+        />
+      ),
     },
     {
       id: 'notes',

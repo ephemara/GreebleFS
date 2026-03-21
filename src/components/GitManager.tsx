@@ -1,7 +1,7 @@
-import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { DiffEditor } from '@monaco-editor/react';
-import { Download, FolderGit2, GitBranch, GitCommit, Plus, RefreshCw, Rocket, Search, Upload, X } from 'lucide-react';
+import Editor from '@monaco-editor/react';
+import { ChevronDown, ChevronUp, Download, FolderGit2, GitBranch, GitCommit, Plus, RefreshCw, Rocket, Search, Upload, X } from 'lucide-react';
 import { multiplyColorAlpha, type ResolvedOverlayAppearance } from '../config/appearance';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
@@ -30,9 +30,8 @@ interface RepoBadgeState {
 }
 
 interface DiffViewState {
-  original: string;
-  modified: string;
-  language: string;
+  content: string;
+  hunkLines: number[];
 }
 
 type ChangeFilter = 'all' | 'staged' | 'unstaged' | 'untracked';
@@ -58,13 +57,19 @@ const FILTERS: Record<ChangeFilter, string> = {
   untracked: 'New',
 };
 
-const MONACO_BY_EXT: Record<string, string> = {
-  ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript', rs: 'rust',
-  py: 'python', go: 'go', json: 'json', md: 'markdown', yml: 'yaml', yaml: 'yaml',
-  toml: 'toml', css: 'css', html: 'html', xml: 'xml', sh: 'shell', ps1: 'powershell',
-};
+interface GitManagerProps {
+  appearance?: ResolvedOverlayAppearance;
+  pendingRepositoryImports?: string[];
+  onPendingRepositoryImportsHandled?: () => void;
+  onRequestRepositoryImport?: () => void;
+}
 
-export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppearance }) {
+export function GitManager({
+  appearance,
+  pendingRepositoryImports = [],
+  onPendingRepositoryImportsHandled,
+  onRequestRepositoryImport,
+}: GitManagerProps) {
   const palette = {
     bg: appearance?.theme.palette.shellBackground || FALLBACK.bg,
     sidebar: appearance?.theme.palette.sidebarBackground || FALLBACK.sidebar,
@@ -91,9 +96,12 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
   const [changeQuery, setChangeQuery] = useState('');
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [diffView, setDiffView] = useState<DiffViewState | null>(null);
+  const [activeHunkIndex, setActiveHunkIndex] = useState(0);
   const deferredQuery = useDeferredValue(changeQuery);
   const [repoRailWidth, setRepoRailWidth] = usePersistentPanelSize('overlayterm-source-repo-rail-width', 230, 180, 360);
   const [changeListWidth, setChangeListWidth] = usePersistentPanelSize('overlayterm-source-change-list-width', 420, 280, 820);
+  const diffContainerRef = useRef<HTMLDivElement | null>(null);
+  const diffEditorRef = useRef<any>(null);
 
   useEffect(() => {
     try {
@@ -258,17 +266,75 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
     }
   }, [refreshRepo]);
 
-  const addRepo = useCallback(async () => {
-    const path = window.prompt('Enter absolute path to Git repository:');
-    if (!path) return;
+  const importRepositories = useCallback(async (paths: string[]) => {
+    const normalizedPaths = Array.from(new Set(
+      paths
+        .map(path => path.trim())
+        .filter(Boolean),
+    ));
+    if (normalizedPaths.length === 0) {
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
     try {
-      await runGit(path, ['status']);
-      setRepos(current => (current.includes(path) ? current : [...current, path]));
-      setSelectedRepo(path);
-    } catch (repoError) {
-      setError(String(repoError));
+      const results = await Promise.all(normalizedPaths.map(async path => {
+        try {
+          await runGit(path, ['rev-parse', '--is-inside-work-tree']);
+          return { path, ok: true as const };
+        } catch (repoError) {
+          return { path, ok: false as const, error: String(repoError) };
+        }
+      }));
+
+      const validPaths = results.filter(result => result.ok).map(result => result.path);
+      const invalidResults = results.filter((result): result is { path: string; ok: false; error: string } => !result.ok);
+
+      if (validPaths.length > 0) {
+        setRepos(current => {
+          const existing = new Set(current);
+          return [...current, ...validPaths.filter(path => !existing.has(path))];
+        });
+        setSelectedRepo(validPaths[0]);
+      }
+
+      if (invalidResults.length > 0) {
+        const invalidSummary = invalidResults.map(result => `${result.path}: ${result.error}`).join('\n');
+        setError(validPaths.length > 0 ? `Some repositories were skipped:\n${invalidSummary}` : invalidSummary);
+      }
+    } finally {
+      setLoading(false);
     }
   }, [runGit]);
+
+  useEffect(() => {
+    if (pendingRepositoryImports.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    void importRepositories(pendingRepositoryImports).finally(() => {
+      if (!cancelled) {
+        onPendingRepositoryImportsHandled?.();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [importRepositories, onPendingRepositoryImportsHandled, pendingRepositoryImports]);
+
+  const addRepo = useCallback(async () => {
+    if (onRequestRepositoryImport) {
+      onRequestRepositoryImport();
+      return;
+    }
+
+    const path = window.prompt('Enter absolute path to Git repository:');
+    if (!path) return;
+    await importRepositories([path]);
+  }, [importRepositories, onRequestRepositoryImport]);
 
   const removeRepo = useCallback((path: string, event: React.MouseEvent) => {
     event.stopPropagation();
@@ -315,12 +381,11 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
   const loadDiff = useCallback(async (repoPath: string, file: GitFileStatus) => {
     setDiffLoading(true);
     try {
-      const headPath = file.originalFile ?? file.file;
-      const [original, modified] = await Promise.all([
-        !file.isUntracked && file.kind !== 'added' ? safeGit(repoPath, ['show', `HEAD:${headPath}`], '') : Promise.resolve(''),
-        file.kind !== 'deleted' ? invoke<string>('fs_read_text_file', { path: joinRepoPath(repoPath, file.file) }).catch(() => '') : Promise.resolve(''),
-      ]);
-      setDiffView({ original, modified, language: inferLanguage(file.file) });
+      const patch = await buildUnifiedDiff(repoPath, file, safeGit);
+      setDiffView({
+        content: patch,
+        hunkLines: findDiffHunkLines(patch),
+      });
     } finally {
       setDiffLoading(false);
     }
@@ -330,6 +395,26 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
     if (!repoState || !selectedFile) return;
     void loadDiff(repoState.path, selectedFile);
   }, [loadDiff, repoState, selectedFile]);
+
+  useEffect(() => {
+    setActiveHunkIndex(0);
+  }, [selectedFilePath, diffView?.content]);
+
+  useEffect(() => {
+    const container = diffContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => {
+      diffEditorRef.current?.layout?.();
+    });
+    observer.observe(container);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [diffContainerRef]);
 
   const summary = repoState ? summarizeGitFiles(repoState.status) : null;
   const dirtyRepoCount = useMemo(
@@ -347,6 +432,33 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
       return file.file.toLowerCase().includes(query) || (file.originalFile?.toLowerCase().includes(query) ?? false);
     });
   }, [changeFilter, deferredQuery, repoState]);
+
+  const jumpToDiffHunk = useCallback((index: number) => {
+    if (!diffView || diffView.hunkLines.length === 0) {
+      return;
+    }
+
+    const safeIndex = Math.max(0, Math.min(diffView.hunkLines.length - 1, index));
+    const lineNumber = diffView.hunkLines[safeIndex];
+    setActiveHunkIndex(safeIndex);
+    diffEditorRef.current?.setPosition?.({ lineNumber, column: 1 });
+    diffEditorRef.current?.revealLineInCenter?.(lineNumber);
+    diffEditorRef.current?.focus?.();
+  }, [diffView]);
+
+  useEffect(() => {
+    if (!diffView || diffView.hunkLines.length === 0) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      jumpToDiffHunk(0);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [diffView, jumpToDiffHunk]);
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', background: palette.bg, color: palette.text, overflow: 'hidden' }}>
@@ -515,20 +627,59 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
               </ResizablePane>
 
               <div style={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', background: palette.bg }}>
-                <div style={{ padding: '8px 12px', borderBottom: `1px solid ${palette.border}`, fontSize: 11, color: palette.muted }}>
-                  {selectedFile ? `${selectedFile.file} • ${statusLabel(selectedFile)} • +${selectedFile.additions} / -${selectedFile.deletions}` : 'Select a changed file to inspect the diff.'}
+                <div style={{ padding: '8px 12px', borderBottom: `1px solid ${palette.border}`, fontSize: 11, color: palette.muted, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                  <span>
+                    {selectedFile ? `${selectedFile.file} • ${statusLabel(selectedFile)} • +${selectedFile.additions} / -${selectedFile.deletions}` : 'Select a changed file to inspect the diff.'}
+                  </span>
+                  {selectedFile && diffView && diffView.hunkLines.length > 0 ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                      <span style={{ fontSize: 10, color: palette.muted }}>
+                        Hunk {activeHunkIndex + 1} / {diffView.hunkLines.length}
+                      </span>
+                      <button type="button" onClick={() => jumpToDiffHunk(activeHunkIndex - 1)} style={iconButtonStyle(palette)} title="Previous change">
+                        <ChevronUp size={11} />
+                      </button>
+                      <button type="button" onClick={() => jumpToDiffHunk(activeHunkIndex + 1)} style={iconButtonStyle(palette)} title="Next change">
+                        <ChevronDown size={11} />
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
-                <div style={{ flex: 1, minHeight: 0 }}>
+                <div ref={node => { diffContainerRef.current = node; }} style={{ flex: 1, minHeight: 0 }}>
                   {selectedFile ? (
                     diffLoading ? (
                       <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: palette.muted, fontSize: 11 }}>Loading diff…</div>
                     ) : (
-                      <DiffEditor
-                        original={diffView?.original ?? ''}
-                        modified={diffView?.modified ?? ''}
-                        language={diffView?.language}
+                      <Editor
+                        onMount={editor => {
+                          diffEditorRef.current = editor;
+                          window.requestAnimationFrame(() => {
+                            editor.layout?.();
+                          });
+                        }}
+                        value={diffView?.content ?? ''}
+                        language="diff"
                         theme="vs-dark"
-                        options={{ readOnly: true, minimap: { enabled: false }, fontSize: 12, renderSideBySide: false, scrollBeyondLastLine: false, wordWrap: 'on', scrollbar: { vertical: 'hidden', horizontal: 'hidden', verticalScrollbarSize: 0, horizontalScrollbarSize: 0, alwaysConsumeMouseWheel: false } }}
+                        options={{
+                          automaticLayout: true,
+                          readOnly: true,
+                          minimap: { enabled: false },
+                          fontSize: 12,
+                          lineNumbers: 'on',
+                          glyphMargin: false,
+                          folding: true,
+                          overviewRulerLanes: 2,
+                          lineDecorationsWidth: 12,
+                          scrollBeyondLastLine: false,
+                          wordWrap: 'off',
+                          scrollbar: {
+                            vertical: 'visible',
+                            horizontal: 'visible',
+                            verticalScrollbarSize: 10,
+                            horizontalScrollbarSize: 10,
+                            alwaysConsumeMouseWheel: false,
+                          },
+                        }}
                       />
                     )
                   ) : (
@@ -546,13 +697,54 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
   );
 }
 
-function inferLanguage(path: string): string {
-  const ext = path.split('.').pop()?.toLowerCase() || '';
-  return MONACO_BY_EXT[ext] || 'plaintext';
-}
-
 function joinRepoPath(repoPath: string, filePath: string): string {
   return `${repoPath.replace(/[\\/]+$/, '')}/${filePath.replace(/\\/g, '/')}`;
+}
+
+async function buildUnifiedDiff(
+  repoPath: string,
+  file: GitFileStatus,
+  safeGit: (repo: string, args: string[], fallback?: string) => Promise<string>,
+): Promise<string> {
+  const diffPaths = [file.originalFile ?? file.file, file.file];
+
+  if (file.isUntracked) {
+    if (file.file.endsWith('/')) {
+      return `diff --git a/${file.file} b/${file.file}\nnew file mode 040000\n--- /dev/null\n+++ b/${file.file}\n@@\n+Directory added: ${file.file}\n`;
+    }
+
+    const content = await invoke<string>('fs_read_text_file', { path: joinRepoPath(repoPath, file.file) }).catch(() => '');
+    return buildSyntheticAddedDiff(file.file, content);
+  }
+
+  const patch = await safeGit(
+    repoPath,
+    ['diff', 'HEAD', '--find-renames', '--no-ext-diff', '--', ...diffPaths],
+    '',
+  );
+
+  if (patch.trim()) {
+    return patch;
+  }
+
+  if (file.kind === 'deleted') {
+    return `diff --git a/${file.file} b/${file.file}\ndeleted file mode 100644\n--- a/${file.file}\n+++ /dev/null\n`;
+  }
+
+  return `diff --git a/${file.file} b/${file.file}\n@@\n+No textual diff output was produced for this file.\n`;
+}
+
+function buildSyntheticAddedDiff(path: string, content: string): string {
+  const lines = content.length > 0 ? content.split(/\r?\n/) : [];
+  const hunkLength = Math.max(lines.length, 1);
+  const body = lines.length > 0 ? lines.map(line => `+${line}`).join('\n') : '+';
+  return `diff --git a/${path} b/${path}\nnew file mode 100644\n--- /dev/null\n+++ b/${path}\n@@ -0,0 +1,${hunkLength} @@\n${body}\n`;
+}
+
+function findDiffHunkLines(patch: string): number[] {
+  return patch
+    .split(/\r?\n/)
+    .flatMap((line, index) => (line.startsWith('@@') ? [index + 1] : []));
 }
 
 function buildRepoBadgeState(files: GitFileStatus[]): RepoBadgeState {

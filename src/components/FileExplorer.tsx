@@ -32,14 +32,21 @@ import {
   type OverlayNativeIconRequest,
   type OverlayNativeIconResponse,
 } from '../config/nativeIcons';
-import { detectClientPlatform, getFallbackExplorerPath, getPlatformPathSeparator, joinPlatformPath } from '../config/platform';
+import {
+  detectClientPlatform,
+  getFallbackExplorerPath,
+  getPlatformPathSeparator,
+  joinPlatformPath,
+  type RuntimePlatform,
+} from '../config/platform';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ExplorerSideRail } from './explorer/ExplorerSideRail';
 import { removeExplorerBookmarksByPath, upsertExplorerBookmark } from './explorer/explorerRailState';
 import { ResizablePane } from './ResizablePane';
-import { useExplorerStore } from '../store/explorerStore';
+import { useExplorerStore, type ExplorerDocumentViewMode } from '../store/explorerStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { shouldOpenExplorerEntryOnTrigger } from './fileExplorerClickBehavior';
+import { TextDocumentPreview, getDocumentPreviewKind, type DocumentPreviewKind } from './documentPreview';
 import {
   getModelPreviewFormat,
   getMonacoLanguage,
@@ -93,6 +100,7 @@ type PreviewState =
       name: string;
       content: string;
       language: string;
+      renderKind: DocumentPreviewKind;
       focusTarget: EditorSearchFocusTarget | null;
       isDirty: boolean;
       isSaving: boolean;
@@ -104,6 +112,8 @@ interface NewItemState   { visible: boolean; kind: 'file'|'folder'; }
 interface ExplorerClipboard { action:'copy'|'cut'; entries: FileEntry[]; }
 interface FileTransferResult { source_path: string; destination_path: string; operation: 'copy' | 'move'; }
 type FileTransferOperation = 'copy' | 'move';
+type ExplorerDragIntent = 'internal' | 'native-out';
+type ExplorerSortKey = 'name' | 'size' | 'date' | 'type';
 
 // ─── Palette ─────────────────────────────────────────────────────────────────
 
@@ -243,6 +253,36 @@ const FILENAME_TYPE_LABEL: Record<string, string> = {
   'cargo.lock': 'Cargo Lockfile',
 };
 
+function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+  const element = target instanceof HTMLElement ? target : null;
+  if (!element) {
+    return false;
+  }
+
+  return element.isContentEditable
+    || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName)
+    || Boolean(element.closest('.monaco-editor'));
+}
+
+function resolveExplorerDragIntent(event: Pick<React.DragEvent, 'altKey'>): ExplorerDragIntent {
+  return event.altKey ? 'native-out' : 'internal';
+}
+
+function resolveExplorerDropOperation(
+  event: Pick<React.DragEvent, 'altKey' | 'ctrlKey'>,
+  platform: RuntimePlatform,
+): FileTransferOperation {
+  if (platform === 'macos') {
+    return event.altKey ? 'copy' : 'move';
+  }
+
+  return event.ctrlKey ? 'copy' : 'move';
+}
+
+function getDefaultExplorerSortOrder(sortBy: ExplorerSortKey): 'asc' | 'desc' {
+  return sortBy === 'size' || sortBy === 'date' ? 'desc' : 'asc';
+}
+
 function getEntryExtension(entry: Pick<FileEntry, 'is_dir' | 'name' | 'extension'>): string {
   if (entry.is_dir) {
     return '';
@@ -277,6 +317,49 @@ function getEntryTypeLabel(entry: Pick<FileEntry, 'is_dir' | 'name' | 'extension
   }
 
   return EXT_TYPE_LABEL[extension] ?? `${extension.toUpperCase()} File`;
+}
+
+function compareExplorerEntries(
+  left: FileEntry,
+  right: FileEntry,
+  sortBy: ExplorerSortKey,
+  sortOrder: 'asc' | 'desc',
+): number {
+  if (left.is_dir !== right.is_dir) {
+    return left.is_dir ? -1 : 1;
+  }
+
+  let comparison = 0;
+  switch (sortBy) {
+    case 'size':
+      comparison = left.size - right.size;
+      break;
+    case 'date':
+      comparison = left.modified - right.modified;
+      break;
+    case 'type':
+      comparison = getEntryTypeLabel(left).localeCompare(getEntryTypeLabel(right), undefined, {
+        sensitivity: 'base',
+        numeric: true,
+      });
+      break;
+    case 'name':
+    default:
+      comparison = left.name.localeCompare(right.name, undefined, {
+        sensitivity: 'base',
+        numeric: true,
+      });
+      break;
+  }
+
+  if (comparison === 0) {
+    comparison = left.name.localeCompare(right.name, undefined, {
+      sensitivity: 'base',
+      numeric: true,
+    });
+  }
+
+  return sortOrder === 'asc' ? comparison : -comparison;
 }
 
 function getIconSrc(
@@ -545,6 +628,8 @@ function PreviewPanel({
   onWidthChange,
   onTextChange,
   onCopyPath,
+  viewMode,
+  onViewModeChange,
 }: {
   preview: PreviewState;
   width: number;
@@ -552,6 +637,8 @@ function PreviewPanel({
   onWidthChange: (width: number) => void;
   onTextChange: (path: string, content: string) => void;
   onCopyPath: (path: string) => void;
+  viewMode: ExplorerDocumentViewMode;
+  onViewModeChange: (mode: ExplorerDocumentViewMode) => void;
 }) {
   const dragging = useRef(false);
   const startX   = useRef(0);
@@ -583,6 +670,7 @@ function PreviewPanel({
 
   const previewTitle = preview.type === 'none' ? 'Preview' : preview.name;
   const copyPathLabel = copiedPath === preview.path ? 'Copied' : 'Copy Path';
+  const supportsRenderedPreview = preview.type === 'text' && preview.renderKind !== 'none';
 
   return (
     <div style={{ width, background:EXP.panel, borderLeft:`1px solid ${EXP.border}`, display:'flex', flexDirection:'column', flexShrink:0, overflow:'hidden', position:'relative' }}>
@@ -613,6 +701,35 @@ function PreviewPanel({
           )}
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
+          {supportsRenderedPreview && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: 2, borderRadius: 7, border: `1px solid ${EXP.border}`, background: 'rgba(255,255,255,0.03)' }}>
+              {([
+                { id: 'edit', label: 'Edit' },
+                { id: 'preview', label: 'Preview' },
+              ] as const).map(option => {
+                const active = viewMode === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => onViewModeChange(option.id)}
+                    style={{
+                      border: 'none',
+                      borderRadius: 5,
+                      cursor: 'pointer',
+                      padding: '4px 8px',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: active ? EXP.text : EXP.muted,
+                      background: active ? `${EXP.accent}22` : 'transparent',
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {preview.type !== 'none' && (
             <button
               onClick={() => {
@@ -639,7 +756,10 @@ function PreviewPanel({
             />
           </div>
         )}
-        {preview.type === 'text' && (
+        {preview.type === 'text' && viewMode === 'preview' && supportsRenderedPreview && (
+          <TextDocumentPreview kind={preview.renderKind} content={preview.content} />
+        )}
+        {preview.type === 'text' && (!supportsRenderedPreview || viewMode === 'edit') && (
           <SearchAwareCodeView
             value={preview.content || ''}
             language={preview.language || 'plaintext'}
@@ -742,9 +862,23 @@ interface FileExplorerProps {
   onOpenInTerminal: (path: string) => void;
   onAddBookmark: (name: string, path: string) => void;
   layoutMode?: ExplorerLayoutMode;
+  repositoryPicker?: {
+    active: boolean;
+    allowMultiple: boolean;
+    requestId: number;
+    onConfirm: (paths: string[]) => void;
+    onCancel: () => void;
+  } | null;
 }
 
-export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmark, layoutMode = 'full' }: FileExplorerProps) {
+export function FileExplorer({
+  theme,
+  appearance,
+  onOpenInTerminal,
+  onAddBookmark,
+  layoutMode = 'full',
+  repositoryPicker = null,
+}: FileExplorerProps) {
   const accent = theme.accent;
   const explorerSettings = useSettingsStore(s => s.settings.explorer);
   const appearanceSettings = useSettingsStore(s => s.settings.appearance);
@@ -793,6 +927,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const [search,       setSearch]       = useState(() => explorerSession.search);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchIncludeContent, setSearchIncludeContent] = useState(() => explorerSession.searchIncludeContent);
+  const [documentViewMode, setDocumentViewMode] = useState<ExplorerDocumentViewMode>(() => explorerSession.documentViewMode);
   const [preview,      setPreview]      = useState<PreviewState>({ type:'none', path:'' });
   const [ctxMenu,      setCtxMenu]      = useState<ContextMenuState>({ visible:false, x:0, y:0, entry:null });
   const [rename,       setRename]       = useState<RenameState>({ active:false, path:'', name:'' });
@@ -845,11 +980,13 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
       previewWidth,
       search,
       searchIncludeContent,
+      documentViewMode,
     });
   }, [
     currentPath,
     history,
     historyIdx,
+    documentViewMode,
     previewWidth,
     search,
     searchIncludeContent,
@@ -1072,9 +1209,36 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   }, [currentPath, navigate, runtimePlatform, search]);
 
   const isSearchActive = search.trim().length > 0;
+  const toggleSort = useCallback((nextSortBy: ExplorerSortKey) => {
+    const nextSortOrder = explorerSettings.sortBy === nextSortBy
+      ? (explorerSettings.sortOrder === 'asc' ? 'desc' : 'asc')
+      : getDefaultExplorerSortOrder(nextSortBy);
+
+    updateExplorerSettings({
+      sortBy: nextSortBy,
+      sortOrder: nextSortOrder,
+    });
+  }, [
+    explorerSettings.sortBy,
+    explorerSettings.sortOrder,
+    updateExplorerSettings,
+  ]);
   const visibleEntries = useMemo(
-    () => (isSearchActive ? searchResults : entries),
-    [isSearchActive, searchResults, entries],
+    () => [...(isSearchActive ? searchResults : entries)].sort((left, right) => (
+      compareExplorerEntries(
+        left,
+        right,
+        explorerSettings.sortBy,
+        explorerSettings.sortOrder,
+      )
+    )),
+    [
+      entries,
+      explorerSettings.sortBy,
+      explorerSettings.sortOrder,
+      isSearchActive,
+      searchResults,
+    ],
   );
   const bookmarkPathSet = useMemo(() => new Set(
     explorerRail.nodes
@@ -1273,6 +1437,20 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     () => visibleEntries.filter(entry => selected.has(entry.path)),
     [visibleEntries, selected],
   );
+  const selectedDirectoryEntries = useMemo(
+    () => selectedEntries.filter(entry => entry.is_dir),
+    [selectedEntries],
+  );
+  const canConfirmRepositorySelection = selectedDirectoryEntries.length > 0;
+
+  useEffect(() => {
+    if (!repositoryPicker?.active) {
+      return;
+    }
+    setSelected(new Set());
+    setCtxMenu({ visible: false, x: 0, y: 0, entry: null });
+    setDeleteTarget(null);
+  }, [repositoryPicker?.active, repositoryPicker?.requestId]);
 
   const getEntryStorageLabel = useCallback((entry: FileEntry) => {
     const measuredInfo = entrySizes[entry.path];
@@ -1504,10 +1682,11 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     }
 
     if (isEditableTextEntry(entry)) {
+      const renderKind = getDocumentPreviewKind(entry.path);
       if (currentPreview.type === 'text' && currentPreview.path === entry.path) {
         setPreview(prev => (
           prev.type === 'text' && prev.path === entry.path
-            ? { ...prev, name: entry.name, language: getMonacoLanguage(ext), focusTarget }
+            ? { ...prev, name: entry.name, language: getMonacoLanguage(ext), renderKind, focusTarget }
             : prev
         ));
         return;
@@ -1521,6 +1700,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
           name:entry.name,
           content,
           language:getMonacoLanguage(ext),
+          renderKind,
           focusTarget,
           isDirty: false,
           isSaving: false,
@@ -1697,6 +1877,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   // ── Click with shift-select support ──
   const onEntryClick = (e: React.MouseEvent, entry: FileEntry) => {
     e.stopPropagation();
+    mainRef.current?.focus();
     const plainClick = !e.shiftKey && !e.ctrlKey && !e.metaKey;
     if (e.shiftKey && lastSelected.current) {
       const idx1 = visibleEntries.findIndex(f => f.path === lastSelected.current);
@@ -1717,6 +1898,9 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
       setSelected(new Set([entry.path]));
     }
     lastSelected.current = entry.path;
+    if (repositoryPicker?.active) {
+      return;
+    }
     if (shouldOpenExplorerEntryOnTrigger({
       isDirectory: entry.is_dir,
       trigger: 'click',
@@ -1732,6 +1916,13 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   };
 
   const onEntryDoubleClick = useCallback((entry: FileEntry) => {
+    if (repositoryPicker?.active) {
+      if (entry.is_dir) {
+        void openEntry(entry);
+      }
+      return;
+    }
+
     if (!shouldOpenExplorerEntryOnTrigger({
       isDirectory: entry.is_dir,
       trigger: 'double-click',
@@ -1742,12 +1933,13 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     }
 
     void openEntry(entry);
-  }, [folderClickMode, openEntry]);
+  }, [folderClickMode, openEntry, repositoryPicker?.active]);
 
   // ── Keyboard ──
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (rename.active || newItem.visible || addressEditing) return;
+      if (isEditableKeyboardTarget(e.target)) return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
         e.preventDefault();
         beginAddressEdit();
@@ -1773,17 +1965,28 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
         e.preventDefault();
         setSelected(new Set(visibleEntries.map(f => f.path)));
       }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        if (selectedEntries.length > 0) {
+          void copyToSysClipboard(selectedEntries.map(entry => entry.path).join('\n'));
+        }
+      }
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        e.preventDefault();
         queueClipboard('copy');
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'x') {
+        e.preventDefault();
         queueClipboard('cut');
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'v') paste();
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        e.preventDefault();
+        void paste();
+      }
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [addressEditing, beginAddressEdit, newItem.visible, paste, queueClipboard, refresh, rename.active, selected, visibleEntries]);
+  }, [addressEditing, beginAddressEdit, newItem.visible, paste, queueClipboard, refresh, rename.active, selectedEntries, visibleEntries]);
 
   // ── Breadcrumbs ──
   const crumbs: { label:string; path:string }[] = [];
@@ -1820,8 +2023,10 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   // ── Drag and Drop ──
   const onDragStart = (e: React.DragEvent, entry: FileEntry) => {
     const dragEntries = resolveEntriesForAction(entry);
+    const dragIntent = resolveExplorerDragIntent(e);
     e.dataTransfer.setData('text/plain', dragEntries[0]?.path ?? entry.path);
     e.dataTransfer.setData('application/x-overlayterm-paths', JSON.stringify(dragEntries.map(item => item.path)));
+    e.dataTransfer.setData('application/x-overlayterm-drag-intent', dragIntent);
     const toFileUri = (value: string) => {
       const normalized = value.replace(/\\/g, '/');
       return normalized.startsWith('/')
@@ -1830,12 +2035,12 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     };
     const uriList = dragEntries.map(item => toFileUri(item.path)).join('\r\n');
     e.dataTransfer.setData('text/uri-list', uriList);
-    e.dataTransfer.effectAllowed = 'copyMove';
+    e.dataTransfer.effectAllowed = dragIntent === 'native-out' ? 'copy' : 'copyMove';
   };
 
   const onDragOver = (e: React.DragEvent, targetPath: string) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
+    e.dataTransfer.dropEffect = resolveExplorerDropOperation(e, runtimePlatform);
     setDragOver(targetPath);
   };
 
@@ -1856,7 +2061,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     }
     if (sources.length === 0) return;
     try {
-      await transferIntoDirectory(targetDir, sources, 'move');
+      await transferIntoDirectory(targetDir, sources, resolveExplorerDropOperation(e, runtimePlatform));
       refresh();
     } catch(e) { setError(String(e)); }
   };
@@ -2150,6 +2355,67 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
           )}
         </div>
 
+        {repositoryPicker?.active && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '8px 12px',
+              background: `${accent}10`,
+              borderBottom: `1px solid ${EXP.border}`,
+              flexShrink: 0,
+            }}
+          >
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: accent }}>
+                Repository Picker
+              </div>
+              <div style={{ marginTop: 3, fontSize: 11, color: EXP.muted }}>
+                Select {repositoryPicker.allowMultiple ? 'one or more folders' : 'a folder'} in Explorer, then confirm them into Source Control.
+                {canConfirmRepositorySelection
+                  ? ` ${selectedDirectoryEntries.length} folder${selectedDirectoryEntries.length !== 1 ? 's' : ''} selected.`
+                  : ' Only directories can be added.'}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => repositoryPicker.onConfirm(selectedDirectoryEntries.map(entry => entry.path))}
+              disabled={!canConfirmRepositorySelection}
+              style={{
+                minHeight: 30,
+                padding: '0 12px',
+                borderRadius: 8,
+                border: `1px solid ${canConfirmRepositorySelection ? accent : EXP.border}`,
+                background: canConfirmRepositorySelection ? accent : 'rgba(255,255,255,0.04)',
+                color: canConfirmRepositorySelection ? '#fff' : EXP.muted,
+                cursor: canConfirmRepositorySelection ? 'pointer' : 'default',
+                fontSize: 11,
+                fontWeight: 700,
+              }}
+            >
+              Add Selected
+            </button>
+            <button
+              type="button"
+              onClick={repositoryPicker.onCancel}
+              style={{
+                minHeight: 30,
+                padding: '0 12px',
+                borderRadius: 8,
+                border: `1px solid ${EXP.border}`,
+                background: 'rgba(255,255,255,0.04)',
+                color: EXP.text,
+                cursor: 'pointer',
+                fontSize: 11,
+                fontWeight: 600,
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
         {/* Error bar */}
         {error && (
           <div style={{ background:'rgba(248,113,113,0.12)', borderBottom:`1px solid rgba(248,113,113,0.3)`, padding:'6px 14px', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
@@ -2163,6 +2429,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
           <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: effectiveViewMode === 'grid' ? 12 : 0 }}>
           <div ref={mainRef} tabIndex={0}
             style={{ minHeight: '100%', outline:'none' }}
+            onClick={() => mainRef.current?.focus()}
             onDragOver={e => { e.preventDefault(); setDragOver('__main__'); }}
             onDragLeave={() => setDragOver(null)}
             onDrop={e => onDrop(e, currentPath)}
@@ -2313,8 +2580,39 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
               <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
                 <thead>
                   <tr style={{ background:EXP.panel, position:'sticky', top:0, zIndex:2 }}>
-                    {['Name','Size','Modified','Type'].map(col => (
-                      <th key={col} style={{ padding:'6px 12px', textAlign:'left', color:EXP.muted, fontWeight:600, fontSize:10, letterSpacing:'0.06em', textTransform:'uppercase', borderBottom:`1px solid ${EXP.border}` }}>{col}</th>
+                    {[
+                      { key: 'name', label: 'Name' },
+                      { key: 'size', label: 'Size' },
+                      { key: 'date', label: 'Modified' },
+                      { key: 'type', label: 'Type' },
+                    ].map(column => (
+                      <th key={column.key} style={{ padding:'6px 12px', textAlign:'left', color:EXP.muted, fontWeight:600, fontSize:10, letterSpacing:'0.06em', textTransform:'uppercase', borderBottom:`1px solid ${EXP.border}` }}>
+                        <button
+                          type="button"
+                          onClick={() => toggleSort(column.key as ExplorerSortKey)}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            background: 'none',
+                            border: 'none',
+                            padding: 0,
+                            color: explorerSettings.sortBy === column.key ? EXP.text : EXP.muted,
+                            cursor: 'pointer',
+                            fontSize: 10,
+                            fontWeight: 600,
+                            letterSpacing: '0.06em',
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          <span>{column.label}</span>
+                          <span style={{ color: explorerSettings.sortBy === column.key ? accent : EXP.muted2 }}>
+                            {explorerSettings.sortBy === column.key
+                              ? explorerSettings.sortOrder === 'asc' ? '↑' : '↓'
+                              : '·'}
+                          </span>
+                        </button>
+                      </th>
                     ))}
                   </tr>
                 </thead>
@@ -2371,6 +2669,8 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
               onWidthChange={setPreviewWidth}
               onTextChange={updatePreviewTextContent}
               onCopyPath={copyToSysClipboard}
+              viewMode={documentViewMode}
+              onViewModeChange={setDocumentViewMode}
               onClose={() => { void closePreview(); }}
             />
           )}

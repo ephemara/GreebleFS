@@ -12,10 +12,17 @@ use image::{ColorType, ImageEncoder, ImageReader, RgbaImage};
 use serde::{Deserialize, Serialize};
 use xcap::Monitor;
 
-static SCREENSHOT_CAPTURE_CACHE: LazyLock<Mutex<HashMap<String, RgbaImage>>> =
+#[derive(Debug, Clone)]
+struct CachedCapture {
+    image: RgbaImage,
+    created_at: u128,
+}
+
+static SCREENSHOT_CAPTURE_CACHE: LazyLock<Mutex<HashMap<String, CachedCapture>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static SCREENSHOT_CAPTURE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
+const MAX_CAPTURE_CACHE_ENTRIES: usize = 6;
 const MAX_PREVIEW_WIDTH: u32 = 1_920;
 const MAX_PREVIEW_HEIGHT: u32 = 1_200;
 
@@ -68,59 +75,58 @@ pub async fn screenshot_save_region(
     width: u32,
     height: u32,
     directory: String,
+    file_prefix: Option<String>,
+    copy_to_clipboard: Option<bool>,
 ) -> Result<SavedScreenshot, String> {
     validate_capture_region(width, height)?;
 
     let image = load_capture_image(&capture_id)?;
-    validate_crop_region(&image, x, y, width, height)?;
+    let cropped = crop_capture_image(&image, x, y, width, height)?;
+    let saved = save_rgba_image(&cropped, Path::new(&directory), file_prefix.as_deref())?;
 
-    let cropped = crop_imm(&image, x, y, width, height).to_image();
-    let dir_path = Path::new(&directory);
-    std::fs::create_dir_all(dir_path).map_err(|e| e.to_string())?;
+    if copy_to_clipboard.unwrap_or(false) {
+        copy_rgba_image_to_clipboard(cropped)?;
+    }
 
-    let created_at = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| e.to_string())?
-        .as_millis();
-    let file_name = format!("overlayterm-shot-{}.png", created_at);
-    let full_path = dir_path.join(&file_name);
+    Ok(saved)
+}
 
-    cropped.save(&full_path).map_err(|e| {
-        format!(
-            "Failed to save screenshot to '{}': {}",
-            full_path.display(),
-            e
-        )
-    })?;
+#[tauri::command]
+pub async fn screenshot_copy_region_to_clipboard(
+    capture_id: String,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    validate_capture_region(width, height)?;
 
-    Ok(SavedScreenshot {
-        path: full_path.to_string_lossy().to_string(),
-        file_name,
-        created_at,
-    })
+    let image = load_capture_image(&capture_id)?;
+    let cropped = crop_capture_image(&image, x, y, width, height)?;
+    copy_rgba_image_to_clipboard(cropped)
 }
 
 #[tauri::command]
 pub async fn screenshot_copy_image_to_clipboard(path: String) -> Result<(), String> {
-    let image = ImageReader::open(&path)
-        .map_err(|e| format!("Failed to open screenshot '{}': {}", path, e))?
-        .with_guessed_format()
-        .map_err(|e| format!("Failed to detect image format for '{}': {}", path, e))?
-        .decode()
-        .map_err(|e| format!("Failed to decode screenshot '{}': {}", path, e))?
-        .to_rgba8();
+    let image = read_image_from_disk(&path)?;
+    copy_rgba_image_to_clipboard(image)
+}
 
-    let mut clipboard =
-        Clipboard::new().map_err(|e| format!("Failed to access system clipboard: {}", e))?;
-    clipboard
-        .set_image(ImageData {
-            width: image.width() as usize,
-            height: image.height() as usize,
-            bytes: Cow::Owned(image.into_raw()),
-        })
-        .map_err(|e| format!("Failed to copy image to clipboard: {}", e))?;
+#[tauri::command]
+pub async fn screenshot_read_gallery_thumbnail(
+    path: String,
+    max_width: u32,
+    max_height: u32,
+) -> Result<String, String> {
+    validate_thumbnail_bounds(max_width, max_height)?;
 
-    Ok(())
+    let image = read_image_from_disk(&path)?;
+    let preview = resize_image_to_fit(&image, max_width, max_height);
+    let preview_png = encode_png(&preview)?;
+    Ok(format!(
+        "data:image/png;base64,{}",
+        BASE64_STANDARD.encode(preview_png)
+    ))
 }
 
 fn validate_capture_region(width: u32, height: u32) -> Result<(), String> {
@@ -129,6 +135,16 @@ fn validate_capture_region(width: u32, height: u32) -> Result<(), String> {
     }
     if width > 16_384 || height > 16_384 {
         return Err("Capture region is too large.".to_string());
+    }
+    Ok(())
+}
+
+fn validate_thumbnail_bounds(max_width: u32, max_height: u32) -> Result<(), String> {
+    if max_width == 0 || max_height == 0 {
+        return Err("Thumbnail bounds must be at least 1 pixel wide and tall.".to_string());
+    }
+    if max_width > 4_096 || max_height > 4_096 {
+        return Err("Thumbnail bounds are too large.".to_string());
     }
     Ok(())
 }
@@ -198,38 +214,74 @@ fn resolve_monitor_region(
 }
 
 fn build_preview_image(image: &RgbaImage) -> RgbaImage {
-    if image.width() <= MAX_PREVIEW_WIDTH && image.height() <= MAX_PREVIEW_HEIGHT {
+    resize_image_to_fit(image, MAX_PREVIEW_WIDTH, MAX_PREVIEW_HEIGHT)
+}
+
+fn resize_image_to_fit(image: &RgbaImage, max_width: u32, max_height: u32) -> RgbaImage {
+    if image.width() <= max_width && image.height() <= max_height {
         return image.clone();
     }
 
     let scale = f32::min(
-        MAX_PREVIEW_WIDTH as f32 / image.width() as f32,
-        MAX_PREVIEW_HEIGHT as f32 / image.height() as f32,
+        max_width as f32 / image.width() as f32,
+        max_height as f32 / image.height() as f32,
     );
 
     let preview_width = ((image.width() as f32) * scale).round().max(1.0) as u32;
     let preview_height = ((image.height() as f32) * scale).round().max(1.0) as u32;
 
-    resize(image, preview_width, preview_height, FilterType::Triangle)
+    resize(image, preview_width, preview_height, FilterType::Lanczos3)
 }
 
 fn store_capture_image(image: RgbaImage) -> Result<String, String> {
     let capture_id = create_capture_id();
+    let created_at = current_timestamp_millis()?;
     let mut cache = SCREENSHOT_CAPTURE_CACHE
         .lock()
         .map_err(|_| "Failed to lock screenshot capture cache.".to_string())?;
-    cache.clear();
-    cache.insert(capture_id.clone(), image);
+    cache.insert(capture_id.clone(), CachedCapture { image, created_at });
+    prune_capture_cache(&mut cache);
     Ok(capture_id)
+}
+
+fn prune_capture_cache(cache: &mut HashMap<String, CachedCapture>) {
+    if cache.len() <= MAX_CAPTURE_CACHE_ENTRIES {
+        return;
+    }
+
+    let mut captures = cache
+        .iter()
+        .map(|(capture_id, entry)| (capture_id.clone(), entry.created_at))
+        .collect::<Vec<_>>();
+    captures.sort_by_key(|(_, created_at)| *created_at);
+
+    let remove_count = cache.len().saturating_sub(MAX_CAPTURE_CACHE_ENTRIES);
+    for (capture_id, _) in captures.into_iter().take(remove_count) {
+        cache.remove(&capture_id);
+    }
 }
 
 fn load_capture_image(capture_id: &str) -> Result<RgbaImage, String> {
     let cache = SCREENSHOT_CAPTURE_CACHE
         .lock()
         .map_err(|_| "Failed to lock screenshot capture cache.".to_string())?;
-    cache.get(capture_id).cloned().ok_or_else(|| {
-        "The screenshot capture preview expired. Take a new screenshot preview.".to_string()
-    })
+    cache
+        .get(capture_id)
+        .map(|entry| entry.image.clone())
+        .ok_or_else(|| {
+            "The screenshot capture preview expired. Take a new screenshot preview.".to_string()
+        })
+}
+
+fn crop_capture_image(
+    image: &RgbaImage,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+) -> Result<RgbaImage, String> {
+    validate_crop_region(image, x, y, width, height)?;
+    Ok(crop_imm(image, x, y, width, height).to_image())
 }
 
 fn validate_crop_region(
@@ -261,11 +313,91 @@ fn validate_crop_region(
     Ok(())
 }
 
-fn create_capture_id() -> String {
-    let created_at = std::time::SystemTime::now()
+fn save_rgba_image(
+    image: &RgbaImage,
+    dir_path: &Path,
+    file_prefix: Option<&str>,
+) -> Result<SavedScreenshot, String> {
+    std::fs::create_dir_all(dir_path).map_err(|e| e.to_string())?;
+
+    let created_at = current_timestamp_millis()?;
+    let prefix = sanitize_file_prefix(file_prefix);
+    let file_name = format!("{}-{}.png", prefix, created_at);
+    let full_path = dir_path.join(&file_name);
+
+    image.save(&full_path).map_err(|e| {
+        format!(
+            "Failed to save screenshot to '{}': {}",
+            full_path.display(),
+            e
+        )
+    })?;
+
+    Ok(SavedScreenshot {
+        path: full_path.to_string_lossy().to_string(),
+        file_name,
+        created_at,
+    })
+}
+
+fn sanitize_file_prefix(value: Option<&str>) -> String {
+    let sanitized = value
+        .unwrap_or("overlayterm-shot")
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch
+            } else if ch == '-' || ch == '_' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .trim_matches('_')
+        .to_string();
+
+    if sanitized.is_empty() {
+        "overlayterm-shot".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn current_timestamp_millis() -> Result<u128, String> {
+    std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())
         .map(|duration| duration.as_millis())
-        .unwrap_or_default();
+}
+
+fn read_image_from_disk(path: &str) -> Result<RgbaImage, String> {
+    ImageReader::open(path)
+        .map_err(|e| format!("Failed to open screenshot '{}': {}", path, e))?
+        .with_guessed_format()
+        .map_err(|e| format!("Failed to detect image format for '{}': {}", path, e))?
+        .decode()
+        .map_err(|e| format!("Failed to decode screenshot '{}': {}", path, e))
+        .map(|image| image.to_rgba8())
+}
+
+fn copy_rgba_image_to_clipboard(image: RgbaImage) -> Result<(), String> {
+    let mut clipboard =
+        Clipboard::new().map_err(|e| format!("Failed to access system clipboard: {}", e))?;
+    clipboard
+        .set_image(ImageData {
+            width: image.width() as usize,
+            height: image.height() as usize,
+            bytes: Cow::Owned(image.into_raw()),
+        })
+        .map_err(|e| format!("Failed to copy image to clipboard: {}", e))?;
+
+    Ok(())
+}
+
+fn create_capture_id() -> String {
+    let created_at = current_timestamp_millis().unwrap_or_default();
     let sequence = SCREENSHOT_CAPTURE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     format!("capture-{}-{}", created_at, sequence)
 }
@@ -287,12 +419,14 @@ fn encode_png(image: &RgbaImage) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_preview_image, create_capture_id, encode_png, load_capture_image,
-        store_capture_image, validate_capture_region, validate_crop_region, MAX_PREVIEW_HEIGHT,
-        MAX_PREVIEW_WIDTH,
+        build_preview_image, create_capture_id, encode_png, load_capture_image, resize_image_to_fit,
+        sanitize_file_prefix, save_rgba_image, store_capture_image, validate_capture_region,
+        validate_crop_region, validate_thumbnail_bounds, MAX_CAPTURE_CACHE_ENTRIES,
+        MAX_PREVIEW_HEIGHT, MAX_PREVIEW_WIDTH,
     };
     use image::{load_from_memory, Rgba, RgbaImage};
     use std::sync::{LazyLock, Mutex};
+    use tempfile::tempdir;
 
     static CACHE_TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
@@ -308,6 +442,14 @@ mod tests {
     fn validate_capture_region_accepts_supported_bounds() {
         assert!(validate_capture_region(1, 1).is_ok());
         assert!(validate_capture_region(16_384, 16_384).is_ok());
+    }
+
+    #[test]
+    fn validate_thumbnail_bounds_rejects_invalid_sizes() {
+        assert!(validate_thumbnail_bounds(0, 240).is_err());
+        assert!(validate_thumbnail_bounds(320, 0).is_err());
+        assert!(validate_thumbnail_bounds(4_097, 240).is_err());
+        assert!(validate_thumbnail_bounds(320, 4_097).is_err());
     }
 
     #[test]
@@ -327,6 +469,14 @@ mod tests {
         assert!(preview.height() <= MAX_PREVIEW_HEIGHT);
         assert_eq!(preview.width(), 1_920);
         assert_eq!(preview.height(), 960);
+    }
+
+    #[test]
+    fn resize_image_to_fit_uses_requested_thumbnail_bounds() {
+        let image = RgbaImage::from_pixel(3_000, 2_000, Rgba([255, 255, 255, 255]));
+        let preview = resize_image_to_fit(&image, 300, 200);
+        assert_eq!(preview.width(), 300);
+        assert_eq!(preview.height(), 200);
     }
 
     #[test]
@@ -358,19 +508,39 @@ mod tests {
     }
 
     #[test]
-    fn store_capture_image_replaces_previous_capture() {
+    fn store_capture_image_keeps_recent_entries_available() {
         let _guard = CACHE_TEST_LOCK.lock().expect("cache test lock");
-        let first_image = RgbaImage::from_pixel(16, 16, Rgba([10, 10, 10, 255]));
-        let second_image = RgbaImage::from_pixel(32, 8, Rgba([20, 20, 20, 255]));
+        let capture_ids = (0..MAX_CAPTURE_CACHE_ENTRIES)
+            .map(|index| {
+                store_capture_image(RgbaImage::from_pixel(
+                    16 + index as u32,
+                    16,
+                    Rgba([index as u8, 20, 20, 255]),
+                ))
+                .expect("store image")
+            })
+            .collect::<Vec<_>>();
 
-        let first_id = store_capture_image(first_image).expect("store first image");
-        let second_id = store_capture_image(second_image.clone()).expect("store second image");
+        for capture_id in capture_ids {
+            assert!(load_capture_image(&capture_id).is_ok());
+        }
+    }
 
-        let loaded_second = load_capture_image(&second_id).expect("load second image");
-        assert_eq!(loaded_second.width(), second_image.width());
-        assert_eq!(loaded_second.height(), second_image.height());
+    #[test]
+    fn sanitize_file_prefix_falls_back_when_invalid() {
+        assert_eq!(sanitize_file_prefix(Some("overlayterm-shot")), "overlayterm-shot");
+        assert_eq!(sanitize_file_prefix(Some("bad prefix!*")), "bad-prefix");
+        assert_eq!(sanitize_file_prefix(Some("___")), "overlayterm-shot");
+    }
 
-        let first_error = load_capture_image(&first_id).expect_err("old capture should expire");
-        assert!(first_error.contains("expired"));
+    #[test]
+    fn save_rgba_image_uses_sanitized_prefix() {
+        let directory = tempdir().expect("tempdir");
+        let image = RgbaImage::from_pixel(12, 12, Rgba([1, 1, 1, 255]));
+        let saved = save_rgba_image(&image, directory.path(), Some("bad prefix!*"))
+            .expect("save image");
+
+        assert!(saved.file_name.starts_with("bad-prefix-"));
+        assert!(saved.path.ends_with(".png"));
     }
 }

@@ -35,6 +35,18 @@ export interface OverlayShaderUniformMap {
   [key: string]: unknown;
 }
 
+export interface OverlayShaderControlDefinition {
+  id: string;
+  label: string;
+  description?: string;
+  type?: 'slider';
+  min: number;
+  max: number;
+  step: number;
+  defaultValue?: number;
+  formatValue?: (value: number) => string;
+}
+
 export interface OverlayShaderShellContext extends OverlayShaderContext {
   viewport: {
     width: number;
@@ -46,6 +58,7 @@ export interface OverlayShaderShellContext extends OverlayShaderContext {
   blurStrength: number;
   zoom: number;
   isSettingsActive: boolean;
+  shaderControlValues: Record<string, number>;
 }
 
 export interface OverlayShaderRenderContext extends OverlayShaderShellContext {
@@ -68,6 +81,7 @@ export interface OverlayShaderDefinition {
   description?: string;
   group?: string;
   tags?: string[];
+  controls?: OverlayShaderControlDefinition[];
   resolveSharedUniforms?: (
     context: OverlayShaderShellContext,
   ) => OverlayShaderUniformMap | null | undefined;
@@ -81,6 +95,7 @@ export interface LoadedOverlayShader extends OverlayShaderContext {
   description?: string;
   group: string;
   tags: string[];
+  controls: OverlayShaderControlDefinition[];
   resolveSharedUniforms?: OverlayShaderDefinition['resolveSharedUniforms'];
   background: OverlayShaderSurfaceDefinition | null;
   topBar: OverlayShaderSurfaceDefinition | null;
@@ -136,6 +151,7 @@ export async function loadShaderFromSource(
       description: normalized.description,
       group: normalized.group?.trim() || 'Custom',
       tags: normalized.tags ?? [],
+      controls: normalized.controls ?? [],
       resolveSharedUniforms: normalized.resolveSharedUniforms,
       background: normalized.background ?? null,
       topBar: normalized.topBar ?? null,
@@ -149,6 +165,7 @@ export async function loadShaderFromSource(
       description: undefined,
       group: 'Custom',
       tags: [],
+      controls: [],
       resolveSharedUniforms: undefined,
       background: null,
       topBar: null,
@@ -173,6 +190,24 @@ export function createBuiltInOverlayShaders(): LoadedOverlayShader[] {
       description: 'Soft volumetric glows drift across the full shell with chrome shimmer and accent rails.',
       group: 'Built-in Atmosphere',
       tags: ['builtin', 'nebula', 'gradient'],
+      controls: [
+        {
+          id: 'accentAlpha',
+          label: 'Glow Alpha',
+          description: 'Boost or soften the main volumetric nebula bloom.',
+          min: 0.2,
+          max: 1,
+          step: 0.02,
+        },
+        {
+          id: 'accentLift',
+          label: 'Glow Lift',
+          description: 'Adjust how much the blur and chrome shimmer push forward.',
+          min: 0,
+          max: 0.75,
+          step: 0.01,
+        },
+      ],
       resolveSharedUniforms: context => ({
         accentAlpha: context.isSettingsActive ? 0.9 : 0.74,
         accentLift: 0.24 + clamp01(context.blurStrength / 32) * 0.28,
@@ -240,6 +275,7 @@ export function mergeOverlayShaders(
       byId.set(shader.id, {
         ...existing,
         ...shader,
+        controls: shader.controls.length > 0 ? shader.controls : existing.controls,
         resolveSharedUniforms: shader.resolveSharedUniforms ?? existing.resolveSharedUniforms,
         background: shader.background ?? existing.background,
         topBar: shader.topBar ?? existing.topBar,
@@ -260,7 +296,7 @@ export function mergeOverlayShaders(
   });
 }
 
-export function resolveShaderSharedUniforms(
+export function resolveShaderComputedUniforms(
   shader: LoadedOverlayShader | null,
   shellContext: OverlayShaderShellContext,
 ): OverlayShaderUniformMap {
@@ -274,6 +310,72 @@ export function resolveShaderSharedUniforms(
     console.warn('OverlayTerm: shader shared uniform resolver failed', shader.name, error);
     return {};
   }
+}
+
+function getStepPrecision(step: number): number {
+  const normalizedStep = Number.isFinite(step) && step > 0 ? step : 1;
+  const decimalSegment = `${normalizedStep}`.split('.')[1];
+  return decimalSegment ? decimalSegment.length : 0;
+}
+
+export function normalizeShaderControlValue(
+  control: OverlayShaderControlDefinition,
+  value: number,
+  fallbackValue?: number,
+): number {
+  const lowerBound = Math.min(control.min, control.max);
+  const upperBound = Math.max(control.min, control.max);
+  const step = Number.isFinite(control.step) && control.step > 0 ? control.step : 1;
+  const fallback = Number.isFinite(fallbackValue)
+    ? fallbackValue as number
+    : Number.isFinite(control.defaultValue)
+      ? control.defaultValue as number
+      : lowerBound;
+  const raw = Number.isFinite(value) ? value : fallback;
+  const clamped = Math.min(Math.max(raw, lowerBound), upperBound);
+  const snapped = lowerBound + (Math.round((clamped - lowerBound) / step) * step);
+  const precision = getStepPrecision(step);
+  return Number(snapped.toFixed(precision));
+}
+
+export function resolveShaderControlValues(
+  shader: LoadedOverlayShader | null,
+  persistedValues?: Record<string, number> | null,
+  computedUniforms?: OverlayShaderUniformMap,
+): Record<string, number> {
+  if (!shader || shader.controls.length === 0) {
+    return {};
+  }
+
+  return Object.fromEntries(shader.controls.map(control => {
+    const persistedValue = persistedValues?.[control.id];
+    const computedValue = computedUniforms?.[control.id];
+    const fallbackValue = typeof computedValue === 'number'
+      ? computedValue
+      : control.defaultValue;
+    const resolvedValue = normalizeShaderControlValue(
+      control,
+      typeof persistedValue === 'number' ? persistedValue : Number.NaN,
+      fallbackValue,
+    );
+    return [control.id, resolvedValue];
+  }));
+}
+
+export function resolveShaderSharedUniforms(
+  shader: LoadedOverlayShader | null,
+  shellContext: OverlayShaderShellContext,
+): OverlayShaderUniformMap {
+  const computedUniforms = resolveShaderComputedUniforms(shader, shellContext);
+  const controlValues = resolveShaderControlValues(
+    shader,
+    shellContext.shaderControlValues,
+    computedUniforms,
+  );
+  return {
+    ...computedUniforms,
+    ...controlValues,
+  };
 }
 
 export function buildShaderRenderContext(args: {
@@ -361,6 +463,7 @@ function createBuiltInShader(definition: OverlayShaderDefinition & { id: string;
     description: definition.description,
     group: definition.group?.trim() || 'Built-in',
     tags: definition.tags ?? ['builtin'],
+    controls: definition.controls ?? [],
     resolveSharedUniforms: definition.resolveSharedUniforms,
     background: definition.background ?? null,
     topBar: definition.topBar ?? null,
@@ -400,6 +503,7 @@ function normalizeShaderExport(
   const background = normalizeSurfaceDefinition(definition.background, 'background');
   const topBar = normalizeSurfaceDefinition(definition.topBar, 'topBar');
   const border = normalizeSurfaceDefinition(definition.border, 'border');
+  const controls = normalizeControlDefinitions(definition.controls);
 
   if (!background && !topBar && !border) {
     throw new Error('Shader must provide at least one of `background`, `topBar`, or `border`.');
@@ -420,9 +524,68 @@ function normalizeShaderExport(
     tags: Array.isArray(definition.tags)
       ? definition.tags.filter((tag): tag is string => typeof tag === 'string' && tag.trim().length > 0)
       : [],
+    controls,
     background: background ?? undefined,
     topBar: topBar ?? undefined,
     border: border ?? undefined,
+  };
+}
+
+function normalizeControlDefinitions(
+  controls: OverlayShaderControlDefinition[] | undefined,
+): OverlayShaderControlDefinition[] {
+  if (!Array.isArray(controls)) {
+    return [];
+  }
+
+  return controls.map(control => normalizeControlDefinition(control));
+}
+
+function normalizeControlDefinition(control: OverlayShaderControlDefinition): OverlayShaderControlDefinition {
+  if (!control || typeof control !== 'object') {
+    throw new Error('Shader controls must be objects.');
+  }
+
+  const id = typeof control.id === 'string' ? control.id.trim() : '';
+  const label = typeof control.label === 'string' ? control.label.trim() : '';
+  if (!id) {
+    throw new Error('Shader controls must provide a non-empty `id`.');
+  }
+  if (!label) {
+    throw new Error(`Shader control "${id}" must provide a non-empty \`label\`.`);
+  }
+  if (!Number.isFinite(control.min) || !Number.isFinite(control.max)) {
+    throw new Error(`Shader control "${id}" must provide finite min/max values.`);
+  }
+  if (!Number.isFinite(control.step) || control.step <= 0) {
+    throw new Error(`Shader control "${id}" must provide a positive numeric step.`);
+  }
+  if (control.formatValue && typeof control.formatValue !== 'function') {
+    throw new Error(`Shader control "${id}" formatValue must be a function when provided.`);
+  }
+
+  return {
+    id,
+    label,
+    description: typeof control.description === 'string' && control.description.trim()
+      ? control.description.trim()
+      : undefined,
+    type: 'slider',
+    min: Math.min(control.min, control.max),
+    max: Math.max(control.min, control.max),
+    step: control.step,
+    defaultValue: Number.isFinite(control.defaultValue)
+      ? normalizeShaderControlValue({
+        ...control,
+        id,
+        label,
+        type: 'slider',
+        min: Math.min(control.min, control.max),
+        max: Math.max(control.min, control.max),
+        step: control.step,
+      }, control.defaultValue as number)
+      : undefined,
+    formatValue: control.formatValue,
   };
 }
 

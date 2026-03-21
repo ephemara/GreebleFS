@@ -170,6 +170,10 @@ export default defineShader({
   description: 'A deep perspective telemetry lattice with sweep bands, signal nodes, and chrome instrumentation across the shell.',
   group: 'Authoring Extremes',
   tags: ['grid', 'scanline', 'telemetry', 'canvas'],
+  controls: [
+    { id: 'densityBoost', label: 'Grid Density', description: 'Increase the number of rows, columns, and node points.', min: 0, max: 1, step: 0.02 },
+    { id: 'scanWeight', label: 'Sweep Energy', description: 'Strengthen the sweep band and signal motion.', min: 0, max: 1, step: 0.02 },
+  ],
   resolveSharedUniforms: context => ({
     densityBoost: clamp01(0.26 + context.viewport.width / 2400 + context.zoom * 0.14),
     scanWeight: clamp01(0.22 + context.blurStrength / 40 + (context.isSettingsActive ? 0.1 : 0)),

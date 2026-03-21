@@ -12,9 +12,11 @@ export const pluginSystemConfig = {
   frontendExtensions: ['tsx', 'ts', 'jsx', 'js'] as const,
   backendDirectoryName: 'backend',
   runtimeModuleName: 'overlayterm-plugin',
+  watchEventName: 'overlay://plugins-changed',
+  watchDebounceMs: 400,
+  fallbackScanIntervalMs: 20000,
   folderPanelsOpenByDefault: true,
   folderPanelsKeepMounted: false,
-  scanIntervalMs: 2000,
 } as const;
 
 export type FrontendPluginExtension =

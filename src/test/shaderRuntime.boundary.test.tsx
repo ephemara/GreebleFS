@@ -18,6 +18,7 @@ function makeShader(overrides: Partial<LoadedOverlayShader> = {}): LoadedOverlay
     description: 'Unit test shader',
     group: 'Custom',
     tags: [],
+    controls: [],
     resolveSharedUniforms: undefined,
     background: null,
     topBar: null,

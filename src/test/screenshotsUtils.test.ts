@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  clampSelectionToBounds,
+  createInsetSelection,
+  moveSelection,
   isSupportedScreenshotEntry,
   normalizeSelection,
+  resizeSelection,
   selectionToPixelRect,
   selectionToMonitorRect,
   sortScreenshotEntries,
@@ -80,6 +84,57 @@ describe('screenshotsUtils', () => {
       y: 216,
       width: 1920,
       height: 1080,
+    });
+  });
+
+  it('clamps oversized selections back into rendered bounds', () => {
+    expect(clampSelectionToBounds(
+      { x: -50, y: -30, width: 700, height: 500 },
+      { width: 640, height: 360 },
+    )).toEqual({
+      x: 0,
+      y: 0,
+      width: 640,
+      height: 360,
+    });
+  });
+
+  it('moves selections without letting them leave the preview frame', () => {
+    expect(moveSelection(
+      { x: 100, y: 80, width: 180, height: 120 },
+      500,
+      -200,
+      { width: 640, height: 360 },
+    )).toEqual({
+      x: 460,
+      y: 0,
+      width: 180,
+      height: 120,
+    });
+  });
+
+  it('resizes selections from a handle while preserving a minimum size', () => {
+    expect(resizeSelection(
+      { x: 120, y: 100, width: 220, height: 160 },
+      'north-west',
+      180,
+      150,
+      { width: 640, height: 360 },
+      24,
+    )).toEqual({
+      x: 300,
+      y: 236,
+      width: 40,
+      height: 24,
+    });
+  });
+
+  it('creates inset selections that stay inside the preview', () => {
+    expect(createInsetSelection({ width: 1_000, height: 500 })).toEqual({
+      x: 120,
+      y: 60,
+      width: 760,
+      height: 380,
     });
   });
 });

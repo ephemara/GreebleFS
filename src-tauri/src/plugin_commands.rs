@@ -1,11 +1,33 @@
+use notify::{Event, EventKind, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use tauri::{AppHandle, Emitter, State};
+
+pub const PLUGIN_WATCH_EVENT: &str = "overlay://plugins-changed";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PluginBackendResult {
     pub stdout: String,
     pub stderr: String,
     pub status: i32,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct PluginDirectoryWatchEvent {
+    pub root: String,
+    pub kind: String,
+    pub paths: Vec<String>,
+}
+
+struct ActivePluginWatcher {
+    root: PathBuf,
+    watcher: notify::RecommendedWatcher,
+}
+
+#[derive(Default)]
+pub struct PluginWatcherState {
+    active: Mutex<Option<ActivePluginWatcher>>,
 }
 
 #[tauri::command]
@@ -17,6 +39,77 @@ pub async fn plugin_run_backend(
 ) -> Result<PluginBackendResult, String> {
     let backend_entry = resolve_backend_entry(&plugins_root, &plugin_id, &entry)?;
     run_backend_command(&backend_entry, &args)
+}
+
+#[tauri::command]
+pub fn plugin_watch_directory(
+    app: AppHandle,
+    state: State<'_, PluginWatcherState>,
+    path: String,
+) -> Result<(), String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("path cannot be empty".to_string());
+    }
+
+    std::fs::create_dir_all(trimmed)
+        .map_err(|e| format!("Could not create plugin watch directory: {e}"))?;
+    let root = std::fs::canonicalize(trimmed)
+        .map_err(|e| format!("Could not resolve plugin watch directory: {e}"))?;
+    let event_root = root.to_string_lossy().to_string();
+    let app_handle = app.clone();
+
+    let mut watcher =
+        notify::recommended_watcher(move |res: Result<Event, notify::Error>| match res {
+            Ok(event) => {
+                if let Some(kind) = map_watch_event_kind(&event.kind) {
+                    let payload = PluginDirectoryWatchEvent {
+                        root: event_root.clone(),
+                        kind: kind.to_string(),
+                        paths: event
+                            .paths
+                            .iter()
+                            .map(|path| path.to_string_lossy().to_string())
+                            .collect(),
+                    };
+                    let _ = app_handle.emit(PLUGIN_WATCH_EVENT, payload);
+                }
+            }
+            Err(error) => {
+                eprintln!("plugin watcher error: {error}");
+            }
+        })
+        .map_err(|e| format!("Could not create plugin watcher: {e}"))?;
+
+    watcher
+        .watch(&root, RecursiveMode::Recursive)
+        .map_err(|e| format!("Could not watch plugin directory '{}': {e}", root.display()))?;
+
+    let mut active = state
+        .active
+        .lock()
+        .map_err(|_| "plugin watcher state lock poisoned".to_string())?;
+
+    if let Some(mut previous) = active.take() {
+        let _ = previous.watcher.unwatch(&previous.root);
+    }
+
+    *active = Some(ActivePluginWatcher { root, watcher });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn plugin_unwatch_directory(state: State<'_, PluginWatcherState>) -> Result<(), String> {
+    let mut active = state
+        .active
+        .lock()
+        .map_err(|_| "plugin watcher state lock poisoned".to_string())?;
+
+    if let Some(mut current) = active.take() {
+        let _ = current.watcher.unwatch(&current.root);
+    }
+
+    Ok(())
 }
 
 fn resolve_backend_entry(
@@ -117,6 +210,16 @@ fn run_backend_command(executable: &Path, args: &[String]) -> Result<PluginBacke
         stderr: String::from_utf8_lossy(&output.stderr).to_string(),
         status: output.status.code().unwrap_or(-1),
     })
+}
+
+fn map_watch_event_kind(kind: &EventKind) -> Option<&'static str> {
+    match kind {
+        EventKind::Create(_) => Some("create"),
+        EventKind::Modify(_) => Some("modify"),
+        EventKind::Remove(_) => Some("remove"),
+        EventKind::Any => Some("any"),
+        _ => None,
+    }
 }
 
 #[cfg(target_os = "windows")]

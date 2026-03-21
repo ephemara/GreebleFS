@@ -12,6 +12,8 @@ export const EXPLORER_STATE_BACKUP_KEY = 'overlayterm-explorer-state-v3.backup';
 export const EXPLORER_LEGACY_BOOKMARKS_KEY = 'fs-bookmarks-v2';
 export const EXPLORER_STATE_VERSION = 3;
 
+export type ExplorerDocumentViewMode = 'edit' | 'preview';
+
 export interface ExplorerSessionSnapshot {
   currentPath: string;
   history: string[];
@@ -20,6 +22,7 @@ export interface ExplorerSessionSnapshot {
   previewWidth: number | null;
   search: string;
   searchIncludeContent: boolean;
+  documentViewMode: ExplorerDocumentViewMode;
 }
 
 export interface ExplorerPersistenceNotice {
@@ -36,6 +39,7 @@ export const defaultExplorerSession: ExplorerSessionSnapshot = {
   previewWidth: null,
   search: '',
   searchIncludeContent: true,
+  documentViewMode: 'edit',
 };
 
 const defaultExplorerPersistenceNotice: ExplorerPersistenceNotice = {
@@ -86,6 +90,7 @@ export function normalizeExplorerSessionSnapshot(value: unknown): ExplorerSessio
     previewWidth: normalizeOptionalNumber(source?.previewWidth),
     search: typeof source?.search === 'string' ? source.search : '',
     searchIncludeContent: typeof source?.searchIncludeContent === 'boolean' ? source.searchIncludeContent : true,
+    documentViewMode: source?.documentViewMode === 'preview' ? 'preview' : 'edit',
   };
 }
 

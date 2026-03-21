@@ -86,6 +86,7 @@ export function createShaderShellContext(
     blurStrength: 12,
     zoom: 1,
     isSettingsActive: false,
+    shaderControlValues: {},
     ...overrides,
   };
 }
@@ -128,6 +129,7 @@ export function makeLoadedShader(
     description: 'unit shader',
     group: 'Custom',
     tags: [],
+    controls: [],
     resolveSharedUniforms: undefined,
     background: null,
     topBar: null,

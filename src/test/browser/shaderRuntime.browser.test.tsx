@@ -29,6 +29,7 @@ function createShellContext(): OverlayShaderShellContext {
     blurStrength: 18,
     zoom: 1,
     isSettingsActive: false,
+    shaderControlValues: {},
   };
 }
 
@@ -52,6 +53,7 @@ function createShader(overrides: Partial<LoadedOverlayShader>): LoadedOverlaySha
     description: 'test shader',
     group: 'Tests',
     tags: ['test'],
+    controls: [],
     resolveSharedUniforms: undefined,
     background: null,
     topBar: null,

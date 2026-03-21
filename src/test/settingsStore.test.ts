@@ -45,6 +45,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.appearance.theme).toBe('dark');
     expect(settings.appearance.activeThemeId).toBe('operator');
     expect(settings.appearance.activeShaderId).toBeNull();
+    expect(settings.appearance.shaderControlValues).toEqual({});
     expect(settings.appearance.uiFontFamily).toBe('Inter, system-ui, sans-serif');
     expect(settings.appearance.useNativeOsIcons).toBe(false);
     expect(settings.appearance.animations).toBe(true);
@@ -67,6 +68,15 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.system.launchAtStartup).toBe(false);
     expect(settings.system.hideAppInTray).toBe(true);
     expect(typeof settings.system.showInTaskbar).toBe('boolean');
+  });
+
+  it('has the correct default screenshot settings', () => {
+    const { settings } = useSettingsStore.getState();
+    expect(settings.screenshots.saveDirectory).toBe(defaultSettings.screenshots.saveDirectory);
+    expect(settings.screenshots.defaultCaptureMode).toBe('region');
+    expect(settings.screenshots.defaultOutputAction).toBe('save-copy');
+    expect(settings.screenshots.showGrid).toBe(true);
+    expect(settings.screenshots.closeEditorAfterAction).toBe(true);
   });
 });
 
@@ -133,12 +143,12 @@ describe('useSettingsStore.updatePython()', () => {
 
     store.updatePython({
       preferredInterpreterPath: 'C:\\Python311\\python.exe',
-      bootstrapPackages: 'numpy\nonnxruntime',
+      bootstrapPackages: 'requests\nrich',
     });
 
     const { settings } = useSettingsStore.getState();
     expect(settings.python.preferredInterpreterPath).toBe('C:\\Python311\\python.exe');
-    expect(settings.python.bootstrapPackages).toBe('numpy\nonnxruntime');
+    expect(settings.python.bootstrapPackages).toBe('requests\nrich');
     expect(settings.terminal).toEqual(beforeTerminal);
   });
 });
@@ -239,6 +249,46 @@ describe('useSettingsStore.updateAppearance()', () => {
     expect(appearance.panelTransparency).toBe(1);
     expect(appearance.appZoom).toBe(0.7);
     expect(appearance.appBlurStrength).toBe(32);
+  });
+
+  it('stores shader control overrides without mutating other appearance fields', () => {
+    const store = useSettingsStore.getState();
+    store.updateAppearance({
+      shaderControlValues: {
+        'aurora-ribbon': {
+          intensity: 0.72,
+        },
+      },
+    });
+
+    const { appearance } = useSettingsStore.getState().settings;
+    expect(appearance.shaderControlValues['aurora-ribbon']?.intensity).toBe(0.72);
+    expect(appearance.activeThemeId).toBe(defaultSettings.appearance.activeThemeId);
+  });
+});
+
+describe('useSettingsStore.updateScreenshots()', () => {
+  it('normalizes invalid screenshot preference updates and preserves valid toggles', () => {
+    const store = useSettingsStore.getState();
+    store.updateScreenshots({
+      defaultCaptureMode: 'monitor',
+      defaultOutputAction: 'copy',
+      showGrid: false,
+      closeEditorAfterAction: false,
+    });
+
+    store.updateScreenshots({
+      defaultCaptureMode: 'bad-mode' as never,
+      defaultOutputAction: 'bad-action' as never,
+      saveDirectory: '   ',
+    });
+
+    const { screenshots } = useSettingsStore.getState().settings;
+    expect(screenshots.defaultCaptureMode).toBe('monitor');
+    expect(screenshots.defaultOutputAction).toBe('copy');
+    expect(screenshots.showGrid).toBe(false);
+    expect(screenshots.closeEditorAfterAction).toBe(false);
+    expect(screenshots.saveDirectory).toBe(defaultSettings.screenshots.saveDirectory);
   });
 });
 

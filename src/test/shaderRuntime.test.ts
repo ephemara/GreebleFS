@@ -5,7 +5,10 @@ import {
   createBuiltInOverlayShaders,
   loadShaderFromSource,
   mergeOverlayShaders,
+  resolveShaderControlValues,
+  resolveShaderSharedUniforms,
 } from '../components/shaderRuntime';
+import { resolveOverlayAppearance } from '../config/appearance';
 
 describe('shaderRuntime', () => {
   it('exposes the built-in shader catalog', () => {
@@ -29,6 +32,16 @@ describe('shaderRuntime', () => {
         export default defineShader({
           name: 'Halo Wash',
           description: 'A tiny custom shader profile.',
+          controls: [
+            {
+              id: 'glow',
+              label: 'Glow',
+              min: 0,
+              max: 1,
+              step: 0.1,
+              defaultValue: 0.4,
+            },
+          ],
           background: {
             render: Halo,
           },
@@ -51,8 +64,32 @@ describe('shaderRuntime', () => {
     expect(loaded.error).toBeNull();
     expect(loaded.name).toBe('Halo Wash');
     expect(loaded.group).toBe('Custom');
+    expect(loaded.controls).toHaveLength(1);
     expect(loaded.background).toBeTruthy();
     expect(loaded.border).toBeTruthy();
+  });
+
+  it('merges persisted shader controls into shared uniforms', () => {
+    const shader = createBuiltInOverlayShaders()[1];
+    const appearance = resolveOverlayAppearance({ activeThemeId: 'operator' });
+    const shellContext = {
+      id: shader.id,
+      name: shader.name,
+      filePath: shader.filePath,
+      shaderRoot: shader.shaderRoot,
+      source: shader.source,
+      viewport: { width: 1440, height: 900 },
+      accentColor: '#6366f1',
+      theme: appearance.theme,
+      panelTransparency: 0.2,
+      blurStrength: 16,
+      zoom: 1,
+      isSettingsActive: true,
+      shaderControlValues: { accentAlpha: 0.55 },
+    };
+
+    expect(resolveShaderControlValues(shader, shellContext.shaderControlValues).accentAlpha).toBe(0.56);
+    expect(resolveShaderSharedUniforms(shader, shellContext).accentAlpha).toBe(0.56);
   });
 
   it('loads every bundled shader module from disk', async () => {
@@ -62,7 +99,7 @@ describe('shaderRuntime', () => {
       .filter(entry => entry.isFile() && /\.(tsx|ts|jsx|js)$/i.test(entry.name))
       .sort((left, right) => left.name.localeCompare(right.name));
 
-    expect(files.length).toBeGreaterThanOrEqual(3);
+    expect(files.length).toBeGreaterThanOrEqual(16);
 
     for (const file of files) {
       const fullPath = resolve(shaderDirectory, file.name);
@@ -93,6 +130,7 @@ describe('shaderRuntime', () => {
         description: undefined,
         group: 'Custom',
         tags: [],
+        controls: [],
         resolveSharedUniforms: undefined,
         background: null,
         topBar: null,
