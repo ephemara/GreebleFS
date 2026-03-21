@@ -71,10 +71,10 @@ export function PythonWorkbench({ appearance }: { appearance: ResolvedOverlayApp
   const sectionStyle = useMemo(
     () => ({
       border: `1px solid ${theme.border}`,
-      background: `linear-gradient(180deg, ${theme.panelBackground} 0%, ${theme.appBackgroundAlt} 100%)`,
+      background: `linear-gradient(180deg, ${theme.panelBackground} 0%, ${theme.shellBackground} 100%)`,
       boxShadow: `inset 0 1px 0 ${theme.accent}12`,
     }),
-    [theme.accent, theme.appBackgroundAlt, theme.border, theme.panelBackground],
+    [theme.accent, theme.border, theme.panelBackground, theme.shellBackground],
   );
 
   const inputStyle = useMemo(
@@ -200,7 +200,7 @@ export function PythonWorkbench({ appearance }: { appearance: ResolvedOverlayApp
   }, []);
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col" style={{ background: theme.appBackground, color: theme.textPrimary }}>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col" style={{ background: theme.shellBackground, color: theme.textPrimary }}>
       <div className="border-b px-5 py-4" style={{ borderColor: theme.border, background: 'rgba(255,255,255,0.02)' }}>
         <div className="flex items-start justify-between gap-4">
           <div>

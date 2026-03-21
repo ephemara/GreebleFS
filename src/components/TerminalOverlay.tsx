@@ -46,6 +46,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import {
   ensureFontFamilyLoaded,
+  multiplyColorAlpha,
   resolveOverlayAppearance,
   type OverlayThemeDefinition,
   type ResolvedOverlayAppearance,
@@ -79,9 +80,9 @@ interface Theme {
 function themeFromAppearance(theme: OverlayThemeDefinition): Theme {
   return {
     name: theme.name,
-    bg: theme.palette.appBackground,
+    bg: theme.palette.shellBackground,
     bgPanel: theme.palette.panelBackground,
-    bgTerm: theme.palette.terminalBackground,
+    bgTerm: multiplyColorAlpha(theme.palette.terminalBackground, 0.78),
     accent: theme.palette.accent,
     text: theme.palette.textPrimary,
     textMuted: theme.palette.textMuted,

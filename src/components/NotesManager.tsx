@@ -15,7 +15,7 @@ import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 const BASE_PATH = 'M:\\Assets\\OverlayTerm';
 
 const PALETTE = {
-  bg: 'var(--overlay-bg-app)',
+  bg: 'var(--overlay-bg-shell)',
   sidebar: 'var(--overlay-bg-sidebar)',
   panel: 'var(--overlay-bg-panel)',
   card: 'var(--overlay-bg-card)',

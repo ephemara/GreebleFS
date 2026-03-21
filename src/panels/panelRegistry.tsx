@@ -122,7 +122,7 @@ export function createBuiltInPanelDefinitions({
           layoutMode={explorerLayoutMode}
           theme={{
             accent,
-            bg: appearance.theme.palette.appBackground,
+            bg: appearance.theme.palette.shellBackground,
             bgPanel: appearance.theme.palette.panelBackground,
             text: appearance.theme.palette.textPrimary,
             border: appearance.theme.palette.border,

@@ -287,7 +287,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
   }, []);
 
   return (
-    <div style={{ display: 'flex', flex: 1, minHeight: 0, background: 'var(--overlay-bg-app)', color: TEXT, fontFamily: 'var(--overlay-font-ui)' }}>
+    <div style={{ display: 'flex', flex: 1, minHeight: 0, background: 'var(--overlay-bg-shell)', color: TEXT, fontFamily: 'var(--overlay-font-ui)' }}>
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
         <div
           style={{

@@ -1834,7 +1834,7 @@ function App() {
                       justifyContent: 'center',
                       color: theme.palette.textMuted,
                       fontSize: 13,
-                      background: theme.palette.appBackground,
+                      background: theme.palette.shellBackground,
                       fontFamily: resolvedAppearance.fonts.ui,
                     }}
                     >

@@ -38,7 +38,7 @@ interface DiffViewState {
 type ChangeFilter = 'all' | 'staged' | 'unstaged' | 'untracked';
 
 const FALLBACK = {
-  bg: 'var(--overlay-bg-app)',
+  bg: 'var(--overlay-bg-shell)',
   sidebar: 'var(--overlay-bg-sidebar)',
   panel: 'var(--overlay-bg-panel)',
   card: 'var(--overlay-bg-card)',
@@ -66,7 +66,7 @@ const MONACO_BY_EXT: Record<string, string> = {
 
 export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppearance }) {
   const palette = {
-    bg: appearance?.theme.palette.appBackground || FALLBACK.bg,
+    bg: appearance?.theme.palette.shellBackground || FALLBACK.bg,
     sidebar: appearance?.theme.palette.sidebarBackground || FALLBACK.sidebar,
     panel: appearance?.theme.palette.panelBackground || FALLBACK.panel,
     card: appearance?.theme.palette.cardBackground || FALLBACK.card,

@@ -86,7 +86,7 @@ export function PluginsManager({
   );
 
   return (
-    <div style={{ display: 'flex', flex: 1, minHeight: 0, background: 'var(--overlay-bg-app)', color: TEXT, fontFamily: 'var(--overlay-font-ui)' }}>
+    <div style={{ display: 'flex', flex: 1, minHeight: 0, background: 'var(--overlay-bg-shell)', color: TEXT, fontFamily: 'var(--overlay-font-ui)' }}>
       <ResizablePane
         size={sidebarWidth}
         minSize={220}
@@ -339,7 +339,7 @@ function FolderPluginHostFrame({
           minWidth: 0,
           minHeight: 0,
           overflow: 'hidden',
-          background: hostMode === 'panel-tab' ? 'transparent' : 'var(--overlay-bg-app)',
+          background: hostMode === 'panel-tab' ? 'transparent' : 'var(--overlay-bg-shell)',
         }}
       >
         {hostMode === 'panel-tab' ? (
@@ -465,7 +465,7 @@ function PluginErrorPanel({ plugin }: { plugin: LoadedOverlayPlugin }) {
           marginTop: 12,
           padding: 12,
           borderRadius: 12,
-          background: 'color-mix(in srgb, var(--overlay-bg-app) 72%, black)',
+          background: 'color-mix(in srgb, var(--overlay-bg-shell) 72%, black)',
           color: 'var(--overlay-warning)',
           whiteSpace: 'pre-wrap',
           fontSize: 12,

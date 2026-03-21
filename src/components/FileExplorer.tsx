@@ -108,7 +108,7 @@ type FileTransferOperation = 'copy' | 'move';
 // ─── Palette ─────────────────────────────────────────────────────────────────
 
 const EXP = {
-  bg:      'var(--overlay-bg-app)', panel:   'var(--overlay-bg-panel)', sidebar: 'var(--overlay-bg-sidebar)',
+  bg:      'var(--overlay-bg-shell)', panel:   'var(--overlay-bg-panel)', sidebar: 'var(--overlay-bg-sidebar)',
   card:    'var(--overlay-bg-card)', cardHov: 'var(--overlay-bg-card-hover)',
   border:  'var(--overlay-border)',
   accent:  'var(--overlay-accent)', accent2: 'var(--overlay-accent)',
