@@ -115,6 +115,8 @@ export interface AppearanceSettings {
 
 export interface SystemSettings {
   launchAtStartup: boolean;
+  hideAppInTray: boolean;
+  showInTaskbar: boolean;
 }
 
 export interface ScreenshotSettings {
@@ -189,6 +191,30 @@ export function normalizeOverlayWindowAnchor(value: unknown): OverlayWindowAncho
 
 export function normalizeExplorerFolderClickMode(value: unknown): ExplorerFolderClickMode {
   return value === 'single' ? 'single' : 'double';
+}
+
+function isDevEnvironment(): boolean {
+  const env = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env;
+  return env?.DEV === true;
+}
+
+function normalizeSystemSettings(
+  base: SystemSettings,
+  updates?: Partial<SystemSettings>,
+): SystemSettings {
+  const merged = { ...base, ...updates };
+  const normalized: SystemSettings = {
+    launchAtStartup: Boolean(merged.launchAtStartup),
+    hideAppInTray: merged.hideAppInTray !== false,
+    showInTaskbar: Boolean(merged.showInTaskbar),
+  };
+
+  // Keep at least one desktop entry point visible so the overlay is always recoverable.
+  if (!normalized.hideAppInTray && !normalized.showInTaskbar) {
+    normalized.hideAppInTray = true;
+  }
+
+  return normalized;
 }
 
 function normalizeAppearanceSettings(
@@ -285,6 +311,8 @@ export const defaultSettings: Settings = {
   },
   system: {
     launchAtStartup: false,
+    hideAppInTray: true,
+    showInTaskbar: isDevEnvironment(),
   },
   screenshots: {
     saveDirectory: screenshotFeatureConfig.defaultSaveDirectory,
@@ -360,7 +388,7 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
         uiFontFamily: legacyUiFont ?? base.appearance.uiFontFamily,
       }),
     },
-    system: { ...base.system, ...(imported as Partial<Settings> | undefined)?.system },
+    system: normalizeSystemSettings(base.system, (imported as Partial<Settings> | undefined)?.system),
     screenshots: { ...base.screenshots, ...imported?.screenshots },
     keybindings: normalizeKeybindingSettings({ ...base.keybindings, ...imported?.keybindings }),
     polygemini: { ...base.polygemini, ...imported?.polygemini },
@@ -459,7 +487,7 @@ export const useSettingsStore = create<SettingsState>()(
       updateSystem: (updates) => set((state) => ({
         settings: {
           ...state.settings,
-          system: { ...state.settings.system, ...updates },
+          system: normalizeSystemSettings(state.settings.system, updates),
         },
       })),
 
@@ -494,7 +522,7 @@ export const useSettingsStore = create<SettingsState>()(
       resetToDefaults: () => set((state) => ({
         settings: {
           ...defaultSettings,
-          system: state.settings.system,
+          system: normalizeSystemSettings(defaultSettings.system, state.settings.system),
         },
       })),
       

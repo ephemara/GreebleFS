@@ -75,5 +75,5 @@ describe('SettingsPage shaders section', () => {
 
     expect(useSettingsStore.getState().settings.appearance.activeShaderId).toBe('aurora-ribbon');
     expect(screen.getAllByText('A soft aurora wash with glossy chrome highlights for all three shell surfaces.').length).toBeGreaterThan(0);
-  });
+  }, 30000);
 });

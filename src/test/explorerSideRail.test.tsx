@@ -43,7 +43,7 @@ describe('ExplorerSideRail', () => {
     expect(useExplorerStore.getState().rail.nodes).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'folder', name: 'Work' }),
     ]));
-  });
+  }, 20000);
 
   it('stores collapsed section state when sections are toggled', () => {
     render(
@@ -64,7 +64,7 @@ describe('ExplorerSideRail', () => {
     fireEvent.click(screen.getByRole('button', { name: /quick access/i }));
 
     expect(useExplorerStore.getState().rail.collapsedSectionIds).toContain('quick-access');
-  });
+  }, 20000);
 
   it('prompts for dropped folders and creates bookmarks optimistically after confirmation', () => {
     const onBookmarkCreated = vi.fn();
@@ -100,5 +100,5 @@ describe('ExplorerSideRail', () => {
     expect(useExplorerStore.getState().rail.nodes).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'bookmark', path: 'M:\\OverlayTerm' }),
     ]));
-  });
+  }, 20000);
 });

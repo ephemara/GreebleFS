@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
 echo =======================================================
-echo Building OverlayTerm to a standalone executable (.exe)
+echo Building Greeble to a standalone executable (.exe)
 echo =======================================================
 echo.
 
@@ -40,7 +40,7 @@ echo =======================================================
 echo BUILD COMPLETE!
 echo.
 echo Your standalone executable is located at:
-echo m:\OverlayTerm\src-tauri\target\release\OverlayTerm.exe
+echo m:\OverlayTerm\src-tauri\target\release\greeble.exe
 echo.
 echo Note: If you have MSI/NSIS bundling enabled, there will also be an installer at:
 echo m:\OverlayTerm\src-tauri\target\release\bundle\nsis\

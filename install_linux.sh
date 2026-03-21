@@ -2,7 +2,7 @@
 set -e
 
 echo "======================================"
-echo " OverlayTerm Linux Installer"
+echo " Greeble Linux Installer"
 echo "======================================"
 echo ""
 
@@ -30,14 +30,14 @@ npm run tauri build
 # 5. Global Install
 echo "Installing to ~/.local/bin..."
 mkdir -p ~/.local/bin
-cp src-tauri/target/release/overlayterm ~/.local/bin/
+cp src-tauri/target/release/greeble ~/.local/bin/
 
 echo "Creating Desktop Entry..."
 mkdir -p ~/.local/share/applications/
-cat <<EOF > ~/.local/share/applications/overlayterm.desktop
+cat <<EOF > ~/.local/share/applications/greeble.desktop
 [Desktop Entry]
-Name=OverlayTerm
-Exec=$HOME/.local/bin/overlayterm
+Name=Greeble
+Exec=$HOME/.local/bin/greeble
 Icon=utilities-terminal
 Type=Application
 Categories=Utility;TerminalEmulator;Development;
@@ -47,7 +47,7 @@ EOF
 echo "======================================"
 echo "Installation Complete! 🎉"
 echo "======================================"
-echo "You can now launch OverlayTerm by:"
+echo "You can now launch Greeble by:"
 echo "1. Opening it from your application menu."
-echo "2. Running '~/.local/bin/overlayterm' in your terminal."
+echo "2. Running '~/.local/bin/greeble' in your terminal."
 echo "   (Make sure ~/.local/bin is in your PATH)"

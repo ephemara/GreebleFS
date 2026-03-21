@@ -61,6 +61,13 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.layout.activeProfileId).toBe(defaultSettings.layout.activeProfileId);
     expect(settings.layout.configPath).toBe('');
   });
+
+  it('has safe default system visibility settings', () => {
+    const { settings } = useSettingsStore.getState();
+    expect(settings.system.launchAtStartup).toBe(false);
+    expect(settings.system.hideAppInTray).toBe(true);
+    expect(typeof settings.system.showInTaskbar).toBe('boolean');
+  });
 });
 
 describe('useSettingsStore.updateTerminal()', () => {
@@ -170,12 +177,12 @@ describe('useSettingsStore.updateLayout()', () => {
 
     store.updateLayout({
       activeProfileId: 'navigator-bottom',
-      configPath: 'M:\\layouts\\snapyard.layouts.toml',
+      configPath: 'M:\\layouts\\greeble.layouts.toml',
     });
 
     const { settings } = useSettingsStore.getState();
     expect(settings.layout.activeProfileId).toBe('navigator-bottom');
-    expect(settings.layout.configPath).toBe('M:\\layouts\\snapyard.layouts.toml');
+    expect(settings.layout.configPath).toBe('M:\\layouts\\greeble.layouts.toml');
     expect(settings.appearance).toEqual(beforeAppearance);
   });
 });
@@ -193,6 +200,20 @@ describe('useSettingsStore.resetToDefaults()', () => {
     expect(settings.terminal.fontSize).toBe(defaultSettings.terminal.fontSize);
     expect(settings.appearance.activeThemeId).toBe(defaultSettings.appearance.activeThemeId);
     expect(settings.explorer.showHiddenFiles).toBe(defaultSettings.explorer.showHiddenFiles);
+  });
+});
+
+describe('useSettingsStore.updateSystem()', () => {
+  it('keeps at least one desktop entry point enabled', () => {
+    const store = useSettingsStore.getState();
+
+    store.updateSystem({ hideAppInTray: false, showInTaskbar: true });
+    expect(useSettingsStore.getState().settings.system.hideAppInTray).toBe(false);
+    expect(useSettingsStore.getState().settings.system.showInTaskbar).toBe(true);
+
+    store.updateSystem({ showInTaskbar: false });
+    expect(useSettingsStore.getState().settings.system.hideAppInTray).toBe(true);
+    expect(useSettingsStore.getState().settings.system.showInTaskbar).toBe(false);
   });
 });
 
@@ -286,6 +307,8 @@ describe('mergeSettingsWithDefaults()', () => {
     expect(merged.appearance.appOpenAnimation).toBe(defaultSettings.appearance.appOpenAnimation);
     expect(merged.appearance.appCloseAnimation).toBe(defaultSettings.appearance.appCloseAnimation);
     expect(merged.terminal.overlayAnchor).toBe(defaultSettings.terminal.overlayAnchor);
+    expect(merged.system.hideAppInTray).toBe(defaultSettings.system.hideAppInTray);
+    expect(merged.system.showInTaskbar).toBe(defaultSettings.system.showInTaskbar);
     expect(merged.screenshots).toEqual(defaultSettings.screenshots);
     expect(merged.layout).toEqual(defaultSettings.layout);
   });

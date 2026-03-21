@@ -60,7 +60,7 @@
       "brightWhite": "#0f3048"
     },
     "cssVars": {
-      "--snapyard-chrome-style": "aqua-light"
+      "--greeble-chrome-style": "aqua-light"
     }
   },
   "visuals": [

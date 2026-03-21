@@ -47,11 +47,7 @@ fn encode_png_data_url(bytes: Vec<u8>) -> String {
     format!("data:image/png;base64,{}", BASE64_STANDARD.encode(bytes))
 }
 
-fn icon_pixels_to_png_data_url(
-    width: u32,
-    height: u32,
-    pixels: Vec<u8>,
-) -> Result<String, String> {
+fn icon_pixels_to_png_data_url(width: u32, height: u32, pixels: Vec<u8>) -> Result<String, String> {
     let image = RgbaImage::from_raw(width, height, pixels)
         .map(DynamicImage::ImageRgba8)
         .ok_or_else(|| "native icon provider returned invalid RGBA pixel data".to_string())?;
@@ -124,7 +120,8 @@ where
 }
 
 fn collect_drag_paths(paths: Vec<String>) -> Vec<PathBuf> {
-    paths.into_iter()
+    paths
+        .into_iter()
         .filter_map(|path| {
             let trimmed = path.trim();
             if trimmed.is_empty() {
@@ -195,5 +192,73 @@ pub fn fs_start_native_file_drag(window: WebviewWindow, paths: Vec<String>) -> R
     }
 
     let drag_window = window.clone();
-    run_on_window_main_thread(&window, move || start_native_drag_impl(drag_window, drag_paths))?
+    run_on_window_main_thread(&window, move || {
+        start_native_drag_impl(drag_window, drag_paths)
+    })?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn normalize_icon_size_uses_default_and_clamps_to_supported_range() {
+        assert_eq!(normalize_icon_size(None), DEFAULT_NATIVE_ICON_SIZE);
+        assert_eq!(normalize_icon_size(Some(8)), 16);
+        assert_eq!(normalize_icon_size(Some(48)), 48);
+        assert_eq!(normalize_icon_size(Some(512)), MAX_NATIVE_ICON_SIZE);
+    }
+
+    #[test]
+    fn build_icon_cache_key_is_case_insensitive_but_size_specific() {
+        let lower = build_icon_cache_key(Path::new("C:\\Temp\\demo.txt"), 32);
+        let upper = build_icon_cache_key(Path::new("c:\\temp\\DEMO.TXT"), 32);
+        let larger = build_icon_cache_key(Path::new("c:\\temp\\demo.txt"), 64);
+
+        assert_eq!(lower, upper);
+        assert_ne!(lower, larger);
+    }
+
+    #[test]
+    fn icon_pixels_to_png_data_url_rejects_invalid_rgba_buffers() {
+        let error = icon_pixels_to_png_data_url(2, 2, vec![255, 0, 0]).unwrap_err();
+        assert!(error.contains("invalid RGBA"));
+    }
+
+    #[test]
+    fn icon_pixels_to_png_data_url_encodes_valid_png_data_urls() {
+        let data_url = icon_pixels_to_png_data_url(1, 1, vec![255, 0, 0, 255]).unwrap();
+        assert!(data_url.starts_with("data:image/png;base64,"));
+    }
+
+    #[test]
+    fn resolve_native_icon_for_missing_paths_returns_none() {
+        let temp = tempdir().unwrap();
+        let missing = temp.path().join("missing.txt");
+
+        let result = resolve_native_icon_for_path(&missing, 32).unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn collect_drag_paths_filters_blank_and_missing_entries() {
+        let temp = tempdir().unwrap();
+        let nested = temp.path().join("nested");
+        fs::create_dir_all(&nested).unwrap();
+        let file_path = nested.join("demo.txt");
+        fs::write(&file_path, "demo").unwrap();
+
+        let drag_paths = collect_drag_paths(vec![
+            String::new(),
+            "   ".to_string(),
+            "C:\\definitely-missing-overlayterm-path".to_string(),
+            format!("  {}  ", file_path.display()),
+        ]);
+
+        assert_eq!(drag_paths.len(), 1);
+        assert!(drag_paths[0].is_absolute());
+        assert!(drag_paths[0].ends_with("demo.txt"));
+    }
 }

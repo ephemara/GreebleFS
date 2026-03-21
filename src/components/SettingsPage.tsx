@@ -563,6 +563,14 @@ export function SettingsPage({
     }
   }, [updateSystem]);
 
+  const setHideAppInTray = useCallback((enabled: boolean) => {
+    updateSystem({ hideAppInTray: enabled });
+  }, [updateSystem]);
+
+  const setShowInTaskbar = useCallback((enabled: boolean) => {
+    updateSystem({ showInTaskbar: enabled });
+  }, [updateSystem]);
+
   const settingsSections: Array<{
     key: SettingsSectionKey;
     label: string;
@@ -631,7 +639,11 @@ export function SettingsPage({
       key: 'system',
       label: 'System',
       subtitle: 'Startup and OS integration status.',
-      summary: settings.system.launchAtStartup ? 'Launch at startup enabled' : 'Launch at startup disabled',
+      summary: [
+        settings.system.launchAtStartup ? 'Startup on' : 'Startup off',
+        settings.system.hideAppInTray ? 'Tray on' : 'Tray off',
+        settings.system.showInTaskbar ? 'Taskbar on' : 'Taskbar off',
+      ].join(' · '),
       detail: 'Handle machine-level behavior like login launch and other desktop integration concerns in one place.',
       icon: <Settings2 size={14} />,
     },
@@ -761,7 +773,7 @@ export function SettingsPage({
                   <div>
                     <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Theme Packages</div>
                     <p className="mt-1 text-[11px] opacity-40">
-                      Drop packaged themes into <code>{themePackagesDirectory}</code> and Snapyard will discover them as first-class themes with assets and visuals.
+                      Drop packaged themes into <code>{themePackagesDirectory}</code> and Greeble will discover them as first-class themes with assets and visuals.
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1493,7 +1505,7 @@ export function SettingsPage({
                 <input
                   value={settings.layout.configPath}
                   onChange={event => updateLayout({ configPath: event.target.value })}
-                  placeholder="Leave blank to probe ~/.overlayterm/snapyard.layouts.json or .toml"
+                  placeholder="Leave blank to probe ~/.greeble/greeble.layouts.json or .toml"
                   className="w-full rounded border px-3 py-2 text-[11px] outline-none"
                   style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text, fontFamily: appearance.fonts.mono }}
                 />
@@ -1531,7 +1543,7 @@ export function SettingsPage({
                   <div>
                     <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Profiles</div>
                     <p className="mt-1 text-[11px] opacity-40">
-                      Click a profile to switch the entire workbench layout. The Snapyard button still cycles this same ordered set.
+                      Click a profile to switch the entire workbench layout. The Greeble button still cycles this same ordered set.
                     </p>
                   </div>
                   <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
@@ -1600,7 +1612,7 @@ export function SettingsPage({
                 <div>
                   <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Launch At Startup</div>
                   <p className="mt-1 text-[11px] opacity-40">
-                    Registers OverlayTerm as a login item so the tray and overlay are available after sign-in.
+                    Registers Greeble as a login item so the tray and overlay are available after sign-in.
                   </p>
                 </div>
                 <input
@@ -1610,12 +1622,40 @@ export function SettingsPage({
                   onChange={event => void setLaunchAtStartup(event.target.checked)}
                 />
               </label>
+              <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                <div>
+                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Hide App In Tray</div>
+                  <p className="mt-1 text-[11px] opacity-40">
+                    Keeps a {platform === 'macos' ? 'menu bar' : 'system tray'} entry available so the overlay can stay resident when the main window is hidden.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={settings.system.hideAppInTray}
+                  disabled={!settings.system.showInTaskbar && settings.system.hideAppInTray}
+                  onChange={event => setHideAppInTray(event.target.checked)}
+                />
+              </label>
+              <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                <div>
+                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Show In Taskbar</div>
+                  <p className="mt-1 text-[11px] opacity-40">
+                    Shows the main window in the {platform === 'macos' ? 'Dock' : 'taskbar'} while the overlay is running. Dev mode defaults this on so `tauri dev` stays easy to find.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={settings.system.showInTaskbar}
+                  disabled={!settings.system.hideAppInTray && settings.system.showInTaskbar}
+                  onChange={event => setShowInTaskbar(event.target.checked)}
+                />
+              </label>
               <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: startupSyncError ? '#fda4af' : muted }}>
                 {startupSyncPending
                   ? 'Updating OS startup registration...'
                   : startupSyncError
                     ? `Startup registration failed: ${startupSyncError}`
-                  : `Current status: ${settings.system.launchAtStartup ? 'enabled' : 'disabled'}`}
+                  : `Current status: startup ${settings.system.launchAtStartup ? 'enabled' : 'disabled'} · tray ${settings.system.hideAppInTray ? 'enabled' : 'disabled'} · ${platform === 'macos' ? 'Dock' : 'taskbar'} ${settings.system.showInTaskbar ? 'enabled' : 'disabled'}`}
               </div>
             </div>
           </section>

@@ -57,6 +57,7 @@ import {
   buildManagedPythonReplCommand,
   createPythonRuntimeConfig,
   formatCommandOutput,
+  pythonQuickPackagePresets,
   pythonExamplePresets,
   summarizeInterpreter,
   type PythonActionResponse,
@@ -401,7 +402,7 @@ function XTermPane({ id, visible, theme, onReady }: XTermPaneProps) {
     fit.fit();
 
     try {
-      await invoke('terminal_spawn', { id, rows: term.rows, cols: term.cols });
+      await invoke('terminal_spawn', { id, rows: term.rows, cols: term.cols, shell: settings.shell });
     } catch (e) {
       term.writeln('\r\n\x1b[31mFailed to spawn PTY:\x1b[0m ' + String(e));
     }
@@ -602,6 +603,20 @@ function PythonSidebarContent({
       }));
   }, [pythonSettings.bootstrapPackages, runAction, runtimeConfig]);
 
+  const applyPackagePreset = useCallback(async (packages: string[]) => {
+    await runAction('Installed Python package preset', () =>
+      invoke<PythonActionResponse>('python_install_packages', {
+        request: {
+          config: {
+            ...runtimeConfig,
+            bootstrapPackages: packages.join('\n'),
+          },
+          packageInput: packages.join('\n'),
+          persistToRequirements: false,
+        },
+      }));
+  }, [runAction, runtimeConfig]);
+
   const openManagedRepl = useCallback(async () => {
     if (!status?.ready || !status.managedPythonPath) {
       announce('Managed Python is not ready yet');
@@ -707,7 +722,7 @@ function PythonSidebarContent({
               style={buttonStyle}
               title="Install the packages configured in Python settings"
             >
-              <span>Install Configured Packages</span>
+              <span>Install Package Queue</span>
               <Play size={11} />
             </button>
           </div>
@@ -723,6 +738,35 @@ function PythonSidebarContent({
                   type="button"
                   onClick={() => void runPreset(preset)}
                   disabled={Boolean(pendingAction) || !status?.ready}
+                  className="w-full rounded border px-2.5 py-2 text-left disabled:opacity-35"
+                  style={{ borderColor: theme.border, background: 'rgba(255,255,255,0.03)' }}
+                  title={preset.description}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-medium" style={{ color: theme.text }}>
+                      {preset.label}
+                    </span>
+                    <Play size={10} style={{ color: theme.accent }} />
+                  </div>
+                  <div className="mt-1 text-[9px]" style={{ color: theme.textMuted }}>
+                    {preset.description}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: theme.textMuted }}>
+              Package Presets
+            </div>
+            <div className="space-y-2">
+              {pythonQuickPackagePresets.map(preset => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => void applyPackagePreset(preset.packages)}
+                  disabled={Boolean(pendingAction)}
                   className="w-full rounded border px-2.5 py-2 text-left disabled:opacity-35"
                   style={{ borderColor: theme.border, background: 'rgba(255,255,255,0.03)' }}
                   title={preset.description}
@@ -1012,7 +1056,7 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
     try {
       await invoke('terminal_kill', { id: activeId });
       entry.xterm.reset();
-      await invoke('terminal_spawn', { id: activeId, rows: entry.xterm.rows, cols: entry.xterm.cols });
+      await invoke('terminal_spawn', { id: activeId, rows: entry.xterm.rows, cols: entry.xterm.cols, shell: settings.shell });
       markTerminalReady(activeId);
       setTransientActionMessage(`Restarted ${tabs.find(tab => tab.id === activeId)?.label ?? 'terminal'}`);
     } catch (error) {
@@ -1023,7 +1067,7 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
       entry.fitAddon.fit();
       entry.xterm.focus();
     });
-  }, [activeId, clearTerminalReady, markTerminalReady, setTransientActionMessage, tabs]);
+  }, [activeId, clearTerminalReady, markTerminalReady, setTransientActionMessage, settings.shell, tabs]);
 
   // ── Listen for cd-inject from FileExplorer (must be after injectCd is defined) ──
   useEffect(() => {

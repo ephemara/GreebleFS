@@ -11,7 +11,15 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
-      include: ['src/components/**', 'src/store/**', 'src/config/**', 'src/input/**', 'src/panels/**'],
+      include: [
+        'src/App.tsx',
+        'src/components/**',
+        'src/store/**',
+        'src/config/**',
+        'src/input/**',
+        'src/panels/**',
+        'src/runtime/**',
+      ],
     },
   },
   resolve: {

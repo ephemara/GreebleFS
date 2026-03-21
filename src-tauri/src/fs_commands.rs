@@ -1947,15 +1947,27 @@ mod tests {
             .iter()
             .find(|entry| entry.path == nested_dir.to_string_lossy())
             .expect("directory result missing");
-        assert!(dir_result.is_dir, "directory should be marked as a directory");
-        assert!(dir_result.is_complete, "small directory scan should complete");
-        assert_eq!(dir_result.bytes, 384, "directory size should include nested files");
+        assert!(
+            dir_result.is_dir,
+            "directory should be marked as a directory"
+        );
+        assert!(
+            dir_result.is_complete,
+            "small directory scan should complete"
+        );
+        assert_eq!(
+            dir_result.bytes, 384,
+            "directory size should include nested files"
+        );
 
         let file_result = results
             .iter()
             .find(|entry| entry.path == loose_file.to_string_lossy())
             .expect("file result missing");
-        assert!(!file_result.is_dir, "file should not be marked as a directory");
+        assert!(
+            !file_result.is_dir,
+            "file should not be marked as a directory"
+        );
         assert!(file_result.is_complete, "files should resolve immediately");
         assert_eq!(file_result.bytes, 64);
     }
@@ -1979,16 +1991,20 @@ mod tests {
         #[cfg(target_family = "windows")]
         std::os::windows::fs::symlink_dir(&real_dir, &linked_dir).unwrap();
 
-        let results = fs_measure_entry_sizes(
-            vec![linked_dir.to_string_lossy().into_owned()],
-            Some(true),
-        )
-        .await
-        .expect("fs_measure_entry_sizes failed");
+        let results =
+            fs_measure_entry_sizes(vec![linked_dir.to_string_lossy().into_owned()], Some(true))
+                .await
+                .expect("fs_measure_entry_sizes failed");
 
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].bytes, 0, "symlinked directories should not be traversed");
-        assert!(results[0].is_complete, "symlink handling should return immediately");
+        assert_eq!(
+            results[0].bytes, 0,
+            "symlinked directories should not be traversed"
+        );
+        assert!(
+            results[0].is_complete,
+            "symlink handling should return immediately"
+        );
     }
 
     #[test]
@@ -2002,7 +2018,10 @@ mod tests {
         }
 
         let (_bytes, is_dir, is_complete) = measure_path_size(&root);
-        assert!(is_dir, "directory should still be identified as a directory");
+        assert!(
+            is_dir,
+            "directory should still be identified as a directory"
+        );
         if !is_complete {
             return;
         }

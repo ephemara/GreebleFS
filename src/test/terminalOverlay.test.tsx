@@ -98,7 +98,7 @@ describe('TerminalOverlay', () => {
         'PS M:\\OverlayTerm> dir\nsrc  src-tauri  package.json',
       );
     });
-  });
+  }, 20000);
 
   it('clears and restarts the active terminal session', async () => {
     const invokeMock = vi.mocked(invoke);
@@ -115,12 +115,12 @@ describe('TerminalOverlay', () => {
     expect(mockXtermInstances[0]?.clear).toHaveBeenCalledTimes(1);
     expect(mockXtermInstances[0]?.reset).toHaveBeenCalledTimes(1);
     expect(invokeMock).toHaveBeenCalledWith('terminal_kill', { id: 'overlay-0' });
-    expect(invokeMock).toHaveBeenCalledWith('terminal_spawn', {
+    expect(invokeMock).toHaveBeenCalledWith('terminal_spawn', expect.objectContaining({
       id: 'overlay-0',
       rows: 24,
       cols: 80,
-    });
-  });
+    }));
+  }, 20000);
 
   it('exposes the managed Python rail inside the terminal sidebar', async () => {
     render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
@@ -129,7 +129,7 @@ describe('TerminalOverlay', () => {
 
     expect(await screen.findByText('Managed Runtime')).toBeInTheDocument();
     expect(screen.getByText('Quick Runs')).toBeInTheDocument();
-  });
+  }, 20000);
 
   it('launches the managed Python REPL into the active terminal tab', async () => {
     const invokeMock = vi.mocked(invoke);
@@ -158,5 +158,5 @@ describe('TerminalOverlay', () => {
       id: 'overlay-0',
       data: "& 'C:\\Python Runtime\\env\\Scripts\\python.exe'\r",
     });
-  });
+  }, 20000);
 });

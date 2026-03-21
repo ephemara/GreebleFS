@@ -603,6 +603,26 @@ function App() {
   }, [updateSystem]);
 
   useEffect(() => {
+    if (!isTauri()) {
+      return;
+    }
+
+    invoke('tray_set_visible', { visible: settings.system.hideAppInTray }).catch(error => {
+      console.warn('OverlayTerm: failed to sync tray visibility', error);
+    });
+  }, [settings.system.hideAppInTray]);
+
+  useEffect(() => {
+    if (!isTauri()) {
+      return;
+    }
+
+    invoke('window_set_taskbar_visibility', { visible: settings.system.showInTaskbar }).catch(error => {
+      console.warn('OverlayTerm: failed to sync taskbar visibility', error);
+    });
+  }, [settings.system.showInTaskbar]);
+
+  useEffect(() => {
     ensureFontFamilyLoaded(resolvedAppearance.fonts.ui);
     ensureFontFamilyLoaded(resolvedAppearance.fonts.mono);
   }, [resolvedAppearance.fonts.mono, resolvedAppearance.fonts.ui]);
@@ -2531,7 +2551,7 @@ function TopBar({
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, lineHeight: 1 }}>
           <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: TEXT, fontFamily: uiFont, userSelect: 'none' }}>
-            Snapyard
+            Greeble
           </span>
           <span style={{
             display: 'inline-flex',

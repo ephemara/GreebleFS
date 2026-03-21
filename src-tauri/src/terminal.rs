@@ -15,6 +15,9 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
 
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 pub struct TerminalInstance {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
@@ -43,59 +46,95 @@ impl TerminalManager {
     }
 
     /// Get the appropriate shell for the current platform
-    fn get_shell() -> (String, Vec<&'static str>) {
+    fn get_shell(shell_override: Option<&str>) -> (String, Vec<String>) {
         #[cfg(target_os = "windows")]
         {
-            // Try PowerShell Core (pwsh) first, then Windows PowerShell, then cmd
-            let pwsh_paths = [
-                std::env::var("ProgramFiles").unwrap_or_default() + "\\PowerShell\\7\\pwsh.exe",
-                std::env::var("LOCALAPPDATA").unwrap_or_default()
-                    + "\\Microsoft\\WindowsApps\\pwsh.exe",
-            ];
-
-            for path in &pwsh_paths {
-                if std::path::Path::new(path).exists() {
-                    return (path.clone(), vec!["-NoLogo"]);
-                }
-            }
-
-            // Try Windows PowerShell via full path
+            let requested = shell_override.unwrap_or("").trim();
             let system_root =
                 std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string());
             let powershell_path = format!(
                 "{}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
                 system_root
             );
+            let pwsh_path = std::env::var("ProgramFiles").unwrap_or_default() + "\\PowerShell\\7\\pwsh.exe";
 
-            if std::path::Path::new(&powershell_path).exists() {
-                return (powershell_path, vec!["-NoLogo", "-NoExit"]);
+            let default_shell = || {
+                if Path::new(&pwsh_path).exists() {
+                    (pwsh_path.clone(), vec!["-NoLogo".to_string()])
+                } else if Path::new(&powershell_path).exists() {
+                    (powershell_path.clone(), vec!["-NoLogo".to_string()])
+                } else {
+                    let cmd_path = format!("{}\\System32\\cmd.exe", system_root);
+                    (cmd_path, Vec::new())
+                }
+            };
+
+            if requested.is_empty() {
+                return default_shell();
             }
 
-            // Fallback to cmd.exe
-            let cmd_path = format!("{}\\System32\\cmd.exe", system_root);
-            (cmd_path, vec![])
+            let normalized = requested.to_ascii_lowercase();
+            if normalized.ends_with("cmd") || normalized.ends_with("cmd.exe") {
+                return (requested.to_string(), Vec::new());
+            }
+
+            if normalized.ends_with("pwsh") || normalized.ends_with("pwsh.exe") {
+                let executable = if Path::new(&pwsh_path).exists() {
+                    pwsh_path
+                } else {
+                    requested.to_string()
+                };
+                return (executable, vec!["-NoLogo".to_string()]);
+            }
+
+            if normalized.ends_with("powershell") || normalized.ends_with("powershell.exe") {
+                let executable = if Path::new(&powershell_path).exists() {
+                    powershell_path
+                } else {
+                    requested.to_string()
+                };
+                return (executable, vec!["-NoLogo".to_string()]);
+            }
+
+            if Path::new(requested).exists() || command_exists(requested) {
+                return (requested.to_string(), Vec::new());
+            }
+
+            default_shell()
         }
 
         #[cfg(target_os = "macos")]
         {
+            let requested = shell_override.unwrap_or("").trim();
+            if !requested.is_empty() {
+                return (requested.to_string(), vec!["-l".to_string()]);
+            }
             // Use zsh on macOS (default since Catalina)
             if std::path::Path::new("/bin/zsh").exists() {
-                return ("/bin/zsh".to_string(), vec!["-l"]);
+                return ("/bin/zsh".to_string(), vec!["-l".to_string()]);
             }
-            ("/bin/bash".to_string(), vec!["-l"])
+            ("/bin/bash".to_string(), vec!["-l".to_string()])
         }
 
         #[cfg(target_os = "linux")]
         {
+            let requested = shell_override.unwrap_or("").trim();
+            if !requested.is_empty() {
+                return (requested.to_string(), vec!["-l".to_string()]);
+            }
             // Check for user's preferred shell
             if let Ok(shell) = std::env::var("SHELL") {
-                return (shell, vec!["-l"]);
+                return (shell, vec!["-l".to_string()]);
             }
-            ("/bin/bash".to_string(), vec!["-l"])
+            ("/bin/bash".to_string(), vec!["-l".to_string()])
         }
 
         #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
         {
+            let requested = shell_override.unwrap_or("").trim();
+            if !requested.is_empty() {
+                return (requested.to_string(), Vec::new());
+            }
             ("/bin/sh".to_string(), vec![])
         }
     }
@@ -104,6 +143,7 @@ impl TerminalManager {
         &self,
         id: &str,
         working_dir: Option<String>,
+        shell: Option<String>,
         rows: u16,
         cols: u16,
     ) -> Result<(), String> {
@@ -119,10 +159,15 @@ impl TerminalManager {
             .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
         // Try to find PowerShell, fall back to cmd.exe
-        let (shell, args) = Self::get_shell();
+        let (shell, args) = Self::get_shell(shell.as_deref());
         let mut cmd = CommandBuilder::new(&shell);
         for arg in args {
             cmd.arg(arg);
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            cmd.creation_flags(CREATE_NO_WINDOW);
         }
 
         if let Some(dir) = &working_dir {
@@ -669,13 +714,14 @@ pub async fn terminal_spawn(
     app: AppHandle,
     id: String,
     working_dir: Option<String>,
+    shell: Option<String>,
     rows: Option<u16>,
     cols: Option<u16>,
 ) -> Result<(), String> {
     let rows = rows.unwrap_or(24);
     let cols = cols.unwrap_or(80);
 
-    terminal_manager.spawn(&id, working_dir, rows, cols)?;
+    terminal_manager.spawn(&id, working_dir, shell, rows, cols)?;
     terminal_manager.start_reader_thread(id, app);
 
     Ok(())

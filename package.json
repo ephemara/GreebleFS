@@ -1,5 +1,5 @@
 {
-  "name": "tauri-app",
+  "name": "greeble",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -9,12 +9,16 @@
     "build": "npm run icons:folders && tsc && vite build",
     "preview": "vite preview",
     "tauri": "node scripts/run-platform-tauri.mjs",
-    "test": "vitest run",
+    "test": "npm run test:unit",
+    "test:unit": "vitest run",
     "test:watch": "vitest",
+    "test:unit:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
+    "test:browser": "vitest run --config vitest.browser.config.ts",
+    "test:browser:watch": "vitest --config vitest.browser.config.ts",
     "test:rust": "node scripts/run-cargo-tests.mjs",
-    "test:all": "npm run test && npm run test:rust"
+    "test:all": "npm run test:unit && npm run test:browser && npm run test:rust && npm run test:coverage"
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",
@@ -46,7 +50,11 @@
     "@types/react-dom": "^19.1.6",
     "@types/three": "^0.183.1",
     "@vitejs/plugin-react": "^4.7.0",
+    "@vitest/browser": "^4.1.0",
+    "@vitest/browser-playwright": "^4.1.0",
+    "@vitest/coverage-v8": "^4.1.0",
     "jsdom": "^28.1.0",
+    "playwright": "^1.58.2",
     "typescript": "~5.8.3",
     "vite": "^7.0.4",
     "vitest": "^4.0.18"

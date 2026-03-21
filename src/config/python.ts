@@ -83,22 +83,22 @@ export interface PythonExamplePreset {
 
 export const pythonQuickPackagePresets: PythonQuickPackagePreset[] = [
   {
-    id: 'core-data',
-    label: 'Core Data',
-    description: 'Base scientific stack for desktop automation and data transforms.',
-    packages: ['numpy', 'pillow', 'pydantic'],
+    id: 'automation',
+    label: 'Automation',
+    description: 'Useful packages for scripting, HTTP calls, and CLI tasks.',
+    packages: ['requests', 'pydantic', 'rich'],
   },
   {
-    id: 'onnx-stack',
-    label: 'ONNX Stack',
-    description: 'ONNX runtime tooling for model execution and verification.',
-    packages: ['numpy', 'onnx', 'onnxruntime'],
+    id: 'data-tools',
+    label: 'Data Tools',
+    description: 'General-purpose parsing and tabular data helpers.',
+    packages: ['numpy', 'pandas', 'python-dateutil'],
   },
   {
-    id: 'vision-stack',
-    label: 'Vision',
-    description: 'Image-oriented runtime for computer vision experiments.',
-    packages: ['numpy', 'opencv-python', 'pillow'],
+    id: 'web-scrape',
+    label: 'Web & Parse',
+    description: 'Utilities for HTML parsing and lightweight scraping tasks.',
+    packages: ['requests', 'beautifulsoup4', 'lxml'],
   },
 ];
 
@@ -128,11 +128,23 @@ export const pythonExamplePresets: PythonExamplePreset[] = [
     entry: 'hello_runtime.py',
   },
   {
-    id: 'onnx-probe',
-    label: 'ONNX Probe',
-    mode: 'script',
-    description: 'Checks whether ONNX-related packages are available in the managed env.',
-    entry: 'onnx_probe.py',
+    id: 'stdlib-report',
+    label: 'Stdlib Report',
+    mode: 'inline',
+    description: 'Prints runtime paths and Python version info from the managed environment.',
+    entry: [
+      'import json',
+      'import site',
+      'import sys',
+      '',
+      'print(json.dumps({',
+      '    "version": sys.version.split()[0],',
+      '    "executable": sys.executable,',
+      '    "cwd": __import__("os").getcwd(),',
+      '    "site_packages": site.getsitepackages(),',
+      '}, indent=2))',
+      '',
+    ].join('\n'),
   },
 ];
 

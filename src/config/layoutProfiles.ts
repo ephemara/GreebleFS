@@ -53,8 +53,10 @@ type LooseRecord = Record<string, unknown>;
 const MIN_PINNED_PANEL_SIZE = 220;
 const MAX_PINNED_PANEL_SIZE = 640;
 const DEFAULT_LAYOUT_VERSION = 1;
-const DEFAULT_CONFIG_RELATIVE_DIR = '.overlayterm';
-const DEFAULT_CONFIG_BASENAME = 'snapyard.layouts';
+const DEFAULT_LAYOUT_CONFIG_LOCATIONS = [
+  { relativeDir: '.greeble', basename: 'greeble.layouts' },
+  { relativeDir: '.overlayterm', basename: 'snapyard.layouts' },
+] as const;
 const DEFAULT_CONFIG_EXTENSIONS = ['json', 'toml'] as const;
 
 function clampNumber(value: number, min: number, max: number): number {
@@ -304,9 +306,15 @@ export function getPanelsBySide(profile: LayoutProfile, side: LayoutDockSide): L
 
 export function buildDefaultLayoutConfigCandidates(homeDir: string): string[] {
   const normalizedHome = homeDir.replace(/[\\/]+$/, '');
-  return DEFAULT_CONFIG_EXTENSIONS.map(
-    extension => `${normalizedHome}\\${DEFAULT_CONFIG_RELATIVE_DIR}\\${DEFAULT_CONFIG_BASENAME}.${extension}`,
-  );
+  const candidates: string[] = [];
+
+  for (const location of DEFAULT_LAYOUT_CONFIG_LOCATIONS) {
+    for (const extension of DEFAULT_CONFIG_EXTENSIONS) {
+      candidates.push(`${normalizedHome}\\${location.relativeDir}\\${location.basename}.${extension}`);
+    }
+  }
+
+  return candidates;
 }
 
 function parseLayoutManifestText(text: string, filePath: string): LayoutManifest {

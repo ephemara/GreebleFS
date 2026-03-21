@@ -1,5 +1,7 @@
 use tauri::{AppHandle, Manager, WebviewWindow};
 
+pub const MAIN_TRAY_ICON_ID: &str = "main-tray";
+
 #[tauri::command]
 pub fn window_set_blur(app: AppHandle, enabled: bool, strength: Option<f64>) -> Result<(), String> {
     let window = app
@@ -9,8 +11,30 @@ pub fn window_set_blur(app: AppHandle, enabled: bool, strength: Option<f64>) -> 
     set_native_blur(&window, enabled, strength)
 }
 
+#[tauri::command]
+pub fn window_set_taskbar_visibility(app: AppHandle, visible: bool) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Main window not found".to_string())?;
+
+    set_native_taskbar_visibility(&app, &window, visible)
+}
+
+#[tauri::command]
+pub fn tray_set_visible(app: AppHandle, visible: bool) -> Result<(), String> {
+    let tray = app
+        .tray_by_id(MAIN_TRAY_ICON_ID)
+        .ok_or_else(|| "Main tray icon not found".to_string())?;
+
+    tray.set_visible(visible).map_err(|error| error.to_string())
+}
+
 #[cfg(target_os = "windows")]
-fn set_native_blur(window: &WebviewWindow, enabled: bool, strength: Option<f64>) -> Result<(), String> {
+fn set_native_blur(
+    window: &WebviewWindow,
+    enabled: bool,
+    strength: Option<f64>,
+) -> Result<(), String> {
     use window_vibrancy::{apply_acrylic, apply_blur, apply_mica};
 
     clear_windows_effects(window);
@@ -52,7 +76,11 @@ fn clear_windows_effects(window: &WebviewWindow) {
 }
 
 #[cfg(target_os = "macos")]
-fn set_native_blur(window: &WebviewWindow, enabled: bool, _strength: Option<f64>) -> Result<(), String> {
+fn set_native_blur(
+    window: &WebviewWindow,
+    enabled: bool,
+    _strength: Option<f64>,
+) -> Result<(), String> {
     use window_vibrancy::{apply_vibrancy, clear_vibrancy, NSVisualEffectMaterial};
 
     if enabled {
@@ -66,8 +94,33 @@ fn set_native_blur(window: &WebviewWindow, enabled: bool, _strength: Option<f64>
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-fn set_native_blur(_window: &WebviewWindow, _enabled: bool, _strength: Option<f64>) -> Result<(), String> {
+fn set_native_blur(
+    _window: &WebviewWindow,
+    _enabled: bool,
+    _strength: Option<f64>,
+) -> Result<(), String> {
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn set_native_taskbar_visibility(
+    app: &AppHandle,
+    _window: &WebviewWindow,
+    visible: bool,
+) -> Result<(), String> {
+    app.set_dock_visibility(visible)
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_native_taskbar_visibility(
+    _app: &AppHandle,
+    window: &WebviewWindow,
+    visible: bool,
+) -> Result<(), String> {
+    window
+        .set_skip_taskbar(!visible)
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
@@ -80,4 +133,31 @@ fn lerp_u8(start: u8, end: u8, amount: f64) -> u8 {
     (start as f64 + (end as f64 - start as f64) * amount)
         .round()
         .clamp(0.0, 255.0) as u8
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn main_tray_icon_id_is_stable() {
+        assert_eq!(MAIN_TRAY_ICON_ID, "main-tray");
+    }
+
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    #[test]
+    fn normalize_blur_strength_defaults_and_clamps() {
+        assert_eq!(normalize_blur_strength(None), 18.0 / 32.0);
+        assert_eq!(normalize_blur_strength(Some(-10.0)), 0.0);
+        assert_eq!(normalize_blur_strength(Some(16.0)), 0.5);
+        assert_eq!(normalize_blur_strength(Some(99.0)), 1.0);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn lerp_u8_interpolates_and_rounds() {
+        assert_eq!(lerp_u8(144, 44, 0.0), 144);
+        assert_eq!(lerp_u8(144, 44, 0.5), 94);
+        assert_eq!(lerp_u8(144, 44, 1.0), 44);
+    }
 }

@@ -212,23 +212,20 @@ fn python_candidate_list(preferred: Option<&str>) -> Vec<InterpreterCandidate> {
     let mut candidates = Vec::new();
     let mut seen = HashSet::new();
 
-    let mut push_candidate = |label: &str,
-                              command: String,
-                              args: Vec<String>,
-                              source: &str,
-                              preferred: bool| {
-        let key = format!("{}|{}", command, args.join("\u{1f}"));
-        if seen.insert(key) {
-            candidates.push(InterpreterCandidate {
-                id: format!("python-{}", candidates.len() + 1),
-                label: label.to_string(),
-                command,
-                args,
-                source: source.to_string(),
-                preferred,
-            });
-        }
-    };
+    let mut push_candidate =
+        |label: &str, command: String, args: Vec<String>, source: &str, preferred: bool| {
+            let key = format!("{}|{}", command, args.join("\u{1f}"));
+            if seen.insert(key) {
+                candidates.push(InterpreterCandidate {
+                    id: format!("python-{}", candidates.len() + 1),
+                    label: label.to_string(),
+                    command,
+                    args,
+                    source: source.to_string(),
+                    preferred,
+                });
+            }
+        };
 
     if let Some(preferred_path) = normalize_optional_string(preferred) {
         push_candidate(
@@ -242,20 +239,68 @@ fn python_candidate_list(preferred: Option<&str>) -> Vec<InterpreterCandidate> {
 
     #[cfg(target_os = "windows")]
     {
-        push_candidate("Python Launcher 3.11", "py".to_string(), vec!["-3.11".to_string()], "launcher", false);
-        push_candidate("Python Launcher 3.10", "py".to_string(), vec!["-3.10".to_string()], "launcher", false);
-        push_candidate("Python Launcher", "py".to_string(), vec!["-3".to_string()], "launcher", false);
-        push_candidate("python3.11", "python3.11".to_string(), Vec::new(), "path", false);
-        push_candidate("python3.10", "python3.10".to_string(), Vec::new(), "path", false);
+        push_candidate(
+            "Python Launcher 3.11",
+            "py".to_string(),
+            vec!["-3.11".to_string()],
+            "launcher",
+            false,
+        );
+        push_candidate(
+            "Python Launcher 3.10",
+            "py".to_string(),
+            vec!["-3.10".to_string()],
+            "launcher",
+            false,
+        );
+        push_candidate(
+            "Python Launcher",
+            "py".to_string(),
+            vec!["-3".to_string()],
+            "launcher",
+            false,
+        );
+        push_candidate(
+            "python3.11",
+            "python3.11".to_string(),
+            Vec::new(),
+            "path",
+            false,
+        );
+        push_candidate(
+            "python3.10",
+            "python3.10".to_string(),
+            Vec::new(),
+            "path",
+            false,
+        );
         push_candidate("python3", "python3".to_string(), Vec::new(), "path", false);
         push_candidate("python", "python".to_string(), Vec::new(), "path", false);
     }
 
     #[cfg(not(target_os = "windows"))]
     {
-        push_candidate("python3.11", "python3.11".to_string(), Vec::new(), "path", false);
-        push_candidate("python3.10", "python3.10".to_string(), Vec::new(), "path", false);
-        push_candidate("python3.12", "python3.12".to_string(), Vec::new(), "path", false);
+        push_candidate(
+            "python3.11",
+            "python3.11".to_string(),
+            Vec::new(),
+            "path",
+            false,
+        );
+        push_candidate(
+            "python3.10",
+            "python3.10".to_string(),
+            Vec::new(),
+            "path",
+            false,
+        );
+        push_candidate(
+            "python3.12",
+            "python3.12".to_string(),
+            Vec::new(),
+            "path",
+            false,
+        );
         push_candidate("python3", "python3".to_string(), Vec::new(), "path", false);
         push_candidate("python", "python".to_string(), Vec::new(), "path", false);
     }
@@ -312,7 +357,12 @@ fn choose_base_interpreter(interpreters: &[DetectedInterpreter]) -> Option<Detec
         .iter()
         .find(|item| item.descriptor.preferred)
         .cloned()
-        .or_else(|| interpreters.iter().find(|item| item.descriptor.recommended).cloned())
+        .or_else(|| {
+            interpreters
+                .iter()
+                .find(|item| item.descriptor.recommended)
+                .cloned()
+        })
         .or_else(|| interpreters.first().cloned())
 }
 
@@ -502,7 +552,11 @@ fn seed_boilerplate_files(paths: &RuntimePaths, packages: &[String]) -> Result<(
     ensure_runtime_directories(paths)?;
 
     if !paths.requirements_path.exists() {
-        fs::write(&paths.requirements_path, requirements_file_contents(packages)).map_err(|error| {
+        fs::write(
+            &paths.requirements_path,
+            requirements_file_contents(packages),
+        )
+        .map_err(|error| {
             format!(
                 "Failed to write requirements file {}: {error}",
                 path_to_string(&paths.requirements_path)
@@ -663,10 +717,16 @@ fn pythonpath_environment(
 ) -> HashMap<String, String> {
     let mut environment = overrides.unwrap_or_default();
     let runtime_root = path_to_string(&paths.root_dir);
-    let separator = if cfg!(target_os = "windows") { ";" } else { ":" };
+    let separator = if cfg!(target_os = "windows") {
+        ";"
+    } else {
+        ":"
+    };
 
     let next_pythonpath = match environment.get("PYTHONPATH").cloned() {
-        Some(existing) if !existing.trim().is_empty() => format!("{runtime_root}{separator}{existing}"),
+        Some(existing) if !existing.trim().is_empty() => {
+            format!("{runtime_root}{separator}{existing}")
+        }
         _ => runtime_root,
     };
     environment.insert("PYTHONPATH".to_string(), next_pythonpath);
@@ -744,7 +804,15 @@ fn build_status(
 
 fn bootstrap_runtime(
     config: &ResolvedRuntimeConfig,
-) -> Result<(RuntimePaths, Vec<DetectedInterpreter>, DetectedInterpreter, PythonCommandResult), String> {
+) -> Result<
+    (
+        RuntimePaths,
+        Vec<DetectedInterpreter>,
+        DetectedInterpreter,
+        PythonCommandResult,
+    ),
+    String,
+> {
     let paths = build_runtime_paths(&config.runtime_root);
     ensure_runtime_directories(&paths)?;
     if config.create_boilerplate {
@@ -776,9 +844,15 @@ fn bootstrap_runtime(
         )?;
         final_exit_code = create_result.exit_code;
         final_success &= create_result.success;
-        log_sections.push(format!("$ {}\n{}\n{}", create_result.command, create_result.stdout, create_result.stderr));
+        log_sections.push(format!(
+            "$ {}\n{}\n{}",
+            create_result.command, create_result.stdout, create_result.stderr
+        ));
         if !create_result.success {
-            return Err(format!("Failed to create managed virtual environment.\n{}", log_sections.join("\n\n")));
+            return Err(format!(
+                "Failed to create managed virtual environment.\n{}",
+                log_sections.join("\n\n")
+            ));
         }
     }
 
@@ -799,9 +873,15 @@ fn bootstrap_runtime(
         )?;
         final_exit_code = upgrade_result.exit_code;
         final_success &= upgrade_result.success;
-        log_sections.push(format!("$ {}\n{}\n{}", upgrade_result.command, upgrade_result.stdout, upgrade_result.stderr));
+        log_sections.push(format!(
+            "$ {}\n{}\n{}",
+            upgrade_result.command, upgrade_result.stdout, upgrade_result.stderr
+        ));
         if !upgrade_result.success {
-            return Err(format!("Failed to upgrade pip in the managed environment.\n{}", log_sections.join("\n\n")));
+            return Err(format!(
+                "Failed to upgrade pip in the managed environment.\n{}",
+                log_sections.join("\n\n")
+            ));
         }
     }
 
@@ -818,9 +898,15 @@ fn bootstrap_runtime(
         )?;
         final_exit_code = install_result.exit_code;
         final_success &= install_result.success;
-        log_sections.push(format!("$ {}\n{}\n{}", install_result.command, install_result.stdout, install_result.stderr));
+        log_sections.push(format!(
+            "$ {}\n{}\n{}",
+            install_result.command, install_result.stdout, install_result.stderr
+        ));
         if !install_result.success {
-            return Err(format!("Failed to install bootstrap packages.\n{}", log_sections.join("\n\n")));
+            return Err(format!(
+                "Failed to install bootstrap packages.\n{}",
+                log_sections.join("\n\n")
+            ));
         }
         append_requirements(&paths.requirements_path, &config.bootstrap_packages)?;
     }
@@ -869,15 +955,25 @@ fn ensure_managed_environment(
 
 fn write_inline_script(paths: &RuntimePaths, contents: &str) -> Result<PathBuf, String> {
     ensure_runtime_directories(paths)?;
-    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
     let script_path = paths.temp_dir.join(format!("inline-run-{timestamp}.py"));
     fs::write(&script_path, contents).map_err(|error| {
-        format!("Failed to write inline Python script {}: {error}", path_to_string(&script_path))
+        format!(
+            "Failed to write inline Python script {}: {error}",
+            path_to_string(&script_path)
+        )
     })?;
     Ok(script_path)
 }
 
-fn resolve_execution_path(paths: &RuntimePaths, entry: &str, working_directory: Option<&str>) -> PathBuf {
+fn resolve_execution_path(
+    paths: &RuntimePaths,
+    entry: &str,
+    working_directory: Option<&str>,
+) -> PathBuf {
     let trimmed = entry.trim();
     let direct = PathBuf::from(trimmed);
     if direct.is_absolute() {
@@ -900,7 +996,10 @@ fn resolve_execution_path(paths: &RuntimePaths, entry: &str, working_directory: 
 }
 
 #[tauri::command]
-pub async fn python_get_runtime_status(app: AppHandle, config: Option<PythonRuntimeConfig>) -> Result<PythonRuntimeStatus, String> {
+pub async fn python_get_runtime_status(
+    app: AppHandle,
+    config: Option<PythonRuntimeConfig>,
+) -> Result<PythonRuntimeStatus, String> {
     let resolved = resolve_runtime_config(&app, config)?;
     let paths = build_runtime_paths(&resolved.runtime_root);
     if resolved.create_boilerplate {
@@ -910,11 +1009,19 @@ pub async fn python_get_runtime_status(app: AppHandle, config: Option<PythonRunt
     }
     let interpreters = detect_interpreters(resolved.preferred_interpreter_path.as_deref());
     let base_interpreter = choose_base_interpreter(&interpreters);
-    Ok(build_status(&resolved, &paths, interpreters, base_interpreter))
+    Ok(build_status(
+        &resolved,
+        &paths,
+        interpreters,
+        base_interpreter,
+    ))
 }
 
 #[tauri::command]
-pub async fn python_bootstrap_runtime(app: AppHandle, config: Option<PythonRuntimeConfig>) -> Result<PythonActionResponse, String> {
+pub async fn python_bootstrap_runtime(
+    app: AppHandle,
+    config: Option<PythonRuntimeConfig>,
+) -> Result<PythonActionResponse, String> {
     let resolved = resolve_runtime_config(&app, config)?;
     let (paths, interpreters, base_interpreter, result) = bootstrap_runtime(&resolved)?;
     let status = build_status(&resolved, &paths, interpreters, Some(base_interpreter));
@@ -922,7 +1029,10 @@ pub async fn python_bootstrap_runtime(app: AppHandle, config: Option<PythonRunti
 }
 
 #[tauri::command]
-pub async fn python_install_packages(app: AppHandle, request: PythonPackageInstallRequest) -> Result<PythonActionResponse, String> {
+pub async fn python_install_packages(
+    app: AppHandle,
+    request: PythonPackageInstallRequest,
+) -> Result<PythonActionResponse, String> {
     let resolved = resolve_runtime_config(&app, request.config)?;
     let packages = parse_package_input(&request.package_input);
     if packages.is_empty() {
@@ -945,7 +1055,10 @@ pub async fn python_install_packages(app: AppHandle, request: PythonPackageInsta
     )?;
 
     if !result.success {
-        return Err(format!("Package installation failed.\n{}\n{}", result.stdout, result.stderr));
+        return Err(format!(
+            "Package installation failed.\n{}\n{}",
+            result.stdout, result.stderr
+        ));
     }
 
     if request.persist_to_requirements.unwrap_or(true) {
@@ -957,7 +1070,10 @@ pub async fn python_install_packages(app: AppHandle, request: PythonPackageInsta
 }
 
 #[tauri::command]
-pub async fn python_execute(app: AppHandle, request: PythonExecutionRequest) -> Result<PythonActionResponse, String> {
+pub async fn python_execute(
+    app: AppHandle,
+    request: PythonExecutionRequest,
+) -> Result<PythonActionResponse, String> {
     let resolved = resolve_runtime_config(&app, request.config)?;
     let use_managed_environment = request.use_managed_environment.unwrap_or(true);
     let (paths, interpreters, base_interpreter) = if use_managed_environment {
@@ -980,7 +1096,10 @@ pub async fn python_execute(app: AppHandle, request: PythonExecutionRequest) -> 
         .map(PathBuf::from)
         .unwrap_or_else(|| paths.root_dir.clone());
     fs::create_dir_all(&working_directory).map_err(|error| {
-        format!("Failed to prepare Python working directory {}: {error}", path_to_string(&working_directory))
+        format!(
+            "Failed to prepare Python working directory {}: {error}",
+            path_to_string(&working_directory)
+        )
     })?;
 
     let python_program = if use_managed_environment {
@@ -1001,7 +1120,11 @@ pub async fn python_execute(app: AppHandle, request: PythonExecutionRequest) -> 
             args.push(path_to_string(&script_path));
         }
         PythonExecutionMode::Script => {
-            let script_path = resolve_execution_path(&paths, &request.entry, request.working_directory.as_deref());
+            let script_path = resolve_execution_path(
+                &paths,
+                &request.entry,
+                request.working_directory.as_deref(),
+            );
             args.push(path_to_string(&script_path));
         }
         PythonExecutionMode::Module => {
@@ -1021,7 +1144,10 @@ pub async fn python_execute(app: AppHandle, request: PythonExecutionRequest) -> 
     let environment = pythonpath_environment(&paths, request.environment);
     let result = run_command(&python_program, &args, &working_directory, &environment)?;
     if !result.success {
-        return Err(format!("Python execution failed.\n{}\n{}", result.stdout, result.stderr));
+        return Err(format!(
+            "Python execution failed.\n{}\n{}",
+            result.stdout, result.stderr
+        ));
     }
 
     let status = build_status(&resolved, &paths, interpreters, Some(base_interpreter));
@@ -1034,10 +1160,16 @@ mod tests {
 
     #[test]
     fn parse_package_input_skips_comments_and_dedupes() {
-        let packages = parse_package_input("\n# core\nnumpy\nonnxruntime, numpy\npillow\n# skip\nonnxruntime\n");
+        let packages = parse_package_input(
+            "\n# core\nnumpy\nonnxruntime, numpy\npillow\n# skip\nonnxruntime\n",
+        );
         assert_eq!(
             packages,
-            vec!["numpy".to_string(), "onnxruntime".to_string(), "pillow".to_string()]
+            vec![
+                "numpy".to_string(),
+                "onnxruntime".to_string(),
+                "pillow".to_string()
+            ]
         );
     }
 
@@ -1060,7 +1192,8 @@ mod tests {
         fs::write(&script_path, "print('ok')").expect("write script");
 
         let runtime = build_runtime_paths(temp.path());
-        let resolved = resolve_execution_path(&runtime, "task.py", Some(&working_dir.to_string_lossy()));
+        let resolved =
+            resolve_execution_path(&runtime, "task.py", Some(&working_dir.to_string_lossy()));
         assert_eq!(resolved, script_path);
     }
 }

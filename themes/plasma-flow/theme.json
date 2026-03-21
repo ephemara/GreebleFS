@@ -59,7 +59,7 @@
       "brightCyan": "#9ff2ff"
     },
     "cssVars": {
-      "--snapyard-chrome-style": "plasma-flow"
+      "--greeble-chrome-style": "plasma-flow"
     }
   },
   "visuals": [

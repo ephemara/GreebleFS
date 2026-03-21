@@ -31,7 +31,9 @@ use terminal::{
     terminal_kill, terminal_open_external, terminal_resize, terminal_spawn, terminal_write,
     TerminalManager,
 };
-use window_commands::window_set_blur;
+use window_commands::{
+    tray_set_visible, window_set_blur, window_set_taskbar_visibility, MAIN_TRAY_ICON_ID,
+};
 
 fn toggle_overlay(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
@@ -58,16 +60,19 @@ pub fn run() {
         .setup(|app| {
             app.manage(TerminalManager::new());
 
+            if let Some(window) = app.get_webview_window("main") {
+                if cfg!(debug_assertions) {
+                    let _ = window.set_skip_taskbar(false);
+                    #[cfg(target_os = "macos")]
+                    let _ = app.set_dock_visibility(true);
+                }
+            }
+
             // ── System Tray ──
             let tray_icon = app.default_window_icon().cloned();
 
-            let toggle_item = MenuItem::with_id(
-                app,
-                "toggle",
-                "Toggle Terminal",
-                true,
-                None::<&str>,
-            )?;
+            let toggle_item =
+                MenuItem::with_id(app, "toggle", "Toggle Terminal", true, None::<&str>)?;
             let separator = tauri::menu::PredefinedMenuItem::separator(app)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit OverlayTerm", true, None::<&str>)?;
 
@@ -75,7 +80,7 @@ pub fn run() {
                 .items(&[&toggle_item, &separator, &quit_item])
                 .build()?;
 
-            let mut tray_builder = TrayIconBuilder::new()
+            let mut tray_builder = TrayIconBuilder::with_id(MAIN_TRAY_ICON_ID)
                 .menu(&menu)
                 .tooltip("OverlayTerm")
                 .show_menu_on_left_click(false)
@@ -141,7 +146,9 @@ pub fn run() {
             plugin_run_backend,
             startup_get_launch_at_startup,
             startup_set_launch_at_startup,
+            tray_set_visible,
             window_set_blur,
+            window_set_taskbar_visibility,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

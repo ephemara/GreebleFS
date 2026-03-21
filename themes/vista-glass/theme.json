@@ -63,7 +63,7 @@
       "brightCyan": "#b9ebff"
     },
     "cssVars": {
-      "--snapyard-chrome-style": "vista-glass"
+      "--greeble-chrome-style": "vista-glass"
     }
   },
   "visuals": [
