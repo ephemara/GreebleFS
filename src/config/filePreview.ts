@@ -1,5 +1,13 @@
 export type ModelPreviewFormat = 'fbx' | 'glb' | 'gltf' | 'obj' | 'stl';
 
+export const MODEL_PREVIEW_PROXY_CONFIG = {
+  maxDirectSourceBytes: 48 * 1024 * 1024,
+  maxRenderableVertexCount: 350_000,
+  maxRenderableTriangleCount: 700_000,
+  maxRenderableMeshCount: 96,
+  maxProxyMeshes: 32,
+} as const;
+
 const IMAGE_PREVIEW_EXTENSIONS = [
   'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tiff', 'tif', 'avif',
 ] as const;

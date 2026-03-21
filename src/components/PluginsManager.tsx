@@ -9,6 +9,7 @@ import type {
   OverlayPluginHostContext,
 } from './pluginRuntime';
 import { OverlayScrollArea } from './OverlayScrollArea';
+import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 
 const PANEL = 'var(--overlay-bg-panel)';
 const PANEL_ALT = 'var(--overlay-bg-panel-alt)';
@@ -68,6 +69,7 @@ export function PluginsManager({
 }: PluginsManagerProps) {
   const accent = appearance?.theme.palette.accent ?? 'var(--overlay-accent)';
   const [selectedPluginId, setSelectedPluginId] = useState<string | null>(null);
+  const [sidebarWidth, setSidebarWidth] = usePersistentPanelSize('overlayterm-plugins-sidebar-width', 280, 220, 420);
 
   useEffect(() => {
     setSelectedPluginId(current => {
@@ -85,9 +87,13 @@ export function PluginsManager({
 
   return (
     <div style={{ display: 'flex', flex: 1, minHeight: 0, background: 'var(--overlay-bg-app)', color: TEXT, fontFamily: 'var(--overlay-font-ui)' }}>
-      <aside
+      <ResizablePane
+        size={sidebarWidth}
+        minSize={220}
+        maxSize={420}
+        onSizeChange={setSidebarWidth}
+        borderColor={`${accent}55`}
         style={{
-          width: 280,
           borderRight: `1px solid ${BORDER}`,
           background: PANEL,
           display: 'flex',
@@ -181,7 +187,7 @@ export function PluginsManager({
             })
           )}
         </OverlayScrollArea>
-      </aside>
+      </ResizablePane>
 
       <main style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <div

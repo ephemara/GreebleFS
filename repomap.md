@@ -191,9 +191,11 @@
         └── 📂 icons
     └── 📂 release-packages
     └── 📂 scripts
+    └── 📂 shaders
     └── 📂 src
         └── 📂 assets
         └── 📂 components
+            └── 📂 explorer
         └── 📂 config
         └── 📂 input
         └── 📂 panels
@@ -206,6 +208,12 @@
             └── 📂 schemas
         └── 📂 icons
         └── 📂 src
+        └── 📂 target-check-icons
+            └── 📂 debug
+                └── 📂 deps
+                └── 📂 examples
+                └── 📂 icons
+                └── 📂 incremental
         └── 📂 target-tests
             └── 📂 debug
                 └── 📂 deps

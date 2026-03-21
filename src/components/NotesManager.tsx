@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import { OverlayScrollArea } from './OverlayScrollArea';
+import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -238,6 +239,7 @@ export function NotesManager({ appearance }: { appearance?: ResolvedOverlayAppea
   const [titleDraft, setTitleDraft] = useState('');
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [showStarredOnly, setShowStarredOnly] = useState(false);
+  const [listWidth, setListWidth] = usePersistentPanelSize('overlayterm-notes-list-width', 280, 220, 440);
 
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const autoSaveTimer = useRef<number | null>(null);
@@ -439,7 +441,14 @@ export function NotesManager({ appearance }: { appearance?: ResolvedOverlayAppea
       </div>
 
       {/* ══ MIDDLE: Entry List ══ */}
-      <div style={{ width: 280, background: PALETTE.sidebar, borderRight: `1px solid ${PALETTE.border}`, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+      <ResizablePane
+        size={listWidth}
+        minSize={220}
+        maxSize={440}
+        onSizeChange={setListWidth}
+        borderColor={`${accent}55`}
+        style={{ background: PALETTE.sidebar, borderRight: `1px solid ${PALETTE.border}`, display: 'flex', flexDirection: 'column' }}
+      >
         {/* List Header */}
         <div style={{ padding: '10px 12px 8px', borderBottom: `1px solid ${PALETTE.border}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -599,7 +608,7 @@ export function NotesManager({ appearance }: { appearance?: ResolvedOverlayAppea
             ))
           )}
         </OverlayScrollArea>
-      </div>
+      </ResizablePane>
 
       {/* ══ RIGHT: Editor ══ */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: PALETTE.bg, overflow: 'hidden' }}>

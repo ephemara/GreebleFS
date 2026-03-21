@@ -10,6 +10,7 @@ import { PythonWorkbench } from '../components/PythonWorkbench';
 import { FolderPluginRenderer } from '../components/PluginsManager';
 import { SettingsPage } from '../components/SettingsPage';
 import type { LoadedOverlayAnimation } from '../components/animationRuntime';
+import type { LoadedOverlayShader } from '../components/shaderRuntime';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
 import type {
@@ -50,6 +51,13 @@ export function createBuiltInPanelDefinitions({
   themePackagesError,
   onRefreshThemes,
   onOpenThemesFolder,
+  shaders,
+  shaderDiagnostics,
+  shadersDirectory,
+  shadersLoading,
+  shadersError,
+  onRefreshShaders,
+  onOpenShadersFolder,
   animations,
   animationDiagnostics,
   animationsDirectory,
@@ -71,6 +79,13 @@ export function createBuiltInPanelDefinitions({
   themePackagesError: string | null;
   onRefreshThemes: () => Promise<void>;
   onOpenThemesFolder: () => Promise<void>;
+  shaders: LoadedOverlayShader[];
+  shaderDiagnostics: LoadedOverlayShader[];
+  shadersDirectory: string;
+  shadersLoading: boolean;
+  shadersError: string | null;
+  onRefreshShaders: () => Promise<void>;
+  onOpenShadersFolder: () => Promise<void>;
   animations: LoadedOverlayAnimation[];
   animationDiagnostics: LoadedOverlayAnimation[];
   animationsDirectory: string;
@@ -170,6 +185,13 @@ export function createBuiltInPanelDefinitions({
           themePackagesError={themePackagesError}
           onRefreshThemes={onRefreshThemes}
           onOpenThemesFolder={onOpenThemesFolder}
+          shaders={shaders}
+          shaderDiagnostics={shaderDiagnostics}
+          shadersDirectory={shadersDirectory}
+          shadersLoading={shadersLoading}
+          shadersError={shadersError}
+          onRefreshShaders={onRefreshShaders}
+          onOpenShadersFolder={onOpenShadersFolder}
           animations={animations}
           animationDiagnostics={animationDiagnostics}
           animationsDirectory={animationsDirectory}

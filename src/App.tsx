@@ -28,6 +28,17 @@ import {
   type AnimationFileEntry,
   type LoadedOverlayAnimation,
 } from './components/animationRuntime';
+import { shaderSystemConfig, resolvePreferredShaderId } from './config/shaders';
+import {
+  ShaderSurfaceLayer,
+  createBuiltInOverlayShaders,
+  isFrontendShaderFile,
+  loadShaderFromSource,
+  mergeOverlayShaders,
+  type LoadedOverlayShader,
+  type OverlayShaderShellContext,
+  type ShaderFileEntry,
+} from './components/shaderRuntime';
 import {
   isFrontendPluginFile,
   loadPluginFromSource,
@@ -79,6 +90,31 @@ function clampValue(value: number, min: number, max: number): number {
 
 function clampUnit(value: number): number {
   return clampValue(value, 0, 1);
+}
+
+function applyWheelVisualControlAdjust(args: {
+  event: WheelEvent;
+  binding: string;
+  currentValue: number;
+  min: number;
+  max: number;
+  step: number;
+  direction: 1 | -1;
+  multiplier: number;
+  onChange: (value: number) => void;
+}): boolean {
+  if (!matchesWheelHotkey(args.event, args.binding) || args.event.deltaY === 0) {
+    return false;
+  }
+
+  args.event.preventDefault();
+  const nextValue = clampValue(
+    args.currentValue + (args.step * args.direction * args.multiplier),
+    args.min,
+    args.max,
+  );
+  args.onChange(nextValue);
+  return true;
 }
 
 function parseHexColor(color: string): { red: number; green: number; blue: number; alpha: number } | null {
@@ -357,11 +393,15 @@ function App() {
   const [authoredAnimations, setAuthoredAnimations] = useState<LoadedOverlayAnimation[]>([]);
   const [authoredAnimationsError, setAuthoredAnimationsError] = useState<string | null>(null);
   const [authoredAnimationsLoading, setAuthoredAnimationsLoading] = useState(true);
+  const [authoredShaders, setAuthoredShaders] = useState<LoadedOverlayShader[]>([]);
+  const [authoredShadersError, setAuthoredShadersError] = useState<string | null>(null);
+  const [authoredShadersLoading, setAuthoredShadersLoading] = useState(true);
   const [folderPlugins, setFolderPlugins] = useState<LoadedOverlayPlugin[]>([]);
   const [folderPluginsError, setFolderPluginsError] = useState<string | null>(null);
   const [folderPluginsLoading, setFolderPluginsLoading] = useState(true);
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
   const builtInAnimations = useMemo(() => createBuiltInOverlayAnimations(), []);
+  const builtInShaders = useMemo(() => createBuiltInOverlayShaders(), []);
   const overlayPhaseRef = useRef<OverlayAnimationPhase>('closed');
   overlayPhaseRef.current = overlayPhase;
   const overlayVisibleRef = useRef(false);
@@ -373,6 +413,7 @@ function App() {
   const isProgrammaticResizeRef = useRef(false);
   const interactionLockUntilRef = useRef(0);
   const animationSignatureRef = useRef('');
+  const shaderSignatureRef = useRef('');
   const pluginSignatureRef = useRef('');
   const dragHideRestoreRef = useRef(false);
   const refreshFolderPluginsRef = useRef<(force?: boolean) => Promise<void>>(async () => undefined);
@@ -447,10 +488,31 @@ function App() {
     () => mergeOverlayAnimations(builtInAnimations, authoredAnimations),
     [authoredAnimations, builtInAnimations],
   );
+  const availableShaders = useMemo(
+    () => mergeOverlayShaders(builtInShaders, authoredShaders),
+    [authoredShaders, builtInShaders],
+  );
   const availableAnimationsById = useMemo(
     () => new Map(availableAnimations.map(animation => [animation.id, animation])),
     [availableAnimations],
   );
+  const availableShadersById = useMemo(
+    () => new Map(availableShaders.map(shader => [shader.id, shader])),
+    [availableShaders],
+  );
+  const resolvedShaderId = useMemo(
+    () => resolvePreferredShaderId({
+      availableShaderIds: availableShadersById.keys(),
+      userOverrideId: appearance.activeShaderId,
+      themeDefaultShaderId: resolvedAppearance.baseTheme.defaultShaderId,
+      fallbackShaderId: shaderSystemConfig.fallbackShaderId,
+    }),
+    [appearance.activeShaderId, availableShadersById, resolvedAppearance.baseTheme.defaultShaderId],
+  );
+  const activeShader = availableShadersById.get(resolvedShaderId)
+    ?? availableShadersById.get(shaderSystemConfig.fallbackShaderId)
+    ?? builtInShaders[0]
+    ?? null;
   const resolveAnimationById = useCallback((id: string, fallbackId: string) => (
     availableAnimationsById.get(id)
       ?? availableAnimationsById.get(fallbackId)
@@ -817,6 +879,22 @@ function App() {
     return () => { unlisten?.(); };
   }, [toggle]);
 
+  useEffect(() => {
+    if (!isTauri() || !import.meta.env.DEV) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      if (!overlayVisibleRef.current && overlayPhaseRef.current === 'closed') {
+        void positionAndShow();
+      }
+    }, 150);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [positionAndShow]);
+
   useGlobalShortcut(keybindings.terminalToggle, toggle, true);
 
   // ── Escape to close ──
@@ -880,25 +958,44 @@ function App() {
     }
 
     const handleWheelZoom = (event: WheelEvent) => {
-      if (!matchesWheelHotkey(event, keybindings.zoomAdjust) || event.deltaY === 0) {
+      const direction: 1 | -1 = event.deltaY < 0 ? 1 : -1;
+      const multiplier = event.shiftKey ? 3 : 1;
+      const appearanceState = useSettingsStore.getState().settings.appearance;
+
+      if (applyWheelVisualControlAdjust({
+        event,
+        binding: keybindings.zoomAdjust,
+        currentValue: appearanceState.appZoom ?? 1,
+        min: overlayVisualControls.zoom.min,
+        max: overlayVisualControls.zoom.max,
+        step: overlayVisualControls.zoom.step,
+        direction,
+        multiplier,
+        onChange: value => {
+          useSettingsStore.getState().updateAppearance({ appZoom: value });
+        },
+      })) {
         return;
       }
 
-      event.preventDefault();
-      const direction = event.deltaY < 0 ? 1 : -1;
-      const multiplier = event.shiftKey ? 3 : 1;
-      const currentZoom = useSettingsStore.getState().settings.appearance.appZoom ?? 1;
-      const nextZoom = clampValue(
-        currentZoom + (overlayVisualControls.zoom.step * direction * multiplier),
-        overlayVisualControls.zoom.min,
-        overlayVisualControls.zoom.max,
-      );
-      useSettingsStore.getState().updateAppearance({ appZoom: nextZoom });
+      applyWheelVisualControlAdjust({
+        event,
+        binding: keybindings.opacityAdjust,
+        currentValue: appearanceState.appOpacity ?? 1,
+        min: overlayVisualControls.opacity.min,
+        max: overlayVisualControls.opacity.max,
+        step: overlayVisualControls.opacity.step,
+        direction,
+        multiplier,
+        onChange: value => {
+          useSettingsStore.getState().updateAppearance({ appOpacity: value });
+        },
+      });
     };
 
     window.addEventListener('wheel', handleWheelZoom, { passive: false, capture: true });
     return () => window.removeEventListener('wheel', handleWheelZoom, { capture: true });
-  }, [isOverlayVisible, keybindings.zoomAdjust]);
+  }, [isOverlayVisible, keybindings.opacityAdjust, keybindings.zoomAdjust]);
 
   // ── Persist resize ──
   useEffect(() => {
@@ -1012,6 +1109,15 @@ function App() {
     await invoke('fs_open_file', { path: animationSystemConfig.animationsDirectory });
   }, []);
 
+  const openShadersFolder = useCallback(async () => {
+    if (!isTauri()) {
+      return;
+    }
+
+    await ensureDir(shaderSystemConfig.shadersDirectory);
+    await invoke('fs_open_file', { path: shaderSystemConfig.shadersDirectory });
+  }, []);
+
   const refreshAuthoredAnimations = useCallback(async (force = false) => {
     if (!isTauri()) {
       setAuthoredAnimations([]);
@@ -1054,6 +1160,51 @@ function App() {
       setAuthoredAnimationsError(String(error));
     } finally {
       setAuthoredAnimationsLoading(false);
+    }
+  }, []);
+
+  const refreshAuthoredShaders = useCallback(async (force = false) => {
+    if (!isTauri()) {
+      setAuthoredShaders([]);
+      setAuthoredShadersError(null);
+      setAuthoredShadersLoading(false);
+      return;
+    }
+
+    if (force) {
+      shaderSignatureRef.current = '';
+    }
+
+    setAuthoredShadersLoading(prev => prev && !force);
+    setAuthoredShadersError(null);
+    try {
+      await ensureDir(shaderSystemConfig.shadersDirectory);
+      const listed = await invoke<ShaderFileEntry[]>('fs_list_dir', {
+        path: shaderSystemConfig.shadersDirectory,
+        showHidden: false,
+      });
+      const files = listed
+        .filter(isFrontendShaderFile)
+        .sort((left, right) => left.name.localeCompare(right.name));
+      const nextSignature = files.map(file => `${file.path}:${file.modified}`).join('|');
+
+      if (!force && nextSignature === shaderSignatureRef.current) {
+        setAuthoredShadersLoading(false);
+        return;
+      }
+
+      shaderSignatureRef.current = nextSignature;
+      const loaded = await Promise.all(files.map(async file => {
+        const source = await invoke<string>('fs_read_text_file', { path: file.path });
+        return loadShaderFromSource(source, file);
+      }));
+
+      setAuthoredShaders(loaded);
+    } catch (error) {
+      setAuthoredShaders([]);
+      setAuthoredShadersError(String(error));
+    } finally {
+      setAuthoredShadersLoading(false);
     }
   }, []);
 
@@ -1153,12 +1304,24 @@ function App() {
   }, [refreshAuthoredAnimations]);
 
   useEffect(() => {
+    void refreshAuthoredShaders(true);
+  }, [refreshAuthoredShaders]);
+
+  useEffect(() => {
     const interval = window.setInterval(() => {
       void refreshAuthoredAnimations();
     }, animationSystemConfig.scanIntervalMs);
 
     return () => window.clearInterval(interval);
   }, [refreshAuthoredAnimations]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void refreshAuthoredShaders();
+    }, shaderSystemConfig.scanIntervalMs);
+
+    return () => window.clearInterval(interval);
+  }, [refreshAuthoredShaders]);
 
   useEffect(() => {
     refreshFolderPluginsRef.current = refreshFolderPlugins;
@@ -1195,6 +1358,13 @@ function App() {
         themePackagesError,
         onRefreshThemes: refreshThemePackages,
         onOpenThemesFolder: openThemesFolder,
+        shaders: availableShaders,
+        shaderDiagnostics: authoredShaders.filter(shader => Boolean(shader.error)),
+        shadersDirectory: shaderSystemConfig.shadersDirectory,
+        shadersLoading: authoredShadersLoading,
+        shadersError: authoredShadersError,
+        onRefreshShaders: () => refreshAuthoredShaders(true),
+        onOpenShadersFolder: openShadersFolder,
         animations: availableAnimations,
         animationDiagnostics: authoredAnimations.filter(animation => Boolean(animation.error)),
         animationsDirectory: animationSystemConfig.animationsDirectory,
@@ -1232,13 +1402,19 @@ function App() {
       authoredAnimations,
       authoredAnimationsError,
       authoredAnimationsLoading,
+      authoredShaders,
+      authoredShadersError,
+      authoredShadersLoading,
       availableAnimations,
+      availableShaders,
       openAnimationsFolder,
+      openShadersFolder,
       openPluginsFolder,
       openThemesFolder,
       pinnedExplorerPanel?.mode,
       refreshThemePackages,
       refreshAuthoredAnimations,
+      refreshAuthoredShaders,
       refreshFolderPlugins,
       resolvedAppearance,
       themePackages,
@@ -1465,6 +1641,33 @@ function App() {
   }, [appBlur, clampedAppBlurStrength, overlayPhase]);
 
   const activeContentPanel = activePanelId ? panelLookup.get(activePanelId) ?? null : null;
+  const shellShaderContext = useMemo<OverlayShaderShellContext>(() => ({
+    ...(activeShader ?? {
+      id: shaderSystemConfig.fallbackShaderId,
+      name: 'None',
+      filePath: 'builtin:none',
+      shaderRoot: 'builtin',
+      source: 'built-in' as const,
+    }),
+    viewport: {
+      width: typeof window === 'undefined' ? 0 : window.innerWidth,
+      height: typeof window === 'undefined' ? 0 : window.innerHeight,
+    },
+    accentColor: accent,
+    theme,
+    panelTransparency: clampedPanelTransparency,
+    blurStrength: clampedAppBlurStrength,
+    zoom: clampedAppZoom,
+    isSettingsActive: activePanelId === 'settings',
+  }), [
+    activePanelId,
+    activeShader,
+    accent,
+    clampedAppBlurStrength,
+    clampedAppZoom,
+    clampedPanelTransparency,
+    theme,
+  ]);
   const chromeBar = (
     <TopBar
       appearance={resolvedAppearance}
@@ -1497,6 +1700,13 @@ function App() {
       blurPlatform={runtimePlatform}
       overlayAnchor={overlayAnchor}
       toggleShortcutLabel={formatHotkeyLabel(keybindings.terminalToggle)}
+      topBarShaderLayer={(
+        <ShaderSurfaceLayer
+          shader={activeShader}
+          shellContext={shellShaderContext}
+          surface="topBar"
+        />
+      )}
     />
   );
 
@@ -1555,9 +1765,19 @@ function App() {
               borderBottomRightRadius: isTopAnchored ? 18 : 0,
             }}
           >
+            <ShaderSurfaceLayer
+              shader={activeShader}
+              shellContext={shellShaderContext}
+              surface="background"
+            />
             {(theme.visuals ?? []).map(layer => (
               <div key={layer.id} aria-hidden style={buildThemeVisualStyle(layer)} />
             ))}
+            <ShaderSurfaceLayer
+              shader={activeShader}
+              shellContext={shellShaderContext}
+              surface="border"
+            />
             <AnimationOverlayLayer
               animation={shellAnimation}
               context={shellAnimationContext}
@@ -2001,6 +2221,7 @@ function TopBar({
   blurPlatform,
   overlayAnchor,
   toggleShortcutLabel,
+  topBarShaderLayer,
 }: {
   appearance: ResolvedOverlayAppearance;
   layoutProfile: LayoutProfile;
@@ -2032,6 +2253,7 @@ function TopBar({
   blurPlatform: RuntimePlatform;
   overlayAnchor: OverlayWindowAnchor;
   toggleShortcutLabel: string;
+  topBarShaderLayer?: React.ReactNode;
 }) {
   const BG = appearance.theme.palette.topBarBackground;
   const MENU_BG = appearance.theme.palette.topBarMenuBackground;
@@ -2259,6 +2481,7 @@ function TopBar({
 
   return (
     <div style={{
+      position: 'relative',
       display: 'flex',
       alignItems: 'stretch',
       height: CHROME_HEIGHT,
@@ -2266,10 +2489,12 @@ function TopBar({
       background: `linear-gradient(180deg, ${BG}, ${appearance.theme.palette.appBackgroundAlt})`,
       borderBottom: isBottomBar ? 'none' : `1px solid ${accent}24`,
       borderTop: isBottomBar ? `1px solid ${accent}24` : 'none',
+      overflow: 'hidden',
       boxShadow: isBottomBar
         ? 'inset 0 -1px 0 rgba(255,255,255,0.04), 0 -8px 18px rgba(0,0,0,0.2)'
         : 'inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 18px rgba(0,0,0,0.2)',
     }}>
+      {topBarShaderLayer}
       <button
         onClick={onCycleLayout}
         onContextMenu={event => {

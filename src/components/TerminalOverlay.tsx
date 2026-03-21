@@ -17,6 +17,7 @@ import React, {
   useRef,
   useCallback,
   useMemo,
+  type ComponentType,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import {
@@ -32,6 +33,9 @@ import {
   ChevronRight,
   Zap,
   Circle,
+  Copy,
+  Eraser,
+  RotateCcw,
 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -221,11 +225,121 @@ function destroyXterm(id: string) {
   xtermRegistry.delete(id);
 }
 
+function collectTerminalBufferText(xterm: XTerm): string {
+  const lines: string[] = [];
+  const buffer = xterm.buffer.active;
+  for (let index = 0; index < buffer.length; index += 1) {
+    const line = buffer.getLine(index);
+    if (!line) continue;
+    lines.push(line.translateToString(true));
+  }
+  return lines.join('\n').trimEnd();
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (!text) return false;
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Fall back to execCommand for environments without clipboard permissions.
+  }
+
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', 'true');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    textarea.style.pointerEvents = 'none';
+    document.body.appendChild(textarea);
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    const didCopy = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return didCopy;
+  } catch {
+    return false;
+  }
+}
+
+function formatCopiedLineLabel(text: string): string {
+  const lineCount = text.split(/\r?\n/g).filter(line => line.length > 0).length;
+  return `${Math.max(lineCount, 1)} line${lineCount === 1 ? '' : 's'}`;
+}
+
+interface TerminalToolbarAction {
+  id: string;
+  label: string;
+  title: string;
+  icon: ComponentType<{ size?: number }>;
+  onClick: () => void;
+  disabled?: boolean;
+  tone?: 'accent' | 'default';
+}
+
+interface TerminalActionToolbarProps {
+  actions: TerminalToolbarAction[];
+  theme: Theme;
+  detail: string;
+}
+
+function TerminalActionToolbar({ actions, theme, detail }: TerminalActionToolbarProps) {
+  return (
+    <div
+      className="flex items-center gap-1 px-2 shrink-0 border-b"
+      style={{ height: 32, background: theme.bgPanel, borderColor: theme.border }}
+    >
+      {actions.map(action => {
+        const Icon = action.icon;
+        const isAccent = action.tone === 'accent';
+        return (
+          <button
+            key={action.id}
+            onClick={action.onClick}
+            disabled={action.disabled}
+            title={action.title}
+            className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-all disabled:opacity-35 disabled:cursor-not-allowed"
+            style={{
+              color: action.disabled
+                ? theme.textMuted
+                : isAccent
+                  ? theme.accent
+                  : theme.text,
+              background: action.disabled
+                ? 'transparent'
+                : isAccent
+                  ? `${theme.accent}18`
+                  : 'rgba(255,255,255,0.04)',
+              border: `1px solid ${action.disabled ? theme.border : isAccent ? `${theme.accent}44` : theme.border}`,
+            }}
+          >
+            <Icon size={11} />
+            <span>{action.label}</span>
+          </button>
+        );
+      })}
+
+      <div className="flex-1" />
+
+      <span
+        className="text-[9px] select-none"
+        style={{ color: theme.textMuted }}
+      >
+        {detail}
+      </span>
+    </div>
+  );
+}
+
 // ─── XTermPane ────────────────────────────────────────────────────────────────
 
-interface XTermPaneProps { id: string; visible: boolean; theme: Theme; }
+interface XTermPaneProps { id: string; visible: boolean; theme: Theme; onReady?: (id: string) => void; }
 
-function XTermPane({ id, visible, theme }: XTermPaneProps) {
+function XTermPane({ id, visible, theme, onReady }: XTermPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mountedRef   = useRef(false);
   const settings     = useSettingsStore(s => s.settings.terminal);
@@ -278,8 +392,9 @@ function XTermPane({ id, visible, theme }: XTermPaneProps) {
       xterm: term, fitAddon: fit,
       unlisten: () => { unlisten(); ro.disconnect(); },
     });
+    onReady?.(id);
     term.focus();
-  }, [id, settings, theme]);
+  }, [id, onReady, settings, theme]);
 
   useEffect(() => {
     if (visible) {
@@ -297,6 +412,11 @@ function XTermPane({ id, visible, theme }: XTermPaneProps) {
       }
     }
   }, [visible, id]);
+
+  useEffect(() => () => {
+    mountedRef.current = false;
+    destroyXterm(id);
+  }, [id]);
 
   return (
     <div
@@ -477,6 +597,9 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
   const [activePanel, setActivePanel] = useState<SidebarPanel>('dirs');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(210);
+  const [readyTerminalIds, setReadyTerminalIds] = useState<string[]>([]);
+  const [terminalActionMessage, setTerminalActionMessage] = useState<string | null>(null);
+  const actionMessageTimerRef = useRef<number | null>(null);
 
   // ── Store init ──
   const { initStore } = useTerminalStore();
@@ -486,6 +609,23 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
   const hasMountedRef = useRef(false);
   if (isOpen && !hasMountedRef.current) hasMountedRef.current = true;
 
+  const setTransientActionMessage = useCallback((message: string) => {
+    setTerminalActionMessage(message);
+    if (actionMessageTimerRef.current !== null) {
+      window.clearTimeout(actionMessageTimerRef.current);
+    }
+    actionMessageTimerRef.current = window.setTimeout(() => {
+      setTerminalActionMessage(null);
+      actionMessageTimerRef.current = null;
+    }, 2400);
+  }, []);
+
+  useEffect(() => () => {
+    if (actionMessageTimerRef.current !== null) {
+      window.clearTimeout(actionMessageTimerRef.current);
+    }
+  }, []);
+
   // ── PTY helpers ──
   const injectCmd = useCallback(async (data: string) => {
     try { await invoke('terminal_write', { id: activeId, data: data + '\r' }); }
@@ -493,6 +633,73 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
   }, [activeId]);
 
   const injectCd = useCallback(async (path: string) => injectCmd(`cd '${path}'`), [injectCmd]);
+
+  const markTerminalReady = useCallback((id: string) => {
+    setReadyTerminalIds(prev => prev.includes(id) ? prev : [...prev, id]);
+  }, []);
+
+  const clearTerminalReady = useCallback((id: string) => {
+    setReadyTerminalIds(prev => prev.filter(value => value !== id));
+  }, []);
+
+  const copyActiveTerminalOutput = useCallback(async () => {
+    const entry = xtermRegistry.get(activeId);
+    if (!entry) {
+      setTransientActionMessage('Terminal is still starting');
+      return;
+    }
+
+    const selectedText = entry.xterm.getSelection().trim();
+    const output = selectedText || collectTerminalBufferText(entry.xterm);
+    if (!output) {
+      setTransientActionMessage('No terminal output to copy');
+      return;
+    }
+
+    const copied = await copyTextToClipboard(output);
+    if (copied) {
+      setTransientActionMessage(`Copied ${selectedText ? 'selection' : formatCopiedLineLabel(output)}`);
+    } else {
+      setTransientActionMessage('Clipboard write failed');
+    }
+    entry.xterm.focus();
+  }, [activeId, setTransientActionMessage]);
+
+  const clearActiveTerminal = useCallback(() => {
+    const entry = xtermRegistry.get(activeId);
+    if (!entry) {
+      setTransientActionMessage('Terminal is still starting');
+      return;
+    }
+    entry.xterm.clear();
+    entry.xterm.focus();
+    setTransientActionMessage('Cleared terminal viewport');
+  }, [activeId, setTransientActionMessage]);
+
+  const restartActiveTerminal = useCallback(async () => {
+    const entry = xtermRegistry.get(activeId);
+    if (!entry) {
+      setTransientActionMessage('Terminal is still starting');
+      return;
+    }
+
+    clearTerminalReady(activeId);
+
+    try {
+      await invoke('terminal_kill', { id: activeId });
+      entry.xterm.reset();
+      await invoke('terminal_spawn', { id: activeId, rows: entry.xterm.rows, cols: entry.xterm.cols });
+      markTerminalReady(activeId);
+      setTransientActionMessage(`Restarted ${tabs.find(tab => tab.id === activeId)?.label ?? 'terminal'}`);
+    } catch (error) {
+      setTransientActionMessage(`Restart failed: ${String(error)}`);
+    }
+
+    requestAnimationFrame(() => {
+      entry.fitAddon.fit();
+      entry.xterm.focus();
+    });
+  }, [activeId, clearTerminalReady, markTerminalReady, setTransientActionMessage, tabs]);
 
   // ── Listen for cd-inject from FileExplorer (must be after injectCd is defined) ──
   useEffect(() => {
@@ -515,6 +722,7 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
   const closeTab = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     destroyXterm(id);
+    clearTerminalReady(id);
     setTabs(prev => {
       const next = prev.filter(t => t.id !== id);
       if (next.length === 0) { onClose(); return prev; }
@@ -540,6 +748,37 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
   };
 
   const slideClass = isOpen ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0';
+  const activeTabLabel = tabs.find(tab => tab.id === activeId)?.label ?? 'terminal';
+  const activeTerminalReady = readyTerminalIds.includes(activeId) || xtermRegistry.has(activeId);
+  const terminalToolbarActions = useMemo<TerminalToolbarAction[]>(() => ([
+    {
+      id: 'copy-output',
+      label: 'Copy Output',
+      title: 'Copy the selected text or the full scrollback buffer',
+      icon: Copy,
+      onClick: () => { void copyActiveTerminalOutput(); },
+      disabled: !activeTerminalReady,
+      tone: 'accent',
+    },
+    {
+      id: 'clear-terminal',
+      label: 'Clear',
+      title: 'Clear the active terminal viewport',
+      icon: Eraser,
+      onClick: clearActiveTerminal,
+      disabled: !activeTerminalReady,
+    },
+    {
+      id: 'restart-terminal',
+      label: 'Restart',
+      title: 'Restart the active terminal session',
+      icon: RotateCcw,
+      onClick: () => { void restartActiveTerminal(); },
+      disabled: !activeTerminalReady,
+    },
+  ]), [activeTerminalReady, clearActiveTerminal, copyActiveTerminalOutput, restartActiveTerminal]);
+  const terminalToolbarDetail = terminalActionMessage
+    ?? (activeTerminalReady ? `${activeTabLabel} ready` : `${activeTabLabel} starting...`);
 
   if (embedded) {
     // Embedded mode: render as a plain flex column, no outer animation/chrome
@@ -616,6 +855,12 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
           </OverlayScrollArea>
         </div>
 
+        <TerminalActionToolbar
+          actions={terminalToolbarActions}
+          theme={theme}
+          detail={terminalToolbarDetail}
+        />
+
         {/* ══ Body ══ */}
         <div className="flex flex-1 min-h-0 overflow-hidden">
           {/* Sidebar panel */}
@@ -640,7 +885,7 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
           {/* Terminal area */}
           <div className="flex-1 relative min-w-0" style={{ background: theme.bgTerm }}>
             {hasMountedRef.current && tabs.map(tab => (
-              <XTermPane key={tab.id} id={tab.id} visible={tab.id === activeId} theme={theme} />
+              <XTermPane key={tab.id} id={tab.id} visible={tab.id === activeId} theme={theme} onReady={markTerminalReady} />
             ))}
           </div>
         </div>
@@ -765,6 +1010,12 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
         </div>
       </div>
 
+      <TerminalActionToolbar
+        actions={terminalToolbarActions}
+        theme={theme}
+        detail={terminalToolbarDetail}
+      />
+
       {/* ══ Body ══ */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
 
@@ -822,7 +1073,7 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
         {/* Terminal area */}
         <div className="flex-1 relative min-w-0" style={{ background: theme.bgTerm }}>
           {hasMountedRef.current && tabs.map(tab => (
-            <XTermPane key={tab.id} id={tab.id} visible={tab.id === activeId} theme={theme} />
+            <XTermPane key={tab.id} id={tab.id} visible={tab.id === activeId} theme={theme} onReady={markTerminalReady} />
           ))}
         </div>
       </div>

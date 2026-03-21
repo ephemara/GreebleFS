@@ -16,12 +16,13 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import Editor from '@monaco-editor/react';
 import {
   ChevronRight, ChevronLeft, ArrowUp, Search, RefreshCw,
-  Grid, List, X, Star, StarOff, HardDrive, Terminal,
+  Grid, List, X, Star, StarOff, Terminal,
   Trash2, Copy, Scissors, Clipboard, Edit3, ExternalLink,
-  Shield, Eye, AlertTriangle, Loader, Home,
+  Shield, Eye, AlertTriangle, Loader,
   FilePlus, FolderPlus, CopyPlus,
 } from 'lucide-react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
+import { getExplorerRailWidthBounds } from '../config/explorerRail';
 import { getFolderIconSrc } from '../config/folderIcons';
 import { getBuiltInIconTheme, resolveFileIconSrc, resolveIconSrc } from '../config/iconTheme';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
@@ -33,6 +34,9 @@ import {
 } from '../config/nativeIcons';
 import { detectClientPlatform, getFallbackExplorerPath, getPlatformPathSeparator, joinPlatformPath } from '../config/platform';
 import { OverlayScrollArea } from './OverlayScrollArea';
+import { ExplorerSideRail } from './explorer/ExplorerSideRail';
+import { removeExplorerBookmarksByPath, upsertExplorerBookmark } from './explorer/explorerRailState';
+import { ResizablePane } from './ResizablePane';
 import { useExplorerStore } from '../store/explorerStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { shouldOpenExplorerEntryOnTrigger } from './fileExplorerClickBehavior';
@@ -78,7 +82,6 @@ interface EntryStorageInfo {
   is_dir: boolean;
   is_complete: boolean;
 }
-interface FsBookmark { id: string; name: string; path: string; }
 interface ContextMenuState { visible: boolean; x: number; y: number; entry: FileEntry | null; }
 interface RenameState    { active: boolean; path: string; name: string; }
 type PreviewState =
@@ -96,7 +99,7 @@ type PreviewState =
       lastSavedAt: number | null;
       error: string | null;
     }
-  | { type: 'model3d'; path: string; format: ModelPreviewFormat; name: string };
+  | { type: 'model3d'; path: string; format: ModelPreviewFormat; name: string; size: number };
 interface NewItemState   { visible: boolean; kind: 'file'|'folder'; }
 interface ExplorerClipboard { action:'copy'|'cut'; entries: FileEntry[]; }
 interface FileTransferResult { source_path: string; destination_path: string; operation: 'copy' | 'move'; }
@@ -652,6 +655,7 @@ function PreviewPanel({
               entryName={preview.name}
               format={preview.format}
               sourcePath={preview.path}
+              sourceBytes={preview.size}
             />
           </Suspense>
         )}
@@ -746,9 +750,12 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const appearanceSettings = useSettingsStore(s => s.settings.appearance);
   const updateExplorerSettings = useSettingsStore(s => s.updateExplorer);
   const explorerSession = useExplorerStore(s => s.session);
+  const explorerRail = useExplorerStore(s => s.rail);
   const updateExplorerSession = useExplorerStore(s => s.updateSession);
+  const updateExplorerRail = useExplorerStore(s => s.updateRail);
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
   const isCompactDock = layoutMode === 'compact-dock';
+  const sidebarBounds = getExplorerRailWidthBounds(isCompactDock);
   const uiFont = appearance?.fonts.ui ?? 'Inter,system-ui,sans-serif';
   const themeIconTheme = appearance?.theme.assets?.iconTheme ?? getBuiltInIconTheme();
   const useNativeOsIcons = appearanceSettings.useNativeOsIcons;
@@ -761,10 +768,10 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const [history,      setHistory]      = useState<string[]>(() => explorerSession.history);
   const [historyIdx,   setHistoryIdx]   = useState(() => explorerSession.historyIdx);
   const [sidebarWidth, setSidebarWidth] = useState(() => {
-    if (typeof explorerSession.sidebarWidth === 'number') {
-      return isCompactDock ? Math.min(explorerSession.sidebarWidth, 200) : explorerSession.sidebarWidth;
-    }
-    return isCompactDock ? 180 : 220;
+    const width = typeof explorerSession.sidebarWidth === 'number'
+      ? explorerSession.sidebarWidth
+      : sidebarBounds.defaultWidth;
+    return Math.max(sidebarBounds.minWidth, Math.min(sidebarBounds.maxWidth, width));
   });
   const [previewWidth, setPreviewWidth] = useState(() => {
     if (typeof explorerSession.previewWidth === 'number') {
@@ -779,7 +786,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
   const [nativeIconLoadingKeys, setNativeIconLoadingKeys] = useState<Set<string>>(() => new Set());
   const [searchResults, setSearchResults] = useState<FileSearchResult[]>([]);
   const [drives,       setDrives]       = useState<DriveInfo[]>([]);
-  const [bookmarks,    setBookmarks]    = useState<FsBookmark[]>([]);
+  const [drivesLoading, setDrivesLoading] = useState(true);
   const [loading,      setLoading]      = useState(false);
   const [error,        setError]        = useState<string|null>(null);
   const [selected,     setSelected]     = useState<Set<string>>(new Set());
@@ -824,10 +831,10 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
 
   useEffect(() => {
     if (isCompactDock) {
-      setSidebarWidth(current => Math.min(current, 200));
+      setSidebarWidth(current => Math.max(sidebarBounds.minWidth, Math.min(current, sidebarBounds.maxWidth)));
       setPreview({ type: 'none', path: '' });
     }
-  }, [isCompactDock]);
+  }, [isCompactDock, sidebarBounds.maxWidth, sidebarBounds.minWidth]);
 
   useEffect(() => {
     updateExplorerSession({
@@ -852,7 +859,11 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
 
   // ── Boot ──
   useEffect(() => {
-    invoke<DriveInfo[]>('fs_get_drives').then(ds => setDrives(ds)).catch(() => {});
+    setDrivesLoading(true);
+    invoke<DriveInfo[]>('fs_get_drives')
+      .then(ds => setDrives(ds))
+      .catch(() => setDrives([]))
+      .finally(() => setDrivesLoading(false));
     const restoredPath = initialSessionPathRef.current;
 
     if (restoredPath) {
@@ -883,7 +894,6 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
         }
       });
 
-      try { const s = localStorage.getItem('fs-bookmarks-v2'); if (s) setBookmarks(JSON.parse(s)); } catch {}
       return;
     }
 
@@ -902,10 +912,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
         .catch(() => navigate(getFallbackExplorerPath(runtimePlatform)));
     }
 
-    try { const s = localStorage.getItem('fs-bookmarks-v2'); if (s) setBookmarks(JSON.parse(s)); } catch {}
   }, [explorerSettings.defaultPath, runtimePlatform]);
-
-  useEffect(() => { localStorage.setItem('fs-bookmarks-v2', JSON.stringify(bookmarks)); }, [bookmarks]);
 
   // ── Navigate ──
   const navigate = useCallback(async (path: string, push = true) => {
@@ -1069,6 +1076,42 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     () => (isSearchActive ? searchResults : entries),
     [isSearchActive, searchResults, entries],
   );
+  const bookmarkPathSet = useMemo(() => new Set(
+    explorerRail.nodes
+      .filter((node): node is typeof explorerRail.nodes[number] & { kind: 'bookmark'; path: string } => node.kind === 'bookmark')
+      .map((node) => node.path),
+  ), [explorerRail.nodes]);
+  const droppedSourceLookup = useMemo(() => {
+    const lookup = new Map<string, { path: string; name: string; isDirectory: boolean }>();
+    for (const entry of [...entries, ...searchResults]) {
+      if (!lookup.has(entry.path)) {
+        lookup.set(entry.path, {
+          path: entry.path,
+          name: entry.name,
+          isDirectory: entry.is_dir,
+        });
+      }
+    }
+    return lookup;
+  }, [entries, searchResults]);
+  const goHome = useCallback(() => {
+    invoke<string>('fs_get_home_dir').then(p => navigate(p)).catch(() => {});
+  }, [navigate]);
+  const handleBookmarkCreated = useCallback((name: string, path: string) => {
+    void Promise.resolve(onAddBookmark(name, path)).catch(() => {});
+  }, [onAddBookmark]);
+  const resolveDroppedBookmarkSources = useCallback((paths: string[]) => paths
+    .filter((path): path is string => typeof path === 'string' && path.trim().length > 0)
+    .map((path) => {
+      const known = droppedSourceLookup.get(path);
+      const fallbackName = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+      const inferredDirectory = known?.isDirectory ?? !/\.[^\\/]+$/.test(fallbackName);
+      return {
+        path,
+        name: known?.name ?? fallbackName,
+        isDirectory: inferredDirectory,
+      };
+    }), [droppedSourceLookup]);
 
   useEffect(() => {
     if (loading || visibleEntries.length === 0) {
@@ -1446,7 +1489,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
     const modelFormat = getModelPreviewFormat(ext);
 
     if (modelFormat) {
-      setPreview({ type:'model3d', path:entry.path, format:modelFormat, name:entry.name });
+      setPreview({ type:'model3d', path:entry.path, format:modelFormat, name:entry.name, size: entry.size });
       return;
     }
 
@@ -1600,7 +1643,7 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
 
   // ── Context menu builder ──
   const buildCtxItems = useCallback((entry: FileEntry): CtxItem[] => {
-    const isBookmarked = bookmarks.some(b => b.path === entry.path);
+    const isBookmarked = bookmarkPathSet.has(entry.path);
     return [
       { label:'Open',               icon:<ExternalLink size={13}/>, action:() => openEntry(entry) },
       { label: entry.is_dir ? 'Open Folder as Admin' : 'Open as Admin', icon:<Shield size={13}/>, action:() => openAsAdmin(entry.path) },
@@ -1614,13 +1657,24 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
       { label:'Rename (F2)',        icon:<Edit3 size={13}/>,        action:() => setRename({ active:true, path:entry.path, name:entry.name }) },
       { label: '', icon:null, divider:true, action:()=>{} },
       { label: isBookmarked ? 'Remove Bookmark' : 'Add to Bookmarks', icon: isBookmarked ? <StarOff size={13}/> : <Star size={13}/>, action:() => {
-        if (isBookmarked) setBookmarks(b => b.filter(bk => bk.path !== entry.path));
-        else { setBookmarks(b => [...b, { id:crypto.randomUUID(), name:entry.name, path:entry.path }]); onAddBookmark(entry.name, entry.path); }
+        if (isBookmarked) {
+          updateExplorerRail(removeExplorerBookmarksByPath(explorerRail, entry.path));
+        } else {
+          const result = upsertExplorerBookmark(explorerRail, {
+            path: entry.path,
+            name: entry.name,
+            isDirectory: entry.is_dir,
+          });
+          updateExplorerRail(result.snapshot);
+          if (result.created) {
+            handleBookmarkCreated(entry.name, entry.path);
+          }
+        }
       }},
       { label: '', icon:null, divider:true, action:()=>{} },
       { label:'Delete', icon:<Trash2 size={13}/>, danger:true, action:() => setDeleteTarget(entry) },
     ];
-  }, [bookmarks, openAsAdmin, openEntry, duplicate, onOpenInTerminal, onAddBookmark, paste, queueClipboard]);
+  }, [bookmarkPathSet, duplicate, explorerRail, handleBookmarkCreated, onOpenInTerminal, openAsAdmin, openEntry, queueClipboard, updateExplorerRail]);
 
   const buildEmptyCtxItems = useCallback((): CtxItem[] => {
     return [
@@ -1862,103 +1916,33 @@ export function FileExplorer({ theme, appearance, onOpenInTerminal, onAddBookmar
       onContextMenu={e => { e.preventDefault(); setCtxMenu(c => ({...c, visible:false})); }}
     >
       {/* ══ SIDEBAR ══ */}
-      <div style={{ width:sidebarWidth, background:EXP.sidebar, borderRight:`1px solid ${EXP.border}`, display:'flex', flexDirection:'column', flexShrink:0, overflow:'hidden', position:'relative' }}>
-        
-        {/* Drag Handle */}
-        <div
-          onMouseDown={e => {
-            e.preventDefault();
-            const startX = e.clientX;
-            const startW = sidebarWidth;
-            const onMouseMove = (me: MouseEvent) => setSidebarWidth(
-              Math.max(isCompactDock ? 160 : 150, Math.min(isCompactDock ? 320 : 600, startW + (me.clientX - startX))),
-            );
-            const onMouseUp = () => { window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onMouseUp); };
-            window.addEventListener('mousemove', onMouseMove); window.addEventListener('mouseup', onMouseUp);
-          }}
-          style={{ position:'absolute', right:0, top:0, bottom:0, width:4, cursor:'col-resize', zIndex:10, background:'transparent' }}
-          onMouseEnter={e => e.currentTarget.style.background = `${accent}55`}
-          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+      <ResizablePane
+        size={sidebarWidth}
+        minSize={sidebarBounds.minWidth}
+        maxSize={sidebarBounds.maxWidth}
+        onSizeChange={setSidebarWidth}
+        borderColor={`${accent}55`}
+        style={{
+          borderRight: `1px solid ${EXP.border}`,
+          background: EXP.sidebar,
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 0,
+        }}
+      >
+        <ExplorerSideRail
+          accent={accent}
+          sidebarWidth={sidebarWidth}
+          currentPath={currentPath}
+          drives={drives}
+          drivesLoading={drivesLoading}
+          isCompactDock={isCompactDock}
+          onNavigate={navigate}
+          onGoHome={goHome}
+          onBookmarkCreated={handleBookmarkCreated}
+          resolveDroppedSources={resolveDroppedBookmarkSources}
         />
-
-        {/* Drives */}
-        <div style={{ padding:isCompactDock ? '8px 10px 4px' : '10px 12px 4px' }}>
-          <span style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:EXP.muted }}>Drives</span>
-        </div>
-        {drives.map(d => {
-          const used = d.total_bytes > 0 ? (d.total_bytes - d.free_bytes) / d.total_bytes : 0;
-          const usedBytes = Math.max(d.total_bytes - d.free_bytes, 0);
-          const isActive = currentPath.toUpperCase().startsWith(d.letter.toUpperCase());
-          return (
-            <button key={d.letter} onClick={() => navigate(d.letter)}
-              style={{ display:'flex', alignItems:'center', gap:8, width:'100%', padding:isCompactDock ? '5px 10px' : '5px 12px', background: isActive ? `${accent}18` : 'transparent', borderLeft:`2px solid ${isActive ? accent : 'transparent'}`, border:'none', cursor:'pointer', color:EXP.text, textAlign:'left' }}
-            >
-              <HardDrive size={13} style={{ color: isActive ? accent : EXP.muted, flexShrink:0 }} />
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ display:'flex', justifyContent:'space-between', fontSize:11 }}>
-                  <span style={{ fontWeight:500 }}>{d.label}</span>
-                  <span style={{ color:EXP.muted, fontSize:10 }}>{d.letter}</span>
-                </div>
-                <div style={{ height:2, background:'rgba(255,255,255,0.06)', borderRadius:1, marginTop:3, overflow:'hidden' }}>
-                  <div style={{ height:'100%', width:`${used*100}%`, background: used>0.9 ? EXP.red : accent, borderRadius:1 }} />
-                </div>
-                <div style={{ display:'flex', justifyContent:'space-between', gap:8, marginTop:4, fontSize:9, color:EXP.muted2 }}>
-                  {d.total_bytes > 0 ? (
-                    <>
-                      <span>{formatSize(usedBytes)} used</span>
-                      <span>{formatSize(d.total_bytes)} total</span>
-                    </>
-                  ) : (
-                    <span>Storage unavailable</span>
-                  )}
-                </div>
-              </div>
-            </button>
-          );
-        })}
-
-        <div style={{ height:1, background:EXP.border, margin:'6px 0' }} />
-
-        {/* Bookmarks */}
-        <div style={{ padding:isCompactDock ? '4px 10px' : '4px 12px' }}>
-          <span style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:EXP.muted }}>Bookmarks</span>
-        </div>
-        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }}>
-          {/* Home quick-link */}
-          <button
-            onClick={() => invoke<string>('fs_get_home_dir').then(p => navigate(p)).catch(() => {})}
-            style={{ display:'flex', alignItems:'center', gap:8, width:'100%', padding:isCompactDock ? '5px 10px' : '5px 12px', background:'transparent', border:'none', cursor:'pointer', color:EXP.muted, textAlign:'left' }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-          >
-            <Home size={12} style={{ color:accent }} />
-            <span style={{ fontSize:11 }}>Home</span>
-          </button>
-
-          {bookmarks.map(bk => (
-            <div key={bk.id} style={{ display:'flex', alignItems:'center' }}>
-              <button
-                onClick={() => navigate(bk.path)}
-                style={{ display:'flex', alignItems:'center', gap:8, flex:1, padding:isCompactDock ? '5px 10px' : '5px 12px', background: currentPath === bk.path ? `${accent}18` : 'transparent', border:'none', cursor:'pointer', color: currentPath === bk.path ? EXP.text : EXP.muted, textAlign:'left', borderLeft:`2px solid ${currentPath===bk.path ? accent : 'transparent'}` }}
-                onMouseEnter={e => { if(currentPath!==bk.path) e.currentTarget.style.background='rgba(255,255,255,0.04)'; }}
-                onMouseLeave={e => { if(currentPath!==bk.path) e.currentTarget.style.background='transparent'; }}
-              >
-                <Star size={11} style={{ color:EXP.yellow }} />
-                <div style={{ minWidth:0 }}>
-                  <div style={{ fontSize:11, fontWeight:500, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{bk.name}</div>
-                  <div style={{ fontSize:9, color:EXP.muted2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontFamily:'monospace' }}>{bk.path}</div>
-                </div>
-              </button>
-              <button onClick={() => setBookmarks(b => b.filter(b2 => b2.id !== bk.id))}
-                style={{ background:'none', border:'none', cursor:'pointer', color:EXP.muted2, padding:'5px 8px', flexShrink:0 }}
-                onMouseEnter={e => (e.currentTarget.style.color = EXP.red)}
-                onMouseLeave={e => (e.currentTarget.style.color = EXP.muted2)}
-              ><X size={10} /></button>
-            </div>
-          ))}
-          {bookmarks.length === 0 && <p style={{ fontSize:10, color:EXP.muted2, padding:'4px 14px' }}>Right-click folder → Bookmark</p>}
-        </OverlayScrollArea>
-      </div>
+      </ResizablePane>
 
       {/* ══ MAIN ══ */}
       <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>

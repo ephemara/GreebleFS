@@ -44,6 +44,7 @@ describe('useSettingsStore — initial state', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.appearance.theme).toBe('dark');
     expect(settings.appearance.activeThemeId).toBe('operator');
+    expect(settings.appearance.activeShaderId).toBeNull();
     expect(settings.appearance.uiFontFamily).toBe('Inter, system-ui, sans-serif');
     expect(settings.appearance.useNativeOsIcons).toBe(false);
     expect(settings.appearance.animations).toBe(true);
@@ -276,6 +277,7 @@ describe('mergeSettingsWithDefaults()', () => {
     });
 
     expect(merged.appearance.activeThemeId).toBe('dracula');
+    expect(merged.appearance.activeShaderId).toBeNull();
     expect(merged.appearance.uiFontFamily).toBe('Geist, Inter, system-ui, sans-serif');
     expect(merged.appearance.appZoom).toBe(1.1);
     expect(merged.appearance.useNativeOsIcons).toBe(defaultSettings.appearance.useNativeOsIcons);

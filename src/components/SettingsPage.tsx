@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { FolderOpen, LayoutGrid, Palette, Plus, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, TerminalSquare, Trash2, Type } from 'lucide-react';
+import { FolderOpen, LayoutGrid, Palette, Plus, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Type } from 'lucide-react';
 import type { LoadedOverlayAnimation } from './animationRuntime';
+import type { LoadedOverlayShader } from './shaderRuntime';
 import {
   ensureFontFamilyLoaded,
   getThemeSourceLabel,
@@ -29,6 +30,7 @@ import {
 } from '../config/folderIcons';
 import { getBuiltInIconTheme } from '../config/iconTheme';
 import { OverlayScrollArea } from './OverlayScrollArea';
+import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 import {
   BUILT_IN_LAYOUT_MANIFEST,
   loadExternalLayoutManifest,
@@ -36,6 +38,11 @@ import {
   type LoadedLayoutManifest,
 } from '../config/layoutProfiles';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
+import {
+  getOverlayShaderSurfaceLabel,
+  getShaderEnabledSurfaceIds,
+  resolvePreferredShaderId,
+} from '../config/shaders';
 import {
   clampOverlayAnimationDuration,
   clampOverlayAnimationIntensity,
@@ -75,11 +82,11 @@ function SectionTitle({ icon, title, subtitle }: { icon: ReactNode; title: strin
   return (
     <div className="flex items-start justify-between gap-3">
       <div>
-        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] opacity-60">
+        <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] opacity-60">
           {icon}
           <span>{title}</span>
         </div>
-        <p className="mt-1 text-[11px] opacity-40">{subtitle}</p>
+        <p className="mt-0.5 text-[10px] leading-4 opacity-40">{subtitle}</p>
       </div>
     </div>
   );
@@ -216,6 +223,8 @@ const DEFAULT_LOADED_LAYOUT_MANIFEST: LoadedLayoutManifest = {
 
 type SettingsSectionKey =
   | 'appearance'
+  | 'shaders'
+  | 'animations'
   | 'terminal'
   | 'explorer'
   | 'layouts'
@@ -251,7 +260,7 @@ function SettingsRailButton({
       type="button"
       onClick={onClick}
       title={subtitle}
-      className="w-full rounded px-2.5 py-2.5 text-left transition-colors"
+      className="w-full rounded px-2 py-2 text-left transition-colors"
       style={{
         border: `1px solid ${active ? `${accent}88` : border}`,
         background: active ? `${accent}12` : 'rgba(255,255,255,0.02)',
@@ -259,9 +268,9 @@ function SettingsRailButton({
         boxShadow: active ? `inset 0 0 0 1px ${accent}22` : 'none',
       }}
     >
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2">
         <div
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded"
           style={{
             background: active ? `${accent}18` : 'rgba(255,255,255,0.035)',
             color: active ? accent : muted,
@@ -271,8 +280,8 @@ function SettingsRailButton({
           {icon}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-[11px] font-semibold">{label}</div>
-          <div className="mt-1 text-[10px] leading-4" style={{ color: active ? accent : muted }}>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.08em]">{label}</div>
+          <div className="mt-0.5 text-[10px] leading-4" style={{ color: active ? accent : muted }}>
             {summary}
           </div>
         </div>
@@ -281,66 +290,6 @@ function SettingsRailButton({
   );
 }
 
-function MotionRailButton({
-  active,
-  label,
-  summary,
-  badges,
-  accent,
-  border,
-  text,
-  muted,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  summary: string;
-  badges: string[];
-  accent: string;
-  border: string;
-  text: string;
-  muted: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="w-full rounded px-2.5 py-2 text-left transition-colors"
-      style={{
-        border: `1px solid ${active ? `${accent}88` : border}`,
-        background: active ? `${accent}12` : 'rgba(255,255,255,0.02)',
-        color: text,
-      }}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[11px] font-semibold">{label}</div>
-          <div className="mt-1 truncate text-[10px]" style={{ color: active ? accent : muted }}>
-            {summary}
-          </div>
-        </div>
-        {badges.length > 0 && (
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-            {badges.map(badge => (
-              <span
-                key={`${label}-${badge}`}
-                className="rounded px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.14em]"
-                style={{
-                  border: `1px solid ${active ? `${accent}66` : border}`,
-                  background: active ? `${accent}18` : 'rgba(255,255,255,0.04)',
-                  color: active ? accent : muted,
-                }}
-              >
-                {badge}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-    </button>
-  );
-}
 
 export function SettingsPage({
   appearance,
@@ -350,6 +299,13 @@ export function SettingsPage({
   themePackagesError,
   onRefreshThemes,
   onOpenThemesFolder,
+  shaders,
+  shaderDiagnostics,
+  shadersDirectory,
+  shadersLoading,
+  shadersError,
+  onRefreshShaders,
+  onOpenShadersFolder,
   animations,
   animationDiagnostics,
   animationsDirectory,
@@ -365,6 +321,13 @@ export function SettingsPage({
   themePackagesError: string | null;
   onRefreshThemes: () => Promise<void>;
   onOpenThemesFolder: () => Promise<void>;
+  shaders: LoadedOverlayShader[];
+  shaderDiagnostics: LoadedOverlayShader[];
+  shadersDirectory: string;
+  shadersLoading: boolean;
+  shadersError: string | null;
+  onRefreshShaders: () => Promise<void>;
+  onOpenShadersFolder: () => Promise<void>;
   animations: LoadedOverlayAnimation[];
   animationDiagnostics: LoadedOverlayAnimation[];
   animationsDirectory: string;
@@ -397,9 +360,14 @@ export function SettingsPage({
   const [startupSyncPending, setStartupSyncPending] = useState(false);
   const [startupSyncError, setStartupSyncError] = useState<string | null>(null);
   const [layoutManifestState, setLayoutManifestState] = useState<LoadedLayoutManifest>(DEFAULT_LOADED_LAYOUT_MANIFEST);
+  const [railWidth, setRailWidth] = usePersistentPanelSize('overlayterm-settings-rail-width', 236, 190, 320);
   const availableAnimations = useMemo(
     () => animations.filter(animation => !animation.error),
     [animations],
+  );
+  const availableShaders = useMemo(
+    () => shaders.filter(shader => !shader.error),
+    [shaders],
   );
   const openAnimationOptions = useMemo(
     () => availableAnimations.filter(animation => animation.open),
@@ -413,6 +381,35 @@ export function SettingsPage({
     () => animationDiagnostics.filter(animation => Boolean(animation.error)),
     [animationDiagnostics],
   );
+  const shaderFailures = useMemo(
+    () => shaderDiagnostics.filter(shader => Boolean(shader.error)),
+    [shaderDiagnostics],
+  );
+  const availableShaderIds = useMemo(
+    () => availableShaders.map(shader => shader.id),
+    [availableShaders],
+  );
+  const effectiveShaderId = useMemo(
+    () => resolvePreferredShaderId({
+      availableShaderIds,
+      userOverrideId: settings.appearance.activeShaderId,
+      themeDefaultShaderId: appearance.baseTheme.defaultShaderId,
+    }),
+    [appearance.baseTheme.defaultShaderId, availableShaderIds, settings.appearance.activeShaderId],
+  );
+  const effectiveShader = useMemo(
+    () => availableShaders.find(shader => shader.id === effectiveShaderId) ?? null,
+    [availableShaders, effectiveShaderId],
+  );
+  const enabledShaderSurfaces = useMemo(
+    () => getShaderEnabledSurfaceIds(effectiveShader),
+    [effectiveShader],
+  );
+  const shaderSelectionSummary = settings.appearance.activeShaderId
+    ? 'Settings Override'
+    : appearance.baseTheme.defaultShaderId
+      ? 'Theme Default'
+      : 'Fallback';
 
   useEffect(() => {
     ensureFontFamilyLoaded(appearance.fonts.ui);
@@ -577,10 +574,26 @@ export function SettingsPage({
     {
       key: 'appearance',
       label: 'Appearance',
-      subtitle: 'Theme, opacity, panel transparency, blur, zoom, and motion.',
-      summary: `${effectiveTheme.name} · ${settings.appearance.useNativeOsIcons ? 'OS Icons' : 'Theme Icons'} · ${availableAnimations.length} motion modules · ${formatOverlayVisualControlValue('opacity', settings.appearance.appOpacity)} OP · ${formatOverlayVisualControlValue('panelTransparency', settings.appearance.panelTransparency)} PT · ${formatOverlayVisualControlValue('zoom', settings.appearance.appZoom)} ZM · ${formatOverlayVisualControlValue('blurStrength', settings.appearance.appBlurStrength)} BL`,
-      detail: 'Tune how the whole shell looks and feels, from presets and palette tokens to blur and motion behavior.',
+      subtitle: 'Theme, opacity, panel transparency, blur, and zoom.',
+      summary: `${effectiveTheme.name} · ${settings.appearance.useNativeOsIcons ? 'OS Icons' : 'Theme Icons'} · ${formatOverlayVisualControlValue('opacity', settings.appearance.appOpacity)} OP · ${formatOverlayVisualControlValue('panelTransparency', settings.appearance.panelTransparency)} PT · ${formatOverlayVisualControlValue('zoom', settings.appearance.appZoom)} ZM · ${formatOverlayVisualControlValue('blurStrength', settings.appearance.appBlurStrength)} BL`,
+      detail: 'Tune the shell look and feel, from presets and palette tokens to blur, transparency, and UI typography.',
       icon: <Palette size={14} />,
+    },
+    {
+      key: 'shaders',
+      label: 'Shaders',
+      subtitle: 'Shell-wide shader profiles for background, chrome, and rails.',
+      summary: `${availableShaders.length} profiles${shaderFailures.length > 0 ? ` · ${shaderFailures.length} errors` : ''}`,
+      detail: 'Assign live shader profiles, inspect surface coverage, and manage the dedicated shader authoring folder apart from animations.',
+      icon: <Sparkles size={14} />,
+    },
+    {
+      key: 'animations',
+      label: 'Animations',
+      subtitle: 'Open and close motion modules.',
+      summary: `${availableAnimations.length} modules${animationFailures.length > 0 ? ` · ${animationFailures.length} errors` : ''}`,
+      detail: 'Browse built-in and authored animation modules, assign the live open/close bindings, and manage the animation authoring folder.',
+      icon: <RotateCcw size={14} />,
     },
     {
       key: 'terminal',
@@ -644,129 +657,85 @@ export function SettingsPage({
         background: `linear-gradient(180deg, ${effectiveTheme.palette.appBackgroundAlt} 0%, ${panelBackground} 100%)`,
       }}
     >
-      <aside className="flex min-h-0 w-[236px] shrink-0 flex-col border-r" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
-        <div className="border-b px-4 py-4" style={{ borderColor: border }}>
+      <ResizablePane
+        size={railWidth}
+        minSize={190}
+        maxSize={320}
+        onSizeChange={setRailWidth}
+        borderColor={`${accent}55`}
+        style={{ display: 'flex', minHeight: 0, flexDirection: 'column', borderRight: `1px solid ${border}`, background: 'rgba(255,255,255,0.02)' }}
+      >
+        <div className="border-b px-4 py-3" style={{ borderColor: border }}>
           <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: muted }}>
             <SlidersHorizontal size={12} />
             <span>Workbench Settings</span>
           </div>
-          <h1 className="mt-2 text-[18px] font-semibold leading-none" style={{ color: text }}>Settings</h1>
+          <h1 className="mt-1.5 text-[16px] font-semibold leading-none" style={{ color: text }}>Settings</h1>
         </div>
 
-        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: '10px 12px 12px 12px' }}>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              {settingsSections.map(section => (
-                <SettingsRailButton
-                  key={section.key}
-                  active={activeSection === section.key}
-                  icon={section.icon}
-                  label={section.label}
-                  subtitle={section.subtitle}
-                  summary={section.summary}
-                  accent={accent}
-                  border={border}
-                  text={text}
-                  muted={muted}
-                  onClick={() => setActiveSection(section.key)}
-                />
-              ))}
-            </div>
-
-            <div className="space-y-2">
-              <div className="px-1 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: muted }}>
-                Motion Modules
-              </div>
-              {availableAnimations.map(animation => {
-                const badges = [
-                  settings.appearance.appOpenAnimation === animation.id ? 'Open' : null,
-                  settings.appearance.appCloseAnimation === animation.id ? 'Close' : null,
-                  animation.source === 'folder' ? 'Custom' : 'Built-In',
-                ].filter((badge): badge is string => Boolean(badge));
-
-                return (
-                  <MotionRailButton
-                    key={`motion-${animation.id}`}
-                    active={activeSection === 'appearance' && (
-                      settings.appearance.appOpenAnimation === animation.id
-                      || settings.appearance.appCloseAnimation === animation.id
-                    )}
-                    label={animation.name}
-                    summary={animation.group}
-                    badges={badges}
-                    accent={accent}
-                    border={border}
-                    text={text}
-                    muted={muted}
-                    onClick={() => setActiveSection('appearance')}
-                  />
-                );
-              })}
-              {animationFailures.map(animation => (
-                <MotionRailButton
-                  key={`motion-failure-${animation.filePath}`}
-                  active={activeSection === 'appearance'}
-                  label={animation.name}
-                  summary="Load error"
-                  badges={['Error']}
-                  accent={accent}
-                  border={border}
-                  text={text}
-                  muted={muted}
-                  onClick={() => setActiveSection('appearance')}
-                />
-              ))}
-              {availableAnimations.length === 0 && animationFailures.length === 0 && (
-                <div className="rounded border px-3 py-2 text-[10px] opacity-45" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-                  No motion modules loaded.
-                </div>
-              )}
-            </div>
+        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: '8px 10px 10px 10px' }}>
+          <div className="space-y-2">
+            {settingsSections.map(section => (
+              <SettingsRailButton
+                key={section.key}
+                active={activeSection === section.key}
+                icon={section.icon}
+                label={section.label}
+                subtitle={section.subtitle}
+                summary={section.summary}
+                accent={accent}
+                border={border}
+                text={text}
+                muted={muted}
+                onClick={() => setActiveSection(section.key)}
+              />
+            ))}
           </div>
         </OverlayScrollArea>
-      </aside>
+      </ResizablePane>
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="border-b px-5 py-4" style={{ borderColor: border }}>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: muted }}>
+        <div className="border-b px-4 py-3" style={{ borderColor: border }}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1.5">
+              <div className="flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.16em]" style={{ color: muted }}>
                 {activeSectionMeta.icon}
                 <span>{activeSectionMeta.label}</span>
               </div>
-              <h2 className="mt-2 text-[23px] font-semibold" style={{ color: text }}>{activeSectionMeta.label}</h2>
-              <p className="mt-2 max-w-[760px] text-[12px] leading-5" style={{ color: muted }}>
+              <h2 className="text-[18px] font-semibold leading-none" style={{ color: text }}>{activeSectionMeta.label}</h2>
+              <div className="hidden h-3 w-px lg:block" style={{ background: border }} />
+              <p className="min-w-[240px] flex-1 text-[11px] leading-4" style={{ color: muted }}>
                 {activeSectionMeta.detail}
               </p>
             </div>
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
               <span
-                className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                className="rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em]"
                 style={{ border: `1px solid ${border}`, color: muted, background: 'rgba(255,255,255,0.03)' }}
               >
                 Theme · {effectiveTheme.name}
               </span>
               <span
-                className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                className="rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em]"
                 style={{ border: `1px solid ${border}`, color: muted, background: 'rgba(255,255,255,0.03)' }}
               >
                 Layout · {activeLayoutProfile.label}
               </span>
               <span
-                className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                className="rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em]"
                 style={{ border: `1px solid ${border}`, color: muted, background: 'rgba(255,255,255,0.03)' }}
               >
                 Startup · {settings.system.launchAtStartup ? 'Enabled' : 'Disabled'}
               </span>
               <span
-                className="hidden rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] md:inline-flex"
+                className="hidden rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] xl:inline-flex"
                 style={{ border: `1px solid ${border}`, color: muted, background: 'rgba(255,255,255,0.03)' }}
               >
                 {activeSectionMeta.summary}
               </span>
               <button
                 onClick={() => resetToDefaults()}
-                className="inline-flex items-center gap-2 rounded px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors"
+                className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
                 style={{ border: `1px solid ${border}`, color: text, background: 'rgba(255,255,255,0.04)' }}
               >
                 <RotateCcw size={12} />
@@ -776,8 +745,8 @@ export function SettingsPage({
           </div>
         </div>
 
-        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 16 }}>
-          <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-4 pb-6">
+        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 12 }}>
+          <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-3 pb-5">
             {activeSection === 'appearance' && (
               <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
             <SectionTitle
@@ -962,17 +931,244 @@ export function SettingsPage({
                   onChange={event => updateAppearance({ appBlur: event.target.checked })}
                 />
               </label>
+            </div>
+          </section>
+            )}
 
+            {activeSection === 'shaders' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+            <SectionTitle
+              icon={<Sparkles size={12} />}
+              title="Shaders"
+              subtitle="Dedicated shell shader profiles with a separate authoring/runtime path from motion."
+            />
+
+            <div className="mt-4 space-y-4">
               <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Window Motion</div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shader Catalog</div>
                     <p className="mt-1 text-[11px] opacity-40">
-                      Built-ins and authored TS/TSX modules all flow through one motion pipeline, so users can ship anything from subtle lift to full-on shatter or vortex effects.
+                      Shader authoring lives in its own catalog now. Use this page to browse built-ins plus folder-authored profiles, inspect load failures, and choose whether the shell follows the theme default or a user override.
                     </p>
                   </div>
                   <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                    Pipeline
+                    Shader
+                  </span>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px]">
+                  <div className="opacity-45">
+                    {availableShaders.length} ready profiles
+                    {shaderFailures.length > 0 ? ` · ${shaderFailures.length} failed loads` : ''}
+                    {shadersLoading ? ' · refreshing…' : ''}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => void onRefreshShaders()}
+                      className="inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 transition-colors"
+                      style={{ borderColor: border, background: 'rgba(255,255,255,0.03)', color: text }}
+                    >
+                      <RefreshCw size={12} />
+                      Refresh Shaders
+                    </button>
+                    <button
+                      onClick={() => void onOpenShadersFolder()}
+                      className="inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 transition-colors"
+                      style={{ borderColor: accent, background: `${accent}16`, color: text }}
+                    >
+                      <FolderOpen size={12} />
+                      Open Folder
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Authoring Folder</div>
+                  <div className="mt-1 break-all opacity-55">{shadersDirectory}</div>
+                  {shadersError && (
+                    <div className="mt-2 rounded border px-2 py-1.5 text-[10px]" style={{ borderColor: 'rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.08)', color: text }}>
+                      {shadersError}
+                    </div>
+                  )}
+                </div>
+
+                {shaderFailures.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {shaderFailures.map(shader => (
+                      <div
+                        key={`shader-error-${shader.filePath}`}
+                        className="rounded border px-3 py-2"
+                        style={{ borderColor: 'rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.08)', color: text }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-[11px] font-semibold">{shader.name}</div>
+                          <span className="text-[9px] uppercase tracking-[0.12em] opacity-55">Load Error</span>
+                        </div>
+                        <div className="mt-1 break-all text-[10px] opacity-55">{shader.filePath}</div>
+                        <pre className="mt-2 whitespace-pre-wrap text-[10px] leading-4 opacity-80">{shader.error}</pre>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.2fr_0.8fr]">
+                <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Live Assignment</div>
+                      <p className="mt-1 text-[11px] opacity-40">
+                        A user override wins over the active theme. Clearing the override hands control back to the theme default, and unresolved IDs collapse safely to <code>none</code>.
+                      </p>
+                    </div>
+                    <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: accent, background: `${accent}14`, color: accent }}>
+                      {shaderSelectionSummary}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-1 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => updateAppearance({ activeShaderId: null })}
+                      className="rounded px-3 py-2 text-left transition-colors"
+                      style={{
+                        border: `1px solid ${settings.appearance.activeShaderId == null ? accent : border}`,
+                        background: settings.appearance.activeShaderId == null ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                        color: text,
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-semibold">Follow Theme Default</span>
+                        <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: settings.appearance.activeShaderId == null ? accent : muted }}>
+                          {appearance.baseTheme.defaultShaderId ?? 'none'}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[11px] opacity-45">
+                        {appearance.baseTheme.defaultShaderId
+                          ? `Active theme ${appearance.baseTheme.name} defaults to ${appearance.baseTheme.defaultShaderId}.`
+                          : `Active theme ${appearance.baseTheme.name} does not define a shader, so the shell falls back to none.`}
+                      </p>
+                    </button>
+
+                    {availableShaders.map(shader => {
+                      const overrideActive = settings.appearance.activeShaderId === shader.id;
+                      const effectiveActive = effectiveShaderId === shader.id;
+                      const surfaceSummary = getShaderEnabledSurfaceIds(shader)
+                        .map(surface => getOverlayShaderSurfaceLabel(surface))
+                        .join(' · ');
+                      return (
+                        <button
+                          key={`shader-${shader.id}`}
+                          type="button"
+                          onClick={() => updateAppearance({ activeShaderId: shader.id })}
+                          className="rounded px-3 py-2 text-left transition-colors"
+                          style={{
+                            border: `1px solid ${overrideActive ? accent : border}`,
+                            background: overrideActive ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                            color: text,
+                          }}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-semibold">{shader.name}</span>
+                            <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: overrideActive ? accent : muted }}>
+                              {shader.group}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[11px] opacity-45">{shader.description ?? 'Shell shader profile.'}</p>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[9px] uppercase tracking-[0.12em] opacity-55">
+                            <span>{surfaceSummary || 'No Surfaces'}</span>
+                            {effectiveActive && <span style={{ color: accent }}>Live</span>}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Effective Shader</div>
+                    <div className="mt-2 flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[12px] font-semibold">{effectiveShader?.name ?? 'None'}</div>
+                        <p className="mt-1 text-[11px] opacity-45">
+                          {effectiveShader?.description ?? 'No shader surfaces are currently active.'}
+                        </p>
+                      </div>
+                      <span className="rounded border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.14em]" style={{ borderColor: border, color: muted }}>
+                        {effectiveShader?.id ?? 'none'}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2 text-[9px] uppercase tracking-[0.12em]">
+                      {(effectiveShader?.tags ?? []).map(tag => (
+                        <span key={`shader-tag-${tag}`} className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)', color: muted }}>
+                          {tag}
+                        </span>
+                      ))}
+                      {(effectiveShader?.tags ?? []).length === 0 && (
+                        <span className="opacity-45">No metadata tags</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Surface Coverage</div>
+                    <div className="mt-3 grid grid-cols-1 gap-2">
+                      {(['background', 'topBar', 'border'] as const).map(surface => {
+                        const enabled = enabledShaderSurfaces.includes(surface);
+                        return (
+                          <div
+                            key={`shader-surface-${surface}`}
+                            className="rounded border px-3 py-2"
+                            style={{
+                              borderColor: enabled ? `${accent}55` : border,
+                              background: enabled ? `${accent}12` : 'rgba(255,255,255,0.03)',
+                              color: text,
+                            }}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-semibold">{getOverlayShaderSurfaceLabel(surface)}</span>
+                              <span className="text-[9px] uppercase tracking-[0.12em]" style={{ color: enabled ? accent : muted }}>
+                                {enabled ? 'Enabled' : 'Off'}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-[11px] opacity-45">
+                              {enabled
+                                ? `${effectiveShader?.name ?? 'Current shader'} actively renders this shell surface.`
+                                : `${effectiveShader?.name ?? 'Current shader'} does not supply a renderer for this surface.`}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+            )}
+
+            {activeSection === 'animations' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+            <SectionTitle
+              icon={<RotateCcw size={12} />}
+              title="Animations"
+              subtitle="Built-in and authored motion modules with dedicated open and close bindings."
+            />
+
+            <div className="mt-4 space-y-4">
+              <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Animation Modules</div>
+                    <p className="mt-1 text-[11px] opacity-40">
+                      Keep motion authoring separate from theme work. Browse modules here, assign live open and close bindings, and manage the animation folder without crowding the Appearance page.
+                    </p>
+                  </div>
+                  <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                    Motion
                   </span>
                 </div>
 

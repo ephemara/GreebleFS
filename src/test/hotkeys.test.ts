@@ -20,6 +20,14 @@ describe('hotkey config helpers', () => {
 
     expect(normalized.terminalToggle).toBe(defaults.terminalToggle);
     expect(normalized.zoomAdjust).toBe('Ctrl+Scroll');
+    expect(defaults.opacityAdjust).toBe('Alt+Scroll');
+  });
+
+  it('normalizes option-based wheel bindings to alt-modified scroll gestures', () => {
+    expect(matchesWheelHotkey(
+      { ctrlKey: false, metaKey: false, altKey: true, shiftKey: false },
+      'Option+Scroll',
+    )).toBe(true);
   });
 
   it('matches ctrl plus wheel gestures and rejects plain scrolling', () => {
@@ -32,5 +40,10 @@ describe('hotkey config helpers', () => {
       { ctrlKey: false, metaKey: false, altKey: false, shiftKey: false },
       'Ctrl+Scroll',
     )).toBe(false);
+
+    expect(matchesWheelHotkey(
+      { ctrlKey: false, metaKey: false, altKey: true, shiftKey: false },
+      'Alt+Scroll',
+    )).toBe(true);
   });
 });

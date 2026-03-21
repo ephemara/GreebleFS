@@ -4,6 +4,7 @@ import { DiffEditor } from '@monaco-editor/react';
 import { Download, FolderGit2, GitBranch, GitCommit, Plus, RefreshCw, Rocket, Search, Upload, X } from 'lucide-react';
 import { multiplyColorAlpha, type ResolvedOverlayAppearance } from '../config/appearance';
 import { OverlayScrollArea } from './OverlayScrollArea';
+import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 import {
   type GitFileStatus,
   mergeGitStatusWithStats,
@@ -91,6 +92,8 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [diffView, setDiffView] = useState<DiffViewState | null>(null);
   const deferredQuery = useDeferredValue(changeQuery);
+  const [repoRailWidth, setRepoRailWidth] = usePersistentPanelSize('overlayterm-source-repo-rail-width', 230, 180, 360);
+  const [changeListWidth, setChangeListWidth] = usePersistentPanelSize('overlayterm-source-change-list-width', 420, 280, 820);
 
   useEffect(() => {
     try {
@@ -347,7 +350,14 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', background: palette.bg, color: palette.text, overflow: 'hidden' }}>
-      <div style={{ width: 230, minWidth: 230, display: 'flex', flexDirection: 'column', background: palette.sidebar, borderRight: `1px solid ${palette.border}` }}>
+      <ResizablePane
+        size={repoRailWidth}
+        minSize={180}
+        maxSize={360}
+        onSizeChange={setRepoRailWidth}
+        borderColor={alpha(palette.accent, 0.28)}
+        style={{ display: 'flex', flexDirection: 'column', background: palette.sidebar, borderRight: `1px solid ${palette.border}` }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderBottom: `1px solid ${palette.border}` }}>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: palette.muted }}>Source Control</div>
@@ -390,7 +400,7 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
             );
           })}
         </OverlayScrollArea>
-      </div>
+      </ResizablePane>
 
       <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {!repoState ? (
@@ -475,8 +485,15 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
 
             {error && <div style={{ padding: '7px 14px', borderBottom: `1px solid ${palette.border}`, fontSize: 11, color: palette.red, background: alpha(palette.red, 0.10) }}>{error}</div>}
 
-            <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: 'minmax(320px, 460px) minmax(0, 1fr)', gap: 0 }}>
-              <div style={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${palette.border}`, background: palette.card }}>
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
+              <ResizablePane
+                size={changeListWidth}
+                minSize={280}
+                maxSize={820}
+                onSizeChange={setChangeListWidth}
+                borderColor={alpha(palette.accent, 0.28)}
+                style={{ minHeight: 0, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${palette.border}`, background: palette.card }}
+              >
                 <div style={{ display: 'grid', gridTemplateColumns: '72px minmax(0, 1fr) 64px 64px', gap: 8, padding: '8px 14px', borderBottom: `1px solid ${palette.border}`, fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: palette.muted }}>
                   <span>Status</span><span>File</span><span style={{ textAlign: 'right' }}>+</span><span style={{ textAlign: 'right' }}>-</span>
                 </div>
@@ -495,7 +512,7 @@ export function GitManager({ appearance }: { appearance?: ResolvedOverlayAppeara
                     </button>
                   ))}
                 </OverlayScrollArea>
-              </div>
+              </ResizablePane>
 
               <div style={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', background: palette.bg }}>
                 <div style={{ padding: '8px 12px', borderBottom: `1px solid ${palette.border}`, fontSize: 11, color: palette.muted }}>

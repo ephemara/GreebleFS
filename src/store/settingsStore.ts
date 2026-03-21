@@ -94,6 +94,7 @@ export interface AppearanceSettings {
   theme: 'dark' | 'light' | 'system';
   activeThemeId: string;
   customThemes: OverlayThemeDefinition[];
+  activeShaderId?: string | null;
   uiFontFamily: string;
   useNativeOsIcons: boolean;
   accentColor: string;
@@ -198,6 +199,11 @@ function normalizeAppearanceSettings(
   return {
     ...merged,
     customThemes: (merged.customThemes ?? base.customThemes).map(theme => normalizeThemeDefinition(theme)),
+    activeShaderId: typeof merged.activeShaderId === 'string'
+      ? merged.activeShaderId.trim() || null
+      : merged.activeShaderId === null
+        ? null
+        : base.activeShaderId ?? null,
     appOpacity: clampOverlayVisualControlValue('opacity', merged.appOpacity),
     panelTransparency: clampOverlayVisualControlValue('panelTransparency', merged.panelTransparency),
     appZoom: clampOverlayVisualControlValue('zoom', merged.appZoom),
@@ -259,6 +265,7 @@ export const defaultSettings: Settings = {
     theme: 'dark',
     activeThemeId: 'operator',
     customThemes: [],
+    activeShaderId: null,
     uiFontFamily: 'Inter, system-ui, sans-serif',
     useNativeOsIcons: false,
     accentColor: '#6366f1',

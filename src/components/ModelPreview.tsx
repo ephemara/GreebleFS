@@ -4,14 +4,24 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
-import type { ModelPreviewFormat } from '../config/filePreview';
+import {
+  MODEL_PREVIEW_PROXY_CONFIG,
+  type ModelPreviewFormat,
+} from '../config/filePreview';
+import {
+  detectClientPlatform,
+  getPlatformPathSeparator,
+  joinPlatformPath,
+} from '../config/platform';
 
 type ModelPreviewProps = {
   entryName: string;
   format: ModelPreviewFormat;
   sourcePath: string;
+  sourceBytes: number;
 };
 
 const VIEW_BG = '#090d12';
@@ -21,8 +31,26 @@ const OVERLAY_BG = 'rgba(8, 12, 18, 0.82)';
 const OVERLAY_BORDER = 'rgba(117, 139, 166, 0.2)';
 const TEXT = '#d8e1ec';
 const MUTED = '#8393a7';
+const PROXY_FILL = '#88b5e8';
+const PROXY_EDGE = '#d8e8fb';
 
-export function ModelPreview({ entryName, format, sourcePath }: ModelPreviewProps) {
+type LoadedPreviewResult = {
+  object: THREE.Object3D;
+  proxyNotice: string | null;
+};
+
+type ModelGeometryStats = {
+  meshCount: number;
+  vertexCount: number;
+  triangleCount: number;
+};
+
+type DisposableObject = THREE.Object3D & {
+  geometry?: { dispose?: () => void };
+  material?: THREE.Material | THREE.Material[];
+};
+
+export function ModelPreview({ entryName, format, sourcePath, sourceBytes }: ModelPreviewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
@@ -32,6 +60,7 @@ export function ModelPreview({ entryName, format, sourcePath }: ModelPreviewProp
   const resetViewRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState<string | null>(null);
+  const [proxyNotice, setProxyNotice] = useState<string | null>(null);
   const assetUrl = useMemo(() => convertFileSrc(sourcePath), [sourcePath]);
 
   useEffect(() => {
@@ -41,6 +70,7 @@ export function ModelPreview({ entryName, format, sourcePath }: ModelPreviewProp
 
     setStatus('loading');
     setError(null);
+    setProxyNotice(null);
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(VIEW_BG);
@@ -110,7 +140,7 @@ export function ModelPreview({ entryName, format, sourcePath }: ModelPreviewProp
       renderer.render(scene, camera);
     };
 
-    void loadPreviewObject(format, assetUrl).then(object => {
+    void loadPreviewObject({ format, assetUrl, sourcePath, sourceBytes }).then(({ object, proxyNotice: nextProxyNotice }) => {
       if (cancelled) {
         disposeObject(object);
         return;
@@ -119,6 +149,7 @@ export function ModelPreview({ entryName, format, sourcePath }: ModelPreviewProp
       applyFallbackMaterials(object);
       modelRef.current = object;
       scene.add(object);
+      setProxyNotice(nextProxyNotice);
       fitObjectInView(object, camera, controls);
       resetViewRef.current = {
         position: camera.position.clone(),
@@ -153,7 +184,7 @@ export function ModelPreview({ entryName, format, sourcePath }: ModelPreviewProp
       resetViewRef.current = null;
       host.innerHTML = '';
     };
-  }, [assetUrl, format]);
+  }, [assetUrl, format, sourceBytes, sourcePath]);
 
   const resetView = () => {
     if (!cameraRef.current || !controlsRef.current || !resetViewRef.current) return;
@@ -191,37 +222,63 @@ export function ModelPreview({ entryName, format, sourcePath }: ModelPreviewProp
           <span style={{ color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textTransform: 'none', letterSpacing: 0 }}>{entryName}</span>
         </div>
         <div style={{ padding: '6px 8px', borderRadius: 9, background: OVERLAY_BG, border: `1px solid ${OVERLAY_BORDER}`, color: MUTED, fontSize: 10 }}>
-          Double-click reset
+          {proxyNotice ?? 'Double-click reset'}
         </div>
       </div>
     </div>
   );
 }
 
-async function loadPreviewObject(format: ModelPreviewFormat, assetUrl: string): Promise<THREE.Object3D> {
+async function loadPreviewObject(args: {
+  format: ModelPreviewFormat;
+  assetUrl: string;
+  sourcePath: string;
+  sourceBytes: number;
+}): Promise<LoadedPreviewResult> {
+  const object = await loadSourceObject(args.format, args.assetUrl, args.sourcePath);
+  const stats = collectModelGeometryStats(object);
+
+  if (shouldUseProxyPreview(args.sourceBytes, stats)) {
+    const proxy = createProxyObject(object, stats);
+    disposeObject(object);
+    return {
+      object: proxy,
+      proxyNotice: `Proxy preview · ${formatCompactCount(stats.triangleCount)} tris`,
+    };
+  }
+
+  return { object, proxyNotice: null };
+}
+
+async function loadSourceObject(
+  format: ModelPreviewFormat,
+  assetUrl: string,
+  sourcePath: string,
+): Promise<THREE.Object3D> {
+  const manager = createPreviewLoadingManager(sourcePath);
   if (format === 'glb') {
-    const loader = new GLTFLoader();
+    const loader = createGltfLoader(manager);
     const asset = await loader.loadAsync(assetUrl);
     return asset.scene ?? asset.scenes[0];
   }
 
   if (format === 'gltf') {
-    const loader = new GLTFLoader();
+    const loader = createGltfLoader(manager);
     const asset = await loader.loadAsync(assetUrl);
     return asset.scene ?? asset.scenes[0];
   }
 
   if (format === 'obj') {
-    const loader = new OBJLoader();
+    const loader = new OBJLoader(manager);
     return loader.loadAsync(assetUrl);
   }
 
   if (format === 'fbx') {
-    const loader = new FBXLoader();
+    const loader = new FBXLoader(manager);
     return loader.loadAsync(assetUrl);
   }
 
-  const loader = new STLLoader();
+  const loader = new STLLoader(manager);
   const geometry = await loader.loadAsync(assetUrl);
   geometry.computeBoundingBox();
   geometry.computeVertexNormals();
@@ -233,6 +290,149 @@ async function loadPreviewObject(format: ModelPreviewFormat, assetUrl: string): 
       metalness: 0.08,
     }),
   );
+}
+
+function createGltfLoader(manager: THREE.LoadingManager): GLTFLoader {
+  const loader = new GLTFLoader(manager);
+  loader.setMeshoptDecoder(MeshoptDecoder);
+  return loader;
+}
+
+function createPreviewLoadingManager(sourcePath: string): THREE.LoadingManager {
+  const manager = new THREE.LoadingManager();
+  const platform = detectClientPlatform();
+  const separator = getPlatformPathSeparator(platform);
+  const sourceDirectory = getParentDirectory(sourcePath);
+
+  manager.setURLModifier((requestedUrl) => {
+    if (!requestedUrl || isAbsoluteAssetUrl(requestedUrl) || !sourceDirectory) {
+      return requestedUrl;
+    }
+
+    const [, relativePath = requestedUrl, suffix = ''] = requestedUrl.match(/^([^?#]+)(.*)$/) ?? [];
+    const normalizedRelativePath = relativePath.replace(/[\\/]+/g, separator);
+    const resolvedPath = joinPlatformPath(sourceDirectory, normalizedRelativePath, platform);
+    return `${convertFileSrc(resolvedPath)}${suffix}`;
+  });
+
+  return manager;
+}
+
+function getParentDirectory(path: string): string {
+  return path.replace(/[\\/][^\\/]+$/, '');
+}
+
+function isAbsoluteAssetUrl(url: string): boolean {
+  return /^(?:[a-z][a-z\d+\-.]*:|\/\/)/i.test(url) || /^[a-z]:[\\/]/i.test(url);
+}
+
+function collectModelGeometryStats(object: THREE.Object3D): ModelGeometryStats {
+  const stats: ModelGeometryStats = {
+    meshCount: 0,
+    vertexCount: 0,
+    triangleCount: 0,
+  };
+
+  object.traverse((child: THREE.Object3D) => {
+    if (!(child instanceof THREE.Mesh) || !(child.geometry instanceof THREE.BufferGeometry)) {
+      return;
+    }
+
+    stats.meshCount += 1;
+    const positionCount = child.geometry.attributes.position?.count ?? 0;
+    stats.vertexCount += positionCount;
+    stats.triangleCount += child.geometry.index
+      ? Math.floor(child.geometry.index.count / 3)
+      : Math.floor(positionCount / 3);
+  });
+
+  return stats;
+}
+
+function shouldUseProxyPreview(sourceBytes: number, stats: ModelGeometryStats): boolean {
+  return sourceBytes >= MODEL_PREVIEW_PROXY_CONFIG.maxDirectSourceBytes
+    || stats.vertexCount >= MODEL_PREVIEW_PROXY_CONFIG.maxRenderableVertexCount
+    || stats.triangleCount >= MODEL_PREVIEW_PROXY_CONFIG.maxRenderableTriangleCount
+    || stats.meshCount >= MODEL_PREVIEW_PROXY_CONFIG.maxRenderableMeshCount;
+}
+
+function createProxyObject(sourceObject: THREE.Object3D, stats: ModelGeometryStats): THREE.Object3D {
+  sourceObject.updateWorldMatrix(true, true);
+
+  const proxyGroup = new THREE.Group();
+  proxyGroup.name = `${sourceObject.name || 'model'}-proxy`;
+  proxyGroup.userData.previewProxy = true;
+  proxyGroup.userData.previewStats = stats;
+
+  const fillMaterial = new THREE.MeshStandardMaterial({
+    color: PROXY_FILL,
+    roughness: 0.72,
+    metalness: 0.06,
+    transparent: true,
+    opacity: 0.18,
+  });
+  const edgeMaterial = new THREE.LineBasicMaterial({
+    color: PROXY_EDGE,
+    transparent: true,
+    opacity: 0.55,
+  });
+
+  let proxyMeshCount = 0;
+  sourceObject.traverse((child: THREE.Object3D) => {
+    if (!(child instanceof THREE.Mesh) || proxyMeshCount >= MODEL_PREVIEW_PROXY_CONFIG.maxProxyMeshes) {
+      return;
+    }
+
+    const bounds = new THREE.Box3().setFromObject(child);
+    if (bounds.isEmpty()) {
+      return;
+    }
+
+    addProxyBounds(proxyGroup, bounds, fillMaterial, edgeMaterial);
+    proxyMeshCount += 1;
+  });
+
+  if (proxyMeshCount === 0) {
+    const fallbackBounds = new THREE.Box3().setFromObject(sourceObject);
+    if (!fallbackBounds.isEmpty()) {
+      addProxyBounds(proxyGroup, fallbackBounds, fillMaterial, edgeMaterial);
+    }
+  }
+
+  return proxyGroup;
+}
+
+function addProxyBounds(
+  proxyGroup: THREE.Group,
+  bounds: THREE.Box3,
+  fillMaterial: THREE.MeshStandardMaterial,
+  edgeMaterial: THREE.LineBasicMaterial,
+) {
+  const size = bounds.getSize(new THREE.Vector3());
+  const center = bounds.getCenter(new THREE.Vector3());
+  const geometry = new THREE.BoxGeometry(
+    Math.max(size.x, 0.02),
+    Math.max(size.y, 0.02),
+    Math.max(size.z, 0.02),
+  );
+
+  const fill = new THREE.Mesh(geometry, fillMaterial);
+  fill.position.copy(center);
+  proxyGroup.add(fill);
+
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), edgeMaterial);
+  edges.position.copy(center);
+  proxyGroup.add(edges);
+}
+
+function formatCompactCount(value: number): string {
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(1)}M`;
+  }
+  if (value >= 1_000) {
+    return `${Math.round(value / 1_000)}K`;
+  }
+  return String(value);
 }
 
 function fitObjectInView(
@@ -280,9 +480,11 @@ function applyFallbackMaterials(object: THREE.Object3D) {
 
 function disposeObject(object: THREE.Object3D) {
   object.traverse((child: THREE.Object3D) => {
-    if (!(child instanceof THREE.Mesh)) return;
-    child.geometry.dispose();
-    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    const disposable = child as DisposableObject;
+    disposable.geometry?.dispose?.();
+    const materials = disposable.material
+      ? (Array.isArray(disposable.material) ? disposable.material : [disposable.material])
+      : [];
     materials.forEach((material: THREE.Material) => material.dispose());
   });
 }

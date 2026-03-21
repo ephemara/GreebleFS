@@ -6,7 +6,8 @@ export type HotkeyBindingKey =
   | 'closeTab'
   | 'find'
   | 'replace'
-  | 'zoomAdjust';
+  | 'zoomAdjust'
+  | 'opacityAdjust';
 
 export interface HotkeyBindingDefinition {
   key: HotkeyBindingKey;
@@ -31,6 +32,13 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     label: 'Zoom Overlay',
     description: 'Hold the modifier and scroll anywhere in the overlay to change zoom.',
     defaultValue: 'Ctrl+Scroll',
+    scope: 'gesture',
+  },
+  {
+    key: 'opacityAdjust',
+    label: 'Opacity Overlay',
+    description: 'Hold the modifier and scroll anywhere in the overlay to change opacity.',
+    defaultValue: 'Alt+Scroll',
     scope: 'gesture',
   },
   {
@@ -126,6 +134,10 @@ function normalizeGestureToken(token: string): string {
 
   if (normalized === 'control') {
     return 'ctrl';
+  }
+
+  if (normalized === 'option') {
+    return 'alt';
   }
 
   if (normalized === 'cmdorcontrol') {

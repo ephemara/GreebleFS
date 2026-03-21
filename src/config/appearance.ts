@@ -108,6 +108,7 @@ export interface OverlayThemeDefinition {
   id: string;
   name: string;
   description?: string;
+  defaultShaderId?: string;
   palette: OverlayThemePalette;
   effects: OverlayThemeEffects;
   xterm: OverlayXTermTheme;
@@ -360,7 +361,7 @@ function createTheme(
   };
 }
 
-export const overlayThemePresets: OverlayThemeDefinition[] = [
+const builtInThemePresets: OverlayThemeDefinition[] = [
   createTheme(
     'operator',
     'Operator',
@@ -723,6 +724,19 @@ export const overlayThemePresets: OverlayThemeDefinition[] = [
   ),
 ];
 
+const overlayThemeDefaultShaderIds: Partial<Record<string, string>> = {
+  operator: 'nebula-flow',
+  dracula: 'prism-wave',
+  nord: 'hologram-grid',
+  'github-dark': 'hologram-grid',
+  catppuccin: 'nebula-flow',
+};
+
+export const overlayThemePresets: OverlayThemeDefinition[] = builtInThemePresets.map(theme => ({
+  ...theme,
+  defaultShaderId: overlayThemeDefaultShaderIds[theme.id] ?? theme.defaultShaderId,
+}));
+
 const presetMap = new Map(overlayThemePresets.map(theme => [theme.id, theme]));
 
 function normalizeThemeVisualLayer(
@@ -783,6 +797,9 @@ export function normalizeThemeDefinition(
     id: String(theme.id ?? fallback.id),
     name: String(theme.name ?? fallback.name),
     description: theme.description ?? fallback.description,
+    defaultShaderId: typeof theme.defaultShaderId === 'string'
+      ? theme.defaultShaderId.trim() || undefined
+      : fallback.defaultShaderId,
     source: theme.source ?? fallback.source ?? 'custom',
     extendsThemeId: theme.extendsThemeId ?? fallback.extendsThemeId,
     palette: {
