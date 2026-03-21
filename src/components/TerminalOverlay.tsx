@@ -23,10 +23,12 @@ import React, {
 import {
   X,
   Terminal as TerminalIcon,
+  Bot,
   Folder,
   Play,
   Hash,
   Plus,
+  Rocket,
   Trash2,
   TerminalSquare,
   ChevronLeft,
@@ -51,6 +53,15 @@ import {
   type OverlayThemeDefinition,
   type ResolvedOverlayAppearance,
 } from '../config/appearance';
+import {
+  createPythonRuntimeConfig,
+  formatCommandOutput,
+  pythonExamplePresets,
+  summarizeInterpreter,
+  type PythonActionResponse,
+  type PythonExamplePreset,
+  type PythonRuntimeStatus,
+} from '../config/python';
 import { useTerminalStore, type Bookmark } from '../store/terminalStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { OverlayScrollArea } from './OverlayScrollArea';
@@ -203,7 +214,19 @@ void ensureFont;
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Tab { id: string; label: string; }
-type SidebarPanel = 'dirs' | 'cmds' | null;
+type SidebarPanel = 'dirs' | 'cmds' | 'python' | null;
+type SidebarPanelId = Exclude<SidebarPanel, null>;
+
+const TERMINAL_SIDEBAR_ITEMS: {
+  id: SidebarPanelId;
+  icon: ComponentType<{ size?: number }>;
+  title: string;
+  accent?: 'success' | 'default';
+}[] = [
+  { id: 'dirs', icon: Folder, title: 'Directories' },
+  { id: 'cmds', icon: Zap, title: 'Commands', accent: 'success' },
+  { id: 'python', icon: Bot, title: 'Python' },
+];
 
 interface TerminalOverlayProps {
   isOpen: boolean;
@@ -486,15 +509,228 @@ function MiniAdder({ ph1, ph2, accent, onConfirm, onCancel }: AdderProps) {
   );
 }
 
+interface PythonSidebarContentProps {
+  theme: Theme;
+  emitToTerminal: (label: string, body: string, tone?: 'info' | 'success' | 'error') => void;
+  announce: (message: string) => void;
+}
+
+function PythonSidebarContent({ theme, emitToTerminal, announce }: PythonSidebarContentProps) {
+  const pythonSettings = useSettingsStore(s => s.settings.python);
+  const runtimeConfig = useMemo(
+    () => createPythonRuntimeConfig(pythonSettings),
+    [pythonSettings],
+  );
+  const [status, setStatus] = useState<PythonRuntimeStatus | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState(true);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+
+  const refreshStatus = useCallback(async () => {
+    setLoadingStatus(true);
+    setStatusError(null);
+
+    try {
+      const nextStatus = await invoke<PythonRuntimeStatus>('python_get_runtime_status', {
+        config: runtimeConfig,
+      });
+      setStatus(nextStatus);
+    } catch (error) {
+      const errorText = String(error);
+      setStatusError(errorText);
+      announce(`Python status failed: ${errorText}`);
+    } finally {
+      setLoadingStatus(false);
+    }
+  }, [announce, runtimeConfig]);
+
+  useEffect(() => {
+    void refreshStatus();
+  }, [refreshStatus]);
+
+  const runAction = useCallback(async (
+    label: string,
+    factory: () => Promise<PythonActionResponse>,
+  ) => {
+    setPendingAction(label);
+    setStatusError(null);
+
+    try {
+      const response = await factory();
+      setStatus(response.status);
+      emitToTerminal('Python', formatCommandOutput(response.result), response.result.success ? 'success' : 'error');
+      announce(label);
+      return response;
+    } catch (error) {
+      const errorText = String(error);
+      setStatusError(errorText);
+      emitToTerminal('Python', `${label} failed\n\n${errorText}`, 'error');
+      announce(`${label} failed`);
+      return null;
+    } finally {
+      setPendingAction(null);
+    }
+  }, [announce, emitToTerminal]);
+
+  const bootstrapRuntime = useCallback(async () => {
+    await runAction('Bootstrapped Python runtime', () =>
+      invoke<PythonActionResponse>('python_bootstrap_runtime', {
+        config: runtimeConfig,
+      }));
+  }, [runAction, runtimeConfig]);
+
+  const installConfiguredPackages = useCallback(async () => {
+    await runAction('Installed configured Python packages', () =>
+      invoke<PythonActionResponse>('python_install_packages', {
+        request: {
+          config: runtimeConfig,
+          packageInput: pythonSettings.bootstrapPackages,
+          persistToRequirements: true,
+        },
+      }));
+  }, [pythonSettings.bootstrapPackages, runAction, runtimeConfig]);
+
+  const runPreset = useCallback(async (preset: PythonExamplePreset) => {
+    await runAction(`Ran ${preset.label}`, () =>
+      invoke<PythonActionResponse>('python_execute', {
+        request: {
+          config: runtimeConfig,
+          executionMode: preset.mode,
+          entry: preset.entry,
+          arguments: [],
+          workingDirectory: null,
+          environment: {},
+          useManagedEnvironment: true,
+        },
+      }));
+  }, [runAction, runtimeConfig]);
+
+  const buttonStyle = {
+    border: `1px solid ${theme.border}`,
+    background: 'rgba(255,255,255,0.04)',
+    color: theme.text,
+  } as const;
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 border-b shrink-0" style={{ borderColor: theme.border }}>
+        <span className="text-[10px] font-bold tracking-widest uppercase opacity-30">Python</span>
+        <button
+          onClick={() => void refreshStatus()}
+          disabled={loadingStatus || Boolean(pendingAction)}
+          className="px-2 py-1 rounded text-[9px] uppercase tracking-[0.18em] disabled:opacity-35"
+          style={{ ...buttonStyle, color: theme.textMuted }}
+          title="Refresh managed Python status"
+        >
+          Refresh
+        </button>
+      </div>
+
+      <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ paddingTop: 8, paddingBottom: 8 }}>
+        <div className="px-3 space-y-3">
+          <div
+            className="rounded border px-3 py-2"
+            style={{ borderColor: theme.border, background: 'rgba(255,255,255,0.03)' }}
+          >
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: theme.textMuted }}>
+              Managed Runtime
+            </div>
+            <div className="mt-2 text-[11px]" style={{ color: theme.text }}>
+              {loadingStatus ? 'Checking runtime…' : status?.ready ? 'Managed env ready' : 'Bootstrap required'}
+            </div>
+            <div className="mt-1 text-[10px]" style={{ color: theme.textMuted }}>
+              {summarizeInterpreter(status?.baseInterpreter ?? null)}
+            </div>
+            <div className="mt-1 text-[10px] font-mono break-all" style={{ color: theme.textMuted }}>
+              {status?.managedPythonPath ?? 'Managed interpreter not created yet'}
+            </div>
+            {statusError && (
+              <div className="mt-2 text-[10px]" style={{ color: '#f87171' }}>
+                {statusError}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 gap-2">
+            <button
+              type="button"
+              onClick={() => void bootstrapRuntime()}
+              disabled={Boolean(pendingAction)}
+              className="flex items-center justify-between rounded px-2.5 py-2 text-[10px] font-medium disabled:opacity-35"
+              style={buttonStyle}
+              title="Create or repair the managed Python environment"
+            >
+              <span>Bootstrap Runtime</span>
+              <Rocket size={11} />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void installConfiguredPackages()}
+              disabled={Boolean(pendingAction) || !pythonSettings.bootstrapPackages.trim()}
+              className="flex items-center justify-between rounded px-2.5 py-2 text-[10px] font-medium disabled:opacity-35"
+              style={buttonStyle}
+              title="Install the packages configured in Python settings"
+            >
+              <span>Install Configured Packages</span>
+              <Play size={11} />
+            </button>
+          </div>
+
+          <div>
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: theme.textMuted }}>
+              Quick Runs
+            </div>
+            <div className="space-y-2">
+              {pythonExamplePresets.map(preset => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => void runPreset(preset)}
+                  disabled={Boolean(pendingAction) || !status?.ready}
+                  className="w-full rounded border px-2.5 py-2 text-left disabled:opacity-35"
+                  style={{ borderColor: theme.border, background: 'rgba(255,255,255,0.03)' }}
+                  title={preset.description}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] font-medium" style={{ color: theme.text }}>
+                      {preset.label}
+                    </span>
+                    <Play size={10} style={{ color: theme.accent }} />
+                  </div>
+                  <div className="mt-1 text-[9px]" style={{ color: theme.textMuted }}>
+                    {preset.description}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded border px-3 py-2" style={{ borderColor: theme.border, background: 'rgba(255,255,255,0.025)' }}>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: theme.textMuted }}>
+              Package Queue
+            </div>
+            <div className="mt-2 text-[10px] font-mono whitespace-pre-wrap break-words" style={{ color: theme.text }}>
+              {pythonSettings.bootstrapPackages.trim() || 'No configured packages yet'}
+            </div>
+          </div>
+        </div>
+      </OverlayScrollArea>
+    </div>
+  );
+}
+
 // ─── Sidebar content ──────────────────────────────────────────────────────────
 
 interface SidebarContentProps {
   panel: SidebarPanel; theme: Theme; appearance: ResolvedOverlayAppearance;
   injectCmd: (cmd: string) => void;
   injectCd:  (path: string) => void;
+  emitToTerminal: (label: string, body: string, tone?: 'info' | 'success' | 'error') => void;
+  announce: (message: string) => void;
 }
 
-function SidebarContent({ panel, theme, appearance, injectCmd, injectCd }: SidebarContentProps) {
+function SidebarContent({ panel, theme, appearance, injectCmd, injectCd, emitToTerminal, announce }: SidebarContentProps) {
   const {
     directoryBookmarks, commandBookmarks,
     addDirectoryBookmark, removeDirectoryBookmark,
@@ -559,6 +795,10 @@ function SidebarContent({ panel, theme, appearance, injectCmd, injectCd }: Sideb
         ))}
       </OverlayScrollArea>
     </div>
+  );
+
+  if (panel === 'python') return (
+    <PythonSidebarContent theme={theme} emitToTerminal={emitToTerminal} announce={announce} />
   );
 
   return null;
@@ -634,6 +874,28 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
   }, [activeId]);
 
   const injectCd = useCallback(async (path: string) => injectCmd(`cd '${path}'`), [injectCmd]);
+
+  const emitToActiveTerminal = useCallback((
+    label: string,
+    body: string,
+    tone: 'info' | 'success' | 'error' = 'info',
+  ) => {
+    const entry = xtermRegistry.get(activeId);
+    if (!entry) {
+      setTransientActionMessage('Terminal is still starting');
+      return;
+    }
+
+    const tonePrefix = tone === 'error'
+      ? '\x1b[31m'
+      : tone === 'success'
+        ? '\x1b[32m'
+        : '\x1b[36m';
+    const normalized = body.trim().replace(/\r?\n/g, '\r\n');
+
+    entry.xterm.write(`\r\n${tonePrefix}[${label}]\x1b[0m\r\n${normalized}\r\n`);
+    entry.xterm.focus();
+  }, [activeId, setTransientActionMessage]);
 
   const markTerminalReady = useCallback((id: string) => {
     setReadyTerminalIds(prev => prev.includes(id) ? prev : [...prev, id]);
@@ -795,16 +1057,16 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
         >
           {/* Sidebar toggles */}
           <div className="flex items-center gap-0.5 px-2 border-r shrink-0" style={{ borderColor: theme.border }}>
-            {([
-              { id: 'dirs',     icon: <Folder size={12} />,           title: 'Directories' },
-              { id: 'cmds',     icon: <Zap size={12} />,              title: 'Commands' },
-            ] as const).map(({ id, icon, title }) => {
+            {TERMINAL_SIDEBAR_ITEMS.map(({ id, icon: Icon, title, accent }) => {
               const active = activePanel === id && sidebarOpen;
               return (
                 <button key={id} onClick={() => togglePanel(id)} title={title}
-                  style={{ color: active ? theme.accent : theme.textMuted, background: active ? `${theme.accent}1a` : 'transparent' }}
+                  style={{
+                    color: active ? (accent === 'success' ? appearance.theme.palette.success : theme.accent) : theme.textMuted,
+                    background: active ? `${accent === 'success' ? appearance.theme.palette.success : theme.accent}1a` : 'transparent',
+                  }}
                   className="w-6 h-6 flex items-center justify-center rounded-sm transition-all hover:opacity-90">
-                  {icon}
+                  <Icon size={12} />
                 </button>
               );
             })}
@@ -868,7 +1130,15 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
           {sidebarOpen && activePanel && (
             <div className="shrink-0 overflow-hidden relative"
               style={{ width: sidebarWidth, background: theme.bgPanel, borderRight: `1px solid ${theme.border}`, color: theme.text }}>
-              <SidebarContent panel={activePanel} theme={theme} appearance={appearance} injectCmd={injectCmd} injectCd={injectCd} />
+              <SidebarContent
+                panel={activePanel}
+                theme={theme}
+                appearance={appearance}
+                injectCmd={injectCmd}
+                injectCd={injectCd}
+                emitToTerminal={emitToActiveTerminal}
+                announce={setTransientActionMessage}
+              />
               {/* Drag Handle */}
               <div
                 onMouseDown={e => {
@@ -1023,20 +1293,17 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
         {/* Icon rail */}
         <div className="flex flex-col items-center gap-0.5 py-2 shrink-0"
           style={{ width: 36, background: theme.bgPanel, borderRight: `1px solid ${theme.border}` }}>
-          {([
-            { id: 'dirs',     icon: <Folder size={14} />,           title: 'Directories' },
-            { id: 'cmds',     icon: <Zap size={14} />,              title: 'Commands' },
-          ] as const).map(({ id, icon, title }) => {
+          {TERMINAL_SIDEBAR_ITEMS.map(({ id, icon: Icon, title, accent }) => {
             const active = activePanel === id && sidebarOpen;
             return (
               <button key={id} onClick={() => togglePanel(id)} title={title}
                 style={{
-                  color:       active ? theme.accent : theme.textMuted,
-                  background:  active ? `${theme.accent}1a` : 'transparent',
-                  borderLeft:  `2px solid ${active ? theme.accent : 'transparent'}`,
+                  color:       active ? (accent === 'success' ? appearance.theme.palette.success : theme.accent) : theme.textMuted,
+                  background:  active ? `${accent === 'success' ? appearance.theme.palette.success : theme.accent}1a` : 'transparent',
+                  borderLeft:  `2px solid ${active ? (accent === 'success' ? appearance.theme.palette.success : theme.accent) : 'transparent'}`,
                 }}
                 className="w-7 h-7 flex items-center justify-center rounded-sm transition-all hover:opacity-90">
-                {icon}
+                <Icon size={14} />
               </button>
             );
           })}
@@ -1055,7 +1322,15 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
         {sidebarOpen && activePanel && (
           <div className="shrink-0 overflow-hidden relative"
             style={{ width: sidebarWidth, background: theme.bgPanel, borderRight: `1px solid ${theme.border}`, color: theme.text }}>
-            <SidebarContent panel={activePanel} theme={theme} appearance={appearance} injectCmd={injectCmd} injectCd={injectCd} />
+            <SidebarContent
+              panel={activePanel}
+              theme={theme}
+              appearance={appearance}
+              injectCmd={injectCmd}
+              injectCd={injectCd}
+              emitToTerminal={emitToActiveTerminal}
+              announce={setTransientActionMessage}
+            />
             {/* Drag Handle */}
             <div
               onMouseDown={e => {

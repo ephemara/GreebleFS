@@ -2489,12 +2489,13 @@ function TopBar({
       background: `linear-gradient(180deg, ${BG}, ${appearance.theme.palette.appBackgroundAlt})`,
       borderBottom: isBottomBar ? 'none' : `1px solid ${accent}24`,
       borderTop: isBottomBar ? `1px solid ${accent}24` : 'none',
-      overflow: 'hidden',
       boxShadow: isBottomBar
         ? 'inset 0 -1px 0 rgba(255,255,255,0.04), 0 -8px 18px rgba(0,0,0,0.2)'
         : 'inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 18px rgba(0,0,0,0.2)',
     }}>
-      {topBarShaderLayer}
+      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
+        {topBarShaderLayer}
+      </div>
       <button
         onClick={onCycleLayout}
         onContextMenu={event => {

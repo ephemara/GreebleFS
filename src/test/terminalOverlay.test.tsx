@@ -121,4 +121,13 @@ describe('TerminalOverlay', () => {
       cols: 80,
     });
   });
+
+  it('exposes the managed Python rail inside the terminal sidebar', async () => {
+    render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
+
+    await userEvent.click(await screen.findByTitle('Python'));
+
+    expect(await screen.findByText('Managed Runtime')).toBeInTheDocument();
+    expect(screen.getByText('Quick Runs')).toBeInTheDocument();
+  });
 });
