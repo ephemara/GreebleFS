@@ -626,7 +626,7 @@ export function GitManager({
                 </OverlayScrollArea>
               </ResizablePane>
 
-              <div style={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', background: palette.bg }}>
+              <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', background: palette.bg }}>
                 <div style={{ padding: '8px 12px', borderBottom: `1px solid ${palette.border}`, fontSize: 11, color: palette.muted, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                   <span>
                     {selectedFile ? `${selectedFile.file} • ${statusLabel(selectedFile)} • +${selectedFile.additions} / -${selectedFile.deletions}` : 'Select a changed file to inspect the diff.'}

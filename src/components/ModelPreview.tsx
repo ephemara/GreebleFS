@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { invoke } from '@tauri-apps/api/core';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
@@ -11,6 +12,11 @@ import {
   MODEL_PREVIEW_PROXY_CONFIG,
   type ModelPreviewFormat,
 } from '../config/filePreview';
+import {
+  collectNormalizedBounds,
+  decodeDataUrlToUint8Array,
+  normalizeModelForPreview,
+} from './modelPreview.utils';
 import {
   detectClientPlatform,
   getPlatformPathSeparator,
@@ -61,7 +67,6 @@ export function ModelPreview({ entryName, format, sourcePath, sourceBytes }: Mod
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState<string | null>(null);
   const [proxyNotice, setProxyNotice] = useState<string | null>(null);
-  const assetUrl = useMemo(() => convertFileSrc(sourcePath), [sourcePath]);
 
   useEffect(() => {
     let cancelled = false;
@@ -140,7 +145,7 @@ export function ModelPreview({ entryName, format, sourcePath, sourceBytes }: Mod
       renderer.render(scene, camera);
     };
 
-    void loadPreviewObject({ format, assetUrl, sourcePath, sourceBytes }).then(({ object, proxyNotice: nextProxyNotice }) => {
+    void loadPreviewObject({ format, sourcePath, sourceBytes }).then(({ object, proxyNotice: nextProxyNotice }) => {
       if (cancelled) {
         disposeObject(object);
         return;
@@ -184,7 +189,7 @@ export function ModelPreview({ entryName, format, sourcePath, sourceBytes }: Mod
       resetViewRef.current = null;
       host.innerHTML = '';
     };
-  }, [assetUrl, format, sourceBytes, sourcePath]);
+  }, [format, sourceBytes, sourcePath]);
 
   const resetView = () => {
     if (!cameraRef.current || !controlsRef.current || !resetViewRef.current) return;
@@ -231,55 +236,60 @@ export function ModelPreview({ entryName, format, sourcePath, sourceBytes }: Mod
 
 async function loadPreviewObject(args: {
   format: ModelPreviewFormat;
-  assetUrl: string;
   sourcePath: string;
   sourceBytes: number;
 }): Promise<LoadedPreviewResult> {
-  const object = await loadSourceObject(args.format, args.assetUrl, args.sourcePath);
-  const stats = collectModelGeometryStats(object);
+  const rawObject = await loadSourceObject(args.format, args.sourcePath);
+  applyFallbackMaterials(rawObject);
+  const normalizedObject = normalizeModelForPreview(rawObject, args.format);
+  const stats = collectModelGeometryStats(normalizedObject);
 
   if (shouldUseProxyPreview(args.sourceBytes, stats)) {
-    const proxy = createProxyObject(object, stats);
-    disposeObject(object);
+    const proxy = createProxyObject(normalizedObject, stats);
+    disposeObject(normalizedObject);
     return {
       object: proxy,
       proxyNotice: `Proxy preview · ${formatCompactCount(stats.triangleCount)} tris`,
     };
   }
 
-  return { object, proxyNotice: null };
+  return { object: normalizedObject, proxyNotice: null };
 }
 
 async function loadSourceObject(
   format: ModelPreviewFormat,
-  assetUrl: string,
   sourcePath: string,
 ): Promise<THREE.Object3D> {
   const manager = createPreviewLoadingManager(sourcePath);
   if (format === 'glb') {
     const loader = createGltfLoader(manager);
-    const asset = await loader.loadAsync(assetUrl);
+    const dataUrl = await invoke<string>('fs_read_file_base64', { path: sourcePath });
+    const asset = await parseGltfAsync(loader, decodeDataUrlToUint8Array(dataUrl).buffer, getLoaderResourceRoot(sourcePath));
     return asset.scene ?? asset.scenes[0];
   }
 
   if (format === 'gltf') {
     const loader = createGltfLoader(manager);
-    const asset = await loader.loadAsync(assetUrl);
+    const content = await invoke<string>('fs_read_text_file', { path: sourcePath });
+    const asset = await parseGltfAsync(loader, content, getLoaderResourceRoot(sourcePath));
     return asset.scene ?? asset.scenes[0];
   }
 
   if (format === 'obj') {
     const loader = new OBJLoader(manager);
-    return loader.loadAsync(assetUrl);
+    const content = await invoke<string>('fs_read_text_file', { path: sourcePath });
+    return loader.parse(content);
   }
 
   if (format === 'fbx') {
     const loader = new FBXLoader(manager);
-    return loader.loadAsync(assetUrl);
+    const dataUrl = await invoke<string>('fs_read_file_base64', { path: sourcePath });
+    return parseFbxAsync(loader, decodeDataUrlToUint8Array(dataUrl).buffer, getLoaderResourceRoot(sourcePath));
   }
 
   const loader = new STLLoader(manager);
-  const geometry = await loader.loadAsync(assetUrl);
+  const dataUrl = await invoke<string>('fs_read_file_base64', { path: sourcePath });
+  const geometry = loader.parse(decodeDataUrlToUint8Array(dataUrl).buffer);
   geometry.computeBoundingBox();
   geometry.computeVertexNormals();
   return new THREE.Mesh(
@@ -316,6 +326,15 @@ function createPreviewLoadingManager(sourcePath: string): THREE.LoadingManager {
   });
 
   return manager;
+}
+
+function getLoaderResourceRoot(sourcePath: string): string {
+  const parent = getParentDirectory(sourcePath);
+  if (!parent) {
+    return '';
+  }
+  const normalized = parent.replace(/\\/g, '/').replace(/\/+$/, '');
+  return `${convertFileSrc(normalized)}/`;
 }
 
 function getParentDirectory(path: string): string {
@@ -440,7 +459,7 @@ function fitObjectInView(
   camera: THREE.PerspectiveCamera,
   controls: OrbitControls,
 ) {
-  const bounds = new THREE.Box3().setFromObject(object);
+  const bounds = collectNormalizedBounds(object);
   if (bounds.isEmpty()) {
     camera.position.set(2.4, 1.8, 3.6);
     controls.target.set(0, 0.4, 0);
@@ -450,7 +469,7 @@ function fitObjectInView(
 
   const center = bounds.getCenter(new THREE.Vector3());
   const size = bounds.getSize(new THREE.Vector3());
-  const radius = Math.max(size.length() * 0.28, 0.3);
+  const radius = Math.max(size.length() * 0.32, 0.3);
   const distance = Math.max(radius / Math.sin((camera.fov * Math.PI) / 360), radius * 1.55);
 
   camera.near = Math.max(distance / 200, 0.01);
@@ -472,8 +491,35 @@ function applyFallbackMaterials(object: THREE.Object3D) {
         metalness: 0.08,
       });
     }
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    materials.forEach(material => {
+      material.side = THREE.DoubleSide;
+      if ('metalness' in material && typeof material.metalness === 'number') {
+        material.metalness = Math.min(material.metalness, 0.2);
+      }
+      if ('roughness' in material && typeof material.roughness === 'number') {
+        material.roughness = Math.max(material.roughness, 0.45);
+      }
+      material.needsUpdate = true;
+    });
     if (!child.geometry.attributes.normal) {
       child.geometry.computeVertexNormals();
+    }
+  });
+}
+
+function parseGltfAsync(loader: GLTFLoader, data: string | ArrayBuffer, resourceRoot: string) {
+  return new Promise<Awaited<ReturnType<GLTFLoader['loadAsync']>>>((resolve, reject) => {
+    loader.parse(data, resourceRoot, resolve, reject);
+  });
+}
+
+function parseFbxAsync(loader: FBXLoader, data: ArrayBuffer, resourceRoot: string) {
+  return new Promise<THREE.Group>((resolve, reject) => {
+    try {
+      resolve(loader.parse(data, resourceRoot));
+    } catch (error) {
+      reject(error);
     }
   });
 }
