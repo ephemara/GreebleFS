@@ -54,6 +54,7 @@ import {
   type ResolvedOverlayAppearance,
 } from '../config/appearance';
 import {
+  buildManagedPythonReplCommand,
   createPythonRuntimeConfig,
   formatCommandOutput,
   pythonExamplePresets,
@@ -62,6 +63,7 @@ import {
   type PythonExamplePreset,
   type PythonRuntimeStatus,
 } from '../config/python';
+import { detectClientPlatform, type RuntimePlatform } from '../config/platform';
 import { useTerminalStore, type Bookmark } from '../store/terminalStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { OverlayScrollArea } from './OverlayScrollArea';
@@ -513,9 +515,19 @@ interface PythonSidebarContentProps {
   theme: Theme;
   emitToTerminal: (label: string, body: string, tone?: 'info' | 'success' | 'error') => void;
   announce: (message: string) => void;
+  shell: string;
+  platform: RuntimePlatform;
+  launchManagedRepl: (command: string) => Promise<void>;
 }
 
-function PythonSidebarContent({ theme, emitToTerminal, announce }: PythonSidebarContentProps) {
+function PythonSidebarContent({
+  theme,
+  emitToTerminal,
+  announce,
+  shell,
+  platform,
+  launchManagedRepl,
+}: PythonSidebarContentProps) {
   const pythonSettings = useSettingsStore(s => s.settings.python);
   const runtimeConfig = useMemo(
     () => createPythonRuntimeConfig(pythonSettings),
@@ -589,6 +601,17 @@ function PythonSidebarContent({ theme, emitToTerminal, announce }: PythonSidebar
         },
       }));
   }, [pythonSettings.bootstrapPackages, runAction, runtimeConfig]);
+
+  const openManagedRepl = useCallback(async () => {
+    if (!status?.ready || !status.managedPythonPath) {
+      announce('Managed Python is not ready yet');
+      return;
+    }
+
+    const replCommand = buildManagedPythonReplCommand(status.managedPythonPath, shell, platform);
+    await launchManagedRepl(replCommand);
+    announce('Opened managed Python REPL');
+  }, [announce, launchManagedRepl, platform, shell, status]);
 
   const runPreset = useCallback(async (preset: PythonExamplePreset) => {
     await runAction(`Ran ${preset.label}`, () =>
@@ -666,6 +689,18 @@ function PythonSidebarContent({ theme, emitToTerminal, announce }: PythonSidebar
 
             <button
               type="button"
+              onClick={() => void openManagedRepl()}
+              disabled={Boolean(pendingAction) || !status?.ready}
+              className="flex items-center justify-between rounded px-2.5 py-2 text-[10px] font-medium disabled:opacity-35"
+              style={buttonStyle}
+              title="Open the managed Python interpreter inside the active terminal tab"
+            >
+              <span>Open Managed REPL</span>
+              <TerminalSquare size={11} />
+            </button>
+
+            <button
+              type="button"
               onClick={() => void installConfiguredPackages()}
               disabled={Boolean(pendingAction) || !pythonSettings.bootstrapPackages.trim()}
               className="flex items-center justify-between rounded px-2.5 py-2 text-[10px] font-medium disabled:opacity-35"
@@ -728,9 +763,23 @@ interface SidebarContentProps {
   injectCd:  (path: string) => void;
   emitToTerminal: (label: string, body: string, tone?: 'info' | 'success' | 'error') => void;
   announce: (message: string) => void;
+  shell: string;
+  platform: RuntimePlatform;
+  launchManagedRepl: (command: string) => Promise<void>;
 }
 
-function SidebarContent({ panel, theme, appearance, injectCmd, injectCd, emitToTerminal, announce }: SidebarContentProps) {
+function SidebarContent({
+  panel,
+  theme,
+  appearance,
+  injectCmd,
+  injectCd,
+  emitToTerminal,
+  announce,
+  shell,
+  platform,
+  launchManagedRepl,
+}: SidebarContentProps) {
   const {
     directoryBookmarks, commandBookmarks,
     addDirectoryBookmark, removeDirectoryBookmark,
@@ -798,7 +847,14 @@ function SidebarContent({ panel, theme, appearance, injectCmd, injectCd, emitToT
   );
 
   if (panel === 'python') return (
-    <PythonSidebarContent theme={theme} emitToTerminal={emitToTerminal} announce={announce} />
+    <PythonSidebarContent
+      theme={theme}
+      emitToTerminal={emitToTerminal}
+      announce={announce}
+      shell={shell}
+      platform={platform}
+      launchManagedRepl={launchManagedRepl}
+    />
   );
 
   return null;
@@ -810,6 +866,7 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
   const settings = useSettingsStore(s => s.settings.terminal);
   const appearanceSettings = useSettingsStore(s => s.settings.appearance);
   const keybindings = useSettingsStore(s => s.settings.keybindings);
+  const runtimePlatform = useMemo(() => detectClientPlatform(), []);
   const appearance = useMemo(
     () => appearanceProp ?? resolveOverlayAppearance({
       activeThemeId: appearanceSettings.activeThemeId,
@@ -874,6 +931,10 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
   }, [activeId]);
 
   const injectCd = useCallback(async (path: string) => injectCmd(`cd '${path}'`), [injectCmd]);
+
+  const launchManagedRepl = useCallback(async (command: string) => {
+    await injectCmd(command);
+  }, [injectCmd]);
 
   const emitToActiveTerminal = useCallback((
     label: string,
@@ -1138,6 +1199,9 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
                 injectCd={injectCd}
                 emitToTerminal={emitToActiveTerminal}
                 announce={setTransientActionMessage}
+                shell={settings.shell}
+                platform={runtimePlatform}
+                launchManagedRepl={launchManagedRepl}
               />
               {/* Drag Handle */}
               <div
@@ -1330,6 +1394,9 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
               injectCd={injectCd}
               emitToTerminal={emitToActiveTerminal}
               announce={setTransientActionMessage}
+              shell={settings.shell}
+              platform={runtimePlatform}
+              launchManagedRepl={launchManagedRepl}
             />
             {/* Drag Handle */}
             <div

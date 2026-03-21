@@ -130,4 +130,33 @@ describe('TerminalOverlay', () => {
     expect(await screen.findByText('Managed Runtime')).toBeInTheDocument();
     expect(screen.getByText('Quick Runs')).toBeInTheDocument();
   });
+
+  it('launches the managed Python REPL into the active terminal tab', async () => {
+    const invokeMock = vi.mocked(invoke);
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'python_get_runtime_status') {
+        return {
+          ready: true,
+          managedPythonPath: 'C:\\Python Runtime\\env\\Scripts\\python.exe',
+          baseInterpreter: { label: 'Python 3.11', version: '3.11.9' },
+          bootstrapPackages: [],
+        };
+      }
+
+      return null;
+    });
+
+    render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
+
+    await userEvent.click(await screen.findByTitle('Python'));
+
+    const replButton = await screen.findByRole('button', { name: 'Open Managed REPL' });
+    await waitFor(() => expect(replButton).toBeEnabled());
+    await userEvent.click(replButton);
+
+    expect(invokeMock).toHaveBeenCalledWith('terminal_write', {
+      id: 'overlay-0',
+      data: "& 'C:\\Python Runtime\\env\\Scripts\\python.exe'\r",
+    });
+  });
 });

@@ -1,3 +1,5 @@
+import type { RuntimePlatform } from './platform';
+
 export interface PythonRuntimeConfig {
   preferredInterpreterPath?: string | null;
   runtimeRoot?: string | null;
@@ -173,4 +175,30 @@ export function formatCommandOutput(result: PythonCommandResult): string {
   ]
     .filter(Boolean)
     .join('\n\n');
+}
+
+function quotePowerShellLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function quotePosixLiteral(value: string): string {
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+}
+
+export function buildManagedPythonReplCommand(
+  managedPythonPath: string,
+  shell: string,
+  platform: RuntimePlatform,
+): string {
+  const normalizedShell = shell.trim().toLowerCase();
+
+  if (platform === 'windows') {
+    if (normalizedShell.includes('cmd')) {
+      return `"${managedPythonPath.replace(/"/g, '""')}"`;
+    }
+
+    return `& ${quotePowerShellLiteral(managedPythonPath)}`;
+  }
+
+  return quotePosixLiteral(managedPythonPath);
 }

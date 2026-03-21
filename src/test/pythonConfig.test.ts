@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createPythonRuntimeConfig, formatCommandOutput, parseMultilineValues } from '../config/python';
+import {
+  buildManagedPythonReplCommand,
+  createPythonRuntimeConfig,
+  formatCommandOutput,
+  parseMultilineValues,
+} from '../config/python';
 
 describe('python config helpers', () => {
   it('normalizes blank runtime settings to nullable config values', () => {
@@ -34,5 +39,21 @@ describe('python config helpers', () => {
 
     expect(output).toContain('$ python hello.py');
     expect(output).toContain('ready');
+  });
+
+  it('builds a managed Python REPL command for PowerShell shells', () => {
+    expect(buildManagedPythonReplCommand(
+      'C:\\Python Runtime\\env\\Scripts\\python.exe',
+      'powershell.exe',
+      'windows',
+    )).toBe("& 'C:\\Python Runtime\\env\\Scripts\\python.exe'");
+  });
+
+  it('builds a managed Python REPL command for cmd shells', () => {
+    expect(buildManagedPythonReplCommand(
+      'C:\\Python Runtime\\env\\Scripts\\python.exe',
+      'cmd.exe',
+      'windows',
+    )).toBe('"C:\\Python Runtime\\env\\Scripts\\python.exe"');
   });
 });
