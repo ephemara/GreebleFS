@@ -1,3 +1,5 @@
+import { resolveRuntimeAssetPollingEnabled } from './runtimeAssetPolling';
+
 export function resolveAnimationsDirectory(): string {
   const configured = (import.meta.env as {
     VITE_OVERLAYTERM_ANIMATIONS_DIR?: string;
@@ -9,6 +11,7 @@ export const animationSystemConfig = {
   animationsDirectory: resolveAnimationsDirectory(),
   frontendExtensions: ['tsx', 'ts', 'jsx', 'js'] as const,
   runtimeModuleName: 'overlayterm-animation',
+  runtimeAssetPollingEnabled: resolveRuntimeAssetPollingEnabled(),
   scanIntervalMs: 2000,
   defaultOpenAnimationId: 'spring-lift',
   defaultCloseAnimationId: 'burn',

@@ -1,3 +1,5 @@
+import { resolveRuntimeAssetPollingEnabled } from './runtimeAssetPolling';
+
 export const overlayShaderSurfaces = [
   {
     id: 'background',
@@ -29,6 +31,7 @@ export const shaderSystemConfig = {
   shadersDirectory: resolveShadersDirectory(),
   frontendExtensions: ['tsx', 'ts', 'jsx', 'js'] as const,
   runtimeModuleName: 'overlayterm-shader',
+  runtimeAssetPollingEnabled: resolveRuntimeAssetPollingEnabled(),
   scanIntervalMs: 2000,
   fallbackShaderId: 'none',
 } as const;

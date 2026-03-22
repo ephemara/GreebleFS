@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import {
   availableMonitors,
@@ -32,7 +32,6 @@ import { useSettingsStore } from '../store/settingsStore';
 import { screenshotFeatureConfig } from '../config/screenshots';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import {
-  clampSelectionToBounds,
   isSupportedScreenshotEntry,
   normalizeSelection,
   selectionToPixelRect,
@@ -53,7 +52,6 @@ type TextAnnotation  = { type: 'text';  x:  number; y:  number; text: string; co
 type Annotation = RectAnnotation | ArrowAnnotation | TextAnnotation;
 
 const ANNOTATION_COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#6366f1','#ec4899','#f1f5f9'];
-
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -81,12 +79,10 @@ type SavedScreenshotPayload = {
 type MonitorCapture = {
   id: string;
   label: string;
-  // logical coordinates for layout
   logicalX: number;
   logicalY: number;
   logicalWidth: number;
   logicalHeight: number;
-  // physical for capture commands
   physicalX: number;
   physicalY: number;
   physicalWidth: number;
@@ -117,10 +113,8 @@ async function ensureDir(path: string): Promise<void> {
   }
 }
 
-
 function toMonitorCapture(monitor: TauriMonitor, activeId: string | null): MonitorCapture {
   const sf = monitor.scaleFactor || 1;
-  // Tauri gives physical pixels for size, logical for position
   const logicalWidth  = Math.round(monitor.size.width  / sf);
   const logicalHeight = Math.round(monitor.size.height / sf);
   const id = [monitor.name ?? 'display', monitor.position.x, monitor.position.y, monitor.size.width, monitor.size.height].join(':');
@@ -153,23 +147,86 @@ function formatFileSize(size: number): string {
 
 function clamp(v: number, lo: number, hi: number) { return Math.min(Math.max(v, lo), hi); }
 
+// Draw annotations onto a canvas context
+function drawAnnotation(ctx: CanvasRenderingContext2D, ann: Annotation) {
+  ctx.save();
+  if (ann.type === 'rect') {
+    const a = ann as RectAnnotation;
+    ctx.strokeStyle = a.color;
+    ctx.lineWidth = a.lw;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.rect(Math.min(a.x1, a.x2), Math.min(a.y1, a.y2), Math.abs(a.x2 - a.x1), Math.abs(a.y2 - a.y1));
+    ctx.stroke();
+  } else if (ann.type === 'arrow') {
+    const a = ann as ArrowAnnotation;
+    const dx = a.x2 - a.x1;
+    const dy = a.y2 - a.y1;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    // Skip degenerate arrows — this was causing draw errors with zero-length vectors
+    if (len < 2) { ctx.restore(); return; }
+    const angle = Math.atan2(dy, dx);
+    const head  = Math.max(12, a.lw * 4);
+    ctx.strokeStyle = a.color;
+    ctx.fillStyle   = a.color;
+    ctx.lineWidth   = a.lw;
+    ctx.lineCap     = 'round';
+    ctx.beginPath();
+    ctx.moveTo(a.x1, a.y1);
+    ctx.lineTo(a.x2, a.y2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(a.x2, a.y2);
+    ctx.lineTo(a.x2 - head * Math.cos(angle - Math.PI / 6), a.y2 - head * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(a.x2 - head * Math.cos(angle + Math.PI / 6), a.y2 - head * Math.sin(angle + Math.PI / 6));
+    ctx.closePath();
+    ctx.fill();
+  } else if (ann.type === 'text') {
+    const a = ann as TextAnnotation;
+    ctx.fillStyle    = a.color;
+    ctx.font         = `700 ${a.size}px Inter, system-ui, sans-serif`;
+    ctx.shadowColor  = 'rgba(0,0,0,0.8)';
+    ctx.shadowBlur   = 4;
+    ctx.fillText(a.text, a.x, a.y + a.size);
+  }
+  ctx.restore();
+}
+
+// Redraws the full canvas from stable refs — used by both the state effect and ResizeObserver
+function redrawCanvas(
+  canvas: HTMLCanvasElement,
+  annotations: Annotation[],
+  liveAnnotation: Annotation | null,
+) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  for (const ann of annotations) drawAnnotation(ctx, ann);
+  if (liveAnnotation) drawAnnotation(ctx, liveAnnotation);
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverlayAppearance }) {
   const accent = appearance?.theme.palette.accent ?? 'var(--overlay-accent)';
   const screenshotDir = useSettingsStore(s => s.settings.screenshots.saveDirectory || screenshotFeatureConfig.defaultSaveDirectory);
 
-  // ── Drag + annotation refs ──
-  // containerRef is the SINGLE coordinate origin: both events and absolute
-  // positioned overlays (selection, canvas) use this element's rect.
+  // ── Refs ──
+  // containerRef: the SINGLE coordinate origin for all pointer events and overlay children.
   const containerRef    = useRef<HTMLDivElement | null>(null);
   const canvasRef       = useRef<HTMLCanvasElement | null>(null);
   const textInputRef    = useRef<HTMLInputElement | null>(null);
-  // DOMRect is cached at pointerDown so layout shifts during drag can't cause jumps.
-  const dragRectRef     = useRef<DOMRect | null>(null);
-  const dragOriginRef   = useRef<Point2D | null>(null);
-  const liveAnnRef      = useRef<Annotation | null>(null);
 
+  // Stable refs used inside pointer handlers and ResizeObserver to avoid stale closures
+  const annotationsRef    = useRef<Annotation[]>([]);
+  const liveAnnotationRef = useRef<Annotation | null>(null);
+
+  // Cached at pointerDown — never re-read during a drag
+  const dragRectRef   = useRef<DOMRect | null>(null);
+  const dragOriginRef = useRef<Point2D | null>(null);
+  const isDraggingRef = useRef(false);
+
+  // ── State ──
   const [activeTool,      setActiveTool]      = useState<AnnotationTool>('select');
   const [annotations,     setAnnotations]     = useState<Annotation[]>([]);
   const [liveAnnotation,  setLiveAnnotation]  = useState<Annotation | null>(null);
@@ -196,8 +253,11 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
 
   const activeMonitor = monitors.find(m => m.id === activeMonitorId) ?? null;
 
-  // Derived selection mapped to full physical pixel space for Rust commands.
-  // Re-compute from ref so action callbacks always see the current container size.
+  // Keep stable refs in sync with state — these are what pointer handlers + ResizeObserver read
+  useEffect(() => { annotationsRef.current = annotations; }, [annotations]);
+  useEffect(() => { liveAnnotationRef.current = liveAnnotation; }, [liveAnnotation]);
+
+  // ── Derived: selection in physical px ──
   const getSelectionPx = useCallback(() => {
     if (!selection || !activeMonitor || !containerRef.current) return null;
     const rect = containerRef.current.getBoundingClientRect();
@@ -255,8 +315,6 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
         : null;
       const base = available.map(m => toMonitorCapture(m, activeId));
 
-      // The Rust command handles seamless capture via SetWindowDisplayAffinity —
-      // the overlay stays visible to the user; only DXGI sees a clean desktop.
       const results: MonitorCapture[] = [];
       for (const mon of base) {
         const preview = await invoke<ScreenshotPreviewPayload>('screenshot_capture_preview', {
@@ -267,12 +325,11 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
         });
         results.push({ ...mon, captureId: preview.captureId, previewUrl: preview.previewUrl, imageWidth: preview.imageWidth, imageHeight: preview.imageHeight });
       }
-      const captured = results;
 
-      setMonitors(captured);
-      const firstActive = captured.find(m => m.isActive) ?? captured[0] ?? null;
+      setMonitors(results);
+      const firstActive = results.find(m => m.isActive) ?? results[0] ?? null;
       setActiveMonitorId(firstActive?.id ?? null);
-      setStatusMsg(`Captured ${captured.length} display${captured.length !== 1 ? 's' : ''}.`);
+      setStatusMsg(`Captured ${results.length} display${results.length !== 1 ? 's' : ''}.`);
     } catch (err) {
       setError(String(err));
       setMonitors([]);
@@ -298,60 +355,77 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
     const t = window.setTimeout(() => setCopiedPath(null), 1800);
     return () => window.clearTimeout(t);
   }, [copiedPath]);
-  // ── Reset annotations when switching monitors ──
+
   useEffect(() => {
     setAnnotations([]);
     setLiveAnnotation(null);
+    liveAnnotationRef.current = null;
+    annotationsRef.current = [];
     setTextDraft(null);
     setTextValue('');
-    liveAnnRef.current = null;
   }, [activeMonitorId]);
 
-  // ── Canvas redraw ──
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    [...annotations, ...(liveAnnotation ? [liveAnnotation] : [])].forEach(ann => drawAnnotation(ctx, ann));
-  }, [annotations, liveAnnotation]);
-
-  // Keep canvas pixel dimensions in sync with container CSS size
-  useEffect(() => {
+  // ── Canvas: sync pixel dimensions to CSS layout size ──
+  // Uses useLayoutEffect so dimensions are set before paint, eliminating the
+  // default 300×150 canvas offset that caused coordinate desync.
+  useLayoutEffect(() => {
     const container = containerRef.current;
     const canvas = canvasRef.current;
     if (!container || !canvas) return;
-    const ro = new ResizeObserver(() => {
+
+    const syncSize = () => {
       const r = container.getBoundingClientRect();
-      canvas.width  = r.width;
-      canvas.height = r.height;
-      // re-trigger draw after resize
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        [...annotations, ...(liveAnnotation ? [liveAnnotation] : [])].forEach(ann => drawAnnotation(ctx, ann));
+      if (r.width > 0 && r.height > 0) {
+        canvas.width  = Math.round(r.width);
+        canvas.height = Math.round(r.height);
+        // Redraw using stable refs — never stale
+        redrawCanvas(canvas, annotationsRef.current, liveAnnotationRef.current);
       }
-    });
+    };
+
+    syncSize();
+    const ro = new ResizeObserver(syncSize);
     ro.observe(container);
     return () => ro.disconnect();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [containerRef.current, canvasRef.current]);
+  }, [activeMonitorId]); // Re-bind when monitor changes (new capture resets canvas)
 
+  // ── Canvas redraw when annotation state changes ──
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    redrawCanvas(canvas, annotations, liveAnnotation);
+  }, [annotations, liveAnnotation]);
 
-  // ── Pointer events — all on the container, rect cached at pointerDown ──
+  // ── Coordinate helper: get position relative to container ──
+  // Always reads from containerRef, NOT from e.currentTarget, to guarantee
+  // the same origin is used across down/move/up events.
+  const getContainerPos = useCallback((clientX: number, clientY: number, cachedRect?: DOMRect | null): Point2D => {
+    const rect = cachedRect ?? containerRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    return {
+      x: clamp(clientX - rect.left, 0, rect.width),
+      y: clamp(clientY - rect.top,  0, rect.height),
+    };
+  }, []);
+
+  // ── Pointer events ──
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (!activeMonitor?.captureId || isCapturing) return;
-    // Capture the rect NOW and cache it for the entire drag
-    const rect = e.currentTarget.getBoundingClientRect();
+
+    // Cache the EXACT rect at pointerdown — reused for the entire drag gesture.
+    // Always use containerRef.current to guarantee we measure the image container,
+    // not any ancestor that might forward the event.
+    const rect = containerRef.current!.getBoundingClientRect();
     dragRectRef.current = rect;
-    const x = clamp(e.clientX - rect.left, 0, rect.width);
-    const y = clamp(e.clientY - rect.top,  0, rect.height);
+    isDraggingRef.current = true;
+
+    const { x, y } = getContainerPos(e.clientX, e.clientY, rect);
     dragOriginRef.current = { x, y };
     e.currentTarget.setPointerCapture(e.pointerId);
 
     if (activeTool === 'select') {
       e.preventDefault();
+      // Store raw (unnormalized) selection — negative width/height is valid during drag
       setSelection({ x, y, width: 0, height: 0 });
     } else if (activeTool === 'text') {
       setTextDraft({ x, y });
@@ -362,47 +436,67 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
       const live: Annotation = activeTool === 'rect'
         ? { type: 'rect',  x1: x, y1: y, x2: x, y2: y, color: annColor, lw: annLw }
         : { type: 'arrow', x1: x, y1: y, x2: x, y2: y, color: annColor, lw: annLw };
-      liveAnnRef.current = live;
+      liveAnnotationRef.current = live;
       setLiveAnnotation(live);
     }
-  }, [activeMonitor, isCapturing, activeTool, annColor, annLw]);
+  }, [activeMonitor, isCapturing, activeTool, annColor, annLw, getContainerPos]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    const rect = dragRectRef.current;
+    const rect   = dragRectRef.current;
     const origin = dragOriginRef.current;
-    if (!rect || !origin) return;
+    if (!rect || !origin || !isDraggingRef.current) return;
     e.preventDefault();
-    // Always use the CACHED rect — never re-measure during a drag
-    const x = clamp(e.clientX - rect.left, 0, rect.width);
-    const y = clamp(e.clientY - rect.top,  0, rect.height);
+
+    // Use the CACHED rect from pointerDown — never re-measure during drag
+    const { x, y } = getContainerPos(e.clientX, e.clientY, rect);
 
     if (activeTool === 'select') {
-      const next = clampSelectionToBounds(
-        { x: origin.x, y: origin.y, width: x - origin.x, height: y - origin.y },
-        { width: rect.width, height: rect.height }, 1,
-      );
-      setSelection(next);
+      // Store raw delta — do NOT clamp/normalize here.
+      // normalizedSel handles display; selectionPx handles pixel mapping.
+      // Clamping during drag causes the selection box to jump when dragging
+      // in a negative direction (right-to-left / bottom-to-top).
+      const raw: RectSelection = {
+        x: origin.x,
+        y: origin.y,
+        width:  clamp(x - origin.x, -origin.x, rect.width  - origin.x),
+        height: clamp(y - origin.y, -origin.y, rect.height - origin.y),
+      };
+      setSelection(raw);
     } else if (activeTool === 'rect' || activeTool === 'arrow') {
       const live: Annotation = activeTool === 'rect'
         ? { type: 'rect',  x1: origin.x, y1: origin.y, x2: x, y2: y, color: annColor, lw: annLw }
         : { type: 'arrow', x1: origin.x, y1: origin.y, x2: x, y2: y, color: annColor, lw: annLw };
-      liveAnnRef.current = live;
+      // Update ref synchronously so ResizeObserver always has current state
+      liveAnnotationRef.current = live;
       setLiveAnnotation(live);
     }
-  }, [activeTool, annColor, annLw]);
+  }, [activeTool, annColor, annLw, getContainerPos]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
-    dragRectRef.current  = null;
+    isDraggingRef.current = false;
+    dragRectRef.current   = null;
     dragOriginRef.current = null;
-    if (liveAnnRef.current) {
-      setAnnotations(prev => [...prev, liveAnnRef.current!]);
-      liveAnnRef.current = null;
+
+    const committed = liveAnnotationRef.current;
+    if (committed) {
+      // Only commit arrow/rect if they have meaningful length
+      let shouldCommit = true;
+      if (committed.type === 'arrow' || committed.type === 'rect') {
+        const a = committed as RectAnnotation | ArrowAnnotation;
+        const dx = Math.abs(a.x2 - a.x1);
+        const dy = Math.abs(a.y2 - a.y1);
+        shouldCommit = dx >= 3 || dy >= 3;
+      }
+      if (shouldCommit) {
+        setAnnotations(prev => [...prev, committed]);
+      }
+      liveAnnotationRef.current = null;
       setLiveAnnotation(null);
     }
-    // selection stays for confirm
+    // selection stays until user clears it
   }, []);
 
   const commitText = useCallback(() => {
@@ -411,7 +505,6 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
     setTextDraft(null);
     setTextValue('');
   }, [textDraft, textValue, annColor]);
-
 
   // ── Actions ──
   const doSave = useCallback(async (copyToo: boolean) => {
@@ -501,7 +594,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
   const hasSelection = normalizedSel && normalizedSel.width >= 4 && normalizedSel.height >= 4;
   const hasAnnotations = annotations.length > 0;
 
-  // ── Save annotated (canvas composite → blob → fs_write_file) ──
+  // ── Save annotated ──
   const doSaveAnnotated = useCallback(async (copyToo: boolean) => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
@@ -515,15 +608,12 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
       out.width = img.naturalWidth; out.height = img.naturalHeight;
       const ctx = out.getContext('2d')!;
       ctx.drawImage(img, 0, 0);
-      // Scale annotations from container CSS px → preview image px
       const scaleX = img.naturalWidth  / container.getBoundingClientRect().width;
       const scaleY = img.naturalHeight / container.getBoundingClientRect().height;
       ctx.save(); ctx.scale(scaleX, scaleY);
       [...annotations].forEach(ann => drawAnnotation(ctx, ann));
       ctx.restore();
-      // Crop to selection if active
       const px = getSelectionPx();
-      // Map from full imageWidth/imageHeight to preview dimensions (preview is downscaled)
       const previewScaleX = img.naturalWidth  / activeMonitor.imageWidth;
       const previewScaleY = img.naturalHeight / activeMonitor.imageHeight;
       let finalCanvas = out;
@@ -553,7 +643,6 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
     finally { setIsSaving(false); }
   }, [activeMonitor, annotations, screenshotDir, loadGallery, getSelectionPx]);
 
-
   // ─── Tool content ──────────────────────────────────────────────────────────
 
   const toolContent = (
@@ -578,10 +667,10 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
         </div>
       )}
 
-      {/* Annotation toolbar — only when capture is ready */}
+      {/* Annotation toolbar */}
       {activeMonitor?.captureId && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderBottom: `1px solid ${BORDER}`, background: PANEL, flexWrap: 'wrap' }}>
-          {([['select','Select'],[`rect`,'Rectangle'],[`arrow`,'Arrow'],[`text`,'Text']] as const).map(([tool, label]) => {
+          {([['select','Select'],['rect','Rectangle'],['arrow','Arrow'],['text','Text']] as const).map(([tool, label]) => {
             const icons: Record<AnnotationTool, React.ReactNode> = {
               select: <MousePointer2 size={13} />, rect: <Square size={13} />,
               arrow: <ArrowUpRight size={13} />, text: <Type size={13} />,
@@ -625,7 +714,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
       )}
 
       {/* Preview area */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 8, background: 'var(--overlay-bg-shell)' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 8, background: 'var(--overlay-bg-shell)', overflow: 'hidden' }}>
         {isCapturing && monitors.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, color: MUTED }}>
             <LoaderCircle size={28} className="animate-spin" style={{ color: accent }} />
@@ -640,7 +729,17 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
             </button>
           </div>
         ) : (
-          // ── Container is the SINGLE coordinate origin for events + overlays
+          /*
+           * COORDINATE ORIGIN — this div is the single source of truth for all
+           * pointer coordinates and absolutely-positioned overlays (canvas, selection).
+           *
+           * Sizing strategy:
+           *   - We let CSS aspect-ratio + max constraints do layout.
+           *   - We do NOT apply padding, margin, or border that would shift the
+           *     interior coordinate space — only the outer div has padding.
+           *   - The canvas's pixel dimensions are synced via useLayoutEffect+ResizeObserver
+           *     so they always match the CSS box exactly.
+           */
           <div
             ref={containerRef}
             onPointerDown={handlePointerDown}
@@ -648,20 +747,51 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
             style={{
-              position: 'relative', maxWidth: '100%', maxHeight: '100%',
+              position: 'relative',
+              // Use explicit max constraints so the container never overflows its parent
+              maxWidth: '100%',
+              maxHeight: '100%',
               aspectRatio: `${activeMonitor.imageWidth} / ${activeMonitor.imageHeight}`,
-              borderRadius: 10, overflow: 'hidden',
+              borderRadius: 10,
+              overflow: 'hidden',
               border: `1px solid ${BORDER}`,
               boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
               cursor: activeTool === 'text' ? 'text' : isCapturing ? 'wait' : 'crosshair',
+              // touch-action none is REQUIRED for Pointer Events to work correctly on touch/pen
               touchAction: 'none',
+              // Prevent the browser from applying any fractional sub-pixel offset
+              willChange: 'transform',
+              // Ensure this establishes its own stacking context so overlays z-stack correctly
+              isolation: 'isolate',
             }}
           >
-            <img src={activeMonitor.previewUrl ?? ''} alt={activeMonitor.label} draggable={false}
-              style={{ display: 'block', width: '100%', height: '100%', objectFit: 'fill', userSelect: 'none', pointerEvents: 'none' }} />
+            <img
+              src={activeMonitor.previewUrl ?? ''}
+              alt={activeMonitor.label}
+              draggable={false}
+              style={{
+                display: 'block',
+                width: '100%',
+                height: '100%',
+                objectFit: 'fill',
+                userSelect: 'none',
+                pointerEvents: 'none',
+              }}
+            />
 
-            {/* Annotation canvas */}
-            <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />
+            {/* Annotation canvas — pixel dimensions kept in sync by useLayoutEffect */}
+            <canvas
+              ref={canvasRef}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                pointerEvents: 'none',
+                // Width/height CSS attrs are set by useLayoutEffect; explicitly
+                // stretch to 100% so it fills even before ResizeObserver fires
+                width: '100%',
+                height: '100%',
+              }}
+            />
 
             {/* Text input overlay */}
             {textDraft && (
@@ -680,14 +810,18 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
               />
             )}
 
-            {/* Selection overlay (only in select mode) */}
+            {/* Selection overlay — only in select mode */}
             {activeTool === 'select' && normalizedSel && normalizedSel.width >= 2 && normalizedSel.height >= 2 && (
               <>
+                {/* Dark vignette outside selection */}
                 <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.46)', pointerEvents: 'none' }} />
+                {/* Selection rect — uses normalizedSel (always positive x/y/w/h) */}
                 <div style={{
                   position: 'absolute',
-                  left: normalizedSel.x, top: normalizedSel.y,
-                  width: normalizedSel.width, height: normalizedSel.height,
+                  left: normalizedSel.x,
+                  top: normalizedSel.y,
+                  width: normalizedSel.width,
+                  height: normalizedSel.height,
                   boxShadow: `0 0 0 9999px rgba(0,0,0,0.46)`,
                   border: `2px solid ${accent}`,
                   outline: '1px solid rgba(255,255,255,0.35)',
@@ -913,48 +1047,6 @@ function annBtn(): React.CSSProperties {
     border: `1px solid ${BORDER}`, background: 'rgba(255,255,255,0.03)',
     color: MUTED,
   };
-}
-
-// ─── Canvas drawing ────────────────────────────────────────────────────────────
-
-function drawAnnotation(ctx: CanvasRenderingContext2D, ann: Annotation) {
-  ctx.save();
-  if (ann.type === 'rect') {
-    const a = ann as { x1: number; y1: number; x2: number; y2: number; color: string; lw: number };
-    ctx.strokeStyle = a.color;
-    ctx.lineWidth = a.lw;
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    ctx.rect(Math.min(a.x1, a.x2), Math.min(a.y1, a.y2), Math.abs(a.x2 - a.x1), Math.abs(a.y2 - a.y1));
-    ctx.stroke();
-  } else if (ann.type === 'arrow') {
-    const a = ann as { x1: number; y1: number; x2: number; y2: number; color: string; lw: number };
-    const angle = Math.atan2(a.y2 - a.y1, a.x2 - a.x1);
-    const head  = Math.max(12, a.lw * 4);
-    ctx.strokeStyle = a.color;
-    ctx.fillStyle   = a.color;
-    ctx.lineWidth   = a.lw;
-    ctx.lineCap     = 'round';
-    ctx.beginPath();
-    ctx.moveTo(a.x1, a.y1);
-    ctx.lineTo(a.x2, a.y2);
-    ctx.stroke();
-    // Arrowhead
-    ctx.beginPath();
-    ctx.moveTo(a.x2, a.y2);
-    ctx.lineTo(a.x2 - head * Math.cos(angle - Math.PI / 6), a.y2 - head * Math.sin(angle - Math.PI / 6));
-    ctx.lineTo(a.x2 - head * Math.cos(angle + Math.PI / 6), a.y2 - head * Math.sin(angle + Math.PI / 6));
-    ctx.closePath();
-    ctx.fill();
-  } else if (ann.type === 'text') {
-    const a = ann as { x: number; y: number; text: string; color: string; size: number };
-    ctx.fillStyle    = a.color;
-    ctx.font         = `700 ${a.size}px Inter, system-ui, sans-serif`;
-    ctx.shadowColor  = 'rgba(0,0,0,0.8)';
-    ctx.shadowBlur   = 4;
-    ctx.fillText(a.text, a.x, a.y + a.size);
-  }
-  ctx.restore();
 }
 
 export default ScreenshotsManager;

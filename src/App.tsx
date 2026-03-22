@@ -1571,7 +1571,7 @@ function App() {
   }, [isOverlayVisible, refreshAuthoredShaders]);
 
   useEffect(() => {
-    if (!isOverlayVisible) {
+    if (!isOverlayVisible || !animationSystemConfig.runtimeAssetPollingEnabled) {
       return;
     }
     const interval = window.setInterval(() => {
@@ -1582,7 +1582,7 @@ function App() {
   }, [isOverlayVisible, refreshAuthoredAnimations]);
 
   useEffect(() => {
-    if (!isOverlayVisible) {
+    if (!isOverlayVisible || !shaderSystemConfig.runtimeAssetPollingEnabled) {
       return;
     }
     const interval = window.setInterval(() => {

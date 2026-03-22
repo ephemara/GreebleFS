@@ -5,10 +5,5 @@
   "description": "Experimental timer cockpit with layered rituals, desktop alerts, rich toast notifications, and persistent timing state.",
   "entry": "dist/index.tsx",
   "defaultOpen": false,
-  "keepMounted": true,
-  "contributions": {
-    "themes": [
-      "themes/chronorift"
-    ]
-  }
+  "keepMounted": true
 }
