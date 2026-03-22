@@ -147,6 +147,57 @@ function normalizeGestureToken(token: string): string {
   return normalized;
 }
 
+function normalizeKeyToken(token: string): string {
+  const normalized = normalizeGestureToken(token);
+  switch (normalized) {
+    case 'esc':
+      return 'escape';
+    case 'return':
+      return 'enter';
+    case 'spacebar':
+      return 'space';
+    default:
+      return normalized;
+  }
+}
+
+export function matchesKeybinding(
+  event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>,
+  binding: string,
+): boolean {
+  const tokens = normalizeKeybindingValue(binding, '')
+    .split('+')
+    .map(normalizeKeyToken)
+    .filter(Boolean);
+
+  if (tokens.length === 0) {
+    return false;
+  }
+
+  const keyToken = tokens.find(token => !['ctrl', 'meta', 'cmd', 'command', 'alt', 'shift', 'commandorcontrol'].includes(token));
+  if (!keyToken) {
+    return false;
+  }
+
+  const needsCtrl = tokens.includes('ctrl');
+  const needsMeta = tokens.includes('meta') || tokens.includes('cmd') || tokens.includes('command');
+  const needsAlt = tokens.includes('alt');
+  const needsShift = tokens.includes('shift');
+  const needsCommandOrControl = tokens.includes('commandorcontrol');
+
+  const ctrlMatches = needsCommandOrControl ? (event.ctrlKey || event.metaKey) : event.ctrlKey === needsCtrl;
+  const metaMatches = needsCommandOrControl ? true : event.metaKey === needsMeta;
+  const altMatches = event.altKey === needsAlt;
+  const shiftMatches = event.shiftKey === needsShift;
+  const normalizedEventKey = normalizeKeyToken(event.key.length === 1 ? event.key.toLowerCase() : event.key);
+
+  return ctrlMatches
+    && metaMatches
+    && altMatches
+    && shiftMatches
+    && normalizedEventKey === keyToken;
+}
+
 export function matchesWheelHotkey(
   event: Pick<WheelEvent, 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey'>,
   binding: string,

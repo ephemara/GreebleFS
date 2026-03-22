@@ -104,6 +104,8 @@ export function GitManager({
   const [changeListWidth, setChangeListWidth] = usePersistentPanelSize('overlayterm-source-change-list-width', 360, 260, 720);
   const diffContainerRef = useRef<HTMLDivElement | null>(null);
   const diffEditorRef = useRef<any>(null);
+  const diffMonacoRef = useRef<any>(null);
+  const diffDecorationsRef = useRef<string[]>([]);
 
   useEffect(() => {
     try {
@@ -462,8 +464,66 @@ export function GitManager({
     };
   }, [diffView, jumpToDiffHunk]);
 
+  useEffect(() => {
+    const editor = diffEditorRef.current;
+    const monaco = diffMonacoRef.current;
+    const model = editor?.getModel?.();
+    if (!editor || !monaco || !model || !diffView) {
+      return;
+    }
+
+    const decorations = diffView.content
+      .split(/\r?\n/)
+      .flatMap((line, index) => {
+        const lineNumber = index + 1;
+
+        if (line.startsWith('@@')) {
+          return [{
+            range: new monaco.Range(lineNumber, 1, lineNumber, 1),
+            options: {
+              isWholeLine: true,
+              className: 'source-diff-line--hunk',
+              inlineClassName: 'source-diff-text--hunk',
+            },
+          }];
+        }
+
+        if (line.startsWith('+') && !line.startsWith('+++')) {
+          return [{
+            range: new monaco.Range(lineNumber, 1, lineNumber, 1),
+            options: {
+              isWholeLine: true,
+              className: 'source-diff-line--added',
+              inlineClassName: 'source-diff-text--added',
+            },
+          }];
+        }
+
+        if (line.startsWith('-') && !line.startsWith('---')) {
+          return [{
+            range: new monaco.Range(lineNumber, 1, lineNumber, 1),
+            options: {
+              isWholeLine: true,
+              className: 'source-diff-line--deleted',
+              inlineClassName: 'source-diff-text--deleted',
+            },
+          }];
+        }
+
+        return [];
+      });
+
+    diffDecorationsRef.current = editor.deltaDecorations(diffDecorationsRef.current, decorations);
+
+    return () => {
+      if (diffEditorRef.current) {
+        diffDecorationsRef.current = diffEditorRef.current.deltaDecorations(diffDecorationsRef.current, []);
+      }
+    };
+  }, [diffView]);
+
   return (
-    <div style={{ flex: 1, minHeight: 0, display: 'flex', background: palette.bg, color: palette.text, overflow: 'hidden', fontFamily: uiFont }}>
+    <div className="source-tab" style={{ flex: 1, minHeight: 0, display: 'flex', background: palette.bg, color: palette.text, overflow: 'hidden', fontFamily: uiFont }}>
       <ResizablePane
         size={repoRailWidth}
         minSize={160}
@@ -653,8 +713,9 @@ export function GitManager({
                       <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: palette.muted, fontSize: 11 }}>Loading diff…</div>
                     ) : (
                       <Editor
-                        onMount={editor => {
+                        onMount={(editor, monaco) => {
                           diffEditorRef.current = editor;
+                          diffMonacoRef.current = monaco;
                           window.requestAnimationFrame(() => {
                             editor.layout?.();
                           });
@@ -666,14 +727,15 @@ export function GitManager({
                           automaticLayout: true,
                           readOnly: true,
                           minimap: { enabled: false },
-                          fontSize: 12,
+                          fontFamily: monoFont,
+                          fontSize: 11.5,
                           lineNumbers: 'on',
                           glyphMargin: false,
                           folding: true,
                           overviewRulerLanes: 2,
                           lineDecorationsWidth: 12,
                           scrollBeyondLastLine: false,
-                          wordWrap: 'off',
+                          wordWrap: 'on',
                           scrollbar: {
                             vertical: 'visible',
                             horizontal: 'visible',

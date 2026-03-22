@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createDefaultKeybindingSettings,
+  matchesKeybinding,
   matchesWheelHotkey,
   normalizeKeybindingSettings,
   normalizeKeybindingValue,
@@ -44,6 +45,23 @@ describe('hotkey config helpers', () => {
     expect(matchesWheelHotkey(
       { ctrlKey: false, metaKey: false, altKey: true, shiftKey: false },
       'Alt+Scroll',
+    )).toBe(true);
+  });
+
+  it('matches keyboard shortcuts with modifier keys for local actions', () => {
+    expect(matchesKeybinding(
+      { key: 'k', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false },
+      'Ctrl+K',
+    )).toBe(true);
+
+    expect(matchesKeybinding(
+      { key: 'k', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false },
+      'Ctrl+K',
+    )).toBe(false);
+
+    expect(matchesKeybinding(
+      { key: 'Escape', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false },
+      'Escape',
     )).toBe(true);
   });
 });

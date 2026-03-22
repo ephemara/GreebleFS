@@ -41,7 +41,7 @@ export const screenshotFeatureConfig = {
     maxHeight: 320,
   },
   editor: {
-    hideWindowDelayMs: 140,
+    hideWindowDelayMs: 260,
     minSelectionSize: 8,
     defaultInsetRatio: 0.12,
     keyboardNudgeStep: 1,

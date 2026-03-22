@@ -15,6 +15,7 @@ import {
   type OverlayPanelDefinition,
 } from './panels/panelRegistry';
 import { PluginsManager } from './components/PluginsManager';
+import { CommandPalette, type OverlayCommandPaletteAction } from './components/CommandPalette';
 import { animationSystemConfig } from './config/animations';
 import { getPluginStorageDirectory, pluginSystemConfig } from './config/plugins';
 import {
@@ -49,7 +50,7 @@ import {
   type PluginFileEntry,
 } from './components/pluginRuntime';
 import { listen } from '@tauri-apps/api/event';
-import { Check, Droplet, GripVertical, LayoutGrid, Settings2, Terminal as TerminalIcon, X } from 'lucide-react';
+import { Check, Droplet, GripVertical, LayoutGrid, Search, Settings2, Terminal as TerminalIcon, X } from 'lucide-react';
 import {
   ensureFontFamilyLoaded,
   resolveOverlayAppearance,
@@ -63,7 +64,8 @@ import type {
   OverlayPluginCommandContribution,
   OverlayPluginExplorerActionContribution,
 } from './config/pluginContributions';
-import { formatHotkeyLabel, matchesWheelHotkey } from './config/hotkeys';
+import { dispatchTerminalCommand } from './config/pluginContributions';
+import { formatHotkeyLabel, matchesKeybinding, matchesWheelHotkey } from './config/hotkeys';
 import {
   BUILT_IN_LAYOUT_MANIFEST,
   getNextLayoutProfileId,
@@ -419,6 +421,7 @@ function App() {
   const [pluginFonts, setPluginFonts] = useState<OverlayRegisteredFontContribution[]>([]);
   const [pluginCommands, setPluginCommands] = useState<OverlayPluginCommandContribution[]>([]);
   const [pluginExplorerActions, setPluginExplorerActions] = useState<OverlayPluginExplorerActionContribution[]>([]);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [folderPluginsError, setFolderPluginsError] = useState<string | null>(null);
   const [folderPluginsLoading, setFolderPluginsLoading] = useState(true);
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
@@ -1038,14 +1041,31 @@ function App() {
 
   useGlobalShortcut(keybindings.terminalToggle, toggle, true);
 
-  // ── Escape to close ──
+  // ── Escape to close / Command palette hotkey ──
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && overlayVisibleRef.current) { e.preventDefault(); void hideOverlay(); }
+      if (!overlayVisibleRef.current) {
+        return;
+      }
+
+      if (matchesKeybinding(e, keybindings.commandPalette)) {
+        e.preventDefault();
+        setIsCommandPaletteOpen(current => !current);
+        return;
+      }
+
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (isCommandPaletteOpen) {
+          setIsCommandPaletteOpen(false);
+          return;
+        }
+        void hideOverlay();
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [hideOverlay]);
+  }, [hideOverlay, isCommandPaletteOpen, keybindings.commandPalette]);
 
   useEffect(() => {
     if (!overlayVisibleRef.current) {
@@ -1880,11 +1900,146 @@ function App() {
     }));
   }, [updateActiveLayoutPanelState]);
 
+  const handleActivatePanel = useCallback((panelId: string) => {
+    if (!panelLookup.has(panelId) || pinnedPanelIds.includes(panelId)) {
+      return;
+    }
+
+    updateActiveLayoutPanelState(current => ({
+      openPanelIds: uniquePanelIds([...current.openPanelIds, panelId]),
+      activePanelId: panelId,
+      dismissedPanelIds: current.dismissedPanelIds.filter(id => id !== panelId),
+    }));
+  }, [panelLookup, pinnedPanelIds, updateActiveLayoutPanelState]);
+
+  const handleOpenCommandPalette = useCallback(() => {
+    setIsCommandPaletteOpen(true);
+  }, []);
+
+  const handleCloseCommandPalette = useCallback(() => {
+    setIsCommandPaletteOpen(false);
+  }, []);
+
   const handleCycleLayout = useCallback(() => {
     updateLayout({
       activeProfileId: getNextLayoutProfileId(layoutManifest, activeLayoutProfile.id),
     });
   }, [activeLayoutProfile.id, layoutManifest, updateLayout]);
+
+  useEffect(() => {
+    if (!isOverlayVisible && isCommandPaletteOpen) {
+      setIsCommandPaletteOpen(false);
+    }
+  }, [isCommandPaletteOpen, isOverlayVisible]);
+
+  const commandPaletteActions = useMemo<OverlayCommandPaletteAction[]>(() => {
+    const builtInActions: OverlayCommandPaletteAction[] = [
+      {
+        id: 'open-settings',
+        title: 'Open Settings',
+        subtitle: 'Jump to the settings panel.',
+        group: 'App',
+        keywords: ['preferences', 'config', 'appearance'],
+        badge: 'App',
+        onSelect: handleOpenSettings,
+      },
+      {
+        id: 'refresh-plugins',
+        title: 'Refresh Plugins',
+        subtitle: 'Rescan legacy and package plugins, then reload their contributions.',
+        group: 'App',
+        keywords: ['plugins', 'reload', 'rescan'],
+        badge: 'Refresh',
+        onSelect: () => refreshFolderPlugins(true),
+      },
+      {
+        id: 'open-plugins-folder',
+        title: 'Open Plugins Folder',
+        subtitle: pluginSystemConfig.pluginsDirectory,
+        group: 'App',
+        keywords: ['plugins', 'folder'],
+        badge: 'Folder',
+        onSelect: openPluginsFolder,
+      },
+      {
+        id: 'refresh-themes',
+        title: 'Refresh Themes',
+        subtitle: 'Reload theme packages and theme contributions.',
+        group: 'App',
+        keywords: ['themes', 'reload'],
+        badge: 'Refresh',
+        onSelect: refreshThemePackages,
+      },
+      {
+        id: 'refresh-shaders',
+        title: 'Refresh Shaders',
+        subtitle: 'Reload authored shaders and plugin shader contributions.',
+        group: 'App',
+        keywords: ['shaders', 'reload'],
+        badge: 'Refresh',
+        onSelect: () => refreshAuthoredShaders(true),
+      },
+      {
+        id: 'refresh-animations',
+        title: 'Refresh Animations',
+        subtitle: 'Reload authored animations.',
+        group: 'App',
+        keywords: ['animations', 'reload'],
+        badge: 'Refresh',
+        onSelect: () => refreshAuthoredAnimations(true),
+      },
+      {
+        id: 'cycle-layout',
+        title: 'Cycle Layout',
+        subtitle: `Switch from ${activeLayoutProfile.label} to the next layout profile.`,
+        group: 'Layout',
+        keywords: ['layout', 'profiles', 'dock'],
+        badge: 'Layout',
+        onSelect: handleCycleLayout,
+      },
+    ];
+
+    const panelActions = panelDefinitions
+      .filter(panel => !pinnedPanelIds.includes(panel.id))
+      .map<OverlayCommandPaletteAction>(panel => ({
+        id: `panel:${panel.id}`,
+        title: `Open ${panel.label}`,
+        subtitle: panel.description,
+        group: panel.kind === 'folder-plugin' ? 'Plugin Panels' : 'Panels',
+        keywords: [panel.id, panel.label, panel.description],
+        badge: panel.kind === 'folder-plugin' ? 'Plugin' : 'Panel',
+        onSelect: () => handleActivatePanel(panel.id),
+      }));
+
+    const pluginCommandActions = pluginCommands.map<OverlayCommandPaletteAction>(command => ({
+      id: `plugin-command:${command.id}`,
+      title: command.name,
+      subtitle: command.description || command.command,
+      group: 'Plugin Commands',
+      keywords: [command.pluginName, command.command, command.description ?? ''],
+      badge: command.pluginName,
+      onSelect: () => dispatchTerminalCommand(command.command, command.runOnSelect),
+    }));
+
+    return [
+      ...builtInActions,
+      ...panelActions,
+      ...pluginCommandActions,
+    ];
+  }, [
+    activeLayoutProfile.label,
+    handleActivatePanel,
+    handleCycleLayout,
+    handleOpenSettings,
+    openPluginsFolder,
+    pinnedPanelIds,
+    panelDefinitions,
+    pluginCommands,
+    refreshAuthoredAnimations,
+    refreshAuthoredShaders,
+    refreshFolderPlugins,
+    refreshThemePackages,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1954,6 +2109,7 @@ function App() {
       onPanelReorder={handleReorderPanels}
       onOpenSettings={handleOpenSettings}
       onCycleLayout={handleCycleLayout}
+      onOpenCommandPalette={handleOpenCommandPalette}
       onToggleOverlayAnchor={handleToggleOverlayAnchor}
       onClose={() => { void hideOverlay(); }}
       accent={accent}
@@ -1970,6 +2126,7 @@ function App() {
       onBlurStrengthChange={(v) => updateAppearance({ appBlurStrength: clampOverlayVisualControlValue('blurStrength', v) })}
       blurPlatform={runtimePlatform}
       overlayAnchor={overlayAnchor}
+      commandPaletteShortcutLabel={formatHotkeyLabel(keybindings.commandPalette)}
       toggleShortcutLabel={formatHotkeyLabel(keybindings.terminalToggle)}
       topBarShaderLayer={(
         <ShaderSurfaceLayer
@@ -1986,6 +2143,7 @@ function App() {
       className="overlay-window-host w-full h-full overflow-hidden"
       style={{
         ...(resolvedAppearance.cssVars as CSSProperties),
+        position: 'relative',
         backgroundColor: 'transparent',
       }}
       onDragStart={handleDragStart}
@@ -2134,6 +2292,13 @@ function App() {
           </div>
         </div>
       </div>
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        appearance={resolvedAppearance}
+        actions={commandPaletteActions}
+        shortcutLabel={formatHotkeyLabel(keybindings.commandPalette)}
+        onClose={handleCloseCommandPalette}
+      />
     </div>
   );
 }
@@ -2475,6 +2640,7 @@ function TopBar({
   onPanelReorder,
   onOpenSettings,
   onCycleLayout,
+  onOpenCommandPalette,
   onToggleOverlayAnchor,
   onClose,
   accent,
@@ -2491,6 +2657,7 @@ function TopBar({
   onBlurStrengthChange,
   blurPlatform,
   overlayAnchor,
+  commandPaletteShortcutLabel,
   toggleShortcutLabel,
   topBarShaderLayer,
 }: {
@@ -2507,6 +2674,7 @@ function TopBar({
   onPanelReorder: (draggedId: string, targetId: string) => void;
   onOpenSettings: () => void;
   onCycleLayout: () => void;
+  onOpenCommandPalette: () => void;
   onToggleOverlayAnchor: () => void;
   onClose: () => void;
   accent: string;
@@ -2523,6 +2691,7 @@ function TopBar({
   onBlurStrengthChange: (value: number) => void;
   blurPlatform: RuntimePlatform;
   overlayAnchor: OverlayWindowAnchor;
+  commandPaletteShortcutLabel: string;
   toggleShortcutLabel: string;
   topBarShaderLayer?: React.ReactNode;
 }) {
@@ -3029,6 +3198,27 @@ function TopBar({
             blurPlatform={blurPlatform}
           />
         )}
+
+        <button
+          onClick={onOpenCommandPalette}
+          title={`Open Command Palette (${commandPaletteShortcutLabel})`}
+          style={{
+            width: 22,
+            height: 22,
+            padding: 0,
+            background: 'rgba(255,255,255,0.025)',
+            border: `1px solid ${BORDER}`,
+            color: MUTED,
+            borderRadius: 6,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            transition: 'all 0.15s',
+          }}
+        >
+          <Search size={11} />
+        </button>
 
         {layoutProfile.chrome.showShortcutBadge && (
           <kbd style={{

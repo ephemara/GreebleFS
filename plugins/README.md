@@ -10,12 +10,8 @@ That means you can stay lightweight for tiny panels, or ship a full plugin packa
 ## Included Examples
 
 - `drawable-canvas.tsx`: richer single-file painter plugin
-- `platform-inspector.tsx`: host/runtime inspection panel
-- `quick-notes.tsx`: persistent scratchpad example
-- `theme-gallery.tsx`: theme preview sample
-- `examples/manifest-package/`: first-party folder-plugin template
 
-## Legacy File Plugins
+## File Plugins
 
 Use this when you want the fastest possible workflow.
 
@@ -36,7 +32,7 @@ export default definePlugin({
 });
 ```
 
-Legacy file plugins are intentionally constrained:
+File plugins are intentionally constrained:
 
 - one file per plugin
 - no relative imports
@@ -168,4 +164,4 @@ Package entry bundles and legacy file plugins both use the same approved runtime
 
 ## Plugin Root
 
-By default the app scans the local `plugins/` directory. You can override the root with `VITE_OVERLAYTERM_PLUGINS_DIR` if you want to point OverlayTerm at a different plugin folder.
+By default the app scans the local `plugins/` directory. You can override the root with `VITE_OVERLAYTERM_PLUGINS_DIR` if you want to point Greeble at a different plugin folder.

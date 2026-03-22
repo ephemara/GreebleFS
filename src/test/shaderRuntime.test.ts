@@ -99,7 +99,7 @@ describe('shaderRuntime', () => {
       .filter(entry => entry.isFile() && /\.(tsx|ts|jsx|js)$/i.test(entry.name))
       .sort((left, right) => left.name.localeCompare(right.name));
 
-    expect(files.length).toBeGreaterThanOrEqual(16);
+    expect(files.length).toBeGreaterThanOrEqual(25);
 
     for (const file of files) {
       const fullPath = resolve(shaderDirectory, file.name);
