@@ -435,6 +435,7 @@ function App() {
   const animationCommitTimerRef = useRef<number | null>(null);
   const progressFrameRef = useRef<number | null>(null);
   const lastToggleAtRef = useRef(0);
+  const lastTerminalFocusAtRef = useRef(0);
   const isProgrammaticResizeRef = useRef(false);
   const interactionLockUntilRef = useRef(0);
   const animationSignatureRef = useRef('');
@@ -443,6 +444,7 @@ function App() {
   const dragHideRestoreRef = useRef(false);
   const refreshFolderPluginsRef = useRef<(force?: boolean) => Promise<void>>(async () => undefined);
   const pluginWatchDebounceTimerRef = useRef<number | null>(null);
+  const openTerminalPanelRef = useRef<() => void>(() => undefined);
   const [layoutManifest, setLayoutManifest] = useState(BUILT_IN_LAYOUT_MANIFEST);
   const [layoutConfigSource, setLayoutConfigSource] = useState<string | null>(null);
   const [themePackages, setThemePackages] = useState<LoadedOverlayThemePackage[]>([]);
@@ -1015,6 +1017,17 @@ function App() {
     void hideOverlay();
   }, [positionAndShow, hideOverlay]);
 
+  const handleOpenCommandPalette = useCallback(() => {
+    setIsCommandPaletteOpen(true);
+    if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
+      void positionAndShow();
+    }
+  }, [positionAndShow]);
+
+  const handleCloseCommandPalette = useCallback(() => {
+    setIsCommandPaletteOpen(false);
+  }, []);
+
   useEffect(() => {
     let unlisten: (() => void) | null = null;
     listen('overlay://toggle-request', () => toggle())
@@ -1047,17 +1060,28 @@ function App() {
   }, []); // intentionally empty — fires exactly once on mount
 
   useGlobalShortcut(keybindings.terminalToggle, toggle, true);
+  useGlobalShortcut(keybindings.terminalFocus, () => openTerminalPanelRef.current(), true);
+  useGlobalShortcut(keybindings.commandPalette, handleOpenCommandPalette, true);
 
   // ── Escape to close / Command palette hotkey ──
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (matchesKeybinding(e, keybindings.terminalFocus)) {
+        e.preventDefault();
+        e.stopPropagation();
+        openTerminalPanelRef.current();
+        return;
+      }
+
       if (!overlayVisibleRef.current) {
         return;
       }
 
       if (matchesKeybinding(e, keybindings.commandPalette)) {
         e.preventDefault();
-        setIsCommandPaletteOpen(current => !current);
+        if (!isTauri()) {
+          setIsCommandPaletteOpen(current => !current);
+        }
         return;
       }
 
@@ -1070,9 +1094,9 @@ function App() {
         void hideOverlay();
       }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [hideOverlay, isCommandPaletteOpen, keybindings.commandPalette]);
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [handleOpenCommandPalette, hideOverlay, isCommandPaletteOpen, keybindings.commandPalette, keybindings.terminalFocus]);
 
   useEffect(() => {
     if (!overlayVisibleRef.current) {
@@ -1931,13 +1955,21 @@ function App() {
     }));
   }, [panelLookup, pinnedPanelIds, updateActiveLayoutPanelState]);
 
-  const handleOpenCommandPalette = useCallback(() => {
-    setIsCommandPaletteOpen(true);
-  }, []);
+  const handleOpenTerminalPanel = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTerminalFocusAtRef.current < 220) {
+      return;
+    }
+    lastTerminalFocusAtRef.current = now;
 
-  const handleCloseCommandPalette = useCallback(() => {
     setIsCommandPaletteOpen(false);
-  }, []);
+    handleActivatePanel('terminal');
+    if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
+      void positionAndShow();
+    }
+  }, [handleActivatePanel, positionAndShow]);
+
+  openTerminalPanelRef.current = handleOpenTerminalPanel;
 
   const handleCycleLayout = useCallback(() => {
     updateLayout({

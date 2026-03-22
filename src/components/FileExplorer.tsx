@@ -13,7 +13,7 @@ import React, {
 } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import Editor from '@monaco-editor/react';
+import type { EditorProps as MonacoEditorProps } from '@monaco-editor/react';
 import {
   ChevronRight, ChevronLeft, ArrowUp, Search, RefreshCw,
   Grid, List, X, Star, StarOff, Terminal,
@@ -47,7 +47,7 @@ import { ResizablePane } from './ResizablePane';
 import { useExplorerStore, type ExplorerDocumentViewMode } from '../store/explorerStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { shouldOpenExplorerEntryOnTrigger } from './fileExplorerClickBehavior';
-import { TextDocumentPreview, getDocumentPreviewKind, type DocumentPreviewKind } from './documentPreview';
+import type { DocumentPreviewKind } from './documentPreview';
 import {
   getModelPreviewFormat,
   getMonacoLanguage,
@@ -67,6 +67,38 @@ import { dispatchTerminalCommand, resolvePluginCommandTemplate } from '../config
 const LazyModelPreview = React.lazy(() =>
   import('./ModelPreview').then(module => ({ default: module.ModelPreview })),
 );
+
+const LazyTextDocumentPreview = React.lazy(() =>
+  import('./documentPreview').then(module => ({ default: module.TextDocumentPreview })),
+);
+
+const LazyMonacoEditor = React.lazy(async () => {
+  const module = await import('@monaco-editor/react');
+  return { default: module.default as React.ComponentType<MonacoEditorProps> };
+});
+
+const EXPLORER_LIST_ROW_HEIGHT = 44;
+const EXPLORER_LIST_SEARCH_ROW_HEIGHT = 72;
+const EXPLORER_LIST_OVERSCAN = 8;
+const EXPLORER_GRID_MIN_WIDTH = 100;
+const EXPLORER_GRID_GAP = 6;
+const EXPLORER_GRID_PADDING = 12;
+const EXPLORER_GRID_OVERSCAN_ROWS = 2;
+const EXPLORER_GRID_ITEM_HEIGHT = 156;
+const EXPLORER_GRID_SEARCH_ITEM_HEIGHT = 180;
+const EXPLORER_NEW_ITEM_LIST_HEIGHT = 46;
+const EXPLORER_NEW_ITEM_GRID_HEIGHT = 156;
+
+function getDocumentPreviewKind(path: string): DocumentPreviewKind {
+  const ext = path.split('.').pop()?.toLowerCase() ?? '';
+  if (ext === 'md' || ext === 'markdown' || ext === 'mdx') {
+    return 'markdown';
+  }
+  if (ext === 'html' || ext === 'htm') {
+    return 'html';
+  }
+  return 'none';
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -90,6 +122,11 @@ interface EntryStorageInfo {
   bytes: number;
   is_dir: boolean;
   is_complete: boolean;
+}
+interface ViewportMetrics {
+  scrollTop: number;
+  clientHeight: number;
+  clientWidth: number;
 }
 interface ContextMenuState { visible: boolean; x: number; y: number; entry: FileEntry | null; }
 interface RenameState    { active: boolean; path: string; name: string; }
@@ -526,7 +563,7 @@ function ContextMenu({ state, items, onClose }: { state: ContextMenuState; items
 
 const MONACO_FIND_WITH_ARGS_ACTION = 'editor.actions.findWithArgs';
 
-type MonacoEditorOptions = React.ComponentProps<typeof Editor>['options'];
+type MonacoEditorOptions = MonacoEditorProps['options'];
 
 function applyEditorSearchFocus(editor: any, monaco: any, focusTarget: EditorSearchFocusTarget | null) {
   editor.layout?.();
@@ -605,19 +642,29 @@ function SearchAwareCodeView({
   }, [focusTarget?.requestId, value]);
 
   return (
-    <Editor
-      height="100%"
-      language={language || 'plaintext'}
-      value={value}
-      theme="vs-dark"
-      onMount={handleMount}
-      onChange={onChange ? nextValue => onChange(nextValue ?? '') : undefined}
-      options={{
-        automaticLayout: true,
-        readOnly,
-        ...options,
-      }}
-    />
+    <Suspense fallback={<EditorFallback label="Loading editor…" />}>
+      <LazyMonacoEditor
+        height="100%"
+        language={language || 'plaintext'}
+        value={value}
+        theme="vs-dark"
+        onMount={handleMount}
+        onChange={onChange ? nextValue => onChange(nextValue ?? '') : undefined}
+        options={{
+          automaticLayout: true,
+          readOnly,
+          ...options,
+        }}
+      />
+    </Suspense>
+  );
+}
+
+function EditorFallback({ label }: { label: string }) {
+  return (
+    <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', background: '#0f131a', color: EXP.muted, fontSize: 11 }}>
+      {label}
+    </div>
   );
 }
 
@@ -759,7 +806,9 @@ function PreviewPanel({
           </div>
         )}
         {preview.type === 'text' && viewMode === 'preview' && supportsRenderedPreview && (
-          <TextDocumentPreview kind={preview.renderKind} content={preview.content} />
+          <Suspense fallback={<DocumentPreviewFallback label="Loading rendered preview…" />}>
+            <LazyTextDocumentPreview kind={preview.renderKind} content={preview.content} />
+          </Suspense>
         )}
         {preview.type === 'text' && (!supportsRenderedPreview || viewMode === 'edit') && (
           <SearchAwareCodeView
@@ -790,6 +839,14 @@ function PreviewPanel({
           </span>
         </div>
       )}
+    </div>
+  );
+}
+
+function DocumentPreviewFallback({ label }: { label: string }) {
+  return (
+    <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', background: '#171a22', color: EXP.muted, fontSize: 11 }}>
+      {label}
     </div>
   );
 }
@@ -957,6 +1014,14 @@ export function FileExplorer({
   const [addressDraft, setAddressDraft] = useState('');
 
   const mainRef = useRef<HTMLDivElement>(null);
+  const explorerViewportRef = useRef<HTMLDivElement>(null);
+  const previewWarmupStartedRef = useRef(false);
+  const previewWarmupTimerRef = useRef<number | null>(null);
+  const [explorerViewportMetrics, setExplorerViewportMetrics] = useState<ViewportMetrics>({
+    scrollTop: 0,
+    clientHeight: 0,
+    clientWidth: 0,
+  });
 
   useEffect(() => {
     previewRef.current = preview;
@@ -1297,162 +1362,6 @@ export function FileExplorer({
         isDirectory: inferredDirectory,
       };
     }), [droppedSourceLookup]);
-
-  useEffect(() => {
-    if (loading || visibleEntries.length === 0) {
-      setEntrySizeLoadingPaths(current => (current.size === 0 ? current : new Set()));
-      return;
-    }
-
-    const pendingFiles = visibleEntries
-      .filter(entry => !entry.is_dir && !entrySizes[entry.path] && !entrySizeLoadingPaths.has(entry.path))
-      .slice(0, 12);
-    const pendingDirectories = visibleEntries
-      .filter(entry => entry.is_dir && !entrySizes[entry.path] && !entrySizeLoadingPaths.has(entry.path))
-      .slice(0, 2);
-    const nextBatch = [...pendingFiles, ...pendingDirectories].slice(0, 12);
-    const unresolvedPaths = nextBatch.map(entry => entry.path);
-
-    if (unresolvedPaths.length === 0) {
-      setEntrySizeLoadingPaths(current => (current.size === 0 ? current : new Set()));
-      return;
-    }
-
-    const requestId = ++entrySizeRequestIdRef.current;
-    setEntrySizeLoadingPaths(current => {
-      const next = new Set(current);
-      for (const path of unresolvedPaths) {
-        next.add(path);
-      }
-      return next;
-    });
-
-    let cancelled = false;
-    void invoke<EntryStorageInfo[]>('fs_measure_entry_sizes', {
-      paths: unresolvedPaths,
-      forceRefresh: false,
-    })
-      .then(results => {
-        if (cancelled || entrySizeRequestIdRef.current !== requestId) {
-          return;
-        }
-        setEntrySizes(current => {
-          const next = { ...current };
-          for (const result of results) {
-            next[result.path] = result;
-          }
-          return next;
-        });
-        setEntrySizeLoadingPaths(current => {
-          if (current.size === 0) {
-            return current;
-          }
-          const next = new Set(current);
-          for (const path of unresolvedPaths) {
-            next.delete(path);
-          }
-          return next.size === current.size ? current : next;
-        });
-      })
-      .catch(() => {
-        if (cancelled || entrySizeRequestIdRef.current !== requestId) {
-          return;
-        }
-        setEntrySizeLoadingPaths(current => {
-          if (current.size === 0) {
-            return current;
-          }
-          const next = new Set(current);
-          for (const path of unresolvedPaths) {
-            next.delete(path);
-          }
-          return next.size === current.size ? current : next;
-        });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [entrySizes, loading, visibleEntries]);
-
-  useEffect(() => {
-    if (!useNativeOsIcons || loading || visibleEntries.length === 0) {
-      setNativeIconLoadingKeys(current => (current.size === 0 ? current : new Set()));
-      return;
-    }
-
-    const pendingEntries = visibleEntries
-      .map(entry => ({
-        entry,
-        key: getNativeIconCacheKey(entry.path, DEFAULT_NATIVE_ICON_SIZE),
-      }))
-      .filter(({ key }) => nativeIconMap[key] === undefined && !nativeIconLoadingKeys.has(key))
-      .slice(0, 48);
-
-    if (pendingEntries.length === 0) {
-      setNativeIconLoadingKeys(current => (current.size === 0 ? current : new Set()));
-      return;
-    }
-
-    const requestId = ++nativeIconRequestIdRef.current;
-    const pendingKeys = pendingEntries.map(item => item.key);
-    const requests = pendingEntries.map(item => getNativeIconRequest(item.entry));
-
-    setNativeIconLoadingKeys(current => {
-      const next = new Set(current);
-      for (const key of pendingKeys) {
-        next.add(key);
-      }
-      return next;
-    });
-
-    let cancelled = false;
-    void invoke<OverlayNativeIconResponse[]>('fs_resolve_native_icons', { requests })
-      .then(results => {
-        if (cancelled || nativeIconRequestIdRef.current !== requestId) {
-          return;
-        }
-
-        setNativeIconMap(current => {
-          const next = { ...current };
-          for (const result of results) {
-            next[getNativeIconCacheKey(result.path, DEFAULT_NATIVE_ICON_SIZE)] = result.src ?? null;
-          }
-          return next;
-        });
-        setNativeIconLoadingKeys(current => {
-          const next = new Set(current);
-          for (const key of pendingKeys) {
-            next.delete(key);
-          }
-          return next.size === current.size ? current : next;
-        });
-      })
-      .catch(() => {
-        if (cancelled || nativeIconRequestIdRef.current !== requestId) {
-          return;
-        }
-
-        setNativeIconMap(current => {
-          const next = { ...current };
-          for (const key of pendingKeys) {
-            next[key] = null;
-          }
-          return next;
-        });
-        setNativeIconLoadingKeys(current => {
-          const next = new Set(current);
-          for (const key of pendingKeys) {
-            next.delete(key);
-          }
-          return next.size === current.size ? current : next;
-        });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [loading, nativeIconLoadingKeys, nativeIconMap, useNativeOsIcons, visibleEntries]);
 
   const selectedEntries = useMemo(
     () => visibleEntries.filter(entry => selected.has(entry.path)),
@@ -2132,6 +2041,301 @@ export function FileExplorer({
   const hasPreview = !isCompactDock && preview.type !== 'none';
   const searchModeLabel = searchIncludeContent ? 'Recursive search + text' : 'Recursive search (names only)';
 
+  useEffect(() => {
+    const viewport = explorerViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    let rafId = 0;
+    const updateMetrics = () => {
+      rafId = 0;
+      setExplorerViewportMetrics(current => {
+        const next = {
+          scrollTop: viewport.scrollTop,
+          clientHeight: viewport.clientHeight,
+          clientWidth: viewport.clientWidth,
+        };
+
+        if (
+          current.scrollTop === next.scrollTop
+          && current.clientHeight === next.clientHeight
+          && current.clientWidth === next.clientWidth
+        ) {
+          return current;
+        }
+
+        return next;
+      });
+    };
+
+    const scheduleMetricsUpdate = () => {
+      if (rafId !== 0) {
+        return;
+      }
+      rafId = window.requestAnimationFrame(updateMetrics);
+    };
+
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(scheduleMetricsUpdate)
+      : null;
+
+    resizeObserver?.observe(viewport);
+    viewport.addEventListener('scroll', scheduleMetricsUpdate, { passive: true });
+    scheduleMetricsUpdate();
+
+    return () => {
+      viewport.removeEventListener('scroll', scheduleMetricsUpdate);
+      resizeObserver?.disconnect();
+      if (rafId !== 0) {
+        window.cancelAnimationFrame(rafId);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (previewWarmupStartedRef.current) {
+      return;
+    }
+
+    previewWarmupStartedRef.current = true;
+    previewWarmupTimerRef.current = window.setTimeout(() => {
+      void import('@monaco-editor/react');
+      void import('./documentPreview');
+      void import('./ModelPreview');
+    }, 1200);
+
+    return () => {
+      if (previewWarmupTimerRef.current != null) {
+        window.clearTimeout(previewWarmupTimerRef.current);
+        previewWarmupTimerRef.current = null;
+      }
+      previewWarmupStartedRef.current = false;
+    };
+  }, []);
+
+  const virtualizedViewportWidth = explorerViewportMetrics.clientWidth;
+  const virtualizedViewportHeight = explorerViewportMetrics.clientHeight;
+  const virtualizedScrollTop = Math.max(
+    0,
+    explorerViewportMetrics.scrollTop - (newItem.visible
+      ? (effectiveViewMode === 'grid' ? EXPLORER_NEW_ITEM_GRID_HEIGHT : EXPLORER_NEW_ITEM_LIST_HEIGHT)
+      : 0),
+  );
+
+  const virtualWindow = useMemo(() => {
+    if (effectiveViewMode === 'grid') {
+      const availableWidth = Math.max(0, virtualizedViewportWidth - EXPLORER_GRID_PADDING * 2);
+      const columns = Math.max(1, Math.floor((availableWidth + EXPLORER_GRID_GAP) / (EXPLORER_GRID_MIN_WIDTH + EXPLORER_GRID_GAP)));
+      const rowHeight = isSearchActive ? EXPLORER_GRID_SEARCH_ITEM_HEIGHT : EXPLORER_GRID_ITEM_HEIGHT;
+      const totalRows = Math.ceil(visibleEntries.length / columns);
+      const startRow = Math.max(0, Math.floor(virtualizedScrollTop / rowHeight) - EXPLORER_GRID_OVERSCAN_ROWS);
+      const endRow = Math.min(
+        totalRows,
+        Math.ceil((virtualizedScrollTop + virtualizedViewportHeight) / rowHeight) + EXPLORER_GRID_OVERSCAN_ROWS,
+      );
+
+      return {
+        kind: 'grid' as const,
+        columns,
+        rowHeight,
+        startRow,
+        endRow,
+        startIndex: startRow * columns,
+        endIndex: Math.min(visibleEntries.length, endRow * columns),
+        topSpacer: startRow * rowHeight,
+        bottomSpacer: Math.max(0, totalRows - endRow) * rowHeight,
+      };
+    }
+
+    const rowHeight = isSearchActive ? EXPLORER_LIST_SEARCH_ROW_HEIGHT : EXPLORER_LIST_ROW_HEIGHT;
+    const totalRows = visibleEntries.length;
+    const startRow = Math.max(0, Math.floor(virtualizedScrollTop / rowHeight) - EXPLORER_LIST_OVERSCAN);
+    const endRow = Math.min(
+      totalRows,
+      Math.ceil((virtualizedScrollTop + virtualizedViewportHeight) / rowHeight) + EXPLORER_LIST_OVERSCAN,
+    );
+
+    return {
+      kind: 'list' as const,
+      rowHeight,
+      startRow,
+      endRow,
+      startIndex: startRow,
+      endIndex: endRow,
+      topSpacer: startRow * rowHeight,
+      bottomSpacer: Math.max(0, totalRows - endRow) * rowHeight,
+    };
+  }, [
+    effectiveViewMode,
+    isSearchActive,
+    virtualizedScrollTop,
+    virtualizedViewportHeight,
+    virtualizedViewportWidth,
+    visibleEntries.length,
+  ]);
+
+  const virtualizedEntries = useMemo(
+    () => visibleEntries.slice(virtualWindow.startIndex, virtualWindow.endIndex),
+    [virtualWindow.endIndex, virtualWindow.startIndex, visibleEntries],
+  );
+
+  useEffect(() => {
+    if (loading || virtualizedEntries.length === 0) {
+      setEntrySizeLoadingPaths(current => (current.size === 0 ? current : new Set()));
+      return;
+    }
+
+    const pendingFiles = virtualizedEntries
+      .filter(entry => !entry.is_dir && !entrySizes[entry.path] && !entrySizeLoadingPaths.has(entry.path))
+      .slice(0, 12);
+    const pendingDirectories = virtualizedEntries
+      .filter(entry => entry.is_dir && !entrySizes[entry.path] && !entrySizeLoadingPaths.has(entry.path))
+      .slice(0, 2);
+    const nextBatch = [...pendingFiles, ...pendingDirectories].slice(0, 12);
+    const unresolvedPaths = nextBatch.map(entry => entry.path);
+
+    if (unresolvedPaths.length === 0) {
+      setEntrySizeLoadingPaths(current => (current.size === 0 ? current : new Set()));
+      return;
+    }
+
+    const requestId = ++entrySizeRequestIdRef.current;
+    setEntrySizeLoadingPaths(current => {
+      const next = new Set(current);
+      for (const path of unresolvedPaths) {
+        next.add(path);
+      }
+      return next;
+    });
+
+    let cancelled = false;
+    void invoke<EntryStorageInfo[]>('fs_measure_entry_sizes', {
+      paths: unresolvedPaths,
+      forceRefresh: false,
+    })
+      .then(results => {
+        if (cancelled || entrySizeRequestIdRef.current !== requestId) {
+          return;
+        }
+        setEntrySizes(current => {
+          const next = { ...current };
+          for (const result of results) {
+            next[result.path] = result;
+          }
+          return next;
+        });
+        setEntrySizeLoadingPaths(current => {
+          if (current.size === 0) {
+            return current;
+          }
+          const next = new Set(current);
+          for (const path of unresolvedPaths) {
+            next.delete(path);
+          }
+          return next.size === current.size ? current : next;
+        });
+      })
+      .catch(() => {
+        if (cancelled || entrySizeRequestIdRef.current !== requestId) {
+          return;
+        }
+        setEntrySizeLoadingPaths(current => {
+          if (current.size === 0) {
+            return current;
+          }
+          const next = new Set(current);
+          for (const path of unresolvedPaths) {
+            next.delete(path);
+          }
+          return next.size === current.size ? current : next;
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [entrySizes, entrySizeLoadingPaths, loading, virtualizedEntries]);
+
+  useEffect(() => {
+    if (!useNativeOsIcons || loading || virtualizedEntries.length === 0) {
+      setNativeIconLoadingKeys(current => (current.size === 0 ? current : new Set()));
+      return;
+    }
+
+    const pendingEntries = virtualizedEntries
+      .map(entry => ({
+        entry,
+        key: getNativeIconCacheKey(entry.path, DEFAULT_NATIVE_ICON_SIZE),
+      }))
+      .filter(({ key }) => nativeIconMap[key] === undefined && !nativeIconLoadingKeys.has(key))
+      .slice(0, 48);
+
+    if (pendingEntries.length === 0) {
+      setNativeIconLoadingKeys(current => (current.size === 0 ? current : new Set()));
+      return;
+    }
+
+    const requestId = ++nativeIconRequestIdRef.current;
+    const pendingKeys = pendingEntries.map(item => item.key);
+    const requests = pendingEntries.map(item => getNativeIconRequest(item.entry));
+
+    setNativeIconLoadingKeys(current => {
+      const next = new Set(current);
+      for (const key of pendingKeys) {
+        next.add(key);
+      }
+      return next;
+    });
+
+    let cancelled = false;
+    void invoke<OverlayNativeIconResponse[]>('fs_resolve_native_icons', { requests })
+      .then(results => {
+        if (cancelled || nativeIconRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setNativeIconMap(current => {
+          const next = { ...current };
+          for (const result of results) {
+            next[getNativeIconCacheKey(result.path, DEFAULT_NATIVE_ICON_SIZE)] = result.src ?? null;
+          }
+          return next;
+        });
+        setNativeIconLoadingKeys(current => {
+          const next = new Set(current);
+          for (const key of pendingKeys) {
+            next.delete(key);
+          }
+          return next.size === current.size ? current : next;
+        });
+      })
+      .catch(() => {
+        if (cancelled || nativeIconRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setNativeIconMap(current => {
+          const next = { ...current };
+          for (const key of pendingKeys) {
+            next[key] = null;
+          }
+          return next;
+        });
+        setNativeIconLoadingKeys(current => {
+          const next = new Set(current);
+          for (const key of pendingKeys) {
+            next.delete(key);
+          }
+          return next.size === current.size ? current : next;
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, nativeIconLoadingKeys, nativeIconMap, useNativeOsIcons, virtualizedEntries]);
+
   const renderSearchMetadata = (entry: FileEntry) => {
     if (!isSearchActive) return null;
     const searchEntry = entry as FileSearchResult;
@@ -2142,21 +2346,21 @@ export function FileExplorer({
         : 'Name match';
 
     return (
-      <div style={{ display:'flex', flexDirection:'column', gap:2, marginTop:4, minWidth:0 }}>
-        <div style={{ fontSize:9, color:EXP.muted2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4, minWidth: 0, maxHeight: 42, overflow: 'hidden' }}>
+        <div style={{ fontSize: 9, color: EXP.muted2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {searchEntry.relative_path || searchEntry.path}
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap:6, minWidth:0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
           {searchEntry.line_number != null && (
-            <span style={{ fontSize:9, color:accent, fontFamily:'monospace', flexShrink:0 }}>L{searchEntry.line_number}</span>
+            <span style={{ fontSize: 9, color: accent, fontFamily: 'monospace', flexShrink: 0 }}>L{searchEntry.line_number}</span>
           )}
           {searchEntry.snippet && (
-            <span style={{ fontSize:9, color:EXP.text, opacity:0.88, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+            <span style={{ fontSize: 9, color: EXP.text, opacity: 0.88, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
               {searchEntry.snippet}
             </span>
           )}
         </div>
-        <div style={{ fontSize:9, color:EXP.muted, letterSpacing:'0.03em', textTransform:'uppercase' }}>
+        <div style={{ fontSize: 9, color: EXP.muted, letterSpacing: '0.03em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {matchLabel}
         </div>
       </div>
@@ -2488,7 +2692,11 @@ export function FileExplorer({
 
         {/* File area + preview */}
         <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
-          <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: effectiveViewMode === 'grid' ? 12 : 0 }}>
+          <OverlayScrollArea
+            style={{ flex: 1, minHeight: 0 }}
+            viewportStyle={{ padding: effectiveViewMode === 'grid' ? 12 : 0 }}
+            viewportRef={explorerViewportRef}
+          >
           <div ref={mainRef} tabIndex={0}
             style={{ minHeight: '100%', outline:'none' }}
             onClick={() => mainRef.current?.focus()}
@@ -2553,107 +2761,127 @@ export function FileExplorer({
             )}
 
             {/* Grid view */}
-            {/* Inline new-item row */}
             {newItem.visible && effectiveViewMode === 'grid' && (
-              <div style={{ background:EXP.card, border:`1px solid ${accent}`, borderRadius:8, padding:8, display:'flex', flexDirection:'column', alignItems:'center', gap:6 }}>
-                <SvgIcon
-                  src={newItem.kind === 'folder'
-                    ? (resolveIconSrc(themeIconTheme.folder, themeIconTheme) ?? '/icons/folder.svg')
-                    : resolveFileIconSrc('new-file.txt', 'txt', themeIconTheme)}
-                  size={36}
-                />
-                <input
-                  autoFocus value={newItemName} onChange={e=>setNewItemName(e.target.value)}
-                  onKeyDown={e => { if(e.key==='Enter') commitNew(); if(e.key==='Escape') setNewItem({visible:false,kind:'folder'}); }}
-                  onBlur={commitNew}
-                  placeholder={newItem.kind === 'folder' ? 'folder name' : 'name.ext'}
-                  style={{ background:'#1e2130', border:`1px solid ${accent}`, borderRadius:4, color:EXP.text, fontSize:11, padding:'2px 6px', outline:'none', width:'100%', boxSizing:'border-box' as const }}
-                />
+              <div style={{ padding: '0 12px 12px', boxSizing: 'border-box' }}>
+                <div style={{ background: EXP.card, border: `1px solid ${accent}`, borderRadius: 8, padding: 8, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, height: EXPLORER_NEW_ITEM_GRID_HEIGHT, boxSizing: 'border-box' }}>
+                  <SvgIcon
+                    src={newItem.kind === 'folder'
+                      ? (resolveIconSrc(themeIconTheme.folder, themeIconTheme) ?? '/icons/folder.svg')
+                      : resolveFileIconSrc('new-file.txt', 'txt', themeIconTheme)}
+                    size={36}
+                  />
+                  <input
+                    autoFocus value={newItemName} onChange={e => setNewItemName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') commitNew(); if (e.key === 'Escape') setNewItem({ visible: false, kind: 'folder' }); }}
+                    onBlur={commitNew}
+                    placeholder={newItem.kind === 'folder' ? 'folder name' : 'name.ext'}
+                    style={{ background: '#1e2130', border: `1px solid ${accent}`, borderRadius: 4, color: EXP.text, fontSize: 11, padding: '2px 6px', outline: 'none', width: '100%', boxSizing: 'border-box' as const }}
+                  />
+                </div>
               </div>
             )}
 
             {!loading && effectiveViewMode === 'grid' && (
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(100px,1fr))', gap:6 }}>
-                {visibleEntries.map(entry => {
-                  const isSel = selected.has(entry.path);
-                  const isDrop = dragOver === entry.path && entry.is_dir;
-                  const isRenaming = rename.active && rename.path === entry.path;
-                  const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
-                  return (
-                    <div key={entry.path}
-                      draggable
-                      data-overlay-drag-source="file"
-                      onDragStart={e => onDragStart(e, entry)}
-                      onDragEnd={onDragEnd}
-                      onDragOver={entry.is_dir ? e => onDragOver(e, entry.path) : undefined}
-                      onDragLeave={() => setDragOver(null)}
-                      onDrop={entry.is_dir ? e => onDrop(e, entry.path) : undefined}
-                      onClick={e => onEntryClick(e, entry)}
-                      onDoubleClick={() => onEntryDoubleClick(entry)}
-                      onContextMenu={e => onRightClick(e, entry)}
-                      title={getSearchTooltip(entry)}
-                      style={{
-                        background: isDrop ? `${accent}33` : isSel ? EXP.selected : EXP.card,
-                        border:`1px solid ${isDrop ? accent : isSel ? EXP.selBord : EXP.border}`,
-                        borderRadius:8, padding:8, cursor:'pointer',
-                        display:'flex', flexDirection:'column', alignItems:'center', gap:6,
-                        opacity:entry.is_hidden?0.5:1, userSelect:'none',
-                        transition:'background 0.1s, border-color 0.1s',
-                      }}
-                      onMouseEnter={e => { if(!isSel && !isDrop)(e.currentTarget as HTMLDivElement).style.background=EXP.cardHov; }}
-                      onMouseLeave={e => { if(!isSel && !isDrop)(e.currentTarget as HTMLDivElement).style.background=EXP.card; }}
+              <div style={{ minHeight: 0 }}>
+                <div style={{ height: virtualWindow.topSpacer }} />
+                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${virtualWindow.columns}, minmax(0, 1fr))`, gridAutoRows: `${virtualWindow.rowHeight}px`, gap: EXPLORER_GRID_GAP, padding: `0 ${EXPLORER_GRID_PADDING}px`, alignItems: 'stretch' }}>
+                  {virtualizedEntries.map(entry => {
+                    const isSel = selected.has(entry.path);
+                    const isDrop = dragOver === entry.path && entry.is_dir;
+                    const isRenaming = rename.active && rename.path === entry.path;
+                    const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
+                    return (
+                      <div
+                        key={entry.path}
+                        draggable
+                        data-overlay-drag-source="file"
+                        onDragStart={e => onDragStart(e, entry)}
+                        onDragEnd={onDragEnd}
+                        onDragOver={entry.is_dir ? e => onDragOver(e, entry.path) : undefined}
+                        onDragLeave={() => setDragOver(null)}
+                        onDrop={entry.is_dir ? e => onDrop(e, entry.path) : undefined}
+                        onClick={e => onEntryClick(e, entry)}
+                        onDoubleClick={() => onEntryDoubleClick(entry)}
+                        onContextMenu={e => onRightClick(e, entry)}
+                        title={getSearchTooltip(entry)}
+                        style={{
+                          background: isDrop ? `${accent}33` : isSel ? EXP.selected : EXP.card,
+                          border: `1px solid ${isDrop ? accent : isSel ? EXP.selBord : EXP.border}`,
+                          borderRadius: 8,
+                          padding: 8,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: 6,
+                          height: '100%',
+                          minHeight: 0,
+                          boxSizing: 'border-box',
+                          overflow: 'hidden',
+                          opacity: entry.is_hidden ? 0.5 : 1,
+                          userSelect: 'none',
+                          transition: 'background 0.1s, border-color 0.1s',
+                        }}
+                        onMouseEnter={e => { if (!isSel && !isDrop) (e.currentTarget as HTMLDivElement).style.background = EXP.cardHov; }}
+                        onMouseLeave={e => { if (!isSel && !isDrop) (e.currentTarget as HTMLDivElement).style.background = EXP.card; }}
                       >
-                        <div style={{ width:48, height:48, display:'flex', alignItems:'center', justifyContent:'center', borderRadius:6, overflow:'hidden', flexShrink:0 }}>
+                        <div style={{ width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
                           <SvgIcon src={iconSrc} size={36} />
                         </div>
                         {isRenaming
-                          ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active:false, path:'', name:'' })} />
-                          : <span style={{ fontSize:10, textAlign:'center', color:EXP.text, overflow:'hidden', textOverflow:'ellipsis', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', width:'100%', lineHeight:1.3 }}>{entry.name}</span>
+                          ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active: false, path: '', name: '' })} />
+                          : <span style={{ fontSize: 10, textAlign: 'center', color: EXP.text, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', width: '100%', lineHeight: 1.3 }}>{entry.name}</span>
                         }
-                        <span style={{ fontSize:9, textAlign:'center', color:EXP.muted2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', width:'100%' }}>
+                        <span style={{ fontSize: 9, textAlign: 'center', color: EXP.muted2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>
                           {getEntryStorageLabel(entry)}
                         </span>
                         {renderSearchMetadata(entry)}
                       </div>
                     );
                   })}
+                </div>
+                <div style={{ height: virtualWindow.bottomSpacer }} />
               </div>
             )}
 
             {/* Inline new-item row in list mode */}
             {newItem.visible && effectiveViewMode === 'list' && (
-              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}><tbody>
-                <tr style={{ background:`${accent}11`, borderBottom:`1px solid ${EXP.border}` }}>
-                  <td style={{ padding:'4px 12px' }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                      <SvgIcon src={newItem.kind === 'folder' ? getIconSrc({ name: 'folder', path: currentPath, is_dir: true, size: 0, modified: 0, extension: '', is_hidden: false, is_symlink: false }, false, {
-                        rules: explorerSettings.folderIconRules,
-                        defaultIcon: explorerSettings.defaultFolderIcon,
-                      }, themeIconTheme) : resolveFileIconSrc('new-file.txt', 'txt', themeIconTheme)} size={16} />
-                      <input autoFocus value={newItemName} onChange={e=>setNewItemName(e.target.value)}
-                        onKeyDown={e=>{ if(e.key==='Enter') commitNew(); if(e.key==='Escape') setNewItem({visible:false,kind:'folder'}); }}
-                        onBlur={commitNew}
-                        placeholder={newItem.kind === 'folder' ? 'folder name' : 'notes.md / app.py'}
-                        style={{ background:'#1e2130', border:`1px solid ${accent}`, borderRadius:4, color:EXP.text, fontSize:12, padding:'2px 6px', outline:'none', flex:1 }}
-                      />
-                    </div>
-                  </td>
-                  <td/><td/><td/>
-                </tr>
-              </tbody></table>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <tbody>
+                  <tr style={{ background: `${accent}11`, borderBottom: `1px solid ${EXP.border}`, height: EXPLORER_NEW_ITEM_LIST_HEIGHT }}>
+                    <td style={{ padding: '4px 12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <SvgIcon src={newItem.kind === 'folder' ? getIconSrc({ name: 'folder', path: currentPath, is_dir: true, size: 0, modified: 0, extension: '', is_hidden: false, is_symlink: false }, false, {
+                          rules: explorerSettings.folderIconRules,
+                          defaultIcon: explorerSettings.defaultFolderIcon,
+                        }, themeIconTheme) : resolveFileIconSrc('new-file.txt', 'txt', themeIconTheme)} size={16} />
+                        <input autoFocus value={newItemName} onChange={e => setNewItemName(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') commitNew(); if (e.key === 'Escape') setNewItem({ visible: false, kind: 'folder' }); }}
+                          onBlur={commitNew}
+                          placeholder={newItem.kind === 'folder' ? 'folder name' : 'notes.md / app.py'}
+                          style={{ background: '#1e2130', border: `1px solid ${accent}`, borderRadius: 4, color: EXP.text, fontSize: 12, padding: '2px 6px', outline: 'none', flex: 1 }}
+                        />
+                      </div>
+                    </td>
+                    <td />
+                    <td />
+                    <td />
+                  </tr>
+                </tbody>
+              </table>
             )}
 
             {!loading && effectiveViewMode === 'list' && (
-              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, tableLayout: 'fixed' }}>
                 <thead>
-                  <tr style={{ background:EXP.panel, position:'sticky', top:0, zIndex:2 }}>
+                  <tr style={{ background: EXP.panel, position: 'sticky', top: 0, zIndex: 2 }}>
                     {[
                       { key: 'name', label: 'Name' },
                       { key: 'size', label: 'Size' },
                       { key: 'date', label: 'Modified' },
                       { key: 'type', label: 'Type' },
                     ].map(column => (
-                      <th key={column.key} style={{ padding:'6px 12px', textAlign:'left', color:EXP.muted, fontWeight:600, fontSize:10, letterSpacing:'0.06em', textTransform:'uppercase', borderBottom:`1px solid ${EXP.border}` }}>
+                      <th key={column.key} style={{ padding: '6px 12px', textAlign: 'left', color: EXP.muted, fontWeight: 600, fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', borderBottom: `1px solid ${EXP.border}` }}>
                         <button
                           type="button"
                           onClick={() => toggleSort(column.key as ExplorerSortKey)}
@@ -2684,13 +2912,17 @@ export function FileExplorer({
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleEntries.map(entry => {
+                  <tr style={{ height: virtualWindow.topSpacer }}>
+                    <td colSpan={4} style={{ padding: 0, border: 'none' }} />
+                  </tr>
+                  {virtualizedEntries.map(entry => {
                     const isSel = selected.has(entry.path);
                     const isDrop = dragOver === entry.path && entry.is_dir;
                     const isRenaming = rename.active && rename.path === entry.path;
                     const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
                     return (
-                    <tr key={entry.path}
+                    <tr
+                        key={entry.path}
                         draggable
                         data-overlay-drag-source="file"
                         onDragStart={e => onDragStart(e, entry)}
@@ -2702,27 +2934,30 @@ export function FileExplorer({
                         onDoubleClick={() => onEntryDoubleClick(entry)}
                         onContextMenu={e => onRightClick(e, entry)}
                         title={getSearchTooltip(entry)}
-                        style={{ background:isDrop?`${accent}22`:isSel?EXP.selected:'transparent', cursor:'pointer', opacity:entry.is_hidden?0.5:1, userSelect:'none', borderBottom:`1px solid ${EXP.border}` }}
-                        onMouseEnter={e => { if(!isSel && !isDrop)(e.currentTarget as HTMLTableRowElement).style.background=EXP.cardHov; }}
-                        onMouseLeave={e => { if(!isSel && !isDrop)(e.currentTarget as HTMLTableRowElement).style.background='transparent'; }}
+                        style={{ background: isDrop ? `${accent}22` : isSel ? EXP.selected : 'transparent', cursor: 'pointer', opacity: entry.is_hidden ? 0.5 : 1, userSelect: 'none', borderBottom: `1px solid ${EXP.border}`, height: virtualWindow.rowHeight }}
+                        onMouseEnter={e => { if (!isSel && !isDrop) (e.currentTarget as HTMLTableRowElement).style.background = EXP.cardHov; }}
+                        onMouseLeave={e => { if (!isSel && !isDrop) (e.currentTarget as HTMLTableRowElement).style.background = 'transparent'; }}
                       >
-                        <td style={{ padding:'4px 12px' }}>
-                          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                        <td style={{ padding: '4px 12px', verticalAlign: 'top', overflow: 'hidden' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                             <SvgIcon src={iconSrc} size={16} />
                             {isRenaming
-                              ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active:false, path:'', name:'' })} />
-                              : <span style={{ color: isSel?EXP.text:entry.is_dir?EXP.yellow:EXP.text, fontWeight:entry.is_dir?500:400 }}>{entry.name}</span>
+                              ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active: false, path: '', name: '' })} />
+                              : <span style={{ color: isSel ? EXP.text : entry.is_dir ? EXP.yellow : EXP.text, fontWeight: entry.is_dir ? 500 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>{entry.name}</span>
                             }
-                            {entry.is_symlink && <span style={{ fontSize:9, color:EXP.muted, background:'rgba(255,255,255,0.06)', borderRadius:3, padding:'1px 4px' }}>symlink</span>}
+                            {entry.is_symlink && <span style={{ fontSize: 9, color: EXP.muted, background: 'rgba(255,255,255,0.06)', borderRadius: 3, padding: '1px 4px', flexShrink: 0 }}>symlink</span>}
                           </div>
                           {renderSearchMetadata(entry)}
                         </td>
-                        <td style={{ padding:'4px 12px', color:EXP.muted, fontFamily:'monospace', whiteSpace:'nowrap' }}>{getEntryStorageLabel(entry)}</td>
-                        <td style={{ padding:'4px 12px', color:EXP.muted, whiteSpace:'nowrap' }}>{formatDate(entry.modified)}</td>
-                        <td style={{ padding:'4px 12px', color:EXP.muted2 }}>{getEntryTypeLabel(entry)}</td>
+                        <td style={{ padding: '4px 12px', color: EXP.muted, fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{getEntryStorageLabel(entry)}</td>
+                        <td style={{ padding: '4px 12px', color: EXP.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatDate(entry.modified)}</td>
+                        <td style={{ padding: '4px 12px', color: EXP.muted2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getEntryTypeLabel(entry)}</td>
                       </tr>
                     );
                   })}
+                  <tr style={{ height: virtualWindow.bottomSpacer }}>
+                    <td colSpan={4} style={{ padding: 0, border: 'none' }} />
+                  </tr>
                 </tbody>
               </table>
             )}

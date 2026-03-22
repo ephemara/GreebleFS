@@ -70,6 +70,13 @@ describe('useSettingsStore — initial state', () => {
     expect(typeof settings.system.showInTaskbar).toBe('boolean');
   });
 
+  it('has the correct default hotkey settings', () => {
+    const { settings } = useSettingsStore.getState();
+    expect(settings.keybindings.terminalToggle).toBe('Ctrl+Space');
+    expect(settings.keybindings.terminalFocus).toBe('Ctrl+J');
+    expect(settings.keybindings.commandPalette).toBe('Ctrl+Shift+P');
+  });
+
   it('has the correct default screenshot settings', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.screenshots.saveDirectory).toBe(defaultSettings.screenshots.saveDirectory);

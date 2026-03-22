@@ -11,6 +11,8 @@ interface OverlayScrollAreaProps {
   style?: React.CSSProperties;
   viewportStyle?: React.CSSProperties;
   contentStyle?: React.CSSProperties;
+  viewportRef?: React.Ref<HTMLDivElement>;
+  onViewportScroll?: React.UIEventHandler<HTMLDivElement>;
 }
 
 export function OverlayScrollArea({
@@ -22,15 +24,17 @@ export function OverlayScrollArea({
   style,
   viewportStyle,
   contentStyle,
+  viewportRef,
+  onViewportScroll,
 }: OverlayScrollAreaProps) {
-  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const internalViewportRef = useRef<HTMLDivElement | null>(null);
 
   const handleWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
     if (direction !== 'horizontal') {
       return;
     }
 
-    const viewport = viewportRef.current;
+    const viewport = internalViewportRef.current;
     if (!viewport) {
       return;
     }
@@ -56,8 +60,9 @@ export function OverlayScrollArea({
       }}
     >
       <div
-        ref={viewportRef}
+        ref={mergeRefs(internalViewportRef, viewportRef)}
         onWheel={handleWheel}
+        onScroll={onViewportScroll}
         className={joinClassNames(
           'overlay-scroll-area__viewport',
           `overlay-scroll-area__viewport--${direction}`,
@@ -89,4 +94,21 @@ export function OverlayScrollArea({
 
 function joinClassNames(...parts: Array<string | undefined>): string {
   return parts.filter(Boolean).join(' ');
+}
+
+function mergeRefs<T>(...refs: Array<React.Ref<T> | undefined>): React.RefCallback<T> {
+  return value => {
+    for (const ref of refs) {
+      if (!ref) {
+        continue;
+      }
+
+      if (typeof ref === 'function') {
+        ref(value);
+        continue;
+      }
+
+      (ref as React.MutableRefObject<T | null>).current = value;
+    }
+  };
 }

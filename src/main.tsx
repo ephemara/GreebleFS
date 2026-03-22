@@ -26,6 +26,18 @@ document.addEventListener('selectstart', (e) => {
     }
 });
 
+document.addEventListener('keydown', (e) => {
+    const isTerminalFocusChord = e.ctrlKey
+        && !e.metaKey
+        && !e.altKey
+        && !e.shiftKey
+        && e.key.toLowerCase() === 'j';
+
+    if (isTerminalFocusChord) {
+        e.preventDefault();
+    }
+}, { capture: true });
+
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <App />

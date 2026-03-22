@@ -1,5 +1,6 @@
 export type HotkeyBindingKey =
   | 'commandPalette'
+  | 'terminalFocus'
   | 'terminalToggle'
   | 'saveFile'
   | 'newFile'
@@ -28,6 +29,13 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     scope: 'global',
   },
   {
+    key: 'terminalFocus',
+    label: 'Focus Terminal',
+    description: 'Global shortcut used to jump directly into the terminal panel.',
+    defaultValue: 'Ctrl+J',
+    scope: 'global',
+  },
+  {
     key: 'zoomAdjust',
     label: 'Zoom Overlay',
     description: 'Hold the modifier and scroll anywhere in the overlay to change zoom.',
@@ -44,9 +52,9 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
   {
     key: 'commandPalette',
     label: 'Command Palette',
-    description: 'Reserved for command palette actions.',
-    defaultValue: 'Ctrl+K',
-    scope: 'local',
+    description: 'Global shortcut used to open the overlay command palette.',
+    defaultValue: 'Ctrl+Shift+P',
+    scope: 'global',
   },
   {
     key: 'saveFile',

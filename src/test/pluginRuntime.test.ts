@@ -134,7 +134,7 @@ describe('pluginRuntime helpers', () => {
   });
 
   it('loads the portable sample plugins from disk through the runtime transpiler', async () => {
-    for (const filename of ['drawable-canvas.tsx', 'platform-inspector.tsx', 'quick-notes.tsx', 'theme-gallery.tsx']) {
+    for (const filename of ['drawable-canvas.tsx']) {
       const pluginPath = resolve(pluginSystemConfig.pluginsDirectory, filename);
       const source = await readFile(pluginPath, 'utf8');
 

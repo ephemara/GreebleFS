@@ -16,10 +16,13 @@ describe('hotkey config helpers', () => {
     const defaults = createDefaultKeybindingSettings();
     const normalized = normalizeKeybindingSettings({
       terminalToggle: '   ',
+      terminalFocus: '   ',
       zoomAdjust: 'Ctrl + Scroll',
     });
 
     expect(normalized.terminalToggle).toBe(defaults.terminalToggle);
+    expect(defaults.terminalFocus).toBe('Ctrl+J');
+    expect(normalized.terminalFocus).toBe(defaults.terminalFocus);
     expect(normalized.zoomAdjust).toBe('Ctrl+Scroll');
     expect(defaults.opacityAdjust).toBe('Alt+Scroll');
   });

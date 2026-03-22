@@ -16,10 +16,16 @@ import {
   Image as ImageIcon,
   LoaderCircle,
   Monitor,
+  MousePointer2,
   RefreshCw,
   Save,
   Search,
   Maximize2,
+  Square,
+  ArrowUpRight,
+  Type,
+  RotateCcw,
+  Trash2,
 } from 'lucide-react';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 import { useSettingsStore } from '../store/settingsStore';
@@ -36,6 +42,18 @@ import {
   type ScreenshotEntryLike,
 } from './screenshotsUtils';
 import { OverlayScrollArea } from './OverlayScrollArea';
+
+// ─── Annotation types ─────────────────────────────────────────────────────────
+
+type AnnotationTool = 'select' | 'rect' | 'arrow' | 'text';
+
+type RectAnnotation  = { type: 'rect';  x1: number; y1: number; x2: number; y2: number; color: string; lw: number; };
+type ArrowAnnotation = { type: 'arrow'; x1: number; y1: number; x2: number; y2: number; color: string; lw: number; };
+type TextAnnotation  = { type: 'text';  x:  number; y:  number; text: string; color: string; size: number; };
+type Annotation = RectAnnotation | ArrowAnnotation | TextAnnotation;
+
+const ANNOTATION_COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#6366f1','#ec4899','#f1f5f9'];
+
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -152,8 +170,24 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
   const accent = appearance?.theme.palette.accent ?? 'var(--overlay-accent)';
   const screenshotDir = useSettingsStore(s => s.settings.screenshots.saveDirectory || screenshotFeatureConfig.defaultSaveDirectory);
 
-  const previewRef    = useRef<HTMLDivElement | null>(null);
-  const dragStateRef  = useRef<{ origin: Point2D; selection: RectSelection; pointerId: number } | null>(null);
+  // ── Drag + annotation refs ──
+  // containerRef is the SINGLE coordinate origin: both events and absolute
+  // positioned overlays (selection, canvas) use this element's rect.
+  const containerRef    = useRef<HTMLDivElement | null>(null);
+  const canvasRef       = useRef<HTMLCanvasElement | null>(null);
+  const textInputRef    = useRef<HTMLInputElement | null>(null);
+  // DOMRect is cached at pointerDown so layout shifts during drag can't cause jumps.
+  const dragRectRef     = useRef<DOMRect | null>(null);
+  const dragOriginRef   = useRef<Point2D | null>(null);
+  const liveAnnRef      = useRef<Annotation | null>(null);
+
+  const [activeTool,      setActiveTool]      = useState<AnnotationTool>('select');
+  const [annotations,     setAnnotations]     = useState<Annotation[]>([]);
+  const [liveAnnotation,  setLiveAnnotation]  = useState<Annotation | null>(null);
+  const [annColor,        setAnnColor]        = useState(ANNOTATION_COLORS[0]);
+  const [annLw,           setAnnLw]           = useState(3);
+  const [textDraft,       setTextDraft]       = useState<{ x: number; y: number; } | null>(null);
+  const [textValue,       setTextValue]       = useState('');
 
   const [monitors,        setMonitors]        = useState<MonitorCapture[]>([]);
   const [activeMonitorId, setActiveMonitorId] = useState<string | null>(null);
@@ -173,17 +207,20 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
 
   const activeMonitor = monitors.find(m => m.id === activeMonitorId) ?? null;
 
-  // ── Derived selection in image-space (physical pixels) ──
-  const selectionPx = (() => {
-    if (!selection || !activeMonitor || !previewRef.current) return null;
-    const rect = previewRef.current.getBoundingClientRect();
+  // Derived selection mapped to full physical pixel space for Rust commands.
+  // Re-compute from ref so action callbacks always see the current container size.
+  const getSelectionPx = useCallback(() => {
+    if (!selection || !activeMonitor || !containerRef.current) return null;
+    const rect = containerRef.current.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return null;
     return selectionToPixelRect(
       normalizeSelection(selection),
       { width: rect.width, height: rect.height },
       { width: activeMonitor.imageWidth, height: activeMonitor.imageHeight },
     );
-  })();
+  }, [selection, activeMonitor]);
+
+  const selectionPx = getSelectionPx();
 
   // ── Gallery ──
   const loadGallery = useCallback(async () => {
@@ -272,49 +309,120 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
     const t = window.setTimeout(() => setCopiedPath(null), 1800);
     return () => window.clearTimeout(t);
   }, [copiedPath]);
+  // ── Reset annotations when switching monitors ──
+  useEffect(() => {
+    setAnnotations([]);
+    setLiveAnnotation(null);
+    setTextDraft(null);
+    setTextValue('');
+    liveAnnRef.current = null;
+  }, [activeMonitorId]);
 
-  // ── Selection drag on preview ──
+  // ── Canvas redraw ──
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    [...annotations, ...(liveAnnotation ? [liveAnnotation] : [])].forEach(ann => drawAnnotation(ctx, ann));
+  }, [annotations, liveAnnotation]);
+
+  // Keep canvas pixel dimensions in sync with container CSS size
+  useEffect(() => {
+    const container = containerRef.current;
+    const canvas = canvasRef.current;
+    if (!container || !canvas) return;
+    const ro = new ResizeObserver(() => {
+      const r = container.getBoundingClientRect();
+      canvas.width  = r.width;
+      canvas.height = r.height;
+      // re-trigger draw after resize
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        [...annotations, ...(liveAnnotation ? [liveAnnotation] : [])].forEach(ann => drawAnnotation(ctx, ann));
+      }
+    });
+    ro.observe(container);
+    return () => ro.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [containerRef.current, canvasRef.current]);
+
+
+  // ── Pointer events — all on the container, rect cached at pointerDown ──
   const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (!activeMonitor?.captureId || isCapturing) return;
-    e.preventDefault();
+    // Capture the rect NOW and cache it for the entire drag
     const rect = e.currentTarget.getBoundingClientRect();
-    const origin: Point2D = {
-      x: clamp(e.clientX - rect.left, 0, rect.width),
-      y: clamp(e.clientY - rect.top,  0, rect.height),
-    };
-    const ds = { origin, selection: { x: origin.x, y: origin.y, width: 0, height: 0 }, pointerId: e.pointerId };
-    dragStateRef.current = ds;
-    setSelection(ds.selection);
+    dragRectRef.current = rect;
+    const x = clamp(e.clientX - rect.left, 0, rect.width);
+    const y = clamp(e.clientY - rect.top,  0, rect.height);
+    dragOriginRef.current = { x, y };
     e.currentTarget.setPointerCapture(e.pointerId);
-  }, [activeMonitor, isCapturing]);
+
+    if (activeTool === 'select') {
+      e.preventDefault();
+      setSelection({ x, y, width: 0, height: 0 });
+    } else if (activeTool === 'text') {
+      setTextDraft({ x, y });
+      setTextValue('');
+      window.requestAnimationFrame(() => textInputRef.current?.focus());
+    } else {
+      e.preventDefault();
+      const live: Annotation = activeTool === 'rect'
+        ? { type: 'rect',  x1: x, y1: y, x2: x, y2: y, color: annColor, lw: annLw }
+        : { type: 'arrow', x1: x, y1: y, x2: x, y2: y, color: annColor, lw: annLw };
+      liveAnnRef.current = live;
+      setLiveAnnotation(live);
+    }
+  }, [activeMonitor, isCapturing, activeTool, annColor, annLw]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    const ds = dragStateRef.current;
-    if (!ds || !previewRef.current) return;
+    const rect = dragRectRef.current;
+    const origin = dragOriginRef.current;
+    if (!rect || !origin) return;
     e.preventDefault();
-    const rect = previewRef.current.getBoundingClientRect();
-    const point: Point2D = {
-      x: clamp(e.clientX - rect.left, 0, rect.width),
-      y: clamp(e.clientY - rect.top,  0, rect.height),
-    };
-    const next = clampSelectionToBounds(
-      { x: ds.origin.x, y: ds.origin.y, width: point.x - ds.origin.x, height: point.y - ds.origin.y },
-      { width: rect.width, height: rect.height }, 1,
-    );
-    dragStateRef.current = { ...ds, selection: next };
-    setSelection(next);
-  }, []);
+    // Always use the CACHED rect — never re-measure during a drag
+    const x = clamp(e.clientX - rect.left, 0, rect.width);
+    const y = clamp(e.clientY - rect.top,  0, rect.height);
+
+    if (activeTool === 'select') {
+      const next = clampSelectionToBounds(
+        { x: origin.x, y: origin.y, width: x - origin.x, height: y - origin.y },
+        { width: rect.width, height: rect.height }, 1,
+      );
+      setSelection(next);
+    } else if (activeTool === 'rect' || activeTool === 'arrow') {
+      const live: Annotation = activeTool === 'rect'
+        ? { type: 'rect',  x1: origin.x, y1: origin.y, x2: x, y2: y, color: annColor, lw: annLw }
+        : { type: 'arrow', x1: origin.x, y1: origin.y, x2: x, y2: y, color: annColor, lw: annLw };
+      liveAnnRef.current = live;
+      setLiveAnnotation(live);
+    }
+  }, [activeTool, annColor, annLw]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    const ds = dragStateRef.current;
-    if (!ds) return;
-    e.preventDefault();
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
-    dragStateRef.current = null;
-    // selection stays — user confirms with action buttons
+    dragRectRef.current  = null;
+    dragOriginRef.current = null;
+    if (liveAnnRef.current) {
+      setAnnotations(prev => [...prev, liveAnnRef.current!]);
+      liveAnnRef.current = null;
+      setLiveAnnotation(null);
+    }
+    // selection stays for confirm
   }, []);
+
+  const commitText = useCallback(() => {
+    if (!textDraft || !textValue.trim()) { setTextDraft(null); setTextValue(''); return; }
+    setAnnotations(prev => [...prev, { type: 'text', x: textDraft.x, y: textDraft.y, text: textValue.trim(), color: annColor, size: 16 }]);
+    setTextDraft(null);
+    setTextValue('');
+  }, [textDraft, textValue, annColor]);
+
 
   // ── Actions ──
   const doSave = useCallback(async (copyToo: boolean) => {
@@ -402,6 +510,60 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
   const isWorking = isCapturing || isSaving || isCopying;
   const normalizedSel = selection ? normalizeSelection(selection) : null;
   const hasSelection = normalizedSel && normalizedSel.width >= 4 && normalizedSel.height >= 4;
+  const hasAnnotations = annotations.length > 0;
+
+  // ── Save annotated (canvas composite → blob → fs_write_file) ──
+  const doSaveAnnotated = useCallback(async (copyToo: boolean) => {
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container || !activeMonitor) return;
+    setIsSaving(true);
+    try {
+      const img = document.createElement('img');
+      img.src = activeMonitor.previewUrl ?? '';
+      await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = rej; });
+      const out = document.createElement('canvas');
+      out.width = img.naturalWidth; out.height = img.naturalHeight;
+      const ctx = out.getContext('2d')!;
+      ctx.drawImage(img, 0, 0);
+      // Scale annotations from container CSS px → preview image px
+      const scaleX = img.naturalWidth  / container.getBoundingClientRect().width;
+      const scaleY = img.naturalHeight / container.getBoundingClientRect().height;
+      ctx.save(); ctx.scale(scaleX, scaleY);
+      [...annotations].forEach(ann => drawAnnotation(ctx, ann));
+      ctx.restore();
+      // Crop to selection if active
+      const px = getSelectionPx();
+      // Map from full imageWidth/imageHeight to preview dimensions (preview is downscaled)
+      const previewScaleX = img.naturalWidth  / activeMonitor.imageWidth;
+      const previewScaleY = img.naturalHeight / activeMonitor.imageHeight;
+      let finalCanvas = out;
+      if (px) {
+        const norm = normalizeSelection(px);
+        const crop = document.createElement('canvas');
+        crop.width = Math.round(norm.width * previewScaleX);
+        crop.height = Math.round(norm.height * previewScaleY);
+        crop.getContext('2d')!.drawImage(out, Math.round(norm.x * previewScaleX), Math.round(norm.y * previewScaleY), crop.width, crop.height, 0, 0, crop.width, crop.height);
+        finalCanvas = crop;
+      }
+      const blob = await new Promise<Blob>((res, rej) => finalCanvas.toBlob(b => b ? res(b) : rej(new Error('canvas empty')), 'image/png'));
+      const buf = await blob.arrayBuffer();
+      const bytes = Array.from(new Uint8Array(buf));
+      await ensureDir(screenshotDir);
+      const ts = Date.now();
+      const fileName = `${screenshotFeatureConfig.filePrefix}-${ts}.png`;
+      const fullPath = `${screenshotDir}\\${fileName}`;
+      await invoke('fs_write_file', { path: fullPath, content: bytes });
+      if (copyToo) {
+        const item = new ClipboardItem({ 'image/png': blob });
+        await navigator.clipboard.write([item]);
+      }
+      await loadGallery();
+      setStatusMsg(`Saved annotated: ${fileName}${copyToo ? ' & copied' : ''}.`);
+    } catch (err) { setError(String(err)); }
+    finally { setIsSaving(false); }
+  }, [activeMonitor, annotations, screenshotDir, loadGallery, getSelectionPx]);
+
 
   // ─── Tool content ──────────────────────────────────────────────────────────
 
@@ -414,28 +576,62 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
           {monitors.map((mon, i) => {
             const active = mon.id === activeMonitorId;
             return (
-              <button
-                key={mon.id}
-                type="button"
-                onClick={() => { setActiveMonitorId(mon.id); setSelection(null); }}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                  padding: '4px 10px', borderRadius: 8, border: `1px solid ${active ? `${accent}88` : BORDER}`,
-                  background: active ? `${accent}20` : 'rgba(255,255,255,0.03)',
-                  color: active ? '#f4f6ff' : MUTED,
-                  cursor: 'pointer', fontSize: 10.5, fontWeight: 700,
-                }}
-              >
+              <button key={mon.id} type="button" onClick={() => { setActiveMonitorId(mon.id); setSelection(null); }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 8,
+                  border: `1px solid ${active ? `${accent}88` : BORDER}`, background: active ? `${accent}20` : 'rgba(255,255,255,0.03)',
+                  color: active ? '#f4f6ff' : MUTED, cursor: 'pointer', fontSize: 10.5, fontWeight: 700 }}>
                 <Monitor size={11} style={{ flexShrink: 0 }} />
                 Display {i + 1}
-                {mon.isActive && (
-                  <span style={{ padding: '1px 5px', borderRadius: 999, background: `${accent}20`, border: `1px solid ${accent}44`, fontSize: 9, color: accent }}>
-                    Active
-                  </span>
-                )}
+                {mon.isActive && <span style={{ padding: '1px 5px', borderRadius: 999, background: `${accent}20`, border: `1px solid ${accent}44`, fontSize: 9, color: accent }}>Active</span>}
               </button>
             );
           })}
+        </div>
+      )}
+
+      {/* Annotation toolbar — only when capture is ready */}
+      {activeMonitor?.captureId && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderBottom: `1px solid ${BORDER}`, background: PANEL, flexWrap: 'wrap' }}>
+          {([['select','Select'],[`rect`,'Rectangle'],[`arrow`,'Arrow'],[`text`,'Text']] as const).map(([tool, label]) => {
+            const icons: Record<AnnotationTool, React.ReactNode> = {
+              select: <MousePointer2 size={13} />, rect: <Square size={13} />,
+              arrow: <ArrowUpRight size={13} />, text: <Type size={13} />,
+            };
+            const active = activeTool === tool;
+            return (
+              <button key={tool} type="button" title={label} onClick={() => setActiveTool(tool)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 6, fontSize: 10.5, fontWeight: 600,
+                  border: `1px solid ${active ? accent : BORDER}`, background: active ? `${accent}22` : 'rgba(255,255,255,0.03)',
+                  color: active ? '#f4f6ff' : MUTED, cursor: 'pointer' }}>
+                {icons[tool as AnnotationTool]}{label}
+              </button>
+            );
+          })}
+          <div style={{ width: 1, height: 18, background: BORDER, margin: '0 2px' }} />
+          {ANNOTATION_COLORS.map(c => (
+            <button key={c} type="button" title={c} onClick={() => setAnnColor(c)}
+              style={{ width: 18, height: 18, borderRadius: '50%', border: c === annColor ? `2px solid #fff` : `2px solid transparent`,
+                background: c, cursor: 'pointer', outline: c === annColor ? `2px solid ${c}` : 'none', outlineOffset: 1 }} />
+          ))}
+          <div style={{ width: 1, height: 18, background: BORDER, margin: '0 2px' }} />
+          {[2, 3, 5].map(w => (
+            <button key={w} type="button" title={`Stroke ${w}px`} onClick={() => setAnnLw(w)}
+              style={{ display: 'grid', placeItems: 'center', width: 26, height: 26, borderRadius: 6, cursor: 'pointer',
+                border: `1px solid ${annLw === w ? accent : BORDER}`, background: annLw === w ? `${accent}22` : 'rgba(255,255,255,0.03)' }}>
+              <div style={{ width: 14, height: w, borderRadius: 999, background: annLw === w ? accent : MUTED }} />
+            </button>
+          ))}
+          <div style={{ flex: 1 }} />
+          {hasAnnotations && (
+            <>
+              <button type="button" title="Undo" onClick={() => setAnnotations(p => p.slice(0, -1))} style={annBtn()}>
+                <RotateCcw size={12} />
+              </button>
+              <button type="button" title="Clear all" onClick={() => setAnnotations([])} style={annBtn()}>
+                <Trash2 size={12} />
+              </button>
+            </>
+          )}
         </div>
       )}
 
@@ -455,71 +651,70 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
             </button>
           </div>
         ) : (
+          // ── Container is the SINGLE coordinate origin for events + overlays
           <div
+            ref={containerRef}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
             style={{
-              position: 'relative',
-              maxWidth: '100%',
-              maxHeight: '100%',
+              position: 'relative', maxWidth: '100%', maxHeight: '100%',
               aspectRatio: `${activeMonitor.imageWidth} / ${activeMonitor.imageHeight}`,
-              borderRadius: 10,
-              overflow: 'hidden',
+              borderRadius: 10, overflow: 'hidden',
               border: `1px solid ${BORDER}`,
               boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-              cursor: isCapturing ? 'wait' : 'crosshair',
+              cursor: activeTool === 'text' ? 'text' : isCapturing ? 'wait' : 'crosshair',
+              touchAction: 'none',
             }}
           >
-            {/* Screenshot preview */}
-            <img
-              src={activeMonitor.previewUrl ?? ''}
-              alt={activeMonitor.label}
-              draggable={false}
-              style={{ display: 'block', width: '100%', height: '100%', objectFit: 'fill', userSelect: 'none', pointerEvents: 'none' }}
-            />
+            <img src={activeMonitor.previewUrl ?? ''} alt={activeMonitor.label} draggable={false}
+              style={{ display: 'block', width: '100%', height: '100%', objectFit: 'fill', userSelect: 'none', pointerEvents: 'none' }} />
 
-            {/* Drag surface */}
-            <div
-              ref={previewRef}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerUp}
-              style={{ position: 'absolute', inset: 0, touchAction: 'none' }}
-            />
+            {/* Annotation canvas */}
+            <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }} />
 
-            {/* Selection overlay */}
-            {normalizedSel && normalizedSel.width >= 2 && normalizedSel.height >= 2 && (
+            {/* Text input overlay */}
+            {textDraft && (
+              <input
+                ref={textInputRef}
+                value={textValue}
+                onChange={e => setTextValue(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') commitText(); if (e.key === 'Escape') { setTextDraft(null); setTextValue(''); } }}
+                onBlur={commitText}
+                style={{
+                  position: 'absolute', left: textDraft.x, top: textDraft.y,
+                  background: 'rgba(0,0,0,0.7)', border: `1px solid ${annColor}`,
+                  color: annColor, fontSize: 14, fontWeight: 700, padding: '2px 6px',
+                  borderRadius: 4, outline: 'none', minWidth: 80,
+                }}
+              />
+            )}
+
+            {/* Selection overlay (only in select mode) */}
+            {activeTool === 'select' && normalizedSel && normalizedSel.width >= 2 && normalizedSel.height >= 2 && (
               <>
-                {/* Dimmed regions */}
-                <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.48)', pointerEvents: 'none' }} />
-                {/* Bright selection hole */}
+                <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.46)', pointerEvents: 'none' }} />
                 <div style={{
                   position: 'absolute',
                   left: normalizedSel.x, top: normalizedSel.y,
                   width: normalizedSel.width, height: normalizedSel.height,
-                  boxShadow: `0 0 0 9999px rgba(0,0,0,0.48)`,
+                  boxShadow: `0 0 0 9999px rgba(0,0,0,0.46)`,
                   border: `2px solid ${accent}`,
                   outline: '1px solid rgba(255,255,255,0.35)',
                   pointerEvents: 'none',
                 }} />
-                {/* Dimension badge */}
                 {selectionPx && (
                   <div style={{
-                    position: 'absolute',
+                    position: 'absolute', pointerEvents: 'none',
                     left: normalizedSel.x + normalizedSel.width / 2,
-                    top: normalizedSel.y + normalizedSel.height + 6,
+                    top: Math.min(normalizedSel.y + normalizedSel.height + 6, (containerRef.current?.getBoundingClientRect().height ?? 9999) - 28),
                     transform: 'translateX(-50%)',
-                    background: 'rgba(5,8,15,0.92)',
-                    border: `1px solid ${accent}55`,
-                    borderRadius: 6,
-                    padding: '2px 8px',
-                    fontSize: 10,
-                    fontWeight: 700,
-                    color: '#e8ecff',
-                    whiteSpace: 'nowrap',
-                    pointerEvents: 'none',
-                    fontFamily: 'var(--overlay-font-mono, monospace)',
+                    background: 'rgba(5,8,15,0.92)', border: `1px solid ${accent}55`,
+                    borderRadius: 6, padding: '2px 8px', fontSize: 10, fontWeight: 700,
+                    color: '#e8ecff', whiteSpace: 'nowrap', fontFamily: 'var(--overlay-font-mono, monospace)',
                   }}>
-                    {normalizeSelection(selectionPx).width} × {normalizeSelection(selectionPx).height} px
+                    {normalizeSelection(selectionPx).width}×{normalizeSelection(selectionPx).height}
                   </div>
                 )}
               </>
@@ -527,7 +722,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
 
             {/* Saving spinner */}
             {isSaving && (
-              <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: 'rgba(0,0,0,0.6)' }}>
+              <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: 'rgba(0,0,0,0.6)', pointerEvents: 'none' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: '#eef0ff' }}>
                   <LoaderCircle size={24} className="animate-spin" style={{ color: accent }} />
                   <div style={{ fontSize: 11 }}>Saving…</div>
@@ -542,23 +737,23 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
       <div style={{ padding: '6px 8px', borderTop: `1px solid ${BORDER}`, background: PANEL, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         {hasSelection ? (
           <>
-            <span style={{ fontSize: 10, color: MUTED, marginRight: 2 }}>Selection:</span>
+            <span style={{ fontSize: 10, color: MUTED, marginRight: 2 }}>Region:</span>
             <button type="button" onClick={() => void doCopy()} disabled={isWorking} style={btnStyle(false, accent, isWorking)}>
-              {isCopying ? <LoaderCircle size={11} className="animate-spin" /> : <Copy size={11} />}
-              Copy
+              {isCopying ? <LoaderCircle size={11} className="animate-spin" /> : <Copy size={11} />} Copy
             </button>
             <button type="button" onClick={() => void doSave(false)} disabled={isWorking} style={btnStyle(false, accent, isWorking)}>
-              {isSaving ? <LoaderCircle size={11} className="animate-spin" /> : <Save size={11} />}
-              Save
+              {isSaving ? <LoaderCircle size={11} className="animate-spin" /> : <Save size={11} />} Save
             </button>
             <button type="button" onClick={() => void doSave(true)} disabled={isWorking} style={btnStyle(true, accent, isWorking)}>
-              {isSaving ? <LoaderCircle size={11} className="animate-spin" /> : <Check size={11} />}
-              Save + Copy
+              {isSaving ? <LoaderCircle size={11} className="animate-spin" /> : <Check size={11} />} Save+Copy
             </button>
+            {hasAnnotations && (
+              <button type="button" onClick={() => void doSaveAnnotated(true)} disabled={isWorking} style={btnStyle(true, accent, isWorking)}>
+                <Check size={11} /> Save Annotated
+              </button>
+            )}
             <div style={{ flex: 1 }} />
-            <button type="button" onClick={() => setSelection(null)} style={btnStyle(false, accent)} title="Clear selection">
-              ✕ Clear
-            </button>
+            <button type="button" onClick={() => setSelection(null)} style={btnStyle(false, accent)}>✕ Clear</button>
           </>
         ) : activeMonitor?.captureId ? (
           <>
@@ -720,6 +915,57 @@ function btnStyle(primary: boolean, accent: string, disabled = false): React.CSS
     color: disabled ? 'rgba(255,255,255,0.35)' : primary ? '#f4f5ff' : '#cdd0ee',
     cursor: disabled ? 'not-allowed' : 'pointer',
   };
+}
+
+function annBtn(): React.CSSProperties {
+  return {
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    width: 26, height: 26, borderRadius: 6, cursor: 'pointer',
+    border: `1px solid ${BORDER}`, background: 'rgba(255,255,255,0.03)',
+    color: MUTED,
+  };
+}
+
+// ─── Canvas drawing ────────────────────────────────────────────────────────────
+
+function drawAnnotation(ctx: CanvasRenderingContext2D, ann: Annotation) {
+  ctx.save();
+  if (ann.type === 'rect') {
+    const a = ann as { x1: number; y1: number; x2: number; y2: number; color: string; lw: number };
+    ctx.strokeStyle = a.color;
+    ctx.lineWidth = a.lw;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.rect(Math.min(a.x1, a.x2), Math.min(a.y1, a.y2), Math.abs(a.x2 - a.x1), Math.abs(a.y2 - a.y1));
+    ctx.stroke();
+  } else if (ann.type === 'arrow') {
+    const a = ann as { x1: number; y1: number; x2: number; y2: number; color: string; lw: number };
+    const angle = Math.atan2(a.y2 - a.y1, a.x2 - a.x1);
+    const head  = Math.max(12, a.lw * 4);
+    ctx.strokeStyle = a.color;
+    ctx.fillStyle   = a.color;
+    ctx.lineWidth   = a.lw;
+    ctx.lineCap     = 'round';
+    ctx.beginPath();
+    ctx.moveTo(a.x1, a.y1);
+    ctx.lineTo(a.x2, a.y2);
+    ctx.stroke();
+    // Arrowhead
+    ctx.beginPath();
+    ctx.moveTo(a.x2, a.y2);
+    ctx.lineTo(a.x2 - head * Math.cos(angle - Math.PI / 6), a.y2 - head * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(a.x2 - head * Math.cos(angle + Math.PI / 6), a.y2 - head * Math.sin(angle + Math.PI / 6));
+    ctx.closePath();
+    ctx.fill();
+  } else if (ann.type === 'text') {
+    const a = ann as { x: number; y: number; text: string; color: string; size: number };
+    ctx.fillStyle    = a.color;
+    ctx.font         = `700 ${a.size}px Inter, system-ui, sans-serif`;
+    ctx.shadowColor  = 'rgba(0,0,0,0.8)';
+    ctx.shadowBlur   = 4;
+    ctx.fillText(a.text, a.x, a.y + a.size);
+  }
+  ctx.restore();
 }
 
 export default ScreenshotsManager;

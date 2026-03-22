@@ -735,8 +735,10 @@ export function SettingsPage({
       key: 'hotkeys',
       label: 'Hotkeys',
       subtitle: 'Overlay opener and gesture bindings.',
-      summary: formatHotkeyLabel(settings.keybindings.terminalToggle),
-      detail: 'Keep the overlay easy to summon and remap the first global gestures without digging through raw config.',
+      summary: [settings.keybindings.terminalToggle, settings.keybindings.terminalFocus]
+        .map(formatHotkeyLabel)
+        .join(' · '),
+      detail: 'Keep the overlay easy to summon, jump straight to the terminal panel, and remap the first global gestures without digging through raw config.',
       icon: <SlidersHorizontal size={14} />,
     },
     {
