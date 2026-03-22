@@ -4,6 +4,68 @@ import { discoverOverlayPlugins } from '../config/pluginPackages';
 import { pluginSystemConfig } from '../config/plugins';
 
 describe('plugin package discovery', () => {
+  it('keeps loading legacy plugins when one file fails to parse', async () => {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      const params = args as { path?: string; showHidden?: boolean } | undefined;
+      const normalizedPath = String(params?.path ?? '').replace(/\\/g, '/');
+
+      if (command === 'fs_list_dir' && normalizedPath === pluginSystemConfig.pluginsDirectory) {
+        return [
+          {
+            name: 'broken-panel.tsx',
+            path: 'plugins/broken-panel.tsx',
+            is_dir: false,
+            extension: 'tsx',
+            modified: 1,
+          },
+          {
+            name: 'hello-panel.tsx',
+            path: 'plugins/hello-panel.tsx',
+            is_dir: false,
+            extension: 'tsx',
+            modified: 2,
+          },
+        ];
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'plugins/broken-panel.tsx') {
+        throw new Error('legacy parse failed');
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'plugins/hello-panel.tsx') {
+        return `
+          import React from 'react';
+          import { definePlugin } from 'overlayterm-plugin';
+
+          export default definePlugin({
+            name: 'Hello Panel',
+            component: function HelloPanel() {
+              return React.createElement('div', null, 'hello');
+            },
+          });
+        `;
+      }
+
+      throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
+    });
+
+    const result = await discoverOverlayPlugins(() => ({
+      invoke: async <T,>() => null as T,
+      event: {} as never,
+      window: {} as never,
+      fs: {} as never,
+      notification: {} as never,
+      refreshPlugins: async () => undefined,
+      openPluginsFolder: async () => undefined,
+      runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),
+    }));
+
+    expect(result.plugins.map(plugin => plugin.name)).toEqual(['Hello Panel']);
+    expect(result.warnings).toEqual([
+      'broken-panel.tsx: Error: legacy parse failed',
+    ]);
+  });
+
   it('loads legacy plugins and manifest-based packages with contributions', async () => {
     vi.mocked(invoke).mockImplementation(async (command, args) => {
       const params = args as { path?: string; showHidden?: boolean } | undefined;

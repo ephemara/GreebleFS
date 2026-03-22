@@ -100,14 +100,17 @@ const LazyMonacoEditor = React.lazy(async () => {
 const EXPLORER_LIST_ROW_HEIGHT = 44;
 const EXPLORER_LIST_SEARCH_ROW_HEIGHT = 72;
 const EXPLORER_LIST_OVERSCAN = 8;
-const EXPLORER_GRID_MIN_WIDTH = 100;
-const EXPLORER_GRID_GAP = 6;
-const EXPLORER_GRID_PADDING = 12;
+const EXPLORER_GRID_MIN_WIDTH = 118;
+const EXPLORER_GRID_GAP = 14;
+const EXPLORER_GRID_PADDING = 18;
 const EXPLORER_GRID_OVERSCAN_ROWS = 2;
-const EXPLORER_GRID_ITEM_HEIGHT = 156;
-const EXPLORER_GRID_SEARCH_ITEM_HEIGHT = 180;
+const EXPLORER_GRID_ITEM_HEIGHT = 164;
+const EXPLORER_GRID_SEARCH_ITEM_HEIGHT = 196;
 const EXPLORER_NEW_ITEM_LIST_HEIGHT = 46;
-const EXPLORER_NEW_ITEM_GRID_HEIGHT = 156;
+const EXPLORER_NEW_ITEM_GRID_HEIGHT = 164;
+const EXPLORER_GRID_ICON_SIZE = 54;
+const EXPLORER_GRID_ICON_STAGE_SIZE = 76;
+const EXPLORER_GRID_TILE_RADIUS = 12;
 const EXPLORER_SEARCH_SCOPE = 'primary_file_explorer';
 
 function getExplorerPerformanceNow(): number {
@@ -3028,12 +3031,25 @@ export function FileExplorer({
             {/* Grid view */}
             {newItem.visible && effectiveViewMode === 'grid' && (
               <div style={{ padding: '0 12px 12px', boxSizing: 'border-box' }}>
-                <div style={{ background: EXP.card, border: `1px solid ${accent}`, borderRadius: 8, padding: 8, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, height: EXPLORER_NEW_ITEM_GRID_HEIGHT, boxSizing: 'border-box' }}>
+                <div
+                  style={{
+                    background: `${accent}10`,
+                    border: `1px solid ${accent}`,
+                    borderRadius: EXPLORER_GRID_TILE_RADIUS,
+                    padding: '10px 8px 8px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 8,
+                    height: EXPLORER_NEW_ITEM_GRID_HEIGHT,
+                    boxSizing: 'border-box',
+                  }}
+                >
                   <SvgIcon
                     src={newItem.kind === 'folder'
                       ? (resolveIconSrc(themeIconTheme.folder, themeIconTheme) ?? '/icons/folder.svg')
                       : resolveFileIconSrc('new-file.txt', 'txt', themeIconTheme)}
-                    size={36}
+                    size={EXPLORER_GRID_ICON_SIZE}
                   />
                   <input
                     autoFocus value={newItemName} onChange={e => setNewItemName(e.target.value)}
@@ -3070,34 +3086,76 @@ export function FileExplorer({
                         onContextMenu={e => onRightClick(e, entry)}
                         title={getSearchTooltip(entry)}
                         style={{
-                          background: isDrop ? `${accent}33` : isSel ? EXP.selected : EXP.card,
-                          border: `1px solid ${isDrop ? accent : isSel ? EXP.selBord : EXP.border}`,
-                          borderRadius: 8,
-                          padding: 8,
+                          background: isDrop ? `${accent}18` : isSel ? `${accent}10` : 'transparent',
+                          border: `1px solid ${isDrop ? accent : isSel ? `${accent}88` : 'transparent'}`,
+                          borderRadius: EXPLORER_GRID_TILE_RADIUS,
+                          padding: '10px 8px 8px',
                           cursor: 'pointer',
                           display: 'flex',
                           flexDirection: 'column',
                           alignItems: 'center',
-                          gap: 6,
+                          justifyContent: 'flex-start',
+                          gap: 8,
                           height: '100%',
                           minHeight: 0,
                           boxSizing: 'border-box',
                           overflow: 'hidden',
                           opacity: entry.is_hidden ? 0.5 : 1,
                           userSelect: 'none',
-                          transition: 'background 0.1s, border-color 0.1s',
+                          transition: 'background 0.12s ease, border-color 0.12s ease, transform 0.12s ease',
                         }}
-                        onMouseEnter={e => { if (!isSel && !isDrop) (e.currentTarget as HTMLDivElement).style.background = EXP.cardHov; }}
-                        onMouseLeave={e => { if (!isSel && !isDrop) (e.currentTarget as HTMLDivElement).style.background = EXP.card; }}
+                        onMouseEnter={e => {
+                          if (!isSel && !isDrop) {
+                            const target = e.currentTarget as HTMLDivElement;
+                            target.style.background = 'rgba(255,255,255,0.035)';
+                            target.style.borderColor = 'rgba(255,255,255,0.08)';
+                            target.style.transform = 'translateY(-1px)';
+                          }
+                        }}
+                        onMouseLeave={e => {
+                          if (!isSel && !isDrop) {
+                            const target = e.currentTarget as HTMLDivElement;
+                            target.style.background = 'transparent';
+                            target.style.borderColor = 'transparent';
+                            target.style.transform = 'translateY(0)';
+                          }
+                        }}
                       >
-                        <div style={{ width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
-                          <SvgIcon src={iconSrc} size={36} />
+                        <div
+                          style={{
+                            width: EXPLORER_GRID_ICON_STAGE_SIZE,
+                            height: EXPLORER_GRID_ICON_STAGE_SIZE,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            overflow: 'hidden',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <SvgIcon src={iconSrc} size={EXPLORER_GRID_ICON_SIZE} />
                         </div>
                         {isRenaming
                           ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active: false, path: '', name: '' })} />
-                          : <span style={{ fontSize: 10, textAlign: 'center', color: EXP.text, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', width: '100%', lineHeight: 1.3 }}>{entry.name}</span>
+                          : (
+                            <span
+                              style={{
+                                fontSize: 11,
+                                textAlign: 'center',
+                                color: EXP.text,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                width: '100%',
+                                lineHeight: 1.28,
+                              }}
+                            >
+                              {entry.name}
+                            </span>
+                          )
                         }
-                        <span style={{ fontSize: 9, textAlign: 'center', color: EXP.muted2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>
+                        <span style={{ fontSize: 9, textAlign: 'center', color: EXP.muted2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%', marginTop: -2 }}>
                           {getEntryStorageLabel(entry)}
                         </span>
                         {renderSearchMetadata(entry)}

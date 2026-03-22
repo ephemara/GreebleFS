@@ -417,7 +417,7 @@ export function resolveShaderSurfaceStyle(
   }
 }
 
-export function ShaderSurfaceLayer({
+export const ShaderSurfaceLayer = React.memo(function ShaderSurfaceLayer({
   shader,
   shellContext,
   surface,
@@ -457,7 +457,7 @@ export function ShaderSurfaceLayer({
       </div>
     </ShaderSurfaceBoundary>
   );
-}
+});
 
 function createBuiltInShader(definition: OverlayShaderDefinition & { id: string; name: string }): LoadedOverlayShader {
   return {

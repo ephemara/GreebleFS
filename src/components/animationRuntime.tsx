@@ -103,6 +103,12 @@ export function lerp(from: number, to: number, progress: number): number {
   return from + ((to - from) * clamp01(progress));
 }
 
+export function useAnimationContextRef<T>(value: T): React.MutableRefObject<T> {
+  const ref = React.useRef(value);
+  ref.current = value;
+  return ref;
+}
+
 export function isFrontendAnimationFile(entry: AnimationFileEntry): boolean {
   return isSupportedRuntimeFile(entry, animationSystemConfig.frontendExtensions);
 }
@@ -311,6 +317,7 @@ function executeAnimationModule(code: string): unknown {
       defineAnimation,
       clamp01,
       lerp,
+      useAnimationContextRef,
     },
   };
 

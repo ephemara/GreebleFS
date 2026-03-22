@@ -571,13 +571,8 @@ export async function discoverOverlayPlugins(
     .filter(entry => entry.is_dir)
     .sort((left, right) => left.name.localeCompare(right.name));
 
-  const legacyPlugins = await Promise.all(legacyFiles.map(async entry => {
-    const source = await invoke<string>('fs_read_text_file', { path: entry.path });
-    return loadPluginFromSource(source, entry as PluginFileEntry, hostApiFactory);
-  }));
-
   const aggregate: OverlayPluginDiscoveryResult = {
-    plugins: [...legacyPlugins],
+    plugins: [],
     themePackages: [],
     shaders: [],
     fonts: [],
@@ -585,6 +580,22 @@ export async function discoverOverlayPlugins(
     explorerActions: [],
     warnings: [],
   };
+
+  const legacyPluginResults = await Promise.allSettled(legacyFiles.map(async entry => {
+    const source = await invoke<string>('fs_read_text_file', { path: entry.path });
+    return loadPluginFromSource(source, entry as PluginFileEntry, hostApiFactory);
+  }));
+
+  legacyPluginResults.forEach((result, index) => {
+    if (result.status === 'fulfilled') {
+      aggregate.plugins.push(result.value);
+      return;
+    }
+
+    const legacyEntry = legacyFiles[index];
+    const legacyName = legacyEntry?.name ?? legacyEntry?.path ?? 'legacy plugin';
+    aggregate.warnings.push(`${legacyName}: ${String(result.reason)}`);
+  });
 
   for (const directory of packageDirectories) {
     const manifest = await readPluginManifest(directory.path);
