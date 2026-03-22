@@ -249,6 +249,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
   const [error,           setError]           = useState<string | null>(null);
   const [copyingPath,     setCopyingPath]     = useState<string | null>(null);
   const [copiedPath,      setCopiedPath]      = useState<string | null>(null);
+  const [deletingPath,    setDeletingPath]    = useState<string | null>(null);
   const [libraryWidth, setLibraryWidth] = usePersistentPanelSize('overlayterm-screenshots-library-width', 280, 220, 480);
 
   const activeMonitor = monitors.find(m => m.id === activeMonitorId) ?? null;
@@ -589,6 +590,29 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
     finally { setCopyingPath(null); }
   }, []);
 
+  const deleteGalleryItem = useCallback(async (item: ScreenshotItem) => {
+    if (deletingPath || !window.confirm(`Delete ${item.name} from the screenshot library?`)) {
+      return;
+    }
+    setDeletingPath(item.path);
+    setError(null);
+    try {
+      await invoke('fs_delete', { path: item.path, recursive: false });
+      if (copiedPath === item.path) {
+        setCopiedPath(null);
+      }
+      if (copyingPath === item.path) {
+        setCopyingPath(null);
+      }
+      await loadGallery();
+      setStatusMsg(`Deleted ${item.name}.`);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setDeletingPath(null);
+    }
+  }, [copiedPath, copyingPath, deletingPath, loadGallery]);
+
   const isWorking = isCapturing || isSaving || isCopying;
   const normalizedSel = selection ? normalizeSelection(selection) : null;
   const hasSelection = normalizedSel && normalizedSel.width >= 4 && normalizedSel.height >= 4;
@@ -911,6 +935,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
             {items.map(item => {
               const isCop  = copyingPath === item.path;
               const isCopd = copiedPath  === item.path;
+              const isDeleting = deletingPath === item.path;
               return (
                 <div key={item.path} style={{ display: 'grid', gridTemplateColumns: '76px minmax(0,1fr)', gap: 8, alignItems: 'start', borderRadius: 8, border: `1px solid ${isCopd ? `${accent}77` : BORDER}`, background: isCopd ? `${accent}12` : PANEL_ALT, padding: 6 }}>
                   <div style={{ aspectRatio: '16/9', borderRadius: 5, overflow: 'hidden', border: `1px solid ${BORDER}`, background: '#050510' }}>
@@ -923,15 +948,19 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
                     <div style={{ fontSize: 10, fontWeight: 700, color: '#eef0ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
                     <div style={{ fontSize: 9, color: MUTED }}>{new Date(item.modified).toLocaleString()} · {formatFileSize(item.size)}</div>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      <button type="button" onClick={() => void copyGalleryItem(item)} style={btnStyle(true, accent, isCop)}>
+                      <button type="button" onClick={() => void copyGalleryItem(item)} disabled={isDeleting} style={btnStyle(true, accent, isCop || isDeleting)}>
                         {isCop ? <LoaderCircle size={10} className="animate-spin" /> : isCopd ? <Check size={10} /> : <Copy size={10} />}
                         {isCopd ? 'Copied' : 'Copy'}
                       </button>
-                      <button type="button" onClick={() => invoke('fs_reveal_in_explorer', { path: item.path }).catch(e => setError(String(e)))} style={btnStyle(false, accent)}>
+                      <button type="button" onClick={() => invoke('fs_reveal_in_explorer', { path: item.path }).catch(e => setError(String(e)))} disabled={isDeleting} style={btnStyle(false, accent, isDeleting)}>
                         <Search size={10} /> Reveal
                       </button>
-                      <button type="button" onClick={() => invoke('fs_open_file', { path: item.path }).catch(e => setError(String(e)))} style={btnStyle(false, accent)}>
+                      <button type="button" onClick={() => invoke('fs_open_file', { path: item.path }).catch(e => setError(String(e)))} disabled={isDeleting} style={btnStyle(false, accent, isDeleting)}>
                         <ExternalLink size={10} /> Open
+                      </button>
+                      <button type="button" onClick={() => void deleteGalleryItem(item)} disabled={isDeleting} style={btnStyle(false, accent, isDeleting)}>
+                        {isDeleting ? <LoaderCircle size={10} className="animate-spin" /> : <Trash2 size={10} />}
+                        {isDeleting ? 'Deleting' : 'Delete'}
                       </button>
                     </div>
                   </div>

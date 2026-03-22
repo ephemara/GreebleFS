@@ -40,7 +40,22 @@ import {
   joinPlatformPath,
   type RuntimePlatform,
 } from '../config/platform';
-import { recordExplorerPerformanceSample } from '../config/performanceTelemetry';
+import {
+  recordExplorerPerformanceSample,
+  type ExplorerPerformanceMetadata,
+  type ExplorerPerformanceMetricId,
+} from '../config/performanceTelemetry';
+import {
+  finalizePendingExplorerMetricSamples,
+  getRuntimeCachePolicyTelemetryMetadata,
+  type FsRuntimeCachePolicy,
+  type PendingExplorerMetricSample,
+  type RuntimeCachePolicyTelemetryMetadata,
+} from '../config/runtimeCachePolicy';
+import {
+  getExplorerSearchTelemetryMetadata,
+  type FileSearchResponse,
+} from '../config/searchTelemetry';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ExplorerSideRail } from './explorer/ExplorerSideRail';
 import { removeExplorerBookmarksByPath, upsertExplorerBookmark } from './explorer/explorerRailState';
@@ -1021,6 +1036,10 @@ export function FileExplorer({
   const searchFocusRequestIdRef = useRef(0);
   const initialInteractiveRecordedRef = useRef(false);
   const explorerMountStartedAtRef = useRef(getExplorerPerformanceNow());
+  const runtimeCachePolicyTelemetryMetadataRef = useRef<RuntimeCachePolicyTelemetryMetadata>(
+    getRuntimeCachePolicyTelemetryMetadata(null, isTauri() ? 'pending' : 'unavailable'),
+  );
+  const pendingExplorerMetricSamplesRef = useRef<PendingExplorerMetricSample[]>([]);
   const addressInputRef = useRef<HTMLInputElement>(null);
   const [addressEditing, setAddressEditing] = useState(false);
   const [addressDraft, setAddressDraft] = useState('');
@@ -1039,6 +1058,47 @@ export function FileExplorer({
     previewRef.current = preview;
   }, [preview]);
 
+  const flushPendingExplorerMetrics = useCallback((
+    runtimePolicyMetadata: RuntimeCachePolicyTelemetryMetadata,
+  ) => {
+    if (pendingExplorerMetricSamplesRef.current.length === 0) {
+      return;
+    }
+
+    const pendingSamples = finalizePendingExplorerMetricSamples(
+      pendingExplorerMetricSamplesRef.current,
+      runtimePolicyMetadata,
+    );
+    pendingExplorerMetricSamplesRef.current = [];
+    for (const sample of pendingSamples) {
+      recordExplorerPerformanceSample(sample);
+    }
+  }, []);
+
+  const recordExplorerMetric = useCallback((input: {
+    metricId: ExplorerPerformanceMetricId;
+    durationMs: number;
+    metadata?: ExplorerPerformanceMetadata;
+  }) => {
+    const runtimePolicyMetadata = runtimeCachePolicyTelemetryMetadataRef.current;
+    if (isTauri() && runtimePolicyMetadata.runtimeCachePolicyStatus === 'pending') {
+      pendingExplorerMetricSamplesRef.current.push({
+        ...input,
+        recordedAt: Date.now(),
+      });
+      return;
+    }
+
+    recordExplorerPerformanceSample({
+      ...input,
+      recordedAt: Date.now(),
+      metadata: {
+        ...runtimePolicyMetadata,
+        ...(input.metadata ?? {}),
+      },
+    });
+  }, []);
+
   useEffect(() => {
     return () => {
       if (previewSaveTimer.current) {
@@ -1047,6 +1107,36 @@ export function FileExplorer({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!isTauri()) {
+      runtimeCachePolicyTelemetryMetadataRef.current = getRuntimeCachePolicyTelemetryMetadata(null, 'unavailable');
+      flushPendingExplorerMetrics(runtimeCachePolicyTelemetryMetadataRef.current);
+      return undefined;
+    }
+
+    let disposed = false;
+    void invoke<FsRuntimeCachePolicy>('fs_get_runtime_cache_policy')
+      .then((policy) => {
+        if (disposed) {
+          return;
+        }
+        runtimeCachePolicyTelemetryMetadataRef.current = getRuntimeCachePolicyTelemetryMetadata(policy, 'ready');
+        flushPendingExplorerMetrics(runtimeCachePolicyTelemetryMetadataRef.current);
+      })
+      .catch(() => {
+        if (disposed) {
+          return;
+        }
+        runtimeCachePolicyTelemetryMetadataRef.current = getRuntimeCachePolicyTelemetryMetadata(null, 'failed');
+        flushPendingExplorerMetrics(runtimeCachePolicyTelemetryMetadataRef.current);
+      });
+
+    return () => {
+      disposed = true;
+      flushPendingExplorerMetrics(runtimeCachePolicyTelemetryMetadataRef.current);
+    };
+  }, [flushPendingExplorerMetrics]);
 
   useEffect(() => {
     if (isCompactDock) {
@@ -1148,7 +1238,7 @@ export function FileExplorer({
     try {
       const nextEntries = await invoke<FileEntry[]>('fs_list_dir', { path: normalizedPath, showHidden });
       setEntries(nextEntries);
-      recordExplorerPerformanceSample({
+      recordExplorerMetric({
         metricId: 'explorer_navigation',
         durationMs: getExplorerPerformanceNow() - startedAt,
         metadata: {
@@ -1161,7 +1251,7 @@ export function FileExplorer({
     }
     catch (e) {
       setError(String(e)); setEntries([]);
-      recordExplorerPerformanceSample({
+      recordExplorerMetric({
         metricId: 'explorer_navigation',
         durationMs: getExplorerPerformanceNow() - startedAt,
         metadata: {
@@ -1173,7 +1263,7 @@ export function FileExplorer({
       });
     }
     finally { setLoading(false); }
-  }, [historyIdx, showHidden]);
+  }, [historyIdx, recordExplorerMetric, showHidden]);
 
   const runSearch = useCallback(async (query: string, requestId: number) => {
     const trimmed = query.trim();
@@ -1186,7 +1276,7 @@ export function FileExplorer({
     setSearchLoading(true);
     const startedAt = getExplorerPerformanceNow();
     try {
-      const results = await invoke<FileSearchResult[]>('fs_search_entries', {
+      const response = await invoke<FileSearchResponse<FileSearchResult>>('fs_search_entries_with_diagnostics', {
         path: currentPath,
         query: trimmed,
         showHidden,
@@ -1195,9 +1285,10 @@ export function FileExplorer({
         requestId,
         requestScope: EXPLORER_SEARCH_SCOPE,
       });
+      const results = response.results;
       if (searchRequestIdRef.current === requestId) {
         setSearchResults(results);
-        recordExplorerPerformanceSample({
+        recordExplorerMetric({
           metricId: 'explorer_search',
           durationMs: getExplorerPerformanceNow() - startedAt,
           metadata: {
@@ -1205,6 +1296,7 @@ export function FileExplorer({
             queryLength: trimmed.length,
             resultCount: results.length,
             success: true,
+            ...getExplorerSearchTelemetryMetadata(response.diagnostics),
           },
         });
       }
@@ -1212,7 +1304,7 @@ export function FileExplorer({
       if (searchRequestIdRef.current === requestId) {
         setSearchResults([]);
         setError(`Search failed: ${searchError}`);
-        recordExplorerPerformanceSample({
+        recordExplorerMetric({
           metricId: 'explorer_search',
           durationMs: getExplorerPerformanceNow() - startedAt,
           metadata: {
@@ -1228,7 +1320,7 @@ export function FileExplorer({
         setSearchLoading(false);
       }
     }
-  }, [currentPath, searchIncludeContent, showHidden]);
+  }, [currentPath, recordExplorerMetric, searchIncludeContent, showHidden]);
 
   const refresh = useCallback(async () => {
     if (!currentPath) return;
@@ -1280,7 +1372,7 @@ export function FileExplorer({
     }
 
     initialInteractiveRecordedRef.current = true;
-    recordExplorerPerformanceSample({
+    recordExplorerMetric({
       metricId: 'explorer_first_interactive',
       durationMs: getExplorerPerformanceNow() - explorerMountStartedAtRef.current,
       metadata: {
@@ -1290,7 +1382,7 @@ export function FileExplorer({
         isSearchActive: search.trim().length > 0,
       },
     });
-  }, [currentPath, entries.length, error, loading, search]);
+  }, [currentPath, entries.length, error, loading, recordExplorerMetric, search]);
 
   useEffect(() => {
     if (addressEditing) {
@@ -2338,7 +2430,7 @@ export function FileExplorer({
       forceRefresh: false,
     })
       .then(results => {
-        recordExplorerPerformanceSample({
+        recordExplorerMetric({
           metricId: 'explorer_entry_size_batch',
           durationMs: getExplorerPerformanceNow() - startedAt,
           metadata: {
@@ -2367,7 +2459,7 @@ export function FileExplorer({
         });
       })
       .catch(() => {
-        recordExplorerPerformanceSample({
+        recordExplorerMetric({
           metricId: 'explorer_entry_size_batch',
           durationMs: getExplorerPerformanceNow() - startedAt,
           metadata: {
@@ -2394,6 +2486,7 @@ export function FileExplorer({
     entrySizeLoadingPaths,
     isSearchActive,
     loading,
+    recordExplorerMetric,
     virtualizedEntries,
   ]);
 
@@ -2430,7 +2523,7 @@ export function FileExplorer({
     const startedAt = getExplorerPerformanceNow();
     void invoke<OverlayNativeIconResponse[]>('fs_resolve_native_icons', { requests })
       .then(results => {
-        recordExplorerPerformanceSample({
+        recordExplorerMetric({
           metricId: 'explorer_native_icon_batch',
           durationMs: getExplorerPerformanceNow() - startedAt,
           metadata: {
@@ -2455,7 +2548,7 @@ export function FileExplorer({
         });
       })
       .catch(() => {
-        recordExplorerPerformanceSample({
+        recordExplorerMetric({
           metricId: 'explorer_native_icon_batch',
           durationMs: getExplorerPerformanceNow() - startedAt,
           metadata: {
@@ -2479,7 +2572,7 @@ export function FileExplorer({
           return next.size === current.size ? current : next;
         });
       });
-  }, [loading, nativeIconLoadingKeys, nativeIconMap, useNativeOsIcons, virtualizedEntries]);
+  }, [loading, nativeIconLoadingKeys, nativeIconMap, recordExplorerMetric, useNativeOsIcons, virtualizedEntries]);
 
   const renderSearchMetadata = (entry: FileEntry) => {
     if (!isSearchActive) return null;

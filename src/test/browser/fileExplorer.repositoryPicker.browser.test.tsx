@@ -1,5 +1,4 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { FileExplorer } from '../../components/FileExplorer';
@@ -62,7 +61,7 @@ function renderRepositoryPicker(options?: {
   const appearance = resolveOverlayAppearance({ activeThemeId: 'operator' });
   const onConfirm = options?.onConfirm ?? vi.fn();
 
-  render(
+  const renderResult = render(
     <FileExplorer
       theme={{
         accent: appearance.theme.palette.accent,
@@ -85,7 +84,7 @@ function renderRepositoryPicker(options?: {
     />,
   );
 
-  return { onConfirm };
+  return { onConfirm, unmount: renderResult.unmount };
 }
 
 describe('FileExplorer repository picker browser coverage', () => {
@@ -110,6 +109,18 @@ describe('FileExplorer repository picker browser coverage', () => {
         case 'fs_resolve_native_icons':
         case 'fs_search_entries':
           return [];
+        case 'fs_search_entries_with_diagnostics':
+          return {
+            results: [],
+            diagnostics: {
+              executionStrategy: 'live_scan',
+              contentCacheStatus: 'not_requested',
+              scannedEntryCount: 0,
+              indexedEntryCount: 0,
+              contentCacheStoredFileCount: 0,
+              contentCacheStoredByteCount: 0,
+            },
+          };
         case 'fs_watch_entry_size_root':
         case 'fs_unwatch_entry_size_root':
         case 'fs_cancel_search_entries':
@@ -121,36 +132,36 @@ describe('FileExplorer repository picker browser coverage', () => {
   });
 
   it('confirms the current folder directly when repository-picker mode starts without a selection', async () => {
-    const user = userEvent.setup();
-    const { onConfirm } = renderRepositoryPicker();
+    const { onConfirm, unmount } = renderRepositoryPicker();
 
     await screen.findByText('alpha');
     expect(screen.getByRole('button', { name: 'Add Current Folder' })).toBeEnabled();
-    expect(screen.getByText('No folders selected yet, so OverlayTerm can add the current folder directly.')).toBeInTheDocument();
+    expect(screen.getByText(/No folders selected yet, so OverlayTerm can add the current folder directly\./)).toBeInTheDocument();
     expect(screen.getByTitle(REPO_ROOT)).toHaveTextContent(`Current folder: ${REPO_ROOT}`);
 
-    await user.click(screen.getByRole('button', { name: 'Add Current Folder' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add Current Folder' }));
 
     expect(onConfirm).toHaveBeenCalledWith([REPO_ROOT]);
+    unmount();
   });
 
   it('keeps repository-picker selection truly single-choice when multi-select is disabled', async () => {
-    const user = userEvent.setup();
-    const { onConfirm } = renderRepositoryPicker({
+    const { onConfirm, unmount } = renderRepositoryPicker({
       allowMultiple: false,
       requestId: 2,
     });
 
     await screen.findByText('alpha');
-    await user.click(screen.getByText('alpha'));
+    fireEvent.click(screen.getByText('alpha'));
     fireEvent.click(screen.getByText('nested'), { ctrlKey: true });
 
     await waitFor(() => {
       expect(screen.getByText(/1 folder selected\./)).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole('button', { name: 'Add Selected Folder' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add Selected Folder' }));
 
     expect(onConfirm).toHaveBeenCalledWith([`${REPO_ROOT}\\nested`]);
+    unmount();
   });
 });

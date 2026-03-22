@@ -2,53 +2,62 @@
 
 ## Current Status
 
-- Team 4 validated the current Source slice, including the newer picker-helper and conflict-action work in the tree.
-- No new blocking product defect was reproduced in the Source workflow during this run.
-- Team 4 fixed one small real correctness mismatch in the picker helper: single-select mode could advertise multi-folder confirmation copy even though confirmation already clamps to one folder.
-- The highest remaining Delta risk is still live Explorer runtime proof, not missing GitManager controls.
+- Team 4 validated the newer screenshot-library deletion slice and did not reproduce a product defect in that workflow.
+- Core Source logic also remains green under targeted unit, build, and native Rust verification.
+- Team 4 tightened the dedicated FileExplorer repository-picker browser proof, but that browser file still hangs and is not yet a reliable live-validation signal.
+- The highest remaining Delta risk is now a still-open browser-proof blocker for the real FileExplorer picker path, plus runtime validation gaps for newer screenshot-library operations.
 
 ## Files Reviewed Or Changed
 
 - `M:\OverlayTerm\src\components\FileExplorer.tsx`
-- `M:\OverlayTerm\src\components\GitManager.tsx`
-- `M:\OverlayTerm\src\components\explorer\repositoryPickerState.ts`
+- `M:\OverlayTerm\src\components\ScreenshotsManager.tsx`
+- `M:\OverlayTerm\src\test\browser.setup.ts`
+- `M:\OverlayTerm\src\test\browser\animationRuntime.browser.test.tsx`
+- `M:\OverlayTerm\src\test\browser\fileExplorer.repositoryPicker.browser.test.tsx`
+- `M:\OverlayTerm\src\test\browser\shaderRuntime.browser.test.tsx`
 - `M:\OverlayTerm\src\test\gitManager.behavior.test.tsx`
 - `M:\OverlayTerm\src\test\panelRegistry.test.tsx`
 - `M:\OverlayTerm\src\test\repositoryPickerState.test.ts`
+- `M:\OverlayTerm\src\test\screenshotsManager.test.tsx`
 - `M:\OverlayTerm\src\test\sourceRepositoryImportFlow.integration.test.tsx`
+- `M:\OverlayTerm\src\test\setup.tsx`
 - `M:\OverlayTerm\src-tauri\src\fs_commands.rs`
-- `M:\OverlayTerm\src-tauri\src\lib.rs`
 
 ## Verification
 
-- `npm run test:unit -- src/test/repositoryPickerState.test.ts src/test/gitManager.behavior.test.tsx src/test/sourceRepositoryImportFlow.integration.test.tsx src/test/panelRegistry.test.tsx`
-- `npm run test:browser`
-- `npm run build`
-- `$env:CARGO_TARGET_DIR='M:\OverlayTerm\src-tauri\target-tests-delta-team-4'; cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml list_dir_`
-- `$env:CARGO_TARGET_DIR='M:\OverlayTerm\src-tauri\target-tests-delta-team-4'; cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml search_entries_`
+- Passed: `npm run test:unit -- src/test/repositoryPickerState.test.ts src/test/gitManager.behavior.test.tsx src/test/sourceRepositoryImportFlow.integration.test.tsx src/test/panelRegistry.test.tsx`
+- Passed: `npm run test:unit -- src/test/screenshotsManager.test.tsx`
+- Passed: `npx vitest run --config vitest.browser.config.ts src/test/browser/animationRuntime.browser.test.tsx --reporter=verbose`
+- Passed: `npx vitest run --config vitest.browser.config.ts src/test/browser/shaderRuntime.browser.test.tsx --reporter=verbose`
+- Passed: `npm run build`
+- Passed: `$env:CARGO_TARGET_DIR='M:\OverlayTerm\src-tauri\target-tests-delta-team-4'; cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml list_dir_`
+- Passed: `$env:CARGO_TARGET_DIR='M:\OverlayTerm\src-tauri\target-tests-delta-team-4'; cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml search_entries_`
+- Failed by timeout: `npx vitest run --config vitest.browser.config.ts src/test/browser/fileExplorer.repositoryPicker.browser.test.tsx --reporter=verbose`
 
 ## Exact Findings
 
-- Fixed: `src/components/explorer/repositoryPickerState.ts` no longer returns multi-folder confirmation copy in single-select picker mode.
-- Fixed: `src/components/FileExplorer.tsx` now passes `repositoryPicker.allowMultiple` into the shared confirm-label helper, so the banner copy stays aligned with actual confirmation behavior.
-- Added: `src/test/repositoryPickerState.test.ts` now proves single-select mode keeps the label singular even when multiple folders are selected.
-- Reconfirmed: existing GitManager behavior coverage still passes for canonical import, mixed duplicate/new repo selection, empty-state callback routing, per-file stage/unstage/discard, conflict resolution, unborn-repo discard fallback, staged-only commit gating, and conflict-aware bulk-action disabling.
-- Reconfirmed: App-side Source onboarding still passes through the pending-import callback chain into `GitManager`, and panel-registry prop forwarding still passes for Explorer repository picker props and Source pending-import callbacks.
-- Reconfirmed: Explorer native search/list hardening in Rust still passes the targeted `list_dir_` and `search_entries_` suites.
-- No new blocking Source or conflict-resolution defect was reproduced in the current tree during this run.
+- Fixed: `src/test/browser/fileExplorer.repositoryPicker.browser.test.tsx` no longer depends on an exact full-paragraph text node match for the current-folder fallback banner, which was brittle against the real rendered DOM.
+- Fixed: the same browser test now uses direct `fireEvent` clicks and explicitly unmounts `FileExplorer` after each case instead of leaving teardown to implicit timing.
+- Fixed: `src/test/browser.setup.ts` now performs explicit RTL `cleanup()` after each browser suite, which is durable hygiene for heavyweight mounted components.
+- Reconfirmed: targeted unit coverage still passes for repository-picker helpers, App-to-Source import handoff, panel wiring, conflict-aware Source actions, unborn-repo discard fallback, and the new screenshot-library delete flow.
+- Reconfirmed: production build still succeeds, and the targeted `list_dir_` plus `search_entries_` Explorer Rust suites remain green under the isolated Cargo target directory.
+- Reconfirmed: browser-mode Vitest itself still works because the animation and shader browser suites pass cleanly.
+- Blocker: the dedicated FileExplorer repository-picker browser file still hangs and times out even after stale process cleanup, explicit browser cleanup, and explicit unmounts. This currently looks like a FileExplorer-path browser open-handle leak rather than a reproduced Source workflow bug.
+- Validator note: `src/test/screenshotsManager.test.tsx` passes, but jsdom still prints `HTMLCanvasElement.getContext()` not implemented warnings because the test environment does not provide a real canvas implementation. That warning did not invalidate the new delete-library coverage.
 
 ## Release Impact
 
-- Source onboarding is slightly tighter because repository-picker copy now matches actual confirmation behavior in both multi-select and single-select modes.
-- The lane keeps its existing protection for App handoff, GitManager import consumption, and per-file Source actions without introducing new regressions.
-- Release risk remains concentrated in real FileExplorer runtime interaction proof rather than in GitManager’s import handling or the shared picker helper.
+- Delta did not uncover a new product regression in the latest Source or screenshot slices.
+- Browser-test hygiene is better, so future FileExplorer browser validation has a cleaner baseline.
+- Release risk remains because the intended live picker proof is still unstable, and the newly completed screenshot-library delete workflow still lacks a real running-app validation pass.
 
 ## Remaining Blockers
 
-- The real FileExplorer repository-picker UI still lacks a direct browser/Tauri validation pass that selects folders through the actual Explorer surface and proves the live multi-panel transition.
-- The new conflicted-file actions still lack live running-app proof across real repositories, especially around delete-side and manual-resolution flows.
-- Product framing and operator-facing release documentation remain underdeveloped outside the Source slice.
+- `src/test/browser/fileExplorer.repositoryPicker.browser.test.tsx` is still not a stable browser-proof signal because the Vitest browser runner hangs instead of exiting cleanly.
+- Screenshot-library delete/reveal/open behavior still lacks live running-app validation against real saved images.
+- The conflicted-file actions in Source still lack a direct browser/running-app proof on a real repository.
+- Product framing and operator-facing release documentation remain underdeveloped outside the validated slices.
 
 ## Single Best Next Step For Delta Team 4
 
-- Add a stable browser/Tauri validation pass that drives the real FileExplorer repository-picker surface and then exercises one real conflict-resolution action in Source, so the remaining runtime-only Source risk is closed.
+- Isolate the open handle in the FileExplorer browser path by temporarily bisecting mount-time effects and mocks in `src/test/browser/fileExplorer.repositoryPicker.browser.test.tsx`, starting with drag-drop listener registration, entry-size watch/unwatch, and other async FileExplorer startup effects, until the browser runner exits cleanly after a passing picker test.

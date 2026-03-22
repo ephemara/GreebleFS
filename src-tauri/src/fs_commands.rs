@@ -882,6 +882,43 @@ pub struct FileSearchResult {
     pub line_number: Option<u64>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FileSearchExecutionStrategy {
+    NameIndexCacheHit,
+    ContentIndexCacheHit,
+    LiveScan,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FileSearchContentCacheStatus {
+    NotRequested,
+    CacheHit,
+    Warmed,
+    Disabled,
+    OverBudgetFallback,
+    ReadFailureFallback,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct FileSearchDiagnostics {
+    pub execution_strategy: FileSearchExecutionStrategy,
+    pub content_cache_status: FileSearchContentCacheStatus,
+    pub scanned_entry_count: u64,
+    pub indexed_entry_count: u64,
+    pub content_cache_stored_file_count: u64,
+    pub content_cache_stored_byte_count: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct FileSearchResponse {
+    pub results: Vec<FileSearchResult>,
+    pub diagnostics: FileSearchDiagnostics,
+}
+
 struct ListedFileEntry {
     sort_name: String,
     entry: FileEntry,
@@ -1431,7 +1468,7 @@ fn lookup_cached_name_search_results(
     query_lower: &str,
     show_hidden: bool,
     max_results: usize,
-) -> Option<Vec<FileSearchResult>> {
+) -> Option<(Vec<FileSearchResult>, usize)> {
     if fs_cache_policy().search_name_index_cache_ttl.is_zero() {
         return None;
     }
@@ -1444,6 +1481,7 @@ fn lookup_cached_name_search_results(
         prune_expired_search_name_index_cache(&mut cache);
         cache.get(&key)?.get(show_hidden)?.entries.clone()
     };
+    let indexed_entry_count = cached_entries.len();
 
     let mut matches = cached_entries
         .into_iter()
@@ -1456,7 +1494,10 @@ fn lookup_cached_name_search_results(
     });
     matches.truncate(max_results);
 
-    Some(matches.into_iter().map(|entry| entry.result).collect())
+    Some((
+        matches.into_iter().map(|entry| entry.result).collect(),
+        indexed_entry_count,
+    ))
 }
 
 fn store_search_name_index(root: &Path, show_hidden: bool, entries: Vec<CachedSearchNameEntry>) {
@@ -1485,7 +1526,7 @@ fn lookup_cached_content_search_results(
     max_results: usize,
     request_scope: &str,
     request_id: u64,
-) -> Option<Vec<FileSearchResult>> {
+) -> Option<(Vec<FileSearchResult>, usize)> {
     let policy = fs_cache_policy();
     if policy.search_content_index_cache_ttl.is_zero()
         || policy.search_content_index_total_bytes_budget == 0
@@ -1508,7 +1549,7 @@ fn lookup_cached_content_search_results(
 
     for (index, entry) in cached_entries.iter().enumerate() {
         if index % 32 == 0 && !is_search_request_active(request_scope, request_id) {
-            return Some(Vec::new());
+            return Some((Vec::new(), cached_entries.len()));
         }
 
         let name_hit = entry.name_lower.contains(query_lower);
@@ -1520,7 +1561,7 @@ fn lookup_cached_content_search_results(
                 request_id,
             ) {
                 Ok(value) => value,
-                Err(()) => return Some(Vec::new()),
+                Err(()) => return Some((Vec::new(), cached_entries.len())),
             },
             None => None,
         };
@@ -1553,7 +1594,7 @@ fn lookup_cached_content_search_results(
     results.extend(name_matches);
     sort_search_results(&mut results);
     results.truncate(max_results);
-    Some(results)
+    Some((results, cached_entries.len()))
 }
 
 fn store_search_content_index(
@@ -1582,6 +1623,25 @@ fn store_search_content_index(
     );
 }
 
+fn empty_search_response(
+    execution_strategy: FileSearchExecutionStrategy,
+    content_cache_status: FileSearchContentCacheStatus,
+    scanned_entry_count: u64,
+    indexed_entry_count: u64,
+) -> FileSearchResponse {
+    FileSearchResponse {
+        results: Vec::new(),
+        diagnostics: FileSearchDiagnostics {
+            execution_strategy,
+            content_cache_status,
+            scanned_entry_count,
+            indexed_entry_count,
+            content_cache_stored_file_count: 0,
+            content_cache_stored_byte_count: 0,
+        },
+    }
+}
+
 fn search_entries_blocking(
     path: String,
     query: String,
@@ -1590,7 +1650,7 @@ fn search_entries_blocking(
     limit: Option<usize>,
     request_scope: String,
     request_id: u64,
-) -> Result<Vec<FileSearchResult>, String> {
+) -> Result<FileSearchResponse, String> {
     let policy = fs_cache_policy();
     let root = PathBuf::from(&path);
     if !root.exists() {
@@ -1602,13 +1662,28 @@ fn search_entries_blocking(
 
     let query = query.trim().to_string();
     if query.is_empty() {
-        return Ok(Vec::new());
+        return Ok(empty_search_response(
+            FileSearchExecutionStrategy::LiveScan,
+            if include_content {
+                if policy.search_content_index_cache_ttl.is_zero()
+                    || policy.search_content_index_total_bytes_budget == 0
+                {
+                    FileSearchContentCacheStatus::Disabled
+                } else {
+                    FileSearchContentCacheStatus::Warmed
+                }
+            } else {
+                FileSearchContentCacheStatus::NotRequested
+            },
+            0,
+            0,
+        ));
     }
 
     let query_lower = query.to_ascii_lowercase();
     let max_results = limit.unwrap_or(250).clamp(1, 1000);
     if include_content {
-        if let Some(results) = lookup_cached_content_search_results(
+        if let Some((results, indexed_entry_count)) = lookup_cached_content_search_results(
             &root,
             &query_lower,
             show_hidden,
@@ -1617,18 +1692,48 @@ fn search_entries_blocking(
             request_id,
         ) {
             if !is_search_request_active(&request_scope, request_id) {
-                return Ok(Vec::new());
+                return Ok(empty_search_response(
+                    FileSearchExecutionStrategy::ContentIndexCacheHit,
+                    FileSearchContentCacheStatus::CacheHit,
+                    0,
+                    indexed_entry_count as u64,
+                ));
             }
-            return Ok(results);
+            return Ok(FileSearchResponse {
+                results,
+                diagnostics: FileSearchDiagnostics {
+                    execution_strategy: FileSearchExecutionStrategy::ContentIndexCacheHit,
+                    content_cache_status: FileSearchContentCacheStatus::CacheHit,
+                    scanned_entry_count: 0,
+                    indexed_entry_count: indexed_entry_count as u64,
+                    content_cache_stored_file_count: 0,
+                    content_cache_stored_byte_count: 0,
+                },
+            });
         }
     } else {
-        if let Some(results) =
+        if let Some((results, indexed_entry_count)) =
             lookup_cached_name_search_results(&root, &query_lower, show_hidden, max_results)
         {
             if !is_search_request_active(&request_scope, request_id) {
-                return Ok(Vec::new());
+                return Ok(empty_search_response(
+                    FileSearchExecutionStrategy::NameIndexCacheHit,
+                    FileSearchContentCacheStatus::NotRequested,
+                    0,
+                    indexed_entry_count as u64,
+                ));
             }
-            return Ok(results);
+            return Ok(FileSearchResponse {
+                results,
+                diagnostics: FileSearchDiagnostics {
+                    execution_strategy: FileSearchExecutionStrategy::NameIndexCacheHit,
+                    content_cache_status: FileSearchContentCacheStatus::NotRequested,
+                    scanned_entry_count: 0,
+                    indexed_entry_count: indexed_entry_count as u64,
+                    content_cache_stored_file_count: 0,
+                    content_cache_stored_byte_count: 0,
+                },
+            });
         }
     }
 
@@ -1640,10 +1745,28 @@ fn search_entries_blocking(
     let mut cached_content_entries = include_content.then(|| Vec::new());
     let mut content_cache_complete = include_content;
     let mut cached_content_bytes = 0_u64;
+    let content_cache_enabled = include_content
+        && !policy.search_content_index_cache_ttl.is_zero()
+        && policy.search_content_index_total_bytes_budget > 0;
+    let mut scanned_entry_count = 0_u64;
+    let mut content_cache_status = if include_content {
+        if content_cache_enabled {
+            FileSearchContentCacheStatus::Warmed
+        } else {
+            FileSearchContentCacheStatus::Disabled
+        }
+    } else {
+        FileSearchContentCacheStatus::NotRequested
+    };
 
     while let Some(current_dir) = stack.pop() {
         if !is_search_request_active(&request_scope, request_id) {
-            return Ok(Vec::new());
+            return Ok(empty_search_response(
+                FileSearchExecutionStrategy::LiveScan,
+                content_cache_status,
+                scanned_entry_count,
+                cached_name_entries.len() as u64,
+            ));
         }
 
         let read_dir = match std::fs::read_dir(&current_dir) {
@@ -1653,7 +1776,12 @@ fn search_entries_blocking(
 
         for entry_result in read_dir {
             if !is_search_request_active(&request_scope, request_id) {
-                return Ok(Vec::new());
+                return Ok(empty_search_response(
+                    FileSearchExecutionStrategy::LiveScan,
+                    content_cache_status,
+                    scanned_entry_count,
+                    cached_name_entries.len() as u64,
+                ));
             }
             pause_search_entry_scan_for_tests();
             record_search_entry_scan_for_tests();
@@ -1662,6 +1790,7 @@ fn search_entries_blocking(
                 Ok(value) => value,
                 Err(_) => continue,
             };
+            scanned_entry_count = scanned_entry_count.saturating_add(1);
 
             let name = entry.file_name().to_string_lossy().to_string();
             let meta = match entry.metadata() {
@@ -1752,7 +1881,14 @@ fn search_entries_blocking(
                                     line_number = matched_line_number;
                                 }
                                 Ok(None) => {}
-                                Err(()) => return Ok(Vec::new()),
+                                Err(()) => {
+                                    return Ok(empty_search_response(
+                                        FileSearchExecutionStrategy::LiveScan,
+                                        content_cache_status,
+                                        scanned_entry_count,
+                                        cached_name_entries.len() as u64,
+                                    ))
+                                }
                             }
                             cached_content_bytes =
                                 cached_content_bytes.saturating_add(metadata.len());
@@ -1760,6 +1896,10 @@ fn search_entries_blocking(
                         }
                         Err(_) => {
                             content_cache_complete = false;
+                            if content_cache_enabled {
+                                content_cache_status =
+                                    FileSearchContentCacheStatus::ReadFailureFallback;
+                            }
                             match search_file_content_for_match(
                                 &path_buf,
                                 &query_lower,
@@ -1772,12 +1912,22 @@ fn search_entries_blocking(
                                     line_number = matched_line_number;
                                 }
                                 Ok(None) => {}
-                                Err(()) => return Ok(Vec::new()),
+                                Err(()) => {
+                                    return Ok(empty_search_response(
+                                        FileSearchExecutionStrategy::LiveScan,
+                                        content_cache_status,
+                                        scanned_entry_count,
+                                        cached_name_entries.len() as u64,
+                                    ))
+                                }
                             }
                         }
                     }
                 } else {
                     content_cache_complete = false;
+                    if content_cache_enabled {
+                        content_cache_status = FileSearchContentCacheStatus::OverBudgetFallback;
+                    }
                     match search_file_content_for_match(
                         &path_buf,
                         &query_lower,
@@ -1790,7 +1940,14 @@ fn search_entries_blocking(
                             line_number = matched_line_number;
                         }
                         Ok(None) => {}
-                        Err(()) => return Ok(Vec::new()),
+                        Err(()) => {
+                            return Ok(empty_search_response(
+                                FileSearchExecutionStrategy::LiveScan,
+                                content_cache_status,
+                                scanned_entry_count,
+                                cached_name_entries.len() as u64,
+                            ))
+                        }
                     }
                 }
             }
@@ -1825,11 +1982,24 @@ fn search_entries_blocking(
     }
 
     if !is_search_request_active(&request_scope, request_id) {
-        return Ok(Vec::new());
+        return Ok(empty_search_response(
+            FileSearchExecutionStrategy::LiveScan,
+            content_cache_status,
+            scanned_entry_count,
+            cached_name_entries.len() as u64,
+        ));
     }
+    let indexed_entry_count = cached_name_entries.len() as u64;
     store_search_name_index(&root, show_hidden, cached_name_entries);
+    let mut content_cache_stored_file_count = 0_u64;
+    let mut content_cache_stored_byte_count = 0_u64;
     if content_cache_complete {
         if let Some(entries) = cached_content_entries {
+            content_cache_stored_file_count = entries
+                .iter()
+                .filter(|entry| entry.content.is_some())
+                .count() as u64;
+            content_cache_stored_byte_count = cached_content_bytes;
             store_search_content_index(&root, show_hidden, entries);
         }
     }
@@ -1840,7 +2010,44 @@ fn search_entries_blocking(
     results.extend(name_matches);
     sort_search_results(&mut results);
     results.truncate(max_results);
-    Ok(results)
+    Ok(FileSearchResponse {
+        results,
+        diagnostics: FileSearchDiagnostics {
+            execution_strategy: FileSearchExecutionStrategy::LiveScan,
+            content_cache_status,
+            scanned_entry_count,
+            indexed_entry_count,
+            content_cache_stored_file_count,
+            content_cache_stored_byte_count,
+        },
+    })
+}
+
+async fn execute_search_entries_command(
+    path: String,
+    query: String,
+    show_hidden: bool,
+    include_content: bool,
+    limit: Option<usize>,
+    request_id: Option<u64>,
+    request_scope: Option<String>,
+) -> Result<FileSearchResponse, String> {
+    let scope = search_request_scope(&path, request_scope);
+    let active_request_id = register_search_request(&scope, request_id);
+
+    tauri::async_runtime::spawn_blocking(move || {
+        search_entries_blocking(
+            path,
+            query,
+            show_hidden,
+            include_content,
+            limit,
+            scope,
+            active_request_id,
+        )
+    })
+    .await
+    .map_err(|error| format!("Failed to search entries: {error}"))?
 }
 
 #[tauri::command]
@@ -1864,22 +2071,39 @@ pub async fn fs_search_entries(
     request_id: Option<u64>,
     request_scope: Option<String>,
 ) -> Result<Vec<FileSearchResult>, String> {
-    let scope = search_request_scope(&path, request_scope);
-    let active_request_id = register_search_request(&scope, request_id);
+    Ok(execute_search_entries_command(
+        path,
+        query,
+        show_hidden,
+        include_content,
+        limit,
+        request_id,
+        request_scope,
+    )
+    .await?
+    .results)
+}
 
-    tauri::async_runtime::spawn_blocking(move || {
-        search_entries_blocking(
-            path,
-            query,
-            show_hidden,
-            include_content,
-            limit,
-            scope,
-            active_request_id,
-        )
-    })
+#[tauri::command]
+pub async fn fs_search_entries_with_diagnostics(
+    path: String,
+    query: String,
+    show_hidden: bool,
+    include_content: bool,
+    limit: Option<usize>,
+    request_id: Option<u64>,
+    request_scope: Option<String>,
+) -> Result<FileSearchResponse, String> {
+    execute_search_entries_command(
+        path,
+        query,
+        show_hidden,
+        include_content,
+        limit,
+        request_id,
+        request_scope,
+    )
     .await
-    .map_err(|error| format!("Failed to search entries: {error}"))?
 }
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
@@ -3655,6 +3879,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn search_entries_with_diagnostics_reports_name_index_cache_hits() {
+        let _serial_guard = search_test_serial_lock().await;
+        let dir = tmp_dir();
+
+        for index in 0..12 {
+            fs::write(
+                dir.path().join(format!("alpha-note-{index:03}.txt")),
+                format!("payload {index}"),
+            )
+            .unwrap();
+        }
+
+        let root = dir.path().to_string_lossy().into_owned();
+        fs_search_entries(
+            root.clone(),
+            "alpha-note".to_string(),
+            true,
+            false,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("initial fs_search_entries failed");
+
+        let response = fs_search_entries_with_diagnostics(
+            root,
+            "alpha-note-00".to_string(),
+            true,
+            false,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("fs_search_entries_with_diagnostics failed");
+
+        assert_eq!(
+            response.diagnostics.execution_strategy,
+            FileSearchExecutionStrategy::NameIndexCacheHit
+        );
+        assert_eq!(
+            response.diagnostics.content_cache_status,
+            FileSearchContentCacheStatus::NotRequested
+        );
+        assert_eq!(response.diagnostics.scanned_entry_count, 0);
+        assert_eq!(response.diagnostics.indexed_entry_count, 12);
+        assert_eq!(response.results.len(), 10);
+    }
+
+    #[tokio::test]
     async fn search_entries_content_reuse_cached_index() {
         let _serial_guard = search_test_serial_lock().await;
         let _delay_guard = set_search_scan_delay(1);
@@ -3803,6 +4078,47 @@ mod tests {
                 "over-budget content searches must remain uncached across repeated queries"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn search_entries_with_diagnostics_reports_over_budget_content_fallback() {
+        let _serial_guard = search_test_serial_lock().await;
+        let dir = tmp_dir();
+        let first_file = dir.path().join("bulk-a.txt");
+        let second_file = dir.path().join("bulk-b.txt");
+        let repeated_a = "alpha payload line\n".repeat(350_000);
+        let repeated_b = "target payload line\n".repeat(350_000);
+        fs::write(&first_file, repeated_a).unwrap();
+        fs::write(&second_file, repeated_b).unwrap();
+
+        let response = fs_search_entries_with_diagnostics(
+            dir.path().to_string_lossy().into_owned(),
+            "target payload line".to_string(),
+            true,
+            true,
+            Some(20),
+            None,
+            None,
+        )
+        .await
+        .expect("fs_search_entries_with_diagnostics failed");
+
+        assert_eq!(
+            response.diagnostics.execution_strategy,
+            FileSearchExecutionStrategy::LiveScan
+        );
+        assert_eq!(
+            response.diagnostics.content_cache_status,
+            FileSearchContentCacheStatus::OverBudgetFallback
+        );
+        assert_eq!(response.diagnostics.content_cache_stored_file_count, 0);
+        assert_eq!(response.diagnostics.content_cache_stored_byte_count, 0);
+        assert!(
+            response.diagnostics.scanned_entry_count >= 2,
+            "over-budget fallback should still report live scanned entries"
+        );
+        assert_eq!(response.results.len(), 1);
+        assert_eq!(response.results[0].path, second_file.to_string_lossy());
     }
 
     #[tokio::test]

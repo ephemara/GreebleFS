@@ -17,6 +17,26 @@ vi.mock('@tauri-apps/api/event', () => ({
 }));
 
 vi.mock('@tauri-apps/api/window', () => ({
+  availableMonitors: vi.fn().mockResolvedValue([{
+    name: 'Primary Display',
+    position: { x: 0, y: 0 },
+    size: { width: 1920, height: 1080 },
+    scaleFactor: 1,
+    workArea: {
+      position: { x: 0, y: 0 },
+      size: { width: 1920, height: 1080 },
+    },
+  }]),
+  currentMonitor: vi.fn().mockResolvedValue({
+    name: 'Primary Display',
+    position: { x: 0, y: 0 },
+    size: { width: 1920, height: 1080 },
+    scaleFactor: 1,
+    workArea: {
+      position: { x: 0, y: 0 },
+      size: { width: 1920, height: 1080 },
+    },
+  }),
   getCurrentWindow: vi.fn(() => ({
     scaleFactor: vi.fn().mockResolvedValue(1),
     setSize: vi.fn().mockResolvedValue(undefined),
@@ -30,6 +50,10 @@ vi.mock('@tauri-apps/api/window', () => ({
     startResizeDragging: vi.fn().mockResolvedValue(undefined),
   })),
   primaryMonitor: vi.fn().mockResolvedValue({
+    name: 'Primary Display',
+    position: { x: 0, y: 0 },
+    size: { width: 1920, height: 1080 },
+    scaleFactor: 1,
     workArea: {
       position: { x: 0, y: 0 },
       size: { width: 1920, height: 1080 },

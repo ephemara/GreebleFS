@@ -38,13 +38,14 @@ export const explorerPerformanceBudgets = {
 
 export type ExplorerPerformanceMetricId = keyof typeof explorerPerformanceBudgets;
 
-type ExplorerPerformanceMetadataValue = string | number | boolean | null;
+export type ExplorerPerformanceMetadataValue = string | number | boolean | null;
+export type ExplorerPerformanceMetadata = Record<string, ExplorerPerformanceMetadataValue>;
 
 export interface ExplorerPerformanceSample {
   metricId: ExplorerPerformanceMetricId;
   durationMs: number;
   recordedAt: number;
-  metadata: Record<string, ExplorerPerformanceMetadataValue>;
+  metadata: ExplorerPerformanceMetadata;
 }
 
 export interface ExplorerPerformanceSnapshot {
@@ -111,7 +112,7 @@ export function recordExplorerPerformanceSample(
     metricId: ExplorerPerformanceMetricId;
     durationMs: number;
     recordedAt?: number;
-    metadata?: Record<string, ExplorerPerformanceMetadataValue>;
+    metadata?: ExplorerPerformanceMetadata;
   },
   storage: Storage | null = getStorage(),
 ): ExplorerPerformanceSnapshot {
@@ -273,7 +274,7 @@ function normalizeRecordedAt(value: unknown): number {
     : Date.now();
 }
 
-function normalizeMetadata(value: unknown): Record<string, ExplorerPerformanceMetadataValue> {
+function normalizeMetadata(value: unknown): ExplorerPerformanceMetadata {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
   }

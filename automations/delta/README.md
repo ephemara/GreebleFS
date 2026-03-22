@@ -11,9 +11,9 @@ Close feature gaps and missing implementations required to ship OverlayTerm with
 
 ## Focus Areas
 
-- Missing product features required for a shippable release.
-- Incomplete workflows across explorer, source control, plugins, screenshots, and settings.
-- Integration gaps between Rust commands, React panels, and persisted settings.
+- Missing product features required for a shippable release outside the dedicated Charlie asset lane.
+- Incomplete workflows across explorer, source control, screenshots, settings, and release framing.
+- Integration gaps between Rust commands, React panels, persisted settings, and app-shell handoffs.
 - Regression prevention, polish, and operator-facing clarity.
 
 ## Ranked Backlog
@@ -24,15 +24,15 @@ Close feature gaps and missing implementations required to ship OverlayTerm with
 2. Release envelope and product framing.
    - Replace template-level project framing with real app-level release docs, onboarding clarity, and operator-facing guidance.
    - Tighten what a new user sees and understands on first contact.
-3. Plugin, theme, shader, and animation workflow completion.
-   - Make drop-in content management feel coherent and shippable.
-   - Improve diagnostics, refresh loops, folder-open flows, and operator clarity.
-4. Screenshots workflow completion.
+3. Screenshots workflow completion.
    - Ensure capture, preview, save, clipboard, and gallery flows are complete and validated.
-5. Settings and layout completion.
+4. Settings and layout completion.
    - Tighten defaults, config path behavior, persistence clarity, and cross-panel settings coherence.
-6. Cross-panel workflow polish.
+5. Cross-panel workflow polish.
    - Smooth handoffs between terminal, explorer, source control, plugins, notes, and screenshots.
+6. Charlie handoff integration.
+   - Keep app-level wiring coherent where asset workflows touch the rest of the product.
+   - Do not absorb Charlie-owned plugin/theme/shader/animation core work unless a broader app-shell blocker requires it.
 
 ## Execution Order For The Next 2-3 Days
 
@@ -47,6 +47,7 @@ Close feature gaps and missing implementations required to ship OverlayTerm with
 
 - Team 3 should usually take the highest unfinished builder item from the ranked backlog.
 - Team 4 should validate the latest Team 3 slice first, then tighten the same workflow or clear the highest-risk remaining blocker.
+- Charlie owns the plugin/theme/shader/animation core workflow backlog; Delta should only touch those surfaces when a broader release-flow integration issue crosses lane boundaries.
 - Do not skip to lower-ranked work unless the higher-ranked item is blocked and the blocker is recorded in `handoff.md`.
 
 ## Workflow

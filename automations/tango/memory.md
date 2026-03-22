@@ -170,3 +170,41 @@
   - Durable lane rules:
     - Runtime tuning for native cache TTLs/budgets should go through the shared policy surface instead of introducing new hot-path literals.
     - Validation reports should record the effective runtime cache policy when comparing cold versus warm behavior; otherwise telemetry samples are hard to interpret across environments.
+- Run 2026-03-22 14:24:03 -04:00: backlog item 6 advanced with frontend telemetry self-labeling for runtime cache policy.
+  - Added `src/config/runtimeCachePolicy.ts` so the frontend uses one data-driven mapping to convert `fs_get_runtime_cache_policy` results into a stable fingerprint plus prefixed telemetry metadata keys.
+  - `src/components/FileExplorer.tsx` now fetches the runtime cache policy once in Tauri and merges that policy context into every explorer navigation, search, entry-size, native-icon, and first-interactive sample recorded through `src/config/performanceTelemetry.ts`.
+  - Policy labeling is non-blocking: samples can be stamped as `pending`, `ready`, `failed`, or `unavailable`, which keeps first-paint/navigation timing honest while still exposing whether the cache-policy fetch had resolved.
+  - Added focused unit coverage in `src/test/runtimeCachePolicy.test.ts`.
+  - Verification completed:
+    - `npm run test:unit -- src/test/performanceTelemetry.test.ts src/test/runtimeCachePolicy.test.ts`
+    - `npm run build`
+  - Durable lane rules:
+    - Explorer telemetry samples should carry their own cache-policy fingerprint and status so validator runs can compare warm/cold behavior directly from persisted telemetry instead of reconstructing override state from separate notes.
+    - A missing runtime cache policy stamp on the first few samples is not necessarily a bug if those samples are explicitly marked `runtimeCachePolicyStatus='pending'`.
+- Run 2026-03-22 14:30:30 -04:00: Team 2 validated the frontend runtime-policy telemetry slice and landed one correctness fix.
+  - Exact validator finding: first navigation, first-interactive, and other cold-path samples could be recorded before `fs_get_runtime_cache_policy` resolved, which left the most important release-comparison samples tagged with `runtimeCachePolicyStatus='pending'` and no fingerprint even though the lane wanted those samples to identify the active TTL/budget policy.
+  - Fixes landed:
+    - `src/components/FileExplorer.tsx` now buffers explorer metrics while runtime cache policy metadata is pending, flushes them after the policy resolves or fails, and flushes queued metrics on unmount so short-lived mounts do not silently lose telemetry.
+    - `src/config/runtimeCachePolicy.ts` now provides typed runtime metadata plus `finalizePendingExplorerMetricSamples` so pending samples are finalized deterministically with the resolved policy context.
+    - `src/test/runtimeCachePolicy.test.ts` now covers queued-sample finalization and preserves per-sample metadata alongside the runtime-policy fingerprint.
+  - Validator verification completed:
+    - `npm run test:unit -- src/test/runtimeCachePolicy.test.ts`
+    - `npm run build`
+    - `$env:CARGO_TARGET_DIR='M:\OverlayTerm\src-tauri\target-tests-tango-team-2'; cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml resolve_fs_cache_policy -- --nocapture`
+  - Durable lane rules:
+    - If async runtime configuration is intended to label telemetry for cold-path comparison, the caller must prefetch it or buffer early samples until the config resolves; otherwise the first samples are not comparable across runs.
+    - `runtimeCachePolicyStatus='pending'` is acceptable only as a short-lived staging state before sample finalization or as an unmount fallback when the runtime policy never resolved in time.
+- Run 2026-03-22 15:33:59 -04:00: Team 1 added deterministic native search-path diagnostics for telemetry and validation.
+  - `src-tauri/src/fs_commands.rs` now defines `FileSearchResponse` plus `FileSearchDiagnostics`, and `fs_search_entries_with_diagnostics` reports whether each search used a warm name index, a warm content index, or a live scan.
+  - Live-scan diagnostics also report content-cache status (`warmed`, `disabled`, `over_budget_fallback`, `read_failure_fallback`) plus scanned entry counts, indexed entry counts, and stored content-cache totals.
+  - `src/components/FileExplorer.tsx` now records those backend diagnostics on every successful `explorer_search` sample through the new mapper in `src/config/searchTelemetry.ts`.
+  - Added targeted Rust coverage with `search_entries_with_diagnostics_reports_name_index_cache_hits` and `search_entries_with_diagnostics_reports_over_budget_content_fallback`, plus frontend mapper coverage in `src/test/searchTelemetry.test.ts`.
+  - Verification completed:
+    - `$env:CARGO_TARGET_DIR='M:\OverlayTerm\src-tauri\target-tests-tango-team-1'; cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml search_entries_with_diagnostics_ -- --nocapture`
+    - `npm run test:unit -- src/test/runtimeCachePolicy.test.ts src/test/searchTelemetry.test.ts`
+    - `npm run build`
+  - Verification gap:
+    - `npm run test:browser -- src/test/browser/fileExplorer.repositoryPicker.browser.test.tsx` timed out twice in this environment, so browser-harness stability is still unproven for this lane.
+  - Durable lane rules:
+    - Search telemetry comparisons should prefer backend-reported execution strategy and content-cache status over timing-only inference.
+    - Over-budget content search remains intentionally uncached; validator evidence should now confirm that via `explorerSearchContentCacheStatus='over_budget_fallback'` in the recorded search sample.
