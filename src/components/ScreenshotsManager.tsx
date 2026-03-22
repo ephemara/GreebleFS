@@ -3,10 +3,10 @@ import { invoke } from '@tauri-apps/api/core';
 import {
   availableMonitors,
   currentMonitor,
-  getCurrentWindow,
   primaryMonitor,
   type Monitor as TauriMonitor,
 } from '@tauri-apps/api/window';
+
 import {
   Check,
   Copy,
@@ -117,17 +117,6 @@ async function ensureDir(path: string): Promise<void> {
   }
 }
 
-async function withHiddenWindowCapture<T>(task: () => Promise<T>): Promise<T> {
-  const win = getCurrentWindow();
-  await win.hide();
-  await new Promise(resolve => window.setTimeout(resolve, screenshotFeatureConfig.editor.hideWindowDelayMs));
-  try {
-    return await task();
-  } finally {
-    await win.show().catch(() => {});
-    await win.setFocus().catch(() => {});
-  }
-}
 
 function toMonitorCapture(monitor: TauriMonitor, activeId: string | null): MonitorCapture {
   const sf = monitor.scaleFactor || 1;
@@ -266,19 +255,19 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
         : null;
       const base = available.map(m => toMonitorCapture(m, activeId));
 
-      const captured: MonitorCapture[] = await withHiddenWindowCapture(async () => {
-        const results: MonitorCapture[] = [];
-        for (const mon of base) {
-          const preview = await invoke<ScreenshotPreviewPayload>('screenshot_capture_preview', {
-            x: mon.physicalX,
-            y: mon.physicalY,
-            width: mon.physicalWidth,
-            height: mon.physicalHeight,
-          });
-          results.push({ ...mon, captureId: preview.captureId, previewUrl: preview.previewUrl, imageWidth: preview.imageWidth, imageHeight: preview.imageHeight });
-        }
-        return results;
-      });
+      // The Rust command handles seamless capture via SetWindowDisplayAffinity —
+      // the overlay stays visible to the user; only DXGI sees a clean desktop.
+      const results: MonitorCapture[] = [];
+      for (const mon of base) {
+        const preview = await invoke<ScreenshotPreviewPayload>('screenshot_capture_preview', {
+          x: mon.physicalX,
+          y: mon.physicalY,
+          width: mon.physicalWidth,
+          height: mon.physicalHeight,
+        });
+        results.push({ ...mon, captureId: preview.captureId, previewUrl: preview.previewUrl, imageWidth: preview.imageWidth, imageHeight: preview.imageHeight });
+      }
+      const captured = results;
 
       setMonitors(captured);
       const firstActive = captured.find(m => m.isActive) ?? captured[0] ?? null;

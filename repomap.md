@@ -215,10 +215,12 @@
             └── 📂 browser
             └── 📂 helpers
     └── 📂 src-tauri
+        └── 📂 animations
         └── 📂 capabilities
         └── 📂 gen
             └── 📂 schemas
         └── 📂 icons
+        └── 📂 shaders
         └── 📂 src
         └── 📂 target-check-icons
             └── 📂 debug
@@ -250,6 +252,7 @@
                 └── 📂 examples
                 └── 📂 icons
                 └── 📂 incremental
+        └── 📂 themes
     └── 📂 target-tests
         └── 📂 cargo
             └── 📂 win32

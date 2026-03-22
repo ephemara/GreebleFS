@@ -1,6 +1,6 @@
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import Editor from '@monaco-editor/react';
+import type { EditorProps } from '@monaco-editor/react';
 import { ChevronDown, ChevronUp, Download, FolderGit2, GitBranch, GitCommit, Plus, RefreshCw, Rocket, Search, Upload, X } from 'lucide-react';
 import { multiplyColorAlpha, type ResolvedOverlayAppearance } from '../config/appearance';
 import { OverlayScrollArea } from './OverlayScrollArea';
@@ -57,6 +57,11 @@ const FILTERS: Record<ChangeFilter, string> = {
   unstaged: 'Working',
   untracked: 'New',
 };
+
+const LazyMonacoEditor = React.lazy(async () => {
+  const module = await import('@monaco-editor/react');
+  return { default: module.default as React.ComponentType<EditorProps> };
+});
 
 interface GitManagerProps {
   appearance?: ResolvedOverlayAppearance;
@@ -737,44 +742,46 @@ export function GitManager({
                     diffLoading ? (
                       <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: palette.muted, fontSize: 11 }}>Loading diff…</div>
                     ) : (
-                      <Editor
-                        height="100%"
-                        onMount={(editor, monaco) => {
-                          diffEditorRef.current = editor;
-                          diffMonacoRef.current = monaco;
-                          // Two-frame delay: first frame settles the flex layout,
-                          // second ensures Monaco measures the real post-zoom size.
-                          window.requestAnimationFrame(() => {
+                      <React.Suspense fallback={<div style={{ height: '100%', display: 'grid', placeItems: 'center', color: palette.muted, fontSize: 11 }}>Loading diff editor…</div>}>
+                        <LazyMonacoEditor
+                          height="100%"
+                          onMount={(editor, monaco) => {
+                            diffEditorRef.current = editor;
+                            diffMonacoRef.current = monaco;
+                            // Two-frame delay: first frame settles the flex layout,
+                            // second ensures Monaco measures the real post-zoom size.
                             window.requestAnimationFrame(() => {
-                              editor.layout?.();
+                              window.requestAnimationFrame(() => {
+                                editor.layout?.();
+                              });
                             });
-                          });
-                        }}
-                        value={diffView?.content ?? ''}
-                        language="plaintext"
-                        theme="vs-dark"
-                        options={{
-                          automaticLayout: true,
-                          readOnly: true,
-                          minimap: { enabled: false },
-                          fontFamily: monoFont,
-                          fontSize: 11.5,
-                          lineNumbers: 'on',
-                          glyphMargin: false,
-                          folding: false,
-                          overviewRulerLanes: 2,
-                          lineDecorationsWidth: 12,
-                          scrollBeyondLastLine: false,
-                          wordWrap: 'on',
-                          scrollbar: {
-                            vertical: 'visible',
-                            horizontal: 'visible',
-                            verticalScrollbarSize: 10,
-                            horizontalScrollbarSize: 10,
-                            alwaysConsumeMouseWheel: false,
-                          },
-                        }}
-                      />
+                          }}
+                          value={diffView?.content ?? ''}
+                          language="plaintext"
+                          theme="vs-dark"
+                          options={{
+                            automaticLayout: true,
+                            readOnly: true,
+                            minimap: { enabled: false },
+                            fontFamily: monoFont,
+                            fontSize: 11.5,
+                            lineNumbers: 'on',
+                            glyphMargin: false,
+                            folding: false,
+                            overviewRulerLanes: 2,
+                            lineDecorationsWidth: 12,
+                            scrollBeyondLastLine: false,
+                            wordWrap: 'on',
+                            scrollbar: {
+                              vertical: 'visible',
+                              horizontal: 'visible',
+                              verticalScrollbarSize: 10,
+                              horizontalScrollbarSize: 10,
+                              alwaysConsumeMouseWheel: false,
+                            },
+                          }}
+                        />
+                      </React.Suspense>
                     )
                   ) : (
                     <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: palette.muted, fontSize: 12 }}>Pick a file from the change list.</div>
