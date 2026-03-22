@@ -40,6 +40,7 @@ import {
   joinPlatformPath,
   type RuntimePlatform,
 } from '../config/platform';
+import { recordExplorerPerformanceSample } from '../config/performanceTelemetry';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ExplorerSideRail } from './explorer/ExplorerSideRail';
 import { removeExplorerBookmarksByPath, upsertExplorerBookmark } from './explorer/explorerRailState';
@@ -88,6 +89,12 @@ const EXPLORER_GRID_ITEM_HEIGHT = 156;
 const EXPLORER_GRID_SEARCH_ITEM_HEIGHT = 180;
 const EXPLORER_NEW_ITEM_LIST_HEIGHT = 46;
 const EXPLORER_NEW_ITEM_GRID_HEIGHT = 156;
+
+function getExplorerPerformanceNow(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+}
 
 function getDocumentPreviewKind(path: string): DocumentPreviewKind {
   const ext = path.split('.').pop()?.toLowerCase() ?? '';
@@ -1007,6 +1014,8 @@ export function FileExplorer({
   const previewSaveTimer = useRef<number | null>(null);
   const searchRequestIdRef = useRef(0);
   const searchFocusRequestIdRef = useRef(0);
+  const initialInteractiveRecordedRef = useRef(false);
+  const explorerMountStartedAtRef = useRef(getExplorerPerformanceNow());
   const addressInputRef = useRef<HTMLInputElement>(null);
   const [addressEditing, setAddressEditing] = useState(false);
   const [addressDraft, setAddressDraft] = useState('');
@@ -1123,6 +1132,7 @@ export function FileExplorer({
 
   // ── Navigate ──
   const navigate = useCallback(async (path: string, push = true) => {
+    const startedAt = getExplorerPerformanceNow();
     const normalizedPath = normalizeExplorerPath(path);
     setCurrentPath(normalizedPath); setSelected(new Set()); setSearch(''); setSearchResults([]); setSearchLoading(false); setError(null);
     setEntrySizeLoadingPaths(new Set());
@@ -1130,8 +1140,33 @@ export function FileExplorer({
     setAddressDraft('');
     if (push) { setHistory(h => [...h.slice(0, historyIdx + 1), normalizedPath]); setHistoryIdx(i => i + 1); }
     setLoading(true);
-    try { setEntries(await invoke<FileEntry[]>('fs_list_dir', { path: normalizedPath, showHidden })); }
-    catch (e) { setError(String(e)); setEntries([]); }
+    try {
+      const nextEntries = await invoke<FileEntry[]>('fs_list_dir', { path: normalizedPath, showHidden });
+      setEntries(nextEntries);
+      recordExplorerPerformanceSample({
+        metricId: 'explorer_navigation',
+        durationMs: getExplorerPerformanceNow() - startedAt,
+        metadata: {
+          entryCount: nextEntries.length,
+          pathDepth: normalizedPath.split(/[\\/]/).filter(Boolean).length,
+          showHidden,
+          success: true,
+        },
+      });
+    }
+    catch (e) {
+      setError(String(e)); setEntries([]);
+      recordExplorerPerformanceSample({
+        metricId: 'explorer_navigation',
+        durationMs: getExplorerPerformanceNow() - startedAt,
+        metadata: {
+          entryCount: 0,
+          pathDepth: normalizedPath.split(/[\\/]/).filter(Boolean).length,
+          showHidden,
+          success: false,
+        },
+      });
+    }
     finally { setLoading(false); }
   }, [historyIdx, showHidden]);
 
@@ -1144,6 +1179,7 @@ export function FileExplorer({
     }
 
     setSearchLoading(true);
+    const startedAt = getExplorerPerformanceNow();
     try {
       const results = await invoke<FileSearchResult[]>('fs_search_entries', {
         path: currentPath,
@@ -1154,11 +1190,31 @@ export function FileExplorer({
       });
       if (searchRequestIdRef.current === requestId) {
         setSearchResults(results);
+        recordExplorerPerformanceSample({
+          metricId: 'explorer_search',
+          durationMs: getExplorerPerformanceNow() - startedAt,
+          metadata: {
+            includeContent: searchIncludeContent,
+            queryLength: trimmed.length,
+            resultCount: results.length,
+            success: true,
+          },
+        });
       }
     } catch (searchError) {
       if (searchRequestIdRef.current === requestId) {
         setSearchResults([]);
         setError(`Search failed: ${searchError}`);
+        recordExplorerPerformanceSample({
+          metricId: 'explorer_search',
+          durationMs: getExplorerPerformanceNow() - startedAt,
+          metadata: {
+            includeContent: searchIncludeContent,
+            queryLength: trimmed.length,
+            resultCount: 0,
+            success: false,
+          },
+        });
       }
     } finally {
       if (searchRequestIdRef.current === requestId) {
@@ -1210,6 +1266,24 @@ export function FileExplorer({
       void invoke('fs_unwatch_entry_size_root', { path: currentPath }).catch(() => {});
     };
   }, [currentPath]);
+
+  useEffect(() => {
+    if (initialInteractiveRecordedRef.current || !currentPath || loading) {
+      return;
+    }
+
+    initialInteractiveRecordedRef.current = true;
+    recordExplorerPerformanceSample({
+      metricId: 'explorer_first_interactive',
+      durationMs: getExplorerPerformanceNow() - explorerMountStartedAtRef.current,
+      metadata: {
+        currentPathDepth: currentPath.split(/[\\/]/).filter(Boolean).length,
+        entryCount: entries.length,
+        hasError: Boolean(error),
+        isSearchActive: search.trim().length > 0,
+      },
+    });
+  }, [currentPath, entries.length, error, loading, search]);
 
   useEffect(() => {
     if (addressEditing) {
@@ -2210,11 +2284,22 @@ export function FileExplorer({
       return next;
     });
 
+    const startedAt = getExplorerPerformanceNow();
     void invoke<EntryStorageInfo[]>('fs_measure_entry_sizes', {
       paths: unresolvedPaths,
       forceRefresh: false,
     })
       .then(results => {
+        recordExplorerPerformanceSample({
+          metricId: 'explorer_entry_size_batch',
+          durationMs: getExplorerPerformanceNow() - startedAt,
+          metadata: {
+            directoryCount: nextBatch.filter((entry) => entry.is_dir).length,
+            pathCount: unresolvedPaths.length,
+            resultCount: results.length,
+            success: true,
+          },
+        });
         setEntrySizes(current => {
           const next = { ...current };
           for (const result of results) {
@@ -2234,6 +2319,16 @@ export function FileExplorer({
         });
       })
       .catch(() => {
+        recordExplorerPerformanceSample({
+          metricId: 'explorer_entry_size_batch',
+          durationMs: getExplorerPerformanceNow() - startedAt,
+          metadata: {
+            directoryCount: nextBatch.filter((entry) => entry.is_dir).length,
+            pathCount: unresolvedPaths.length,
+            resultCount: 0,
+            success: false,
+          },
+        });
         setEntrySizeLoadingPaths(current => {
           if (current.size === 0) {
             return current;
@@ -2284,8 +2379,18 @@ export function FileExplorer({
       return next;
     });
 
+    const startedAt = getExplorerPerformanceNow();
     void invoke<OverlayNativeIconResponse[]>('fs_resolve_native_icons', { requests })
       .then(results => {
+        recordExplorerPerformanceSample({
+          metricId: 'explorer_native_icon_batch',
+          durationMs: getExplorerPerformanceNow() - startedAt,
+          metadata: {
+            pathCount: pendingKeys.length,
+            resultCount: results.length,
+            success: true,
+          },
+        });
         setNativeIconMap(current => {
           const next = { ...current };
           for (const result of results) {
@@ -2302,6 +2407,15 @@ export function FileExplorer({
         });
       })
       .catch(() => {
+        recordExplorerPerformanceSample({
+          metricId: 'explorer_native_icon_batch',
+          durationMs: getExplorerPerformanceNow() - startedAt,
+          metadata: {
+            pathCount: pendingKeys.length,
+            resultCount: 0,
+            success: false,
+          },
+        });
         setNativeIconMap(current => {
           const next = { ...current };
           for (const key of pendingKeys) {

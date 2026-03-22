@@ -1,0 +1,25 @@
+# Tango Memory
+
+- Lane created on 2026-03-22 for the performance and ship-readiness closed loop.
+- Primary hotspots already identified in the repo:
+  - `M:\OverlayTerm\src-tauri\src\fs_commands.rs`
+  - `M:\OverlayTerm\src\components\FileExplorer.tsx`
+  - `M:\OverlayTerm\src\App.tsx`
+- Long-term target: move explorer behavior toward indexed, incremental, native-first data flows instead of repeated cold filesystem work.
+- Backlog seeded on 2026-03-22.
+- Ranked priority order at lane start:
+  - instrumentation and budgets
+  - native explorer hot-path reduction
+  - search pipeline hardening
+  - async enrichment isolation
+  - explorer/UI state isolation
+  - release hardening
+- Run 2026-03-22: backlog item 1 started and landed an initial telemetry baseline slice.
+  - Added `src/config/performanceTelemetry.ts` with named explorer metrics, target budgets, persisted sample history, and summary helpers.
+  - Added `src/test/performanceTelemetry.test.ts`.
+  - Wired explorer navigation, search, entry-size batches, native icon batches, and first-interactive readiness into telemetry recording in `src/components/FileExplorer.tsx`.
+  - Runtime samples persist under localStorage key `overlayterm-explorer-performance-v1`.
+  - Verification completed:
+    - `npm run test:unit -- src/test/performanceTelemetry.test.ts`
+    - `npm run build`
+  - Next highest-value move: reduce `fs_list_dir` and adjacent native listing cost using the new telemetry as the baseline source of truth.
