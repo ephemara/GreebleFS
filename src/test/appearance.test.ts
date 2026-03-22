@@ -3,10 +3,12 @@ import {
   ensureFontFamilyLoaded,
   getThemeSourceLabel,
   normalizeThemeDefinition,
+  overlayFontCatalog,
   overlayThemePresets,
   parseImportedTheme,
   resolveOverlayAppearance,
   serializeTheme,
+  setOverlayPluginFonts,
   upsertCustomTheme,
   type OverlayThemeDefinition,
 } from '../config/appearance';
@@ -200,5 +202,30 @@ describe('appearance config helpers', () => {
       String(link.getAttribute('href')).includes(encodeURIComponent(uniqueFamilyName)),
     );
     expect(matchingLinks).toHaveLength(1);
+  });
+
+  it('registers plugin fonts locally without fetching them from Google Fonts', () => {
+    const pluginFamily = `Overlay Plugin Font ${Date.now()}`;
+    const stylesheetLinksBefore = document.head.querySelectorAll('link[rel="stylesheet"]').length;
+
+    setOverlayPluginFonts([
+      {
+        id: 'plugin-font',
+        name: 'Plugin Font',
+        family: `"${pluginFamily}", sans-serif`,
+        faceName: pluginFamily,
+        sourceUrl: 'asset://localhost/plugins/mega-plugin/fonts/plugin-font.ttf',
+      },
+    ]);
+
+    expect(overlayFontCatalog.some(font => font.id === 'plugin-font')).toBe(true);
+    expect(document.head.querySelector('#overlayterm-plugin-fonts')?.textContent).toContain(pluginFamily);
+
+    ensureFontFamilyLoaded(`"${pluginFamily}", sans-serif`);
+
+    const stylesheetLinksAfter = document.head.querySelectorAll('link[rel="stylesheet"]').length;
+    expect(stylesheetLinksAfter).toBe(stylesheetLinksBefore);
+
+    setOverlayPluginFonts([]);
   });
 });

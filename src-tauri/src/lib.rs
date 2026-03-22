@@ -1,4 +1,5 @@
 pub mod desktop_integration;
+pub mod entry_size_cache;
 pub mod fs_commands;
 pub mod plugin_commands;
 pub mod python_commands;
@@ -8,6 +9,10 @@ pub mod terminal;
 pub mod window_commands;
 
 use desktop_integration::{fs_resolve_native_icons, fs_start_native_file_drag};
+use entry_size_cache::{
+    fs_unwatch_entry_size_root, fs_watch_entry_size_root, initialize_entry_size_cache,
+    EntrySizeWatcherState,
+};
 use fs_commands::{
     fs_copy, fs_create_dir, fs_delete, fs_get_drives, fs_get_home_dir, fs_list_dir,
     fs_measure_entry_sizes, fs_move, fs_open_as_admin, fs_open_file, fs_read_file_base64,
@@ -22,8 +27,7 @@ use python_commands::{
 };
 use screenshot_commands::{
     screenshot_capture_preview, screenshot_copy_image_to_clipboard,
-    screenshot_copy_region_to_clipboard, screenshot_read_gallery_thumbnail,
-    screenshot_save_region,
+    screenshot_copy_region_to_clipboard, screenshot_read_gallery_thumbnail, screenshot_save_region,
 };
 use startup_commands::{startup_get_launch_at_startup, startup_set_launch_at_startup};
 use tauri::{
@@ -63,6 +67,8 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .setup(|app| {
             app.manage(TerminalManager::new());
+            initialize_entry_size_cache(app.handle())?;
+            app.manage(EntrySizeWatcherState::default());
             app.manage(PluginWatcherState::default());
 
             if let Some(window) = app.get_webview_window("main") {
@@ -124,6 +130,8 @@ pub fn run() {
             fs_list_dir,
             fs_get_drives,
             fs_measure_entry_sizes,
+            fs_watch_entry_size_root,
+            fs_unwatch_entry_size_root,
             fs_read_text_file,
             fs_open_file,
             fs_open_as_admin,

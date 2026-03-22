@@ -28,6 +28,7 @@
         └── 📂 macos
             └── 📂 src
             └── 📂 src-swift
+    └── 📂 explorertest
     └── 📂 mac-release
     └── 📂 output
         └── 📂 folder-icon-library

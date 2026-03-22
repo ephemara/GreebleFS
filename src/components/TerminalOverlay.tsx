@@ -66,6 +66,11 @@ import {
 } from '../config/python';
 import { detectClientPlatform, type RuntimePlatform } from '../config/platform';
 import { useTerminalStore, type Bookmark } from '../store/terminalStore';
+import {
+  dispatchTerminalCommand,
+  type OverlayPluginCommandContribution,
+  type OverlayTerminalCommandInjectionDetail,
+} from '../config/pluginContributions';
 import { useSettingsStore } from '../store/settingsStore';
 import { OverlayScrollArea } from './OverlayScrollArea';
 
@@ -237,6 +242,7 @@ interface TerminalOverlayProps {
   /** When true, renders as embedded panel (no outer slide animation, no grab handle) */
   embedded?: boolean;
   appearance?: ResolvedOverlayAppearance;
+  pluginCommands?: OverlayPluginCommandContribution[];
 }
 
 // ─── XTerm registry ───────────────────────────────────────────────────────────
@@ -462,7 +468,7 @@ function XTermPane({ id, visible, theme, onReady }: XTermPaneProps) {
 
 interface ChipProps {
   bm: Bookmark; icon: React.ReactNode; accentStyle: string;
-  onPrimary: () => void; onRun?: () => void; onDelete: () => void;
+  onPrimary: () => void; onRun?: () => void; onDelete?: () => void;
 }
 function BookmarkChip({ bm, icon, accentStyle, onPrimary, onRun, onDelete }: ChipProps) {
   return (
@@ -478,9 +484,11 @@ function BookmarkChip({ bm, icon, accentStyle, onPrimary, onRun, onDelete }: Chi
             <Play size={10} />
           </button>
         )}
-        <button onClick={onDelete} className="p-1 rounded text-white/20 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete">
-          <Trash2 size={10} />
-        </button>
+        {onDelete && (
+          <button onClick={onDelete} className="p-1 rounded text-white/20 hover:text-red-400 hover:bg-red-500/10 transition-all" title="Delete">
+            <Trash2 size={10} />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -803,6 +811,7 @@ function PythonSidebarContent({
 
 interface SidebarContentProps {
   panel: SidebarPanel; theme: Theme; appearance: ResolvedOverlayAppearance;
+  pluginCommands: OverlayPluginCommandContribution[];
   injectCmd: (cmd: string) => void;
   injectCd:  (path: string) => void;
   emitToTerminal: (label: string, body: string, tone?: 'info' | 'success' | 'error') => void;
@@ -816,6 +825,7 @@ function SidebarContent({
   panel,
   theme,
   appearance,
+  pluginCommands,
   injectCmd,
   injectCd,
   emitToTerminal,
@@ -877,7 +887,7 @@ function SidebarContent({
             onConfirm={async (n, v) => { await addCommandBookmark({ id: crypto.randomUUID(), name: n, value: v }); setAddingCmd(false); }}
             onCancel={() => setAddingCmd(false)} />
         )}
-        {commandBookmarks.length === 0 && !addingCmd && (
+        {commandBookmarks.length === 0 && pluginCommands.length === 0 && !addingCmd && (
           <p className="text-[9px] opacity-20 px-3 py-2">No commands yet — click + to add</p>
         )}
         {commandBookmarks.map(bm => (
@@ -885,6 +895,21 @@ function SidebarContent({
             onPrimary={() => injectCmd(bm.value)}
             onRun={() => injectCmd(bm.value + '\r')}
             onDelete={() => removeCommandBookmark(bm.id)} />
+        ))}
+        {pluginCommands.length > 0 && (
+          <div className="px-3 pt-3 pb-1 text-[9px] font-semibold uppercase tracking-[0.14em] opacity-35">
+            Plugin Commands
+          </div>
+        )}
+        {pluginCommands.map(command => (
+          <BookmarkChip
+            key={command.id}
+            bm={{ id: command.id, name: `${command.pluginName}: ${command.name}`, value: command.command }}
+            icon={<Hash size={10} />}
+            accentStyle={appearance.theme.palette.info}
+            onPrimary={() => dispatchTerminalCommand(command.command, command.runOnSelect)}
+            onRun={() => dispatchTerminalCommand(command.command, true)}
+          />
         ))}
       </OverlayScrollArea>
     </div>
@@ -906,7 +931,13 @@ function SidebarContent({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance: appearanceProp }: TerminalOverlayProps) {
+export function TerminalOverlay({
+  isOpen,
+  onClose,
+  embedded = false,
+  appearance: appearanceProp,
+  pluginCommands = [],
+}: TerminalOverlayProps) {
   const settings = useSettingsStore(s => s.settings.terminal);
   const appearanceSettings = useSettingsStore(s => s.settings.appearance);
   const keybindings = useSettingsStore(s => s.settings.keybindings);
@@ -1079,6 +1110,18 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
     return () => window.removeEventListener('overlayterm:cdinject', handler);
   }, [injectCd]);
 
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<OverlayTerminalCommandInjectionDetail>).detail;
+      if (!detail?.command) {
+        return;
+      }
+      injectCmd(detail.run ? `${detail.command}\r` : detail.command);
+    };
+    window.addEventListener('overlayterm:cmdinject', handler);
+    return () => window.removeEventListener('overlayterm:cmdinject', handler);
+  }, [injectCmd]);
+
   // ── Tab management ──
   const newTab = () => {
     const id  = `overlay-${Date.now()}`;
@@ -1239,6 +1282,7 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
                 panel={activePanel}
                 theme={theme}
                 appearance={appearance}
+                pluginCommands={pluginCommands}
                 injectCmd={injectCmd}
                 injectCd={injectCd}
                 emitToTerminal={emitToActiveTerminal}
@@ -1434,6 +1478,7 @@ export function TerminalOverlay({ isOpen, onClose, embedded = false, appearance:
               panel={activePanel}
               theme={theme}
               appearance={appearance}
+              pluginCommands={pluginCommands}
               injectCmd={injectCmd}
               injectCd={injectCd}
               emitToTerminal={emitToActiveTerminal}

@@ -49,6 +49,8 @@ describe('createBuiltInPanelDefinitions', () => {
       explorerRepoPicker: null,
       isOpen: true,
       hideOverlay: () => {},
+      pluginCommands: [],
+      pluginExplorerActions: [],
       onOpenInTerminal: () => {},
       onAddBookmark: async () => {},
       onRequestRepositoryImport: () => {},

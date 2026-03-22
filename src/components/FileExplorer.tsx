@@ -11,17 +11,18 @@
 import React, {
   Suspense, useState, useEffect, useRef, useCallback, useMemo,
 } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import Editor from '@monaco-editor/react';
 import {
   ChevronRight, ChevronLeft, ArrowUp, Search, RefreshCw,
   Grid, List, X, Star, StarOff, Terminal,
   Trash2, Copy, Scissors, Clipboard, Edit3, ExternalLink,
-  Shield, Eye, AlertTriangle, Loader,
+  Shield, Eye, AlertTriangle, Loader, Puzzle,
   FilePlus, FolderPlus, CopyPlus,
 } from 'lucide-react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
+import type { OverlayPluginExplorerActionContribution } from '../config/pluginContributions';
 import { getExplorerRailWidthBounds } from '../config/explorerRail';
 import { getFolderIconSrc } from '../config/folderIcons';
 import { getBuiltInIconTheme, resolveFileIconSrc, resolveIconSrc } from '../config/iconTheme';
@@ -61,6 +62,7 @@ import {
   findSearchFocusColumns,
   type EditorSearchFocusTarget,
 } from './fileExplorerSearchFocus';
+import { dispatchTerminalCommand, resolvePluginCommandTemplate } from '../config/pluginContributions';
 
 const LazyModelPreview = React.lazy(() =>
   import('./ModelPreview').then(module => ({ default: module.ModelPreview })),
@@ -861,6 +863,7 @@ interface FileExplorerProps {
   appearance?: ResolvedOverlayAppearance;
   onOpenInTerminal: (path: string) => void;
   onAddBookmark: (name: string, path: string) => void;
+  pluginActions?: OverlayPluginExplorerActionContribution[];
   layoutMode?: ExplorerLayoutMode;
   repositoryPicker?: {
     active: boolean;
@@ -876,6 +879,7 @@ export function FileExplorer({
   appearance,
   onOpenInTerminal,
   onAddBookmark,
+  pluginActions = [],
   layoutMode = 'full',
   repositoryPicker = null,
 }: FileExplorerProps) {
@@ -1126,6 +1130,20 @@ export function FileExplorer({
   }, [currentPath, entries, search, searchResults, showHidden, runSearch]);
 
   useEffect(() => { refresh(); }, [showHidden]);
+
+  useEffect(() => {
+    if (!currentPath || !isTauri()) {
+      return undefined;
+    }
+
+    void invoke('fs_watch_entry_size_root', { path: currentPath }).catch(error => {
+      console.warn('OverlayTerm: failed to watch entry size root', error);
+    });
+
+    return () => {
+      void invoke('fs_unwatch_entry_size_root', { path: currentPath }).catch(() => {});
+    };
+  }, [currentPath]);
 
   useEffect(() => {
     if (addressEditing) {
@@ -1437,6 +1455,7 @@ export function FileExplorer({
     () => visibleEntries.filter(entry => selected.has(entry.path)),
     [visibleEntries, selected],
   );
+  const activeDragPathsRef = useRef<string[]>([]);
   const selectedDirectoryEntries = useMemo(
     () => selectedEntries.filter(entry => entry.is_dir),
     [selectedEntries],
@@ -1824,6 +1843,32 @@ export function FileExplorer({
   // ── Context menu builder ──
   const buildCtxItems = useCallback((entry: FileEntry): CtxItem[] => {
     const isBookmarked = bookmarkPathSet.has(entry.path);
+    const parentPath = entry.path.replace(/[/\\\\][^/\\\\]+$/, '');
+    const stem = entry.name.replace(/\.[^.]+$/, '');
+    const matchedPluginActions = pluginActions
+      .filter(action => (
+        action.appliesTo === 'any'
+        || (action.appliesTo === 'directory' && entry.is_dir)
+        || (action.appliesTo === 'file' && !entry.is_dir)
+      ))
+      .map(action => ({
+        label: `${action.pluginName}: ${action.label}`,
+        icon: <Puzzle size={13} />,
+        action: () => {
+          const resolvedCommand = resolvePluginCommandTemplate(action.command, {
+            path: entry.path,
+            name: entry.name,
+            parent: parentPath,
+            extension: entry.extension,
+            stem,
+            isDirectory: entry.is_dir,
+            pluginId: action.pluginId,
+            pluginName: action.pluginName,
+          });
+          dispatchTerminalCommand(resolvedCommand, action.runOnSelect);
+        },
+      }));
+
     return [
       { label:'Open',               icon:<ExternalLink size={13}/>, action:() => openEntry(entry) },
       { label: entry.is_dir ? 'Open Folder as Admin' : 'Open as Admin', icon:<Shield size={13}/>, action:() => openAsAdmin(entry.path) },
@@ -1851,10 +1896,11 @@ export function FileExplorer({
           }
         }
       }},
+      ...(matchedPluginActions.length > 0 ? [{ label: '', icon:null, divider:true, action:()=>{} }, ...matchedPluginActions] : []),
       { label: '', icon:null, divider:true, action:()=>{} },
       { label:'Delete', icon:<Trash2 size={13}/>, danger:true, action:() => setDeleteTarget(entry) },
     ];
-  }, [bookmarkPathSet, duplicate, explorerRail, handleBookmarkCreated, onOpenInTerminal, openAsAdmin, openEntry, queueClipboard, updateExplorerRail]);
+  }, [bookmarkPathSet, duplicate, explorerRail, handleBookmarkCreated, onOpenInTerminal, openAsAdmin, openEntry, pluginActions, queueClipboard, updateExplorerRail]);
 
   const buildEmptyCtxItems = useCallback((): CtxItem[] => {
     return [
@@ -2023,19 +2069,28 @@ export function FileExplorer({
   // ── Drag and Drop ──
   const onDragStart = (e: React.DragEvent, entry: FileEntry) => {
     const dragEntries = resolveEntriesForAction(entry);
+    const dragPaths = dragEntries.map(item => item.path);
     const dragIntent = resolveExplorerDragIntent(e);
-    e.dataTransfer.setData('text/plain', dragEntries[0]?.path ?? entry.path);
-    e.dataTransfer.setData('application/x-overlayterm-paths', JSON.stringify(dragEntries.map(item => item.path)));
+    activeDragPathsRef.current = dragPaths;
+    e.dataTransfer.setData('text/plain', dragPaths[0] ?? entry.path);
+    e.dataTransfer.setData('application/x-overlayterm-paths', JSON.stringify(dragPaths));
     e.dataTransfer.setData('application/x-overlayterm-drag-intent', dragIntent);
-    const toFileUri = (value: string) => {
-      const normalized = value.replace(/\\/g, '/');
-      return normalized.startsWith('/')
-        ? `file://${encodeURI(normalized)}`
-        : `file:///${encodeURI(normalized)}`;
-    };
-    const uriList = dragEntries.map(item => toFileUri(item.path)).join('\r\n');
-    e.dataTransfer.setData('text/uri-list', uriList);
+    if (dragIntent === 'native-out') {
+      const toFileUri = (value: string) => {
+        const normalized = value.replace(/\\/g, '/');
+        return normalized.startsWith('/')
+          ? `file://${encodeURI(normalized)}`
+          : `file:///${encodeURI(normalized)}`;
+      };
+      const uriList = dragPaths.map(toFileUri).join('\r\n');
+      e.dataTransfer.setData('text/uri-list', uriList);
+    }
     e.dataTransfer.effectAllowed = dragIntent === 'native-out' ? 'copy' : 'copyMove';
+  };
+
+  const onDragEnd = () => {
+    activeDragPathsRef.current = [];
+    setDragOver(null);
   };
 
   const onDragOver = (e: React.DragEvent, targetPath: string) => {
@@ -2059,9 +2114,13 @@ export function FileExplorer({
     if (sources.length === 0) {
       sources = [e.dataTransfer.getData('text/plain')].filter(Boolean);
     }
+    if (sources.length === 0 && activeDragPathsRef.current.length > 0) {
+      sources = [...activeDragPathsRef.current];
+    }
     if (sources.length === 0) return;
     try {
       await transferIntoDirectory(targetDir, sources, resolveExplorerDropOperation(e, runtimePlatform));
+      activeDragPathsRef.current = [];
       refresh();
     } catch(e) { setError(String(e)); }
   };
@@ -2430,7 +2489,11 @@ export function FileExplorer({
           <div ref={mainRef} tabIndex={0}
             style={{ minHeight: '100%', outline:'none' }}
             onClick={() => mainRef.current?.focus()}
-            onDragOver={e => { e.preventDefault(); setDragOver('__main__'); }}
+            onDragOver={e => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = resolveExplorerDropOperation(e, runtimePlatform);
+              setDragOver('__main__');
+            }}
             onDragLeave={() => setDragOver(null)}
             onDrop={e => onDrop(e, currentPath)}
             onContextMenu={e => {
@@ -2518,6 +2581,7 @@ export function FileExplorer({
                       draggable
                       data-overlay-drag-source="file"
                       onDragStart={e => onDragStart(e, entry)}
+                      onDragEnd={onDragEnd}
                       onDragOver={entry.is_dir ? e => onDragOver(e, entry.path) : undefined}
                       onDragLeave={() => setDragOver(null)}
                       onDrop={entry.is_dir ? e => onDrop(e, entry.path) : undefined}
@@ -2627,6 +2691,7 @@ export function FileExplorer({
                         draggable
                         data-overlay-drag-source="file"
                         onDragStart={e => onDragStart(e, entry)}
+                        onDragEnd={onDragEnd}
                         onDragOver={entry.is_dir ? e => onDragOver(e, entry.path) : undefined}
                         onDragLeave={() => setDragOver(null)}
                         onDrop={entry.is_dir ? e => onDrop(e, entry.path) : undefined}

@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "id": "manifest-package-template",
+  "name": "Manifest Package Template",
+  "description": "Copy this folder out of plugins/examples and customize it into a full package plugin.",
+  "entry": "dist/index.js",
+  "defaultOpen": false,
+  "keepMounted": false,
+  "contributions": {
+    "themes": [
+      "themes/cobalt-lab"
+    ],
+    "shaders": [
+      "shaders/cobalt-halo.tsx"
+    ],
+    "commands": [
+      {
+        "id": "project-build",
+        "name": "Project Build",
+        "command": "npm run build",
+        "description": "Inject a build command into the integrated terminal."
+      }
+    ],
+    "explorerActions": [
+      {
+        "id": "echo-selected-path",
+        "label": "Echo Selected Path",
+        "command": "echo {path}",
+        "appliesTo": "file",
+        "description": "Send the selected file path into the integrated terminal and run it immediately.",
+        "runOnSelect": true
+      }
+    ]
+  }
+}

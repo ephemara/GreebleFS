@@ -419,10 +419,10 @@ fn encode_png(image: &RgbaImage) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_preview_image, create_capture_id, encode_png, load_capture_image, resize_image_to_fit,
-        sanitize_file_prefix, save_rgba_image, store_capture_image, validate_capture_region,
-        validate_crop_region, validate_thumbnail_bounds, MAX_CAPTURE_CACHE_ENTRIES,
-        MAX_PREVIEW_HEIGHT, MAX_PREVIEW_WIDTH,
+        build_preview_image, create_capture_id, encode_png, load_capture_image,
+        resize_image_to_fit, sanitize_file_prefix, save_rgba_image, store_capture_image,
+        validate_capture_region, validate_crop_region, validate_thumbnail_bounds,
+        MAX_CAPTURE_CACHE_ENTRIES, MAX_PREVIEW_HEIGHT, MAX_PREVIEW_WIDTH,
     };
     use image::{load_from_memory, Rgba, RgbaImage};
     use std::sync::{LazyLock, Mutex};
@@ -528,7 +528,10 @@ mod tests {
 
     #[test]
     fn sanitize_file_prefix_falls_back_when_invalid() {
-        assert_eq!(sanitize_file_prefix(Some("overlayterm-shot")), "overlayterm-shot");
+        assert_eq!(
+            sanitize_file_prefix(Some("overlayterm-shot")),
+            "overlayterm-shot"
+        );
         assert_eq!(sanitize_file_prefix(Some("bad prefix!*")), "bad-prefix");
         assert_eq!(sanitize_file_prefix(Some("___")), "overlayterm-shot");
     }
@@ -537,8 +540,8 @@ mod tests {
     fn save_rgba_image_uses_sanitized_prefix() {
         let directory = tempdir().expect("tempdir");
         let image = RgbaImage::from_pixel(12, 12, Rgba([1, 1, 1, 255]));
-        let saved = save_rgba_image(&image, directory.path(), Some("bad prefix!*"))
-            .expect("save image");
+        let saved =
+            save_rgba_image(&image, directory.path(), Some("bad prefix!*")).expect("save image");
 
         assert!(saved.file_name.starts_with("bad-prefix-"));
         assert!(saved.path.ends_with(".png"));

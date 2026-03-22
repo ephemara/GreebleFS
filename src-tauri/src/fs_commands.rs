@@ -2,11 +2,15 @@
 // Provides: dir listing with metadata, Windows drive enumeration,
 // open-with-default-app, open-as-admin (runas), delete, rename, copy.
 
+use crate::entry_size_cache::{
+    delete_entry_size_subtree, load_entry_size_cache, mark_path_and_ancestors_dirty,
+    normalize_cache_path, upsert_entry_size_cache, PersistedEntrySize,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 // ─── Data types ───────────────────────────────────────────────────────────────
 
@@ -56,7 +60,7 @@ fn entry_size_cache() -> &'static Mutex<HashMap<String, CachedEntrySize>> {
 }
 
 fn path_cache_key(path: &Path) -> String {
-    path.to_string_lossy().to_string()
+    normalize_cache_path(path)
 }
 
 fn invalidate_entry_size_cache(path: &Path) {
@@ -84,23 +88,128 @@ fn invalidate_entry_size_cache(path: &Path) {
     }
 }
 
-fn measure_path_size(path: &Path) -> (u64, bool, bool) {
+fn invalidate_persisted_entry_size(path: &Path) {
+    let _ = delete_entry_size_subtree(path);
+    let _ = mark_path_and_ancestors_dirty(path);
+}
+
+fn invalidate_all_entry_size_caches(path: &Path) {
+    invalidate_entry_size_cache(path);
+    invalidate_persisted_entry_size(path);
+}
+
+#[derive(Debug, Clone)]
+struct MeasuredPathSize {
+    bytes: u64,
+    is_dir: bool,
+    is_complete: bool,
+    modified_ms: Option<u64>,
+    entry_bytes: Option<u64>,
+}
+
+fn metadata_modified_ms(metadata: &std::fs::Metadata) -> Option<u64> {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as u64)
+}
+
+fn current_time_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn persisted_entry_is_valid(path: &Path, entry: &PersistedEntrySize) -> bool {
+    if entry.dirty {
+        return false;
+    }
+
     let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
-        Err(_) => return (0, false, false),
+        Err(_) => return false,
     };
-
     let file_type = metadata.file_type();
+
     if file_type.is_symlink() {
-        return (0, file_type.is_dir(), true);
+        return entry.bytes == 0 && entry.is_complete;
+    }
+
+    if entry.is_dir != metadata.is_dir() {
+        return false;
+    }
+
+    let modified_ms = metadata_modified_ms(&metadata);
+    if entry.modified_ms != modified_ms {
+        return false;
     }
 
     if metadata.is_file() {
-        return (metadata.len(), false, true);
+        return entry.entry_bytes == Some(metadata.len());
+    }
+
+    metadata.is_dir()
+}
+
+fn measured_to_persisted_entry(path: &Path, measurement: &MeasuredPathSize) -> PersistedEntrySize {
+    PersistedEntrySize {
+        path: path_cache_key(path),
+        bytes: measurement.bytes,
+        is_dir: measurement.is_dir,
+        is_complete: measurement.is_complete,
+        modified_ms: measurement.modified_ms,
+        entry_bytes: measurement.entry_bytes,
+        measured_at_ms: current_time_millis(),
+        dirty: false,
+    }
+}
+
+fn measure_path_size(path: &Path) -> MeasuredPathSize {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(_) => {
+            return MeasuredPathSize {
+                bytes: 0,
+                is_dir: false,
+                is_complete: false,
+                modified_ms: None,
+                entry_bytes: None,
+            }
+        }
+    };
+
+    let file_type = metadata.file_type();
+    let modified_ms = metadata_modified_ms(&metadata);
+    if file_type.is_symlink() {
+        return MeasuredPathSize {
+            bytes: 0,
+            is_dir: path.is_dir(),
+            is_complete: true,
+            modified_ms,
+            entry_bytes: None,
+        };
+    }
+
+    if metadata.is_file() {
+        return MeasuredPathSize {
+            bytes: metadata.len(),
+            is_dir: false,
+            is_complete: true,
+            modified_ms,
+            entry_bytes: Some(metadata.len()),
+        };
     }
 
     if !metadata.is_dir() {
-        return (0, false, false);
+        return MeasuredPathSize {
+            bytes: 0,
+            is_dir: false,
+            is_complete: false,
+            modified_ms,
+            entry_bytes: None,
+        };
     }
 
     let mut total_bytes = 0_u64;
@@ -110,7 +219,13 @@ fn measure_path_size(path: &Path) -> (u64, bool, bool) {
 
     while let Some(dir) = stack.pop() {
         if Instant::now() >= deadline {
-            return (total_bytes, true, false);
+            return MeasuredPathSize {
+                bytes: total_bytes,
+                is_dir: true,
+                is_complete: false,
+                modified_ms,
+                entry_bytes: None,
+            };
         }
 
         let canonical = dir.canonicalize().unwrap_or(dir.clone());
@@ -125,7 +240,13 @@ fn measure_path_size(path: &Path) -> (u64, bool, bool) {
 
         for entry in read_dir.flatten() {
             if Instant::now() >= deadline {
-                return (total_bytes, true, false);
+                return MeasuredPathSize {
+                    bytes: total_bytes,
+                    is_dir: true,
+                    is_complete: false,
+                    modified_ms,
+                    entry_bytes: None,
+                };
             }
 
             let entry_path = entry.path();
@@ -150,13 +271,25 @@ fn measure_path_size(path: &Path) -> (u64, bool, bool) {
         }
     }
 
-    (total_bytes, true, true)
+    MeasuredPathSize {
+        bytes: total_bytes,
+        is_dir: true,
+        is_complete: true,
+        modified_ms,
+        entry_bytes: None,
+    }
 }
 
 fn measure_entry_sizes_blocking(paths: Vec<String>, force_refresh: bool) -> Vec<EntryStorageInfo> {
     let now = Instant::now();
     let mut results = Vec::with_capacity(paths.len());
     let mut pending: Vec<(usize, PathBuf, String)> = Vec::new();
+    let path_bufs = paths.iter().map(PathBuf::from).collect::<Vec<_>>();
+    let persisted = if force_refresh {
+        HashMap::new()
+    } else {
+        load_entry_size_cache(&path_bufs).unwrap_or_default()
+    };
 
     if let Ok(cache) = entry_size_cache().lock() {
         for (index, raw_path) in paths.iter().enumerate() {
@@ -178,6 +311,16 @@ fn measure_entry_sizes_blocking(paths: Vec<String>, force_refresh: bool) -> Vec<
                     is_dir: entry.is_dir,
                     is_complete: entry.is_complete,
                 });
+            } else if let Some(entry) = persisted
+                .get(&key)
+                .filter(|entry| persisted_entry_is_valid(&path, entry))
+            {
+                results.push(EntryStorageInfo {
+                    path: entry.path.clone(),
+                    bytes: entry.bytes,
+                    is_dir: entry.is_dir,
+                    is_complete: entry.is_complete,
+                });
             } else {
                 results.push(EntryStorageInfo {
                     path: key.clone(),
@@ -195,23 +338,25 @@ fn measure_entry_sizes_blocking(paths: Vec<String>, force_refresh: bool) -> Vec<
     }
 
     let mut cache_updates = Vec::with_capacity(pending.len());
+    let mut persisted_updates = Vec::with_capacity(pending.len());
     for (index, path, key) in pending {
-        let (bytes, is_dir, is_complete) = measure_path_size(&path);
+        let measured = measure_path_size(&path);
         results[index] = EntryStorageInfo {
             path: key.clone(),
-            bytes,
-            is_dir,
-            is_complete,
+            bytes: measured.bytes,
+            is_dir: measured.is_dir,
+            is_complete: measured.is_complete,
         };
         cache_updates.push((
             key,
             CachedEntrySize {
-                bytes,
-                is_dir,
-                is_complete,
+                bytes: measured.bytes,
+                is_dir: measured.is_dir,
+                is_complete: measured.is_complete,
                 measured_at: now,
             },
         ));
+        persisted_updates.push(measured_to_persisted_entry(&path, &measured));
     }
 
     if let Ok(mut cache) = entry_size_cache().lock() {
@@ -219,6 +364,8 @@ fn measure_entry_sizes_blocking(paths: Vec<String>, force_refresh: bool) -> Vec<
             cache.insert(key, entry);
         }
     }
+
+    let _ = upsert_entry_size_cache(&persisted_updates);
 
     results
 }
@@ -1194,9 +1341,9 @@ pub async fn fs_delete(path: String, recursive: bool) -> Result<(), String> {
     };
 
     if result.is_ok() {
-        invalidate_entry_size_cache(p);
+        invalidate_all_entry_size_caches(p);
         if let Some(parent) = p.parent() {
-            invalidate_entry_size_cache(parent);
+            invalidate_all_entry_size_caches(parent);
         }
     }
 
@@ -1211,13 +1358,13 @@ pub async fn fs_rename(old_path: String, new_path: String) -> Result<(), String>
     if result.is_ok() {
         let old_path_ref = Path::new(&old_path);
         let new_path_ref = Path::new(&new_path);
-        invalidate_entry_size_cache(old_path_ref);
-        invalidate_entry_size_cache(new_path_ref);
+        invalidate_all_entry_size_caches(old_path_ref);
+        invalidate_all_entry_size_caches(new_path_ref);
         if let Some(parent) = old_path_ref.parent() {
-            invalidate_entry_size_cache(parent);
+            invalidate_all_entry_size_caches(parent);
         }
         if let Some(parent) = new_path_ref.parent() {
-            invalidate_entry_size_cache(parent);
+            invalidate_all_entry_size_caches(parent);
         }
     }
     result
@@ -1229,13 +1376,13 @@ pub async fn fs_move(src: String, dst: String) -> Result<(), String> {
     let dst_path = Path::new(&dst);
     let result = move_path(src_path, dst_path).map_err(|e| e.to_string());
     if result.is_ok() {
-        invalidate_entry_size_cache(src_path);
-        invalidate_entry_size_cache(dst_path);
+        invalidate_all_entry_size_caches(src_path);
+        invalidate_all_entry_size_caches(dst_path);
         if let Some(parent) = src_path.parent() {
-            invalidate_entry_size_cache(parent);
+            invalidate_all_entry_size_caches(parent);
         }
         if let Some(parent) = dst_path.parent() {
-            invalidate_entry_size_cache(parent);
+            invalidate_all_entry_size_caches(parent);
         }
     }
     result
@@ -1256,9 +1403,9 @@ pub async fn fs_copy(src: String, dst: String) -> Result<(), String> {
 
     if result.is_ok() {
         let dst_path = Path::new(&dst);
-        invalidate_entry_size_cache(dst_path);
+        invalidate_all_entry_size_caches(dst_path);
         if let Some(parent) = dst_path.parent() {
-            invalidate_entry_size_cache(parent);
+            invalidate_all_entry_size_caches(parent);
         }
     }
 
@@ -1332,13 +1479,13 @@ pub async fn fs_transfer_items(
     }
 
     for result in &results {
-        invalidate_entry_size_cache(Path::new(&result.source_path));
-        invalidate_entry_size_cache(Path::new(&result.destination_path));
+        invalidate_all_entry_size_caches(Path::new(&result.source_path));
+        invalidate_all_entry_size_caches(Path::new(&result.destination_path));
         if let Some(parent) = Path::new(&result.source_path).parent() {
-            invalidate_entry_size_cache(parent);
+            invalidate_all_entry_size_caches(parent);
         }
         if let Some(parent) = Path::new(&result.destination_path).parent() {
-            invalidate_entry_size_cache(parent);
+            invalidate_all_entry_size_caches(parent);
         }
     }
 
@@ -1493,9 +1640,9 @@ pub async fn fs_create_dir(path: String) -> Result<(), String> {
     let result = std::fs::create_dir_all(&path).map_err(|e| e.to_string());
     if result.is_ok() {
         let path_ref = Path::new(&path);
-        invalidate_entry_size_cache(path_ref);
+        invalidate_all_entry_size_caches(path_ref);
         if let Some(parent) = path_ref.parent() {
-            invalidate_entry_size_cache(parent);
+            invalidate_all_entry_size_caches(parent);
         }
     }
     result
@@ -1511,9 +1658,9 @@ pub async fn fs_write_file(path: String, content: String) -> Result<(), String> 
     let result = std::fs::write(&path, content.as_bytes()).map_err(|e| e.to_string());
     if result.is_ok() {
         let path_ref = Path::new(&path);
-        invalidate_entry_size_cache(path_ref);
+        invalidate_all_entry_size_caches(path_ref);
         if let Some(parent) = path_ref.parent() {
-            invalidate_entry_size_cache(parent);
+            invalidate_all_entry_size_caches(parent);
         }
     }
     result
@@ -2055,17 +2202,17 @@ mod tests {
             fs::write(root.join(format!("chunk-{index}.bin")), [0_u8; 32]).unwrap();
         }
 
-        let (_bytes, is_dir, is_complete) = measure_path_size(&root);
+        let measured = measure_path_size(&root);
         assert!(
-            is_dir,
+            measured.is_dir,
             "directory should still be identified as a directory"
         );
-        if !is_complete {
+        if !measured.is_complete {
             return;
         }
 
         // Fast machines may still finish inside the budget; in that case the full scan is still valid.
-        assert!(is_complete);
+        assert!(measured.is_complete);
     }
 
     #[tokio::test]

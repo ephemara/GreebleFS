@@ -55,6 +55,11 @@ interface OverlayThemePackageRecord {
   manifest: OverlayThemePackageManifest;
 }
 
+export interface ThemePackageDirectoryEntry {
+  name: string;
+  path: string;
+}
+
 export interface LoadedOverlayThemePackage {
   id: string;
   name: string;
@@ -368,22 +373,14 @@ async function buildPackageTheme(
   return mergedTheme;
 }
 
-export async function loadThemePackages(): Promise<ThemePackageLoadResult> {
-  const directory = themeSystemConfig.themesDirectory;
-  if (!isTauri()) {
-    return {
-      packages: [],
-      directory,
-      sourceError: null,
-    };
-  }
-
+export async function loadThemePackagesFromDirectoryEntries(
+  directoryEntries: ThemePackageDirectoryEntry[],
+  directoryLabel = themeSystemConfig.themesDirectory,
+): Promise<ThemePackageLoadResult> {
   try {
-    const rootEntries = await invoke<FileEntry[]>('fs_list_dir', { path: directory, showHidden: false });
-    const packageDirectories = rootEntries.filter(entry => entry.is_dir);
     const packageRecords: OverlayThemePackageRecord[] = [];
 
-    for (const entry of packageDirectories) {
+    for (const entry of directoryEntries) {
       const manifest = await readPackageManifest(entry.path);
       if (!manifest) {
         continue;
@@ -417,9 +414,34 @@ export async function loadThemePackages(): Promise<ThemePackageLoadResult> {
 
     return {
       packages,
+      directory: directoryLabel,
+      sourceError: null,
+    };
+  } catch (error) {
+    return {
+      packages: [],
+      directory: directoryLabel,
+      sourceError: String(error),
+    };
+  }
+}
+
+export async function loadThemePackages(): Promise<ThemePackageLoadResult> {
+  const directory = themeSystemConfig.themesDirectory;
+  if (!isTauri()) {
+    return {
+      packages: [],
       directory,
       sourceError: null,
     };
+  }
+
+  try {
+    const rootEntries = await invoke<FileEntry[]>('fs_list_dir', { path: directory, showHidden: false });
+    return loadThemePackagesFromDirectoryEntries(
+      rootEntries.filter(entry => entry.is_dir).map(entry => ({ name: entry.name, path: entry.path })),
+      directory,
+    );
   } catch (error) {
     return {
       packages: [],

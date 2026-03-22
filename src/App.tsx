@@ -1,5 +1,5 @@
 import { useState, useEffect, useEffectEvent, useRef, useCallback, useMemo, type CSSProperties } from 'react';
-import { invoke, isTauri } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core';
 import * as TauriEvent from '@tauri-apps/api/event';
 import {
   getCurrentWindow,
@@ -42,7 +42,6 @@ import {
 } from './components/shaderRuntime';
 import {
   isFrontendPluginFile,
-  loadPluginFromSource,
   type LoadedOverlayPlugin,
   type OverlayPluginApi,
   type OverlayPluginContext,
@@ -51,8 +50,19 @@ import {
 } from './components/pluginRuntime';
 import { listen } from '@tauri-apps/api/event';
 import { Check, Droplet, GripVertical, LayoutGrid, Settings2, Terminal as TerminalIcon, X } from 'lucide-react';
-import { ensureFontFamilyLoaded, resolveOverlayAppearance, type ResolvedOverlayAppearance } from './config/appearance';
+import {
+  ensureFontFamilyLoaded,
+  resolveOverlayAppearance,
+  setOverlayPluginFonts,
+  type OverlayRegisteredFontContribution,
+  type ResolvedOverlayAppearance,
+} from './config/appearance';
 import { loadThemePackages as discoverThemePackages, themeSystemConfig, type LoadedOverlayThemePackage } from './config/themePackages';
+import { discoverOverlayPlugins } from './config/pluginPackages';
+import type {
+  OverlayPluginCommandContribution,
+  OverlayPluginExplorerActionContribution,
+} from './config/pluginContributions';
 import { formatHotkeyLabel, matchesWheelHotkey } from './config/hotkeys';
 import {
   BUILT_IN_LAYOUT_MANIFEST,
@@ -404,6 +414,11 @@ function App() {
   const [authoredShadersError, setAuthoredShadersError] = useState<string | null>(null);
   const [authoredShadersLoading, setAuthoredShadersLoading] = useState(true);
   const [folderPlugins, setFolderPlugins] = useState<LoadedOverlayPlugin[]>([]);
+  const [pluginContributedShaders, setPluginContributedShaders] = useState<LoadedOverlayShader[]>([]);
+  const [pluginThemePackages, setPluginThemePackages] = useState<LoadedOverlayThemePackage[]>([]);
+  const [pluginFonts, setPluginFonts] = useState<OverlayRegisteredFontContribution[]>([]);
+  const [pluginCommands, setPluginCommands] = useState<OverlayPluginCommandContribution[]>([]);
+  const [pluginExplorerActions, setPluginExplorerActions] = useState<OverlayPluginExplorerActionContribution[]>([]);
   const [folderPluginsError, setFolderPluginsError] = useState<string | null>(null);
   const [folderPluginsLoading, setFolderPluginsLoading] = useState(true);
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
@@ -444,9 +459,13 @@ function App() {
   const updateLayout = useSettingsStore(s => s.updateLayout);
   const updateSystem = useSettingsStore(s => s.updateSystem);
   const { initStore, addDirectoryBookmark } = useTerminalStore();
+  const combinedThemePackages = useMemo(
+    () => [...themePackages, ...pluginThemePackages],
+    [pluginThemePackages, themePackages],
+  );
   const resolvedPackageThemes = useMemo(
-    () => themePackages.map(pkg => pkg.theme),
-    [themePackages],
+    () => combinedThemePackages.map(pkg => pkg.theme),
+    [combinedThemePackages],
   );
   const resolvedAppearance = useMemo(
     () => resolveOverlayAppearance({
@@ -501,8 +520,8 @@ function App() {
     [authoredAnimations, builtInAnimations],
   );
   const availableShaders = useMemo(
-    () => mergeOverlayShaders(builtInShaders, authoredShaders),
-    [authoredShaders, builtInShaders],
+    () => mergeOverlayShaders(builtInShaders, [...authoredShaders, ...pluginContributedShaders]),
+    [authoredShaders, builtInShaders, pluginContributedShaders],
   );
   const availableAnimationsById = useMemo(
     () => new Map(availableAnimations.map(animation => [animation.id, animation])),
@@ -685,6 +704,10 @@ function App() {
       console.warn('OverlayTerm: failed to sync taskbar visibility', error);
     });
   }, [systemSettings.showInTaskbar]);
+
+  useEffect(() => {
+    setOverlayPluginFonts(pluginFonts);
+  }, [pluginFonts]);
 
   useEffect(() => {
     ensureFontFamilyLoaded(resolvedAppearance.fonts.ui);
@@ -1330,6 +1353,20 @@ function App() {
     const appLocalData = TauriFs.BaseDirectory.AppLocalData;
     const separator = getPlatformPathSeparator(runtimePlatform);
     const storageRoot = getPluginStorageDirectory(plugin.id);
+    const assetRoot = plugin.pluginDirectory;
+    const resolveAssetPath = (relativePath: string) => {
+      const trimmed = relativePath.trim().replace(/^[\\\\/]+/, '');
+      return trimmed ? joinPlatformPath(assetRoot, trimmed, runtimePlatform) : assetRoot;
+    };
+    const resolveAssetUrl = (relativePath: string) => {
+      const absolutePath = resolveAssetPath(relativePath);
+      try {
+        return convertFileSrc(absolutePath);
+      } catch {
+        const normalized = absolutePath.replace(/\\/g, '/');
+        return normalized.startsWith('/') ? `file://${encodeURI(normalized)}` : `file:///${encodeURI(normalized)}`;
+      }
+    };
     const resolveStoragePath = (relativePath?: string) => {
       const trimmed = relativePath?.trim().replace(/^[\\/]+/, '') ?? '';
       return trimmed ? joinPlatformPath(storageRoot, trimmed, runtimePlatform) : storageRoot;
@@ -1366,6 +1403,11 @@ function App() {
           await TauriFs.writeFile(target, data, { baseDir: appLocalData });
         },
       },
+      assets: {
+        rootDir: assetRoot,
+        resolvePath: resolveAssetPath,
+        resolveUrl: resolveAssetUrl,
+      },
       refreshPlugins: async () => {
         await refreshFolderPluginsRef.current(true);
       },
@@ -1380,6 +1422,18 @@ function App() {
   }, [openPluginsFolder, runtimePlatform]);
 
   const refreshFolderPlugins = useCallback(async (force = false) => {
+    if (!isTauri()) {
+      setFolderPlugins([]);
+      setPluginContributedShaders([]);
+      setPluginThemePackages([]);
+      setPluginFonts([]);
+      setPluginCommands([]);
+      setPluginExplorerActions([]);
+      setFolderPluginsError(null);
+      setFolderPluginsLoading(false);
+      return;
+    }
+
     if (force) {
       pluginSignatureRef.current = '';
     }
@@ -1392,10 +1446,11 @@ function App() {
         path: pluginSystemConfig.pluginsDirectory,
         showHidden: false,
       });
-      const files = listed
-        .filter(isFrontendPluginFile)
-        .sort((left, right) => left.name.localeCompare(right.name));
-      const nextSignature = files.map(file => `${file.path}:${file.modified}`).join('|');
+      const nextSignature = listed
+        .filter(entry => entry.is_dir || isFrontendPluginFile(entry))
+        .sort((left, right) => left.name.localeCompare(right.name))
+        .map(entry => `${entry.path}:${entry.modified}:${entry.is_dir ? 'dir' : 'file'}`)
+        .join('|');
 
       if (!force && nextSignature === pluginSignatureRef.current) {
         setFolderPluginsLoading(false);
@@ -1403,14 +1458,21 @@ function App() {
       }
 
       pluginSignatureRef.current = nextSignature;
-      const loaded = await Promise.all(files.map(async file => {
-        const source = await invoke<string>('fs_read_text_file', { path: file.path });
-        return loadPluginFromSource(source, file, createPluginApi);
-      }));
-
-      setFolderPlugins(loaded);
+      const discovered = await discoverOverlayPlugins(createPluginApi);
+      setFolderPlugins(discovered.plugins);
+      setPluginContributedShaders(discovered.shaders);
+      setPluginThemePackages(discovered.themePackages);
+      setPluginFonts(discovered.fonts);
+      setPluginCommands(discovered.commands);
+      setPluginExplorerActions(discovered.explorerActions);
+      setFolderPluginsError(discovered.warnings.length > 0 ? discovered.warnings.join('\n') : null);
     } catch (error) {
       setFolderPlugins([]);
+      setPluginContributedShaders([]);
+      setPluginThemePackages([]);
+      setPluginFonts([]);
+      setPluginCommands([]);
+      setPluginExplorerActions([]);
       setFolderPluginsError(String(error));
     } finally {
       setFolderPluginsLoading(false);
@@ -1482,7 +1544,7 @@ function App() {
       }
 
       fallbackInterval = window.setInterval(() => {
-        void refreshFolderPluginsRef.current();
+        void refreshFolderPluginsRef.current(true);
       }, pluginSystemConfig.fallbackScanIntervalMs);
     };
 
@@ -1542,19 +1604,21 @@ function App() {
           : null,
         isOpen: isOverlayVisible,
         hideOverlay,
+        pluginCommands,
+        pluginExplorerActions,
         onOpenInTerminal: handleOpenInTerminal,
         onAddBookmark: handleAddBookmark,
         onRequestRepositoryImport: handleRequestRepositoryImport,
         pendingRepositoryImports,
         onPendingRepositoryImportsHandled: handleRepositoryImportsHandled,
-        themePackages,
+        themePackages: combinedThemePackages,
         themePackagesDirectory: themeSystemConfig.themesDirectory,
         themePackagesLoading,
         themePackagesError,
         onRefreshThemes: refreshThemePackages,
         onOpenThemesFolder: openThemesFolder,
         shaders: availableShaders,
-        shaderDiagnostics: authoredShaders.filter(shader => Boolean(shader.error)),
+        shaderDiagnostics: [...authoredShaders, ...pluginContributedShaders].filter(shader => Boolean(shader.error)),
         shadersDirectory: shaderSystemConfig.shadersDirectory,
         shadersLoading: authoredShadersLoading,
         shadersError: authoredShadersError,
@@ -1607,6 +1671,9 @@ function App() {
       authoredShadersLoading,
       availableAnimations,
       availableShaders,
+      pluginContributedShaders,
+      pluginCommands,
+      pluginExplorerActions,
       openAnimationsFolder,
       openShadersFolder,
       openPluginsFolder,
@@ -1619,7 +1686,7 @@ function App() {
       refreshFolderPlugins,
       repositoryPickerRequestId,
       resolvedAppearance,
-      themePackages,
+      combinedThemePackages,
       themePackagesError,
       themePackagesLoading,
     ],

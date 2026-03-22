@@ -1,6 +1,10 @@
 import React from 'react';
 import { Terminal as TerminalIcon, FolderOpen, GitBranch, StickyNote, Camera, Puzzle, SlidersHorizontal } from 'lucide-react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
+import type {
+  OverlayPluginCommandContribution,
+  OverlayPluginExplorerActionContribution,
+} from '../config/pluginContributions';
 import TerminalOverlay from '../components/TerminalOverlay';
 import { FileExplorer } from '../components/FileExplorer';
 import { GitManager } from '../components/GitManager';
@@ -43,6 +47,8 @@ export function createBuiltInPanelDefinitions({
   explorerRepoPicker,
   isOpen,
   hideOverlay,
+  pluginCommands,
+  pluginExplorerActions,
   onOpenInTerminal,
   onAddBookmark,
   onRequestRepositoryImport,
@@ -81,6 +87,8 @@ export function createBuiltInPanelDefinitions({
   } | null;
   isOpen: boolean;
   hideOverlay: () => void;
+  pluginCommands: OverlayPluginCommandContribution[];
+  pluginExplorerActions: OverlayPluginExplorerActionContribution[];
   onOpenInTerminal: (path: string) => void;
   onAddBookmark: (name: string, path: string) => Promise<void>;
   onRequestRepositoryImport: () => void;
@@ -119,7 +127,15 @@ export function createBuiltInPanelDefinitions({
       description: 'Primary command workspace.',
       defaultOpen: true,
       keepMounted: true,
-      render: () => <TerminalOverlay isOpen={isOpen} onClose={hideOverlay} embedded appearance={appearance} />,
+      render: () => (
+        <TerminalOverlay
+          isOpen={isOpen}
+          onClose={hideOverlay}
+          embedded
+          appearance={appearance}
+          pluginCommands={pluginCommands}
+        />
+      ),
     },
     {
       id: 'explorer',
@@ -144,6 +160,7 @@ export function createBuiltInPanelDefinitions({
           }}
           onOpenInTerminal={onOpenInTerminal}
           onAddBookmark={onAddBookmark}
+          pluginActions={pluginExplorerActions}
         />
       ),
     },

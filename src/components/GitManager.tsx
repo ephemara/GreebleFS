@@ -83,6 +83,8 @@ export function GitManager({
     red: appearance?.theme.palette.danger || FALLBACK.red,
     yellow: appearance?.theme.palette.warning || FALLBACK.yellow,
   };
+  const uiFont = appearance?.fonts.ui ?? 'var(--overlay-font-ui)';
+  const monoFont = appearance?.fonts.mono ?? 'var(--overlay-font-mono, "Cascadia Code", Consolas, monospace)';
 
   const [repos, setRepos] = useState<string[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
@@ -98,8 +100,8 @@ export function GitManager({
   const [diffView, setDiffView] = useState<DiffViewState | null>(null);
   const [activeHunkIndex, setActiveHunkIndex] = useState(0);
   const deferredQuery = useDeferredValue(changeQuery);
-  const [repoRailWidth, setRepoRailWidth] = usePersistentPanelSize('overlayterm-source-repo-rail-width', 230, 180, 360);
-  const [changeListWidth, setChangeListWidth] = usePersistentPanelSize('overlayterm-source-change-list-width', 420, 280, 820);
+  const [repoRailWidth, setRepoRailWidth] = usePersistentPanelSize('overlayterm-source-repo-rail-width', 208, 160, 300);
+  const [changeListWidth, setChangeListWidth] = usePersistentPanelSize('overlayterm-source-change-list-width', 360, 260, 720);
   const diffContainerRef = useRef<HTMLDivElement | null>(null);
   const diffEditorRef = useRef<any>(null);
 
@@ -461,20 +463,20 @@ export function GitManager({
   }, [diffView, jumpToDiffHunk]);
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: 'flex', background: palette.bg, color: palette.text, overflow: 'hidden' }}>
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', background: palette.bg, color: palette.text, overflow: 'hidden', fontFamily: uiFont }}>
       <ResizablePane
         size={repoRailWidth}
-        minSize={180}
-        maxSize={360}
+        minSize={160}
+        maxSize={300}
         onSizeChange={setRepoRailWidth}
         borderColor={alpha(palette.accent, 0.28)}
         style={{ display: 'flex', flexDirection: 'column', background: palette.sidebar, borderRight: `1px solid ${palette.border}` }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderBottom: `1px solid ${palette.border}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderBottom: `1px solid ${palette.border}` }}>
           <div>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: palette.muted }}>Source Control</div>
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: palette.muted }}>Source Control</div>
             <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ fontSize: 15, fontWeight: 700 }}>Repositories</div>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>Repositories</div>
               {dirtyRepoCount > 0 && (
                 <span title={`${dirtyRepoCount} repos currently have changes`} style={repoNotificationBadgeStyle(palette, false)}>
                   {dirtyRepoCount > 99 ? '99+' : dirtyRepoCount}
@@ -489,12 +491,12 @@ export function GitManager({
             const active = repo === selectedRepo;
             const badge = repoBadges[repo];
             return (
-              <button key={repo} onClick={() => setSelectedRepo(repo)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', gap: 8, padding: '10px 12px', border: 'none', borderBottom: `1px solid ${palette.border}`, background: active ? alpha(palette.accent, 0.14) : 'transparent', color: palette.text, cursor: 'pointer', textAlign: 'left' }}>
+              <button key={repo} onClick={() => setSelectedRepo(repo)} style={{ width: '100%', display: 'flex', justifyContent: 'space-between', gap: 8, padding: '8px 10px', border: 'none', borderBottom: `1px solid ${palette.border}`, background: active ? alpha(palette.accent, 0.14) : 'transparent', color: palette.text, cursor: 'pointer', textAlign: 'left' }}>
                 <div style={{ display: 'flex', gap: 8, minWidth: 0 }}>
-                  <FolderGit2 size={14} style={{ color: active ? palette.accent : palette.muted, marginTop: 2, flexShrink: 0 }} />
+                  <FolderGit2 size={13} style={{ color: active ? palette.accent : palette.muted, marginTop: 1, flexShrink: 0 }} />
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{repo.split(/[/\\]/).pop() || repo}</div>
-                    <div style={{ marginTop: 3, fontSize: 10, color: palette.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{repo}</div>
+                    <div style={{ fontSize: 10.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{repo.split(/[/\\]/).pop() || repo}</div>
+                    <div style={{ marginTop: 2, fontSize: 9.5, color: palette.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{repo}</div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -519,17 +521,17 @@ export function GitManager({
           <div style={{ flex: 1, display: 'grid', placeItems: 'center', color: palette.muted, fontSize: 12 }}>Select or add a repository.</div>
         ) : (
           <>
-            <div style={{ padding: '10px 14px', borderBottom: `1px solid ${palette.border}`, background: palette.panel }}>
+            <div style={{ padding: '8px 12px', borderBottom: `1px solid ${palette.border}`, background: palette.panel }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <div style={{ fontSize: 16, fontWeight: 700 }}>{repoState.name}</div>
+                    <div style={{ fontSize: 14, fontWeight: 700 }}>{repoState.name}</div>
                     <span style={pillStyle(alpha(palette.accent, 0.14), palette.accent)}><GitBranch size={11} />{repoState.branch}</span>
                     {summary && <span style={pillStyle(alpha(palette.panel, 0.9), palette.muted)}>{summary.totalFiles} changed</span>}
                     {summary && <span style={pillStyle(alpha(palette.green, 0.14), palette.green)}>+{summary.additions}</span>}
                     {summary && <span style={pillStyle(alpha(palette.red, 0.14), palette.red)}>-{summary.deletions}</span>}
                   </div>
-                  <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 11, color: palette.muted }}>
+                  <div style={{ marginTop: 5, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 10, color: palette.muted }}>
                     <span>{repoState.path}</span>
                     <span>•</span>
                     <GitCommit size={12} />
@@ -544,16 +546,16 @@ export function GitManager({
               </div>
             </div>
 
-            <div style={{ padding: '8px 14px', borderBottom: `1px solid ${palette.border}`, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: alpha(palette.panel, 0.72) }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 240, flex: '1 1 240px', maxWidth: 420, padding: '6px 10px', borderRadius: 8, border: `1px solid ${palette.border}`, background: alpha(palette.bg, 0.5) }}>
-                <Search size={13} style={{ color: palette.muted }} />
-                <input value={changeQuery} onChange={event => setChangeQuery(event.target.value)} placeholder="Search changed files" style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', color: palette.text, fontSize: 11 }} />
+            <div style={{ padding: '7px 12px', borderBottom: `1px solid ${palette.border}`, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: alpha(palette.panel, 0.72) }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 220, flex: '1 1 220px', maxWidth: 400, padding: '5px 9px', borderRadius: 8, border: `1px solid ${palette.border}`, background: alpha(palette.bg, 0.5) }}>
+                <Search size={12} style={{ color: palette.muted }} />
+                <input value={changeQuery} onChange={event => setChangeQuery(event.target.value)} placeholder="Search changed files" style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', color: palette.text, fontSize: 10.5 }} />
               </div>
               {(Object.keys(FILTERS) as ChangeFilter[]).map(filter => (
                 <button key={filter} onClick={() => setChangeFilter(filter)} style={{ ...pillStyle(filter === changeFilter ? alpha(palette.accent, 0.16) : alpha(palette.panel, 0.84), filter === changeFilter ? palette.accent : palette.muted), border: `1px solid ${filter === changeFilter ? alpha(palette.accent, 0.5) : palette.border}`, cursor: 'pointer' }}>{FILTERS[filter]}</button>
               ))}
               <div style={{ flex: 1 }} />
-              <textarea value={commitMsg} onChange={event => setCommitMsg(event.target.value)} placeholder="Commit message for Quick Ship" className="hide-scrollbar" style={{ height: 30, minWidth: 220, maxWidth: 420, flex: '1 1 220px', resize: 'none', borderRadius: 8, border: `1px solid ${palette.border}`, background: alpha(palette.bg, 0.5), color: palette.text, padding: '7px 10px', fontSize: 11, outline: 'none' }} />
+              <textarea value={commitMsg} onChange={event => setCommitMsg(event.target.value)} placeholder="Commit message for Quick Ship" className="hide-scrollbar" style={{ height: 28, minWidth: 220, maxWidth: 400, flex: '1 1 220px', resize: 'none', borderRadius: 8, border: `1px solid ${palette.border}`, background: alpha(palette.bg, 0.5), color: palette.text, padding: '6px 9px', fontSize: 10.5, outline: 'none' }} />
               <button onClick={() => void runRepoAction(() => runGit(selectedRepo!, ['add', '-A']).then(() => undefined))} disabled={loading || !repoState.status.length} style={toolbarButtonStyle(palette)}>Stage All</button>
               <button onClick={() => void runRepoAction(async () => { if (commitMsg.trim()) { await runGit(selectedRepo!, ['commit', '-m', commitMsg.trim()]); setCommitMsg(''); } })} disabled={loading || !commitMsg.trim() || !repoState.status.length} style={{ ...toolbarButtonStyle(palette), background: palette.accent, borderColor: palette.accent, color: '#fff' }}>Commit</button>
               <button
@@ -600,27 +602,27 @@ export function GitManager({
             <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
               <ResizablePane
                 size={changeListWidth}
-                minSize={280}
-                maxSize={820}
+                minSize={260}
+                maxSize={720}
                 onSizeChange={setChangeListWidth}
                 borderColor={alpha(palette.accent, 0.28)}
                 style={{ minHeight: 0, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${palette.border}`, background: palette.card }}
               >
-                <div style={{ display: 'grid', gridTemplateColumns: '72px minmax(0, 1fr) 64px 64px', gap: 8, padding: '8px 14px', borderBottom: `1px solid ${palette.border}`, fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: palette.muted }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr) 56px 56px', gap: 8, padding: '7px 12px', borderBottom: `1px solid ${palette.border}`, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: palette.muted }}>
                   <span>Status</span><span>File</span><span style={{ textAlign: 'right' }}>+</span><span style={{ textAlign: 'right' }}>-</span>
                 </div>
                 <OverlayScrollArea style={{ flex: 1, minHeight: 0 }}>
                   {filteredFiles.length === 0 ? (
                     <div style={{ padding: 14, color: palette.muted, fontSize: 11 }}>{repoState.status.length === 0 ? 'Working tree is clean.' : 'No files match the current filter.'}</div>
                   ) : filteredFiles.map(file => (
-                    <button key={`${file.statusText}-${file.file}`} onClick={() => setSelectedFilePath(file.file)} style={{ width: '100%', display: 'grid', gridTemplateColumns: '72px minmax(0, 1fr) 64px 64px', gap: 8, alignItems: 'center', padding: '8px 14px', border: 'none', borderBottom: `1px solid ${alpha(palette.border, 0.7)}`, background: selectedFilePath === file.file ? alpha(palette.accent, 0.14) : 'transparent', color: palette.text, cursor: 'pointer', textAlign: 'left' }}>
+                    <button key={`${file.statusText}-${file.file}`} onClick={() => setSelectedFilePath(file.file)} style={{ width: '100%', display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr) 56px 56px', gap: 8, alignItems: 'center', padding: '7px 12px', border: 'none', borderBottom: `1px solid ${alpha(palette.border, 0.7)}`, background: selectedFilePath === file.file ? alpha(palette.accent, 0.14) : 'transparent', color: palette.text, cursor: 'pointer', textAlign: 'left' }}>
                       <span style={{ ...pillStyle(alpha(statusColor(file, palette), 0.14), statusColor(file, palette)), justifyContent: 'center' }}>{statusLabel(file)}</span>
                       <span style={{ minWidth: 0 }}>
-                        <span style={{ display: 'block', fontSize: 11, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: '"Cascadia Code", Consolas, monospace' }}>{file.file}</span>
-                        {file.originalFile && <span style={{ display: 'block', marginTop: 2, fontSize: 10, color: palette.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.originalFile}</span>}
+                        <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: monoFont }}>{file.file}</span>
+                        {file.originalFile && <span style={{ display: 'block', marginTop: 2, fontSize: 9.5, color: palette.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: monoFont }}>{file.originalFile}</span>}
                       </span>
-                      <span style={{ textAlign: 'right', fontSize: 11, fontWeight: 700, color: palette.green }}>+{file.additions}</span>
-                      <span style={{ textAlign: 'right', fontSize: 11, fontWeight: 700, color: palette.red }}>-{file.deletions}</span>
+                      <span style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: palette.green }}>+{file.additions}</span>
+                      <span style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: palette.red }}>-{file.deletions}</span>
                     </button>
                   ))}
                 </OverlayScrollArea>
@@ -785,11 +787,11 @@ function repoNotificationBadgeStyle(
 }
 
 function toolbarButtonStyle(palette: { border: string; panel: string; text: string }): React.CSSProperties {
-  return { display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 28, padding: '0 10px', borderRadius: 8, border: `1px solid ${palette.border}`, background: alpha(palette.panel, 0.86), color: palette.text, cursor: 'pointer', fontSize: 11, fontWeight: 700 };
+  return { display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 26, padding: '0 9px', borderRadius: 8, border: `1px solid ${palette.border}`, background: alpha(palette.panel, 0.86), color: palette.text, cursor: 'pointer', fontSize: 10.5, fontWeight: 700 };
 }
 
 function pillStyle(background: string, color: string): React.CSSProperties {
-  return { display: 'inline-flex', alignItems: 'center', gap: 5, minHeight: 18, padding: '0 7px', borderRadius: 999, background, color, fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap' };
+  return { display: 'inline-flex', alignItems: 'center', gap: 5, minHeight: 17, padding: '0 6px', borderRadius: 999, background, color, fontSize: 9.5, fontWeight: 700, whiteSpace: 'nowrap' };
 }
 
 function statusLabel(file: GitFileStatus): string {

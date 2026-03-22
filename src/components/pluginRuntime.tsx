@@ -37,6 +37,7 @@ export interface OverlayPluginApi {
   window: typeof TauriWindow;
   fs: typeof TauriFs;
   storage?: OverlayPluginStorageApi;
+  assets?: OverlayPluginAssetsApi;
   refreshPlugins: () => Promise<void>;
   openPluginsFolder: () => Promise<void>;
   runBackend: (entry: string, args?: string[]) => Promise<PluginBackendResult>;
@@ -48,6 +49,12 @@ export interface OverlayPluginStorageApi {
   readTextFile: (relativePath: string) => Promise<string>;
   writeTextFile: (relativePath: string, data: string) => Promise<void>;
   writeFile: (relativePath: string, data: Uint8Array) => Promise<void>;
+}
+
+export interface OverlayPluginAssetsApi {
+  rootDir: string;
+  resolvePath: (relativePath: string) => string;
+  resolveUrl: (relativePath: string) => string;
 }
 
 export interface OverlayPluginHostContext {
@@ -96,6 +103,11 @@ export interface PluginBackendResult {
   status: number;
 }
 
+export interface LoadPluginFromSourceOptions {
+  context?: Partial<OverlayPluginContext>;
+  defaults?: Partial<Pick<OverlayPluginDefinition, 'id' | 'name' | 'description' | 'defaultOpen' | 'keepMounted'>>;
+}
+
 export function definePlugin(definition: OverlayPluginDefinition): OverlayPluginDefinition {
   return definition;
 }
@@ -116,15 +128,16 @@ export async function loadPluginFromSource(
   source: string,
   entry: PluginFileEntry,
   hostApiFactory: (context: OverlayPluginContext) => OverlayPluginApi,
+  options?: LoadPluginFromSourceOptions,
 ): Promise<LoadedOverlayPlugin> {
   const fileId = derivePluginId(entry.name);
   const context: OverlayPluginContext = {
-    id: fileId,
-    name: derivePluginName(entry.name),
-    filePath: entry.path,
-    pluginRoot: pluginSystemConfig.pluginsDirectory,
-    pluginDirectory: getPluginDirectory(fileId),
-    backendDirectory: getPluginBackendDirectory(fileId),
+    id: options?.context?.id ?? fileId,
+    name: options?.context?.name ?? derivePluginName(entry.name),
+    filePath: options?.context?.filePath ?? entry.path,
+    pluginRoot: options?.context?.pluginRoot ?? pluginSystemConfig.pluginsDirectory,
+    pluginDirectory: options?.context?.pluginDirectory ?? getPluginDirectory(fileId),
+    backendDirectory: options?.context?.backendDirectory ?? getPluginBackendDirectory(fileId),
   };
 
   try {
@@ -134,12 +147,12 @@ export async function loadPluginFromSource(
 
     const plugin: LoadedOverlayPlugin = {
       ...context,
-      id: normalized.id ?? context.id,
-      name: normalized.name ?? context.name,
-      description: normalized.description,
+      id: normalized.id ?? options?.defaults?.id ?? context.id,
+      name: normalized.name ?? options?.defaults?.name ?? context.name,
+      description: normalized.description ?? options?.defaults?.description,
       modified: entry.modified,
-      defaultOpen: normalized.defaultOpen ?? pluginSystemConfig.folderPanelsOpenByDefault,
-      keepMounted: normalized.keepMounted ?? pluginSystemConfig.folderPanelsKeepMounted,
+      defaultOpen: normalized.defaultOpen ?? options?.defaults?.defaultOpen ?? pluginSystemConfig.folderPanelsOpenByDefault,
+      keepMounted: normalized.keepMounted ?? options?.defaults?.keepMounted ?? pluginSystemConfig.folderPanelsKeepMounted,
       component: normalized.component,
       error: null,
     };

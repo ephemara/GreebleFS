@@ -147,7 +147,15 @@ export interface OverlayFontOption {
   family: string;
 }
 
-export const overlayFontCatalog: OverlayFontOption[] = [
+export interface OverlayRegisteredFontContribution extends OverlayFontOption {
+  faceName?: string;
+  sourceUrl: string;
+  format?: string;
+  style?: string;
+  weight?: string;
+}
+
+const builtInOverlayFontCatalog: OverlayFontOption[] = [
   { id: 'inter', name: 'Inter', family: 'Inter, system-ui, sans-serif' },
   { id: 'geist', name: 'Geist', family: 'Geist, Inter, system-ui, sans-serif' },
   { id: 'space-grotesk', name: 'Space Grotesk', family: '"Space Grotesk", Inter, system-ui, sans-serif' },
@@ -157,10 +165,61 @@ export const overlayFontCatalog: OverlayFontOption[] = [
   { id: 'system-ui', name: 'System UI', family: 'system-ui, sans-serif' },
 ];
 
+export const overlayFontCatalog: OverlayFontOption[] = [...builtInOverlayFontCatalog];
+
 const defaultUiFont = overlayFontCatalog[0].family;
 const defaultMonoFont = overlayFontCatalog[3].family;
 
 const loadedFonts = new Set<string>();
+const pluginFontFamilies = new Set<string>();
+const pluginFontsStyleElementId = 'overlayterm-plugin-fonts';
+
+function getPrimaryFontFamily(fontFamily: string): string | null {
+  return fontFamily
+    .split(',')
+    .map(part => part.trim().replace(/^['\"]|['\"]$/g, ''))
+    .find(part => part && !part.includes('sans-serif') && !part.includes('monospace') && !part.includes('serif'))
+    ?? null;
+}
+
+function getPluginFontsStyleElement(): HTMLStyleElement | null {
+  if (typeof document === 'undefined') {
+    return null;
+  }
+
+  let style = document.getElementById(pluginFontsStyleElementId) as HTMLStyleElement | null;
+  if (!style) {
+    style = document.createElement('style');
+    style.id = pluginFontsStyleElementId;
+    document.head.appendChild(style);
+  }
+  return style;
+}
+
+export function setOverlayPluginFonts(fonts: OverlayRegisteredFontContribution[]): void {
+  const mergedOptions = new Map<string, OverlayFontOption>(
+    builtInOverlayFontCatalog.map(font => [font.id, font] as const),
+  );
+  const fontFaceRules: string[] = [];
+
+  pluginFontFamilies.clear();
+
+  fonts.forEach(font => {
+    const faceName = font.faceName?.trim() || getPrimaryFontFamily(font.family) || font.name;
+    pluginFontFamilies.add(faceName);
+    mergedOptions.set(font.id, { id: font.id, name: font.name, family: font.family });
+    fontFaceRules.push(
+      `@font-face { font-family: "${faceName.replace(/"/g, '\\"')}"; src: url("${font.sourceUrl}") format("${font.format ?? 'truetype'}"); font-style: ${font.style ?? 'normal'}; font-weight: ${font.weight ?? '400'}; font-display: swap; }`,
+    );
+  });
+
+  overlayFontCatalog.splice(0, overlayFontCatalog.length, ...mergedOptions.values());
+
+  const style = getPluginFontsStyleElement();
+  if (style) {
+    style.textContent = fontFaceRules.join('\n');
+  }
+}
 
 export function ensureFontFamilyLoaded(fontFamily: string): void {
   if (typeof document === 'undefined') return;
@@ -170,7 +229,7 @@ export function ensureFontFamilyLoaded(fontFamily: string): void {
     .map(part => part.trim().replace(/^['"]|['"]$/g, ''))
     .find(part => part && !part.includes('sans-serif') && !part.includes('monospace') && !part.includes('serif'));
 
-  if (!familyName || loadedFonts.has(familyName)) {
+  if (!familyName || loadedFonts.has(familyName) || pluginFontFamilies.has(familyName)) {
     return;
   }
 

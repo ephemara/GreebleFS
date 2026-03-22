@@ -431,9 +431,10 @@ function EmptyPluginsState({ accent, onOpenFolder }: { accent: string; onOpenFol
       }}
     >
       <Blocks size={34} style={{ color: accent }} />
-      <div style={{ fontSize: 16, fontWeight: 700 }}>Drop-in plugins become tabs</div>
+      <div style={{ fontSize: 16, fontWeight: 700 }}>Drop-in files and package plugins become tabs</div>
       <div style={{ fontSize: 12, color: MUTED, maxWidth: 520, lineHeight: 1.6 }}>
-        Put a self-contained TSX file into `{pluginSystemConfig.pluginsDirectory}` and Greeble will load it as a top-bar panel.
+        Put a self-contained TSX file into `{pluginSystemConfig.pluginsDirectory}` for a lightweight plugin, or drop in a
+        package folder with a manifest, bundled entrypoint, themes, shaders, fonts, and assets.
         If a plugin needs its own native helper, place it in{' '}
         <code>{`${pluginSystemConfig.pluginsDirectory}/plugin-name/backend`}</code>.
       </div>

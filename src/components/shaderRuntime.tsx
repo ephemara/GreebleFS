@@ -103,6 +103,10 @@ export interface LoadedOverlayShader extends OverlayShaderContext {
   error: string | null;
 }
 
+export interface LoadShaderFromSourceOptions {
+  context?: Partial<OverlayShaderContext>;
+}
+
 export function defineShader(definition: OverlayShaderDefinition): OverlayShaderDefinition {
   return definition;
 }
@@ -130,13 +134,16 @@ export function deriveShaderName(name: string): string {
 export async function loadShaderFromSource(
   source: string,
   entry: ShaderFileEntry,
+  options?: LoadShaderFromSourceOptions,
 ): Promise<LoadedOverlayShader> {
+  const defaultId = deriveShaderId(entry.name);
+  const defaultName = deriveShaderName(entry.name);
   const context: OverlayShaderContext = {
-    id: deriveShaderId(entry.name),
-    name: deriveShaderName(entry.name),
-    filePath: entry.path,
-    shaderRoot: shaderSystemConfig.shadersDirectory,
-    source: 'folder',
+    id: options?.context?.id ?? defaultId,
+    name: options?.context?.name ?? defaultName,
+    filePath: options?.context?.filePath ?? entry.path,
+    shaderRoot: options?.context?.shaderRoot ?? shaderSystemConfig.shadersDirectory,
+    source: options?.context?.source ?? 'folder',
   };
 
   try {
