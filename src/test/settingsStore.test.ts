@@ -51,8 +51,8 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.appearance.animations).toBe(true);
     expect(settings.appearance.panelTransparency).toBe(0);
     expect(settings.appearance.appBlurStrength).toBe(18);
-    expect(settings.appearance.appOpenAnimation).toBe('spring-lift');
-    expect(settings.appearance.appCloseAnimation).toBe('burn');
+    expect(settings.appearance.appOpenAnimation).toBeNull();
+    expect(settings.appearance.appCloseAnimation).toBeNull();
     expect(settings.appearance.appAnimationDurationMs).toBe(320);
     expect(settings.appearance.appAnimationIntensity).toBe(1);
   });
@@ -272,6 +272,22 @@ describe('useSettingsStore.updateAppearance()', () => {
     expect(appearance.shaderControlValues['aurora-ribbon']?.intensity).toBe(0.72);
     expect(appearance.activeThemeId).toBe(defaultSettings.appearance.activeThemeId);
   });
+
+  it('allows clearing motion overrides back to theme-managed defaults', () => {
+    const store = useSettingsStore.getState();
+    store.updateAppearance({
+      appOpenAnimation: 'spring-lift',
+      appCloseAnimation: 'burn',
+    });
+    store.updateAppearance({
+      appOpenAnimation: null,
+      appCloseAnimation: null,
+    });
+
+    const { appearance } = useSettingsStore.getState().settings;
+    expect(appearance.appOpenAnimation).toBeNull();
+    expect(appearance.appCloseAnimation).toBeNull();
+  });
 });
 
 describe('useSettingsStore.updateScreenshots()', () => {
@@ -380,6 +396,18 @@ describe('mergeSettingsWithDefaults()', () => {
 
     expect(merged.appearance.appAnimationDurationMs).toBeLessThanOrEqual(1200);
     expect(merged.appearance.appAnimationIntensity).toBeGreaterThanOrEqual(0.55);
+  });
+
+  it('normalizes blank motion overrides to theme-following null values', () => {
+    const merged = mergeSettingsWithDefaults({
+      appearance: {
+        appOpenAnimation: '   ' as never,
+        appCloseAnimation: '' as never,
+      } as typeof defaultSettings.appearance,
+    });
+
+    expect(merged.appearance.appOpenAnimation).toBeNull();
+    expect(merged.appearance.appCloseAnimation).toBeNull();
   });
 
   it('normalizes unsupported explorer folder click modes back to the default', () => {

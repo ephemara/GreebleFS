@@ -142,6 +142,8 @@ describe('appearance config helpers', () => {
       id: 'vista-glass',
       name: 'Vista Glass',
       source: 'package',
+      defaultOpenAnimationId: 'dissolve',
+      defaultCloseAnimationId: 'burn',
       assets: {
         backgroundUrl: 'asset://localhost/themes/vista-glass/assets/wallpaper.svg',
         iconEntries: {
@@ -170,8 +172,30 @@ describe('appearance config helpers', () => {
     expect(resolved.theme.assets?.backgroundUrl).toContain('wallpaper.svg');
     expect(resolved.theme.assets?.iconEntries?.folder).toContain('folder.svg');
     expect(resolved.theme.visuals).toHaveLength(1);
+    expect(resolved.theme.defaultOpenAnimationId).toBe('dissolve');
+    expect(resolved.theme.defaultCloseAnimationId).toBe('burn');
     expect(resolved.themes.some(theme => theme.id === 'vista-glass')).toBe(true);
     expect(getThemeSourceLabel(resolved.theme)).toBe('Package');
+  });
+
+  it('normalizes theme animation defaults and inherits them from the fallback when omitted', () => {
+    const normalized = normalizeThemeDefinition({
+      id: 'motion-lab',
+      name: 'Motion Lab',
+      defaultOpenAnimationId: ' lift ',
+      defaultCloseAnimationId: ' fizzle ',
+    } as Partial<OverlayThemeDefinition>);
+
+    expect(normalized.defaultOpenAnimationId).toBe('lift');
+    expect(normalized.defaultCloseAnimationId).toBe('fizzle');
+
+    const inherited = normalizeThemeDefinition({
+      id: 'inherit-lab',
+      name: 'Inherit Lab',
+    } as Partial<OverlayThemeDefinition>, normalized);
+
+    expect(inherited.defaultOpenAnimationId).toBe('lift');
+    expect(inherited.defaultCloseAnimationId).toBe('fizzle');
   });
 
   it('falls back to the first preset when selected theme id is unknown', () => {

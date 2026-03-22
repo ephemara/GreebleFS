@@ -36,6 +36,7 @@ import {
   type FolderIconValue,
 } from '../config/folderIcons';
 import { getBuiltInIconTheme } from '../config/iconTheme';
+import { animationSystemConfig, resolvePreferredAnimationId } from '../config/animations';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 import {
@@ -397,6 +398,14 @@ export function SettingsPage({
     () => availableAnimations.filter(animation => animation.close),
     [availableAnimations],
   );
+  const availableOpenAnimationIds = useMemo(
+    () => openAnimationOptions.map(animation => animation.id),
+    [openAnimationOptions],
+  );
+  const availableCloseAnimationIds = useMemo(
+    () => closeAnimationOptions.map(animation => animation.id),
+    [closeAnimationOptions],
+  );
   const animationFailures = useMemo(
     () => animationDiagnostics.filter(animation => Boolean(animation.error)),
     [animationDiagnostics],
@@ -481,6 +490,24 @@ export function SettingsPage({
     : appearance.baseTheme.defaultShaderId
       ? 'Theme Default'
       : 'Fallback';
+  const effectiveOpenAnimationId = useMemo(
+    () => resolvePreferredAnimationId({
+      availableAnimationIds: availableOpenAnimationIds,
+      userOverrideId: settings.appearance.appOpenAnimation,
+      themeDefaultAnimationId: appearance.baseTheme.defaultOpenAnimationId,
+      fallbackAnimationId: animationSystemConfig.defaultOpenAnimationId,
+    }),
+    [appearance.baseTheme.defaultOpenAnimationId, availableOpenAnimationIds, settings.appearance.appOpenAnimation],
+  );
+  const effectiveCloseAnimationId = useMemo(
+    () => resolvePreferredAnimationId({
+      availableAnimationIds: availableCloseAnimationIds,
+      userOverrideId: settings.appearance.appCloseAnimation,
+      themeDefaultAnimationId: appearance.baseTheme.defaultCloseAnimationId,
+      fallbackAnimationId: animationSystemConfig.defaultCloseAnimationId,
+    }),
+    [appearance.baseTheme.defaultCloseAnimationId, availableCloseAnimationIds, settings.appearance.appCloseAnimation],
+  );
 
   useEffect(() => {
     ensureFontFamilyLoaded(appearance.fonts.ui);
@@ -1396,6 +1423,27 @@ export function SettingsPage({
                   <div className="space-y-2">
                     <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Open Motion</label>
                     <div className="grid grid-cols-1 gap-2">
+                      <button
+                        onClick={() => updateAppearance({ appOpenAnimation: null })}
+                        className="rounded px-3 py-2 text-left transition-colors"
+                        style={{
+                          border: `1px solid ${settings.appearance.appOpenAnimation == null ? accent : border}`,
+                          background: settings.appearance.appOpenAnimation == null ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                          color: text,
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-semibold">Follow Theme Default</span>
+                          <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: settings.appearance.appOpenAnimation == null ? accent : muted }}>
+                            {effectiveOpenAnimationId}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[11px] opacity-45">
+                          {appearance.baseTheme.defaultOpenAnimationId
+                            ? `Active theme ${appearance.baseTheme.name} defaults open motion to ${appearance.baseTheme.defaultOpenAnimationId}.`
+                            : `Active theme ${appearance.baseTheme.name} does not define open motion, so OverlayTerm falls back to ${animationSystemConfig.defaultOpenAnimationId}.`}
+                        </p>
+                      </button>
                       {openAnimationOptions.map(animation => {
                         const active = settings.appearance.appOpenAnimation === animation.id;
                         return (
@@ -1430,6 +1478,27 @@ export function SettingsPage({
                   <div className="space-y-2">
                     <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Close Motion</label>
                     <div className="grid grid-cols-1 gap-2">
+                      <button
+                        onClick={() => updateAppearance({ appCloseAnimation: null })}
+                        className="rounded px-3 py-2 text-left transition-colors"
+                        style={{
+                          border: `1px solid ${settings.appearance.appCloseAnimation == null ? accent : border}`,
+                          background: settings.appearance.appCloseAnimation == null ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                          color: text,
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-semibold">Follow Theme Default</span>
+                          <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: settings.appearance.appCloseAnimation == null ? accent : muted }}>
+                            {effectiveCloseAnimationId}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[11px] opacity-45">
+                          {appearance.baseTheme.defaultCloseAnimationId
+                            ? `Active theme ${appearance.baseTheme.name} defaults close motion to ${appearance.baseTheme.defaultCloseAnimationId}.`
+                            : `Active theme ${appearance.baseTheme.name} does not define close motion, so OverlayTerm falls back to ${animationSystemConfig.defaultCloseAnimationId}.`}
+                        </p>
+                      </button>
                       {closeAnimationOptions.map(animation => {
                         const active = settings.appearance.appCloseAnimation === animation.id;
                         return (

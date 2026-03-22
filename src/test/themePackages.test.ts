@@ -55,6 +55,8 @@ describe('theme package loader', () => {
             iconTheme: 'icon-theme.json',
           },
           theme: {
+            defaultOpenAnimationId: 'package-open',
+            defaultCloseAnimationId: 'burn',
             palette: {
               accent: '#7dd3ff',
             },
@@ -128,6 +130,8 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.theme.assets?.backgroundUrl?.replace(/\\/g, '/')).toBe('asset://localhost/themes/vista-glass/assets/wallpaper.svg');
     expect(result.packages[0]?.theme.assets?.iconEntries?.folder?.replace(/\\/g, '/')).toBe('asset://localhost/themes/vista-glass/icons/folder.svg');
     expect(result.packages[0]?.theme.assets?.iconTheme?.fileExtensions.ts).toBe('typescript');
+    expect(result.packages[0]?.theme.defaultOpenAnimationId).toBe('package-open');
+    expect(result.packages[0]?.theme.defaultCloseAnimationId).toBe('burn');
     expect(result.packages[0]?.theme.visuals).toHaveLength(1);
     expect(result.shaders).toHaveLength(1);
     expect(result.shaders[0]?.shaderRoot.replace(/\\/g, '/')).toBe('themes/vista-glass');

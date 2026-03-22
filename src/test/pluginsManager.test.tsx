@@ -50,7 +50,13 @@ describe('PluginsManager', () => {
   });
 
   it('switches between plugins and surfaces load errors', async () => {
-    const PluginView = ({ plugin }: { plugin: { name: string } }) => <div>workspace:{plugin.name}</div>;
+    const PluginView = ({
+      plugin,
+      host,
+    }: {
+      plugin: { name: string };
+      host?: { zoom?: number };
+    }) => <div>workspace:{plugin.name}:zoom:{host?.zoom ?? 0}</div>;
     const plugins = [
       {
         id: 'alpha',
@@ -99,7 +105,7 @@ describe('PluginsManager', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('workspace:Alpha')).toBeInTheDocument();
+      expect(screen.getByText('workspace:Alpha:zoom:1')).toBeInTheDocument();
     });
     expect(screen.getByText('runtime warning')).toBeInTheDocument();
 

@@ -15,9 +15,9 @@ import {
   createFolderPluginPanelDefinitions,
   type OverlayPanelDefinition,
 } from './panels/panelRegistry';
-import { PluginsManager } from './components/PluginsManager';
+import { FolderPluginRenderer, PluginsManager } from './components/PluginsManager';
 import { CommandPalette, type OverlayCommandPaletteAction } from './components/CommandPalette';
-import { animationSystemConfig } from './config/animations';
+import { animationSystemConfig, resolvePreferredAnimationId } from './config/animations';
 import { getPluginStorageDirectory, pluginSystemConfig } from './config/plugins';
 import {
   AnimationOverlayLayer,
@@ -496,12 +496,6 @@ function App() {
   const appBlur = appearance.appBlur ?? true;
   const appBlurStrength = appearance.appBlurStrength ?? overlayVisualControls.blurStrength.defaultValue;
   const animationsEnabled = appearance.animations ?? true;
-  const appOpenAnimation = animationsEnabled
-    ? (appearance.appOpenAnimation ?? animationSystemConfig.defaultOpenAnimationId)
-    : 'none';
-  const appCloseAnimation = animationsEnabled
-    ? (appearance.appCloseAnimation ?? animationSystemConfig.defaultCloseAnimationId)
-    : 'none';
   const appAnimationDurationMs = animationsEnabled
     ? clampOverlayAnimationDuration(appearance.appAnimationDurationMs ?? 320)
     : 140;
@@ -535,6 +529,28 @@ function App() {
     () => new Map(availableAnimations.map(animation => [animation.id, animation])),
     [availableAnimations],
   );
+  const resolvedOpenAnimationId = useMemo(
+    () => animationsEnabled
+      ? resolvePreferredAnimationId({
+          availableAnimationIds: availableAnimationsById.keys(),
+          userOverrideId: appearance.appOpenAnimation,
+          themeDefaultAnimationId: resolvedAppearance.baseTheme.defaultOpenAnimationId,
+          fallbackAnimationId: animationSystemConfig.defaultOpenAnimationId,
+        })
+      : 'none',
+    [animationsEnabled, appearance.appOpenAnimation, availableAnimationsById, resolvedAppearance.baseTheme.defaultOpenAnimationId],
+  );
+  const resolvedCloseAnimationId = useMemo(
+    () => animationsEnabled
+      ? resolvePreferredAnimationId({
+          availableAnimationIds: availableAnimationsById.keys(),
+          userOverrideId: appearance.appCloseAnimation,
+          themeDefaultAnimationId: resolvedAppearance.baseTheme.defaultCloseAnimationId,
+          fallbackAnimationId: animationSystemConfig.defaultCloseAnimationId,
+        })
+      : 'none',
+    [animationsEnabled, appearance.appCloseAnimation, availableAnimationsById, resolvedAppearance.baseTheme.defaultCloseAnimationId],
+  );
   const availableShadersById = useMemo(
     () => new Map(availableShaders.map(shader => [shader.id, shader])),
     [availableShaders],
@@ -566,7 +582,7 @@ function App() {
       ?? null
   ), [availableAnimationsById, builtInAnimations]);
   const shellAnimation = activeAnimation ?? resolveAnimationById(
-    overlayAnimationDirection === 'exit' ? appCloseAnimation : appOpenAnimation,
+    overlayAnimationDirection === 'exit' ? resolvedCloseAnimationId : resolvedOpenAnimationId,
     overlayAnimationDirection === 'exit'
       ? animationSystemConfig.defaultCloseAnimationId
       : animationSystemConfig.defaultOpenAnimationId,
@@ -817,7 +833,7 @@ function App() {
         overlayAnchor: store.overlayAnchor === 'top' ? 'top' : 'bottom',
       });
       const nextAnimation = resolveAnimationById(
-        appOpenAnimation,
+        resolvedOpenAnimationId,
         animationSystemConfig.defaultOpenAnimationId,
       );
       const nextDurationMs = resolveAnimationDurationMs(
@@ -879,7 +895,7 @@ function App() {
       setAnimationProgress(0);
       console.warn('OverlayTerm: failed to position/show', e);
     }
-  }, [appAnimationDurationMs, appOpenAnimation, clearAnimationClock, markOverlayRuntimePhase, resolveAnimationById, startAnimationProgress]);
+  }, [appAnimationDurationMs, clearAnimationClock, markOverlayRuntimePhase, resolveAnimationById, resolvedOpenAnimationId, startAnimationProgress]);
 
   const handleToggleOverlayAnchor = useCallback(() => {
     updateTerminal({
@@ -895,7 +911,7 @@ function App() {
 
     clearAnimationClock();
     const nextAnimation = resolveAnimationById(
-      appCloseAnimation,
+      resolvedCloseAnimationId,
       animationSystemConfig.defaultCloseAnimationId,
     );
     const nextDurationMs = resolveAnimationDurationMs(
@@ -921,7 +937,7 @@ function App() {
         // Ignore hide failures during teardown.
       }
     }, nextDurationMs);
-  }, [appAnimationDurationMs, appCloseAnimation, clearAnimationClock, markOverlayRuntimePhase, resolveAnimationById, startAnimationProgress]);
+  }, [appAnimationDurationMs, clearAnimationClock, markOverlayRuntimePhase, resolveAnimationById, resolvedCloseAnimationId, startAnimationProgress]);
 
   const hideOverlayForDrag = useCallback(async () => {
     const currentPhase = overlayPhaseRef.current;
@@ -2313,7 +2329,29 @@ function App() {
                           overflow: 'hidden',
                         }}
                       >
-                        {panel.render()}
+                        {panel.kind === 'folder-plugin'
+                          ? (
+                            <FolderPluginRenderer
+                              plugin={folderPlugins.find(candidate => candidate.id === panel.id) ?? {
+                                id: panel.id,
+                                name: panel.label,
+                                filePath: '',
+                                pluginRoot: '',
+                                pluginDirectory: '',
+                                backendDirectory: '',
+                                modified: 0,
+                                defaultOpen: panel.defaultOpen ?? false,
+                                keepMounted: panel.keepMounted ?? false,
+                                component: null,
+                                error: 'Plugin definition not found.',
+                              }}
+                              appearance={resolvedAppearance}
+                              createPluginApi={createPluginApi}
+                              hostMode="panel-tab"
+                              isActive={isActive}
+                            />
+                          )
+                          : panel.render()}
                       </div>
                     );
                   })}

@@ -273,6 +273,7 @@ export function createFolderPluginPanelDefinitions({
         appearance={appearance}
         createPluginApi={createPluginApi}
         hostMode="panel-tab"
+        isActive
       />
     ),
   }));

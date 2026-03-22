@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Blocks, FolderOpen, LoaderCircle, Puzzle, RefreshCw, TriangleAlert } from 'lucide-react';
 import { pluginSystemConfig } from '../config/plugins';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
+import { useSettingsStore } from '../store/settingsStore';
 import type {
   LoadedOverlayPlugin,
   OverlayPluginApi,
@@ -56,6 +57,7 @@ export interface FolderPluginRendererProps {
   appearance?: ResolvedOverlayAppearance;
   createPluginApi: (plugin: OverlayPluginContext) => OverlayPluginApi;
   hostMode?: FolderPluginHostMode;
+  isActive?: boolean;
 }
 
 export function PluginsManager({
@@ -250,6 +252,7 @@ export function FolderPluginRenderer({
   appearance,
   createPluginApi,
   hostMode = 'panel-tab',
+  isActive = true,
 }: FolderPluginRendererProps) {
   const PluginComponent = plugin.component;
   if (plugin.error || !PluginComponent) {
@@ -262,6 +265,7 @@ export function FolderPluginRenderer({
       appearance={appearance}
       createPluginApi={createPluginApi}
       hostMode={hostMode}
+      isActive={isActive}
     />
   );
 }
@@ -271,11 +275,13 @@ function FolderPluginHostFrame({
   appearance,
   createPluginApi,
   hostMode,
+  isActive,
 }: {
   plugin: LoadedOverlayPlugin;
   appearance?: ResolvedOverlayAppearance;
   createPluginApi: (plugin: OverlayPluginContext) => OverlayPluginApi;
   hostMode: FolderPluginHostMode;
+  isActive: boolean;
 }) {
   const PluginComponent = plugin.component;
   if (!PluginComponent) {
@@ -283,7 +289,9 @@ function FolderPluginHostFrame({
   }
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [hostSize, setHostSize] = useState({ width: 0, height: 0 });
+  const appZoom = useSettingsStore(state => state.settings.appearance.appZoom ?? 1);
   const hostLayout = FOLDER_PLUGIN_HOST_LAYOUT[hostMode];
+  const syncHostSizeRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     const hostElement = hostRef.current;
@@ -301,6 +309,7 @@ function FolderPluginHostFrame({
         return { width: nextWidth, height: nextHeight };
       });
     };
+    syncHostSizeRef.current = syncHostSize;
 
     syncHostSize();
     if (typeof ResizeObserver === 'undefined') {
@@ -311,7 +320,19 @@ function FolderPluginHostFrame({
     return () => observer.disconnect();
   }, []);
 
-  const hostContext = buildPluginHostContext(hostMode, hostSize.width, hostSize.height);
+  useEffect(() => {
+    if (!isActive) {
+      return;
+    }
+    const runSync = () => syncHostSizeRef.current();
+    const firstFrame = window.requestAnimationFrame(() => {
+      runSync();
+      window.requestAnimationFrame(runSync);
+    });
+    return () => window.cancelAnimationFrame(firstFrame);
+  }, [appZoom, isActive, hostMode]);
+
+  const hostContext = buildPluginHostContext(hostMode, hostSize.width, hostSize.height, appZoom);
   const hostStyle = {
     '--overlay-plugin-host-width': `${hostContext.width}px`,
     '--overlay-plugin-host-height': `${hostContext.height}px`,
@@ -384,12 +405,14 @@ function buildPluginHostContext(
   mode: FolderPluginHostMode,
   width: number,
   height: number,
+  zoom: number,
 ): OverlayPluginHostContext {
   const compact = width > 0 && width <= PLUGIN_HOST_COMPACT_WIDTH;
   return {
     mode,
     width,
     height,
+    zoom,
     compact,
     density: width > 0 && width <= PLUGIN_HOST_DENSE_WIDTH ? 'compact' : 'regular',
   };

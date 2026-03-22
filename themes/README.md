@@ -34,7 +34,7 @@ Top-level fields:
 - `extends`
   - Optional base theme id. Can point at a built-in theme or another package theme.
 - `theme`
-  - Partial OverlayTerm theme definition with `palette`, `effects`, `xterm`, `fonts`, `cssVars`, and `visuals`.
+  - Partial OverlayTerm theme definition with `palette`, `effects`, `xterm`, `fonts`, `cssVars`, `visuals`, `defaultShaderId`, `defaultOpenAnimationId`, and `defaultCloseAnimationId`.
 - `assets.background`
   - Relative path to a wallpaper/image asset.
 - `assets.iconTheme`
@@ -87,5 +87,6 @@ File and folder icons fall back to the built-in `/icons` catalog automatically w
 - Theme packages are scanned from this `themes` folder.
 - Shader modules bundled inside a theme package are loaded into the same live shader registry as global shaders.
 - Animation modules bundled inside a theme package are loaded into the same live animation registry as global animations.
+- Theme packages can set `theme.defaultOpenAnimationId` and `theme.defaultCloseAnimationId` so motion follows the active theme unless the user chooses an explicit override in Settings.
 - Use the Settings panel to refresh package discovery or open this directory.
 - Visual layers are optional; they are how you can add animated glass, soft glow, plasma drift, and similar background motion without hardcoding theme behavior into the app.

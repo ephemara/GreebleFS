@@ -16,3 +16,26 @@ export const animationSystemConfig = {
 
 export type FrontendAnimationExtension =
   typeof animationSystemConfig.frontendExtensions[number];
+
+export function resolvePreferredAnimationId(args: {
+  availableAnimationIds: Iterable<string>;
+  userOverrideId?: string | null;
+  themeDefaultAnimationId?: string | null;
+  fallbackAnimationId?: string;
+}): string {
+  const available = new Set(Array.from(args.availableAnimationIds));
+  const fallbackId = args.fallbackAnimationId ?? animationSystemConfig.defaultOpenAnimationId;
+  const preferredIds = [
+    args.userOverrideId,
+    args.themeDefaultAnimationId,
+    fallbackId,
+  ];
+
+  for (const candidate of preferredIds) {
+    if (typeof candidate === 'string' && candidate.trim() && available.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  return available.has(fallbackId) ? fallbackId : Array.from(available)[0] ?? fallbackId;
+}

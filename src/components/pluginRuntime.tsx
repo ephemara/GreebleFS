@@ -63,6 +63,7 @@ export interface OverlayPluginHostContext {
   mode: 'panel-tab' | 'manager-preview';
   width: number;
   height: number;
+  zoom: number;
   compact: boolean;
   density: 'compact' | 'regular';
 }

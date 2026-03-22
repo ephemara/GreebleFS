@@ -795,18 +795,18 @@ const overlayThemeDefaultShaderIds: Partial<Record<string, string>> = {
 
 const overlayThemeDefaultOpenAnimationIds: Partial<Record<string, string>> = {
   operator: 'spring-lift',
-  dracula: 'pixel-sort',
-  nord: 'soft-rise',
+  dracula: 'dissolve',
+  nord: 'lift',
   'github-dark': 'spring-lift',
-  catppuccin: 'spring-lift',
+  catppuccin: 'dissolve',
 };
 
 const overlayThemeDefaultCloseAnimationIds: Partial<Record<string, string>> = {
   operator: 'burn',
-  dracula: 'burn',
-  nord: 'fade-scale',
+  dracula: 'fizzle',
+  nord: 'dissolve',
   'github-dark': 'burn',
-  catppuccin: 'burn',
+  catppuccin: 'fizzle',
 };
 
 export const overlayThemePresets: OverlayThemeDefinition[] = builtInThemePresets.map(theme => ({

@@ -114,8 +114,8 @@ export interface AppearanceSettings {
   appZoom: number;
   appBlur: boolean;
   appBlurStrength: number;
-  appOpenAnimation: OverlayAnimationPresetId;
-  appCloseAnimation: OverlayAnimationPresetId;
+  appOpenAnimation: OverlayAnimationPresetId | null;
+  appCloseAnimation: OverlayAnimationPresetId | null;
   appAnimationDurationMs: number;
   appAnimationIntensity: number;
 }
@@ -246,6 +246,16 @@ function normalizeAppearanceSettings(
     panelTransparency: clampOverlayVisualControlValue('panelTransparency', merged.panelTransparency),
     appZoom: clampOverlayVisualControlValue('zoom', merged.appZoom),
     appBlurStrength: clampOverlayVisualControlValue('blurStrength', merged.appBlurStrength),
+    appOpenAnimation: typeof merged.appOpenAnimation === 'string'
+      ? merged.appOpenAnimation.trim() || null
+      : merged.appOpenAnimation === null
+        ? null
+        : base.appOpenAnimation ?? null,
+    appCloseAnimation: typeof merged.appCloseAnimation === 'string'
+      ? merged.appCloseAnimation.trim() || null
+      : merged.appCloseAnimation === null
+        ? null
+        : base.appCloseAnimation ?? null,
     appAnimationDurationMs: clampOverlayAnimationDuration(merged.appAnimationDurationMs),
     appAnimationIntensity: clampOverlayAnimationIntensity(merged.appAnimationIntensity),
   };
@@ -373,8 +383,8 @@ export const defaultSettings: Settings = {
     appZoom: overlayVisualControls.zoom.defaultValue,
     appBlur: true,
     appBlurStrength: overlayVisualControls.blurStrength.defaultValue,
-    appOpenAnimation: 'spring-lift',
-    appCloseAnimation: 'burn',
+    appOpenAnimation: null,
+    appCloseAnimation: null,
     appAnimationDurationMs: 320,
     appAnimationIntensity: 1.0,
   },

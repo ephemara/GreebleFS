@@ -9,6 +9,9 @@
     "iconTheme": "icon-theme.json"
   },
   "theme": {
+    "defaultShaderId": "hologram-grid",
+    "defaultOpenAnimationId": "lift",
+    "defaultCloseAnimationId": "dissolve",
     "palette": {
       "appBackground": "#dbefff",
       "appBackgroundAlt": "#cbe7ff",

@@ -13,6 +13,9 @@
     "mono": "\"Consolas\", \"Cascadia Mono\", monospace"
   },
   "theme": {
+    "defaultShaderId": "prism-wave",
+    "defaultOpenAnimationId": "dissolve",
+    "defaultCloseAnimationId": "burn",
     "palette": {
       "appBackground": "#0a1220",
       "appBackgroundAlt": "#10203a",

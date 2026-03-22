@@ -9,6 +9,9 @@
     "iconTheme": "icon-theme.json"
   },
   "theme": {
+    "defaultShaderId": "nebula-flow",
+    "defaultOpenAnimationId": "spring-lift",
+    "defaultCloseAnimationId": "fizzle",
     "palette": {
       "appBackground": "#111520",
       "appBackgroundAlt": "#151b2a",

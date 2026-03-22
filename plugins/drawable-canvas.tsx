@@ -13,7 +13,7 @@ type OverlayPluginStorageApi = {
 };
 type OverlayPluginApi  = { storage?: OverlayPluginStorageApi };
 type OverlayAppearance = { theme: { palette?: { accent?: string; textMuted?: string } } };
-type HostContext       = { width: number; height: number; compact: boolean; density: string };
+type HostContext       = { width: number; height: number; zoom?: number; compact: boolean; density: string };
 type PluginProps       = { plugin: { id: string; name: string }; api?: OverlayPluginApi; appearance: OverlayAppearance; host?: HostContext };
 
 type TextObj = { id: string; x: number; y: number; text: string; color: string; size: number; font: string };
@@ -290,6 +290,7 @@ function CanvasPad({ plugin, api, appearance, host }: PluginProps) {
 
   const muted     = appearance.theme.palette?.textMuted ?? 'rgba(226,232,240,0.65)';
   const isCompact = host?.compact ?? vpSize.width < 960;
+  const hostZoom  = host?.zoom ?? 1;
   const brush     = BRUSHES.find(b => b.id === brushId) ?? BRUSHES[0];
 
   /* ── surface management ─────────────────────────────────────────────────── */
@@ -311,7 +312,7 @@ function CanvasPad({ plugin, api, appearance, host }: PluginProps) {
 
     const vw = Math.max(Math.floor(vpSize.width), MIN_SIZE.width);
     const vh = Math.max(Math.floor(vpSize.height), MIN_SIZE.height);
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.max(window.devicePixelRatio || 1, (window.devicePixelRatio || 1) * Math.max(hostZoom, 1));
     const tw = Math.floor(vw * dpr); const th = Math.floor(vh * dpr);
     if (display.width !== tw || display.height !== th) {
       display.width = tw; display.height = th;
@@ -343,7 +344,7 @@ function CanvasPad({ plugin, api, appearance, host }: PluginProps) {
     ctx.drawImage(paint, 0, 0, art.width, art.height, 0, 0, vw, vh);
     ctx.drawImage(draft, 0, 0, art.width, art.height, 0, 0, vw, vh);
     ctx.restore();
-  }, [vpSize]);
+  }, [hostZoom, vpSize]);
 
   const scheduleBlit = useCallback(() => {
     if (rafId.current !== null) return;
@@ -571,6 +572,12 @@ function CanvasPad({ plugin, api, appearance, host }: PluginProps) {
 
   useEffect(() => { ensureSurfaces(vpSize); scheduleBlit(); }, [vpSize, ensureSurfaces, scheduleBlit]);
   useEffect(() => { scheduleBlit(); }, [scheduleBlit]);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      scheduleBlit();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [hostZoom, scheduleBlit]);
 
   /* ── when brush changes, sync default size ───────────────────────────────── */
   useEffect(() => {
