@@ -1007,8 +1007,6 @@ export function FileExplorer({
   const previewSaveTimer = useRef<number | null>(null);
   const searchRequestIdRef = useRef(0);
   const searchFocusRequestIdRef = useRef(0);
-  const entrySizeRequestIdRef = useRef(0);
-  const nativeIconRequestIdRef = useRef(0);
   const addressInputRef = useRef<HTMLInputElement>(null);
   const [addressEditing, setAddressEditing] = useState(false);
   const [addressDraft, setAddressDraft] = useState('');
@@ -2186,13 +2184,17 @@ export function FileExplorer({
       return;
     }
 
+    const shouldMeasureDirectories = !isSearchActive;
     const pendingFiles = virtualizedEntries
       .filter(entry => !entry.is_dir && !entrySizes[entry.path] && !entrySizeLoadingPaths.has(entry.path))
       .slice(0, 12);
-    const pendingDirectories = virtualizedEntries
-      .filter(entry => entry.is_dir && !entrySizes[entry.path] && !entrySizeLoadingPaths.has(entry.path))
-      .slice(0, 2);
-    const nextBatch = [...pendingFiles, ...pendingDirectories].slice(0, 12);
+    const pendingDirectories = shouldMeasureDirectories
+      ? virtualizedEntries
+        .filter(entry => entry.is_dir && !entrySizes[entry.path] && !entrySizeLoadingPaths.has(entry.path))
+        .slice(0, 1)
+      : [];
+
+    const nextBatch = (pendingFiles.length > 0 ? pendingFiles : pendingDirectories).slice(0, 12);
     const unresolvedPaths = nextBatch.map(entry => entry.path);
 
     if (unresolvedPaths.length === 0) {
@@ -2200,7 +2202,6 @@ export function FileExplorer({
       return;
     }
 
-    const requestId = ++entrySizeRequestIdRef.current;
     setEntrySizeLoadingPaths(current => {
       const next = new Set(current);
       for (const path of unresolvedPaths) {
@@ -2209,15 +2210,11 @@ export function FileExplorer({
       return next;
     });
 
-    let cancelled = false;
     void invoke<EntryStorageInfo[]>('fs_measure_entry_sizes', {
       paths: unresolvedPaths,
       forceRefresh: false,
     })
       .then(results => {
-        if (cancelled || entrySizeRequestIdRef.current !== requestId) {
-          return;
-        }
         setEntrySizes(current => {
           const next = { ...current };
           for (const result of results) {
@@ -2237,9 +2234,6 @@ export function FileExplorer({
         });
       })
       .catch(() => {
-        if (cancelled || entrySizeRequestIdRef.current !== requestId) {
-          return;
-        }
         setEntrySizeLoadingPaths(current => {
           if (current.size === 0) {
             return current;
@@ -2251,11 +2245,14 @@ export function FileExplorer({
           return next.size === current.size ? current : next;
         });
       });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [entrySizes, entrySizeLoadingPaths, loading, virtualizedEntries]);
+  }, [
+    effectiveViewMode,
+    entrySizes,
+    entrySizeLoadingPaths,
+    isSearchActive,
+    loading,
+    virtualizedEntries,
+  ]);
 
   useEffect(() => {
     if (!useNativeOsIcons || loading || virtualizedEntries.length === 0) {
@@ -2276,7 +2273,6 @@ export function FileExplorer({
       return;
     }
 
-    const requestId = ++nativeIconRequestIdRef.current;
     const pendingKeys = pendingEntries.map(item => item.key);
     const requests = pendingEntries.map(item => getNativeIconRequest(item.entry));
 
@@ -2288,13 +2284,8 @@ export function FileExplorer({
       return next;
     });
 
-    let cancelled = false;
     void invoke<OverlayNativeIconResponse[]>('fs_resolve_native_icons', { requests })
       .then(results => {
-        if (cancelled || nativeIconRequestIdRef.current !== requestId) {
-          return;
-        }
-
         setNativeIconMap(current => {
           const next = { ...current };
           for (const result of results) {
@@ -2311,10 +2302,6 @@ export function FileExplorer({
         });
       })
       .catch(() => {
-        if (cancelled || nativeIconRequestIdRef.current !== requestId) {
-          return;
-        }
-
         setNativeIconMap(current => {
           const next = { ...current };
           for (const key of pendingKeys) {
@@ -2330,10 +2317,6 @@ export function FileExplorer({
           return next.size === current.size ? current : next;
         });
       });
-
-    return () => {
-      cancelled = true;
-    };
   }, [loading, nativeIconLoadingKeys, nativeIconMap, useNativeOsIcons, virtualizedEntries]);
 
   const renderSearchMetadata = (entry: FileEntry) => {

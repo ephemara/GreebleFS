@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "id": "vintage-macintosh",
+  "name": "Vintage Macintosh",
+  "description": "A 1980s Macintosh-inspired shell with warm platinum chrome, crisp ink borders, phosphor terminal glow, and a full vintage icon catalog.",
+  "author": "OverlayTerm Labs",
+  "homepage": "https://overlayterm.local/themes/vintage-macintosh",
+  "tags": ["vintage", "macintosh", "1980s", "crt", "retro"],
+  "extends": "operator",
+  "assets": {
+    "background": "assets/wallpaper.svg",
+    "preview": "assets/preview.svg",
+    "iconTheme": "icon-theme.json"
+  },
+  "theme": {
+    "defaultShaderId": "vintage-macintosh-signal-glass",
+    "defaultOpenAnimationId": "vintage-macintosh-power-on",
+    "defaultCloseAnimationId": "vintage-macintosh-power-on",
+    "palette": {
+      "appBackground": "#d7d1c4",
+      "appBackgroundAlt": "#c9c2b2",
+      "shellBackground": "rgba(248, 244, 234, 0.82)",
+      "shellBackgroundSolid": "rgba(239, 233, 220, 0.97)",
+      "topBarBackground": "#ece6d9",
+      "topBarMenuBackground": "#dfd6c7",
+      "sidebarBackground": "rgba(228, 221, 208, 0.94)",
+      "panelBackground": "rgba(243, 238, 228, 0.92)",
+      "panelAltBackground": "rgba(231, 224, 212, 0.96)",
+      "cardBackground": "rgba(251, 248, 240, 0.9)",
+      "cardHoverBackground": "rgba(255, 251, 243, 0.98)",
+      "contextMenuBackground": "rgba(248, 244, 234, 0.98)",
+      "inputBackground": "rgba(255, 252, 246, 0.95)",
+      "terminalBackground": "#10170f",
+      "selectionBackground": "rgba(87, 138, 97, 0.22)",
+      "scrimBackground": "rgba(61, 55, 45, 0.16)",
+      "textPrimary": "#1f1c16",
+      "textSecondary": "#383229",
+      "textMuted": "rgba(31, 28, 22, 0.62)",
+      "textDim": "rgba(31, 28, 22, 0.38)",
+      "textInverse": "#f8f4ea",
+      "border": "rgba(35, 29, 18, 0.22)",
+      "borderStrong": "rgba(24, 20, 13, 0.5)",
+      "accent": "#506f42",
+      "accentSoft": "rgba(80, 111, 66, 0.15)",
+      "accentContrast": "#f4efe5",
+      "success": "#506f42",
+      "warning": "#a86f32",
+      "danger": "#9b5446",
+      "info": "#6d7d58",
+      "note": "#6d7d58",
+      "todo": "#506f42",
+      "bug": "#9b5446",
+      "prompt": "#5c596d"
+    },
+    "effects": {
+      "backgroundSize": "cover",
+      "backgroundPosition": "center",
+      "shadow": "0 18px 42px rgba(46, 37, 25, 0.18)",
+      "overlayShadow": "0 -3px 0 0 #79896e, 0 -24px 60px rgba(47, 40, 29, 0.26)"
+    },
+    "xterm": {
+      "background": "#10170f",
+      "foreground": "#c5d7b8",
+      "cursor": "#dfecc8",
+      "black": "#0d110c",
+      "red": "#8f6255",
+      "green": "#8ea37d",
+      "yellow": "#b8a86b",
+      "blue": "#7e9181",
+      "magenta": "#8b7b8d",
+      "cyan": "#87a29a",
+      "white": "#d9ddcf",
+      "brightBlack": "#52594a",
+      "brightRed": "#bd8777",
+      "brightGreen": "#b9d2a1",
+      "brightYellow": "#d7c988",
+      "brightBlue": "#a1b6a1",
+      "brightMagenta": "#b59ec1",
+      "brightCyan": "#b1d0c5",
+      "brightWhite": "#f2f4e8"
+    },
+    "fonts": {
+      "ui": "\"Geneva\", \"Chicago\", \"Tahoma\", sans-serif",
+      "mono": "\"Monaco\", \"Courier New\", monospace"
+    },
+    "cssVars": {
+      "--greeble-chrome-style": "vintage-macintosh",
+      "--overlay-vintage-bezel": "#ede5d6"
+    }
+  },
+  "visuals": [
+    {
+      "id": "vintage-paper-grain",
+      "backgroundImage": "radial-gradient(circle at 20% 18%, rgba(255,255,255,0.52), transparent 28%), radial-gradient(circle at 82% 14%, rgba(113, 123, 97, 0.12), transparent 24%), linear-gradient(180deg, rgba(255,255,255,0.32) 0%, rgba(0,0,0,0) 44%)",
+      "opacity": 0.72,
+      "blendMode": "screen"
+    },
+    {
+      "id": "vintage-phosphor-aura",
+      "backgroundImage": "radial-gradient(circle at 50% 68%, rgba(125, 170, 118, 0.18), transparent 32%), radial-gradient(circle at 46% 58%, rgba(240, 246, 213, 0.16), transparent 22%)",
+      "opacity": 0.8,
+      "blendMode": "screen",
+      "animation": {
+        "kind": "pulse",
+        "durationMs": 14000
+      }
+    },
+    {
+      "id": "vintage-scan-haze",
+      "backgroundImage": "linear-gradient(180deg, rgba(30, 42, 24, 0) 0%, rgba(88, 119, 75, 0.06) 48%, rgba(30, 42, 24, 0) 100%)",
+      "opacity": 0.5,
+      "blendMode": "multiply",
+      "animation": {
+        "kind": "pan",
+        "durationMs": 24000
+      }
+    }
+  ]
+}

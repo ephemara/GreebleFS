@@ -70,6 +70,45 @@ import {
 import { useSettingsStore } from '../store/settingsStore';
 import { useTerminalStore } from '../store/terminalStore';
 
+function ThemeBadge({ label, active = false }: { label: string; active?: boolean }) {
+  return (
+    <span
+      className="rounded px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]"
+      style={{
+        border: `1px solid ${active ? 'currentColor' : 'rgba(255,255,255,0.12)'}`,
+        background: active ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)',
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+function getThemePreviewBackground(
+  theme: OverlayThemeDefinition,
+  previewUrl?: string,
+): string {
+  if (previewUrl) {
+    return [
+      'linear-gradient(180deg, rgba(5,10,18,0.1) 0%, rgba(5,10,18,0.72) 100%)',
+      `url("${previewUrl}")`,
+    ].join(', ');
+  }
+
+  return [
+    `radial-gradient(circle at 18% 20%, ${theme.palette.accentSoft || `${theme.palette.accent}33`}, transparent 28%)`,
+    `linear-gradient(135deg, ${theme.palette.appBackgroundAlt} 0%, ${theme.palette.appBackground} 52%, ${theme.palette.panelBackground} 100%)`,
+  ].join(', ');
+}
+
+function clampThemeDescription(text: string | undefined): string | null {
+  const trimmed = text?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return trimmed.length > 120 ? `${trimmed.slice(0, 117)}...` : trimmed;
+}
+
 function ColorToken({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
     <label className="flex flex-col gap-1 rounded border border-white/8 bg-white/[0.03] p-2">
@@ -386,6 +425,10 @@ export function SettingsPage({
     () => animations.filter(animation => !animation.error),
     [animations],
   );
+  const themePackageLookup = useMemo(
+    () => new Map(themePackages.map(pkg => [pkg.id, pkg] as const)),
+    [themePackages],
+  );
   const availableShaders = useMemo(
     () => shaders.filter(shader => !shader.error),
     [shaders],
@@ -558,6 +601,17 @@ export function SettingsPage({
     setThemeDraft(serializeTheme(customTheme));
     return customTheme;
   }, [settings.appearance.customThemes, updateAppearance]);
+
+  const applyThemeSelection = useCallback((themeId: string) => {
+    const packageInfo = themePackageLookup.get(themeId);
+    updateAppearance({
+      activeThemeId: themeId,
+      activeShaderId: null,
+      appOpenAnimation: null,
+      appCloseAnimation: null,
+      ...(packageInfo?.capabilitySummary.icons ? { useNativeOsIcons: false } : {}),
+    });
+  }, [themePackageLookup, updateAppearance]);
 
   const updateThemePalette = useCallback((patch: Partial<OverlayThemeDefinition['palette']>) => {
     persistTheme({
@@ -942,26 +996,77 @@ export function SettingsPage({
 
               <div className="space-y-1.5">
                 <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Theme Presets</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                   {appearance.themes.map(themeOption => {
                     const active = settings.appearance.activeThemeId === themeOption.id;
+                    const packageInfo = themePackageLookup.get(themeOption.id);
+                    const description = clampThemeDescription(packageInfo?.description ?? themeOption.description);
+                    const previewBackground = getThemePreviewBackground(themeOption, packageInfo?.previewUrl);
+                    const capabilityLabels = [
+                      packageInfo?.capabilitySummary.icons ? 'Icons' : null,
+                      packageInfo?.capabilitySummary.shaders ? `Shaders ${packageInfo.capabilitySummary.shaders}` : null,
+                      packageInfo?.capabilitySummary.animations ? `Motion ${packageInfo.capabilitySummary.animations}` : null,
+                      packageInfo?.capabilitySummary.visuals ? `Visuals ${packageInfo.capabilitySummary.visuals}` : null,
+                    ].filter((value): value is string => Boolean(value)).slice(0, 4);
                     return (
                       <button
                         key={themeOption.id}
-                        onClick={() => updateAppearance({ activeThemeId: themeOption.id })}
-                        className="flex items-center gap-2 rounded px-3 py-2 text-left transition-opacity hover:opacity-100"
+                        onClick={() => applyThemeSelection(themeOption.id)}
+                        className="overflow-hidden rounded text-left transition-opacity hover:opacity-100"
                         style={{
                           background: themeOption.palette.appBackground,
                           border: `1px solid ${active ? themeOption.palette.accent : themeOption.palette.border}`,
                           color: themeOption.palette.textPrimary,
+                          boxShadow: active ? `0 0 0 1px ${themeOption.palette.accent}40 inset` : 'none',
                         }}
                       >
-                        <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: themeOption.palette.accent }} />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-[11px] font-medium">{themeOption.name}</div>
-                          <div className="truncate text-[9px] uppercase tracking-[0.12em] opacity-45">{getThemeSourceLabel(themeOption)}</div>
+                        <div
+                          className="relative h-24 w-full"
+                          style={{
+                            backgroundImage: previewBackground,
+                            backgroundSize: packageInfo?.previewUrl ? 'cover' : '100% 100%',
+                            backgroundPosition: 'center',
+                          }}
+                        >
+                          <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-2">
+                            <ThemeBadge label={getThemeSourceLabel(themeOption)} active={active} />
+                            {packageInfo ? (
+                              <div className="flex items-center gap-1">
+                                <ThemeBadge label={`v${packageInfo.version}`} active={active} />
+                                {packageInfo.author ? <ThemeBadge label={packageInfo.author} /> : null}
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 p-2">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: themeOption.palette.accent }} />
+                              <div className="truncate text-[11px] font-semibold">{themeOption.name}</div>
+                            </div>
+                            {active && <span className="text-[9px] font-semibold uppercase tracking-[0.12em] opacity-75">Live</span>}
+                          </div>
                         </div>
-                        {active && <span className="ml-auto text-[9px] opacity-60">LIVE</span>}
+                        <div className="space-y-2 px-3 py-3">
+                          <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.12em] opacity-55">
+                            <span>{themeOption.id}</span>
+                            {packageInfo?.homepage ? <span>• {packageInfo.homepage.replace(/^https?:\/\//, '').replace(/\/$/, '')}</span> : null}
+                          </div>
+                          {description ? (
+                            <p className="min-h-[2.75rem] text-[11px] leading-4 opacity-70">{description}</p>
+                          ) : (
+                            <p className="min-h-[2.75rem] text-[11px] leading-4 opacity-35">No package summary provided yet.</p>
+                          )}
+                          <div className="flex flex-wrap gap-1.5">
+                            {themeOption.defaultShaderId ? <ThemeBadge label={`Shader ${themeOption.defaultShaderId}`} active={active} /> : null}
+                            {themeOption.defaultOpenAnimationId ? <ThemeBadge label={`Open ${themeOption.defaultOpenAnimationId}`} active={active} /> : null}
+                            {themeOption.defaultCloseAnimationId ? <ThemeBadge label={`Close ${themeOption.defaultCloseAnimationId}`} active={active} /> : null}
+                            {capabilityLabels.map(label => (
+                              <ThemeBadge key={`${themeOption.id}-${label}`} label={label} />
+                            ))}
+                            {(packageInfo?.tags ?? []).slice(0, 3).map(tag => (
+                              <ThemeBadge key={`${themeOption.id}-tag-${tag}`} label={tag} />
+                            ))}
+                          </div>
+                        </div>
                       </button>
                     );
                   })}

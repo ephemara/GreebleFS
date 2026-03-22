@@ -1,0 +1,13 @@
+{
+  "name": "Plasma Flow Icons",
+  "version": 1,
+  "description": "Small plasma override set layered on top of the OverlayTerm canonical icon catalog.",
+  "iconDefinitions": {
+    "folder": { "iconPath": "./icons/folder.svg" },
+    "folder_open": { "iconPath": "./icons/folder_open.svg" },
+    "folder_src": { "iconPath": "./icons/folder_src.svg" },
+    "folder_src_open": { "iconPath": "./icons/folder_src_open.svg" },
+    "txt": { "iconPath": "./icons/txt.svg" },
+    "typescript": { "iconPath": "./icons/typescript.svg" }
+  }
+}

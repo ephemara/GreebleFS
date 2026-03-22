@@ -403,7 +403,7 @@ describe('mergeSettingsWithDefaults()', () => {
       appearance: {
         appOpenAnimation: '   ' as never,
         appCloseAnimation: '' as never,
-      } as typeof defaultSettings.appearance,
+      } as unknown as typeof defaultSettings.appearance,
     });
 
     expect(merged.appearance.appOpenAnimation).toBeNull();

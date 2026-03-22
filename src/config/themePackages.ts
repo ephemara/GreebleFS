@@ -36,6 +36,9 @@ export interface OverlayThemePackageManifest {
   id?: string;
   name?: string;
   description?: string;
+  author?: string;
+  homepage?: string;
+  tags?: string[];
   extends?: string;
   theme?: Partial<OverlayThemeDefinition>;
   assets?: {
@@ -75,6 +78,19 @@ export interface LoadedOverlayThemePackage {
   version: number;
   directoryPath: string;
   manifestPath: string;
+  description?: string;
+  author?: string;
+  homepage?: string;
+  tags: string[];
+  previewUrl?: string;
+  capabilitySummary: {
+    icons: boolean;
+    wallpaper: boolean;
+    visuals: number;
+    shaders: number;
+    animations: number;
+    fonts: number;
+  };
   theme: OverlayThemeDefinition;
 }
 
@@ -159,6 +175,18 @@ function toAssetUrl(filePath: string): string {
   }
 }
 
+async function toInlineAssetUrl(filePath: string): Promise<string> {
+  if (typeof window === 'undefined' || !isTauri()) {
+    return toAssetUrl(filePath);
+  }
+
+  try {
+    return await invoke<string>('fs_read_file_base64', { path: filePath });
+  } catch {
+    return toAssetUrl(filePath);
+  }
+}
+
 function normalizePackageAssetPath(assetPath: string): string {
   return assetPath.trim().replace(/^\.(?:\/|\\)/, '');
 }
@@ -183,6 +211,11 @@ function parseThemeManifestText(text: string, filePath: string): OverlayThemePac
     id: asString(source.id),
     name: asString(source.name),
     description: asString(source.description),
+    author: asString(source.author),
+    homepage: asString(source.homepage),
+    tags: Array.isArray(source.tags)
+      ? source.tags.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0).map(entry => entry.trim())
+      : [],
     extends: asString(source.extends),
     theme: asRecord(source.theme) as Partial<OverlayThemeDefinition> | undefined,
     assets: {
@@ -230,14 +263,15 @@ async function readPackageManifest(directoryPath: string): Promise<{ manifestPat
 async function resolveIconEntries(directoryPath: string, iconsDirectory: string, aliases: Record<string, string>): Promise<Record<string, string>> {
   const iconsPath = joinPlatformPath(directoryPath, normalizePackageAssetPath(iconsDirectory));
   const entries = await invoke<FileEntry[]>('fs_list_dir', { path: iconsPath, showHidden: false });
-  const resolved = Object.fromEntries(
+  const resolvedEntries = await Promise.all(
     entries
       .filter(entry => !entry.is_dir)
-      .map(entry => {
+      .map(async entry => {
         const baseName = entry.name.replace(/\.[^.]+$/, '').toLowerCase();
-        return [baseName, toAssetUrl(entry.path)] as const;
+        return [baseName, await toInlineAssetUrl(entry.path)] as const;
       }),
   );
+  const resolved = Object.fromEntries(resolvedEntries);
 
   Object.entries(aliases).forEach(([alias, target]) => {
     const resolvedTarget = resolved[target.toLowerCase()];
@@ -256,9 +290,30 @@ async function resolvePackageIconTheme(
   const absolutePath = joinPlatformPath(directoryPath, iconThemePath);
   const text = await invoke<string>('fs_read_text_file', { path: absolutePath });
   const manifest = parseIconThemeManifest(text);
+  const resolvedIconEntries = await Promise.all(
+    Object.entries(manifest.iconDefinitions ?? {}).map(async ([key, value]) => {
+      const iconPath = typeof value === 'string' ? value : value?.iconPath;
+      if (!iconPath?.trim()) {
+        return null;
+      }
+
+      const absoluteIconPath = joinPlatformPath(
+        directoryPath,
+        normalizePackageAssetPath(iconPath),
+      );
+      return [key, await toInlineAssetUrl(absoluteIconPath)] as const;
+    }),
+  );
   const resolved = resolveIconThemeManifest(
-    manifest,
-    iconPath => toAssetUrl(joinPlatformPath(directoryPath, normalizePackageAssetPath(iconPath))),
+    {
+      ...manifest,
+      iconDefinitions: Object.fromEntries(
+        resolvedIconEntries.filter(
+          (entry): entry is readonly [string, string] => Boolean(entry),
+        ),
+      ),
+    },
+    iconPath => iconPath,
   );
   return mergeResolvedIconThemes(getBuiltInIconTheme(), resolved);
 }
@@ -503,6 +558,19 @@ export async function loadThemePackagesFromDirectoryEntries(
         version: typeof record.manifest.version === 'number' ? record.manifest.version : 1,
         directoryPath: record.directoryPath,
         manifestPath: record.manifestPath,
+        description: asString(record.manifest.description) || theme.description,
+        author: asString(record.manifest.author) || undefined,
+        homepage: asString(record.manifest.homepage) || undefined,
+        tags: record.manifest.tags ?? [],
+        previewUrl: theme.assets?.previewUrl ?? theme.assets?.backgroundUrl,
+        capabilitySummary: {
+          icons: Boolean(theme.assets?.iconTheme || theme.assets?.iconEntries),
+          wallpaper: Boolean(theme.assets?.backgroundUrl),
+          visuals: theme.visuals?.length ?? 0,
+          shaders: packageShaders.length,
+          animations: packageAnimations.length,
+          fonts: [theme.fonts?.ui, theme.fonts?.mono].filter(Boolean).length,
+        },
         theme,
       });
       shaders.push(...packageShaders);

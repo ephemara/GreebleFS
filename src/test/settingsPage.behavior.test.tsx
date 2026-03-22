@@ -5,10 +5,11 @@ import { invoke } from '@tauri-apps/api/core';
 import { SettingsPage } from '../components/SettingsPage';
 import { createBuiltInOverlayAnimations } from '../components/animationRuntime';
 import { createBuiltInOverlayShaders } from '../components/shaderRuntime';
-import { resolveOverlayAppearance } from '../config/appearance';
+import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/appearance';
 import { createDefaultFolderIconRules } from '../config/folderIcons';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTerminalStore } from '../store/terminalStore';
+import type { LoadedOverlayThemePackage } from '../config/themePackages';
 
 function findSectionButton(label: string): HTMLButtonElement {
   const button = screen.getAllByRole('button').find(entry => entry.textContent?.includes(label));
@@ -18,13 +19,20 @@ function findSectionButton(label: string): HTMLButtonElement {
   return button as HTMLButtonElement;
 }
 
-function renderSettingsPage() {
-  const appearance = resolveOverlayAppearance({ activeThemeId: 'operator' });
+function renderSettingsPage(options?: {
+  appearanceThemeId?: string;
+  themePackages?: LoadedOverlayThemePackage[];
+}) {
+  const packageThemes = (options?.themePackages ?? []).map(pkg => pkg.theme);
+  const appearance = resolveOverlayAppearance({
+    activeThemeId: options?.appearanceThemeId ?? 'operator',
+    packageThemes,
+  });
 
   render(
     <SettingsPage
       appearance={appearance}
-      themePackages={[]}
+      themePackages={options?.themePackages ?? []}
       themePackagesDirectory="themes"
       themePackagesLoading={false}
       themePackagesError={null}
@@ -199,4 +207,116 @@ describe('SettingsPage behavior', () => {
     await user.click(screen.getAllByRole('button', { name: 'Reset' })[0]);
     expect(useSettingsStore.getState().settings.keybindings.terminalToggle).toBe('Ctrl+Space');
   }, 30000);
+
+  it('renders packaged theme preview metadata and badges in the picker', async () => {
+    const packageTheme = normalizeThemeDefinition({
+      id: 'vista-glass',
+      name: 'Vista Glass',
+      source: 'package',
+      description: 'Glossy Aero shell.',
+      defaultShaderId: 'prism-wave',
+      defaultOpenAnimationId: 'dissolve',
+      defaultCloseAnimationId: 'burn',
+      assets: {
+        previewUrl: 'asset://localhost/themes/vista-glass/assets/preview.svg',
+        backgroundUrl: 'asset://localhost/themes/vista-glass/assets/wallpaper.svg',
+      },
+      palette: {
+        accent: '#7dd3ff',
+      },
+    } as never);
+
+    renderSettingsPage({
+      appearanceThemeId: 'vista-glass',
+      themePackages: [{
+        id: 'vista-glass',
+        name: 'Vista Glass',
+        version: 2,
+        directoryPath: 'themes/vista-glass',
+        manifestPath: 'themes/vista-glass/theme.json',
+        description: 'Glossy Aero shell.',
+        author: 'OverlayTerm Labs',
+        homepage: 'https://overlayterm.local/themes/vista-glass',
+        tags: ['glass', 'blue'],
+        previewUrl: 'asset://localhost/themes/vista-glass/assets/preview.svg',
+        capabilitySummary: {
+          icons: true,
+          wallpaper: true,
+          visuals: 2,
+          shaders: 1,
+          animations: 1,
+          fonts: 2,
+        },
+        theme: packageTheme,
+      }],
+    });
+
+    expect(screen.getByText('Vista Glass')).toBeInTheDocument();
+    expect(screen.getByText('OverlayTerm Labs')).toBeInTheDocument();
+    expect(screen.getByText('v2')).toBeInTheDocument();
+    expect(screen.getByText('Shaders 1')).toBeInTheDocument();
+    expect(screen.getByText('Motion 1')).toBeInTheDocument();
+    expect(screen.getByText('Visuals 2')).toBeInTheDocument();
+    expect(screen.getByText('glass')).toBeInTheDocument();
+  });
+
+  it('applies package theme defaults when selecting a packaged theme', async () => {
+    const user = userEvent.setup();
+    const packageTheme = normalizeThemeDefinition({
+      id: 'vista-glass',
+      name: 'Vista Glass',
+      source: 'package',
+      description: 'Glossy Aero shell.',
+      defaultShaderId: 'prism-wave',
+      defaultOpenAnimationId: 'dissolve',
+      defaultCloseAnimationId: 'burn',
+      palette: {
+        accent: '#7dd3ff',
+      },
+    } as never);
+
+    useSettingsStore.setState(state => ({
+      settings: {
+        ...state.settings,
+        appearance: {
+          ...state.settings.appearance,
+          activeThemeId: 'operator',
+          activeShaderId: 'aurora-ribbon',
+          appOpenAnimation: 'fizzle',
+          appCloseAnimation: 'burn',
+          useNativeOsIcons: true,
+        },
+      },
+    }));
+
+    renderSettingsPage({
+      themePackages: [{
+        id: 'vista-glass',
+        name: 'Vista Glass',
+        version: 2,
+        directoryPath: 'themes/vista-glass',
+        manifestPath: 'themes/vista-glass/theme.json',
+        tags: ['glass'],
+        previewUrl: 'asset://localhost/themes/vista-glass/assets/preview.svg',
+        capabilitySummary: {
+          icons: true,
+          wallpaper: true,
+          visuals: 2,
+          shaders: 1,
+          animations: 1,
+          fonts: 2,
+        },
+        theme: packageTheme,
+      }],
+    });
+
+    await user.click(screen.getByRole('button', { name: /Vista Glass/i }));
+
+    const appearanceSettings = useSettingsStore.getState().settings.appearance;
+    expect(appearanceSettings.activeThemeId).toBe('vista-glass');
+    expect(appearanceSettings.activeShaderId).toBeNull();
+    expect(appearanceSettings.appOpenAnimation).toBeNull();
+    expect(appearanceSettings.appCloseAnimation).toBeNull();
+    expect(appearanceSettings.useNativeOsIcons).toBe(false);
+  });
 });

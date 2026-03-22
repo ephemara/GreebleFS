@@ -49,9 +49,14 @@ describe('theme package loader', () => {
           version: 1,
           id: 'vista-glass',
           name: 'Vista Glass',
+          description: 'Package summary',
+          author: 'OverlayTerm Labs',
+          homepage: 'https://overlayterm.local/themes/vista-glass',
+          tags: ['glass', 'blue'],
           extends: 'github-dark',
           assets: {
             background: 'assets/wallpaper.svg',
+            preview: 'assets/preview.svg',
             iconTheme: 'icon-theme.json',
           },
           theme: {
@@ -117,6 +122,26 @@ describe('theme package loader', () => {
         `;
       }
 
+      if (command === 'fs_read_text_file' && normalizedPath === 'themes/vista-glass/assets/preview.svg') {
+        return '<svg />';
+      }
+
+      if (command === 'fs_read_file_base64' && normalizedPath === 'themes/vista-glass/icons/folder.svg') {
+        return 'data:image/svg+xml;base64,Zm9sZGVy';
+      }
+
+      if (command === 'fs_read_file_base64' && normalizedPath === 'themes/vista-glass/icons/folder-open.svg') {
+        return 'data:image/svg+xml;base64,Zm9sZGVyLW9wZW4=';
+      }
+
+      if (command === 'fs_read_file_base64' && normalizedPath === 'themes/vista-glass/icons/txt.svg') {
+        return 'data:image/svg+xml;base64,dHh0';
+      }
+
+      if (command === 'fs_read_file_base64' && normalizedPath === 'themes/vista-glass/icons/typescript.svg') {
+        return 'data:image/svg+xml;base64,dHlwZXNjcmlwdA==';
+      }
+
       throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
     });
 
@@ -128,10 +153,18 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.theme.source).toBe('package');
     expect(result.packages[0]?.theme.extendsThemeId).toBe('github-dark');
     expect(result.packages[0]?.theme.assets?.backgroundUrl?.replace(/\\/g, '/')).toBe('asset://localhost/themes/vista-glass/assets/wallpaper.svg');
-    expect(result.packages[0]?.theme.assets?.iconEntries?.folder?.replace(/\\/g, '/')).toBe('asset://localhost/themes/vista-glass/icons/folder.svg');
+    expect(result.packages[0]?.previewUrl?.replace(/\\/g, '/')).toBe('asset://localhost/themes/vista-glass/assets/preview.svg');
+    expect(result.packages[0]?.theme.assets?.iconEntries?.folder).toBe('data:image/svg+xml;base64,Zm9sZGVy');
     expect(result.packages[0]?.theme.assets?.iconTheme?.fileExtensions.ts).toBe('typescript');
     expect(result.packages[0]?.theme.defaultOpenAnimationId).toBe('package-open');
     expect(result.packages[0]?.theme.defaultCloseAnimationId).toBe('burn');
+    expect(result.packages[0]?.author).toBe('OverlayTerm Labs');
+    expect(result.packages[0]?.homepage).toBe('https://overlayterm.local/themes/vista-glass');
+    expect(result.packages[0]?.tags).toEqual(['glass', 'blue']);
+    expect(result.packages[0]?.capabilitySummary.icons).toBe(true);
+    expect(result.packages[0]?.capabilitySummary.wallpaper).toBe(true);
+    expect(result.packages[0]?.capabilitySummary.shaders).toBe(1);
+    expect(result.packages[0]?.capabilitySummary.animations).toBe(1);
     expect(result.packages[0]?.theme.visuals).toHaveLength(1);
     expect(result.shaders).toHaveLength(1);
     expect(result.shaders[0]?.shaderRoot.replace(/\\/g, '/')).toBe('themes/vista-glass');

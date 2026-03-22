@@ -124,6 +124,11 @@
         └── 📂 plasma-flow
             └── 📂 assets
             └── 📂 icons
+        └── 📂 vintage-macintosh
+            └── 📂 animations
+            └── 📂 assets
+            └── 📂 icons
+            └── 📂 shaders
         └── 📂 vista-glass
             └── 📂 assets
             └── 📂 icons
