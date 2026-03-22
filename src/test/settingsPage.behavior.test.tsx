@@ -7,6 +7,7 @@ import { createBuiltInOverlayAnimations } from '../components/animationRuntime';
 import { createBuiltInOverlayShaders } from '../components/shaderRuntime';
 import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/appearance';
 import { createDefaultFolderIconRules } from '../config/folderIcons';
+import { pluginSystemConfig } from '../config/plugins';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTerminalStore } from '../store/terminalStore';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
@@ -71,6 +72,40 @@ describe('SettingsPage behavior', () => {
       value: 'Win32',
     });
   });
+
+  it('lands on the overview section and can create then open a missing workspace root', async () => {
+    const user = userEvent.setup();
+    const invokeMock = vi.mocked(invoke);
+
+    invokeMock.mockImplementation(async (command: string, args: unknown) => {
+      if (command === 'fs_list_dir') {
+        const payload = args as { path?: string } | undefined;
+        if (payload?.path === pluginSystemConfig.pluginsDirectory) {
+          throw new Error('missing');
+        }
+        return [];
+      }
+
+      return null;
+    });
+
+    renderSettingsPage();
+
+    expect(screen.getByText('OverlayTerm Control Surface')).toBeInTheDocument();
+    expect(screen.getByText('Core Workflows')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Terminal Settings' }));
+    expect(screen.getByText('Integrated shell behavior and external terminal handoff.')).toBeInTheDocument();
+
+    await user.click(findSectionButton('Overview'));
+    await user.click(screen.getByRole('button', { name: 'Open Plugins Folder' }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('fs_create_dir', { path: pluginSystemConfig.pluginsDirectory });
+    });
+    expect(invokeMock).toHaveBeenCalledWith('fs_open_file', { path: pluginSystemConfig.pluginsDirectory });
+    expect(screen.getByText(`Opened Plugins: ${pluginSystemConfig.pluginsDirectory}`)).toBeInTheDocument();
+  }, 30000);
 
   it('updates explorer click mode, restores folder rules, and seeds bookmarks without duplicates', async () => {
     const user = userEvent.setup();

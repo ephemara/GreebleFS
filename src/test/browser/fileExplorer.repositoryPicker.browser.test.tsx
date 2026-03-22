@@ -1,0 +1,156 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { invoke } from '@tauri-apps/api/core';
+import { FileExplorer } from '../../components/FileExplorer';
+import { resolveOverlayAppearance } from '../../config/appearance';
+import { createDefaultExplorerRailSnapshot } from '../../components/explorer/explorerRailState';
+import { useSettingsStore } from '../../store/settingsStore';
+import { useExplorerStore } from '../../store/explorerStore';
+
+interface TestFileEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size: number;
+  modified: number;
+  extension: string;
+  is_hidden: boolean;
+  is_symlink: boolean;
+}
+
+const REPO_ROOT = 'C:\\workspace\\repo';
+
+const EXPLORER_ENTRIES: TestFileEntry[] = [
+  {
+    name: 'alpha',
+    path: `${REPO_ROOT}\\alpha`,
+    is_dir: true,
+    size: 0,
+    modified: 0,
+    extension: '',
+    is_hidden: false,
+    is_symlink: false,
+  },
+  {
+    name: 'nested',
+    path: `${REPO_ROOT}\\nested`,
+    is_dir: true,
+    size: 0,
+    modified: 0,
+    extension: '',
+    is_hidden: false,
+    is_symlink: false,
+  },
+  {
+    name: 'notes.txt',
+    path: `${REPO_ROOT}\\notes.txt`,
+    is_dir: false,
+    size: 12,
+    modified: 0,
+    extension: 'txt',
+    is_hidden: false,
+    is_symlink: false,
+  },
+];
+
+function renderRepositoryPicker(options?: {
+  allowMultiple?: boolean;
+  requestId?: number;
+  onConfirm?: (paths: string[]) => void;
+}) {
+  const appearance = resolveOverlayAppearance({ activeThemeId: 'operator' });
+  const onConfirm = options?.onConfirm ?? vi.fn();
+
+  render(
+    <FileExplorer
+      theme={{
+        accent: appearance.theme.palette.accent,
+        bg: appearance.theme.palette.appBackground,
+        bgPanel: appearance.theme.palette.panelBackground,
+        text: appearance.theme.palette.textPrimary,
+        border: appearance.theme.palette.border,
+        textMuted: appearance.theme.palette.textMuted,
+      }}
+      appearance={appearance}
+      onOpenInTerminal={() => {}}
+      onAddBookmark={async () => {}}
+      repositoryPicker={{
+        active: true,
+        allowMultiple: options?.allowMultiple ?? true,
+        requestId: options?.requestId ?? 1,
+        onConfirm,
+        onCancel: vi.fn(),
+      }}
+    />,
+  );
+
+  return { onConfirm };
+}
+
+describe('FileExplorer repository picker browser coverage', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    useSettingsStore.getState().resetToDefaults();
+    useExplorerStore.getState().resetSession();
+    useExplorerStore.getState().replaceRail(createDefaultExplorerRailSnapshot());
+    useExplorerStore.getState().clearPersistenceNotice();
+
+    vi.mocked(invoke).mockReset();
+    vi.mocked(invoke).mockImplementation(async (command: string) => {
+      switch (command) {
+        case 'fs_get_drives':
+          return [];
+        case 'fs_get_home_dir':
+          return REPO_ROOT;
+        case 'fs_list_dir':
+        case 'fs_list_dir_uncached':
+          return EXPLORER_ENTRIES;
+        case 'fs_measure_entry_sizes':
+        case 'fs_resolve_native_icons':
+        case 'fs_search_entries':
+          return [];
+        case 'fs_watch_entry_size_root':
+        case 'fs_unwatch_entry_size_root':
+        case 'fs_cancel_search_entries':
+          return null;
+        default:
+          throw new Error(`Unexpected invoke command: ${command}`);
+      }
+    });
+  });
+
+  it('confirms the current folder directly when repository-picker mode starts without a selection', async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = renderRepositoryPicker();
+
+    await screen.findByText('alpha');
+    expect(screen.getByRole('button', { name: 'Add Current Folder' })).toBeEnabled();
+    expect(screen.getByText('No folders selected yet, so OverlayTerm can add the current folder directly.')).toBeInTheDocument();
+    expect(screen.getByTitle(REPO_ROOT)).toHaveTextContent(`Current folder: ${REPO_ROOT}`);
+
+    await user.click(screen.getByRole('button', { name: 'Add Current Folder' }));
+
+    expect(onConfirm).toHaveBeenCalledWith([REPO_ROOT]);
+  });
+
+  it('keeps repository-picker selection truly single-choice when multi-select is disabled', async () => {
+    const user = userEvent.setup();
+    const { onConfirm } = renderRepositoryPicker({
+      allowMultiple: false,
+      requestId: 2,
+    });
+
+    await screen.findByText('alpha');
+    await user.click(screen.getByText('alpha'));
+    fireEvent.click(screen.getByText('nested'), { ctrlKey: true });
+
+    await waitFor(() => {
+      expect(screen.getByText(/1 folder selected\./)).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Add Selected Folder' }));
+
+    expect(onConfirm).toHaveBeenCalledWith([`${REPO_ROOT}\\nested`]);
+  });
+});

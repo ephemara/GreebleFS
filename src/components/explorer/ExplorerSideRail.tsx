@@ -205,7 +205,7 @@ export function ExplorerSideRail({
               Explorer Rail
             </div>
             <div style={{ fontSize: dense ? 12 : 14, color: 'var(--overlay-text-primary)', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              Greeble
+              OverlayTerm
             </div>
           </div>
           <div style={{ display: 'flex', gap: 4 }}>

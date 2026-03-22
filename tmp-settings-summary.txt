@@ -1,0 +1,73 @@
+
+[1m[46m RUN [49m[22m [36mv4.1.0 [39m[90mM:/OverlayTerm[39m
+
+ [32m✓[39m src/test/settingsPage.behavior.test.tsx[2m > [22mSettingsPage behavior[2m > [22mlands on the overview section and can create then open a missing workspace root[33m 2956[2mms[22m[39m
+ [32m✓[39m src/test/settingsPage.behavior.test.tsx[2m > [22mSettingsPage behavior[2m > [22mupdates explorer click mode, restores folder rules, and seeds bookmarks without duplicates[33m 4010[2mms[22m[39m
+ [32m✓[39m src/test/settingsPage.behavior.test.tsx[2m > [22mSettingsPage behavior[2m > [22msyncs startup registration, desktop visibility toggles, and commits hotkey edits[33m 2651[2mms[22m[39m
+ [31m×[39m src/test/settingsPage.behavior.test.tsx[2m > [22mSettingsPage behavior[2m > [22mrenders packaged theme preview metadata and badges in the picker[32m 92[2mms[22m[39m
+[31m   → Unable to find an element with the text: OverlayTerm Labs. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[31m
+  [36m<div>[31m
+    [36m<div[31m
+      [33mstyle[31m=[32m"display: flex; height: 100%; min-height: 0px; min-width: 0px; font-family: Inter, system-ui, sans-serif; background: linear-gradient(180deg, rgb(11, 11, 24) 0%, rgb(19, 20, 25) 100%);"[31m
+    [36m>[31m
+      [36m<div[31m
+        [33mstyle[31m=[32m"width: 236px; min-width: 236px; max-width: 236px; flex-shrink: 0; position: relative; overflow: hidden; display: flex; min-height: 0px; flex-direction: column; border-right: 1px solid rgba(255, 255, 255, 0.08); background: rgba(255, 255, 255, 0.02);"[31m
+      [36m>[31m
+        [36m<div[31m
+          [33mclass[31m=[32m"border-b px-4 py-3"[31m
+          [33mstyle[31m=[32m"border-color: rgba(255, 255, 255, 0.08);"[31m
+        [36m>[31m
+          [36m<div[31m
+            [33mclass[31m=[32m"flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em]"[31m
+            [33mstyle[31m=[32m"color: rgba(226, 226, 240, 0.58);"[31m
+          [36m>[31m
+            [36m<svg[31m
+              [33maria-hidden[31m=[32m"true"[31m
+              [33mclass[31m=[32m"lucide lucide-sliders-horizontal"[31m
+              [33mfill[31m=[32m"none"[31m
+              [33mheight[31m=[32m"12"[31m
+              [33mstroke[31m=[32m"currentColor"[31m
+              [33mstroke-linecap[31m=[32m"round"[31m
+              [33mstroke-linejoin[31m=[32m"round"[31m
+              [33mstroke-width[31m=[32m"2"[31m
+              [33mviewBox[31m=[32m"0 0 24 24"[31m
+              [33mwidth[31m=[32m"12"[31m
+              [33mxmlns[31m=[32m"http://www.w3.org/2000/svg"[31m
+            [36m>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M10 5H3"[31m
+              [36m/>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M12 19H3"[31m
+              [36m/>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M14 3v4"[31m
+              [36m/>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M16 17v4"[31m
+              [36m/>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M21 12h-9"[31m
+              [36m/>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M21 19h-5"[31m
+              [36m/>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M21 5h-7"[31m
+              [36m/>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M8 10v4"[31m
+              [36m/>[31m
+              [36m<path[31m
+                [33md[31m=[32m"M8 12H3"[31m
+              [36m/>[31m
+            [36m</svg>[31m
+            [36m<span>[31m
+              [0mWorkbench Settings[0m
+            [36m</span>[31m
+          [36m</div>[31m
+          [36m<h1[31m
+            [33mclass[31

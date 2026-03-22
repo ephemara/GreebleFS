@@ -3072,7 +3072,7 @@ function TopBar({
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, lineHeight: 1 }}>
           <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: TEXT, fontFamily: uiFont, userSelect: 'none' }}>
-            Greeble
+            OverlayTerm
           </span>
           <span style={{
             display: 'inline-flex',

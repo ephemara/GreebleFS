@@ -1,3 +1,4 @@
+use crate::fs_commands::invalidate_all_fs_caches_for_path;
 use notify::{RecursiveMode, Watcher};
 use rusqlite::{params, Connection};
 use std::collections::HashMap;
@@ -295,8 +296,7 @@ fn watch_key_for_path(path: &Path) -> String {
 
 fn handle_watch_event(event: notify::Event) {
     for path in event.paths {
-        let _ = delete_entry_size_subtree(&path);
-        let _ = mark_path_and_ancestors_dirty(&path);
+        invalidate_all_fs_caches_for_path(&path);
     }
 }
 

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Greeble",
+  "productName": "OverlayTerm",
   "version": "0.1.0",
-  "identifier": "co.greeble.app",
+  "identifier": "co.overlayterm.app",
   "build": {
     "frontendDist": "../dist",
     "beforeDevCommand": "npm run dev",
@@ -13,7 +13,7 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "Greeble",
+        "title": "OverlayTerm",
         "width": 1000,
         "height": 500,
         "transparent": true,

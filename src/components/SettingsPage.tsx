@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { FolderOpen, LayoutGrid, Palette, Plus, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Type } from 'lucide-react';
+import { Camera, FolderOpen, GitBranch, LayoutGrid, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Type } from 'lucide-react';
 import type { LoadedOverlayAnimation } from './animationRuntime';
 import {
   normalizeShaderControlValue,
@@ -46,6 +46,7 @@ import {
   type LoadedLayoutManifest,
 } from '../config/layoutProfiles';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
+import { pluginSystemConfig } from '../config/plugins';
 import {
   getOverlayShaderSurfaceLabel,
   getShaderEnabledSurfaceIds,
@@ -67,6 +68,7 @@ import {
   normalizeKeybindingValue,
   type HotkeyBindingKey,
 } from '../config/hotkeys';
+import { screenshotFeatureConfig } from '../config/screenshots';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTerminalStore } from '../store/terminalStore';
 
@@ -282,6 +284,7 @@ const DEFAULT_LOADED_LAYOUT_MANIFEST: LoadedLayoutManifest = {
 };
 
 type SettingsSectionKey =
+  | 'overview'
   | 'appearance'
   | 'shaders'
   | 'animations'
@@ -347,6 +350,43 @@ function SettingsRailButton({
         </div>
       </div>
     </button>
+  );
+}
+
+function OverviewCard({
+  title,
+  subtitle,
+  badges,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  badges?: string[];
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded border p-3" style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.025)' }}>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">{title}</div>
+          <p className="mt-1 text-[11px] leading-4 opacity-45">{subtitle}</p>
+        </div>
+        {badges && badges.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-1">
+            {badges.map(badge => (
+              <span
+                key={badge}
+                className="rounded border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]"
+                style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)' }}
+              >
+                {badge}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-3">{children}</div>
+    </div>
   );
 }
 
@@ -416,9 +456,11 @@ export function SettingsPage({
   const profileOptions = useMemo(() => getExternalTerminalProfileOptions(platform), [platform]);
   const [themeDraft, setThemeDraft] = useState(() => serializeTheme(appearance.baseTheme));
   const [folderIconSearch, setFolderIconSearch] = useState('');
-  const [activeSection, setActiveSection] = useState<SettingsSectionKey>('appearance');
+  const [activeSection, setActiveSection] = useState<SettingsSectionKey>('overview');
   const [startupSyncPending, setStartupSyncPending] = useState(false);
   const [startupSyncError, setStartupSyncError] = useState<string | null>(null);
+  const [overviewNotice, setOverviewNotice] = useState<string | null>(null);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
   const [layoutManifestState, setLayoutManifestState] = useState<LoadedLayoutManifest>(DEFAULT_LOADED_LAYOUT_MANIFEST);
   const [railWidth, setRailWidth] = usePersistentPanelSize('overlayterm-settings-rail-width', 236, 190, 320);
   const availableAnimations = useMemo(
@@ -646,6 +688,32 @@ export function SettingsPage({
     }
   }, [addDirectoryBookmark, directoryBookmarks, platform]);
 
+  const ensureWorkspaceDirectory = useCallback(async (path: string) => {
+    const normalizedPath = path.trim();
+    if (!normalizedPath) {
+      throw new Error('No workspace directory is configured yet.');
+    }
+
+    try {
+      await invoke('fs_list_dir', { path: normalizedPath, showHidden: false });
+    } catch {
+      await invoke('fs_create_dir', { path: normalizedPath });
+    }
+  }, []);
+
+  const openWorkspaceDirectory = useCallback(async (label: string, path: string) => {
+    setOverviewNotice(null);
+    setOverviewError(null);
+
+    try {
+      await ensureWorkspaceDirectory(path);
+      await invoke('fs_open_file', { path });
+      setOverviewNotice(`Opened ${label}: ${path}`);
+    } catch (error) {
+      setOverviewError(`Failed to open ${label}: ${String(error)}`);
+    }
+  }, [ensureWorkspaceDirectory]);
+
   const effectiveTheme = appearance.theme;
   const editableTheme = appearance.baseTheme;
   const panelBackground = effectiveTheme.palette.panelBackground;
@@ -675,6 +743,125 @@ export function SettingsPage({
 
     return FOLDER_ICON_OPTIONS.filter(option => option.label.toLowerCase().includes(query) || option.value.toLowerCase().includes(query));
   }, [folderIconSearch]);
+  const overviewStats = useMemo(() => [
+    {
+      id: 'theme',
+      label: 'Theme',
+      value: effectiveTheme.name,
+    },
+    {
+      id: 'layout',
+      label: 'Layout',
+      value: activeLayoutProfile.label,
+    },
+    {
+      id: 'startup',
+      label: 'Startup',
+      value: settings.system.launchAtStartup ? 'Ready at sign-in' : 'Manual launch',
+    },
+    {
+      id: 'source',
+      label: 'Source',
+      value: 'Explorer import + file actions live',
+    },
+  ], [activeLayoutProfile.label, effectiveTheme.name, settings.system.launchAtStartup]);
+  const overviewWorkflows = useMemo(() => [
+    {
+      id: 'explorer-to-source',
+      icon: <GitBranch size={13} />,
+      title: 'Explorer -> Source',
+      description: 'Navigate to a repo in Explorer, confirm it for Source, then stage, diff, commit, or quick ship without leaving the overlay.',
+      actionLabel: 'Explorer Settings',
+      action: () => setActiveSection('explorer'),
+    },
+    {
+      id: 'terminal-and-layout',
+      icon: <TerminalSquare size={13} />,
+      title: 'Terminal + Layouts',
+      description: 'Tune the shell, choose how external handoff behaves, and swap layout profiles so the overlay matches the machine you are driving.',
+      actionLabel: 'Terminal Settings',
+      action: () => setActiveSection('terminal'),
+    },
+    {
+      id: 'plugins-and-assets',
+      icon: <Puzzle size={13} />,
+      title: 'Plugins + Assets',
+      description: 'Drop plugins, themes, shaders, and animations into their workspace folders so OverlayTerm can discover them as live runtime modules.',
+      actionLabel: 'Appearance Settings',
+      action: () => setActiveSection('appearance'),
+    },
+    {
+      id: 'capture-proof',
+      icon: <Camera size={13} />,
+      title: 'Screenshots + Proof',
+      description: 'Capture the current desktop, annotate details, and save or copy release proof from the built-in screenshot workflow.',
+      actionLabel: 'Hotkeys',
+      action: () => setActiveSection('hotkeys'),
+    },
+  ], []);
+  const workspaceRoots = useMemo(() => [
+    {
+      id: 'plugins',
+      label: 'Plugins',
+      path: pluginSystemConfig.pluginsDirectory,
+      description: 'Drop TSX panels and runtime modules here.',
+    },
+    {
+      id: 'themes',
+      label: 'Themes',
+      path: themePackagesDirectory,
+      description: 'Package theme manifests, assets, and icon sets here.',
+    },
+    {
+      id: 'shaders',
+      label: 'Shaders',
+      path: shadersDirectory,
+      description: 'Author shell shader profiles with surface-level controls.',
+    },
+    {
+      id: 'animations',
+      label: 'Animations',
+      path: animationsDirectory,
+      description: 'Author open and close motion modules here.',
+    },
+    {
+      id: 'screenshots',
+      label: 'Screenshots',
+      path: settings.screenshots.saveDirectory || screenshotFeatureConfig.defaultSaveDirectory,
+      description: 'Saved captures and annotated proof land here.',
+    },
+  ], [
+    animationsDirectory,
+    settings.screenshots.saveDirectory,
+    shadersDirectory,
+    themePackagesDirectory,
+  ]);
+  const settingsJumpCards = useMemo(() => [
+    {
+      id: 'appearance',
+      title: 'Appearance',
+      summary: 'Theme presets, blur, transparency, and fonts.',
+      action: () => setActiveSection('appearance'),
+    },
+    {
+      id: 'layouts',
+      title: 'Layouts',
+      summary: 'Manifest-driven panel profiles and shell chrome.',
+      action: () => setActiveSection('layouts'),
+    },
+    {
+      id: 'system',
+      title: 'System',
+      summary: 'Launch, tray, and taskbar integration.',
+      action: () => setActiveSection('system'),
+    },
+    {
+      id: 'theme-json',
+      title: 'Theme JSON',
+      summary: 'Raw import/export path for full theme definitions.',
+      action: () => setActiveSection('theme-json'),
+    },
+  ], []);
 
   const patchFolderRules = useCallback((rules: FolderIconRule[]) => {
     updateExplorer({ folderIconRules: rules });
@@ -764,6 +951,14 @@ export function SettingsPage({
     detail: string;
     icon: ReactNode;
   }> = [
+    {
+      key: 'overview',
+      label: 'Overview',
+      subtitle: 'Start here for the workbench map and release-facing paths.',
+      summary: `${effectiveTheme.name} · ${activeLayoutProfile.label} · ${workspaceRoots.length} workspace roots`,
+      detail: 'Orient new operators quickly: learn the panel handoff flow, jump into key settings areas, and open the authoring folders that define the release surface.',
+      icon: <Sparkles size={14} />,
+    },
     {
       key: 'appearance',
       label: 'Appearance',
@@ -940,6 +1135,137 @@ export function SettingsPage({
 
         <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 12 }}>
           <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-3 pb-5">
+            {activeSection === 'overview' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                <SectionTitle
+                  icon={<Sparkles size={12} />}
+                  title="Overview"
+                  subtitle="First-run orientation, workspace roots, and the settings slices that matter most for a credible ship candidate."
+                />
+
+                <div className="mt-4 space-y-4">
+                  <div className="rounded border p-4" style={{ borderColor: `${accent}44`, background: `${accent}0d` }}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="max-w-[640px]">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: muted }}>OverlayTerm Control Surface</div>
+                        <h2 className="mt-2 text-[18px] font-semibold" style={{ color: text }}>Ship the shell, not a template.</h2>
+                        <p className="mt-2 text-[12px] leading-5" style={{ color: muted }}>
+                          OverlayTerm is a desktop command overlay with a live terminal, file explorer, source-control rail, plugin host, theme/shader/animation authoring, and screenshot proof capture in one surface.
+                        </p>
+                      </div>
+                      <div className="grid min-w-[220px] flex-1 grid-cols-1 gap-2 sm:grid-cols-2">
+                        {overviewStats.map(stat => (
+                          <div
+                            key={stat.id}
+                            className="rounded border px-3 py-2"
+                            style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)' }}
+                          >
+                            <div className="text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: muted }}>{stat.label}</div>
+                            <div className="mt-1 text-[12px] font-semibold" style={{ color: text }}>{stat.value}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <OverviewCard
+                    title="Core Workflows"
+                    subtitle="These are the panel handoffs operators need to understand on first contact."
+                    badges={['Explorer', 'Source', 'Plugins', 'Screenshots']}
+                  >
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      {overviewWorkflows.map(workflow => (
+                        <div
+                          key={workflow.id}
+                          className="rounded border p-3"
+                          style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}
+                        >
+                          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: muted }}>
+                            {workflow.icon}
+                            <span>{workflow.title}</span>
+                          </div>
+                          <p className="mt-2 text-[11px] leading-5" style={{ color: muted }}>{workflow.description}</p>
+                          <button
+                            type="button"
+                            onClick={workflow.action}
+                            className="mt-3 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                            style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                          >
+                            {workflow.actionLabel}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </OverviewCard>
+
+                  <OverviewCard
+                    title="Workspace Roots"
+                    subtitle="Open or create the directories that feed OverlayTerm runtime discovery."
+                    badges={[`${workspaceRoots.length} roots`, 'Create on demand']}
+                  >
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      {workspaceRoots.map(root => (
+                        <div
+                          key={root.id}
+                          className="rounded border p-3"
+                          style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.03)' }}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="text-[11px] font-semibold" style={{ color: text }}>{root.label}</div>
+                              <p className="mt-1 text-[11px] leading-4" style={{ color: muted }}>{root.description}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => void openWorkspaceDirectory(root.label, root.path)}
+                              className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                              style={{ border: `1px solid ${accent}55`, background: `${accent}16`, color: text }}
+                            >
+                              Open {root.label} Folder
+                            </button>
+                          </div>
+                          <div className="mt-3 rounded border px-3 py-2 text-[10px]" style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.12)', color: muted, fontFamily: appearance.fonts.mono }}>
+                            {root.path}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {overviewNotice ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${accent}44`, background: `${accent}12`, color: text }}>
+                        {overviewNotice}
+                      </div>
+                    ) : null}
+                    {overviewError ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.18)', color: '#fecaca' }}>
+                        {overviewError}
+                      </div>
+                    ) : null}
+                  </OverviewCard>
+
+                  <OverviewCard
+                    title="Settings Shortcuts"
+                    subtitle="Jump straight to the settings surfaces most likely to unblock a real release session."
+                    badges={['Appearance', 'Layouts', 'System', 'Theme JSON']}
+                  >
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                      {settingsJumpCards.map(card => (
+                        <button
+                          key={card.id}
+                          type="button"
+                          onClick={card.action}
+                          className="rounded px-3 py-3 text-left transition-colors"
+                          style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.03)', color: text }}
+                        >
+                          <div className="text-[11px] font-semibold">{card.title}</div>
+                          <div className="mt-1 text-[11px] opacity-45">{card.summary}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </OverviewCard>
+                </div>
+              </section>
+            )}
+
             {activeSection === 'appearance' && (
               <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
             <SectionTitle
@@ -954,7 +1280,7 @@ export function SettingsPage({
                   <div>
                     <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Theme Packages</div>
                     <p className="mt-1 text-[11px] opacity-40">
-                      Drop packaged themes into <code>{themePackagesDirectory}</code> and Greeble will discover them as first-class themes with assets and visuals.
+                      Drop packaged themes into <code>{themePackagesDirectory}</code> and OverlayTerm will discover them as first-class themes with assets and visuals.
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1870,7 +2196,7 @@ export function SettingsPage({
                   <div>
                     <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Profiles</div>
                     <p className="mt-1 text-[11px] opacity-40">
-                      Click a profile to switch the entire workbench layout. The Greeble button still cycles this same ordered set.
+                      Click a profile to switch the entire workbench layout. The OverlayTerm chrome button still cycles this same ordered set.
                     </p>
                   </div>
                   <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
@@ -1939,7 +2265,7 @@ export function SettingsPage({
                 <div>
                   <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Launch At Startup</div>
                   <p className="mt-1 text-[11px] opacity-40">
-                    Registers Greeble as a login item so the tray and overlay are available after sign-in.
+                    Registers OverlayTerm as a login item so the tray and overlay are available after sign-in.
                   </p>
                 </div>
                 <input

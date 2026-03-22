@@ -5,6 +5,9 @@
     └── 📂 animations
     └── 📂 AppleCommand
         └── 📂 public
+    └── 📂 automations
+        └── 📂 delta
+        └── 📂 tango
     └── 📂 coverage
         └── 📂 src
             └── 📂 components
@@ -73,6 +76,12 @@
                 └── 📂 examples
                 └── 📂 icons
                 └── 📂 incremental
+        └── 📂 target-tests-delta-team-4
+            └── 📂 debug
+                └── 📂 deps
+                └── 📂 examples
+                └── 📂 icons
+                └── 📂 incremental
         └── 📂 target-tests-explorer-fileops
             └── 📂 debug
                 └── 📂 deps
@@ -85,7 +94,34 @@
                 └── 📂 examples
                 └── 📂 icons
                 └── 📂 incremental
+        └── 📂 target-tests-tango-team-1
+            └── 📂 debug
+                └── 📂 deps
+                └── 📂 examples
+                └── 📂 icons
+                └── 📂 incremental
+        └── 📂 target-tests-tango-team-2
+            └── 📂 debug
+                └── 📂 deps
+                └── 📂 examples
+                └── 📂 icons
+                └── 📂 incremental
         └── 📂 themes
+            └── 📂 _starter
+            └── 📂 aqua-light
+                └── 📂 assets
+                └── 📂 icons
+            └── 📂 plasma-flow
+                └── 📂 assets
+                └── 📂 icons
+            └── 📂 vintage-macintosh
+                └── 📂 animations
+                └── 📂 assets
+                └── 📂 icons
+                └── 📂 shaders
+            └── 📂 vista-glass
+                └── 📂 assets
+                └── 📂 icons
     └── 📂 target-tests
         └── 📂 cargo
             └── 📂 win32

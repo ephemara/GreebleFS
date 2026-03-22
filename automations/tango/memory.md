@@ -23,3 +23,150 @@
     - `npm run test:unit -- src/test/performanceTelemetry.test.ts`
     - `npm run build`
   - Next highest-value move: reduce `fs_list_dir` and adjacent native listing cost using the new telemetry as the baseline source of truth.
+- Run 2026-03-22 05:26:13 -04:00: backlog item 2 advanced with a native listing hot-path slice.
+  - `src-tauri/src/fs_commands.rs` now routes `fs_list_dir` through `spawn_blocking` and a dedicated `list_dir_blocking` helper instead of doing cold directory work on the async command lane.
+  - Directory listing now reuses per-entry metadata for hidden checks, modified timestamps, and file sizing, and precomputes case-folded sort keys before sorting.
+  - Directory symlinks now stay visible/navigable in explorer results while still being marked as symlinks.
+  - Recursive search now uses `DirEntry::file_type()` plus followed-target metadata only when needed, so it no longer descends into symlinked directories or duplicates results through linked subtrees.
+  - Added regression coverage for symlink-aware listing and symlink-safe search.
+  - Verification completed:
+    - `CARGO_TARGET_DIR=M:\OverlayTerm\src-tauri\target-tests-tango-team-1 cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml list_dir_`
+    - `CARGO_TARGET_DIR=M:\OverlayTerm\src-tauri\target-tests-tango-team-1 cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml search_entries_`
+    - `npm run build`
+  - Lane note: automation runs on Windows should prefer a dedicated `CARGO_TARGET_DIR` because the default `src-tauri\target` can fail archive renames with `os error 5` while the app or another process holds the library.
+- Run 2026-03-22 05:30:32 -04:00: Team 2 validated and polished the native listing/search slice.
+  - Exact validator finding: the new precomputed listing sort key briefly regressed explorer ordering to ASCII-only case folding; non-ASCII names could reorder differently from the lane's prior case-insensitive behavior.
+  - Fix landed in `src-tauri/src/fs_commands.rs`: keep precomputed sort keys for performance, but use `name.to_lowercase()` so Unicode-aware ordering still matches existing explorer semantics.
+  - Added regression coverage with `list_dir_preserves_unicode_case_insensitive_sorting`.
+  - Validator verification completed:
+    - `CARGO_TARGET_DIR=M:\OverlayTerm\src-tauri\target-tests-tango-team-2 cargo test --manifest-path src-tauri/Cargo.toml list_dir_preserves_unicode_case_insensitive_sorting`
+    - `CARGO_TARGET_DIR=M:\OverlayTerm\src-tauri\target-tests-tango-team-2 cargo test --manifest-path src-tauri/Cargo.toml fs_commands::tests`
+  - Durable lane rule: hot-path sort optimizations in explorer-native code must preserve Unicode-aware ordering unless the UI contract is explicitly changed.
+- Run 2026-03-22 06:27:48 -04:00: Team 2 validated the fresh blocking/cancelable search slice and landed one polish fix.
+  - Exact validator finding: the new scope-based search cancellation registry kept the maximum explicit request id per scope. That breaks after a FileExplorer remount because the frontend request counter restarts from `1`, so the backend can immediately treat fresh searches as stale and return empty results.
+  - Fix landed in `src-tauri/src/fs_commands.rs`: explicit request ids now replace the active scope id instead of being merged with the previous maximum.
+  - Added regression coverage with `search_entries_allow_lower_request_id_after_scope_restart`.
+  - Validator verification completed:
+    - `CARGO_TARGET_DIR=M:\OverlayTerm\src-tauri\target-tests-tango-team-2 cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml fs_commands::tests`
+    - `npm run build`
+  - Durable lane rules:
+    - Explicit cancellation ids are lifecycle state from the caller, not monotonic backend sequence numbers; backend registries must allow lower explicit ids after remount/restart.
+    - Shared search scope strings are a contract boundary. `primary_file_explorer` must stay unique to one live explorer instance unless the UI adds per-instance scope derivation.
+- Run 2026-03-22 07:27:57 -04:00: Team 2 validated and hardened the new directory-list cache slice.
+  - Exact validator findings:
+    - `DIR_LIST_CACHE` only checked TTL on lookup and never pruned dead variants, so browsing many directories would leave stale listing vectors resident for the rest of the session.
+    - The explorer `refresh()` path still invoked cached `fs_list_dir`, so a manual refresh could replay stale file size/modified metadata after external edits because the cache key only revalidated against the parent directory timestamp.
+  - Fixes landed:
+    - `src-tauri/src/fs_commands.rs` now prunes expired directory-list cache variants before reuse and insertion.
+    - `src-tauri/src/fs_commands.rs` now exposes `fs_list_dir_uncached` for explicit fresh reads.
+    - `src/components/FileExplorer.tsx` now routes `refresh()` through `fs_list_dir_uncached`.
+    - Added regression coverage with `list_dir_uncached_refreshes_entry_metadata_after_external_write` and `dir_list_cache_prunes_expired_variants`.
+  - Validator verification completed:
+    - `CARGO_TARGET_DIR=M:\OverlayTerm\src-tauri\target-tests-tango-team-2 cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml fs_commands::tests`
+    - `npm run build`
+  - Durable lane rules:
+    - Any filesystem cache that stores per-entry metadata must define when a caller is demanding an authoritative refresh; UI refresh paths cannot silently reuse short-lived cache snapshots.
+    - TTL caches in long-lived native processes must prune expired entries proactively, not only when the exact same key is revisited.
+- Run 2026-03-22 06:26:57 -04:00: backlog item 3 advanced with a blocking and cancelable search slice.
+  - `src-tauri/src/fs_commands.rs` now routes `fs_search_entries` through `spawn_blocking` and a dedicated `search_entries_blocking` helper, keeping recursive search traversal off the async command lane.
+  - Native search requests are now tracked by scope plus request id; superseded searches cooperatively stop during directory traversal and content scanning instead of always finishing stale work.
+  - `src-tauri/src/lib.rs` now exports `fs_cancel_search_entries`, and `src/components/FileExplorer.tsx` uses the stable scope `primary_file_explorer` to cancel native search work when the query changes or clears.
+  - Added regression coverage for stale-request interruption and lower-id scope restarts so future frontend remounts can safely reuse a scope without inheriting an older high-water request id.
+  - Verification completed:
+    - `CARGO_TARGET_DIR=M:\OverlayTerm\src-tauri\target-tests-tango-team-1 cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml search_entries_`
+    - `npm run build`
+  - Durable lane rule: search surfaces that want native stale-work suppression must provide a stable request scope and caller-owned request ids; path fallback exists for non-scoped callers, but real UI lifecycles should prefer explicit scopes.
+- Run 2026-03-22 07:21:04 -04:00: backlog item 2 advanced with a native warm directory-list cache slice.
+  - `src-tauri/src/fs_commands.rs` now caches `fs_list_dir` results per normalized directory path plus `show_hidden` variant for 2 seconds when the directory modified timestamp still matches.
+  - Warm explorer revisits, refreshes, and other `fs_list_dir` callers now avoid repeating the same directory scan and per-entry metadata collection when nothing changed.
+  - `fs_delete`, `fs_rename`, `fs_move`, `fs_copy`, `fs_transfer_items`, `fs_create_dir`, and `fs_write_file` now route through `invalidate_all_fs_caches`, so entry-size and directory-list caches stay aligned after in-app mutations.
+  - Added regression coverage for hidden-filter cache separation plus parent-list invalidation after `fs_write_file` and `fs_rename`.
+  - Verification completed:
+    - `CARGO_TARGET_DIR=M:\OverlayTerm\src-tauri\target-tests-tango-team-1 cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml fs_commands::tests`
+  - Durable lane rules:
+    - Native directory-list caches must keep separate variants for hidden-filter semantics; a filtered warm result cannot be reused for `show_hidden=true`.
+    - Mutation-driven invalidation needs to clear both entry-size and listing caches for affected paths and parents, because explorer rows expose membership plus file metadata together.
+    - External filesystem churn is still bounded by directory modified timestamps plus TTL; validator smoke should explicitly probe that freshness contract on Windows.
+- Run 2026-03-22 08:24:59 -04:00: backlog item 3 advanced with short-lived recursive name-index reuse for search.
+  - `src-tauri/src/fs_commands.rs` now keeps a 2-second native recursive name index per normalized search root plus `show_hidden` variant, and `fs_search_entries` reuses it for `include_content=false` queries so warm repeated name searches stop rescanning the filesystem.
+  - Content-enabled searches still do a cold traversal, but they now repopulate the same name index as a side effect so the next names-only query can reuse the warm metadata snapshot.
+  - `invalidate_all_fs_caches` now also clears recursive search-index entries for matching descendants and cached ancestor roots, so in-app writes, renames, moves, copies, deletes, and directory creation do not leave stale warm search results behind.
+  - Added deterministic Rust regression coverage with `search_entries_names_only_reuse_cached_index` and `search_entries_name_index_is_invalidated_by_fs_write_file`.
+  - Verification completed:
+    - `CARGO_TARGET_DIR=M:\OverlayTerm\src-tauri\target-tests-tango-team-1 cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml fs_commands::tests -- --nocapture`
+    - `npm run build`
+  - Durable lane rules:
+    - Warm recursive search reuse is only valid for the names-only path; `include_content=true` must still scan live file contents unless the lane adds a real content index.
+    - Recursive search-cache invalidation must clear ancestor roots as well as descendants, because a mutation under `root\child\...` makes cached results rooted at `root` stale immediately.
+- Run 2026-03-22 08:29:26 -04:00: Team 2 validated the fresh recursive names-only search-index slice and tightened mutation coverage.
+  - Exact validator finding: no new live correctness defect reproduced in review or targeted Rust tests, but the search-index invalidation contract was only explicitly covered for `fs_write_file`; rename and delete paths were still unproven despite sharing the same cache-fanout helper.
+  - Tightening landed in `src-tauri/src/fs_commands.rs`: added regression coverage with `search_entries_name_index_is_invalidated_by_fs_rename` and `search_entries_name_index_is_invalidated_by_fs_delete`.
+  - Validator verification completed:
+    - `CARGO_TARGET_DIR=M:\OverlayTerm\src-tauri\target-tests-tango-team-2 cargo test --manifest-path src-tauri/Cargo.toml search_entries_name_index_is_invalidated_by_fs_rename`
+    - `CARGO_TARGET_DIR=M:\OverlayTerm\src-tauri\target-tests-tango-team-2 cargo test --manifest-path src-tauri/Cargo.toml search_entries_name_index_is_invalidated_by_fs_delete`
+    - `CARGO_TARGET_DIR=M:\OverlayTerm\src-tauri\target-tests-tango-team-2 cargo test --manifest-path src-tauri/Cargo.toml fs_commands::tests`
+    - `npm run build`
+  - Durable lane rules:
+    - When a native recursive cache relies on shared invalidation helpers, validator coverage should exercise at least write, rename, and delete so ancestor-root invalidation stays protected across common mutations.
+    - Large-real-tree UI smoke is still required before shipping the warm search path; backend suites prove invalidation correctness, not interactive latency or stale-result perception.
+- Run 2026-03-22 09:27:35 -04:00: backlog item 3 advanced with bounded warm reuse for content-enabled search.
+  - `src-tauri/src/fs_commands.rs` now keeps a 2-second recursive content index per normalized search root plus `show_hidden` variant for `include_content=true` queries when the full searchable text set fits within a 12 MB budget and every eligible file can be read as text.
+  - Warm repeated content searches now reuse in-memory file text to rebuild snippets and line numbers without rereading the filesystem, while oversized or unreadable roots stay on the cold scan path instead of reusing a partial cache.
+  - `invalidate_all_fs_caches` now also clears ancestor recursive content-search caches, so writes, renames, moves, copies, deletes, and directory creation cannot leave stale warm content hits behind.
+  - Added deterministic Rust regression coverage with `search_entries_content_reuse_cached_index` and `search_entries_content_index_is_invalidated_by_fs_write_file`.
+  - Verification completed:
+    - `$env:CARGO_TARGET_DIR='M:\OverlayTerm\src-tauri\target-tests-tango-team-1'; cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml search_entries_ -- --nocapture`
+  - Durable lane rules:
+    - Warm content-search reuse must be complete-or-nothing; partial indices are not valid because they can silently miss matches in oversized or unreadable files.
+    - Backend tests that assert against `SEARCH_ENTRY_TEST_*` globals must serialize themselves under Cargo's parallel runner or the scan-count signal becomes nondeterministic.
+- Run 2026-03-22 09:36:27 -04:00: Team 2 validated the bounded content-search cache slice and tightened its test evidence.
+  - Exact validator finding: no new live correctness defect reproduced in the production content-cache path, but the new scan-counter-based Rust tests were flaky under Cargo's default parallel runner because they shared `SEARCH_ENTRY_TEST_DELAY_MS` and `SEARCH_ENTRY_TEST_SCAN_COUNT` across concurrent search tests.
+  - Fix landed in `src-tauri/src/fs_commands.rs`: search-entry tests now acquire an async `search_test_serial_lock`, which keeps cache-hit and stale-search assertions deterministic without touching runtime code.
+  - Tightening landed in `src-tauri/src/fs_commands.rs`: added `search_entries_content_index_is_invalidated_by_fs_rename` and `search_entries_content_index_is_invalidated_by_fs_delete`, so the content cache now has explicit write/rename/delete mutation coverage instead of only the write path.
+  - Validator verification completed:
+    - `CARGO_TARGET_DIR=M:\OverlayTerm\src-tauri\target-tests-tango-team-2 cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml fs_commands::tests`
+    - `npm run build`
+  - Durable lane rules:
+    - When validator-only instrumentation uses shared globals, tests must serialize themselves or scope the instrumentation to the request under test; otherwise the suite can go red without a production defect.
+    - Recursive content-search caches need explicit mutation coverage across write, rename, and delete so ancestor-root invalidation stays protected across the common file lifecycle.
+    - After backend coverage is green, the next meaningful risk reduction is real-workspace UI telemetry for cold versus warm content search, over-budget fallback, cancellation, and refresh freshness.
+- Run 2026-03-22 11:05:14 -04:00: backlog item 3 advanced with watcher-driven external freshness for warm explorer caches.
+  - `src-tauri/src/entry_size_cache.rs` now routes existing explorer-root watch events through the shared cache invalidation path in `src-tauri/src/fs_commands.rs`, so external edits under the watched root clear native directory-list, names-only search, and content-search caches alongside entry-size state.
+  - `src-tauri/src/fs_commands.rs` now exposes `invalidate_all_fs_caches_for_path` for external watcher/event integrations and includes regression coverage for stale-listing refresh plus recursive name/content cache invalidation after an out-of-band file write.
+  - Verification completed:
+    - `$env:CARGO_TARGET_DIR='M:\OverlayTerm\src-tauri\target-tests-tango-team-1'; cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml fs_commands::tests -- --nocapture`
+    - `$env:CARGO_TARGET_DIR='M:\OverlayTerm\src-tauri\target-tests-tango-team-1'; cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml dirty_marking_updates_ancestors -- --nocapture`
+  - Durable lane rules:
+    - External filesystem watchers should invalidate every warm explorer cache that depends on the watched subtree, not only the cache that originally motivated the watcher.
+    - Watched-root freshness and TTL freshness are different contracts; release validation must explicitly call out which explorer surfaces are covered by live watchers and which still depend on short-lived cache expiry.
+- Run 2026-03-22 11:22:18 -04:00: Team 2 validated the watcher-backed filesystem suite and tightened the over-budget fallback evidence for the bounded content cache.
+  - Exact validator finding: no new production defect reproduced in the live watcher/caching stack during this run, but the lane lacked regression proof that roots exceeding the 12 MB content-cache budget stay fully uncached across repeated `include_content=true` queries.
+  - Tightening landed in `src-tauri/src/fs_commands.rs`: added `search_entries_content_over_budget_stays_uncached`, which proves over-budget content searches still return correct results, do not persist a partial `SEARCH_CONTENT_INDEX_CACHE`, and rescan on repeated queries.
+  - Validator verification completed:
+    - `CARGO_TARGET_DIR=M:\OverlayTerm\src-tauri\target-tests-tango-team-2 cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml search_entries_content_over_budget_stays_uncached`
+    - `CARGO_TARGET_DIR=M:\OverlayTerm\src-tauri\target-tests-tango-team-2 cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml fs_commands::tests`
+    - `npm run build`
+  - Durable lane rules:
+    - Complete-or-nothing recursive content caches need explicit regression proof for the over-budget path as well as the warm-cache path, because partial-cache regressions only surface after repeated large-root searches.
+    - Backend watcher freshness and backend over-budget fallback are now validator-backed; the next highest-value evidence is still real-workspace UI telemetry for watched-root refresh perception, cold versus warm search latency, cancellation, and refresh freshness.
+- Run 2026-03-22 13:22:31 -04:00: backlog item 6 advanced with a runtime-configurable cache-policy slice for release tuning and validation clarity.
+  - `src-tauri/src/fs_commands.rs` now resolves native explorer/search cache policy from env-backed overrides once at startup instead of hardcoding TTLs and budgets directly into each hot path.
+  - Added the backend inspection command `fs_get_runtime_cache_policy` and exported it from `src-tauri/src/lib.rs`, so validators and future UI tooling can record the exact active TTL/budget values during smoke runs.
+  - New configurable knobs:
+    - `OVERLAYTERM_DIR_LIST_CACHE_TTL_MS`
+    - `OVERLAYTERM_SEARCH_NAME_INDEX_CACHE_TTL_MS`
+    - `OVERLAYTERM_SEARCH_CONTENT_INDEX_CACHE_TTL_MS`
+    - `OVERLAYTERM_ENTRY_SIZE_CACHE_TTL_MS`
+    - `OVERLAYTERM_ENTRY_SIZE_SCAN_BUDGET_MS`
+    - `OVERLAYTERM_SEARCH_CONTENT_INDEX_TOTAL_BYTES_BUDGET`
+    - `OVERLAYTERM_SEARCH_MAX_CONTENT_FILE_BYTES`
+  - Zero-valued TTL/budget overrides now intentionally disable the corresponding in-memory cache reuse path, which gives release and regression runs a deterministic cold-path switch without source edits.
+  - Added backend tests for defaulting plus override parsing and reran the full `fs_commands::tests` suite.
+  - Verification completed:
+    - `CARGO_TARGET_DIR=M:\OverlayTerm\src-tauri\target-tests-tango-team-1 cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml resolve_fs_cache_policy -- --nocapture`
+    - `CARGO_TARGET_DIR=M:\OverlayTerm\src-tauri\target-tests-tango-team-1 cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml dir_list_cache_prunes_expired_variants -- --nocapture`
+    - `CARGO_TARGET_DIR=M:\OverlayTerm\src-tauri\target-tests-tango-team-1 cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml search_entries_content_over_budget_stays_uncached -- --nocapture`
+    - `CARGO_TARGET_DIR=M:\OverlayTerm\src-tauri\target-tests-tango-team-1 cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml fs_commands::tests -- --nocapture`
+  - Durable lane rules:
+    - Runtime tuning for native cache TTLs/budgets should go through the shared policy surface instead of introducing new hot-path literals.
+    - Validation reports should record the effective runtime cache policy when comparing cold versus warm behavior; otherwise telemetry samples are hard to interpret across environments.

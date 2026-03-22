@@ -14,10 +14,10 @@ use entry_size_cache::{
     EntrySizeWatcherState,
 };
 use fs_commands::{
-    fs_copy, fs_create_dir, fs_delete, fs_get_drives, fs_get_home_dir, fs_list_dir,
-    fs_measure_entry_sizes, fs_move, fs_open_as_admin, fs_open_file, fs_read_file_base64,
-    fs_read_text_file, fs_rename, fs_reveal_in_explorer, fs_search_entries, fs_transfer_items,
-    fs_write_file, git_exec,
+    fs_cancel_search_entries, fs_copy, fs_create_dir, fs_delete, fs_get_drives, fs_get_home_dir,
+    fs_get_runtime_cache_policy, fs_list_dir, fs_list_dir_uncached, fs_measure_entry_sizes,
+    fs_move, fs_open_as_admin, fs_open_file, fs_read_file_base64, fs_read_text_file, fs_rename,
+    fs_reveal_in_explorer, fs_search_entries, fs_transfer_items, fs_write_file, git_exec,
 };
 use plugin_commands::{
     plugin_run_backend, plugin_unwatch_directory, plugin_watch_directory, PluginWatcherState,
@@ -153,6 +153,9 @@ pub fn run() {
             fs_create_dir,
             fs_read_file_base64,
             fs_write_file,
+            fs_get_runtime_cache_policy,
+            fs_list_dir_uncached,
+            fs_cancel_search_entries,
             fs_search_entries,
             git_exec,
             fs_get_home_dir,

@@ -4,6 +4,15 @@ import { playwright } from '@vitest/browser-playwright';
 
 export default defineConfig({
   plugins: [react()],
+  optimizeDeps: {
+    include: [
+      '@monaco-editor/react',
+      '@testing-library/user-event',
+      'smol-toml',
+      'zustand',
+      'zustand/middleware',
+    ],
+  },
   resolve: {
     alias: {
       '@': '/src',

@@ -9,8 +9,11 @@ use crate::entry_size_cache::{
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+#[cfg(test)]
+use std::sync::atomic::{AtomicU64, Ordering};
 
 // ─── Data types ───────────────────────────────────────────────────────────────
 
@@ -51,17 +54,406 @@ struct CachedEntrySize {
     measured_at: Instant,
 }
 
-const ENTRY_SIZE_CACHE_TTL: Duration = Duration::from_secs(10);
-const ENTRY_SIZE_SCAN_BUDGET: Duration = Duration::from_millis(900);
+#[derive(Debug, Clone)]
+struct CachedDirListing {
+    entries: Vec<FileEntry>,
+    directory_modified_ms: Option<u64>,
+    cached_at: Instant,
+}
+
+#[derive(Debug, Clone, Default)]
+struct CachedDirListingVariants {
+    visible_only: Option<CachedDirListing>,
+    include_hidden: Option<CachedDirListing>,
+}
+
+impl CachedDirListingVariants {
+    fn get(&self, show_hidden: bool) -> Option<&CachedDirListing> {
+        if show_hidden {
+            self.include_hidden.as_ref()
+        } else {
+            self.visible_only.as_ref()
+        }
+    }
+
+    fn set(&mut self, show_hidden: bool, listing: CachedDirListing) {
+        if show_hidden {
+            self.include_hidden = Some(listing);
+        } else {
+            self.visible_only = Some(listing);
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CachedSearchNameEntry {
+    name_lower: String,
+    path_lower: String,
+    result: FileSearchResult,
+}
+
+#[derive(Debug, Clone)]
+struct CachedSearchIndex {
+    entries: Vec<CachedSearchNameEntry>,
+    cached_at: Instant,
+}
+
+#[derive(Debug, Clone, Default)]
+struct CachedSearchIndexVariants {
+    visible_only: Option<CachedSearchIndex>,
+    include_hidden: Option<CachedSearchIndex>,
+}
+
+impl CachedSearchIndexVariants {
+    fn get(&self, show_hidden: bool) -> Option<&CachedSearchIndex> {
+        if show_hidden {
+            self.include_hidden.as_ref()
+        } else {
+            self.visible_only.as_ref()
+        }
+    }
+
+    fn set(&mut self, show_hidden: bool, index: CachedSearchIndex) {
+        if show_hidden {
+            self.include_hidden = Some(index);
+        } else {
+            self.visible_only = Some(index);
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CachedSearchContentEntry {
+    name_lower: String,
+    result: FileSearchResult,
+    content: Option<Arc<str>>,
+}
+
+#[derive(Debug, Clone)]
+struct CachedSearchContentIndex {
+    entries: Vec<CachedSearchContentEntry>,
+    cached_at: Instant,
+}
+
+#[derive(Debug, Clone, Default)]
+struct CachedSearchContentIndexVariants {
+    visible_only: Option<CachedSearchContentIndex>,
+    include_hidden: Option<CachedSearchContentIndex>,
+}
+
+impl CachedSearchContentIndexVariants {
+    fn get(&self, show_hidden: bool) -> Option<&CachedSearchContentIndex> {
+        if show_hidden {
+            self.include_hidden.as_ref()
+        } else {
+            self.visible_only.as_ref()
+        }
+    }
+
+    fn set(&mut self, show_hidden: bool, index: CachedSearchContentIndex) {
+        if show_hidden {
+            self.include_hidden = Some(index);
+        } else {
+            self.visible_only = Some(index);
+        }
+    }
+}
+
+const DIR_LIST_CACHE_TTL_ENV: &str = "OVERLAYTERM_DIR_LIST_CACHE_TTL_MS";
+const SEARCH_NAME_INDEX_CACHE_TTL_ENV: &str = "OVERLAYTERM_SEARCH_NAME_INDEX_CACHE_TTL_MS";
+const SEARCH_CONTENT_INDEX_CACHE_TTL_ENV: &str = "OVERLAYTERM_SEARCH_CONTENT_INDEX_CACHE_TTL_MS";
+const ENTRY_SIZE_CACHE_TTL_ENV: &str = "OVERLAYTERM_ENTRY_SIZE_CACHE_TTL_MS";
+const ENTRY_SIZE_SCAN_BUDGET_ENV: &str = "OVERLAYTERM_ENTRY_SIZE_SCAN_BUDGET_MS";
+const SEARCH_CONTENT_INDEX_TOTAL_BYTES_BUDGET_ENV: &str =
+    "OVERLAYTERM_SEARCH_CONTENT_INDEX_TOTAL_BYTES_BUDGET";
+const MAX_SEARCH_CONTENT_BYTES_ENV: &str = "OVERLAYTERM_SEARCH_MAX_CONTENT_FILE_BYTES";
+
+const DIR_LIST_CACHE_TTL_MS_DEFAULT: u64 = 2_000;
+const SEARCH_NAME_INDEX_CACHE_TTL_MS_DEFAULT: u64 = 2_000;
+const SEARCH_CONTENT_INDEX_CACHE_TTL_MS_DEFAULT: u64 = 2_000;
+const ENTRY_SIZE_CACHE_TTL_MS_DEFAULT: u64 = 10_000;
+const ENTRY_SIZE_SCAN_BUDGET_MS_DEFAULT: u64 = 900;
+const SEARCH_CONTENT_INDEX_TOTAL_BYTES_BUDGET_DEFAULT: u64 = 12 * 1024 * 1024;
+const MAX_SEARCH_CONTENT_BYTES_DEFAULT: u64 = 8 * 1024 * 1024;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FsRuntimeCachePolicy {
+    pub dir_list_cache_ttl_ms: u64,
+    pub search_name_index_cache_ttl_ms: u64,
+    pub search_content_index_cache_ttl_ms: u64,
+    pub entry_size_cache_ttl_ms: u64,
+    pub entry_size_scan_budget_ms: u64,
+    pub search_content_index_total_bytes_budget: u64,
+    pub max_search_content_file_bytes: u64,
+}
+
+#[derive(Debug, Clone)]
+struct FsCachePolicy {
+    dir_list_cache_ttl: Duration,
+    search_name_index_cache_ttl: Duration,
+    search_content_index_cache_ttl: Duration,
+    entry_size_cache_ttl: Duration,
+    entry_size_scan_budget: Duration,
+    search_content_index_total_bytes_budget: u64,
+    max_search_content_file_bytes: u64,
+}
+
+impl FsCachePolicy {
+    fn snapshot(&self) -> FsRuntimeCachePolicy {
+        FsRuntimeCachePolicy {
+            dir_list_cache_ttl_ms: self.dir_list_cache_ttl.as_millis() as u64,
+            search_name_index_cache_ttl_ms: self.search_name_index_cache_ttl.as_millis() as u64,
+            search_content_index_cache_ttl_ms: self.search_content_index_cache_ttl.as_millis()
+                as u64,
+            entry_size_cache_ttl_ms: self.entry_size_cache_ttl.as_millis() as u64,
+            entry_size_scan_budget_ms: self.entry_size_scan_budget.as_millis() as u64,
+            search_content_index_total_bytes_budget: self.search_content_index_total_bytes_budget,
+            max_search_content_file_bytes: self.max_search_content_file_bytes,
+        }
+    }
+}
+
+static FS_CACHE_POLICY: OnceLock<FsCachePolicy> = OnceLock::new();
+static DIR_LIST_CACHE: OnceLock<Mutex<HashMap<String, CachedDirListingVariants>>> = OnceLock::new();
+static SEARCH_NAME_INDEX_CACHE: OnceLock<Mutex<HashMap<String, CachedSearchIndexVariants>>> =
+    OnceLock::new();
+static SEARCH_CONTENT_INDEX_CACHE: OnceLock<
+    Mutex<HashMap<String, CachedSearchContentIndexVariants>>,
+> = OnceLock::new();
 static ENTRY_SIZE_CACHE: OnceLock<Mutex<HashMap<String, CachedEntrySize>>> = OnceLock::new();
+static SEARCH_REQUESTS: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+
+#[cfg(test)]
+static SEARCH_ENTRY_TEST_DELAY_MS: AtomicU64 = AtomicU64::new(0);
+#[cfg(test)]
+static SEARCH_ENTRY_TEST_SCAN_COUNT: AtomicU64 = AtomicU64::new(0);
+
+fn parse_fs_cache_policy_u64(raw: Option<&str>, default: u64) -> u64 {
+    raw.map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(default)
+}
+
+fn resolve_fs_cache_policy_from_lookup(
+    mut lookup: impl FnMut(&str) -> Option<String>,
+) -> FsCachePolicy {
+    FsCachePolicy {
+        dir_list_cache_ttl: Duration::from_millis(parse_fs_cache_policy_u64(
+            lookup(DIR_LIST_CACHE_TTL_ENV).as_deref(),
+            DIR_LIST_CACHE_TTL_MS_DEFAULT,
+        )),
+        search_name_index_cache_ttl: Duration::from_millis(parse_fs_cache_policy_u64(
+            lookup(SEARCH_NAME_INDEX_CACHE_TTL_ENV).as_deref(),
+            SEARCH_NAME_INDEX_CACHE_TTL_MS_DEFAULT,
+        )),
+        search_content_index_cache_ttl: Duration::from_millis(parse_fs_cache_policy_u64(
+            lookup(SEARCH_CONTENT_INDEX_CACHE_TTL_ENV).as_deref(),
+            SEARCH_CONTENT_INDEX_CACHE_TTL_MS_DEFAULT,
+        )),
+        entry_size_cache_ttl: Duration::from_millis(parse_fs_cache_policy_u64(
+            lookup(ENTRY_SIZE_CACHE_TTL_ENV).as_deref(),
+            ENTRY_SIZE_CACHE_TTL_MS_DEFAULT,
+        )),
+        entry_size_scan_budget: Duration::from_millis(parse_fs_cache_policy_u64(
+            lookup(ENTRY_SIZE_SCAN_BUDGET_ENV).as_deref(),
+            ENTRY_SIZE_SCAN_BUDGET_MS_DEFAULT,
+        )),
+        search_content_index_total_bytes_budget: parse_fs_cache_policy_u64(
+            lookup(SEARCH_CONTENT_INDEX_TOTAL_BYTES_BUDGET_ENV).as_deref(),
+            SEARCH_CONTENT_INDEX_TOTAL_BYTES_BUDGET_DEFAULT,
+        ),
+        max_search_content_file_bytes: parse_fs_cache_policy_u64(
+            lookup(MAX_SEARCH_CONTENT_BYTES_ENV).as_deref(),
+            MAX_SEARCH_CONTENT_BYTES_DEFAULT,
+        ),
+    }
+}
+
+fn load_fs_cache_policy() -> FsCachePolicy {
+    resolve_fs_cache_policy_from_lookup(|key| std::env::var(key).ok())
+}
+
+fn fs_cache_policy() -> &'static FsCachePolicy {
+    FS_CACHE_POLICY.get_or_init(load_fs_cache_policy)
+}
+
+fn dir_list_cache() -> &'static Mutex<HashMap<String, CachedDirListingVariants>> {
+    DIR_LIST_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn search_name_index_cache() -> &'static Mutex<HashMap<String, CachedSearchIndexVariants>> {
+    SEARCH_NAME_INDEX_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn search_content_index_cache() -> &'static Mutex<HashMap<String, CachedSearchContentIndexVariants>>
+{
+    SEARCH_CONTENT_INDEX_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 fn entry_size_cache() -> &'static Mutex<HashMap<String, CachedEntrySize>> {
     ENTRY_SIZE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn search_requests() -> &'static Mutex<HashMap<String, u64>> {
+    SEARCH_REQUESTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 fn path_cache_key(path: &Path) -> String {
     normalize_cache_path(path)
 }
+
+fn prune_expired_dir_list_cache(cache: &mut HashMap<String, CachedDirListingVariants>) {
+    let ttl = fs_cache_policy().dir_list_cache_ttl;
+    if ttl.is_zero() {
+        cache.clear();
+        return;
+    }
+
+    for variants in cache.values_mut() {
+        if variants
+            .visible_only
+            .as_ref()
+            .map(|listing| listing.cached_at.elapsed() > ttl)
+            .unwrap_or(false)
+        {
+            variants.visible_only = None;
+        }
+
+        if variants
+            .include_hidden
+            .as_ref()
+            .map(|listing| listing.cached_at.elapsed() > ttl)
+            .unwrap_or(false)
+        {
+            variants.include_hidden = None;
+        }
+    }
+
+    cache
+        .retain(|_, variants| variants.visible_only.is_some() || variants.include_hidden.is_some());
+}
+
+fn prune_expired_search_name_index_cache(cache: &mut HashMap<String, CachedSearchIndexVariants>) {
+    let ttl = fs_cache_policy().search_name_index_cache_ttl;
+    if ttl.is_zero() {
+        cache.clear();
+        return;
+    }
+
+    for variants in cache.values_mut() {
+        if variants
+            .visible_only
+            .as_ref()
+            .map(|index| index.cached_at.elapsed() > ttl)
+            .unwrap_or(false)
+        {
+            variants.visible_only = None;
+        }
+
+        if variants
+            .include_hidden
+            .as_ref()
+            .map(|index| index.cached_at.elapsed() > ttl)
+            .unwrap_or(false)
+        {
+            variants.include_hidden = None;
+        }
+    }
+
+    cache
+        .retain(|_, variants| variants.visible_only.is_some() || variants.include_hidden.is_some());
+}
+
+fn prune_expired_search_content_index_cache(
+    cache: &mut HashMap<String, CachedSearchContentIndexVariants>,
+) {
+    let ttl = fs_cache_policy().search_content_index_cache_ttl;
+    if ttl.is_zero() {
+        cache.clear();
+        return;
+    }
+
+    for variants in cache.values_mut() {
+        if variants
+            .visible_only
+            .as_ref()
+            .map(|index| index.cached_at.elapsed() > ttl)
+            .unwrap_or(false)
+        {
+            variants.visible_only = None;
+        }
+
+        if variants
+            .include_hidden
+            .as_ref()
+            .map(|index| index.cached_at.elapsed() > ttl)
+            .unwrap_or(false)
+        {
+            variants.include_hidden = None;
+        }
+    }
+
+    cache
+        .retain(|_, variants| variants.visible_only.is_some() || variants.include_hidden.is_some());
+}
+
+fn search_request_scope(path: &str, request_scope: Option<String>) -> String {
+    request_scope
+        .map(|scope| scope.trim().to_string())
+        .filter(|scope| !scope.is_empty())
+        .unwrap_or_else(|| normalize_cache_path(Path::new(path)))
+}
+
+fn register_search_request(scope: &str, request_id: Option<u64>) -> u64 {
+    let mut active = search_requests()
+        .lock()
+        .expect("search request map poisoned");
+    match request_id {
+        Some(id) => {
+            // Explicit request ids come from the caller's lifecycle. Replacing the
+            // active value lets a remounted frontend restart its counter without
+            // inheriting a stale larger id from an older search session.
+            active.insert(scope.to_string(), id);
+            id
+        }
+        None => {
+            let next_request_id = active.get(scope).copied().unwrap_or(0).saturating_add(1);
+            active.insert(scope.to_string(), next_request_id);
+            next_request_id
+        }
+    }
+}
+
+fn is_search_request_active(scope: &str, request_id: u64) -> bool {
+    search_requests()
+        .lock()
+        .ok()
+        .and_then(|active| active.get(scope).copied())
+        == Some(request_id)
+}
+
+#[cfg(test)]
+fn pause_search_entry_scan_for_tests() {
+    let delay_ms = SEARCH_ENTRY_TEST_DELAY_MS.load(Ordering::Relaxed);
+    if delay_ms > 0 {
+        std::thread::sleep(Duration::from_millis(delay_ms));
+    }
+}
+
+#[cfg(not(test))]
+#[inline]
+fn pause_search_entry_scan_for_tests() {}
+
+#[cfg(test)]
+fn record_search_entry_scan_for_tests() {
+    SEARCH_ENTRY_TEST_SCAN_COUNT.fetch_add(1, Ordering::Relaxed);
+}
+
+#[cfg(not(test))]
+#[inline]
+fn record_search_entry_scan_for_tests() {}
 
 fn invalidate_entry_size_cache(path: &Path) {
     let key = path_cache_key(path);
@@ -88,6 +480,71 @@ fn invalidate_entry_size_cache(path: &Path) {
     }
 }
 
+fn invalidate_dir_list_cache(path: &Path) {
+    let key = path_cache_key(path);
+    let key_with_separator = if key.ends_with(std::path::MAIN_SEPARATOR) {
+        key.clone()
+    } else {
+        format!("{key}{}", std::path::MAIN_SEPARATOR)
+    };
+
+    if let Ok(mut cache) = dir_list_cache().lock() {
+        cache.retain(|cached_path, _| {
+            cached_path != &key && !cached_path.starts_with(&key_with_separator)
+        });
+    }
+}
+
+fn invalidate_search_name_index_cache(path: &Path) {
+    let key = path_cache_key(path);
+    let key_with_separator = if key.ends_with(std::path::MAIN_SEPARATOR) {
+        key.clone()
+    } else {
+        format!("{key}{}", std::path::MAIN_SEPARATOR)
+    };
+
+    if let Ok(mut cache) = search_name_index_cache().lock() {
+        cache.retain(|cached_path, _| {
+            if cached_path == &key || cached_path.starts_with(&key_with_separator) {
+                return false;
+            }
+
+            let cached_path_with_separator = if cached_path.ends_with(std::path::MAIN_SEPARATOR) {
+                cached_path.clone()
+            } else {
+                format!("{cached_path}{}", std::path::MAIN_SEPARATOR)
+            };
+
+            !key.starts_with(&cached_path_with_separator)
+        });
+    }
+}
+
+fn invalidate_search_content_index_cache(path: &Path) {
+    let key = path_cache_key(path);
+    let key_with_separator = if key.ends_with(std::path::MAIN_SEPARATOR) {
+        key.clone()
+    } else {
+        format!("{key}{}", std::path::MAIN_SEPARATOR)
+    };
+
+    if let Ok(mut cache) = search_content_index_cache().lock() {
+        cache.retain(|cached_path, _| {
+            if cached_path == &key || cached_path.starts_with(&key_with_separator) {
+                return false;
+            }
+
+            let cached_path_with_separator = if cached_path.ends_with(std::path::MAIN_SEPARATOR) {
+                cached_path.clone()
+            } else {
+                format!("{cached_path}{}", std::path::MAIN_SEPARATOR)
+            };
+
+            !key.starts_with(&cached_path_with_separator)
+        });
+    }
+}
+
 fn invalidate_persisted_entry_size(path: &Path) {
     let _ = delete_entry_size_subtree(path);
     let _ = mark_path_and_ancestors_dirty(path);
@@ -96,6 +553,17 @@ fn invalidate_persisted_entry_size(path: &Path) {
 fn invalidate_all_entry_size_caches(path: &Path) {
     invalidate_entry_size_cache(path);
     invalidate_persisted_entry_size(path);
+}
+
+fn invalidate_all_fs_caches(path: &Path) {
+    invalidate_all_entry_size_caches(path);
+    invalidate_dir_list_cache(path);
+    invalidate_search_name_index_cache(path);
+    invalidate_search_content_index_cache(path);
+}
+
+pub fn invalidate_all_fs_caches_for_path(path: &Path) {
+    invalidate_all_fs_caches(path);
 }
 
 #[derive(Debug, Clone)]
@@ -215,7 +683,7 @@ fn measure_path_size(path: &Path) -> MeasuredPathSize {
     let mut total_bytes = 0_u64;
     let mut stack = vec![path.to_path_buf()];
     let mut visited = HashSet::new();
-    let deadline = Instant::now() + ENTRY_SIZE_SCAN_BUDGET;
+    let deadline = Instant::now() + fs_cache_policy().entry_size_scan_budget;
 
     while let Some(dir) = stack.pop() {
         if Instant::now() >= deadline {
@@ -282,6 +750,7 @@ fn measure_path_size(path: &Path) -> MeasuredPathSize {
 
 fn measure_entry_sizes_blocking(paths: Vec<String>, force_refresh: bool) -> Vec<EntryStorageInfo> {
     let now = Instant::now();
+    let entry_size_cache_ttl = fs_cache_policy().entry_size_cache_ttl;
     let mut results = Vec::with_capacity(paths.len());
     let mut pending: Vec<(usize, PathBuf, String)> = Vec::new();
     let path_bufs = paths.iter().map(PathBuf::from).collect::<Vec<_>>();
@@ -300,7 +769,10 @@ fn measure_entry_sizes_blocking(paths: Vec<String>, force_refresh: bool) -> Vec<
             } else {
                 cache
                     .get(&key)
-                    .filter(|entry| now.duration_since(entry.measured_at) <= ENTRY_SIZE_CACHE_TTL)
+                    .filter(|entry| {
+                        !entry_size_cache_ttl.is_zero()
+                            && now.duration_since(entry.measured_at) <= entry_size_cache_ttl
+                    })
                     .cloned()
             };
 
@@ -360,8 +832,10 @@ fn measure_entry_sizes_blocking(paths: Vec<String>, force_refresh: bool) -> Vec<
     }
 
     if let Ok(mut cache) = entry_size_cache().lock() {
-        for (key, entry) in cache_updates {
-            cache.insert(key, entry);
+        if !entry_size_cache_ttl.is_zero() {
+            for (key, entry) in cache_updates {
+                cache.insert(key, entry);
+            }
         }
     }
 
@@ -408,93 +882,142 @@ pub struct FileSearchResult {
     pub line_number: Option<u64>,
 }
 
+struct ListedFileEntry {
+    sort_name: String,
+    entry: FileEntry,
+}
+
 // ─── fs_list_dir ─────────────────────────────────────────────────────────────
 
-#[tauri::command]
-pub async fn fs_list_dir(path: String, show_hidden: bool) -> Result<Vec<FileEntry>, String> {
-    let dir_path = Path::new(&path);
+fn build_listed_file_entry(entry: std::fs::DirEntry, show_hidden: bool) -> Option<ListedFileEntry> {
+    let name = entry.file_name().to_string_lossy().to_string();
+    let entry_metadata = entry.metadata().ok()?;
+    let is_hidden = is_hidden_with_metadata(&name, &entry_metadata);
+    if is_hidden && !show_hidden {
+        return None;
+    }
+
+    let file_type = entry.file_type().ok()?;
+    let path = entry.path();
+    let target_metadata = followed_metadata_for_symlink(&path, &file_type);
+    let metadata = target_metadata.as_ref().unwrap_or(&entry_metadata);
+    let is_symlink = file_type.is_symlink();
+    let is_dir = file_type.is_dir() || metadata.is_dir();
+
+    Some(ListedFileEntry {
+        sort_name: name.to_lowercase(),
+        entry: FileEntry {
+            name,
+            path: path.to_string_lossy().to_string(),
+            is_dir,
+            size: if is_dir { 0 } else { metadata.len() },
+            modified: metadata_modified_ms(&metadata).unwrap_or(0),
+            extension: if is_dir {
+                String::new()
+            } else {
+                normalized_extension(&path)
+            },
+            is_hidden,
+            is_symlink,
+        },
+    })
+}
+
+fn list_dir_blocking(
+    dir_path: PathBuf,
+    show_hidden: bool,
+    bypass_cache: bool,
+) -> Result<Vec<FileEntry>, String> {
+    let policy = fs_cache_policy();
+    let path_label = dir_path.to_string_lossy().to_string();
     if !dir_path.exists() {
-        return Err(format!("Path does not exist: {}", path));
+        return Err(format!("Path does not exist: {}", path_label));
     }
     if !dir_path.is_dir() {
-        return Err(format!("Path is not a directory: {}", path));
+        return Err(format!("Path is not a directory: {}", path_label));
+    }
+
+    let cache_key = path_cache_key(&dir_path);
+    let directory_modified_ms = std::fs::metadata(&dir_path)
+        .ok()
+        .and_then(|metadata| metadata_modified_ms(&metadata));
+    if !bypass_cache && !policy.dir_list_cache_ttl.is_zero() {
+        if let Ok(mut cache) = dir_list_cache().lock() {
+            prune_expired_dir_list_cache(&mut cache);
+            if let Some(cached) = cache
+                .get(&cache_key)
+                .and_then(|variants| variants.get(show_hidden))
+            {
+                if cached.directory_modified_ms == directory_modified_ms {
+                    return Ok(cached.entries.clone());
+                }
+            }
+        }
     }
 
     let read_dir =
-        std::fs::read_dir(dir_path).map_err(|e| format!("Failed to read directory: {}", e))?;
+        std::fs::read_dir(&dir_path).map_err(|e| format!("Failed to read directory: {}", e))?;
 
-    let mut entries: Vec<FileEntry> = Vec::new();
-    for entry_result in read_dir {
-        let entry = match entry_result {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
+    let mut entries: Vec<ListedFileEntry> = read_dir
+        .filter_map(|entry_result| entry_result.ok())
+        .filter_map(|entry| build_listed_file_entry(entry, show_hidden))
+        .collect();
 
-        let file_name = entry.file_name();
-        let name = file_name.to_string_lossy().to_string();
+    // Sort once using precomputed lowercase names so large directories don't
+    // allocate lowercase strings repeatedly during comparison.
+    entries.sort_unstable_by(
+        |left, right| match (left.entry.is_dir, right.entry.is_dir) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => left.sort_name.cmp(&right.sort_name),
+        },
+    );
 
-        // Skip hidden files unless show_hidden is true
-        let is_hidden = name.starts_with('.');
-        #[cfg(target_os = "windows")]
-        let is_hidden = is_hidden || {
-            use std::os::windows::fs::MetadataExt;
-            entry
-                .metadata()
-                .map(|m| m.file_attributes() & 0x2 != 0)
-                .unwrap_or(false)
-        };
-
-        if is_hidden && !show_hidden {
-            continue;
+    let entries = entries
+        .into_iter()
+        .map(|listed| listed.entry)
+        .collect::<Vec<_>>();
+    if !policy.dir_list_cache_ttl.is_zero() {
+        if let Ok(mut cache) = dir_list_cache().lock() {
+            prune_expired_dir_list_cache(&mut cache);
+            cache.entry(cache_key).or_default().set(
+                show_hidden,
+                CachedDirListing {
+                    entries: entries.clone(),
+                    directory_modified_ms,
+                    cached_at: Instant::now(),
+                },
+            );
         }
-
-        let meta = match entry.metadata() {
-            Ok(m) => m,
-            Err(_) => continue,
-        };
-
-        let modified = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
-
-        let is_symlink = meta.file_type().is_symlink();
-        let is_dir = meta.is_dir();
-        let size = if is_dir { 0 } else { meta.len() };
-
-        let entry_path = entry.path().to_string_lossy().to_string();
-        let extension = if is_dir {
-            String::new()
-        } else {
-            entry
-                .path()
-                .extension()
-                .map(|e| e.to_string_lossy().to_lowercase())
-                .unwrap_or_default()
-        };
-
-        entries.push(FileEntry {
-            name,
-            path: entry_path,
-            is_dir,
-            size,
-            modified,
-            extension,
-            is_hidden,
-            is_symlink,
-        });
     }
 
-    // Sort: directories first, then files, alphabetically within each group
-    entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
-        (true, false) => std::cmp::Ordering::Less,
-        (false, true) => std::cmp::Ordering::Greater,
-        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-    });
-
     Ok(entries)
+}
+
+#[tauri::command]
+pub fn fs_get_runtime_cache_policy() -> FsRuntimeCachePolicy {
+    fs_cache_policy().snapshot()
+}
+
+#[tauri::command]
+pub async fn fs_list_dir(path: String, show_hidden: bool) -> Result<Vec<FileEntry>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        list_dir_blocking(PathBuf::from(path), show_hidden, false)
+    })
+    .await
+    .map_err(|error| format!("Failed to list directory: {error}"))?
+}
+
+#[tauri::command]
+pub async fn fs_list_dir_uncached(
+    path: String,
+    show_hidden: bool,
+) -> Result<Vec<FileEntry>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        list_dir_blocking(PathBuf::from(path), show_hidden, true)
+    })
+    .await
+    .map_err(|error| format!("Failed to list directory: {error}"))?
 }
 
 #[tauri::command]
@@ -722,19 +1245,33 @@ fn is_hidden_name(name: &str) -> bool {
     name.starts_with('.')
 }
 
-fn is_hidden_entry(entry: &std::fs::DirEntry, name: &str) -> bool {
-    let is_hidden = is_hidden_name(name);
-
+fn metadata_has_hidden_attribute(metadata: &std::fs::Metadata) -> bool {
     #[cfg(target_os = "windows")]
-    let is_hidden = is_hidden || {
+    {
         use std::os::windows::fs::MetadataExt;
-        entry
-            .metadata()
-            .map(|metadata| metadata.file_attributes() & 0x2 != 0)
-            .unwrap_or(false)
-    };
+        return metadata.file_attributes() & 0x2 != 0;
+    }
 
-    is_hidden
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = metadata;
+        false
+    }
+}
+
+fn is_hidden_with_metadata(name: &str, metadata: &std::fs::Metadata) -> bool {
+    is_hidden_name(name) || metadata_has_hidden_attribute(metadata)
+}
+
+fn followed_metadata_for_symlink(
+    path: &Path,
+    file_type: &std::fs::FileType,
+) -> Option<std::fs::Metadata> {
+    if file_type.is_symlink() {
+        return std::fs::metadata(path).ok();
+    }
+
+    None
 }
 
 fn is_searchable_text_file(path: &Path) -> bool {
@@ -808,164 +1345,65 @@ fn build_search_snippet(line: &str, query_lower: &str) -> String {
     snippet
 }
 
-#[tauri::command]
-pub async fn fs_search_entries(
-    path: String,
-    query: String,
-    show_hidden: bool,
-    include_content: bool,
-    limit: Option<usize>,
-) -> Result<Vec<FileSearchResult>, String> {
-    let root = PathBuf::from(&path);
-    if !root.exists() {
-        return Err(format!("Path does not exist: {}", path));
-    }
-    if !root.is_dir() {
-        return Err(format!("Path is not a directory: {}", path));
-    }
-
-    let query = query.trim().to_string();
-    if query.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let query_lower = query.to_ascii_lowercase();
-    let max_results = limit.unwrap_or(250).clamp(1, 1000);
-    const MAX_CONTENT_BYTES: u64 = 8 * 1024 * 1024;
-
-    let mut stack = vec![root.clone()];
-    let mut combined_matches: Vec<FileSearchResult> = Vec::new();
-    let mut content_matches: Vec<FileSearchResult> = Vec::new();
-    let mut name_matches: Vec<FileSearchResult> = Vec::new();
-
-    while let Some(current_dir) = stack.pop() {
-        let read_dir = match std::fs::read_dir(&current_dir) {
-            Ok(entries) => entries,
-            Err(_) => continue,
+fn search_reader_for_match<R: std::io::BufRead>(
+    reader: R,
+    query_lower: &str,
+    request_scope: &str,
+    request_id: u64,
+) -> Result<Option<(String, Option<u64>)>, ()> {
+    for (idx, line_result) in reader.lines().enumerate() {
+        if idx % 32 == 0 && !is_search_request_active(request_scope, request_id) {
+            return Err(());
+        }
+        let line = match line_result {
+            Ok(value) => value,
+            Err(_) => return Ok(None),
         };
-
-        for entry_result in read_dir {
-            let entry = match entry_result {
-                Ok(value) => value,
-                Err(_) => continue,
-            };
-
-            let name = entry.file_name().to_string_lossy().to_string();
-            let is_hidden = is_hidden_entry(&entry, &name);
-            if is_hidden && !show_hidden {
-                continue;
-            }
-
-            let meta = match entry.metadata() {
-                Ok(value) => value,
-                Err(_) => continue,
-            };
-
-            let path_buf = entry.path();
-            let is_dir = meta.is_dir();
-            let is_symlink = meta.file_type().is_symlink();
-            let modified = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_millis() as u64)
-                .unwrap_or(0);
-            let extension = if is_dir {
-                String::new()
-            } else {
-                normalized_extension(&path_buf)
-            };
-            let relative_path = path_buf
-                .strip_prefix(&root)
-                .map(|relative| relative.to_string_lossy().to_string())
-                .unwrap_or_else(|_| path_buf.to_string_lossy().to_string());
-            let name_hit = name.to_ascii_lowercase().contains(&query_lower);
-
-            if is_dir {
-                if name_hit {
-                    name_matches.push(FileSearchResult {
-                        name,
-                        path: path_buf.to_string_lossy().to_string(),
-                        relative_path,
-                        is_dir,
-                        size: 0,
-                        modified,
-                        extension,
-                        is_hidden,
-                        is_symlink,
-                        match_kind: FileSearchMatchKind::Name,
-                        snippet: String::new(),
-                        line_number: None,
-                    });
-                }
-
-                if !is_symlink {
-                    stack.push(path_buf);
-                }
-                continue;
-            }
-
-            let mut content_hit = false;
-            let mut snippet = String::new();
-            let mut line_number = None;
-
-            if include_content
-                && meta.len() <= MAX_CONTENT_BYTES
-                && is_searchable_text_file(&path_buf)
-            {
-                if let Ok(file) = std::fs::File::open(&path_buf) {
-                    let reader = std::io::BufReader::new(file);
-                    use std::io::BufRead;
-                    for (idx, line_result) in reader.lines().enumerate() {
-                        let line = match line_result {
-                            Ok(value) => value,
-                            Err(_) => break,
-                        };
-                        if line.to_ascii_lowercase().contains(&query_lower) {
-                            content_hit = true;
-                            snippet = build_search_snippet(&line, &query_lower);
-                            line_number = Some((idx + 1) as u64);
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if !name_hit && !content_hit {
-                continue;
-            }
-
-            let result = FileSearchResult {
-                name,
-                path: path_buf.to_string_lossy().to_string(),
-                relative_path,
-                is_dir,
-                size: meta.len(),
-                modified,
-                extension,
-                is_hidden,
-                is_symlink,
-                match_kind: match (name_hit, content_hit) {
-                    (true, true) => FileSearchMatchKind::NameAndContent,
-                    (false, true) => FileSearchMatchKind::Content,
-                    _ => FileSearchMatchKind::Name,
-                },
-                snippet,
-                line_number,
-            };
-
-            match result.match_kind {
-                FileSearchMatchKind::NameAndContent => combined_matches.push(result),
-                FileSearchMatchKind::Content => content_matches.push(result),
-                FileSearchMatchKind::Name => name_matches.push(result),
-            }
+        if line.to_ascii_lowercase().contains(query_lower) {
+            return Ok(Some((
+                build_search_snippet(&line, query_lower),
+                Some((idx + 1) as u64),
+            )));
         }
     }
 
-    let mut results = Vec::new();
-    results.extend(combined_matches);
-    results.extend(content_matches);
-    results.extend(name_matches);
+    Ok(None)
+}
+
+fn search_file_content_for_match(
+    path: &Path,
+    query_lower: &str,
+    request_scope: &str,
+    request_id: u64,
+) -> Result<Option<(String, Option<u64>)>, ()> {
+    let file = match std::fs::File::open(path) {
+        Ok(value) => value,
+        Err(_) => return Ok(None),
+    };
+
+    search_reader_for_match(
+        std::io::BufReader::new(file),
+        query_lower,
+        request_scope,
+        request_id,
+    )
+}
+
+fn search_cached_content_for_match(
+    content: &str,
+    query_lower: &str,
+    request_scope: &str,
+    request_id: u64,
+) -> Result<Option<(String, Option<u64>)>, ()> {
+    search_reader_for_match(
+        std::io::Cursor::new(content.as_bytes()),
+        query_lower,
+        request_scope,
+        request_id,
+    )
+}
+
+fn sort_search_results(results: &mut [FileSearchResult]) {
     results.sort_by(|a, b| {
         let rank = |kind: FileSearchMatchKind| match kind {
             FileSearchMatchKind::NameAndContent => 0u8,
@@ -986,8 +1424,462 @@ pub async fn fs_search_entries(
                     .cmp(&b.name.to_ascii_lowercase())
             })
     });
+}
+
+fn lookup_cached_name_search_results(
+    root: &Path,
+    query_lower: &str,
+    show_hidden: bool,
+    max_results: usize,
+) -> Option<Vec<FileSearchResult>> {
+    if fs_cache_policy().search_name_index_cache_ttl.is_zero() {
+        return None;
+    }
+
+    let key = path_cache_key(root);
+    let cached_entries = {
+        let mut cache = search_name_index_cache()
+            .lock()
+            .expect("search name index cache poisoned");
+        prune_expired_search_name_index_cache(&mut cache);
+        cache.get(&key)?.get(show_hidden)?.entries.clone()
+    };
+
+    let mut matches = cached_entries
+        .into_iter()
+        .filter(|entry| entry.name_lower.contains(query_lower))
+        .collect::<Vec<_>>();
+    matches.sort_by(|a, b| {
+        a.path_lower
+            .cmp(&b.path_lower)
+            .then_with(|| a.name_lower.cmp(&b.name_lower))
+    });
+    matches.truncate(max_results);
+
+    Some(matches.into_iter().map(|entry| entry.result).collect())
+}
+
+fn store_search_name_index(root: &Path, show_hidden: bool, entries: Vec<CachedSearchNameEntry>) {
+    if fs_cache_policy().search_name_index_cache_ttl.is_zero() {
+        return;
+    }
+
+    let key = path_cache_key(root);
+    let mut cache = search_name_index_cache()
+        .lock()
+        .expect("search name index cache poisoned");
+    prune_expired_search_name_index_cache(&mut cache);
+    cache.entry(key).or_default().set(
+        show_hidden,
+        CachedSearchIndex {
+            entries,
+            cached_at: Instant::now(),
+        },
+    );
+}
+
+fn lookup_cached_content_search_results(
+    root: &Path,
+    query_lower: &str,
+    show_hidden: bool,
+    max_results: usize,
+    request_scope: &str,
+    request_id: u64,
+) -> Option<Vec<FileSearchResult>> {
+    let policy = fs_cache_policy();
+    if policy.search_content_index_cache_ttl.is_zero()
+        || policy.search_content_index_total_bytes_budget == 0
+    {
+        return None;
+    }
+
+    let key = path_cache_key(root);
+    let cached_entries = {
+        let mut cache = search_content_index_cache()
+            .lock()
+            .expect("search content index cache poisoned");
+        prune_expired_search_content_index_cache(&mut cache);
+        cache.get(&key)?.get(show_hidden)?.entries.clone()
+    };
+
+    let mut combined_matches: Vec<FileSearchResult> = Vec::new();
+    let mut content_matches: Vec<FileSearchResult> = Vec::new();
+    let mut name_matches: Vec<FileSearchResult> = Vec::new();
+
+    for (index, entry) in cached_entries.iter().enumerate() {
+        if index % 32 == 0 && !is_search_request_active(request_scope, request_id) {
+            return Some(Vec::new());
+        }
+
+        let name_hit = entry.name_lower.contains(query_lower);
+        let content_match = match entry.content.as_deref() {
+            Some(content) => match search_cached_content_for_match(
+                content,
+                query_lower,
+                request_scope,
+                request_id,
+            ) {
+                Ok(value) => value,
+                Err(()) => return Some(Vec::new()),
+            },
+            None => None,
+        };
+        let content_hit = content_match.is_some();
+        if !name_hit && !content_hit {
+            continue;
+        }
+
+        let mut result = entry.result.clone();
+        result.match_kind = match (name_hit, content_hit) {
+            (true, true) => FileSearchMatchKind::NameAndContent,
+            (false, true) => FileSearchMatchKind::Content,
+            _ => FileSearchMatchKind::Name,
+        };
+        if let Some((snippet, line_number)) = content_match {
+            result.snippet = snippet;
+            result.line_number = line_number;
+        }
+
+        match result.match_kind {
+            FileSearchMatchKind::NameAndContent => combined_matches.push(result),
+            FileSearchMatchKind::Content => content_matches.push(result),
+            FileSearchMatchKind::Name => name_matches.push(result),
+        }
+    }
+
+    let mut results = Vec::new();
+    results.extend(combined_matches);
+    results.extend(content_matches);
+    results.extend(name_matches);
+    sort_search_results(&mut results);
+    results.truncate(max_results);
+    Some(results)
+}
+
+fn store_search_content_index(
+    root: &Path,
+    show_hidden: bool,
+    entries: Vec<CachedSearchContentEntry>,
+) {
+    let policy = fs_cache_policy();
+    if policy.search_content_index_cache_ttl.is_zero()
+        || policy.search_content_index_total_bytes_budget == 0
+    {
+        return;
+    }
+
+    let key = path_cache_key(root);
+    let mut cache = search_content_index_cache()
+        .lock()
+        .expect("search content index cache poisoned");
+    prune_expired_search_content_index_cache(&mut cache);
+    cache.entry(key).or_default().set(
+        show_hidden,
+        CachedSearchContentIndex {
+            entries,
+            cached_at: Instant::now(),
+        },
+    );
+}
+
+fn search_entries_blocking(
+    path: String,
+    query: String,
+    show_hidden: bool,
+    include_content: bool,
+    limit: Option<usize>,
+    request_scope: String,
+    request_id: u64,
+) -> Result<Vec<FileSearchResult>, String> {
+    let policy = fs_cache_policy();
+    let root = PathBuf::from(&path);
+    if !root.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+    if !root.is_dir() {
+        return Err(format!("Path is not a directory: {}", path));
+    }
+
+    let query = query.trim().to_string();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let query_lower = query.to_ascii_lowercase();
+    let max_results = limit.unwrap_or(250).clamp(1, 1000);
+    if include_content {
+        if let Some(results) = lookup_cached_content_search_results(
+            &root,
+            &query_lower,
+            show_hidden,
+            max_results,
+            &request_scope,
+            request_id,
+        ) {
+            if !is_search_request_active(&request_scope, request_id) {
+                return Ok(Vec::new());
+            }
+            return Ok(results);
+        }
+    } else {
+        if let Some(results) =
+            lookup_cached_name_search_results(&root, &query_lower, show_hidden, max_results)
+        {
+            if !is_search_request_active(&request_scope, request_id) {
+                return Ok(Vec::new());
+            }
+            return Ok(results);
+        }
+    }
+
+    let mut stack = vec![root.clone()];
+    let mut combined_matches: Vec<FileSearchResult> = Vec::new();
+    let mut content_matches: Vec<FileSearchResult> = Vec::new();
+    let mut name_matches: Vec<FileSearchResult> = Vec::new();
+    let mut cached_name_entries: Vec<CachedSearchNameEntry> = Vec::new();
+    let mut cached_content_entries = include_content.then(|| Vec::new());
+    let mut content_cache_complete = include_content;
+    let mut cached_content_bytes = 0_u64;
+
+    while let Some(current_dir) = stack.pop() {
+        if !is_search_request_active(&request_scope, request_id) {
+            return Ok(Vec::new());
+        }
+
+        let read_dir = match std::fs::read_dir(&current_dir) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+
+        for entry_result in read_dir {
+            if !is_search_request_active(&request_scope, request_id) {
+                return Ok(Vec::new());
+            }
+            pause_search_entry_scan_for_tests();
+            record_search_entry_scan_for_tests();
+
+            let entry = match entry_result {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+
+            let name = entry.file_name().to_string_lossy().to_string();
+            let meta = match entry.metadata() {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+
+            let is_hidden = is_hidden_with_metadata(&name, &meta);
+            if is_hidden && !show_hidden {
+                continue;
+            }
+
+            let path_buf = entry.path();
+            let file_type = match entry.file_type() {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            let target_metadata = followed_metadata_for_symlink(&path_buf, &file_type);
+            let metadata = target_metadata.as_ref().unwrap_or(&meta);
+            let is_symlink = file_type.is_symlink();
+            let is_dir = file_type.is_dir() || metadata.is_dir();
+            let modified = metadata_modified_ms(metadata).unwrap_or(0);
+            let extension = if is_dir {
+                String::new()
+            } else {
+                normalized_extension(&path_buf)
+            };
+            let relative_path = path_buf
+                .strip_prefix(&root)
+                .map(|relative| relative.to_string_lossy().to_string())
+                .unwrap_or_else(|_| path_buf.to_string_lossy().to_string());
+            let name_lower = name.to_ascii_lowercase();
+            let cached_name_result = FileSearchResult {
+                name,
+                path: path_buf.to_string_lossy().to_string(),
+                relative_path,
+                is_dir,
+                size: if is_dir { 0 } else { meta.len() },
+                modified,
+                extension,
+                is_hidden,
+                is_symlink,
+                match_kind: FileSearchMatchKind::Name,
+                snippet: String::new(),
+                line_number: None,
+            };
+            cached_name_entries.push(CachedSearchNameEntry {
+                name_lower: name_lower.clone(),
+                path_lower: cached_name_result.path.to_ascii_lowercase(),
+                result: cached_name_result.clone(),
+            });
+            let name_hit = name_lower.contains(&query_lower);
+
+            if is_dir {
+                if name_hit {
+                    name_matches.push(cached_name_result);
+                }
+
+                if !is_symlink {
+                    stack.push(path_buf);
+                }
+                continue;
+            }
+
+            let mut content_hit = false;
+            let mut snippet = String::new();
+            let mut line_number = None;
+            let mut cached_content = None;
+            let content_searchable = metadata.len() <= policy.max_search_content_file_bytes
+                && is_searchable_text_file(&path_buf);
+
+            if include_content && content_searchable {
+                if content_cache_complete
+                    && cached_content_bytes.saturating_add(metadata.len())
+                        <= policy.search_content_index_total_bytes_budget
+                {
+                    match std::fs::read_to_string(&path_buf) {
+                        Ok(content) => {
+                            match search_cached_content_for_match(
+                                &content,
+                                &query_lower,
+                                &request_scope,
+                                request_id,
+                            ) {
+                                Ok(Some((matched_snippet, matched_line_number))) => {
+                                    content_hit = true;
+                                    snippet = matched_snippet;
+                                    line_number = matched_line_number;
+                                }
+                                Ok(None) => {}
+                                Err(()) => return Ok(Vec::new()),
+                            }
+                            cached_content_bytes =
+                                cached_content_bytes.saturating_add(metadata.len());
+                            cached_content = Some(Arc::<str>::from(content));
+                        }
+                        Err(_) => {
+                            content_cache_complete = false;
+                            match search_file_content_for_match(
+                                &path_buf,
+                                &query_lower,
+                                &request_scope,
+                                request_id,
+                            ) {
+                                Ok(Some((matched_snippet, matched_line_number))) => {
+                                    content_hit = true;
+                                    snippet = matched_snippet;
+                                    line_number = matched_line_number;
+                                }
+                                Ok(None) => {}
+                                Err(()) => return Ok(Vec::new()),
+                            }
+                        }
+                    }
+                } else {
+                    content_cache_complete = false;
+                    match search_file_content_for_match(
+                        &path_buf,
+                        &query_lower,
+                        &request_scope,
+                        request_id,
+                    ) {
+                        Ok(Some((matched_snippet, matched_line_number))) => {
+                            content_hit = true;
+                            snippet = matched_snippet;
+                            line_number = matched_line_number;
+                        }
+                        Ok(None) => {}
+                        Err(()) => return Ok(Vec::new()),
+                    }
+                }
+            }
+
+            if let Some(entries) = cached_content_entries.as_mut() {
+                entries.push(CachedSearchContentEntry {
+                    name_lower: name_lower.clone(),
+                    result: cached_name_result.clone(),
+                    content: cached_content,
+                });
+            }
+
+            if !name_hit && !content_hit {
+                continue;
+            }
+
+            let mut result = cached_name_result;
+            result.match_kind = match (name_hit, content_hit) {
+                (true, true) => FileSearchMatchKind::NameAndContent,
+                (false, true) => FileSearchMatchKind::Content,
+                _ => FileSearchMatchKind::Name,
+            };
+            result.snippet = snippet;
+            result.line_number = line_number;
+
+            match result.match_kind {
+                FileSearchMatchKind::NameAndContent => combined_matches.push(result),
+                FileSearchMatchKind::Content => content_matches.push(result),
+                FileSearchMatchKind::Name => name_matches.push(result),
+            }
+        }
+    }
+
+    if !is_search_request_active(&request_scope, request_id) {
+        return Ok(Vec::new());
+    }
+    store_search_name_index(&root, show_hidden, cached_name_entries);
+    if content_cache_complete {
+        if let Some(entries) = cached_content_entries {
+            store_search_content_index(&root, show_hidden, entries);
+        }
+    }
+
+    let mut results = Vec::new();
+    results.extend(combined_matches);
+    results.extend(content_matches);
+    results.extend(name_matches);
+    sort_search_results(&mut results);
     results.truncate(max_results);
     Ok(results)
+}
+
+#[tauri::command]
+pub fn fs_cancel_search_entries(
+    path: String,
+    request_id: Option<u64>,
+    request_scope: Option<String>,
+) -> Result<(), String> {
+    let scope = search_request_scope(&path, request_scope);
+    register_search_request(&scope, request_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn fs_search_entries(
+    path: String,
+    query: String,
+    show_hidden: bool,
+    include_content: bool,
+    limit: Option<usize>,
+    request_id: Option<u64>,
+    request_scope: Option<String>,
+) -> Result<Vec<FileSearchResult>, String> {
+    let scope = search_request_scope(&path, request_scope);
+    let active_request_id = register_search_request(&scope, request_id);
+
+    tauri::async_runtime::spawn_blocking(move || {
+        search_entries_blocking(
+            path,
+            query,
+            show_hidden,
+            include_content,
+            limit,
+            scope,
+            active_request_id,
+        )
+    })
+    .await
+    .map_err(|error| format!("Failed to search entries: {error}"))?
 }
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
@@ -1341,9 +2233,9 @@ pub async fn fs_delete(path: String, recursive: bool) -> Result<(), String> {
     };
 
     if result.is_ok() {
-        invalidate_all_entry_size_caches(p);
+        invalidate_all_fs_caches(p);
         if let Some(parent) = p.parent() {
-            invalidate_all_entry_size_caches(parent);
+            invalidate_all_fs_caches(parent);
         }
     }
 
@@ -1358,13 +2250,13 @@ pub async fn fs_rename(old_path: String, new_path: String) -> Result<(), String>
     if result.is_ok() {
         let old_path_ref = Path::new(&old_path);
         let new_path_ref = Path::new(&new_path);
-        invalidate_all_entry_size_caches(old_path_ref);
-        invalidate_all_entry_size_caches(new_path_ref);
+        invalidate_all_fs_caches(old_path_ref);
+        invalidate_all_fs_caches(new_path_ref);
         if let Some(parent) = old_path_ref.parent() {
-            invalidate_all_entry_size_caches(parent);
+            invalidate_all_fs_caches(parent);
         }
         if let Some(parent) = new_path_ref.parent() {
-            invalidate_all_entry_size_caches(parent);
+            invalidate_all_fs_caches(parent);
         }
     }
     result
@@ -1376,13 +2268,13 @@ pub async fn fs_move(src: String, dst: String) -> Result<(), String> {
     let dst_path = Path::new(&dst);
     let result = move_path(src_path, dst_path).map_err(|e| e.to_string());
     if result.is_ok() {
-        invalidate_all_entry_size_caches(src_path);
-        invalidate_all_entry_size_caches(dst_path);
+        invalidate_all_fs_caches(src_path);
+        invalidate_all_fs_caches(dst_path);
         if let Some(parent) = src_path.parent() {
-            invalidate_all_entry_size_caches(parent);
+            invalidate_all_fs_caches(parent);
         }
         if let Some(parent) = dst_path.parent() {
-            invalidate_all_entry_size_caches(parent);
+            invalidate_all_fs_caches(parent);
         }
     }
     result
@@ -1403,9 +2295,9 @@ pub async fn fs_copy(src: String, dst: String) -> Result<(), String> {
 
     if result.is_ok() {
         let dst_path = Path::new(&dst);
-        invalidate_all_entry_size_caches(dst_path);
+        invalidate_all_fs_caches(dst_path);
         if let Some(parent) = dst_path.parent() {
-            invalidate_all_entry_size_caches(parent);
+            invalidate_all_fs_caches(parent);
         }
     }
 
@@ -1479,13 +2371,13 @@ pub async fn fs_transfer_items(
     }
 
     for result in &results {
-        invalidate_all_entry_size_caches(Path::new(&result.source_path));
-        invalidate_all_entry_size_caches(Path::new(&result.destination_path));
+        invalidate_all_fs_caches(Path::new(&result.source_path));
+        invalidate_all_fs_caches(Path::new(&result.destination_path));
         if let Some(parent) = Path::new(&result.source_path).parent() {
-            invalidate_all_entry_size_caches(parent);
+            invalidate_all_fs_caches(parent);
         }
         if let Some(parent) = Path::new(&result.destination_path).parent() {
-            invalidate_all_entry_size_caches(parent);
+            invalidate_all_fs_caches(parent);
         }
     }
 
@@ -1640,9 +2532,9 @@ pub async fn fs_create_dir(path: String) -> Result<(), String> {
     let result = std::fs::create_dir_all(&path).map_err(|e| e.to_string());
     if result.is_ok() {
         let path_ref = Path::new(&path);
-        invalidate_all_entry_size_caches(path_ref);
+        invalidate_all_fs_caches(path_ref);
         if let Some(parent) = path_ref.parent() {
-            invalidate_all_entry_size_caches(parent);
+            invalidate_all_fs_caches(parent);
         }
     }
     result
@@ -1658,9 +2550,9 @@ pub async fn fs_write_file(path: String, content: String) -> Result<(), String> 
     let result = std::fs::write(&path, content.as_bytes()).map_err(|e| e.to_string());
     if result.is_ok() {
         let path_ref = Path::new(&path);
-        invalidate_all_entry_size_caches(path_ref);
+        invalidate_all_fs_caches(path_ref);
         if let Some(parent) = path_ref.parent() {
-            invalidate_all_entry_size_caches(parent);
+            invalidate_all_fs_caches(parent);
         }
     }
     result
@@ -2002,6 +2894,112 @@ mod tests {
         tempfile::tempdir().expect("failed to create tempdir")
     }
 
+    #[cfg(test)]
+    struct SearchScanDelayGuard;
+
+    #[cfg(test)]
+    impl Drop for SearchScanDelayGuard {
+        fn drop(&mut self) {
+            SEARCH_ENTRY_TEST_DELAY_MS.store(0, Ordering::Relaxed);
+            SEARCH_ENTRY_TEST_SCAN_COUNT.store(0, Ordering::Relaxed);
+        }
+    }
+
+    #[cfg(test)]
+    fn set_search_scan_delay(delay_ms: u64) -> SearchScanDelayGuard {
+        SEARCH_ENTRY_TEST_DELAY_MS.store(delay_ms, Ordering::Relaxed);
+        SEARCH_ENTRY_TEST_SCAN_COUNT.store(0, Ordering::Relaxed);
+        SearchScanDelayGuard
+    }
+
+    #[cfg(test)]
+    fn reset_search_scan_count() {
+        SEARCH_ENTRY_TEST_SCAN_COUNT.store(0, Ordering::Relaxed);
+    }
+
+    #[cfg(test)]
+    fn search_scan_count() -> u64 {
+        SEARCH_ENTRY_TEST_SCAN_COUNT.load(Ordering::Relaxed)
+    }
+
+    #[cfg(test)]
+    async fn search_test_serial_lock() -> tokio::sync::MutexGuard<'static, ()> {
+        static SEARCH_TEST_SERIAL_MUTEX: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+        SEARCH_TEST_SERIAL_MUTEX
+            .get_or_init(|| tokio::sync::Mutex::new(()))
+            .lock()
+            .await
+    }
+
+    #[test]
+    fn parse_fs_cache_policy_u64_defaults_for_missing_blank_and_invalid_values() {
+        assert_eq!(parse_fs_cache_policy_u64(None, 42), 42);
+        assert_eq!(parse_fs_cache_policy_u64(Some(""), 42), 42);
+        assert_eq!(parse_fs_cache_policy_u64(Some("  "), 42), 42);
+        assert_eq!(parse_fs_cache_policy_u64(Some("invalid"), 42), 42);
+    }
+
+    #[test]
+    fn resolve_fs_cache_policy_uses_defaults_without_overrides() {
+        let policy = resolve_fs_cache_policy_from_lookup(|_| None);
+        let snapshot = policy.snapshot();
+
+        assert_eq!(
+            snapshot.dir_list_cache_ttl_ms,
+            DIR_LIST_CACHE_TTL_MS_DEFAULT
+        );
+        assert_eq!(
+            snapshot.search_name_index_cache_ttl_ms,
+            SEARCH_NAME_INDEX_CACHE_TTL_MS_DEFAULT
+        );
+        assert_eq!(
+            snapshot.search_content_index_cache_ttl_ms,
+            SEARCH_CONTENT_INDEX_CACHE_TTL_MS_DEFAULT
+        );
+        assert_eq!(
+            snapshot.entry_size_cache_ttl_ms,
+            ENTRY_SIZE_CACHE_TTL_MS_DEFAULT
+        );
+        assert_eq!(
+            snapshot.entry_size_scan_budget_ms,
+            ENTRY_SIZE_SCAN_BUDGET_MS_DEFAULT
+        );
+        assert_eq!(
+            snapshot.search_content_index_total_bytes_budget,
+            SEARCH_CONTENT_INDEX_TOTAL_BYTES_BUDGET_DEFAULT
+        );
+        assert_eq!(
+            snapshot.max_search_content_file_bytes,
+            MAX_SEARCH_CONTENT_BYTES_DEFAULT
+        );
+    }
+
+    #[test]
+    fn resolve_fs_cache_policy_applies_valid_overrides() {
+        let overrides = HashMap::from([
+            (DIR_LIST_CACHE_TTL_ENV, "1250".to_string()),
+            (SEARCH_NAME_INDEX_CACHE_TTL_ENV, "2200".to_string()),
+            (SEARCH_CONTENT_INDEX_CACHE_TTL_ENV, "3200".to_string()),
+            (ENTRY_SIZE_CACHE_TTL_ENV, "15000".to_string()),
+            (ENTRY_SIZE_SCAN_BUDGET_ENV, "1200".to_string()),
+            (
+                SEARCH_CONTENT_INDEX_TOTAL_BYTES_BUDGET_ENV,
+                "1048576".to_string(),
+            ),
+            (MAX_SEARCH_CONTENT_BYTES_ENV, "2048".to_string()),
+        ]);
+        let policy = resolve_fs_cache_policy_from_lookup(|key| overrides.get(key).cloned());
+        let snapshot = policy.snapshot();
+
+        assert_eq!(snapshot.dir_list_cache_ttl_ms, 1250);
+        assert_eq!(snapshot.search_name_index_cache_ttl_ms, 2200);
+        assert_eq!(snapshot.search_content_index_cache_ttl_ms, 3200);
+        assert_eq!(snapshot.entry_size_cache_ttl_ms, 15000);
+        assert_eq!(snapshot.entry_size_scan_budget_ms, 1200);
+        assert_eq!(snapshot.search_content_index_total_bytes_budget, 1_048_576);
+        assert_eq!(snapshot.max_search_content_file_bytes, 2048);
+    }
+
     #[tokio::test]
     async fn list_dir_returns_files_and_dirs() {
         let dir = tmp_dir();
@@ -2046,6 +3044,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn list_dir_preserves_unicode_case_insensitive_sorting() {
+        let dir = tmp_dir();
+        fs::write(dir.path().join("jar.txt"), b"j").unwrap();
+        fs::write(dir.path().join("İstanbul.txt"), b"i").unwrap();
+
+        let entries = fs_list_dir(dir.path().to_string_lossy().into(), false)
+            .await
+            .expect("fs_list_dir failed");
+
+        let file_names: Vec<_> = entries
+            .iter()
+            .filter(|entry| !entry.is_dir)
+            .map(|entry| entry.name.as_str())
+            .collect();
+        assert_eq!(
+            file_names,
+            vec!["İstanbul.txt", "jar.txt"],
+            "fs_list_dir should keep Unicode-aware case-insensitive ordering"
+        );
+    }
+
+    #[tokio::test]
     async fn list_dir_hides_hidden_files_by_default() {
         let dir = tmp_dir();
         fs::write(dir.path().join(".hidden"), b"secret").unwrap();
@@ -2080,6 +3100,102 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn list_dir_does_not_reuse_filtered_cache_for_show_hidden_requests() {
+        let dir = tmp_dir();
+        fs::write(dir.path().join(".hidden"), b"secret").unwrap();
+        fs::write(dir.path().join("visible.txt"), b"public").unwrap();
+
+        let entries_without_hidden = fs_list_dir(dir.path().to_string_lossy().into(), false)
+            .await
+            .expect("initial filtered fs_list_dir failed");
+        assert!(
+            entries_without_hidden
+                .iter()
+                .all(|entry| !entry.name.starts_with('.')),
+            "filtered listing should not contain hidden entries"
+        );
+
+        let entries_with_hidden = fs_list_dir(dir.path().to_string_lossy().into(), true)
+            .await
+            .expect("show_hidden fs_list_dir failed");
+        assert!(
+            entries_with_hidden
+                .iter()
+                .any(|entry| entry.name.starts_with('.')),
+            "show_hidden listing should bypass the filtered cache variant"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_dir_uncached_refreshes_entry_metadata_after_external_write() {
+        let dir = tmp_dir();
+        let dir_path = dir.path().to_string_lossy().into_owned();
+        let file_path = dir.path().join("alpha.txt");
+        fs::write(&file_path, b"alpha").unwrap();
+
+        let cached_entries = fs_list_dir(dir_path.clone(), false)
+            .await
+            .expect("initial fs_list_dir failed");
+        let cached_size = cached_entries
+            .iter()
+            .find(|entry| entry.name == "alpha.txt")
+            .expect("cached file entry missing")
+            .size;
+        assert_eq!(cached_size, 5);
+
+        fs::write(&file_path, b"alpha-with-more-bytes").unwrap();
+
+        let refreshed_entries = fs_list_dir_uncached(dir_path, false)
+            .await
+            .expect("uncached fs_list_dir failed");
+        let refreshed_size = refreshed_entries
+            .iter()
+            .find(|entry| entry.name == "alpha.txt")
+            .expect("refreshed file entry missing")
+            .size;
+        assert_eq!(
+            refreshed_size, 21,
+            "uncached listing should re-read file metadata after external writes"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_dir_marks_symlinked_directories() {
+        #[cfg(not(any(target_family = "windows", target_family = "unix")))]
+        {
+            return;
+        }
+
+        let dir = tmp_dir();
+        let real_dir = dir.path().join("real");
+        let linked_dir = dir.path().join("linked");
+        fs::create_dir_all(&real_dir).unwrap();
+        fs::write(real_dir.join("payload.txt"), b"hello").unwrap();
+
+        #[cfg(target_family = "unix")]
+        std::os::unix::fs::symlink(&real_dir, &linked_dir).unwrap();
+
+        #[cfg(target_family = "windows")]
+        std::os::windows::fs::symlink_dir(&real_dir, &linked_dir).unwrap();
+
+        let entries = fs_list_dir(dir.path().to_string_lossy().into(), false)
+            .await
+            .expect("fs_list_dir failed");
+
+        let linked = entries
+            .iter()
+            .find(|entry| entry.name == "linked")
+            .expect("symlinked directory missing from listing");
+
+        assert!(linked.is_dir, "symlinked directory should stay navigable");
+        assert!(linked.is_symlink, "symlinked directory should be marked");
+        assert_eq!(
+            linked.size, 0,
+            "directory listings should not hydrate sizes"
+        );
+    }
+
+    #[tokio::test]
     async fn list_dir_fails_for_nonexistent_path() {
         let result = fs_list_dir("C:\\nonexistent\\path\\xyz_abc".to_string(), false).await;
         assert!(result.is_err(), "expected Err for nonexistent path");
@@ -2101,6 +3217,187 @@ mod tests {
         assert!(
             result.is_err(),
             "expected Err when path is a file, not a dir"
+        );
+    }
+
+    #[tokio::test]
+    async fn write_file_invalidates_parent_directory_listing_cache() {
+        let dir = tmp_dir();
+        let dir_path = dir.path().to_string_lossy().into_owned();
+        let alpha_path = dir.path().join("alpha.txt");
+        let beta_path = dir.path().join("beta.txt");
+        fs::write(&alpha_path, b"alpha").unwrap();
+
+        let initial_entries = fs_list_dir(dir_path.clone(), false)
+            .await
+            .expect("initial fs_list_dir failed");
+        assert_eq!(
+            initial_entries
+                .iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["alpha.txt"]
+        );
+
+        fs_write_file(beta_path.to_string_lossy().into_owned(), "beta".to_string())
+            .await
+            .expect("fs_write_file failed");
+
+        let refreshed_entries = fs_list_dir(dir_path, false)
+            .await
+            .expect("refreshed fs_list_dir failed");
+        assert_eq!(
+            refreshed_entries
+                .iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["alpha.txt", "beta.txt"]
+        );
+    }
+
+    #[tokio::test]
+    async fn rename_invalidates_parent_directory_listing_cache() {
+        let dir = tmp_dir();
+        let dir_path = dir.path().to_string_lossy().into_owned();
+        let old_path = dir.path().join("alpha.txt");
+        let new_path = dir.path().join("beta.txt");
+        fs::write(&old_path, b"alpha").unwrap();
+
+        let initial_entries = fs_list_dir(dir_path.clone(), false)
+            .await
+            .expect("initial fs_list_dir failed");
+        assert_eq!(
+            initial_entries
+                .iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["alpha.txt"]
+        );
+
+        fs_rename(
+            old_path.to_string_lossy().into_owned(),
+            new_path.to_string_lossy().into_owned(),
+        )
+        .await
+        .expect("fs_rename failed");
+
+        let refreshed_entries = fs_list_dir(dir_path, false)
+            .await
+            .expect("refreshed fs_list_dir failed");
+        assert_eq!(
+            refreshed_entries
+                .iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["beta.txt"]
+        );
+    }
+
+    #[test]
+    fn dir_list_cache_prunes_expired_variants() {
+        let dir_list_ttl = Duration::from_millis(DIR_LIST_CACHE_TTL_MS_DEFAULT);
+        let expired_at = Instant::now()
+            .checked_sub(dir_list_ttl + Duration::from_millis(25))
+            .expect("failed to construct expired instant");
+        let stale_key = format!("prune-test-{}", current_time_millis());
+
+        {
+            let mut cache = dir_list_cache().lock().expect("dir list cache poisoned");
+            cache.insert(
+                stale_key.clone(),
+                CachedDirListingVariants {
+                    visible_only: Some(CachedDirListing {
+                        entries: Vec::new(),
+                        directory_modified_ms: None,
+                        cached_at: expired_at,
+                    }),
+                    include_hidden: None,
+                },
+            );
+            prune_expired_dir_list_cache(&mut cache);
+        }
+
+        let cache = dir_list_cache().lock().expect("dir list cache poisoned");
+        assert!(
+            !cache.contains_key(&stale_key),
+            "expired directory listings should be pruned instead of growing unbounded"
+        );
+    }
+
+    #[tokio::test]
+    async fn external_path_invalidation_refreshes_parent_directory_listing_cache() {
+        let dir = tmp_dir();
+        let dir_path = dir.path().to_string_lossy().into_owned();
+        let alpha_path = dir.path().join("alpha.txt");
+        let beta_path = dir.path().join("beta.txt");
+        fs::write(&alpha_path, b"alpha").unwrap();
+
+        let initial_entries = fs_list_dir(dir_path.clone(), false)
+            .await
+            .expect("initial fs_list_dir failed");
+        assert_eq!(
+            initial_entries
+                .iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["alpha.txt"]
+        );
+
+        fs::write(&beta_path, b"beta").unwrap();
+        invalidate_all_fs_caches_for_path(&beta_path);
+
+        let refreshed_entries = fs_list_dir(dir_path, false)
+            .await
+            .expect("refreshed fs_list_dir failed");
+        assert_eq!(
+            refreshed_entries
+                .iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["alpha.txt", "beta.txt"]
+        );
+    }
+
+    #[tokio::test]
+    async fn search_entries_skip_symlinked_directories() {
+        let _serial_guard = search_test_serial_lock().await;
+        #[cfg(not(any(target_family = "windows", target_family = "unix")))]
+        {
+            return;
+        }
+
+        let dir = tmp_dir();
+        let real_dir = dir.path().join("real");
+        let linked_dir = dir.path().join("linked");
+        fs::create_dir_all(&real_dir).unwrap();
+        fs::write(real_dir.join("needle.txt"), b"needle").unwrap();
+
+        #[cfg(target_family = "unix")]
+        std::os::unix::fs::symlink(&real_dir, &linked_dir).unwrap();
+
+        #[cfg(target_family = "windows")]
+        std::os::windows::fs::symlink_dir(&real_dir, &linked_dir).unwrap();
+
+        let results = fs_search_entries(
+            dir.path().to_string_lossy().into(),
+            "needle".to_string(),
+            false,
+            false,
+            Some(10),
+            None,
+            None,
+        )
+        .await
+        .expect("fs_search_entries failed");
+
+        assert_eq!(
+            results.len(),
+            1,
+            "symlinked directories should not duplicate recursive search results"
+        );
+        assert_eq!(
+            results[0].relative_path,
+            "real\\needle.txt".replace('\\', std::path::MAIN_SEPARATOR_STR)
         );
     }
 
@@ -2245,6 +3542,7 @@ mod tests {
 
     #[tokio::test]
     async fn search_entries_finds_nested_content_matches() {
+        let _serial_guard = search_test_serial_lock().await;
         let dir = tmp_dir();
         let nested = dir.path().join("src").join("deep");
         fs::create_dir_all(&nested).unwrap();
@@ -2257,6 +3555,8 @@ mod tests {
             true,
             true,
             Some(50),
+            None,
+            None,
         )
         .await;
 
@@ -2270,6 +3570,7 @@ mod tests {
 
     #[tokio::test]
     async fn search_entries_can_skip_content_matches() {
+        let _serial_guard = search_test_serial_lock().await;
         let dir = tmp_dir();
         let named = dir.path().join("search-term-note.txt");
         let content_only = dir.path().join("other-note.txt");
@@ -2282,6 +3583,8 @@ mod tests {
             true,
             false,
             Some(50),
+            None,
+            None,
         )
         .await;
 
@@ -2291,6 +3594,873 @@ mod tests {
         assert_eq!(results[0].path, named.to_string_lossy());
         assert!(results[0].snippet.is_empty());
         assert_eq!(results[0].line_number, None);
+    }
+
+    #[tokio::test]
+    async fn search_entries_names_only_reuse_cached_index() {
+        let _serial_guard = search_test_serial_lock().await;
+        let _delay_guard = set_search_scan_delay(1);
+        let dir = tmp_dir();
+
+        for index in 0..64 {
+            fs::write(
+                dir.path().join(format!("alpha-note-{index:03}.txt")),
+                format!("payload {index}"),
+            )
+            .unwrap();
+        }
+
+        let root = dir.path().to_string_lossy().into_owned();
+        let first_results = fs_search_entries(
+            root.clone(),
+            "alpha-note".to_string(),
+            true,
+            false,
+            Some(100),
+            None,
+            None,
+        )
+        .await
+        .expect("first fs_search_entries failed");
+
+        assert_eq!(first_results.len(), 64);
+        assert!(
+            search_scan_count() >= 64,
+            "initial names-only search should walk the filesystem before the cache exists"
+        );
+
+        reset_search_scan_count();
+
+        let cached_results = fs_search_entries(
+            root.clone(),
+            "alpha-note-01".to_string(),
+            true,
+            false,
+            Some(100),
+            None,
+            None,
+        )
+        .await
+        .expect("cached fs_search_entries failed");
+
+        assert!(
+            !cached_results.is_empty(),
+            "cached names-only query should still return filtered matches"
+        );
+        assert_eq!(
+            search_scan_count(),
+            0,
+            "warm names-only searches should reuse the cached recursive name index"
+        );
+    }
+
+    #[tokio::test]
+    async fn search_entries_content_reuse_cached_index() {
+        let _serial_guard = search_test_serial_lock().await;
+        let _delay_guard = set_search_scan_delay(1);
+        let dir = tmp_dir();
+
+        for index in 0..40 {
+            fs::write(
+                dir.path().join(format!("entry-{index:03}.txt")),
+                format!("alpha body line\npayload-match-{index:03}\nomega"),
+            )
+            .unwrap();
+        }
+
+        let root_path = dir.path();
+        let root = root_path.to_string_lossy().into_owned();
+        let root_key = path_cache_key(root_path);
+        let first_results = fs_search_entries(
+            root.clone(),
+            "alpha body line".to_string(),
+            true,
+            true,
+            Some(100),
+            None,
+            None,
+        )
+        .await
+        .expect("first content fs_search_entries failed");
+
+        assert_eq!(first_results.len(), 40);
+        assert!(
+            search_scan_count() >= 40,
+            "initial content-enabled search should walk the filesystem before the cache exists"
+        );
+        {
+            let cache = search_content_index_cache()
+                .lock()
+                .expect("search content index cache poisoned");
+            assert!(
+                cache
+                    .get(&root_key)
+                    .and_then(|variants| variants.get(true))
+                    .is_some(),
+                "content-enabled search should populate the cached recursive content index when it fits the byte budget"
+            );
+        }
+
+        reset_search_scan_count();
+
+        let cached_results = fs_search_entries(
+            root,
+            "payload-match-017".to_string(),
+            true,
+            true,
+            Some(100),
+            None,
+            None,
+        )
+        .await
+        .expect("cached content fs_search_entries failed");
+
+        assert_eq!(cached_results.len(), 1);
+        assert_eq!(cached_results[0].line_number, Some(2));
+        assert_eq!(
+            search_scan_count(),
+            0,
+            "warm content-enabled searches should reuse the cached recursive content index"
+        );
+    }
+
+    #[tokio::test]
+    async fn search_entries_content_over_budget_stays_uncached() {
+        let _serial_guard = search_test_serial_lock().await;
+        let _delay_guard = set_search_scan_delay(1);
+        let dir = tmp_dir();
+        let first_file = dir.path().join("bulk-a.txt");
+        let second_file = dir.path().join("bulk-b.txt");
+        let repeated_a = "alpha payload line\n".repeat(350_000);
+        let repeated_b = "target payload line\n".repeat(350_000);
+        fs::write(&first_file, repeated_a).unwrap();
+        fs::write(&second_file, repeated_b).unwrap();
+
+        let root_path = dir.path();
+        let root = root_path.to_string_lossy().into_owned();
+        let root_key = path_cache_key(root_path);
+
+        let first_results = fs_search_entries(
+            root.clone(),
+            "target payload line".to_string(),
+            true,
+            true,
+            Some(20),
+            None,
+            None,
+        )
+        .await
+        .expect("first over-budget content fs_search_entries failed");
+
+        assert_eq!(first_results.len(), 1);
+        assert_eq!(first_results[0].path, second_file.to_string_lossy());
+        assert!(
+            search_scan_count() >= 2,
+            "initial over-budget content search should still scan the live filesystem"
+        );
+        {
+            let cache = search_content_index_cache()
+                .lock()
+                .expect("search content index cache poisoned");
+            assert!(
+                cache
+                    .get(&root_key)
+                    .and_then(|variants| variants.get(true))
+                    .is_none(),
+                "over-budget content searches must not persist a partial recursive content index"
+            );
+        }
+
+        reset_search_scan_count();
+
+        let second_results = fs_search_entries(
+            root,
+            "target payload line".to_string(),
+            true,
+            true,
+            Some(20),
+            None,
+            None,
+        )
+        .await
+        .expect("second over-budget content fs_search_entries failed");
+
+        assert_eq!(second_results.len(), 1);
+        assert_eq!(second_results[0].path, second_file.to_string_lossy());
+        assert!(
+            search_scan_count() >= 2,
+            "repeated over-budget content searches should stay on the cold scan path"
+        );
+        {
+            let cache = search_content_index_cache()
+                .lock()
+                .expect("search content index cache poisoned");
+            assert!(
+                cache
+                    .get(&root_key)
+                    .and_then(|variants| variants.get(true))
+                    .is_none(),
+                "over-budget content searches must remain uncached across repeated queries"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn external_path_invalidation_clears_recursive_search_caches() {
+        let _serial_guard = search_test_serial_lock().await;
+        let dir = tmp_dir();
+        let original = dir.path().join("alpha-note.txt");
+        let nested_dir = dir.path().join("nested");
+        let nested_match = nested_dir.join("beta-note.txt");
+        fs::write(&original, "alpha body").unwrap();
+        fs::create_dir_all(&nested_dir).unwrap();
+
+        let root_path = dir.path();
+        let root = root_path.to_string_lossy().into_owned();
+        let root_key = path_cache_key(root_path);
+
+        let initial_name_results = fs_search_entries(
+            root.clone(),
+            "alpha-note".to_string(),
+            true,
+            false,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("initial names-only fs_search_entries failed");
+        assert_eq!(initial_name_results.len(), 1);
+
+        let initial_content_results = fs_search_entries(
+            root.clone(),
+            "alpha body".to_string(),
+            true,
+            true,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("initial content fs_search_entries failed");
+        assert_eq!(initial_content_results.len(), 1);
+
+        {
+            let name_cache = search_name_index_cache()
+                .lock()
+                .expect("search name index cache poisoned");
+            assert!(
+                name_cache
+                    .get(&root_key)
+                    .and_then(|variants| variants.get(true))
+                    .is_some(),
+                "initial names-only search should populate the cached recursive name index"
+            );
+        }
+        {
+            let content_cache = search_content_index_cache()
+                .lock()
+                .expect("search content index cache poisoned");
+            assert!(
+                content_cache
+                    .get(&root_key)
+                    .and_then(|variants| variants.get(true))
+                    .is_some(),
+                "initial content-enabled search should populate the cached recursive content index"
+            );
+        }
+
+        fs::write(&nested_match, "beta body").unwrap();
+        invalidate_all_fs_caches_for_path(&nested_match);
+
+        {
+            let name_cache = search_name_index_cache()
+                .lock()
+                .expect("search name index cache poisoned");
+            assert!(
+                name_cache.get(&root_key).is_none(),
+                "external invalidation should clear ancestor recursive name-search caches"
+            );
+        }
+        {
+            let content_cache = search_content_index_cache()
+                .lock()
+                .expect("search content index cache poisoned");
+            assert!(
+                content_cache.get(&root_key).is_none(),
+                "external invalidation should clear ancestor recursive content-search caches"
+            );
+        }
+
+        let refreshed_name_results = fs_search_entries(
+            root.clone(),
+            "beta-note".to_string(),
+            true,
+            false,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("refreshed names-only fs_search_entries failed");
+        assert_eq!(refreshed_name_results.len(), 1);
+        assert_eq!(
+            refreshed_name_results[0].path,
+            nested_match.to_string_lossy()
+        );
+
+        let refreshed_content_results = fs_search_entries(
+            root,
+            "beta body".to_string(),
+            true,
+            true,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("refreshed content fs_search_entries failed");
+        assert_eq!(refreshed_content_results.len(), 1);
+        assert_eq!(
+            refreshed_content_results[0].path,
+            nested_match.to_string_lossy()
+        );
+    }
+
+    #[tokio::test]
+    async fn search_entries_content_index_is_invalidated_by_fs_write_file() {
+        let _serial_guard = search_test_serial_lock().await;
+        let dir = tmp_dir();
+        let original = dir.path().join("notes.txt");
+        fs::write(&original, "alpha body").unwrap();
+
+        let root_path = dir.path();
+        let root = root_path.to_string_lossy().into_owned();
+        let root_key = path_cache_key(root_path);
+
+        let initial_results = fs_search_entries(
+            root.clone(),
+            "alpha body".to_string(),
+            true,
+            true,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("initial content fs_search_entries failed");
+
+        assert_eq!(initial_results.len(), 1);
+        {
+            let cache = search_content_index_cache()
+                .lock()
+                .expect("search content index cache poisoned");
+            assert!(
+                cache
+                    .get(&root_key)
+                    .and_then(|variants| variants.get(true))
+                    .is_some(),
+                "initial content-enabled search should populate the cached recursive content index"
+            );
+        }
+
+        let created_path = dir.path().join("nested").join("beta.txt");
+        fs_write_file(
+            created_path.to_string_lossy().into_owned(),
+            "beta body".to_string(),
+        )
+        .await
+        .expect("fs_write_file failed");
+
+        {
+            let cache = search_content_index_cache()
+                .lock()
+                .expect("search content index cache poisoned");
+            assert!(
+                cache.get(&root_key).is_none(),
+                "fs_write_file should invalidate ancestor recursive content-search caches"
+            );
+        }
+
+        let refreshed_results = fs_search_entries(
+            root,
+            "beta body".to_string(),
+            true,
+            true,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("refreshed content fs_search_entries failed");
+
+        assert_eq!(refreshed_results.len(), 1);
+        assert_eq!(refreshed_results[0].path, created_path.to_string_lossy());
+    }
+
+    #[tokio::test]
+    async fn search_entries_content_index_is_invalidated_by_fs_rename() {
+        let _serial_guard = search_test_serial_lock().await;
+        let dir = tmp_dir();
+        let old_path = dir.path().join("notes.txt");
+        let new_path = dir.path().join("renamed-notes.txt");
+        fs::write(&old_path, "alpha body").unwrap();
+
+        let root_path = dir.path();
+        let root = root_path.to_string_lossy().into_owned();
+        let root_key = path_cache_key(root_path);
+
+        let initial_results = fs_search_entries(
+            root.clone(),
+            "alpha body".to_string(),
+            true,
+            true,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("initial content fs_search_entries failed");
+
+        assert_eq!(initial_results.len(), 1);
+        {
+            let cache = search_content_index_cache()
+                .lock()
+                .expect("search content index cache poisoned");
+            assert!(
+                cache
+                    .get(&root_key)
+                    .and_then(|variants| variants.get(true))
+                    .is_some(),
+                "initial content-enabled search should populate the cached recursive content index"
+            );
+        }
+
+        fs_rename(
+            old_path.to_string_lossy().into_owned(),
+            new_path.to_string_lossy().into_owned(),
+        )
+        .await
+        .expect("fs_rename failed");
+
+        {
+            let cache = search_content_index_cache()
+                .lock()
+                .expect("search content index cache poisoned");
+            assert!(
+                cache.get(&root_key).is_none(),
+                "fs_rename should invalidate ancestor recursive content-search caches"
+            );
+        }
+
+        let refreshed_results = fs_search_entries(
+            root,
+            "alpha body".to_string(),
+            true,
+            true,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("refreshed content fs_search_entries failed");
+
+        assert_eq!(refreshed_results.len(), 1);
+        assert_eq!(refreshed_results[0].path, new_path.to_string_lossy());
+    }
+
+    #[tokio::test]
+    async fn search_entries_content_index_is_invalidated_by_fs_delete() {
+        let _serial_guard = search_test_serial_lock().await;
+        let dir = tmp_dir();
+        let file_path = dir.path().join("notes.txt");
+        fs::write(&file_path, "alpha body").unwrap();
+
+        let root_path = dir.path();
+        let root = root_path.to_string_lossy().into_owned();
+        let root_key = path_cache_key(root_path);
+
+        let initial_results = fs_search_entries(
+            root.clone(),
+            "alpha body".to_string(),
+            true,
+            true,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("initial content fs_search_entries failed");
+
+        assert_eq!(initial_results.len(), 1);
+        {
+            let cache = search_content_index_cache()
+                .lock()
+                .expect("search content index cache poisoned");
+            assert!(
+                cache
+                    .get(&root_key)
+                    .and_then(|variants| variants.get(true))
+                    .is_some(),
+                "initial content-enabled search should populate the cached recursive content index"
+            );
+        }
+
+        fs_delete(file_path.to_string_lossy().into_owned(), false)
+            .await
+            .expect("fs_delete failed");
+
+        {
+            let cache = search_content_index_cache()
+                .lock()
+                .expect("search content index cache poisoned");
+            assert!(
+                cache.get(&root_key).is_none(),
+                "fs_delete should invalidate ancestor recursive content-search caches"
+            );
+        }
+
+        let refreshed_results = fs_search_entries(
+            root,
+            "alpha body".to_string(),
+            true,
+            true,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("refreshed content fs_search_entries failed");
+
+        assert!(
+            refreshed_results.is_empty(),
+            "rebuilt content search should drop deleted files"
+        );
+    }
+
+    #[tokio::test]
+    async fn search_entries_name_index_is_invalidated_by_fs_write_file() {
+        let _serial_guard = search_test_serial_lock().await;
+        let dir = tmp_dir();
+        let original = dir.path().join("alpha-note.txt");
+        fs::write(&original, "payload").unwrap();
+
+        let root_path = dir.path();
+        let root = root_path.to_string_lossy().into_owned();
+        let root_key = path_cache_key(root_path);
+
+        let initial_results = fs_search_entries(
+            root.clone(),
+            "alpha-note".to_string(),
+            true,
+            false,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("initial fs_search_entries failed");
+
+        assert_eq!(initial_results.len(), 1);
+        {
+            let cache = search_name_index_cache()
+                .lock()
+                .expect("search name index cache poisoned");
+            assert!(
+                cache
+                    .get(&root_key)
+                    .and_then(|variants| variants.get(true))
+                    .is_some(),
+                "initial names-only search should populate the cached recursive name index"
+            );
+        }
+
+        fs_write_file(
+            dir.path()
+                .join("nested")
+                .join("alpha-note-2.txt")
+                .to_string_lossy()
+                .into_owned(),
+            "payload".to_string(),
+        )
+        .await
+        .expect("fs_write_file failed");
+
+        {
+            let cache = search_name_index_cache()
+                .lock()
+                .expect("search name index cache poisoned");
+            assert!(
+                cache.get(&root_key).is_none(),
+                "fs_write_file should invalidate ancestor recursive search caches"
+            );
+        }
+
+        let refreshed_results = fs_search_entries(
+            root,
+            "alpha-note".to_string(),
+            true,
+            false,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("refreshed fs_search_entries failed");
+
+        assert_eq!(
+            refreshed_results.len(),
+            2,
+            "rebuilt names-only index should include files created after invalidation"
+        );
+    }
+
+    #[tokio::test]
+    async fn search_entries_name_index_is_invalidated_by_fs_rename() {
+        let _serial_guard = search_test_serial_lock().await;
+        let dir = tmp_dir();
+        let old_path = dir.path().join("alpha-note.txt");
+        let new_path = dir.path().join("beta-note.txt");
+        fs::write(&old_path, "payload").unwrap();
+
+        let root_path = dir.path();
+        let root = root_path.to_string_lossy().into_owned();
+        let root_key = path_cache_key(root_path);
+
+        let initial_results = fs_search_entries(
+            root.clone(),
+            "alpha-note".to_string(),
+            true,
+            false,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("initial fs_search_entries failed");
+
+        assert_eq!(initial_results.len(), 1);
+        {
+            let cache = search_name_index_cache()
+                .lock()
+                .expect("search name index cache poisoned");
+            assert!(
+                cache
+                    .get(&root_key)
+                    .and_then(|variants| variants.get(true))
+                    .is_some(),
+                "initial names-only search should populate the cached recursive name index"
+            );
+        }
+
+        fs_rename(
+            old_path.to_string_lossy().into_owned(),
+            new_path.to_string_lossy().into_owned(),
+        )
+        .await
+        .expect("fs_rename failed");
+
+        {
+            let cache = search_name_index_cache()
+                .lock()
+                .expect("search name index cache poisoned");
+            assert!(
+                cache.get(&root_key).is_none(),
+                "fs_rename should invalidate ancestor recursive search caches"
+            );
+        }
+
+        let old_name_results = fs_search_entries(
+            root.clone(),
+            "alpha-note".to_string(),
+            true,
+            false,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("old-name fs_search_entries failed");
+        assert!(
+            old_name_results.is_empty(),
+            "renamed files should disappear from rebuilt names-only search indexes"
+        );
+
+        let new_name_results = fs_search_entries(
+            root,
+            "beta-note".to_string(),
+            true,
+            false,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("new-name fs_search_entries failed");
+        assert_eq!(
+            new_name_results.len(),
+            1,
+            "rebuilt names-only index should include renamed files under the new name"
+        );
+        assert_eq!(new_name_results[0].path, new_path.to_string_lossy());
+    }
+
+    #[tokio::test]
+    async fn search_entries_name_index_is_invalidated_by_fs_delete() {
+        let _serial_guard = search_test_serial_lock().await;
+        let dir = tmp_dir();
+        let file_path = dir.path().join("alpha-note.txt");
+        fs::write(&file_path, "payload").unwrap();
+
+        let root_path = dir.path();
+        let root = root_path.to_string_lossy().into_owned();
+        let root_key = path_cache_key(root_path);
+
+        let initial_results = fs_search_entries(
+            root.clone(),
+            "alpha-note".to_string(),
+            true,
+            false,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("initial fs_search_entries failed");
+
+        assert_eq!(initial_results.len(), 1);
+        {
+            let cache = search_name_index_cache()
+                .lock()
+                .expect("search name index cache poisoned");
+            assert!(
+                cache
+                    .get(&root_key)
+                    .and_then(|variants| variants.get(true))
+                    .is_some(),
+                "initial names-only search should populate the cached recursive name index"
+            );
+        }
+
+        fs_delete(file_path.to_string_lossy().into_owned(), false)
+            .await
+            .expect("fs_delete failed");
+
+        {
+            let cache = search_name_index_cache()
+                .lock()
+                .expect("search name index cache poisoned");
+            assert!(
+                cache.get(&root_key).is_none(),
+                "fs_delete should invalidate ancestor recursive search caches"
+            );
+        }
+
+        let refreshed_results = fs_search_entries(
+            root,
+            "alpha-note".to_string(),
+            true,
+            false,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("refreshed fs_search_entries failed");
+
+        assert!(
+            refreshed_results.is_empty(),
+            "rebuilt names-only index should drop deleted files"
+        );
+    }
+
+    #[tokio::test]
+    async fn search_entries_cancel_stale_requests_within_the_same_scope() {
+        let _serial_guard = search_test_serial_lock().await;
+        let _delay_guard = set_search_scan_delay(2);
+        let dir = tmp_dir();
+
+        for index in 0..120 {
+            fs::write(
+                dir.path().join(format!("entry-{index:03}.txt")),
+                format!("payload {index}"),
+            )
+            .unwrap();
+        }
+        let winning_file = dir.path().join("winning-match.txt");
+        fs::write(&winning_file, "winner").unwrap();
+
+        let root = dir.path().to_string_lossy().into_owned();
+        let scope = format!("search-test-{}", root);
+
+        let stale_search = tokio::spawn(fs_search_entries(
+            root.clone(),
+            "missing-value".to_string(),
+            true,
+            false,
+            Some(500),
+            Some(1),
+            Some(scope.clone()),
+        ));
+
+        tokio::time::sleep(Duration::from_millis(12)).await;
+
+        let fresh_results = fs_search_entries(
+            root.clone(),
+            "winning-match".to_string(),
+            true,
+            false,
+            Some(20),
+            Some(2),
+            Some(scope),
+        )
+        .await
+        .expect("fresh fs_search_entries failed");
+
+        let stale_results = stale_search
+            .await
+            .expect("stale search task panicked")
+            .expect("stale fs_search_entries failed");
+
+        assert!(
+            stale_results.is_empty(),
+            "superseded search should stop and return no results"
+        );
+        assert_eq!(fresh_results.len(), 1);
+        assert_eq!(fresh_results[0].path, winning_file.to_string_lossy());
+    }
+
+    #[tokio::test]
+    async fn search_entries_allow_lower_request_id_after_scope_restart() {
+        let _serial_guard = search_test_serial_lock().await;
+        let dir = tmp_dir();
+        let winning_file = dir.path().join("winning-match.txt");
+        fs::write(&winning_file, "winner").unwrap();
+
+        let root = dir.path().to_string_lossy().into_owned();
+        let scope = format!("search-restart-{}", root);
+
+        fs_cancel_search_entries(root.clone(), Some(8), Some(scope.clone()))
+            .expect("failed to register prior search request");
+
+        let fresh_results = fs_search_entries(
+            root,
+            "winning-match".to_string(),
+            true,
+            false,
+            Some(20),
+            Some(1),
+            Some(scope),
+        )
+        .await
+        .expect("remounted fs_search_entries failed");
+
+        assert_eq!(
+            fresh_results.len(),
+            1,
+            "lower explicit request ids should still work after scope restart"
+        );
+        assert_eq!(fresh_results[0].path, winning_file.to_string_lossy());
     }
 
     #[tokio::test]

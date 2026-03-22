@@ -44,6 +44,10 @@ import { recordExplorerPerformanceSample } from '../config/performanceTelemetry'
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ExplorerSideRail } from './explorer/ExplorerSideRail';
 import { removeExplorerBookmarksByPath, upsertExplorerBookmark } from './explorer/explorerRailState';
+import {
+  getRepositoryPickerConfirmLabel,
+  resolveRepositoryPickerConfirmationPaths,
+} from './explorer/repositoryPickerState';
 import { ResizablePane } from './ResizablePane';
 import { useExplorerStore, type ExplorerDocumentViewMode } from '../store/explorerStore';
 import { useSettingsStore } from '../store/settingsStore';
@@ -89,6 +93,7 @@ const EXPLORER_GRID_ITEM_HEIGHT = 156;
 const EXPLORER_GRID_SEARCH_ITEM_HEIGHT = 180;
 const EXPLORER_NEW_ITEM_LIST_HEIGHT = 46;
 const EXPLORER_NEW_ITEM_GRID_HEIGHT = 156;
+const EXPLORER_SEARCH_SCOPE = 'primary_file_explorer';
 
 function getExplorerPerformanceNow(): number {
   return typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -1187,6 +1192,8 @@ export function FileExplorer({
         showHidden,
         includeContent: searchIncludeContent,
         limit: 250,
+        requestId,
+        requestScope: EXPLORER_SEARCH_SCOPE,
       });
       if (searchRequestIdRef.current === requestId) {
         setSearchResults(results);
@@ -1242,7 +1249,7 @@ export function FileExplorer({
       return changed ? next : current;
     });
     setEntrySizeLoadingPaths(new Set());
-    try { setEntries(await invoke<FileEntry[]>('fs_list_dir', { path: currentPath, showHidden })); }
+    try { setEntries(await invoke<FileEntry[]>('fs_list_dir_uncached', { path: currentPath, showHidden })); }
     catch (e) { setError(String(e)); }
     finally { setLoading(false); }
     if (search.trim()) {
@@ -1304,13 +1311,27 @@ export function FileExplorer({
   useEffect(() => {
     const trimmed = search.trim();
     if (!trimmed) {
-      searchRequestIdRef.current += 1;
+      const requestId = ++searchRequestIdRef.current;
+      if (currentPath) {
+        void invoke('fs_cancel_search_entries', {
+          path: currentPath,
+          requestId,
+          requestScope: EXPLORER_SEARCH_SCOPE,
+        }).catch(() => {});
+      }
       setSearchResults([]);
       setSearchLoading(false);
       return;
     }
 
     const requestId = ++searchRequestIdRef.current;
+    if (currentPath) {
+      void invoke('fs_cancel_search_entries', {
+        path: currentPath,
+        requestId,
+        requestScope: EXPLORER_SEARCH_SCOPE,
+      }).catch(() => {});
+    }
     setSearchResults([]);
     setSearchLoading(true);
     const timer = window.setTimeout(() => {
@@ -1444,7 +1465,29 @@ export function FileExplorer({
     () => selectedEntries.filter(entry => entry.is_dir),
     [selectedEntries],
   );
-  const canConfirmRepositorySelection = selectedDirectoryEntries.length > 0;
+  const repositoryPickerConfirmationPaths = useMemo(() => resolveRepositoryPickerConfirmationPaths({
+    allowMultiple: repositoryPicker?.allowMultiple ?? true,
+    currentPath,
+    hasAnySelection: selectedEntries.length > 0,
+    selectedDirectoryPaths: selectedDirectoryEntries.map(entry => entry.path),
+  }), [
+    currentPath,
+    repositoryPicker?.allowMultiple,
+    selectedDirectoryEntries,
+    selectedEntries.length,
+  ]);
+  const canConfirmRepositorySelection = repositoryPickerConfirmationPaths.length > 0;
+  const isRepositoryPickerUsingCurrentPath = (
+    selectedEntries.length === 0
+    && repositoryPickerConfirmationPaths.length === 1
+    && repositoryPickerConfirmationPaths[0] === currentPath.trim()
+  );
+  const repositoryPickerConfirmLabel = useMemo(() => getRepositoryPickerConfirmLabel({
+    allowMultiple: repositoryPicker?.allowMultiple ?? true,
+    currentPath,
+    hasAnySelection: selectedEntries.length > 0,
+    selectedDirectoryCount: selectedDirectoryEntries.length,
+  }), [currentPath, repositoryPicker?.allowMultiple, selectedDirectoryEntries.length, selectedEntries.length]);
 
   useEffect(() => {
     if (!repositoryPicker?.active) {
@@ -1908,6 +1951,11 @@ export function FileExplorer({
   const onEntryClick = (e: React.MouseEvent, entry: FileEntry) => {
     e.stopPropagation();
     mainRef.current?.focus();
+    if (repositoryPicker?.active && !repositoryPicker.allowMultiple) {
+      setSelected(new Set([entry.path]));
+      lastSelected.current = entry.path;
+      return;
+    }
     const plainClick = !e.shiftKey && !e.ctrlKey && !e.metaKey;
     if (e.shiftKey && lastSelected.current) {
       const idx1 = visibleEntries.findIndex(f => f.path === lastSelected.current);
@@ -2736,14 +2784,32 @@ export function FileExplorer({
               </div>
               <div style={{ marginTop: 3, fontSize: 11, color: EXP.muted }}>
                 Select {repositoryPicker.allowMultiple ? 'one or more folders' : 'a folder'} in Explorer, then confirm them into Source Control.
-                {canConfirmRepositorySelection
+                {selectedDirectoryEntries.length > 0
                   ? ` ${selectedDirectoryEntries.length} folder${selectedDirectoryEntries.length !== 1 ? 's' : ''} selected.`
+                  : isRepositoryPickerUsingCurrentPath
+                    ? ' No folders selected yet, so OverlayTerm can add the current folder directly.'
                   : ' Only directories can be added.'}
               </div>
+              {isRepositoryPickerUsingCurrentPath ? (
+                <div
+                  style={{
+                    marginTop: 4,
+                    fontSize: 10,
+                    color: EXP.muted,
+                    fontFamily: appearance?.fonts.mono ?? 'var(--overlay-font-mono, "Cascadia Code", Consolas, monospace)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title={currentPath}
+                >
+                  Current folder: {currentPath}
+                </div>
+              ) : null}
             </div>
             <button
               type="button"
-              onClick={() => repositoryPicker.onConfirm(selectedDirectoryEntries.map(entry => entry.path))}
+              onClick={() => repositoryPicker.onConfirm(repositoryPickerConfirmationPaths)}
               disabled={!canConfirmRepositorySelection}
               style={{
                 minHeight: 30,
@@ -2757,7 +2823,7 @@ export function FileExplorer({
                 fontWeight: 700,
               }}
             >
-              Add Selected
+              {repositoryPickerConfirmLabel}
             </button>
             <button
               type="button"

@@ -24,6 +24,7 @@ vi.mock('@tauri-apps/api/window', () => ({
     show: vi.fn().mockResolvedValue(undefined),
     setFocus: vi.fn().mockResolvedValue(undefined),
     hide: vi.fn().mockResolvedValue(undefined),
+    onDragDropEvent: vi.fn().mockResolvedValue(() => {}),
     onResized: vi.fn().mockResolvedValue(() => {}),
     is_visible: vi.fn().mockResolvedValue(false),
     startResizeDragging: vi.fn().mockResolvedValue(undefined),

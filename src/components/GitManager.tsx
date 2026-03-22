@@ -35,6 +35,12 @@ interface DiffViewState {
   hunkLines: number[];
 }
 
+interface ResolvedRepositoryImport {
+  requestedPath: string;
+  repoPath: string;
+  comparablePath: string;
+}
+
 type ChangeFilter = 'all' | 'staged' | 'unstaged' | 'untracked';
 
 const FALLBACK = {
@@ -112,6 +118,7 @@ export function GitManager({
   const diffEditorRef = useRef<any>(null);
   const diffMonacoRef = useRef<any>(null);
   const diffDecorationsRef = useRef<string[]>([]);
+  const reposRef = useRef<string[]>([]);
 
   useEffect(() => {
     try {
@@ -119,8 +126,9 @@ export function GitManager({
       if (!saved) return;
       const parsed = JSON.parse(saved);
       if (!Array.isArray(parsed)) return;
-      setRepos(parsed);
-      if (parsed.length > 0) setSelectedRepo(parsed[0]);
+      const sanitized = sanitizeRepositoryList(parsed);
+      setRepos(sanitized);
+      if (sanitized.length > 0) setSelectedRepo(sanitized[0]);
     } catch (storageError) {
       console.error(storageError);
     }
@@ -128,6 +136,10 @@ export function GitManager({
 
   useEffect(() => {
     localStorage.setItem('overlayterm-git-repos', JSON.stringify(repos));
+  }, [repos]);
+
+  useEffect(() => {
+    reposRef.current = repos;
   }, [repos]);
 
   useEffect(() => {
@@ -144,6 +156,15 @@ export function GitManager({
     } catch {
       return fallback;
     }
+  }, [runGit]);
+
+  const resolveRepoRoot = useCallback(async (path: string) => {
+    const repoRoot = await runGit(path, ['rev-parse', '--show-toplevel']);
+    const normalized = normalizeRepositoryPath(repoRoot);
+    if (!normalized) {
+      throw new Error(`Git did not return a repository root for ${path}`);
+    }
+    return normalized;
   }, [runGit]);
 
   const loadRepoBadge = useCallback(async (path: string): Promise<RepoBadgeState> => {
@@ -258,10 +279,87 @@ export function GitManager({
     };
   }, [loadRepoBadge, repos]);
 
+  useEffect(() => {
+    if (repos.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const canonicalizeStoredRepos = async () => {
+      const resolvedEntries = await Promise.all(
+        repos.map(async repo => {
+          try {
+            return {
+              requestedPath: repo,
+              repoPath: await resolveRepoRoot(repo),
+            };
+          } catch {
+            return {
+              requestedPath: repo,
+              repoPath: repo,
+            };
+          }
+        }),
+      );
+
+      if (cancelled) {
+        return;
+      }
+
+      const canonicalRepos = sanitizeRepositoryList(resolvedEntries.map(entry => entry.repoPath));
+      if (repositoryPathListsEqual(canonicalRepos, repos)) {
+        return;
+      }
+
+      setRepos(canonicalRepos);
+      setSelectedRepo(current => {
+        if (!current) {
+          return canonicalRepos[0] ?? null;
+        }
+
+        const resolvedSelected = resolvedEntries.find(entry => (
+          getRepositoryComparablePath(entry.requestedPath) === getRepositoryComparablePath(current)
+        ));
+        const targetComparablePath = getRepositoryComparablePath(resolvedSelected?.repoPath ?? current);
+        return canonicalRepos.find(repo => getRepositoryComparablePath(repo) === targetComparablePath) ?? canonicalRepos[0] ?? null;
+      });
+    };
+
+    void canonicalizeStoredRepos();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [repos, resolveRepoRoot]);
+
   const refreshRepo = useCallback(async () => {
     if (!selectedRepo) return;
     await Promise.all([loadRepoState(selectedRepo), refreshRepoBadges()]);
   }, [loadRepoState, refreshRepoBadges, selectedRepo]);
+
+  const summary = useMemo(
+    () => (repoState ? summarizeGitFiles(repoState.status) : null),
+    [repoState],
+  );
+  const hasRepositoryChanges = (summary?.totalFiles ?? 0) > 0;
+  const hasStagedChanges = (summary?.stagedFiles ?? 0) > 0;
+  const hasConflictedFiles = (summary?.conflictedFiles ?? 0) > 0;
+  const hasWorkingTreeOnlyChanges = (summary?.unstagedFiles ?? 0) > 0;
+  const canStageAllChanges = hasRepositoryChanges && !hasConflictedFiles;
+  const canCommitStagedChanges = hasStagedChanges && !hasConflictedFiles;
+  const canQuickShipChanges = hasRepositoryChanges && !hasConflictedFiles;
+  const sourceActionHint = summary
+    ? hasConflictedFiles
+      ? 'Resolve conflicted files with the file-level controls before staging everything or shipping this repo.'
+      : hasStagedChanges
+        ? hasWorkingTreeOnlyChanges
+          ? `${summary.stagedFiles} staged file${summary.stagedFiles === 1 ? '' : 's'} ready to commit. ${summary.unstagedFiles} file${summary.unstagedFiles === 1 ? '' : 's'} still only in the working tree.`
+          : `${summary.stagedFiles} staged file${summary.stagedFiles === 1 ? '' : 's'} ready to commit.`
+        : hasRepositoryChanges
+          ? 'Stage selected files, use Stage All, or Quick Ship to include working-tree changes in a commit.'
+          : null
+    : null;
 
   const runRepoAction = useCallback(async (action: () => Promise<void>) => {
     setLoading(true);
@@ -277,46 +375,90 @@ export function GitManager({
   }, [refreshRepo]);
 
   const importRepositories = useCallback(async (paths: string[]) => {
-    const normalizedPaths = Array.from(new Set(
-      paths
-        .map(path => path.trim())
-        .filter(Boolean),
-    ));
-    if (normalizedPaths.length === 0) {
+    const requestedPaths = sanitizeRepositoryList(paths);
+    if (requestedPaths.length === 0) {
       return;
     }
 
     setLoading(true);
     setError(null);
     try {
-      const results = await Promise.all(normalizedPaths.map(async path => {
+      const results = await Promise.all(requestedPaths.map(async path => {
         try {
-          await runGit(path, ['rev-parse', '--is-inside-work-tree']);
-          return { path, ok: true as const };
+          const repoPath = await resolveRepoRoot(path);
+          return {
+            requestedPath: path,
+            ok: true as const,
+            repoPath,
+            comparablePath: getRepositoryComparablePath(repoPath),
+          } satisfies ResolvedRepositoryImport & { ok: true };
         } catch (repoError) {
-          return { path, ok: false as const, error: String(repoError) };
+          return { requestedPath: path, ok: false as const, error: String(repoError) };
         }
       }));
 
-      const validPaths = results.filter(result => result.ok).map(result => result.path);
-      const invalidResults = results.filter((result): result is { path: string; ok: false; error: string } => !result.ok);
-
-      if (validPaths.length > 0) {
-        setRepos(current => {
-          const existing = new Set(current);
-          return [...current, ...validPaths.filter(path => !existing.has(path))];
+      const seenComparablePaths = new Set<string>();
+      const resolvedImports = results.filter((result): result is ResolvedRepositoryImport & { ok: true } => result.ok)
+        .filter(result => {
+          if (seenComparablePaths.has(result.comparablePath)) {
+            return false;
+          }
+          seenComparablePaths.add(result.comparablePath);
+          return true;
         });
-        setSelectedRepo(validPaths[0]);
+      const invalidResults = results.filter((result): result is { requestedPath: string; ok: false; error: string } => !result.ok);
+      const currentRepos = reposRef.current;
+      const existingComparablePaths = new Set(currentRepos.map(getRepositoryComparablePath));
+      const nextRepos = [...currentRepos];
+      const alreadyImported: string[] = [];
+      let nextSelectedRepo: string | null = null;
+
+      if (resolvedImports.length > 0) {
+        for (const result of resolvedImports) {
+          if (existingComparablePaths.has(result.comparablePath)) {
+            alreadyImported.push(result.repoPath);
+            continue;
+          }
+
+          existingComparablePaths.add(result.comparablePath);
+          nextRepos.push(result.repoPath);
+          if (!nextSelectedRepo) {
+            nextSelectedRepo = result.repoPath;
+          }
+        }
+
+        if (!repositoryPathListsEqual(nextRepos, currentRepos)) {
+          reposRef.current = nextRepos;
+          setRepos(nextRepos);
+        }
       }
 
+      if (nextSelectedRepo) {
+        setSelectedRepo(nextSelectedRepo);
+      }
+
+      const feedback: string[] = [];
       if (invalidResults.length > 0) {
-        const invalidSummary = invalidResults.map(result => `${result.path}: ${result.error}`).join('\n');
-        setError(validPaths.length > 0 ? `Some repositories were skipped:\n${invalidSummary}` : invalidSummary);
+        feedback.push(invalidResults.map(result => `${result.requestedPath}: ${result.error}`).join('\n'));
+      }
+
+      if (alreadyImported.length > 0) {
+        feedback.push(`Already imported:\n${Array.from(new Set(alreadyImported)).join('\n')}`);
+      }
+
+      if (feedback.length > 0) {
+        setError(feedback.join('\n\n'));
       }
     } finally {
       setLoading(false);
     }
-  }, [runGit]);
+  }, [resolveRepoRoot]);
+
+  const importRepoFromPrompt = useCallback(async () => {
+    const path = window.prompt('Enter absolute path to Git repository or any folder inside it:');
+    if (!path) return;
+    await importRepositories([path]);
+  }, [importRepositories]);
 
   useEffect(() => {
     if (pendingRepositoryImports.length === 0) {
@@ -340,11 +482,8 @@ export function GitManager({
       onRequestRepositoryImport();
       return;
     }
-
-    const path = window.prompt('Enter absolute path to Git repository:');
-    if (!path) return;
-    await importRepositories([path]);
-  }, [importRepositories, onRequestRepositoryImport]);
+    await importRepoFromPrompt();
+  }, [importRepoFromPrompt, onRequestRepositoryImport]);
 
   const removeRepo = useCallback((path: string, event: React.MouseEvent) => {
     event.stopPropagation();
@@ -370,9 +509,48 @@ export function GitManager({
     await runRepoAction(() => runGit(selectedRepo, ['push']).then(() => undefined));
   }, [runGit, runRepoAction, selectedRepo]);
 
+  const handleStageAll = useCallback(async () => {
+    if (!selectedRepo) return;
+    if (hasConflictedFiles) {
+      setError('Resolve conflicted files before using Stage All.');
+      return;
+    }
+    if (!hasRepositoryChanges) {
+      setError('No changes to stage.');
+      return;
+    }
+
+    await runRepoAction(() => runGit(selectedRepo, ['add', '-A']).then(() => undefined));
+  }, [hasConflictedFiles, hasRepositoryChanges, runGit, runRepoAction, selectedRepo]);
+
+  const handleCommit = useCallback(async () => {
+    if (!selectedRepo) return;
+    const message = commitMsg.trim();
+    if (!message) {
+      return;
+    }
+    if (hasConflictedFiles) {
+      setError('Resolve conflicted files before committing.');
+      return;
+    }
+    if (!hasStagedChanges) {
+      setError('Stage files before committing.');
+      return;
+    }
+
+    await runRepoAction(async () => {
+      await runGit(selectedRepo, ['commit', '-m', message]);
+      setCommitMsg('');
+    });
+  }, [commitMsg, hasConflictedFiles, hasStagedChanges, runGit, runRepoAction, selectedRepo]);
+
   const handleQuickShip = useCallback(async () => {
     if (!selectedRepo || !repoState) return;
-    if (repoState.status.length === 0) {
+    if (hasConflictedFiles) {
+      setError('Resolve conflicted files before Quick Ship.');
+      return;
+    }
+    if (!hasRepositoryChanges) {
       setError('No changes to ship.');
       return;
     }
@@ -384,9 +562,70 @@ export function GitManager({
       await runGit(selectedRepo, ['push']);
       setCommitMsg('');
     });
-  }, [commitMsg, repoState, runGit, runRepoAction, selectedRepo]);
+  }, [commitMsg, hasConflictedFiles, hasRepositoryChanges, repoState, runGit, runRepoAction, selectedRepo]);
 
   const selectedFile = repoState?.status.find(file => file.file === selectedFilePath) ?? null;
+  const canStageSelectedFile = selectedFile ? canStageFile(selectedFile) : false;
+  const canUnstageSelectedFile = selectedFile?.isStaged ?? false;
+  const canDiscardSelectedFile = selectedFile ? canDiscardFile(selectedFile) : false;
+  const canResolveSelectedConflict = selectedFile?.kind === 'conflicted';
+  const stageSelectedFileLabel = selectedFile ? stageActionLabel(selectedFile) : 'Stage';
+  const discardSelectedFileLabel = selectedFile ? discardActionLabel(selectedFile) : 'Discard';
+
+  const handleStageSelectedFile = useCallback(async () => {
+    if (!selectedRepo || !selectedFile || !canStageFile(selectedFile)) {
+      return;
+    }
+
+    await runRepoAction(async () => {
+      await runGit(selectedRepo, ['add', '--', selectedFile.file]);
+    });
+  }, [runGit, runRepoAction, selectedFile, selectedRepo]);
+
+  const handleUnstageSelectedFile = useCallback(async () => {
+    if (!selectedRepo || !selectedFile || !selectedFile.isStaged) {
+      return;
+    }
+
+    await runRepoAction(async () => {
+      await runGit(selectedRepo, ['restore', '--staged', '--', ...getGitTrackedPaths(selectedFile)]);
+    });
+  }, [runGit, runRepoAction, selectedFile, selectedRepo]);
+
+  const handleDiscardSelectedFile = useCallback(async () => {
+    if (!selectedRepo || !selectedFile || !canDiscardFile(selectedFile)) {
+      return;
+    }
+
+    const confirmed = window.confirm(buildDiscardConfirmationMessage(selectedFile));
+    if (!confirmed) {
+      return;
+    }
+
+    await runRepoAction(async () => {
+      if (selectedFile.isUntracked) {
+        await runGit(selectedRepo, ['clean', '-fd', '--', selectedFile.file]);
+        return;
+      }
+
+      await discardTrackedFileChanges(selectedRepo, selectedFile, runGit, safeGit);
+    });
+  }, [runGit, runRepoAction, safeGit, selectedFile, selectedRepo]);
+
+  const handleResolveSelectedConflict = useCallback(async (side: ConflictResolutionSide) => {
+    if (!selectedRepo || !selectedFile || selectedFile.kind !== 'conflicted') {
+      return;
+    }
+
+    const confirmed = window.confirm(buildConflictResolutionConfirmationMessage(selectedFile, side));
+    if (!confirmed) {
+      return;
+    }
+
+    await runRepoAction(async () => {
+      await resolveConflictedFile(selectedRepo, selectedFile, side, runGit);
+    });
+  }, [runGit, runRepoAction, selectedFile, selectedRepo]);
 
   const loadDiff = useCallback(async (repoPath: string, file: GitFileStatus) => {
     setDiffLoading(true);
@@ -405,6 +644,24 @@ export function GitManager({
     if (!repoState || !selectedFile) return;
     void loadDiff(repoState.path, selectedFile);
   }, [loadDiff, repoState, selectedFile]);
+
+  useEffect(() => {
+    if (!repoState) {
+      setSelectedFilePath(null);
+      setDiffView(null);
+      return;
+    }
+
+    if (!selectedFilePath) {
+      return;
+    }
+
+    const selectedFileStillExists = repoState.status.some(file => file.file === selectedFilePath);
+    if (!selectedFileStillExists) {
+      setSelectedFilePath(null);
+      setDiffView(null);
+    }
+  }, [repoState, selectedFilePath]);
 
   useEffect(() => {
     setActiveHunkIndex(0);
@@ -447,7 +704,6 @@ export function GitManager({
     return () => window.cancelAnimationFrame(frame);
   }, [appZoom]);
 
-  const summary = repoState ? summarizeGitFiles(repoState.status) : null;
   const dirtyRepoCount = useMemo(
     () => repos.reduce((count, repo) => count + ((repoBadges[repo]?.changeCount ?? 0) > 0 ? 1 : 0), 0),
     [repoBadges, repos],
@@ -605,7 +861,37 @@ export function GitManager({
 
       <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {!repoState ? (
-          <div style={{ flex: 1, display: 'grid', placeItems: 'center', color: palette.muted, fontSize: 12 }}>Select or add a repository.</div>
+          repos.length === 0 ? (
+            <div style={{ flex: 1, display: 'grid', placeItems: 'center', padding: 24, textAlign: 'center' }}>
+              <div style={{ maxWidth: 360 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: palette.accent }}>
+                  Source Control
+                </div>
+                <div style={{ marginTop: 10, fontSize: 18, fontWeight: 700, color: palette.text }}>
+                  Bring a repository into OverlayTerm
+                </div>
+                <div style={{ marginTop: 8, fontSize: 11.5, lineHeight: 1.5, color: palette.muted }}>
+                  Pick a repo from Explorer or paste any nested folder path. OverlayTerm now normalizes selections to the real git root before loading diffs and ship actions.
+                </div>
+                <div style={{ marginTop: 16, display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
+                  {onRequestRepositoryImport ? (
+                    <button type="button" onClick={onRequestRepositoryImport} style={{ ...toolbarButtonStyle(palette), minHeight: 32 }}>
+                      <FolderGit2 size={13} />
+                      Pick In Explorer
+                    </button>
+                  ) : null}
+                  <button type="button" onClick={() => void importRepoFromPrompt()} style={{ ...toolbarButtonStyle(palette), minHeight: 32 }}>
+                    <Plus size={13} />
+                    Paste Repo Path
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ flex: 1, display: 'grid', placeItems: 'center', color: palette.muted, fontSize: 12 }}>
+              {loading ? 'Loading repository…' : 'Select a repository.'}
+            </div>
+          )
         ) : (
           <>
             <div style={{ padding: '8px 12px', borderBottom: `1px solid ${palette.border}`, background: palette.panel }}>
@@ -615,6 +901,9 @@ export function GitManager({
                     <div style={{ fontSize: 14, fontWeight: 700 }}>{repoState.name}</div>
                     <span style={pillStyle(alpha(palette.accent, 0.14), palette.accent)}><GitBranch size={11} />{repoState.branch}</span>
                     {summary && <span style={pillStyle(alpha(palette.panel, 0.9), palette.muted)}>{summary.totalFiles} changed</span>}
+                    {summary && summary.stagedFiles > 0 ? <span style={pillStyle(alpha(palette.green, 0.10), palette.green)}>{summary.stagedFiles} staged</span> : null}
+                    {summary && summary.unstagedFiles > 0 ? <span style={pillStyle(alpha(palette.yellow, 0.12), palette.yellow)}>{summary.unstagedFiles} working</span> : null}
+                    {summary && summary.conflictedFiles > 0 ? <span style={pillStyle(alpha(palette.red, 0.12), palette.red)}>{summary.conflictedFiles} conflicted</span> : null}
                     {summary && <span style={pillStyle(alpha(palette.green, 0.14), palette.green)}>+{summary.additions}</span>}
                     {summary && <span style={pillStyle(alpha(palette.red, 0.14), palette.red)}>-{summary.deletions}</span>}
                   </div>
@@ -643,12 +932,26 @@ export function GitManager({
               ))}
               <div style={{ flex: 1 }} />
               <textarea value={commitMsg} onChange={event => setCommitMsg(event.target.value)} placeholder="Commit message for Quick Ship" className="hide-scrollbar" style={{ height: 28, minWidth: 220, maxWidth: 400, flex: '1 1 220px', resize: 'none', borderRadius: 8, border: `1px solid ${palette.border}`, background: alpha(palette.bg, 0.5), color: palette.text, padding: '6px 9px', fontSize: 10.5, outline: 'none' }} />
-              <button onClick={() => void runRepoAction(() => runGit(selectedRepo!, ['add', '-A']).then(() => undefined))} disabled={loading || !repoState.status.length} style={toolbarButtonStyle(palette)}>Stage All</button>
-              <button onClick={() => void runRepoAction(async () => { if (commitMsg.trim()) { await runGit(selectedRepo!, ['commit', '-m', commitMsg.trim()]); setCommitMsg(''); } })} disabled={loading || !commitMsg.trim() || !repoState.status.length} style={{ ...toolbarButtonStyle(palette), background: palette.accent, borderColor: palette.accent, color: '#fff' }}>Commit</button>
+              <button
+                onClick={() => void handleStageAll()}
+                disabled={loading || !canStageAllChanges}
+                title={hasConflictedFiles ? 'Resolve conflicted files before staging everything.' : undefined}
+                style={toolbarButtonStyle(palette)}
+              >
+                Stage All
+              </button>
+              <button
+                onClick={() => void handleCommit()}
+                disabled={loading || !commitMsg.trim() || !canCommitStagedChanges}
+                title={hasConflictedFiles ? 'Resolve conflicted files before committing.' : !hasStagedChanges ? 'Commit only includes staged files.' : undefined}
+                style={{ ...toolbarButtonStyle(palette), background: palette.accent, borderColor: palette.accent, color: '#fff' }}
+              >
+                Commit
+              </button>
               <button
                 onClick={() => void handleQuickShip()}
-                disabled={loading || !repoState.status.length}
-                title="Stage all, commit, and push in one step"
+                disabled={loading || !canQuickShipChanges}
+                title={hasConflictedFiles ? 'Resolve conflicted files before Quick Ship.' : 'Stage all, commit, and push in one step'}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -682,6 +985,11 @@ export function GitManager({
                   <span style={{ fontSize: 9, color: palette.muted, fontWeight: 600, letterSpacing: '0.04em' }}>Stage • Commit • Push</span>
                 </span>
               </button>
+              {sourceActionHint ? (
+                <div style={{ flexBasis: '100%', fontSize: 10, color: hasConflictedFiles ? palette.red : palette.muted }}>
+                  {sourceActionHint}
+                </div>
+              ) : null}
             </div>
 
             {error && <div style={{ padding: '7px 14px', borderBottom: `1px solid ${palette.border}`, fontSize: 11, color: palette.red, background: alpha(palette.red, 0.10) }}>{error}</div>}
@@ -716,23 +1024,101 @@ export function GitManager({
               </ResizablePane>
 
               <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', background: palette.bg }}>
-                <div style={{ padding: '8px 12px', borderBottom: `1px solid ${palette.border}`, fontSize: 11, color: palette.muted, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                  <span>
-                    {selectedFile ? `${selectedFile.file} • ${statusLabel(selectedFile)} • +${selectedFile.additions} / -${selectedFile.deletions}` : 'Select a changed file to inspect the diff.'}
-                  </span>
-                  {selectedFile && diffView && diffView.hunkLines.length > 0 ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                      <span style={{ fontSize: 10, color: palette.muted }}>
-                        Hunk {activeHunkIndex + 1} / {diffView.hunkLines.length}
-                      </span>
-                      <button type="button" onClick={() => jumpToDiffHunk(activeHunkIndex - 1)} style={iconButtonStyle(palette)} title="Previous change">
-                        <ChevronUp size={11} />
-                      </button>
-                      <button type="button" onClick={() => jumpToDiffHunk(activeHunkIndex + 1)} style={iconButtonStyle(palette)} title="Next change">
-                        <ChevronDown size={11} />
-                      </button>
-                    </div>
-                  ) : null}
+                <div style={{ padding: '8px 12px', borderBottom: `1px solid ${palette.border}`, fontSize: 11, color: palette.muted, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ minWidth: 0, flex: '1 1 320px' }}>
+                    <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {selectedFile ? `${selectedFile.file} • ${statusLabel(selectedFile)} • +${selectedFile.additions} / -${selectedFile.deletions}` : 'Select a changed file to inspect the diff.'}
+                    </span>
+                    {selectedFile ? (
+                      <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <span style={pillStyle(alpha(statusColor(selectedFile, palette), 0.14), statusColor(selectedFile, palette))}>
+                          {statusLabel(selectedFile)}
+                        </span>
+                        {selectedFile.isStaged ? (
+                          <span style={pillStyle(alpha(palette.green, 0.14), palette.green)}>Staged</span>
+                        ) : null}
+                        {selectedFile.hasUnstagedChanges ? (
+                          <span style={pillStyle(alpha(palette.yellow, 0.16), palette.yellow)}>Working Tree</span>
+                        ) : null}
+                        {selectedFile.isUntracked ? (
+                          <span style={pillStyle(alpha(palette.yellow, 0.12), palette.muted)}>Untracked</span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+                    {selectedFile ? (
+                      <>
+                        {canResolveSelectedConflict ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleResolveSelectedConflict('ours')}
+                            disabled={loading}
+                            title="Resolve this conflict with git's --ours version and stage the result."
+                            style={{ ...toolbarButtonStyle(palette), background: alpha(palette.accent, 0.12), borderColor: alpha(palette.accent, 0.4), color: palette.accent }}
+                          >
+                            Use Ours
+                          </button>
+                        ) : null}
+                        {canResolveSelectedConflict ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleResolveSelectedConflict('theirs')}
+                            disabled={loading}
+                            title="Resolve this conflict with git's --theirs version and stage the result."
+                            style={{ ...toolbarButtonStyle(palette), background: alpha(palette.yellow, 0.12), borderColor: alpha(palette.yellow, 0.4), color: palette.yellow }}
+                          >
+                            Use Theirs
+                          </button>
+                        ) : null}
+                        {canStageSelectedFile ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleStageSelectedFile()}
+                            disabled={loading}
+                            title={selectedFile.kind === 'conflicted' ? 'Stage the current file contents to mark this conflict as resolved.' : undefined}
+                            style={{ ...toolbarButtonStyle(palette), background: alpha(palette.green, 0.12), borderColor: alpha(palette.green, 0.42), color: palette.green }}
+                          >
+                            {stageSelectedFileLabel}
+                          </button>
+                        ) : null}
+                        {canUnstageSelectedFile ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleUnstageSelectedFile()}
+                            disabled={loading}
+                            style={toolbarButtonStyle(palette)}
+                          >
+                            Unstage
+                          </button>
+                        ) : null}
+                        {canDiscardSelectedFile ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleDiscardSelectedFile()}
+                            disabled={loading}
+                            title={selectedFile.isStaged && selectedFile.hasUnstagedChanges ? 'Discard only working tree changes and keep staged changes in the index.' : 'Discard the selected file changes.'}
+                            style={{ ...toolbarButtonStyle(palette), background: alpha(palette.red, 0.10), borderColor: alpha(palette.red, 0.32), color: palette.red }}
+                          >
+                            {discardSelectedFileLabel}
+                          </button>
+                        ) : null}
+                      </>
+                    ) : null}
+                    {selectedFile && diffView && diffView.hunkLines.length > 0 ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                        <span style={{ fontSize: 10, color: palette.muted }}>
+                          Hunk {activeHunkIndex + 1} / {diffView.hunkLines.length}
+                        </span>
+                        <button type="button" onClick={() => jumpToDiffHunk(activeHunkIndex - 1)} style={iconButtonStyle(palette)} title="Previous change">
+                          <ChevronUp size={11} />
+                        </button>
+                        <button type="button" onClick={() => jumpToDiffHunk(activeHunkIndex + 1)} style={iconButtonStyle(palette)} title="Next change">
+                          <ChevronDown size={11} />
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
                 <div
                   ref={node => { diffContainerRef.current = node; }}
@@ -816,6 +1202,18 @@ async function buildUnifiedDiff(
 
     const content = await invoke<string>('fs_read_text_file', { path: joinRepoPath(repoPath, file.file) }).catch(() => '');
     return buildSyntheticAddedDiff(file.file, content);
+  }
+
+  if (file.kind === 'conflicted') {
+    const conflictPatch = await safeGit(
+      repoPath,
+      ['diff', '--cc', '--find-renames', '--no-ext-diff', '--', ...diffPaths],
+      '',
+    );
+
+    if (conflictPatch.trim()) {
+      return conflictPatch;
+    }
   }
 
   const patch = await safeGit(
@@ -911,6 +1309,174 @@ function statusColor(file: GitFileStatus, palette: { accent: string; green: stri
   return palette.yellow;
 }
 
+function canStageFile(file: GitFileStatus): boolean {
+  return file.isUntracked || file.hasUnstagedChanges;
+}
+
+function stageActionLabel(file: GitFileStatus): string {
+  if (file.kind === 'conflicted') {
+    return 'Mark Resolved';
+  }
+
+  return 'Stage';
+}
+
+function canDiscardFile(file: GitFileStatus): boolean {
+  if (file.kind === 'conflicted') {
+    return false;
+  }
+
+  return file.isUntracked || file.hasUnstagedChanges;
+}
+
+function discardActionLabel(file: GitFileStatus): string {
+  if (file.isStaged && file.hasUnstagedChanges) {
+    return 'Discard Working';
+  }
+
+  return 'Discard';
+}
+
+function buildDiscardConfirmationMessage(file: GitFileStatus): string {
+  if (file.isUntracked) {
+    return `Remove the untracked file ${file.file}? This cannot be undone from OverlayTerm.`;
+  }
+
+  if (file.isStaged && file.hasUnstagedChanges) {
+    return `Discard only the unstaged changes in ${file.file}? Staged changes will be kept.`;
+  }
+
+  return `Discard the current working tree changes in ${file.file}?`;
+}
+
+function buildConflictResolutionConfirmationMessage(
+  file: GitFileStatus,
+  side: ConflictResolutionSide,
+): string {
+  const sideLabel = side === 'ours' ? 'our' : 'their';
+  const sideCode = side === 'ours' ? file.stagedCode : file.unstagedCode;
+
+  if (sideCode === 'D') {
+    return `Resolve the conflict in ${file.file} by deleting the file with ${sideLabel} version? OverlayTerm will stage that resolution.`;
+  }
+
+  return `Resolve the conflict in ${file.file} with ${sideLabel} version? OverlayTerm will replace the working tree file and stage the result as resolved.`;
+}
+
+function getGitTrackedPaths(file: GitFileStatus): string[] {
+  return Array.from(
+    new Set(
+      [file.originalFile, file.file]
+        .filter((value): value is string => Boolean(value))
+        .map(value => value.replace(/\\/g, '/')),
+    ),
+  );
+}
+
+function getGitIndexPaths(file: GitFileStatus): string[] {
+  return Array.from(
+    new Set(
+      [file.file]
+        .filter((value): value is string => Boolean(value))
+        .map(value => value.replace(/\\/g, '/')),
+    ),
+  );
+}
+
+type ConflictResolutionSide = 'ours' | 'theirs';
+
+async function resolveConflictedFile(
+  repoPath: string,
+  file: GitFileStatus,
+  side: ConflictResolutionSide,
+  runGit: (repo: string, args: string[]) => Promise<string>,
+): Promise<void> {
+  const sideCode = side === 'ours' ? file.stagedCode : file.unstagedCode;
+  const indexPaths = getGitIndexPaths(file);
+
+  if (indexPaths.length === 0) {
+    throw new Error(`Unable to resolve conflicted file ${file.file} because no tracked path was available.`);
+  }
+
+  if (sideCode === 'D') {
+    await runGit(repoPath, ['rm', '--', ...indexPaths]);
+    return;
+  }
+
+  await runGit(repoPath, ['checkout', `--${side}`, '--', ...indexPaths]);
+  await runGit(repoPath, ['add', '--', ...indexPaths]);
+}
+
+async function discardTrackedFileChanges(
+  repoPath: string,
+  file: GitFileStatus,
+  runGit: (repo: string, args: string[]) => Promise<string>,
+  safeGit: (repo: string, args: string[], fallback?: string) => Promise<string>,
+): Promise<void> {
+  const trackedPaths = getGitTrackedPaths(file);
+  if (!file.isStaged) {
+    await runGit(repoPath, ['restore', '--worktree', '--source=HEAD', '--', ...trackedPaths]);
+    return;
+  }
+
+  const hasHead = Boolean((await safeGit(repoPath, ['rev-parse', '--verify', 'HEAD'], '')).trim());
+  if (hasHead) {
+    await runGit(repoPath, ['restore', '--worktree', '--source=HEAD', '--', ...trackedPaths]);
+    return;
+  }
+
+  const indexPaths = getGitIndexPaths(file);
+  if (indexPaths.length === 0) {
+    throw new Error(`Unable to discard ${file.file} before the first commit because no staged path was available.`);
+  }
+
+  await runGit(repoPath, ['checkout-index', '--force', '--', ...indexPaths]);
+}
+
 function alpha(color: string, opacity: number): string {
   return multiplyColorAlpha(color, opacity);
+}
+
+function sanitizeRepositoryList(paths: unknown[]): string[] {
+  const unique = new Map<string, string>();
+
+  for (const value of paths) {
+    if (typeof value !== 'string') {
+      continue;
+    }
+
+    const normalized = normalizeRepositoryPath(value);
+    if (!normalized) {
+      continue;
+    }
+
+    const comparablePath = getRepositoryComparablePath(normalized);
+    if (!unique.has(comparablePath)) {
+      unique.set(comparablePath, normalized);
+    }
+  }
+
+  return [...unique.values()];
+}
+
+function normalizeRepositoryPath(path: string): string {
+  return path.trim().replace(/[\\/]+$/, '');
+}
+
+function getRepositoryComparablePath(path: string): string {
+  const normalized = normalizeRepositoryPath(path).replace(/\\/g, '/');
+  if (/^[a-z]:\//i.test(normalized) || normalized.startsWith('//')) {
+    return normalized.toLowerCase();
+  }
+  return normalized;
+}
+
+function repositoryPathListsEqual(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((path, index) => (
+    getRepositoryComparablePath(path) === getRepositoryComparablePath(right[index] ?? '')
+  ));
 }
