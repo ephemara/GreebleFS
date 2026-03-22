@@ -1,5 +1,6 @@
 import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core';
-import { parse as parseToml } from '@iarna/toml';
+import { parse as parseToml } from 'smol-toml';
+
 import type { OverlayRegisteredFontContribution } from './appearance';
 import type {
   OverlayPluginCommandContribution,

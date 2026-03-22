@@ -11,6 +11,13 @@ export const EXPLORER_STATE_STORAGE_KEY = 'overlayterm-explorer-state-v3';
 export const EXPLORER_STATE_BACKUP_KEY = 'overlayterm-explorer-state-v3.backup';
 export const EXPLORER_LEGACY_BOOKMARKS_KEY = 'fs-bookmarks-v2';
 export const EXPLORER_STATE_VERSION = 3;
+const EXPLORER_PERSIST_DEBOUNCE_MS = (() => {
+  // Vitest runs in a browser-like environment; keep persistence synchronous so unit tests
+  // can assert immediately after calling store actions.
+  const env = (import.meta as unknown as { env?: Record<string, unknown> }).env;
+  const isTest = env?.MODE === 'test' || Boolean(env?.VITEST);
+  return isTest ? 0 : 600;
+})();
 
 export type ExplorerDocumentViewMode = 'edit' | 'preview';
 
@@ -213,6 +220,9 @@ export function persistExplorerState(
 }
 
 export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
+  let persistTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingNotice: Partial<ExplorerPersistenceNotice> | undefined;
+
   const persistLatest = (successNotice?: Partial<ExplorerPersistenceNotice>) => {
     const result = persistExplorerState({
       version: EXPLORER_STATE_VERSION,
@@ -234,6 +244,61 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
     }));
   };
 
+  const persistLatestNow = (successNotice?: Partial<ExplorerPersistenceNotice>) => {
+    if (persistTimer !== null) {
+      clearTimeout(persistTimer);
+      persistTimer = null;
+    }
+    pendingNotice = undefined;
+    persistLatest(successNotice);
+  };
+
+  const schedulePersistLatest = (successNotice?: Partial<ExplorerPersistenceNotice>) => {
+    if (typeof window === 'undefined') {
+      persistLatest(successNotice);
+      return;
+    }
+    if (EXPLORER_PERSIST_DEBOUNCE_MS <= 0) {
+      persistLatestNow(successNotice);
+      return;
+    }
+    if (successNotice) {
+      pendingNotice = successNotice;
+    }
+    if (persistTimer !== null) {
+      clearTimeout(persistTimer);
+    }
+    persistTimer = setTimeout(() => {
+      persistTimer = null;
+      const notice = pendingNotice;
+      pendingNotice = undefined;
+      persistLatest(notice);
+    }, EXPLORER_PERSIST_DEBOUNCE_MS);
+  };
+
+  // Best-effort flush so the latest session isn't lost on close/navigation.
+  const installFlushListeners = () => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const marker = '__overlayterm_explorer_persist_flush_installed__';
+    const globalAny = globalThis as unknown as Record<string, unknown>;
+    if (globalAny[marker]) {
+      return;
+    }
+    globalAny[marker] = true;
+
+    const flush = () => persistLatestNow();
+    window.addEventListener('pagehide', flush);
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        flush();
+      }
+    });
+  };
+
+  installFlushListeners();
+
   return {
     session: hydratedState.session,
     rail: hydratedState.rail,
@@ -245,13 +310,13 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
           ...updates,
         },
       }));
-      persistLatest(hydratedState.persistence.status === 'legacy-imported'
+      schedulePersistLatest(hydratedState.persistence.status === 'legacy-imported'
         ? { status: 'ready', message: null }
         : undefined);
     },
     resetSession: () => {
       set({ session: defaultExplorerSession });
-      persistLatest();
+      schedulePersistLatest();
     },
     updateRail: (updates) => {
       set((state) => ({
@@ -261,7 +326,7 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
             : { ...state.rail, ...updates },
         ),
       }));
-      persistLatest(hydratedState.persistence.status === 'legacy-imported'
+      schedulePersistLatest(hydratedState.persistence.status === 'legacy-imported'
         ? { status: 'ready', message: null }
         : undefined);
     },
@@ -269,7 +334,7 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
       set({
         rail: normalizeExplorerRailSnapshot(nextRail),
       });
-      persistLatest(hydratedState.persistence.status === 'legacy-imported'
+      schedulePersistLatest(hydratedState.persistence.status === 'legacy-imported'
         ? { status: 'ready', message: null }
         : undefined);
     },
@@ -290,7 +355,7 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
         session: backup.session,
         rail: backup.rail,
       });
-      persistLatest({
+      persistLatestNow({
         status: 'restored-backup',
         message: 'Explorer layout restored from the last known good backup.',
       });

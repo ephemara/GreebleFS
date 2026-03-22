@@ -390,15 +390,19 @@ export function ExplorerSideRail({
               )}
             </div>
 
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 5,
-              marginTop: 6,
-              flexWrap: dense ? 'nowrap' : 'wrap',
-              overflowX: dense ? 'auto' : 'visible',
-              paddingBottom: dense ? 2 : 0,
-            }}>
+            <div
+              className={dense ? 'overlay-scrollbars-none' : undefined}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                marginTop: 6,
+                flexWrap: dense ? 'nowrap' : 'wrap',
+                overflowX: dense ? 'auto' : 'visible',
+                overflowY: 'hidden',
+                paddingBottom: dense ? 2 : 0,
+              }}
+            >
               <button
                 type="button"
                 onClick={() => updateRail(clearExplorerBookmarkCategoryFilters(rail))}

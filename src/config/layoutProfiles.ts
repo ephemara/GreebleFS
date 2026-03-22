@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
-import { parse as parseToml } from '@iarna/toml';
+import { parse as parseToml } from 'smol-toml';
+
 
 export type LayoutBarPosition = 'top' | 'bottom';
 export type LayoutDockSide = 'left' | 'right';

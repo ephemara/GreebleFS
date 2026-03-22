@@ -1023,21 +1023,28 @@ function App() {
     return () => { unlisten?.(); };
   }, [toggle]);
 
+  // Dev-mode auto-show: fires once after mount so you don't need to press
+  // the hotkey every time you restart during development.
+  // We store positionAndShow in a ref so the [] dep array timer is never
+  // cancelled by useCallback reference churn (the old [positionAndShow] dep
+  // caused the timer to reset every time settings finished loading).
+  const positionAndShowRef = useRef(positionAndShow);
+  positionAndShowRef.current = positionAndShow;
   useEffect(() => {
     if (!isTauri() || !import.meta.env.DEV) {
       return;
     }
-
+    // Rust already calls window.show() + emits toggle-request in debug builds,
+    // so this is a JS-side safety net in case the event arrives before the
+    // listener is registered (i.e. very fast machines / hot-reloads).
     const timer = window.setTimeout(() => {
       if (!overlayVisibleRef.current && overlayPhaseRef.current === 'closed') {
-        void positionAndShow();
+        void positionAndShowRef.current();
       }
-    }, 150);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [positionAndShow]);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally empty — fires exactly once on mount
 
   useGlobalShortcut(keybindings.terminalToggle, toggle, true);
 
@@ -1500,28 +1507,40 @@ function App() {
   }, [createPluginApi]);
 
   useEffect(() => {
+    if (!isOverlayVisible) {
+      return;
+    }
     void refreshAuthoredAnimations(true);
-  }, [refreshAuthoredAnimations]);
+  }, [isOverlayVisible, refreshAuthoredAnimations]);
 
   useEffect(() => {
+    if (!isOverlayVisible) {
+      return;
+    }
     void refreshAuthoredShaders(true);
-  }, [refreshAuthoredShaders]);
+  }, [isOverlayVisible, refreshAuthoredShaders]);
 
   useEffect(() => {
+    if (!isOverlayVisible) {
+      return;
+    }
     const interval = window.setInterval(() => {
       void refreshAuthoredAnimations();
     }, animationSystemConfig.scanIntervalMs);
 
     return () => window.clearInterval(interval);
-  }, [refreshAuthoredAnimations]);
+  }, [isOverlayVisible, refreshAuthoredAnimations]);
 
   useEffect(() => {
+    if (!isOverlayVisible) {
+      return;
+    }
     const interval = window.setInterval(() => {
       void refreshAuthoredShaders();
     }, shaderSystemConfig.scanIntervalMs);
 
     return () => window.clearInterval(interval);
-  }, [refreshAuthoredShaders]);
+  }, [isOverlayVisible, refreshAuthoredShaders]);
 
   useEffect(() => {
     refreshFolderPluginsRef.current = refreshFolderPlugins;
@@ -2236,7 +2255,9 @@ function App() {
                     const isPanelOpen = openPanelIds.includes(panel.id);
                     const isActive = panel.id === activePanelId;
                     const isPinned = pinnedPanelIds.includes(panel.id);
-                    const shouldMount = !isPinned && (panel.keepMounted ? true : isPanelOpen && isActive);
+                    // keepMounted means "stay mounted while open, even when not the active tab".
+                    // Closed panels should unmount to avoid background work.
+                    const shouldMount = !isPinned && (panel.keepMounted ? isPanelOpen : isPanelOpen && isActive);
 
                     if (!shouldMount) return null;
 

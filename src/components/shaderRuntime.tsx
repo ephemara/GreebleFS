@@ -1,4 +1,4 @@
-import React, { type CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
+import React, { type CSSProperties, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import * as TauriCore from '@tauri-apps/api/core';
 import * as TauriEvent from '@tauri-apps/api/event';
 import * as TauriWindow from '@tauri-apps/api/window';
@@ -619,24 +619,108 @@ function normalizeSurfaceDefinition(
   return surface;
 }
 
+type RafClockListener = () => void;
+
+// Single shared RAF clock for all built-in shader surfaces. This avoids each surface
+// spinning up its own RAF loop + React state updates.
+const sharedRafClock = (() => {
+  let nowSeconds = 0;
+  let rafId = 0;
+  const listeners = new Set<RafClockListener>();
+
+  const tick = (nowMs: number) => {
+    nowSeconds = nowMs * 0.001;
+    for (const listener of listeners) {
+      listener();
+    }
+    if (listeners.size > 0) {
+      rafId = window.requestAnimationFrame(tick);
+    } else {
+      rafId = 0;
+    }
+  };
+
+  const startIfNeeded = () => {
+    if (rafId !== 0) {
+      return;
+    }
+    rafId = window.requestAnimationFrame(tick);
+  };
+
+  return {
+    subscribe(listener: RafClockListener) {
+      listeners.add(listener);
+      // rAF is throttled in background tabs; we still start so the clock can't get "stuck"
+      // if the first subscription happens while hidden.
+      startIfNeeded();
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size === 0 && rafId !== 0) {
+          window.cancelAnimationFrame(rafId);
+          rafId = 0;
+        }
+      };
+    },
+    getSnapshot() {
+      return nowSeconds;
+    },
+    getServerSnapshot() {
+      return 0;
+    },
+  };
+})();
+
 function useAnimationClock(speed = 1): number {
-  const [time, setTime] = useState(0);
-  const speedRef = useRef(speed);
-  speedRef.current = speed;
-
-  useEffect(() => {
-    let frame = 0;
-    const tick = (now: number) => {
-      setTime(now * 0.001 * speedRef.current);
-      frame = window.requestAnimationFrame(tick);
-    };
-
-    frame = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frame);
-  }, []);
-
-  return time;
+  const base = useSyncExternalStore(
+    sharedRafClock.subscribe,
+    sharedRafClock.getSnapshot,
+    sharedRafClock.getServerSnapshot,
+  );
+  return base * speed;
 }
+
+type CanvasAnimatorListener = (nowMs: number) => void;
+
+// One shared animator for all canvas-backed shader surfaces.
+const sharedCanvasAnimator = (() => {
+  let rafId = 0;
+  const listeners = new Set<CanvasAnimatorListener>();
+
+  const tick = (nowMs: number) => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      // Skip heavy canvas draws while hidden; keep the animator alive so it resumes smoothly.
+      rafId = window.requestAnimationFrame(tick);
+      return;
+    }
+
+    for (const listener of listeners) {
+      listener(nowMs);
+    }
+
+    rafId = listeners.size > 0 ? window.requestAnimationFrame(tick) : 0;
+  };
+
+  const startIfNeeded = () => {
+    if (rafId !== 0) {
+      return;
+    }
+    rafId = window.requestAnimationFrame(tick);
+  };
+
+  return {
+    subscribe(listener: CanvasAnimatorListener) {
+      listeners.add(listener);
+      startIfNeeded();
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size === 0 && rafId !== 0) {
+          window.cancelAnimationFrame(rafId);
+          rafId = 0;
+        }
+      };
+    },
+  };
+})();
 
 function NebulaBackgroundSurface({ context }: OverlayShaderSurfaceProps) {
   const time = useAnimationClock(0.9);
@@ -757,45 +841,58 @@ function CanvasGridRenderer({
       return;
     }
 
-    let frame = 0;
-    const render = (now: number) => {
+    const strokeStyle = `${context.accentColor}${Math.round(opacity * 255).toString(16).padStart(2, '0')}`;
+    const lineWidth = context.surface === 'border' ? 1.4 : 1;
+
+    let lastClientWidth = 0;
+    let lastClientHeight = 0;
+    let lastDpr = 0;
+
+    const render = (nowMs: number) => {
+      const clientWidth = Math.max(0, canvas.clientWidth);
+      const clientHeight = Math.max(0, canvas.clientHeight);
+      if (clientWidth <= 0 || clientHeight <= 0) {
+        return;
+      }
+
       const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-      const width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
-      const height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
-      canvas.width = width;
-      canvas.height = height;
+      if (clientWidth !== lastClientWidth || clientHeight !== lastClientHeight || dpr !== lastDpr) {
+        lastClientWidth = clientWidth;
+        lastClientHeight = clientHeight;
+        lastDpr = dpr;
+        canvas.width = Math.max(1, Math.floor(clientWidth * dpr));
+        canvas.height = Math.max(1, Math.floor(clientHeight * dpr));
+      }
 
+      // Resizing a canvas resets all context state; set these every frame to keep it correct.
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-
-      const time = now * 0.001;
-      const verticalStep = Math.max(8, canvas.clientHeight / density);
-      const horizontalStep = Math.max(12, canvas.clientWidth / density);
-      ctx.lineWidth = context.surface === 'border' ? 1.4 : 1;
-      ctx.strokeStyle = `${context.accentColor}${Math.round(opacity * 255).toString(16).padStart(2, '0')}`;
+      ctx.clearRect(0, 0, clientWidth, clientHeight);
+      ctx.lineWidth = lineWidth;
+      ctx.strokeStyle = strokeStyle;
       ctx.globalCompositeOperation = 'screen';
 
-      for (let y = -verticalStep; y <= canvas.clientHeight + verticalStep; y += verticalStep) {
+      const time = nowMs * 0.001;
+      const verticalStep = Math.max(8, clientHeight / density);
+      const horizontalStep = Math.max(12, clientWidth / density);
+
+      for (let y = -verticalStep; y <= clientHeight + verticalStep; y += verticalStep) {
         const drift = Math.sin(time * 1.2 + y * 0.04) * 8;
         ctx.beginPath();
         ctx.moveTo(0, y + drift);
-        ctx.lineTo(canvas.clientWidth, y - drift);
+        ctx.lineTo(clientWidth, y - drift);
         ctx.stroke();
       }
 
-      for (let x = -horizontalStep; x <= canvas.clientWidth + horizontalStep; x += horizontalStep) {
+      for (let x = -horizontalStep; x <= clientWidth + horizontalStep; x += horizontalStep) {
         const drift = Math.cos(time * 1.05 + x * 0.03) * 6;
         ctx.beginPath();
         ctx.moveTo(x + drift, 0);
-        ctx.lineTo(x - drift, canvas.clientHeight);
+        ctx.lineTo(x - drift, clientHeight);
         ctx.stroke();
       }
-
-      frame = window.requestAnimationFrame(render);
     };
 
-    frame = window.requestAnimationFrame(render);
-    return () => window.cancelAnimationFrame(frame);
+    return sharedCanvasAnimator.subscribe(render);
   }, [context.accentColor, context.surface, density, opacity]);
 
   return (

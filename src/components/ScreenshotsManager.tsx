@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import {
   availableMonitors,
@@ -15,8 +15,11 @@ import {
   FolderOpen,
   Image as ImageIcon,
   LoaderCircle,
+  Monitor,
   RefreshCw,
+  Save,
   Search,
+  Maximize2,
 } from 'lucide-react';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 import { useSettingsStore } from '../store/settingsStore';
@@ -28,12 +31,13 @@ import {
   normalizeSelection,
   selectionToPixelRect,
   sortScreenshotEntries,
-  type MonitorBounds,
   type Point2D,
   type RectSelection,
   type ScreenshotEntryLike,
 } from './screenshotsUtils';
 import { OverlayScrollArea } from './OverlayScrollArea';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type FileEntry = ScreenshotEntryLike & {
   size: number;
@@ -41,9 +45,7 @@ type FileEntry = ScreenshotEntryLike & {
   is_symlink?: boolean;
 };
 
-type ScreenshotItem = FileEntry & {
-  previewUrl: string | null;
-};
+type ScreenshotItem = FileEntry & { previewUrl: string | null };
 
 type ScreenshotPreviewPayload = {
   captureId: string;
@@ -58,12 +60,20 @@ type SavedScreenshotPayload = {
   created_at: number;
 };
 
-type MonitorCapture = MonitorBounds & {
+type MonitorCapture = {
   id: string;
   label: string;
+  // logical coordinates for layout
+  logicalX: number;
+  logicalY: number;
+  logicalWidth: number;
+  logicalHeight: number;
+  // physical for capture commands
+  physicalX: number;
+  physicalY: number;
+  physicalWidth: number;
+  physicalHeight: number;
   scaleFactor: number;
-  workAreaWidth: number;
-  workAreaHeight: number;
   captureId: string | null;
   previewUrl: string | null;
   imageWidth: number;
@@ -71,18 +81,15 @@ type MonitorCapture = MonitorBounds & {
   isActive: boolean;
 };
 
-type DragState = {
-  monitorId: string;
-  pointerId: number;
-  origin: Point2D;
-  selection: RectSelection;
-};
+// ─── Palette constants ────────────────────────────────────────────────────────
 
-const PANEL = 'var(--overlay-bg-panel)';
+const PANEL     = 'var(--overlay-bg-panel)';
 const PANEL_ALT = 'var(--overlay-bg-panel-alt)';
-const BORDER = 'var(--overlay-border)';
-const MUTED = 'var(--overlay-text-muted)';
-const TEXT = 'var(--overlay-text-primary)';
+const BORDER    = 'var(--overlay-border)';
+const MUTED     = 'var(--overlay-text-muted)';
+const TEXT      = 'var(--overlay-text-primary)';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function ensureDir(path: string): Promise<void> {
   try {
@@ -96,7 +103,6 @@ async function withHiddenWindowCapture<T>(task: () => Promise<T>): Promise<T> {
   const win = getCurrentWindow();
   await win.hide();
   await new Promise(resolve => window.setTimeout(resolve, screenshotFeatureConfig.editor.hideWindowDelayMs));
-
   try {
     return await task();
   } finally {
@@ -105,96 +111,89 @@ async function withHiddenWindowCapture<T>(task: () => Promise<T>): Promise<T> {
   }
 }
 
-function toMonitorCapture(monitor: TauriMonitor, activeMonitorId: string | null): MonitorCapture {
-  const id = [
-    monitor.name ?? 'display',
-    monitor.position.x,
-    monitor.position.y,
-    monitor.size.width,
-    monitor.size.height,
-  ].join(':');
-
+function toMonitorCapture(monitor: TauriMonitor, activeId: string | null): MonitorCapture {
+  const sf = monitor.scaleFactor || 1;
+  // Tauri gives physical pixels for size, logical for position
+  const logicalWidth  = Math.round(monitor.size.width  / sf);
+  const logicalHeight = Math.round(monitor.size.height / sf);
+  const id = [monitor.name ?? 'display', monitor.position.x, monitor.position.y, monitor.size.width, monitor.size.height].join(':');
   const displayName = monitor.name?.trim() || 'Display';
   return {
     id,
-    label: `${displayName} · ${monitor.size.width}x${monitor.size.height}`,
-    x: monitor.position.x,
-    y: monitor.position.y,
-    width: monitor.size.width,
-    height: monitor.size.height,
-    scaleFactor: monitor.scaleFactor,
-    workAreaWidth: monitor.workArea.size.width,
-    workAreaHeight: monitor.workArea.size.height,
+    label: `${displayName} · ${logicalWidth}×${logicalHeight}`,
+    logicalX: monitor.position.x,
+    logicalY: monitor.position.y,
+    logicalWidth,
+    logicalHeight,
+    physicalX:      monitor.position.x,
+    physicalY:      monitor.position.y,
+    physicalWidth:  monitor.size.width,
+    physicalHeight: monitor.size.height,
+    scaleFactor: sf,
     captureId: null,
     previewUrl: null,
     imageWidth: 0,
     imageHeight: 0,
-    isActive: id === activeMonitorId,
+    isActive: id === activeId,
   };
 }
 
 function formatFileSize(size: number): string {
   if (size < 1_024) return `${size} B`;
-  if (size < 1_024 * 1_024) return `${(size / 1_024).toFixed(1)} KB`;
-  return `${(size / (1_024 * 1_024)).toFixed(1)} MB`;
+  if (size < 1_048_576) return `${(size / 1_024).toFixed(1)} KB`;
+  return `${(size / 1_048_576).toFixed(1)} MB`;
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
+function clamp(v: number, lo: number, hi: number) { return Math.min(Math.max(v, lo), hi); }
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverlayAppearance }) {
   const accent = appearance?.theme.palette.accent ?? 'var(--overlay-accent)';
   const screenshotDir = useSettingsStore(s => s.settings.screenshots.saveDirectory || screenshotFeatureConfig.defaultSaveDirectory);
 
-  const previewRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const dragStateRef = useRef<DragState | null>(null);
+  const previewRef    = useRef<HTMLDivElement | null>(null);
+  const dragStateRef  = useRef<{ origin: Point2D; selection: RectSelection; pointerId: number } | null>(null);
 
-  const [items, setItems] = useState<ScreenshotItem[]>([]);
-  const [visibleGalleryCount, setVisibleGalleryCount] = useState(0);
-  const [totalGalleryCount, setTotalGalleryCount] = useState(0);
-  const [monitors, setMonitors] = useState<MonitorCapture[]>([]);
-  const [activeSection, setActiveSection] = useState<'tool' | 'library'>('tool');
-  const [dragState, setDragState] = useState<DragState | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(true);
-  const [savingMonitorId, setSavingMonitorId] = useState<string | null>(null);
-  const [copyingPath, setCopyingPath] = useState<string | null>(null);
-  const [copiedPath, setCopiedPath] = useState<string | null>(null);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [libraryWidth, setLibraryWidth] = usePersistentPanelSize(
-    'overlayterm-screenshots-library-width',
-    300,
-    240,
-    520,
-  );
+  const [monitors,        setMonitors]        = useState<MonitorCapture[]>([]);
+  const [activeMonitorId, setActiveMonitorId] = useState<string | null>(null);
+  const [selection,       setSelection]       = useState<RectSelection | null>(null);
+  const [items,           setItems]           = useState<ScreenshotItem[]>([]);
+  const [visibleCount,    setVisibleCount]    = useState(0);
+  const [totalCount,      setTotalCount]      = useState(0);
+  const [activeSection,   setActiveSection]   = useState<'tool' | 'library'>('tool');
+  const [isCapturing,     setIsCapturing]     = useState(false);
+  const [isSaving,        setIsSaving]        = useState(false);
+  const [isCopying,       setIsCopying]       = useState(false);
+  const [statusMsg,       setStatusMsg]       = useState<string | null>(null);
+  const [error,           setError]           = useState<string | null>(null);
+  const [copyingPath,     setCopyingPath]     = useState<string | null>(null);
+  const [copiedPath,      setCopiedPath]      = useState<string | null>(null);
+  const [libraryWidth, setLibraryWidth] = usePersistentPanelSize('overlayterm-screenshots-library-width', 280, 220, 480);
 
-  const wallBounds = useMemo(() => {
-    if (monitors.length === 0) {
-      return { minX: 0, minY: 0, width: 1, height: 1 };
-    }
+  const activeMonitor = monitors.find(m => m.id === activeMonitorId) ?? null;
 
-    const minX = Math.min(...monitors.map(monitor => monitor.x));
-    const minY = Math.min(...monitors.map(monitor => monitor.y));
-    const maxX = Math.max(...monitors.map(monitor => monitor.x + monitor.width));
-    const maxY = Math.max(...monitors.map(monitor => monitor.y + monitor.height));
+  // ── Derived selection in image-space (physical pixels) ──
+  const selectionPx = (() => {
+    if (!selection || !activeMonitor || !previewRef.current) return null;
+    const rect = previewRef.current.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+    return selectionToPixelRect(
+      normalizeSelection(selection),
+      { width: rect.width, height: rect.height },
+      { width: activeMonitor.imageWidth, height: activeMonitor.imageHeight },
+    );
+  })();
 
-    return {
-      minX,
-      minY,
-      width: Math.max(maxX - minX, 1),
-      height: Math.max(maxY - minY, 1),
-    };
-  }, [monitors]);
-
+  // ── Gallery ──
   const loadGallery = useCallback(async () => {
     try {
       await ensureDir(screenshotDir);
       const listed = await invoke<FileEntry[]>('fs_list_dir', { path: screenshotDir, showHidden: false });
-      const screenshotEntries = sortScreenshotEntries(listed.filter(isSupportedScreenshotEntry));
-      const visibleEntries = screenshotEntries.slice(0, screenshotFeatureConfig.maxGalleryItems);
-      const previewUrls = await Promise.all(
-        visibleEntries.map(async entry => {
+      const entries = sortScreenshotEntries(listed.filter(isSupportedScreenshotEntry));
+      const visible = entries.slice(0, screenshotFeatureConfig.maxGalleryItems);
+      const withPreviews = await Promise.all(
+        visible.map(async entry => {
           try {
             const previewUrl = await invoke<string>('screenshot_read_gallery_thumbnail', {
               path: entry.path,
@@ -207,347 +206,414 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
           }
         }),
       );
-
-      setItems(previewUrls);
-      setVisibleGalleryCount(visibleEntries.length);
-      setTotalGalleryCount(screenshotEntries.length);
+      setItems(withPreviews);
+      setVisibleCount(visible.length);
+      setTotalCount(entries.length);
     } catch (err) {
       setError(String(err));
       setItems([]);
-      setVisibleGalleryCount(0);
-      setTotalGalleryCount(0);
     }
   }, [screenshotDir]);
 
-  const refreshMonitorWall = useCallback(async () => {
-    setIsRefreshing(true);
+  // ── Capture all monitors ──
+  const captureMonitors = useCallback(async () => {
+    setIsCapturing(true);
     setError(null);
-
+    setSelection(null);
     try {
-      const [available, activeMonitor, fallbackMonitor] = await Promise.all([
-        availableMonitors(),
-        currentMonitor(),
-        primaryMonitor(),
+      const [available, activeMon, primaryMon] = await Promise.all([
+        availableMonitors(), currentMonitor(), primaryMonitor(),
       ]);
+      const activeId = (activeMon ?? primaryMon)
+        ? toMonitorCapture((activeMon ?? primaryMon)!, null).id
+        : null;
+      const base = available.map(m => toMonitorCapture(m, activeId));
 
-      const activeId = activeMonitor
-        ? toMonitorCapture(activeMonitor, null).id
-        : fallbackMonitor
-          ? toMonitorCapture(fallbackMonitor, null).id
-          : null;
-
-      const baseMonitors = available.map(monitor => toMonitorCapture(monitor, activeId));
-
-      const nextMonitors = await withHiddenWindowCapture(async () => {
-        const captured: MonitorCapture[] = [];
-        for (const monitor of baseMonitors) {
+      const captured: MonitorCapture[] = await withHiddenWindowCapture(async () => {
+        const results: MonitorCapture[] = [];
+        for (const mon of base) {
           const preview = await invoke<ScreenshotPreviewPayload>('screenshot_capture_preview', {
-            x: monitor.x,
-            y: monitor.y,
-            width: monitor.width,
-            height: monitor.height,
+            x: mon.physicalX,
+            y: mon.physicalY,
+            width: mon.physicalWidth,
+            height: mon.physicalHeight,
           });
-
-          captured.push({
-            ...monitor,
-            captureId: preview.captureId,
-            previewUrl: preview.previewUrl,
-            imageWidth: preview.imageWidth,
-            imageHeight: preview.imageHeight,
-          });
+          results.push({ ...mon, captureId: preview.captureId, previewUrl: preview.previewUrl, imageWidth: preview.imageWidth, imageHeight: preview.imageHeight });
         }
-
-        return captured;
+        return results;
       });
 
-      setMonitors(nextMonitors);
-      setStatusMessage(`Loaded ${nextMonitors.length} monitor preview${nextMonitors.length === 1 ? '' : 's'}.`);
+      setMonitors(captured);
+      const firstActive = captured.find(m => m.isActive) ?? captured[0] ?? null;
+      setActiveMonitorId(firstActive?.id ?? null);
+      setStatusMsg(`Captured ${captured.length} display${captured.length !== 1 ? 's' : ''}.`);
     } catch (err) {
       setError(String(err));
       setMonitors([]);
     } finally {
-      setIsRefreshing(false);
+      setIsCapturing(false);
     }
   }, []);
 
-  const refreshWorkspace = useCallback(async () => {
-    await Promise.all([refreshMonitorWall(), loadGallery()]);
-  }, [loadGallery, refreshMonitorWall]);
+  const refreshAll = useCallback(async () => {
+    await Promise.all([captureMonitors(), loadGallery()]);
+  }, [captureMonitors, loadGallery]);
+
+  useEffect(() => { void refreshAll(); }, [refreshAll]);
 
   useEffect(() => {
-    void refreshWorkspace();
-  }, [refreshWorkspace]);
+    if (!statusMsg) return;
+    const t = window.setTimeout(() => setStatusMsg(null), 2500);
+    return () => window.clearTimeout(t);
+  }, [statusMsg]);
 
   useEffect(() => {
-    if (!copiedPath) return undefined;
-    const timeout = window.setTimeout(() => setCopiedPath(null), 1800);
-    return () => window.clearTimeout(timeout);
+    if (!copiedPath) return;
+    const t = window.setTimeout(() => setCopiedPath(null), 1800);
+    return () => window.clearTimeout(t);
   }, [copiedPath]);
 
-  useEffect(() => {
-    if (!statusMessage) return undefined;
-    const timeout = window.setTimeout(() => setStatusMessage(null), 2200);
-    return () => window.clearTimeout(timeout);
-  }, [statusMessage]);
-
-  const clearMessages = useCallback(() => {
-    setError(null);
-    setStatusMessage(null);
-  }, []);
-
-  const updateDragSelection = useCallback((monitorId: string, clientX: number, clientY: number) => {
-    const frame = previewRefs.current[monitorId];
-    const currentDrag = dragStateRef.current;
-    if (!frame || !currentDrag || currentDrag.monitorId !== monitorId) return;
-
-    const rect = frame.getBoundingClientRect();
-    const point = {
-      x: clamp(clientX - rect.left, 0, rect.width),
-      y: clamp(clientY - rect.top, 0, rect.height),
+  // ── Selection drag on preview ──
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!activeMonitor?.captureId || isCapturing) return;
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const origin: Point2D = {
+      x: clamp(e.clientX - rect.left, 0, rect.width),
+      y: clamp(e.clientY - rect.top,  0, rect.height),
     };
+    const ds = { origin, selection: { x: origin.x, y: origin.y, width: 0, height: 0 }, pointerId: e.pointerId };
+    dragStateRef.current = ds;
+    setSelection(ds.selection);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }, [activeMonitor, isCapturing]);
 
-    const nextSelection = clampSelectionToBounds({
-      x: currentDrag.origin.x,
-      y: currentDrag.origin.y,
-      width: point.x - currentDrag.origin.x,
-      height: point.y - currentDrag.origin.y,
-    }, { width: rect.width, height: rect.height }, 1);
-
-    const nextDragState = {
-      ...currentDrag,
-      selection: nextSelection,
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const ds = dragStateRef.current;
+    if (!ds || !previewRef.current) return;
+    e.preventDefault();
+    const rect = previewRef.current.getBoundingClientRect();
+    const point: Point2D = {
+      x: clamp(e.clientX - rect.left, 0, rect.width),
+      y: clamp(e.clientY - rect.top,  0, rect.height),
     };
-
-    dragStateRef.current = nextDragState;
-    setDragState(nextDragState);
-  }, []);
-
-  const saveDragSelection = useCallback(async (monitorId: string) => {
-    const currentDrag = dragStateRef.current;
-    const frame = previewRefs.current[monitorId];
-    const monitor = monitors.find(entry => entry.id === monitorId);
-    if (!currentDrag || !frame || !monitor || !monitor.captureId) return;
-
-    const normalized = normalizeSelection(currentDrag.selection);
-    if (normalized.width < screenshotFeatureConfig.editor.minSelectionSize || normalized.height < screenshotFeatureConfig.editor.minSelectionSize) {
-      dragStateRef.current = null;
-      setDragState(null);
-      return;
-    }
-
-    const rect = frame.getBoundingClientRect();
-    const cropRect = selectionToPixelRect(
-      normalized,
-      { width: rect.width, height: rect.height },
-      { width: monitor.imageWidth, height: monitor.imageHeight },
+    const next = clampSelectionToBounds(
+      { x: ds.origin.x, y: ds.origin.y, width: point.x - ds.origin.x, height: point.y - ds.origin.y },
+      { width: rect.width, height: rect.height }, 1,
     );
+    dragStateRef.current = { ...ds, selection: next };
+    setSelection(next);
+  }, []);
 
+  const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const ds = dragStateRef.current;
+    if (!ds) return;
+    e.preventDefault();
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
     dragStateRef.current = null;
-    setDragState(null);
-    setSavingMonitorId(monitorId);
-    setError(null);
+    // selection stays — user confirms with action buttons
+  }, []);
 
+  // ── Actions ──
+  const doSave = useCallback(async (copyToo: boolean) => {
+    if (!activeMonitor?.captureId || !selectionPx) return;
+    const norm = normalizeSelection(selectionPx);
+    if (norm.width < 4 || norm.height < 4) { setError('Selection too small.'); return; }
+    setIsSaving(true);
+    setError(null);
     try {
       await ensureDir(screenshotDir);
       const saved = await invoke<SavedScreenshotPayload>('screenshot_save_region', {
-        captureId: monitor.captureId,
-        x: cropRect.x,
-        y: cropRect.y,
-        width: cropRect.width,
-        height: cropRect.height,
+        captureId: activeMonitor.captureId,
+        x: norm.x, y: norm.y, width: norm.width, height: norm.height,
         directory: screenshotDir,
         filePrefix: screenshotFeatureConfig.filePrefix,
-        copyToClipboard: false,
+        copyToClipboard: copyToo,
       });
       await loadGallery();
-      setStatusMessage(`Saved ${saved.file_name}.`);
+      setStatusMsg(copyToo ? `Saved & copied ${saved.file_name}.` : `Saved ${saved.file_name}.`);
     } catch (err) {
       setError(String(err));
     } finally {
-      setSavingMonitorId(null);
+      setIsSaving(false);
     }
-  }, [loadGallery, monitors, screenshotDir]);
+  }, [activeMonitor, selectionPx, screenshotDir, loadGallery]);
 
-  const copyScreenshot = useCallback(async (item: ScreenshotItem) => {
-    setCopyingPath(item.path);
+  const doCopy = useCallback(async () => {
+    if (!activeMonitor?.captureId || !selectionPx) return;
+    const norm = normalizeSelection(selectionPx);
+    if (norm.width < 4 || norm.height < 4) { setError('Selection too small.'); return; }
+    setIsCopying(true);
     setError(null);
+    try {
+      await invoke('screenshot_copy_region_to_clipboard', {
+        captureId: activeMonitor.captureId,
+        x: norm.x, y: norm.y, width: norm.width, height: norm.height,
+      });
+      setStatusMsg('Copied to clipboard.');
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setIsCopying(false);
+    }
+  }, [activeMonitor, selectionPx]);
+
+  const doFullMonitor = useCallback(async (action: 'save' | 'copy' | 'save-copy') => {
+    if (!activeMonitor?.captureId) return;
+    const w = activeMonitor.imageWidth;
+    const h = activeMonitor.imageHeight;
+    if (action === 'copy') {
+      setIsCopying(true);
+      try {
+        await invoke('screenshot_copy_region_to_clipboard', { captureId: activeMonitor.captureId, x: 0, y: 0, width: w, height: h });
+        setStatusMsg('Full monitor copied.');
+      } catch (err) { setError(String(err)); }
+      finally { setIsCopying(false); }
+    } else {
+      setIsSaving(true);
+      try {
+        await ensureDir(screenshotDir);
+        const saved = await invoke<SavedScreenshotPayload>('screenshot_save_region', {
+          captureId: activeMonitor.captureId,
+          x: 0, y: 0, width: w, height: h,
+          directory: screenshotDir,
+          filePrefix: screenshotFeatureConfig.filePrefix,
+          copyToClipboard: action === 'save-copy',
+        });
+        await loadGallery();
+        setStatusMsg(`Full monitor saved${action === 'save-copy' ? ' & copied' : ''}: ${saved.file_name}.`);
+      } catch (err) { setError(String(err)); }
+      finally { setIsSaving(false); }
+    }
+  }, [activeMonitor, screenshotDir, loadGallery]);
+
+  const copyGalleryItem = useCallback(async (item: ScreenshotItem) => {
+    setCopyingPath(item.path);
     try {
       await invoke('screenshot_copy_image_to_clipboard', { path: item.path });
       setCopiedPath(item.path);
-      setStatusMessage(`Copied ${item.name}.`);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setCopyingPath(null);
-    }
+      setStatusMsg(`Copied ${item.name}.`);
+    } catch (err) { setError(String(err)); }
+    finally { setCopyingPath(null); }
   }, []);
 
-  const activeDragMonitorId = dragState?.monitorId ?? null;
-  const monitorWallContent = (
-    <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 6 }}>
-      {isRefreshing && monitors.length === 0 ? (
-        <GalleryLoading accent={accent} label="Capturing displays..." />
-      ) : monitors.length === 0 ? (
-        <div style={emptyPanelStyle(accent)}>
-          <div style={{ fontSize: 14, fontWeight: 700 }}>No displays</div>
-          <button type="button" onClick={() => void refreshWorkspace()} style={toolbarButtonStyle(true, accent)}>
-            <RefreshCw size={14} />
-            Retry
-          </button>
-        </div>
-      ) : (
-        <div style={{ position: 'relative', width: '100%', aspectRatio: `${wallBounds.width} / ${wallBounds.height}`, minHeight: 220, borderRadius: 12, border: `1px solid ${BORDER}`, background: 'rgba(255,255,255,0.02)', overflow: 'hidden' }}>
-          {monitors.map(monitor => {
-            const left = ((monitor.x - wallBounds.minX) / wallBounds.width) * 100;
-            const top = ((monitor.y - wallBounds.minY) / wallBounds.height) * 100;
-            const width = (monitor.width / wallBounds.width) * 100;
-            const height = (monitor.height / wallBounds.height) * 100;
-            const dragSelection = activeDragMonitorId === monitor.id && dragState ? normalizeSelection(dragState.selection) : null;
-            const isSaving = savingMonitorId === monitor.id;
+  const isWorking = isCapturing || isSaving || isCopying;
+  const normalizedSel = selection ? normalizeSelection(selection) : null;
+  const hasSelection = normalizedSel && normalizedSel.width >= 4 && normalizedSel.height >= 4;
 
+  // ─── Tool content ──────────────────────────────────────────────────────────
+
+  const toolContent = (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+
+      {/* Monitor tabs */}
+      {monitors.length > 0 && (
+        <div style={{ display: 'flex', gap: 4, padding: '6px 8px', borderBottom: `1px solid ${BORDER}`, background: PANEL, flexWrap: 'wrap' }}>
+          {monitors.map((mon, i) => {
+            const active = mon.id === activeMonitorId;
             return (
-              <div key={monitor.id} style={{ position: 'absolute', left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%`, padding: 3 }}>
-                <div style={{ position: 'relative', width: '100%', height: '100%', borderRadius: 10, border: `1px solid ${monitor.isActive ? `${accent}88` : BORDER}`, background: PANEL_ALT, overflow: 'hidden', boxShadow: monitor.isActive ? `0 0 0 1px ${accent}55 inset` : 'none' }}>
-                  <div style={{ position: 'absolute', inset: 0 }}>
-                    {monitor.previewUrl ? (
-                      <img src={monitor.previewUrl} alt={monitor.label} style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block', pointerEvents: 'none', userSelect: 'none' }} />
-                    ) : (
-                      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: MUTED }}>
-                        <ImageIcon size={20} />
-                      </div>
-                    )}
-                  </div>
-
-                  <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.06), rgba(0,0,0,0.28))' }} />
-
-                  <div
-                    ref={node => {
-                      previewRefs.current[monitor.id] = node;
-                    }}
-                    onPointerDown={(event) => {
-                      if (isRefreshing || isSaving || !monitor.captureId) return;
-                      event.preventDefault();
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      const origin = {
-                        x: clamp(event.clientX - rect.left, 0, rect.width),
-                        y: clamp(event.clientY - rect.top, 0, rect.height),
-                      };
-                      const nextDragState = {
-                        monitorId: monitor.id,
-                        pointerId: event.pointerId,
-                        origin,
-                        selection: { x: origin.x, y: origin.y, width: 0, height: 0 },
-                      };
-                      dragStateRef.current = nextDragState;
-                      setDragState(nextDragState);
-                      event.currentTarget.setPointerCapture(event.pointerId);
-                    }}
-                    onPointerMove={(event) => {
-                      if (dragStateRef.current?.monitorId !== monitor.id) return;
-                      event.preventDefault();
-                      updateDragSelection(monitor.id, event.clientX, event.clientY);
-                    }}
-                    onPointerUp={(event) => {
-                      if (dragStateRef.current?.monitorId !== monitor.id) return;
-                      event.preventDefault();
-                      updateDragSelection(monitor.id, event.clientX, event.clientY);
-                      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-                        event.currentTarget.releasePointerCapture(event.pointerId);
-                      }
-                      void saveDragSelection(monitor.id);
-                    }}
-                    onPointerCancel={(event) => {
-                      if (dragStateRef.current?.monitorId !== monitor.id) return;
-                      event.preventDefault();
-                      dragStateRef.current = null;
-                      setDragState(null);
-                      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-                        event.currentTarget.releasePointerCapture(event.pointerId);
-                      }
-                    }}
-                    style={{ position: 'absolute', inset: 0, cursor: isSaving ? 'progress' : 'crosshair', touchAction: 'none' }}
-                  >
-                    {dragSelection && (
-                      <div style={{ position: 'absolute', left: dragSelection.x, top: dragSelection.y, width: dragSelection.width, height: dragSelection.height, border: `2px solid ${accent}`, boxShadow: `0 0 0 9999px rgba(0,0,0,0.42), inset 0 0 0 1px rgba(255,255,255,0.45)`, background: `${accent}16` }} />
-                    )}
-                  </div>
-
-                  <div style={{ position: 'absolute', left: 6, right: 6, top: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                    <div style={{ minWidth: 0, display: 'grid', gap: 2 }}>
-                      <div style={{ fontSize: 9, fontWeight: 700, color: '#f4f6ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{monitor.label}</div>
-                    </div>
-                    {monitor.isActive && <div style={smallBadgeStyle(accent)}>Active</div>}
-                  </div>
-
-                  {isSaving && (
-                    <div style={{ position: 'absolute', right: 8, bottom: 8, display: 'inline-flex', alignItems: 'center', gap: 5, borderRadius: 999, padding: '4px 7px', background: 'rgba(5,8,15,0.88)', border: `1px solid ${accent}55`, color: '#f4f6ff', fontSize: 9, fontWeight: 700 }}>
-                      <LoaderCircle size={11} className="animate-spin" />
-                      Saving
-                    </div>
-                  )}
-                </div>
-              </div>
+              <button
+                key={mon.id}
+                type="button"
+                onClick={() => { setActiveMonitorId(mon.id); setSelection(null); }}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '4px 10px', borderRadius: 8, border: `1px solid ${active ? `${accent}88` : BORDER}`,
+                  background: active ? `${accent}20` : 'rgba(255,255,255,0.03)',
+                  color: active ? '#f4f6ff' : MUTED,
+                  cursor: 'pointer', fontSize: 10.5, fontWeight: 700,
+                }}
+              >
+                <Monitor size={11} style={{ flexShrink: 0 }} />
+                Display {i + 1}
+                {mon.isActive && (
+                  <span style={{ padding: '1px 5px', borderRadius: 999, background: `${accent}20`, border: `1px solid ${accent}44`, fontSize: 9, color: accent }}>
+                    Active
+                  </span>
+                )}
+              </button>
             );
           })}
         </div>
       )}
-    </OverlayScrollArea>
-  );
 
-  const libraryContent = (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: PANEL }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 10px', borderBottom: `1px solid ${BORDER}` }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: '#edf1ff' }}>Library</div>
-        <div style={{ fontSize: 10, color: MUTED }}>{visibleGalleryCount}/{totalGalleryCount}</div>
-      </div>
-      <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 8 }}>
-        {isRefreshing && items.length === 0 ? (
-          <GalleryLoading accent={accent} label="Loading library..." />
-        ) : items.length === 0 ? (
-          <div style={emptyPanelStyle(accent)}>
-            <div style={{ fontSize: 13, fontWeight: 700 }}>Empty</div>
+      {/* Preview area */}
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 8, background: 'var(--overlay-bg-shell)' }}>
+        {isCapturing && monitors.length === 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, color: MUTED }}>
+            <LoaderCircle size={28} className="animate-spin" style={{ color: accent }} />
+            <div style={{ fontSize: 12 }}>Capturing displays…</div>
+          </div>
+        ) : !activeMonitor ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, color: MUTED }}>
+            <ImageIcon size={32} strokeWidth={1} />
+            <div style={{ fontSize: 12 }}>No capture yet</div>
+            <button type="button" onClick={() => void captureMonitors()} style={btnStyle(true, accent)}>
+              <Crosshair size={13} /> Capture
+            </button>
           </div>
         ) : (
-          <div style={activeSection === 'library'
-            ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }
-            : { display: 'grid', gap: 6 }}
+          <div
+            style={{
+              position: 'relative',
+              maxWidth: '100%',
+              maxHeight: '100%',
+              aspectRatio: `${activeMonitor.imageWidth} / ${activeMonitor.imageHeight}`,
+              borderRadius: 10,
+              overflow: 'hidden',
+              border: `1px solid ${BORDER}`,
+              boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+              cursor: isCapturing ? 'wait' : 'crosshair',
+            }}
           >
+            {/* Screenshot preview */}
+            <img
+              src={activeMonitor.previewUrl ?? ''}
+              alt={activeMonitor.label}
+              draggable={false}
+              style={{ display: 'block', width: '100%', height: '100%', objectFit: 'fill', userSelect: 'none', pointerEvents: 'none' }}
+            />
+
+            {/* Drag surface */}
+            <div
+              ref={previewRef}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              style={{ position: 'absolute', inset: 0, touchAction: 'none' }}
+            />
+
+            {/* Selection overlay */}
+            {normalizedSel && normalizedSel.width >= 2 && normalizedSel.height >= 2 && (
+              <>
+                {/* Dimmed regions */}
+                <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.48)', pointerEvents: 'none' }} />
+                {/* Bright selection hole */}
+                <div style={{
+                  position: 'absolute',
+                  left: normalizedSel.x, top: normalizedSel.y,
+                  width: normalizedSel.width, height: normalizedSel.height,
+                  boxShadow: `0 0 0 9999px rgba(0,0,0,0.48)`,
+                  border: `2px solid ${accent}`,
+                  outline: '1px solid rgba(255,255,255,0.35)',
+                  pointerEvents: 'none',
+                }} />
+                {/* Dimension badge */}
+                {selectionPx && (
+                  <div style={{
+                    position: 'absolute',
+                    left: normalizedSel.x + normalizedSel.width / 2,
+                    top: normalizedSel.y + normalizedSel.height + 6,
+                    transform: 'translateX(-50%)',
+                    background: 'rgba(5,8,15,0.92)',
+                    border: `1px solid ${accent}55`,
+                    borderRadius: 6,
+                    padding: '2px 8px',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: '#e8ecff',
+                    whiteSpace: 'nowrap',
+                    pointerEvents: 'none',
+                    fontFamily: 'var(--overlay-font-mono, monospace)',
+                  }}>
+                    {normalizeSelection(selectionPx).width} × {normalizeSelection(selectionPx).height} px
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Saving spinner */}
+            {isSaving && (
+              <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: 'rgba(0,0,0,0.6)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: '#eef0ff' }}>
+                  <LoaderCircle size={24} className="animate-spin" style={{ color: accent }} />
+                  <div style={{ fontSize: 11 }}>Saving…</div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Action bar */}
+      <div style={{ padding: '6px 8px', borderTop: `1px solid ${BORDER}`, background: PANEL, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        {hasSelection ? (
+          <>
+            <span style={{ fontSize: 10, color: MUTED, marginRight: 2 }}>Selection:</span>
+            <button type="button" onClick={() => void doCopy()} disabled={isWorking} style={btnStyle(false, accent, isWorking)}>
+              {isCopying ? <LoaderCircle size={11} className="animate-spin" /> : <Copy size={11} />}
+              Copy
+            </button>
+            <button type="button" onClick={() => void doSave(false)} disabled={isWorking} style={btnStyle(false, accent, isWorking)}>
+              {isSaving ? <LoaderCircle size={11} className="animate-spin" /> : <Save size={11} />}
+              Save
+            </button>
+            <button type="button" onClick={() => void doSave(true)} disabled={isWorking} style={btnStyle(true, accent, isWorking)}>
+              {isSaving ? <LoaderCircle size={11} className="animate-spin" /> : <Check size={11} />}
+              Save + Copy
+            </button>
+            <div style={{ flex: 1 }} />
+            <button type="button" onClick={() => setSelection(null)} style={btnStyle(false, accent)} title="Clear selection">
+              ✕ Clear
+            </button>
+          </>
+        ) : activeMonitor?.captureId ? (
+          <>
+            <span style={{ fontSize: 10, color: MUTED }}>Draw a selection, or:</span>
+            <button type="button" onClick={() => void doFullMonitor('copy')} disabled={isWorking} style={btnStyle(false, accent, isWorking)}>
+              <Copy size={11} /> Copy Screen
+            </button>
+            <button type="button" onClick={() => void doFullMonitor('save-copy')} disabled={isWorking} style={btnStyle(true, accent, isWorking)}>
+              <Maximize2 size={11} /> Full Screen
+            </button>
+          </>
+        ) : (
+          <span style={{ fontSize: 10, color: MUTED }}>Capture a display to begin.</span>
+        )}
+      </div>
+    </div>
+  );
+
+  // ─── Library content ───────────────────────────────────────────────────────
+
+  const libraryContent = (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 10px', borderBottom: `1px solid ${BORDER}` }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#edf1ff' }}>Library</div>
+        <div style={{ fontSize: 10, color: MUTED }}>{visibleCount}/{totalCount}</div>
+      </div>
+      <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 8 }}>
+        {items.length === 0 ? (
+          <div style={{ padding: 20, textAlign: 'center', color: MUTED, fontSize: 11 }}>No screenshots yet.</div>
+        ) : (
+          <div style={{ display: 'grid', gap: 6 }}>
             {items.map(item => {
-              const isCopying = copyingPath === item.path;
-              const isCopied = copiedPath === item.path;
+              const isCop  = copyingPath === item.path;
+              const isCopd = copiedPath  === item.path;
               return (
-                <div
-                  key={item.path}
-                  style={activeSection === 'library'
-                    ? { display: 'grid', gap: 6, borderRadius: 10, border: `1px solid ${isCopied ? `${accent}88` : BORDER}`, background: isCopied ? `${accent}12` : PANEL_ALT, padding: 6 }
-                    : { display: 'grid', gridTemplateColumns: '76px minmax(0, 1fr)', gap: 8, alignItems: 'start', borderRadius: 10, border: `1px solid ${isCopied ? `${accent}88` : BORDER}`, background: isCopied ? `${accent}12` : PANEL_ALT, padding: 6 }}
-                >
-                  <div style={{ aspectRatio: '16 / 9', borderRadius: 6, overflow: 'hidden', border: `1px solid ${BORDER}`, background: '#05050c', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {item.previewUrl ? (
-                      <img src={item.previewUrl} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                    ) : (
-                      <ImageIcon size={18} style={{ color: MUTED }} />
-                    )}
+                <div key={item.path} style={{ display: 'grid', gridTemplateColumns: '76px minmax(0,1fr)', gap: 8, alignItems: 'start', borderRadius: 8, border: `1px solid ${isCopd ? `${accent}77` : BORDER}`, background: isCopd ? `${accent}12` : PANEL_ALT, padding: 6 }}>
+                  <div style={{ aspectRatio: '16/9', borderRadius: 5, overflow: 'hidden', border: `1px solid ${BORDER}`, background: '#050510' }}>
+                    {item.previewUrl
+                      ? <img src={item.previewUrl} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                      : <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center' }}><ImageIcon size={14} style={{ color: MUTED }} /></div>
+                    }
                   </div>
                   <div style={{ minWidth: 0, display: 'grid', gap: 4 }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: '#eef0ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
-                      <div style={{ marginTop: 2, fontSize: 9, color: MUTED }}>
-                        {new Date(item.modified).toLocaleString()} · {formatFileSize(item.size)}
-                      </div>
-                    </div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#eef0ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
+                    <div style={{ fontSize: 9, color: MUTED }}>{new Date(item.modified).toLocaleString()} · {formatFileSize(item.size)}</div>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      <button type="button" onClick={() => void copyScreenshot(item)} style={toolbarButtonStyle(true, accent, isCopying)}>
-                        {isCopying ? <LoaderCircle size={11} className="animate-spin" /> : isCopied ? <Check size={11} /> : <Copy size={11} />}
-                        {isCopied ? 'Copied' : 'Copy'}
+                      <button type="button" onClick={() => void copyGalleryItem(item)} style={btnStyle(true, accent, isCop)}>
+                        {isCop ? <LoaderCircle size={10} className="animate-spin" /> : isCopd ? <Check size={10} /> : <Copy size={10} />}
+                        {isCopd ? 'Copied' : 'Copy'}
                       </button>
-                      <button type="button" onClick={() => invoke('fs_reveal_in_explorer', { path: item.path }).catch(err => setError(String(err)))} style={toolbarButtonStyle(false, accent)}>
-                        <Search size={11} />
-                        Reveal
+                      <button type="button" onClick={() => invoke('fs_reveal_in_explorer', { path: item.path }).catch(e => setError(String(e)))} style={btnStyle(false, accent)}>
+                        <Search size={10} /> Reveal
                       </button>
-                      <button type="button" onClick={() => invoke('fs_open_file', { path: item.path }).catch(err => setError(String(err)))} style={toolbarButtonStyle(false, accent)}>
-                        <ExternalLink size={11} />
-                        Open
+                      <button type="button" onClick={() => invoke('fs_open_file', { path: item.path }).catch(e => setError(String(e)))} style={btnStyle(false, accent)}>
+                        <ExternalLink size={10} /> Open
                       </button>
                     </div>
                   </div>
@@ -560,9 +626,13 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
     </div>
   );
 
+  // ─── Root ──────────────────────────────────────────────────────────────────
+
   return (
     <div style={{ display: 'flex', flex: 1, minHeight: 0, background: 'var(--overlay-bg-shell)', color: TEXT, fontFamily: 'var(--overlay-font-ui)' }}>
-      <div style={{ width: 46, minWidth: 46, maxWidth: 46, borderRight: `1px solid ${BORDER}`, background: 'var(--overlay-bg-sidebar)', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '8px 4px', gap: 6 }}>
+
+      {/* Side rail */}
+      <div style={{ width: 46, minWidth: 46, borderRight: `1px solid ${BORDER}`, background: 'var(--overlay-bg-sidebar)', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '8px 4px', gap: 6 }}>
         <RailButton active={activeSection === 'tool'} label="Tool" accent={accent} onClick={() => setActiveSection('tool')}>
           <Crosshair size={16} />
         </RailButton>
@@ -571,51 +641,41 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
         </RailButton>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 8px', borderBottom: `1px solid ${BORDER}`, background: PANEL }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#f0f3ff' }}>
-              {activeSection === 'tool' ? 'Screenshot Tool' : 'Screenshot Library'}
-            </div>
-            {activeSection === 'tool' && (
-              <div style={{ fontSize: 10, color: MUTED, whiteSpace: 'nowrap' }}>
-                {monitors.length} displays
-              </div>
-            )}
-          </div>
+      {/* Content area */}
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, overflow: 'hidden' }}>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <button type="button" onClick={() => void refreshWorkspace()} style={toolbarButtonStyle(false, accent, isRefreshing)} disabled={isRefreshing}>
-              {isRefreshing ? <LoaderCircle size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-              Refresh
+        {/* Top toolbar */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 8px', borderBottom: `1px solid ${BORDER}`, background: PANEL, flexShrink: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#f0f3ff' }}>
+            {activeSection === 'tool' ? 'Screenshot Tool' : 'Screenshot Library'}
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button type="button" onClick={() => void refreshAll()} disabled={isWorking} style={btnStyle(false, accent, isWorking)}>
+              {isCapturing ? <LoaderCircle size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+              {isCapturing ? 'Capturing…' : 'Recapture'}
             </button>
-            <button type="button" onClick={() => invoke('fs_open_file', { path: screenshotDir }).catch(err => setError(String(err)))} style={toolbarButtonStyle(false, accent)}>
-              <FolderOpen size={14} />
-              Folder
+            <button type="button" onClick={() => invoke('fs_open_file', { path: screenshotDir }).catch(e => setError(String(e)))} style={btnStyle(false, accent)}>
+              <FolderOpen size={13} /> Folder
             </button>
           </div>
         </div>
 
-        {(error || statusMessage) && (
-          <div style={{ padding: '6px 8px', fontSize: 10, borderBottom: `1px solid ${BORDER}`, background: error ? 'rgba(127,29,29,0.28)' : `${accent}12`, color: error ? '#fca5a5' : '#e7ebff' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <span>{error ?? statusMessage}</span>
-              <button type="button" onClick={clearMessages} style={iconButtonStyle(accent)}>
-                <Check size={12} />
-              </button>
-            </div>
+        {/* Status / error bar */}
+        {(error || statusMsg) && (
+          <div style={{ padding: '5px 10px', fontSize: 10, borderBottom: `1px solid ${BORDER}`, background: error ? 'rgba(127,29,29,0.28)' : `${accent}12`, color: error ? '#fca5a5' : '#e7ebff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <span>{error ?? statusMsg}</span>
+            <button type="button" onClick={() => { setError(null); setStatusMsg(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: 2, opacity: 0.7 }}>✕</button>
           </div>
         )}
 
+        {/* Main panel */}
         {activeSection === 'tool' ? (
           <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
-            <div style={{ flex: 1, minWidth: 0, minHeight: 0, background: 'var(--overlay-bg-shell)' }}>
-              {monitorWallContent}
-            </div>
+            {toolContent}
             <ResizablePane
               size={libraryWidth}
-              minSize={240}
-              maxSize={520}
+              minSize={220}
+              maxSize={480}
               onSizeChange={setLibraryWidth}
               borderColor={`${accent}44`}
               handleSide="left"
@@ -625,114 +685,41 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
             </ResizablePane>
           </div>
         ) : (
-          <div style={{ flex: 1, minHeight: 0 }}>
-            {libraryContent}
-          </div>
+          <div style={{ flex: 1, minHeight: 0 }}>{libraryContent}</div>
         )}
       </div>
+
+      <style>{`.animate-spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
 
-function GalleryLoading({ accent, label }: { accent: string; label: string }) {
-  return (
-    <div style={{ minHeight: 260, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: '#eef0ff' }}>
-      <LoaderCircle size={28} className="animate-spin" style={{ color: accent }} />
-      <div style={{ fontSize: 13 }}>{label}</div>
-    </div>
-  );
-}
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
-function RailButton({
-  active,
-  label,
-  accent,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  label: string;
-  accent: string;
-  onClick: () => void;
-  children: React.ReactNode;
+function RailButton({ active, label, accent, onClick, children }: {
+  active: boolean; label: string; accent: string; onClick: () => void; children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      style={{
-        width: 38,
-        height: 38,
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderRadius: 12,
-        border: `1px solid ${active ? `${accent}88` : BORDER}`,
-        background: active ? `${accent}18` : 'rgba(255,255,255,0.02)',
-        color: active ? '#f4f6ff' : MUTED,
-        cursor: 'pointer',
-      }}
-    >
+    <button type="button" aria-label={label} title={label} onClick={onClick} style={{
+      width: 38, height: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      borderRadius: 12, border: `1px solid ${active ? `${accent}88` : BORDER}`,
+      background: active ? `${accent}18` : 'rgba(255,255,255,0.02)',
+      color: active ? '#f4f6ff' : MUTED, cursor: 'pointer',
+    }}>
       {children}
     </button>
   );
 }
 
-function toolbarButtonStyle(primary: boolean, accent: string, disabled = false): React.CSSProperties {
+function btnStyle(primary: boolean, accent: string, disabled = false): React.CSSProperties {
   return {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderRadius: 8,
-    padding: '6px 9px',
+    display: 'inline-flex', alignItems: 'center', gap: 5,
+    padding: '5px 9px', borderRadius: 7, fontSize: 10.5, fontWeight: 600,
     border: `1px solid ${primary ? accent : BORDER}`,
-    background: disabled ? 'rgba(255,255,255,0.04)' : primary ? `${accent}22` : 'rgba(255,255,255,0.02)',
-    color: disabled ? 'rgba(255,255,255,0.38)' : primary ? '#f4f5ff' : '#d6d9ef',
+    background: disabled ? 'rgba(255,255,255,0.04)' : primary ? `${accent}22` : 'rgba(255,255,255,0.03)',
+    color: disabled ? 'rgba(255,255,255,0.35)' : primary ? '#f4f5ff' : '#cdd0ee',
     cursor: disabled ? 'not-allowed' : 'pointer',
-    fontSize: 11,
-    fontWeight: 600,
   };
 }
-
-function iconButtonStyle(accent: string): React.CSSProperties {
-  return {
-    width: 24,
-    height: 24,
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 6,
-    border: `1px solid ${accent}55`,
-    background: 'rgba(255,255,255,0.03)',
-    color: '#eef0ff',
-    cursor: 'pointer',
-  };
-}
-
-const emptyPanelStyle = (accent: string): React.CSSProperties => ({
-  minHeight: 220,
-  display: 'grid',
-  placeItems: 'center',
-  gap: 10,
-  borderRadius: 18,
-  border: `1px dashed ${accent}44`,
-  background: `${accent}08`,
-  color: '#eef0ff',
-  textAlign: 'center',
-  padding: 24,
-});
-
-const smallBadgeStyle = (accent: string): React.CSSProperties => ({
-  borderRadius: 999,
-  padding: '3px 7px',
-  border: `1px solid ${accent}55`,
-  background: `${accent}14`,
-  color: '#f4f6ff',
-  fontSize: 9,
-  fontWeight: 700,
-});
 
 export default ScreenshotsManager;

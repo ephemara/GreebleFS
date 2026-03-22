@@ -46,7 +46,15 @@ export function TextDocumentPreview({
   const html = useMemo(() => renderDocumentPreviewHtml(kind, content), [content, kind]);
 
   return (
-    <div style={{ height: '100%', overflow: 'auto', background: '#171a22' }}>
+    <div
+      className="overlay-scrollbars-none"
+      style={{
+        height: '100%',
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        background: '#171a22',
+      }}
+    >
       <style>{`
         [data-document-preview] h1,
         [data-document-preview] h2,
@@ -82,6 +90,14 @@ export function TextDocumentPreview({
           border-radius: 10px;
           padding: 14px 16px;
           overflow: auto;
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+          max-width: 100%;
+        }
+        [data-document-preview] pre::-webkit-scrollbar {
+          width: 0;
+          height: 0;
+          display: none;
         }
         [data-document-preview] pre code {
           background: transparent;

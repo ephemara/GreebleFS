@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp, Download, FolderGit2, GitBranch, GitCommit, Plu
 import { multiplyColorAlpha, type ResolvedOverlayAppearance } from '../config/appearance';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
+import { useSettingsStore } from '../store/settingsStore';
 import {
   type GitFileStatus,
   mergeGitStatusWithStats,
@@ -410,6 +411,16 @@ export function GitManager({
       return;
     }
 
+    // Force an immediate layout so Monaco knows its real size after the
+    // scale-zoom CSS transform has settled on the parent shell.
+    const scheduleLayout = () => {
+      window.requestAnimationFrame(() => {
+        diffEditorRef.current?.layout?.();
+      });
+    };
+
+    scheduleLayout();
+
     const observer = new ResizeObserver(() => {
       diffEditorRef.current?.layout?.();
     });
@@ -419,6 +430,17 @@ export function GitManager({
       observer.disconnect();
     };
   }, [diffContainerRef]);
+
+  // CSS scale() transforms don't fire ResizeObserver inside the scaled element,
+  // so Monaco won't remeasure when the user changes the global zoom level.
+  // We subscribe to appZoom from the store and call layout() manually when it changes.
+  const appZoom = useSettingsStore(s => s.settings.appearance.appZoom ?? 1);
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      diffEditorRef.current?.layout?.();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [appZoom]);
 
   const summary = repoState ? summarizeGitFiles(repoState.status) : null;
   const dirtyRepoCount = useMemo(
@@ -568,7 +590,7 @@ export function GitManager({
                       {badge.changeCount > 99 ? '99+' : badge.changeCount}
                     </span>
                   ) : null}
-                  <button onClick={event => removeRepo(repo, event)} style={{ ...iconButtonStyle(palette), opacity: active ? 1 : 0.3 }}><X size={11} /></button>
+                  <div role="button" tabIndex={-1} onClick={event => removeRepo(repo, event)} onKeyDown={e => e.key === 'Enter' && removeRepo(repo, e as any)} style={{ ...iconButtonStyle(palette), opacity: active ? 1 : 0.3 }}><X size={11} /></div>
                 </div>
               </button>
             );
@@ -707,21 +729,29 @@ export function GitManager({
                     </div>
                   ) : null}
                 </div>
-                <div ref={node => { diffContainerRef.current = node; }} style={{ flex: 1, minHeight: 0 }}>
+                <div
+                  ref={node => { diffContainerRef.current = node; }}
+                  style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}
+                >
                   {selectedFile ? (
                     diffLoading ? (
                       <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: palette.muted, fontSize: 11 }}>Loading diff…</div>
                     ) : (
                       <Editor
+                        height="100%"
                         onMount={(editor, monaco) => {
                           diffEditorRef.current = editor;
                           diffMonacoRef.current = monaco;
+                          // Two-frame delay: first frame settles the flex layout,
+                          // second ensures Monaco measures the real post-zoom size.
                           window.requestAnimationFrame(() => {
-                            editor.layout?.();
+                            window.requestAnimationFrame(() => {
+                              editor.layout?.();
+                            });
                           });
                         }}
                         value={diffView?.content ?? ''}
-                        language="diff"
+                        language="plaintext"
                         theme="vs-dark"
                         options={{
                           automaticLayout: true,
@@ -731,7 +761,7 @@ export function GitManager({
                           fontSize: 11.5,
                           lineNumbers: 'on',
                           glyphMargin: false,
-                          folding: true,
+                          folding: false,
                           overviewRulerLanes: 2,
                           lineDecorationsWidth: 12,
                           scrollBeyondLastLine: false,

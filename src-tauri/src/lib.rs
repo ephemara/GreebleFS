@@ -73,7 +73,15 @@ pub fn run() {
 
             if let Some(window) = app.get_webview_window("main") {
                 if cfg!(debug_assertions) {
+                    // Dev mode: show the window immediately so you don't need
+                    // to press the hotkey every time you restart. This block is
+                    // compiled out entirely in release builds — zero user impact.
                     let _ = window.set_skip_taskbar(false);
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                    // Tell the React side to run positionAndShow() so overlay
+                    // phase state is initialised correctly.
+                    let _ = window.emit("overlay://toggle-request", ());
                     #[cfg(target_os = "macos")]
                     let _ = app.set_dock_visibility(true);
                 }

@@ -887,7 +887,6 @@ export function FileExplorer({
   const explorerSettings = useSettingsStore(s => s.settings.explorer);
   const appearanceSettings = useSettingsStore(s => s.settings.appearance);
   const updateExplorerSettings = useSettingsStore(s => s.updateExplorer);
-  const explorerSession = useExplorerStore(s => s.session);
   const explorerRail = useExplorerStore(s => s.rail);
   const updateExplorerSession = useExplorerStore(s => s.updateSession);
   const updateExplorerRail = useExplorerStore(s => s.updateRail);
@@ -900,20 +899,24 @@ export function FileExplorer({
   const showHidden = explorerSettings.showHiddenFiles;
   const viewMode = explorerSettings.viewMode;
   const folderClickMode = explorerSettings.folderClickMode;
-  const initialSessionPathRef = useRef(explorerSession.currentPath.trim());
+  // Session is only used to seed the explorer's local state. Avoid subscribing to it
+  // so high-frequency local changes (typing, resizing) don't force extra store-driven renders.
+  const initialSessionRef = useRef(useExplorerStore.getState().session);
+  const initialSession = initialSessionRef.current;
+  const initialSessionPathRef = useRef(initialSession.currentPath.trim());
 
-  const [currentPath,  setCurrentPath]  = useState(() => explorerSession.currentPath);
-  const [history,      setHistory]      = useState<string[]>(() => explorerSession.history);
-  const [historyIdx,   setHistoryIdx]   = useState(() => explorerSession.historyIdx);
+  const [currentPath,  setCurrentPath]  = useState(() => initialSession.currentPath);
+  const [history,      setHistory]      = useState<string[]>(() => initialSession.history);
+  const [historyIdx,   setHistoryIdx]   = useState(() => initialSession.historyIdx);
   const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const width = typeof explorerSession.sidebarWidth === 'number'
-      ? explorerSession.sidebarWidth
+    const width = typeof initialSession.sidebarWidth === 'number'
+      ? initialSession.sidebarWidth
       : sidebarBounds.defaultWidth;
     return Math.max(sidebarBounds.minWidth, Math.min(sidebarBounds.maxWidth, width));
   });
   const [previewWidth, setPreviewWidth] = useState(() => {
-    if (typeof explorerSession.previewWidth === 'number') {
-      return Math.max(220, Math.min(800, explorerSession.previewWidth));
+    if (typeof initialSession.previewWidth === 'number') {
+      return Math.max(220, Math.min(800, initialSession.previewWidth));
     }
     return 380;
   });
@@ -928,10 +931,10 @@ export function FileExplorer({
   const [loading,      setLoading]      = useState(false);
   const [error,        setError]        = useState<string|null>(null);
   const [selected,     setSelected]     = useState<Set<string>>(new Set());
-  const [search,       setSearch]       = useState(() => explorerSession.search);
+  const [search,       setSearch]       = useState(() => initialSession.search);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [searchIncludeContent, setSearchIncludeContent] = useState(() => explorerSession.searchIncludeContent);
-  const [documentViewMode, setDocumentViewMode] = useState<ExplorerDocumentViewMode>(() => explorerSession.documentViewMode);
+  const [searchIncludeContent, setSearchIncludeContent] = useState(() => initialSession.searchIncludeContent);
+  const [documentViewMode, setDocumentViewMode] = useState<ExplorerDocumentViewMode>(() => initialSession.documentViewMode);
   const [preview,      setPreview]      = useState<PreviewState>({ type:'none', path:'' });
   const [ctxMenu,      setCtxMenu]      = useState<ContextMenuState>({ visible:false, x:0, y:0, entry:null });
   const [rename,       setRename]       = useState<RenameState>({ active:false, path:'', name:'' });

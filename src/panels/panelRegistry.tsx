@@ -22,6 +22,12 @@ import type {
   OverlayPluginContext,
 } from '../components/pluginRuntime';
 
+// Prevent keep-mounted heavy panels from rerendering on unrelated App state updates.
+const MemoTerminalOverlay = React.memo(TerminalOverlay);
+MemoTerminalOverlay.displayName = 'MemoTerminalOverlay';
+const MemoFileExplorer = React.memo(FileExplorer);
+MemoFileExplorer.displayName = 'MemoFileExplorer';
+
 export interface PanelCatalogEntry {
   id: string;
   label: string;
@@ -117,6 +123,14 @@ export function createBuiltInPanelDefinitions({
   renderPluginsManager: () => React.ReactNode;
 }): OverlayPanelDefinition[] {
   const accent = appearance.theme.palette.accent;
+  const explorerTheme = {
+    accent,
+    bg: appearance.theme.palette.shellBackground,
+    bgPanel: appearance.theme.palette.panelBackground,
+    text: appearance.theme.palette.textPrimary,
+    border: appearance.theme.palette.border,
+    textMuted: appearance.theme.palette.textMuted,
+  };
 
   return [
     {
@@ -128,7 +142,7 @@ export function createBuiltInPanelDefinitions({
       defaultOpen: true,
       keepMounted: true,
       render: () => (
-        <TerminalOverlay
+        <MemoTerminalOverlay
           isOpen={isOpen}
           onClose={hideOverlay}
           embedded
@@ -146,18 +160,11 @@ export function createBuiltInPanelDefinitions({
       defaultOpen: true,
       keepMounted: true,
       render: () => (
-        <FileExplorer
+        <MemoFileExplorer
           appearance={appearance}
           layoutMode={explorerLayoutMode}
           repositoryPicker={explorerRepoPicker}
-          theme={{
-            accent,
-            bg: appearance.theme.palette.shellBackground,
-            bgPanel: appearance.theme.palette.panelBackground,
-            text: appearance.theme.palette.textPrimary,
-            border: appearance.theme.palette.border,
-            textMuted: appearance.theme.palette.textMuted,
-          }}
+          theme={explorerTheme}
           onOpenInTerminal={onOpenInTerminal}
           onAddBookmark={onAddBookmark}
           pluginActions={pluginExplorerActions}

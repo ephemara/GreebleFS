@@ -21,7 +21,6 @@
     "test:all": "npm run test:unit && npm run test:browser && npm run test:rust && npm run test:coverage"
   },
   "dependencies": {
-    "@iarna/toml": "^2.2.5",
     "@monaco-editor/react": "^4.7.0",
     "@tailwindcss/vite": "^4.2.1",
     "@tauri-apps/api": "^2",
@@ -38,6 +37,7 @@
     "marked": "^17.0.5",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "smol-toml": "^1.6.0",
     "tailwindcss": "^4.2.1",
     "three": "^0.183.2",
     "zustand": "^5.0.11"
