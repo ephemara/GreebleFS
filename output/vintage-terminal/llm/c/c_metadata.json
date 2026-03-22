@@ -1,0 +1,28 @@
+{
+  "name": "c",
+  "description": "c",
+  "category": "llm",
+  "tags": [],
+  "generator": "icon",
+  "template_source": "c",
+  "generation_timestamp": "2026-03-22T02:31:44.075826",
+  "dimensions": [
+    64,
+    64
+  ],
+  "format": "png",
+  "file_size": 388,
+  "color_mode": "RGBA",
+  "has_alpha": true,
+  "dpi": 72,
+  "theme_variant": null,
+  "theme_group": null,
+  "is_animated": false,
+  "animation_type": null,
+  "frame_count": null,
+  "duration": null,
+  "usage_count": 0,
+  "last_used": null,
+  "validation_passed": true,
+  "validation_warnings": []
+}

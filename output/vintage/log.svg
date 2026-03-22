@@ -1,0 +1,7 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="4" y="4" width="24" height="24" rx="2" fill="#4A3C31" stroke="#9D907E" stroke-width="1"/>
+  <text x="6" y="12" font-family="monospace" font-size="4" fill="#A0C581">[INFO]</text>
+  <text x="6" y="17" font-family="monospace" font-size="4" fill="#D3C581">[WARN]</text>
+  <text x="6" y="22" font-family="monospace" font-size="4" fill="#D39381">[ERROR]</text>
+  <circle cx="26" cy="6" r="1" fill="#A0C581"/>
+</svg>

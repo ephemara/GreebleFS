@@ -1,0 +1,12 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="shaderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#A9A89D;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#D3A896;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#B3C5B1;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <path d="M16 6 L28 26 L4 26 Z" fill="url(#shaderGrad)"/>
+  <path d="M8 22 L16 10 L24 22" stroke="#D3C1A9" stroke-width="1" opacity="0.3" fill="none"/>
+  <path d="M12 24 L16 16 L20 24" stroke="#D3C1A9" stroke-width="1" opacity="0.3" fill="none"/>
+</svg>

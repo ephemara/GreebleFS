@@ -14,6 +14,7 @@ const hostApiFactory = () => ({
   event: {} as never,
   window: {} as never,
   fs: {} as never,
+  notification: {} as never,
   refreshPlugins: async () => undefined,
   openPluginsFolder: async () => undefined,
   runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),

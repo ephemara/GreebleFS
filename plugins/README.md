@@ -10,6 +10,7 @@ That means you can stay lightweight for tiny panels, or ship a full plugin packa
 ## Included Examples
 
 - `drawable-canvas.tsx`: richer single-file painter plugin
+- `chronorift/`: package-mode experimental timer cockpit with persistent state, desktop alerts, and a bundled theme
 
 ## File Plugins
 
@@ -160,7 +161,10 @@ Package entry bundles and legacy file plugins both use the same approved runtime
 - `@tauri-apps/api/event`
 - `@tauri-apps/api/window`
 - `@tauri-apps/plugin-fs`
+- `@tauri-apps/plugin-notification`
 - `overlayterm-plugin`
+
+Plugins also receive the same notification capability through `api.notification`, so plugin authors can either import the official Tauri notification package directly or use the host-provided API surface.
 
 ## Plugin Root
 

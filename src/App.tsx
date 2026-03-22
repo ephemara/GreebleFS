@@ -9,6 +9,7 @@ import {
 } from '@tauri-apps/api/window';
 import * as TauriWindow from '@tauri-apps/api/window';
 import * as TauriFs from '@tauri-apps/plugin-fs';
+import * as TauriNotification from '@tauri-apps/plugin-notification';
 import {
   createBuiltInPanelDefinitions,
   createFolderPluginPanelDefinitions,
@@ -1433,6 +1434,7 @@ function App() {
       event: TauriEvent,
       window: TauriWindow,
       fs: TauriFs,
+      notification: TauriNotification,
       storage: {
         rootDir: storageRoot,
         ensureDir: ensureStorageDir,

@@ -70,6 +70,7 @@ describe('pluginRuntime helpers', () => {
         event: {} as never,
         window: {} as never,
         fs: {} as never,
+        notification: {} as never,
         refreshPlugins: async () => undefined,
         openPluginsFolder: async () => undefined,
         runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),
@@ -82,6 +83,44 @@ describe('pluginRuntime helpers', () => {
     expect(loaded.id).toBe('source-plugin');
     expect(loaded.defaultOpen).toBe(true);
     expect(loaded.keepMounted).toBe(false);
+    expect(typeof loaded.component).toBe('function');
+  });
+
+  it('allows plugins to import the notification runtime', async () => {
+    const loaded = await loadPluginFromSource(
+      `
+        import React from 'react';
+        import { isPermissionGranted } from '@tauri-apps/plugin-notification';
+        import { definePlugin } from 'overlayterm-plugin';
+
+        export default definePlugin({
+          name: 'Notification Plugin',
+          component: function NotificationPlugin() {
+            return React.createElement('div', null, typeof isPermissionGranted);
+          },
+        });
+      `,
+      {
+        name: 'notification-plugin.tsx',
+        path: 'plugins/notification-plugin.tsx',
+        is_dir: false,
+        modified: 7,
+        extension: 'tsx',
+      },
+      () => ({
+        invoke: async <T,>() => null as T,
+        event: {} as never,
+        window: {} as never,
+        fs: {} as never,
+        notification: {} as never,
+        refreshPlugins: async () => undefined,
+        openPluginsFolder: async () => undefined,
+        runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),
+      }),
+    );
+
+    expect(loaded.error).toBeNull();
+    expect(loaded.name).toBe('Notification Plugin');
     expect(typeof loaded.component).toBe('function');
   });
 
@@ -120,6 +159,7 @@ describe('pluginRuntime helpers', () => {
         event: {} as never,
         window: {} as never,
         fs: {} as never,
+        notification: {} as never,
         refreshPlugins: async () => undefined,
         openPluginsFolder: async () => undefined,
         runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),
@@ -134,7 +174,7 @@ describe('pluginRuntime helpers', () => {
   });
 
   it('loads the portable sample plugins from disk through the runtime transpiler', async () => {
-    for (const filename of ['drawable-canvas.tsx']) {
+    for (const filename of ['drawable-canvas.tsx', 'chronorift/dist/index.tsx']) {
       const pluginPath = resolve(pluginSystemConfig.pluginsDirectory, filename);
       const source = await readFile(pluginPath, 'utf8');
 
@@ -150,9 +190,10 @@ describe('pluginRuntime helpers', () => {
         () => ({
           invoke: async <T,>() => null as T,
           event: {} as never,
-          window: {} as never,
-          fs: {} as never,
-          refreshPlugins: async () => undefined,
+        window: {} as never,
+        fs: {} as never,
+        notification: {} as never,
+        refreshPlugins: async () => undefined,
           openPluginsFolder: async () => undefined,
           runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),
         }),
