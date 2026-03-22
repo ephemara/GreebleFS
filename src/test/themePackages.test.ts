@@ -3,9 +3,10 @@ import { invoke } from '@tauri-apps/api/core';
 import { loadThemePackages, themeSystemConfig } from '../config/themePackages';
 
 describe('theme package loader', () => {
-  it('loads packaged themes, resolves icon theme assets, and preserves extends metadata', async () => {
+  it('loads packaged themes, resolves icon theme assets, and discovers packaged shaders and animations', async () => {
     vi.mocked(invoke).mockImplementation(async (command, args) => {
       const params = args as { path?: string; showHidden?: boolean } | undefined;
+      const normalizedPath = String(params?.path).replace(/\\/g, '/');
 
       if (command === 'fs_list_dir' && params?.path === themeSystemConfig.themesDirectory) {
         return [
@@ -14,11 +15,36 @@ describe('theme package loader', () => {
             path: 'themes/vista-glass',
             is_dir: true,
             extension: '',
+            modified: 0,
           },
         ];
       }
 
-      if (command === 'fs_read_text_file' && String(params?.path).replace(/\\/g, '/') === 'themes/vista-glass/theme.json') {
+      if (command === 'fs_list_dir' && normalizedPath === 'themes/vista-glass/shaders') {
+        return [
+          {
+            name: 'package-glow.tsx',
+            path: 'themes/vista-glass/shaders/package-glow.tsx',
+            is_dir: false,
+            extension: 'tsx',
+            modified: 1711111111111,
+          },
+        ];
+      }
+
+      if (command === 'fs_list_dir' && normalizedPath === 'themes/vista-glass/animations') {
+        return [
+          {
+            name: 'package-open.tsx',
+            path: 'themes/vista-glass/animations/package-open.tsx',
+            is_dir: false,
+            extension: 'tsx',
+            modified: 1711111112222,
+          },
+        ];
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'themes/vista-glass/theme.json') {
         return JSON.stringify({
           version: 1,
           id: 'vista-glass',
@@ -42,7 +68,7 @@ describe('theme package loader', () => {
         });
       }
 
-      if (command === 'fs_read_text_file' && String(params?.path).replace(/\\/g, '/') === 'themes/vista-glass/icon-theme.json') {
+      if (command === 'fs_read_text_file' && normalizedPath === 'themes/vista-glass/icon-theme.json') {
         return JSON.stringify({
           version: 1,
           file: 'txt',
@@ -63,6 +89,32 @@ describe('theme package loader', () => {
         });
       }
 
+      if (command === 'fs_read_text_file' && normalizedPath === 'themes/vista-glass/shaders/package-glow.tsx') {
+        return `
+          import { defineShader } from 'overlayterm-shader';
+
+          export default defineShader({
+            name: 'Package Glow',
+            background: {
+              resolveStyle: () => ({ opacity: 0.42 }),
+            },
+          });
+        `;
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'themes/vista-glass/animations/package-open.tsx') {
+        return `
+          import { defineAnimation } from 'overlayterm-animation';
+
+          export default defineAnimation({
+            name: 'Package Open',
+            open: {
+              durationMs: 240,
+            },
+          });
+        `;
+      }
+
       throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
     });
 
@@ -77,5 +129,13 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.theme.assets?.iconEntries?.folder?.replace(/\\/g, '/')).toBe('asset://localhost/themes/vista-glass/icons/folder.svg');
     expect(result.packages[0]?.theme.assets?.iconTheme?.fileExtensions.ts).toBe('typescript');
     expect(result.packages[0]?.theme.visuals).toHaveLength(1);
+    expect(result.shaders).toHaveLength(1);
+    expect(result.shaders[0]?.shaderRoot.replace(/\\/g, '/')).toBe('themes/vista-glass');
+    expect(result.shaders[0]?.filePath.replace(/\\/g, '/')).toBe('themes/vista-glass/shaders/package-glow.tsx');
+    expect(result.shaders[0]?.name).toBe('Package Glow');
+    expect(result.animations).toHaveLength(1);
+    expect(result.animations[0]?.animationRoot.replace(/\\/g, '/')).toBe('themes/vista-glass');
+    expect(result.animations[0]?.filePath.replace(/\\/g, '/')).toBe('themes/vista-glass/animations/package-open.tsx');
+    expect(result.animations[0]?.name).toBe('Package Open');
   });
 });

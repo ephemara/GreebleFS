@@ -11,6 +11,10 @@ themes/
     icon-theme.json
     assets/
       wallpaper.svg
+    shaders/
+      ambient-shell.tsx
+    animations/
+      open-bloom.tsx
     icons/
       folder.svg
       folder_open.svg
@@ -37,6 +41,10 @@ Top-level fields:
   - Relative path to an icon theme JSON file. This is the preferred way to ship icon overrides and matcher overrides.
 - `assets.iconsDirectory`
   - Legacy folder-only icon override mode. Still supported for older theme packages.
+- `contributions.shaders`
+  - Optional list of relative shader module paths. When omitted, OverlayTerm auto-discovers supported files from the package `shaders/` folder.
+- `contributions.animations`
+  - Optional list of relative animation module paths. When omitted, OverlayTerm auto-discovers supported files from the package `animations/` folder.
 - `visuals`
   - Declarative animated layers rendered behind the shell content.
 
@@ -77,5 +85,7 @@ File and folder icons fall back to the built-in `/icons` catalog automatically w
 ## Notes
 
 - Theme packages are scanned from this `themes` folder.
+- Shader modules bundled inside a theme package are loaded into the same live shader registry as global shaders.
+- Animation modules bundled inside a theme package are loaded into the same live animation registry as global animations.
 - Use the Settings panel to refresh package discovery or open this directory.
 - Visual layers are optional; they are how you can add animated glass, soft glow, plasma drift, and similar background motion without hardcoding theme behavior into the app.

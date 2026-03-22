@@ -50,7 +50,7 @@ files_map = {
     "app": [rect(24, 24, 80, 80, rx=8, fill=crt(), stroke=neon("#00FFFF", 8)), line(24, 40, 104, 40, stroke=neon("#FF00FF", 6)), circle(36, 32, 4, fill=fill("#FFFF00"))],
     "exe": [rect(24, 24, 80, 80, rx=8, fill=crt(), stroke=neon("#ffffff", 8)), line(24, 40, 104, 40, stroke=neon("#00FF00", 6)), path("M 48 72 L 64 56 L 80 72 M 64 56 L 64 88", stroke=neon("#FFFF00", 8))],
     "archive": [rect(32, 24, 64, 80, rx=6, fill=crt(), stroke=neon("#FF5500", 8)), rect(48, 24, 32, 24, fill=fill("#111111"), stroke=neon("#FFFF00", 6)), circle(64, 80, 12, stroke=neon("#FF00FF", 6))],
-    "zip": [rect(32, 16, 64, 96, rx=4, fill=crt(), stroke=neon("#FFFF00", 8)), path("M 64 16 L 64 64", stroke=neon("#00FFFF", 8, dashlist=[8,8])), polygon([(56,64), (72,64), (64,80)], fill=fill("#FF00FF"))],
+    "zip": [rect(32, 16, 64, 96, rx=4, fill=crt(), stroke=neon("#FFFF00", 8)), path("M 64 16 L 64 64", stroke=neon("#00FFFF", 8)), polygon([(56,64), (72,64), (64,80)], fill=fill("#FF00FF"))],
     "audio": [circle(64, 64, 40, fill=crt(), stroke=neon("#FF00FF", 8)), circle(64, 64, 12, stroke=neon("#00FFFF", 6)), path("M 64 24 L 64 16 M 64 104 L 64 112 M 24 64 L 16 64 M 104 64 L 112 64", stroke=neon("#FFFF00", 6))],
     "video": [rect(16, 32, 96, 64, rx=8, fill=crt(), stroke=neon("#00FFFF", 8)), polygon([(52, 52), (80, 64), (52, 76)], fill=fill("#FF00FF")), circle(24, 40, 4, fill=fill("#FFFF00")), circle(24, 88, 4, fill=fill("#FFFF00")), circle(104, 40, 4, fill=fill("#FFFF00")), circle(104, 88, 4, fill=fill("#FFFF00"))],
     "image": [rect(16, 24, 96, 80, rx=4, fill=crt(), stroke=neon("#FFFF00", 8)), circle(40, 48, 12, stroke=neon("#FF00FF", 6)), path("M 16 104 L 48 56 L 72 80 L 88 64 L 112 104", stroke=neon("#00FFFF", 8))],

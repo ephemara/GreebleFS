@@ -87,6 +87,10 @@ export interface LoadedOverlayAnimation extends OverlayAnimationContext {
   error: string | null;
 }
 
+export interface LoadAnimationFromSourceOptions {
+  context?: Partial<OverlayAnimationContext>;
+}
+
 export function defineAnimation(definition: OverlayAnimationDefinition): OverlayAnimationDefinition {
   return definition;
 }
@@ -114,13 +118,16 @@ export function deriveAnimationName(name: string): string {
 export async function loadAnimationFromSource(
   source: string,
   entry: AnimationFileEntry,
+  options?: LoadAnimationFromSourceOptions,
 ): Promise<LoadedOverlayAnimation> {
+  const defaultId = deriveAnimationId(entry.name);
+  const defaultName = deriveAnimationName(entry.name);
   const context: OverlayAnimationContext = {
-    id: deriveAnimationId(entry.name),
-    name: deriveAnimationName(entry.name),
-    filePath: entry.path,
-    animationRoot: animationSystemConfig.animationsDirectory,
-    source: 'folder',
+    id: options?.context?.id ?? defaultId,
+    name: options?.context?.name ?? defaultName,
+    filePath: options?.context?.filePath ?? entry.path,
+    animationRoot: options?.context?.animationRoot ?? animationSystemConfig.animationsDirectory,
+    source: options?.context?.source ?? 'folder',
   };
 
   try {

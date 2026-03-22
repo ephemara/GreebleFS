@@ -416,6 +416,8 @@ function App() {
   const [authoredShaders, setAuthoredShaders] = useState<LoadedOverlayShader[]>([]);
   const [authoredShadersError, setAuthoredShadersError] = useState<string | null>(null);
   const [authoredShadersLoading, setAuthoredShadersLoading] = useState(true);
+  const [themeContributedAnimations, setThemeContributedAnimations] = useState<LoadedOverlayAnimation[]>([]);
+  const [themeContributedShaders, setThemeContributedShaders] = useState<LoadedOverlayShader[]>([]);
   const [folderPlugins, setFolderPlugins] = useState<LoadedOverlayPlugin[]>([]);
   const [pluginContributedShaders, setPluginContributedShaders] = useState<LoadedOverlayShader[]>([]);
   const [pluginThemePackages, setPluginThemePackages] = useState<LoadedOverlayThemePackage[]>([]);
@@ -522,12 +524,12 @@ function App() {
     ? `blur(${clampedAppBlurStrength}px) saturate(${(1.05 + blurStrengthRatio * 0.35).toFixed(2)})`
     : 'none';
   const availableAnimations = useMemo(
-    () => mergeOverlayAnimations(builtInAnimations, authoredAnimations),
-    [authoredAnimations, builtInAnimations],
+    () => mergeOverlayAnimations(builtInAnimations, [...authoredAnimations, ...themeContributedAnimations]),
+    [authoredAnimations, builtInAnimations, themeContributedAnimations],
   );
   const availableShaders = useMemo(
-    () => mergeOverlayShaders(builtInShaders, [...authoredShaders, ...pluginContributedShaders]),
-    [authoredShaders, builtInShaders, pluginContributedShaders],
+    () => mergeOverlayShaders(builtInShaders, [...authoredShaders, ...themeContributedShaders, ...pluginContributedShaders]),
+    [authoredShaders, builtInShaders, pluginContributedShaders, themeContributedShaders],
   );
   const availableAnimationsById = useMemo(
     () => new Map(availableAnimations.map(animation => [animation.id, animation])),
@@ -1265,6 +1267,8 @@ function App() {
   const refreshThemePackages = useCallback(async () => {
     if (!isTauri()) {
       setThemePackages([]);
+      setThemeContributedShaders([]);
+      setThemeContributedAnimations([]);
       setThemePackagesError(null);
       setThemePackagesLoading(false);
       return;
@@ -1275,9 +1279,13 @@ function App() {
       await ensureDir(themeSystemConfig.themesDirectory);
       const result = await discoverThemePackages();
       setThemePackages(result.packages);
+      setThemeContributedShaders(result.shaders);
+      setThemeContributedAnimations(result.animations);
       setThemePackagesError(result.sourceError);
     } catch (error) {
       setThemePackages([]);
+      setThemeContributedShaders([]);
+      setThemeContributedAnimations([]);
       setThemePackagesError(String(error));
     } finally {
       setThemePackagesLoading(false);

@@ -8,6 +8,7 @@ import {
   type OverlayThemeDefinition,
   type OverlayThemeVisualLayer,
 } from './appearance';
+import { type LoadedOverlayAnimation, loadAnimationFromSource, deriveAnimationId, deriveAnimationName } from '../components/animationRuntime';
 import {
   createResolvedIconThemeFromEntries,
   getBuiltInIconTheme,
@@ -16,6 +17,8 @@ import {
   resolveIconThemeManifest,
   type OverlayResolvedIconTheme,
 } from './iconTheme';
+import { type LoadedOverlayShader, loadShaderFromSource, deriveShaderId, deriveShaderName, isFrontendShaderFile } from '../components/shaderRuntime';
+import { isFrontendAnimationFile } from '../components/animationRuntime';
 import { joinPlatformPath } from './platform';
 
 interface FileEntry {
@@ -23,6 +26,7 @@ interface FileEntry {
   path: string;
   is_dir: boolean;
   extension: string;
+  modified: number;
 }
 
 type LooseRecord = Record<string, unknown>;
@@ -40,6 +44,10 @@ export interface OverlayThemePackageManifest {
     iconsDirectory?: string;
     iconTheme?: string;
     iconAliases?: Record<string, string>;
+  };
+  contributions?: {
+    shaders?: string[];
+    animations?: string[];
   };
   visuals?: OverlayThemeVisualLayer[];
   cssVars?: Record<string, string>;
@@ -72,6 +80,8 @@ export interface LoadedOverlayThemePackage {
 
 export interface ThemePackageLoadResult {
   packages: LoadedOverlayThemePackage[];
+  shaders: LoadedOverlayShader[];
+  animations: LoadedOverlayAnimation[];
   directory: string;
   sourceError: string | null;
 }
@@ -79,6 +89,8 @@ export interface ThemePackageLoadResult {
 export const themeSystemConfig = {
   themesDirectory: resolveThemesDirectory(),
   manifestNames: ['theme.json', 'theme.toml', 'manifest.json', 'manifest.toml'] as const,
+  packageShadersDirectoryName: 'shaders',
+  packageAnimationsDirectoryName: 'animations',
 } as const;
 
 function resolveThemesDirectory(): string {
@@ -180,6 +192,14 @@ function parseThemeManifestText(text: string, filePath: string): OverlayThemePac
       iconTheme: asString(asRecord(source.assets)?.iconTheme),
       iconAliases: asStringRecord(asRecord(source.assets)?.iconAliases),
     },
+    contributions: {
+      shaders: Array.isArray(asRecord(source.contributions)?.shaders)
+        ? (asRecord(source.contributions)?.shaders as unknown[]).filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0).map(entry => entry.trim())
+        : [],
+      animations: Array.isArray(asRecord(source.contributions)?.animations)
+        ? (asRecord(source.contributions)?.animations as unknown[]).filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0).map(entry => entry.trim())
+        : [],
+    },
     visuals: Array.isArray(source.visuals) ? source.visuals as OverlayThemeVisualLayer[] : undefined,
     cssVars: asStringRecord(source.cssVars),
     fonts: {
@@ -241,6 +261,42 @@ async function resolvePackageIconTheme(
     iconPath => toAssetUrl(joinPlatformPath(directoryPath, normalizePackageAssetPath(iconPath))),
   );
   return mergeResolvedIconThemes(getBuiltInIconTheme(), resolved);
+}
+
+function createRelativeFileEntry(directoryPath: string, relativePath: string): FileEntry {
+  const normalizedPath = normalizePackageAssetPath(relativePath);
+  const absolutePath = joinPlatformPath(directoryPath, normalizedPath);
+  const pathSegments = normalizedPath.split(/[\\/]/).filter(Boolean);
+  const fileName = pathSegments[pathSegments.length - 1] ?? normalizedPath;
+  const extensionMatch = /\.([^.]+)$/.exec(fileName);
+  return {
+    name: fileName,
+    path: absolutePath,
+    is_dir: false,
+    extension: extensionMatch?.[1]?.toLowerCase() ?? '',
+    modified: 0,
+  };
+}
+
+async function resolvePackageRuntimeEntries(
+  directoryPath: string,
+  explicitPaths: string[] | undefined,
+  defaultDirectoryName: string,
+  filterEntry: (entry: FileEntry) => boolean,
+): Promise<FileEntry[]> {
+  if (explicitPaths && explicitPaths.length > 0) {
+    return explicitPaths
+      .map(relativePath => createRelativeFileEntry(directoryPath, relativePath))
+      .filter(filterEntry);
+  }
+
+  const runtimeDirectory = joinPlatformPath(directoryPath, defaultDirectoryName);
+  try {
+    const entries = await invoke<FileEntry[]>('fs_list_dir', { path: runtimeDirectory, showHidden: false });
+    return entries.filter(entry => !entry.is_dir && filterEntry(entry));
+  } catch {
+    return [];
+  }
 }
 
 function mergeVisualLayers(
@@ -380,6 +436,8 @@ export async function loadThemePackagesFromDirectoryEntries(
 ): Promise<ThemePackageLoadResult> {
   try {
     const packageRecords: OverlayThemePackageRecord[] = [];
+    const shaders: LoadedOverlayShader[] = [];
+    const animations: LoadedOverlayAnimation[] = [];
 
     for (const entry of directoryEntries) {
       const manifest = await readPackageManifest(entry.path);
@@ -401,6 +459,44 @@ export async function loadThemePackagesFromDirectoryEntries(
 
     for (const record of packageRecords) {
       const theme = await buildPackageTheme(record, packageMap, cache);
+      const shaderEntries = await resolvePackageRuntimeEntries(
+        record.directoryPath,
+        record.manifest.contributions?.shaders,
+        themeSystemConfig.packageShadersDirectoryName,
+        isFrontendShaderFile,
+      );
+      const animationEntries = await resolvePackageRuntimeEntries(
+        record.directoryPath,
+        record.manifest.contributions?.animations,
+        themeSystemConfig.packageAnimationsDirectoryName,
+        isFrontendAnimationFile,
+      );
+
+      const packageShaders = await Promise.all(shaderEntries.map(async entry => {
+        const source = await invoke<string>('fs_read_text_file', { path: entry.path });
+        return loadShaderFromSource(source, entry, {
+          context: {
+            id: deriveShaderId(`${theme.id}-${entry.name}`),
+            name: deriveShaderName(`${theme.name} ${entry.name}`),
+            filePath: entry.path,
+            shaderRoot: record.directoryPath,
+            source: 'folder',
+          },
+        });
+      }));
+      const packageAnimations = await Promise.all(animationEntries.map(async entry => {
+        const source = await invoke<string>('fs_read_text_file', { path: entry.path });
+        return loadAnimationFromSource(source, entry, {
+          context: {
+            id: deriveAnimationId(`${theme.id}-${entry.name}`),
+            name: deriveAnimationName(`${theme.name} ${entry.name}`),
+            filePath: entry.path,
+            animationRoot: record.directoryPath,
+            source: 'folder',
+          },
+        });
+      }));
+
       packages.push({
         id: theme.id,
         name: theme.name,
@@ -409,18 +505,26 @@ export async function loadThemePackagesFromDirectoryEntries(
         manifestPath: record.manifestPath,
         theme,
       });
+      shaders.push(...packageShaders);
+      animations.push(...packageAnimations);
     }
 
     packages.sort((left, right) => left.name.localeCompare(right.name));
+    shaders.sort((left, right) => left.name.localeCompare(right.name));
+    animations.sort((left, right) => left.name.localeCompare(right.name));
 
     return {
       packages,
+      shaders,
+      animations,
       directory: directoryLabel,
       sourceError: null,
     };
   } catch (error) {
     return {
       packages: [],
+      shaders: [],
+      animations: [],
       directory: directoryLabel,
       sourceError: String(error),
     };
@@ -432,6 +536,8 @@ export async function loadThemePackages(): Promise<ThemePackageLoadResult> {
   if (!isTauri()) {
     return {
       packages: [],
+      shaders: [],
+      animations: [],
       directory,
       sourceError: null,
     };
@@ -446,6 +552,8 @@ export async function loadThemePackages(): Promise<ThemePackageLoadResult> {
   } catch (error) {
     return {
       packages: [],
+      shaders: [],
+      animations: [],
       directory,
       sourceError: String(error),
     };

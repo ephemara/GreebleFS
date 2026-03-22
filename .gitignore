@@ -28,6 +28,8 @@ src-tauri/gen/
 target/
 Cargo.lock
 **/*.rs.bk
+/output
+output/
 
 # --- C++ ---
 *.o

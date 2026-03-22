@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 use xcap::Monitor;
 
 #[cfg(target_os = "windows")]
+use windows_sys::Win32::Foundation::HWND;
+#[cfg(target_os = "windows")]
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE, WDA_NONE,
 };
@@ -99,13 +101,15 @@ pub async fn screenshot_capture_preview(
 
 /// Returns the raw Win32 HWND for our overlay window.
 /// Returns None on non-Windows or if the handle cannot be retrieved.
-fn get_overlay_hwnd(_window: &tauri::WebviewWindow) -> Option<isize> {
+fn get_overlay_hwnd(_window: &tauri::WebviewWindow) -> Option<HWND> {
     #[cfg(target_os = "windows")]
     {
-        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        use raw_window_handle::HasWindowHandle;
+        use raw_window_handle::RawWindowHandle;
+
         if let Ok(handle) = _window.window_handle() {
             if let RawWindowHandle::Win32(h) = handle.as_raw() {
-                return Some(h.hwnd.get() as isize);
+                return Some(h.hwnd.get() as HWND);
             }
         }
     }

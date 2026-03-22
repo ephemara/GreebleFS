@@ -109,6 +109,8 @@ export interface OverlayThemeDefinition {
   name: string;
   description?: string;
   defaultShaderId?: string;
+  defaultOpenAnimationId?: string;
+  defaultCloseAnimationId?: string;
   palette: OverlayThemePalette;
   effects: OverlayThemeEffects;
   xterm: OverlayXTermTheme;
@@ -791,9 +793,27 @@ const overlayThemeDefaultShaderIds: Partial<Record<string, string>> = {
   catppuccin: 'nebula-flow',
 };
 
+const overlayThemeDefaultOpenAnimationIds: Partial<Record<string, string>> = {
+  operator: 'spring-lift',
+  dracula: 'pixel-sort',
+  nord: 'soft-rise',
+  'github-dark': 'spring-lift',
+  catppuccin: 'spring-lift',
+};
+
+const overlayThemeDefaultCloseAnimationIds: Partial<Record<string, string>> = {
+  operator: 'burn',
+  dracula: 'burn',
+  nord: 'fade-scale',
+  'github-dark': 'burn',
+  catppuccin: 'burn',
+};
+
 export const overlayThemePresets: OverlayThemeDefinition[] = builtInThemePresets.map(theme => ({
   ...theme,
   defaultShaderId: overlayThemeDefaultShaderIds[theme.id] ?? theme.defaultShaderId,
+  defaultOpenAnimationId: overlayThemeDefaultOpenAnimationIds[theme.id] ?? theme.defaultOpenAnimationId,
+  defaultCloseAnimationId: overlayThemeDefaultCloseAnimationIds[theme.id] ?? theme.defaultCloseAnimationId,
 }));
 
 const presetMap = new Map(overlayThemePresets.map(theme => [theme.id, theme]));
@@ -859,6 +879,12 @@ export function normalizeThemeDefinition(
     defaultShaderId: typeof theme.defaultShaderId === 'string'
       ? theme.defaultShaderId.trim() || undefined
       : fallback.defaultShaderId,
+    defaultOpenAnimationId: typeof theme.defaultOpenAnimationId === 'string'
+      ? theme.defaultOpenAnimationId.trim() || undefined
+      : fallback.defaultOpenAnimationId,
+    defaultCloseAnimationId: typeof theme.defaultCloseAnimationId === 'string'
+      ? theme.defaultCloseAnimationId.trim() || undefined
+      : fallback.defaultCloseAnimationId,
     source: theme.source ?? fallback.source ?? 'custom',
     extendsThemeId: theme.extendsThemeId ?? fallback.extendsThemeId,
     palette: {
