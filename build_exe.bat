@@ -40,10 +40,10 @@ echo =======================================================
 echo BUILD COMPLETE!
 echo.
 echo Your standalone executable is located at:
-echo m:\OverlayTerm\src-tauri\target\release\greeble.exe
+echo %CD%\src-tauri\target\release\greeble.exe
 echo.
 echo Note: If you have MSI/NSIS bundling enabled, there will also be an installer at:
-echo m:\OverlayTerm\src-tauri\target\release\bundle\nsis\
+echo %CD%\src-tauri\target\release\bundle\nsis\
 echo =======================================================
 pause
 exit /b 0

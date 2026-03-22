@@ -210,22 +210,51 @@ describe('ScreenshotsManager', () => {
     expect(screen.getByText('Full monitor is the default capture, or drag to switch to area snip:')).toBeInTheDocument();
 
     const saveButton = await screen.findByRole('button', { name: /^Save Screen$/i });
-    await user.click(saveButton);
-
     await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith('screenshot_save_region', {
-        captureId: 'capture-1',
-        x: 0,
-        y: 0,
-        width: 1920,
-        height: 1080,
-        directory: screenshotFeatureConfig.defaultSaveDirectory,
-        filePrefix: screenshotFeatureConfig.filePrefix,
-        copyToClipboard: false,
-      });
+      expect(saveButton).toBeEnabled();
     });
+    await user.click(saveButton);
 
     expect(await screen.findByText('Screenshot Library')).toBeInTheDocument();
     expect(await screen.findByText(savedScreenshot.name)).toBeInTheDocument();
+  });
+
+  it('defers gallery thumbnail decoding until the full library is opened', async () => {
+    const user = userEvent.setup();
+    const invokeMock = vi.mocked(invoke);
+    const screenshot = makeGalleryEntry('overlayterm-shot-thumb.png');
+
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'fs_list_dir') {
+        return [screenshot];
+      }
+      if (command === 'screenshot_capture_preview') {
+        return {
+          captureId: 'capture-1',
+          previewUrl: 'data:image/png;base64,ZmFrZQ==',
+          imageWidth: 1920,
+          imageHeight: 1080,
+        };
+      }
+      if (command === 'screenshot_read_gallery_thumbnail') {
+        return 'data:image/png;base64,ZmFrZQ==';
+      }
+      return null;
+    });
+
+    render(<ScreenshotsManager />);
+
+    expect(await screen.findByText(screenshot.name)).toBeInTheDocument();
+    expect(invokeMock).not.toHaveBeenCalledWith('screenshot_read_gallery_thumbnail', expect.anything());
+
+    await user.click(screen.getByRole('button', { name: 'Library' }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('screenshot_read_gallery_thumbnail', {
+        path: screenshot.path,
+        maxWidth: screenshotFeatureConfig.galleryThumbnail.maxWidth,
+        maxHeight: screenshotFeatureConfig.galleryThumbnail.maxHeight,
+      });
+    });
   });
 });

@@ -3,6 +3,7 @@ import { defineConfig } from 'vitest/config';
 import { playwright } from '@vitest/browser-playwright';
 
 export default defineConfig({
+  cacheDir: process.env.OVERLAYTERM_VITE_CACHE_DIR,
   plugins: [react()],
   optimizeDeps: {
     include: [

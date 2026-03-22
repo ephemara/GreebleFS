@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
+const defaultCargoTestTargetRoot = process.env.OVERLAYTERM_CARGO_TEST_TARGET_ROOT
+  ? path.resolve(process.env.OVERLAYTERM_CARGO_TEST_TARGET_ROOT)
+  : path.join(projectRoot, 'target-tests', 'cargo');
 
 function manifestsForPlatform(platform) {
   const manifests = ['src-tauri/Cargo.toml', 'crates/file-opening/Cargo.toml'];
@@ -23,7 +26,7 @@ function manifestsForPlatform(platform) {
 
 function runCargoTest(manifestPath) {
   const manifestDirName = path.basename(path.dirname(manifestPath));
-  const targetDir = path.join(projectRoot, 'target-tests', 'cargo', process.platform, manifestDirName);
+  const targetDir = path.join(defaultCargoTestTargetRoot, process.platform, manifestDirName);
   const result = spawnSync('cargo', ['test', '--manifest-path', manifestPath, '--target-dir', targetDir], {
     cwd: projectRoot,
     stdio: 'inherit',

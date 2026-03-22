@@ -248,6 +248,57 @@ function redrawCanvas(
   if (liveAnnotation) drawAnnotation(ctx, liveAnnotation);
 }
 
+function dataUrlToObjectUrl(dataUrl: string): string {
+  if (
+    typeof URL === 'undefined'
+    || typeof URL.createObjectURL !== 'function'
+  ) {
+    return dataUrl;
+  }
+
+  const match = dataUrl.match(/^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,(.+)$/);
+  if (!match) {
+    return dataUrl;
+  }
+
+  try {
+    const mimeType = match[1] || 'application/octet-stream';
+    const binary = atob(match[2]);
+    const bytes = new Uint8Array(binary.length);
+
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+
+    return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+  } catch {
+    return dataUrl;
+  }
+}
+
+function revokePreviewUrl(url: string | null | undefined): void {
+  if (
+    !url
+    || !url.startsWith('blob:')
+    || typeof URL === 'undefined'
+    || typeof URL.revokeObjectURL !== 'function'
+  ) {
+    return;
+  }
+
+  try {
+    URL.revokeObjectURL(url);
+  } catch {
+    // Ignore best-effort cleanup failures.
+  }
+}
+
+function revokePreviewUrls(urls: Iterable<string | null | undefined>): void {
+  for (const url of urls) {
+    revokePreviewUrl(url);
+  }
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverlayAppearance }) {
@@ -264,6 +315,10 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
   // Stable refs used inside pointer handlers and ResizeObserver to avoid stale closures
   const annotationsRef    = useRef<Annotation[]>([]);
   const liveAnnotationRef = useRef<Annotation | null>(null);
+  const galleryRequestIdRef = useRef(0);
+  const captureRequestIdRef = useRef(0);
+  const galleryPreviewUrlsRef = useRef<string[]>([]);
+  const monitorPreviewUrlsRef = useRef<string[]>([]);
 
   // Cached at pointerDown — never re-read during a drag
   const dragRectRef   = useRef<DOMRect | null>(null);
@@ -297,6 +352,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
   const [libraryWidth, setLibraryWidth] = usePersistentPanelSize('overlayterm-screenshots-library-width', 280, 220, 480);
 
   const activeMonitor = monitors.find(m => m.id === activeMonitorId) ?? null;
+  const shouldLoadGalleryPreviews = activeSection === 'library';
   const orderedOutputActions = useCallback(() => (
     [
       ...screenshotFeatureConfig.outputActions,
@@ -310,6 +366,38 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
   // Keep stable refs in sync with state — these are what pointer handlers + ResizeObserver read
   useEffect(() => { annotationsRef.current = annotations; }, [annotations]);
   useEffect(() => { liveAnnotationRef.current = liveAnnotation; }, [liveAnnotation]);
+  useEffect(() => () => {
+    galleryRequestIdRef.current += 1;
+    captureRequestIdRef.current += 1;
+    revokePreviewUrls(galleryPreviewUrlsRef.current);
+    revokePreviewUrls(monitorPreviewUrlsRef.current);
+    galleryPreviewUrlsRef.current = [];
+    monitorPreviewUrlsRef.current = [];
+  }, []);
+
+  const replaceGalleryItems = useCallback((nextItems: ScreenshotItem[]) => {
+    const nextPreviewUrls = nextItems
+      .map(item => item.previewUrl)
+      .filter((url): url is string => Boolean(url));
+
+    setItems(() => {
+      revokePreviewUrls(galleryPreviewUrlsRef.current);
+      galleryPreviewUrlsRef.current = nextPreviewUrls;
+      return nextItems;
+    });
+  }, []);
+
+  const replaceMonitors = useCallback((nextMonitors: MonitorCapture[]) => {
+    const nextPreviewUrls = nextMonitors
+      .map(monitor => monitor.previewUrl)
+      .filter((url): url is string => Boolean(url));
+
+    setMonitors(() => {
+      revokePreviewUrls(monitorPreviewUrlsRef.current);
+      monitorPreviewUrlsRef.current = nextPreviewUrls;
+      return nextMonitors;
+    });
+  }, []);
 
   const resetEditorState = useCallback(() => {
     setSelection(null);
@@ -349,36 +437,56 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
 
   // ── Gallery ──
   const loadGallery = useCallback(async () => {
+    const requestId = galleryRequestIdRef.current + 1;
+    galleryRequestIdRef.current = requestId;
+
     try {
       await ensureDir(screenshotDir);
       const listed = await invoke<FileEntry[]>('fs_list_dir', { path: screenshotDir, showHidden: false });
       const entries = sortScreenshotEntries(listed.filter(isSupportedScreenshotEntry));
       const visible = entries.slice(0, screenshotFeatureConfig.maxGalleryItems);
-      const withPreviews = await Promise.all(
-        visible.map(async entry => {
-          try {
-            const previewUrl = await invoke<string>('screenshot_read_gallery_thumbnail', {
-              path: entry.path,
-              maxWidth: screenshotFeatureConfig.galleryThumbnail.maxWidth,
-              maxHeight: screenshotFeatureConfig.galleryThumbnail.maxHeight,
-            });
-            return { ...entry, previewUrl };
-          } catch {
-            return { ...entry, previewUrl: null };
-          }
-        }),
-      );
-      setItems(withPreviews);
+
+      const withPreviews = shouldLoadGalleryPreviews
+        ? await Promise.all(
+            visible.map(async entry => {
+              try {
+                const previewDataUrl = await invoke<string>('screenshot_read_gallery_thumbnail', {
+                  path: entry.path,
+                  maxWidth: screenshotFeatureConfig.galleryThumbnail.maxWidth,
+                  maxHeight: screenshotFeatureConfig.galleryThumbnail.maxHeight,
+                });
+                return { ...entry, previewUrl: dataUrlToObjectUrl(previewDataUrl) };
+              } catch {
+                return { ...entry, previewUrl: null };
+              }
+            }),
+          )
+        : visible.map(entry => ({ ...entry, previewUrl: null }));
+
+      if (requestId !== galleryRequestIdRef.current) {
+        revokePreviewUrls(withPreviews.map(item => item.previewUrl));
+        return;
+      }
+
+      replaceGalleryItems(withPreviews);
       setVisibleCount(visible.length);
       setTotalCount(entries.length);
     } catch (err) {
+      if (requestId !== galleryRequestIdRef.current) {
+        return;
+      }
       setError(String(err));
-      setItems([]);
+      replaceGalleryItems([]);
+      setVisibleCount(0);
+      setTotalCount(0);
     }
-  }, [screenshotDir]);
+  }, [replaceGalleryItems, screenshotDir, shouldLoadGalleryPreviews]);
 
   // ── Capture all monitors ──
   const captureMonitors = useCallback(async () => {
+    const requestId = captureRequestIdRef.current + 1;
+    captureRequestIdRef.current = requestId;
+
     setIsCapturing(true);
     setError(null);
     setSelection(null);
@@ -399,26 +507,43 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
           width: mon.physicalWidth,
           height: mon.physicalHeight,
         });
-        results.push({ ...mon, captureId: preview.captureId, previewUrl: preview.previewUrl, imageWidth: preview.imageWidth, imageHeight: preview.imageHeight });
+        results.push({
+          ...mon,
+          captureId: preview.captureId,
+          previewUrl: dataUrlToObjectUrl(preview.previewUrl),
+          imageWidth: preview.imageWidth,
+          imageHeight: preview.imageHeight,
+        });
       }
 
-      setMonitors(results);
+      if (requestId !== captureRequestIdRef.current) {
+        revokePreviewUrls(results.map(result => result.previewUrl));
+        return;
+      }
+
+      replaceMonitors(results);
       const firstActive = results.find(m => m.isActive) ?? results[0] ?? null;
       setActiveMonitorId(firstActive?.id ?? null);
       setStatusMsg(`Captured ${results.length} display${results.length !== 1 ? 's' : ''}.`);
     } catch (err) {
+      if (requestId !== captureRequestIdRef.current) {
+        return;
+      }
       setError(String(err));
-      setMonitors([]);
+      replaceMonitors([]);
     } finally {
-      setIsCapturing(false);
+      if (requestId === captureRequestIdRef.current) {
+        setIsCapturing(false);
+      }
     }
-  }, []);
+  }, [replaceMonitors]);
 
   const refreshAll = useCallback(async () => {
     await Promise.all([captureMonitors(), loadGallery()]);
   }, [captureMonitors, loadGallery]);
 
-  useEffect(() => { void refreshAll(); }, [refreshAll]);
+  useEffect(() => { void captureMonitors(); }, [captureMonitors]);
+  useEffect(() => { void loadGallery(); }, [loadGallery]);
 
   useEffect(() => {
     if (!statusMsg) return;

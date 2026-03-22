@@ -12,7 +12,27 @@ const sharedNodeModules = path.join(projectRoot, "node_modules");
 const sharedTauriCliDir = path.join(sharedNodeModules, "@tauri-apps", "cli");
 const sharedTauriCliEntry = path.join(sharedTauriCliDir, "tauri.js");
 const cacheRoot = path.join(os.homedir(), ".cache", "overlayterm-tauri");
+const hasExplicitArtifactRoot = Boolean(process.env.OVERLAYTERM_VPS_ARTIFACTS_ROOT);
+const artifactRoot = hasExplicitArtifactRoot
+  ? path.resolve(process.env.OVERLAYTERM_VPS_ARTIFACTS_ROOT)
+  : cacheRoot;
+const defaultFrontendDist = hasExplicitArtifactRoot
+  ? path.join(artifactRoot, "dist")
+  : path.join(projectRoot, "dist");
+const defaultCargoTargetDir = hasExplicitArtifactRoot
+  ? path.join(artifactRoot, "cargo-target", "tauri")
+  : path.join(projectRoot, "src-tauri", "target");
 const cacheNodeModules = path.join(cacheRoot, "node_modules");
+const frontendDist = process.env.OVERLAYTERM_TAURI_FRONTEND_DIST
+  ? path.resolve(process.env.OVERLAYTERM_TAURI_FRONTEND_DIST)
+  : defaultFrontendDist;
+const tauriConfigDir = process.env.OVERLAYTERM_TAURI_CONFIG_DIR
+  ? path.resolve(process.env.OVERLAYTERM_TAURI_CONFIG_DIR)
+  : path.join(artifactRoot, "tauri-config");
+const tauriCargoTargetDir =
+  process.env.CARGO_TARGET_DIR ??
+  process.env.OVERLAYTERM_TAURI_CARGO_TARGET_DIR ??
+  defaultCargoTargetDir;
 
 function getLibcFlavor() {
   if (process.platform !== "linux") {
@@ -48,6 +68,22 @@ async function pathExists(targetPath) {
   } catch {
     return false;
   }
+}
+
+async function writeRuntimeTauriConfig() {
+  const tauriConfigPath = path.join(projectRoot, "src-tauri", "tauri.conf.json");
+  const rawConfig = await fs.readFile(tauriConfigPath, "utf8");
+  const config = JSON.parse(rawConfig);
+  const runtimeConfigPath = path.join(tauriConfigDir, "tauri.vps.config.json");
+
+  config.build = {
+    ...config.build,
+    frontendDist,
+  };
+
+  await fs.mkdir(tauriConfigDir, { recursive: true });
+  await fs.writeFile(runtimeConfigPath, `${JSON.stringify(config, null, 2)}\n`);
+  return runtimeConfigPath;
 }
 
 function runCommand(command, args, extraEnv = {}) {
@@ -129,17 +165,27 @@ async function main() {
   }
 
   await ensureNativeBindingAvailable();
+  await fs.mkdir(frontendDist, { recursive: true });
 
   const existingNodePath = process.env.NODE_PATH
     ? `${cacheNodeModules}${path.delimiter}${process.env.NODE_PATH}`
     : cacheNodeModules;
+  const runtimeConfigPath = await writeRuntimeTauriConfig();
+  const cliArgs = process.argv.slice(2);
+  const hasExplicitConfig = cliArgs.includes("--config") || cliArgs.includes("-c");
+  const tauriArgs =
+    hasExplicitConfig || cliArgs.length === 0
+      ? cliArgs
+      : [cliArgs[0], "--config", runtimeConfigPath, ...cliArgs.slice(1)];
 
   const exitCode = await runCommand(
     process.execPath,
-    [sharedTauriCliEntry, ...process.argv.slice(2)],
+    [sharedTauriCliEntry, ...tauriArgs],
     {
       NODE_PATH: existingNodePath,
       npm_config_optional: "true",
+      CARGO_TARGET_DIR: tauriCargoTargetDir,
+      OVERLAYTERM_VITE_OUT_DIR: frontendDist,
     }
   );
 

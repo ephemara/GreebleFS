@@ -30,8 +30,8 @@ static SCREENSHOT_CAPTURE_CACHE: LazyLock<Mutex<HashMap<String, CachedCapture>>>
 static SCREENSHOT_CAPTURE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 const MAX_CAPTURE_CACHE_ENTRIES: usize = 6;
-const MAX_PREVIEW_WIDTH: u32 = 1_920;
-const MAX_PREVIEW_HEIGHT: u32 = 1_200;
+const MAX_PREVIEW_WIDTH: u32 = 1_280;
+const MAX_PREVIEW_HEIGHT: u32 = 800;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SavedScreenshot {
@@ -516,8 +516,8 @@ mod tests {
 
         assert!(preview.width() <= MAX_PREVIEW_WIDTH);
         assert!(preview.height() <= MAX_PREVIEW_HEIGHT);
-        assert_eq!(preview.width(), 1_920);
-        assert_eq!(preview.height(), 960);
+        assert_eq!(preview.width(), 1_280);
+        assert_eq!(preview.height(), 640);
     }
 
     #[test]

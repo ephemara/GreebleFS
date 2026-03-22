@@ -35,10 +35,10 @@ export const screenshotFeatureConfig = {
   filePrefix: 'overlayterm-shot',
   defaultCaptureMode: screenshotCaptureModes[0].id,
   defaultOutputAction: screenshotOutputActions[2].id,
-  maxGalleryItems: 48,
+  maxGalleryItems: 24,
   galleryThumbnail: {
-    maxWidth: 480,
-    maxHeight: 320,
+    maxWidth: 320,
+    maxHeight: 200,
   },
   editor: {
     hideWindowDelayMs: 260,
