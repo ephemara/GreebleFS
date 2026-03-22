@@ -13,6 +13,7 @@ import { type LoadedOverlayShader, loadShaderFromSource } from '../components/sh
 import {
   type LoadedOverlayPlugin,
   type OverlayPluginApi,
+  type OverlayPluginCapabilitySummary,
   type OverlayPluginContext,
   type PluginFileEntry,
   loadPluginFromSource,
@@ -417,12 +418,14 @@ async function loadPluginPackage(
 
   const packageId = derivePackageId(record);
   const packageName = derivePackageName(record);
+  const packageWarnings: string[] = [];
 
   const panelEntry = await resolvePackagePanelEntry(record);
+  let packagePlugin: LoadedOverlayPlugin | null = null;
   if (panelEntry) {
     try {
       const source = await invoke<string>('fs_read_text_file', { path: panelEntry.path });
-      const plugin = await loadPluginFromSource(source, panelEntry as PluginFileEntry, hostApiFactory, {
+      packagePlugin = await loadPluginFromSource(source, panelEntry as PluginFileEntry, hostApiFactory, {
         context: {
           id: packageId,
           name: packageName,
@@ -438,20 +441,28 @@ async function loadPluginPackage(
           defaultOpen: record.manifest.defaultOpen,
           keepMounted: record.manifest.keepMounted,
         },
+        diagnostics: {
+          sourceKind: 'package-plugin',
+          sourceLabel: packageName,
+          manifestPath: record.manifestPath,
+        },
       });
-      result.plugins.push(plugin);
     } catch (error) {
-      result.warnings.push(`${packageName}: ${String(error)}`);
+      packageWarnings.push(String(error));
     }
   }
 
   const themeDirectories = await resolveThemeDirectories(record);
   if (themeDirectories.length > 0) {
-    const themeResult = await loadThemePackagesFromDirectoryEntries(themeDirectories, record.directoryPath);
+    const themeResult = await loadThemePackagesFromDirectoryEntries(themeDirectories, record.directoryPath, {
+      sourceKind: 'plugin-package',
+      sourceLabel: packageName,
+    });
     result.themePackages.push(...themeResult.packages);
     if (themeResult.sourceError) {
-      result.warnings.push(`${packageName} themes: ${themeResult.sourceError}`);
+      packageWarnings.push(`themes: ${themeResult.sourceError}`);
     }
+    packageWarnings.push(...themeResult.warnings);
   }
 
   const shaderEntries = await resolveShaderEntries(record);
@@ -467,7 +478,7 @@ async function loadPluginPackage(
           },
         });
       } catch (error) {
-        result.warnings.push(`${packageName} shader ${entry.name}: ${String(error)}`);
+        packageWarnings.push(`shader ${entry.name}: ${String(error)}`);
         return null;
       }
     }));
@@ -511,6 +522,26 @@ async function loadPluginPackage(
       runOnSelect: action.runOnSelect ?? true,
     }))),
   );
+
+  if (packagePlugin) {
+    const capabilities: OverlayPluginCapabilitySummary = {
+      panel: true,
+      themes: result.themePackages.length,
+      shaders: result.shaders.length,
+      fonts: result.fonts.length,
+      commands: result.commands.length,
+      explorerActions: result.explorerActions.length,
+    };
+    result.plugins.push({
+      ...packagePlugin,
+      diagnostics: {
+        ...packagePlugin.diagnostics,
+        warnings: packageWarnings,
+        capabilities,
+      },
+    });
+  }
+  result.warnings.push(...packageWarnings.map(warning => `${packageName}: ${warning}`));
 
   return result;
 }

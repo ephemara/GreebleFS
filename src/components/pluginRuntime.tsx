@@ -91,6 +91,25 @@ export interface OverlayPluginDefinition {
   component: React.ComponentType<OverlayPluginProps>;
 }
 
+export type OverlayPluginSourceKind = 'file-plugin' | 'package-plugin';
+
+export interface OverlayPluginCapabilitySummary {
+  panel: boolean;
+  themes: number;
+  shaders: number;
+  fonts: number;
+  commands: number;
+  explorerActions: number;
+}
+
+export interface OverlayPluginDiagnostics {
+  sourceKind: OverlayPluginSourceKind;
+  sourceLabel: string;
+  manifestPath?: string;
+  warnings: string[];
+  capabilities: OverlayPluginCapabilitySummary;
+}
+
 export interface LoadedOverlayPlugin extends OverlayPluginContext {
   description?: string;
   modified: number;
@@ -98,6 +117,7 @@ export interface LoadedOverlayPlugin extends OverlayPluginContext {
   keepMounted: boolean;
   component: React.ComponentType<OverlayPluginProps> | null;
   error: string | null;
+  diagnostics: OverlayPluginDiagnostics;
 }
 
 export interface PluginBackendResult {
@@ -109,6 +129,7 @@ export interface PluginBackendResult {
 export interface LoadPluginFromSourceOptions {
   context?: Partial<OverlayPluginContext>;
   defaults?: Partial<Pick<OverlayPluginDefinition, 'id' | 'name' | 'description' | 'defaultOpen' | 'keepMounted'>>;
+  diagnostics?: Partial<OverlayPluginDiagnostics>;
 }
 
 export function definePlugin(definition: OverlayPluginDefinition): OverlayPluginDefinition {
@@ -142,6 +163,20 @@ export async function loadPluginFromSource(
     pluginDirectory: options?.context?.pluginDirectory ?? getPluginDirectory(fileId),
     backendDirectory: options?.context?.backendDirectory ?? getPluginBackendDirectory(fileId),
   };
+  const diagnostics: OverlayPluginDiagnostics = {
+    sourceKind: options?.diagnostics?.sourceKind ?? 'file-plugin',
+    sourceLabel: options?.diagnostics?.sourceLabel ?? context.filePath,
+    manifestPath: options?.diagnostics?.manifestPath,
+    warnings: options?.diagnostics?.warnings ?? [],
+    capabilities: {
+      panel: options?.diagnostics?.capabilities?.panel ?? true,
+      themes: options?.diagnostics?.capabilities?.themes ?? 0,
+      shaders: options?.diagnostics?.capabilities?.shaders ?? 0,
+      fonts: options?.diagnostics?.capabilities?.fonts ?? 0,
+      commands: options?.diagnostics?.capabilities?.commands ?? 0,
+      explorerActions: options?.diagnostics?.capabilities?.explorerActions ?? 0,
+    },
+  };
 
   try {
     const transpiled = await transpilePluginSource(source);
@@ -158,6 +193,7 @@ export async function loadPluginFromSource(
       keepMounted: normalized.keepMounted ?? options?.defaults?.keepMounted ?? pluginSystemConfig.folderPanelsKeepMounted,
       component: normalized.component,
       error: null,
+      diagnostics,
     };
 
     const runtimeApi = hostApiFactory(plugin);
@@ -174,6 +210,7 @@ export async function loadPluginFromSource(
       keepMounted: pluginSystemConfig.folderPanelsKeepMounted,
       component: null,
       error: String(error),
+      diagnostics,
     };
   }
 }

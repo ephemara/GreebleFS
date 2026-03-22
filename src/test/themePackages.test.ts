@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
-import { loadThemePackages, themeSystemConfig } from '../config/themePackages';
+import { loadThemePackages, loadThemePackagesFromDirectoryEntries, themeSystemConfig } from '../config/themePackages';
 
 describe('theme package loader', () => {
   it('loads packaged themes, resolves icon theme assets, and discovers packaged shaders and animations', async () => {
@@ -148,9 +148,13 @@ describe('theme package loader', () => {
     const result = await loadThemePackages();
 
     expect(result.sourceError).toBeNull();
+    expect(result.warnings).toEqual([]);
     expect(result.packages).toHaveLength(1);
     expect(result.packages[0]?.theme.id).toBe('vista-glass');
     expect(result.packages[0]?.theme.source).toBe('package');
+    expect(result.packages[0]?.sourceKind).toBe('theme-directory');
+    expect(result.packages[0]?.sourceLabel).toBe('themes/vista-glass');
+    expect(result.packages[0]?.warnings).toEqual([]);
     expect(result.packages[0]?.theme.extendsThemeId).toBe('github-dark');
     expect(result.packages[0]?.theme.assets?.backgroundUrl?.replace(/\\/g, '/')).toBe('asset://localhost/themes/vista-glass/assets/wallpaper.svg');
     expect(result.packages[0]?.previewUrl?.replace(/\\/g, '/')).toBe('asset://localhost/themes/vista-glass/assets/preview.svg');
@@ -174,5 +178,51 @@ describe('theme package loader', () => {
     expect(result.animations[0]?.animationRoot.replace(/\\/g, '/')).toBe('themes/vista-glass');
     expect(result.animations[0]?.filePath.replace(/\\/g, '/')).toBe('themes/vista-glass/animations/package-open.tsx');
     expect(result.animations[0]?.name).toBe('Package Open');
+  });
+
+  it('keeps healthy theme packages when a sibling package has invalid runtime contributions', async () => {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      const params = args as { path?: string; showHidden?: boolean } | undefined;
+      const normalizedPath = String(params?.path).replace(/\\/g, '/');
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'themes/good/theme.json') {
+        return JSON.stringify({
+          id: 'good-theme',
+          name: 'Good Theme',
+          extends: 'operator',
+        });
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'themes/broken/theme.json') {
+        return JSON.stringify({
+          id: 'broken-theme',
+          name: 'Broken Theme',
+          extends: 'operator',
+          contributions: {
+            shaders: ['shaders/bad.tsx'],
+          },
+        });
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'themes/broken/shaders/bad.tsx') {
+        throw new Error('missing shader entry');
+      }
+
+      throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
+    });
+
+    const result = await loadThemePackagesFromDirectoryEntries([
+      { name: 'good', path: 'themes/good' },
+      { name: 'broken', path: 'themes/broken' },
+    ], 'themes');
+
+    expect(result.sourceError).toBeNull();
+    expect(result.packages.map(pkg => pkg.id)).toEqual(['broken-theme', 'good-theme']);
+    expect(result.packages.find(pkg => pkg.id === 'broken-theme')?.warnings).toEqual([
+      'Shader bad.tsx: Error: missing shader entry',
+    ]);
+    expect(result.warnings).toEqual([
+      'Broken Theme: Shader bad.tsx: Error: missing shader entry',
+    ]);
   });
 });

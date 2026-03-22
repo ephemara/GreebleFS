@@ -73,6 +73,20 @@ describe('PluginsManager', () => {
         keepMounted: false,
         component: PluginView,
         error: null,
+        diagnostics: {
+          sourceKind: 'package-plugin',
+          sourceLabel: 'Alpha Suite',
+          manifestPath: 'plugins/alpha/plugin.json',
+          warnings: ['shader glow.tsx: bad uniform'],
+          capabilities: {
+            panel: true,
+            themes: 1,
+            shaders: 1,
+            fonts: 0,
+            commands: 1,
+            explorerActions: 0,
+          },
+        },
       },
       {
         id: 'beta',
@@ -89,6 +103,19 @@ describe('PluginsManager', () => {
         keepMounted: false,
         component: null,
         error: 'broken export',
+        diagnostics: {
+          sourceKind: 'file-plugin',
+          sourceLabel: resolve(pluginSystemConfig.pluginsDirectory, 'beta.tsx'),
+          warnings: [],
+          capabilities: {
+            panel: true,
+            themes: 0,
+            shaders: 0,
+            fonts: 0,
+            commands: 0,
+            explorerActions: 0,
+          },
+        },
       },
     ] as never;
 
@@ -108,6 +135,10 @@ describe('PluginsManager', () => {
       expect(screen.getByText('workspace:Alpha:zoom:1')).toBeInTheDocument();
     });
     expect(screen.getByText('runtime warning')).toBeInTheDocument();
+    expect(screen.getAllByText(/Package plugin/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Themes 1').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/1 warning/i).length).toBeGreaterThan(0);
+    expect(screen.getByText('shader glow.tsx: bad uniform')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Beta Load error/i }));
 

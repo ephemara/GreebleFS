@@ -4,11 +4,17 @@ import { invoke } from '@tauri-apps/api/core';
 import { FileExplorer } from '../components/FileExplorer';
 import { resolveOverlayAppearance } from '../config/appearance';
 import {
+  EXPLORER_PERFORMANCE_HISTORY_KEY,
   loadExplorerPerformanceSnapshot,
   resetExplorerPerformanceSnapshot,
 } from '../config/performanceTelemetry';
 import type { FsRuntimeCachePolicy } from '../config/runtimeCachePolicy';
 import { createDefaultExplorerRailSnapshot } from '../components/explorer/explorerRailState';
+import {
+  EXPLORER_LEGACY_BOOKMARKS_KEY,
+  EXPLORER_STATE_BACKUP_KEY,
+  EXPLORER_STATE_STORAGE_KEY,
+} from '../store/explorerStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { useExplorerStore } from '../store/explorerStore';
 
@@ -31,6 +37,7 @@ interface TestFileSearchResult extends TestFileEntry {
 }
 
 const REPO_ROOT = 'C:\\workspace\\repo';
+const SETTINGS_STORAGE_KEY = 'ultacode-settings';
 
 const EXPLORER_ENTRIES: TestFileEntry[] = [
   {
@@ -65,6 +72,14 @@ function buildEntrySizeResults(paths: string[]) {
       is_complete: true,
     };
   });
+}
+
+function resetOverlayTermStorage(storage: Storage) {
+  storage.removeItem(SETTINGS_STORAGE_KEY);
+  storage.removeItem(EXPLORER_STATE_STORAGE_KEY);
+  storage.removeItem(EXPLORER_STATE_BACKUP_KEY);
+  storage.removeItem(EXPLORER_LEGACY_BOOKMARKS_KEY);
+  storage.removeItem(EXPLORER_PERFORMANCE_HISTORY_KEY);
 }
 
 const SEARCH_RESULT: TestFileSearchResult = {
@@ -114,7 +129,7 @@ function renderExplorer() {
 
 describe('FileExplorer search telemetry', () => {
   beforeEach(() => {
-    window.localStorage.clear();
+    resetOverlayTermStorage(window.localStorage);
     resetExplorerPerformanceSnapshot(window.localStorage);
     useSettingsStore.getState().resetToDefaults();
     useExplorerStore.getState().resetSession();
@@ -122,7 +137,8 @@ describe('FileExplorer search telemetry', () => {
     useExplorerStore.getState().clearPersistenceNotice();
 
     vi.mocked(invoke).mockReset();
-    vi.mocked(invoke).mockImplementation(async (command: string, args?: { paths?: string[] }) => {
+    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
+      const payload = args as { paths?: string[] } | undefined;
       switch (command) {
         case 'fs_get_drives':
           return [];
@@ -134,7 +150,7 @@ describe('FileExplorer search telemetry', () => {
         case 'fs_list_dir_uncached':
           return EXPLORER_ENTRIES;
         case 'fs_measure_entry_sizes':
-          return buildEntrySizeResults(args?.paths ?? []);
+          return buildEntrySizeResults(payload?.paths ?? []);
         case 'fs_resolve_native_icons':
           return [];
         case 'fs_search_entries_with_diagnostics':

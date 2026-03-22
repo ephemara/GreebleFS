@@ -453,6 +453,7 @@ function App() {
   const [themePackages, setThemePackages] = useState<LoadedOverlayThemePackage[]>([]);
   const [themePackagesLoading, setThemePackagesLoading] = useState(true);
   const [themePackagesError, setThemePackagesError] = useState<string | null>(null);
+  const [themePackagesWarnings, setThemePackagesWarnings] = useState<string[]>([]);
   const [repositoryPickerRequestId, setRepositoryPickerRequestId] = useState(0);
   const [isRepositoryPickerActive, setIsRepositoryPickerActive] = useState(false);
   const [pendingRepositoryImports, setPendingRepositoryImports] = useState<string[]>([]);
@@ -1286,6 +1287,7 @@ function App() {
       setThemeContributedShaders([]);
       setThemeContributedAnimations([]);
       setThemePackagesError(null);
+      setThemePackagesWarnings([]);
       setThemePackagesLoading(false);
       return;
     }
@@ -1298,11 +1300,13 @@ function App() {
       setThemeContributedShaders(result.shaders);
       setThemeContributedAnimations(result.animations);
       setThemePackagesError(result.sourceError);
+      setThemePackagesWarnings(result.warnings);
     } catch (error) {
       setThemePackages([]);
       setThemeContributedShaders([]);
       setThemeContributedAnimations([]);
       setThemePackagesError(String(error));
+      setThemePackagesWarnings([]);
     } finally {
       setThemePackagesLoading(false);
     }
@@ -1704,6 +1708,7 @@ function App() {
         themePackagesDirectory: themeSystemConfig.themesDirectory,
         themePackagesLoading,
         themePackagesError,
+        themePackagesWarnings,
         onRefreshThemes: refreshThemePackages,
         onOpenThemesFolder: openThemesFolder,
         shaders: availableShaders,
@@ -1778,6 +1783,7 @@ function App() {
       combinedThemePackages,
       themePackagesError,
       themePackagesLoading,
+      themePackagesWarnings,
     ],
   );
   const panelLookup = useMemo(
@@ -2344,6 +2350,19 @@ function App() {
                                 keepMounted: panel.keepMounted ?? false,
                                 component: null,
                                 error: 'Plugin definition not found.',
+                                diagnostics: {
+                                  sourceKind: 'file-plugin',
+                                  sourceLabel: panel.label,
+                                  warnings: ['Plugin definition not found.'],
+                                  capabilities: {
+                                    panel: true,
+                                    themes: 0,
+                                    shaders: 0,
+                                    fonts: 0,
+                                    commands: 0,
+                                    explorerActions: 0,
+                                  },
+                                },
                               }}
                               appearance={resolvedAppearance}
                               createPluginApi={createPluginApi}

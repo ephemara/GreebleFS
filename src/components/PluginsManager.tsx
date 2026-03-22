@@ -86,6 +86,10 @@ export function PluginsManager({
     () => plugins.find(plugin => plugin.id === selectedPluginId) ?? null,
     [plugins, selectedPluginId],
   );
+  const selectedPluginCapabilityLabels = useMemo(
+    () => (selectedPlugin ? getPluginCapabilityLabels(selectedPlugin) : []),
+    [selectedPlugin],
+  );
 
   return (
     <div style={{ display: 'flex', flex: 1, minHeight: 0, background: 'var(--overlay-bg-shell)', color: TEXT, fontFamily: 'var(--overlay-font-ui)' }}>
@@ -159,7 +163,8 @@ export function PluginsManager({
           ) : (
             plugins.map(plugin => {
               const isSelected = plugin.id === selectedPluginId;
-              const status = plugin.error ? 'Load error' : 'Top-bar tab';
+              const status = plugin.error ? 'Load error' : getPluginSourceSummary(plugin);
+              const capabilityLabels = getPluginCapabilityLabels(plugin).slice(0, 2);
 
               return (
                 <button
@@ -184,6 +189,16 @@ export function PluginsManager({
                   <div style={{ marginTop: 5, fontSize: 11, color: MUTED }}>
                     {status}
                   </div>
+                  {(capabilityLabels.length > 0 || plugin.diagnostics.warnings.length > 0) && (
+                    <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {capabilityLabels.map(label => (
+                        <PluginBadge key={`${plugin.id}-${label}`} label={label} accent={accent} />
+                      ))}
+                      {plugin.diagnostics.warnings.length > 0 && (
+                        <PluginBadge label={`${plugin.diagnostics.warnings.length} warning${plugin.diagnostics.warnings.length === 1 ? '' : 's'}`} accent="var(--overlay-warning)" />
+                      )}
+                    </div>
+                  )}
                 </button>
               );
             })
@@ -208,7 +223,7 @@ export function PluginsManager({
               {selectedPlugin?.name ?? 'Plugin Workspace'}
             </div>
             <div style={{ fontSize: 11, color: MUTED, marginTop: 4 }}>
-              {selectedPlugin?.filePath ?? pluginSystemConfig.pluginsDirectory}
+              {selectedPlugin ? `${getPluginSourceSummary(selectedPlugin)} • ${selectedPlugin.filePath}` : pluginSystemConfig.pluginsDirectory}
             </div>
           </div>
 
@@ -234,12 +249,52 @@ export function PluginsManager({
               <EmptyPluginsState accent={accent} onOpenFolder={onOpenPluginsFolder} />
             </div>
           ) : (
-            <FolderPluginRenderer
-              plugin={selectedPlugin}
-              appearance={appearance}
-              createPluginApi={createPluginApi}
-              hostMode="manager-preview"
-            />
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ padding: '14px 16px', borderBottom: `1px solid ${BORDER}`, background: PANEL }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  <PluginBadge label={selectedPlugin.error ? 'Load error' : 'Panel ready'} accent={selectedPlugin.error ? 'var(--overlay-warning)' : accent} />
+                  {selectedPluginCapabilityLabels.map(label => (
+                    <PluginBadge key={`${selectedPlugin.id}-${label}`} label={label} accent={accent} />
+                  ))}
+                </div>
+                {selectedPlugin.diagnostics.manifestPath && (
+                  <div style={{ marginTop: 8, fontSize: 11, color: MUTED }}>
+                    Manifest: {selectedPlugin.diagnostics.manifestPath}
+                  </div>
+                )}
+                {selectedPlugin.diagnostics.warnings.length > 0 && (
+                  <div
+                    style={{
+                      marginTop: 10,
+                      borderRadius: 12,
+                      border: '1px solid color-mix(in srgb, var(--overlay-warning) 45%, transparent)',
+                      background: 'color-mix(in srgb, var(--overlay-warning) 14%, transparent)',
+                      padding: 12,
+                      fontSize: 11,
+                      color: TEXT,
+                    }}
+                  >
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--overlay-warning)' }}>
+                      Package warnings
+                    </div>
+                    <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+                      {selectedPlugin.diagnostics.warnings.map(warning => (
+                        <div key={`${selectedPlugin.id}-${warning}`}>{warning}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                <FolderPluginRenderer
+                  plugin={selectedPlugin}
+                  appearance={appearance}
+                  createPluginApi={createPluginApi}
+                  hostMode="manager-preview"
+                />
+              </div>
+            </div>
           )}
         </div>
       </main>
@@ -520,6 +575,54 @@ function toolbarButton(accent: string, primary: boolean): React.CSSProperties {
     fontSize: 12,
     fontWeight: 600,
   };
+}
+
+function getPluginSourceSummary(plugin: LoadedOverlayPlugin): string {
+  return plugin.diagnostics.sourceKind === 'package-plugin'
+    ? `Package plugin • ${plugin.diagnostics.sourceLabel}`
+    : 'File plugin';
+}
+
+function getPluginCapabilityLabels(plugin: LoadedOverlayPlugin): string[] {
+  const labels: string[] = [];
+  if (plugin.diagnostics.capabilities.themes > 0) {
+    labels.push(`Themes ${plugin.diagnostics.capabilities.themes}`);
+  }
+  if (plugin.diagnostics.capabilities.shaders > 0) {
+    labels.push(`Shaders ${plugin.diagnostics.capabilities.shaders}`);
+  }
+  if (plugin.diagnostics.capabilities.fonts > 0) {
+    labels.push(`Fonts ${plugin.diagnostics.capabilities.fonts}`);
+  }
+  if (plugin.diagnostics.capabilities.commands > 0) {
+    labels.push(`Commands ${plugin.diagnostics.capabilities.commands}`);
+  }
+  if (plugin.diagnostics.capabilities.explorerActions > 0) {
+    labels.push(`Explorer ${plugin.diagnostics.capabilities.explorerActions}`);
+  }
+  return labels;
+}
+
+function PluginBadge({ label, accent }: { label: string; accent: string }) {
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        borderRadius: 999,
+        border: `1px solid color-mix(in srgb, ${accent} 36%, transparent)`,
+        background: `color-mix(in srgb, ${accent} 14%, transparent)`,
+        color: TEXT,
+        padding: '4px 8px',
+        fontSize: 10,
+        fontWeight: 700,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+      }}
+    >
+      {label}
+    </span>
+  );
 }
 
 class PluginErrorBoundary extends React.Component<

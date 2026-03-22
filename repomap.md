@@ -6,7 +6,10 @@
     └── 📂 AppleCommand
         └── 📂 public
     └── 📂 automations
+        └── 📂 charlie
         └── 📂 delta
+        └── 📂 echo
+        └── 📂 foxtrot
         └── 📂 tango
     └── 📂 coverage
         └── 📂 src

@@ -38,6 +38,7 @@ function renderSettingsPage(options?: {
       themePackagesDirectory="themes"
       themePackagesLoading={false}
       themePackagesError={null}
+      themePackagesWarnings={[]}
       onRefreshThemes={async () => {}}
       onOpenThemesFolder={async () => {}}
       shaders={createBuiltInOverlayShaders()}
@@ -304,6 +305,8 @@ describe('SettingsPage behavior', () => {
         version: 2,
         directoryPath: 'themes/vista-glass',
         manifestPath: 'themes/vista-glass/theme.json',
+        sourceKind: 'theme-directory',
+        sourceLabel: 'themes/vista-glass',
         description: 'Glossy Aero shell.',
         author: 'OverlayTerm Labs',
         homepage: 'https://overlayterm.local/themes/vista-glass',
@@ -317,6 +320,7 @@ describe('SettingsPage behavior', () => {
           animations: 1,
           fonts: 2,
         },
+        warnings: [],
         theme: packageTheme,
       }],
     });
@@ -329,6 +333,8 @@ describe('SettingsPage behavior', () => {
     expect(screen.getByText('Shaders 1')).toBeInTheDocument();
     expect(screen.getByText('Motion 1')).toBeInTheDocument();
     expect(screen.getByText('Visuals 2')).toBeInTheDocument();
+    expect(screen.getByText('Theme Folder')).toBeInTheDocument();
+    expect(screen.getAllByText('themes/vista-glass').length).toBeGreaterThan(0);
     expect(screen.getByText('glass')).toBeInTheDocument();
   });
 
@@ -368,6 +374,8 @@ describe('SettingsPage behavior', () => {
         version: 2,
         directoryPath: 'themes/vista-glass',
         manifestPath: 'themes/vista-glass/theme.json',
+        sourceKind: 'theme-directory',
+        sourceLabel: 'themes/vista-glass',
         tags: ['glass'],
         previewUrl: 'asset://localhost/themes/vista-glass/assets/preview.svg',
         capabilitySummary: {
@@ -378,6 +386,7 @@ describe('SettingsPage behavior', () => {
           animations: 1,
           fonts: 2,
         },
+        warnings: [],
         theme: packageTheme,
       }],
     });

@@ -54,6 +54,7 @@ describe('SettingsPage shaders section', () => {
         themePackagesDirectory="themes"
         themePackagesLoading={false}
         themePackagesError={null}
+        themePackagesWarnings={[]}
         onRefreshThemes={async () => {}}
         onOpenThemesFolder={async () => {}}
         shaders={[...createBuiltInOverlayShaders(), authoredShader]}

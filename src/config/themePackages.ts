@@ -78,11 +78,14 @@ export interface LoadedOverlayThemePackage {
   version: number;
   directoryPath: string;
   manifestPath: string;
+  sourceKind: 'theme-directory' | 'plugin-package';
+  sourceLabel: string;
   description?: string;
   author?: string;
   homepage?: string;
   tags: string[];
   previewUrl?: string;
+  warnings: string[];
   capabilitySummary: {
     icons: boolean;
     wallpaper: boolean;
@@ -99,7 +102,13 @@ export interface ThemePackageLoadResult {
   shaders: LoadedOverlayShader[];
   animations: LoadedOverlayAnimation[];
   directory: string;
+  warnings: string[];
   sourceError: string | null;
+}
+
+export interface ThemePackageLoadOptions {
+  sourceKind?: LoadedOverlayThemePackage['sourceKind'];
+  sourceLabel?: string;
 }
 
 export const themeSystemConfig = {
@@ -488,11 +497,13 @@ async function buildPackageTheme(
 export async function loadThemePackagesFromDirectoryEntries(
   directoryEntries: ThemePackageDirectoryEntry[],
   directoryLabel = themeSystemConfig.themesDirectory,
+  options?: ThemePackageLoadOptions,
 ): Promise<ThemePackageLoadResult> {
   try {
     const packageRecords: OverlayThemePackageRecord[] = [];
     const shaders: LoadedOverlayShader[] = [];
     const animations: LoadedOverlayAnimation[] = [];
+    const warnings: string[] = [];
 
     for (const entry of directoryEntries) {
       const manifest = await readPackageManifest(entry.path);
@@ -513,68 +524,93 @@ export async function loadThemePackagesFromDirectoryEntries(
     const packages: LoadedOverlayThemePackage[] = [];
 
     for (const record of packageRecords) {
-      const theme = await buildPackageTheme(record, packageMap, cache);
-      const shaderEntries = await resolvePackageRuntimeEntries(
-        record.directoryPath,
-        record.manifest.contributions?.shaders,
-        themeSystemConfig.packageShadersDirectoryName,
-        isFrontendShaderFile,
-      );
-      const animationEntries = await resolvePackageRuntimeEntries(
-        record.directoryPath,
-        record.manifest.contributions?.animations,
-        themeSystemConfig.packageAnimationsDirectoryName,
-        isFrontendAnimationFile,
-      );
+      const packageName = derivePackageName(record);
+      const packageWarnings: string[] = [];
 
-      const packageShaders = await Promise.all(shaderEntries.map(async entry => {
-        const source = await invoke<string>('fs_read_text_file', { path: entry.path });
-        return loadShaderFromSource(source, entry, {
-          context: {
-            id: deriveShaderId(`${theme.id}-${entry.name}`),
-            name: deriveShaderName(`${theme.name} ${entry.name}`),
-            filePath: entry.path,
-            shaderRoot: record.directoryPath,
-            source: 'folder',
-          },
-        });
-      }));
-      const packageAnimations = await Promise.all(animationEntries.map(async entry => {
-        const source = await invoke<string>('fs_read_text_file', { path: entry.path });
-        return loadAnimationFromSource(source, entry, {
-          context: {
-            id: deriveAnimationId(`${theme.id}-${entry.name}`),
-            name: deriveAnimationName(`${theme.name} ${entry.name}`),
-            filePath: entry.path,
-            animationRoot: record.directoryPath,
-            source: 'folder',
-          },
-        });
-      }));
+      try {
+        const theme = await buildPackageTheme(record, packageMap, cache);
+        const shaderEntries = await resolvePackageRuntimeEntries(
+          record.directoryPath,
+          record.manifest.contributions?.shaders,
+          themeSystemConfig.packageShadersDirectoryName,
+          isFrontendShaderFile,
+        );
+        const animationEntries = await resolvePackageRuntimeEntries(
+          record.directoryPath,
+          record.manifest.contributions?.animations,
+          themeSystemConfig.packageAnimationsDirectoryName,
+          isFrontendAnimationFile,
+        );
 
-      packages.push({
-        id: theme.id,
-        name: theme.name,
-        version: typeof record.manifest.version === 'number' ? record.manifest.version : 1,
-        directoryPath: record.directoryPath,
-        manifestPath: record.manifestPath,
-        description: asString(record.manifest.description) || theme.description,
-        author: asString(record.manifest.author) || undefined,
-        homepage: asString(record.manifest.homepage) || undefined,
-        tags: record.manifest.tags ?? [],
-        previewUrl: theme.assets?.previewUrl ?? theme.assets?.backgroundUrl,
-        capabilitySummary: {
-          icons: Boolean(theme.assets?.iconTheme || theme.assets?.iconEntries),
-          wallpaper: Boolean(theme.assets?.backgroundUrl),
-          visuals: theme.visuals?.length ?? 0,
-          shaders: packageShaders.length,
-          animations: packageAnimations.length,
-          fonts: [theme.fonts?.ui, theme.fonts?.mono].filter(Boolean).length,
-        },
-        theme,
-      });
-      shaders.push(...packageShaders);
-      animations.push(...packageAnimations);
+        const packageShaders = (
+          await Promise.all(shaderEntries.map(async entry => {
+            try {
+              const source = await invoke<string>('fs_read_text_file', { path: entry.path });
+              return loadShaderFromSource(source, entry, {
+                context: {
+                  id: deriveShaderId(`${theme.id}-${entry.name}`),
+                  name: deriveShaderName(`${theme.name} ${entry.name}`),
+                  filePath: entry.path,
+                  shaderRoot: record.directoryPath,
+                  source: 'folder',
+                },
+              });
+            } catch (error) {
+              packageWarnings.push(`Shader ${entry.name}: ${String(error)}`);
+              return null;
+            }
+          }))
+        ).filter((entry): entry is LoadedOverlayShader => Boolean(entry));
+        const packageAnimations = (
+          await Promise.all(animationEntries.map(async entry => {
+            try {
+              const source = await invoke<string>('fs_read_text_file', { path: entry.path });
+              return loadAnimationFromSource(source, entry, {
+                context: {
+                  id: deriveAnimationId(`${theme.id}-${entry.name}`),
+                  name: deriveAnimationName(`${theme.name} ${entry.name}`),
+                  filePath: entry.path,
+                  animationRoot: record.directoryPath,
+                  source: 'folder',
+                },
+              });
+            } catch (error) {
+              packageWarnings.push(`Animation ${entry.name}: ${String(error)}`);
+              return null;
+            }
+          }))
+        ).filter((entry): entry is LoadedOverlayAnimation => Boolean(entry));
+
+        packages.push({
+          id: theme.id,
+          name: theme.name,
+          version: typeof record.manifest.version === 'number' ? record.manifest.version : 1,
+          directoryPath: record.directoryPath,
+          manifestPath: record.manifestPath,
+          sourceKind: options?.sourceKind ?? 'theme-directory',
+          sourceLabel: options?.sourceLabel ?? record.directoryPath,
+          description: asString(record.manifest.description) || theme.description,
+          author: asString(record.manifest.author) || undefined,
+          homepage: asString(record.manifest.homepage) || undefined,
+          tags: record.manifest.tags ?? [],
+          previewUrl: theme.assets?.previewUrl ?? theme.assets?.backgroundUrl,
+          warnings: packageWarnings,
+          capabilitySummary: {
+            icons: Boolean(theme.assets?.iconTheme || theme.assets?.iconEntries),
+            wallpaper: Boolean(theme.assets?.backgroundUrl),
+            visuals: theme.visuals?.length ?? 0,
+            shaders: packageShaders.length,
+            animations: packageAnimations.length,
+            fonts: [theme.fonts?.ui, theme.fonts?.mono].filter(Boolean).length,
+          },
+          theme,
+        });
+        shaders.push(...packageShaders);
+        animations.push(...packageAnimations);
+        warnings.push(...packageWarnings.map(warning => `${packageName}: ${warning}`));
+      } catch (error) {
+        warnings.push(`${packageName}: ${String(error)}`);
+      }
     }
 
     packages.sort((left, right) => left.name.localeCompare(right.name));
@@ -586,6 +622,7 @@ export async function loadThemePackagesFromDirectoryEntries(
       shaders,
       animations,
       directory: directoryLabel,
+      warnings,
       sourceError: null,
     };
   } catch (error) {
@@ -594,6 +631,7 @@ export async function loadThemePackagesFromDirectoryEntries(
       shaders: [],
       animations: [],
       directory: directoryLabel,
+      warnings: [],
       sourceError: String(error),
     };
   }
@@ -607,6 +645,7 @@ export async function loadThemePackages(): Promise<ThemePackageLoadResult> {
       shaders: [],
       animations: [],
       directory,
+      warnings: [],
       sourceError: null,
     };
   }
@@ -623,6 +662,7 @@ export async function loadThemePackages(): Promise<ThemePackageLoadResult> {
       shaders: [],
       animations: [],
       directory,
+      warnings: [],
       sourceError: String(error),
     };
   }

@@ -2,62 +2,46 @@
 
 ## Current Status
 
-- Team 4 validated the newer screenshot-library deletion slice and did not reproduce a product defect in that workflow.
-- Core Source logic also remains green under targeted unit, build, and native Rust verification.
-- Team 4 tightened the dedicated FileExplorer repository-picker browser proof, but that browser file still hangs and is not yet a reliable live-validation signal.
-- The highest remaining Delta risk is now a still-open browser-proof blocker for the real FileExplorer picker path, plus runtime validation gaps for newer screenshot-library operations.
+- Team 3 finished the missing screenshot-settings workflow that had existed only as store/config data.
+- OverlayTerm now has a dedicated screenshot settings surface for save path, default capture mode, default output action, preview grid, and post-save library-return behavior.
+- Focused regression coverage is green, and the production build is green again in the current tree.
+- The latest Delta work is ready for validator/runtime proof rather than more builder scaffolding.
 
-## Files Reviewed Or Changed
+## Files Changed
 
-- `M:\OverlayTerm\src\components\FileExplorer.tsx`
-- `M:\OverlayTerm\src\components\ScreenshotsManager.tsx`
-- `M:\OverlayTerm\src\test\browser.setup.ts`
-- `M:\OverlayTerm\src\test\browser\animationRuntime.browser.test.tsx`
+- `M:\OverlayTerm\src\App.tsx`
+- `M:\OverlayTerm\src\components\SettingsPage.tsx`
 - `M:\OverlayTerm\src\test\browser\fileExplorer.repositoryPicker.browser.test.tsx`
-- `M:\OverlayTerm\src\test\browser\shaderRuntime.browser.test.tsx`
-- `M:\OverlayTerm\src\test\gitManager.behavior.test.tsx`
-- `M:\OverlayTerm\src\test\panelRegistry.test.tsx`
-- `M:\OverlayTerm\src\test\repositoryPickerState.test.ts`
+- `M:\OverlayTerm\src\test\fileExplorer.searchTelemetry.test.tsx`
 - `M:\OverlayTerm\src\test\screenshotsManager.test.tsx`
-- `M:\OverlayTerm\src\test\sourceRepositoryImportFlow.integration.test.tsx`
-- `M:\OverlayTerm\src\test\setup.tsx`
-- `M:\OverlayTerm\src-tauri\src\fs_commands.rs`
+- `M:\OverlayTerm\src\test\settingsPage.behavior.test.tsx`
 
 ## Verification
 
-- Passed: `npm run test:unit -- src/test/repositoryPickerState.test.ts src/test/gitManager.behavior.test.tsx src/test/sourceRepositoryImportFlow.integration.test.tsx src/test/panelRegistry.test.tsx`
-- Passed: `npm run test:unit -- src/test/screenshotsManager.test.tsx`
-- Passed: `npx vitest run --config vitest.browser.config.ts src/test/browser/animationRuntime.browser.test.tsx --reporter=verbose`
-- Passed: `npx vitest run --config vitest.browser.config.ts src/test/browser/shaderRuntime.browser.test.tsx --reporter=verbose`
+- Passed: `npm run test:unit -- src/test/settingsPage.behavior.test.tsx src/test/screenshotsManager.test.tsx`
 - Passed: `npm run build`
-- Passed: `$env:CARGO_TARGET_DIR='M:\OverlayTerm\src-tauri\target-tests-delta-team-4'; cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml list_dir_`
-- Passed: `$env:CARGO_TARGET_DIR='M:\OverlayTerm\src-tauri\target-tests-delta-team-4'; cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml search_entries_`
-- Failed by timeout: `npx vitest run --config vitest.browser.config.ts src/test/browser/fileExplorer.repositoryPicker.browser.test.tsx --reporter=verbose`
 
 ## Exact Findings
 
-- Fixed: `src/test/browser/fileExplorer.repositoryPicker.browser.test.tsx` no longer depends on an exact full-paragraph text node match for the current-folder fallback banner, which was brittle against the real rendered DOM.
-- Fixed: the same browser test now uses direct `fireEvent` clicks and explicitly unmounts `FileExplorer` after each case instead of leaving teardown to implicit timing.
-- Fixed: `src/test/browser.setup.ts` now performs explicit RTL `cleanup()` after each browser suite, which is durable hygiene for heavyweight mounted components.
-- Reconfirmed: targeted unit coverage still passes for repository-picker helpers, App-to-Source import handoff, panel wiring, conflict-aware Source actions, unborn-repo discard fallback, and the new screenshot-library delete flow.
-- Reconfirmed: production build still succeeds, and the targeted `list_dir_` plus `search_entries_` Explorer Rust suites remain green under the isolated Cargo target directory.
-- Reconfirmed: browser-mode Vitest itself still works because the animation and shader browser suites pass cleanly.
-- Blocker: the dedicated FileExplorer repository-picker browser file still hangs and times out even after stale process cleanup, explicit browser cleanup, and explicit unmounts. This currently looks like a FileExplorer-path browser open-handle leak rather than a reproduced Source workflow bug.
-- Validator note: `src/test/screenshotsManager.test.tsx` passes, but jsdom still prints `HTMLCanvasElement.getContext()` not implemented warnings because the test environment does not provide a real canvas implementation. That warning did not invalidate the new delete-library coverage.
+- Fixed: screenshot defaults are no longer stranded in config/store only; operators can now change them from `Settings > Screenshots`.
+- Fixed: the overview workflow card for `Screenshots + Proof` now lands on screenshot settings instead of unrelated hotkey controls.
+- Reconfirmed: the current screenshot manager honors monitor-first/save defaults from persisted settings under focused unit coverage.
+- Fixed for verification: restored the existing `themePackagesWarnings` contract and plugin fallback diagnostics shape so `tsc` and the production build complete in this worktree.
+- Fixed for verification: widened two test-only `invoke` mock signatures so the current TypeScript build no longer fails on over-narrow mock parameter typing.
+- Validator note: jsdom still emits the expected `HTMLCanvasElement.getContext()` warning when `ScreenshotsManager` mounts, but the focused screenshot tests still pass because they validate settings/save flow and library behavior rather than canvas rendering fidelity.
 
 ## Release Impact
 
-- Delta did not uncover a new product regression in the latest Source or screenshot slices.
-- Browser-test hygiene is better, so future FileExplorer browser validation has a cleaner baseline.
-- Release risk remains because the intended live picker proof is still unstable, and the newly completed screenshot-library delete workflow still lacks a real running-app validation pass.
+- Delta materially improved screenshot release readiness by turning default capture behavior into a real configurable workflow instead of hardcoded behavior.
+- First-run operator guidance is better because the screenshot workflow now has an obvious settings home in the app.
+- The build being green again removes a verification bottleneck for the next validator pass.
 
 ## Remaining Blockers
 
-- `src/test/browser/fileExplorer.repositoryPicker.browser.test.tsx` is still not a stable browser-proof signal because the Vitest browser runner hangs instead of exiting cleanly.
-- Screenshot-library delete/reveal/open behavior still lacks live running-app validation against real saved images.
-- The conflicted-file actions in Source still lack a direct browser/running-app proof on a real repository.
-- Product framing and operator-facing release documentation remain underdeveloped outside the validated slices.
+- Screenshot settings still need live Tauri validation against real captures, especially save-directory changes and the post-save library handoff.
+- The long-standing browser proof blocker for `src/test/browser/fileExplorer.repositoryPicker.browser.test.tsx` still exists as a separate Source-validation issue; Team 3 did not re-open that workflow beyond the type-signature fix needed for `tsc`.
+- Product framing and cross-panel runtime validation still need follow-through beyond unit/build coverage.
 
 ## Single Best Next Step For Delta Team 4
 
-- Isolate the open handle in the FileExplorer browser path by temporarily bisecting mount-time effects and mocks in `src/test/browser/fileExplorer.repositoryPicker.browser.test.tsx`, starting with drag-drop listener registration, entry-size watch/unwatch, and other async FileExplorer startup effects, until the browser runner exits cleanly after a passing picker test.
+- Run a live Tauri validation of the new screenshot settings slice: set a non-default save folder, switch to full-monitor default, confirm the composition grid appears, save a real capture, and verify the tool returns to the library with the new file visible.

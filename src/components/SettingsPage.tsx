@@ -111,6 +111,10 @@ function clampThemeDescription(text: string | undefined): string | null {
   return trimmed.length > 120 ? `${trimmed.slice(0, 117)}...` : trimmed;
 }
 
+function getThemePackageSourceBadgeLabel(sourceKind: LoadedOverlayThemePackage['sourceKind']): string {
+  return sourceKind === 'plugin-package' ? 'Plugin Package' : 'Theme Folder';
+}
+
 function ColorToken({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
     <label className="flex flex-col gap-1 rounded border border-white/8 bg-white/[0.03] p-2">
@@ -406,6 +410,7 @@ export function SettingsPage({
   themePackagesDirectory,
   themePackagesLoading,
   themePackagesError,
+  themePackagesWarnings,
   onRefreshThemes,
   onOpenThemesFolder,
   shaders,
@@ -428,6 +433,7 @@ export function SettingsPage({
   themePackagesDirectory: string;
   themePackagesLoading: boolean;
   themePackagesError: string | null;
+  themePackagesWarnings: string[];
   onRefreshThemes: () => Promise<void>;
   onOpenThemesFolder: () => Promise<void>;
   shaders: LoadedOverlayShader[];
@@ -1336,6 +1342,17 @@ export function SettingsPage({
                     Theme package scan failed: {themePackagesError}
                   </div>
                 )}
+
+                {themePackagesWarnings.length > 0 && (
+                  <div className="mt-3 rounded border px-3 py-3 text-[11px]" style={{ borderColor: '#854d0e', background: 'rgba(133,77,14,0.18)', color: '#fde68a' }}>
+                    <div className="font-semibold uppercase tracking-[0.12em]">Package warnings</div>
+                    <div className="mt-2 space-y-1.5">
+                      {themePackagesWarnings.map(warning => (
+                        <div key={warning}>{warning}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-1.5">
@@ -1373,7 +1390,11 @@ export function SettingsPage({
                           }}
                         >
                           <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-2">
-                            <ThemeBadge label={getThemeSourceLabel(themeOption)} active={active} />
+                            <div className="flex items-center gap-1">
+                              <ThemeBadge label={getThemeSourceLabel(themeOption)} active={active} />
+                              {packageInfo ? <ThemeBadge label={getThemePackageSourceBadgeLabel(packageInfo.sourceKind)} active={active} /> : null}
+                              {packageInfo?.warnings.length ? <ThemeBadge label={`Warnings ${packageInfo.warnings.length}`} /> : null}
+                            </div>
                             {packageInfo ? (
                               <div className="flex items-center gap-1">
                                 <ThemeBadge label={`v${packageInfo.version}`} active={active} />
@@ -1392,6 +1413,12 @@ export function SettingsPage({
                         <div className="space-y-2 px-3 py-3">
                           <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.12em] opacity-55">
                             <span>{themeOption.id}</span>
+                            {packageInfo?.sourceLabel ? (
+                              <>
+                                <span aria-hidden="true">•</span>
+                                <span>{packageInfo.sourceLabel}</span>
+                              </>
+                            ) : null}
                             {packageInfo?.homepage ? <span>• {packageInfo.homepage.replace(/^https?:\/\//, '').replace(/\/$/, '')}</span> : null}
                           </div>
                           {description ? (
@@ -1410,6 +1437,13 @@ export function SettingsPage({
                               <ThemeBadge key={`${themeOption.id}-tag-${tag}`} label={tag} />
                             ))}
                           </div>
+                          {packageInfo?.warnings.length ? (
+                            <div className="rounded border px-2.5 py-2 text-[10px] leading-4" style={{ borderColor: 'rgba(245,158,11,0.32)', background: 'rgba(245,158,11,0.12)', color: '#fde68a' }}>
+                              {packageInfo.warnings.map(warning => (
+                                <div key={`${themeOption.id}-${warning}`}>{warning}</div>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
                       </button>
                     );

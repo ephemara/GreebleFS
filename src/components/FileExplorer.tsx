@@ -2306,6 +2306,15 @@ export function FileExplorer({
   }, []);
 
   useEffect(() => {
+    if (repositoryPicker?.active) {
+      if (previewWarmupTimerRef.current != null) {
+        window.clearTimeout(previewWarmupTimerRef.current);
+        previewWarmupTimerRef.current = null;
+      }
+      previewWarmupStartedRef.current = false;
+      return;
+    }
+
     if (previewWarmupStartedRef.current) {
       return;
     }
@@ -2324,7 +2333,7 @@ export function FileExplorer({
       }
       previewWarmupStartedRef.current = false;
     };
-  }, []);
+  }, [repositoryPicker?.active]);
 
   const virtualizedViewportWidth = explorerViewportMetrics.clientWidth;
   const virtualizedViewportHeight = explorerViewportMetrics.clientHeight;

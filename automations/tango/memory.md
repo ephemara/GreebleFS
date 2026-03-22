@@ -208,3 +208,18 @@
   - Durable lane rules:
     - Search telemetry comparisons should prefer backend-reported execution strategy and content-cache status over timing-only inference.
     - Over-budget content search remains intentionally uncached; validator evidence should now confirm that via `explorerSearchContentCacheStatus='over_budget_fallback'` in the recorded search sample.
+- Run 2026-03-22 15:58:10 -04:00: Team 2 validated the search-diagnostics telemetry slice and tightened frontend evidence around the persisted explorer search sample.
+  - Exact validator finding: no new production defect reproduced in the latest `fs_search_entries_with_diagnostics` plumbing, but the lane lacked end-to-end proof that a real `FileExplorer` search sample persisted both the runtime cache-policy fingerprint and the backend diagnostic fields together.
+  - Tightening landed:
+    - Added `src/test/fileExplorer.searchTelemetry.test.tsx`, which mounts `FileExplorer`, triggers a search, and proves the stored `explorer_search` sample carries `runtimeCachePolicy*` metadata plus the `explorerSearch*` diagnostics from the backend response.
+    - Updated `src/test/browser/fileExplorer.repositoryPicker.browser.test.tsx` to mock `fs_get_runtime_cache_policy`, keeping the repository-picker/browser path aligned with the new explorer startup IPC.
+  - Validator verification completed:
+    - `CARGO_TARGET_DIR=M:\OverlayTerm\src-tauri\target-tests-tango-team-2 cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml fs_commands::tests -- --nocapture`
+    - `npx vitest run src/test/fileExplorer.searchTelemetry.test.tsx --reporter=verbose`
+    - `npm run test:unit -- src/test/runtimeCachePolicy.test.ts src/test/searchTelemetry.test.ts`
+    - `npm run build`
+  - Verification blocker:
+    - `npx vitest run --config vitest.browser.config.ts src/test/browser/fileExplorer.repositoryPicker.browser.test.tsx --reporter=verbose` still hung beyond the 180-second timeout without producing per-test output, so browser-run validator coverage is still not dependable.
+  - Durable lane rules:
+    - For telemetry slices, keep one focused test that validates the persisted performance sample shape through the actual explorer component; mapper-only tests are not enough by themselves.
+    - Browser validator commands that stall without returning a test result are release-risk signal, not noise, because they block the real-workspace explorer smoke the lane still needs.

@@ -64,6 +64,7 @@ export function createBuiltInPanelDefinitions({
   themePackagesDirectory,
   themePackagesLoading,
   themePackagesError,
+  themePackagesWarnings,
   onRefreshThemes,
   onOpenThemesFolder,
   shaders,
@@ -104,6 +105,7 @@ export function createBuiltInPanelDefinitions({
   themePackagesDirectory: string;
   themePackagesLoading: boolean;
   themePackagesError: string | null;
+  themePackagesWarnings: string[];
   onRefreshThemes: () => Promise<void>;
   onOpenThemesFolder: () => Promise<void>;
   shaders: LoadedOverlayShader[];
@@ -219,6 +221,7 @@ export function createBuiltInPanelDefinitions({
           themePackagesDirectory={themePackagesDirectory}
           themePackagesLoading={themePackagesLoading}
           themePackagesError={themePackagesError}
+          themePackagesWarnings={themePackagesWarnings}
           onRefreshThemes={onRefreshThemes}
           onOpenThemesFolder={onOpenThemesFolder}
           shaders={shaders}

@@ -155,7 +155,7 @@ describe('ScreenshotsManager', () => {
     expect(screen.getByText(screenshot.name)).toBeInTheDocument();
   });
 
-  it('uses screenshot defaults for monitor-first saves and returns to the library after saving', async () => {
+  it('uses screenshot defaults for monitor-first save actions and returns to the library after saving', async () => {
     const user = userEvent.setup();
     const invokeMock = vi.mocked(invoke);
     const savedScreenshot = makeGalleryEntry('overlayterm-shot-monitor.png');
@@ -207,8 +207,9 @@ describe('ScreenshotsManager', () => {
     render(<ScreenshotsManager />);
 
     expect(await screen.findByTestId('screenshot-grid')).toBeInTheDocument();
+    expect(screen.getByText('Full monitor is the default capture, or drag to switch to area snip:')).toBeInTheDocument();
 
-    const saveButton = await screen.findByRole('button', { name: /^Save$/i });
+    const saveButton = await screen.findByRole('button', { name: /^Save Screen$/i });
     await user.click(saveButton);
 
     await waitFor(() => {

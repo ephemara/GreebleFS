@@ -6,6 +6,9 @@ export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
     include: [
+      '@tauri-apps/api/event',
+      '@tauri-apps/plugin-global-shortcut',
+      '@tauri-apps/plugin-store',
       '@monaco-editor/react',
       '@testing-library/user-event',
       'smol-toml',

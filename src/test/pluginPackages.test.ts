@@ -160,8 +160,16 @@ describe('plugin package discovery', () => {
 
     expect(result.warnings).toEqual([]);
     expect(result.plugins.map(plugin => plugin.name)).toEqual(['Hello Panel', 'Mega Plugin']);
+    expect(result.plugins[0]?.diagnostics.sourceKind).toBe('file-plugin');
+    expect(result.plugins[1]?.diagnostics.sourceKind).toBe('package-plugin');
+    expect(result.plugins[1]?.diagnostics.manifestPath?.replace(/\\/g, '/')).toBe('plugins/mega-plugin/plugin.json');
+    expect(result.plugins[1]?.diagnostics.capabilities.themes).toBe(1);
+    expect(result.plugins[1]?.diagnostics.capabilities.shaders).toBe(1);
+    expect(result.plugins[1]?.diagnostics.capabilities.commands).toBe(1);
     expect(result.themePackages).toHaveLength(1);
     expect(result.themePackages[0]?.theme.id).toBe('cobalt-plugin-theme');
+    expect(result.themePackages[0]?.sourceKind).toBe('plugin-package');
+    expect(result.themePackages[0]?.sourceLabel).toBe('Mega Plugin');
     expect(result.shaders).toHaveLength(1);
     expect(result.shaders[0]?.name).toBe('Plugin Halo');
     expect(result.fonts).toHaveLength(1);
