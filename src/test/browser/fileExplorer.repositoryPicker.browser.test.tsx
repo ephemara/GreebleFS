@@ -53,6 +53,18 @@ const EXPLORER_ENTRIES: TestFileEntry[] = [
   },
 ];
 
+function buildEntrySizeResults(paths: string[]) {
+  return paths.map(path => {
+    const matchingEntry = EXPLORER_ENTRIES.find(entry => entry.path === path);
+    return {
+      path,
+      bytes: matchingEntry?.size ?? 0,
+      is_dir: matchingEntry?.is_dir ?? false,
+      is_complete: true,
+    };
+  });
+}
+
 function renderRepositoryPicker(options?: {
   allowMultiple?: boolean;
   requestId?: number;
@@ -96,16 +108,27 @@ describe('FileExplorer repository picker browser coverage', () => {
     useExplorerStore.getState().clearPersistenceNotice();
 
     vi.mocked(invoke).mockReset();
-    vi.mocked(invoke).mockImplementation(async (command: string) => {
+    vi.mocked(invoke).mockImplementation(async (command: string, args?: { paths?: string[] }) => {
       switch (command) {
         case 'fs_get_drives':
           return [];
         case 'fs_get_home_dir':
           return REPO_ROOT;
+        case 'fs_get_runtime_cache_policy':
+          return {
+            dirListCacheTtlMs: 2000,
+            searchNameIndexCacheTtlMs: 1500,
+            searchContentIndexCacheTtlMs: 1000,
+            entrySizeCacheTtlMs: 10000,
+            entrySizeScanBudgetMs: 900,
+            searchContentIndexTotalBytesBudget: 12 * 1024 * 1024,
+            maxSearchContentFileBytes: 8 * 1024 * 1024,
+          };
         case 'fs_list_dir':
         case 'fs_list_dir_uncached':
           return EXPLORER_ENTRIES;
         case 'fs_measure_entry_sizes':
+          return buildEntrySizeResults(args?.paths ?? []);
         case 'fs_resolve_native_icons':
         case 'fs_search_entries':
           return [];

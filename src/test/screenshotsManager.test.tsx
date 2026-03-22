@@ -10,6 +10,7 @@ import {
 import type { Monitor as TauriMonitor } from '@tauri-apps/api/window';
 import { ScreenshotsManager } from '../components/ScreenshotsManager';
 import { screenshotFeatureConfig } from '../config/screenshots';
+import { useSettingsStore } from '../store/settingsStore';
 
 const DEFAULT_MONITOR = {
   name: 'Primary Display',
@@ -37,6 +38,7 @@ function makeGalleryEntry(name: string) {
 
 describe('ScreenshotsManager', () => {
   beforeEach(() => {
+    useSettingsStore.getState().resetToDefaults();
     vi.mocked(invoke).mockReset();
     vi.mocked(availableMonitors).mockResolvedValue([DEFAULT_MONITOR]);
     vi.mocked(currentMonitor).mockResolvedValue(DEFAULT_MONITOR);
@@ -49,6 +51,21 @@ describe('ScreenshotsManager', () => {
         observe() {}
         disconnect() {}
       },
+    });
+
+    Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: 960,
+        bottom: 540,
+        width: 960,
+        height: 540,
+        toJSON: () => ({}),
+      }),
     });
   });
 
@@ -136,5 +153,78 @@ describe('ScreenshotsManager', () => {
 
     expect(invokeMock).not.toHaveBeenCalledWith('fs_delete', expect.anything());
     expect(screen.getByText(screenshot.name)).toBeInTheDocument();
+  });
+
+  it('uses screenshot defaults for monitor-first saves and returns to the library after saving', async () => {
+    const user = userEvent.setup();
+    const invokeMock = vi.mocked(invoke);
+    const savedScreenshot = makeGalleryEntry('overlayterm-shot-monitor.png');
+    let galleryEntries = [] as ReturnType<typeof makeGalleryEntry>[];
+
+    useSettingsStore.getState().updateScreenshots({
+      defaultCaptureMode: 'monitor',
+      defaultOutputAction: 'save',
+      closeEditorAfterAction: true,
+      showGrid: true,
+    });
+
+    invokeMock.mockImplementation(async (command: string, args: unknown) => {
+      if (command === 'fs_list_dir') {
+        return galleryEntries;
+      }
+      if (command === 'screenshot_capture_preview') {
+        return {
+          captureId: 'capture-1',
+          previewUrl: 'data:image/png;base64,ZmFrZQ==',
+          imageWidth: 1920,
+          imageHeight: 1080,
+        };
+      }
+      if (command === 'screenshot_read_gallery_thumbnail') {
+        return 'data:image/png;base64,ZmFrZQ==';
+      }
+      if (command === 'screenshot_save_region') {
+        expect(args).toEqual({
+          captureId: 'capture-1',
+          x: 0,
+          y: 0,
+          width: 1920,
+          height: 1080,
+          directory: screenshotFeatureConfig.defaultSaveDirectory,
+          filePrefix: screenshotFeatureConfig.filePrefix,
+          copyToClipboard: false,
+        });
+        galleryEntries = [savedScreenshot];
+        return {
+          path: savedScreenshot.path,
+          file_name: savedScreenshot.name,
+          created_at: savedScreenshot.modified,
+        };
+      }
+      return null;
+    });
+
+    render(<ScreenshotsManager />);
+
+    expect(await screen.findByTestId('screenshot-grid')).toBeInTheDocument();
+
+    const saveButton = await screen.findByRole('button', { name: /^Save$/i });
+    await user.click(saveButton);
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('screenshot_save_region', {
+        captureId: 'capture-1',
+        x: 0,
+        y: 0,
+        width: 1920,
+        height: 1080,
+        directory: screenshotFeatureConfig.defaultSaveDirectory,
+        filePrefix: screenshotFeatureConfig.filePrefix,
+        copyToClipboard: false,
+      });
+    });
+
+    expect(await screen.findByText('Screenshot Library')).toBeInTheDocument();
+    expect(await screen.findByText(savedScreenshot.name)).toBeInTheDocument();
   });
 });

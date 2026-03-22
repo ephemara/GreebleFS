@@ -1,13 +1,9 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 
-vi.mock('@tauri-apps/api/core', () => ({
+const browserMocks = vi.hoisted(() => ({
   invoke: vi.fn().mockResolvedValue(null),
-  convertFileSrc: (path: string) => `asset://localhost/${path}`,
   isTauri: vi.fn(() => true),
-}));
-
-vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: vi.fn(() => ({
     scaleFactor: vi.fn().mockResolvedValue(1),
     setSize: vi.fn().mockResolvedValue(undefined),
@@ -28,6 +24,19 @@ vi.mock('@tauri-apps/api/window', () => ({
   }),
   PhysicalSize: vi.fn(),
   PhysicalPosition: vi.fn(),
+}));
+
+vi.mock('@tauri-apps/api/core', () => ({
+  invoke: browserMocks.invoke,
+  convertFileSrc: (path: string) => `asset://localhost/${path}`,
+  isTauri: browserMocks.isTauri,
+}));
+
+vi.mock('@tauri-apps/api/window', () => ({
+  getCurrentWindow: browserMocks.getCurrentWindow,
+  primaryMonitor: browserMocks.primaryMonitor,
+  PhysicalSize: browserMocks.PhysicalSize,
+  PhysicalPosition: browserMocks.PhysicalPosition,
 }));
 
 vi.mock('@monaco-editor/react', () => ({

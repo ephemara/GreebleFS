@@ -76,6 +76,9 @@ type SavedScreenshotPayload = {
   created_at: number;
 };
 
+type ScreenshotOutputActionId =
+  typeof screenshotFeatureConfig.outputActions[number]['id'];
+
 type MonitorCapture = {
   id: string;
   label: string;
@@ -147,6 +150,46 @@ function formatFileSize(size: number): string {
 
 function clamp(v: number, lo: number, hi: number) { return Math.min(Math.max(v, lo), hi); }
 
+function formatToolbarActionLabel(
+  action: ScreenshotOutputActionId,
+  scope: 'region' | 'monitor' | 'annotated',
+): string {
+  if (scope === 'monitor') {
+    if (action === 'copy') return 'Copy Screen';
+    if (action === 'save') return 'Save Screen';
+    return 'Save + Copy Screen';
+  }
+
+  if (scope === 'annotated') {
+    if (action === 'copy') return 'Copy Annotated';
+    if (action === 'save') return 'Save Annotated';
+    return 'Save + Copy Annotated';
+  }
+
+  if (action === 'copy') return 'Copy';
+  if (action === 'save') return 'Save';
+  return 'Save + Copy';
+}
+
+function buildGridOverlay(accent: string): React.CSSProperties {
+  const guide = `${accent}55`;
+  const guideSoft = `${accent}24`;
+  return {
+    position: 'absolute',
+    inset: 0,
+    pointerEvents: 'none',
+    backgroundImage: [
+      `linear-gradient(to right, transparent calc(33.333% - 0.5px), ${guide} calc(33.333% - 0.5px), ${guide} calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px), transparent calc(66.666% - 0.5px), ${guide} calc(66.666% - 0.5px), ${guide} calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px))`,
+      `linear-gradient(to bottom, transparent calc(33.333% - 0.5px), ${guide} calc(33.333% - 0.5px), ${guide} calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px), transparent calc(66.666% - 0.5px), ${guide} calc(66.666% - 0.5px), ${guide} calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px))`,
+      `linear-gradient(to right, ${guideSoft} 1px, transparent 1px)`,
+      `linear-gradient(to bottom, ${guideSoft} 1px, transparent 1px)`,
+    ].join(','),
+    backgroundSize: '100% 100%, 100% 100%, 32px 32px, 32px 32px',
+    mixBlendMode: 'screen',
+    opacity: 0.45,
+  };
+}
+
 // Draw annotations onto a canvas context
 function drawAnnotation(ctx: CanvasRenderingContext2D, ann: Annotation) {
   ctx.save();
@@ -209,7 +252,8 @@ function redrawCanvas(
 
 export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverlayAppearance }) {
   const accent = appearance?.theme.palette.accent ?? 'var(--overlay-accent)';
-  const screenshotDir = useSettingsStore(s => s.settings.screenshots.saveDirectory || screenshotFeatureConfig.defaultSaveDirectory);
+  const screenshotSettings = useSettingsStore(s => s.settings.screenshots);
+  const screenshotDir = screenshotSettings.saveDirectory || screenshotFeatureConfig.defaultSaveDirectory;
 
   // ── Refs ──
   // containerRef: the SINGLE coordinate origin for all pointer events and overlay children.
@@ -253,10 +297,41 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
   const [libraryWidth, setLibraryWidth] = usePersistentPanelSize('overlayterm-screenshots-library-width', 280, 220, 480);
 
   const activeMonitor = monitors.find(m => m.id === activeMonitorId) ?? null;
+  const orderedOutputActions = useCallback(() => (
+    [
+      ...screenshotFeatureConfig.outputActions,
+    ].sort((left, right) => {
+      if (left.id === screenshotSettings.defaultOutputAction) return -1;
+      if (right.id === screenshotSettings.defaultOutputAction) return 1;
+      return 0;
+    })
+  ), [screenshotSettings.defaultOutputAction]);
 
   // Keep stable refs in sync with state — these are what pointer handlers + ResizeObserver read
   useEffect(() => { annotationsRef.current = annotations; }, [annotations]);
   useEffect(() => { liveAnnotationRef.current = liveAnnotation; }, [liveAnnotation]);
+
+  const resetEditorState = useCallback(() => {
+    setSelection(null);
+    setAnnotations([]);
+    setLiveAnnotation(null);
+    liveAnnotationRef.current = null;
+    annotationsRef.current = [];
+    setTextDraft(null);
+    setTextValue('');
+    setActiveTool('select');
+  }, []);
+
+  const finishToolAction = useCallback((openLibrary: boolean) => {
+    if (!screenshotSettings.closeEditorAfterAction) {
+      return;
+    }
+
+    resetEditorState();
+    if (openLibrary) {
+      setActiveSection('library');
+    }
+  }, [resetEditorState, screenshotSettings.closeEditorAfterAction]);
 
   // ── Derived: selection in physical px ──
   const getSelectionPx = useCallback(() => {
@@ -365,6 +440,42 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
     setTextDraft(null);
     setTextValue('');
   }, [activeMonitorId]);
+
+  useLayoutEffect(() => {
+    if (screenshotSettings.defaultCaptureMode !== 'monitor' || !activeMonitor?.captureId) {
+      return;
+    }
+
+    let frameA = 0;
+    let frameB = 0;
+    frameA = window.requestAnimationFrame(() => {
+      frameB = window.requestAnimationFrame(() => {
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect || rect.width < 4 || rect.height < 4) {
+          return;
+        }
+
+        setSelection(current => {
+          const normalized = current ? normalizeSelection(current) : null;
+          if (normalized && normalized.width >= 4 && normalized.height >= 4) {
+            return current;
+          }
+
+          return {
+            x: 0,
+            y: 0,
+            width: rect.width,
+            height: rect.height,
+          };
+        });
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameA);
+      window.cancelAnimationFrame(frameB);
+    };
+  }, [activeMonitor?.captureId, screenshotSettings.defaultCaptureMode]);
 
   // ── Canvas: sync pixel dimensions to CSS layout size ──
   // Uses useLayoutEffect so dimensions are set before paint, eliminating the
@@ -525,12 +636,13 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
       });
       await loadGallery();
       setStatusMsg(copyToo ? `Saved & copied ${saved.file_name}.` : `Saved ${saved.file_name}.`);
+      finishToolAction(true);
     } catch (err) {
       setError(String(err));
     } finally {
       setIsSaving(false);
     }
-  }, [activeMonitor, selectionPx, screenshotDir, loadGallery]);
+  }, [activeMonitor, finishToolAction, selectionPx, screenshotDir, loadGallery]);
 
   const doCopy = useCallback(async () => {
     if (!activeMonitor?.captureId || !selectionPx) return;
@@ -544,12 +656,13 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
         x: norm.x, y: norm.y, width: norm.width, height: norm.height,
       });
       setStatusMsg('Copied to clipboard.');
+      finishToolAction(false);
     } catch (err) {
       setError(String(err));
     } finally {
       setIsCopying(false);
     }
-  }, [activeMonitor, selectionPx]);
+  }, [activeMonitor, finishToolAction, selectionPx]);
 
   const doFullMonitor = useCallback(async (action: 'save' | 'copy' | 'save-copy') => {
     if (!activeMonitor?.captureId) return;
@@ -560,6 +673,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
       try {
         await invoke('screenshot_copy_region_to_clipboard', { captureId: activeMonitor.captureId, x: 0, y: 0, width: w, height: h });
         setStatusMsg('Full monitor copied.');
+        finishToolAction(false);
       } catch (err) { setError(String(err)); }
       finally { setIsCopying(false); }
     } else {
@@ -575,10 +689,20 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
         });
         await loadGallery();
         setStatusMsg(`Full monitor saved${action === 'save-copy' ? ' & copied' : ''}: ${saved.file_name}.`);
+        finishToolAction(true);
       } catch (err) { setError(String(err)); }
       finally { setIsSaving(false); }
     }
-  }, [activeMonitor, screenshotDir, loadGallery]);
+  }, [activeMonitor, finishToolAction, screenshotDir, loadGallery]);
+
+  const runSelectionOutputAction = useCallback(async (action: ScreenshotOutputActionId) => {
+    if (action === 'copy') {
+      await doCopy();
+      return;
+    }
+
+    await doSave(action === 'save-copy');
+  }, [doCopy, doSave]);
 
   const copyGalleryItem = useCallback(async (item: ScreenshotItem) => {
     setCopyingPath(item.path);
@@ -619,11 +743,16 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
   const hasAnnotations = annotations.length > 0;
 
   // ── Save annotated ──
-  const doSaveAnnotated = useCallback(async (copyToo: boolean) => {
+  const runAnnotatedOutputAction = useCallback(async (action: ScreenshotOutputActionId) => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container || !activeMonitor) return;
-    setIsSaving(true);
+    setError(null);
+    if (action === 'copy') {
+      setIsCopying(true);
+    } else {
+      setIsSaving(true);
+    }
     try {
       const img = document.createElement('img');
       img.src = activeMonitor.previewUrl ?? '';
@@ -650,22 +779,37 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
         finalCanvas = crop;
       }
       const blob = await new Promise<Blob>((res, rej) => finalCanvas.toBlob(b => b ? res(b) : rej(new Error('canvas empty')), 'image/png'));
-      const buf = await blob.arrayBuffer();
-      const bytes = Array.from(new Uint8Array(buf));
-      await ensureDir(screenshotDir);
-      const ts = Date.now();
-      const fileName = `${screenshotFeatureConfig.filePrefix}-${ts}.png`;
-      const fullPath = `${screenshotDir}\\${fileName}`;
-      await invoke('fs_write_file', { path: fullPath, content: bytes });
-      if (copyToo) {
+      let fileName: string | null = null;
+
+      if (action !== 'copy') {
+        const buf = await blob.arrayBuffer();
+        const bytes = Array.from(new Uint8Array(buf));
+        await ensureDir(screenshotDir);
+        const ts = Date.now();
+        fileName = `${screenshotFeatureConfig.filePrefix}-${ts}.png`;
+        const fullPath = `${screenshotDir}\\${fileName}`;
+        await invoke('fs_write_file', { path: fullPath, content: bytes });
+      }
+
+      if (action === 'copy' || action === 'save-copy') {
         const item = new ClipboardItem({ 'image/png': blob });
         await navigator.clipboard.write([item]);
       }
-      await loadGallery();
-      setStatusMsg(`Saved annotated: ${fileName}${copyToo ? ' & copied' : ''}.`);
+      if (action !== 'copy') {
+        await loadGallery();
+      }
+      setStatusMsg(
+        action === 'copy'
+          ? 'Copied annotated selection.'
+          : `Saved annotated: ${fileName}${action === 'save-copy' ? ' & copied' : ''}.`,
+      );
+      finishToolAction(action !== 'copy');
     } catch (err) { setError(String(err)); }
-    finally { setIsSaving(false); }
-  }, [activeMonitor, annotations, screenshotDir, loadGallery, getSelectionPx]);
+    finally {
+      setIsSaving(false);
+      setIsCopying(false);
+    }
+  }, [activeMonitor, annotations, finishToolAction, screenshotDir, loadGallery, getSelectionPx]);
 
   // ─── Tool content ──────────────────────────────────────────────────────────
 
@@ -803,6 +947,10 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
               }}
             />
 
+            {screenshotSettings.showGrid && (
+              <div aria-label="Screenshot composition grid" data-testid="screenshot-grid" style={buildGridOverlay(accent)} />
+            )}
+
             {/* Annotation canvas — pixel dimensions kept in sync by useLayoutEffect */}
             <canvas
               ref={canvasRef}
@@ -884,33 +1032,61 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
       <div style={{ padding: '6px 8px', borderTop: `1px solid ${BORDER}`, background: PANEL, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         {hasSelection ? (
           <>
-            <span style={{ fontSize: 10, color: MUTED, marginRight: 2 }}>Region:</span>
-            <button type="button" onClick={() => void doCopy()} disabled={isWorking} style={btnStyle(false, accent, isWorking)}>
-              {isCopying ? <LoaderCircle size={11} className="animate-spin" /> : <Copy size={11} />} Copy
-            </button>
-            <button type="button" onClick={() => void doSave(false)} disabled={isWorking} style={btnStyle(false, accent, isWorking)}>
-              {isSaving ? <LoaderCircle size={11} className="animate-spin" /> : <Save size={11} />} Save
-            </button>
-            <button type="button" onClick={() => void doSave(true)} disabled={isWorking} style={btnStyle(true, accent, isWorking)}>
-              {isSaving ? <LoaderCircle size={11} className="animate-spin" /> : <Check size={11} />} Save+Copy
-            </button>
-            {hasAnnotations && (
-              <button type="button" onClick={() => void doSaveAnnotated(true)} disabled={isWorking} style={btnStyle(true, accent, isWorking)}>
-                <Check size={11} /> Save Annotated
-              </button>
-            )}
+            <span style={{ fontSize: 10, color: MUTED, marginRight: 2 }}>{hasAnnotations ? 'Annotated selection:' : 'Selection:'}</span>
+            {orderedOutputActions().map(action => {
+              const primary = action.id === screenshotSettings.defaultOutputAction;
+              const label = formatToolbarActionLabel(action.id, hasAnnotations ? 'annotated' : 'region');
+
+              return (
+                <button
+                  key={`selection-${action.id}`}
+                  type="button"
+                  onClick={() => void (hasAnnotations ? runAnnotatedOutputAction(action.id) : runSelectionOutputAction(action.id))}
+                  disabled={isWorking}
+                  style={btnStyle(primary, accent, isWorking)}
+                >
+                  {(isSaving || isCopying) && primary
+                    ? <LoaderCircle size={11} className="animate-spin" />
+                    : action.id === 'copy'
+                      ? <Copy size={11} />
+                      : action.id === 'save'
+                        ? <Save size={11} />
+                        : <Check size={11} />}
+                  {label}
+                </button>
+              );
+            })}
             <div style={{ flex: 1 }} />
             <button type="button" onClick={() => setSelection(null)} style={btnStyle(false, accent)}>✕ Clear</button>
           </>
         ) : activeMonitor?.captureId ? (
           <>
-            <span style={{ fontSize: 10, color: MUTED }}>Draw a selection, or:</span>
-            <button type="button" onClick={() => void doFullMonitor('copy')} disabled={isWorking} style={btnStyle(false, accent, isWorking)}>
-              <Copy size={11} /> Copy Screen
-            </button>
-            <button type="button" onClick={() => void doFullMonitor('save-copy')} disabled={isWorking} style={btnStyle(true, accent, isWorking)}>
-              <Maximize2 size={11} /> Full Screen
-            </button>
+            <span style={{ fontSize: 10, color: MUTED }}>
+              {screenshotSettings.defaultCaptureMode === 'monitor'
+                ? 'Full monitor is the default capture, or drag to switch to area snip:'
+                : 'Draw a selection, or use the full monitor:'}
+            </span>
+            {orderedOutputActions().map(action => {
+              const primary = action.id === screenshotSettings.defaultOutputAction;
+              return (
+                <button
+                  key={`monitor-${action.id}`}
+                  type="button"
+                  onClick={() => void doFullMonitor(action.id)}
+                  disabled={isWorking}
+                  style={btnStyle(primary, accent, isWorking)}
+                >
+                  {(isSaving || isCopying) && primary
+                    ? <LoaderCircle size={11} className="animate-spin" />
+                    : action.id === 'copy'
+                      ? <Copy size={11} />
+                      : action.id === 'save'
+                        ? <Save size={11} />
+                        : <Maximize2 size={11} />}
+                  {formatToolbarActionLabel(action.id, 'monitor')}
+                </button>
+              );
+            })}
           </>
         ) : (
           <span style={{ fontSize: 10, color: MUTED }}>Capture a display to begin.</span>

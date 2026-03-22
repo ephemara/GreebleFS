@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
@@ -8,6 +8,7 @@ import { createBuiltInOverlayShaders } from '../components/shaderRuntime';
 import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/appearance';
 import { createDefaultFolderIconRules } from '../config/folderIcons';
 import { pluginSystemConfig } from '../config/plugins';
+import { screenshotFeatureConfig } from '../config/screenshots';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTerminalStore } from '../store/terminalStore';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
@@ -243,6 +244,40 @@ describe('SettingsPage behavior', () => {
     expect(useSettingsStore.getState().settings.keybindings.terminalToggle).toBe('Ctrl+Space');
   }, 30000);
 
+  it('surfaces screenshot defaults in settings and opens the configured save folder', async () => {
+    const user = userEvent.setup();
+    const invokeMock = vi.mocked(invoke);
+    const screenshotDir = 'D:\\Proofs\\OverlayTerm';
+
+    invokeMock.mockImplementation(async () => []);
+
+    renderSettingsPage();
+
+    await user.click(findSectionButton('Screenshots'));
+
+    expect(screen.getByText('Proof Capture Defaults')).toBeInTheDocument();
+
+    const saveDirectoryInput = screen.getByDisplayValue(screenshotFeatureConfig.defaultSaveDirectory);
+    fireEvent.change(saveDirectoryInput, { target: { value: screenshotDir } });
+
+    await user.click(screen.getByRole('button', { name: /Full Monitor/i }));
+    await user.click(screen.getByRole('button', { name: /^Copy\s/i }));
+    await user.click(screen.getByRole('checkbox', { name: 'Show composition grid' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Jump back to the library after save actions' }));
+
+    expect(useSettingsStore.getState().settings.screenshots.saveDirectory).toBe(screenshotDir);
+    expect(useSettingsStore.getState().settings.screenshots.defaultCaptureMode).toBe('monitor');
+    expect(useSettingsStore.getState().settings.screenshots.defaultOutputAction).toBe('copy');
+    expect(useSettingsStore.getState().settings.screenshots.showGrid).toBe(false);
+    expect(useSettingsStore.getState().settings.screenshots.closeEditorAfterAction).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: 'Open Save Folder' }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('fs_open_file', { path: screenshotDir });
+    });
+  }, 30000);
+
   it('renders packaged theme preview metadata and badges in the picker', async () => {
     const packageTheme = normalizeThemeDefinition({
       id: 'vista-glass',
@@ -286,8 +321,10 @@ describe('SettingsPage behavior', () => {
       }],
     });
 
-    expect(screen.getByText('Vista Glass')).toBeInTheDocument();
-    expect(screen.getByText('OverlayTerm Labs')).toBeInTheDocument();
+    await userEvent.setup().click(findSectionButton('Appearance'));
+
+    expect(await screen.findByText('Vista Glass')).toBeInTheDocument();
+    expect(screen.getAllByText('OverlayTerm Labs')[0]).toBeInTheDocument();
     expect(screen.getByText('v2')).toBeInTheDocument();
     expect(screen.getByText('Shaders 1')).toBeInTheDocument();
     expect(screen.getByText('Motion 1')).toBeInTheDocument();
@@ -345,7 +382,8 @@ describe('SettingsPage behavior', () => {
       }],
     });
 
-    await user.click(screen.getByRole('button', { name: /Vista Glass/i }));
+    await user.click(findSectionButton('Appearance'));
+    await user.click((await screen.findByText('Vista Glass')).closest('button') as HTMLButtonElement);
 
     const appearanceSettings = useSettingsStore.getState().settings.appearance;
     expect(appearanceSettings.activeThemeId).toBe('vista-glass');

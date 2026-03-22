@@ -68,7 +68,7 @@ import {
   normalizeKeybindingValue,
   type HotkeyBindingKey,
 } from '../config/hotkeys';
-import { screenshotFeatureConfig } from '../config/screenshots';
+import { screenshotFeatureConfig, type ScreenshotOutputActionId } from '../config/screenshots';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTerminalStore } from '../store/terminalStore';
 
@@ -290,6 +290,7 @@ type SettingsSectionKey =
   | 'animations'
   | 'terminal'
   | 'explorer'
+  | 'screenshots'
   | 'layouts'
   | 'hotkeys'
   | 'system'
@@ -351,6 +352,14 @@ function SettingsRailButton({
       </div>
     </button>
   );
+}
+
+function formatScreenshotOutputActionLabel(action: ScreenshotOutputActionId): string {
+  if (action === 'save-copy') {
+    return 'Save + Copy';
+  }
+
+  return action === 'save' ? 'Save' : 'Copy';
 }
 
 function OverviewCard({
@@ -449,6 +458,7 @@ export function SettingsPage({
   const updateAppearance = useSettingsStore(s => s.updateAppearance);
   const updateLayout = useSettingsStore(s => s.updateLayout);
   const updateKeybindings = useSettingsStore(s => s.updateKeybindings);
+  const updateScreenshots = useSettingsStore(s => s.updateScreenshots);
   const updateSystem = useSettingsStore(s => s.updateSystem);
   const resetToDefaults = useSettingsStore(s => s.resetToDefaults);
   const { directoryBookmarks, addDirectoryBookmark } = useTerminalStore();
@@ -795,8 +805,8 @@ export function SettingsPage({
       icon: <Camera size={13} />,
       title: 'Screenshots + Proof',
       description: 'Capture the current desktop, annotate details, and save or copy release proof from the built-in screenshot workflow.',
-      actionLabel: 'Hotkeys',
-      action: () => setActiveSection('hotkeys'),
+      actionLabel: 'Screenshot Settings',
+      action: () => setActiveSection('screenshots'),
     },
   ], []);
   const workspaceRoots = useMemo(() => [
@@ -998,6 +1008,14 @@ export function SettingsPage({
       summary: `${settings.explorer.folderClickMode === 'single' ? 'Single-click folders' : 'Double-click folders'} · ${settings.explorer.folderIconRules.length} icon rules`,
       detail: 'Shape the file browser around your machine, including startup path, folder activation behavior, and icon rules.',
       icon: <FolderOpen size={14} />,
+    },
+    {
+      key: 'screenshots',
+      label: 'Screenshots',
+      subtitle: 'Capture defaults, save path, and proof-focused editor behavior.',
+      summary: `${settings.screenshots.defaultCaptureMode === 'monitor' ? 'Full monitor default' : 'Area snip default'} · ${formatScreenshotOutputActionLabel(settings.screenshots.defaultOutputAction)} · ${settings.screenshots.showGrid ? 'Grid on' : 'Grid off'}`,
+      detail: 'Set the default screenshot landing path and decide how the built-in capture tool behaves before and after a proof action.',
+      icon: <Camera size={14} />,
     },
     {
       key: 'layouts',
@@ -2551,6 +2569,160 @@ export function SettingsPage({
               </button>
             </div>
           </section>
+            )}
+
+            {activeSection === 'screenshots' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                <SectionTitle
+                  icon={<Camera size={12} />}
+                  title="Screenshots"
+                  subtitle="Default capture behavior, save path, and proof-session polish for the built-in screenshot workflow."
+                />
+
+                <div className="mt-4 space-y-4">
+                  <div className="rounded border p-3" style={{ borderColor: `${accent}44`, background: `${accent}0d` }}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="max-w-[720px]">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: muted }}>Proof Capture Defaults</div>
+                        <p className="mt-1 text-[11px] leading-5" style={{ color: muted }}>
+                          The Screenshots panel now follows these defaults directly. Pick whether a fresh capture opens as an area snip or a full-screen proof pass, choose the primary output action, and decide whether the tool clears back to the library after a save.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-[0.12em]">
+                        <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                          {settings.screenshots.defaultCaptureMode === 'monitor' ? 'Full Monitor Default' : 'Area Snip Default'}
+                        </span>
+                        <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                          {formatScreenshotOutputActionLabel(settings.screenshots.defaultOutputAction)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Save Directory</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          Every saved or annotated capture lands here. The Settings overview and the Screenshots panel both read from this same path.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void openWorkspaceDirectory('Screenshots', settings.screenshots.saveDirectory || screenshotFeatureConfig.defaultSaveDirectory)}
+                          className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                          style={{ border: `1px solid ${accent}55`, background: `${accent}16`, color: text }}
+                        >
+                          Open Save Folder
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateScreenshots({ saveDirectory: screenshotFeatureConfig.defaultSaveDirectory })}
+                          className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                          style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                        >
+                          Reset Directory
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 space-y-1.5">
+                      <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Folder Path</label>
+                      <input
+                        value={settings.screenshots.saveDirectory}
+                        onChange={event => updateScreenshots({ saveDirectory: event.target.value })}
+                        className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                        style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text, fontFamily: appearance.fonts.mono }}
+                      />
+                      <p className="text-[11px] opacity-40">OverlayTerm creates the folder on demand before the first saved capture.</p>
+                    </div>
+                  </div>
+
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Default Capture Mode</div>
+                      <p className="mt-1 text-[11px] opacity-40">
+                        This sets how a fresh monitor preview behaves before the operator does anything else in the screenshot tool.
+                      </p>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                      {screenshotFeatureConfig.captureModes.map(mode => {
+                        const active = settings.screenshots.defaultCaptureMode === mode.id;
+                        return (
+                          <button
+                            key={mode.id}
+                            type="button"
+                            onClick={() => updateScreenshots({ defaultCaptureMode: mode.id })}
+                            className="rounded px-3 py-3 text-left transition-colors"
+                            style={{
+                              border: `1px solid ${active ? accent : border}`,
+                              background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                              color: text,
+                            }}
+                          >
+                            <div className="text-[11px] font-semibold">{mode.label}</div>
+                            <p className="mt-1 text-[11px] opacity-45">{mode.description}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Default Output Action</div>
+                      <p className="mt-1 text-[11px] opacity-40">
+                        The screenshot toolbar promotes this action first for both region captures and full-monitor proof runs.
+                      </p>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+                      {screenshotFeatureConfig.outputActions.map(action => {
+                        const active = settings.screenshots.defaultOutputAction === action.id;
+                        return (
+                          <button
+                            key={action.id}
+                            type="button"
+                            onClick={() => updateScreenshots({ defaultOutputAction: action.id })}
+                            className="rounded px-3 py-3 text-left transition-colors"
+                            style={{
+                              border: `1px solid ${active ? accent : border}`,
+                              background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                              color: text,
+                            }}
+                          >
+                            <div className="text-[11px] font-semibold">{formatScreenshotOutputActionLabel(action.id)}</div>
+                            <p className="mt-1 text-[11px] opacity-45">{action.description}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2">
+                    <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                      <span>Show composition grid over the capture preview</span>
+                      <input
+                        type="checkbox"
+                        aria-label="Show composition grid"
+                        checked={settings.screenshots.showGrid}
+                        onChange={event => updateScreenshots({ showGrid: event.target.checked })}
+                      />
+                    </label>
+                    <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                      <span>Jump back to the library after save actions</span>
+                      <input
+                        type="checkbox"
+                        aria-label="Jump back to the library after save actions"
+                        checked={settings.screenshots.closeEditorAfterAction}
+                        onChange={event => updateScreenshots({ closeEditorAfterAction: event.target.checked })}
+                      />
+                    </label>
+                  </div>
+                </div>
+              </section>
             )}
 
             {activeSection === 'theme-json' && (
