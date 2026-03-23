@@ -13,10 +13,11 @@ import React, {
 } from 'react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { useShallow } from 'zustand/react/shallow';
 import type { EditorProps as MonacoEditorProps } from '@monaco-editor/react';
 import {
   ChevronRight, ChevronLeft, ArrowUp, Search, RefreshCw,
-  Grid, List, X, Star, StarOff, Terminal,
+  X, Star, StarOff, Terminal,
   Trash2, Copy, Scissors, Clipboard, Edit3, ExternalLink,
   Shield, Eye, AlertTriangle, Loader, Puzzle,
   FilePlus, FolderPlus, CopyPlus,
@@ -27,6 +28,13 @@ import { getExplorerRailWidthBounds } from '../config/explorerRail';
 import { getFolderIconSrc } from '../config/folderIcons';
 import { getBuiltInIconTheme, resolveFileIconSrc, resolveIconSrc } from '../config/iconTheme';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
+import {
+  explorerViewModes,
+  getExplorerViewModeDefinition,
+  resolveEffectiveExplorerViewMode,
+  stepExplorerViewMode,
+  type ExplorerViewModeDefinition,
+} from '../config/explorerViewModes';
 import {
   DEFAULT_NATIVE_ICON_SIZE,
   getNativeIconCacheKey,
@@ -100,18 +108,9 @@ const LazyMonacoEditor = React.lazy(async () => {
 const EXPLORER_LIST_ROW_HEIGHT = 44;
 const EXPLORER_LIST_SEARCH_ROW_HEIGHT = 72;
 const EXPLORER_LIST_OVERSCAN = 8;
-const EXPLORER_GRID_MIN_WIDTH = 118;
-const EXPLORER_GRID_GAP = 14;
-const EXPLORER_GRID_PADDING = 18;
 const EXPLORER_GRID_OVERSCAN_ROWS = 2;
-const EXPLORER_GRID_ITEM_HEIGHT = 164;
-const EXPLORER_GRID_SEARCH_ITEM_HEIGHT = 196;
-const EXPLORER_NEW_ITEM_LIST_HEIGHT = 46;
-const EXPLORER_NEW_ITEM_GRID_HEIGHT = 164;
-const EXPLORER_GRID_ICON_SIZE = 54;
-const EXPLORER_GRID_ICON_STAGE_SIZE = 76;
-const EXPLORER_GRID_TILE_RADIUS = 12;
 const EXPLORER_SEARCH_SCOPE = 'primary_file_explorer';
+const EXPLORER_LAYOUT_WHEEL_STEP_THROTTLE_MS = 140;
 
 function getExplorerPerformanceNow(): number {
   return typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -591,6 +590,59 @@ function ContextMenu({ state, items, onClose }: { state: ContextMenuState; items
   );
 }
 
+function ExplorerLayoutGlyph({ mode, accent, active }: {
+  mode: ExplorerViewModeDefinition;
+  accent: string;
+  active: boolean;
+}) {
+  const color = active ? accent : EXP.muted;
+  const borderColor = active ? `${accent}66` : 'rgba(255,255,255,0.14)';
+  const baseCellStyle: React.CSSProperties = {
+    borderRadius: 2,
+    border: `1px solid ${borderColor}`,
+    background: active ? `${accent}22` : 'rgba(255,255,255,0.04)',
+  };
+
+  if (mode.presentation === 'grid') {
+    return (
+      <span style={{ width: 14, height: 14, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 2 }}>
+        <span style={baseCellStyle} />
+        <span style={baseCellStyle} />
+        <span style={baseCellStyle} />
+        <span style={baseCellStyle} />
+      </span>
+    );
+  }
+
+  if (mode.presentation === 'list') {
+    return (
+      <span style={{ width: 14, height: 14, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2 }}>
+        {Array.from({ length: 3 }).map((_, index) => (
+          <span
+            key={index}
+            style={{
+              height: 2,
+              borderRadius: 999,
+              background: color,
+              opacity: index === 2 ? 0.7 : 1,
+            }}
+          />
+        ))}
+      </span>
+    );
+  }
+
+  return (
+    <span style={{ width: 14, height: 14, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 2 }}>
+      <span style={{ ...baseCellStyle, gridColumn: '1 / span 2', height: 3, alignSelf: 'center' }} />
+      <span style={baseCellStyle} />
+      <span style={baseCellStyle} />
+      <span style={baseCellStyle} />
+      <span style={baseCellStyle} />
+    </span>
+  );
+}
+
 const MONACO_FIND_WITH_ARGS_ACTION = 'editor.actions.findWithArgs';
 
 type MonacoEditorOptions = MonacoEditorProps['options'];
@@ -971,12 +1023,24 @@ export function FileExplorer({
   repositoryPicker = null,
 }: FileExplorerProps) {
   const accent = theme.accent;
-  const explorerSettings = useSettingsStore(s => s.settings.explorer);
-  const appearanceSettings = useSettingsStore(s => s.settings.appearance);
-  const updateExplorerSettings = useSettingsStore(s => s.updateExplorer);
-  const explorerRail = useExplorerStore(s => s.rail);
-  const updateExplorerSession = useExplorerStore(s => s.updateSession);
-  const updateExplorerRail = useExplorerStore(s => s.updateRail);
+  const {
+    explorerSettings,
+    appearanceSettings,
+    updateExplorerSettings,
+  } = useSettingsStore(useShallow(state => ({
+    explorerSettings: state.settings.explorer,
+    appearanceSettings: state.settings.appearance,
+    updateExplorerSettings: state.updateExplorer,
+  })));
+  const {
+    explorerRail,
+    updateExplorerSession,
+    updateExplorerRail,
+  } = useExplorerStore(useShallow(state => ({
+    explorerRail: state.rail,
+    updateExplorerSession: state.updateSession,
+    updateExplorerRail: state.updateRail,
+  })));
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
   const isCompactDock = layoutMode === 'compact-dock';
   const sidebarBounds = getExplorerRailWidthBounds(isCompactDock);
@@ -1024,6 +1088,7 @@ export function FileExplorer({
   const [documentViewMode, setDocumentViewMode] = useState<ExplorerDocumentViewMode>(() => initialSession.documentViewMode);
   const [preview,      setPreview]      = useState<PreviewState>({ type:'none', path:'' });
   const [ctxMenu,      setCtxMenu]      = useState<ContextMenuState>({ visible:false, x:0, y:0, entry:null });
+  const [showLayoutMenu, setShowLayoutMenu] = useState(false);
   const [rename,       setRename]       = useState<RenameState>({ active:false, path:'', name:'' });
   const [deleteTarget, setDeleteTarget] = useState<FileEntry|null>(null);
   const [clipboard,    setClipboard]    = useState<ExplorerClipboard|null>(null);
@@ -1049,6 +1114,8 @@ export function FileExplorer({
 
   const mainRef = useRef<HTMLDivElement>(null);
   const explorerViewportRef = useRef<HTMLDivElement>(null);
+  const layoutMenuAnchorRef = useRef<HTMLDivElement>(null);
+  const lastLayoutWheelAtRef = useRef(0);
   const previewWarmupStartedRef = useRef(false);
   const previewWarmupTimerRef = useRef<number | null>(null);
   const [explorerViewportMetrics, setExplorerViewportMetrics] = useState<ViewportMetrics>({
@@ -1060,6 +1127,22 @@ export function FileExplorer({
   useEffect(() => {
     previewRef.current = preview;
   }, [preview]);
+
+  useEffect(() => {
+    if (!showLayoutMenu) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (layoutMenuAnchorRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setShowLayoutMenu(false);
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    return () => window.removeEventListener('mousedown', handlePointerDown);
+  }, [showLayoutMenu]);
 
   const flushPendingExplorerMetrics = useCallback((
     runtimePolicyMetadata: RuntimeCachePolicyTelemetryMetadata,
@@ -1602,8 +1685,8 @@ export function FileExplorer({
     if (!entry.is_dir) {
       return formatSize(entry.size);
     }
-    return entrySizeLoadingPaths.has(entry.path) ? 'Calculating…' : '—';
-  }, [entrySizeLoadingPaths, entrySizes]);
+    return '—';
+  }, [entrySizes]);
 
   const resolveEntriesForAction = useCallback((entry?: FileEntry) => {
     if (!entry) return selectedEntries;
@@ -2252,7 +2335,23 @@ export function FileExplorer({
     } catch(e) { setError(String(e)); }
   };
 
-  const effectiveViewMode = isCompactDock || isSearchActive ? 'list' : viewMode;
+  const selectedViewModeDefinition = useMemo(
+    () => getExplorerViewModeDefinition(viewMode),
+    [viewMode],
+  );
+  const effectiveViewMode = resolveEffectiveExplorerViewMode(viewMode, {
+    isCompactDock,
+    isSearchActive,
+  });
+  const effectiveViewModeDefinition = useMemo(
+    () => getExplorerViewModeDefinition(effectiveViewMode),
+    [effectiveViewMode],
+  );
+  const activeGridMetrics = effectiveViewModeDefinition.grid;
+  const activeRowMetrics = effectiveViewModeDefinition.rows;
+  const activeNewItemHeight = effectiveViewModeDefinition.presentation === 'grid'
+    ? activeGridMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT
+    : activeRowMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT;
   const hasPreview = !isCompactDock && preview.type !== 'none';
   const searchModeLabel = searchIncludeContent ? 'Recursive search + text' : 'Recursive search (names only)';
 
@@ -2309,6 +2408,43 @@ export function FileExplorer({
   }, []);
 
   useEffect(() => {
+    const viewport = explorerViewportRef.current;
+    if (!viewport || isCompactDock) {
+      return undefined;
+    }
+
+    const handleWheel = (event: WheelEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) {
+        return;
+      }
+      if (isEditableKeyboardTarget(event.target)) {
+        return;
+      }
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX) || Math.abs(event.deltaY) < 6) {
+        return;
+      }
+
+      event.preventDefault();
+      const now = typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now();
+      if (now - lastLayoutWheelAtRef.current < EXPLORER_LAYOUT_WHEEL_STEP_THROTTLE_MS) {
+        return;
+      }
+      lastLayoutWheelAtRef.current = now;
+
+      const direction = event.deltaY < 0 ? 'larger' : 'smaller';
+      const nextMode = stepExplorerViewMode(viewMode, direction);
+      if (nextMode !== viewMode) {
+        updateExplorerSettings({ viewMode: nextMode });
+      }
+    };
+
+    viewport.addEventListener('wheel', handleWheel, { passive: false });
+    return () => viewport.removeEventListener('wheel', handleWheel);
+  }, [isCompactDock, updateExplorerSettings, viewMode]);
+
+  useEffect(() => {
     if (repositoryPicker?.active) {
       if (previewWarmupTimerRef.current != null) {
         window.clearTimeout(previewWarmupTimerRef.current);
@@ -2342,16 +2478,17 @@ export function FileExplorer({
   const virtualizedViewportHeight = explorerViewportMetrics.clientHeight;
   const virtualizedScrollTop = Math.max(
     0,
-    explorerViewportMetrics.scrollTop - (newItem.visible
-      ? (effectiveViewMode === 'grid' ? EXPLORER_NEW_ITEM_GRID_HEIGHT : EXPLORER_NEW_ITEM_LIST_HEIGHT)
-      : 0),
+    explorerViewportMetrics.scrollTop - (newItem.visible ? activeNewItemHeight : 0),
   );
 
   const virtualWindow = useMemo(() => {
-    if (effectiveViewMode === 'grid') {
-      const availableWidth = Math.max(0, virtualizedViewportWidth - EXPLORER_GRID_PADDING * 2);
-      const columns = Math.max(1, Math.floor((availableWidth + EXPLORER_GRID_GAP) / (EXPLORER_GRID_MIN_WIDTH + EXPLORER_GRID_GAP)));
-      const rowHeight = isSearchActive ? EXPLORER_GRID_SEARCH_ITEM_HEIGHT : EXPLORER_GRID_ITEM_HEIGHT;
+    if (effectiveViewModeDefinition.presentation === 'grid' && activeGridMetrics) {
+      const availableWidth = Math.max(0, virtualizedViewportWidth - activeGridMetrics.padding * 2);
+      const columns = Math.max(
+        1,
+        Math.floor((availableWidth + activeGridMetrics.gap) / (activeGridMetrics.minWidth + activeGridMetrics.gap)),
+      );
+      const rowHeight = isSearchActive ? activeGridMetrics.searchRowHeight : activeGridMetrics.rowHeight;
       const totalRows = Math.ceil(visibleEntries.length / columns);
       const startRow = Math.max(0, Math.floor(virtualizedScrollTop / rowHeight) - EXPLORER_GRID_OVERSCAN_ROWS);
       const endRow = Math.min(
@@ -2372,7 +2509,9 @@ export function FileExplorer({
       };
     }
 
-    const rowHeight = isSearchActive ? EXPLORER_LIST_SEARCH_ROW_HEIGHT : EXPLORER_LIST_ROW_HEIGHT;
+    const rowHeight = isSearchActive
+      ? activeRowMetrics?.searchRowHeight ?? EXPLORER_LIST_SEARCH_ROW_HEIGHT
+      : activeRowMetrics?.rowHeight ?? EXPLORER_LIST_ROW_HEIGHT;
     const totalRows = visibleEntries.length;
     const startRow = Math.max(0, Math.floor(virtualizedScrollTop / rowHeight) - EXPLORER_LIST_OVERSCAN);
     const endRow = Math.min(
@@ -2392,6 +2531,9 @@ export function FileExplorer({
     };
   }, [
     effectiveViewMode,
+    effectiveViewModeDefinition.presentation,
+    activeGridMetrics,
+    activeRowMetrics,
     isSearchActive,
     virtualizedScrollTop,
     virtualizedViewportHeight,
@@ -2630,8 +2772,18 @@ export function FileExplorer({
     return parts.join('\n');
   };
 
+  const renderEntryInlineMeta = (entry: FileEntry) => {
+    const parts = [
+      getEntryTypeLabel(entry),
+      getEntryStorageLabel(entry),
+      formatDate(entry.modified),
+    ].filter(Boolean);
+    return parts.join('  •  ');
+  };
+
   return (
     <div
+      data-overlay-explorer
       style={{ flex:1, display:'flex', overflow:'hidden', background:EXP.bg, color:EXP.text, fontFamily:uiFont, position:'relative' }}
       onClick={() => { setSelected(new Set()); setCtxMenu(c => ({...c, visible:false})); }}
       onContextMenu={e => { e.preventDefault(); setCtxMenu(c => ({...c, visible:false})); }}
@@ -2830,11 +2982,113 @@ export function FileExplorer({
 
           {/* Toolbar buttons */}
           {!isCompactDock && (
-            <button onClick={() => updateExplorerSettings({ viewMode: viewMode === 'grid' ? 'list' : 'grid' })} title="Toggle view (Grid/List)"
-              style={{ background:'none', border:'none', cursor:'pointer', color:EXP.muted, padding:5, borderRadius:5, display:'flex' }}
-              onMouseEnter={e=>(e.currentTarget.style.background='rgba(255,255,255,0.06)')}
-              onMouseLeave={e=>(e.currentTarget.style.background='transparent')}
-            >{viewMode==='grid' ? <List size={14}/> : <Grid size={14}/>}</button>
+            <div
+              ref={layoutMenuAnchorRef}
+              style={{ position: 'relative' }}
+              onClick={event => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                aria-label={`Explorer layout: ${selectedViewModeDefinition.label}`}
+                aria-haspopup="menu"
+                aria-expanded={showLayoutMenu}
+                onClick={() => setShowLayoutMenu(current => !current)}
+                title={`Explorer layout: ${selectedViewModeDefinition.label}`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  background: showLayoutMenu ? `${accent}18` : 'none',
+                  border: `1px solid ${showLayoutMenu ? `${accent}55` : 'transparent'}`,
+                  cursor: 'pointer',
+                  color: showLayoutMenu ? EXP.text : EXP.muted,
+                  padding: '4px 8px',
+                  borderRadius: 7,
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = showLayoutMenu ? `${accent}18` : 'rgba(255,255,255,0.06)')}
+                onMouseLeave={e => (e.currentTarget.style.background = showLayoutMenu ? `${accent}18` : 'transparent')}
+              >
+                <ExplorerLayoutGlyph mode={selectedViewModeDefinition} accent={accent} active={showLayoutMenu} />
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  {selectedViewModeDefinition.shortLabel}
+                </span>
+              </button>
+              {showLayoutMenu && (
+                <div
+                  role="menu"
+                  aria-label="Explorer layout menu"
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 8px)',
+                    right: 0,
+                    zIndex: 40,
+                    minWidth: 240,
+                    borderRadius: 12,
+                    border: `1px solid ${EXP.border}`,
+                    background: '#1b1f27',
+                    boxShadow: '0 18px 42px rgba(0,0,0,0.42)',
+                    padding: 8,
+                  }}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {explorerViewModes.map(mode => {
+                      const active = viewMode === mode.id;
+                      return (
+                        <button
+                          key={mode.id}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={active}
+                          onClick={() => {
+                            updateExplorerSettings({ viewMode: mode.id });
+                            setShowLayoutMenu(false);
+                          }}
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '18px minmax(0, 1fr)',
+                            gap: 10,
+                            alignItems: 'start',
+                            width: '100%',
+                            border: 'none',
+                            borderRadius: 8,
+                            padding: '8px 10px',
+                            background: active ? `${accent}24` : 'transparent',
+                            color: active ? EXP.text : EXP.muted,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                          }}
+                          onMouseEnter={e => {
+                            if (!active) {
+                              e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                            }
+                          }}
+                          onMouseLeave={e => {
+                            if (!active) {
+                              e.currentTarget.style.background = 'transparent';
+                            }
+                          }}
+                        >
+                          <span style={{ display: 'flex', justifyContent: 'center', paddingTop: 1 }}>
+                            <ExplorerLayoutGlyph mode={mode} accent={accent} active={active} />
+                          </span>
+                          <span style={{ minWidth: 0 }}>
+                            <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: active ? EXP.text : EXP.text }}>
+                              {mode.label}
+                            </span>
+                            <span style={{ display: 'block', marginTop: 2, fontSize: 10, color: EXP.muted2, lineHeight: 1.35 }}>
+                              {mode.description}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${EXP.border}`, fontSize: 10, color: EXP.muted2 }}>
+                    Ctrl/Cmd + wheel steps through layouts from icons to details.
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           <button onClick={() => updateExplorerSettings({ showHiddenFiles: !showHidden })} title="Toggle hidden files"
@@ -2962,7 +3216,7 @@ export function FileExplorer({
         <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
           <OverlayScrollArea
             style={{ flex: 1, minHeight: 0 }}
-            viewportStyle={{ padding: effectiveViewMode === 'grid' ? 12 : 0 }}
+            viewportStyle={{ padding: 0 }}
             viewportRef={explorerViewportRef}
           >
           <div ref={mainRef} tabIndex={0}
@@ -3029,19 +3283,19 @@ export function FileExplorer({
             )}
 
             {/* Grid view */}
-            {newItem.visible && effectiveViewMode === 'grid' && (
-              <div style={{ padding: '0 12px 12px', boxSizing: 'border-box' }}>
+            {newItem.visible && virtualWindow.kind === 'grid' && activeGridMetrics && (
+              <div style={{ padding: `0 ${activeGridMetrics.padding}px ${activeGridMetrics.padding}px`, boxSizing: 'border-box' }}>
                 <div
                   style={{
                     background: `${accent}10`,
                     border: `1px solid ${accent}`,
-                    borderRadius: EXPLORER_GRID_TILE_RADIUS,
-                    padding: '10px 8px 8px',
+                    borderRadius: activeGridMetrics.tileRadius,
+                    padding: activeGridMetrics.iconSize <= 46 ? '8px 6px 6px' : '10px 8px 8px',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
                     gap: 8,
-                    height: EXPLORER_NEW_ITEM_GRID_HEIGHT,
+                    height: activeGridMetrics.newItemHeight,
                     boxSizing: 'border-box',
                   }}
                 >
@@ -3049,7 +3303,7 @@ export function FileExplorer({
                     src={newItem.kind === 'folder'
                       ? (resolveIconSrc(themeIconTheme.folder, themeIconTheme) ?? '/icons/folder.svg')
                       : resolveFileIconSrc('new-file.txt', 'txt', themeIconTheme)}
-                    size={EXPLORER_GRID_ICON_SIZE}
+                    size={activeGridMetrics.iconSize}
                   />
                   <input
                     autoFocus value={newItemName} onChange={e => setNewItemName(e.target.value)}
@@ -3062,10 +3316,19 @@ export function FileExplorer({
               </div>
             )}
 
-            {!loading && effectiveViewMode === 'grid' && (
+            {!loading && virtualWindow.kind === 'grid' && activeGridMetrics && (
               <div style={{ minHeight: 0 }}>
                 <div style={{ height: virtualWindow.topSpacer }} />
-                <div style={{ display: 'grid', gridTemplateColumns: `repeat(${virtualWindow.columns}, minmax(0, 1fr))`, gridAutoRows: `${virtualWindow.rowHeight}px`, gap: EXPLORER_GRID_GAP, padding: `0 ${EXPLORER_GRID_PADDING}px`, alignItems: 'stretch' }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: `repeat(${virtualWindow.columns}, minmax(0, 1fr))`,
+                    gridAutoRows: `${virtualWindow.rowHeight}px`,
+                    gap: activeGridMetrics.gap,
+                    padding: `0 ${activeGridMetrics.padding}px`,
+                    alignItems: 'stretch',
+                  }}
+                >
                   {virtualizedEntries.map(entry => {
                     const isSel = selected.has(entry.path);
                     const isDrop = dragOver === entry.path && entry.is_dir;
@@ -3088,8 +3351,8 @@ export function FileExplorer({
                         style={{
                           background: isDrop ? `${accent}18` : isSel ? `${accent}10` : 'transparent',
                           border: `1px solid ${isDrop ? accent : isSel ? `${accent}88` : 'transparent'}`,
-                          borderRadius: EXPLORER_GRID_TILE_RADIUS,
-                          padding: '10px 8px 8px',
+                          borderRadius: activeGridMetrics.tileRadius,
+                          padding: activeGridMetrics.iconSize <= 46 ? '8px 6px 6px' : '10px 8px 8px',
                           cursor: 'pointer',
                           display: 'flex',
                           flexDirection: 'column',
@@ -3123,8 +3386,8 @@ export function FileExplorer({
                       >
                         <div
                           style={{
-                            width: EXPLORER_GRID_ICON_STAGE_SIZE,
-                            height: EXPLORER_GRID_ICON_STAGE_SIZE,
+                            width: activeGridMetrics.iconStageSize,
+                            height: activeGridMetrics.iconStageSize,
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -3132,7 +3395,7 @@ export function FileExplorer({
                             flexShrink: 0,
                           }}
                         >
-                          <SvgIcon src={iconSrc} size={EXPLORER_GRID_ICON_SIZE} />
+                          <SvgIcon src={iconSrc} size={activeGridMetrics.iconSize} />
                         </div>
                         {isRenaming
                           ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active: false, path: '', name: '' })} />
@@ -3145,7 +3408,7 @@ export function FileExplorer({
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
                                 display: '-webkit-box',
-                                WebkitLineClamp: 2,
+                                WebkitLineClamp: activeGridMetrics.nameLines,
                                 WebkitBoxOrient: 'vertical',
                                 width: '100%',
                                 lineHeight: 1.28,
@@ -3167,17 +3430,116 @@ export function FileExplorer({
               </div>
             )}
 
-            {/* Inline new-item row in list mode */}
-            {newItem.visible && effectiveViewMode === 'list' && (
+            {newItem.visible && virtualWindow.kind === 'list' && effectiveViewModeDefinition.presentation === 'list' && (
+              <div
+                style={{
+                  height: activeRowMetrics?.newItemHeight ?? 42,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '0 12px',
+                  borderBottom: `1px solid ${EXP.border}`,
+                  background: `${accent}11`,
+                }}
+              >
+                <SvgIcon
+                  src={newItem.kind === 'folder'
+                    ? getIconSrc({ name: 'folder', path: currentPath, is_dir: true, size: 0, modified: 0, extension: '', is_hidden: false, is_symlink: false }, false, {
+                      rules: explorerSettings.folderIconRules,
+                      defaultIcon: explorerSettings.defaultFolderIcon,
+                    }, themeIconTheme)
+                    : resolveFileIconSrc('new-file.txt', 'txt', themeIconTheme)}
+                  size={activeRowMetrics?.iconSize ?? 16}
+                />
+                <input
+                  autoFocus
+                  value={newItemName}
+                  onChange={e => setNewItemName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') commitNew(); if (e.key === 'Escape') setNewItem({ visible: false, kind: 'folder' }); }}
+                  onBlur={commitNew}
+                  placeholder={newItem.kind === 'folder' ? 'folder name' : 'notes.md / app.py'}
+                  style={{ background: '#1e2130', border: `1px solid ${accent}`, borderRadius: 4, color: EXP.text, fontSize: 12, padding: '2px 6px', outline: 'none', flex: 1 }}
+                />
+              </div>
+            )}
+
+            {!loading && virtualWindow.kind === 'list' && effectiveViewModeDefinition.presentation === 'list' && (
+              <div style={{ minHeight: 0 }}>
+                <div style={{ height: virtualWindow.topSpacer }} />
+                {virtualizedEntries.map(entry => {
+                  const isSel = selected.has(entry.path);
+                  const isDrop = dragOver === entry.path && entry.is_dir;
+                  const isRenaming = rename.active && rename.path === entry.path;
+                  const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
+                  return (
+                    <div
+                      key={entry.path}
+                      draggable
+                      data-overlay-drag-source="file"
+                      onDragStart={e => onDragStart(e, entry)}
+                      onDragEnd={onDragEnd}
+                      onDragOver={entry.is_dir ? e => onDragOver(e, entry.path) : undefined}
+                      onDragLeave={() => setDragOver(null)}
+                      onDrop={entry.is_dir ? e => onDrop(e, entry.path) : undefined}
+                      onClick={e => onEntryClick(e, entry)}
+                      onDoubleClick={() => onEntryDoubleClick(entry)}
+                      onContextMenu={e => onRightClick(e, entry)}
+                      title={getSearchTooltip(entry)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        minHeight: virtualWindow.rowHeight,
+                        padding: '0 12px',
+                        borderBottom: `1px solid ${EXP.border}`,
+                        background: isDrop ? `${accent}22` : isSel ? EXP.selected : 'transparent',
+                        cursor: 'pointer',
+                        opacity: entry.is_hidden ? 0.5 : 1,
+                        userSelect: 'none',
+                      }}
+                      onMouseEnter={e => { if (!isSel && !isDrop) (e.currentTarget as HTMLDivElement).style.background = EXP.cardHov; }}
+                      onMouseLeave={e => { if (!isSel && !isDrop) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+                    >
+                      <div style={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <SvgIcon src={iconSrc} size={activeRowMetrics?.iconSize ?? 16} />
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          {isRenaming
+                            ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active: false, path: '', name: '' })} />
+                            : (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                                <span style={{ color: isSel ? EXP.text : entry.is_dir ? EXP.yellow : EXP.text, fontWeight: entry.is_dir ? 600 : 450, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                                  {entry.name}
+                                </span>
+                                {entry.is_symlink && <span style={{ fontSize: 9, color: EXP.muted, background: 'rgba(255,255,255,0.06)', borderRadius: 3, padding: '1px 4px', flexShrink: 0 }}>symlink</span>}
+                              </div>
+                            )}
+                          <div style={{ marginTop: 2, fontSize: 10, color: EXP.muted2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {renderEntryInlineMeta(entry)}
+                          </div>
+                          {renderSearchMetadata(entry)}
+                        </div>
+                      </div>
+                      <div style={{ flexShrink: 0, fontSize: 10, color: EXP.muted, whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                        {getEntryTypeLabel(entry)}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div style={{ height: virtualWindow.bottomSpacer }} />
+              </div>
+            )}
+
+            {newItem.visible && virtualWindow.kind === 'list' && effectiveViewModeDefinition.presentation === 'table' && (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <tbody>
-                  <tr style={{ background: `${accent}11`, borderBottom: `1px solid ${EXP.border}`, height: EXPLORER_NEW_ITEM_LIST_HEIGHT }}>
+                  <tr style={{ background: `${accent}11`, borderBottom: `1px solid ${EXP.border}`, height: activeRowMetrics?.newItemHeight ?? 42 }}>
                     <td style={{ padding: '4px 12px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <SvgIcon src={newItem.kind === 'folder' ? getIconSrc({ name: 'folder', path: currentPath, is_dir: true, size: 0, modified: 0, extension: '', is_hidden: false, is_symlink: false }, false, {
                           rules: explorerSettings.folderIconRules,
                           defaultIcon: explorerSettings.defaultFolderIcon,
-                        }, themeIconTheme) : resolveFileIconSrc('new-file.txt', 'txt', themeIconTheme)} size={16} />
+                        }, themeIconTheme) : resolveFileIconSrc('new-file.txt', 'txt', themeIconTheme)} size={activeRowMetrics?.iconSize ?? 16} />
                         <input autoFocus value={newItemName} onChange={e => setNewItemName(e.target.value)}
                           onKeyDown={e => { if (e.key === 'Enter') commitNew(); if (e.key === 'Escape') setNewItem({ visible: false, kind: 'folder' }); }}
                           onBlur={commitNew}
@@ -3194,7 +3556,7 @@ export function FileExplorer({
               </table>
             )}
 
-            {!loading && effectiveViewMode === 'list' && (
+            {!loading && virtualWindow.kind === 'list' && effectiveViewModeDefinition.presentation === 'table' && (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, tableLayout: 'fixed' }}>
                 <thead>
                   <tr style={{ background: EXP.panel, position: 'sticky', top: 0, zIndex: 2 }}>
@@ -3243,8 +3605,9 @@ export function FileExplorer({
                     const isDrop = dragOver === entry.path && entry.is_dir;
                     const isRenaming = rename.active && rename.path === entry.path;
                     const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
+                    const isDetailsMode = effectiveViewMode === 'details';
                     return (
-                    <tr
+                      <tr
                         key={entry.path}
                         draggable
                         data-overlay-drag-source="file"
@@ -3261,20 +3624,32 @@ export function FileExplorer({
                         onMouseEnter={e => { if (!isSel && !isDrop) (e.currentTarget as HTMLTableRowElement).style.background = EXP.cardHov; }}
                         onMouseLeave={e => { if (!isSel && !isDrop) (e.currentTarget as HTMLTableRowElement).style.background = 'transparent'; }}
                       >
-                        <td style={{ padding: '4px 12px', verticalAlign: 'top', overflow: 'hidden' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                            <SvgIcon src={iconSrc} size={16} />
-                            {isRenaming
-                              ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active: false, path: '', name: '' })} />
-                              : <span style={{ color: isSel ? EXP.text : entry.is_dir ? EXP.yellow : EXP.text, fontWeight: entry.is_dir ? 500 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>{entry.name}</span>
-                            }
-                            {entry.is_symlink && <span style={{ fontSize: 9, color: EXP.muted, background: 'rgba(255,255,255,0.06)', borderRadius: 3, padding: '1px 4px', flexShrink: 0 }}>symlink</span>}
+                        <td style={{ padding: isDetailsMode ? '6px 12px' : '4px 12px', verticalAlign: 'top', overflow: 'hidden' }}>
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
+                            <SvgIcon src={iconSrc} size={activeRowMetrics?.iconSize ?? 16} />
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              {isRenaming
+                                ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active: false, path: '', name: '' })} />
+                                : (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                                    <span style={{ color: isSel ? EXP.text : entry.is_dir ? EXP.yellow : EXP.text, fontWeight: entry.is_dir ? 600 : isDetailsMode ? 500 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>
+                                      {entry.name}
+                                    </span>
+                                    {entry.is_symlink && <span style={{ fontSize: 9, color: EXP.muted, background: 'rgba(255,255,255,0.06)', borderRadius: 3, padding: '1px 4px', flexShrink: 0 }}>symlink</span>}
+                                  </div>
+                                )}
+                              {isDetailsMode && !isRenaming && (
+                                <div style={{ marginTop: 2, fontSize: 10, color: EXP.muted2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {renderEntryInlineMeta(entry)}
+                                </div>
+                              )}
+                              {renderSearchMetadata(entry)}
+                            </div>
                           </div>
-                          {renderSearchMetadata(entry)}
                         </td>
-                        <td style={{ padding: '4px 12px', color: EXP.muted, fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{getEntryStorageLabel(entry)}</td>
-                        <td style={{ padding: '4px 12px', color: EXP.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatDate(entry.modified)}</td>
-                        <td style={{ padding: '4px 12px', color: EXP.muted2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getEntryTypeLabel(entry)}</td>
+                        <td style={{ padding: isDetailsMode ? '6px 12px' : '4px 12px', color: EXP.muted, fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{getEntryStorageLabel(entry)}</td>
+                        <td style={{ padding: isDetailsMode ? '6px 12px' : '4px 12px', color: EXP.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatDate(entry.modified)}</td>
+                        <td style={{ padding: isDetailsMode ? '6px 12px' : '4px 12px', color: EXP.muted2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{getEntryTypeLabel(entry)}</td>
                       </tr>
                     );
                   })}
@@ -3306,6 +3681,12 @@ export function FileExplorer({
         <div style={{ display:'flex', alignItems:'center', gap:12, padding:'3px 12px', background:EXP.sidebar, borderTop:`1px solid ${EXP.border}`, fontSize:10, color:EXP.muted, flexShrink:0 }}>
           <span>{visibleEntries.length} item{visibleEntries.length!==1?'s':''}</span>
           {selected.size > 0 && <span style={{ color:accent }}>{selected.size} selected</span>}
+          {!isCompactDock && (
+            <span>
+              View: <span style={{ color: EXP.text }}>{selectedViewModeDefinition.label}</span>
+              {effectiveViewMode !== viewMode ? ` -> ${effectiveViewModeDefinition.label}` : ''}
+            </span>
+          )}
           {search && <span>{searchModeLabel}: "<span style={{ color:EXP.text }}>{search}</span>"</span>}
           <div style={{ flex:1 }} />
           {clipboard && (

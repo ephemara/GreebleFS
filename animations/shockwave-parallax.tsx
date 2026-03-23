@@ -1,8 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { clamp01, defineAnimation, lerp } from 'overlayterm-animation';
+import { clamp01, defineAnimation, lerp, useAnimationContextRef } from 'overlayterm-animation';
 
 function ShockwaveParallaxOverlay({ context }: { context: any }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const contextRef = useAnimationContextRef(context);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -17,6 +18,7 @@ function ShockwaveParallaxOverlay({ context }: { context: any }) {
 
     let raf = 0;
     const render = (now: number) => {
+      const liveContext = contextRef.current;
       const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       canvas.width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
       canvas.height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
@@ -24,8 +26,8 @@ function ShockwaveParallaxOverlay({ context }: { context: any }) {
       ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
 
       const time = now * 0.001;
-      const progress = clamp01(context.progress);
-      const active = context.direction === 'enter' ? progress : 1 - progress;
+      const progress = clamp01(liveContext.progress);
+      const active = liveContext.direction === 'enter' ? progress : 1 - progress;
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
       const cx = width * 0.5;
@@ -40,7 +42,7 @@ function ShockwaveParallaxOverlay({ context }: { context: any }) {
         const yOffset = Math.cos(time * 0.8 + depth * 2.9) * lerp(4, 18, depth);
         const alpha = 0.08 + (1 - depth) * 0.16 + active * 0.08;
 
-        ctx.strokeStyle = `${context.accentColor}${Math.round(alpha * 255).toString(16).padStart(2, '0')}`;
+        ctx.strokeStyle = `${liveContext.accentColor}${Math.round(alpha * 255).toString(16).padStart(2, '0')}`;
         ctx.lineWidth = lerp(6, 1.2, depth);
         ctx.beginPath();
         ctx.ellipse(cx + xOffset * 0.12, cy + yOffset * 0.12, radius * 0.96, radius * (0.48 + depth * 0.22), time * 0.1 + depth, 0, Math.PI * 2);
@@ -56,7 +58,7 @@ function ShockwaveParallaxOverlay({ context }: { context: any }) {
           const angle = (spoke / 10) * Math.PI * 2 + time * 0.45 + depth * 0.7;
           const px = cx + Math.cos(angle) * radius;
           const py = cy + Math.sin(angle) * radius * 0.5;
-          ctx.fillStyle = spoke % 2 === 0 ? 'rgba(255,255,255,0.58)' : `${context.accentColor}aa`;
+          ctx.fillStyle = spoke % 2 === 0 ? 'rgba(255,255,255,0.58)' : `${liveContext.accentColor}aa`;
           ctx.beginPath();
           ctx.arc(px, py, 1.5 + depth * 2.4, 0, Math.PI * 2);
           ctx.fill();
@@ -66,7 +68,7 @@ function ShockwaveParallaxOverlay({ context }: { context: any }) {
       ctx.globalCompositeOperation = 'source-over';
       for (let layer = 0; layer < 4; layer += 1) {
         const offset = (layer - 1.5) * 16 * (1 - active);
-        ctx.fillStyle = `${context.accentColor}${Math.round((0.04 + layer * 0.03) * 255).toString(16).padStart(2, '0')}`;
+        ctx.fillStyle = `${liveContext.accentColor}${Math.round((0.04 + layer * 0.03) * 255).toString(16).padStart(2, '0')}`;
         ctx.beginPath();
         ctx.ellipse(cx + offset, cy - offset * 0.28, width * 0.48, height * (0.04 + layer * 0.03), 0, 0, Math.PI * 2);
         ctx.fill();
@@ -77,7 +79,7 @@ function ShockwaveParallaxOverlay({ context }: { context: any }) {
 
     raf = window.requestAnimationFrame(render);
     return () => window.cancelAnimationFrame(raf);
-  }, [context.accentColor, context.direction, context.progress]);
+  }, []);
 
   return (
     <canvas

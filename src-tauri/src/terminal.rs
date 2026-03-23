@@ -35,6 +35,13 @@ pub struct ExternalTerminalRequest {
     pub shell: Option<String>,
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalWriteRequest {
+    pub id: String,
+    pub data: String,
+}
+
 impl TerminalManager {
     pub fn new() -> Self {
         Self {
@@ -210,6 +217,26 @@ impl TerminalManager {
             .writer
             .flush()
             .map_err(|e| format!("Flush failed: {}", e))?;
+
+        Ok(())
+    }
+
+    pub fn write_many(&self, writes: &[TerminalWriteRequest]) -> Result<(), String> {
+        let mut terminals = self.terminals.lock().unwrap();
+        for request in writes {
+            let instance = terminals
+                .get_mut(&request.id)
+                .ok_or_else(|| format!("Terminal {} not found", request.id))?;
+
+            instance
+                .writer
+                .write_all(request.data.as_bytes())
+                .map_err(|e| format!("Write failed for {}: {}", request.id, e))?;
+            instance
+                .writer
+                .flush()
+                .map_err(|e| format!("Flush failed for {}: {}", request.id, e))?;
+        }
 
         Ok(())
     }
@@ -727,6 +754,18 @@ pub async fn terminal_write(
     data: String,
 ) -> Result<(), String> {
     terminal_manager.write(&id, data.as_bytes())
+}
+
+#[tauri::command]
+pub async fn terminal_write_many(
+    terminal_manager: tauri::State<'_, TerminalManager>,
+    writes: Vec<TerminalWriteRequest>,
+) -> Result<(), String> {
+    if writes.is_empty() {
+        return Ok(());
+    }
+
+    terminal_manager.write_many(&writes)
 }
 
 #[tauri::command]

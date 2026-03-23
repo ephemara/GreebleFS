@@ -25,3 +25,8 @@
 - Lane boundary:
   - Charlie owns plugin/theme/shader/animation core workflow work.
   - Delta should only overlap when a broader app-shell release blocker crosses lane boundaries.
+- Run note 2026-03-22T22:29:42Z:
+  - Legacy plugin discovery was all-or-nothing for file-level parse/read failures; `discoverOverlayPlugins()` now isolates each legacy file with `Promise.allSettled` and keeps healthy plugins available.
+  - A regression test now covers the broken-legacy-file path in `src/test/pluginPackages.test.ts`.
+  - The narrowed compile check for the touched plugin-packaging files passed under the repo's Vite/TypeScript settings.
+  - Next validation pressure point is runtime execution of the plugin package test and, separately, whether package-level theme icon asset failures should be warning-only instead of package-fatal.

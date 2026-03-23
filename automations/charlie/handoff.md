@@ -45,3 +45,12 @@
 ## Single Best Next Step For Charlie Team 5
 
 - Start backlog item 1 by surfacing plugin/theme contribution warnings and capability details from the existing discovery/load results into the operator-visible UI, beginning with `PluginsManager.tsx` and the asset manager props flowing out of `App.tsx`.
+
+## Validation Update 2026-03-22T22:29:42Z
+
+- Status: one concrete asset-system defect hardened and covered by regression test.
+- Exact finding: legacy plugin discovery could fail all-or-nothing if any file plugin read or parse step threw.
+- Exact fix: `src/config/pluginPackages.ts` now uses `Promise.allSettled()` for legacy files and records per-file warnings while preserving healthy plugins.
+- Exact verification: `npx tsc --noEmit --pretty false --skipLibCheck --module esnext --target es2020 --moduleResolution bundler --jsx react-jsx --lib es2020,dom,esnext.disposable --types vitest/globals,vite/client src/config/pluginPackages.ts src/test/pluginPackages.test.ts` completed successfully.
+- Runtime verification note: `npm run test:unit:vps -- src/test/pluginPackages.test.ts` timed out in this VPS session, so the new regression test still needs a cleaner Vitest pass.
+- Single best next step: rerun the plugin-package Vitest file in a quieter environment, then decide whether theme-package icon asset failures should get the same warning-only treatment.

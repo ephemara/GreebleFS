@@ -7,6 +7,7 @@ const { mockXtermInstances } = vi.hoisted(() => ({
   mockXtermInstances: [] as {
     clear: ReturnType<typeof vi.fn>;
     reset: ReturnType<typeof vi.fn>;
+    emitData: (data: string) => void;
   }[],
 }));
 
@@ -23,6 +24,7 @@ vi.mock('@xterm/xterm', () => ({
     rows = 24;
     cols = 80;
     selection = '';
+    private dataHandler: ((data: string) => void) | null = null;
     clear = vi.fn();
     reset = vi.fn();
     focus = vi.fn();
@@ -30,7 +32,9 @@ vi.mock('@xterm/xterm', () => ({
     loadAddon = vi.fn();
     open = vi.fn();
     writeln = vi.fn();
-    onData = vi.fn();
+    onData = vi.fn((handler: (data: string) => void) => {
+      this.dataHandler = handler;
+    });
     onResize = vi.fn();
     buffer = {
       active: {
@@ -48,6 +52,10 @@ vi.mock('@xterm/xterm', () => ({
 
     getSelection(): string {
       return this.selection;
+    }
+
+    emitData(data: string): void {
+      this.dataHandler?.(data);
     }
   },
 }));
@@ -67,6 +75,8 @@ import TerminalOverlay from '../components/TerminalOverlay';
 describe('TerminalOverlay', () => {
   beforeEach(() => {
     mockXtermInstances.length = 0;
+    vi.mocked(invoke).mockReset();
+    vi.mocked(invoke).mockResolvedValue(null);
 
     Object.defineProperty(window, 'ResizeObserver', {
       configurable: true,
@@ -106,7 +116,7 @@ describe('TerminalOverlay', () => {
     render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
 
     const clearButton = await screen.findByRole('button', { name: 'Clear' });
-    const restartButton = await screen.findByRole('button', { name: 'Restart' });
+    const restartButton = screen.getByTitle('Restart the active pane session');
     await waitFor(() => expect(clearButton).toBeEnabled());
 
     await userEvent.click(clearButton);
@@ -120,6 +130,47 @@ describe('TerminalOverlay', () => {
       rows: 24,
       cols: 80,
     }));
+  }, 20000);
+
+  it('splits the active workspace and broadcasts typed input across panes', async () => {
+    const invokeMock = vi.mocked(invoke);
+
+    render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Split Columns' }));
+
+    await waitFor(() => {
+      expect(mockXtermInstances).toHaveLength(2);
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Broadcast Off' }));
+    await screen.findByRole('button', { name: 'Broadcast On' });
+
+    invokeMock.mockClear();
+    mockXtermInstances[0]?.emitData('npm test');
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('terminal_write_many', {
+        writes: [
+          { id: 'overlay-0', data: 'npm test' },
+          { id: 'overlay-1', data: 'npm test' },
+        ],
+      });
+    });
+  }, 20000);
+
+  it('copies a markdown snapshot of the active pane', async () => {
+    render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
+
+    const snapshotButton = await screen.findByRole('button', { name: 'Copy Snapshot' });
+    await waitFor(() => expect(snapshotButton).toBeEnabled());
+
+    await userEvent.click(snapshotButton);
+
+    await waitFor(() => {
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('Pane 1'));
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('```text'));
+    });
   }, 20000);
 
   it('exposes the managed Python rail inside the terminal sidebar', async () => {

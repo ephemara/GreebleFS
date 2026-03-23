@@ -1,8 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { clamp01, defineAnimation, lerp } from 'overlayterm-animation';
+import { clamp01, defineAnimation, lerp, useAnimationContextRef } from 'overlayterm-animation';
 
 function VolumetricSlabLaunchLayer({ context }) {
   const canvasRef = useRef(null);
+  const contextRef = useAnimationContextRef(context);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -26,8 +27,9 @@ function VolumetricSlabLaunchLayer({ context }) {
 
     let raf = 0;
     const render = (now: number) => {
-      const progress = clamp01(context.progress);
-      const active = context.direction === 'enter' ? progress : 1 - progress;
+      const liveContext = contextRef.current;
+      const progress = clamp01(liveContext.progress);
+      const active = liveContext.direction === 'enter' ? progress : 1 - progress;
       const dpr = Math.min(window.devicePixelRatio || 1, 1.6);
       const width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
       const height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
@@ -46,15 +48,15 @@ function VolumetricSlabLaunchLayer({ context }) {
 
       const backGlow = ctx.createLinearGradient(0, h, 0, 0);
       backGlow.addColorStop(0, 'rgba(0,0,0,0)');
-      backGlow.addColorStop(0.35, `${context.accentColor}18`);
+      backGlow.addColorStop(0.35, `${liveContext.accentColor}18`);
       backGlow.addColorStop(1, 'rgba(255,255,255,0.08)');
       ctx.fillStyle = backGlow;
       ctx.fillRect(0, 0, w, h);
 
       const launchCore = ctx.createRadialGradient(cx, baseY, 8, cx, baseY, w * 0.42);
       launchCore.addColorStop(0, `rgba(255,255,255,${0.24 + active * 0.28})`);
-      launchCore.addColorStop(0.16, `${context.accentColor}cc`);
-      launchCore.addColorStop(0.36, `${context.accentColor}33`);
+      launchCore.addColorStop(0.16, `${liveContext.accentColor}cc`);
+      launchCore.addColorStop(0.36, `${liveContext.accentColor}33`);
       launchCore.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = launchCore;
       ctx.beginPath();
@@ -79,7 +81,7 @@ function VolumetricSlabLaunchLayer({ context }) {
 
         ctx.save();
         ctx.globalAlpha = alpha;
-        ctx.shadowColor = context.accentColor;
+        ctx.shadowColor = liveContext.accentColor;
         ctx.shadowBlur = 16 + band * 10 + active * 18;
 
         const topLeft = [cx - halfWidth - xShift - skew, rise - halfHeight - band * 6];
@@ -89,7 +91,7 @@ function VolumetricSlabLaunchLayer({ context }) {
 
         const fill = ctx.createLinearGradient(0, rise - halfHeight, 0, rise + halfHeight);
         fill.addColorStop(0, `rgba(255,255,255,${0.34 + active * 0.16})`);
-        fill.addColorStop(0.4, `${context.accentColor}${Math.round((0.26 + band * 0.12) * 255).toString(16).padStart(2, '0')}`);
+        fill.addColorStop(0.4, `${liveContext.accentColor}${Math.round((0.26 + band * 0.12) * 255).toString(16).padStart(2, '0')}`);
         fill.addColorStop(1, 'rgba(0,0,0,0.08)');
         ctx.fillStyle = fill;
 
@@ -101,7 +103,7 @@ function VolumetricSlabLaunchLayer({ context }) {
         ctx.closePath();
         ctx.fill();
 
-        ctx.strokeStyle = index % 2 === 0 ? '#ffffff' : context.accentColor;
+        ctx.strokeStyle = index % 2 === 0 ? '#ffffff' : liveContext.accentColor;
         ctx.lineWidth = 1 + band * 0.2;
         ctx.globalAlpha = alpha * 0.92;
         ctx.stroke();
@@ -122,7 +124,7 @@ function VolumetricSlabLaunchLayer({ context }) {
         ctx.globalAlpha = 0.08 + active * 0.38;
         ctx.shadowColor = '#ffffff';
         ctx.shadowBlur = 8 + active * 10;
-        ctx.fillStyle = index % 4 === 0 ? '#ffffff' : context.accentColor;
+        ctx.fillStyle = index % 4 === 0 ? '#ffffff' : liveContext.accentColor;
         ctx.beginPath();
         ctx.arc(x, y + Math.sin(seed + now * 0.0018) * 6, size, 0, Math.PI * 2);
         ctx.fill();
@@ -135,7 +137,7 @@ function VolumetricSlabLaunchLayer({ context }) {
 
     raf = window.requestAnimationFrame(render);
     return () => window.cancelAnimationFrame(raf);
-  }, [context.accentColor, context.direction, context.progress]);
+  }, []);
 
   return (
     <canvas

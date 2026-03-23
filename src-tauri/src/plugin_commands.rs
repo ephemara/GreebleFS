@@ -46,6 +46,7 @@ pub fn plugin_watch_directory(
     app: AppHandle,
     state: State<'_, PluginWatcherState>,
     path: String,
+    ignored_directories: Vec<String>,
 ) -> Result<(), String> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
@@ -57,20 +58,29 @@ pub fn plugin_watch_directory(
     let root = std::fs::canonicalize(trimmed)
         .map_err(|e| format!("Could not resolve plugin watch directory: {e}"))?;
     let event_root = root.to_string_lossy().to_string();
+    let ignored_directory_names = normalize_ignored_directory_names(ignored_directories);
     let app_handle = app.clone();
 
     let mut watcher =
         notify::recommended_watcher(move |res: Result<Event, notify::Error>| match res {
             Ok(event) => {
                 if let Some(kind) = map_watch_event_kind(&event.kind) {
+                    let paths = event
+                        .paths
+                        .iter()
+                        .filter(|path| {
+                            !path_contains_ignored_directory(path, &ignored_directory_names)
+                        })
+                        .map(|path| path.to_string_lossy().to_string())
+                        .collect::<Vec<_>>();
+                    if paths.is_empty() {
+                        return;
+                    }
+
                     let payload = PluginDirectoryWatchEvent {
                         root: event_root.clone(),
                         kind: kind.to_string(),
-                        paths: event
-                            .paths
-                            .iter()
-                            .map(|path| path.to_string_lossy().to_string())
-                            .collect(),
+                        paths,
                     };
                     let _ = app_handle.emit(PLUGIN_WATCH_EVENT, payload);
                 }
@@ -220,6 +230,21 @@ fn map_watch_event_kind(kind: &EventKind) -> Option<&'static str> {
         EventKind::Any => Some("any"),
         _ => None,
     }
+}
+
+fn normalize_ignored_directory_names(ignored_directories: Vec<String>) -> Vec<String> {
+    ignored_directories
+        .into_iter()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty())
+        .collect()
+}
+
+fn path_contains_ignored_directory(path: &Path, ignored_directories: &[String]) -> bool {
+    path.components().any(|component| {
+        let segment = component.as_os_str().to_string_lossy().trim().to_ascii_lowercase();
+        !segment.is_empty() && ignored_directories.iter().any(|ignored| ignored == &segment)
+    })
 }
 
 #[cfg(target_os = "windows")]
@@ -384,6 +409,38 @@ mod tests {
         let missing = temp.path().join("definitely-missing-plugin-backend.exe");
         let error = run_backend_command(&missing, &[]).expect_err("missing executable should fail");
         assert!(error.contains("Failed to run plugin backend"));
+    }
+
+    #[test]
+    fn normalize_ignored_directory_names_trims_and_lowercases_values() {
+        let normalized = normalize_ignored_directory_names(vec![
+            " node_modules ".to_string(),
+            "Backend".to_string(),
+            String::new(),
+        ]);
+
+        assert_eq!(
+            normalized,
+            vec!["node_modules".to_string(), "backend".to_string()]
+        );
+    }
+
+    #[test]
+    fn path_contains_ignored_directory_detects_nested_segments_case_insensitively() {
+        let ignored = vec!["node_modules".to_string(), "backend".to_string()];
+
+        assert!(path_contains_ignored_directory(
+            Path::new(r"C:\plugins\alpha\node_modules\react\index.js"),
+            &ignored,
+        ));
+        assert!(path_contains_ignored_directory(
+            Path::new(r"C:\plugins\alpha\Backend\worker.cmd"),
+            &ignored,
+        ));
+        assert!(!path_contains_ignored_directory(
+            Path::new(r"C:\plugins\alpha\dist\index.js"),
+            &ignored,
+        ));
     }
 
     #[cfg(target_os = "windows")]

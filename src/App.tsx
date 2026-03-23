@@ -1,6 +1,7 @@
 import { useState, useEffect, useEffectEvent, useRef, useCallback, useMemo, type CSSProperties } from 'react';
 import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core';
 import * as TauriEvent from '@tauri-apps/api/event';
+import { useShallow } from 'zustand/react/shallow';
 import {
   getCurrentWindow,
   PhysicalSize,
@@ -18,7 +19,11 @@ import {
 import { FolderPluginRenderer, PluginsManager } from './components/PluginsManager';
 import { CommandPalette, type OverlayCommandPaletteAction } from './components/CommandPalette';
 import { animationSystemConfig, resolvePreferredAnimationId } from './config/animations';
-import { getPluginStorageDirectory, pluginSystemConfig } from './config/plugins';
+import {
+  getPluginStorageDirectory,
+  pluginSystemConfig,
+  shouldRefreshForPluginWatchPaths,
+} from './config/plugins';
 import {
   AnimationOverlayLayer,
   createBuiltInOverlayAnimations,
@@ -85,15 +90,23 @@ import {
   type OverlayAnimationPhase,
 } from './config/overlayAnimations';
 import {
+  clampOverlayWindowBoundsToWorkArea,
+  computeOverlayWindowLayout,
   clampOverlayVisualControlValue,
   formatOverlayVisualControlValue,
+  type OverlayWindowBounds,
   overlayVisualControls,
 } from './config/overlayWindow';
 import { detectClientPlatform, getPlatformPathSeparator, joinPlatformPath, type RuntimePlatform } from './config/platform';
 import { derivePanelOpenState, reorderPanelIds } from './components/panelUtils';
 import { OverlayScrollArea } from './components/OverlayScrollArea';
 import { useGlobalShortcut } from './input/GlobalShortcuts';
-import { useSettingsStore, type LayoutPanelState, type OverlayWindowAnchor } from './store/settingsStore';
+import {
+  useSettingsStore,
+  type LayoutPanelState,
+  type OverlayWindowAnchor,
+  type TerminalWindowMode,
+} from './store/settingsStore';
 import { useTerminalStore } from './store/terminalStore';
 
 const LOGICAL_PADDING = 12;
@@ -234,11 +247,12 @@ async function ensureDir(path: string): Promise<void> {
   }
 }
 
-interface OverlayWindowLayout {
+interface PanelWindowLayout {
   width: number;
   height: number;
   x: number;
   y: number;
+  healedWidth: number | null;
   healedHeight: number | null;
 }
 
@@ -248,38 +262,30 @@ interface PluginDirectoryWatchEvent {
   paths: string[];
 }
 
-function computeOverlayWindowLayout(args: {
+function computePanelWindowLayout(args: {
   workArea: { position: PhysicalPosition; size: PhysicalSize };
   scaleFactor: number;
-  overlayHeight: number;
-  overlayWidth: number;
-  overlayAnchor: OverlayWindowAnchor;
-}): OverlayWindowLayout {
+  windowedWidth: number;
+  windowedHeight: number;
+}): PanelWindowLayout {
   const physPad = Math.round(LOGICAL_PADDING * args.scaleFactor);
-  const availableLogicalHeight = Math.max(Math.round(args.workArea.size.height / args.scaleFactor) - LOGICAL_PADDING * 2, 150);
-  const rawTargetHeight = args.overlayHeight > 0 ? args.overlayHeight : 420;
-  const healedHeight = rawTargetHeight >= availableLogicalHeight - 4 ? 420 : null;
-  const logicalHeight = healedHeight ?? rawTargetHeight;
-  const height = Math.min(
-    Math.round(logicalHeight * args.scaleFactor),
-    args.workArea.size.height - physPad * 2,
-  );
-  const isTopAnchored = args.overlayAnchor === 'top';
-
-  const savedPhysWidth = args.overlayWidth > 0
-    ? Math.round(args.overlayWidth * args.scaleFactor)
-    : null;
-  const width = savedPhysWidth
-    ? Math.min(savedPhysWidth, args.workArea.size.width - physPad * 2)
-    : args.workArea.size.width - physPad * 2;
+  const availableLogicalWidth = Math.max(Math.round(args.workArea.size.width / args.scaleFactor) - LOGICAL_PADDING * 2, 720);
+  const availableLogicalHeight = Math.max(Math.round(args.workArea.size.height / args.scaleFactor) - LOGICAL_PADDING * 2, 480);
+  const targetLogicalWidth = args.windowedWidth > 0 ? args.windowedWidth : 1440;
+  const targetLogicalHeight = args.windowedHeight > 0 ? args.windowedHeight : 920;
+  const healedWidth = targetLogicalWidth > availableLogicalWidth ? availableLogicalWidth : null;
+  const healedHeight = targetLogicalHeight > availableLogicalHeight ? availableLogicalHeight : null;
+  const logicalWidth = Math.max(Math.min(healedWidth ?? targetLogicalWidth, availableLogicalWidth), Math.min(720, availableLogicalWidth));
+  const logicalHeight = Math.max(Math.min(healedHeight ?? targetLogicalHeight, availableLogicalHeight), Math.min(480, availableLogicalHeight));
+  const width = Math.round(logicalWidth * args.scaleFactor);
+  const height = Math.round(logicalHeight * args.scaleFactor);
 
   return {
-    width: Math.max(width, 400),
+    width,
     height,
-    x: args.workArea.position.x + physPad,
-    y: isTopAnchored
-      ? args.workArea.position.y + physPad
-      : args.workArea.position.y + args.workArea.size.height - height - physPad,
+    x: args.workArea.position.x + Math.max(Math.round((args.workArea.size.width - width) / 2), physPad),
+    y: args.workArea.position.y + Math.max(Math.round((args.workArea.size.height - height) / 2), physPad),
+    healedWidth,
     healedHeight,
   };
 }
@@ -440,13 +446,17 @@ function App() {
   const lastToggleAtRef = useRef(0);
   const lastTerminalFocusAtRef = useRef(0);
   const isProgrammaticResizeRef = useRef(false);
+  const runtimeOverlayBoundsRef = useRef<OverlayWindowBounds | null>(null);
   const interactionLockUntilRef = useRef(0);
+  const windowModeRef = useRef<TerminalWindowMode>('overlay');
   const animationSignatureRef = useRef('');
   const shaderSignatureRef = useRef('');
   const pluginSignatureRef = useRef('');
   const dragHideRestoreRef = useRef(false);
   const refreshFolderPluginsRef = useRef<(force?: boolean) => Promise<void>>(async () => undefined);
   const pluginWatchDebounceTimerRef = useRef<number | null>(null);
+  const pluginRefreshInFlightRef = useRef(false);
+  const pluginRefreshQueuedForceRef = useRef(false);
   const openTerminalPanelRef = useRef<() => void>(() => undefined);
   const [layoutManifest, setLayoutManifest] = useState(BUILT_IN_LAYOUT_MANIFEST);
   const [layoutConfigSource, setLayoutConfigSource] = useState<string | null>(null);
@@ -458,16 +468,34 @@ function App() {
   const [isRepositoryPickerActive, setIsRepositoryPickerActive] = useState(false);
   const [pendingRepositoryImports, setPendingRepositoryImports] = useState<string[]>([]);
 
-  const settings = useSettingsStore(s => s.settings.terminal);
-  const appearance = useSettingsStore(s => s.settings.appearance);
-  const keybindings = useSettingsStore(s => s.settings.keybindings);
-  const layoutSettings = useSettingsStore(s => s.settings.layout);
-  const systemSettings = useSettingsStore(s => s.settings.system);
-  const updateTerminal = useSettingsStore(s => s.updateTerminal);
-  const updateAppearance = useSettingsStore(s => s.updateAppearance);
-  const updateLayout = useSettingsStore(s => s.updateLayout);
-  const updateSystem = useSettingsStore(s => s.updateSystem);
-  const { initStore, addDirectoryBookmark } = useTerminalStore();
+  const {
+    settings,
+    appearance,
+    keybindings,
+    layoutSettings,
+    systemSettings,
+    updateTerminal,
+    updateAppearance,
+    updateLayout,
+    updateSystem,
+  } = useSettingsStore(useShallow(state => ({
+    settings: state.settings.terminal,
+    appearance: state.settings.appearance,
+    keybindings: state.settings.keybindings,
+    layoutSettings: state.settings.layout,
+    systemSettings: state.settings.system,
+    updateTerminal: state.updateTerminal,
+    updateAppearance: state.updateAppearance,
+    updateLayout: state.updateLayout,
+    updateSystem: state.updateSystem,
+  })));
+  const {
+    initStore: initTerminalStore,
+    addDirectoryBookmark,
+  } = useTerminalStore(useShallow(state => ({
+    initStore: state.initStore,
+    addDirectoryBookmark: state.addDirectoryBookmark,
+  })));
   const combinedThemePackages = useMemo(
     () => [...themePackages, ...pluginThemePackages],
     [pluginThemePackages, themePackages],
@@ -491,6 +519,10 @@ function App() {
   const accent = theme.palette.accent;
   const isOverlayVisible = overlayPhase !== 'closed';
   overlayVisibleRef.current = isOverlayVisible;
+  const windowMode: TerminalWindowMode = settings.windowMode === 'windowed' ? 'windowed' : 'overlay';
+  windowModeRef.current = windowMode;
+  const isWindowedMode = windowMode === 'windowed';
+  const shouldShowInTaskbar = systemSettings.showInTaskbar || isWindowedMode;
   const appOpacity = appearance.appOpacity ?? 1.0;
   const panelTransparency = appearance.panelTransparency ?? overlayVisualControls.panelTransparency.defaultValue;
   const appZoom = appearance.appZoom ?? 1.0;
@@ -506,7 +538,7 @@ function App() {
   const clampedAppZoom = clampOverlayVisualControlValue('zoom', appZoom);
   const clampedAppBlurStrength = clampOverlayVisualControlValue('blurStrength', appBlurStrength);
   const overlayAnchor: OverlayWindowAnchor = settings.overlayAnchor === 'top' ? 'top' : 'bottom';
-  const isTopAnchored = overlayAnchor === 'top';
+  const isTopAnchored = !isWindowedMode && overlayAnchor === 'top';
   const scaledWidth = `${100 / clampedAppZoom}%`;
   const scaledHeight = `${100 / clampedAppZoom}%`;
   const shellBackgroundColor = appBlur
@@ -690,7 +722,7 @@ function App() {
   }, []);
 
   // ── Boot store ──
-  useEffect(() => { initStore(); }, [initStore]);
+  useEffect(() => { initTerminalStore(); }, [initTerminalStore]);
 
   useEffect(() => {
     let cancelled = false;
@@ -725,10 +757,10 @@ function App() {
       return;
     }
 
-    invoke('window_set_taskbar_visibility', { visible: systemSettings.showInTaskbar }).catch(error => {
+    invoke('window_set_taskbar_visibility', { visible: shouldShowInTaskbar }).catch(error => {
       console.warn('OverlayTerm: failed to sync taskbar visibility', error);
     });
-  }, [systemSettings.showInTaskbar]);
+  }, [shouldShowInTaskbar]);
 
   useEffect(() => {
     setOverlayPluginFonts(pluginFonts);
@@ -816,23 +848,55 @@ function App() {
     clearAnimationClock();
   }, [clearAnimationClock]);
 
+  const syncWindowPresentation = useCallback(async (mode: TerminalWindowMode) => {
+    if (!isTauri()) {
+      return;
+    }
+
+    const win = getCurrentWindow();
+    const isWindowed = mode === 'windowed';
+
+    if (!isWindowed) {
+      await win.unmaximize().catch(() => {});
+    }
+
+    await Promise.allSettled([
+      win.setDecorations(isWindowed),
+      win.setAlwaysOnTop(!isWindowed),
+      win.setResizable(true),
+      win.setShadow(isWindowed),
+      win.setSkipTaskbar(isWindowed ? false : !shouldShowInTaskbar),
+    ]);
+  }, [shouldShowInTaskbar]);
+
   // ── Position & show ──
   const positionAndShow = useCallback(async () => {
     clearAnimationClock();
     try {
       const win = getCurrentWindow();
+      await syncWindowPresentation('overlay');
       const scaleFactor = await win.scaleFactor();
       const monitor = await primaryMonitor();
       if (!monitor) return;
 
       const store = useSettingsStore.getState().settings.terminal;
-      const layout = computeOverlayWindowLayout({
-        workArea: monitor.workArea,
-        scaleFactor,
-        overlayHeight: store.overlayHeight,
-        overlayWidth: store.overlayWidth,
-        overlayAnchor: store.overlayAnchor === 'top' ? 'top' : 'bottom',
-      });
+      const rememberedBounds = runtimeOverlayBoundsRef.current;
+      const layout = rememberedBounds
+        ? {
+            ...clampOverlayWindowBoundsToWorkArea({
+              workArea: monitor.workArea,
+              scaleFactor,
+              bounds: rememberedBounds,
+            }),
+            healedHeight: null,
+          }
+        : computeOverlayWindowLayout({
+            workArea: monitor.workArea,
+            scaleFactor,
+            overlayHeight: store.overlayHeight,
+            overlayWidth: store.overlayWidth,
+            overlayAnchor: store.overlayAnchor === 'top' ? 'top' : 'bottom',
+          });
       const nextAnimation = resolveAnimationById(
         resolvedOpenAnimationId,
         animationSystemConfig.defaultOpenAnimationId,
@@ -852,6 +916,12 @@ function App() {
       if (layout.healedHeight !== null && layout.healedHeight !== store.overlayHeight) {
         useSettingsStore.getState().updateTerminal({ overlayHeight: layout.healedHeight });
       }
+      runtimeOverlayBoundsRef.current = {
+        width: layout.width,
+        height: layout.height,
+        x: layout.x,
+        y: layout.y,
+      };
       isProgrammaticResizeRef.current = true;
       await win.setSize(new PhysicalSize(layout.width, layout.height));
       await win.setPosition(new PhysicalPosition(layout.x, layout.y));
@@ -873,6 +943,12 @@ function App() {
           animationCommitTimerRef.current = null;
         }
         void win.setPosition(new PhysicalPosition(layout.x, layout.y)).catch(() => {});
+        runtimeOverlayBoundsRef.current = {
+          width: layout.width,
+          height: layout.height,
+          x: layout.x,
+          y: layout.y,
+        };
         isProgrammaticResizeRef.current = false;
         markOverlayRuntimePhase('opening', true);
         setOverlayPhase('opening');
@@ -896,7 +972,115 @@ function App() {
       setAnimationProgress(0);
       console.warn('OverlayTerm: failed to position/show', e);
     }
-  }, [appAnimationDurationMs, clearAnimationClock, markOverlayRuntimePhase, resolveAnimationById, resolvedOpenAnimationId, startAnimationProgress]);
+  }, [appAnimationDurationMs, clearAnimationClock, markOverlayRuntimePhase, resolveAnimationById, resolvedOpenAnimationId, startAnimationProgress, syncWindowPresentation]);
+
+  const showWindowedPanel = useCallback(async () => {
+    clearAnimationClock();
+    try {
+      const win = getCurrentWindow();
+      await syncWindowPresentation('windowed');
+      const scaleFactor = await win.scaleFactor();
+      const monitor = await primaryMonitor();
+      if (!monitor) return;
+
+      const store = useSettingsStore.getState().settings.terminal;
+      const layout = computePanelWindowLayout({
+        workArea: monitor.workArea,
+        scaleFactor,
+        windowedWidth: store.windowedWidth,
+        windowedHeight: store.windowedHeight,
+      });
+      const nextAnimation = resolveAnimationById(
+        resolvedOpenAnimationId,
+        animationSystemConfig.defaultOpenAnimationId,
+      );
+      const nextDurationMs = resolveAnimationDurationMs(
+        nextAnimation,
+        'enter',
+        appAnimationDurationMs,
+      );
+
+      setOverlayAnimationDirection('enter');
+      setActiveAnimation(nextAnimation);
+      setAnimationProgress(0);
+      markOverlayRuntimePhase('opening', true);
+      interactionLockUntilRef.current = Date.now() + nextDurationMs + 80;
+      setOverlayPhase('closed');
+      if (
+        (layout.healedWidth !== null && layout.healedWidth !== store.windowedWidth)
+        || (layout.healedHeight !== null && layout.healedHeight !== store.windowedHeight)
+      ) {
+        useSettingsStore.getState().updateTerminal({
+          ...(layout.healedWidth !== null ? { windowedWidth: layout.healedWidth } : {}),
+          ...(layout.healedHeight !== null ? { windowedHeight: layout.healedHeight } : {}),
+        });
+      }
+
+      const isMaximized = await win.isMaximized().catch(() => false);
+      if (!isMaximized) {
+        isProgrammaticResizeRef.current = true;
+        await win.setSize(new PhysicalSize(layout.width, layout.height));
+        await win.setPosition(new PhysicalPosition(layout.x, layout.y));
+      }
+      await win.show();
+      await win.unminimize().catch(() => {});
+      await win.setFocus();
+
+      let committedOpenPhase = false;
+      const commitOpenPhase = () => {
+        if (committedOpenPhase) {
+          return;
+        }
+        committedOpenPhase = true;
+        if (animationFrameRef.current !== null) {
+          window.cancelAnimationFrame(animationFrameRef.current);
+          animationFrameRef.current = null;
+        }
+        if (animationCommitTimerRef.current !== null) {
+          window.clearTimeout(animationCommitTimerRef.current);
+          animationCommitTimerRef.current = null;
+        }
+        isProgrammaticResizeRef.current = false;
+        markOverlayRuntimePhase('opening', true);
+        setOverlayPhase('opening');
+        startAnimationProgress(nextDurationMs);
+        animationTimerRef.current = window.setTimeout(() => {
+          markOverlayRuntimePhase('open', true);
+          setOverlayPhase('open');
+          setAnimationProgress(1);
+          animationTimerRef.current = null;
+        }, nextDurationMs);
+      };
+      animationFrameRef.current = window.requestAnimationFrame(() => {
+        commitOpenPhase();
+      });
+      animationCommitTimerRef.current = window.setTimeout(() => {
+        commitOpenPhase();
+      }, 24);
+    } catch (error) {
+      isProgrammaticResizeRef.current = false;
+      markOverlayRuntimePhase('closed', false);
+      setAnimationProgress(0);
+      console.warn('OverlayTerm: failed to show regular window mode', error);
+    }
+  }, [
+    appAnimationDurationMs,
+    clearAnimationClock,
+    markOverlayRuntimePhase,
+    resolveAnimationById,
+    resolvedOpenAnimationId,
+    startAnimationProgress,
+    syncWindowPresentation,
+  ]);
+
+  const showCurrentPresentation = useCallback(() => {
+    if (windowModeRef.current === 'windowed') {
+      void showWindowedPanel();
+      return;
+    }
+
+    void positionAndShow();
+  }, [positionAndShow, showWindowedPanel]);
 
   const handleToggleOverlayAnchor = useCallback(() => {
     updateTerminal({
@@ -1031,18 +1215,29 @@ function App() {
       return;
     }
     if (!overlayVisibleRef.current || currentPhase === 'closed') {
-      void positionAndShow();
+      showCurrentPresentation();
       return;
     }
     void hideOverlay();
-  }, [positionAndShow, hideOverlay]);
+  }, [hideOverlay, showCurrentPresentation]);
+
+  const handleToggleWindowMode = useCallback(() => {
+    const currentPhase = overlayPhaseRef.current;
+    if (currentPhase !== 'open') {
+      return;
+    }
+
+    updateTerminal({
+      windowMode: windowModeRef.current === 'windowed' ? 'overlay' : 'windowed',
+    });
+  }, [updateTerminal]);
 
   const handleOpenCommandPalette = useCallback(() => {
     setIsCommandPaletteOpen(true);
     if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
-      void positionAndShow();
+      showCurrentPresentation();
     }
-  }, [positionAndShow]);
+  }, [showCurrentPresentation]);
 
   const handleCloseCommandPalette = useCallback(() => {
     setIsCommandPaletteOpen(false);
@@ -1058,11 +1253,11 @@ function App() {
 
   // Dev-mode auto-show: fires once after mount so you don't need to press
   // the hotkey every time you restart during development.
-  // We store positionAndShow in a ref so the [] dep array timer is never
-  // cancelled by useCallback reference churn (the old [positionAndShow] dep
-  // caused the timer to reset every time settings finished loading).
-  const positionAndShowRef = useRef(positionAndShow);
-  positionAndShowRef.current = positionAndShow;
+  // We store the current show routine in a ref so the [] dep array timer is
+  // never cancelled by useCallback reference churn while settings finish
+  // loading or the presentation mode changes.
+  const showCurrentPresentationRef = useRef(showCurrentPresentation);
+  showCurrentPresentationRef.current = showCurrentPresentation;
   useEffect(() => {
     if (!isTauri() || !import.meta.env.DEV) {
       return;
@@ -1072,7 +1267,7 @@ function App() {
     // listener is registered (i.e. very fast machines / hot-reloads).
     const timer = window.setTimeout(() => {
       if (!overlayVisibleRef.current && overlayPhaseRef.current === 'closed') {
-        void positionAndShowRef.current();
+        showCurrentPresentationRef.current();
       }
     }, 400);
     return () => window.clearTimeout(timer);
@@ -1090,6 +1285,13 @@ function App() {
         e.preventDefault();
         e.stopPropagation();
         openTerminalPanelRef.current();
+        return;
+      }
+
+      if (matchesKeybinding(e, keybindings.windowModeToggle)) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleToggleWindowMode();
         return;
       }
 
@@ -1116,10 +1318,150 @@ function App() {
     };
     window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
-  }, [handleOpenCommandPalette, hideOverlay, isCommandPaletteOpen, keybindings.commandPalette, keybindings.terminalFocus]);
+  }, [
+    handleOpenCommandPalette,
+    handleToggleWindowMode,
+    hideOverlay,
+    isCommandPaletteOpen,
+    keybindings.commandPalette,
+    keybindings.terminalFocus,
+    keybindings.windowModeToggle,
+  ]);
 
   useEffect(() => {
-    if (!overlayVisibleRef.current) {
+    if (!isTauri()) {
+      return;
+    }
+
+    void syncWindowPresentation(windowMode);
+  }, [syncWindowPresentation, windowMode]);
+
+  useEffect(() => {
+    if (!isTauri() || !overlayVisibleRef.current || overlayPhaseRef.current !== 'open') {
+      return;
+    }
+
+    let cancelled = false;
+
+    const applyVisibleWindowMode = async () => {
+      try {
+        const win = getCurrentWindow();
+        await syncWindowPresentation(windowMode);
+        const scaleFactor = await win.scaleFactor();
+        const monitor = await primaryMonitor();
+        if (!monitor || cancelled) {
+          return;
+        }
+
+        if (windowMode === 'windowed') {
+          const store = useSettingsStore.getState().settings.terminal;
+          const layout = computePanelWindowLayout({
+            workArea: monitor.workArea,
+            scaleFactor,
+            windowedWidth: store.windowedWidth,
+            windowedHeight: store.windowedHeight,
+          });
+          const isMaximized = await win.isMaximized().catch(() => false);
+          if (!isMaximized) {
+            isProgrammaticResizeRef.current = true;
+            await win.setSize(new PhysicalSize(layout.width, layout.height));
+            await win.setPosition(new PhysicalPosition(layout.x, layout.y));
+          }
+          if (
+            (layout.healedWidth !== null && layout.healedWidth !== store.windowedWidth)
+            || (layout.healedHeight !== null && layout.healedHeight !== store.windowedHeight)
+          ) {
+            useSettingsStore.getState().updateTerminal({
+              ...(layout.healedWidth !== null ? { windowedWidth: layout.healedWidth } : {}),
+              ...(layout.healedHeight !== null ? { windowedHeight: layout.healedHeight } : {}),
+            });
+          }
+          return;
+        }
+
+        const store = useSettingsStore.getState().settings.terminal;
+        const rememberedBounds = runtimeOverlayBoundsRef.current;
+        const baseLayout = rememberedBounds
+          ? clampOverlayWindowBoundsToWorkArea({
+              workArea: monitor.workArea,
+              scaleFactor,
+              bounds: rememberedBounds,
+            })
+          : computeOverlayWindowLayout({
+              workArea: monitor.workArea,
+              scaleFactor,
+              overlayHeight: store.overlayHeight,
+              overlayWidth: store.overlayWidth,
+              overlayAnchor: store.overlayAnchor === 'top' ? 'top' : 'bottom',
+            });
+        const anchoredLayout = computeOverlayWindowLayout({
+          workArea: monitor.workArea,
+          scaleFactor,
+          overlayHeight: Math.round(baseLayout.height / scaleFactor),
+          overlayWidth: Math.round(baseLayout.width / scaleFactor),
+          overlayAnchor: store.overlayAnchor === 'top' ? 'top' : 'bottom',
+        });
+        const layout = {
+          ...baseLayout,
+          y: anchoredLayout.y,
+          healedHeight: 'healedHeight' in anchoredLayout ? anchoredLayout.healedHeight : null,
+        };
+        if (layout.healedHeight !== null && layout.healedHeight !== store.overlayHeight) {
+          useSettingsStore.getState().updateTerminal({ overlayHeight: layout.healedHeight });
+        }
+
+        runtimeOverlayBoundsRef.current = {
+          width: layout.width,
+          height: layout.height,
+          x: layout.x,
+          y: layout.y,
+        };
+        isProgrammaticResizeRef.current = true;
+        await win.setSize(new PhysicalSize(layout.width, layout.height));
+        await win.setPosition(new PhysicalPosition(layout.x, layout.y));
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('OverlayTerm: failed to transition window presentation', error);
+        }
+      } finally {
+        isProgrammaticResizeRef.current = false;
+      }
+    };
+
+    void applyVisibleWindowMode();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [syncWindowPresentation, windowMode]);
+
+  useEffect(() => {
+    if (!isTauri()) {
+      return;
+    }
+
+    let unlisten: (() => void) | null = null;
+    getCurrentWindow().onCloseRequested(async event => {
+      event.preventDefault();
+      const currentPhase = overlayPhaseRef.current;
+      if (currentPhase === 'open') {
+        await hideOverlay();
+        return;
+      }
+      await getCurrentWindow().hide().catch(() => {});
+    }).then(listener => {
+      unlisten = listener;
+    }).catch(error => {
+      console.warn('OverlayTerm: failed to intercept close requests', error);
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, [hideOverlay]);
+
+  useEffect(() => {
+    if (!overlayVisibleRef.current || windowMode !== 'overlay') {
       return;
     }
 
@@ -1135,18 +1477,43 @@ function App() {
         }
 
         const store = useSettingsStore.getState().settings.terminal;
-        const layout = computeOverlayWindowLayout({
+        const rememberedBounds = runtimeOverlayBoundsRef.current;
+        const baseLayout = rememberedBounds
+          ? clampOverlayWindowBoundsToWorkArea({
+              workArea: monitor.workArea,
+              scaleFactor,
+              bounds: rememberedBounds,
+            })
+          : computeOverlayWindowLayout({
+              workArea: monitor.workArea,
+              scaleFactor,
+              overlayHeight: store.overlayHeight,
+              overlayWidth: store.overlayWidth,
+              overlayAnchor: store.overlayAnchor === 'top' ? 'top' : 'bottom',
+            });
+        const anchoredLayout = computeOverlayWindowLayout({
           workArea: monitor.workArea,
           scaleFactor,
-          overlayHeight: store.overlayHeight,
-          overlayWidth: store.overlayWidth,
+          overlayHeight: Math.round(baseLayout.height / scaleFactor),
+          overlayWidth: Math.round(baseLayout.width / scaleFactor),
           overlayAnchor: store.overlayAnchor === 'top' ? 'top' : 'bottom',
         });
+        const layout = {
+          ...baseLayout,
+          y: anchoredLayout.y,
+          healedHeight: anchoredLayout.healedHeight,
+        };
 
         if (layout.healedHeight !== null && layout.healedHeight !== store.overlayHeight) {
           useSettingsStore.getState().updateTerminal({ overlayHeight: layout.healedHeight });
         }
 
+        runtimeOverlayBoundsRef.current = {
+          width: layout.width,
+          height: layout.height,
+          x: layout.x,
+          y: layout.y,
+        };
         isProgrammaticResizeRef.current = true;
         await win.setSize(new PhysicalSize(layout.width, layout.height));
         await win.setPosition(new PhysicalPosition(layout.x, layout.y));
@@ -1162,7 +1529,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [overlayAnchor]);
+  }, [overlayAnchor, windowMode]);
 
   useEffect(() => {
     if (!isOverlayVisible || typeof window === 'undefined' || !isTauri()) {
@@ -1170,6 +1537,11 @@ function App() {
     }
 
     const handleWheelZoom = (event: WheelEvent) => {
+      const eventTarget = event.target instanceof HTMLElement ? event.target : null;
+      if (eventTarget?.closest('[data-overlay-explorer]') && (event.ctrlKey || event.metaKey)) {
+        return;
+      }
+
       const direction: 1 | -1 = event.deltaY < 0 ? 1 : -1;
       const multiplier = event.shiftKey ? 3 : 1;
       const appearanceState = useSettingsStore.getState().settings.appearance;
@@ -1215,15 +1587,44 @@ function App() {
       if (isProgrammaticResizeRef.current || !overlayVisibleRef.current) {
         return;
       }
-      const factor = await getCurrentWindow().scaleFactor();
+      const win = getCurrentWindow();
+      const factor = await win.scaleFactor();
       const logH = Math.round(ev.payload.height / factor);
       const logW = Math.round(ev.payload.width / factor);
-      useSettingsStore.getState().updateTerminal({
-        overlayHeight: Math.max(logH, 150),
-        overlayWidth:  Math.max(logW, 300),
-      });
+      if (windowModeRef.current === 'windowed') {
+        useSettingsStore.getState().updateTerminal({
+          windowedHeight: Math.max(logH, 480),
+          windowedWidth: Math.max(logW, 720),
+        });
+        return;
+      }
+
+      const position = await win.outerPosition().catch(() => runtimeOverlayBoundsRef.current ?? { x: 0, y: 0 });
+      runtimeOverlayBoundsRef.current = {
+        width: ev.payload.width,
+        height: ev.payload.height,
+        x: position.x,
+        y: position.y,
+      };
     });
     return () => { unlistenResize.then(fn => fn()); };
+  }, []);
+
+  useEffect(() => {
+    const unlistenMove = getCurrentWindow().onMoved(async ev => {
+      if (isProgrammaticResizeRef.current || !overlayVisibleRef.current || windowModeRef.current !== 'overlay') {
+        return;
+      }
+      const win = getCurrentWindow();
+      const size = await win.outerSize().catch(() => runtimeOverlayBoundsRef.current ?? { width: 0, height: 0 });
+      runtimeOverlayBoundsRef.current = {
+        width: size.width,
+        height: size.height,
+        x: ev.payload.x,
+        y: ev.payload.y,
+      };
+    });
+    return () => { unlistenMove.then(fn => fn()); };
   }, []);
 
   // ── Explorer → Terminal bridge ──
@@ -1516,47 +1917,65 @@ function App() {
     }
 
     if (force) {
-      pluginSignatureRef.current = '';
+      pluginRefreshQueuedForceRef.current = true;
+    }
+    if (pluginRefreshInFlightRef.current) {
+      return;
     }
 
-    setFolderPluginsLoading(prev => prev && !force);
-    setFolderPluginsError(null);
+    pluginRefreshInFlightRef.current = true;
     try {
-      await ensureDir(pluginSystemConfig.pluginsDirectory);
-      const listed = await invoke<PluginFileEntry[]>('fs_list_dir', {
-        path: pluginSystemConfig.pluginsDirectory,
-        showHidden: false,
-      });
-      const nextSignature = listed
-        .filter(entry => entry.is_dir || isFrontendPluginFile(entry))
-        .sort((left, right) => left.name.localeCompare(right.name))
-        .map(entry => `${entry.path}:${entry.modified}:${entry.is_dir ? 'dir' : 'file'}`)
-        .join('|');
+      do {
+        const nextForce = force || pluginRefreshQueuedForceRef.current;
+        pluginRefreshQueuedForceRef.current = false;
+        force = false;
 
-      if (!force && nextSignature === pluginSignatureRef.current) {
-        setFolderPluginsLoading(false);
-        return;
-      }
+        if (nextForce) {
+          pluginSignatureRef.current = '';
+        }
 
-      pluginSignatureRef.current = nextSignature;
-      const discovered = await discoverOverlayPlugins(createPluginApi);
-      setFolderPlugins(discovered.plugins);
-      setPluginContributedShaders(discovered.shaders);
-      setPluginThemePackages(discovered.themePackages);
-      setPluginFonts(discovered.fonts);
-      setPluginCommands(discovered.commands);
-      setPluginExplorerActions(discovered.explorerActions);
-      setFolderPluginsError(discovered.warnings.length > 0 ? discovered.warnings.join('\n') : null);
-    } catch (error) {
-      setFolderPlugins([]);
-      setPluginContributedShaders([]);
-      setPluginThemePackages([]);
-      setPluginFonts([]);
-      setPluginCommands([]);
-      setPluginExplorerActions([]);
-      setFolderPluginsError(String(error));
+        setFolderPluginsLoading(prev => prev && !nextForce);
+        setFolderPluginsError(null);
+        try {
+          await ensureDir(pluginSystemConfig.pluginsDirectory);
+          const listed = await invoke<PluginFileEntry[]>('fs_list_dir', {
+            path: pluginSystemConfig.pluginsDirectory,
+            showHidden: false,
+          });
+          const nextSignature = listed
+            .filter(entry => entry.is_dir || isFrontendPluginFile(entry))
+            .sort((left, right) => left.name.localeCompare(right.name))
+            .map(entry => `${entry.path}:${entry.modified}:${entry.is_dir ? 'dir' : 'file'}`)
+            .join('|');
+
+          if (!nextForce && nextSignature === pluginSignatureRef.current) {
+            setFolderPluginsLoading(false);
+            continue;
+          }
+
+          pluginSignatureRef.current = nextSignature;
+          const discovered = await discoverOverlayPlugins(createPluginApi);
+          setFolderPlugins(discovered.plugins);
+          setPluginContributedShaders(discovered.shaders);
+          setPluginThemePackages(discovered.themePackages);
+          setPluginFonts(discovered.fonts);
+          setPluginCommands(discovered.commands);
+          setPluginExplorerActions(discovered.explorerActions);
+          setFolderPluginsError(discovered.warnings.length > 0 ? discovered.warnings.join('\n') : null);
+        } catch (error) {
+          setFolderPlugins([]);
+          setPluginContributedShaders([]);
+          setPluginThemePackages([]);
+          setPluginFonts([]);
+          setPluginCommands([]);
+          setPluginExplorerActions([]);
+          setFolderPluginsError(String(error));
+        } finally {
+          setFolderPluginsLoading(false);
+        }
+      } while (pluginRefreshQueuedForceRef.current);
     } finally {
-      setFolderPluginsLoading(false);
+      pluginRefreshInFlightRef.current = false;
     }
   }, [createPluginApi]);
 
@@ -1644,11 +2063,17 @@ function App() {
     const startPluginWatcher = async () => {
       try {
         await ensureDir(pluginSystemConfig.pluginsDirectory);
-        unlistenPlugins = await listen<PluginDirectoryWatchEvent>(pluginSystemConfig.watchEventName, () => {
+        unlistenPlugins = await listen<PluginDirectoryWatchEvent>(pluginSystemConfig.watchEventName, (event) => {
+          if (!shouldRefreshForPluginWatchPaths(event.payload.paths)) {
+            return;
+          }
           schedulePluginRefresh(true);
         });
 
-        await invoke('plugin_watch_directory', { path: pluginSystemConfig.pluginsDirectory });
+        await invoke('plugin_watch_directory', {
+          path: pluginSystemConfig.pluginsDirectory,
+          ignoredDirectories: [...pluginSystemConfig.ignoredWatchDirectoryNames],
+        });
 
         if (disposed) {
           unlistenPlugins?.();
@@ -1997,9 +2422,9 @@ function App() {
     setIsCommandPaletteOpen(false);
     handleActivatePanel('terminal');
     if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
-      void positionAndShow();
+      showCurrentPresentation();
     }
-  }, [handleActivatePanel, positionAndShow]);
+  }, [handleActivatePanel, showCurrentPresentation]);
 
   openTerminalPanelRef.current = handleOpenTerminalPanel;
 
@@ -2208,6 +2633,7 @@ function App() {
       blurStrength={clampedAppBlurStrength}
       onBlurStrengthChange={(v) => updateAppearance({ appBlurStrength: clampOverlayVisualControlValue('blurStrength', v) })}
       blurPlatform={runtimePlatform}
+      windowMode={windowMode}
       overlayAnchor={overlayAnchor}
       commandPaletteShortcutLabel={formatHotkeyLabel(keybindings.commandPalette)}
       toggleShortcutLabel={formatHotkeyLabel(keybindings.terminalToggle)}
@@ -2237,8 +2663,8 @@ function App() {
         style={{
           position: 'absolute',
           left: 0,
-          top: isTopAnchored ? 0 : 'auto',
-          bottom: isTopAnchored ? 'auto' : 0,
+          top: isWindowedMode ? 0 : (isTopAnchored ? 0 : 'auto'),
+          bottom: isWindowedMode ? 'auto' : (isTopAnchored ? 'auto' : 0),
           width: scaledWidth,
           height: scaledHeight,
         }}
@@ -2249,7 +2675,7 @@ function App() {
             height: '100%',
             ...shellAnimationStyle,
             transform: combinedShellTransform,
-            transformOrigin: isTopAnchored ? 'top left' : 'bottom left',
+            transformOrigin: isWindowedMode ? 'center center' : (isTopAnchored ? 'top left' : 'bottom left'),
           }}
         >
           <div
@@ -2269,12 +2695,14 @@ function App() {
               color: theme.palette.textPrimary,
               fontFamily: resolvedAppearance.fonts.ui,
               boxShadow: theme.effects.overlayShadow,
-              borderTop: isTopAnchored ? 'none' : `1px solid ${accent}40`,
-              borderBottom: isTopAnchored ? `1px solid ${accent}40` : 'none',
-              borderTopLeftRadius: isTopAnchored ? 0 : 18,
-              borderTopRightRadius: isTopAnchored ? 0 : 18,
-              borderBottomLeftRadius: isTopAnchored ? 18 : 0,
-              borderBottomRightRadius: isTopAnchored ? 18 : 0,
+              borderTop: isWindowedMode ? `1px solid ${accent}28` : (isTopAnchored ? 'none' : `1px solid ${accent}40`),
+              borderBottom: isWindowedMode ? `1px solid ${accent}28` : (isTopAnchored ? `1px solid ${accent}40` : 'none'),
+              borderLeft: isWindowedMode ? `1px solid ${accent}28` : 'none',
+              borderRight: isWindowedMode ? `1px solid ${accent}28` : 'none',
+              borderTopLeftRadius: isWindowedMode ? 16 : (isTopAnchored ? 0 : 18),
+              borderTopRightRadius: isWindowedMode ? 16 : (isTopAnchored ? 0 : 18),
+              borderBottomLeftRadius: isWindowedMode ? 16 : (isTopAnchored ? 18 : 0),
+              borderBottomRightRadius: isWindowedMode ? 16 : (isTopAnchored ? 18 : 0),
             }}
           >
             <ShaderSurfaceLayer
@@ -2296,7 +2724,7 @@ function App() {
             />
 
             <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-              {!isTopAnchored && (
+              {!isWindowedMode && !isTopAnchored && (
                 <div
                   className="h-[4px] shrink-0 cursor-ns-resize select-none"
                   style={{ background: `linear-gradient(90deg, transparent 0%, ${accent}99 30%, ${accent} 50%, ${accent}99 70%, transparent 100%)` }}
@@ -2399,7 +2827,7 @@ function App() {
 
               {activeLayoutProfile.chrome.barPosition === 'bottom' && chromeBar}
 
-              {isTopAnchored && (
+              {!isWindowedMode && isTopAnchored && (
                 <div
                   className="h-[4px] shrink-0 cursor-ns-resize select-none"
                   style={{ background: `linear-gradient(90deg, transparent 0%, ${accent}99 30%, ${accent} 50%, ${accent}99 70%, transparent 100%)` }}
@@ -2776,6 +3204,7 @@ function TopBar({
   blurStrength,
   onBlurStrengthChange,
   blurPlatform,
+  windowMode,
   overlayAnchor,
   commandPaletteShortcutLabel,
   toggleShortcutLabel,
@@ -2810,6 +3239,7 @@ function TopBar({
   blurStrength: number;
   onBlurStrengthChange: (value: number) => void;
   blurPlatform: RuntimePlatform;
+  windowMode: TerminalWindowMode;
   overlayAnchor: OverlayWindowAnchor;
   commandPaletteShortcutLabel: string;
   toggleShortcutLabel: string;
@@ -2833,6 +3263,7 @@ function TopBar({
   const isSettingsActive = activePanelId === 'settings';
   const supportsNativeBlur = blurPlatform === 'macos' || blurPlatform === 'windows';
   const isBottomBar = layoutProfile.chrome.barPosition === 'bottom';
+  const isWindowedMode = windowMode === 'windowed';
   const openPanels = useMemo(
     () => getTabbedOpenPanelIds(layoutProfile, openPanelIds)
       .map(id => panels.find(panel => panel.id === id))
@@ -2861,9 +3292,13 @@ function TopBar({
   );
   const showPanelDescriptions = !compactPanelMenu && panelMenuHeight > 290;
   const nextOverlayAnchor = overlayAnchor === 'top' ? 'bottom' : 'top';
-  const layoutButtonTitle = layoutSourcePath
-    ? `Cycle Layout (${layoutProfile.label})\n${layoutSourcePath}\nRight-click: dock overlay to the ${nextOverlayAnchor} edge`
-    : `Cycle Layout (${layoutProfile.label})\nRight-click: dock overlay to the ${nextOverlayAnchor} edge`;
+  const layoutButtonTitle = isWindowedMode
+    ? (layoutSourcePath
+      ? `Cycle Layout (${layoutProfile.label})\n${layoutSourcePath}`
+      : `Cycle Layout (${layoutProfile.label})`)
+    : (layoutSourcePath
+      ? `Cycle Layout (${layoutProfile.label})\n${layoutSourcePath}\nRight-click: dock overlay to the ${nextOverlayAnchor} edge`
+      : `Cycle Layout (${layoutProfile.label})\nRight-click: dock overlay to the ${nextOverlayAnchor} edge`);
 
   useEffect(() => {
     if (!isMenuOpen) return;
@@ -3060,7 +3495,9 @@ function TopBar({
         onClick={onCycleLayout}
         onContextMenu={event => {
           event.preventDefault();
-          onToggleOverlayAnchor();
+          if (!isWindowedMode) {
+            onToggleOverlayAnchor();
+          }
         }}
         title={layoutButtonTitle}
         style={{
@@ -3351,19 +3788,21 @@ function TopBar({
             {toggleShortcutLabel}
           </kbd>
         )}
-        <button
-          onClick={onClose}
-          title="Close (Esc)"
-          style={{
-            background: 'transparent', border: 'none', cursor: 'pointer',
-            color: MUTED, padding: 4, borderRadius: 5, display: 'flex', alignItems: 'center',
-            transition: 'background 0.12s, color 0.12s',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(248,113,113,0.12)'; e.currentTarget.style.color = appearance.theme.palette.danger; }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = MUTED; }}
-        >
-          <X size={12} />
-        </button>
+        {!isWindowedMode && (
+          <button
+            onClick={onClose}
+            title="Close (Esc)"
+            style={{
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              color: MUTED, padding: 4, borderRadius: 5, display: 'flex', alignItems: 'center',
+              transition: 'background 0.12s, color 0.12s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(248,113,113,0.12)'; e.currentTarget.style.color = appearance.theme.palette.danger; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = MUTED; }}
+          >
+            <X size={12} />
+          </button>
+        )}
       </div>
     </div>
   );

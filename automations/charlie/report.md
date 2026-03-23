@@ -34,3 +34,11 @@
 ## Goal
 
 - Turn the existing asset runtime into a debuggable, repeatable, operator-friendly workflow that feels ready to ship instead of merely technically possible.
+
+## Release Risk Posture 2026-03-22T22:29:42Z
+
+- Posture: slightly improved, not yet shippable.
+- What improved: legacy plugin scanning no longer collapses the entire discovery pass when one file plugin is broken; the operator now gets a warning and the remaining plugins still load.
+- What is still risky: full Vitest execution in this VPS session did not complete, so runtime confirmation of the new regression path is still pending.
+- Residual asset risk: theme-package asset resolution still deserves a separate pass if package-level icon failures should be downgraded from package-fatal to warning-only.
+- Overall call: better release posture for plugin discovery, but Charlie still needs one clean runtime verification pass before the lane can treat asset workflow as low-risk.

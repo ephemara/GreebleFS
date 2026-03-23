@@ -167,6 +167,7 @@ const ENTRY_SIZE_SCAN_BUDGET_ENV: &str = "OVERLAYTERM_ENTRY_SIZE_SCAN_BUDGET_MS"
 const SEARCH_CONTENT_INDEX_TOTAL_BYTES_BUDGET_ENV: &str =
     "OVERLAYTERM_SEARCH_CONTENT_INDEX_TOTAL_BYTES_BUDGET";
 const MAX_SEARCH_CONTENT_BYTES_ENV: &str = "OVERLAYTERM_SEARCH_MAX_CONTENT_FILE_BYTES";
+const SEARCH_MAX_INDEXED_ENTRIES_ENV: &str = "OVERLAYTERM_SEARCH_MAX_INDEXED_ENTRIES";
 
 const DIR_LIST_CACHE_TTL_MS_DEFAULT: u64 = 2_000;
 const SEARCH_NAME_INDEX_CACHE_TTL_MS_DEFAULT: u64 = 2_000;
@@ -175,6 +176,7 @@ const ENTRY_SIZE_CACHE_TTL_MS_DEFAULT: u64 = 10_000;
 const ENTRY_SIZE_SCAN_BUDGET_MS_DEFAULT: u64 = 900;
 const SEARCH_CONTENT_INDEX_TOTAL_BYTES_BUDGET_DEFAULT: u64 = 12 * 1024 * 1024;
 const MAX_SEARCH_CONTENT_BYTES_DEFAULT: u64 = 8 * 1024 * 1024;
+const SEARCH_MAX_INDEXED_ENTRIES_DEFAULT: u64 = 25_000;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -186,6 +188,7 @@ pub struct FsRuntimeCachePolicy {
     pub entry_size_scan_budget_ms: u64,
     pub search_content_index_total_bytes_budget: u64,
     pub max_search_content_file_bytes: u64,
+    pub search_max_indexed_entries: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -197,6 +200,7 @@ struct FsCachePolicy {
     entry_size_scan_budget: Duration,
     search_content_index_total_bytes_budget: u64,
     max_search_content_file_bytes: u64,
+    search_max_indexed_entries: usize,
 }
 
 impl FsCachePolicy {
@@ -210,6 +214,7 @@ impl FsCachePolicy {
             entry_size_scan_budget_ms: self.entry_size_scan_budget.as_millis() as u64,
             search_content_index_total_bytes_budget: self.search_content_index_total_bytes_budget,
             max_search_content_file_bytes: self.max_search_content_file_bytes,
+            search_max_indexed_entries: self.search_max_indexed_entries as u64,
         }
     }
 }
@@ -268,6 +273,11 @@ fn resolve_fs_cache_policy_from_lookup(
             lookup(MAX_SEARCH_CONTENT_BYTES_ENV).as_deref(),
             MAX_SEARCH_CONTENT_BYTES_DEFAULT,
         ),
+        search_max_indexed_entries: parse_fs_cache_policy_u64(
+            lookup(SEARCH_MAX_INDEXED_ENTRIES_ENV).as_deref(),
+            SEARCH_MAX_INDEXED_ENTRIES_DEFAULT,
+        )
+        .clamp(1, usize::MAX as u64) as usize,
     }
 }
 
@@ -910,6 +920,7 @@ pub struct FileSearchDiagnostics {
     pub indexed_entry_count: u64,
     pub content_cache_stored_file_count: u64,
     pub content_cache_stored_byte_count: u64,
+    pub truncated_by_scan_budget: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -1628,6 +1639,7 @@ fn empty_search_response(
     content_cache_status: FileSearchContentCacheStatus,
     scanned_entry_count: u64,
     indexed_entry_count: u64,
+    truncated_by_scan_budget: bool,
 ) -> FileSearchResponse {
     FileSearchResponse {
         results: Vec::new(),
@@ -1638,6 +1650,7 @@ fn empty_search_response(
             indexed_entry_count,
             content_cache_stored_file_count: 0,
             content_cache_stored_byte_count: 0,
+            truncated_by_scan_budget,
         },
     }
 }
@@ -1677,6 +1690,7 @@ fn search_entries_blocking(
             },
             0,
             0,
+            false,
         ));
     }
 
@@ -1697,6 +1711,7 @@ fn search_entries_blocking(
                     FileSearchContentCacheStatus::CacheHit,
                     0,
                     indexed_entry_count as u64,
+                    false,
                 ));
             }
             return Ok(FileSearchResponse {
@@ -1708,6 +1723,7 @@ fn search_entries_blocking(
                     indexed_entry_count: indexed_entry_count as u64,
                     content_cache_stored_file_count: 0,
                     content_cache_stored_byte_count: 0,
+                    truncated_by_scan_budget: false,
                 },
             });
         }
@@ -1721,6 +1737,7 @@ fn search_entries_blocking(
                     FileSearchContentCacheStatus::NotRequested,
                     0,
                     indexed_entry_count as u64,
+                    false,
                 ));
             }
             return Ok(FileSearchResponse {
@@ -1732,6 +1749,7 @@ fn search_entries_blocking(
                     indexed_entry_count: indexed_entry_count as u64,
                     content_cache_stored_file_count: 0,
                     content_cache_stored_byte_count: 0,
+                    truncated_by_scan_budget: false,
                 },
             });
         }
@@ -1745,6 +1763,7 @@ fn search_entries_blocking(
     let mut cached_content_entries = include_content.then(|| Vec::new());
     let mut content_cache_complete = include_content;
     let mut cached_content_bytes = 0_u64;
+    let mut truncated_by_scan_budget = false;
     let content_cache_enabled = include_content
         && !policy.search_content_index_cache_ttl.is_zero()
         && policy.search_content_index_total_bytes_budget > 0;
@@ -1759,13 +1778,14 @@ fn search_entries_blocking(
         FileSearchContentCacheStatus::NotRequested
     };
 
-    while let Some(current_dir) = stack.pop() {
+    'search: while let Some(current_dir) = stack.pop() {
         if !is_search_request_active(&request_scope, request_id) {
             return Ok(empty_search_response(
                 FileSearchExecutionStrategy::LiveScan,
                 content_cache_status,
                 scanned_entry_count,
                 cached_name_entries.len() as u64,
+                truncated_by_scan_budget,
             ));
         }
 
@@ -1781,10 +1801,16 @@ fn search_entries_blocking(
                     content_cache_status,
                     scanned_entry_count,
                     cached_name_entries.len() as u64,
+                    truncated_by_scan_budget,
                 ));
             }
             pause_search_entry_scan_for_tests();
             record_search_entry_scan_for_tests();
+
+            if scanned_entry_count >= policy.search_max_indexed_entries as u64 {
+                truncated_by_scan_budget = true;
+                break 'search;
+            }
 
             let entry = match entry_result {
                 Ok(value) => value,
@@ -1887,6 +1913,7 @@ fn search_entries_blocking(
                                         content_cache_status,
                                         scanned_entry_count,
                                         cached_name_entries.len() as u64,
+                                        truncated_by_scan_budget,
                                     ))
                                 }
                             }
@@ -1918,6 +1945,7 @@ fn search_entries_blocking(
                                         content_cache_status,
                                         scanned_entry_count,
                                         cached_name_entries.len() as u64,
+                                        truncated_by_scan_budget,
                                     ))
                                 }
                             }
@@ -1946,6 +1974,7 @@ fn search_entries_blocking(
                                 content_cache_status,
                                 scanned_entry_count,
                                 cached_name_entries.len() as u64,
+                                truncated_by_scan_budget,
                             ))
                         }
                     }
@@ -1987,13 +2016,16 @@ fn search_entries_blocking(
             content_cache_status,
             scanned_entry_count,
             cached_name_entries.len() as u64,
+            truncated_by_scan_budget,
         ));
     }
     let indexed_entry_count = cached_name_entries.len() as u64;
-    store_search_name_index(&root, show_hidden, cached_name_entries);
+    if !truncated_by_scan_budget {
+        store_search_name_index(&root, show_hidden, cached_name_entries);
+    }
     let mut content_cache_stored_file_count = 0_u64;
     let mut content_cache_stored_byte_count = 0_u64;
-    if content_cache_complete {
+    if content_cache_complete && !truncated_by_scan_budget {
         if let Some(entries) = cached_content_entries {
             content_cache_stored_file_count = entries
                 .iter()
@@ -2019,6 +2051,7 @@ fn search_entries_blocking(
             indexed_entry_count,
             content_cache_stored_file_count,
             content_cache_stored_byte_count,
+            truncated_by_scan_budget,
         },
     })
 }
@@ -3196,6 +3229,10 @@ mod tests {
             snapshot.max_search_content_file_bytes,
             MAX_SEARCH_CONTENT_BYTES_DEFAULT
         );
+        assert_eq!(
+            snapshot.search_max_indexed_entries,
+            SEARCH_MAX_INDEXED_ENTRIES_DEFAULT
+        );
     }
 
     #[test]
@@ -3211,6 +3248,7 @@ mod tests {
                 "1048576".to_string(),
             ),
             (MAX_SEARCH_CONTENT_BYTES_ENV, "2048".to_string()),
+            (SEARCH_MAX_INDEXED_ENTRIES_ENV, "8192".to_string()),
         ]);
         let policy = resolve_fs_cache_policy_from_lookup(|key| overrides.get(key).cloned());
         let snapshot = policy.snapshot();
@@ -3222,6 +3260,7 @@ mod tests {
         assert_eq!(snapshot.entry_size_scan_budget_ms, 1200);
         assert_eq!(snapshot.search_content_index_total_bytes_budget, 1_048_576);
         assert_eq!(snapshot.max_search_content_file_bytes, 2048);
+        assert_eq!(snapshot.search_max_indexed_entries, 8192);
     }
 
     #[tokio::test]

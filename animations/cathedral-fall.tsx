@@ -1,8 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { clamp01, defineAnimation, lerp } from 'overlayterm-animation';
+import { clamp01, defineAnimation, lerp, useAnimationContextRef } from 'overlayterm-animation';
 
 function CathedralFallOverlay({ context }: { context: any }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const contextRef = useAnimationContextRef(context);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -17,6 +18,7 @@ function CathedralFallOverlay({ context }: { context: any }) {
 
     const rafState = { id: 0 };
     const render = (now: number) => {
+      const liveContext = contextRef.current;
       const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       canvas.width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
       canvas.height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
@@ -24,7 +26,9 @@ function CathedralFallOverlay({ context }: { context: any }) {
       ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
 
       const time = now * 0.001;
-      const active = context.direction === 'enter' ? clamp01(context.progress) : 1 - clamp01(context.progress);
+      const active = liveContext.direction === 'enter'
+        ? clamp01(liveContext.progress)
+        : 1 - clamp01(liveContext.progress);
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
       const columnCount = 8;
@@ -39,7 +43,7 @@ function CathedralFallOverlay({ context }: { context: any }) {
 
         const grad = ctx.createLinearGradient(x - 18, topY, x + 18, bottomY);
         grad.addColorStop(0, 'rgba(255,255,255,0.14)');
-        grad.addColorStop(0.38, `${context.accentColor}18`);
+        grad.addColorStop(0.38, `${liveContext.accentColor}18`);
         grad.addColorStop(0.74, 'rgba(255,255,255,0.08)');
         grad.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = grad;
@@ -51,7 +55,7 @@ function CathedralFallOverlay({ context }: { context: any }) {
         ctx.closePath();
         ctx.fill();
 
-        ctx.strokeStyle = `${context.accentColor}66`;
+        ctx.strokeStyle = `${liveContext.accentColor}66`;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(x, topY);
@@ -68,7 +72,7 @@ function CathedralFallOverlay({ context }: { context: any }) {
 
       for (let arch = 0; arch < 4; arch += 1) {
         const y = height * (0.22 + arch * 0.16);
-        ctx.strokeStyle = `${context.accentColor}${arch === 1 ? '4d' : '22'}`;
+        ctx.strokeStyle = `${liveContext.accentColor}${arch === 1 ? '4d' : '22'}`;
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(width * 0.08, y);
@@ -82,7 +86,7 @@ function CathedralFallOverlay({ context }: { context: any }) {
 
     rafState.id = window.requestAnimationFrame(render);
     return () => window.cancelAnimationFrame(rafState.id);
-  }, [context.accentColor, context.direction, context.progress]);
+  }, []);
 
   return (
     <canvas

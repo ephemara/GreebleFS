@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { clamp01, defineAnimation, lerp } from 'overlayterm-animation';
+import { clamp01, defineAnimation, lerp, useAnimationContextRef } from 'overlayterm-animation';
 
 const CUBE_VERTICES = [
   [-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1],
@@ -27,6 +27,7 @@ function rotate(point, ax, ay) {
 
 function HologramCubeLattice({ context }) {
   const canvasRef = useRef(null);
+  const contextRef = useAnimationContextRef(context);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -44,8 +45,9 @@ function HologramCubeLattice({ context }) {
 
     let raf = 0;
     const render = now => {
-      const progress = clamp01(context.progress);
-      const active = context.direction === 'enter' ? 1 - progress : progress;
+      const liveContext = contextRef.current;
+      const progress = clamp01(liveContext.progress);
+      const active = liveContext.direction === 'enter' ? 1 - progress : progress;
       const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       canvas.width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
       canvas.height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
@@ -87,7 +89,7 @@ function HologramCubeLattice({ context }) {
 
     raf = window.requestAnimationFrame(render);
     return () => window.cancelAnimationFrame(raf);
-  }, [context.direction, context.progress]);
+  }, []);
 
   return <canvas ref={canvasRef} aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', opacity: 0.88 }} />;
 }

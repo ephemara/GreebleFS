@@ -218,8 +218,40 @@
     - `npx vitest run src/test/fileExplorer.searchTelemetry.test.tsx --reporter=verbose`
     - `npm run test:unit -- src/test/runtimeCachePolicy.test.ts src/test/searchTelemetry.test.ts`
     - `npm run build`
+- Run 2026-03-22 22:48 UTC: Team 2 validated the VPS toolchain blocker further and hardened the wrapper path.
+  - Exact validator finding: the mounted Windows-origin workspace is the real VPS blocker, not a Vitest-specific worker-pool bug.
+    - `timeout 60s node -e "import('vitest')..."` timed out with no output.
+    - `timeout 60s node -e "import('playwright')..."` timed out with no output.
+    - `strace` on both entrypoints showed slow `statx/openat` traversal under mounted `node_modules` until timeout killed the process.
+    - Attempts to `rsync` or `tar` even a narrow frontend file set off the mounted tree also entered uninterruptible source I/O, so this run could not safely auto-mirror the repo from that mount.
+  - Tightening landed:
+    - `scripts/with-vps-artifacts.sh` now fails fast when invoked from `/home/azureuser/Desktop/M on Player (NoMachine)/...` without a VPS-local exec root, replacing multi-minute hangs with an actionable error.
+    - `scripts/with-vps-artifacts.sh` now supports `OVERLAYTERM_VPS_EXEC_ROOT` for redirecting Node-based VPS commands to a VPS-local OverlayTerm checkout/worktree and exports `OVERLAYTERM_VPS_SOURCE_ROOT` for context.
+  - Validator verification completed:
+    - `source scripts/vps-artifacts.sh && timeout 45s npm run test:unit:vps -- src/test/runtimeCachePolicy.test.ts`
+    - `source scripts/vps-artifacts.sh && timeout 45s npm run build:vps`
+    - Both now fail fast with the mounted-workspace guidance instead of hanging.
+    - `OVERLAYTERM_VPS_EXEC_ROOT='/home/azureuser/.codex/worktrees/ba94/OverlayTerm' bash scripts/with-vps-artifacts.sh pwd`
+    - `OVERLAYTERM_VPS_EXEC_ROOT='/home/azureuser/.codex/worktrees/ba94/OverlayTerm' bash scripts/with-vps-artifacts.sh bash -lc 'printf "%s\n%s\n" "$OVERLAYTERM_VPS_SOURCE_ROOT" "$PWD"'`
+  - Durable lane rules:
+    - On this VPS, mounted Windows workspaces can stall before Vitest, Playwright, or Vite emit startup logs; treat that as a filesystem-level validation blocker, not automatically as a product regression.
+    - `*:vps` commands should run from a synced VPS-local repo root via `OVERLAYTERM_VPS_EXEC_ROOT` whenever the source-of-truth checkout lives under `/home/azureuser/Desktop/M on Player (NoMachine)`.
+    - A local fallback worktree is only valid for release evidence if its commit or synced contents are explicitly proven equivalent to the mounted repo state first.
   - Verification blocker:
     - `npx vitest run --config vitest.browser.config.ts src/test/browser/fileExplorer.repositoryPicker.browser.test.tsx --reporter=verbose` still hung beyond the 180-second timeout without producing per-test output, so browser-run validator coverage is still not dependable.
   - Durable lane rules:
     - For telemetry slices, keep one focused test that validates the persisted performance sample shape through the actual explorer component; mapper-only tests are not enough by themselves.
     - Browser validator commands that stall without returning a test result are release-risk signal, not noise, because they block the real-workspace explorer smoke the lane still needs.
+- Run 2026-03-22 22:26:52 UTC: Team 2 validated the Linux VPS toolchain path on the mounted workspace and tightened its failure mode.
+  - Exact validator findings:
+    - The mounted workspace initially lacked the Linux-native Rollup optional package `@rollup/rollup-linux-x64-gnu`, so Vite/Vitest startup on the VPS failed before meaningful frontend validation could begin.
+    - `npm install` on the VPS repaired that cross-platform dependency gap without changing tracked package files.
+    - Landed a new VPS preflight guard:
+      - `/home/azureuser/Desktop/M on Player (NoMachine)/OverlayTerm/scripts/check-vps-node-runtime.mjs`
+      - `/home/azureuser/Desktop/M on Player (NoMachine)/OverlayTerm/scripts/with-vps-artifacts.sh`
+    - The guard now fails fast when Linux-native Rollup packages are missing instead of letting Vite/Vitest appear to hang.
+    - Remaining blocker: after the repair, `npm run test:unit:vps -- src/test/runtimeCachePolicy.test.ts` still fails because Vitest `forks` workers do not respond in time on the mounted path, and `node node_modules/playwright/cli.js --version` still times out without output.
+  - Durable lane rules:
+    - On the VPS, treat Windows-origin `node_modules` as suspect until the Linux-native optional packages have been installed locally.
+    - VPS artifact redirection alone is not enough for dependable validation when worker startup still depends on a mounted dependency tree.
+    - The next release-readiness gain is to make VPS unit/browser startup deterministic on the mounted path, then rerun build plus browser smoke under the recorded runtime cache policy.

@@ -14,18 +14,19 @@ describe('runtimeCachePolicy', () => {
     entrySizeScanBudgetMs: 900,
     searchContentIndexTotalBytesBudget: 12 * 1024 * 1024,
     maxSearchContentFileBytes: 8 * 1024 * 1024,
+    searchMaxIndexedEntries: 25000,
   };
 
   it('builds a stable fingerprint from the runtime cache policy values', () => {
     expect(buildRuntimeCachePolicyFingerprint(basePolicy)).toBe(
-      '2000:1500:1000:10000:900:12582912:8388608',
+      '2000:1500:1000:10000:900:12582912:8388608:25000',
     );
   });
 
   it('exposes telemetry metadata for a resolved runtime cache policy', () => {
     expect(getRuntimeCachePolicyTelemetryMetadata(basePolicy, 'ready')).toEqual({
       runtimeCachePolicyStatus: 'ready',
-      runtimeCachePolicyFingerprint: '2000:1500:1000:10000:900:12582912:8388608',
+      runtimeCachePolicyFingerprint: '2000:1500:1000:10000:900:12582912:8388608:25000',
       runtimeCachePolicyDirListCacheTtlMs: 2000,
       runtimeCachePolicySearchNameIndexCacheTtlMs: 1500,
       runtimeCachePolicySearchContentIndexCacheTtlMs: 1000,
@@ -33,6 +34,7 @@ describe('runtimeCachePolicy', () => {
       runtimeCachePolicyEntrySizeScanBudgetMs: 900,
       runtimeCachePolicySearchContentIndexTotalBytesBudget: 12582912,
       runtimeCachePolicyMaxSearchContentFileBytes: 8388608,
+      runtimeCachePolicySearchMaxIndexedEntries: 25000,
     });
   });
 
@@ -65,7 +67,7 @@ describe('runtimeCachePolicy', () => {
         recordedAt: 1234,
         metadata: {
           runtimeCachePolicyStatus: 'ready',
-          runtimeCachePolicyFingerprint: '2000:1500:1000:10000:900:12582912:8388608',
+          runtimeCachePolicyFingerprint: '2000:1500:1000:10000:900:12582912:8388608:25000',
           runtimeCachePolicyDirListCacheTtlMs: 2000,
           runtimeCachePolicySearchNameIndexCacheTtlMs: 1500,
           runtimeCachePolicySearchContentIndexCacheTtlMs: 1000,
@@ -73,6 +75,7 @@ describe('runtimeCachePolicy', () => {
           runtimeCachePolicyEntrySizeScanBudgetMs: 900,
           runtimeCachePolicySearchContentIndexTotalBytesBudget: 12582912,
           runtimeCachePolicyMaxSearchContentFileBytes: 8388608,
+          runtimeCachePolicySearchMaxIndexedEntries: 25000,
           pathDepth: 3,
         },
       },

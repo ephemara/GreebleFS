@@ -17,12 +17,15 @@ describe('hotkey config helpers', () => {
     const normalized = normalizeKeybindingSettings({
       terminalToggle: '   ',
       terminalFocus: '   ',
+      windowModeToggle: '   ',
       zoomAdjust: 'Ctrl + Scroll',
     });
 
     expect(normalized.terminalToggle).toBe(defaults.terminalToggle);
     expect(defaults.terminalFocus).toBe('Ctrl+J');
     expect(normalized.terminalFocus).toBe(defaults.terminalFocus);
+    expect(defaults.windowModeToggle).toBe('F11');
+    expect(normalized.windowModeToggle).toBe(defaults.windowModeToggle);
     expect(normalized.zoomAdjust).toBe('Ctrl+Scroll');
     expect(defaults.opacityAdjust).toBe('Alt+Scroll');
   });
@@ -52,6 +55,11 @@ describe('hotkey config helpers', () => {
   });
 
   it('matches keyboard shortcuts with modifier keys for local actions', () => {
+    expect(matchesKeybinding(
+      { key: 'F11', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false },
+      'F11',
+    )).toBe(true);
+
     expect(matchesKeybinding(
       { key: 'k', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false },
       'Ctrl+K',

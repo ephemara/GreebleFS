@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -111,8 +111,28 @@ function runCommand(command, args, extraEnv = {}) {
   });
 }
 
-function getNpmCommand() {
-  return process.platform === "win32" ? "npm.cmd" : "npm";
+function commandExists(command) {
+  const result = spawnSync(command, ["--version"], {
+    stdio: "ignore",
+    shell: false,
+  });
+  return !result.error && result.status === 0;
+}
+
+function getPackageManagerCommand() {
+  const explicit = process.env.OVERLAYTERM_PACKAGE_MANAGER?.trim();
+  const bunCommand = process.platform === "win32" ? "bun.exe" : "bun";
+  const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+
+  if (explicit) {
+    return explicit;
+  }
+
+  if (commandExists(bunCommand)) {
+    return bunCommand;
+  }
+
+  return npmCommand;
 }
 
 async function readSharedCliVersion() {
@@ -120,7 +140,7 @@ async function readSharedCliVersion() {
 
   if (!(await pathExists(packageJsonPath))) {
     throw new Error(
-      "Shared @tauri-apps/cli package is missing. Run npm install in OverlayTerm first."
+      "Shared @tauri-apps/cli package is missing. Run bun install in OverlayTerm first."
     );
   }
 
@@ -144,13 +164,11 @@ async function ensureNativeBindingAvailable() {
 
   console.log(`Installing ${nativeBinding}@${cliVersion} into VPS-local cache...`);
 
-  const installCode = await runCommand(getNpmCommand(), [
-    "install",
-    "--no-save",
-    "--prefix",
-    cacheRoot,
-    `${nativeBinding}@${cliVersion}`,
-  ]);
+  const packageManager = getPackageManagerCommand();
+  const installArgs = packageManager.includes("bun")
+    ? ["add", "--no-save", "--cwd", cacheRoot, `${nativeBinding}@${cliVersion}`]
+    : ["install", "--no-save", "--prefix", cacheRoot, `${nativeBinding}@${cliVersion}`];
+  const installCode = await runCommand(packageManager, installArgs);
 
   if (installCode !== 0) {
     process.exit(installCode);
@@ -160,7 +178,7 @@ async function ensureNativeBindingAvailable() {
 async function main() {
   if (!(await pathExists(sharedTauriCliEntry))) {
     throw new Error(
-      "Shared Tauri CLI entrypoint is missing. Run npm install in OverlayTerm first."
+      "Shared Tauri CLI entrypoint is missing. Run bun install in OverlayTerm first."
     );
   }
 

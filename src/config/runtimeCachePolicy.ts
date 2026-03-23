@@ -11,6 +11,7 @@ export interface FsRuntimeCachePolicy {
   entrySizeScanBudgetMs: number;
   searchContentIndexTotalBytesBudget: number;
   maxSearchContentFileBytes: number;
+  searchMaxIndexedEntries: number;
 }
 
 export type RuntimeCachePolicyTelemetryStatus = 'pending' | 'ready' | 'failed' | 'unavailable';
@@ -35,6 +36,7 @@ const RUNTIME_CACHE_POLICY_METADATA_FIELDS = [
   ['runtimeCachePolicyEntrySizeScanBudgetMs', 'entrySizeScanBudgetMs'],
   ['runtimeCachePolicySearchContentIndexTotalBytesBudget', 'searchContentIndexTotalBytesBudget'],
   ['runtimeCachePolicyMaxSearchContentFileBytes', 'maxSearchContentFileBytes'],
+  ['runtimeCachePolicySearchMaxIndexedEntries', 'searchMaxIndexedEntries'],
 ] as const satisfies ReadonlyArray<
   readonly [metadataKey: string, policyKey: keyof FsRuntimeCachePolicy]
 >;

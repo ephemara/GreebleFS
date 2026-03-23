@@ -97,10 +97,9 @@ describe('shaderRuntime', () => {
     const entries = await readdir(shaderDirectory, { withFileTypes: true });
     const files = entries
       .filter(entry => entry.isFile() && /\.(tsx|ts|jsx|js)$/i.test(entry.name))
-      .filter(entry => entry.name !== 'raymarch-fracture-field.tsx')
       .sort((left, right) => left.name.localeCompare(right.name));
 
-    expect(files.length).toBeGreaterThanOrEqual(25);
+    expect(files.length).toBeGreaterThanOrEqual(29);
 
     for (const file of files) {
       const fullPath = resolve(shaderDirectory, file.name);

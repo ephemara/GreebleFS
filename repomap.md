@@ -38,7 +38,6 @@
     └── 📂 mac-release
     └── 📂 public
         └── 📂 icons
-    └── 📂 release-packages
     └── 📂 scripts
     └── 📂 shaders
     └── 📂 src
@@ -86,6 +85,12 @@
                 └── 📂 icons
                 └── 📂 incremental
         └── 📂 target-tests-explorer-fileops
+            └── 📂 debug
+                └── 📂 deps
+                └── 📂 examples
+                └── 📂 icons
+                └── 📂 incremental
+        └── 📂 target-tests-plugin-watch-memory
             └── 📂 debug
                 └── 📂 deps
                 └── 📂 examples

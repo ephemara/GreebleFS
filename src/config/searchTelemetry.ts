@@ -20,6 +20,7 @@ export interface FileSearchDiagnostics {
   indexedEntryCount: number;
   contentCacheStoredFileCount: number;
   contentCacheStoredByteCount: number;
+  truncatedByScanBudget: boolean;
 }
 
 export interface FileSearchResponse<Result> {
@@ -34,6 +35,7 @@ const SEARCH_DIAGNOSTIC_METADATA_FIELDS = [
   ['explorerSearchIndexedEntryCount', 'indexedEntryCount'],
   ['explorerSearchContentCacheStoredFileCount', 'contentCacheStoredFileCount'],
   ['explorerSearchContentCacheStoredByteCount', 'contentCacheStoredByteCount'],
+  ['explorerSearchTruncatedByScanBudget', 'truncatedByScanBudget'],
 ] as const satisfies ReadonlyArray<
   readonly [metadataKey: string, diagnosticsKey: keyof FileSearchDiagnostics]
 >;

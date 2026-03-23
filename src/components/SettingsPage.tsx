@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Camera, FolderOpen, GitBranch, LayoutGrid, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Type } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import type { LoadedOverlayAnimation } from './animationRuntime';
 import {
   normalizeShaderControlValue,
@@ -35,6 +36,10 @@ import {
   type FolderIconRule,
   type FolderIconValue,
 } from '../config/folderIcons';
+import {
+  explorerViewModes,
+  getExplorerViewModeDefinition,
+} from '../config/explorerViewModes';
 import { getBuiltInIconTheme } from '../config/iconTheme';
 import { animationSystemConfig, resolvePreferredAnimationId } from '../config/animations';
 import { OverlayScrollArea } from './OverlayScrollArea';
@@ -69,7 +74,7 @@ import {
   type HotkeyBindingKey,
 } from '../config/hotkeys';
 import { screenshotFeatureConfig, type ScreenshotOutputActionId } from '../config/screenshots';
-import { useSettingsStore } from '../store/settingsStore';
+import { useSettingsStore, type TerminalWindowMode } from '../store/settingsStore';
 import { useTerminalStore } from '../store/terminalStore';
 
 function ThemeBadge({ label, active = false }: { label: string; active?: boolean }) {
@@ -458,16 +463,31 @@ export function SettingsPage({
     if (platform === 'linux') return 'Linux';
     return 'the OS';
   }, [platform]);
-  const settings = useSettingsStore(s => s.settings);
-  const updateTerminal = useSettingsStore(s => s.updateTerminal);
-  const updateExplorer = useSettingsStore(s => s.updateExplorer);
-  const updateAppearance = useSettingsStore(s => s.updateAppearance);
-  const updateLayout = useSettingsStore(s => s.updateLayout);
-  const updateKeybindings = useSettingsStore(s => s.updateKeybindings);
-  const updateScreenshots = useSettingsStore(s => s.updateScreenshots);
-  const updateSystem = useSettingsStore(s => s.updateSystem);
-  const resetToDefaults = useSettingsStore(s => s.resetToDefaults);
-  const { directoryBookmarks, addDirectoryBookmark } = useTerminalStore();
+  const {
+    settings,
+    updateTerminal,
+    updateExplorer,
+    updateAppearance,
+    updateLayout,
+    updateKeybindings,
+    updateScreenshots,
+    updateSystem,
+    resetToDefaults,
+  } = useSettingsStore(useShallow(state => ({
+    settings: state.settings,
+    updateTerminal: state.updateTerminal,
+    updateExplorer: state.updateExplorer,
+    updateAppearance: state.updateAppearance,
+    updateLayout: state.updateLayout,
+    updateKeybindings: state.updateKeybindings,
+    updateScreenshots: state.updateScreenshots,
+    updateSystem: state.updateSystem,
+    resetToDefaults: state.resetToDefaults,
+  })));
+  const { directoryBookmarks, addDirectoryBookmark } = useTerminalStore(useShallow(state => ({
+    directoryBookmarks: state.directoryBookmarks,
+    addDirectoryBookmark: state.addDirectoryBookmark,
+  })));
 
   const profileOptions = useMemo(() => getExternalTerminalProfileOptions(platform), [platform]);
   const [themeDraft, setThemeDraft] = useState(() => serializeTheme(appearance.baseTheme));
@@ -1003,7 +1023,7 @@ export function SettingsPage({
       key: 'terminal',
       label: 'Terminal',
       subtitle: 'Shell defaults and external handoff.',
-      summary: `${settings.terminal.preferredOpenMode} · ${settings.terminal.cursorStyle} cursor`,
+      summary: `${settings.terminal.windowMode} mode · ${settings.terminal.preferredOpenMode} · ${settings.terminal.cursorStyle} cursor`,
       detail: 'Control the integrated terminal, its typography, and how commands hand off to external shells.',
       icon: <TerminalSquare size={14} />,
     },
@@ -1011,8 +1031,8 @@ export function SettingsPage({
       key: 'explorer',
       label: 'Explorer',
       subtitle: 'Startup path, file visibility, and folder rules.',
-      summary: `${settings.explorer.folderClickMode === 'single' ? 'Single-click folders' : 'Double-click folders'} · ${settings.explorer.folderIconRules.length} icon rules`,
-      detail: 'Shape the file browser around your machine, including startup path, folder activation behavior, and icon rules.',
+      summary: `${getExplorerViewModeDefinition(settings.explorer.viewMode).label} · ${settings.explorer.folderClickMode === 'single' ? 'Single-click folders' : 'Double-click folders'} · ${settings.explorer.folderIconRules.length} icon rules`,
+      detail: 'Shape the file browser around your machine, including content-browser layout modes, folder activation behavior, and icon rules.',
       icon: <FolderOpen size={14} />,
     },
     {
@@ -1035,7 +1055,7 @@ export function SettingsPage({
       key: 'hotkeys',
       label: 'Hotkeys',
       subtitle: 'Overlay opener and gesture bindings.',
-      summary: [settings.keybindings.terminalToggle, settings.keybindings.terminalFocus]
+      summary: [settings.keybindings.terminalToggle, settings.keybindings.windowModeToggle, settings.keybindings.terminalFocus]
         .map(formatHotkeyLabel)
         .join(' · '),
       detail: 'Keep the overlay easy to summon, jump straight to the terminal panel, and remap the first global gestures without digging through raw config.',
@@ -2046,12 +2066,16 @@ export function SettingsPage({
             <SectionTitle
               icon={<TerminalSquare size={12} />}
               title="Hotkeys"
-              subtitle="Keep the overlay opener configurable and expose the first global gesture controls."
+              subtitle="Keep the overlay opener configurable and expose the regular-window mode toggle alongside the first global gesture controls."
             />
 
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
               {hotkeyBindingDefinitions
-                .filter(definition => definition.scope === 'global' || definition.scope === 'gesture')
+                .filter(definition => (
+                  definition.scope === 'global'
+                  || definition.scope === 'gesture'
+                  || definition.key === 'windowModeToggle'
+                ))
                 .map(definition => (
                   <ShortcutField
                     key={definition.key}
@@ -2069,10 +2093,85 @@ export function SettingsPage({
             <SectionTitle
               icon={<TerminalSquare size={12} />}
               title="Terminal"
-              subtitle="Integrated shell behavior and external terminal handoff."
+              subtitle="Integrated shell behavior, overlay versus windowed presentation, and external terminal handoff."
             />
 
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="space-y-3 md:col-span-2 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Window Presentation</div>
+                    <p className="mt-1 text-[11px] opacity-40">
+                      `Ctrl+Space` always shows the current presentation mode. Use {formatHotkeyLabel(settings.keybindings.windowModeToggle)} while the shell is focused to swap between the anchored overlay and a regular resizable panel window.
+                    </p>
+                  </div>
+                  <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                    {settings.terminal.windowMode === 'windowed' ? 'Regular Window' : 'Anchored Overlay'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  {([
+                    {
+                      value: 'overlay',
+                      label: 'Overlay',
+                      description: 'Pins the shell to the monitor edge, keeps the overlay flow, and uses the current anchor behavior.',
+                    },
+                    {
+                      value: 'windowed',
+                      label: 'Windowed',
+                      description: 'Opens as a regular resizable panel window with native minimize, maximize, and close controls.',
+                    },
+                  ] as const satisfies Array<{ value: TerminalWindowMode; label: string; description: string }>).map(option => {
+                    const active = settings.terminal.windowMode === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => updateTerminal({ windowMode: option.value })}
+                        className="rounded px-3 py-3 text-left transition-colors"
+                        style={{
+                          border: `1px solid ${active ? accent : border}`,
+                          background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                          color: text,
+                        }}
+                      >
+                        <div className="text-[11px] font-semibold">{option.label}</div>
+                        <p className="mt-1 text-[11px] opacity-45">{option.description}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Windowed Width</label>
+                    <input
+                      type="number"
+                      min={720}
+                      step={20}
+                      value={settings.terminal.windowedWidth}
+                      onChange={event => updateTerminal({ windowedWidth: Number(event.target.value) })}
+                      className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                      style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Windowed Height</label>
+                    <input
+                      type="number"
+                      min={480}
+                      step={20}
+                      value={settings.terminal.windowedHeight}
+                      onChange={event => updateTerminal({ windowedHeight: Number(event.target.value) })}
+                      className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                      style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Integrated Shell</label>
                 <input
@@ -2407,6 +2506,42 @@ export function SettingsPage({
                         key={option.value}
                         type="button"
                         onClick={() => updateExplorer({ folderClickMode: option.value })}
+                        className="rounded px-3 py-3 text-left transition-colors"
+                        style={{
+                          border: `1px solid ${active ? accent : border}`,
+                          background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                          color: text,
+                        }}
+                      >
+                        <div className="text-[11px] font-semibold">{option.label}</div>
+                        <p className="mt-1 text-[11px] opacity-45">{option.description}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Content Layout</div>
+                    <p className="mt-1 text-[11px] opacity-40">
+                      Match the explorer to a UE-style content browser. Ctrl/Cmd + wheel in the explorer steps through these modes without shrinking the whole UI.
+                    </p>
+                  </div>
+                  <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                    {getExplorerViewModeDefinition(settings.explorer.viewMode).label}
+                  </span>
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  {explorerViewModes.map(option => {
+                    const active = settings.explorer.viewMode === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => updateExplorer({ viewMode: option.id })}
                         className="rounded px-3 py-3 text-left transition-colors"
                         style={{
                           border: `1px solid ${active ? accent : border}`,

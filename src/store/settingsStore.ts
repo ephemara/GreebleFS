@@ -17,6 +17,10 @@ import {
   type ExternalTerminalProfile,
 } from '../config/platform';
 import {
+  normalizeExplorerViewMode,
+  type ExplorerViewMode,
+} from '../config/explorerViewModes';
+import {
   createDefaultKeybindingSettings,
   normalizeKeybindingSettings,
   type HotkeyBindingSettings,
@@ -29,6 +33,7 @@ import {
 import {
   clampOverlayVisualControlValue,
   overlayVisualControls,
+  overlayWindowGeometry,
 } from '../config/overlayWindow';
 import {
   isScreenshotCaptureModeId,
@@ -66,8 +71,11 @@ export interface TerminalSettings {
   cursorStyle: 'bar' | 'block' | 'underline';
   scrollback: number;
   overlayHeight: number;
-  overlayWidth: number;  // -1 means "full monitor work area width minus padding"
+  overlayWidth: number;
   overlayAnchor: OverlayWindowAnchor;
+  windowMode: TerminalWindowMode;
+  windowedWidth: number;
+  windowedHeight: number;
   preferredOpenMode: 'integrated' | 'external';
   externalTerminalProfile: ExternalTerminalProfile;
   externalTerminalCommand: string;
@@ -89,7 +97,7 @@ export interface ExplorerSettings {
   showHiddenFiles: boolean;
   sortBy: 'name' | 'size' | 'date' | 'type';
   sortOrder: 'asc' | 'desc';
-  viewMode: 'list' | 'grid';
+  viewMode: ExplorerViewMode;
   folderClickMode: ExplorerFolderClickMode;
   confirmDelete: boolean;
   defaultFolderIcon: FolderIconValue;
@@ -146,6 +154,7 @@ export interface PolyGeminiSettings {
 }
 
 export type OverlayWindowAnchor = 'top' | 'bottom';
+export type TerminalWindowMode = 'overlay' | 'windowed';
 
 export interface LayoutSettings {
   activeProfileId: string;
@@ -200,8 +209,44 @@ export function normalizeOverlayWindowAnchor(value: unknown): OverlayWindowAncho
   return value === 'top' ? 'top' : 'bottom';
 }
 
+export function normalizeTerminalWindowMode(value: unknown): TerminalWindowMode {
+  return value === 'windowed' ? 'windowed' : 'overlay';
+}
+
 export function normalizeExplorerFolderClickMode(value: unknown): ExplorerFolderClickMode {
   return value === 'single' ? 'single' : 'double';
+}
+
+function normalizeSavedWindowDimension(value: unknown, fallback: number, min: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.max(Math.round(value), min);
+}
+
+function normalizeTerminalSettings(
+  base: TerminalSettings,
+  updates?: Partial<TerminalSettings>,
+): TerminalSettings {
+  const merged = { ...base, ...updates };
+  return {
+    ...merged,
+    overlayHeight: normalizeSavedWindowDimension(
+      merged.overlayHeight,
+      base.overlayHeight,
+      overlayWindowGeometry.minHeight,
+    ),
+    overlayWidth: normalizeSavedWindowDimension(
+      merged.overlayWidth,
+      base.overlayWidth,
+      overlayWindowGeometry.minWidth,
+    ),
+    overlayAnchor: normalizeOverlayWindowAnchor(merged.overlayAnchor ?? base.overlayAnchor),
+    windowMode: normalizeTerminalWindowMode(merged.windowMode ?? base.windowMode),
+    windowedWidth: normalizeSavedWindowDimension(merged.windowedWidth, base.windowedWidth, 720),
+    windowedHeight: normalizeSavedWindowDimension(merged.windowedHeight, base.windowedHeight, 480),
+  };
 }
 
 function isDevEnvironment(): boolean {
@@ -339,9 +384,12 @@ export const defaultSettings: Settings = {
     cursorBlink: true,
     cursorStyle: 'bar',
     scrollback: 10000,
-    overlayHeight: 420,
-    overlayWidth: -1,
+    overlayHeight: overlayWindowGeometry.defaultHeight,
+    overlayWidth: overlayWindowGeometry.defaultWidth,
     overlayAnchor: 'bottom',
+    windowMode: 'overlay',
+    windowedWidth: 1440,
+    windowedHeight: 920,
     preferredOpenMode: 'integrated',
     externalTerminalProfile: 'auto',
     externalTerminalCommand: '',
@@ -359,7 +407,7 @@ export const defaultSettings: Settings = {
     showHiddenFiles: false,
     sortBy: 'name',
     sortOrder: 'asc',
-    viewMode: 'list',
+    viewMode: 'details',
     folderClickMode: 'double',
     confirmDelete: true,
     defaultFolderIcon: DEFAULT_FOLDER_ICON_VALUE,
@@ -453,15 +501,12 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
     ...base,
     ...imported,
     editor: { ...base.editor, ...imported?.editor },
-    terminal: {
-      ...base.terminal,
-      ...importedTerminal,
-      overlayAnchor: normalizeOverlayWindowAnchor(importedTerminal?.overlayAnchor ?? base.terminal.overlayAnchor),
-    },
+    terminal: normalizeTerminalSettings(base.terminal, importedTerminal),
     python: { ...base.python, ...(imported as Partial<Settings> | undefined)?.python },
     explorer: {
       ...base.explorer,
       ...imported?.explorer,
+      viewMode: normalizeExplorerViewMode(imported?.explorer?.viewMode ?? base.explorer.viewMode),
       folderClickMode: normalizeExplorerFolderClickMode(imported?.explorer?.folderClickMode ?? base.explorer.folderClickMode),
     },
     appearance: {
@@ -542,7 +587,7 @@ export const useSettingsStore = create<SettingsState>()(
       updateTerminal: (updates) => set((state) => ({
         settings: {
           ...state.settings,
-          terminal: { ...state.settings.terminal, ...updates },
+          terminal: normalizeTerminalSettings(state.settings.terminal, updates),
         },
       })),
 

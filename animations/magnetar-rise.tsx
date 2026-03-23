@@ -1,8 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { clamp01, defineAnimation, lerp } from 'overlayterm-animation';
+import { clamp01, defineAnimation, lerp, useAnimationContextRef } from 'overlayterm-animation';
 
 function MagnetarRiseLayer({ context }) {
   const canvasRef = useRef(null);
+  const contextRef = useAnimationContextRef(context);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -17,8 +18,9 @@ function MagnetarRiseLayer({ context }) {
 
     let raf = 0;
     const render = (now: number) => {
-      const progress = clamp01(context.progress);
-      const active = context.direction === 'enter' ? progress : 1 - progress;
+      const liveContext = contextRef.current;
+      const progress = clamp01(liveContext.progress);
+      const active = liveContext.direction === 'enter' ? progress : 1 - progress;
       const dpr = Math.min(window.devicePixelRatio || 1, 1.6);
       const width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
       const height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
@@ -39,15 +41,15 @@ function MagnetarRiseLayer({ context }) {
 
       const wash = ctx.createLinearGradient(0, h, 0, 0);
       wash.addColorStop(0, `rgba(0,0,0,0)`);
-      wash.addColorStop(0.3, `${context.accentColor}18`);
+      wash.addColorStop(0.3, `${liveContext.accentColor}18`);
       wash.addColorStop(1, 'rgba(255,255,255,0.1)');
       ctx.fillStyle = wash;
       ctx.fillRect(0, 0, w, h);
 
       const corona = ctx.createRadialGradient(cx, rise, 8, cx, rise, flareWidth);
       corona.addColorStop(0, `rgba(255,255,255,${0.28 + active * 0.26})`);
-      corona.addColorStop(0.18, `${context.accentColor}cc`);
-      corona.addColorStop(0.42, `${context.accentColor}33`);
+      corona.addColorStop(0.18, `${liveContext.accentColor}cc`);
+      corona.addColorStop(0.42, `${liveContext.accentColor}33`);
       corona.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = corona;
       ctx.beginPath();
@@ -65,8 +67,8 @@ function MagnetarRiseLayer({ context }) {
 
         ctx.save();
         ctx.globalAlpha = alpha;
-        ctx.strokeStyle = index % 2 === 0 ? context.accentColor : '#ffffff';
-        ctx.shadowColor = context.accentColor;
+        ctx.strokeStyle = index % 2 === 0 ? liveContext.accentColor : '#ffffff';
+        ctx.shadowColor = liveContext.accentColor;
         ctx.shadowBlur = 10 + active * 12;
         ctx.lineWidth = 1 + (index % 4) * 0.4;
 
@@ -96,7 +98,7 @@ function MagnetarRiseLayer({ context }) {
         ctx.globalAlpha = 0.1 + active * 0.45;
         ctx.shadowBlur = 12 * active;
         ctx.shadowColor = '#ffffff';
-        ctx.fillStyle = index % 5 === 0 ? '#ffffff' : context.accentColor;
+        ctx.fillStyle = index % 5 === 0 ? '#ffffff' : liveContext.accentColor;
         ctx.beginPath();
         ctx.arc(px, py, size, 0, Math.PI * 2);
         ctx.fill();
@@ -109,7 +111,7 @@ function MagnetarRiseLayer({ context }) {
 
     raf = window.requestAnimationFrame(render);
     return () => window.cancelAnimationFrame(raf);
-  }, [context.accentColor, context.direction, context.progress]);
+  }, []);
 
   return (
     <canvas

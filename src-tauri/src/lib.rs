@@ -38,7 +38,7 @@ use tauri::{
 };
 use terminal::{
     terminal_kill, terminal_open_external, terminal_resize, terminal_spawn, terminal_write,
-    TerminalManager,
+    terminal_write_many, TerminalManager,
 };
 use window_commands::{
     tray_set_visible, window_set_blur, window_set_taskbar_visibility, MAIN_TRAY_ICON_ID,
@@ -133,6 +133,7 @@ pub fn run() {
             // Terminal
             terminal_spawn,
             terminal_write,
+            terminal_write_many,
             terminal_resize,
             terminal_kill,
             terminal_open_external,

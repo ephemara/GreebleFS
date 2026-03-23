@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import { clamp01, defineAnimation, lerp } from 'overlayterm-animation';
+import { clamp01, defineShader } from 'overlayterm-shader';
 
-function compileShader(gl, type, source) {
+function compileShader(gl: WebGLRenderingContext, type: number, source: string): WebGLShader {
   const shader = gl.createShader(type);
   if (!shader) {
     throw new Error('Unable to allocate shader.');
@@ -16,7 +16,7 @@ function compileShader(gl, type, source) {
   return shader;
 }
 
-function createProgram(gl, vertexSource, fragmentSource) {
+function createProgram(gl: WebGLRenderingContext, vertexSource: string, fragmentSource: string): WebGLProgram {
   const vertexShader = compileShader(gl, gl.VERTEX_SHADER, vertexSource);
   const fragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
   const program = gl.createProgram();
@@ -36,7 +36,7 @@ function createProgram(gl, vertexSource, fragmentSource) {
   return program;
 }
 
-function createSimulationTarget(gl, width, height) {
+function createSimulationTarget(gl: WebGLRenderingContext, width: number, height: number) {
   const texture = gl.createTexture();
   const framebuffer = gl.createFramebuffer();
   if (!texture || !framebuffer) {
@@ -55,8 +55,10 @@ function createSimulationTarget(gl, width, height) {
   return { texture, framebuffer, width, height };
 }
 
-function ShaderFeedbackNebula({ context }) {
-  const canvasRef = useRef(null);
+function ShaderFeedbackNebulaSurface({ context }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const contextRef = useRef(context);
+  contextRef.current = context;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -90,8 +92,7 @@ function ShaderFeedbackNebula({ context }) {
       uniform sampler2D uPrev;
       uniform vec2 uResolution;
       uniform float uTime;
-      uniform float uProgress;
-      uniform float uDirection;
+      uniform float uEnergy;
 
       float hash(vec2 p) {
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
@@ -101,19 +102,18 @@ function ShaderFeedbackNebula({ context }) {
         vec2 uv = vUv;
         vec2 p = uv * 2.0 - 1.0;
         p.x *= uResolution.x / max(uResolution.y, 1.0);
-        float directionProgress = uDirection < 0.5 ? (1.0 - uProgress) : uProgress;
         float dist = length(p);
         float ang = atan(p.y, p.x);
         vec2 swirl = vec2(cos(ang + uTime * 0.33), sin(ang - uTime * 0.25));
         vec2 sampleUv = uv + swirl * (0.003 + dist * 0.009) + vec2(sin(uTime + uv.y * 24.0), cos(uTime * 1.1 + uv.x * 19.0)) * 0.0025;
         vec4 prev = texture2D(uPrev, sampleUv) * 0.972;
 
-        float pulse = smoothstep(1.35, 0.08, dist) * (0.018 + directionProgress * 0.028);
+        float pulse = smoothstep(1.35, 0.08, dist) * (0.02 + uEnergy * 0.03);
         float filament = pow(max(0.0, 1.0 - abs(sin(ang * 4.0 + uTime * 0.85))), 6.0) * smoothstep(1.2, 0.18, dist);
         float stars = step(0.9955, hash(floor(uv * uResolution * 0.24) + floor(uTime * 8.0)));
         vec3 inject = vec3(0.05, 0.18, 0.42) * pulse;
-        inject += vec3(0.14, 0.72, 1.08) * filament * 0.05;
-        inject += vec3(0.95, 0.98, 1.0) * stars * (0.03 + directionProgress * 0.02);
+        inject += vec3(0.14, 0.72, 1.08) * filament * (0.04 + uEnergy * 0.03);
+        inject += vec3(0.95, 0.98, 1.0) * stars * (0.025 + uEnergy * 0.015);
 
         gl_FragColor = vec4(prev.rgb + inject, 1.0);
       }
@@ -123,39 +123,38 @@ function ShaderFeedbackNebula({ context }) {
       precision mediump float;
       varying vec2 vUv;
       uniform sampler2D uTexture;
-      uniform float uProgress;
+      uniform float uEnergy;
       void main() {
         vec3 color = texture2D(uTexture, vUv).rgb;
         float glow = max(color.r, max(color.g, color.b));
-        float alpha = smoothstep(0.02, 0.9, glow) * (0.18 + glow * 0.88) * (1.0 - uProgress * 0.08);
+        float alpha = smoothstep(0.02, 0.9, glow) * (0.16 + glow * 0.9) * (0.82 + uEnergy * 0.18);
         gl_FragColor = vec4(color, alpha);
       }
     `;
 
     const feedbackProgram = createProgram(gl, vertexSource, feedbackSource);
     const displayProgram = createProgram(gl, vertexSource, displaySource);
-
     const quad = gl.createBuffer();
+    if (!quad) {
+      gl.deleteProgram(feedbackProgram);
+      gl.deleteProgram(displayProgram);
+      return;
+    }
+
     gl.bindBuffer(gl.ARRAY_BUFFER, quad);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-      -1, -1,
-       1, -1,
-      -1,  1,
-       1,  1,
-    ]), gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
 
     const feedbackPosition = gl.getAttribLocation(feedbackProgram, 'aPosition');
     const displayPosition = gl.getAttribLocation(displayProgram, 'aPosition');
     const feedbackPrev = gl.getUniformLocation(feedbackProgram, 'uPrev');
     const feedbackResolution = gl.getUniformLocation(feedbackProgram, 'uResolution');
     const feedbackTime = gl.getUniformLocation(feedbackProgram, 'uTime');
-    const feedbackProgress = gl.getUniformLocation(feedbackProgram, 'uProgress');
-    const feedbackDirection = gl.getUniformLocation(feedbackProgram, 'uDirection');
+    const feedbackEnergy = gl.getUniformLocation(feedbackProgram, 'uEnergy');
     const displayTexture = gl.getUniformLocation(displayProgram, 'uTexture');
-    const displayProgress = gl.getUniformLocation(displayProgram, 'uProgress');
+    const displayEnergy = gl.getUniformLocation(displayProgram, 'uEnergy');
 
-    let readTarget = null;
-    let writeTarget = null;
+    let readTarget: ReturnType<typeof createSimulationTarget> | null = null;
+    let writeTarget: ReturnType<typeof createSimulationTarget> | null = null;
     let raf = 0;
 
     const ensureTargets = () => {
@@ -166,12 +165,14 @@ function ShaderFeedbackNebula({ context }) {
       canvas.width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
       canvas.height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
 
-      if (readTarget && readTarget.width === nextWidth && readTarget.height === nextHeight) {
+      if (readTarget && writeTarget && readTarget.width === nextWidth && readTarget.height === nextHeight) {
         return;
       }
 
       [readTarget, writeTarget].forEach(target => {
-        if (!target) return;
+        if (!target) {
+          return;
+        }
         gl.deleteTexture(target.texture);
         gl.deleteFramebuffer(target.framebuffer);
       });
@@ -186,12 +187,15 @@ function ShaderFeedbackNebula({ context }) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     };
 
-    const render = now => {
+    const render = (now: number) => {
+      const liveContext = contextRef.current;
       ensureTargets();
-      const time = now * 0.001;
-      const progress = clamp01(context.progress);
-      const direction = context.direction === 'enter' ? 0 : 1;
+      if (!readTarget || !writeTarget) {
+        raf = window.requestAnimationFrame(render);
+        return;
+      }
 
+      const energy = clamp01(0.42 + liveContext.blurStrength / 48 + (liveContext.isSettingsActive ? 0.18 : 0));
       gl.bindBuffer(gl.ARRAY_BUFFER, quad);
 
       gl.bindFramebuffer(gl.FRAMEBUFFER, writeTarget.framebuffer);
@@ -203,9 +207,8 @@ function ShaderFeedbackNebula({ context }) {
       gl.bindTexture(gl.TEXTURE_2D, readTarget.texture);
       gl.uniform1i(feedbackPrev, 0);
       gl.uniform2f(feedbackResolution, writeTarget.width, writeTarget.height);
-      gl.uniform1f(feedbackTime, time);
-      gl.uniform1f(feedbackProgress, progress);
-      gl.uniform1f(feedbackDirection, direction);
+      gl.uniform1f(feedbackTime, now * 0.001);
+      gl.uniform1f(feedbackEnergy, energy);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -216,7 +219,7 @@ function ShaderFeedbackNebula({ context }) {
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, writeTarget.texture);
       gl.uniform1i(displayTexture, 0);
-      gl.uniform1f(displayProgress, progress);
+      gl.uniform1f(displayEnergy, energy);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
       const swap = readTarget;
@@ -226,47 +229,34 @@ function ShaderFeedbackNebula({ context }) {
     };
 
     raf = window.requestAnimationFrame(render);
-
     return () => {
       window.cancelAnimationFrame(raf);
       gl.deleteProgram(feedbackProgram);
       gl.deleteProgram(displayProgram);
       gl.deleteBuffer(quad);
       [readTarget, writeTarget].forEach(target => {
-        if (!target) return;
+        if (!target) {
+          return;
+        }
         gl.deleteTexture(target.texture);
         gl.deleteFramebuffer(target.framebuffer);
       });
     };
-  }, [context.direction, context.progress]);
+  }, []);
 
-  return <canvas ref={canvasRef} aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', mixBlendMode: 'screen', opacity: 0.92 }} />;
+  return <canvas ref={canvasRef} aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }} />;
 }
 
-function shellStyle(context, direction) {
-  const progress = clamp01(context.progress);
-  const signed = context.verticalOrigin === 'top' ? -1 : 1;
-  const active = direction === 'enter' ? progress : 1 - progress;
-  return {
-    transform: `perspective(1200px) translate3d(0, ${lerp(24, 0, active) * signed}px, 0) scale(${direction === 'enter' ? lerp(0.82, 1, active) : lerp(1, 0.88, progress)}) rotateX(${direction === 'enter' ? lerp(18, 0, active) : lerp(0, -14, progress)}deg) rotateZ(${direction === 'enter' ? lerp(-5, 0, active) : lerp(0, 7, progress)}deg)`,
-    opacity: context.baseOpacity * (direction === 'enter' ? active : 1 - progress),
-    filter: `blur(${direction === 'enter' ? lerp(16, 0, active) : lerp(0, 18, progress)}px) saturate(${direction === 'enter' ? lerp(0.62, 1.08, active) : lerp(1.08, 0.54, progress)}) brightness(${direction === 'enter' ? lerp(0.82, 1, active) : lerp(1, 0.72, progress)})`,
-    transition: 'none',
-    willChange: 'transform, opacity, filter',
-  };
-}
-
-export default defineAnimation({
+export default defineShader({
   name: 'Shader Feedback Nebula',
   description: 'A ping-pong feedback shader that smears light into a living volumetric nebula.',
   group: 'Shader Lab',
-  tags: ['shader', 'feedback', 'ping-pong', 'nebula'],
-  open: {
-    resolveShellStyle: context => shellStyle(context, 'enter'),
-    renderOverlay: ShaderFeedbackNebula,
-  },
-  close: {
-    resolveShellStyle: context => shellStyle(context, 'exit'),
-    renderOverlay: ShaderFeedbackNebula,
+  tags: ['shader', 'feedback', 'ping-pong', 'nebula', 'webgl'],
+  background: {
+    render: ShaderFeedbackNebulaSurface,
+    resolveStyle: () => ({
+      mixBlendMode: 'screen',
+      opacity: 0.92,
+    }),
   },
 });

@@ -139,6 +139,7 @@ describe('FileExplorer repository picker browser coverage', () => {
             entrySizeScanBudgetMs: 900,
             searchContentIndexTotalBytesBudget: 12 * 1024 * 1024,
             maxSearchContentFileBytes: 8 * 1024 * 1024,
+            searchMaxIndexedEntries: 25000,
           };
         case 'fs_list_dir':
         case 'fs_list_dir_uncached':
@@ -158,6 +159,7 @@ describe('FileExplorer repository picker browser coverage', () => {
               indexedEntryCount: 0,
               contentCacheStoredFileCount: 0,
               contentCacheStoredByteCount: 0,
+              truncatedByScanBudget: false,
             },
           };
         case 'fs_watch_entry_size_root':

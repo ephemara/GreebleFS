@@ -105,6 +105,7 @@ const RUNTIME_POLICY: FsRuntimeCachePolicy = {
   entrySizeScanBudgetMs: 900,
   searchContentIndexTotalBytesBudget: 12 * 1024 * 1024,
   maxSearchContentFileBytes: 8 * 1024 * 1024,
+  searchMaxIndexedEntries: 25000,
 };
 
 function renderExplorer() {
@@ -163,6 +164,7 @@ describe('FileExplorer search telemetry', () => {
               indexedEntryCount: 64,
               contentCacheStoredFileCount: 0,
               contentCacheStoredByteCount: 0,
+              truncatedByScanBudget: false,
             },
           };
         case 'fs_cancel_search_entries':
@@ -207,7 +209,7 @@ describe('FileExplorer search telemetry', () => {
       queryLength: 6,
       resultCount: 1,
       runtimeCachePolicyStatus: 'ready',
-      runtimeCachePolicyFingerprint: '2000:1500:1000:10000:900:12582912:8388608',
+      runtimeCachePolicyFingerprint: '2000:1500:1000:10000:900:12582912:8388608:25000',
       runtimeCachePolicyDirListCacheTtlMs: 2000,
       runtimeCachePolicySearchNameIndexCacheTtlMs: 1500,
       runtimeCachePolicySearchContentIndexCacheTtlMs: 1000,
@@ -215,12 +217,14 @@ describe('FileExplorer search telemetry', () => {
       runtimeCachePolicyEntrySizeScanBudgetMs: 900,
       runtimeCachePolicySearchContentIndexTotalBytesBudget: 12582912,
       runtimeCachePolicyMaxSearchContentFileBytes: 8388608,
+      runtimeCachePolicySearchMaxIndexedEntries: 25000,
       explorerSearchExecutionStrategy: 'content_index_cache_hit',
       explorerSearchContentCacheStatus: 'cache_hit',
       explorerSearchScannedEntryCount: 0,
       explorerSearchIndexedEntryCount: 64,
       explorerSearchContentCacheStoredFileCount: 0,
       explorerSearchContentCacheStoredByteCount: 0,
+      explorerSearchTruncatedByScanBudget: false,
     });
   });
 });

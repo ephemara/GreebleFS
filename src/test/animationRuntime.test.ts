@@ -68,7 +68,7 @@ describe('animationRuntime', () => {
       .filter(entry => entry.isFile() && /\.(tsx|ts|jsx|js)$/i.test(entry.name))
       .sort((left, right) => left.name.localeCompare(right.name));
 
-    expect(files.length).toBeGreaterThanOrEqual(25);
+    expect(files.length).toBeGreaterThanOrEqual(21);
 
     for (const file of files) {
       const fullPath = resolve(animationDirectory, file.name);

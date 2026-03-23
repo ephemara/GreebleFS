@@ -2,38 +2,42 @@
 
 ## Release Readiness
 
-- Status: not yet shippable, but release evidence improved. The new search-diagnostics telemetry slice is now validator-backed from native tests through persisted frontend performance samples.
+- Status: not yet shippable on the Linux VPS. This run improved release-gate honesty by converting a multi-minute validator hang into a deterministic fast failure with a local-exec-root path, but the lane still lacks green VPS unit/browser/build evidence.
 
 ## Release-Readiness Impact
 
-- `M:\OverlayTerm\src-tauri\src\fs_commands.rs` still exposes `fs_search_entries_with_diagnostics`, which reports native execution strategy plus content-cache status and scan/index counts.
-- `M:\OverlayTerm\src\components\FileExplorer.tsx` still records that backend search metadata together with the runtime cache-policy fingerprint on successful `explorer_search` samples.
-- `M:\OverlayTerm\src\config\searchTelemetry.ts` keeps the diagnostic-to-telemetry mapping data-driven instead of scattering field names through the explorer component.
-- `M:\OverlayTerm\src\test\fileExplorer.searchTelemetry.test.tsx` now proves the persisted `explorer_search` sample shape end-to-end through a real `FileExplorer` render and search flow.
-- `M:\OverlayTerm\src\test\browser\fileExplorer.repositoryPicker.browser.test.tsx` now knows about `fs_get_runtime_cache_policy`, so the browser test path no longer lags behind the explorer startup contract.
-- Focused Rust coverage, focused frontend unit coverage, and the production build are green for this slice.
+- The search-telemetry implementation remains in place:
+  - `/home/azureuser/Desktop/M on Player (NoMachine)/OverlayTerm/src-tauri/src/fs_commands.rs`
+  - `/home/azureuser/Desktop/M on Player (NoMachine)/OverlayTerm/src/components/FileExplorer.tsx`
+  - `/home/azureuser/Desktop/M on Player (NoMachine)/OverlayTerm/src/config/searchTelemetry.ts`
+- This run tightened validator execution instead of product logic:
+  - `/home/azureuser/Desktop/M on Player (NoMachine)/OverlayTerm/scripts/with-vps-artifacts.sh` now fails fast on the mounted Windows path and instructs the operator to set `OVERLAYTERM_VPS_EXEC_ROOT` to a VPS-local OverlayTerm checkout/worktree.
+  - The same wrapper now exports `OVERLAYTERM_VPS_SOURCE_ROOT`, so redirected VPS commands retain source-of-truth context while executing from local disk.
+- Exact diagnostic upgrade:
+  - Vitest and Playwright both timed out on plain `import(...)` from the mounted workspace before any tool-specific startup logs appeared.
+  - `strace` showed slow `statx/openat` churn under mounted `node_modules`, which proves the blocker is filesystem-level module startup on the Windows-origin mount rather than only a Vitest worker-pool regression.
 
 ## Current Known Gaps
 
+- No synced VPS-local OverlayTerm checkout/worktree was validated yet for redirected `*:vps` commands, so there is still no green `test:unit:vps`, `test:browser:vps`, or `build:vps` evidence after this run.
+- The available local Codex worktree cannot yet be used as release evidence because its HEAD (`2d8d72ba5eab307c00963dde71edf88ba8e3c1d6`) differs from the mounted repo HEAD (`6446e3f38b37e16ee2deb7604a59d4c674501aa7`).
+- Attempts to `rsync` or `tar` the mounted repo into a root-disk mirror also hit uninterruptible source I/O, so auto-mirroring from the mount is still unproven and unsafe.
 - Large-real-tree validator smoke is still missing for watched-root external-edit freshness, cold versus warm search behavior, over-budget fallback perception, and rapid clear-search interruption.
-- The browser-harness command for repository-picker coverage still hangs in this environment, so browser-based validator coverage is not dependable yet.
 - `include_content=true` still performs a cold full-tree scan on roots whose eligible text exceeds the configured total content-cache budget, exceeds the configured per-file content-search size limit, or includes unreadable text files.
 - External churn outside the active watcher coverage is still TTL-bounded; only in-app mutations or watched-root filesystem notifications invalidate the cache immediately.
 - Directory listings still need one metadata read per entry because the UI currently expects modified time, size, hidden state, and symlink state immediately.
-- Performance budgets are formalized in `src/config/performanceTelemetry.ts`, but real runtime baselines still need more interactive samples.
 - The current search scope wiring assumes one live primary explorer; multi-explorer reuse would need per-instance scope derivation.
-- The app shell still carries too much coordination load in the top-level React component.
 
 ## Ranked Release Risks
 
-1. The lane still lacks real-workspace UI evidence that `explorer_search` telemetry records the correct backend execution strategy and content-cache status for cold, warm, and over-budget queries under a known runtime policy.
-2. Browser-based validator coverage is currently unreliable because the targeted Vitest browser repository-picker run hangs instead of returning a deterministic result.
-3. Large or unreadable roots still pay the full cold content-scan cost on every `include_content=true` query.
-4. External edits outside the active watcher coverage are still TTL-bounded unless the user triggers an explicit refresh.
-5. Native directory listing still scales with live per-entry metadata reads, even though the cache layer is now bounded, refresh-aware, and configurable.
-6. Secondary metadata work still competes too directly with primary navigation responsiveness.
-7. Hot-path UI logic is concentrated in very large React files.
-8. Build output still needs release-oriented attention for oversized JS chunks.
+1. VPS release-gate commands are still not green because the lane does not yet have a synced VPS-local exec root for `test:unit:vps`, browser coverage, or `build:vps`.
+2. The mounted Windows-origin filesystem still blocks direct Node-based validation on the source-of-truth checkout; bypassing the wrapper would reintroduce misleading hangs.
+3. The lane still lacks real-workspace UI evidence that `explorer_search` telemetry records the correct backend execution strategy and content-cache status for cold, warm, and over-budget queries under a known runtime policy.
+4. Browser-based validator coverage remains unproven until Playwright runs successfully from a synced local exec root.
+5. Large or unreadable roots still pay the full cold content-scan cost on every `include_content=true` query.
+6. External edits outside the active watcher coverage are still TTL-bounded unless the user triggers an explicit refresh.
+7. Native directory listing still scales with live per-entry metadata reads, even though the cache layer is now bounded, refresh-aware, and configurable.
+8. Secondary metadata work still competes too directly with primary navigation responsiveness.
 9. The current fixed search scope is not ready for multiple simultaneous explorer instances without additional scoping.
 
 ## Budget Targets
@@ -52,11 +56,11 @@
 ## Baseline Source
 
 - Code:
-  - `M:\OverlayTerm\src\config\performanceTelemetry.ts`
-  - `M:\OverlayTerm\src\config\runtimeCachePolicy.ts`
-  - `M:\OverlayTerm\src\config\searchTelemetry.ts`
-  - `M:\OverlayTerm\src\components\FileExplorer.tsx`
-  - `M:\OverlayTerm\src-tauri\src\fs_commands.rs`
+  - `/home/azureuser/Desktop/M on Player (NoMachine)/OverlayTerm/src/config/performanceTelemetry.ts`
+  - `/home/azureuser/Desktop/M on Player (NoMachine)/OverlayTerm/src/config/runtimeCachePolicy.ts`
+  - `/home/azureuser/Desktop/M on Player (NoMachine)/OverlayTerm/src/config/searchTelemetry.ts`
+  - `/home/azureuser/Desktop/M on Player (NoMachine)/OverlayTerm/src/components/FileExplorer.tsx`
+  - `/home/azureuser/Desktop/M on Player (NoMachine)/OverlayTerm/src-tauri/src/fs_commands.rs`
 - Runtime storage:
   - localStorage key `overlayterm-explorer-performance-v1`
 - Current state:
@@ -68,26 +72,41 @@
   - over-budget content fallback is validator-backed as fully uncached and telemetry-visible
   - watched-root external invalidation is present in native code
   - effective native cache TTLs and budgets are inspectable at runtime through `fs_get_runtime_cache_policy`
-  - first explorer samples now finalize with runtime policy metadata instead of persisting as `pending`
-  - persisted `explorer_search` samples are now validator-backed for both runtime cache-policy fields and backend search diagnostics
+  - persisted `explorer_search` samples are validator-backed at the unit level
+  - `*:vps` wrapper commands now fail fast when invoked from the mounted Windows path without a local exec root
 
 ## Verification
 
-- Validator verification:
-  - `$env:CARGO_TARGET_DIR='M:\OverlayTerm\src-tauri\target-tests-tango-team-2'; cargo test --manifest-path M:\OverlayTerm\src-tauri\Cargo.toml fs_commands::tests -- --nocapture`
-  - `npx vitest run src/test/fileExplorer.searchTelemetry.test.tsx --reporter=verbose`
-  - `npm run test:unit -- src/test/runtimeCachePolicy.test.ts src/test/searchTelemetry.test.ts`
-  - `npm run build`
+- Green:
+  - `source scripts/vps-artifacts.sh && timeout 45s npm run test:unit:vps -- src/test/runtimeCachePolicy.test.ts`
+  - Result: fast deterministic mounted-path failure message.
+  - `source scripts/vps-artifacts.sh && timeout 45s npm run build:vps`
+  - Result: fast deterministic mounted-path failure message.
+  - `OVERLAYTERM_VPS_EXEC_ROOT='/home/azureuser/.codex/worktrees/ba94/OverlayTerm' bash scripts/with-vps-artifacts.sh pwd`
+  - Result: redirected into the local exec root successfully.
+  - `OVERLAYTERM_VPS_EXEC_ROOT='/home/azureuser/.codex/worktrees/ba94/OverlayTerm' bash scripts/with-vps-artifacts.sh bash -lc 'printf "%s\n%s\n" "$OVERLAYTERM_VPS_SOURCE_ROOT" "$PWD"'`
+  - Result: preserved mounted source root while executing locally.
+- Reproduced blocker:
+  - `source scripts/vps-artifacts.sh && timeout 60s node -e "import('vitest').then(() => console.log('vitest-import-ok')).catch(err => { console.error(err); process.exit(1); })"`
+  - Result: timed out with exit code `124`.
+  - `source scripts/vps-artifacts.sh && timeout 60s node -e "import('playwright').then(() => console.log('playwright-import-ok')).catch(err => { console.error(err); process.exit(1); })"`
+  - Result: timed out with exit code `124`.
+  - `timeout 20s strace -f -tt -o /tmp/overlayterm-vitest.strace node node_modules/vitest/vitest.mjs run src/test/runtimeCachePolicy.test.ts --pool=threads --reporter=verbose || true`
+  - `timeout 20s strace -f -tt -o /tmp/overlayterm-playwright.strace node node_modules/playwright/cli.js --version || true`
+  - Result: both traces showed mounted-path module-resolution churn before timeout.
 - Attempted but not green:
-  - `npx vitest run --config vitest.browser.config.ts src/test/browser/fileExplorer.repositoryPicker.browser.test.tsx --reporter=verbose`
-  - Result: hung past the 180-second timeout without a deterministic pass/fail result.
+  - `rsync` and `tar` mirror attempts from the mounted repo.
+  - Result: source-side I/O entered `D` state, so no safe auto-mirror landed.
 
 ## Current Execution Bias
 
-- The next validator move should be a real-workspace UI smoke pass with telemetry capture, focused on watched-root external-edit freshness, cold versus warm search path labeling, over-budget fallback perception, and rapid typing or clear-search interruption.
-- That validator run should call `fs_get_runtime_cache_policy` first, then confirm the recorded `explorer_search` samples contain both the runtime cache-policy fingerprint and the expected backend diagnostic fields for each scenario.
-- After that, the builder should use those live samples to decide whether watcher coverage or the default content-cache thresholds need to become broader or adaptive.
+- The next validator move should provision or sync a VPS-local OverlayTerm checkout/worktree first, then set `OVERLAYTERM_VPS_EXEC_ROOT` to it.
+- Once that local exec root is proven equivalent to the mounted repo commit, rerun:
+  - `npm run test:unit:vps`
+  - `npm run test:browser:vps`
+  - `npm run build:vps`
+- Only after dependable VPS gates are restored should Tango resume the real-workspace UI smoke pass for cold, warm, and over-budget `explorer_search` telemetry.
 
 ## Goal
 
-- Convert performance work into measured, validated, release-oriented progress over repeated hourly runs.
+- Convert performance work into measured, validated, release-oriented progress over repeated hourly runs without letting mounted-filesystem toolchain failures masquerade as product regressions.

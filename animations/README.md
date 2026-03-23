@@ -3,6 +3,10 @@
 Drop `*.ts`, `*.tsx`, `*.js`, or `*.jsx` files into this folder to author custom
 window open/close motion for OverlayTerm.
 
+Keep this folder focused on shell motion and lightweight overlay effects. Ambient or
+surface-oriented shader work belongs in the sibling `shaders/` folder instead of the
+animation catalog.
+
 Runtime imports:
 
 - `react`

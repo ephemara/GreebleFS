@@ -1,8 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { clamp01, defineAnimation, lerp } from 'overlayterm-animation';
+import { clamp01, defineAnimation, lerp, useAnimationContextRef } from 'overlayterm-animation';
 
 function PortalCausticFoldOverlay({ context }: { context: any }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const contextRef = useAnimationContextRef(context);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -17,6 +18,7 @@ function PortalCausticFoldOverlay({ context }: { context: any }) {
 
     let raf = 0;
     const render = (now: number) => {
+      const liveContext = contextRef.current;
       const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       canvas.width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
       canvas.height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
@@ -24,8 +26,8 @@ function PortalCausticFoldOverlay({ context }: { context: any }) {
       ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
 
       const time = now * 0.001;
-      const progress = clamp01(context.progress);
-      const active = context.direction === 'enter' ? progress : 1 - progress;
+      const progress = clamp01(liveContext.progress);
+      const active = liveContext.direction === 'enter' ? progress : 1 - progress;
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
       const centerX = width * 0.5;
@@ -39,7 +41,7 @@ function PortalCausticFoldOverlay({ context }: { context: any }) {
         const pulse = Math.sin(time * (1.4 + depth * 1.3) + ring * 0.8);
         const alpha = 0.08 + (1 - depth) * 0.14 + active * 0.08;
 
-        ctx.strokeStyle = `${context.accentColor}${Math.round(alpha * 255).toString(16).padStart(2, '0')}`;
+        ctx.strokeStyle = `${liveContext.accentColor}${Math.round(alpha * 255).toString(16).padStart(2, '0')}`;
         ctx.lineWidth = lerp(1.5, 8, 1 - depth);
         ctx.beginPath();
         ctx.arc(centerX, centerY, radius + pulse * 10, 0, Math.PI * 2);
@@ -50,7 +52,7 @@ function PortalCausticFoldOverlay({ context }: { context: any }) {
           const angle = (glint / glints) * Math.PI * 2 + time * 0.5 + depth * 1.2;
           const px = centerX + Math.cos(angle) * (radius + pulse * 6);
           const py = centerY + Math.sin(angle) * (radius * 0.58 + pulse * 4);
-          ctx.fillStyle = glint % 3 === 0 ? 'rgba(255,255,255,0.58)' : `${context.accentColor}aa`;
+          ctx.fillStyle = glint % 3 === 0 ? 'rgba(255,255,255,0.58)' : `${liveContext.accentColor}aa`;
           ctx.beginPath();
           ctx.ellipse(px, py, 6 + depth * 10, 2 + depth * 3, angle, 0, Math.PI * 2);
           ctx.fill();
@@ -59,7 +61,7 @@ function PortalCausticFoldOverlay({ context }: { context: any }) {
 
       ctx.globalCompositeOperation = 'source-over';
       const foldAlpha = 0.12 + active * 0.2;
-      ctx.fillStyle = `${context.accentColor}${Math.round(foldAlpha * 255).toString(16).padStart(2, '0')}`;
+      ctx.fillStyle = `${liveContext.accentColor}${Math.round(foldAlpha * 255).toString(16).padStart(2, '0')}`;
       for (let fold = 0; fold < 11; fold += 1) {
         const y = height * (fold / 10);
         const wave = Math.sin(time * 0.8 + fold * 0.6) * 28;
@@ -77,7 +79,7 @@ function PortalCausticFoldOverlay({ context }: { context: any }) {
 
     raf = window.requestAnimationFrame(render);
     return () => window.cancelAnimationFrame(raf);
-  }, [context.accentColor, context.direction, context.progress]);
+  }, []);
 
   return (
     <canvas

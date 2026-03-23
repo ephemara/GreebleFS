@@ -19,6 +19,7 @@ export const pluginSystemConfig = {
   watchEventName: 'overlay://plugins-changed',
   watchDebounceMs: 400,
   fallbackScanIntervalMs: 20000,
+  ignoredWatchDirectoryNames: ['node_modules', '.git', '.turbo', 'coverage', 'target', 'backend'] as const,
   folderPanelsOpenByDefault: true,
   folderPanelsKeepMounted: false,
 } as const;
@@ -36,4 +37,27 @@ export function getPluginBackendDirectory(pluginId: string): string {
 
 export function getPluginStorageDirectory(pluginId: string): string {
   return joinPlatformPath(joinPlatformPath('overlayterm', 'plugins'), pluginId);
+}
+
+export function normalizePluginWatchPathSegments(path: string): string[] {
+  return path
+    .replace(/\\/g, '/')
+    .split('/')
+    .map(segment => segment.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+export function isIgnoredPluginWatchPath(path: string): boolean {
+  const segments = normalizePluginWatchPathSegments(path);
+  return pluginSystemConfig.ignoredWatchDirectoryNames.some(directoryName => (
+    segments.includes(directoryName.toLowerCase())
+  ));
+}
+
+export function shouldRefreshForPluginWatchPaths(paths: string[]): boolean {
+  if (paths.length === 0) {
+    return true;
+  }
+
+  return paths.some(path => !isIgnoredPluginWatchPath(path));
 }

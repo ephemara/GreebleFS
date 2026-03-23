@@ -1,8 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { clamp01, defineAnimation, lerp } from 'overlayterm-animation';
+import { clamp01, defineAnimation, lerp, useAnimationContextRef } from 'overlayterm-animation';
 
 function FractureRingArrayLayer({ context }) {
   const canvasRef = useRef(null);
+  const contextRef = useAnimationContextRef(context);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -24,8 +25,9 @@ function FractureRingArrayLayer({ context }) {
 
     let raf = 0;
     const render = (now: number) => {
-      const progress = clamp01(context.progress);
-      const active = context.direction === 'enter' ? progress : 1 - progress;
+      const liveContext = contextRef.current;
+      const progress = clamp01(liveContext.progress);
+      const active = liveContext.direction === 'enter' ? progress : 1 - progress;
       const dpr = Math.min(window.devicePixelRatio || 1, 1.6);
       const width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
       const height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
@@ -43,7 +45,7 @@ function FractureRingArrayLayer({ context }) {
 
       const haze = ctx.createRadialGradient(cx, cy, 12, cx, cy, radiusLimit);
       haze.addColorStop(0, `rgba(255,255,255,${0.16 + active * 0.12})`);
-      haze.addColorStop(0.32, `${context.accentColor}22`);
+      haze.addColorStop(0.32, `${liveContext.accentColor}22`);
       haze.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = haze;
       ctx.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
@@ -59,9 +61,9 @@ function FractureRingArrayLayer({ context }) {
         const shardJitter = 1 + Math.sin(now * 0.0018 + ring.phase) * 0.22;
 
         ctx.save();
-        ctx.shadowColor = context.accentColor;
+        ctx.shadowColor = liveContext.accentColor;
         ctx.shadowBlur = 16 * active + ringIndex * 0.5;
-        ctx.strokeStyle = context.accentColor;
+        ctx.strokeStyle = liveContext.accentColor;
         ctx.lineWidth = 1.15 + ringIndex * 0.1;
         ctx.globalAlpha = alpha;
 
@@ -103,7 +105,7 @@ function FractureRingArrayLayer({ context }) {
         ctx.globalAlpha = 0.15 + active * 0.55;
         ctx.shadowColor = '#ffffff';
         ctx.shadowBlur = 10 * active;
-        ctx.fillStyle = index % 3 === 0 ? '#ffffff' : context.accentColor;
+        ctx.fillStyle = index % 3 === 0 ? '#ffffff' : liveContext.accentColor;
         ctx.beginPath();
         ctx.arc(px, py, size, 0, Math.PI * 2);
         ctx.fill();
@@ -116,7 +118,7 @@ function FractureRingArrayLayer({ context }) {
 
     raf = window.requestAnimationFrame(render);
     return () => window.cancelAnimationFrame(raf);
-  }, [context.accentColor, context.direction, context.progress]);
+  }, []);
 
   return (
     <canvas

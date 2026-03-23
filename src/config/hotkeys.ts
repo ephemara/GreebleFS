@@ -2,6 +2,7 @@ export type HotkeyBindingKey =
   | 'commandPalette'
   | 'terminalFocus'
   | 'terminalToggle'
+  | 'windowModeToggle'
   | 'saveFile'
   | 'newFile'
   | 'closeTab'
@@ -34,6 +35,13 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     description: 'Global shortcut used to jump directly into the terminal panel.',
     defaultValue: 'Ctrl+J',
     scope: 'global',
+  },
+  {
+    key: 'windowModeToggle',
+    label: 'Toggle Window Mode',
+    description: 'Switch between the anchored overlay and the regular resizable panel window.',
+    defaultValue: 'F11',
+    scope: 'local',
   },
   {
     key: 'zoomAdjust',

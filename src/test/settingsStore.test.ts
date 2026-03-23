@@ -5,6 +5,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useSettingsStore, defaultSettings, mergeSettingsWithDefaults } from '../store/settingsStore';
+import { overlayWindowGeometry } from '../config/overlayWindow';
 
 beforeEach(() => {
   useSettingsStore.getState().resetToDefaults();
@@ -15,8 +16,12 @@ describe('useSettingsStore — initial state', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.terminal.cursorBlink).toBe(true);
     expect(settings.terminal.scrollback).toBe(10000);
-    expect(settings.terminal.overlayHeight).toBe(420);
+    expect(settings.terminal.overlayHeight).toBe(overlayWindowGeometry.defaultHeight);
+    expect(settings.terminal.overlayWidth).toBe(overlayWindowGeometry.defaultWidth);
     expect(settings.terminal.overlayAnchor).toBe('bottom');
+    expect(settings.terminal.windowMode).toBe('overlay');
+    expect(settings.terminal.windowedWidth).toBe(1440);
+    expect(settings.terminal.windowedHeight).toBe(920);
     expect(settings.terminal.fontSize).toBe(13);
     expect(settings.terminal.preferredOpenMode).toBe('integrated');
     expect(settings.terminal.externalTerminalProfile).toBe('auto');
@@ -36,7 +41,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.explorer.showHiddenFiles).toBe(false);
     expect(settings.explorer.sortBy).toBe('name');
     expect(settings.explorer.sortOrder).toBe('asc');
-    expect(settings.explorer.viewMode).toBe('list');
+    expect(settings.explorer.viewMode).toBe(defaultSettings.explorer.viewMode);
     expect(settings.explorer.folderClickMode).toBe('double');
   });
 
@@ -74,6 +79,7 @@ describe('useSettingsStore — initial state', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.keybindings.terminalToggle).toBe('Ctrl+Space');
     expect(settings.keybindings.terminalFocus).toBe('Ctrl+J');
+    expect(settings.keybindings.windowModeToggle).toBe('F11');
     expect(settings.keybindings.commandPalette).toBe('Ctrl+Shift+P');
   });
 
@@ -102,7 +108,7 @@ describe('useSettingsStore.updateTerminal()', () => {
     const store = useSettingsStore.getState();
     store.updateTerminal({ overlayHeight: 600 });
     expect(useSettingsStore.getState().settings.terminal.overlayHeight).toBe(600);
-    expect(useSettingsStore.getState().settings.terminal.overlayWidth).toBe(-1);
+    expect(useSettingsStore.getState().settings.terminal.overlayWidth).toBe(overlayWindowGeometry.defaultWidth);
 
     store.updateTerminal({ overlayWidth: 1400 });
     expect(useSettingsStore.getState().settings.terminal.overlayWidth).toBe(1400);
@@ -116,6 +122,22 @@ describe('useSettingsStore.updateTerminal()', () => {
     expect(settings.terminal.overlayAnchor).toBe('top');
     expect(settings.terminal.overlayHeight).toBe(600);
     expect(settings.terminal.overlayWidth).toBe(1400);
+  });
+
+  it('updates window mode without disturbing overlay sizing', () => {
+    const store = useSettingsStore.getState();
+    store.updateTerminal({
+      windowMode: 'windowed',
+      windowedWidth: 1680,
+      windowedHeight: 980,
+    });
+
+    const { settings } = useSettingsStore.getState();
+    expect(settings.terminal.windowMode).toBe('windowed');
+    expect(settings.terminal.windowedWidth).toBe(1680);
+    expect(settings.terminal.windowedHeight).toBe(980);
+    expect(settings.terminal.overlayHeight).toBe(overlayWindowGeometry.defaultHeight);
+    expect(settings.terminal.overlayWidth).toBe(overlayWindowGeometry.defaultWidth);
   });
 
   it('updates external terminal fields together', () => {
@@ -169,8 +191,8 @@ describe('useSettingsStore.updateExplorer()', () => {
 
   it('updates viewMode', () => {
     const store = useSettingsStore.getState();
-    store.updateExplorer({ viewMode: 'grid' });
-    expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('grid');
+    store.updateExplorer({ viewMode: 'icons-l' });
+    expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('icons-l');
   });
 
   it('updates folderClickMode', () => {
@@ -380,6 +402,9 @@ describe('mergeSettingsWithDefaults()', () => {
     expect(merged.appearance.appOpenAnimation).toBe(defaultSettings.appearance.appOpenAnimation);
     expect(merged.appearance.appCloseAnimation).toBe(defaultSettings.appearance.appCloseAnimation);
     expect(merged.terminal.overlayAnchor).toBe(defaultSettings.terminal.overlayAnchor);
+    expect(merged.terminal.windowMode).toBe(defaultSettings.terminal.windowMode);
+    expect(merged.terminal.windowedWidth).toBe(defaultSettings.terminal.windowedWidth);
+    expect(merged.terminal.windowedHeight).toBe(defaultSettings.terminal.windowedHeight);
     expect(merged.system.hideAppInTray).toBe(defaultSettings.system.hideAppInTray);
     expect(merged.system.showInTaskbar).toBe(defaultSettings.system.showInTaskbar);
     expect(merged.screenshots).toEqual(defaultSettings.screenshots);
@@ -418,5 +443,35 @@ describe('mergeSettingsWithDefaults()', () => {
     });
 
     expect(merged.explorer.folderClickMode).toBe(defaultSettings.explorer.folderClickMode);
+  });
+
+  it('maps legacy explorer grid/list modes into the richer layout presets', () => {
+    const mergedGrid = mergeSettingsWithDefaults({
+      explorer: {
+        viewMode: 'grid',
+      } as unknown as typeof defaultSettings.explorer,
+    });
+    const mergedList = mergeSettingsWithDefaults({
+      explorer: {
+        viewMode: 'list',
+      } as unknown as typeof defaultSettings.explorer,
+    });
+
+    expect(mergedGrid.explorer.viewMode).toBe('icons-l');
+    expect(mergedList.explorer.viewMode).toBe('details');
+  });
+
+  it('normalizes unsupported window presentation values back to safe defaults', () => {
+    const merged = mergeSettingsWithDefaults({
+      terminal: {
+        windowMode: 'panel-godmode',
+        windowedWidth: 160,
+        windowedHeight: 140,
+      } as unknown as typeof defaultSettings.terminal,
+    });
+
+    expect(merged.terminal.windowMode).toBe(defaultSettings.terminal.windowMode);
+    expect(merged.terminal.windowedWidth).toBeGreaterThanOrEqual(720);
+    expect(merged.terminal.windowedHeight).toBeGreaterThanOrEqual(480);
   });
 });

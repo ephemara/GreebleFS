@@ -7,11 +7,7 @@ import type {
 } from '../config/pluginContributions';
 import TerminalOverlay from '../components/TerminalOverlay';
 import { FileExplorer } from '../components/FileExplorer';
-import { GitManager } from '../components/GitManager';
-import { NotesManager } from '../components/NotesManager';
-import { ScreenshotsManager } from '../components/ScreenshotsManager';
 import { FolderPluginRenderer } from '../components/PluginsManager';
-import { SettingsPage } from '../components/SettingsPage';
 import type { LoadedOverlayAnimation } from '../components/animationRuntime';
 import type { LoadedOverlayShader } from '../components/shaderRuntime';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
@@ -21,6 +17,53 @@ import type {
   OverlayPluginApi,
   OverlayPluginContext,
 } from '../components/pluginRuntime';
+
+const LazyGitManager = React.lazy(async () => {
+  const module = await import('../components/GitManager');
+  return { default: module.GitManager };
+});
+
+const LazyNotesManager = React.lazy(async () => {
+  const module = await import('../components/NotesManager');
+  return { default: module.NotesManager };
+});
+
+const LazyScreenshotsManager = React.lazy(async () => {
+  const module = await import('../components/ScreenshotsManager');
+  return { default: module.ScreenshotsManager };
+});
+
+const LazySettingsPage = React.lazy(async () => {
+  const module = await import('../components/SettingsPage');
+  return { default: module.SettingsPage };
+});
+
+function DeferredPanel({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <React.Suspense fallback={(
+      <div
+        style={{
+          flex: 1,
+          display: 'grid',
+          placeItems: 'center',
+          padding: 24,
+          color: 'var(--overlay-text-muted)',
+          fontSize: 12,
+          background: 'var(--overlay-bg-panel)',
+        }}
+      >
+        Loading panel...
+      </div>
+    )}
+    >
+      {children}
+    </React.Suspense>
+  );
+}
 
 // Prevent keep-mounted heavy panels from rerendering on unrelated App state updates.
 const MemoTerminalOverlay = React.memo(TerminalOverlay);
@@ -181,12 +224,14 @@ export function createBuiltInPanelDefinitions({
       description: 'Git tools and diff management.',
       defaultOpen: true,
       render: () => (
-        <GitManager
-          appearance={appearance}
-          pendingRepositoryImports={pendingRepositoryImports}
-          onPendingRepositoryImportsHandled={onPendingRepositoryImportsHandled}
-          onRequestRepositoryImport={onRequestRepositoryImport}
-        />
+        <DeferredPanel>
+          <LazyGitManager
+            appearance={appearance}
+            pendingRepositoryImports={pendingRepositoryImports}
+            onPendingRepositoryImportsHandled={onPendingRepositoryImportsHandled}
+            onRequestRepositoryImport={onRequestRepositoryImport}
+          />
+        </DeferredPanel>
       ),
     },
     {
@@ -196,7 +241,11 @@ export function createBuiltInPanelDefinitions({
       icon: <StickyNote size={12} />,
       description: 'Scratchpads and structured notes.',
       defaultOpen: true,
-      render: () => <NotesManager appearance={appearance} />,
+      render: () => (
+        <DeferredPanel>
+          <LazyNotesManager appearance={appearance} />
+        </DeferredPanel>
+      ),
     },
     {
       id: 'screenshots',
@@ -205,7 +254,11 @@ export function createBuiltInPanelDefinitions({
       icon: <Camera size={12} />,
       description: 'Built-in example plugin for capture and clipboard workflows.',
       defaultOpen: true,
-      render: () => <ScreenshotsManager appearance={appearance} />,
+      render: () => (
+        <DeferredPanel>
+          <LazyScreenshotsManager appearance={appearance} />
+        </DeferredPanel>
+      ),
     },
     {
       id: 'settings',
@@ -215,30 +268,32 @@ export function createBuiltInPanelDefinitions({
       description: 'Application-wide appearance, terminal, and explorer settings.',
       defaultOpen: false,
       render: () => (
-        <SettingsPage
-          appearance={appearance}
-          themePackages={themePackages}
-          themePackagesDirectory={themePackagesDirectory}
-          themePackagesLoading={themePackagesLoading}
-          themePackagesError={themePackagesError}
-          themePackagesWarnings={themePackagesWarnings}
-          onRefreshThemes={onRefreshThemes}
-          onOpenThemesFolder={onOpenThemesFolder}
-          shaders={shaders}
-          shaderDiagnostics={shaderDiagnostics}
-          shadersDirectory={shadersDirectory}
-          shadersLoading={shadersLoading}
-          shadersError={shadersError}
-          onRefreshShaders={onRefreshShaders}
-          onOpenShadersFolder={onOpenShadersFolder}
-          animations={animations}
-          animationDiagnostics={animationDiagnostics}
-          animationsDirectory={animationsDirectory}
-          animationsLoading={animationsLoading}
-          animationsError={animationsError}
-          onRefreshAnimations={onRefreshAnimations}
-          onOpenAnimationsFolder={onOpenAnimationsFolder}
-        />
+        <DeferredPanel>
+          <LazySettingsPage
+            appearance={appearance}
+            themePackages={themePackages}
+            themePackagesDirectory={themePackagesDirectory}
+            themePackagesLoading={themePackagesLoading}
+            themePackagesError={themePackagesError}
+            themePackagesWarnings={themePackagesWarnings}
+            onRefreshThemes={onRefreshThemes}
+            onOpenThemesFolder={onOpenThemesFolder}
+            shaders={shaders}
+            shaderDiagnostics={shaderDiagnostics}
+            shadersDirectory={shadersDirectory}
+            shadersLoading={shadersLoading}
+            shadersError={shadersError}
+            onRefreshShaders={onRefreshShaders}
+            onOpenShadersFolder={onOpenShadersFolder}
+            animations={animations}
+            animationDiagnostics={animationDiagnostics}
+            animationsDirectory={animationsDirectory}
+            animationsLoading={animationsLoading}
+            animationsError={animationsError}
+            onRefreshAnimations={onRefreshAnimations}
+            onOpenAnimationsFolder={onOpenAnimationsFolder}
+          />
+        </DeferredPanel>
       ),
     },
     {

@@ -12,6 +12,7 @@ describe('searchTelemetry', () => {
       indexedEntryCount: 64,
       contentCacheStoredFileCount: 0,
       contentCacheStoredByteCount: 0,
+      truncatedByScanBudget: false,
     };
 
     expect(getExplorerSearchTelemetryMetadata(diagnostics)).toEqual({
@@ -21,6 +22,7 @@ describe('searchTelemetry', () => {
       explorerSearchIndexedEntryCount: 64,
       explorerSearchContentCacheStoredFileCount: 0,
       explorerSearchContentCacheStoredByteCount: 0,
+      explorerSearchTruncatedByScanBudget: false,
     });
   });
 });

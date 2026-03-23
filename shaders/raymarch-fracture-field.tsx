@@ -1,9 +1,11 @@
 import React, { useEffect, useRef } from 'react';
-import { clamp01, defineAnimation, lerp } from 'overlayterm-animation';
+import { defineShader } from 'overlayterm-shader';
 
-function compileShader(gl, type, source) {
+function compileShader(gl: WebGLRenderingContext, type: number, source: string): WebGLShader {
   const shader = gl.createShader(type);
-  if (!shader) throw new Error('Unable to create shader.');
+  if (!shader) {
+    throw new Error('Unable to create shader.');
+  }
   gl.shaderSource(shader, source);
   gl.compileShader(shader);
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
@@ -14,9 +16,11 @@ function compileShader(gl, type, source) {
   return shader;
 }
 
-function createProgram(gl, vertexSource, fragmentSource) {
+function createProgram(gl: WebGLRenderingContext, vertexSource: string, fragmentSource: string): WebGLProgram {
   const program = gl.createProgram();
-  if (!program) throw new Error('Unable to create program.');
+  if (!program) {
+    throw new Error('Unable to create program.');
+  }
   const vertexShader = compileShader(gl, gl.VERTEX_SHADER, vertexSource);
   const fragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
   gl.attachShader(program, vertexShader);
@@ -32,15 +36,32 @@ function createProgram(gl, vertexSource, fragmentSource) {
   return program;
 }
 
-function RaymarchFractureField({ context }) {
-  const canvasRef = useRef(null);
+function parseAccent(color: string): [number, number, number] {
+  if (!color.startsWith('#') || color.length !== 7) {
+    return [0.42, 0.72, 1];
+  }
+  return [
+    parseInt(color.slice(1, 3), 16) / 255,
+    parseInt(color.slice(3, 5), 16) / 255,
+    parseInt(color.slice(5, 7), 16) / 255,
+  ];
+}
+
+function RaymarchFractureFieldSurface({ context }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const contextRef = useRef(context);
+  contextRef.current = context;
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) {
+      return;
+    }
 
     const gl = canvas.getContext('webgl', { alpha: true, antialias: true, depth: false, stencil: false });
-    if (!gl) return;
+    if (!gl) {
+      return;
+    }
 
     const vertexSource = `
       attribute vec2 aPosition;
@@ -56,8 +77,7 @@ function RaymarchFractureField({ context }) {
       varying vec2 vUv;
       uniform vec2 uResolution;
       uniform float uTime;
-      uniform float uProgress;
-      uniform float uDirection;
+      uniform vec3 uAccent;
 
       float sdBox(vec3 p, vec3 b) {
         vec3 d = abs(p) - b;
@@ -85,11 +105,11 @@ function RaymarchFractureField({ context }) {
       void main() {
         vec2 uv = vUv * 2.0 - 1.0;
         uv.x *= uResolution.x / max(uResolution.y, 1.0);
-        float dirMix = uDirection < 0.5 ? (1.0 - uProgress) : uProgress;
-        vec3 ro = vec3(0.0, 0.0, -4.6 + dirMix * 1.4);
+        float drive = 0.5 + 0.5 * sin(uTime * 0.36);
+        vec3 ro = vec3(0.0, 0.0, -4.6 + drive * 1.2);
         vec3 rd = normalize(vec3(uv, 1.45));
 
-        float yaw = uTime * 0.34 + dirMix * 1.2;
+        float yaw = uTime * 0.34 + drive * 1.2;
         float cy = cos(yaw);
         float sy = sin(yaw);
         mat2 rot = mat2(cy, -sy, sy, cy);
@@ -115,8 +135,8 @@ function RaymarchFractureField({ context }) {
           vec3 normal = calcNormal(p);
           float fresnel = pow(1.0 - max(dot(normal, -rd), 0.0), 3.0);
           float pulse = 0.5 + 0.5 * sin(uTime * 1.5 + p.z * 2.0);
-          color = mix(vec3(0.08, 0.18, 0.38), vec3(0.55, 0.92, 1.25), fresnel + pulse * 0.18);
-          color *= 1.0 + fresnel * 0.65;
+          vec3 base = mix(vec3(0.08, 0.18, 0.38), uAccent + vec3(0.18, 0.3, 0.42), fresnel + pulse * 0.18);
+          color = base * (1.0 + fresnel * 0.65);
         }
 
         float vignette = smoothstep(1.4, 0.22, length(uv));
@@ -127,22 +147,21 @@ function RaymarchFractureField({ context }) {
 
     const program = createProgram(gl, vertexSource, fragmentSource);
     const quad = gl.createBuffer();
+    if (!quad) {
+      gl.deleteProgram(program);
+      return;
+    }
     gl.bindBuffer(gl.ARRAY_BUFFER, quad);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-      -1, -1,
-       1, -1,
-      -1,  1,
-       1,  1,
-    ]), gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
 
     const positionLocation = gl.getAttribLocation(program, 'aPosition');
     const resolutionLocation = gl.getUniformLocation(program, 'uResolution');
     const timeLocation = gl.getUniformLocation(program, 'uTime');
-    const progressLocation = gl.getUniformLocation(program, 'uProgress');
-    const directionLocation = gl.getUniformLocation(program, 'uDirection');
+    const accentLocation = gl.getUniformLocation(program, 'uAccent');
     let raf = 0;
 
-    const render = now => {
+    const render = (now: number) => {
+      const liveContext = contextRef.current;
       const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       canvas.width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
       canvas.height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
@@ -155,8 +174,8 @@ function RaymarchFractureField({ context }) {
       gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
       gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
       gl.uniform1f(timeLocation, now * 0.001);
-      gl.uniform1f(progressLocation, clamp01(context.progress));
-      gl.uniform1f(directionLocation, context.direction === 'enter' ? 0 : 1);
+      const accent = parseAccent(liveContext.accentColor);
+      gl.uniform3f(accentLocation, accent[0], accent[1], accent[2]);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       raf = window.requestAnimationFrame(render);
     };
@@ -167,35 +186,21 @@ function RaymarchFractureField({ context }) {
       gl.deleteProgram(program);
       gl.deleteBuffer(quad);
     };
-  }, [context.direction, context.progress]);
+  }, []);
 
-  return <canvas ref={canvasRef} aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', mixBlendMode: 'screen', opacity: 0.84 }} />;
+  return <canvas ref={canvasRef} aria-hidden style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }} />;
 }
 
-function shellStyle(context, direction) {
-  const progress = clamp01(context.progress);
-  const signed = context.verticalOrigin === 'top' ? -1 : 1;
-  const active = direction === 'enter' ? progress : 1 - progress;
-  return {
-    transform: `perspective(1400px) translate3d(0, ${lerp(18, 0, active) * signed}px, 0) scale(${direction === 'enter' ? lerp(0.76, 1, active) : lerp(1, 0.72, progress)}) rotateY(${direction === 'enter' ? lerp(24, 0, active) : lerp(0, -28, progress)}deg) rotateX(${direction === 'enter' ? lerp(-14, 0, active) : lerp(0, 16, progress)}deg)`,
-    opacity: context.baseOpacity * (direction === 'enter' ? active : 1 - progress),
-    filter: `blur(${direction === 'enter' ? lerp(18, 0, active) : lerp(0, 20, progress)}px) saturate(${direction === 'enter' ? lerp(0.52, 1, active) : lerp(1, 0.46, progress)}) brightness(${direction === 'enter' ? lerp(0.9, 1, active) : lerp(1, 0.78, progress)})`,
-    transition: 'none',
-    willChange: 'transform, opacity, filter',
-  };
-}
-
-export default defineAnimation({
+export default defineShader({
   name: 'Raymarch Fracture Field',
-  description: 'A full-screen raymarched lattice pushes the animation system into true 3D shader territory.',
+  description: 'A full-screen raymarched lattice that pushes the shader system into true 3D territory.',
   group: 'Shader Lab',
-  tags: ['shader', 'raymarch', '3d', 'fracture'],
-  open: {
-    resolveShellStyle: context => shellStyle(context, 'enter'),
-    renderOverlay: RaymarchFractureField,
-  },
-  close: {
-    resolveShellStyle: context => shellStyle(context, 'exit'),
-    renderOverlay: RaymarchFractureField,
+  tags: ['shader', 'raymarch', '3d', 'fracture', 'webgl'],
+  background: {
+    render: RaymarchFractureFieldSurface,
+    resolveStyle: () => ({
+      mixBlendMode: 'screen',
+      opacity: 0.84,
+    }),
   },
 });

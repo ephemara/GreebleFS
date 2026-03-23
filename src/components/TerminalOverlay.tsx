@@ -20,6 +20,7 @@ import React, {
   type ComponentType,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import {
   X,
   Terminal as TerminalIcon,
@@ -221,9 +222,79 @@ void ensureFont;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Tab { id: string; label: string; }
+type TerminalSplitDirection = 'columns' | 'rows';
+interface TerminalPaneSession {
+  id: string;
+  label: string;
+  createdAt: number;
+}
+interface Tab {
+  id: string;
+  label: string;
+  paneIds: string[];
+  activePaneId: string;
+  splitDirection: TerminalSplitDirection;
+  broadcastInput: boolean;
+  createdAt: number;
+}
+interface TerminalPaneTelemetry {
+  outputBytes: number;
+  outputLines: number;
+  lastOutputAt: number | null;
+  lastFocusAt: number | null;
+  rows: number | null;
+  cols: number | null;
+}
 type SidebarPanel = 'dirs' | 'cmds' | 'python' | null;
 type SidebarPanelId = Exclude<SidebarPanel, null>;
+
+const INITIAL_TAB_ID = 'terminal-tab-0';
+const INITIAL_PANE_ID = 'overlay-0';
+
+function createPaneTelemetry(): TerminalPaneTelemetry {
+  return {
+    outputBytes: 0,
+    outputLines: 0,
+    lastOutputAt: null,
+    lastFocusAt: null,
+    rows: null,
+    cols: null,
+  };
+}
+
+function getShellDisplayLabel(shell: string): string {
+  const normalized = shell.trim().replace(/["']/g, '');
+  if (!normalized) {
+    return 'shell';
+  }
+  const segments = normalized.split(/[\\/]/).filter(Boolean);
+  return segments[segments.length - 1] ?? normalized;
+}
+
+function formatRelativeTime(timestamp: number | null): string {
+  if (!timestamp) {
+    return 'no activity yet';
+  }
+  const seconds = Math.max(1, Math.round((Date.now() - timestamp) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days}d ago`;
+}
+
+function formatDataSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function countPayloadLines(payload: string): number {
+  const matches = payload.match(/\r?\n/g);
+  return matches?.length ?? 0;
+}
 
 const TERMINAL_SIDEBAR_ITEMS: {
   id: SidebarPanelId;
@@ -323,44 +394,48 @@ interface TerminalActionToolbarProps {
 function TerminalActionToolbar({ actions, theme, detail }: TerminalActionToolbarProps) {
   return (
     <div
-      className="flex items-center gap-1 px-2 shrink-0 border-b"
-      style={{ height: 32, background: theme.bgPanel, borderColor: theme.border }}
+      className="flex items-center gap-2 px-2 shrink-0 border-b"
+      style={{ minHeight: 40, background: theme.bgPanel, borderColor: theme.border }}
     >
-      {actions.map(action => {
-        const Icon = action.icon;
-        const isAccent = action.tone === 'accent';
-        return (
-          <button
-            key={action.id}
-            onClick={action.onClick}
-            disabled={action.disabled}
-            title={action.title}
-            className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-all disabled:opacity-35 disabled:cursor-not-allowed"
-            style={{
-              color: action.disabled
-                ? theme.textMuted
-                : isAccent
-                  ? theme.accent
-                  : theme.text,
-              background: action.disabled
-                ? 'transparent'
-                : isAccent
-                  ? `${theme.accent}18`
-                  : 'rgba(255,255,255,0.04)',
-              border: `1px solid ${action.disabled ? theme.border : isAccent ? `${theme.accent}44` : theme.border}`,
-            }}
-          >
-            <Icon size={11} />
-            <span>{action.label}</span>
-          </button>
-        );
-      })}
-
-      <div className="flex-1" />
+      <OverlayScrollArea
+        direction="horizontal"
+        style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0 }}
+        contentStyle={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 'max-content', paddingTop: 4, paddingBottom: 4 }}
+      >
+        {actions.map(action => {
+          const Icon = action.icon;
+          const isAccent = action.tone === 'accent';
+          return (
+            <button
+              key={action.id}
+              onClick={action.onClick}
+              disabled={action.disabled}
+              title={action.title}
+              className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-all disabled:opacity-35 disabled:cursor-not-allowed whitespace-nowrap"
+              style={{
+                color: action.disabled
+                  ? theme.textMuted
+                  : isAccent
+                    ? theme.accent
+                    : theme.text,
+                background: action.disabled
+                  ? 'transparent'
+                  : isAccent
+                    ? `${theme.accent}18`
+                    : 'rgba(255,255,255,0.04)',
+                border: `1px solid ${action.disabled ? theme.border : isAccent ? `${theme.accent}44` : theme.border}`,
+              }}
+            >
+              <Icon size={11} />
+              <span>{action.label}</span>
+            </button>
+          );
+        })}
+      </OverlayScrollArea>
 
       <span
         className="text-[9px] select-none"
-        style={{ color: theme.textMuted }}
+        style={{ color: theme.textMuted, whiteSpace: 'nowrap' }}
       >
         {detail}
       </span>
@@ -370,12 +445,45 @@ function TerminalActionToolbar({ actions, theme, detail }: TerminalActionToolbar
 
 // ─── XTermPane ────────────────────────────────────────────────────────────────
 
-interface XTermPaneProps { id: string; visible: boolean; theme: Theme; onReady?: (id: string) => void; }
+interface XTermPaneProps {
+  id: string;
+  visible: boolean;
+  active: boolean;
+  theme: Theme;
+  onReady?: (id: string) => void;
+  onFocus?: (id: string) => void;
+  onData?: (id: string, data: string) => void;
+  onOutput?: (id: string, payload: string) => void;
+  onResize?: (id: string, rows: number, cols: number) => void;
+}
 
-function XTermPane({ id, visible, theme, onReady }: XTermPaneProps) {
+function XTermPane({
+  id,
+  visible,
+  active,
+  theme,
+  onReady,
+  onFocus,
+  onData,
+  onOutput,
+  onResize,
+}: XTermPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mountedRef   = useRef(false);
-  const settings     = useSettingsStore(s => s.settings.terminal);
+  const bufferedOutputRef = useRef('');
+  const outputFrameRef = useRef<number | null>(null);
+  const settings = useSettingsStore(s => s.settings.terminal);
+  const onReadyRef = useRef(onReady);
+  const onFocusRef = useRef(onFocus);
+  const onDataRef = useRef(onData);
+  const onOutputRef = useRef(onOutput);
+  const onResizeRef = useRef(onResize);
+
+  useEffect(() => { onReadyRef.current = onReady; }, [onReady]);
+  useEffect(() => { onFocusRef.current = onFocus; }, [onFocus]);
+  useEffect(() => { onDataRef.current = onData; }, [onData]);
+  useEffect(() => { onOutputRef.current = onOutput; }, [onOutput]);
+  useEffect(() => { onResizeRef.current = onResize; }, [onResize]);
 
   const boot = useCallback(async () => {
     if (!containerRef.current || mountedRef.current) return;
@@ -413,21 +521,63 @@ function XTermPane({ id, visible, theme, onReady }: XTermPaneProps) {
       term.writeln('\r\n\x1b[31mFailed to spawn PTY:\x1b[0m ' + String(e));
     }
 
-    const unlisten = await listen<string>(`terminal-output-${id}`, ev => term.write(ev.payload));
-    term.onData(data => invoke('terminal_write', { id, data }).catch(() => {}));
-    term.onResize(({ rows: r, cols: c }) =>
-      invoke('terminal_resize', { id, rows: r, cols: c }).catch(() => {}));
+    const flushBufferedOutput = () => {
+      outputFrameRef.current = null;
+      const chunk = bufferedOutputRef.current;
+      if (!chunk) {
+        return;
+      }
+
+      bufferedOutputRef.current = '';
+      term.write(chunk);
+      onOutputRef.current?.(id, chunk);
+    };
+
+    const scheduleBufferedFlush = () => {
+      if (outputFrameRef.current !== null) {
+        return;
+      }
+
+      outputFrameRef.current = window.requestAnimationFrame(flushBufferedOutput);
+    };
+
+    const unlisten = await listen<string>(`terminal-output-${id}`, ev => {
+      bufferedOutputRef.current += ev.payload;
+      scheduleBufferedFlush();
+    });
+    term.onData(data => {
+      onFocusRef.current?.(id);
+      onDataRef.current?.(id, data);
+    });
+    term.onResize(({ rows: r, cols: c }) => {
+      onResizeRef.current?.(id, r, c);
+      invoke('terminal_resize', { id, rows: r, cols: c }).catch(() => {});
+    });
 
     const ro = new ResizeObserver(() => fit.fit());
     ro.observe(containerRef.current!);
 
+    const focusTarget = containerRef.current;
+    const handlePointerDown = () => onFocusRef.current?.(id);
+    focusTarget?.addEventListener('pointerdown', handlePointerDown);
+
     xtermRegistry.set(id, {
       xterm: term, fitAddon: fit,
-      unlisten: () => { unlisten(); ro.disconnect(); },
+      unlisten: () => {
+        flushBufferedOutput();
+        if (outputFrameRef.current !== null) {
+          window.cancelAnimationFrame(outputFrameRef.current);
+          outputFrameRef.current = null;
+        }
+        unlisten();
+        ro.disconnect();
+        focusTarget?.removeEventListener('pointerdown', handlePointerDown);
+      },
     });
-    onReady?.(id);
+    onResizeRef.current?.(id, term.rows, term.cols);
+    onReadyRef.current?.(id);
     term.focus();
-  }, [id, onReady, settings, theme]);
+  }, [id, settings, theme]);
 
   useEffect(() => {
     if (visible) {
@@ -437,14 +587,14 @@ function XTermPane({ id, visible, theme, onReady }: XTermPaneProps) {
   }, [visible, boot]);
 
   useEffect(() => {
-    if (visible) {
+    if (visible && active) {
       const entry = xtermRegistry.get(id);
       if (entry) {
         requestAnimationFrame(() => entry.fitAddon.fit());
         requestAnimationFrame(() => entry.xterm.focus());
       }
     }
-  }, [visible, id]);
+  }, [active, visible, id]);
 
   useEffect(() => () => {
     mountedRef.current = false;
@@ -812,7 +962,7 @@ function PythonSidebarContent({
 interface SidebarContentProps {
   panel: SidebarPanel; theme: Theme; appearance: ResolvedOverlayAppearance;
   pluginCommands: OverlayPluginCommandContribution[];
-  injectCmd: (cmd: string) => void;
+  injectCmd: (cmd: string, run?: boolean) => void;
   injectCd:  (path: string) => void;
   emitToTerminal: (label: string, body: string, tone?: 'info' | 'success' | 'error') => void;
   announce: (message: string) => void;
@@ -893,7 +1043,7 @@ function SidebarContent({
         {commandBookmarks.map(bm => (
           <BookmarkChip key={bm.id} bm={bm} icon={<Hash size={10} />} accentStyle={appearance.theme.palette.success}
             onPrimary={() => injectCmd(bm.value)}
-            onRun={() => injectCmd(bm.value + '\r')}
+            onRun={() => injectCmd(bm.value, true)}
             onDelete={() => removeCommandBookmark(bm.id)} />
         ))}
         {pluginCommands.length > 0 && (
@@ -938,9 +1088,11 @@ export function TerminalOverlay({
   appearance: appearanceProp,
   pluginCommands = [],
 }: TerminalOverlayProps) {
-  const settings = useSettingsStore(s => s.settings.terminal);
-  const appearanceSettings = useSettingsStore(s => s.settings.appearance);
-  const keybindings = useSettingsStore(s => s.settings.keybindings);
+  const { settings, appearanceSettings, keybindings } = useSettingsStore(useShallow(state => ({
+    settings: state.settings.terminal,
+    appearanceSettings: state.settings.appearance,
+    keybindings: state.settings.keybindings,
+  })));
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
   const appearance = useMemo(
     () => appearanceProp ?? resolveOverlayAppearance({
@@ -960,25 +1112,44 @@ export function TerminalOverlay({
     ensureFontFamilyLoaded(settings.fontFamily);
   }, [settings.fontFamily, uiFont]);
 
-  // ── Tabs ──
-  const [tabs, setTabs]         = useState<Tab[]>([{ id: 'overlay-0', label: 'pwsh' }]);
-  const [activeId, setActiveId] = useState('overlay-0');
+  const initialShellLabel = useMemo(() => getShellDisplayLabel(settings.shell), [settings.shell]);
+  const [tabs, setTabs] = useState<Tab[]>(() => [{
+    id: INITIAL_TAB_ID,
+    label: initialShellLabel,
+    paneIds: [INITIAL_PANE_ID],
+    activePaneId: INITIAL_PANE_ID,
+    splitDirection: 'columns',
+    broadcastInput: false,
+    createdAt: Date.now(),
+  }]);
+  const [paneSessions, setPaneSessions] = useState<Record<string, TerminalPaneSession>>(() => ({
+    [INITIAL_PANE_ID]: {
+      id: INITIAL_PANE_ID,
+      label: 'Pane 1',
+      createdAt: Date.now(),
+    },
+  }));
+  const [activeTabId, setActiveTabId] = useState(INITIAL_TAB_ID);
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [renameVal, setRenameVal]   = useState('');
+  const [renameVal, setRenameVal] = useState('');
 
-  // ── Sidebar ──
   const [activePanel, setActivePanel] = useState<SidebarPanel>('dirs');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(210);
   const [readyTerminalIds, setReadyTerminalIds] = useState<string[]>([]);
   const [terminalActionMessage, setTerminalActionMessage] = useState<string | null>(null);
+  const [paneTelemetry, setPaneTelemetry] = useState<Record<string, TerminalPaneTelemetry>>(() => ({
+    [INITIAL_PANE_ID]: createPaneTelemetry(),
+  }));
   const actionMessageTimerRef = useRef<number | null>(null);
+  const paneCounterRef = useRef(1);
+  const tabCounterRef = useRef(1);
 
-  // ── Store init ──
-  const { initStore } = useTerminalStore();
+  const { initStore } = useTerminalStore(useShallow(state => ({
+    initStore: state.initStore,
+  })));
   useEffect(() => { initStore(); }, [initStore]);
 
-  // ── Mount guard ──
   const hasMountedRef = useRef(false);
   if (isOpen && !hasMountedRef.current) hasMountedRef.current = true;
 
@@ -999,24 +1170,134 @@ export function TerminalOverlay({
     }
   }, []);
 
-  // ── PTY helpers ──
-  const injectCmd = useCallback(async (data: string) => {
-    try { await invoke('terminal_write', { id: activeId, data: data + '\r' }); }
-    catch (e) { console.error('inject cmd failed', e); }
-  }, [activeId]);
+  const activeTab = useMemo(
+    () => tabs.find(tab => tab.id === activeTabId) ?? tabs[0] ?? null,
+    [tabs, activeTabId],
+  );
+  const activePaneId = activeTab?.activePaneId ?? activeTab?.paneIds[0] ?? INITIAL_PANE_ID;
+  const activePane = paneSessions[activePaneId] ?? null;
+  const activePaneMetrics = paneTelemetry[activePaneId] ?? createPaneTelemetry();
+  const totalPaneCount = tabs.reduce((sum, tab) => sum + tab.paneIds.length, 0);
 
-  const injectCd = useCallback(async (path: string) => injectCmd(`cd '${path}'`), [injectCmd]);
+  const findTabForPane = useCallback((paneId: string) => (
+    tabs.find(tab => tab.paneIds.includes(paneId)) ?? null
+  ), [tabs]);
+
+  const isPaneReady = useCallback((paneId: string) => (
+    readyTerminalIds.includes(paneId) || xtermRegistry.has(paneId)
+  ), [readyTerminalIds]);
+
+  const markTerminalReady = useCallback((id: string) => {
+    setReadyTerminalIds(prev => prev.includes(id) ? prev : [...prev, id]);
+    setPaneTelemetry(prev => ({
+      ...prev,
+      [id]: prev[id] ?? createPaneTelemetry(),
+    }));
+  }, []);
+
+  const clearTerminalReady = useCallback((id: string) => {
+    setReadyTerminalIds(prev => prev.filter(value => value !== id));
+  }, []);
+
+  const updatePaneTelemetry = useCallback((paneId: string, updater: (current: TerminalPaneTelemetry) => TerminalPaneTelemetry) => {
+    setPaneTelemetry(prev => ({
+      ...prev,
+      [paneId]: updater(prev[paneId] ?? createPaneTelemetry()),
+    }));
+  }, []);
+
+  const markPaneFocused = useCallback((paneId: string) => {
+    updatePaneTelemetry(paneId, current => ({
+      ...current,
+      lastFocusAt: Date.now(),
+    }));
+  }, [updatePaneTelemetry]);
+
+  const focusPane = useCallback((tabId: string, paneId: string) => {
+    setActiveTabId(tabId);
+    setTabs(prev => prev.map(tab => (
+      tab.id === tabId
+        ? { ...tab, activePaneId: paneId }
+        : tab
+    )));
+    markPaneFocused(paneId);
+    const entry = xtermRegistry.get(paneId);
+    if (entry) {
+      requestAnimationFrame(() => entry.xterm.focus());
+    }
+  }, [markPaneFocused]);
+
+  const removePaneSession = useCallback((paneId: string) => {
+    clearTerminalReady(paneId);
+    setPaneSessions(prev => {
+      const next = { ...prev };
+      delete next[paneId];
+      return next;
+    });
+    setPaneTelemetry(prev => {
+      const next = { ...prev };
+      delete next[paneId];
+      return next;
+    });
+  }, [clearTerminalReady]);
+
+  const writeToPaneIds = useCallback(async (paneIds: string[], data: string) => {
+    if (paneIds.length === 0) {
+      return;
+    }
+
+    if (paneIds.length === 1) {
+      await invoke('terminal_write', { id: paneIds[0], data });
+      return;
+    }
+
+    await invoke('terminal_write_many', {
+      writes: paneIds.map(id => ({ id, data })),
+    });
+  }, []);
+
+  const resolveCommandTargets = useCallback((paneId?: string) => {
+    const tab = paneId ? findTabForPane(paneId) : activeTab;
+    if (!tab) {
+      return paneId ? [paneId] : [];
+    }
+    return tab.broadcastInput ? tab.paneIds : [paneId ?? tab.activePaneId];
+  }, [activeTab, findTabForPane]);
+
+  const injectCmd = useCallback(async (command: string, run = false, paneId?: string) => {
+    const targetIds = resolveCommandTargets(paneId);
+    if (targetIds.length === 0) {
+      return;
+    }
+
+    try {
+      await writeToPaneIds(targetIds, run ? `${command}\r` : command);
+    } catch (error) {
+      console.error('inject cmd failed', error);
+    }
+  }, [resolveCommandTargets, writeToPaneIds]);
+
+  const injectCd = useCallback(async (path: string) => injectCmd(`cd '${path}'`, true), [injectCmd]);
 
   const launchManagedRepl = useCallback(async (command: string) => {
-    await injectCmd(command);
+    await injectCmd(command, true);
   }, [injectCmd]);
 
-  const emitToActiveTerminal = useCallback((
+  const handleTerminalInput = useCallback((paneId: string, data: string) => {
+    const targetIds = resolveCommandTargets(paneId);
+    if (targetIds.length === 0) {
+      return;
+    }
+    void writeToPaneIds(targetIds, data).catch(error => console.error('terminal input failed', error));
+  }, [resolveCommandTargets, writeToPaneIds]);
+
+  const emitToPane = useCallback((
+    paneId: string,
     label: string,
     body: string,
     tone: 'info' | 'success' | 'error' = 'info',
   ) => {
-    const entry = xtermRegistry.get(activeId);
+    const entry = xtermRegistry.get(paneId);
     if (!entry) {
       setTransientActionMessage('Terminal is still starting');
       return;
@@ -1031,18 +1312,35 @@ export function TerminalOverlay({
 
     entry.xterm.write(`\r\n${tonePrefix}[${label}]\x1b[0m\r\n${normalized}\r\n`);
     entry.xterm.focus();
-  }, [activeId, setTransientActionMessage]);
+  }, [setTransientActionMessage]);
 
-  const markTerminalReady = useCallback((id: string) => {
-    setReadyTerminalIds(prev => prev.includes(id) ? prev : [...prev, id]);
-  }, []);
+  const emitToActiveTerminal = useCallback((
+    label: string,
+    body: string,
+    tone: 'info' | 'success' | 'error' = 'info',
+  ) => {
+    emitToPane(activePaneId, label, body, tone);
+  }, [activePaneId, emitToPane]);
 
-  const clearTerminalReady = useCallback((id: string) => {
-    setReadyTerminalIds(prev => prev.filter(value => value !== id));
-  }, []);
+  const handleTerminalOutput = useCallback((paneId: string, payload: string) => {
+    updatePaneTelemetry(paneId, current => ({
+      ...current,
+      outputBytes: current.outputBytes + payload.length,
+      outputLines: current.outputLines + countPayloadLines(payload),
+      lastOutputAt: Date.now(),
+    }));
+  }, [updatePaneTelemetry]);
 
-  const copyActiveTerminalOutput = useCallback(async () => {
-    const entry = xtermRegistry.get(activeId);
+  const handlePaneResize = useCallback((paneId: string, rows: number, cols: number) => {
+    updatePaneTelemetry(paneId, current => ({
+      ...current,
+      rows,
+      cols,
+    }));
+  }, [updatePaneTelemetry]);
+
+  const copyPaneOutput = useCallback(async (paneId: string) => {
+    const entry = xtermRegistry.get(paneId);
     if (!entry) {
       setTransientActionMessage('Terminal is still starting');
       return;
@@ -1062,34 +1360,63 @@ export function TerminalOverlay({
       setTransientActionMessage('Clipboard write failed');
     }
     entry.xterm.focus();
-  }, [activeId, setTransientActionMessage]);
+  }, [setTransientActionMessage]);
 
-  const clearActiveTerminal = useCallback(() => {
-    const entry = xtermRegistry.get(activeId);
+  const copyPaneSnapshot = useCallback(async (paneId: string) => {
+    const entry = xtermRegistry.get(paneId);
+    const tab = findTabForPane(paneId);
+    const pane = paneSessions[paneId];
+    if (!entry || !tab || !pane) {
+      setTransientActionMessage('Terminal is still starting');
+      return;
+    }
+
+    const output = collectTerminalBufferText(entry.xterm);
+    const metrics = paneTelemetry[paneId] ?? createPaneTelemetry();
+    const snapshot = [
+      `# ${tab.label} · ${pane.label}`,
+      '',
+      `- Shell: ${settings.shell}`,
+      `- Layout: ${tab.splitDirection === 'columns' ? 'columns' : 'rows'}`,
+      `- Broadcast input: ${tab.broadcastInput ? 'enabled' : 'disabled'}`,
+      `- Viewport: ${metrics.cols && metrics.rows ? `${metrics.cols} x ${metrics.rows}` : 'unknown'}`,
+      `- Captured: ${new Date().toLocaleString()}`,
+      '',
+      '```text',
+      output || '(no output captured yet)',
+      '```',
+    ].join('\n');
+
+    const copied = await copyTextToClipboard(snapshot);
+    setTransientActionMessage(copied ? `Snapshot copied for ${pane.label}` : 'Snapshot copy failed');
+  }, [findTabForPane, paneSessions, paneTelemetry, setTransientActionMessage, settings.shell]);
+
+  const clearPane = useCallback((paneId: string) => {
+    const entry = xtermRegistry.get(paneId);
     if (!entry) {
       setTransientActionMessage('Terminal is still starting');
       return;
     }
     entry.xterm.clear();
     entry.xterm.focus();
-    setTransientActionMessage('Cleared terminal viewport');
-  }, [activeId, setTransientActionMessage]);
+    setTransientActionMessage(`Cleared ${paneSessions[paneId]?.label ?? 'pane'}`);
+  }, [paneSessions, setTransientActionMessage]);
 
-  const restartActiveTerminal = useCallback(async () => {
-    const entry = xtermRegistry.get(activeId);
+  const restartPane = useCallback(async (paneId: string) => {
+    const entry = xtermRegistry.get(paneId);
     if (!entry) {
       setTransientActionMessage('Terminal is still starting');
       return;
     }
 
-    clearTerminalReady(activeId);
+    clearTerminalReady(paneId);
 
     try {
-      await invoke('terminal_kill', { id: activeId });
+      await invoke('terminal_kill', { id: paneId });
       entry.xterm.reset();
-      await invoke('terminal_spawn', { id: activeId, rows: entry.xterm.rows, cols: entry.xterm.cols, shell: settings.shell });
-      markTerminalReady(activeId);
-      setTransientActionMessage(`Restarted ${tabs.find(tab => tab.id === activeId)?.label ?? 'terminal'}`);
+      await invoke('terminal_spawn', { id: paneId, rows: entry.xterm.rows, cols: entry.xterm.cols, shell: settings.shell });
+      markTerminalReady(paneId);
+      setTransientActionMessage(`Restarted ${paneSessions[paneId]?.label ?? 'terminal'}`);
     } catch (error) {
       setTransientActionMessage(`Restart failed: ${String(error)}`);
     }
@@ -1098,13 +1425,11 @@ export function TerminalOverlay({
       entry.fitAddon.fit();
       entry.xterm.focus();
     });
-  }, [activeId, clearTerminalReady, markTerminalReady, setTransientActionMessage, settings.shell, tabs]);
-
-  // ── Listen for cd-inject from FileExplorer (must be after injectCd is defined) ──
+  }, [clearTerminalReady, markTerminalReady, paneSessions, setTransientActionMessage, settings.shell]);
   useEffect(() => {
     const handler = (e: Event) => {
       const path = (e as CustomEvent<string>).detail;
-      if (path) injectCd(path);
+      if (path) void injectCd(path);
     };
     window.addEventListener('overlayterm:cdinject', handler);
     return () => window.removeEventListener('overlayterm:cdinject', handler);
@@ -1116,220 +1441,665 @@ export function TerminalOverlay({
       if (!detail?.command) {
         return;
       }
-      injectCmd(detail.run ? `${detail.command}\r` : detail.command);
+      void injectCmd(detail.command, Boolean(detail.run));
     };
     window.addEventListener('overlayterm:cmdinject', handler);
     return () => window.removeEventListener('overlayterm:cmdinject', handler);
   }, [injectCmd]);
 
-  // ── Tab management ──
-  const newTab = () => {
-    const id  = `overlay-${Date.now()}`;
-    const num = tabs.length + 1;
-    setTabs(t => [...t, { id, label: `pwsh (${num})` }]);
-    setActiveId(id);
-  };
+  const createPaneSession = useCallback((label: string): TerminalPaneSession => {
+    const id = `overlay-${paneCounterRef.current}`;
+    paneCounterRef.current += 1;
+    return {
+      id,
+      label,
+      createdAt: Date.now(),
+    };
+  }, []);
 
-  const closeTab = (id: string, e: React.MouseEvent) => {
+  const newTab = useCallback(() => {
+    const pane = createPaneSession('Pane 1');
+    const tabId = `terminal-tab-${tabCounterRef.current}`;
+    tabCounterRef.current += 1;
+    const nextTabs = [...tabs, {
+      id: tabId,
+      label: `${getShellDisplayLabel(settings.shell)} (${tabs.length + 1})`,
+      paneIds: [pane.id],
+      activePaneId: pane.id,
+      splitDirection: 'columns' as const,
+      broadcastInput: false,
+      createdAt: Date.now(),
+    }];
+
+    setPaneSessions(prev => ({ ...prev, [pane.id]: pane }));
+    setPaneTelemetry(prev => ({ ...prev, [pane.id]: createPaneTelemetry() }));
+    setTabs(nextTabs);
+    setActiveTabId(tabId);
+    setTransientActionMessage(`Opened ${nextTabs[nextTabs.length - 1].label}`);
+  }, [createPaneSession, settings.shell, tabs, setTransientActionMessage]);
+
+  const splitActiveTab = useCallback((direction: TerminalSplitDirection) => {
+    if (!activeTab) {
+      return;
+    }
+
+    const pane = createPaneSession(`Pane ${activeTab.paneIds.length + 1}`);
+    setPaneSessions(prev => ({ ...prev, [pane.id]: pane }));
+    setPaneTelemetry(prev => ({ ...prev, [pane.id]: createPaneTelemetry() }));
+    setTabs(prev => prev.map(tab => (
+      tab.id === activeTab.id
+        ? {
+            ...tab,
+            paneIds: [...tab.paneIds, pane.id],
+            activePaneId: pane.id,
+            splitDirection: direction,
+          }
+        : tab
+    )));
+    setTransientActionMessage(direction === 'columns' ? 'Added a side-by-side split' : 'Added a stacked split');
+  }, [activeTab, createPaneSession, setTransientActionMessage]);
+
+  const duplicateActivePane = useCallback(() => {
+    if (!activeTab) {
+      return;
+    }
+    const nextDirection = activeTab.splitDirection;
+    splitActiveTab(nextDirection);
+    setTransientActionMessage(`Forked a fresh ${nextDirection === 'columns' ? 'side-by-side' : 'stacked'} pane`);
+  }, [activeTab, splitActiveTab, setTransientActionMessage]);
+
+  const toggleBroadcastActiveTab = useCallback(() => {
+    if (!activeTab) {
+      return;
+    }
+    setTabs(prev => prev.map(tab => (
+      tab.id === activeTab.id
+        ? { ...tab, broadcastInput: !tab.broadcastInput }
+        : tab
+    )));
+    setTransientActionMessage(activeTab.broadcastInput ? 'Broadcast input disabled' : 'Broadcast input armed');
+  }, [activeTab, setTransientActionMessage]);
+
+  const setActiveTabLayout = useCallback((direction: TerminalSplitDirection) => {
+    if (!activeTab) {
+      return;
+    }
+    setTabs(prev => prev.map(tab => (
+      tab.id === activeTab.id
+        ? { ...tab, splitDirection: direction }
+        : tab
+    )));
+    setTransientActionMessage(direction === 'columns' ? 'Switched to columns layout' : 'Switched to rows layout');
+  }, [activeTab, setTransientActionMessage]);
+
+  const closePane = useCallback((paneId: string) => {
+    const tab = findTabForPane(paneId);
+    if (!tab || tab.paneIds.length <= 1) {
+      return;
+    }
+
+    destroyXterm(paneId);
+    removePaneSession(paneId);
+
+    const paneIndex = tab.paneIds.indexOf(paneId);
+    setTabs(prev => prev.map(current => {
+      if (current.id !== tab.id) {
+        return current;
+      }
+      const nextPaneIds = current.paneIds.filter(id => id !== paneId);
+      return {
+        ...current,
+        paneIds: nextPaneIds,
+        activePaneId: current.activePaneId === paneId
+          ? nextPaneIds[Math.max(0, paneIndex - 1)] ?? nextPaneIds[0]
+          : current.activePaneId,
+      };
+    }));
+    setTransientActionMessage(`Closed ${paneSessions[paneId]?.label ?? 'pane'}`);
+  }, [findTabForPane, paneSessions, removePaneSession, setTransientActionMessage]);
+
+  const closeTab = useCallback((tabId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    destroyXterm(id);
-    clearTerminalReady(id);
-    setTabs(prev => {
-      const next = prev.filter(t => t.id !== id);
-      if (next.length === 0) { onClose(); return prev; }
-      if (activeId === id) setActiveId(next[next.length - 1].id);
-      return next;
+    const tabIndex = tabs.findIndex(tab => tab.id === tabId);
+    if (tabIndex === -1) {
+      return;
+    }
+
+    if (tabs.length === 1) {
+      onClose();
+      return;
+    }
+
+    const tab = tabs[tabIndex];
+    tab.paneIds.forEach(paneId => {
+      destroyXterm(paneId);
+      removePaneSession(paneId);
     });
-  };
 
-  const startRename = (id: string, label: string, e: React.MouseEvent) => {
-    e.stopPropagation(); setRenamingId(id); setRenameVal(label);
-  };
+    const nextTabs = tabs.filter(current => current.id !== tabId);
+    setTabs(nextTabs);
+    if (activeTabId === tabId) {
+      const fallback = nextTabs[Math.max(0, tabIndex - 1)] ?? nextTabs[0];
+      setActiveTabId(fallback.id);
+    }
+    setTransientActionMessage(`Closed ${tab.label}`);
+  }, [activeTabId, onClose, removePaneSession, setTransientActionMessage, tabs]);
 
-  const commitRename = () => {
-    if (renamingId && renameVal.trim())
-      setTabs(t => t.map(tab => tab.id === renamingId ? { ...tab, label: renameVal.trim() } : tab));
+  const startRename = useCallback((id: string, label: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRenamingId(id);
+    setRenameVal(label);
+  }, []);
+
+  const commitRename = useCallback(() => {
+    if (renamingId && renameVal.trim()) {
+      setTabs(prev => prev.map(tab => (
+        tab.id === renamingId ? { ...tab, label: renameVal.trim() } : tab
+      )));
+    }
     setRenamingId(null);
-  };
+  }, [renameVal, renamingId]);
 
-  // ── Sidebar toggle ──
-  const togglePanel = (p: SidebarPanel) => {
-    if (activePanel === p && sidebarOpen) { setSidebarOpen(false); setActivePanel(null); }
-    else { setActivePanel(p); setSidebarOpen(true); }
-  };
+  const togglePanel = useCallback((panel: SidebarPanel) => {
+    if (activePanel === panel && sidebarOpen) {
+      setSidebarOpen(false);
+      setActivePanel(null);
+      return;
+    }
+    setActivePanel(panel);
+    setSidebarOpen(true);
+  }, [activePanel, sidebarOpen]);
 
   const slideClass = isOpen ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0';
-  const activeTabLabel = tabs.find(tab => tab.id === activeId)?.label ?? 'terminal';
-  const activeTerminalReady = readyTerminalIds.includes(activeId) || xtermRegistry.has(activeId);
+  const activeTerminalReady = isPaneReady(activePaneId);
+  const activeTabReadyCount = activeTab?.paneIds.filter(isPaneReady).length ?? 0;
+  const activeTabLabel = activeTab?.label ?? 'terminal';
   const terminalToolbarActions = useMemo<TerminalToolbarAction[]>(() => ([
+    {
+      id: 'split-columns',
+      label: 'Split Columns',
+      title: 'Add a side-by-side pane to the active workspace',
+      icon: Plus,
+      onClick: () => splitActiveTab('columns'),
+      tone: activeTab?.splitDirection === 'columns' ? 'accent' : 'default',
+    },
+    {
+      id: 'split-rows',
+      label: 'Split Rows',
+      title: 'Stack panes vertically in the active workspace',
+      icon: Plus,
+      onClick: () => splitActiveTab('rows'),
+      tone: activeTab?.splitDirection === 'rows' ? 'accent' : 'default',
+    },
+    {
+      id: 'fork-pane',
+      label: 'Fork Pane',
+      title: 'Create a fresh pane in the current layout',
+      icon: TerminalSquare,
+      onClick: duplicateActivePane,
+    },
+    {
+      id: 'broadcast',
+      label: activeTab?.broadcastInput ? 'Broadcast On' : 'Broadcast Off',
+      title: 'Mirror input to every pane inside the current tab',
+      icon: Zap,
+      onClick: toggleBroadcastActiveTab,
+      tone: activeTab?.broadcastInput ? 'accent' : 'default',
+    },
     {
       id: 'copy-output',
       label: 'Copy Output',
       title: 'Copy the selected text or the full scrollback buffer',
       icon: Copy,
-      onClick: () => { void copyActiveTerminalOutput(); },
+      onClick: () => { void copyPaneOutput(activePaneId); },
       disabled: !activeTerminalReady,
       tone: 'accent',
     },
     {
-      id: 'clear-terminal',
-      label: 'Clear',
-      title: 'Clear the active terminal viewport',
-      icon: Eraser,
-      onClick: clearActiveTerminal,
+      id: 'copy-snapshot',
+      label: 'Copy Snapshot',
+      title: 'Copy a markdown capture card for the active pane',
+      icon: Copy,
+      onClick: () => { void copyPaneSnapshot(activePaneId); },
       disabled: !activeTerminalReady,
     },
     {
-      id: 'restart-terminal',
-      label: 'Restart',
-      title: 'Restart the active terminal session',
-      icon: RotateCcw,
-      onClick: () => { void restartActiveTerminal(); },
+      id: 'clear-pane',
+      label: 'Clear',
+      title: 'Clear the active pane viewport',
+      icon: Eraser,
+      onClick: () => clearPane(activePaneId),
       disabled: !activeTerminalReady,
     },
-  ]), [activeTerminalReady, clearActiveTerminal, copyActiveTerminalOutput, restartActiveTerminal]);
+    {
+      id: 'restart-pane',
+      label: 'Restart',
+      title: 'Restart the active pane session',
+      icon: RotateCcw,
+      onClick: () => { void restartPane(activePaneId); },
+      disabled: !activeTerminalReady,
+    },
+  ]), [
+    activePaneId,
+    activeTab?.broadcastInput,
+    activeTab?.splitDirection,
+    activeTerminalReady,
+    clearPane,
+    copyPaneOutput,
+    copyPaneSnapshot,
+    duplicateActivePane,
+    restartPane,
+    splitActiveTab,
+    toggleBroadcastActiveTab,
+  ]);
   const terminalToolbarDetail = terminalActionMessage
-    ?? (activeTerminalReady ? `${activeTabLabel} ready` : `${activeTabLabel} starting...`);
+    ?? (activeTerminalReady
+      ? `${activeTabReadyCount}/${activeTab?.paneIds.length ?? 0} panes live · ${activeTab?.broadcastInput ? 'broadcasting input' : 'focused input'}`
+      : `${activeTabLabel} starting...`);
+
+  const workspaceCards = [
+    {
+      id: 'workspace',
+      label: 'Workspace',
+      value: activeTabLabel,
+      detail: `${activeTab?.paneIds.length ?? 0} pane${(activeTab?.paneIds.length ?? 0) === 1 ? '' : 's'} · ${activeTab?.splitDirection === 'rows' ? 'rows layout' : 'columns layout'}`,
+      accent: theme.accent,
+    },
+    {
+      id: 'mode',
+      label: 'Input Mode',
+      value: activeTab?.broadcastInput ? 'Broadcast live' : 'Focused input',
+      detail: activeTab?.broadcastInput ? 'Every keystroke fans out to the tab' : 'Only the active pane receives input',
+      accent: activeTab?.broadcastInput ? appearance.theme.palette.success : theme.text,
+    },
+    {
+      id: 'activity',
+      label: 'Last Burst',
+      value: formatRelativeTime(activePaneMetrics.lastOutputAt),
+      detail: `${activePaneMetrics.outputLines} lines · ${formatDataSize(activePaneMetrics.outputBytes)}`,
+      accent: appearance.theme.palette.info,
+    },
+    {
+      id: 'viewport',
+      label: 'Viewport',
+      value: activePaneMetrics.cols && activePaneMetrics.rows ? `${activePaneMetrics.cols} x ${activePaneMetrics.rows}` : 'Sizing…',
+      detail: activePane?.label ?? 'No active pane',
+      accent: theme.text,
+    },
+  ];
+
+  const sidebarPanelNode = sidebarOpen && activePanel ? (
+    <div
+      className="shrink-0 overflow-hidden relative"
+      style={{ width: sidebarWidth, background: theme.bgPanel, borderRight: `1px solid ${theme.border}`, color: theme.text }}
+    >
+      <SidebarContent
+        panel={activePanel}
+        theme={theme}
+        appearance={appearance}
+        pluginCommands={pluginCommands}
+        injectCmd={injectCmd}
+        injectCd={injectCd}
+        emitToTerminal={emitToActiveTerminal}
+        announce={setTransientActionMessage}
+        shell={settings.shell}
+        platform={runtimePlatform}
+        launchManagedRepl={launchManagedRepl}
+      />
+      <div
+        onMouseDown={e => {
+          e.preventDefault();
+          const startX = e.clientX;
+          const startW = sidebarWidth;
+          const onMouseMove = (me: MouseEvent) => setSidebarWidth(Math.max(150, Math.min(600, startW + (me.clientX - startX))));
+          const onMouseUp = () => {
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+          };
+          window.addEventListener('mousemove', onMouseMove);
+          window.addEventListener('mouseup', onMouseUp);
+        }}
+        className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-white/10 transition-colors z-10"
+      />
+    </div>
+  ) : null;
+
+  const workspaceArea = (
+    <div className="flex-1 min-w-0 min-h-0 flex flex-col" style={{ background: theme.bgTerm }}>
+      <div
+        className="grid shrink-0 gap-2 border-b p-3"
+        style={{
+          borderColor: theme.border,
+          background: `linear-gradient(180deg, ${theme.bgTerm}, ${theme.bg})`,
+          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+        }}
+      >
+        {workspaceCards.map(card => (
+          <div
+            key={card.id}
+            className="rounded-lg border px-3 py-2"
+            style={{
+              borderColor: `${card.accent}33`,
+              background: 'rgba(255,255,255,0.03)',
+              boxShadow: `0 0 0 1px ${card.accent}10 inset`,
+            }}
+          >
+            <div className="text-[9px] font-semibold uppercase tracking-[0.18em]" style={{ color: theme.textMuted }}>
+              {card.label}
+            </div>
+            <div className="mt-2 text-[12px] font-semibold" style={{ color: card.accent }}>
+              {card.value}
+            </div>
+            <div className="mt-1 text-[10px]" style={{ color: theme.textMuted }}>
+              {card.detail}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2 px-3 py-2 border-b shrink-0" style={{ borderColor: theme.border, background: 'rgba(255,255,255,0.02)' }}>
+        <button
+          type="button"
+          onClick={() => setActiveTabLayout('columns')}
+          className="rounded px-2 py-1 text-[10px] font-medium transition-all"
+          style={{
+            color: activeTab?.splitDirection === 'columns' ? theme.accent : theme.textMuted,
+            border: `1px solid ${activeTab?.splitDirection === 'columns' ? `${theme.accent}55` : theme.border}`,
+            background: activeTab?.splitDirection === 'columns' ? `${theme.accent}14` : 'transparent',
+          }}
+        >
+          Columns
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTabLayout('rows')}
+          className="rounded px-2 py-1 text-[10px] font-medium transition-all"
+          style={{
+            color: activeTab?.splitDirection === 'rows' ? theme.accent : theme.textMuted,
+            border: `1px solid ${activeTab?.splitDirection === 'rows' ? `${theme.accent}55` : theme.border}`,
+            background: activeTab?.splitDirection === 'rows' ? `${theme.accent}14` : 'transparent',
+          }}
+        >
+          Rows
+        </button>
+        <div className="flex-1" />
+        <span className="text-[10px]" style={{ color: theme.textMuted }}>
+          Click any pane to focus it. Broadcast mode mirrors both manual typing and injected commands.
+        </span>
+      </div>
+
+      <div className="flex-1 min-h-0 min-w-0 p-3">
+        {activeTab && (
+          <div
+            className="flex min-h-full min-w-0 gap-3"
+            style={{ flexDirection: activeTab.splitDirection === 'columns' ? 'row' : 'column' }}
+          >
+            {activeTab.paneIds.map(paneId => {
+              const pane = paneSessions[paneId];
+              if (!pane) {
+                return null;
+              }
+              const metrics = paneTelemetry[paneId] ?? createPaneTelemetry();
+              const ready = isPaneReady(paneId);
+              const isActivePane = activePaneId === paneId;
+              return (
+                <div
+                  key={paneId}
+                  className="flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border"
+                  style={{
+                    borderColor: isActivePane ? `${theme.accent}66` : theme.border,
+                    background: theme.bg,
+                    boxShadow: isActivePane ? `0 0 0 1px ${theme.accent}18 inset` : 'none',
+                  }}
+                >
+                  <div className="flex flex-1 min-h-0 min-w-0 flex-col">
+                    <div
+                      className="flex items-center gap-2 border-b px-3 py-2 shrink-0"
+                      style={{
+                        borderColor: theme.border,
+                        background: isActivePane ? `${theme.accent}10` : 'rgba(255,255,255,0.025)',
+                      }}
+                      onMouseDown={() => focusPane(activeTab.id, paneId)}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="truncate text-[11px] font-semibold" style={{ color: theme.text }}>
+                            {pane.label}
+                          </span>
+                          <span
+                            className="rounded-full px-1.5 py-0.5 text-[8px] font-bold tracking-[0.16em]"
+                            style={{
+                              color: ready ? appearance.theme.palette.success : theme.textMuted,
+                              background: ready ? `${appearance.theme.palette.success}18` : 'rgba(255,255,255,0.06)',
+                              border: `1px solid ${ready ? `${appearance.theme.palette.success}33` : theme.border}`,
+                            }}
+                          >
+                            {ready ? 'LIVE' : 'BOOTING'}
+                          </span>
+                          {isActivePane && (
+                            <span
+                              className="rounded-full px-1.5 py-0.5 text-[8px] font-bold tracking-[0.16em]"
+                              style={{
+                                color: theme.accent,
+                                background: `${theme.accent}18`,
+                                border: `1px solid ${theme.accent}33`,
+                              }}
+                            >
+                              ACTIVE
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-1 text-[9px]" style={{ color: theme.textMuted }}>
+                          {(metrics.cols && metrics.rows) ? `${metrics.cols} x ${metrics.rows}` : 'Sizing…'} · {metrics.outputLines} lines · {formatDataSize(metrics.outputBytes)} · {formatRelativeTime(metrics.lastOutputAt ?? metrics.lastFocusAt)}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => focusPane(activeTab.id, paneId)}
+                          className="rounded px-2 py-1 text-[9px] transition-all"
+                          style={{ color: isActivePane ? theme.accent : theme.textMuted, border: `1px solid ${theme.border}` }}
+                          title="Focus pane"
+                        >
+                          Focus
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { void copyPaneOutput(paneId); }}
+                          className="rounded px-2 py-1 text-[9px] transition-all"
+                          style={{ color: theme.textMuted, border: `1px solid ${theme.border}` }}
+                          title="Copy pane output"
+                        >
+                          Copy
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { void restartPane(paneId); }}
+                          className="rounded px-2 py-1 text-[9px] transition-all"
+                          style={{ color: theme.textMuted, border: `1px solid ${theme.border}` }}
+                          title="Restart pane"
+                        >
+                          Restart
+                        </button>
+                        {activeTab.paneIds.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => closePane(paneId)}
+                            className="rounded px-2 py-1 text-[9px] transition-all hover:bg-red-500/10"
+                            style={{ color: theme.textMuted, border: `1px solid ${theme.border}` }}
+                            title="Close pane"
+                          >
+                            Close
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="relative flex-1 min-h-0 min-w-0" onMouseDown={() => focusPane(activeTab.id, paneId)}>
+                      {hasMountedRef.current && (
+                        <XTermPane
+                          key={paneId}
+                          id={paneId}
+                          visible={activeTab.id === activeTabId}
+                          active={isActivePane && activeTab.id === activeTabId}
+                          theme={theme}
+                          onReady={markTerminalReady}
+                          onFocus={(id) => {
+                            const owner = findTabForPane(id);
+                            if (owner) {
+                              focusPane(owner.id, id);
+                            }
+                          }}
+                          onData={handleTerminalInput}
+                          onOutput={handleTerminalOutput}
+                          onResize={handlePaneResize}
+                        />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const tabStrip = (
+    <OverlayScrollArea
+      direction="horizontal"
+      style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0 }}
+      contentStyle={{ display: 'flex', alignItems: 'stretch', minWidth: 'max-content' }}
+    >
+      {tabs.map(tab => {
+        const isActive = tab.id === activeTabId;
+        return (
+          <div
+            key={tab.id}
+            onClick={() => {
+              setActiveTabId(tab.id);
+              focusPane(tab.id, tab.activePaneId);
+            }}
+            onDoubleClick={e => startRename(tab.id, tab.label, e)}
+            style={{
+              borderRight: `1px solid ${theme.border}`,
+              borderBottom: isActive ? `2px solid ${theme.accent}` : '2px solid transparent',
+              background: isActive ? `${theme.accent}14` : 'transparent',
+            }}
+            className="group flex items-center gap-1.5 px-3 cursor-pointer select-none shrink-0 transition-colors hover:bg-white/[0.03]"
+          >
+            <TerminalSquare size={embedded ? 10 : 11} style={{ color: isActive ? theme.accent : theme.textMuted }} />
+            <div className="min-w-0">
+              {renamingId === tab.id ? (
+                <input
+                  autoFocus
+                  value={renameVal}
+                  onChange={e => setRenameVal(e.target.value)}
+                  onBlur={commitRename}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') commitRename();
+                    if (e.key === 'Escape') setRenamingId(null);
+                  }}
+                  onClick={e => e.stopPropagation()}
+                  style={{ width: Math.max(renameVal.length * 7, 60), color: theme.text, borderBottom: `1px solid ${theme.accent}` }}
+                  className="bg-transparent text-[11px] outline-none"
+                />
+              ) : (
+                <>
+                  <div className="text-[11px] font-medium whitespace-nowrap transition-all" style={{ color: isActive ? theme.text : theme.textMuted }}>
+                    {tab.label}
+                  </div>
+                  <div className="text-[8px] uppercase tracking-[0.16em]" style={{ color: theme.textMuted }}>
+                    {tab.paneIds.length} pane{tab.paneIds.length === 1 ? '' : 's'}{tab.broadcastInput ? ' · BCAST' : ''}
+                  </div>
+                </>
+              )}
+            </div>
+            {tabs.length > 1 && (
+              <button
+                onClick={e => closeTab(tab.id, e)}
+                className="opacity-0 group-hover:opacity-100 ml-0.5 p-0.5 rounded hover:bg-red-500/20 hover:text-red-400 transition-all"
+                style={{ color: theme.textMuted }}
+              >
+                <X size={9} />
+              </button>
+            )}
+          </div>
+        );
+      })}
+      <button
+        onClick={newTab}
+        className="flex items-center px-2 hover:bg-white/[0.04] transition-all shrink-0"
+        style={{ color: theme.textMuted }}
+        title="New Terminal Workspace"
+      >
+        <Plus size={embedded ? 11 : 12} />
+      </button>
+    </OverlayScrollArea>
+  );
+
+  const statusBar = (
+    <div
+      className="flex items-center gap-3 px-3 shrink-0 border-t"
+      style={{ height: embedded ? 20 : 22, background: `${theme.accent}18`, borderColor: theme.border }}
+    >
+      <div className="flex items-center gap-1.5">
+        <Circle size={embedded ? 5 : 6} className="fill-current" style={{ color: appearance.theme.palette.success }} />
+        <span className="text-[9px] font-mono opacity-40">
+          {activeTabLabel} · {activePane?.label ?? 'pane'}
+        </span>
+      </div>
+      <span className="text-[9px] font-mono opacity-20">
+        {tabs.length} workspace{tabs.length === 1 ? '' : 's'} · {totalPaneCount} pane{totalPaneCount === 1 ? '' : 's'}
+      </span>
+      <div className="flex-1" />
+      <span className="text-[9px] opacity-20 select-none" style={{ fontFamily: appearance.fonts.mono }}>
+        {activeTab?.broadcastInput ? 'broadcast armed' : 'focused input'} · {appearance.theme.id}
+      </span>
+    </div>
+  );
 
   if (embedded) {
-    // Embedded mode: render as a plain flex column, no outer animation/chrome
     return (
       <div
         className="flex flex-col overflow-hidden"
         style={{ flex: 1, background: theme.bg, color: theme.text, fontFamily: uiFont }}
       >
-        {/* ══ Tab bar (inner terminal tabs) ══ */}
         <div
           className="flex items-stretch shrink-0 border-b"
-          style={{ background: theme.bgPanel, height: 34, borderColor: theme.border }}
+          style={{ background: theme.bgPanel, height: 38, borderColor: theme.border }}
         >
-          {/* Sidebar toggles */}
           <div className="flex items-center gap-0.5 px-2 border-r shrink-0" style={{ borderColor: theme.border }}>
             {TERMINAL_SIDEBAR_ITEMS.map(({ id, icon: Icon, title, accent }) => {
               const active = activePanel === id && sidebarOpen;
               return (
-                <button key={id} onClick={() => togglePanel(id)} title={title}
+                <button
+                  key={id}
+                  onClick={() => togglePanel(id)}
+                  title={title}
                   style={{
                     color: active ? (accent === 'success' ? appearance.theme.palette.success : theme.accent) : theme.textMuted,
                     background: active ? `${accent === 'success' ? appearance.theme.palette.success : theme.accent}1a` : 'transparent',
                   }}
-                  className="w-6 h-6 flex items-center justify-center rounded-sm transition-all hover:opacity-90">
+                  className="w-6 h-6 flex items-center justify-center rounded-sm transition-all hover:opacity-90"
+                >
                   <Icon size={12} />
                 </button>
               );
             })}
           </div>
-          {/* Tabs */}
-          <OverlayScrollArea direction="horizontal" style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0 }} contentStyle={{ display: 'flex', alignItems: 'stretch', minWidth: 'max-content' }}>
-            {tabs.map(tab => {
-              const isActive = tab.id === activeId;
-              return (
-                <div key={tab.id}
-                  onClick={() => setActiveId(tab.id)}
-                  onDoubleClick={e => startRename(tab.id, tab.label, e)}
-                  style={{
-                    borderRight:  `1px solid ${theme.border}`,
-                    borderBottom: isActive ? `2px solid ${theme.accent}` : '2px solid transparent',
-                    background:   isActive ? `${theme.accent}14` : 'transparent',
-                  }}
-                  className="group flex items-center gap-1.5 px-3 cursor-pointer select-none shrink-0 transition-colors hover:bg-white/[0.03]"
-                >
-                  <TerminalSquare size={10} style={{ color: isActive ? theme.accent : theme.textMuted }} />
-                  {renamingId === tab.id ? (
-                    <input autoFocus value={renameVal}
-                      onChange={e => setRenameVal(e.target.value)}
-                      onBlur={commitRename}
-                      onKeyDown={e => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenamingId(null); }}
-                      onClick={e => e.stopPropagation()}
-                      style={{ width: Math.max(renameVal.length * 7, 60), color: theme.text, borderBottom: `1px solid ${theme.accent}` }}
-                      className="bg-transparent text-[11px] outline-none" />
-                  ) : (
-                    <span className="text-[11px] font-medium whitespace-nowrap transition-all"
-                      style={{ color: isActive ? theme.text : theme.textMuted }}>
-                      {tab.label}
-                    </span>
-                  )}
-                  {tabs.length > 1 && (
-                    <button onClick={e => closeTab(tab.id, e)}
-                      className="opacity-0 group-hover:opacity-100 ml-0.5 p-0.5 rounded hover:bg-red-500/20 hover:text-red-400 transition-all"
-                      style={{ color: theme.textMuted }}>
-                      <X size={9} />
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-            <button onClick={newTab} className="flex items-center px-2 hover:bg-white/[0.04] transition-all shrink-0"
-              style={{ color: theme.textMuted }} title="New Terminal">
-              <Plus size={11} />
-            </button>
-          </OverlayScrollArea>
+          {tabStrip}
         </div>
 
-        <TerminalActionToolbar
-          actions={terminalToolbarActions}
-          theme={theme}
-          detail={terminalToolbarDetail}
-        />
+        <TerminalActionToolbar actions={terminalToolbarActions} theme={theme} detail={terminalToolbarDetail} />
 
-        {/* ══ Body ══ */}
         <div className="flex flex-1 min-h-0 overflow-hidden">
-          {/* Sidebar panel */}
-          {sidebarOpen && activePanel && (
-            <div className="shrink-0 overflow-hidden relative"
-              style={{ width: sidebarWidth, background: theme.bgPanel, borderRight: `1px solid ${theme.border}`, color: theme.text }}>
-              <SidebarContent
-                panel={activePanel}
-                theme={theme}
-                appearance={appearance}
-                pluginCommands={pluginCommands}
-                injectCmd={injectCmd}
-                injectCd={injectCd}
-                emitToTerminal={emitToActiveTerminal}
-                announce={setTransientActionMessage}
-                shell={settings.shell}
-                platform={runtimePlatform}
-                launchManagedRepl={launchManagedRepl}
-              />
-              {/* Drag Handle */}
-              <div
-                onMouseDown={e => {
-                  e.preventDefault();
-                  const startX = e.clientX;
-                  const startW = sidebarWidth;
-                  const onMouseMove = (me: MouseEvent) => setSidebarWidth(Math.max(150, Math.min(600, startW + (me.clientX - startX))));
-                  const onMouseUp = () => { window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onMouseUp); };
-                  window.addEventListener('mousemove', onMouseMove); window.addEventListener('mouseup', onMouseUp);
-                }}
-                className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-white/10 transition-colors z-10"
-              />
-            </div>
-          )}
-          {/* Terminal area */}
-          <div className="flex-1 relative min-w-0" style={{ background: theme.bgTerm }}>
-            {hasMountedRef.current && tabs.map(tab => (
-              <XTermPane key={tab.id} id={tab.id} visible={tab.id === activeId} theme={theme} onReady={markTerminalReady} />
-            ))}
-          </div>
+          {sidebarPanelNode}
+          {workspaceArea}
         </div>
 
-        {/* ══ Status bar ══ */}
-        <div className="flex items-center gap-3 px-3 shrink-0 border-t"
-          style={{ height: 20, background: `${theme.accent}18`, borderColor: theme.border }}>
-          <div className="flex items-center gap-1.5">
-            <Circle size={5} className="fill-current" style={{ color: appearance.theme.palette.success }} />
-            <span className="text-[9px] font-mono opacity-40">
-              {tabs.find(t => t.id === activeId)?.label ?? 'terminal'}
-            </span>
-          </div>
-          <span className="text-[9px] font-mono opacity-20">
-            {tabs.length} session{tabs.length !== 1 ? 's' : ''}
-          </span>
-          <div className="flex-1" />
-          <span className="text-[9px] opacity-20 select-none" style={{ fontFamily: appearance.fonts.mono }}>
-            {appearance.theme.id}
-          </span>
-        </div>
+        {statusBar}
       </div>
     );
   }
@@ -1338,123 +2108,79 @@ export function TerminalOverlay({
     <div
       className={`absolute inset-0 flex flex-col overflow-hidden transition-all duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${slideClass}`}
       style={{
-        background:  theme.bg,
-        color:       theme.text,
-        fontFamily:  uiFont,
-        boxShadow:   `0 -4px 0 0 ${theme.accent}, 0 -32px 80px rgba(0,0,0,0.98)`,
-        borderTop:   `1px solid ${theme.accent}40`,
+        background: theme.bg,
+        color: theme.text,
+        fontFamily: uiFont,
+        boxShadow: `0 -4px 0 0 ${theme.accent}, 0 -32px 80px rgba(0,0,0,0.98)`,
+        borderTop: `1px solid ${theme.accent}40`,
       }}
     >
-      {/* ══ Grab handle ══ */}
       <div
         className="h-[4px] shrink-0 cursor-ns-resize select-none"
         style={{ background: `linear-gradient(90deg, transparent 0%, ${theme.accent}99 30%, ${theme.accent} 50%, ${theme.accent}99 70%, transparent 100%)` }}
         onPointerDown={e => {
-          if (e.buttons === 1) { e.preventDefault(); getCurrentWindow().startResizeDragging('North').catch(() => {}); }
+          if (e.buttons === 1) {
+            e.preventDefault();
+            getCurrentWindow().startResizeDragging('North').catch(() => {});
+          }
         }}
       />
 
-      {/* ══ Tab bar ══ */}
       <div
         className="flex items-stretch shrink-0 border-b"
-        style={{ background: theme.bgPanel, height: 36, borderColor: theme.border }}
+        style={{ background: theme.bgPanel, height: 40, borderColor: theme.border }}
       >
-        {/* Brand */}
         <div className="flex items-center gap-2 px-3 border-r shrink-0" style={{ borderColor: theme.border }}>
-          <div className="w-[18px] h-[18px] rounded flex items-center justify-center"
-            style={{ background: theme.accent + '28', border: `1px solid ${theme.accent}55` }}>
+          <div
+            className="w-[18px] h-[18px] rounded flex items-center justify-center"
+            style={{ background: theme.accent + '28', border: `1px solid ${theme.accent}55` }}
+          >
             <TerminalIcon size={10} style={{ color: theme.accent }} />
           </div>
           <span className="text-[10px] font-bold tracking-widest uppercase select-none" style={{ color: theme.textMuted }}>
-            Console
+            Console Lab
           </span>
         </div>
 
-        {/* Tabs */}
-        <OverlayScrollArea direction="horizontal" style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0 }} contentStyle={{ display: 'flex', alignItems: 'stretch', minWidth: 'max-content' }}>
-          {tabs.map(tab => {
-            const isActive = tab.id === activeId;
-            return (
-              <div key={tab.id}
-                onClick={() => setActiveId(tab.id)}
-                onDoubleClick={e => startRename(tab.id, tab.label, e)}
-                style={{
-                  borderRight:  `1px solid ${theme.border}`,
-                  borderBottom: isActive ? `2px solid ${theme.accent}` : '2px solid transparent',
-                  background:   isActive ? `${theme.accent}14` : 'transparent',
-                }}
-                className="group flex items-center gap-1.5 px-3 cursor-pointer select-none shrink-0 transition-colors hover:bg-white/[0.03]"
-              >
-                <TerminalSquare size={11} style={{ color: isActive ? theme.accent : theme.textMuted }} />
+        {tabStrip}
 
-                {renamingId === tab.id ? (
-                  <input autoFocus value={renameVal}
-                    onChange={e => setRenameVal(e.target.value)}
-                    onBlur={commitRename}
-                    onKeyDown={e => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenamingId(null); }}
-                    onClick={e => e.stopPropagation()}
-                    style={{ width: Math.max(renameVal.length * 7, 60), color: theme.text, borderBottom: `1px solid ${theme.accent}` }}
-                    className="bg-transparent text-[11px] outline-none" />
-                ) : (
-                  <span className="text-[11px] font-medium whitespace-nowrap transition-all"
-                    style={{ color: isActive ? theme.text : theme.textMuted }}>
-                    {tab.label}
-                  </span>
-                )}
-
-                {tabs.length > 1 && (
-                  <button onClick={e => closeTab(tab.id, e)}
-                    className="opacity-0 group-hover:opacity-100 ml-0.5 p-0.5 rounded hover:bg-red-500/20 hover:text-red-400 transition-all"
-                    style={{ color: theme.textMuted }}>
-                    <X size={9} />
-                  </button>
-                )}
-              </div>
-            );
-          })}
-
-          {/* New tab */}
-          <button onClick={newTab} className="flex items-center px-2 hover:bg-white/[0.04] transition-all shrink-0"
-            style={{ color: theme.textMuted }} title="New Terminal (Ctrl+T)">
-            <Plus size={12} />
-          </button>
-        </OverlayScrollArea>
-
-        {/* Controls */}
         <div className="flex items-center gap-0.5 px-2 border-l shrink-0" style={{ borderColor: theme.border }}>
-          <kbd className="text-[9px] font-mono bg-white/[0.04] px-1.5 py-0.5 rounded border border-white/5 select-none mr-1"
-            style={{ color: theme.textMuted }}>
+          <kbd
+            className="text-[9px] font-mono bg-white/[0.04] px-1.5 py-0.5 rounded border border-white/5 select-none mr-1"
+            style={{ color: theme.textMuted }}
+          >
             {keybindings.terminalToggle}
           </kbd>
-          <button onClick={onClose} className="p-1.5 rounded hover:bg-red-500/12 hover:text-red-400 transition-all"
-            style={{ color: theme.textMuted }} title="Close (Esc)">
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded hover:bg-red-500/12 hover:text-red-400 transition-all"
+            style={{ color: theme.textMuted }}
+            title="Close (Esc)"
+          >
             <X size={13} />
           </button>
         </div>
       </div>
 
-      <TerminalActionToolbar
-        actions={terminalToolbarActions}
-        theme={theme}
-        detail={terminalToolbarDetail}
-      />
+      <TerminalActionToolbar actions={terminalToolbarActions} theme={theme} detail={terminalToolbarDetail} />
 
-      {/* ══ Body ══ */}
       <div className="flex flex-1 min-h-0 overflow-hidden">
-
-        {/* Icon rail */}
         <div className="flex flex-col items-center gap-0.5 py-2 shrink-0"
           style={{ width: 36, background: theme.bgPanel, borderRight: `1px solid ${theme.border}` }}>
           {TERMINAL_SIDEBAR_ITEMS.map(({ id, icon: Icon, title, accent }) => {
             const active = activePanel === id && sidebarOpen;
             return (
-              <button key={id} onClick={() => togglePanel(id)} title={title}
+              <button
+                key={id}
+                onClick={() => togglePanel(id)}
+                title={title}
                 style={{
-                  color:       active ? (accent === 'success' ? appearance.theme.palette.success : theme.accent) : theme.textMuted,
-                  background:  active ? `${accent === 'success' ? appearance.theme.palette.success : theme.accent}1a` : 'transparent',
-                  borderLeft:  `2px solid ${active ? (accent === 'success' ? appearance.theme.palette.success : theme.accent) : 'transparent'}`,
+                  color: active ? (accent === 'success' ? appearance.theme.palette.success : theme.accent) : theme.textMuted,
+                  background: active ? `${accent === 'success' ? appearance.theme.palette.success : theme.accent}1a` : 'transparent',
+                  borderLeft: `2px solid ${active ? (accent === 'success' ? appearance.theme.palette.success : theme.accent) : 'transparent'}`,
                 }}
-                className="w-7 h-7 flex items-center justify-center rounded-sm transition-all hover:opacity-90">
+                className="w-7 h-7 flex items-center justify-center rounded-sm transition-all hover:opacity-90"
+              >
                 <Icon size={14} />
               </button>
             );
@@ -1462,71 +2188,21 @@ export function TerminalOverlay({
 
           <div className="flex-1" />
 
-          <button onClick={() => setSidebarOpen(s => !s)}
+          <button
+            onClick={() => setSidebarOpen(s => !s)}
             className="w-7 h-7 flex items-center justify-center transition-all hover:opacity-80"
             style={{ color: theme.textMuted }}
-            title={sidebarOpen ? 'Collapse' : 'Expand'}>
+            title={sidebarOpen ? 'Collapse' : 'Expand'}
+          >
             {sidebarOpen ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
           </button>
         </div>
 
-        {/* Sidebar panel */}
-        {sidebarOpen && activePanel && (
-          <div className="shrink-0 overflow-hidden relative"
-            style={{ width: sidebarWidth, background: theme.bgPanel, borderRight: `1px solid ${theme.border}`, color: theme.text }}>
-            <SidebarContent
-              panel={activePanel}
-              theme={theme}
-              appearance={appearance}
-              pluginCommands={pluginCommands}
-              injectCmd={injectCmd}
-              injectCd={injectCd}
-              emitToTerminal={emitToActiveTerminal}
-              announce={setTransientActionMessage}
-              shell={settings.shell}
-              platform={runtimePlatform}
-              launchManagedRepl={launchManagedRepl}
-            />
-            {/* Drag Handle */}
-            <div
-              onMouseDown={e => {
-                e.preventDefault();
-                const startX = e.clientX;
-                const startW = sidebarWidth;
-                const onMouseMove = (me: MouseEvent) => setSidebarWidth(Math.max(150, Math.min(600, startW + (me.clientX - startX))));
-                const onMouseUp = () => { window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onMouseUp); };
-                window.addEventListener('mousemove', onMouseMove); window.addEventListener('mouseup', onMouseUp);
-              }}
-              className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-white/10 transition-colors z-10"
-            />
-          </div>
-        )}
-
-        {/* Terminal area */}
-        <div className="flex-1 relative min-w-0" style={{ background: theme.bgTerm }}>
-          {hasMountedRef.current && tabs.map(tab => (
-            <XTermPane key={tab.id} id={tab.id} visible={tab.id === activeId} theme={theme} onReady={markTerminalReady} />
-          ))}
-        </div>
+        {sidebarPanelNode}
+        {workspaceArea}
       </div>
 
-      {/* ══ Status bar ══ */}
-      <div className="flex items-center gap-3 px-3 shrink-0 border-t"
-        style={{ height: 22, background: `${theme.accent}18`, borderColor: theme.border }}>
-        <div className="flex items-center gap-1.5">
-          <Circle size={6} className="fill-current" style={{ color: appearance.theme.palette.success }} />
-          <span className="text-[9px] font-mono opacity-40">
-            {tabs.find(t => t.id === activeId)?.label ?? 'terminal'}
-          </span>
-        </div>
-        <span className="text-[9px] font-mono opacity-20">
-          {tabs.length} session{tabs.length !== 1 ? 's' : ''}
-        </span>
-        <div className="flex-1" />
-        <span className="text-[9px] opacity-20 select-none" style={{ fontFamily: appearance.fonts.mono }}>
-          dbl-click tab to rename · {appearance.theme.id}
-        </span>
-      </div>
+      {statusBar}
     </div>
   );
 }

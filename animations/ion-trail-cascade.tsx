@@ -1,8 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { clamp01, defineAnimation, lerp } from 'overlayterm-animation';
+import { clamp01, defineAnimation, lerp, useAnimationContextRef } from 'overlayterm-animation';
 
 function IonTrailCascadeOverlay({ context }: { context: any }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const contextRef = useAnimationContextRef(context);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -25,6 +26,7 @@ function IonTrailCascadeOverlay({ context }: { context: any }) {
 
     let raf = 0;
     const render = (now: number) => {
+      const liveContext = contextRef.current;
       const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       canvas.width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
       canvas.height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
@@ -32,8 +34,8 @@ function IonTrailCascadeOverlay({ context }: { context: any }) {
       ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
 
       const time = now * 0.001;
-      const progress = clamp01(context.progress);
-      const active = context.direction === 'enter' ? progress : 1 - progress;
+      const progress = clamp01(liveContext.progress);
+      const active = liveContext.direction === 'enter' ? progress : 1 - progress;
       const width = canvas.clientWidth;
       const height = canvas.clientHeight;
       const centerX = width * 0.5;
@@ -50,8 +52,8 @@ function IonTrailCascadeOverlay({ context }: { context: any }) {
 
         const grad = ctx.createLinearGradient(x, y - 32, x, y + 42);
         grad.addColorStop(0, 'rgba(255,255,255,0)');
-        grad.addColorStop(0.28, `${context.accentColor}00`);
-        grad.addColorStop(0.5, `${context.accentColor}${Math.round((0.18 + active * 0.28) * 255).toString(16).padStart(2, '0')}`);
+        grad.addColorStop(0.28, `${liveContext.accentColor}00`);
+        grad.addColorStop(0.5, `${liveContext.accentColor}${Math.round((0.18 + active * 0.28) * 255).toString(16).padStart(2, '0')}`);
         grad.addColorStop(1, 'rgba(255,255,255,0)');
         ctx.fillStyle = grad;
         ctx.fillRect(x - 1.5, y - 42, 3, 84);
@@ -63,7 +65,7 @@ function IonTrailCascadeOverlay({ context }: { context: any }) {
         ctx.lineTo(x + Math.sin(time * 1.5 + particle.seed) * 18, y + 28);
         ctx.stroke();
 
-        ctx.fillStyle = particle.lane % 3 === 0 ? 'rgba(255,255,255,0.78)' : `${context.accentColor}cc`;
+        ctx.fillStyle = particle.lane % 3 === 0 ? 'rgba(255,255,255,0.78)' : `${liveContext.accentColor}cc`;
         ctx.beginPath();
         ctx.arc(x, y, trail * (0.7 + Math.cos(time + particle.seed) * 0.1), 0, Math.PI * 2);
         ctx.fill();
@@ -71,7 +73,7 @@ function IonTrailCascadeOverlay({ context }: { context: any }) {
 
       ctx.globalCompositeOperation = 'source-over';
       const ribbonAlpha = 0.2 + active * 0.18;
-      ctx.strokeStyle = `${context.accentColor}${Math.round(ribbonAlpha * 255).toString(16).padStart(2, '0')}`;
+      ctx.strokeStyle = `${liveContext.accentColor}${Math.round(ribbonAlpha * 255).toString(16).padStart(2, '0')}`;
       for (let ribbon = 0; ribbon < 5; ribbon += 1) {
         const y = height * (0.12 + ribbon * 0.18) + Math.sin(time * 0.6 + ribbon) * 14;
         ctx.beginPath();
@@ -85,7 +87,7 @@ function IonTrailCascadeOverlay({ context }: { context: any }) {
 
     raf = window.requestAnimationFrame(render);
     return () => window.cancelAnimationFrame(raf);
-  }, [context.accentColor, context.direction, context.progress]);
+  }, []);
 
   return (
     <canvas

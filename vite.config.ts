@@ -3,6 +3,18 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
+const ignoredWatchGlobs = [
+  "**/.git/**",
+  "**/coverage/**",
+  "**/dist/**",
+  "**/output/**",
+  "**/release-packages/**",
+  "**/src-tauri/**",
+  "**/src-tauri/target*/**",
+  "**/target-tests*/**",
+  "**/plugins/**/node_modules/**",
+];
+
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
@@ -26,8 +38,8 @@ export default defineConfig(async () => ({
     strictPort: true,
     host: true, // listen on all addresses
     watch: {
-      // 3. tell vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. keep large artifact trees and plugin dependency folders out of the live watcher.
+      ignored: ignoredWatchGlobs,
     },
   },
 }));
