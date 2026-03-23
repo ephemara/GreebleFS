@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ensureFontFamilyLoaded,
   getThemeSourceLabel,
+  isThemeCompatibleWithShellBlueprint,
   normalizeThemeDefinition,
   overlayFontCatalog,
   overlayThemePresets,
@@ -156,6 +157,10 @@ describe('appearance config helpers', () => {
           backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.3), transparent)',
         },
       ],
+      compatibility: {
+        shellBlueprints: ['classic-dock', 'xmb-cross-media'],
+        tags: ['glass', 'cinematic'],
+      },
       palette: {
         accent: '#7dd3ff',
       },
@@ -174,8 +179,28 @@ describe('appearance config helpers', () => {
     expect(resolved.theme.visuals).toHaveLength(1);
     expect(resolved.theme.defaultOpenAnimationId).toBe('dissolve');
     expect(resolved.theme.defaultCloseAnimationId).toBe('burn');
+    expect(resolved.theme.compatibility?.shellBlueprints).toEqual(['classic-dock', 'xmb-cross-media']);
+    expect(resolved.theme.compatibility?.tags).toEqual(['glass', 'cinematic']);
     expect(resolved.themes.some(theme => theme.id === 'vista-glass')).toBe(true);
     expect(getThemeSourceLabel(resolved.theme)).toBe('Package');
+  });
+
+  it('treats missing compatibility metadata as broadly supported and honors explicit shell targeting', () => {
+    const universalTheme = normalizeThemeDefinition({
+      id: 'universal',
+      name: 'Universal',
+    } as Partial<OverlayThemeDefinition>);
+    const targetedTheme = normalizeThemeDefinition({
+      id: 'targeted',
+      name: 'Targeted',
+      compatibility: {
+        shellBlueprints: ['retro-desktop'],
+      },
+    } as Partial<OverlayThemeDefinition>);
+
+    expect(isThemeCompatibleWithShellBlueprint(universalTheme, 'xmb-cross-media')).toBe(true);
+    expect(isThemeCompatibleWithShellBlueprint(targetedTheme, 'retro-desktop')).toBe(true);
+    expect(isThemeCompatibleWithShellBlueprint(targetedTheme, 'classic-dock')).toBe(false);
   });
 
   it('normalizes theme animation defaults and inherits them from the fallback when omitted', () => {

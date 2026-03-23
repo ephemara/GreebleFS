@@ -1,4 +1,5 @@
 pub mod desktop_integration;
+pub mod domain_commands;
 pub mod entry_size_cache;
 pub mod fs_commands;
 pub mod plugin_commands;
@@ -9,6 +10,7 @@ pub mod terminal;
 pub mod window_commands;
 
 use desktop_integration::{fs_resolve_native_icons, fs_start_native_file_drag};
+use domain_commands::domain_list_shell_blueprints;
 use entry_size_cache::{
     fs_unwatch_entry_size_root, fs_watch_entry_size_root, initialize_entry_size_cache,
     EntrySizeWatcherState,
@@ -181,6 +183,7 @@ pub fn run() {
             tray_set_visible,
             window_set_blur,
             window_set_taskbar_visibility,
+            domain_list_shell_blueprints,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

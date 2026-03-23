@@ -39,6 +39,7 @@ drag = "2.1.0"
 file_icon_provider = "1.0.0"
 notify = "8.2.0"
 rusqlite = { version = "0.32.1", features = ["bundled"] }
+overlay-contracts = { path = "../crates/overlay-contracts" }
 
 [dev-dependencies]
 tokio  = { version = "1", features = ["full"] }

@@ -1,3 +1,4 @@
+import type { OverlayShellBlueprintId } from './shellBlueprints';
 import { mergeResolvedIconThemes, type OverlayResolvedIconTheme } from './iconTheme';
 import { clampOverlayVisualControlValue } from './overlayWindow';
 
@@ -104,6 +105,25 @@ export interface OverlayThemeFonts {
   mono?: string;
 }
 
+export type OverlayThemeDensity = 'compact' | 'comfortable' | 'immersive';
+export type OverlayThemeChromeStyle = 'minimal' | 'ornate' | 'floating' | 'system';
+export type OverlayThemeIconStyle = 'system' | 'vector' | 'pixel' | 'skeuomorphic';
+export type OverlayThemeMotionStyle = 'snappy' | 'fluid' | 'dramatic' | 'instant';
+
+export interface OverlayThemeCompatibility {
+  shellBlueprints?: OverlayShellBlueprintId[];
+  tags?: string[];
+}
+
+export interface OverlayThemePresentation {
+  density?: OverlayThemeDensity;
+  chromeStyle?: OverlayThemeChromeStyle;
+  iconStyle?: OverlayThemeIconStyle;
+  motionStyle?: OverlayThemeMotionStyle;
+  cornerRadius?: number;
+  panelSpacing?: number;
+}
+
 export interface OverlayThemeDefinition {
   id: string;
   name: string;
@@ -120,6 +140,8 @@ export interface OverlayThemeDefinition {
   assets?: OverlayThemeAssets;
   visuals?: OverlayThemeVisualLayer[];
   cssVars?: Record<string, string>;
+  presentation?: OverlayThemePresentation;
+  compatibility?: OverlayThemeCompatibility;
 }
 
 export interface OverlayAppearanceSelection {
@@ -418,6 +440,14 @@ function createTheme(
       brightCyan: '#56d4dd',
       brightWhite: '#f0f6fc',
       ...xterm,
+    },
+    presentation: {
+      density: 'comfortable',
+      chromeStyle: 'floating',
+      iconStyle: 'vector',
+      motionStyle: 'fluid',
+      cornerRadius: 18,
+      panelSpacing: 12,
     },
   };
 }
@@ -903,6 +933,21 @@ export function normalizeThemeDefinition(
       ...(fallback.fonts ?? {}),
       ...(theme.fonts ?? {}),
     },
+    presentation: {
+      ...(fallback.presentation ?? {}),
+      ...(theme.presentation ?? {}),
+    },
+    compatibility: {
+      shellBlueprints: Array.from(new Set(
+        (theme.compatibility?.shellBlueprints ?? fallback.compatibility?.shellBlueprints ?? [])
+          .filter((entry): entry is OverlayShellBlueprintId => typeof entry === 'string' && entry.trim().length > 0),
+      )),
+      tags: Array.from(new Set(
+        (theme.compatibility?.tags ?? fallback.compatibility?.tags ?? [])
+          .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+          .map(entry => entry.trim()),
+      )),
+    },
     assets: mergeThemeAssets(fallback.assets, theme.assets),
     visuals: (theme.visuals ?? fallback.visuals ?? [])
       .filter(layer => Boolean(layer?.backgroundImage))
@@ -1008,6 +1053,12 @@ export function resolveOverlayAppearance(selection?: OverlayAppearanceSelection)
       '--overlay-overlay-shadow': theme.effects.overlayShadow,
       '--overlay-panel-transparency': String(panelTransparency),
       '--overlay-panel-opacity': formatAlphaComponent(1 - panelTransparency),
+      '--overlay-density': theme.presentation?.density ?? 'comfortable',
+      '--overlay-chrome-style': theme.presentation?.chromeStyle ?? 'floating',
+      '--overlay-icon-style': theme.presentation?.iconStyle ?? 'vector',
+      '--overlay-motion-style': theme.presentation?.motionStyle ?? 'fluid',
+      '--overlay-corner-radius': String(theme.presentation?.cornerRadius ?? 18),
+      '--overlay-panel-spacing': String(theme.presentation?.panelSpacing ?? 12),
       ...(theme.cssVars ?? {}),
     },
   };
@@ -1022,4 +1073,12 @@ export function getThemeSourceLabel(theme: OverlayThemeDefinition): string {
     default:
       return 'Built In';
   }
+}
+
+export function isThemeCompatibleWithShellBlueprint(
+  theme: OverlayThemeDefinition,
+  shellBlueprint: OverlayShellBlueprintId,
+): boolean {
+  const supportedShells = theme.compatibility?.shellBlueprints ?? [];
+  return supportedShells.length === 0 || supportedShells.includes(shellBlueprint);
 }

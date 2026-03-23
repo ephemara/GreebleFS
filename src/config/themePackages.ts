@@ -5,7 +5,9 @@ import {
   normalizeThemeDefinition,
   overlayThemePresets,
   type OverlayThemeAssets,
+  type OverlayThemeCompatibility,
   type OverlayThemeDefinition,
+  type OverlayThemePresentation,
   type OverlayThemeVisualLayer,
 } from './appearance';
 import { type LoadedOverlayAnimation, loadAnimationFromSource, deriveAnimationId, deriveAnimationName } from '../components/animationRuntime';
@@ -20,6 +22,7 @@ import {
 import { type LoadedOverlayShader, loadShaderFromSource, deriveShaderId, deriveShaderName, isFrontendShaderFile } from '../components/shaderRuntime';
 import { isFrontendAnimationFile } from '../components/animationRuntime';
 import { joinPlatformPath } from './platform';
+import { normalizeShellBlueprintId } from './shellBlueprints';
 
 interface FileEntry {
   name: string;
@@ -58,6 +61,8 @@ export interface OverlayThemePackageManifest {
     ui?: string;
     mono?: string;
   };
+  presentation?: OverlayThemePresentation;
+  compatibility?: OverlayThemeCompatibility;
 }
 
 interface OverlayThemePackageRecord {
@@ -247,6 +252,19 @@ function parseThemeManifestText(text: string, filePath: string): OverlayThemePac
     fonts: {
       ui: asString(asRecord(source.fonts)?.ui),
       mono: asString(asRecord(source.fonts)?.mono),
+    },
+    presentation: asRecord(source.presentation) as OverlayThemePresentation | undefined,
+    compatibility: {
+      shellBlueprints: Array.isArray(asRecord(source.compatibility)?.shellBlueprints)
+        ? (asRecord(source.compatibility)?.shellBlueprints as unknown[])
+          .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+          .map(entry => normalizeShellBlueprintId(entry))
+        : [],
+      tags: Array.isArray(asRecord(source.compatibility)?.tags)
+        ? (asRecord(source.compatibility)?.tags as unknown[])
+          .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+          .map(entry => entry.trim())
+        : [],
     },
   };
 }
@@ -481,12 +499,22 @@ async function buildPackageTheme(
       ...(themePatch.fonts ?? {}),
       ...(record.manifest.fonts ?? {}),
     },
+    presentation: {
+      ...(baseTheme.presentation ?? {}),
+      ...(themePatch.presentation ?? {}),
+      ...(record.manifest.presentation ?? {}),
+    },
     assets: mergeThemeAssets(baseTheme.assets, resolvedAssets),
     visuals: mergeVisualLayers(baseTheme.visuals, record.manifest.visuals ?? themePatch.visuals),
     cssVars: {
       ...(baseTheme.cssVars ?? {}),
       ...(themePatch.cssVars ?? {}),
       ...(record.manifest.cssVars ?? {}),
+    },
+    compatibility: {
+      ...(baseTheme.compatibility ?? {}),
+      ...(themePatch.compatibility ?? {}),
+      ...(record.manifest.compatibility ?? {}),
     },
   }, baseTheme);
 

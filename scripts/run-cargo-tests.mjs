@@ -11,7 +11,12 @@ const defaultCargoTestTargetRoot = process.env.OVERLAYTERM_CARGO_TEST_TARGET_ROO
   : path.join(projectRoot, 'target-tests', 'cargo');
 
 function manifestsForPlatform(platform) {
-  const manifests = ['src-tauri/Cargo.toml', 'crates/file-opening/Cargo.toml'];
+  const manifests = [
+    'src-tauri/Cargo.toml',
+    'crates/file-opening/Cargo.toml',
+    'crates/overlay-contracts/Cargo.toml',
+    'crates/overlay-theme/Cargo.toml',
+  ];
 
   if (platform === 'win32') {
     manifests.push('crates/file-opening-windows/Cargo.toml');

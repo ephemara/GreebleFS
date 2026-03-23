@@ -66,6 +66,14 @@ describe('theme package loader', () => {
               accent: '#7dd3ff',
             },
           },
+          presentation: {
+            chromeStyle: 'system',
+            panelSpacing: 10,
+          },
+          compatibility: {
+            shellBlueprints: ['classic-dock', 'xmb-cross-media'],
+            tags: ['glass', 'cinematic'],
+          },
           visuals: [
             {
               id: 'glow',
@@ -162,6 +170,10 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.theme.assets?.iconTheme?.fileExtensions.ts).toBe('typescript');
     expect(result.packages[0]?.theme.defaultOpenAnimationId).toBe('package-open');
     expect(result.packages[0]?.theme.defaultCloseAnimationId).toBe('burn');
+    expect(result.packages[0]?.theme.presentation?.chromeStyle).toBe('system');
+    expect(result.packages[0]?.theme.presentation?.panelSpacing).toBe(10);
+    expect(result.packages[0]?.theme.compatibility?.shellBlueprints).toEqual(['classic-dock', 'xmb-cross-media']);
+    expect(result.packages[0]?.theme.compatibility?.tags).toEqual(['glass', 'cinematic']);
     expect(result.packages[0]?.author).toBe('OverlayTerm Labs');
     expect(result.packages[0]?.homepage).toBe('https://overlayterm.local/themes/vista-glass');
     expect(result.packages[0]?.tags).toEqual(['glass', 'blue']);

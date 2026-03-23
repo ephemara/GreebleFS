@@ -242,8 +242,15 @@ fn normalize_ignored_directory_names(ignored_directories: Vec<String>) -> Vec<St
 
 fn path_contains_ignored_directory(path: &Path, ignored_directories: &[String]) -> bool {
     path.components().any(|component| {
-        let segment = component.as_os_str().to_string_lossy().trim().to_ascii_lowercase();
-        !segment.is_empty() && ignored_directories.iter().any(|ignored| ignored == &segment)
+        let segment = component
+            .as_os_str()
+            .to_string_lossy()
+            .trim()
+            .to_ascii_lowercase();
+        !segment.is_empty()
+            && ignored_directories
+                .iter()
+                .any(|ignored| ignored == &segment)
     })
 }
 

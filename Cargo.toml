@@ -1,0 +1,15 @@
+[workspace]
+members = [
+  "src-tauri",
+  "crates/file-opening",
+  "crates/file-opening-linux",
+  "crates/file-opening-macos",
+  "crates/file-opening-windows",
+  "crates/macos",
+  "crates/overlay-contracts",
+  "crates/overlay-theme",
+]
+resolver = "2"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }

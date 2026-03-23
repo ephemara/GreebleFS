@@ -71,11 +71,28 @@ describe('layoutProfiles', () => {
     const classicProfile = resolveLayoutProfile(BUILT_IN_LAYOUT_MANIFEST, 'overlay-classic');
     const profile = resolveLayoutProfile(BUILT_IN_LAYOUT_MANIFEST, 'navigator-bottom');
 
+    expect(profile.shellBlueprint).toBe('classic-dock');
     expect(profile.chrome.barPosition).toBe('bottom');
     expect(profile.controlDock).toEqual(classicProfile.controlDock);
     expect(profile.pinnedPanels).toEqual([]);
     expect(profile.behavior.enforcedOpenPanelIds).toEqual(classicProfile.behavior.enforcedOpenPanelIds);
     expect(getPinnedPanelIds(profile)).toEqual([]);
     expect(getTabbedOpenPanelIds(profile, ['explorer', 'terminal', 'notes'])).toEqual(['explorer', 'terminal', 'notes']);
+  });
+
+  it('normalizes supported shell blueprints for future shell paradigms', () => {
+    const manifest = normalizeLayoutManifest({
+      extendsBuiltIns: false,
+      profiles: [
+        {
+          id: 'portable-shell',
+          label: 'Portable Shell',
+          description: 'Two-screen handheld shell.',
+          shellBlueprint: 'handheld-dual-screen',
+        },
+      ],
+    });
+
+    expect(manifest.profiles[0]?.shellBlueprint).toBe('handheld-dual-screen');
   });
 });

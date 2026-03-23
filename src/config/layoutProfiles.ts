@@ -1,5 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
 import { parse as parseToml } from 'smol-toml';
+import {
+  normalizeShellBlueprintId,
+  type OverlayShellBlueprintId,
+} from './shellBlueprints';
 
 
 export type LayoutBarPosition = 'top' | 'bottom';
@@ -37,6 +41,7 @@ export interface LayoutProfile {
   id: string;
   label: string;
   description: string;
+  shellBlueprint: OverlayShellBlueprintId;
   chrome: LayoutChromeConfig;
   controlDock: LayoutControlDockConfig;
   pinnedPanels: LayoutPinnedPanel[];
@@ -142,6 +147,7 @@ function normalizeLayoutProfile(input: unknown, fallback: LayoutProfile, fallbac
     id: asString(source.id, fallback.id),
     label: asString(source.label, fallback.label),
     description: asString(source.description, fallback.description),
+    shellBlueprint: normalizeShellBlueprintId(source.shellBlueprint, fallback.shellBlueprint),
     chrome: {
       barPosition: chrome?.barPosition === 'bottom' ? 'bottom' : fallback.chrome.barPosition,
       showSettingsShortcut: asBoolean(chrome?.showSettingsShortcut, fallback.chrome.showSettingsShortcut),
@@ -180,6 +186,7 @@ const BUILT_IN_PROFILES: LayoutProfile[] = sortProfiles([
     id: 'overlay-classic',
     label: 'Classic Dock',
     description: 'Top chrome with a single active panel workspace.',
+    shellBlueprint: 'classic-dock',
     chrome: {
       barPosition: 'top',
       showSettingsShortcut: true,
@@ -203,6 +210,7 @@ const BUILT_IN_PROFILES: LayoutProfile[] = sortProfiles([
     id: 'navigator-bottom',
     label: 'Navigator Bottom',
     description: 'Classic dock workspace with the chrome bar flipped to the bottom edge.',
+    shellBlueprint: 'classic-dock',
     chrome: {
       barPosition: 'bottom',
       showSettingsShortcut: true,
