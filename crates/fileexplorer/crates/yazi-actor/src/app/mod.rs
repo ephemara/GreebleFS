@@ -1,0 +1,16 @@
+yazi_macro::mod_flat!(
+	accept_payload
+	bootstrap
+	deprecate
+	focus
+	mouse
+	plugin
+	plugin_do
+	quit
+	reflow
+	resize
+	resume
+	stop
+	title
+	update_progress
+);

@@ -1,6 +1,5 @@
-import { useState, useEffect, useEffectEvent, useRef, useCallback, useMemo, type CSSProperties } from 'react';
-import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core';
-import * as TauriEvent from '@tauri-apps/api/event';
+import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from 'react';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import { useShallow } from 'zustand/react/shallow';
 import {
   getCurrentWindow,
@@ -8,9 +7,6 @@ import {
   PhysicalPosition,
   primaryMonitor,
 } from '@tauri-apps/api/window';
-import * as TauriWindow from '@tauri-apps/api/window';
-import * as TauriFs from '@tauri-apps/plugin-fs';
-import * as TauriNotification from '@tauri-apps/plugin-notification';
 import {
   createBuiltInPanelDefinitions,
   createFolderPluginPanelDefinitions,
@@ -20,9 +16,7 @@ import { FolderPluginRenderer, PluginsManager } from './components/PluginsManage
 import { CommandPalette, type OverlayCommandPaletteAction } from './components/CommandPalette';
 import { animationSystemConfig, resolvePreferredAnimationId } from './config/animations';
 import {
-  getPluginStorageDirectory,
   pluginSystemConfig,
-  shouldRefreshForPluginWatchPaths,
 } from './config/plugins';
 import {
   AnimationOverlayLayer,
@@ -47,29 +41,15 @@ import {
   type OverlayShaderShellContext,
   type ShaderFileEntry,
 } from './components/shaderRuntime';
-import {
-  isFrontendPluginFile,
-  type LoadedOverlayPlugin,
-  type OverlayPluginApi,
-  type OverlayPluginContext,
-  type PluginBackendResult,
-  type PluginFileEntry,
-} from './components/pluginRuntime';
 import { listen } from '@tauri-apps/api/event';
 import { Check, Droplet, GripVertical, LayoutGrid, Search, Settings2, Terminal as TerminalIcon, X } from 'lucide-react';
 import {
   ensureFontFamilyLoaded,
   resolveOverlayAppearance,
   setOverlayPluginFonts,
-  type OverlayRegisteredFontContribution,
   type ResolvedOverlayAppearance,
 } from './config/appearance';
 import { loadThemePackages as discoverThemePackages, themeSystemConfig, type LoadedOverlayThemePackage } from './config/themePackages';
-import { discoverOverlayPlugins } from './config/pluginPackages';
-import type {
-  OverlayPluginCommandContribution,
-  OverlayPluginExplorerActionContribution,
-} from './config/pluginContributions';
 import { dispatchTerminalCommand } from './config/pluginContributions';
 import { formatHotkeyLabel, matchesKeybinding, matchesWheelHotkey } from './config/hotkeys';
 import {
@@ -97,10 +77,17 @@ import {
   type OverlayWindowBounds,
   overlayVisualControls,
 } from './config/overlayWindow';
-import { detectClientPlatform, getPlatformPathSeparator, joinPlatformPath, type RuntimePlatform } from './config/platform';
+import { detectClientPlatform, type RuntimePlatform } from './config/platform';
 import { derivePanelOpenState, reorderPanelIds } from './components/panelUtils';
 import { OverlayScrollArea } from './components/OverlayScrollArea';
 import { useGlobalShortcut } from './input/GlobalShortcuts';
+import {
+  buildThemeVisualStyle,
+  computePanelWindowLayout,
+  ensureDir,
+  parseExternalArgs,
+} from './runtime/overlayRuntimeUtils';
+import { useFolderPluginRuntime } from './runtime/useFolderPluginRuntime';
 import {
   useSettingsStore,
   type LayoutPanelState,
@@ -108,8 +95,6 @@ import {
   type TerminalWindowMode,
 } from './store/settingsStore';
 import { useTerminalStore } from './store/terminalStore';
-
-const LOGICAL_PADDING = 12;
 
 function clampValue(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -223,73 +208,6 @@ function resolveShellBackgroundColor(
   return withColorAlpha(translucentColor, targetAlpha);
 }
 
-function parseExternalArgs(raw: string): string[] {
-  return raw
-    .split(/\r?\n/g)
-    .map(value => value.trim())
-    .filter(Boolean);
-}
-
-function getParentPath(path: string, separator: string): string {
-  let normalized = path.replace(/[\\/]+/g, separator);
-  while (normalized.endsWith(separator)) {
-    normalized = normalized.slice(0, -separator.length);
-  }
-  const index = normalized.lastIndexOf(separator);
-  return index > 0 ? normalized.slice(0, index) : '';
-}
-
-async function ensureDir(path: string): Promise<void> {
-  try {
-    await invoke('fs_list_dir', { path, showHidden: false });
-  } catch {
-    await invoke('fs_create_dir', { path });
-  }
-}
-
-interface PanelWindowLayout {
-  width: number;
-  height: number;
-  x: number;
-  y: number;
-  healedWidth: number | null;
-  healedHeight: number | null;
-}
-
-interface PluginDirectoryWatchEvent {
-  root: string;
-  kind: string;
-  paths: string[];
-}
-
-function computePanelWindowLayout(args: {
-  workArea: { position: PhysicalPosition; size: PhysicalSize };
-  scaleFactor: number;
-  windowedWidth: number;
-  windowedHeight: number;
-}): PanelWindowLayout {
-  const physPad = Math.round(LOGICAL_PADDING * args.scaleFactor);
-  const availableLogicalWidth = Math.max(Math.round(args.workArea.size.width / args.scaleFactor) - LOGICAL_PADDING * 2, 720);
-  const availableLogicalHeight = Math.max(Math.round(args.workArea.size.height / args.scaleFactor) - LOGICAL_PADDING * 2, 480);
-  const targetLogicalWidth = args.windowedWidth > 0 ? args.windowedWidth : 1440;
-  const targetLogicalHeight = args.windowedHeight > 0 ? args.windowedHeight : 920;
-  const healedWidth = targetLogicalWidth > availableLogicalWidth ? availableLogicalWidth : null;
-  const healedHeight = targetLogicalHeight > availableLogicalHeight ? availableLogicalHeight : null;
-  const logicalWidth = Math.max(Math.min(healedWidth ?? targetLogicalWidth, availableLogicalWidth), Math.min(720, availableLogicalWidth));
-  const logicalHeight = Math.max(Math.min(healedHeight ?? targetLogicalHeight, availableLogicalHeight), Math.min(480, availableLogicalHeight));
-  const width = Math.round(logicalWidth * args.scaleFactor);
-  const height = Math.round(logicalHeight * args.scaleFactor);
-
-  return {
-    width,
-    height,
-    x: args.workArea.position.x + Math.max(Math.round((args.workArea.size.width - width) / 2), physPad),
-    y: args.workArea.position.y + Math.max(Math.round((args.workArea.size.height - height) / 2), physPad),
-    healedWidth,
-    healedHeight,
-  };
-}
-
 const EMPTY_LAYOUT_PANEL_STATE: LayoutPanelState = {
   openPanelIds: [],
   activePanelId: null,
@@ -334,34 +252,6 @@ function sanitizeLayoutPanelState(
     openPanelIds: normalizeIds(source.openPanelIds),
     activePanelId,
     dismissedPanelIds: normalizeIds(source.dismissedPanelIds),
-  };
-}
-
-function getThemeVisualAnimation(layer: NonNullable<ResolvedOverlayAppearance['theme']['visuals']>[number]): string | undefined {
-  if (!layer.animation) {
-    return undefined;
-  }
-
-  const durationMs = typeof layer.animation.durationMs === 'number' ? layer.animation.durationMs : 18000;
-  const easing = layer.animation.easing ?? 'ease-in-out';
-  const direction = layer.animation.direction ?? 'alternate';
-  return `overlay-theme-visual-${layer.animation.kind} ${durationMs}ms ${easing} infinite ${direction}`;
-}
-
-function buildThemeVisualStyle(layer: NonNullable<ResolvedOverlayAppearance['theme']['visuals']>[number]): CSSProperties {
-  return {
-    position: 'absolute',
-    inset: layer.inset ?? '0',
-    pointerEvents: 'none',
-    backgroundImage: layer.backgroundImage,
-    backgroundSize: layer.backgroundSize ?? 'cover',
-    backgroundPosition: layer.backgroundPosition ?? 'center',
-    backgroundRepeat: layer.backgroundRepeat ?? 'no-repeat',
-    opacity: typeof layer.opacity === 'number' ? layer.opacity : 1,
-    filter: layer.filter ?? 'none',
-    mixBlendMode: (layer.blendMode as CSSProperties['mixBlendMode']) ?? 'normal',
-    animation: getThemeVisualAnimation(layer),
-    willChange: layer.animation ? 'transform, opacity' : undefined,
   };
 }
 
@@ -424,15 +314,7 @@ function App() {
   const [authoredShadersLoading, setAuthoredShadersLoading] = useState(true);
   const [themeContributedAnimations, setThemeContributedAnimations] = useState<LoadedOverlayAnimation[]>([]);
   const [themeContributedShaders, setThemeContributedShaders] = useState<LoadedOverlayShader[]>([]);
-  const [folderPlugins, setFolderPlugins] = useState<LoadedOverlayPlugin[]>([]);
-  const [pluginContributedShaders, setPluginContributedShaders] = useState<LoadedOverlayShader[]>([]);
-  const [pluginThemePackages, setPluginThemePackages] = useState<LoadedOverlayThemePackage[]>([]);
-  const [pluginFonts, setPluginFonts] = useState<OverlayRegisteredFontContribution[]>([]);
-  const [pluginCommands, setPluginCommands] = useState<OverlayPluginCommandContribution[]>([]);
-  const [pluginExplorerActions, setPluginExplorerActions] = useState<OverlayPluginExplorerActionContribution[]>([]);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
-  const [folderPluginsError, setFolderPluginsError] = useState<string | null>(null);
-  const [folderPluginsLoading, setFolderPluginsLoading] = useState(true);
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
   const builtInAnimations = useMemo(() => createBuiltInOverlayAnimations(), []);
   const builtInShaders = useMemo(() => createBuiltInOverlayShaders(), []);
@@ -451,12 +333,7 @@ function App() {
   const windowModeRef = useRef<TerminalWindowMode>('overlay');
   const animationSignatureRef = useRef('');
   const shaderSignatureRef = useRef('');
-  const pluginSignatureRef = useRef('');
   const dragHideRestoreRef = useRef(false);
-  const refreshFolderPluginsRef = useRef<(force?: boolean) => Promise<void>>(async () => undefined);
-  const pluginWatchDebounceTimerRef = useRef<number | null>(null);
-  const pluginRefreshInFlightRef = useRef(false);
-  const pluginRefreshQueuedForceRef = useRef(false);
   const openTerminalPanelRef = useRef<() => void>(() => undefined);
   const [layoutManifest, setLayoutManifest] = useState(BUILT_IN_LAYOUT_MANIFEST);
   const [layoutConfigSource, setLayoutConfigSource] = useState<string | null>(null);
@@ -496,6 +373,19 @@ function App() {
     initStore: state.initStore,
     addDirectoryBookmark: state.addDirectoryBookmark,
   })));
+  const {
+    folderPlugins,
+    pluginContributedShaders,
+    pluginThemePackages,
+    pluginFonts,
+    pluginCommands,
+    pluginExplorerActions,
+    folderPluginsError,
+    folderPluginsLoading,
+    openPluginsFolder,
+    refreshFolderPlugins,
+    createPluginApi,
+  } = useFolderPluginRuntime(runtimePlatform);
   const combinedThemePackages = useMemo(
     () => [...themePackages, ...pluginThemePackages],
     [pluginThemePackages, themePackages],
@@ -1677,11 +1567,6 @@ function App() {
     await addDirectoryBookmark({ id: crypto.randomUUID(), name, value: path });
   }, [addDirectoryBookmark]);
 
-  const openPluginsFolder = useCallback(async () => {
-    await ensureDir(pluginSystemConfig.pluginsDirectory);
-    await invoke('fs_open_file', { path: pluginSystemConfig.pluginsDirectory });
-  }, []);
-
   const refreshThemePackages = useCallback(async () => {
     if (!isTauri()) {
       setThemePackages([]);
@@ -1830,155 +1715,6 @@ function App() {
     }
   }, []);
 
-  const createPluginApi = useCallback((plugin: OverlayPluginContext): OverlayPluginApi => {
-    const appLocalData = TauriFs.BaseDirectory.AppLocalData;
-    const separator = getPlatformPathSeparator(runtimePlatform);
-    const storageRoot = getPluginStorageDirectory(plugin.id);
-    const assetRoot = plugin.pluginDirectory;
-    const resolveAssetPath = (relativePath: string) => {
-      const trimmed = relativePath.trim().replace(/^[\\\\/]+/, '');
-      return trimmed ? joinPlatformPath(assetRoot, trimmed, runtimePlatform) : assetRoot;
-    };
-    const resolveAssetUrl = (relativePath: string) => {
-      const absolutePath = resolveAssetPath(relativePath);
-      try {
-        return convertFileSrc(absolutePath);
-      } catch {
-        const normalized = absolutePath.replace(/\\/g, '/');
-        return normalized.startsWith('/') ? `file://${encodeURI(normalized)}` : `file:///${encodeURI(normalized)}`;
-      }
-    };
-    const resolveStoragePath = (relativePath?: string) => {
-      const trimmed = relativePath?.trim().replace(/^[\\/]+/, '') ?? '';
-      return trimmed ? joinPlatformPath(storageRoot, trimmed, runtimePlatform) : storageRoot;
-    };
-    const ensureStorageDir = async (relativePath?: string) => {
-      const target = resolveStoragePath(relativePath);
-      await TauriFs.mkdir(target, { baseDir: appLocalData, recursive: true });
-      return target;
-    };
-
-    return {
-      invoke,
-      event: TauriEvent,
-      window: TauriWindow,
-      fs: TauriFs,
-      notification: TauriNotification,
-      storage: {
-        rootDir: storageRoot,
-        ensureDir: ensureStorageDir,
-        readTextFile: async relativePath => TauriFs.readTextFile(resolveStoragePath(relativePath), { baseDir: appLocalData }),
-        writeTextFile: async (relativePath, data) => {
-          const target = resolveStoragePath(relativePath);
-          const parent = getParentPath(target, separator);
-          if (parent) {
-            await TauriFs.mkdir(parent, { baseDir: appLocalData, recursive: true });
-          }
-          await TauriFs.writeTextFile(target, data, { baseDir: appLocalData });
-        },
-        writeFile: async (relativePath, data) => {
-          const target = resolveStoragePath(relativePath);
-          const parent = getParentPath(target, separator);
-          if (parent) {
-            await TauriFs.mkdir(parent, { baseDir: appLocalData, recursive: true });
-          }
-          await TauriFs.writeFile(target, data, { baseDir: appLocalData });
-        },
-      },
-      assets: {
-        rootDir: assetRoot,
-        resolvePath: resolveAssetPath,
-        resolveUrl: resolveAssetUrl,
-      },
-      refreshPlugins: async () => {
-        await refreshFolderPluginsRef.current(true);
-      },
-      openPluginsFolder,
-      runBackend: async (entry, args = []) => invoke<PluginBackendResult>('plugin_run_backend', {
-        pluginsRoot: pluginSystemConfig.pluginsDirectory,
-        pluginId: plugin.id,
-        entry,
-        args,
-      }),
-    };
-  }, [openPluginsFolder, runtimePlatform]);
-
-  const refreshFolderPlugins = useCallback(async (force = false) => {
-    if (!isTauri()) {
-      setFolderPlugins([]);
-      setPluginContributedShaders([]);
-      setPluginThemePackages([]);
-      setPluginFonts([]);
-      setPluginCommands([]);
-      setPluginExplorerActions([]);
-      setFolderPluginsError(null);
-      setFolderPluginsLoading(false);
-      return;
-    }
-
-    if (force) {
-      pluginRefreshQueuedForceRef.current = true;
-    }
-    if (pluginRefreshInFlightRef.current) {
-      return;
-    }
-
-    pluginRefreshInFlightRef.current = true;
-    try {
-      do {
-        const nextForce = force || pluginRefreshQueuedForceRef.current;
-        pluginRefreshQueuedForceRef.current = false;
-        force = false;
-
-        if (nextForce) {
-          pluginSignatureRef.current = '';
-        }
-
-        setFolderPluginsLoading(prev => prev && !nextForce);
-        setFolderPluginsError(null);
-        try {
-          await ensureDir(pluginSystemConfig.pluginsDirectory);
-          const listed = await invoke<PluginFileEntry[]>('fs_list_dir', {
-            path: pluginSystemConfig.pluginsDirectory,
-            showHidden: false,
-          });
-          const nextSignature = listed
-            .filter(entry => entry.is_dir || isFrontendPluginFile(entry))
-            .sort((left, right) => left.name.localeCompare(right.name))
-            .map(entry => `${entry.path}:${entry.modified}:${entry.is_dir ? 'dir' : 'file'}`)
-            .join('|');
-
-          if (!nextForce && nextSignature === pluginSignatureRef.current) {
-            setFolderPluginsLoading(false);
-            continue;
-          }
-
-          pluginSignatureRef.current = nextSignature;
-          const discovered = await discoverOverlayPlugins(createPluginApi);
-          setFolderPlugins(discovered.plugins);
-          setPluginContributedShaders(discovered.shaders);
-          setPluginThemePackages(discovered.themePackages);
-          setPluginFonts(discovered.fonts);
-          setPluginCommands(discovered.commands);
-          setPluginExplorerActions(discovered.explorerActions);
-          setFolderPluginsError(discovered.warnings.length > 0 ? discovered.warnings.join('\n') : null);
-        } catch (error) {
-          setFolderPlugins([]);
-          setPluginContributedShaders([]);
-          setPluginThemePackages([]);
-          setPluginFonts([]);
-          setPluginCommands([]);
-          setPluginExplorerActions([]);
-          setFolderPluginsError(String(error));
-        } finally {
-          setFolderPluginsLoading(false);
-        }
-      } while (pluginRefreshQueuedForceRef.current);
-    } finally {
-      pluginRefreshInFlightRef.current = false;
-    }
-  }, [createPluginApi]);
-
   useEffect(() => {
     if (!isOverlayVisible) {
       return;
@@ -2014,93 +1750,6 @@ function App() {
 
     return () => window.clearInterval(interval);
   }, [isOverlayVisible, refreshAuthoredShaders]);
-
-  useEffect(() => {
-    refreshFolderPluginsRef.current = refreshFolderPlugins;
-  }, [refreshFolderPlugins]);
-
-  const schedulePluginRefresh = useEffectEvent((force = true) => {
-    if (pluginWatchDebounceTimerRef.current !== null) {
-      window.clearTimeout(pluginWatchDebounceTimerRef.current);
-    }
-
-    pluginWatchDebounceTimerRef.current = window.setTimeout(() => {
-      pluginWatchDebounceTimerRef.current = null;
-      void refreshFolderPluginsRef.current(force);
-    }, pluginSystemConfig.watchDebounceMs);
-  });
-
-  useEffect(() => {
-    void refreshFolderPlugins(true);
-  }, [refreshFolderPlugins]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !isTauri()) {
-      return;
-    }
-
-    let fallbackInterval: number | null = null;
-    let unlistenPlugins: (() => void) | null = null;
-    let disposed = false;
-
-    const clearFallbackPolling = () => {
-      if (fallbackInterval !== null) {
-        window.clearInterval(fallbackInterval);
-        fallbackInterval = null;
-      }
-    };
-
-    const startFallbackPolling = () => {
-      if (fallbackInterval !== null) {
-        return;
-      }
-
-      fallbackInterval = window.setInterval(() => {
-        void refreshFolderPluginsRef.current(true);
-      }, pluginSystemConfig.fallbackScanIntervalMs);
-    };
-
-    const startPluginWatcher = async () => {
-      try {
-        await ensureDir(pluginSystemConfig.pluginsDirectory);
-        unlistenPlugins = await listen<PluginDirectoryWatchEvent>(pluginSystemConfig.watchEventName, (event) => {
-          if (!shouldRefreshForPluginWatchPaths(event.payload.paths)) {
-            return;
-          }
-          schedulePluginRefresh(true);
-        });
-
-        await invoke('plugin_watch_directory', {
-          path: pluginSystemConfig.pluginsDirectory,
-          ignoredDirectories: [...pluginSystemConfig.ignoredWatchDirectoryNames],
-        });
-
-        if (disposed) {
-          unlistenPlugins?.();
-          unlistenPlugins = null;
-          await invoke('plugin_unwatch_directory');
-        }
-      } catch (error) {
-        unlistenPlugins?.();
-        unlistenPlugins = null;
-        console.warn('Plugin watcher unavailable, falling back to polling:', error);
-        startFallbackPolling();
-      }
-    };
-
-    void startPluginWatcher();
-
-    return () => {
-      disposed = true;
-      if (pluginWatchDebounceTimerRef.current !== null) {
-        window.clearTimeout(pluginWatchDebounceTimerRef.current);
-        pluginWatchDebounceTimerRef.current = null;
-      }
-      clearFallbackPolling();
-      unlistenPlugins?.();
-      void invoke('plugin_unwatch_directory').catch(() => undefined);
-    };
-  }, [schedulePluginRefresh]);
 
   useEffect(() => {
     void refreshThemePackages();
