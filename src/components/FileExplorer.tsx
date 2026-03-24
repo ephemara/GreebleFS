@@ -11,7 +11,7 @@
 import React, {
   Suspense, useState, useEffect, useRef, useCallback, useMemo,
 } from 'react';
-import { invoke, isTauri } from '@tauri-apps/api/core';
+import { isTauri, invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useShallow } from 'zustand/react/shallow';
 import type { EditorProps as MonacoEditorProps } from '@monaco-editor/react';
@@ -62,7 +62,6 @@ import {
 } from '../config/runtimeCachePolicy';
 import {
   getExplorerSearchTelemetryMetadata,
-  type FileSearchResponse,
 } from '../config/searchTelemetry';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ExplorerSideRail } from './explorer/ExplorerSideRail';
@@ -91,6 +90,27 @@ import {
   type EditorSearchFocusTarget,
 } from './fileExplorerSearchFocus';
 import { dispatchTerminalCommand, resolvePluginCommandTemplate } from '../config/pluginContributions';
+import {
+  cancelExplorerSearchEntries,
+  createExplorerDir,
+  deleteExplorerPath,
+  getExplorerDrives,
+  listExplorerDir,
+  listExplorerDirUncached,
+  openExplorerPath,
+  openExplorerPathAsAdmin,
+  readExplorerTextFile,
+  renameExplorerPath,
+  revealExplorerPath,
+  searchExplorerEntriesWithDiagnostics,
+  unwatchExplorerEntrySizeRoot,
+  watchExplorerEntrySizeRoot,
+  writeExplorerFile,
+  type ExplorerDriveInfo as DriveInfo,
+  type ExplorerEntryStorageInfo as EntryStorageInfo,
+  type ExplorerFileEntry as FileEntry,
+  type ExplorerFileSearchResult as FileSearchResult,
+} from '../runtime/explorerBackend';
 
 const LazyModelPreview = React.lazy(() =>
   import('./ModelPreview').then(module => ({ default: module.ModelPreview })),
@@ -131,27 +151,6 @@ function getDocumentPreviewKind(path: string): DocumentPreviewKind {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface FileEntry {
-  name: string; path: string; is_dir: boolean;
-  size: number; modified: number; extension: string;
-  is_hidden: boolean; is_symlink: boolean;
-}
-interface FileSearchResult extends FileEntry {
-  relative_path: string;
-  snippet: string;
-  line_number: number | null;
-  match_kind: 'name' | 'content' | 'name_and_content';
-}
-interface DriveInfo {
-  letter: string; label: string;
-  total_bytes: number; free_bytes: number; drive_type: string;
-}
-interface EntryStorageInfo {
-  path: string;
-  bytes: number;
-  is_dir: boolean;
-  is_complete: boolean;
-}
 interface ViewportMetrics {
   scrollTop: number;
   clientHeight: number;
@@ -1257,7 +1256,7 @@ export function FileExplorer({
   // ── Boot ──
   useEffect(() => {
     setDrivesLoading(true);
-    invoke<DriveInfo[]>('fs_get_drives')
+    getExplorerDrives()
       .then(ds => setDrives(ds))
       .catch(() => setDrives([]))
       .finally(() => setDrivesLoading(false));
@@ -1322,7 +1321,7 @@ export function FileExplorer({
     if (push) { setHistory(h => [...h.slice(0, historyIdx + 1), normalizedPath]); setHistoryIdx(i => i + 1); }
     setLoading(true);
     try {
-      const nextEntries = await invoke<FileEntry[]>('fs_list_dir', { path: normalizedPath, showHidden });
+      const nextEntries = await listExplorerDir(normalizedPath, showHidden);
       setEntries(nextEntries);
       recordExplorerMetric({
         metricId: 'explorer_navigation',
@@ -1362,7 +1361,7 @@ export function FileExplorer({
     setSearchLoading(true);
     const startedAt = getExplorerPerformanceNow();
     try {
-      const response = await invoke<FileSearchResponse<FileSearchResult>>('fs_search_entries_with_diagnostics', {
+      const response = await searchExplorerEntriesWithDiagnostics({
         path: currentPath,
         query: trimmed,
         showHidden,
@@ -1427,7 +1426,7 @@ export function FileExplorer({
       return changed ? next : current;
     });
     setEntrySizeLoadingPaths(new Set());
-    try { setEntries(await invoke<FileEntry[]>('fs_list_dir_uncached', { path: currentPath, showHidden })); }
+    try { setEntries(await listExplorerDirUncached(currentPath, showHidden)); }
     catch (e) { setError(String(e)); }
     finally { setLoading(false); }
     if (search.trim()) {
@@ -1443,12 +1442,12 @@ export function FileExplorer({
       return undefined;
     }
 
-    void invoke('fs_watch_entry_size_root', { path: currentPath }).catch(error => {
+    void watchExplorerEntrySizeRoot(currentPath).catch(error => {
       console.warn('OverlayTerm: failed to watch entry size root', error);
     });
 
     return () => {
-      void invoke('fs_unwatch_entry_size_root', { path: currentPath }).catch(() => {});
+      void unwatchExplorerEntrySizeRoot(currentPath).catch(() => {});
     };
   }, [currentPath]);
 
@@ -1491,7 +1490,7 @@ export function FileExplorer({
     if (!trimmed) {
       const requestId = ++searchRequestIdRef.current;
       if (currentPath) {
-        void invoke('fs_cancel_search_entries', {
+        void cancelExplorerSearchEntries({
           path: currentPath,
           requestId,
           requestScope: EXPLORER_SEARCH_SCOPE,
@@ -1504,7 +1503,7 @@ export function FileExplorer({
 
     const requestId = ++searchRequestIdRef.current;
     if (currentPath) {
-      void invoke('fs_cancel_search_entries', {
+      void cancelExplorerSearchEntries({
         path: currentPath,
         requestId,
         requestScope: EXPLORER_SEARCH_SCOPE,
@@ -1723,7 +1722,7 @@ export function FileExplorer({
   }, [resolveEntriesForAction]);
 
   const openAsAdmin = useCallback(async (path: string) => {
-    await invoke('fs_open_as_admin', { path }).catch(e => setError(String(e)));
+    await openExplorerPathAsAdmin(path).catch(e => setError(String(e)));
   }, []);
 
   const transferIntoDirectory = useCallback(async (
@@ -1811,7 +1810,7 @@ export function FileExplorer({
     ));
 
     try {
-      await invoke('fs_write_file', { path, content: contentAtSave });
+      await writeExplorerFile(path, contentAtSave);
       setPreview(prev => {
         if (prev.type !== 'text' || prev.path !== path) return prev;
         const isStillSame = prev.content === contentAtSave;
@@ -1917,7 +1916,7 @@ export function FileExplorer({
       }
       setPreviewLoading(true);
       try {
-        const content = await invoke<string>('fs_read_text_file', { path: entry.path });
+        const content = await readExplorerTextFile(entry.path);
         setPreview({
           type:'text',
           path:entry.path,
@@ -1960,11 +1959,11 @@ export function FileExplorer({
     }
 
     if (isExecutableExtension(ext)) {
-      await invoke('fs_open_file', { path: entry.path }).catch(e => setError(String(e)));
+      await openExplorerPath(entry.path).catch(e => setError(String(e)));
       return;
     }
 
-    await invoke('fs_open_file', { path: entry.path }).catch(e => setError(String(e)));
+    await openExplorerPath(entry.path).catch(e => setError(String(e)));
   }, [getSearchFocusTarget, navigate, previewEntry]);
 
   // ── Duplicate ──
@@ -2007,7 +2006,7 @@ export function FileExplorer({
       const shouldResaveRenamedPreview = previewRef.current.type === 'text'
         && previewRef.current.path === oldPath
         && previewRef.current.isDirty;
-      await invoke('fs_rename', { oldPath, newPath });
+      await renameExplorerPath(oldPath, newPath);
       if (previewSaveTimer.current) {
         window.clearTimeout(previewSaveTimer.current);
         previewSaveTimer.current = null;
@@ -2035,7 +2034,7 @@ export function FileExplorer({
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     try {
-      await invoke('fs_delete', { path: deleteTarget.path, recursive: deleteTarget.is_dir });
+      await deleteExplorerPath(deleteTarget.path, deleteTarget.is_dir);
       if (preview.path === deleteTarget.path) setPreview({ type:'none', path:'' });
       if (previewSaveTimer.current) {
         window.clearTimeout(previewSaveTimer.current);
@@ -2078,7 +2077,7 @@ export function FileExplorer({
       { label:'Open',               icon:<ExternalLink size={13}/>, action:() => openEntry(entry) },
       { label: entry.is_dir ? 'Open Folder as Admin' : 'Open as Admin', icon:<Shield size={13}/>, action:() => openAsAdmin(entry.path) },
       ...(entry.is_dir ? [{ label:'Open in Terminal', icon:<Terminal size={13}/>, action:() => onOpenInTerminal(entry.path) }] : []),
-      { label:'Reveal in Explorer', icon:<Eye size={13}/>,          action:() => invoke('fs_reveal_in_explorer', { path:entry.path }).catch(e=>setError(String(e))) },
+      { label:'Reveal in Explorer', icon:<Eye size={13}/>,          action:() => revealExplorerPath(entry.path).catch(e=>setError(String(e))) },
       { label:'Copy Path',          icon:<Copy size={13}/>,         action:() => copyToSysClipboard(entry.path) },
       { label: '', icon:null, divider:true, action:()=>{} },
       { label:'Copy',               icon:<Copy size={13}/>,         action:() => queueClipboard('copy', entry) },
@@ -2267,9 +2266,9 @@ export function FileExplorer({
     const base = currentPath.replace(/[/\\]+$/, '');
     try {
       if (newItem.kind === 'folder') {
-        await invoke('fs_create_dir', { path: joinPlatformPath(base, name, runtimePlatform) });
+        await createExplorerDir(joinPlatformPath(base, name, runtimePlatform));
       } else {
-        await invoke('fs_write_file', { path: joinPlatformPath(base, name, runtimePlatform), content: '' });
+        await writeExplorerFile(joinPlatformPath(base, name, runtimePlatform), '');
       }
       refresh();
     } catch(e) { setError(String(e)); }

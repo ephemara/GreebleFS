@@ -26,7 +26,6 @@ import {
   mergeOverlayAnimations,
   resolveAnimationDurationMs,
   resolveAnimationShellStyle,
-  type AnimationFileEntry,
   type LoadedOverlayAnimation,
 } from './components/animationRuntime';
 import { shaderSystemConfig, resolvePreferredShaderId } from './config/shaders';
@@ -39,10 +38,22 @@ import {
   resolveShaderControlValues,
   type LoadedOverlayShader,
   type OverlayShaderShellContext,
-  type ShaderFileEntry,
 } from './components/shaderRuntime';
 import { listen } from '@tauri-apps/api/event';
-import { Check, Droplet, GripVertical, LayoutGrid, Search, Settings2, Terminal as TerminalIcon, X } from 'lucide-react';
+import {
+  Check,
+  Copy,
+  Droplet,
+  GripHorizontal,
+  GripVertical,
+  LayoutGrid,
+  Minus,
+  Search,
+  Settings2,
+  Square,
+  Terminal as TerminalIcon,
+  X,
+} from 'lucide-react';
 import {
   ensureFontFamilyLoaded,
   resolveOverlayAppearance,
@@ -87,6 +98,7 @@ import {
   ensureDir,
   parseExternalArgs,
 } from './runtime/overlayRuntimeUtils';
+import { listExplorerDir, openExplorerPath } from './runtime/explorerBackend';
 import { useFolderPluginRuntime } from './runtime/useFolderPluginRuntime';
 import {
   useSettingsStore,
@@ -1149,12 +1161,12 @@ function App() {
   const showCurrentPresentationRef = useRef(showCurrentPresentation);
   showCurrentPresentationRef.current = showCurrentPresentation;
   useEffect(() => {
-    if (!isTauri() || !import.meta.env.DEV) {
+    if (!isTauri()) {
       return;
     }
-    // Rust already calls window.show() + emits toggle-request in debug builds,
-    // so this is a JS-side safety net in case the event arrives before the
-    // listener is registered (i.e. very fast machines / hot-reloads).
+    // Show the current presentation mode on desktop startup once the React
+    // listeners are mounted. This keeps release builds from idling as a hidden
+    // tray process on first launch while still avoiding a pre-hydration flash.
     const timer = window.setTimeout(() => {
       if (!overlayVisibleRef.current && overlayPhaseRef.current === 'closed') {
         showCurrentPresentationRef.current();
@@ -1604,7 +1616,7 @@ function App() {
     }
 
     await ensureDir(themeSystemConfig.themesDirectory);
-    await invoke('fs_open_file', { path: themeSystemConfig.themesDirectory });
+    await openExplorerPath(themeSystemConfig.themesDirectory);
   }, []);
 
   const openAnimationsFolder = useCallback(async () => {
@@ -1613,7 +1625,7 @@ function App() {
     }
 
     await ensureDir(animationSystemConfig.animationsDirectory);
-    await invoke('fs_open_file', { path: animationSystemConfig.animationsDirectory });
+    await openExplorerPath(animationSystemConfig.animationsDirectory);
   }, []);
 
   const openShadersFolder = useCallback(async () => {
@@ -1622,7 +1634,7 @@ function App() {
     }
 
     await ensureDir(shaderSystemConfig.shadersDirectory);
-    await invoke('fs_open_file', { path: shaderSystemConfig.shadersDirectory });
+    await openExplorerPath(shaderSystemConfig.shadersDirectory);
   }, []);
 
   const refreshAuthoredAnimations = useCallback(async (force = false) => {
@@ -1641,10 +1653,7 @@ function App() {
     setAuthoredAnimationsError(null);
     try {
       await ensureDir(animationSystemConfig.animationsDirectory);
-      const listed = await invoke<AnimationFileEntry[]>('fs_list_dir', {
-        path: animationSystemConfig.animationsDirectory,
-        showHidden: false,
-      });
+      const listed = await listExplorerDir(animationSystemConfig.animationsDirectory, false);
       const files = listed
         .filter(isFrontendAnimationFile)
         .sort((left, right) => left.name.localeCompare(right.name));
@@ -1686,10 +1695,7 @@ function App() {
     setAuthoredShadersError(null);
     try {
       await ensureDir(shaderSystemConfig.shadersDirectory);
-      const listed = await invoke<ShaderFileEntry[]>('fs_list_dir', {
-        path: shaderSystemConfig.shadersDirectory,
-        showHidden: false,
-      });
+      const listed = await listExplorerDir(shaderSystemConfig.shadersDirectory, false);
       const files = listed
         .filter(isFrontendShaderFile)
         .sort((left, right) => left.name.localeCompare(right.name));
@@ -2255,6 +2261,7 @@ function App() {
     <TopBar
       appearance={resolvedAppearance}
       layoutProfile={activeLayoutProfile}
+      layoutProfiles={layoutManifest.profiles}
       layoutSourcePath={layoutConfigSource}
       panels={panelDefinitions}
       openPanelIds={openPanelIds}
@@ -2266,6 +2273,7 @@ function App() {
       onPanelReorder={handleReorderPanels}
       onOpenSettings={handleOpenSettings}
       onCycleLayout={handleCycleLayout}
+      onSelectLayoutProfile={(profileId) => updateLayout({ activeProfileId: profileId })}
       onOpenCommandPalette={handleOpenCommandPalette}
       onToggleOverlayAnchor={handleToggleOverlayAnchor}
       onClose={() => { void hideOverlay(); }}
@@ -2826,6 +2834,7 @@ function OverlayViewportDock({
 function TopBar({
   appearance,
   layoutProfile,
+  layoutProfiles,
   layoutSourcePath,
   panels,
   openPanelIds,
@@ -2837,6 +2846,7 @@ function TopBar({
   onPanelReorder,
   onOpenSettings,
   onCycleLayout,
+  onSelectLayoutProfile,
   onOpenCommandPalette,
   onToggleOverlayAnchor,
   onClose,
@@ -2861,6 +2871,7 @@ function TopBar({
 }: {
   appearance: ResolvedOverlayAppearance;
   layoutProfile: LayoutProfile;
+  layoutProfiles: LayoutProfile[];
   layoutSourcePath: string | null;
   panels: OverlayPanelDefinition[];
   openPanelIds: string[];
@@ -2872,6 +2883,7 @@ function TopBar({
   onPanelReorder: (draggedId: string, targetId: string) => void;
   onOpenSettings: () => void;
   onCycleLayout: () => void;
+  onSelectLayoutProfile: (profileId: string) => void;
   onOpenCommandPalette: () => void;
   onToggleOverlayAnchor: () => void;
   onClose: () => void;
@@ -2904,6 +2916,7 @@ function TopBar({
   const CHROME_HEIGHT = 36;
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [draggedPanelId, setDraggedPanelId] = useState<string | null>(null);
   const [viewportSize, setViewportSize] = useState(() => ({
     width: window.innerWidth,
@@ -2941,6 +2954,10 @@ function TopBar({
   );
   const showPanelDescriptions = !compactPanelMenu && panelMenuHeight > 290;
   const nextOverlayAnchor = overlayAnchor === 'top' ? 'bottom' : 'top';
+  const layoutRailMaxWidth = Math.max(
+    180,
+    Math.min(isWindowedMode ? 360 : 320, Math.floor(viewportSize.width * (isWindowedMode ? 0.28 : 0.24))),
+  );
   const layoutButtonTitle = isWindowedMode
     ? (layoutSourcePath
       ? `Cycle Layout (${layoutProfile.label})\n${layoutSourcePath}`
@@ -2948,6 +2965,40 @@ function TopBar({
     : (layoutSourcePath
       ? `Cycle Layout (${layoutProfile.label})\n${layoutSourcePath}\nRight-click: dock overlay to the ${nextOverlayAnchor} edge`
       : `Cycle Layout (${layoutProfile.label})\nRight-click: dock overlay to the ${nextOverlayAnchor} edge`);
+
+  const handleStartWindowDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isWindowedMode || event.button !== 0 || !isTauri()) {
+      return;
+    }
+
+    event.preventDefault();
+    getCurrentWindow().startDragging().catch(() => {});
+  }, [isWindowedMode]);
+
+  const handleMinimizeWindow = useCallback(() => {
+    if (!isWindowedMode || !isTauri()) {
+      return;
+    }
+
+    getCurrentWindow().minimize().catch(() => {});
+  }, [isWindowedMode]);
+
+  const handleToggleMaximize = useCallback(async () => {
+    if (!isWindowedMode || !isTauri()) {
+      return;
+    }
+
+    const win = getCurrentWindow();
+    const maximized = await win.isMaximized().catch(() => false);
+    if (maximized) {
+      await win.unmaximize().catch(() => {});
+      setIsWindowMaximized(false);
+      return;
+    }
+
+    await win.maximize().catch(() => {});
+    setIsWindowMaximized(true);
+  }, [isWindowedMode]);
 
   useEffect(() => {
     if (!isMenuOpen) return;
@@ -2973,6 +3024,32 @@ function TopBar({
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  useEffect(() => {
+    if (!isWindowedMode || !isTauri()) {
+      setIsWindowMaximized(false);
+      return;
+    }
+
+    let cancelled = false;
+    const win = getCurrentWindow();
+    const sync = async () => {
+      const nextValue = await win.isMaximized().catch(() => false);
+      if (!cancelled) {
+        setIsWindowMaximized(nextValue);
+      }
+    };
+
+    void sync();
+    const unlistenResize = win.onResized(() => {
+      void sync();
+    });
+
+    return () => {
+      cancelled = true;
+      void unlistenResize.then(unlisten => unlisten());
+    };
+  }, [isWindowedMode]);
 
   const panelMenu = (
     <div style={{
@@ -3199,6 +3276,196 @@ function TopBar({
         </div>
       </button>
 
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '0 10px',
+        borderRight: `1px solid ${BORDER}`,
+        flexShrink: 1,
+        minWidth: 0,
+        maxWidth: layoutRailMaxWidth,
+        background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.008))',
+      }}>
+        <span style={{
+          fontSize: 8,
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          color: MUTED,
+          fontWeight: 700,
+          whiteSpace: 'nowrap',
+          userSelect: 'none',
+        }}>
+          Layouts
+        </span>
+        <OverlayScrollArea
+          direction="horizontal"
+          style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}
+          viewportStyle={{ paddingBottom: 2 }}
+          contentStyle={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 'max-content' }}
+        >
+          {layoutProfiles.map(profile => {
+            const isActive = profile.id === layoutProfile.id;
+            return (
+              <button
+                key={profile.id}
+                onClick={() => onSelectLayoutProfile(profile.id)}
+                title={`${profile.label}\n${profile.description}`}
+                style={{
+                  height: 24,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '0 10px',
+                  borderRadius: 999,
+                  border: `1px solid ${isActive ? `${accent}58` : BORDER}`,
+                  background: isActive
+                    ? `linear-gradient(180deg, ${accent}28, ${accent}12)`
+                    : 'rgba(255,255,255,0.025)',
+                  color: isActive ? TEXT : MUTED,
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  cursor: isActive ? 'default' : 'pointer',
+                  whiteSpace: 'nowrap',
+                  boxShadow: isActive ? `0 0 0 1px ${accent}18 inset` : 'none',
+                  transition: 'background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s',
+                }}
+              >
+                {profile.label}
+              </button>
+            );
+          })}
+        </OverlayScrollArea>
+      </div>
+
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '0 8px',
+        borderRight: `1px solid ${BORDER}`,
+        flexShrink: 0,
+        background: 'linear-gradient(180deg, rgba(0,0,0,0.14), rgba(255,255,255,0.02))',
+      }}>
+        {layoutProfile.chrome.showPanelMenu && (
+          <div ref={menuRef} style={{ position: 'relative', flexShrink: 0, marginRight: 4 }}>
+            <button
+              onClick={() => setIsMenuOpen(open => !open)}
+              title="Toggle Panels"
+              style={{
+                width: 22,
+                height: 22,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: isMenuOpen
+                  ? `linear-gradient(180deg, ${accent}22, ${accent}12)`
+                  : 'rgba(255,255,255,0.02)',
+                border: `1px solid ${isMenuOpen ? `${accent}55` : BORDER}`,
+                borderRadius: 6,
+                color: isMenuOpen ? TEXT : MUTED,
+                cursor: 'pointer',
+                boxShadow: isMenuOpen ? `0 0 0 1px ${accent}22 inset` : 'none',
+                transition: 'background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s',
+              }}
+            >
+              <LayoutGrid size={11} style={{ color: isMenuOpen ? accent : MUTED }} />
+            </button>
+
+            {isMenuOpen && panelMenu}
+          </div>
+        )}
+
+        {layoutProfile.chrome.showBlurToggle && showViewportControls && (
+          <OverlayViewportDock
+            accent={accent}
+            border={BORDER}
+            muted={MUTED}
+            text={TEXT}
+            opacity={opacity}
+            onOpacityChange={onOpacityChange}
+            panelTransparency={panelTransparency}
+            onPanelTransparencyChange={onPanelTransparencyChange}
+            zoom={zoom}
+            onZoomChange={onZoomChange}
+            blur={blur}
+            onBlurChange={onBlurChange}
+            blurStrength={blurStrength}
+            onBlurStrengthChange={onBlurStrengthChange}
+            blurPlatform={blurPlatform}
+          />
+        )}
+
+        {layoutProfile.chrome.showBlurToggle && !showViewportControls && (
+          <button
+            onClick={() => onBlurChange(!blur)}
+            title={supportsNativeBlur
+              ? (blur ? 'Disable native window blur' : 'Enable native window blur')
+              : 'Native blur is currently only available on macOS and Windows'}
+            style={{
+              width: 22,
+              height: 22,
+              padding: 0,
+              background: blur ? `${accent}22` : 'rgba(255,255,255,0.025)',
+              border: `1px solid ${blur ? accent : BORDER}`,
+              color: blur ? accent : MUTED,
+              borderRadius: 6,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+              opacity: supportsNativeBlur ? 1 : 0.65,
+            }}
+          >
+            <Droplet size={11} />
+          </button>
+        )}
+
+        {!layoutProfile.chrome.showBlurToggle && showViewportControls && (
+          <OverlayViewportDock
+            accent={accent}
+            border={BORDER}
+            muted={MUTED}
+            text={TEXT}
+            opacity={opacity}
+            onOpacityChange={onOpacityChange}
+            panelTransparency={panelTransparency}
+            onPanelTransparencyChange={onPanelTransparencyChange}
+            zoom={zoom}
+            onZoomChange={onZoomChange}
+            blur={blur}
+            onBlurChange={onBlurChange}
+            blurStrength={blurStrength}
+            onBlurStrengthChange={onBlurStrengthChange}
+            blurPlatform={blurPlatform}
+          />
+        )}
+
+        <button
+          onClick={onOpenCommandPalette}
+          title={`Open Command Palette (${commandPaletteShortcutLabel})`}
+          style={{
+            width: 22,
+            height: 22,
+            padding: 0,
+            background: 'rgba(255,255,255,0.025)',
+            border: `1px solid ${BORDER}`,
+            color: MUTED,
+            borderRadius: 6,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            transition: 'all 0.15s',
+          }}
+        >
+          <Search size={11} />
+        </button>
+      </div>
+
       <div style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0 }}>
         {layoutProfile.chrome.showSettingsShortcut && (
           <button
@@ -3304,127 +3571,43 @@ function TopBar({
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 6,
-        padding: '0 8px',
+        gap: 8,
+        padding: '0 10px',
         borderLeft: `1px solid ${BORDER}`,
         flexShrink: 0,
-        background: 'linear-gradient(180deg, rgba(0,0,0,0.14), rgba(255,255,255,0.02))',
+        background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.12))',
       }}>
-        {layoutProfile.chrome.showPanelMenu && (
-          <div ref={menuRef} style={{ position: 'relative', flexShrink: 0, marginRight: 4 }}>
-            <button
-              onClick={() => setIsMenuOpen(open => !open)}
-              title="Toggle Panels"
-              style={{
-                width: 22,
-                height: 22,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: isMenuOpen
-                  ? `linear-gradient(180deg, ${accent}22, ${accent}12)`
-                  : 'rgba(255,255,255,0.02)',
-                border: `1px solid ${isMenuOpen ? `${accent}55` : BORDER}`,
-                borderRadius: 6,
-                color: isMenuOpen ? TEXT : MUTED,
-                cursor: 'pointer',
-                boxShadow: isMenuOpen ? `0 0 0 1px ${accent}22 inset` : 'none',
-                transition: 'background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s',
-              }}
-              >
-              <LayoutGrid size={11} style={{ color: isMenuOpen ? accent : MUTED }} />
-            </button>
-
-            {isMenuOpen && panelMenu}
-          </div>
-        )}
-
-        {layoutProfile.chrome.showBlurToggle && showViewportControls && (
-          <OverlayViewportDock
-            accent={accent}
-            border={BORDER}
-            muted={MUTED}
-            text={TEXT}
-            opacity={opacity}
-            onOpacityChange={onOpacityChange}
-            panelTransparency={panelTransparency}
-            onPanelTransparencyChange={onPanelTransparencyChange}
-            zoom={zoom}
-            onZoomChange={onZoomChange}
-            blur={blur}
-            onBlurChange={onBlurChange}
-            blurStrength={blurStrength}
-            onBlurStrengthChange={onBlurStrengthChange}
-            blurPlatform={blurPlatform}
-          />
-        )}
-
-        {layoutProfile.chrome.showBlurToggle && !showViewportControls && (
-          <button
-            onClick={() => onBlurChange(!blur)}
-            title={supportsNativeBlur
-              ? (blur ? 'Disable native window blur' : 'Enable native window blur')
-              : 'Native blur is currently only available on macOS and Windows'}
+        {isWindowedMode && (
+          <div
+            onPointerDown={handleStartWindowDrag}
+            onDoubleClick={() => { void handleToggleMaximize(); }}
+            title="Drag Window"
             style={{
-              width: 22,
-              height: 22,
-              padding: 0,
-              background: blur ? `${accent}22` : 'rgba(255,255,255,0.025)',
-              border: `1px solid ${blur ? accent : BORDER}`,
-              color: blur ? accent : MUTED,
-              borderRadius: 6,
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              transition: 'all 0.15s',
-              opacity: supportsNativeBlur ? 1 : 0.65,
+              gap: 6,
+              height: 24,
+              padding: '0 10px',
+              borderRadius: 999,
+              border: `1px solid ${accent}24`,
+              background: 'rgba(255,255,255,0.025)',
+              color: MUTED,
+              cursor: 'grab',
+              userSelect: 'none',
             }}
           >
-            <Droplet size={11} />
-          </button>
+            <GripHorizontal size={11} />
+            <span style={{
+              fontSize: 8,
+              fontWeight: 800,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              whiteSpace: 'nowrap',
+            }}>
+              Drag
+            </span>
+          </div>
         )}
-
-        {!layoutProfile.chrome.showBlurToggle && showViewportControls && (
-          <OverlayViewportDock
-            accent={accent}
-            border={BORDER}
-            muted={MUTED}
-            text={TEXT}
-            opacity={opacity}
-            onOpacityChange={onOpacityChange}
-            panelTransparency={panelTransparency}
-            onPanelTransparencyChange={onPanelTransparencyChange}
-            zoom={zoom}
-            onZoomChange={onZoomChange}
-            blur={blur}
-            onBlurChange={onBlurChange}
-            blurStrength={blurStrength}
-            onBlurStrengthChange={onBlurStrengthChange}
-            blurPlatform={blurPlatform}
-          />
-        )}
-
-        <button
-          onClick={onOpenCommandPalette}
-          title={`Open Command Palette (${commandPaletteShortcutLabel})`}
-          style={{
-            width: 22,
-            height: 22,
-            padding: 0,
-            background: 'rgba(255,255,255,0.025)',
-            border: `1px solid ${BORDER}`,
-            color: MUTED,
-            borderRadius: 6,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            transition: 'all 0.15s',
-          }}
-        >
-          <Search size={11} />
-        </button>
 
         {layoutProfile.chrome.showShortcutBadge && (
           <kbd style={{
@@ -3437,6 +3620,82 @@ function TopBar({
             {toggleShortcutLabel}
           </kbd>
         )}
+
+        {isWindowedMode && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <button
+              onClick={handleMinimizeWindow}
+              title="Minimize Window"
+              style={{
+                width: 24,
+                height: 24,
+                padding: 0,
+                background: 'rgba(255,255,255,0.025)',
+                border: `1px solid ${BORDER}`,
+                color: MUTED,
+                borderRadius: 6,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
+            >
+              <Minus size={11} />
+            </button>
+            <button
+              onClick={() => { void handleToggleMaximize(); }}
+              title={isWindowMaximized ? 'Restore Window' : 'Maximize Window'}
+              style={{
+                width: 24,
+                height: 24,
+                padding: 0,
+                background: 'rgba(255,255,255,0.025)',
+                border: `1px solid ${BORDER}`,
+                color: MUTED,
+                borderRadius: 6,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
+            >
+              {isWindowMaximized ? <Copy size={10} /> : <Square size={10} />}
+            </button>
+            <button
+              onClick={onClose}
+              title="Close Window"
+              style={{
+                width: 24,
+                height: 24,
+                padding: 0,
+                background: 'rgba(255,255,255,0.025)',
+                border: `1px solid ${BORDER}`,
+                color: MUTED,
+                borderRadius: 6,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                transition: 'background 0.12s, color 0.12s, border-color 0.12s',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = 'rgba(248,113,113,0.12)';
+                e.currentTarget.style.borderColor = `${appearance.theme.palette.danger}55`;
+                e.currentTarget.style.color = appearance.theme.palette.danger;
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.025)';
+                e.currentTarget.style.borderColor = BORDER;
+                e.currentTarget.style.color = MUTED;
+              }}
+            >
+              <X size={11} />
+            </button>
+          </div>
+        )}
+
         {!isWindowedMode && (
           <button
             onClick={onClose}

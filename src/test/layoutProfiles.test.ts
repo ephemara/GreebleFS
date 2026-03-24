@@ -75,6 +75,8 @@ describe('layoutProfiles', () => {
     expect(profile.chrome.barPosition).toBe('bottom');
     expect(profile.controlDock).toEqual(classicProfile.controlDock);
     expect(profile.pinnedPanels).toEqual([]);
+    expect(classicProfile.behavior.defaultActivePanelId).toBe('explorer');
+    expect(profile.behavior.defaultActivePanelId).toBe('explorer');
     expect(profile.behavior.enforcedOpenPanelIds).toEqual(classicProfile.behavior.enforcedOpenPanelIds);
     expect(getPinnedPanelIds(profile)).toEqual([]);
     expect(getTabbedOpenPanelIds(profile, ['explorer', 'terminal', 'notes'])).toEqual(['explorer', 'terminal', 'notes']);

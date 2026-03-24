@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import {
   StickyNote, ListTodo, Bug, MessageSquareText,
   Plus, Trash2, Pin, PinOff, Search, X, Check,
@@ -9,6 +8,13 @@ import {
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
+import {
+  createExplorerDir,
+  deleteExplorerPath,
+  listExplorerDir,
+  readExplorerTextFile,
+  writeExplorerFile,
+} from '../runtime/explorerBackend';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -173,9 +179,9 @@ function getNoteFilename(note: NoteEntry): string {
 
 async function ensureDir(path: string): Promise<void> {
   try {
-    await invoke('fs_list_dir', { path, showHidden: false });
+    await listExplorerDir(path, false);
   } catch {
-    await invoke('fs_create_dir', { path });
+    await createExplorerDir(path);
   }
 }
 
@@ -183,12 +189,12 @@ async function loadAllNotes(category: NoteCategory): Promise<NoteEntry[]> {
   const dir = getCategoryPath(category);
   try {
     await ensureDir(dir);
-    const files: Array<{ name: string; path: string; is_dir: boolean }> = await invoke('fs_list_dir', { path: dir, showHidden: false });
+    const files: Array<{ name: string; path: string; is_dir: boolean }> = await listExplorerDir(dir, false);
     const notes: NoteEntry[] = [];
     for (const f of files) {
       if (f.is_dir || !f.name.endsWith('.md')) continue;
       try {
-        const raw: string = await invoke('fs_read_text_file', { path: f.path });
+        const raw = await readExplorerTextFile(f.path);
         const note = deserializeNote(raw);
         if (note) notes.push(note);
       } catch { /* skip corrupt files */ }
@@ -203,14 +209,14 @@ async function saveNote(note: NoteEntry): Promise<void> {
   const dir = getCategoryPath(note.category);
   await ensureDir(dir);
   const filePath = `${dir}\\${getNoteFilename(note)}`;
-  await invoke('fs_write_file', { path: filePath, content: serializeNote(note) });
+  await writeExplorerFile(filePath, serializeNote(note));
 }
 
 async function deleteNoteFile(note: NoteEntry): Promise<void> {
   const dir = getCategoryPath(note.category);
   const filePath = `${dir}\\${getNoteFilename(note)}`;
   try {
-    await invoke('fs_delete', { path: filePath, recursive: false });
+    await deleteExplorerPath(filePath, false);
   } catch { /* already gone */ }
 }
 

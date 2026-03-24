@@ -5,10 +5,11 @@
   "type": "module",
   "packageManager": "bun@1.3.9",
   "scripts": {
+    "bindings:generate": "cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings",
     "icons:folders": "node scripts/sync-canonical-icons.mjs",
-    "dev": "node scripts/sync-canonical-icons.mjs && vite",
+    "dev": "node scripts/sync-canonical-icons.mjs && cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings && vite",
     "dev:vps": "bash scripts/with-vps-artifacts.sh bun run dev",
-    "build": "node scripts/sync-canonical-icons.mjs && tsc && vite build",
+    "build": "node scripts/sync-canonical-icons.mjs && cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings && tsc && vite build",
     "build:vps": "bash scripts/with-vps-artifacts.sh bun run build",
     "preview": "vite preview",
     "tauri": "node scripts/run-platform-tauri.mjs",

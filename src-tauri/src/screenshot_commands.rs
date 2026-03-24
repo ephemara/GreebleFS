@@ -33,14 +33,14 @@ const MAX_CAPTURE_CACHE_ENTRIES: usize = 6;
 const MAX_PREVIEW_WIDTH: u32 = 1_280;
 const MAX_PREVIEW_HEIGHT: u32 = 800;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct SavedScreenshot {
     pub path: String,
     pub file_name: String,
     pub created_at: u128,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ScreenshotPreview {
     pub capture_id: String,
@@ -50,6 +50,7 @@ pub struct ScreenshotPreview {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn screenshot_capture_preview(
     window: tauri::WebviewWindow,
     x: i32,
@@ -117,6 +118,7 @@ fn get_overlay_hwnd(_window: &tauri::WebviewWindow) -> Option<HWND> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn screenshot_save_region(
     capture_id: String,
     x: u32,
@@ -141,6 +143,7 @@ pub async fn screenshot_save_region(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn screenshot_copy_region_to_clipboard(
     capture_id: String,
     x: u32,
@@ -156,12 +159,14 @@ pub async fn screenshot_copy_region_to_clipboard(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn screenshot_copy_image_to_clipboard(path: String) -> Result<(), String> {
     let image = read_image_from_disk(&path)?;
     copy_rgba_image_to_clipboard(image)
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn screenshot_read_gallery_thumbnail(
     path: String,
     max_width: u32,

@@ -25,7 +25,7 @@ pub struct TerminalManager {
     terminals: Mutex<HashMap<String, TerminalInstance>>,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ExternalTerminalRequest {
     pub working_dir: String,
@@ -35,7 +35,7 @@ pub struct ExternalTerminalRequest {
     pub shell: Option<String>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalWriteRequest {
     pub id: String,
@@ -729,6 +729,7 @@ end tell"#,
 
 // Tauri commands
 #[tauri::command]
+#[specta::specta]
 pub async fn terminal_spawn(
     terminal_manager: tauri::State<'_, TerminalManager>,
     app: AppHandle,
@@ -748,6 +749,7 @@ pub async fn terminal_spawn(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn terminal_write(
     terminal_manager: tauri::State<'_, TerminalManager>,
     id: String,
@@ -757,6 +759,7 @@ pub async fn terminal_write(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn terminal_write_many(
     terminal_manager: tauri::State<'_, TerminalManager>,
     writes: Vec<TerminalWriteRequest>,
@@ -769,6 +772,7 @@ pub async fn terminal_write_many(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn terminal_resize(
     terminal_manager: tauri::State<'_, TerminalManager>,
     id: String,
@@ -779,6 +783,7 @@ pub async fn terminal_resize(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn terminal_kill(
     terminal_manager: tauri::State<'_, TerminalManager>,
     id: String,
@@ -787,6 +792,7 @@ pub async fn terminal_kill(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn terminal_open_external(request: ExternalTerminalRequest) -> Result<(), String> {
     let working_dir = resolve_working_dir(&request.working_dir)?;
 

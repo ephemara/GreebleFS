@@ -6,14 +6,14 @@ use tauri::{AppHandle, Emitter, State};
 
 pub const PLUGIN_WATCH_EVENT: &str = "overlay://plugins-changed";
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct PluginBackendResult {
     pub stdout: String,
     pub stderr: String,
     pub status: i32,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, specta::Type)]
 pub struct PluginDirectoryWatchEvent {
     pub root: String,
     pub kind: String,
@@ -31,6 +31,7 @@ pub struct PluginWatcherState {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn plugin_run_backend(
     plugins_root: String,
     plugin_id: String,
@@ -42,6 +43,7 @@ pub async fn plugin_run_backend(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn plugin_watch_directory(
     app: AppHandle,
     state: State<'_, PluginWatcherState>,
@@ -109,6 +111,7 @@ pub fn plugin_watch_directory(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn plugin_unwatch_directory(state: State<'_, PluginWatcherState>) -> Result<(), String> {
     let mut active = state
         .active

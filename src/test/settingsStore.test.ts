@@ -19,7 +19,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.terminal.overlayHeight).toBe(overlayWindowGeometry.defaultHeight);
     expect(settings.terminal.overlayWidth).toBe(overlayWindowGeometry.defaultWidth);
     expect(settings.terminal.overlayAnchor).toBe('bottom');
-    expect(settings.terminal.windowMode).toBe('overlay');
+    expect(settings.terminal.windowMode).toBe('windowed');
     expect(settings.terminal.windowedWidth).toBe(1440);
     expect(settings.terminal.windowedHeight).toBe(920);
     expect(settings.terminal.fontSize).toBe(13);
@@ -72,7 +72,7 @@ describe('useSettingsStore — initial state', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.system.launchAtStartup).toBe(false);
     expect(settings.system.hideAppInTray).toBe(true);
-    expect(typeof settings.system.showInTaskbar).toBe('boolean');
+    expect(settings.system.showInTaskbar).toBe(true);
   });
 
   it('has the correct default hotkey settings', () => {

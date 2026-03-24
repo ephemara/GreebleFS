@@ -18,7 +18,6 @@ import {
   type OverlayPluginApi,
   type OverlayPluginContext,
   type PluginBackendResult,
-  type PluginFileEntry,
 } from '../components/pluginRuntime';
 import type {
   OverlayPluginCommandContribution,
@@ -28,6 +27,7 @@ import type { LoadedOverlayShader } from '../components/shaderRuntime';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
 import { getPlatformPathSeparator, joinPlatformPath, type RuntimePlatform } from '../config/platform';
 import type { OverlayRegisteredFontContribution } from '../config/appearance';
+import { listExplorerDir, openExplorerPath } from './explorerBackend';
 import { ensureDir, getParentPath } from './overlayRuntimeUtils';
 
 interface PluginDirectoryWatchEvent {
@@ -70,7 +70,7 @@ export function useFolderPluginRuntime(
 
   const openPluginsFolder = useCallback(async () => {
     await ensureDir(pluginSystemConfig.pluginsDirectory);
-    await invoke('fs_open_file', { path: pluginSystemConfig.pluginsDirectory });
+    await openExplorerPath(pluginSystemConfig.pluginsDirectory);
   }, []);
 
   const createPluginApi = useCallback((plugin: OverlayPluginContext): OverlayPluginApi => {
@@ -181,10 +181,7 @@ export function useFolderPluginRuntime(
         setFolderPluginsError(null);
         try {
           await ensureDir(pluginSystemConfig.pluginsDirectory);
-          const listed = await invoke<PluginFileEntry[]>('fs_list_dir', {
-            path: pluginSystemConfig.pluginsDirectory,
-            showHidden: false,
-          });
+          const listed = await listExplorerDir(pluginSystemConfig.pluginsDirectory, false);
           const nextSignature = listed
             .filter(entry => entry.is_dir || isFrontendPluginFile(entry))
             .sort((left, right) => left.name.localeCompare(right.name))

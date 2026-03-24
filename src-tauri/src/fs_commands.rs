@@ -11,13 +11,18 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use yazi_fs::{
+    cha::{Cha, ChaType},
+    provider::{local::Local, DirReader, FileHolder, Provider},
+};
+use yazi_shared::{path::PathLike, strand::StrandLike};
 
 #[cfg(test)]
 use std::sync::atomic::{AtomicU64, Ordering};
 
 // ─── Data types ───────────────────────────────────────────────────────────────
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct FileEntry {
     pub name: String,
     pub path: String,
@@ -29,7 +34,7 @@ pub struct FileEntry {
     pub is_symlink: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct DriveInfo {
     pub letter: String,
     pub label: String,
@@ -38,7 +43,7 @@ pub struct DriveInfo {
     pub drive_type: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct EntryStorageInfo {
     pub path: String,
     pub bytes: u64,
@@ -178,7 +183,7 @@ const SEARCH_CONTENT_INDEX_TOTAL_BYTES_BUDGET_DEFAULT: u64 = 12 * 1024 * 1024;
 const MAX_SEARCH_CONTENT_BYTES_DEFAULT: u64 = 8 * 1024 * 1024;
 const SEARCH_MAX_INDEXED_ENTRIES_DEFAULT: u64 = 25_000;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct FsRuntimeCachePolicy {
     pub dir_list_cache_ttl_ms: u64,
@@ -593,6 +598,13 @@ fn metadata_modified_ms(metadata: &std::fs::Metadata) -> Option<u64> {
         .map(|duration| duration.as_millis() as u64)
 }
 
+fn cha_modified_ms(metadata: &Cha) -> Option<u64> {
+    metadata
+        .mtime
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as u64)
+}
+
 fn current_time_millis() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -854,21 +866,21 @@ fn measure_entry_sizes_blocking(paths: Vec<String>, force_refresh: bool) -> Vec<
     results
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum FileTransferOperation {
     Copy,
     Move,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct FileTransferResult {
     pub source_path: String,
     pub destination_path: String,
     pub operation: FileTransferOperation,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum FileSearchMatchKind {
     Name,
@@ -876,7 +888,7 @@ pub enum FileSearchMatchKind {
     NameAndContent,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct FileSearchResult {
     pub name: String,
     pub path: String,
@@ -892,7 +904,7 @@ pub struct FileSearchResult {
     pub line_number: Option<u64>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum FileSearchExecutionStrategy {
     NameIndexCacheHit,
@@ -900,7 +912,7 @@ pub enum FileSearchExecutionStrategy {
     LiveScan,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum FileSearchContentCacheStatus {
     NotRequested,
@@ -911,7 +923,7 @@ pub enum FileSearchContentCacheStatus {
     ReadFailureFallback,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct FileSearchDiagnostics {
     pub execution_strategy: FileSearchExecutionStrategy,
@@ -923,7 +935,7 @@ pub struct FileSearchDiagnostics {
     pub truncated_by_scan_budget: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct FileSearchResponse {
     pub results: Vec<FileSearchResult>,
@@ -935,31 +947,68 @@ struct ListedFileEntry {
     entry: FileEntry,
 }
 
+#[derive(Debug, Clone)]
+struct SearchableEntry {
+    path: PathBuf,
+    name_lower: String,
+    result: FileSearchResult,
+    content_searchable: bool,
+}
+
 // ─── fs_list_dir ─────────────────────────────────────────────────────────────
 
-fn build_listed_file_entry(entry: std::fs::DirEntry, show_hidden: bool) -> Option<ListedFileEntry> {
-    let name = entry.file_name().to_string_lossy().to_string();
-    let entry_metadata = entry.metadata().ok()?;
-    let is_hidden = is_hidden_with_metadata(&name, &entry_metadata);
+async fn build_listed_file_entry<T>(
+    entry: T,
+    show_hidden: bool,
+) -> Result<Option<ListedFileEntry>, String>
+where
+    T: FileHolder,
+{
+    let name = entry.name().to_string_lossy().into_owned();
+    let path = entry
+        .path()
+        .to_os_owned()
+        .map_err(|error| format!("Failed to resolve Yazi entry path: {error}"))?;
+    let provider = Local::regular(&path);
+    let file_type = entry.file_type().await.map_err(|error| {
+        format!(
+            "Failed to inspect entry type '{}': {error}",
+            path.to_string_lossy()
+        )
+    })?;
+    let entry_metadata = provider.symlink_metadata().await.map_err(|error| {
+        format!(
+            "Failed to read entry metadata '{}': {error}",
+            path.to_string_lossy()
+        )
+    })?;
+    let is_hidden = entry_metadata.is_hidden() || is_hidden_name(&name);
     if is_hidden && !show_hidden {
-        return None;
+        return Ok(None);
     }
 
-    let file_type = entry.file_type().ok()?;
-    let path = entry.path();
-    let target_metadata = followed_metadata_for_symlink(&path, &file_type);
+    let target_metadata = if file_type == ChaType::Link {
+        Some(provider.metadata().await.map_err(|error| {
+            format!(
+                "Failed to read symlink target metadata '{}': {error}",
+                path.to_string_lossy()
+            )
+        })?)
+    } else {
+        None
+    };
     let metadata = target_metadata.as_ref().unwrap_or(&entry_metadata);
-    let is_symlink = file_type.is_symlink();
-    let is_dir = file_type.is_dir() || metadata.is_dir();
+    let is_symlink = file_type == ChaType::Link;
+    let is_dir = file_type.is_dir() || ChaType::from(metadata.mode).is_dir();
 
-    Some(ListedFileEntry {
+    Ok(Some(ListedFileEntry {
         sort_name: name.to_lowercase(),
         entry: FileEntry {
             name,
             path: path.to_string_lossy().to_string(),
             is_dir,
-            size: if is_dir { 0 } else { metadata.len() },
-            modified: metadata_modified_ms(&metadata).unwrap_or(0),
+            size: if is_dir { 0 } else { metadata.len },
+            modified: cha_modified_ms(metadata).unwrap_or(0),
             extension: if is_dir {
                 String::new()
             } else {
@@ -968,10 +1017,99 @@ fn build_listed_file_entry(entry: std::fs::DirEntry, show_hidden: bool) -> Optio
             is_hidden,
             is_symlink,
         },
+    }))
+}
+
+async fn list_dir_via_yazi(dir_path: &Path, show_hidden: bool) -> Result<Vec<FileEntry>, String> {
+    let mut read_dir = Local::regular(dir_path)
+        .read_dir()
+        .await
+        .map_err(|error| format!("Failed to read directory: {error}"))?;
+
+    let mut entries = Vec::new();
+    while let Some(entry) = read_dir
+        .next()
+        .await
+        .map_err(|error| format!("Failed to read directory: {error}"))?
+    {
+        if let Some(listed) = build_listed_file_entry(entry, show_hidden).await? {
+            entries.push(listed);
+        }
+    }
+
+    // Sort once using precomputed lowercase names so large directories don't
+    // allocate lowercase strings repeatedly during comparison.
+    entries.sort_unstable_by(
+        |left, right| match (left.entry.is_dir, right.entry.is_dir) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => left.sort_name.cmp(&right.sort_name),
+        },
+    );
+
+    Ok(entries.into_iter().map(|listed| listed.entry).collect())
+}
+
+async fn build_searchable_entry<T>(
+    entry: T,
+    root: &Path,
+    show_hidden: bool,
+    max_search_content_file_bytes: u64,
+) -> Option<SearchableEntry>
+where
+    T: FileHolder,
+{
+    let name = entry.name().to_string_lossy().into_owned();
+    let path = entry.path().to_os_owned().ok()?;
+    let provider = Local::regular(&path);
+    let file_type = entry.file_type().await.ok()?;
+    let entry_metadata = provider.symlink_metadata().await.ok()?;
+    let is_hidden = entry_metadata.is_hidden() || is_hidden_name(&name);
+    if is_hidden && !show_hidden {
+        return None;
+    }
+
+    let target_metadata = if file_type == ChaType::Link {
+        provider.metadata().await.ok()
+    } else {
+        None
+    };
+    let metadata = target_metadata.as_ref().unwrap_or(&entry_metadata);
+    let is_symlink = file_type == ChaType::Link;
+    let is_dir = file_type.is_dir() || ChaType::from(metadata.mode).is_dir();
+    let relative_path = path
+        .strip_prefix(root)
+        .map(|relative| relative.to_string_lossy().to_string())
+        .unwrap_or_else(|_| path.to_string_lossy().to_string());
+
+    Some(SearchableEntry {
+        content_searchable: !is_dir
+            && metadata.len <= max_search_content_file_bytes
+            && is_searchable_text_file(&path),
+        name_lower: name.to_ascii_lowercase(),
+        path: path.clone(),
+        result: FileSearchResult {
+            name,
+            path: path.to_string_lossy().to_string(),
+            relative_path,
+            is_dir,
+            size: if is_dir { 0 } else { metadata.len },
+            modified: cha_modified_ms(metadata).unwrap_or(0),
+            extension: if is_dir {
+                String::new()
+            } else {
+                normalized_extension(&path)
+            },
+            is_hidden,
+            is_symlink,
+            match_kind: FileSearchMatchKind::Name,
+            snippet: String::new(),
+            line_number: None,
+        },
     })
 }
 
-fn list_dir_blocking(
+async fn list_dir(
     dir_path: PathBuf,
     show_hidden: bool,
     bypass_cache: bool,
@@ -1003,28 +1141,7 @@ fn list_dir_blocking(
         }
     }
 
-    let read_dir =
-        std::fs::read_dir(&dir_path).map_err(|e| format!("Failed to read directory: {}", e))?;
-
-    let mut entries: Vec<ListedFileEntry> = read_dir
-        .filter_map(|entry_result| entry_result.ok())
-        .filter_map(|entry| build_listed_file_entry(entry, show_hidden))
-        .collect();
-
-    // Sort once using precomputed lowercase names so large directories don't
-    // allocate lowercase strings repeatedly during comparison.
-    entries.sort_unstable_by(
-        |left, right| match (left.entry.is_dir, right.entry.is_dir) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => left.sort_name.cmp(&right.sort_name),
-        },
-    );
-
-    let entries = entries
-        .into_iter()
-        .map(|listed| listed.entry)
-        .collect::<Vec<_>>();
+    let entries = list_dir_via_yazi(&dir_path, show_hidden).await?;
     if !policy.dir_list_cache_ttl.is_zero() {
         if let Ok(mut cache) = dir_list_cache().lock() {
             prune_expired_dir_list_cache(&mut cache);
@@ -1043,32 +1160,28 @@ fn list_dir_blocking(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn fs_get_runtime_cache_policy() -> FsRuntimeCachePolicy {
     fs_cache_policy().snapshot()
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn fs_list_dir(path: String, show_hidden: bool) -> Result<Vec<FileEntry>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        list_dir_blocking(PathBuf::from(path), show_hidden, false)
-    })
-    .await
-    .map_err(|error| format!("Failed to list directory: {error}"))?
+    list_dir(PathBuf::from(path), show_hidden, false).await
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn fs_list_dir_uncached(
     path: String,
     show_hidden: bool,
 ) -> Result<Vec<FileEntry>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        list_dir_blocking(PathBuf::from(path), show_hidden, true)
-    })
-    .await
-    .map_err(|error| format!("Failed to list directory: {error}"))?
+    list_dir(PathBuf::from(path), show_hidden, true).await
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn fs_measure_entry_sizes(
     paths: Vec<String>,
     force_refresh: Option<bool>,
@@ -1088,6 +1201,7 @@ pub async fn fs_measure_entry_sizes(
 // ─── fs_get_drives (Windows) ──────────────────────────────────────────────────
 
 #[tauri::command]
+#[specta::specta]
 pub async fn fs_get_drives() -> Result<Vec<DriveInfo>, String> {
     #[cfg(target_os = "windows")]
     {
@@ -1291,35 +1405,6 @@ fn normalized_extension(path: &Path) -> String {
 
 fn is_hidden_name(name: &str) -> bool {
     name.starts_with('.')
-}
-
-fn metadata_has_hidden_attribute(metadata: &std::fs::Metadata) -> bool {
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::fs::MetadataExt;
-        return metadata.file_attributes() & 0x2 != 0;
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = metadata;
-        false
-    }
-}
-
-fn is_hidden_with_metadata(name: &str, metadata: &std::fs::Metadata) -> bool {
-    is_hidden_name(name) || metadata_has_hidden_attribute(metadata)
-}
-
-fn followed_metadata_for_symlink(
-    path: &Path,
-    file_type: &std::fs::FileType,
-) -> Option<std::fs::Metadata> {
-    if file_type.is_symlink() {
-        return std::fs::metadata(path).ok();
-    }
-
-    None
 }
 
 fn is_searchable_text_file(path: &Path) -> bool {
@@ -1655,7 +1740,7 @@ fn empty_search_response(
     }
 }
 
-fn search_entries_blocking(
+async fn search_entries(
     path: String,
     query: String,
     show_hidden: bool,
@@ -1789,12 +1874,12 @@ fn search_entries_blocking(
             ));
         }
 
-        let read_dir = match std::fs::read_dir(&current_dir) {
+        let mut read_dir = match Local::regular(&current_dir).read_dir().await {
             Ok(entries) => entries,
             Err(_) => continue,
         };
 
-        for entry_result in read_dir {
+        loop {
             if !is_search_request_active(&request_scope, request_id) {
                 return Ok(empty_search_response(
                     FileSearchExecutionStrategy::LiveScan,
@@ -1812,57 +1897,30 @@ fn search_entries_blocking(
                 break 'search;
             }
 
-            let entry = match entry_result {
-                Ok(value) => value,
-                Err(_) => continue,
+            let entry = match read_dir.next().await {
+                Ok(Some(value)) => value,
+                Ok(None) => break,
+                Err(_) => break,
             };
             scanned_entry_count = scanned_entry_count.saturating_add(1);
 
-            let name = entry.file_name().to_string_lossy().to_string();
-            let meta = match entry.metadata() {
-                Ok(value) => value,
-                Err(_) => continue,
-            };
-
-            let is_hidden = is_hidden_with_metadata(&name, &meta);
-            if is_hidden && !show_hidden {
+            let Some(candidate) = build_searchable_entry(
+                entry,
+                &root,
+                show_hidden,
+                policy.max_search_content_file_bytes,
+            )
+            .await
+            else {
                 continue;
-            }
+            };
 
-            let path_buf = entry.path();
-            let file_type = match entry.file_type() {
-                Ok(value) => value,
-                Err(_) => continue,
-            };
-            let target_metadata = followed_metadata_for_symlink(&path_buf, &file_type);
-            let metadata = target_metadata.as_ref().unwrap_or(&meta);
-            let is_symlink = file_type.is_symlink();
-            let is_dir = file_type.is_dir() || metadata.is_dir();
-            let modified = metadata_modified_ms(metadata).unwrap_or(0);
-            let extension = if is_dir {
-                String::new()
-            } else {
-                normalized_extension(&path_buf)
-            };
-            let relative_path = path_buf
-                .strip_prefix(&root)
-                .map(|relative| relative.to_string_lossy().to_string())
-                .unwrap_or_else(|_| path_buf.to_string_lossy().to_string());
-            let name_lower = name.to_ascii_lowercase();
-            let cached_name_result = FileSearchResult {
-                name,
-                path: path_buf.to_string_lossy().to_string(),
-                relative_path,
-                is_dir,
-                size: if is_dir { 0 } else { meta.len() },
-                modified,
-                extension,
-                is_hidden,
-                is_symlink,
-                match_kind: FileSearchMatchKind::Name,
-                snippet: String::new(),
-                line_number: None,
-            };
+            let SearchableEntry {
+                path: path_buf,
+                name_lower,
+                result: cached_name_result,
+                content_searchable,
+            } = candidate;
             cached_name_entries.push(CachedSearchNameEntry {
                 name_lower: name_lower.clone(),
                 path_lower: cached_name_result.path.to_ascii_lowercase(),
@@ -1870,12 +1928,12 @@ fn search_entries_blocking(
             });
             let name_hit = name_lower.contains(&query_lower);
 
-            if is_dir {
+            if cached_name_result.is_dir {
                 if name_hit {
-                    name_matches.push(cached_name_result);
+                    name_matches.push(cached_name_result.clone());
                 }
 
-                if !is_symlink {
+                if !cached_name_result.is_symlink {
                     stack.push(path_buf);
                 }
                 continue;
@@ -1885,15 +1943,13 @@ fn search_entries_blocking(
             let mut snippet = String::new();
             let mut line_number = None;
             let mut cached_content = None;
-            let content_searchable = metadata.len() <= policy.max_search_content_file_bytes
-                && is_searchable_text_file(&path_buf);
 
             if include_content && content_searchable {
                 if content_cache_complete
-                    && cached_content_bytes.saturating_add(metadata.len())
+                    && cached_content_bytes.saturating_add(cached_name_result.size)
                         <= policy.search_content_index_total_bytes_budget
                 {
-                    match std::fs::read_to_string(&path_buf) {
+                    match Local::regular(&path_buf).read_to_string().await {
                         Ok(content) => {
                             match search_cached_content_for_match(
                                 &content,
@@ -1917,8 +1973,8 @@ fn search_entries_blocking(
                                     ))
                                 }
                             }
-                            cached_content_bytes =
-                                cached_content_bytes.saturating_add(metadata.len());
+                            cached_content_bytes = cached_content_bytes
+                                .saturating_add(cached_name_result.size);
                             cached_content = Some(Arc::<str>::from(content));
                         }
                         Err(_) => {
@@ -2068,22 +2124,20 @@ async fn execute_search_entries_command(
     let scope = search_request_scope(&path, request_scope);
     let active_request_id = register_search_request(&scope, request_id);
 
-    tauri::async_runtime::spawn_blocking(move || {
-        search_entries_blocking(
-            path,
-            query,
-            show_hidden,
-            include_content,
-            limit,
-            scope,
-            active_request_id,
-        )
-    })
+    search_entries(
+        path,
+        query,
+        show_hidden,
+        include_content,
+        limit,
+        scope,
+        active_request_id,
+    )
     .await
-    .map_err(|error| format!("Failed to search entries: {error}"))?
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn fs_cancel_search_entries(
     path: String,
     request_id: Option<u64>,
@@ -2095,6 +2149,7 @@ pub fn fs_cancel_search_entries(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn fs_search_entries(
     path: String,
     query: String,
@@ -2118,6 +2173,7 @@ pub async fn fs_search_entries(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn fs_search_entries_with_diagnostics(
     path: String,
     query: String,
@@ -2332,6 +2388,7 @@ fn execute_path(path: &Path) -> Result<(), String> {
 // ─── fs_read_text_file ────────────────────────────────────────────────────────
 
 #[tauri::command]
+#[specta::specta]
 pub async fn fs_read_text_file(path: String) -> Result<String, String> {
     // Limit file size to 10 MB to avoid hanging Monaco
     let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
@@ -2344,6 +2401,7 @@ pub async fn fs_read_text_file(path: String) -> Result<String, String> {
 // ─── fs_open_file ─────────────────────────────────────────────────────────────
 
 #[tauri::command]
+#[specta::specta]
 pub async fn fs_open_file(path: String) -> Result<(), String> {
     let target = PathBuf::from(&path);
     if !target.exists() {
@@ -2360,6 +2418,7 @@ pub async fn fs_open_file(path: String) -> Result<(), String> {
 // ─── fs_open_as_admin (Windows runas) ────────────────────────────────────────
 
 #[tauri::command]
+#[specta::specta]
 pub async fn fs_open_as_admin(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -2441,6 +2500,7 @@ pub async fn fs_open_as_admin(path: String) -> Result<(), String> {
 // ─── fs_reveal_in_explorer ────────────────────────────────────────────────────
 
 #[tauri::command]
+#[specta::specta]
 pub async fn fs_reveal_in_explorer(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -2477,6 +2537,7 @@ pub async fn fs_reveal_in_explorer(path: String) -> Result<(), String> {
 // ─── fs_delete ────────────────────────────────────────────────────────────────
 
 #[tauri::command]
+#[specta::specta]
 pub async fn fs_delete(path: String, recursive: bool) -> Result<(), String> {
     let p = Path::new(&path);
     let result = if p.is_dir() {
@@ -2502,6 +2563,7 @@ pub async fn fs_delete(path: String, recursive: bool) -> Result<(), String> {
 // ─── fs_rename ────────────────────────────────────────────────────────────────
 
 #[tauri::command]
+#[specta::specta]
 pub async fn fs_rename(old_path: String, new_path: String) -> Result<(), String> {
     let result = std::fs::rename(&old_path, &new_path).map_err(|e| e.to_string());
     if result.is_ok() {
@@ -2520,6 +2582,7 @@ pub async fn fs_rename(old_path: String, new_path: String) -> Result<(), String>
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn fs_move(src: String, dst: String) -> Result<(), String> {
     let src_path = Path::new(&src);
     let dst_path = Path::new(&dst);
@@ -2540,6 +2603,7 @@ pub async fn fs_move(src: String, dst: String) -> Result<(), String> {
 // ─── fs_copy ─────────────────────────────────────────────────────────────────
 
 #[tauri::command]
+#[specta::specta]
 pub async fn fs_copy(src: String, dst: String) -> Result<(), String> {
     let src_path = Path::new(&src);
     let result = if src_path.is_dir() {
@@ -2577,6 +2641,7 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn fs_transfer_items(
     target_dir: String,
     sources: Vec<String>,
@@ -2785,6 +2850,7 @@ fn numbered_destination(
 // ─── fs_create_dir ────────────────────────────────────────────────────────────
 
 #[tauri::command]
+#[specta::specta]
 pub async fn fs_create_dir(path: String) -> Result<(), String> {
     let result = std::fs::create_dir_all(&path).map_err(|e| e.to_string());
     if result.is_ok() {
@@ -2800,6 +2866,7 @@ pub async fn fs_create_dir(path: String) -> Result<(), String> {
 // ─── fs_write_file ────────────────────────────────────────────────────────────
 
 #[tauri::command]
+#[specta::specta]
 pub async fn fs_write_file(path: String, content: String) -> Result<(), String> {
     if let Some(parent) = std::path::Path::new(&path).parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -2818,6 +2885,7 @@ pub async fn fs_write_file(path: String, content: String) -> Result<(), String> 
 // ─── git_exec ─────────────────────────────────────────────────────────────────
 // Executes a git command in the specified directory and returns stdout (or stderr on failure)
 #[tauri::command]
+#[specta::specta]
 pub async fn git_exec(repo_path: String, args: Vec<String>) -> Result<String, String> {
     #[cfg(target_os = "windows")]
     use std::os::windows::process::CommandExt;
@@ -2848,6 +2916,7 @@ pub async fn git_exec(repo_path: String, args: Vec<String>) -> Result<String, St
 // needing the asset:// protocol (which requires allow-listed paths).
 
 #[tauri::command]
+#[specta::specta]
 pub async fn fs_read_file_base64(path: String) -> Result<String, String> {
     use std::io::Read;
     let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
@@ -2922,6 +2991,7 @@ fn base64_encode(input: &[u8]) -> String {
 // ─── fs_get_home_dir ──────────────────────────────────────────────────────────
 
 #[tauri::command]
+#[specta::specta]
 pub async fn fs_get_home_dir() -> Result<String, String> {
     dirs::home_dir()
         .map(|p| p.to_string_lossy().to_string())

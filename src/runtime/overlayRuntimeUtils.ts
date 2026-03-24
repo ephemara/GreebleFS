@@ -1,8 +1,8 @@
-import { invoke } from '@tauri-apps/api/core';
 import type { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/window';
 import type { CSSProperties } from 'react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import { clampOverlayVisualControlValue, overlayVisualControls } from '../config/overlayWindow';
+import { createExplorerDir, listExplorerDir } from './explorerBackend';
 
 const LOGICAL_PADDING = 12;
 
@@ -33,9 +33,9 @@ export function getParentPath(path: string, separator: string): string {
 
 export async function ensureDir(path: string): Promise<void> {
   try {
-    await invoke('fs_list_dir', { path, showHidden: false });
+    await listExplorerDir(path, false);
   } catch {
-    await invoke('fs_create_dir', { path });
+    await createExplorerDir(path);
   }
 }
 

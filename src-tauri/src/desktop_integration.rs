@@ -11,13 +11,13 @@ const DEFAULT_NATIVE_ICON_SIZE: u32 = 32;
 const MAX_NATIVE_ICON_SIZE: u32 = 128;
 const DRAG_PREVIEW_PNG: &[u8] = include_bytes!("../icons/icon.png");
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, specta::Type)]
 pub struct NativeIconRequest {
     pub path: String,
     pub size: Option<u32>,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, specta::Type)]
 pub struct NativeIconResponse {
     pub path: String,
     pub src: Option<String>,
@@ -173,6 +173,7 @@ fn start_native_drag_impl(window: WebviewWindow, drag_paths: Vec<PathBuf>) -> Re
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn fs_resolve_native_icons(
     window: WebviewWindow,
     requests: Vec<NativeIconRequest>,
@@ -185,6 +186,7 @@ pub fn fs_resolve_native_icons(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn fs_start_native_file_drag(window: WebviewWindow, paths: Vec<String>) -> Result<(), String> {
     let drag_paths = collect_drag_paths(paths);
     if drag_paths.is_empty() {

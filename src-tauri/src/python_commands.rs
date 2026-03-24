@@ -16,7 +16,7 @@ print(json.dumps({
 }))
 "#;
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PythonRuntimeConfig {
     pub preferred_interpreter_path: Option<String>,
@@ -26,7 +26,7 @@ pub struct PythonRuntimeConfig {
     pub create_boilerplate: Option<bool>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PythonPackageInstallRequest {
     pub config: Option<PythonRuntimeConfig>,
@@ -34,7 +34,7 @@ pub struct PythonPackageInstallRequest {
     pub persist_to_requirements: Option<bool>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum PythonExecutionMode {
     Inline,
@@ -42,7 +42,7 @@ pub enum PythonExecutionMode {
     Module,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PythonExecutionRequest {
     pub config: Option<PythonRuntimeConfig>,
@@ -73,7 +73,7 @@ struct InterpreterCandidate {
     preferred: bool,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PythonInterpreterDescriptor {
     pub id: String,
@@ -109,7 +109,7 @@ struct RuntimePaths {
     probe_script_path: PathBuf,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PythonBoilerplateFiles {
     pub readme_path: String,
@@ -119,7 +119,7 @@ pub struct PythonBoilerplateFiles {
     pub probe_script_path: String,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PythonRuntimeStatus {
     pub runtime_root: String,
@@ -140,7 +140,7 @@ pub struct PythonRuntimeStatus {
     pub boilerplate: PythonBoilerplateFiles,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PythonCommandResult {
     pub command: String,
@@ -151,7 +151,7 @@ pub struct PythonCommandResult {
     pub stderr: String,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PythonActionResponse {
     pub status: PythonRuntimeStatus,
@@ -996,6 +996,7 @@ fn resolve_execution_path(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn python_get_runtime_status(
     app: AppHandle,
     config: Option<PythonRuntimeConfig>,
@@ -1018,6 +1019,7 @@ pub async fn python_get_runtime_status(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn python_bootstrap_runtime(
     app: AppHandle,
     config: Option<PythonRuntimeConfig>,
@@ -1029,6 +1031,7 @@ pub async fn python_bootstrap_runtime(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn python_install_packages(
     app: AppHandle,
     request: PythonPackageInstallRequest,
@@ -1070,6 +1073,7 @@ pub async fn python_install_packages(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn python_execute(
     app: AppHandle,
     request: PythonExecutionRequest,

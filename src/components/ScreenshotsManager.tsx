@@ -41,6 +41,14 @@ import {
   type ScreenshotEntryLike,
 } from './screenshotsUtils';
 import { OverlayScrollArea } from './OverlayScrollArea';
+import {
+  createExplorerDir,
+  deleteExplorerPath,
+  listExplorerDir,
+  openExplorerPath,
+  revealExplorerPath,
+  writeExplorerFile,
+} from '../runtime/explorerBackend';
 
 // ─── Annotation types ─────────────────────────────────────────────────────────
 
@@ -110,9 +118,9 @@ const TEXT      = 'var(--overlay-text-primary)';
 
 async function ensureDir(path: string): Promise<void> {
   try {
-    await invoke('fs_list_dir', { path, showHidden: false });
+    await listExplorerDir(path, false);
   } catch {
-    await invoke('fs_create_dir', { path });
+    await createExplorerDir(path);
   }
 }
 
@@ -442,7 +450,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
 
     try {
       await ensureDir(screenshotDir);
-      const listed = await invoke<FileEntry[]>('fs_list_dir', { path: screenshotDir, showHidden: false });
+      const listed = await listExplorerDir(screenshotDir, false);
       const entries = sortScreenshotEntries(listed.filter(isSupportedScreenshotEntry));
       const visible = entries.slice(0, screenshotFeatureConfig.maxGalleryItems);
 
@@ -846,7 +854,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
     setDeletingPath(item.path);
     setError(null);
     try {
-      await invoke('fs_delete', { path: item.path, recursive: false });
+      await deleteExplorerPath(item.path, false);
       if (copiedPath === item.path) {
         setCopiedPath(null);
       }
@@ -913,7 +921,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
         const ts = Date.now();
         fileName = `${screenshotFeatureConfig.filePrefix}-${ts}.png`;
         const fullPath = `${screenshotDir}\\${fileName}`;
-        await invoke('fs_write_file', { path: fullPath, content: bytes });
+        await writeExplorerFile(fullPath, bytes);
       }
 
       if (action === 'copy' || action === 'save-copy') {
@@ -1253,10 +1261,10 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
                         {isCop ? <LoaderCircle size={10} className="animate-spin" /> : isCopd ? <Check size={10} /> : <Copy size={10} />}
                         {isCopd ? 'Copied' : 'Copy'}
                       </button>
-                      <button type="button" onClick={() => invoke('fs_reveal_in_explorer', { path: item.path }).catch(e => setError(String(e)))} disabled={isDeleting} style={btnStyle(false, accent, isDeleting)}>
+                      <button type="button" onClick={() => revealExplorerPath(item.path).catch(e => setError(String(e)))} disabled={isDeleting} style={btnStyle(false, accent, isDeleting)}>
                         <Search size={10} /> Reveal
                       </button>
-                      <button type="button" onClick={() => invoke('fs_open_file', { path: item.path }).catch(e => setError(String(e)))} disabled={isDeleting} style={btnStyle(false, accent, isDeleting)}>
+                      <button type="button" onClick={() => openExplorerPath(item.path).catch(e => setError(String(e)))} disabled={isDeleting} style={btnStyle(false, accent, isDeleting)}>
                         <ExternalLink size={10} /> Open
                       </button>
                       <button type="button" onClick={() => void deleteGalleryItem(item)} disabled={isDeleting} style={btnStyle(false, accent, isDeleting)}>
@@ -1302,7 +1310,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
               {isCapturing ? <LoaderCircle size={13} className="animate-spin" /> : <RefreshCw size={13} />}
               {isCapturing ? 'Capturing…' : 'Recapture'}
             </button>
-            <button type="button" onClick={() => invoke('fs_open_file', { path: screenshotDir }).catch(e => setError(String(e)))} style={btnStyle(false, accent)}>
+            <button type="button" onClick={() => openExplorerPath(screenshotDir).catch(e => setError(String(e)))} style={btnStyle(false, accent)}>
               <FolderOpen size={13} /> Folder
             </button>
           </div>

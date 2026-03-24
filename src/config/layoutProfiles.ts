@@ -202,7 +202,7 @@ const BUILT_IN_PROFILES: LayoutProfile[] = sortProfiles([
     pinnedPanels: [],
     behavior: {
       cycleOrder: 10,
-      defaultActivePanelId: 'terminal',
+      defaultActivePanelId: 'explorer',
       enforcedOpenPanelIds: [],
     },
   },
@@ -226,7 +226,7 @@ const BUILT_IN_PROFILES: LayoutProfile[] = sortProfiles([
     pinnedPanels: [],
     behavior: {
       cycleOrder: 20,
-      defaultActivePanelId: 'terminal',
+      defaultActivePanelId: 'explorer',
       enforcedOpenPanelIds: [],
     },
   },

@@ -24,8 +24,8 @@ export type HotkeyBindingSettings = Record<HotkeyBindingKey, string>;
 export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
   {
     key: 'terminalToggle',
-    label: 'Toggle Overlay',
-    description: 'Global shortcut used to open or hide the overlay window.',
+    label: 'Toggle Main Window',
+    description: 'Global shortcut used to open or hide the app window in its current presentation mode.',
     defaultValue: 'Ctrl+Space',
     scope: 'global',
   },
@@ -38,8 +38,8 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
   },
   {
     key: 'windowModeToggle',
-    label: 'Toggle Window Mode',
-    description: 'Switch between the anchored overlay and the regular resizable panel window.',
+    label: 'Toggle App/Dock Mode',
+    description: 'Switch between the dock-style overlay shell and the regular desktop application window.',
     defaultValue: 'F11',
     scope: 'local',
   },

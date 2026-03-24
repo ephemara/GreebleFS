@@ -29,6 +29,11 @@ import {
   type ExternalTerminalProfile,
 } from '../config/platform';
 import {
+  createExplorerDir,
+  listExplorerDir,
+  openExplorerPath,
+} from '../runtime/explorerBackend';
+import {
   createDefaultFolderIconRules,
   FOLDER_ICON_OPTIONS,
   getNamedFolderIconSrc,
@@ -731,9 +736,9 @@ export function SettingsPage({
     }
 
     try {
-      await invoke('fs_list_dir', { path: normalizedPath, showHidden: false });
+      await listExplorerDir(normalizedPath, false);
     } catch {
-      await invoke('fs_create_dir', { path: normalizedPath });
+      await createExplorerDir(normalizedPath);
     }
   }, []);
 
@@ -743,7 +748,7 @@ export function SettingsPage({
 
     try {
       await ensureWorkspaceDirectory(path);
-      await invoke('fs_open_file', { path });
+      await openExplorerPath(path);
       setOverviewNotice(`Opened ${label}: ${path}`);
     } catch (error) {
       setOverviewError(`Failed to open ${label}: ${String(error)}`);
@@ -1023,7 +1028,7 @@ export function SettingsPage({
       key: 'terminal',
       label: 'Terminal',
       subtitle: 'Shell defaults and external handoff.',
-      summary: `${settings.terminal.windowMode} mode · ${settings.terminal.preferredOpenMode} · ${settings.terminal.cursorStyle} cursor`,
+      summary: `${settings.terminal.windowMode === 'windowed' ? 'application' : 'dock'} mode · ${settings.terminal.preferredOpenMode} · ${settings.terminal.cursorStyle} cursor`,
       detail: 'Control the integrated terminal, its typography, and how commands hand off to external shells.',
       icon: <TerminalSquare size={14} />,
     },
@@ -2093,20 +2098,20 @@ export function SettingsPage({
             <SectionTitle
               icon={<TerminalSquare size={12} />}
               title="Terminal"
-              subtitle="Integrated shell behavior, overlay versus windowed presentation, and external terminal handoff."
+              subtitle="Application mode, dock mode, integrated shell defaults, and external terminal handoff."
             />
 
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="space-y-3 md:col-span-2 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Window Presentation</div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shell Presentation</div>
                     <p className="mt-1 text-[11px] opacity-40">
-                      `Ctrl+Space` always shows the current presentation mode. Use {formatHotkeyLabel(settings.keybindings.windowModeToggle)} while the shell is focused to swap between the anchored overlay and a regular resizable panel window.
+                      `Ctrl+Space` always shows the current presentation mode. Use {formatHotkeyLabel(settings.keybindings.windowModeToggle)} while the shell is focused to swap between the dock-style overlay shell and a regular desktop application window.
                     </p>
                   </div>
                   <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                    {settings.terminal.windowMode === 'windowed' ? 'Regular Window' : 'Anchored Overlay'}
+                    {settings.terminal.windowMode === 'windowed' ? 'Application Window' : 'Dock Overlay'}
                   </span>
                 </div>
 
@@ -2114,13 +2119,13 @@ export function SettingsPage({
                   {([
                     {
                       value: 'overlay',
-                      label: 'Overlay',
-                      description: 'Pins the shell to the monitor edge, keeps the overlay flow, and uses the current anchor behavior.',
+                      label: 'Dock Mode',
+                      description: 'Pins the shell to the monitor edge, keeps the hotkey-driven dock flow, and uses the current anchor behavior.',
                     },
                     {
                       value: 'windowed',
-                      label: 'Windowed',
-                      description: 'Opens as a regular resizable panel window with native minimize, maximize, and close controls.',
+                      label: 'Application Mode',
+                      description: 'Opens as a regular resizable desktop window with native minimize, maximize, and close controls.',
                     },
                   ] as const satisfies Array<{ value: TerminalWindowMode; label: string; description: string }>).map(option => {
                     const active = settings.terminal.windowMode === option.value;
@@ -2444,7 +2449,7 @@ export function SettingsPage({
                 <div>
                   <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Show In Taskbar</div>
                   <p className="mt-1 text-[11px] opacity-40">
-                    Shows the main window in the {platform === 'macos' ? 'Dock' : 'taskbar'} while the overlay is running. Dev mode defaults this on so `tauri dev` stays easy to find.
+                    Shows the main window in the {platform === 'macos' ? 'Dock' : 'taskbar'} while the shell is running so application mode behaves like a regular desktop app.
                   </p>
                 </div>
                 <input

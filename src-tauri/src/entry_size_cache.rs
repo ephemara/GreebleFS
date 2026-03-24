@@ -6,6 +6,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Manager, State};
+use yazi_fs::{
+    cha::ChaType,
+    provider::{local::Local, Provider},
+};
+use yazi_shared::url::UrlLike;
 
 const ENTRY_SIZE_DB_ENV: &str = "OVERLAYTERM_ENTRY_SIZE_DB_PATH";
 static ENTRY_SIZE_DB_PATH: OnceLock<PathBuf> = OnceLock::new();
@@ -300,8 +305,28 @@ fn handle_watch_event(event: notify::Event) {
     }
 }
 
+async fn resolve_watch_root(path: &str) -> Result<PathBuf, String> {
+    let root = PathBuf::from(path);
+    let provider = Local::regular(&root);
+    let metadata = provider
+        .metadata()
+        .await
+        .map_err(|error| format!("Path is not available for watching '{}': {error}", path))?;
+    if !ChaType::from(metadata.mode).is_dir() {
+        return Err(format!("Path is not a directory: {path}"));
+    }
+
+    Ok(provider
+        .canonicalize()
+        .await
+        .ok()
+        .and_then(|url| url.as_local().map(PathBuf::from))
+        .unwrap_or(root))
+}
+
 #[tauri::command]
-pub fn fs_watch_entry_size_root(
+#[specta::specta]
+pub async fn fs_watch_entry_size_root(
     state: State<'_, EntrySizeWatcherState>,
     path: String,
 ) -> Result<(), String> {
@@ -310,14 +335,7 @@ pub fn fs_watch_entry_size_root(
         return Err("path cannot be empty".to_string());
     }
 
-    let root = PathBuf::from(trimmed);
-    if !root.exists() {
-        return Err(format!("Path does not exist: {trimmed}"));
-    }
-    if !root.is_dir() {
-        return Err(format!("Path is not a directory: {trimmed}"));
-    }
-
+    let root = resolve_watch_root(trimmed).await?;
     let watch_key = watch_key_for_path(&root);
     let mut active = state
         .active
@@ -359,6 +377,7 @@ pub fn fs_watch_entry_size_root(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn fs_unwatch_entry_size_root(
     state: State<'_, EntrySizeWatcherState>,
     path: String,

@@ -3,6 +3,7 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 pub const MAIN_TRAY_ICON_ID: &str = "main-tray";
 
 #[tauri::command]
+#[specta::specta]
 pub fn window_set_blur(app: AppHandle, enabled: bool, strength: Option<f64>) -> Result<(), String> {
     let window = app
         .get_webview_window("main")
@@ -12,6 +13,7 @@ pub fn window_set_blur(app: AppHandle, enabled: bool, strength: Option<f64>) -> 
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn window_set_taskbar_visibility(app: AppHandle, visible: bool) -> Result<(), String> {
     let window = app
         .get_webview_window("main")
@@ -21,6 +23,7 @@ pub fn window_set_taskbar_visibility(app: AppHandle, visible: bool) -> Result<()
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn tray_set_visible(app: AppHandle, visible: bool) -> Result<(), String> {
     let tray = app
         .tray_by_id(MAIN_TRAY_ICON_ID)

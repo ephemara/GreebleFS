@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum ShellBlueprintId {
     ClassicDock,
@@ -10,7 +10,7 @@ pub enum ShellBlueprintId {
     HandheldDualScreen,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum ShellNavigationModel {
     Tabs,
@@ -20,7 +20,7 @@ pub enum ShellNavigationModel {
     StackedDualPane,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum ShellSurfaceStyle {
     Glass,
@@ -30,7 +30,7 @@ pub enum ShellSurfaceStyle {
     Pixel,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum ThemeDensity {
     Compact,
@@ -38,7 +38,7 @@ pub enum ThemeDensity {
     Immersive,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum ThemeChromeStyle {
     Minimal,
@@ -47,7 +47,7 @@ pub enum ThemeChromeStyle {
     System,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum ThemeIconStyle {
     System,
@@ -56,7 +56,7 @@ pub enum ThemeIconStyle {
     Skeuomorphic,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum ThemeMotionStyle {
     Snappy,
@@ -65,7 +65,7 @@ pub enum ThemeMotionStyle {
     Instant,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ThemePresentation {
     pub density: ThemeDensity,
@@ -76,7 +76,7 @@ pub struct ThemePresentation {
     pub panel_spacing: u16,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum WorkbenchRegionId {
     Primary,
@@ -87,7 +87,7 @@ pub enum WorkbenchRegionId {
     Modal,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum WorkbenchWindowMode {
     Overlay,
@@ -95,7 +95,7 @@ pub enum WorkbenchWindowMode {
     Fullscreen,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
 pub enum WorkbenchInputMode {
     Keyboard,
@@ -104,7 +104,7 @@ pub enum WorkbenchInputMode {
     Touch,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkbenchPanelBinding {
     pub panel_id: String,
@@ -114,7 +114,7 @@ pub struct WorkbenchPanelBinding {
     pub preferred_size: Option<u16>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkbenchWindowProfile {
     pub mode: WorkbenchWindowMode,
@@ -122,7 +122,7 @@ pub struct WorkbenchWindowProfile {
     pub aspect_ratio: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkbenchInputProfile {
     pub mode: WorkbenchInputMode,
@@ -131,7 +131,7 @@ pub struct WorkbenchInputProfile {
     pub pointer_gestures: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkbenchPreset {
     pub id: String,
@@ -145,7 +145,7 @@ pub struct WorkbenchPreset {
     pub input_profile: WorkbenchInputProfile,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ShellBlueprint {
     pub id: ShellBlueprintId,

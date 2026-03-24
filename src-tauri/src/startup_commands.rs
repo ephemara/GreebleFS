@@ -2,6 +2,7 @@ use tauri::AppHandle;
 use tauri_plugin_autostart::ManagerExt;
 
 #[tauri::command]
+#[specta::specta]
 pub async fn startup_get_launch_at_startup(app: AppHandle) -> Result<bool, String> {
     app.autolaunch()
         .is_enabled()
@@ -9,6 +10,7 @@ pub async fn startup_get_launch_at_startup(app: AppHandle) -> Result<bool, Strin
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn startup_set_launch_at_startup(app: AppHandle, enabled: bool) -> Result<bool, String> {
     let manager = app.autolaunch();
     if enabled {

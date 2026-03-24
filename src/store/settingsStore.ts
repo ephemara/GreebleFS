@@ -4,7 +4,7 @@
  */
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import { normalizeThemeDefinition, type OverlayThemeDefinition } from '../config/appearance';
 import {
   createDefaultFolderIconRules,
@@ -210,7 +210,7 @@ export function normalizeOverlayWindowAnchor(value: unknown): OverlayWindowAncho
 }
 
 export function normalizeTerminalWindowMode(value: unknown): TerminalWindowMode {
-  return value === 'windowed' ? 'windowed' : 'overlay';
+  return value === 'overlay' ? 'overlay' : 'windowed';
 }
 
 export function normalizeExplorerFolderClickMode(value: unknown): ExplorerFolderClickMode {
@@ -249,9 +249,54 @@ function normalizeTerminalSettings(
   };
 }
 
-function isDevEnvironment(): boolean {
-  const env = (import.meta as ImportMeta & { env?: { DEV?: boolean } }).env;
-  return env?.DEV === true;
+function createMemoryStorage(): Storage {
+  const storage = new Map<string, string>();
+
+  return {
+    get length() {
+      return storage.size;
+    },
+    clear() {
+      storage.clear();
+    },
+    getItem(key: string) {
+      return storage.get(key) ?? null;
+    },
+    key(index: number) {
+      return Array.from(storage.keys())[index] ?? null;
+    },
+    removeItem(key: string) {
+      storage.delete(key);
+    },
+    setItem(key: string, value: string) {
+      storage.set(key, value);
+    },
+  };
+}
+
+function isStorageLike(value: unknown): value is Storage {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && typeof (value as Storage).getItem === 'function'
+    && typeof (value as Storage).setItem === 'function'
+    && typeof (value as Storage).removeItem === 'function',
+  );
+}
+
+function getSettingsStorage(): Storage {
+  if (typeof window !== 'undefined' && isStorageLike(window.localStorage)) {
+    return window.localStorage;
+  }
+
+  if (typeof globalThis !== 'undefined' && 'localStorage' in globalThis) {
+    const candidate = globalThis.localStorage;
+    if (isStorageLike(candidate)) {
+      return candidate;
+    }
+  }
+
+  return createMemoryStorage();
 }
 
 function normalizeSystemSettings(
@@ -387,7 +432,7 @@ export const defaultSettings: Settings = {
     overlayHeight: overlayWindowGeometry.defaultHeight,
     overlayWidth: overlayWindowGeometry.defaultWidth,
     overlayAnchor: 'bottom',
-    windowMode: 'overlay',
+    windowMode: 'windowed',
     windowedWidth: 1440,
     windowedHeight: 920,
     preferredOpenMode: 'integrated',
@@ -439,7 +484,7 @@ export const defaultSettings: Settings = {
   system: {
     launchAtStartup: false,
     hideAppInTray: true,
-    showInTaskbar: isDevEnvironment(),
+    showInTaskbar: true,
   },
   screenshots: {
     saveDirectory: screenshotFeatureConfig.defaultSaveDirectory,
@@ -662,6 +707,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'ultacode-settings',
+      storage: createJSONStorage(() => getSettingsStorage()),
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<SettingsState> | undefined;
         return {

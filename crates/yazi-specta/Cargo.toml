@@ -1,0 +1,13 @@
+[package]
+name = "yazi-specta"
+version = "0.1.0"
+edition = "2021"
+description = "Frontend-safe Specta bridge types for the embedded Yazi workspace"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+specta = { workspace = true }
+yazi-fs = { path = "../fileexplorer/crates/yazi-fs" }
+yazi-parser = { path = "../fileexplorer/crates/yazi-parser" }
+yazi-scheduler = { path = "../fileexplorer/crates/yazi-scheduler" }

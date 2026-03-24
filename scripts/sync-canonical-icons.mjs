@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readdir, rm } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, rm, writeFile, access } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -7,18 +7,29 @@ import canonicalIconTheme from '../src/config/canonicalIconTheme.json' with { ty
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
-const sourceDir = path.join(projectRoot, 'vscode-icon-theme', 'icons');
 const targetDir = path.join(projectRoot, 'public', 'icons');
+const sourceDirectories = [
+  path.join(projectRoot, 'vscode-icon-theme', 'icons'),
+  path.join(projectRoot, 'node_modules', 'material-icon-theme', 'icons'),
+];
 
 function normalizeIconPath(iconPath) {
   return iconPath.replace(/\\/g, '/').replace(/^\.\//, '');
 }
 
-async function copyCanonicalFolderIcons() {
+async function pathExists(targetPath) {
+  try {
+    await access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function buildCanonicalIconFileNames() {
   const iconDefinitions = canonicalIconTheme.iconDefinitions ?? {};
-  const folderFileNames = new Set(
+  return new Set(
     Object.entries(iconDefinitions)
-      .filter(([iconId]) => iconId === 'folder' || iconId.startsWith('folder_'))
       .map(([, definition]) => {
         const iconPath = typeof definition === 'string' ? definition : definition?.iconPath;
         return normalizeIconPath(String(iconPath ?? ''));
@@ -26,14 +37,77 @@ async function copyCanonicalFolderIcons() {
       .filter(iconPath => iconPath.startsWith('icons/'))
       .map(iconPath => path.basename(iconPath)),
   );
+}
+
+function buildSourceCandidates(fileName) {
+  const baseName = fileName.replace(/\.svg$/i, '');
+  return Array.from(new Set([
+    fileName,
+    `${baseName.replace(/_open$/i, '-open')}.svg`,
+    `${baseName.replace(/_open$/i, '-open').replace(/_/g, '-')}.svg`,
+    `${baseName.replace(/_/g, '-')}.svg`,
+  ]));
+}
+
+async function resolveSourceIconPath(fileName) {
+  const candidateFileNames = buildSourceCandidates(fileName);
+
+  for (const sourceDir of sourceDirectories) {
+    for (const candidateFileName of candidateFileNames) {
+      const candidatePath = path.join(sourceDir, candidateFileName);
+      if (await pathExists(candidatePath)) {
+        return candidatePath;
+      }
+    }
+  }
+
+  return null;
+}
+
+function createFallbackIconSvg(fileName) {
+  if (/^folder/i.test(fileName)) {
+    const isOpen = /(?:_open|-open)\.svg$/i.test(fileName);
+    const body = isOpen
+      ? '<path d="M6 11.5h23.5L26 27H6.5A2.5 2.5 0 0 1 4 24.5v-10A2.5 2.5 0 0 1 6.5 12z" fill="#d2a24c"/><path d="M4 12.5h11l2-3h12A2.5 2.5 0 0 1 31.5 12H6.5A2.5 2.5 0 0 0 4 14.5z" fill="#f3c46b"/>'
+      : '<path d="M4 10.5A2.5 2.5 0 0 1 6.5 8H16l2 3h11.5A2.5 2.5 0 0 1 32 13.5v11A2.5 2.5 0 0 1 29.5 27h-23A2.5 2.5 0 0 1 4 24.5z" fill="#d6a551"/><path d="M4 14.5h28v2H4z" fill="#f2c86f" opacity="0.85"/>';
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36">${body}</svg>\n`;
+  }
+
+  return [
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36">',
+    '<path d="M10 4.5h10l6 6V31.5H10A2.5 2.5 0 0 1 7.5 29V7A2.5 2.5 0 0 1 10 4.5z" fill="#67b7ff"/>',
+    '<path d="M20 4.5v6h6" fill="#bde1ff"/>',
+    '<path d="M12 17h12v2H12zm0 5h9v2h-9z" fill="#0f2a43" opacity="0.7"/>',
+    '</svg>\n',
+  ].join('');
+}
+
+async function syncCanonicalIcons() {
+  const iconFileNames = buildCanonicalIconFileNames();
+  let copiedCount = 0;
+  let fallbackCount = 0;
 
   await mkdir(targetDir, { recursive: true });
 
-  for (const fileName of folderFileNames) {
-    await copyFile(path.join(sourceDir, fileName), path.join(targetDir, fileName));
+  for (const fileName of iconFileNames) {
+    const sourcePath = await resolveSourceIconPath(fileName);
+    const targetPath = path.join(targetDir, fileName);
+
+    if (sourcePath) {
+      await copyFile(sourcePath, targetPath);
+      copiedCount += 1;
+      continue;
+    }
+
+    await writeFile(targetPath, createFallbackIconSvg(fileName), 'utf8');
+    fallbackCount += 1;
   }
 
-  return folderFileNames.size;
+  return {
+    totalCount: iconFileNames.size,
+    copiedCount,
+    fallbackCount,
+  };
 }
 
 async function removeLegacyFolderIcons() {
@@ -47,9 +121,11 @@ async function removeLegacyFolderIcons() {
 }
 
 async function main() {
-  const copiedCount = await copyCanonicalFolderIcons();
+  const syncSummary = await syncCanonicalIcons();
   const removedCount = await removeLegacyFolderIcons();
-  console.log(`Synced ${copiedCount} canonical folder icons and removed ${removedCount} legacy folder icons.`);
+  console.log(
+    `Synced ${syncSummary.totalCount} canonical icons (${syncSummary.copiedCount} copied, ${syncSummary.fallbackCount} generated) and removed ${removedCount} legacy folder icons.`,
+  );
 }
 
 main().catch(error => {

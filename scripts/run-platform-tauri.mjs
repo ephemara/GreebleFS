@@ -70,14 +70,17 @@ async function pathExists(targetPath) {
   }
 }
 
-async function writeRuntimeTauriConfig() {
+async function writeRuntimeTauriConfig(packageManagerCommand) {
   const tauriConfigPath = path.join(projectRoot, "src-tauri", "tauri.conf.json");
   const rawConfig = await fs.readFile(tauriConfigPath, "utf8");
   const config = JSON.parse(rawConfig);
   const runtimeConfigPath = path.join(tauriConfigDir, "tauri.vps.config.json");
+  const runPrefix = `${packageManagerCommand} run`;
 
   config.build = {
     ...config.build,
+    beforeDevCommand: `${runPrefix} dev`,
+    beforeBuildCommand: `${runPrefix} build`,
     frontendDist,
   };
 
@@ -88,10 +91,11 @@ async function writeRuntimeTauriConfig() {
 
 function runCommand(command, args, extraEnv = {}) {
   return new Promise((resolve, reject) => {
+    const useShell = process.platform === "win32" && /\.(cmd|bat)$/i.test(command);
     const child = spawn(command, args, {
       cwd: projectRoot,
       stdio: "inherit",
-      shell: false,
+      shell: useShell,
       env: {
         ...process.env,
         ...extraEnv,
@@ -184,11 +188,12 @@ async function main() {
 
   await ensureNativeBindingAvailable();
   await fs.mkdir(frontendDist, { recursive: true });
+  const packageManagerCommand = getPackageManagerCommand();
 
   const existingNodePath = process.env.NODE_PATH
     ? `${cacheNodeModules}${path.delimiter}${process.env.NODE_PATH}`
     : cacheNodeModules;
-  const runtimeConfigPath = await writeRuntimeTauriConfig();
+  const runtimeConfigPath = await writeRuntimeTauriConfig(packageManagerCommand);
   const cliArgs = process.argv.slice(2);
   const hasExplicitConfig = cliArgs.includes("--config") || cliArgs.includes("-c");
   const tauriArgs =
