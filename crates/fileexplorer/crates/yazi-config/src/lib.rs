@@ -20,6 +20,11 @@ pub fn init() -> anyhow::Result<()> {
 	Ok(())
 }
 
+pub fn init_default() -> anyhow::Result<()> {
+	try_init(false)?;
+	Ok(())
+}
+
 fn try_init(merge: bool) -> anyhow::Result<()> {
 	let mut yazi = Preset::yazi()?;
 	let mut keymap = Preset::keymap()?;

@@ -143,10 +143,10 @@ impl<'a> Url<'a> {
 	#[inline]
 	pub fn loc(self) -> PathDyn<'a> {
 		match self {
-			Self::Regular(loc) => loc.as_path(),
-			Self::Search { loc, .. } => loc.as_path(),
-			Self::Archive { loc, .. } => loc.as_path(),
-			Self::Sftp { loc, .. } => loc.as_path(),
+			Self::Regular(loc) => AsPath::as_path(*loc),
+			Self::Search { loc, .. } => AsPath::as_path(*loc),
+			Self::Archive { loc, .. } => AsPath::as_path(*loc),
+			Self::Sftp { loc, .. } => AsPath::as_path(*loc),
 		}
 	}
 
@@ -256,11 +256,11 @@ impl<'a> Url<'a> {
 		match self {
 			Self::Regular(loc) | Self::Search { loc, .. } | Self::Archive { loc, .. } => {
 				let (base, rest, urn) = loc.triple();
-				(base.as_path(), rest.as_path(), urn.as_path())
+				(AsPath::as_path(base), AsPath::as_path(rest), AsPath::as_path(urn))
 			}
 			Self::Sftp { loc, .. } => {
 				let (base, rest, urn) = loc.triple();
-				(base.as_path(), rest.as_path(), urn.as_path())
+				(AsPath::as_path(base), AsPath::as_path(rest), AsPath::as_path(urn))
 			}
 		}
 	}
@@ -451,20 +451,20 @@ impl<'a> Url<'a> {
 	#[inline]
 	pub fn uri(self) -> PathDyn<'a> {
 		match self {
-			Self::Regular(loc) => loc.uri().as_path(),
-			Self::Search { loc, .. } => loc.uri().as_path(),
-			Self::Archive { loc, .. } => loc.uri().as_path(),
-			Self::Sftp { loc, .. } => loc.uri().as_path(),
+			Self::Regular(loc) => AsPath::as_path(loc.uri()),
+			Self::Search { loc, .. } => AsPath::as_path(loc.uri()),
+			Self::Archive { loc, .. } => AsPath::as_path(loc.uri()),
+			Self::Sftp { loc, .. } => AsPath::as_path(loc.uri()),
 		}
 	}
 
 	#[inline]
 	pub fn urn(self) -> PathDyn<'a> {
 		match self {
-			Self::Regular(loc) => loc.urn().as_path(),
-			Self::Search { loc, .. } => loc.urn().as_path(),
-			Self::Archive { loc, .. } => loc.urn().as_path(),
-			Self::Sftp { loc, .. } => loc.urn().as_path(),
+			Self::Regular(loc) => AsPath::as_path(loc.urn()),
+			Self::Search { loc, .. } => AsPath::as_path(loc.urn()),
+			Self::Archive { loc, .. } => AsPath::as_path(loc.urn()),
+			Self::Sftp { loc, .. } => AsPath::as_path(loc.urn()),
 		}
 	}
 }

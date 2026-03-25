@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from 'react';
-import { invoke, isTauri } from '@tauri-apps/api/core';
+import { isTauri } from '@tauri-apps/api/core';
 import { useShallow } from 'zustand/react/shallow';
 import {
   getCurrentWindow,
@@ -99,6 +99,7 @@ import {
   parseExternalArgs,
 } from './runtime/overlayRuntimeUtils';
 import { listExplorerDir, openExplorerPath } from './runtime/explorerBackend';
+import { commands, unwrapTauriResult } from './runtime/tauriClient';
 import { useFolderPluginRuntime } from './runtime/useFolderPluginRuntime';
 import {
   useSettingsStore,
@@ -629,7 +630,8 @@ function App() {
   useEffect(() => {
     let cancelled = false;
 
-    invoke<boolean>('startup_get_launch_at_startup')
+    commands.startupGetLaunchAtStartup()
+      .then(unwrapTauriResult)
       .then(enabled => {
         if (!cancelled) {
           updateSystem({ launchAtStartup: enabled });
@@ -649,7 +651,7 @@ function App() {
       return;
     }
 
-    invoke('tray_set_visible', { visible: systemSettings.hideAppInTray }).catch(error => {
+    commands.traySetVisible(systemSettings.hideAppInTray).then(unwrapTauriResult).catch(error => {
       console.warn('OverlayTerm: failed to sync tray visibility', error);
     });
   }, [systemSettings.hideAppInTray]);
@@ -659,7 +661,7 @@ function App() {
       return;
     }
 
-    invoke('window_set_taskbar_visibility', { visible: shouldShowInTaskbar }).catch(error => {
+    commands.windowSetTaskbarVisibility(shouldShowInTaskbar).then(unwrapTauriResult).catch(error => {
       console.warn('OverlayTerm: failed to sync taskbar visibility', error);
     });
   }, [shouldShowInTaskbar]);
@@ -1085,7 +1087,7 @@ function App() {
     void (async () => {
       try {
         await hideOverlayForDrag();
-        await invoke('fs_start_native_file_drag', { paths });
+        unwrapTauriResult(await commands.fsStartNativeFileDrag(paths));
       } catch (error) {
         console.warn('OverlayTerm: failed to start native file drag', error);
       } finally {
@@ -1532,15 +1534,13 @@ function App() {
   // ── Explorer → Terminal bridge ──
   const handleOpenInTerminal = useCallback(async (path: string) => {
     if (settings.preferredOpenMode === 'external') {
-      await invoke('terminal_open_external', {
-        request: {
-          workingDir: path,
-          profile: settings.externalTerminalProfile,
-          executable: settings.externalTerminalCommand || null,
-          args: parseExternalArgs(settings.externalTerminalArgs),
-          shell: settings.shell,
-        },
-      }).catch(error => {
+      await commands.terminalOpenExternal({
+        workingDir: path,
+        profile: settings.externalTerminalProfile,
+        executable: settings.externalTerminalCommand || null,
+        args: parseExternalArgs(settings.externalTerminalArgs),
+        shell: settings.shell,
+      }).then(unwrapTauriResult).catch(error => {
         console.warn('OverlayTerm: failed to open external terminal', error);
       });
       hideOverlay();
@@ -1666,7 +1666,7 @@ function App() {
 
       animationSignatureRef.current = nextSignature;
       const loaded = await Promise.all(files.map(async file => {
-        const source = await invoke<string>('fs_read_text_file', { path: file.path });
+        const source = await commands.fsReadTextFile(file.path).then(unwrapTauriResult);
         return loadAnimationFromSource(source, file);
       }));
 
@@ -1708,7 +1708,7 @@ function App() {
 
       shaderSignatureRef.current = nextSignature;
       const loaded = await Promise.all(files.map(async file => {
-        const source = await invoke<string>('fs_read_text_file', { path: file.path });
+        const source = await commands.fsReadTextFile(file.path).then(unwrapTauriResult);
         return loadShaderFromSource(source, file);
       }));
 
@@ -2209,10 +2209,10 @@ function App() {
 
     const syncNativeBlur = async () => {
       try {
-        await invoke('window_set_blur', {
-          enabled: appBlur && overlayPhase !== 'closed',
-          strength: clampedAppBlurStrength,
-        });
+        unwrapTauriResult(await commands.windowSetBlur(
+          appBlur && overlayPhase !== 'closed',
+          clampedAppBlurStrength,
+        ));
       } catch (error) {
         if (!cancelled) {
           console.warn('OverlayTerm: failed to apply native window blur', error);

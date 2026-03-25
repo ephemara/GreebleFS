@@ -40,7 +40,6 @@ import {
   Eraser,
   RotateCcw,
 } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Terminal as XTerm } from '@xterm/xterm';
@@ -74,6 +73,7 @@ import {
 } from '../config/pluginContributions';
 import { useSettingsStore } from '../store/settingsStore';
 import { OverlayScrollArea } from './OverlayScrollArea';
+import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 
 export type ThemeId = 'operator' | 'dracula' | 'nord' | 'monokai' | 'github-dark' | 'catppuccin';
 
@@ -325,7 +325,7 @@ function destroyXterm(id: string) {
   const e = xtermRegistry.get(id);
   if (!e) return;
   e.unlisten(); e.xterm.dispose();
-  invoke('terminal_kill', { id }).catch(() => {});
+  void commands.terminalKill(id).then(unwrapTauriResult).catch(() => {});
   xtermRegistry.delete(id);
 }
 
@@ -516,7 +516,7 @@ function XTermPane({
     fit.fit();
 
     try {
-      await invoke('terminal_spawn', { id, rows: term.rows, cols: term.cols, shell: settings.shell });
+      unwrapTauriResult(await commands.terminalSpawn(id, null, settings.shell, term.rows, term.cols));
     } catch (e) {
       term.writeln('\r\n\x1b[31mFailed to spawn PTY:\x1b[0m ' + String(e));
     }
@@ -551,7 +551,7 @@ function XTermPane({
     });
     term.onResize(({ rows: r, cols: c }) => {
       onResizeRef.current?.(id, r, c);
-      invoke('terminal_resize', { id, rows: r, cols: c }).catch(() => {});
+      void commands.terminalResize(id, r, c).then(unwrapTauriResult).catch(() => {});
     });
 
     const ro = new ResizeObserver(() => fit.fit());
@@ -702,9 +702,7 @@ function PythonSidebarContent({
     setStatusError(null);
 
     try {
-      const nextStatus = await invoke<PythonRuntimeStatus>('python_get_runtime_status', {
-        config: runtimeConfig,
-      });
+      const nextStatus = await commands.pythonGetRuntimeStatus(runtimeConfig).then(unwrapTauriResult);
       setStatus(nextStatus);
     } catch (error) {
       const errorText = String(error);
@@ -745,34 +743,28 @@ function PythonSidebarContent({
 
   const bootstrapRuntime = useCallback(async () => {
     await runAction('Bootstrapped Python runtime', () =>
-      invoke<PythonActionResponse>('python_bootstrap_runtime', {
-        config: runtimeConfig,
-      }));
+      commands.pythonBootstrapRuntime(runtimeConfig).then(unwrapTauriResult));
   }, [runAction, runtimeConfig]);
 
   const installConfiguredPackages = useCallback(async () => {
     await runAction('Installed configured Python packages', () =>
-      invoke<PythonActionResponse>('python_install_packages', {
-        request: {
-          config: runtimeConfig,
-          packageInput: pythonSettings.bootstrapPackages,
-          persistToRequirements: true,
-        },
-      }));
+      commands.pythonInstallPackages({
+        config: runtimeConfig,
+        packageInput: pythonSettings.bootstrapPackages,
+        persistToRequirements: true,
+      }).then(unwrapTauriResult));
   }, [pythonSettings.bootstrapPackages, runAction, runtimeConfig]);
 
   const applyPackagePreset = useCallback(async (packages: string[]) => {
     await runAction('Installed Python package preset', () =>
-      invoke<PythonActionResponse>('python_install_packages', {
-        request: {
-          config: {
-            ...runtimeConfig,
-            bootstrapPackages: packages.join('\n'),
-          },
-          packageInput: packages.join('\n'),
-          persistToRequirements: false,
+      commands.pythonInstallPackages({
+        config: {
+          ...runtimeConfig,
+          bootstrapPackages: packages.join('\n'),
         },
-      }));
+        packageInput: packages.join('\n'),
+        persistToRequirements: false,
+      }).then(unwrapTauriResult));
   }, [runAction, runtimeConfig]);
 
   const openManagedRepl = useCallback(async () => {
@@ -788,17 +780,15 @@ function PythonSidebarContent({
 
   const runPreset = useCallback(async (preset: PythonExamplePreset) => {
     await runAction(`Ran ${preset.label}`, () =>
-      invoke<PythonActionResponse>('python_execute', {
-        request: {
-          config: runtimeConfig,
-          executionMode: preset.mode,
-          entry: preset.entry,
-          arguments: [],
-          workingDirectory: null,
-          environment: {},
-          useManagedEnvironment: true,
-        },
-      }));
+      commands.pythonExecute({
+        config: runtimeConfig,
+        executionMode: preset.mode,
+        entry: preset.entry,
+        arguments: [],
+        workingDirectory: null,
+        environment: {},
+        useManagedEnvironment: true,
+      }).then(unwrapTauriResult));
   }, [runAction, runtimeConfig]);
 
   const buttonStyle = {
@@ -1247,13 +1237,13 @@ export function TerminalOverlay({
     }
 
     if (paneIds.length === 1) {
-      await invoke('terminal_write', { id: paneIds[0], data });
+      unwrapTauriResult(await commands.terminalWrite(paneIds[0], data));
       return;
     }
 
-    await invoke('terminal_write_many', {
-      writes: paneIds.map(id => ({ id, data })),
-    });
+    unwrapTauriResult(await commands.terminalWriteMany(
+      paneIds.map(id => ({ id, data })),
+    ));
   }, []);
 
   const resolveCommandTargets = useCallback((paneId?: string) => {
@@ -1412,9 +1402,15 @@ export function TerminalOverlay({
     clearTerminalReady(paneId);
 
     try {
-      await invoke('terminal_kill', { id: paneId });
+      unwrapTauriResult(await commands.terminalKill(paneId));
       entry.xterm.reset();
-      await invoke('terminal_spawn', { id: paneId, rows: entry.xterm.rows, cols: entry.xterm.cols, shell: settings.shell });
+      unwrapTauriResult(await commands.terminalSpawn(
+        paneId,
+        null,
+        settings.shell,
+        entry.xterm.rows,
+        entry.xterm.cols,
+      ));
       markTerminalReady(paneId);
       setTransientActionMessage(`Restarted ${paneSessions[paneId]?.label ?? 'terminal'}`);
     } catch (error) {

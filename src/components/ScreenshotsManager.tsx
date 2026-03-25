@@ -28,7 +28,12 @@ import {
   Trash2,
 } from 'lucide-react';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
+import { ExplorerTaskStatusBadge } from './explorer/ExplorerTaskStatusBadge';
 import { useSettingsStore } from '../store/settingsStore';
+import {
+  useCurrentExplorerTaskProgress,
+  useExplorerTaskProgressFeed,
+} from '../store/explorerTaskStore';
 import { screenshotFeatureConfig } from '../config/screenshots';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import {
@@ -49,6 +54,7 @@ import {
   revealExplorerPath,
   writeExplorerFile,
 } from '../runtime/explorerBackend';
+import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 
 // ─── Annotation types ─────────────────────────────────────────────────────────
 
@@ -358,6 +364,8 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
   const [copiedPath,      setCopiedPath]      = useState<string | null>(null);
   const [deletingPath,    setDeletingPath]    = useState<string | null>(null);
   const [libraryWidth, setLibraryWidth] = usePersistentPanelSize('overlayterm-screenshots-library-width', 280, 220, 480);
+  useExplorerTaskProgressFeed();
+  const explorerTaskProgress = useCurrentExplorerTaskProgress();
 
   const activeMonitor = monitors.find(m => m.id === activeMonitorId) ?? null;
   const shouldLoadGalleryPreviews = activeSection === 'library';
@@ -784,10 +792,13 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
     setIsCopying(true);
     setError(null);
     try {
-      await invoke('screenshot_copy_region_to_clipboard', {
-        captureId: activeMonitor.captureId,
-        x: norm.x, y: norm.y, width: norm.width, height: norm.height,
-      });
+      unwrapTauriResult(await commands.screenshotCopyRegionToClipboard(
+        activeMonitor.captureId,
+        norm.x,
+        norm.y,
+        norm.width,
+        norm.height,
+      ));
       setStatusMsg('Copied to clipboard.');
       finishToolAction(false);
     } catch (err) {
@@ -804,7 +815,13 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
     if (action === 'copy') {
       setIsCopying(true);
       try {
-        await invoke('screenshot_copy_region_to_clipboard', { captureId: activeMonitor.captureId, x: 0, y: 0, width: w, height: h });
+        unwrapTauriResult(await commands.screenshotCopyRegionToClipboard(
+          activeMonitor.captureId,
+          0,
+          0,
+          w,
+          h,
+        ));
         setStatusMsg('Full monitor copied.');
         finishToolAction(false);
       } catch (err) { setError(String(err)); }
@@ -840,7 +857,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
   const copyGalleryItem = useCallback(async (item: ScreenshotItem) => {
     setCopyingPath(item.path);
     try {
-      await invoke('screenshot_copy_image_to_clipboard', { path: item.path });
+      unwrapTauriResult(await commands.screenshotCopyImageToClipboard(item.path));
       setCopiedPath(item.path);
       setStatusMsg(`Copied ${item.name}.`);
     } catch (err) { setError(String(err)); }
@@ -1317,10 +1334,23 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
         </div>
 
         {/* Status / error bar */}
-        {(error || statusMsg) && (
+        {(error || statusMsg || explorerTaskProgress) && (
           <div style={{ padding: '5px 10px', fontSize: 10, borderBottom: `1px solid ${BORDER}`, background: error ? 'rgba(127,29,29,0.28)' : `${accent}12`, color: error ? '#fca5a5' : '#e7ebff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <span>{error ?? statusMsg}</span>
-            <button type="button" onClick={() => { setError(null); setStatusMsg(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: 2, opacity: 0.7 }}>✕</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+              {(error || statusMsg) && <span>{error ?? statusMsg}</span>}
+              <ExplorerTaskStatusBadge
+                taskProgress={explorerTaskProgress}
+                accent={accent}
+                text="#f4f6ff"
+                muted={MUTED}
+                border={BORDER}
+                danger="var(--overlay-danger)"
+                background="rgba(255,255,255,0.04)"
+              />
+            </div>
+            {(error || statusMsg) && (
+              <button type="button" onClick={() => { setError(null); setStatusMsg(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: 2, opacity: 0.7 }}>✕</button>
+            )}
           </div>
         )}
 

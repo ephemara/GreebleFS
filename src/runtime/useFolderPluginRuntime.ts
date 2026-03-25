@@ -28,13 +28,9 @@ import type { LoadedOverlayThemePackage } from '../config/themePackages';
 import { getPlatformPathSeparator, joinPlatformPath, type RuntimePlatform } from '../config/platform';
 import type { OverlayRegisteredFontContribution } from '../config/appearance';
 import { listExplorerDir, openExplorerPath } from './explorerBackend';
+import type { PluginDirectoryWatchEvent } from '../generated/tauri';
 import { ensureDir, getParentPath } from './overlayRuntimeUtils';
-
-interface PluginDirectoryWatchEvent {
-  root: string;
-  kind: string;
-  paths: string[];
-}
+import { commands, unwrapTauriResult } from './tauriClient';
 
 export interface UseFolderPluginRuntimeResult {
   folderPlugins: LoadedOverlayPlugin[];
@@ -274,15 +270,15 @@ export function useFolderPluginRuntime(
           schedulePluginRefresh(true);
         });
 
-        await invoke('plugin_watch_directory', {
-          path: pluginSystemConfig.pluginsDirectory,
-          ignoredDirectories: [...pluginSystemConfig.ignoredWatchDirectoryNames],
-        });
+        unwrapTauriResult(await commands.pluginWatchDirectory(
+          pluginSystemConfig.pluginsDirectory,
+          [...pluginSystemConfig.ignoredWatchDirectoryNames],
+        ));
 
         if (disposed) {
           unlistenPlugins?.();
           unlistenPlugins = null;
-          await invoke('plugin_unwatch_directory');
+          unwrapTauriResult(await commands.pluginUnwatchDirectory());
         }
       } catch (error) {
         unlistenPlugins?.();
@@ -302,7 +298,7 @@ export function useFolderPluginRuntime(
       }
       clearFallbackPolling();
       unlistenPlugins?.();
-      void invoke('plugin_unwatch_directory').catch(() => undefined);
+      void commands.pluginUnwatchDirectory().then(unwrapTauriResult).catch(() => undefined);
     };
   }, [schedulePluginRefresh]);
 

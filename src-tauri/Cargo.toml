@@ -42,10 +42,17 @@ drag = "2.1.0"
 file_icon_provider = "1.0.0"
 notify = "8.2.0"
 rusqlite = { version = "0.32.1", features = ["bundled"] }
+tokio = { version = "1", features = ["time"] }
 overlay-contracts = { path = "../crates/overlay-contracts" }
 yazi-specta = { path = "../crates/yazi-specta" }
+yazi-boot = { path = "../crates/fileexplorer/crates/yazi-boot" }
+yazi-config = { path = "../crates/fileexplorer/crates/yazi-config" }
+yazi-dds = { path = "../crates/fileexplorer/crates/yazi-dds" }
 yazi-fs = { path = "../crates/fileexplorer/crates/yazi-fs" }
+yazi-scheduler = { path = "../crates/fileexplorer/crates/yazi-scheduler" }
 yazi-shared = { path = "../crates/fileexplorer/crates/yazi-shared" }
+yazi-term = { path = "../crates/fileexplorer/crates/yazi-term" }
+yazi-vfs = { path = "../crates/fileexplorer/crates/yazi-vfs" }
 
 [dev-dependencies]
 tokio  = { version = "1", features = ["full"] }

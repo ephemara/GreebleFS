@@ -83,10 +83,10 @@ impl UserData for Cha {
 				Err("Short hash not supported".into_lua_err())?
 			})
 		});
-		methods.add_method("perm", |lua, _me, ()| {
+		methods.add_method("perm", |_lua, _me, ()| {
 			Ok(
 				#[cfg(unix)]
-				lua.create_string(_me.mode.permissions(_me.is_dummy())),
+				_lua.create_string(_me.mode.permissions(_me.is_dummy())),
 				#[cfg(windows)]
 				Ok::<_, mlua::Error>(mlua::Value::Nil),
 			)

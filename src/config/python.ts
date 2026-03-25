@@ -1,11 +1,11 @@
 import type { RuntimePlatform } from './platform';
 
 export interface PythonRuntimeConfig {
-  preferredInterpreterPath?: string | null;
-  runtimeRoot?: string | null;
-  bootstrapPackages?: string | null;
-  autoUpgradePip?: boolean | null;
-  createBoilerplate?: boolean | null;
+  preferredInterpreterPath: string | null;
+  runtimeRoot: string | null;
+  bootstrapPackages: string | null;
+  autoUpgradePip: boolean | null;
+  createBoilerplate: boolean | null;
 }
 
 export interface PythonInterpreterDescriptor {

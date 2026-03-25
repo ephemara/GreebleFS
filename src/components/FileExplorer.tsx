@@ -56,7 +56,6 @@ import {
 import {
   finalizePendingExplorerMetricSamples,
   getRuntimeCachePolicyTelemetryMetadata,
-  type FsRuntimeCachePolicy,
   type PendingExplorerMetricSample,
   type RuntimeCachePolicyTelemetryMetadata,
 } from '../config/runtimeCachePolicy';
@@ -65,6 +64,7 @@ import {
 } from '../config/searchTelemetry';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ExplorerSideRail } from './explorer/ExplorerSideRail';
+import { ExplorerTaskStatusBadge } from './explorer/ExplorerTaskStatusBadge';
 import { removeExplorerBookmarksByPath, upsertExplorerBookmark } from './explorer/explorerRailState';
 import {
   getRepositoryPickerConfirmLabel,
@@ -72,6 +72,10 @@ import {
 } from './explorer/repositoryPickerState';
 import { ResizablePane } from './ResizablePane';
 import { useExplorerStore, type ExplorerDocumentViewMode } from '../store/explorerStore';
+import {
+  useCurrentExplorerTaskProgress,
+  useExplorerTaskProgressFeed,
+} from '../store/explorerTaskStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { shouldOpenExplorerEntryOnTrigger } from './fileExplorerClickBehavior';
 import type { DocumentPreviewKind } from './documentPreview';
@@ -95,20 +99,27 @@ import {
   createExplorerDir,
   deleteExplorerPath,
   getExplorerDrives,
+  getExplorerHomeDir,
+  getExplorerRuntimeCachePolicy,
   listExplorerDir,
   listExplorerDirUncached,
+  measureExplorerEntrySizes,
   openExplorerPath,
   openExplorerPathAsAdmin,
+  readExplorerFileBase64,
   readExplorerTextFile,
   renameExplorerPath,
   revealExplorerPath,
   searchExplorerEntriesWithDiagnostics,
+  transferExplorerItems,
   unwatchExplorerEntrySizeRoot,
   watchExplorerEntrySizeRoot,
   writeExplorerFile,
   type ExplorerDriveInfo as DriveInfo,
   type ExplorerEntryStorageInfo as EntryStorageInfo,
   type ExplorerFileEntry as FileEntry,
+  type ExplorerFileTransferOperation as FileTransferOperation,
+  type ExplorerFileTransferResult as FileTransferResult,
   type ExplorerFileSearchResult as FileSearchResult,
 } from '../runtime/explorerBackend';
 
@@ -177,8 +188,6 @@ type PreviewState =
   | { type: 'model3d'; path: string; format: ModelPreviewFormat; name: string; size: number };
 interface NewItemState   { visible: boolean; kind: 'file'|'folder'; }
 interface ExplorerClipboard { action:'copy'|'cut'; entries: FileEntry[]; }
-interface FileTransferResult { source_path: string; destination_path: string; operation: 'copy' | 'move'; }
-type FileTransferOperation = 'copy' | 'move';
 type ExplorerDragIntent = 'internal' | 'native-out';
 type ExplorerSortKey = 'name' | 'size' | 'date' | 'type';
 
@@ -1110,6 +1119,8 @@ export function FileExplorer({
   const addressInputRef = useRef<HTMLInputElement>(null);
   const [addressEditing, setAddressEditing] = useState(false);
   const [addressDraft, setAddressDraft] = useState('');
+  useExplorerTaskProgressFeed();
+  const explorerTaskProgress = useCurrentExplorerTaskProgress();
 
   const mainRef = useRef<HTMLDivElement>(null);
   const explorerViewportRef = useRef<HTMLDivElement>(null);
@@ -1201,7 +1212,7 @@ export function FileExplorer({
     }
 
     let disposed = false;
-    void invoke<FsRuntimeCachePolicy>('fs_get_runtime_cache_policy')
+    void getExplorerRuntimeCachePolicy()
       .then((policy) => {
         if (disposed) {
           return;
@@ -1279,12 +1290,12 @@ export function FileExplorer({
 
         if (bootstrapPath) {
           navigate(bootstrapPath).catch(() => {
-            invoke<string>('fs_get_home_dir')
+            getExplorerHomeDir()
               .then(home => navigate(home))
               .catch(() => navigate(getFallbackExplorerPath(runtimePlatform)));
           });
         } else {
-          invoke<string>('fs_get_home_dir')
+          getExplorerHomeDir()
             .then(home => navigate(home))
             .catch(() => navigate(getFallbackExplorerPath(runtimePlatform)));
         }
@@ -1298,12 +1309,12 @@ export function FileExplorer({
 
     if (bootstrapPath) {
       navigate(bootstrapPath).catch(() => {
-        invoke<string>('fs_get_home_dir')
+        getExplorerHomeDir()
           .then(home => navigate(home))
           .catch(() => navigate(getFallbackExplorerPath(runtimePlatform)));
       });
     } else {
-      invoke<string>('fs_get_home_dir')
+      getExplorerHomeDir()
         .then(home => navigate(home))
         .catch(() => navigate(getFallbackExplorerPath(runtimePlatform)));
     }
@@ -1615,7 +1626,7 @@ export function FileExplorer({
     return lookup;
   }, [entries, searchResults]);
   const goHome = useCallback(() => {
-    invoke<string>('fs_get_home_dir').then(p => navigate(p)).catch(() => {});
+    getExplorerHomeDir().then(p => navigate(p)).catch(() => {});
   }, [navigate]);
   const handleBookmarkCreated = useCallback((name: string, path: string) => {
     void Promise.resolve(onAddBookmark(name, path)).catch(() => {});
@@ -1731,11 +1742,7 @@ export function FileExplorer({
     operation: FileTransferOperation,
   ): Promise<FileTransferResult[]> => {
     if (sources.length === 0) return [];
-    return invoke<FileTransferResult[]>('fs_transfer_items', {
-      targetDir,
-      sources,
-      operation,
-    });
+    return transferExplorerItems(targetDir, sources, operation);
   }, []);
 
   useEffect(() => {
@@ -1897,7 +1904,7 @@ export function FileExplorer({
     if (isImagePreviewExtension(ext)) {
       setPreviewLoading(true);
       try {
-        const dataUri = await invoke<string>('fs_read_file_base64', { path: entry.path });
+        const dataUri = await readExplorerFileBase64(entry.path);
         setPreview({ type:'image', path:entry.path, name:entry.name, content:dataUri });
       } catch(e) { setError(`Image load failed: ${e}`); }
       finally { setPreviewLoading(false); }
@@ -2578,10 +2585,7 @@ export function FileExplorer({
     });
 
     const startedAt = getExplorerPerformanceNow();
-    void invoke<EntryStorageInfo[]>('fs_measure_entry_sizes', {
-      paths: unresolvedPaths,
-      forceRefresh: false,
-    })
+    void measureExplorerEntrySizes(unresolvedPaths, false)
       .then(results => {
         recordExplorerMetric({
           metricId: 'explorer_entry_size_batch',
@@ -3687,6 +3691,15 @@ export function FileExplorer({
             </span>
           )}
           {search && <span>{searchModeLabel}: "<span style={{ color:EXP.text }}>{search}</span>"</span>}
+          <ExplorerTaskStatusBadge
+            taskProgress={explorerTaskProgress}
+            accent={accent}
+            text={EXP.text}
+            muted={EXP.muted}
+            border={EXP.border}
+            danger={EXP.red}
+            background="rgba(255,255,255,0.02)"
+          />
           <div style={{ flex:1 }} />
           {clipboard && (
             <span style={{ color:EXP.muted2 }}>

@@ -35,14 +35,7 @@ import {
   type ExplorerBookmarkImportSource,
   type ExplorerBookmarkTreeNode,
 } from './explorerRailState';
-
-interface ExplorerDriveInfo {
-  letter: string;
-  label: string;
-  total_bytes: number;
-  free_bytes: number;
-  drive_type: string;
-}
+import type { ExplorerDriveInfo } from '../../runtime/explorerBackend';
 
 interface ExplorerSideRailProps {
   accent: string;

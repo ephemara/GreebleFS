@@ -1,0 +1,10 @@
+
+thread 'fs_commands::tests::copy_copies_single_file' (9792) panicked at crates\fileexplorer\crates\yazi-shared\src\ro_cell.rs:70:4:
+assertion failed: *self.initialized.get()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+await_explorer_yazi_task id=1 seen=true done=None
+task_state id=1 running=true failed=false name=Copy C:\Users\ephemara\AppData\Local\Temp\.tmpehCvTN\original.txt to C:\Users\ephemara\AppData\Local\Temp\.tmpehCvTN\copy.txt
+await_explorer_yazi_task id=1 seen=true done=None
+task_state id=1 running=true failed=false name=Copy C:\Users\ephemara\AppData\Local\Temp\.tmpehCvTN\original.txt to C:\Users\ephemara\AppData\Local\Temp\.tmpehCvTN\copy.txt
+await_explorer_yazi_task id=1 seen=true done=None
+task_state id=1 running=true failed=false name=Copy C:\Users\ephemara\AppData\Local\Temp\.tmpehCvTN\original.txt to C:\Users\ephemara\AppData\Local\Temp\.tmpehCvTN\copy.txt

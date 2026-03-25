@@ -3,6 +3,16 @@ use yazi_shared::{CompletionToken, Id};
 
 use crate::{TaskProg, hook::HookIn};
 
+#[derive(Clone, Debug)]
+pub struct TaskTicket {
+	pub id:   Id,
+	pub done: CompletionToken,
+}
+
+impl From<&Task> for TaskTicket {
+	fn from(task: &Task) -> Self { Self { id: task.id, done: task.done.clone() } }
+}
+
 #[derive(Debug)]
 pub struct Task {
 	pub id:          Id,

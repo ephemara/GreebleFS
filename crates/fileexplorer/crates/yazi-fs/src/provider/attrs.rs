@@ -53,6 +53,9 @@ impl TryFrom<Attrs> for std::fs::Permissions {
 	type Error = ();
 
 	fn try_from(value: Attrs) -> Result<Self, Self::Error> {
+		#[cfg(not(unix))]
+		let _ = value;
+
 		#[cfg(unix)]
 		if let Some(mode) = value.mode {
 			return Ok(mode.into());

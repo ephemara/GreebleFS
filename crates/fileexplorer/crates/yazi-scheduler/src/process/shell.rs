@@ -8,6 +8,7 @@ use yazi_shared::url::{AsUrl, UrlCow};
 pub(crate) struct ShellOpt {
 	pub(crate) cwd:    UrlCow<'static>,
 	pub(crate) cmd:    OsString,
+	#[cfg_attr(windows, allow(dead_code))]
 	pub(crate) args:   Vec<UrlCow<'static>>,
 	pub(crate) piped:  bool,
 	pub(crate) orphan: bool,

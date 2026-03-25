@@ -5,7 +5,7 @@ use yazi_config::{YAZI, plugin::{Fetcher, Preloader}};
 use yazi_parser::{app::PluginOpt, tasks::ProcessOpenOpt};
 use yazi_shared::{CompletionToken, Id, Throttle, url::{UrlBuf, UrlLike}};
 
-use crate::{HIGH, LOW, NORMAL, Runner, fetch::{FetchIn, FetchProg}, file::{FileInCopy, FileInCut, FileInDelete, FileInDownload, FileInHardlink, FileInLink, FileInTrash, FileInUpload, FileOutCopy, FileOutCut, FileOutDownload, FileOutHardlink, FileOutUpload, FileProgCopy, FileProgCut, FileProgDelete, FileProgDownload, FileProgHardlink, FileProgLink, FileProgTrash, FileProgUpload}, hook::{HookInDelete, HookInDownload, HookInTrash, HookInUpload}, plugin::{PluginInEntry, PluginProgEntry}, preload::{PreloadIn, PreloadProg}, process::{ProcessInBg, ProcessInBlock, ProcessInOrphan, ProcessProgBg, ProcessProgBlock, ProcessProgOrphan}, size::{SizeIn, SizeProg}};
+use crate::{HIGH, LOW, NORMAL, Runner, TaskTicket, fetch::{FetchIn, FetchProg}, file::{FileInCopy, FileInCut, FileInDelete, FileInDownload, FileInHardlink, FileInLink, FileInTrash, FileInUpload, FileOutCopy, FileOutCut, FileOutDownload, FileOutHardlink, FileOutUpload, FileProgCopy, FileProgCut, FileProgDelete, FileProgDownload, FileProgHardlink, FileProgLink, FileProgTrash, FileProgUpload}, hook::{HookInDelete, HookInDownload, HookInTrash, HookInUpload}, plugin::{PluginInEntry, PluginProgEntry}, preload::{PreloadIn, PreloadProg}, process::{ProcessInBg, ProcessInBlock, ProcessInOrphan, ProcessProgBg, ProcessProgBlock, ProcessProgOrphan}, size::{SizeIn, SizeProg}};
 
 pub struct Scheduler {
 	pub runner: Runner,
@@ -39,14 +39,16 @@ impl Scheduler {
 		}
 	}
 
-	pub fn file_cut(&self, from: UrlBuf, to: UrlBuf, force: bool) {
+	pub fn file_cut_ticket(&self, from: UrlBuf, to: UrlBuf, force: bool) -> TaskTicket {
 		let mut ongoing = self.ongoing.lock();
 		let task = ongoing.add::<FileProgCut>(format!("Cut {} to {}", from.display(), to.display()));
+		let ticket = TaskTicket::from(&*task);
 
 		if to.try_starts_with(&from).unwrap_or(false) && !to.covariant(&from) {
-			return self
+			self
 				.ops
 				.out(task.id, FileOutCut::Fail("Cannot cut directory into itself".to_owned()));
+			return ticket;
 		}
 
 		let follow = !from.scheme().covariant(to.scheme());
@@ -64,16 +66,23 @@ impl Scheduler {
 			},
 			LOW,
 		);
+		ticket
 	}
 
-	pub fn file_copy(&self, from: UrlBuf, to: UrlBuf, force: bool, follow: bool) {
+	pub fn file_cut(&self, from: UrlBuf, to: UrlBuf, force: bool) {
+		let _ = self.file_cut_ticket(from, to, force);
+	}
+
+	pub fn file_copy_ticket(&self, from: UrlBuf, to: UrlBuf, force: bool, follow: bool) -> TaskTicket {
 		let mut ongoing = self.ongoing.lock();
 		let task = ongoing.add::<FileProgCopy>(format!("Copy {} to {}", from.display(), to.display()));
+		let ticket = TaskTicket::from(&*task);
 
 		if to.try_starts_with(&from).unwrap_or(false) && !to.covariant(&from) {
-			return self
+			self
 				.ops
 				.out(task.id, FileOutCopy::Fail("Cannot copy directory into itself".to_owned()));
+			return ticket;
 		}
 
 		let follow = follow || !from.scheme().covariant(to.scheme());
@@ -90,6 +99,11 @@ impl Scheduler {
 			},
 			LOW,
 		);
+		ticket
+	}
+
+	pub fn file_copy(&self, from: UrlBuf, to: UrlBuf, force: bool, follow: bool) {
+		let _ = self.file_copy_ticket(from, to, force, follow);
 	}
 
 	pub fn file_link(&self, from: UrlBuf, to: UrlBuf, relative: bool, force: bool) {
@@ -131,20 +145,32 @@ impl Scheduler {
 		self.file.submit(FileInHardlink { id: task.id, from, to, force, cha: None, follow }, LOW);
 	}
 
-	pub fn file_delete(&self, target: UrlBuf) {
+	pub fn file_delete_ticket(&self, target: UrlBuf) -> TaskTicket {
 		let mut ongoing = self.ongoing.lock();
 		let task = ongoing.add::<FileProgDelete>(format!("Delete {}", target.display()));
+		let ticket = TaskTicket::from(&*task);
 
 		task.set_hook(HookInDelete { id: task.id, target: target.clone() });
 		self.file.submit(FileInDelete { id: task.id, target, cha: None }, LOW);
+		ticket
 	}
 
-	pub fn file_trash(&self, target: UrlBuf) {
+	pub fn file_delete(&self, target: UrlBuf) {
+		let _ = self.file_delete_ticket(target);
+	}
+
+	pub fn file_trash_ticket(&self, target: UrlBuf) -> TaskTicket {
 		let mut ongoing = self.ongoing.lock();
 		let task = ongoing.add::<FileProgTrash>(format!("Trash {}", target.display()));
+		let ticket = TaskTicket::from(&*task);
 
 		task.set_hook(HookInTrash { id: task.id, target: target.clone() });
 		self.file.submit(FileInTrash { id: task.id, target }, LOW);
+		ticket
+	}
+
+	pub fn file_trash(&self, target: UrlBuf) {
+		let _ = self.file_trash_ticket(target);
 	}
 
 	pub fn file_download(&self, target: UrlBuf) -> CompletionToken {

@@ -10,9 +10,8 @@ pub mod startup_commands;
 pub mod terminal;
 pub mod window_commands;
 
-use entry_size_cache::{
-    initialize_entry_size_cache, EntrySizeWatcherState,
-};
+use entry_size_cache::{initialize_entry_size_cache, EntrySizeWatcherState};
+use fs_commands::initialize_fs_command_events;
 use plugin_commands::PluginWatcherState;
 use tauri::{
     menu::{MenuBuilder, MenuItem},
@@ -50,6 +49,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .setup(move |app| {
             builder.mount_events(app);
+            initialize_fs_command_events(app.handle().clone());
             app.manage(TerminalManager::new());
             initialize_entry_size_cache(app.handle())?;
             app.manage(EntrySizeWatcherState::default());

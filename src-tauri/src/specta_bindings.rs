@@ -1,20 +1,23 @@
 use std::{fs, path::PathBuf};
 
-use overlay_contracts::ShellBlueprint;
-use specta_typescript::{BigIntExportBehavior, Typescript};
-use tauri_specta::{Builder, collect_commands};
 use crate::desktop_integration::{NativeIconRequest, NativeIconResponse};
 use crate::fs_commands::{
-    DriveInfo, EntryStorageInfo, FileEntry, FileSearchContentCacheStatus, FileSearchDiagnostics,
-    FileSearchExecutionStrategy, FileSearchMatchKind, FileSearchResponse, FileSearchResult, FileTransferOperation, FileTransferResult, FsRuntimeCachePolicy,
+    DriveInfo, EntryStorageInfo, ExplorerTaskProgressEvent, FileEntry,
+    FileSearchContentCacheStatus, FileSearchDiagnostics, FileSearchExecutionStrategy,
+    FileSearchMatchKind, FileSearchResponse, FileSearchResult, FileTransferOperation,
+    FileTransferResult, FsRuntimeCachePolicy,
 };
 use crate::plugin_commands::{PluginBackendResult, PluginDirectoryWatchEvent};
 use crate::python_commands::{
     PythonActionResponse, PythonBoilerplateFiles, PythonCommandResult, PythonExecutionMode,
-    PythonExecutionRequest, PythonInterpreterDescriptor, PythonPackageInstallRequest, PythonRuntimeConfig, PythonRuntimeStatus,
+    PythonExecutionRequest, PythonInterpreterDescriptor, PythonPackageInstallRequest,
+    PythonRuntimeConfig, PythonRuntimeStatus,
 };
 use crate::screenshot_commands::{SavedScreenshot, ScreenshotPreview};
 use crate::terminal::{ExternalTerminalRequest, TerminalWriteRequest};
+use overlay_contracts::ShellBlueprint;
+use specta_typescript::{BigIntExportBehavior, Typescript};
+use tauri_specta::{collect_commands, collect_events, Builder};
 
 pub const TAURI_TYPESCRIPT_BINDINGS_PATH: &str = "../src/generated/tauri.ts";
 
@@ -88,12 +91,16 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::window_commands::window_set_taskbar_visibility,
             crate::domain_commands::domain_list_shell_blueprints,
         ])
+        .events(collect_events![
+            crate::fs_commands::ExplorerTaskProgressEvent
+        ])
         .typ::<ShellBlueprint>()
         .typ::<NativeIconRequest>()
         .typ::<NativeIconResponse>()
         .typ::<FileEntry>()
         .typ::<DriveInfo>()
         .typ::<EntryStorageInfo>()
+        .typ::<ExplorerTaskProgressEvent>()
         .typ::<FsRuntimeCachePolicy>()
         .typ::<FileTransferOperation>()
         .typ::<FileTransferResult>()

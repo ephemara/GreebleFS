@@ -1,54 +1,56 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { FileSearchResponse } from '../config/searchTelemetry';
+import type { FsRuntimeCachePolicy } from '../config/runtimeCachePolicy';
+import { commands, events, unwrapTauriResult } from './tauriClient';
+import {
+  type DriveInfo,
+  type EntryStorageInfo,
+  type ExplorerTaskProgressEvent,
+  type FileEntry,
+  type FileSearchResult,
+  type FileTransferOperation,
+  type FileTransferResult,
+  type YaziSchedulerTaskSnap,
+} from '../generated/tauri';
 
-export interface ExplorerFileEntry {
-  name: string;
-  path: string;
-  is_dir: boolean;
-  size: number;
-  modified: number;
-  extension: string;
-  is_hidden: boolean;
-  is_symlink: boolean;
-}
-
-export interface ExplorerFileSearchResult extends ExplorerFileEntry {
-  relative_path: string;
-  snippet: string;
-  line_number: number | null;
-  match_kind: 'name' | 'content' | 'name_and_content';
-}
-
-export interface ExplorerDriveInfo {
-  letter: string;
-  label: string;
-  total_bytes: number;
-  free_bytes: number;
-  drive_type: string;
-}
-
-export interface ExplorerEntryStorageInfo {
-  path: string;
-  bytes: number;
-  is_dir: boolean;
-  is_complete: boolean;
-}
-
+export type ExplorerFileEntry = FileEntry;
+export type ExplorerFileSearchResult = FileSearchResult;
+export type ExplorerDriveInfo = DriveInfo;
+export type ExplorerEntryStorageInfo = EntryStorageInfo;
+export type ExplorerFileTransferOperation = FileTransferOperation;
+export type ExplorerFileTransferResult = FileTransferResult;
+export type ExplorerTaskProgress = ExplorerTaskProgressEvent;
+export type ExplorerSchedulerTask = YaziSchedulerTaskSnap;
 export type ExplorerWritableContent = string | number[];
 
 export async function listExplorerDir(path: string, showHidden: boolean): Promise<ExplorerFileEntry[]> {
-  return invoke<ExplorerFileEntry[]>('fs_list_dir', { path, showHidden });
+  return unwrapTauriResult(await commands.fsListDir(path, showHidden));
 }
 
 export async function listExplorerDirUncached(
   path: string,
   showHidden: boolean,
 ): Promise<ExplorerFileEntry[]> {
-  return invoke<ExplorerFileEntry[]>('fs_list_dir_uncached', { path, showHidden });
+  return unwrapTauriResult(await commands.fsListDirUncached(path, showHidden));
 }
 
 export async function getExplorerDrives(): Promise<ExplorerDriveInfo[]> {
-  return invoke<ExplorerDriveInfo[]>('fs_get_drives');
+  return unwrapTauriResult(await commands.fsGetDrives());
+}
+
+export async function measureExplorerEntrySizes(
+  paths: string[],
+  forceRefresh = false,
+): Promise<ExplorerEntryStorageInfo[]> {
+  return unwrapTauriResult(await commands.fsMeasureEntrySizes(paths, forceRefresh));
+}
+
+export async function getExplorerRuntimeCachePolicy(): Promise<FsRuntimeCachePolicy> {
+  return commands.fsGetRuntimeCachePolicy();
+}
+
+export async function getExplorerHomeDir(): Promise<string> {
+  return unwrapTauriResult(await commands.fsGetHomeDir());
 }
 
 export async function searchExplorerEntriesWithDiagnostics(args: {
@@ -60,10 +62,15 @@ export async function searchExplorerEntriesWithDiagnostics(args: {
   requestId?: number;
   requestScope?: string;
 }): Promise<FileSearchResponse<ExplorerFileSearchResult>> {
-  return invoke<FileSearchResponse<ExplorerFileSearchResult>>(
-    'fs_search_entries_with_diagnostics',
-    args,
-  );
+  return unwrapTauriResult(await commands.fsSearchEntriesWithDiagnostics(
+    args.path,
+    args.query,
+    args.showHidden,
+    args.includeContent ?? false,
+    args.limit ?? null,
+    args.requestId ?? null,
+    args.requestScope ?? null,
+  )) as FileSearchResponse<ExplorerFileSearchResult>;
 }
 
 export async function cancelExplorerSearchEntries(args: {
@@ -71,31 +78,43 @@ export async function cancelExplorerSearchEntries(args: {
   requestId?: number;
   requestScope?: string;
 }): Promise<void> {
-  await invoke('fs_cancel_search_entries', args);
+  unwrapTauriResult(await commands.fsCancelSearchEntries(
+    args.path,
+    args.requestId ?? null,
+    args.requestScope ?? null,
+  ));
 }
 
 export async function watchExplorerEntrySizeRoot(path: string): Promise<void> {
-  await invoke('fs_watch_entry_size_root', { path });
+  unwrapTauriResult(await commands.fsWatchEntrySizeRoot(path));
 }
 
 export async function unwatchExplorerEntrySizeRoot(path: string): Promise<void> {
-  await invoke('fs_unwatch_entry_size_root', { path });
+  unwrapTauriResult(await commands.fsUnwatchEntrySizeRoot(path));
 }
 
 export async function openExplorerPath(path: string): Promise<void> {
-  await invoke('fs_open_file', { path });
+  unwrapTauriResult(await commands.fsOpenFile(path));
 }
 
 export async function revealExplorerPath(path: string): Promise<void> {
-  await invoke('fs_reveal_in_explorer', { path });
+  unwrapTauriResult(await commands.fsRevealInExplorer(path));
 }
 
 export async function openExplorerPathAsAdmin(path: string): Promise<void> {
-  await invoke('fs_open_as_admin', { path });
+  unwrapTauriResult(await commands.fsOpenAsAdmin(path));
 }
 
 export async function createExplorerDir(path: string): Promise<void> {
-  await invoke('fs_create_dir', { path });
+  unwrapTauriResult(await commands.fsCreateDir(path));
+}
+
+export async function transferExplorerItems(
+  targetDir: string,
+  sources: string[],
+  operation: ExplorerFileTransferOperation,
+): Promise<ExplorerFileTransferResult[]> {
+  return unwrapTauriResult(await commands.fsTransferItems(targetDir, sources, operation));
 }
 
 export async function writeExplorerFile(
@@ -106,13 +125,77 @@ export async function writeExplorerFile(
 }
 
 export async function readExplorerTextFile(path: string): Promise<string> {
-  return invoke<string>('fs_read_text_file', { path });
+  return unwrapTauriResult(await commands.fsReadTextFile(path));
+}
+
+export async function readExplorerFileBase64(path: string): Promise<string> {
+  return unwrapTauriResult(await commands.fsReadFileBase64(path));
 }
 
 export async function renameExplorerPath(oldPath: string, newPath: string): Promise<void> {
-  await invoke('fs_rename', { oldPath, newPath });
+  unwrapTauriResult(await commands.fsRename(oldPath, newPath));
 }
 
 export async function deleteExplorerPath(path: string, recursive: boolean): Promise<void> {
-  await invoke('fs_delete', { path, recursive });
+  unwrapTauriResult(await commands.fsDelete(path, recursive));
+}
+
+export async function listenToExplorerTaskProgress(
+  listener: (event: ExplorerTaskProgress) => void,
+): Promise<() => void> {
+  return events.explorerTaskProgressEvent.listen(
+    (event: { payload: ExplorerTaskProgress }) => listener(event.payload),
+  );
+}
+
+export function getExplorerTaskProgressPercent(task: ExplorerSchedulerTask): number | null {
+  switch (task.prog.kind) {
+    case 'fileCopy':
+    case 'fileCut':
+    case 'fileDelete':
+      return task.prog.totalBytes > 0
+        ? Math.min(100, Math.round((task.prog.processedBytes / task.prog.totalBytes) * 100))
+        : task.prog.collected === true
+          ? 100
+          : task.prog.failedFiles > 0
+            ? 0
+            : null;
+    default:
+      return null;
+  }
+}
+
+export function didExplorerTaskFail(task: ExplorerSchedulerTask): boolean {
+  switch (task.prog.kind) {
+    case 'fileCopy':
+    case 'fileCut':
+    case 'fileDelete':
+      return task.prog.cleaned === false || task.prog.collected === false;
+    default:
+      return false;
+  }
+}
+
+export function isExplorerTaskFinished(task: ExplorerSchedulerTask): boolean {
+  switch (task.prog.kind) {
+    case 'fileCopy':
+    case 'fileCut':
+    case 'fileDelete':
+      return task.prog.cleaned !== null || task.prog.collected === false;
+    default:
+      return false;
+  }
+}
+
+export function getExplorerTaskStatusLabel(task: ExplorerSchedulerTask): string {
+  if (didExplorerTaskFail(task)) {
+    return 'Failed';
+  }
+
+  const percent = getExplorerTaskProgressPercent(task);
+  if (percent != null && !isExplorerTaskFinished(task)) {
+    return `${percent}%`;
+  }
+
+  return isExplorerTaskFinished(task) ? 'Done' : 'Working…';
 }

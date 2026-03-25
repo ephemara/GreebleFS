@@ -400,6 +400,11 @@ async domainListShellBlueprints() : Promise<ShellBlueprint[]> {
 /** user-defined events **/
 
 
+export const events = __makeEvents__<{
+explorerTaskProgressEvent: ExplorerTaskProgressEvent
+}>({
+explorerTaskProgressEvent: "explorer-task-progress-event"
+})
 
 /** user-defined constants **/
 
@@ -409,6 +414,7 @@ export const YAZI_BINDINGS_MANIFEST = {"entries":[{"crateName":"yazi-actor","exp
 
 export type DriveInfo = { letter: string; label: string; total_bytes: number; free_bytes: number; drive_type: string }
 export type EntryStorageInfo = { path: string; bytes: number; is_dir: boolean; is_complete: boolean }
+export type ExplorerTaskProgressEvent = { taskId: string; task: YaziSchedulerTaskSnap }
 export type ExternalTerminalRequest = { workingDir: string; profile: string | null; executable: string | null; args: string[] | null; shell: string | null }
 export type FileEntry = { name: string; path: string; is_dir: boolean; size: number; modified: number; extension: string; is_hidden: boolean; is_symlink: boolean }
 export type FileSearchContentCacheStatus = "not_requested" | "cache_hit" | "warmed" | "disabled" | "over_budget_fallback" | "read_failure_fallback"

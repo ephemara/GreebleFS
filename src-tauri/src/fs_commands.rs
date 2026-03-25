@@ -11,11 +11,17 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tauri::AppHandle;
+use tauri_specta::Event;
 use yazi_fs::{
     cha::{Cha, ChaType},
     provider::{local::Local, DirReader, FileHolder, Provider},
 };
-use yazi_shared::{path::PathLike, strand::StrandLike};
+use yazi_scheduler::{
+    Scheduler as YaziScheduler, TaskSnap as YaziTaskSnap, TaskTicket as YaziTaskTicket,
+};
+use yazi_shared::{path::PathLike, strand::StrandLike, url::UrlBuf, Id as YaziTaskId};
+use yazi_vfs::provider as yazi_provider;
 
 #[cfg(test)]
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -49,6 +55,13 @@ pub struct EntryStorageInfo {
     pub bytes: u64,
     pub is_dir: bool,
     pub is_complete: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+pub struct ExplorerTaskProgressEvent {
+    pub task_id: String,
+    pub task: yazi_specta::YaziSchedulerTaskSnap,
 }
 
 #[derive(Debug, Clone)]
@@ -233,6 +246,9 @@ static SEARCH_CONTENT_INDEX_CACHE: OnceLock<
 > = OnceLock::new();
 static ENTRY_SIZE_CACHE: OnceLock<Mutex<HashMap<String, CachedEntrySize>>> = OnceLock::new();
 static SEARCH_REQUESTS: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+static FS_COMMAND_APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
+static FS_COMMAND_YAZI_RUNTIME: OnceLock<Result<(), String>> = OnceLock::new();
+static FS_COMMAND_YAZI_SCHEDULER: OnceLock<Arc<YaziScheduler>> = OnceLock::new();
 
 #[cfg(test)]
 static SEARCH_ENTRY_TEST_DELAY_MS: AtomicU64 = AtomicU64::new(0);
@@ -313,6 +329,130 @@ fn entry_size_cache() -> &'static Mutex<HashMap<String, CachedEntrySize>> {
 
 fn search_requests() -> &'static Mutex<HashMap<String, u64>> {
     SEARCH_REQUESTS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub fn initialize_fs_command_events(app: AppHandle) {
+    let _ = FS_COMMAND_APP_HANDLE.set(app);
+}
+
+fn fs_command_app_handle() -> Option<&'static AppHandle> {
+    FS_COMMAND_APP_HANDLE.get()
+}
+
+fn ensure_yazi_runtime() -> Result<(), String> {
+    FS_COMMAND_YAZI_RUNTIME
+        .get_or_init(|| {
+            yazi_shared::init();
+            yazi_term::init();
+            yazi_fs::init();
+            yazi_config::init_default()
+                .map_err(|error| format!("Failed to initialize Yazi default config: {error}"))?;
+            yazi_vfs::init();
+            yazi_boot::init_default();
+            yazi_dds::init();
+            yazi_dds::serve();
+            Ok(())
+        })
+        .clone()
+}
+
+fn fs_command_scheduler() -> Result<&'static Arc<YaziScheduler>, String> {
+    ensure_yazi_runtime()?;
+    Ok(FS_COMMAND_YAZI_SCHEDULER.get_or_init(|| Arc::new(YaziScheduler::serve())))
+}
+
+#[derive(Debug, Clone)]
+struct ExplorerYaziTaskState {
+    snap: yazi_specta::YaziSchedulerTaskSnap,
+    running: bool,
+    failed: bool,
+    logs: String,
+}
+
+fn current_explorer_yazi_task_state(task_id: YaziTaskId) -> Option<ExplorerYaziTaskState> {
+    let ongoing = fs_command_scheduler().ok()?.ongoing.lock();
+    let task = ongoing.values().find(|task| task.id == task_id)?;
+    let snap = YaziTaskSnap::from(task);
+    Some(ExplorerYaziTaskState {
+        running: snap.prog.running(),
+        failed: snap.prog.failed(),
+        logs: task.logs.clone(),
+        snap: snap.into(),
+    })
+}
+
+fn emit_explorer_task_progress(task_id: YaziTaskId, task: &yazi_specta::YaziSchedulerTaskSnap) {
+    let Some(app) = fs_command_app_handle() else {
+        return;
+    };
+
+    let _ = ExplorerTaskProgressEvent {
+        task_id: task_id.to_string(),
+        task: task.clone(),
+    }
+    .emit(app);
+}
+
+fn explorer_yazi_task_error(state: &ExplorerYaziTaskState) -> String {
+    state
+        .logs
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| format!("{} failed", state.snap.name))
+}
+
+async fn await_explorer_yazi_task(ticket: YaziTaskTicket) -> Result<(), String> {
+    ensure_yazi_runtime()?;
+    let mut last_state: Option<ExplorerYaziTaskState> = None;
+
+    loop {
+        if ticket.done.completed() == Some(true) {
+            if let Some(state) = &last_state {
+                if state.failed {
+                    if let Ok(scheduler) = fs_command_scheduler() {
+                        scheduler.cancel(ticket.id);
+                    }
+                    return Err(explorer_yazi_task_error(state));
+                }
+            }
+            return Ok(());
+        }
+
+        if let Some(state) = current_explorer_yazi_task_state(ticket.id) {
+            if last_state
+                .as_ref()
+                .map(|previous| previous.snap != state.snap)
+                .unwrap_or(true)
+            {
+                emit_explorer_task_progress(ticket.id, &state.snap);
+            }
+
+            if !state.running {
+                if state.failed {
+                    if let Ok(scheduler) = fs_command_scheduler() {
+                        scheduler.cancel(ticket.id);
+                    }
+                    return Err(explorer_yazi_task_error(&state));
+                }
+                return Ok(());
+            }
+
+            last_state = Some(state);
+        } else if let Some(state) = &last_state {
+            if state.failed {
+                if let Ok(scheduler) = fs_command_scheduler() {
+                    scheduler.cancel(ticket.id);
+                }
+                return Err(explorer_yazi_task_error(state));
+            }
+            return Ok(());
+        }
+
+        tokio::time::sleep(Duration::from_millis(40)).await;
+    }
 }
 
 fn path_cache_key(path: &Path) -> String {
@@ -1973,8 +2113,8 @@ async fn search_entries(
                                     ))
                                 }
                             }
-                            cached_content_bytes = cached_content_bytes
-                                .saturating_add(cached_name_result.size);
+                            cached_content_bytes =
+                                cached_content_bytes.saturating_add(cached_name_result.size);
                             cached_content = Some(Arc::<str>::from(content));
                         }
                         Err(_) => {
@@ -2540,24 +2680,15 @@ pub async fn fs_reveal_in_explorer(path: String) -> Result<(), String> {
 #[specta::specta]
 pub async fn fs_delete(path: String, recursive: bool) -> Result<(), String> {
     let p = Path::new(&path);
-    let result = if p.is_dir() {
-        if recursive {
-            std::fs::remove_dir_all(p).map_err(|e| e.to_string())
-        } else {
-            std::fs::remove_dir(p).map_err(|e| e.to_string())
-        }
-    } else {
-        std::fs::remove_file(p).map_err(|e| e.to_string())
-    };
+    ensure_nonrecursive_delete_allowed(p, recursive)?;
+    delete_path_with_scheduler(p).await?;
 
-    if result.is_ok() {
-        invalidate_all_fs_caches(p);
-        if let Some(parent) = p.parent() {
-            invalidate_all_fs_caches(parent);
-        }
+    invalidate_all_fs_caches(p);
+    if let Some(parent) = p.parent() {
+        invalidate_all_fs_caches(parent);
     }
 
-    result
+    Ok(())
 }
 
 // ─── fs_rename ────────────────────────────────────────────────────────────────
@@ -2586,18 +2717,19 @@ pub async fn fs_rename(old_path: String, new_path: String) -> Result<(), String>
 pub async fn fs_move(src: String, dst: String) -> Result<(), String> {
     let src_path = Path::new(&src);
     let dst_path = Path::new(&dst);
-    let result = move_path(src_path, dst_path).map_err(|e| e.to_string());
-    if result.is_ok() {
-        invalidate_all_fs_caches(src_path);
-        invalidate_all_fs_caches(dst_path);
-        if let Some(parent) = src_path.parent() {
-            invalidate_all_fs_caches(parent);
-        }
-        if let Some(parent) = dst_path.parent() {
-            invalidate_all_fs_caches(parent);
-        }
+    validate_transfer_destination(src_path, dst_path, FileTransferOperation::Move)?;
+    move_path(src_path, dst_path, true).await?;
+
+    invalidate_all_fs_caches(src_path);
+    invalidate_all_fs_caches(dst_path);
+    if let Some(parent) = src_path.parent() {
+        invalidate_all_fs_caches(parent);
     }
-    result
+    if let Some(parent) = dst_path.parent() {
+        invalidate_all_fs_caches(parent);
+    }
+
+    Ok(())
 }
 
 // ─── fs_copy ─────────────────────────────────────────────────────────────────
@@ -2606,37 +2738,15 @@ pub async fn fs_move(src: String, dst: String) -> Result<(), String> {
 #[specta::specta]
 pub async fn fs_copy(src: String, dst: String) -> Result<(), String> {
     let src_path = Path::new(&src);
-    let result = if src_path.is_dir() {
-        copy_dir_all(src_path, Path::new(&dst)).map_err(|e| e.to_string())
-    } else {
-        std::fs::copy(&src, &dst)
-            .map(|_| ())
-            .map_err(|e| e.to_string())
-    };
+    let dst_path = Path::new(&dst);
+    validate_transfer_destination(src_path, dst_path, FileTransferOperation::Copy)?;
+    copy_path(src_path, dst_path, true).await?;
 
-    if result.is_ok() {
-        let dst_path = Path::new(&dst);
-        invalidate_all_fs_caches(dst_path);
-        if let Some(parent) = dst_path.parent() {
-            invalidate_all_fs_caches(parent);
-        }
+    invalidate_all_fs_caches(dst_path);
+    if let Some(parent) = dst_path.parent() {
+        invalidate_all_fs_caches(parent);
     }
 
-    result
-}
-
-fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(dst)?;
-    for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        let ty = entry.file_type()?;
-        let dst_entry = dst.join(entry.file_name());
-        if ty.is_dir() {
-            copy_dir_all(&entry.path(), &dst_entry)?;
-        } else {
-            std::fs::copy(entry.path(), dst_entry)?;
-        }
-    }
     Ok(())
 }
 
@@ -2676,13 +2786,13 @@ pub async fn fs_transfer_items(
 
         validate_transfer_destination(&source_path, &destination, operation)?;
 
-        match operation {
-            FileTransferOperation::Copy => {
-                copy_path(&source_path, &destination).map_err(|e| e.to_string())?;
-            }
-            FileTransferOperation::Move => {
-                move_path(&source_path, &destination).map_err(|e| e.to_string())?;
-            }
+        let operation_result = match operation {
+            FileTransferOperation::Copy => copy_path(&source_path, &destination, true).await,
+            FileTransferOperation::Move => move_path(&source_path, &destination, true).await,
+        };
+
+        if let Err(error) = operation_result {
+            return Err(error);
         }
 
         results.push(FileTransferResult {
@@ -2704,6 +2814,25 @@ pub async fn fs_transfer_items(
     }
 
     Ok(results)
+}
+
+fn ensure_nonrecursive_delete_allowed(path: &Path, recursive: bool) -> Result<(), String> {
+    if recursive || !path.is_dir() {
+        return Ok(());
+    }
+
+    let mut entries = std::fs::read_dir(path).map_err(|error| error.to_string())?;
+    let has_entries = entries
+        .next()
+        .transpose()
+        .map_err(|error| error.to_string())?
+        .is_some();
+
+    if has_entries {
+        return Err(format!("Directory is not empty: {}", path.display()));
+    }
+
+    Ok(())
 }
 
 fn validate_transfer_destination(
@@ -2742,42 +2871,88 @@ fn validate_transfer_destination(
     Ok(())
 }
 
-fn copy_path(src: &Path, dst: &Path) -> std::io::Result<()> {
-    if src.is_dir() {
-        copy_dir_all(src, dst)
-    } else {
-        if let Some(parent) = dst.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::copy(src, dst).map(|_| ())
+async fn ensure_destination_parent_dir(path: &Path) -> Result<(), String> {
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+
+    if parent.as_os_str().is_empty() {
+        return Ok(());
+    }
+
+    ensure_yazi_runtime()?;
+    yazi_provider::create_dir_all(UrlBuf::from(parent))
+        .await
+        .map_err(|error| {
+            format!(
+                "Failed to create destination parent directory {} via Yazi VFS: {error}",
+                parent.display()
+            )
+        })
+}
+
+async fn copy_path(src: &Path, dst: &Path, force: bool) -> Result<(), String> {
+    ensure_destination_parent_dir(dst).await?;
+    let ticket = fs_command_scheduler()?.file_copy_ticket(
+        UrlBuf::from(src),
+        UrlBuf::from(dst),
+        force,
+        false,
+    );
+    await_explorer_yazi_task(ticket).await
+}
+
+async fn yazi_path_metadata(path: &Path) -> Result<Option<Cha>, String> {
+    ensure_yazi_runtime()?;
+
+    match yazi_provider::symlink_metadata(UrlBuf::from(path)).await {
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!(
+            "Failed to inspect {} via Yazi VFS: {error}",
+            path.display()
+        )),
     }
 }
 
-fn move_path(src: &Path, dst: &Path) -> std::io::Result<()> {
-    if let Some(parent) = dst.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
+async fn cleanup_residual_move_source(source: &Path, metadata: Cha) -> Result<(), String> {
+    let url = UrlBuf::from(source);
+    let cleanup_result = if metadata.is_dir() && !metadata.is_link() {
+        yazi_provider::remove_dir_all(url).await
+    } else {
+        yazi_provider::remove_file(url).await
+    };
 
-    match std::fs::rename(src, dst) {
-        Ok(()) => Ok(()),
-        Err(rename_error) => {
-            copy_path(src, dst)?;
-            delete_path(src)?;
-            if dst.exists() {
-                Ok(())
-            } else {
-                Err(rename_error)
-            }
-        }
+    cleanup_result.map_err(|error| {
+        format!(
+            "Move completed but residual source cleanup failed for {}: {error}",
+            source.display()
+        )
+    })
+}
+
+async fn move_path(src: &Path, dst: &Path, force: bool) -> Result<(), String> {
+    ensure_destination_parent_dir(dst).await?;
+    let ticket =
+        fs_command_scheduler()?.file_cut_ticket(UrlBuf::from(src), UrlBuf::from(dst), force);
+    await_explorer_yazi_task(ticket).await?;
+
+    let destination_metadata = yazi_path_metadata(dst).await?;
+    let source_metadata = yazi_path_metadata(src).await?;
+
+    match (destination_metadata, source_metadata) {
+        (None, _) => Err(format!(
+            "Move completed but destination is missing: {}",
+            dst.display()
+        )),
+        (Some(_), None) => Ok(()),
+        (Some(_), Some(metadata)) => cleanup_residual_move_source(src, metadata).await,
     }
 }
 
-fn delete_path(path: &Path) -> std::io::Result<()> {
-    if path.is_dir() {
-        std::fs::remove_dir_all(path)
-    } else {
-        std::fs::remove_file(path)
-    }
+async fn delete_path_with_scheduler(path: &Path) -> Result<(), String> {
+    let ticket = fs_command_scheduler()?.file_delete_ticket(UrlBuf::from(path));
+    await_explorer_yazi_task(ticket).await
 }
 
 fn collision_free_destination(
