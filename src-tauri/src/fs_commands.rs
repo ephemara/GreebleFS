@@ -2696,10 +2696,13 @@ pub async fn fs_delete(path: String, recursive: bool) -> Result<(), String> {
 #[tauri::command]
 #[specta::specta]
 pub async fn fs_rename(old_path: String, new_path: String) -> Result<(), String> {
-    let result = std::fs::rename(&old_path, &new_path).map_err(|e| e.to_string());
+    ensure_yazi_runtime()?;
+    let old_path_ref = Path::new(&old_path);
+    let new_path_ref = Path::new(&new_path);
+    let result = yazi_provider::rename(UrlBuf::from(old_path_ref), UrlBuf::from(new_path_ref))
+    .await
+    .map_err(|error| error.to_string());
     if result.is_ok() {
-        let old_path_ref = Path::new(&old_path);
-        let new_path_ref = Path::new(&new_path);
         invalidate_all_fs_caches(old_path_ref);
         invalidate_all_fs_caches(new_path_ref);
         if let Some(parent) = old_path_ref.parent() {

@@ -1,5 +1,5 @@
-import { invoke } from '@tauri-apps/api/core';
 import { parse as parseToml } from 'smol-toml';
+import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 import {
   normalizeShellBlueprintId,
   type OverlayShellBlueprintId,
@@ -351,12 +351,12 @@ export async function loadExternalLayoutManifest(preferredPath?: string | null):
   const requestedPath = preferredPath?.trim();
   const candidatePaths = requestedPath
     ? [requestedPath]
-    : buildDefaultLayoutConfigCandidates(await invoke<string>('fs_get_home_dir'));
+    : buildDefaultLayoutConfigCandidates(await commands.fsGetHomeDir().then(unwrapTauriResult));
   let lastError: string | null = null;
 
   for (const candidatePath of candidatePaths) {
     try {
-      const text = await invoke<string>('fs_read_text_file', { path: candidatePath });
+      const text = await commands.fsReadTextFile(candidatePath).then(unwrapTauriResult);
       return {
         manifest: parseLayoutManifestText(text, candidatePath),
         sourcePath: candidatePath,

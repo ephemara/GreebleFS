@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { invoke } from '@tauri-apps/api/core';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
@@ -22,6 +21,7 @@ import {
   getPlatformPathSeparator,
   joinPlatformPath,
 } from '../config/platform';
+import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 
 type ModelPreviewProps = {
   entryName: string;
@@ -263,32 +263,32 @@ async function loadSourceObject(
   const manager = createPreviewLoadingManager(sourcePath);
   if (format === 'glb') {
     const loader = createGltfLoader(manager);
-    const dataUrl = await invoke<string>('fs_read_file_base64', { path: sourcePath });
+    const dataUrl = await commands.fsReadFileBase64(sourcePath).then(unwrapTauriResult);
     const asset = await parseGltfAsync(loader, decodeDataUrlToUint8Array(dataUrl).buffer, getLoaderResourceRoot(sourcePath));
     return asset.scene ?? asset.scenes[0];
   }
 
   if (format === 'gltf') {
     const loader = createGltfLoader(manager);
-    const content = await invoke<string>('fs_read_text_file', { path: sourcePath });
+    const content = await commands.fsReadTextFile(sourcePath).then(unwrapTauriResult);
     const asset = await parseGltfAsync(loader, content, getLoaderResourceRoot(sourcePath));
     return asset.scene ?? asset.scenes[0];
   }
 
   if (format === 'obj') {
     const loader = new OBJLoader(manager);
-    const content = await invoke<string>('fs_read_text_file', { path: sourcePath });
+    const content = await commands.fsReadTextFile(sourcePath).then(unwrapTauriResult);
     return loader.parse(content);
   }
 
   if (format === 'fbx') {
     const loader = new FBXLoader(manager);
-    const dataUrl = await invoke<string>('fs_read_file_base64', { path: sourcePath });
+    const dataUrl = await commands.fsReadFileBase64(sourcePath).then(unwrapTauriResult);
     return parseFbxAsync(loader, decodeDataUrlToUint8Array(dataUrl).buffer, getLoaderResourceRoot(sourcePath));
   }
 
   const loader = new STLLoader(manager);
-  const dataUrl = await invoke<string>('fs_read_file_base64', { path: sourcePath });
+  const dataUrl = await commands.fsReadFileBase64(sourcePath).then(unwrapTauriResult);
   const geometry = loader.parse(decodeDataUrlToUint8Array(dataUrl).buffer);
   geometry.computeBoundingBox();
   geometry.computeVertexNormals();

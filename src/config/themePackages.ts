@@ -1,4 +1,4 @@
-import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core';
+import { convertFileSrc, isTauri } from '@tauri-apps/api/core';
 import { parse as parseToml } from 'smol-toml';
 
 import {
@@ -23,6 +23,7 @@ import { type LoadedOverlayShader, loadShaderFromSource, deriveShaderId, deriveS
 import { isFrontendAnimationFile } from '../components/animationRuntime';
 import { joinPlatformPath } from './platform';
 import { normalizeShellBlueprintId } from './shellBlueprints';
+import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 
 interface FileEntry {
   name: string;
@@ -195,7 +196,7 @@ async function toInlineAssetUrl(filePath: string): Promise<string> {
   }
 
   try {
-    return await invoke<string>('fs_read_file_base64', { path: filePath });
+    return await commands.fsReadFileBase64(filePath).then(unwrapTauriResult);
   } catch {
     return toAssetUrl(filePath);
   }
@@ -274,7 +275,7 @@ async function readPackageManifest(directoryPath: string): Promise<{ manifestPat
 
   for (const candidatePath of candidates) {
     try {
-      const text = await invoke<string>('fs_read_text_file', { path: candidatePath });
+      const text = await commands.fsReadTextFile(candidatePath).then(unwrapTauriResult);
       return {
         manifestPath: candidatePath,
         manifest: parseThemeManifestText(text, candidatePath),
@@ -289,7 +290,7 @@ async function readPackageManifest(directoryPath: string): Promise<{ manifestPat
 
 async function resolveIconEntries(directoryPath: string, iconsDirectory: string, aliases: Record<string, string>): Promise<Record<string, string>> {
   const iconsPath = joinPlatformPath(directoryPath, normalizePackageAssetPath(iconsDirectory));
-  const entries = await invoke<FileEntry[]>('fs_list_dir', { path: iconsPath, showHidden: false });
+  const entries = await commands.fsListDir(iconsPath, false).then(unwrapTauriResult);
   const resolvedEntries = await Promise.all(
     entries
       .filter(entry => !entry.is_dir)
@@ -315,7 +316,7 @@ async function resolvePackageIconTheme(
   iconThemePath: string,
 ): Promise<OverlayResolvedIconTheme> {
   const absolutePath = joinPlatformPath(directoryPath, iconThemePath);
-  const text = await invoke<string>('fs_read_text_file', { path: absolutePath });
+  const text = await commands.fsReadTextFile(absolutePath).then(unwrapTauriResult);
   const manifest = parseIconThemeManifest(text);
   const resolvedIconEntries = await Promise.all(
     Object.entries(manifest.iconDefinitions ?? {}).map(async ([key, value]) => {
@@ -374,7 +375,7 @@ async function resolvePackageRuntimeEntries(
 
   const runtimeDirectory = joinPlatformPath(directoryPath, defaultDirectoryName);
   try {
-    const entries = await invoke<FileEntry[]>('fs_list_dir', { path: runtimeDirectory, showHidden: false });
+    const entries = await commands.fsListDir(runtimeDirectory, false).then(unwrapTauriResult);
     return entries.filter(entry => !entry.is_dir && filterEntry(entry));
   } catch {
     return [];
@@ -573,7 +574,7 @@ export async function loadThemePackagesFromDirectoryEntries(
         const packageShaders = (
           await Promise.all(shaderEntries.map(async entry => {
             try {
-              const source = await invoke<string>('fs_read_text_file', { path: entry.path });
+              const source = await commands.fsReadTextFile(entry.path).then(unwrapTauriResult);
               return loadShaderFromSource(source, entry, {
                 context: {
                   id: deriveShaderId(`${theme.id}-${entry.name}`),
@@ -592,7 +593,7 @@ export async function loadThemePackagesFromDirectoryEntries(
         const packageAnimations = (
           await Promise.all(animationEntries.map(async entry => {
             try {
-              const source = await invoke<string>('fs_read_text_file', { path: entry.path });
+              const source = await commands.fsReadTextFile(entry.path).then(unwrapTauriResult);
               return loadAnimationFromSource(source, entry, {
                 context: {
                   id: deriveAnimationId(`${theme.id}-${entry.name}`),
@@ -679,7 +680,7 @@ export async function loadThemePackages(): Promise<ThemePackageLoadResult> {
   }
 
   try {
-    const rootEntries = await invoke<FileEntry[]>('fs_list_dir', { path: directory, showHidden: false });
+    const rootEntries = await commands.fsListDir(directory, false).then(unwrapTauriResult);
     return loadThemePackagesFromDirectoryEntries(
       rootEntries.filter(entry => entry.is_dir).map(entry => ({ name: entry.name, path: entry.path })),
       directory,

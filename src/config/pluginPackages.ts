@@ -1,4 +1,4 @@
-import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core';
+import { convertFileSrc, isTauri } from '@tauri-apps/api/core';
 import { parse as parseToml } from 'smol-toml';
 
 import type { OverlayRegisteredFontContribution } from './appearance';
@@ -11,13 +11,14 @@ import { pluginSystemConfig } from './plugins';
 import { type LoadedOverlayThemePackage, loadThemePackagesFromDirectoryEntries } from './themePackages';
 import { type LoadedOverlayShader, loadShaderFromSource } from '../components/shaderRuntime';
 import {
-  type LoadedOverlayPlugin,
+  type LoadedOverlayPlugin,  
   type OverlayPluginApi,
   type OverlayPluginCapabilitySummary,
   type OverlayPluginContext,
   type PluginFileEntry,
   loadPluginFromSource,
 } from '../components/pluginRuntime';
+import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 
 interface FileEntry {
   name: string;
@@ -315,7 +316,7 @@ async function readPluginManifest(directoryPath: string): Promise<{ manifestPath
   for (const manifestName of pluginSystemConfig.manifestNames) {
     const candidatePath = joinPlatformPath(directoryPath, manifestName);
     try {
-      const text = await invoke<string>('fs_read_text_file', { path: candidatePath });
+      const text = await commands.fsReadTextFile(candidatePath).then(unwrapTauriResult);
       return {
         manifestPath: candidatePath,
         manifest: parsePluginManifestText(text, candidatePath),
@@ -329,7 +330,7 @@ async function readPluginManifest(directoryPath: string): Promise<{ manifestPath
 }
 
 async function listDirectory(path: string): Promise<FileEntry[]> {
-  return invoke<FileEntry[]>('fs_list_dir', { path, showHidden: false });
+  return commands.fsListDir(path, false).then(unwrapTauriResult);
 }
 
 async function resolveRelativeFileEntry(baseDirectory: string, relativePath: string): Promise<FileEntry | null> {
@@ -424,7 +425,7 @@ async function loadPluginPackage(
   let packagePlugin: LoadedOverlayPlugin | null = null;
   if (panelEntry) {
     try {
-      const source = await invoke<string>('fs_read_text_file', { path: panelEntry.path });
+      const source = await commands.fsReadTextFile(panelEntry.path).then(unwrapTauriResult);
       packagePlugin = await loadPluginFromSource(source, panelEntry as PluginFileEntry, hostApiFactory, {
         context: {
           id: packageId,
@@ -469,7 +470,7 @@ async function loadPluginPackage(
   if (shaderEntries.length > 0) {
     const loadedShaders = await Promise.all(shaderEntries.map(async entry => {
       try {
-        const source = await invoke<string>('fs_read_text_file', { path: entry.path });
+        const source = await commands.fsReadTextFile(entry.path).then(unwrapTauriResult);
         return loadShaderFromSource(source, entry, {
           context: {
             filePath: entry.path,
@@ -582,7 +583,7 @@ export async function discoverOverlayPlugins(
   };
 
   const legacyPluginResults = await Promise.allSettled(legacyFiles.map(async entry => {
-    const source = await invoke<string>('fs_read_text_file', { path: entry.path });
+    const source = await commands.fsReadTextFile(entry.path).then(unwrapTauriResult);
     return loadPluginFromSource(source, entry as PluginFileEntry, hostApiFactory);
   }));
 

@@ -11,7 +11,7 @@
 import React, {
   Suspense, useState, useEffect, useRef, useCallback, useMemo,
 } from 'react';
-import { isTauri, invoke } from '@tauri-apps/api/core';
+import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useShallow } from 'zustand/react/shallow';
 import type { EditorProps as MonacoEditorProps } from '@monaco-editor/react';
@@ -39,7 +39,6 @@ import {
   DEFAULT_NATIVE_ICON_SIZE,
   getNativeIconCacheKey,
   type OverlayNativeIconRequest,
-  type OverlayNativeIconResponse,
 } from '../config/nativeIcons';
 import {
   detectClientPlatform,
@@ -122,6 +121,7 @@ import {
   type ExplorerFileTransferResult as FileTransferResult,
   type ExplorerFileSearchResult as FileSearchResult,
 } from '../runtime/explorerBackend';
+import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 
 const LazyModelPreview = React.lazy(() =>
   import('./ModelPreview').then(module => ({ default: module.ModelPreview })),
@@ -2678,7 +2678,13 @@ export function FileExplorer({
     });
 
     const startedAt = getExplorerPerformanceNow();
-    void invoke<OverlayNativeIconResponse[]>('fs_resolve_native_icons', { requests })
+    void commands.fsResolveNativeIcons(
+      requests.map(request => ({
+        ...request,
+        size: request.size ?? null,
+      })),
+    )
+      .then(unwrapTauriResult)
       .then(results => {
         recordExplorerMetric({
           metricId: 'explorer_native_icon_batch',

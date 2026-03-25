@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { Camera, FolderOpen, GitBranch, LayoutGrid, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Type } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import type { LoadedOverlayAnimation } from './animationRuntime';
@@ -81,6 +80,7 @@ import {
 import { screenshotFeatureConfig, type ScreenshotOutputActionId } from '../config/screenshots';
 import { useSettingsStore, type TerminalWindowMode } from '../store/settingsStore';
 import { useTerminalStore } from '../store/terminalStore';
+import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 
 function ThemeBadge({ label, active = false }: { label: string; active?: boolean }) {
   return (
@@ -717,7 +717,7 @@ export function SettingsPage({
 
   const seedDefaultBookmarks = useCallback(async () => {
     try {
-      const home = await invoke<string>('fs_get_home_dir');
+      const home = await commands.fsGetHomeDir().then(unwrapTauriResult);
       const seeds = createDefaultDirectoryBookmarks(home, platform);
       for (const seed of seeds) {
         if (!directoryBookmarks.some(bookmark => bookmark.value === seed.value)) {
@@ -934,7 +934,7 @@ export function SettingsPage({
     setStartupSyncPending(true);
     setStartupSyncError(null);
     try {
-      const nextValue = await invoke<boolean>('startup_set_launch_at_startup', { enabled });
+      const nextValue = await commands.startupSetLaunchAtStartup(enabled).then(unwrapTauriResult);
       updateSystem({ launchAtStartup: nextValue });
     } catch (error) {
       setStartupSyncError(String(error));

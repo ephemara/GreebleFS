@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import {
   availableMonitors,
   currentMonitor,
@@ -76,19 +75,6 @@ type FileEntry = ScreenshotEntryLike & {
 };
 
 type ScreenshotItem = FileEntry & { previewUrl: string | null };
-
-type ScreenshotPreviewPayload = {
-  captureId: string;
-  previewUrl: string;
-  imageWidth: number;
-  imageHeight: number;
-};
-
-type SavedScreenshotPayload = {
-  path: string;
-  file_name: string;
-  created_at: number;
-};
 
 type ScreenshotOutputActionId =
   typeof screenshotFeatureConfig.outputActions[number]['id'];
@@ -466,11 +452,11 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
         ? await Promise.all(
             visible.map(async entry => {
               try {
-                const previewDataUrl = await invoke<string>('screenshot_read_gallery_thumbnail', {
-                  path: entry.path,
-                  maxWidth: screenshotFeatureConfig.galleryThumbnail.maxWidth,
-                  maxHeight: screenshotFeatureConfig.galleryThumbnail.maxHeight,
-                });
+                const previewDataUrl = await commands.screenshotReadGalleryThumbnail(
+                  entry.path,
+                  screenshotFeatureConfig.galleryThumbnail.maxWidth,
+                  screenshotFeatureConfig.galleryThumbnail.maxHeight,
+                ).then(unwrapTauriResult);
                 return { ...entry, previewUrl: dataUrlToObjectUrl(previewDataUrl) };
               } catch {
                 return { ...entry, previewUrl: null };
@@ -517,12 +503,12 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
 
       const results: MonitorCapture[] = [];
       for (const mon of base) {
-        const preview = await invoke<ScreenshotPreviewPayload>('screenshot_capture_preview', {
-          x: mon.physicalX,
-          y: mon.physicalY,
-          width: mon.physicalWidth,
-          height: mon.physicalHeight,
-        });
+        const preview = await commands.screenshotCapturePreview(
+          mon.physicalX,
+          mon.physicalY,
+          mon.physicalWidth,
+          mon.physicalHeight,
+        ).then(unwrapTauriResult);
         results.push({
           ...mon,
           captureId: preview.captureId,
@@ -768,13 +754,16 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
     setError(null);
     try {
       await ensureDir(screenshotDir);
-      const saved = await invoke<SavedScreenshotPayload>('screenshot_save_region', {
-        captureId: activeMonitor.captureId,
-        x: norm.x, y: norm.y, width: norm.width, height: norm.height,
-        directory: screenshotDir,
-        filePrefix: screenshotFeatureConfig.filePrefix,
-        copyToClipboard: copyToo,
-      });
+      const saved = await commands.screenshotSaveRegion(
+        activeMonitor.captureId,
+        norm.x,
+        norm.y,
+        norm.width,
+        norm.height,
+        screenshotDir,
+        screenshotFeatureConfig.filePrefix,
+        copyToo,
+      ).then(unwrapTauriResult);
       await loadGallery();
       setStatusMsg(copyToo ? `Saved & copied ${saved.file_name}.` : `Saved ${saved.file_name}.`);
       finishToolAction(true);
@@ -830,13 +819,16 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
       setIsSaving(true);
       try {
         await ensureDir(screenshotDir);
-        const saved = await invoke<SavedScreenshotPayload>('screenshot_save_region', {
-          captureId: activeMonitor.captureId,
-          x: 0, y: 0, width: w, height: h,
-          directory: screenshotDir,
-          filePrefix: screenshotFeatureConfig.filePrefix,
-          copyToClipboard: action === 'save-copy',
-        });
+        const saved = await commands.screenshotSaveRegion(
+          activeMonitor.captureId,
+          0,
+          0,
+          w,
+          h,
+          screenshotDir,
+          screenshotFeatureConfig.filePrefix,
+          action === 'save-copy',
+        ).then(unwrapTauriResult);
         await loadGallery();
         setStatusMsg(`Full monitor saved${action === 'save-copy' ? ' & copied' : ''}: ${saved.file_name}.`);
         finishToolAction(true);

@@ -17,7 +17,6 @@ import {
   type LoadedOverlayPlugin,
   type OverlayPluginApi,
   type OverlayPluginContext,
-  type PluginBackendResult,
 } from '../components/pluginRuntime';
 import type {
   OverlayPluginCommandContribution,
@@ -133,12 +132,9 @@ export function useFolderPluginRuntime(
         await refreshFolderPluginsRef.current(true);
       },
       openPluginsFolder,
-      runBackend: async (entry, args = []) => invoke<PluginBackendResult>('plugin_run_backend', {
-        pluginsRoot: pluginSystemConfig.pluginsDirectory,
-        pluginId: plugin.id,
-        entry,
-        args,
-      }),
+      runBackend: async (entry, args = []) => commands
+        .pluginRunBackend(pluginSystemConfig.pluginsDirectory, plugin.id, entry, args)
+        .then(unwrapTauriResult),
     };
   }, [openPluginsFolder, runtimePlatform]);
 

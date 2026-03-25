@@ -1,11 +1,11 @@
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import type { EditorProps } from '@monaco-editor/react';
 import { ChevronDown, ChevronUp, Download, FolderGit2, GitBranch, GitCommit, Plus, RefreshCw, Rocket, Search, Upload, X } from 'lucide-react';
 import { multiplyColorAlpha, type ResolvedOverlayAppearance } from '../config/appearance';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 import { useSettingsStore } from '../store/settingsStore';
+import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 import {
   type GitFileStatus,
   mergeGitStatusWithStats,
@@ -147,7 +147,7 @@ export function GitManager({
   }, [repos]);
 
   const runGit = useCallback(async (repo: string, args: string[]) => {
-    return invoke<string>('git_exec', { repoPath: repo, args });
+    return commands.gitExec(repo, args).then(unwrapTauriResult);
   }, []);
 
   const safeGit = useCallback(async (repo: string, args: string[], fallback = '') => {
@@ -1200,7 +1200,10 @@ async function buildUnifiedDiff(
       return `diff --git a/${file.file} b/${file.file}\nnew file mode 040000\n--- /dev/null\n+++ b/${file.file}\n@@\n+Directory added: ${file.file}\n`;
     }
 
-    const content = await invoke<string>('fs_read_text_file', { path: joinRepoPath(repoPath, file.file) }).catch(() => '');
+    const content = await commands
+      .fsReadTextFile(joinRepoPath(repoPath, file.file))
+      .then(unwrapTauriResult)
+      .catch(() => '');
     return buildSyntheticAddedDiff(file.file, content);
   }
 
