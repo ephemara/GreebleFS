@@ -95,11 +95,17 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::window_commands::window_set_blur,
             crate::window_commands::window_set_taskbar_visibility,
             crate::domain_commands::domain_list_shell_blueprints,
+            crate::domain_commands::domain_list_theme_manifests,
+            crate::domain_commands::domain_list_workbench_presets,
         ])
         .events(collect_events![
             crate::fs_commands::ExplorerTaskProgressEvent
         ])
         .typ::<ShellBlueprint>()
+        .typ::<overlay_contracts::ThemeTokenKind>()
+        .typ::<overlay_contracts::ThemeLayoutPrimitiveKind>()
+        .typ::<overlay_contracts::ThemeNavigationPatternKind>()
+        .typ::<overlay_contracts::ThemeNavigationAxis>()
         .typ::<NativeIconRequest>()
         .typ::<NativeIconResponse>()
         .typ::<FileEntry>()
@@ -136,6 +142,15 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<ThemeIconStyle>()
         .typ::<ThemeMotionStyle>()
         .typ::<ThemePresentation>()
+        .typ::<overlay_contracts::ThemeCompatibility>()
+        .typ::<overlay_contracts::ThemeDesignToken>()
+        .typ::<overlay_contracts::ThemeLayoutPrimitive>()
+        .typ::<overlay_contracts::ThemeNavigationPattern>()
+        .typ::<overlay_contracts::ThemeAnimationProfile>()
+        .typ::<overlay_contracts::ThemeIconPackStyle>()
+        .typ::<overlay_contracts::ThemeIconPackManifest>()
+        .typ::<overlay_contracts::ThemeRenderStyleManifest>()
+        .typ::<overlay_contracts::ThemeManifest>()
         .typ::<LayoutBarPosition>()
         .typ::<LayoutDockSide>()
         .typ::<ExplorerLayoutMode>()
@@ -176,6 +191,14 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<yazi_specta::YaziSchedulerTaskProg>()
         .typ::<yazi_specta::YaziSchedulerTaskSnap>()
         .constant("YAZI_BINDINGS_MANIFEST", yazi_specta::binding_manifest())
+        .constant(
+            "OVERLAY_THEME_MANIFESTS",
+            overlay_contracts::built_in_theme_manifests(),
+        )
+        .constant(
+            "OVERLAY_WORKBENCH_PRESETS",
+            overlay_contracts::built_in_workbench_presets(),
+        )
 }
 
 fn sanitize_generated_typescript(path: &PathBuf) -> Result<(), String> {

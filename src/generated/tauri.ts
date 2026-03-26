@@ -394,6 +394,12 @@ async windowSetTaskbarVisibility(visible: boolean) : Promise<Result<null, string
 },
 async domainListShellBlueprints() : Promise<ShellBlueprint[]> {
     return await TAURI_INVOKE("domain_list_shell_blueprints");
+},
+async domainListThemeManifests() : Promise<ThemeManifest[]> {
+    return await TAURI_INVOKE("domain_list_theme_manifests");
+},
+async domainListWorkbenchPresets() : Promise<WorkbenchPreset[]> {
+    return await TAURI_INVOKE("domain_list_workbench_presets");
 }
 }
 
@@ -409,11 +415,14 @@ explorerTaskProgressEvent: "explorer-task-progress-event"
 /** user-defined constants **/
 
 export const YAZI_BINDINGS_MANIFEST = {"entries":[{"crateName":"yazi-actor","exportedTypes":[],"notes":["actor command internals"],"status":"internal"},{"crateName":"yazi-adapter","exportedTypes":[],"notes":["adapter and image bridge surface planned"],"status":"planned"},{"crateName":"yazi-binding","exportedTypes":[],"notes":["Lua binding internals"],"status":"internal"},{"crateName":"yazi-boot","exportedTypes":[],"notes":["boot/runtime handshake surface planned"],"status":"planned"},{"crateName":"yazi-build","exportedTypes":[],"notes":["build helper crate"],"status":"internal"},{"crateName":"yazi-cli","exportedTypes":[],"notes":["CLI-only surface"],"status":"internal"},{"crateName":"yazi-codegen","exportedTypes":[],"notes":["codegen helper crate"],"status":"internal"},{"crateName":"yazi-config","exportedTypes":[],"notes":["config/theme bridge surface planned"],"status":"planned"},{"crateName":"yazi-core","exportedTypes":[],"notes":["runtime state internals"],"status":"internal"},{"crateName":"yazi-dds","exportedTypes":[],"notes":["DDS payload bridge surface planned"],"status":"planned"},{"crateName":"yazi-emulator","exportedTypes":[],"notes":["terminal emulator bridge surface planned"],"status":"planned"},{"crateName":"yazi-ffi","exportedTypes":[],"notes":["FFI handle internals"],"status":"internal"},{"crateName":"yazi-fm","exportedTypes":[],"notes":["full TUI app crate"],"status":"internal"},{"crateName":"yazi-fs","exportedTypes":["YaziFsSortBy","YaziFsSortFallback","YaziFsErrorDto","YaziFsFolderStageDto"],"notes":["file explorer sorting and stage contracts exported"],"status":"bridged"},{"crateName":"yazi-macro","exportedTypes":[],"notes":["macro crate"],"status":"internal"},{"crateName":"yazi-packing","exportedTypes":[],"notes":["archive/package bridge surface planned"],"status":"planned"},{"crateName":"yazi-parser","exportedTypes":["YaziParserTaskSummary","YaziParserSortOpt","YaziParserHiddenOpt","YaziParserHiddenOptState"],"notes":["frontend-safe parser option DTOs exported"],"status":"bridged"},{"crateName":"yazi-plugin","exportedTypes":[],"notes":["plugin runtime bridge surface planned"],"status":"planned"},{"crateName":"yazi-proxy","exportedTypes":[],"notes":["proxy bridge surface planned"],"status":"planned"},{"crateName":"yazi-scheduler","exportedTypes":["YaziSchedulerFetchProg","YaziSchedulerFileProgCopy","YaziSchedulerFileProgCut","YaziSchedulerFileProgLink","YaziSchedulerFileProgHardlink","YaziSchedulerFileProgDelete","YaziSchedulerFileProgTrash","YaziSchedulerFileProgDownload","YaziSchedulerFileProgUpload","YaziSchedulerPluginProgEntry","YaziSchedulerPreloadProg","YaziSchedulerProcessProgBlock","YaziSchedulerProcessProgOrphan","YaziSchedulerProcessProgBg","YaziSchedulerSizeProg","YaziSchedulerTaskProg","YaziSchedulerTaskSnap"],"notes":["task progress bridge DTOs exported"],"status":"bridged"},{"crateName":"yazi-sftp","exportedTypes":[],"notes":["SFTP bridge surface planned"],"status":"planned"},{"crateName":"yazi-shared","exportedTypes":[],"notes":["shared URL/data bridge surface planned"],"status":"planned"},{"crateName":"yazi-shim","exportedTypes":[],"notes":["platform shim internals"],"status":"internal"},{"crateName":"yazi-term","exportedTypes":[],"notes":["terminal presentation bridge surface planned"],"status":"planned"},{"crateName":"yazi-tty","exportedTypes":[],"notes":["TTY internals"],"status":"internal"},{"crateName":"yazi-vfs","exportedTypes":[],"notes":["VFS service bridge surface planned"],"status":"planned"},{"crateName":"yazi-watcher","exportedTypes":[],"notes":["watcher event bridge surface planned"],"status":"planned"},{"crateName":"yazi-widgets","exportedTypes":[],"notes":["widget layout bridge surface planned"],"status":"planned"}],"version":"phase-1"} as const;
+export const OVERLAY_WORKBENCH_PRESETS = [{"description":"Cross-axis shell","id":"xmb-media-deck","inputProfile":{"density":"immersive","directionalNavigation":true,"mode":"controller","pointerGestures":false},"label":"XMB Media Deck","navigationModel":"cross-axis","panelBindings":[{"defaultOpen":true,"order":0,"panelId":"terminal","preferredSize":null,"region":"primary"}],"preferredThemeIds":["operator"],"shellBlueprint":"xmb-cross-media","windowProfile":{"anchor":"center","aspectRatio":"16:9","mode":"fullscreen"}}] as const;
+export const OVERLAY_THEME_MANIFESTS = [{"animationProfiles":[{"durationMs":180,"easing":"ease-in-out","id":"default-motion","intensity":50,"name":"Default Motion"}],"compatibility":{"shellBlueprints":[],"tags":["default"]},"defaultRenderStyleId":"default-render","designTokens":[],"extends":null,"iconPacks":[{"id":"system-icons","name":"System Icons","style":"system"}],"id":"operator","layoutPrimitives":[],"name":"Operator","navigationPatterns":[],"presentation":{"chromeStyle":"floating","cornerRadius":12,"density":"comfortable","iconStyle":"vector","motionStyle":"fluid","panelSpacing":8},"renderStyles":[{"description":"Built-in renderer placeholder","entryModule":"renderers/default.tsx","id":"default-render","kind":"vs-code-workbench","label":"Default Render","supportsLiveSwap":true}]}] as const;
 
 /** user-defined types **/
 
 export type DriveInfo = { letter: string; label: string; total_bytes: number; free_bytes: number; drive_type: string }
 export type EntryStorageInfo = { path: string; bytes: number; is_dir: boolean; is_complete: boolean }
+export type ExplorerLayoutMode = "full" | "compact-dock"
 export type ExplorerTaskProgressEvent = { taskId: string; task: YaziSchedulerTaskSnap }
 export type ExternalTerminalRequest = { workingDir: string; profile: string | null; executable: string | null; args: string[] | null; shell: string | null }
 export type FileEntry = { name: string; path: string; is_dir: boolean; size: number; modified: number; extension: string; is_hidden: boolean; is_symlink: boolean }
@@ -427,6 +436,14 @@ export type FileTransferOperation = "copy" | "move"
 export type FileTransferResult = { source_path: string; destination_path: string; operation: FileTransferOperation }
 export type FsRuntimeCachePolicy = { dirListCacheTtlMs: number; searchNameIndexCacheTtlMs: number; searchContentIndexCacheTtlMs: number; entrySizeCacheTtlMs: number; entrySizeScanBudgetMs: number; searchContentIndexTotalBytesBudget: number; maxSearchContentFileBytes: number; searchMaxIndexedEntries: number }
 export type FsWriteFileContent = { kind: "text"; value: string } | { kind: "bytes"; value: number[] }
+export type LayoutBarPosition = "top" | "bottom"
+export type LayoutBehaviorConfig = { cycleOrder: number; defaultActivePanelId: string; enforcedOpenPanelIds: string[] }
+export type LayoutChromeConfig = { barPosition: LayoutBarPosition; showSettingsShortcut: boolean; showPanelMenu: boolean; showBlurToggle: boolean; showShortcutBadge: boolean }
+export type LayoutControlDockConfig = { enabled: boolean; side: LayoutDockSide; inset: number }
+export type LayoutDockSide = "left" | "right"
+export type LayoutManifest = { version: number; extendsBuiltIns: boolean; profiles: LayoutProfile[] }
+export type LayoutPinnedPanel = { panelId: string; side: LayoutDockSide; size: number; mode: ExplorerLayoutMode }
+export type LayoutProfile = { id: string; label: string; description: string; shellBlueprint: ShellBlueprintId; chrome: LayoutChromeConfig; controlDock: LayoutControlDockConfig; pinnedPanels: LayoutPinnedPanel[]; behavior: LayoutBehaviorConfig }
 export type NativeIconRequest = { path: string; size: number | null }
 export type NativeIconResponse = { path: string; src: string | null }
 export type PluginBackendResult = { stdout: string; stderr: string; status: number }
@@ -442,32 +459,36 @@ export type PythonRuntimeConfig = { preferredInterpreterPath: string | null; run
 export type PythonRuntimeStatus = { runtimeRoot: string; envDir: string; scriptsDir: string; tempDir: string; logsDir: string; managedPythonPath: string; envExists: boolean; ready: boolean; managedPythonVersion: string | null; managedPipVersion: string | null; preferredInterpreterPath: string | null; bootstrapPackages: string[]; interpreterHint: string; baseInterpreter: PythonInterpreterDescriptor | null; discoveredInterpreters: PythonInterpreterDescriptor[]; boilerplate: PythonBoilerplateFiles }
 export type SavedScreenshot = { path: string; file_name: string; created_at: number }
 export type ScreenshotPreview = { captureId: string; previewUrl: string; imageWidth: number; imageHeight: number }
-export type ThemeDensity = "compact" | "comfortable" | "immersive"
-export type ThemeChromeStyle = "minimal" | "ornate" | "floating" | "system"
-export type ThemeIconStyle = "system" | "vector" | "pixel" | "skeuomorphic"
-export type ThemeMotionStyle = "snappy" | "fluid" | "dramatic" | "instant"
-export type ThemePresentation = { density: ThemeDensity; chromeStyle: ThemeChromeStyle; iconStyle: ThemeIconStyle; motionStyle: ThemeMotionStyle; cornerRadius: number; panelSpacing: number }
-export type LayoutBarPosition = "top" | "bottom"
-export type LayoutDockSide = "left" | "right"
-export type ExplorerLayoutMode = "full" | "compact-dock"
-export type LayoutPinnedPanel = { panelId: string; side: LayoutDockSide; size: number; mode: ExplorerLayoutMode }
-export type LayoutChromeConfig = { barPosition: LayoutBarPosition; showSettingsShortcut: boolean; showPanelMenu: boolean; showBlurToggle: boolean; showShortcutBadge: boolean }
-export type LayoutControlDockConfig = { enabled: boolean; side: LayoutDockSide; inset: number }
-export type LayoutBehaviorConfig = { cycleOrder: number; defaultActivePanelId: string; enforcedOpenPanelIds: string[] }
-export type LayoutProfile = { id: string; label: string; description: string; shellBlueprint: ShellBlueprintId; chrome: LayoutChromeConfig; controlDock: LayoutControlDockConfig; pinnedPanels: LayoutPinnedPanel[]; behavior: LayoutBehaviorConfig }
-export type LayoutManifest = { version: number; extendsBuiltIns: boolean; profiles: LayoutProfile[] }
-export type WorkbenchRegionId = "primary" | "secondary" | "rail" | "dock" | "desktop" | "modal"
-export type WorkbenchWindowMode = "overlay" | "windowed" | "fullscreen"
-export type WorkbenchInputMode = "keyboard" | "pointer" | "controller" | "touch"
-export type WorkbenchPanelBinding = { panelId: string; region: WorkbenchRegionId; order: number; defaultOpen: boolean; preferredSize: number | null }
-export type WorkbenchWindowProfile = { mode: WorkbenchWindowMode; anchor: string | null; aspectRatio: string | null }
-export type WorkbenchInputProfile = { mode: WorkbenchInputMode; density: ThemeDensity; directionalNavigation: boolean; pointerGestures: boolean }
-export type WorkbenchPreset = { id: string; label: string; description: string; shellBlueprint: ShellBlueprintId; navigationModel: ShellNavigationModel; preferredThemeIds: string[]; panelBindings: WorkbenchPanelBinding[]; windowProfile: WorkbenchWindowProfile; inputProfile: WorkbenchInputProfile }
 export type ShellBlueprint = { id: ShellBlueprintId; label: string; description: string; navigationModel: ShellNavigationModel; surfaceStyle: ShellSurfaceStyle; supportsPinnedPanels: boolean; supportsViewportDock: boolean; supportsPanelTabs: boolean; supportsDualScreen: boolean }
 export type ShellBlueprintId = "classic-dock" | "xmb-cross-media" | "retro-desktop" | "tile-start" | "handheld-dual-screen"
 export type ShellNavigationModel = "tabs" | "cross-axis" | "desktop" | "tiles" | "stacked-dual-pane"
 export type ShellSurfaceStyle = "glass" | "solid" | "skeuomorphic" | "flat" | "pixel"
 export type TerminalWriteRequest = { id: string; data: string }
+export type ThemeAnimationProfile = { id: string; name: string; durationMs: number; easing: string; intensity: number }
+export type ThemeChromeStyle = "minimal" | "ornate" | "floating" | "system"
+export type ThemeCompatibility = { shellBlueprints: ShellBlueprintId[]; tags: string[] }
+export type ThemeDensity = "compact" | "comfortable" | "immersive"
+export type ThemeDesignToken = { id: string; name: string; kind: ThemeTokenKind; value: string }
+export type ThemeIconPackManifest = { id: string; name: string; style: ThemeIconPackStyle }
+export type ThemeIconPackStyle = "system" | "vector" | "pixel" | "skeuomorphic" | "custom"
+export type ThemeIconStyle = "system" | "vector" | "pixel" | "skeuomorphic"
+export type ThemeLayoutPrimitive = { id: string; name: string; kind: ThemeLayoutPrimitiveKind; props: Partial<{ [key in string]: string }> }
+export type ThemeLayoutPrimitiveKind = "stack" | "grid" | "split" | "dock" | "freeform"
+export type ThemeManifest = { id: string; name: string; extends: string | null; presentation: ThemePresentation; compatibility: ThemeCompatibility; designTokens: ThemeDesignToken[]; layoutPrimitives: ThemeLayoutPrimitive[]; navigationPatterns: ThemeNavigationPattern[]; animationProfiles: ThemeAnimationProfile[]; iconPacks: ThemeIconPackManifest[]; renderStyles: ThemeRenderStyleManifest[]; defaultRenderStyleId: string | null }
+export type ThemeMotionStyle = "snappy" | "fluid" | "dramatic" | "instant"
+export type ThemeNavigationAxis = "horizontal" | "vertical" | "both"
+export type ThemeNavigationPattern = { id: string; name: string; kind: ThemeNavigationPatternKind; axis: ThemeNavigationAxis; props: Partial<{ [key in string]: string }> }
+export type ThemeNavigationPatternKind = "xmb" | "tabbed" | "hierarchy" | "palette" | "spatial" | "custom"
+export type ThemePresentation = { density: ThemeDensity; chromeStyle: ThemeChromeStyle; iconStyle: ThemeIconStyle; motionStyle: ThemeMotionStyle; cornerRadius: number; panelSpacing: number }
+export type ThemeRenderStyleManifest = { id: string; label: string; kind: string; entryModule: string; supportsLiveSwap: boolean; description: string | null }
+export type ThemeTokenKind = "color" | "typography" | "spacing" | "radius" | "shadow" | "motion"
+export type WorkbenchInputMode = "keyboard" | "pointer" | "controller" | "touch"
+export type WorkbenchInputProfile = { mode: WorkbenchInputMode; density: ThemeDensity; directionalNavigation: boolean; pointerGestures: boolean }
+export type WorkbenchPanelBinding = { panelId: string; region: WorkbenchRegionId; order: number; defaultOpen: boolean; preferredSize: number | null }
+export type WorkbenchPreset = { id: string; label: string; description: string; shellBlueprint: ShellBlueprintId; navigationModel: ShellNavigationModel; preferredThemeIds: string[]; panelBindings: WorkbenchPanelBinding[]; windowProfile: WorkbenchWindowProfile; inputProfile: WorkbenchInputProfile }
+export type WorkbenchRegionId = "primary" | "secondary" | "rail" | "dock" | "desktop" | "modal"
+export type WorkbenchWindowMode = "overlay" | "windowed" | "fullscreen"
+export type WorkbenchWindowProfile = { mode: WorkbenchWindowMode; anchor: string | null; aspectRatio: string | null }
 export type YaziBindingManifest = { version: string; entries: YaziBindingManifestEntry[] }
 export type YaziBindingManifestEntry = { crateName: YaziCrateName; status: YaziBindingStatus; exportedTypes: string[]; notes: string[] }
 export type YaziBindingStatus = "direct" | "bridged" | "planned" | "internal"

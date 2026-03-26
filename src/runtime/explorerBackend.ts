@@ -23,6 +23,29 @@ export type ExplorerTaskProgress = ExplorerTaskProgressEvent;
 export type ExplorerSchedulerTask = YaziSchedulerTaskSnap;
 export type ExplorerWritableContent = string | number[];
 
+export type ExplorerBackendContract = {
+  listDir: typeof listExplorerDir;
+  listDirUncached: typeof listExplorerDirUncached;
+  getDrives: typeof getExplorerDrives;
+  measureEntrySizes: typeof measureExplorerEntrySizes;
+  getRuntimeCachePolicy: typeof getExplorerRuntimeCachePolicy;
+  getHomeDir: typeof getExplorerHomeDir;
+  searchEntriesWithDiagnostics: typeof searchExplorerEntriesWithDiagnostics;
+  cancelSearchEntries: typeof cancelExplorerSearchEntries;
+  watchEntrySizeRoot: typeof watchExplorerEntrySizeRoot;
+  unwatchEntrySizeRoot: typeof unwatchExplorerEntrySizeRoot;
+  openPath: typeof openExplorerPath;
+  revealPath: typeof revealExplorerPath;
+  openPathAsAdmin: typeof openExplorerPathAsAdmin;
+  createDir: typeof createExplorerDir;
+  transferItems: typeof transferExplorerItems;
+  writeFile: typeof writeExplorerFile;
+  readTextFile: typeof readExplorerTextFile;
+  readFileBase64: typeof readExplorerFileBase64;
+  renamePath: typeof renameExplorerPath;
+  deletePath: typeof deleteExplorerPath;
+};
+
 export async function listExplorerDir(path: string, showHidden: boolean): Promise<ExplorerFileEntry[]> {
   return unwrapTauriResult(await commands.fsListDir(path, showHidden));
 }
@@ -143,6 +166,29 @@ export async function renameExplorerPath(oldPath: string, newPath: string): Prom
 export async function deleteExplorerPath(path: string, recursive: boolean): Promise<void> {
   unwrapTauriResult(await commands.fsDelete(path, recursive));
 }
+
+export const explorerBackendContract: ExplorerBackendContract = {
+  listDir: listExplorerDir,
+  listDirUncached: listExplorerDirUncached,
+  getDrives: getExplorerDrives,
+  measureEntrySizes: measureExplorerEntrySizes,
+  getRuntimeCachePolicy: getExplorerRuntimeCachePolicy,
+  getHomeDir: getExplorerHomeDir,
+  searchEntriesWithDiagnostics: searchExplorerEntriesWithDiagnostics,
+  cancelSearchEntries: cancelExplorerSearchEntries,
+  watchEntrySizeRoot: watchExplorerEntrySizeRoot,
+  unwatchEntrySizeRoot: unwatchExplorerEntrySizeRoot,
+  openPath: openExplorerPath,
+  revealPath: revealExplorerPath,
+  openPathAsAdmin: openExplorerPathAsAdmin,
+  createDir: createExplorerDir,
+  transferItems: transferExplorerItems,
+  writeFile: writeExplorerFile,
+  readTextFile: readExplorerTextFile,
+  readFileBase64: readExplorerFileBase64,
+  renamePath: renameExplorerPath,
+  deletePath: deleteExplorerPath,
+};
 
 export async function listenToExplorerTaskProgress(
   listener: (event: ExplorerTaskProgress) => void,
