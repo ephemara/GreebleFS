@@ -1,35 +1,14 @@
-export type OverlayShellBlueprintId =
-  | 'classic-dock'
-  | 'xmb-cross-media'
-  | 'retro-desktop'
-  | 'tile-start'
-  | 'handheld-dual-screen';
+import type {
+  ShellBlueprint as GeneratedShellBlueprint,
+  ShellBlueprintId as GeneratedShellBlueprintId,
+  ShellNavigationModel as GeneratedShellNavigationModel,
+  ShellSurfaceStyle as GeneratedShellSurfaceStyle,
+} from '../generated/tauri';
 
-export type OverlayShellNavigationModel =
-  | 'tabs'
-  | 'cross-axis'
-  | 'desktop'
-  | 'tiles'
-  | 'stacked-dual-pane';
-
-export type OverlayShellSurfaceStyle =
-  | 'glass'
-  | 'solid'
-  | 'skeuomorphic'
-  | 'flat'
-  | 'pixel';
-
-export interface OverlayShellBlueprint {
-  id: OverlayShellBlueprintId;
-  label: string;
-  description: string;
-  navigationModel: OverlayShellNavigationModel;
-  surfaceStyle: OverlayShellSurfaceStyle;
-  supportsPinnedPanels: boolean;
-  supportsViewportDock: boolean;
-  supportsPanelTabs: boolean;
-  supportsDualScreen: boolean;
-}
+export type OverlayShellBlueprintId = GeneratedShellBlueprintId;
+export type OverlayShellNavigationModel = GeneratedShellNavigationModel;
+export type OverlayShellSurfaceStyle = GeneratedShellSurfaceStyle;
+export type OverlayShellBlueprint = GeneratedShellBlueprint;
 
 export const OVERLAY_SHELL_BLUEPRINTS: OverlayShellBlueprint[] = [
   {

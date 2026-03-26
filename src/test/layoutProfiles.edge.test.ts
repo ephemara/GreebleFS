@@ -32,4 +32,24 @@ describe('layoutProfiles edge cases', () => {
       BUILT_IN_LAYOUT_MANIFEST.profiles[0]?.id ?? 'overlay-classic',
     );
   });
+
+  it('falls back to built-in interaction metadata when custom values are invalid', () => {
+    const manifest = normalizeLayoutManifest({
+      profiles: [
+        {
+          id: 'overlay-classic',
+          interaction: {
+            primaryAxisOwner: 'unknown-surface',
+            progressOwner: 'mystery-layer',
+            preserveFocusAnchor: false,
+          },
+        },
+      ],
+    });
+
+    expect(manifest.profiles[0]?.interaction.primaryAxisOwner).toBe('active-panel');
+    expect(manifest.profiles[0]?.interaction.progressOwner).toBe('session');
+    expect(manifest.profiles[0]?.interaction.preserveFocusAnchor).toBe(false);
+    expect(manifest.profiles[0]?.interaction.preserveSelectionAnchor).toBe(true);
+  });
 });

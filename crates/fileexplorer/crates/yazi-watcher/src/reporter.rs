@@ -65,3 +65,58 @@ impl Reporter {
 		self.remote_tx.send((url.into_owned(), false)).ok();
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use std::sync::OnceLock;
+
+	use tokio::sync::mpsc;
+	use yazi_shared::url::UrlBuf;
+
+	use super::*;
+	use crate::Watchee;
+
+	fn init_watcher_tests() {
+		static INIT: OnceLock<()> = OnceLock::new();
+
+		yazi_shared::init_tests();
+		INIT.get_or_init(crate::init);
+		WATCHED.write().clear();
+		LINKED.write().clear();
+	}
+
+	#[tokio::test]
+	async fn report_remote_emits_parent_and_child_for_watched_roots() {
+		init_watcher_tests();
+
+		let parent: UrlBuf = "sftp://demo//vault".parse().expect("valid parent url");
+		let child: UrlBuf = "sftp://demo:2:1//vault/file.txt".parse().expect("valid child url");
+		WATCHED.write().insert(Watchee::new(parent.clone()).await.to_static());
+
+		let (_local_tx, mut local_rx) = mpsc::unbounded_channel();
+		let (remote_tx, mut remote_rx) = mpsc::unbounded_channel();
+		let reporter = Reporter { local_tx: _local_tx, remote_tx };
+
+		reporter.report([child.clone()]);
+
+		assert_eq!(remote_rx.recv().await, Some((parent.clone(), false)));
+		assert_eq!(remote_rx.recv().await, Some((child, false)));
+		assert!(remote_rx.try_recv().is_err());
+		assert!(local_rx.try_recv().is_err());
+	}
+
+	#[tokio::test]
+	async fn report_remote_ignores_unwatched_roots() {
+		init_watcher_tests();
+
+		let child: UrlBuf = "sftp://demo:2:1//vault/file.txt".parse().expect("valid child url");
+		let (_local_tx, mut local_rx) = mpsc::unbounded_channel();
+		let (remote_tx, mut remote_rx) = mpsc::unbounded_channel();
+		let reporter = Reporter { local_tx: _local_tx, remote_tx };
+
+		reporter.report([child]);
+
+		assert!(remote_rx.try_recv().is_err());
+		assert!(local_rx.try_recv().is_err());
+	}
+}

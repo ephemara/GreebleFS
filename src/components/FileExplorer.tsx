@@ -94,26 +94,8 @@ import {
 } from './fileExplorerSearchFocus';
 import { dispatchTerminalCommand, resolvePluginCommandTemplate } from '../config/pluginContributions';
 import {
-  cancelExplorerSearchEntries,
-  createExplorerDir,
-  deleteExplorerPath,
-  getExplorerDrives,
-  getExplorerHomeDir,
-  getExplorerRuntimeCachePolicy,
-  listExplorerDir,
-  listExplorerDirUncached,
-  measureExplorerEntrySizes,
-  openExplorerPath,
-  openExplorerPathAsAdmin,
-  readExplorerFileBase64,
-  readExplorerTextFile,
-  renameExplorerPath,
-  revealExplorerPath,
-  searchExplorerEntriesWithDiagnostics,
-  transferExplorerItems,
-  unwatchExplorerEntrySizeRoot,
-  watchExplorerEntrySizeRoot,
-  writeExplorerFile,
+  explorerBackendContract,
+  type ExplorerBackendContract,
   type ExplorerDriveInfo as DriveInfo,
   type ExplorerEntryStorageInfo as EntryStorageInfo,
   type ExplorerFileEntry as FileEntry,
@@ -1008,6 +990,7 @@ function DeleteDialog({ entry, onConfirm, onCancel }: { entry: FileEntry; onConf
 interface FileExplorerProps {
   theme: { accent: string; bg: string; bgPanel: string; text: string; border: string; textMuted: string };
   appearance?: ResolvedOverlayAppearance;
+  explorerBackend?: ExplorerBackendContract;
   onOpenInTerminal: (path: string) => void;
   onAddBookmark: (name: string, path: string) => void;
   pluginActions?: OverlayPluginExplorerActionContribution[];
@@ -1024,12 +1007,35 @@ interface FileExplorerProps {
 export function FileExplorer({
   theme,
   appearance,
+  explorerBackend = explorerBackendContract,
   onOpenInTerminal,
   onAddBookmark,
   pluginActions = [],
   layoutMode = 'full',
   repositoryPicker = null,
 }: FileExplorerProps) {
+  const {
+    cancelSearchEntries: cancelExplorerSearchEntries,
+    createDir: createExplorerDir,
+    deletePath: deleteExplorerPath,
+    getDrives: getExplorerDrives,
+    getHomeDir: getExplorerHomeDir,
+    getRuntimeCachePolicy: getExplorerRuntimeCachePolicy,
+    listDir: listExplorerDir,
+    listDirUncached: listExplorerDirUncached,
+    measureEntrySizes: measureExplorerEntrySizes,
+    openPath: openExplorerPath,
+    openPathAsAdmin: openExplorerPathAsAdmin,
+    readFileBase64: readExplorerFileBase64,
+    readTextFile: readExplorerTextFile,
+    renamePath: renameExplorerPath,
+    revealPath: revealExplorerPath,
+    searchEntriesWithDiagnostics: searchExplorerEntriesWithDiagnostics,
+    transferItems: transferExplorerItems,
+    unwatchEntrySizeRoot: unwatchExplorerEntrySizeRoot,
+    watchEntrySizeRoot: watchExplorerEntrySizeRoot,
+    writeFile: writeExplorerFile,
+  } = explorerBackend;
   const accent = theme.accent;
   const {
     explorerSettings,

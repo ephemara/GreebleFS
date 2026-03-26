@@ -78,20 +78,26 @@ impl Icon {
 	fn match_by_name(&self, file: &File) -> Option<&I> {
 		let name = file.name()?.to_str().ok()?;
 		if file.is_dir() {
-			self.dirs.get(name).or_else(|| self.dirs.get(&name.to_ascii_lowercase()))
+			get_ascii_ci(&self.dirs, name)
 		} else {
-			self
-				.files
-				.get(name)
-				.or_else(|| self.files.get(&name.to_ascii_lowercase()))
-				.or_else(|| self.match_by_ext(file))
+			get_ascii_ci(&self.files, name).or_else(|| self.match_by_ext(file))
 		}
 	}
 
 	fn match_by_ext(&self, file: &File) -> Option<&I> {
 		let ext = file.url.ext()?.to_str().ok()?;
-		self.exts.get(ext).or_else(|| self.exts.get(&ext.to_ascii_lowercase()))
+		get_ascii_ci(&self.exts, ext)
 	}
+}
+
+#[inline]
+fn get_ascii_ci<'a>(icons: &'a StrIcons, key: &str) -> Option<&'a I> {
+	icons.get(key).or_else(|| {
+		key.bytes()
+			.any(|b| b.is_ascii_uppercase())
+			.then(|| key.to_ascii_lowercase())
+			.and_then(|lower| icons.get(lower.as_str()))
+	})
 }
 
 impl Icon {
@@ -204,5 +210,31 @@ impl<'de> Deserialize<'de> for CondIcons {
 				.map(|s| (s.r#if, I { text: s.text, style: Style { fg: s.fg, ..Default::default() } }))
 				.collect(),
 		))
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::{I, StrIcons, Style, get_ascii_ci};
+	use hashbrown::HashMap;
+
+	#[test]
+	fn reuses_exact_match_without_fallback_allocation() {
+		let icons = StrIcons(HashMap::from([(String::from("README.md"), I {
+			text: String::from("x"),
+			style: Style::default(),
+		})]));
+
+		assert_eq!(get_ascii_ci(&icons, "README.md").map(|i| i.text.as_str()), Some("x"));
+	}
+
+	#[test]
+	fn matches_lowercase_fallback_for_ascii_keys() {
+		let icons = StrIcons(HashMap::from([(String::from("readme.md"), I {
+			text: String::from("x"),
+			style: Style::default(),
+		})]));
+
+		assert_eq!(get_ascii_ci(&icons, "README.MD").map(|i| i.text.as_str()), Some("x"));
 	}
 }

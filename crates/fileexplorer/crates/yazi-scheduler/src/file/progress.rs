@@ -364,3 +364,62 @@ impl FileProgUpload {
 		})
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use yazi_parser::app::TaskSummary;
+
+	use super::{FileProgCopy, FileProgDownload, FileProgUpload};
+
+	#[test]
+	fn copy_percent_stays_below_completion_until_cleanup_finishes() {
+		let progress = FileProgCopy {
+			total_files: 2,
+			success_files: 2,
+			failed_files: 0,
+			total_bytes: 100,
+			processed_bytes: 100,
+			collected: Some(true),
+			cleaned: None,
+		};
+
+		assert!(progress.running());
+		assert_eq!(progress.percent(), Some(99.99));
+	}
+
+	#[test]
+	fn failed_download_collapses_percent_to_zero() {
+		let progress = FileProgDownload {
+			total_files: 1,
+			success_files: 0,
+			failed_files: 1,
+			total_bytes: 100,
+			processed_bytes: 80,
+			collected: Some(false),
+			cleaned: None,
+		};
+
+		assert!(progress.failed());
+		assert_eq!(progress.percent(), Some(0.0));
+	}
+
+	#[test]
+	fn upload_summary_reflects_completion_only_after_cleanup() {
+		let running_upload = FileProgUpload {
+			total_files: 1,
+			success_files: 1,
+			failed_files: 0,
+			total_bytes: 100,
+			processed_bytes: 100,
+			collected: Some(true),
+			cleaned: None,
+		};
+		let completed_upload = FileProgUpload { cleaned: Some(true), ..running_upload };
+
+		let running_summary: TaskSummary = running_upload.into();
+		let completed_summary: TaskSummary = completed_upload.into();
+
+		assert_eq!(running_summary.percent.map(|value| value.0), Some(99.99));
+		assert_eq!(completed_summary.percent.map(|value| value.0), Some(100.0));
+	}
+}

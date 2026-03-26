@@ -1,6 +1,6 @@
 use crate::fs_commands::invalidate_all_fs_caches_for_path;
 use notify::{RecursiveMode, Watcher};
-use rusqlite::{params, Connection};
+use rusqlite::{params, params_from_iter, Connection, Row};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -111,6 +111,29 @@ fn i64_to_u64(value: i64) -> Result<u64, String> {
     u64::try_from(value).map_err(|_| format!("Negative SQLite value {value} cannot become u64"))
 }
 
+fn persisted_entry_size_from_row(row: &Row<'_>) -> rusqlite::Result<PersistedEntrySize> {
+    Ok(PersistedEntrySize {
+        path: row.get::<_, String>(0)?,
+        bytes: i64_to_u64(row.get::<_, i64>(1)?)
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(error.into()))?,
+        is_dir: row.get::<_, i64>(2)? != 0,
+        is_complete: row.get::<_, i64>(3)? != 0,
+        modified_ms: row
+            .get::<_, Option<i64>>(4)?
+            .map(i64_to_u64)
+            .transpose()
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(error.into()))?,
+        entry_bytes: row
+            .get::<_, Option<i64>>(5)?
+            .map(i64_to_u64)
+            .transpose()
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(error.into()))?,
+        measured_at_ms: i64_to_u64(row.get::<_, i64>(6)?)
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(error.into()))?,
+        dirty: row.get::<_, i64>(7)? != 0,
+    })
+}
+
 #[cfg(test)]
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
@@ -127,53 +150,43 @@ pub fn load_entry_size_cache(
     }
 
     with_connection(|connection| {
-        let mut statement = connection
-            .prepare(
+        const SQLITE_PARAMETER_LIMIT: usize = 900;
+
+        let mut unique_keys = Vec::with_capacity(paths.len());
+        let mut seen = HashMap::with_capacity(paths.len());
+        for path in paths {
+            let key = normalize_cache_path(path);
+            if seen.insert(key.clone(), ()).is_none() {
+                unique_keys.push(key);
+            }
+        }
+
+        let mut entries = HashMap::with_capacity(unique_keys.len());
+        for chunk in unique_keys.chunks(SQLITE_PARAMETER_LIMIT) {
+            let placeholders = std::iter::repeat_n("?", chunk.len())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let query = format!(
                 "
                 SELECT path, bytes, is_dir, is_complete, modified_ms, entry_bytes, measured_at_ms, dirty
                 FROM entry_size_cache
-                WHERE path = ?1
-                ",
-            )
-            .map_err(|error| format!("Failed to prepare entry size cache read: {error}"))?;
+                WHERE path IN ({placeholders})
+                "
+            );
+            let mut statement = connection
+                .prepare(&query)
+                .map_err(|error| format!("Failed to prepare entry size cache read: {error}"))?;
+            let mut rows = statement
+                .query(params_from_iter(chunk.iter()))
+                .map_err(|error| format!("Failed to query entry size cache batch: {error}"))?;
 
-        let mut entries = HashMap::with_capacity(paths.len());
-        for path in paths {
-            let key = normalize_cache_path(path);
-            let record = statement.query_row(params![key], |row| {
-                Ok(PersistedEntrySize {
-                    path: row.get::<_, String>(0)?,
-                    bytes: i64_to_u64(row.get::<_, i64>(1)?)
-                        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(error.into()))?,
-                    is_dir: row.get::<_, i64>(2)? != 0,
-                    is_complete: row.get::<_, i64>(3)? != 0,
-                    modified_ms: row
-                        .get::<_, Option<i64>>(4)?
-                        .map(i64_to_u64)
-                        .transpose()
-                        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(error.into()))?,
-                    entry_bytes: row
-                        .get::<_, Option<i64>>(5)?
-                        .map(i64_to_u64)
-                        .transpose()
-                        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(error.into()))?,
-                    measured_at_ms: i64_to_u64(row.get::<_, i64>(6)?)
-                        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(error.into()))?,
-                    dirty: row.get::<_, i64>(7)? != 0,
-                })
-            });
-
-            match record {
-                Ok(entry) => {
-                    entries.insert(entry.path.clone(), entry);
-                }
-                Err(rusqlite::Error::QueryReturnedNoRows) => {}
-                Err(error) => {
-                    return Err(format!(
-                        "Failed to read cached entry size for {}: {error}",
-                        key
-                    ));
-                }
+            while let Some(row) = rows
+                .next()
+                .map_err(|error| format!("Failed to read entry size cache row: {error}"))?
+            {
+                let entry = persisted_entry_size_from_row(row)
+                    .map_err(|error| format!("Failed to decode entry size cache row: {error}"))?;
+                entries.insert(entry.path.clone(), entry);
             }
         }
 
@@ -504,6 +517,62 @@ mod tests {
         mark_path_and_ancestors_dirty(&file).expect("mark dirty");
         let loaded = load_entry_size_cache(&[root, nested, file]).expect("load dirty");
         assert!(loaded.values().all(|entry| entry.dirty));
+
+        std::env::remove_var(ENTRY_SIZE_DB_ENV);
+    }
+
+    #[test]
+    fn load_entry_size_cache_batches_duplicate_and_missing_paths() {
+        let _guard = test_lock().lock().expect("test lock");
+        let dir = TempDir::new().expect("temp dir");
+        let db_path = test_db_path(&dir);
+        std::env::set_var(ENTRY_SIZE_DB_ENV, &db_path);
+
+        let present_a = dir.path().join("present-a");
+        let present_b = dir.path().join("present-b");
+        let missing = dir.path().join("missing");
+        let entries = [
+            PersistedEntrySize {
+                path: normalize_cache_path(&present_a),
+                bytes: 64,
+                is_dir: false,
+                is_complete: true,
+                modified_ms: Some(11),
+                entry_bytes: Some(64),
+                measured_at_ms: now_ms(),
+                dirty: false,
+            },
+            PersistedEntrySize {
+                path: normalize_cache_path(&present_b),
+                bytes: 128,
+                is_dir: true,
+                is_complete: false,
+                modified_ms: Some(22),
+                entry_bytes: None,
+                measured_at_ms: now_ms(),
+                dirty: true,
+            },
+        ];
+        upsert_entry_size_cache(&entries).expect("seed");
+
+        let loaded =
+            load_entry_size_cache(&[present_a.clone(), present_b.clone(), present_a, missing])
+                .expect("batched load");
+
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(
+            loaded
+                .get(&normalize_cache_path(&present_b))
+                .expect("present b")
+                .bytes,
+            128
+        );
+        assert!(
+            loaded
+                .get(&normalize_cache_path(&present_b))
+                .expect("present b")
+                .dirty
+        );
 
         std::env::remove_var(ENTRY_SIZE_DB_ENV);
     }

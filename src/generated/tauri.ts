@@ -181,7 +181,7 @@ async fsReadFileBase64(path: string) : Promise<Result<string, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async fsWriteFile(path: string, content: string) : Promise<Result<null, string>> {
+async fsWriteFile(path: string, content: FsWriteFileContent) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("fs_write_file", { path, content }) };
 } catch (e) {
@@ -426,6 +426,7 @@ export type FileSearchResult = { name: string; path: string; relative_path: stri
 export type FileTransferOperation = "copy" | "move"
 export type FileTransferResult = { source_path: string; destination_path: string; operation: FileTransferOperation }
 export type FsRuntimeCachePolicy = { dirListCacheTtlMs: number; searchNameIndexCacheTtlMs: number; searchContentIndexCacheTtlMs: number; entrySizeCacheTtlMs: number; entrySizeScanBudgetMs: number; searchContentIndexTotalBytesBudget: number; maxSearchContentFileBytes: number; searchMaxIndexedEntries: number }
+export type FsWriteFileContent = { kind: "text"; value: string } | { kind: "bytes"; value: number[] }
 export type NativeIconRequest = { path: string; size: number | null }
 export type NativeIconResponse = { path: string; src: string | null }
 export type PluginBackendResult = { stdout: string; stderr: string; status: number }
@@ -441,6 +442,27 @@ export type PythonRuntimeConfig = { preferredInterpreterPath: string | null; run
 export type PythonRuntimeStatus = { runtimeRoot: string; envDir: string; scriptsDir: string; tempDir: string; logsDir: string; managedPythonPath: string; envExists: boolean; ready: boolean; managedPythonVersion: string | null; managedPipVersion: string | null; preferredInterpreterPath: string | null; bootstrapPackages: string[]; interpreterHint: string; baseInterpreter: PythonInterpreterDescriptor | null; discoveredInterpreters: PythonInterpreterDescriptor[]; boilerplate: PythonBoilerplateFiles }
 export type SavedScreenshot = { path: string; file_name: string; created_at: number }
 export type ScreenshotPreview = { captureId: string; previewUrl: string; imageWidth: number; imageHeight: number }
+export type ThemeDensity = "compact" | "comfortable" | "immersive"
+export type ThemeChromeStyle = "minimal" | "ornate" | "floating" | "system"
+export type ThemeIconStyle = "system" | "vector" | "pixel" | "skeuomorphic"
+export type ThemeMotionStyle = "snappy" | "fluid" | "dramatic" | "instant"
+export type ThemePresentation = { density: ThemeDensity; chromeStyle: ThemeChromeStyle; iconStyle: ThemeIconStyle; motionStyle: ThemeMotionStyle; cornerRadius: number; panelSpacing: number }
+export type LayoutBarPosition = "top" | "bottom"
+export type LayoutDockSide = "left" | "right"
+export type ExplorerLayoutMode = "full" | "compact-dock"
+export type LayoutPinnedPanel = { panelId: string; side: LayoutDockSide; size: number; mode: ExplorerLayoutMode }
+export type LayoutChromeConfig = { barPosition: LayoutBarPosition; showSettingsShortcut: boolean; showPanelMenu: boolean; showBlurToggle: boolean; showShortcutBadge: boolean }
+export type LayoutControlDockConfig = { enabled: boolean; side: LayoutDockSide; inset: number }
+export type LayoutBehaviorConfig = { cycleOrder: number; defaultActivePanelId: string; enforcedOpenPanelIds: string[] }
+export type LayoutProfile = { id: string; label: string; description: string; shellBlueprint: ShellBlueprintId; chrome: LayoutChromeConfig; controlDock: LayoutControlDockConfig; pinnedPanels: LayoutPinnedPanel[]; behavior: LayoutBehaviorConfig }
+export type LayoutManifest = { version: number; extendsBuiltIns: boolean; profiles: LayoutProfile[] }
+export type WorkbenchRegionId = "primary" | "secondary" | "rail" | "dock" | "desktop" | "modal"
+export type WorkbenchWindowMode = "overlay" | "windowed" | "fullscreen"
+export type WorkbenchInputMode = "keyboard" | "pointer" | "controller" | "touch"
+export type WorkbenchPanelBinding = { panelId: string; region: WorkbenchRegionId; order: number; defaultOpen: boolean; preferredSize: number | null }
+export type WorkbenchWindowProfile = { mode: WorkbenchWindowMode; anchor: string | null; aspectRatio: string | null }
+export type WorkbenchInputProfile = { mode: WorkbenchInputMode; density: ThemeDensity; directionalNavigation: boolean; pointerGestures: boolean }
+export type WorkbenchPreset = { id: string; label: string; description: string; shellBlueprint: ShellBlueprintId; navigationModel: ShellNavigationModel; preferredThemeIds: string[]; panelBindings: WorkbenchPanelBinding[]; windowProfile: WorkbenchWindowProfile; inputProfile: WorkbenchInputProfile }
 export type ShellBlueprint = { id: ShellBlueprintId; label: string; description: string; navigationModel: ShellNavigationModel; surfaceStyle: ShellSurfaceStyle; supportsPinnedPanels: boolean; supportsViewportDock: boolean; supportsPanelTabs: boolean; supportsDualScreen: boolean }
 export type ShellBlueprintId = "classic-dock" | "xmb-cross-media" | "retro-desktop" | "tile-start" | "handheld-dual-screen"
 export type ShellNavigationModel = "tabs" | "cross-axis" | "desktop" | "tiles" | "stacked-dual-pane"

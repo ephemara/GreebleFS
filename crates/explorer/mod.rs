@@ -3,7 +3,6 @@
 
 pub mod commands;
 pub mod search;
-pub mod watcher;
 pub mod terminal;
 pub mod jobs;
 
@@ -13,7 +12,6 @@ pub mod git;
 // Re-export commonly used items
 pub use commands::*;
 pub use search::{fuzzy_search_files, search_file_contents, FuzzySearchOptions, SearchResult};
-pub use watcher::FileWatcher;
 pub use terminal::TerminalManager;
 pub use jobs::JobManager;
 

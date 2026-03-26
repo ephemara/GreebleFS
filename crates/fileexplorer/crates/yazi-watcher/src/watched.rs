@@ -60,3 +60,51 @@ impl Watched {
 		if self.contains_url(&url) { Some(url) } else { None }
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use std::sync::OnceLock;
+
+	use super::*;
+	use yazi_shared::url::UrlBuf;
+
+	fn init_watcher_tests() {
+		static INIT: OnceLock<()> = OnceLock::new();
+
+		yazi_shared::init_tests();
+		INIT.get_or_init(crate::init);
+	}
+
+	#[tokio::test]
+	async fn contains_url_matches_primary_and_alt_local_watchers() {
+		init_watcher_tests();
+
+		let path = std::env::temp_dir().join("yazi-watcher-watched-primary");
+		let mut watched = Watched::default();
+		watched.insert(Watchee::new(path.as_path()).await.to_static());
+
+		assert!(watched.contains_url(path.as_path()));
+		assert!(watched.contains_path(path.as_path()));
+
+		let mut alt_watched = Watched::default();
+		alt_watched.insert(Watchee::Local(UrlBuf::from(path.as_path()).into(), true));
+
+		assert!(alt_watched.contains_url(path.as_path()));
+		assert!(alt_watched.contains_path(path.as_path()));
+	}
+
+	#[test]
+	fn find_by_cache_decodes_sftp_cache_paths_for_watched_roots() {
+		init_watcher_tests();
+
+		let mut watched = Watched::default();
+		let remote: UrlBuf = "sftp://demo//vault".parse().expect("valid remote url");
+		watched.insert(Watchee::Remote(remote.clone().into()));
+
+		let cache = Xdg::cache_dir().join("sftp-demo").join(".%2Fvault");
+		assert_eq!(watched.find_by_cache(cache.as_path()), Some(remote));
+
+		let other_cache = Xdg::cache_dir().join("sftp-demo").join(".%2Fother");
+		assert_eq!(watched.find_by_cache(other_cache.as_path()), None);
+	}
+}

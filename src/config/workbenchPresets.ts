@@ -1,55 +1,31 @@
 import {
+  OVERLAY_WORKBENCH_PRESETS as GENERATED_OVERLAY_WORKBENCH_PRESETS,
+  type ThemeDensity as GeneratedThemeDensity,
+  type WorkbenchInputMode as GeneratedWorkbenchInputMode,
+  type WorkbenchInputProfile as GeneratedWorkbenchInputProfile,
+  type WorkbenchPanelBinding as GeneratedWorkbenchPanelBinding,
+  type WorkbenchPreset as GeneratedWorkbenchPreset,
+  type WorkbenchRegionId as GeneratedWorkbenchRegionId,
+  type WorkbenchWindowMode as GeneratedWorkbenchWindowMode,
+  type WorkbenchWindowProfile as GeneratedWorkbenchWindowProfile,
+} from '../generated/tauri';
+import {
   getShellBlueprint,
   normalizeShellBlueprintId,
   type OverlayShellBlueprintId,
   type OverlayShellNavigationModel,
 } from './shellBlueprints';
 
-export type WorkbenchRegionId =
-  | 'primary'
-  | 'secondary'
-  | 'rail'
-  | 'dock'
-  | 'desktop'
-  | 'modal';
-
-export type WorkbenchWindowMode = 'overlay' | 'windowed' | 'fullscreen';
-export type WorkbenchInputMode = 'keyboard' | 'pointer' | 'controller' | 'touch';
-export type WorkbenchDensityMode = 'compact' | 'comfortable' | 'immersive';
+export type WorkbenchRegionId = GeneratedWorkbenchRegionId;
+export type WorkbenchWindowMode = GeneratedWorkbenchWindowMode;
+export type WorkbenchInputMode = GeneratedWorkbenchInputMode;
+export type WorkbenchDensityMode = GeneratedThemeDensity;
 export type WorkbenchWindowAnchor = 'top' | 'bottom' | 'left' | 'right' | 'center';
 
-export interface WorkbenchPanelBinding {
-  panelId: string;
-  region: WorkbenchRegionId;
-  order: number;
-  defaultOpen: boolean;
-  preferredSize?: number;
-}
-
-export interface WorkbenchWindowProfile {
-  mode: WorkbenchWindowMode;
-  anchor?: WorkbenchWindowAnchor;
-  aspectRatio?: string;
-}
-
-export interface WorkbenchInputProfile {
-  mode: WorkbenchInputMode;
-  density: WorkbenchDensityMode;
-  directionalNavigation: boolean;
-  pointerGestures: boolean;
-}
-
-export interface WorkbenchPreset {
-  id: string;
-  label: string;
-  description: string;
-  shellBlueprint: OverlayShellBlueprintId;
-  navigationModel: OverlayShellNavigationModel;
-  preferredThemeIds: string[];
-  panelBindings: WorkbenchPanelBinding[];
-  windowProfile: WorkbenchWindowProfile;
-  inputProfile: WorkbenchInputProfile;
-}
+export type WorkbenchPanelBinding = GeneratedWorkbenchPanelBinding;
+export type WorkbenchWindowProfile = GeneratedWorkbenchWindowProfile;
+export type WorkbenchInputProfile = GeneratedWorkbenchInputProfile;
+export type WorkbenchPreset = GeneratedWorkbenchPreset;
 
 type LooseRecord = Record<string, unknown>;
 
@@ -147,128 +123,7 @@ function normalizePanelBinding(
   };
 }
 
-export const BUILT_IN_WORKBENCH_PRESETS: WorkbenchPreset[] = [
-  {
-    id: 'operator-classic',
-    label: 'Operator Classic',
-    description: 'Current shell baseline with dock chrome and tab-driven multitasking.',
-    shellBlueprint: 'classic-dock',
-    navigationModel: 'tabs',
-    preferredThemeIds: ['operator', 'github-dark', 'nord'],
-    panelBindings: [
-      { panelId: 'terminal', region: 'primary', order: 0, defaultOpen: true },
-      { panelId: 'explorer', region: 'rail', order: 0, defaultOpen: true, preferredSize: 320 },
-      { panelId: 'git', region: 'primary', order: 1, defaultOpen: true },
-      { panelId: 'notes', region: 'primary', order: 2, defaultOpen: true },
-    ],
-    windowProfile: {
-      mode: 'overlay',
-      anchor: 'bottom',
-    },
-    inputProfile: {
-      mode: 'keyboard',
-      density: 'comfortable',
-      directionalNavigation: false,
-      pointerGestures: true,
-    },
-  },
-  {
-    id: 'xmb-media-deck',
-    label: 'XMB Media Deck',
-    description: 'Cross-media rail with controller-friendly focus movement and fullscreen immersion.',
-    shellBlueprint: 'xmb-cross-media',
-    navigationModel: 'cross-axis',
-    preferredThemeIds: ['vista-glass', 'operator', 'catppuccin'],
-    panelBindings: [
-      { panelId: 'terminal', region: 'primary', order: 0, defaultOpen: true },
-      { panelId: 'explorer', region: 'primary', order: 1, defaultOpen: true },
-      { panelId: 'plugins', region: 'primary', order: 2, defaultOpen: true },
-    ],
-    windowProfile: {
-      mode: 'fullscreen',
-      anchor: 'center',
-    },
-    inputProfile: {
-      mode: 'controller',
-      density: 'immersive',
-      directionalNavigation: true,
-      pointerGestures: false,
-    },
-  },
-  {
-    id: 'hackintosh-desktop',
-    label: 'Hackintosh Desktop',
-    description: 'Retro desktop metaphor with layered windows, menu chrome, and a wallpaper-first canvas.',
-    shellBlueprint: 'retro-desktop',
-    navigationModel: 'desktop',
-    preferredThemeIds: ['vintage-macintosh', 'aqua-light'],
-    panelBindings: [
-      { panelId: 'terminal', region: 'desktop', order: 0, defaultOpen: true },
-      { panelId: 'explorer', region: 'desktop', order: 1, defaultOpen: true },
-      { panelId: 'notes', region: 'desktop', order: 2, defaultOpen: true },
-      { panelId: 'git', region: 'desktop', order: 3, defaultOpen: false },
-    ],
-    windowProfile: {
-      mode: 'windowed',
-      anchor: 'center',
-      aspectRatio: '4:3',
-    },
-    inputProfile: {
-      mode: 'pointer',
-      density: 'comfortable',
-      directionalNavigation: false,
-      pointerGestures: true,
-    },
-  },
-  {
-    id: 'metro-start',
-    label: 'Metro Start',
-    description: 'Tile-first launcher shell with dashboard surfaces and touch-sized targets.',
-    shellBlueprint: 'tile-start',
-    navigationModel: 'tiles',
-    preferredThemeIds: ['plasma-flow', 'nord'],
-    panelBindings: [
-      { panelId: 'terminal', region: 'primary', order: 0, defaultOpen: true },
-      { panelId: 'explorer', region: 'primary', order: 1, defaultOpen: true },
-      { panelId: 'screenshots', region: 'secondary', order: 0, defaultOpen: true },
-      { panelId: 'plugins', region: 'secondary', order: 1, defaultOpen: true },
-    ],
-    windowProfile: {
-      mode: 'fullscreen',
-      anchor: 'center',
-    },
-    inputProfile: {
-      mode: 'touch',
-      density: 'immersive',
-      directionalNavigation: true,
-      pointerGestures: true,
-    },
-  },
-  {
-    id: 'dual-screen-devkit',
-    label: 'Dual Screen Devkit',
-    description: 'Handheld-style stacked shell with a primary task surface and a persistent utility screen.',
-    shellBlueprint: 'handheld-dual-screen',
-    navigationModel: 'stacked-dual-pane',
-    preferredThemeIds: ['vintage-macintosh', 'operator'],
-    panelBindings: [
-      { panelId: 'terminal', region: 'primary', order: 0, defaultOpen: true },
-      { panelId: 'explorer', region: 'secondary', order: 0, defaultOpen: true },
-      { panelId: 'plugins', region: 'secondary', order: 1, defaultOpen: false },
-    ],
-    windowProfile: {
-      mode: 'windowed',
-      anchor: 'center',
-      aspectRatio: '10:9',
-    },
-    inputProfile: {
-      mode: 'touch',
-      density: 'compact',
-      directionalNavigation: true,
-      pointerGestures: true,
-    },
-  },
-];
+export const BUILT_IN_WORKBENCH_PRESETS: WorkbenchPreset[] = [...GENERATED_OVERLAY_WORKBENCH_PRESETS];
 
 const builtInWorkbenchPresetMap = new Map(
   BUILT_IN_WORKBENCH_PRESETS.map(preset => [preset.id, preset] as const),

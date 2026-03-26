@@ -78,6 +78,83 @@ pub struct ThemePresentation {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
+pub enum LayoutBarPosition {
+    Top,
+    Bottom,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum LayoutDockSide {
+    Left,
+    Right,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExplorerLayoutMode {
+    Full,
+    CompactDock,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LayoutPinnedPanel {
+    pub panel_id: String,
+    pub side: LayoutDockSide,
+    pub size: u16,
+    pub mode: ExplorerLayoutMode,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LayoutChromeConfig {
+    pub bar_position: LayoutBarPosition,
+    pub show_settings_shortcut: bool,
+    pub show_panel_menu: bool,
+    pub show_blur_toggle: bool,
+    pub show_shortcut_badge: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LayoutControlDockConfig {
+    pub enabled: bool,
+    pub side: LayoutDockSide,
+    pub inset: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LayoutBehaviorConfig {
+    pub cycle_order: u16,
+    pub default_active_panel_id: String,
+    pub enforced_open_panel_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LayoutProfile {
+    pub id: String,
+    pub label: String,
+    pub description: String,
+    pub shell_blueprint: ShellBlueprintId,
+    pub chrome: LayoutChromeConfig,
+    pub control_dock: LayoutControlDockConfig,
+    pub pinned_panels: Vec<LayoutPinnedPanel>,
+    pub behavior: LayoutBehaviorConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LayoutManifest {
+    pub version: u16,
+    pub extends_built_ins: bool,
+    pub profiles: Vec<LayoutProfile>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
 pub enum WorkbenchRegionId {
     Primary,
     Secondary,

@@ -19,6 +19,7 @@ pub struct File {
 	v_name:  Option<Value>,
 	v_path:  Option<Value>,
 	v_cache: Option<Value>,
+	v_icon:  Option<Value>,
 }
 
 impl Deref for File {
@@ -42,6 +43,7 @@ impl File {
 			v_name:  None,
 			v_path:  None,
 			v_cache: None,
+			v_icon:  None,
 		}
 	}
 
@@ -88,10 +90,18 @@ impl UserData for File {
 	fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
 		impl_file_methods!(methods);
 
-		methods.add_method("icon", |_, me, ()| {
+		methods.add_method_mut("icon", |lua, me, ()| {
 			use crate::Icon;
-			// TODO: use a cache
-			Ok(yazi_config::THEME.icon.matches(me, false).map(Icon::from))
+			if let Some(icon) = &me.v_icon {
+				return Ok(icon.clone());
+			}
+
+			let icon = match yazi_config::THEME.icon.matches(me, false) {
+				Some(icon) => Value::UserData(lua.create_userdata(Icon::from(icon))?),
+				None => Value::Nil,
+			};
+			me.v_icon = Some(icon.clone());
+			Ok(icon)
 		});
 	}
 }

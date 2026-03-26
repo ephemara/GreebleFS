@@ -19,6 +19,11 @@ describe('layoutProfiles', () => {
         {
           id: 'navigator-bottom',
           label: 'Navigator XL',
+          interaction: {
+            primaryAxisOwner: 'pinned-rail',
+            commandOwner: 'chrome',
+            backBehavior: 'overlay-first',
+          },
           pinnedPanels: [
             {
               panelId: 'explorer',
@@ -34,6 +39,10 @@ describe('layoutProfiles', () => {
     const profile = resolveLayoutProfile(manifest, 'navigator-bottom');
     expect(profile.label).toBe('Navigator XL');
     expect(profile.pinnedPanels[0]?.size).toBe(420);
+    expect(profile.interaction.primaryAxisOwner).toBe('pinned-rail');
+    expect(profile.interaction.commandOwner).toBe('chrome');
+    expect(profile.interaction.backBehavior).toBe('overlay-first');
+    expect(profile.interaction.modeExitTarget).toBe('last-browse-target');
     expect(manifest.profiles.length).toBeGreaterThanOrEqual(BUILT_IN_LAYOUT_MANIFEST.profiles.length);
   });
 
@@ -78,6 +87,7 @@ describe('layoutProfiles', () => {
     expect(classicProfile.behavior.defaultActivePanelId).toBe('explorer');
     expect(profile.behavior.defaultActivePanelId).toBe('explorer');
     expect(profile.behavior.enforcedOpenPanelIds).toEqual(classicProfile.behavior.enforcedOpenPanelIds);
+    expect(profile.interaction).toEqual(classicProfile.interaction);
     expect(getPinnedPanelIds(profile)).toEqual([]);
     expect(getTabbedOpenPanelIds(profile, ['explorer', 'terminal', 'notes'])).toEqual(['explorer', 'terminal', 'notes']);
   });

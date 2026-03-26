@@ -13,7 +13,7 @@ pub struct PluginBackendResult {
     pub status: i32,
 }
 
-#[derive(Debug, Serialize, Clone, specta::Type)]
+#[derive(Debug, Serialize, Clone, specta::Type, tauri_specta::Event)]
 pub struct PluginDirectoryWatchEvent {
     pub root: String,
     pub kind: String,

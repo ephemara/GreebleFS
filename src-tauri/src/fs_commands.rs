@@ -57,6 +57,13 @@ pub struct EntryStorageInfo {
     pub is_complete: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
+#[serde(tag = "kind", content = "value", rename_all = "camelCase")]
+pub enum FsWriteFileContent {
+    Text(String),
+    Bytes(Vec<u8>),
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, specta::Type, tauri_specta::Event)]
 #[serde(rename_all = "camelCase")]
 pub struct ExplorerTaskProgressEvent {
@@ -2700,8 +2707,8 @@ pub async fn fs_rename(old_path: String, new_path: String) -> Result<(), String>
     let old_path_ref = Path::new(&old_path);
     let new_path_ref = Path::new(&new_path);
     let result = yazi_provider::rename(UrlBuf::from(old_path_ref), UrlBuf::from(new_path_ref))
-    .await
-    .map_err(|error| error.to_string());
+        .await
+        .map_err(|error| error.to_string());
     if result.is_ok() {
         invalidate_all_fs_caches(old_path_ref);
         invalidate_all_fs_caches(new_path_ref);
@@ -3030,7 +3037,10 @@ fn numbered_destination(
 #[tauri::command]
 #[specta::specta]
 pub async fn fs_create_dir(path: String) -> Result<(), String> {
-    let result = std::fs::create_dir_all(&path).map_err(|e| e.to_string());
+    ensure_yazi_runtime()?;
+    let result = yazi_provider::create_dir_all(UrlBuf::from(Path::new(&path)))
+        .await
+        .map_err(|e| e.to_string());
     if result.is_ok() {
         let path_ref = Path::new(&path);
         invalidate_all_fs_caches(path_ref);
@@ -3045,11 +3055,21 @@ pub async fn fs_create_dir(path: String) -> Result<(), String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn fs_write_file(path: String, content: String) -> Result<(), String> {
+pub async fn fs_write_file(path: String, content: FsWriteFileContent) -> Result<(), String> {
     if let Some(parent) = std::path::Path::new(&path).parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        ensure_yazi_runtime()?;
+        yazi_provider::create_dir_all(UrlBuf::from(parent))
+            .await
+            .map_err(|e| e.to_string())?;
     }
-    let result = std::fs::write(&path, content.as_bytes()).map_err(|e| e.to_string());
+    let bytes = match content {
+        FsWriteFileContent::Text(text) => text.into_bytes(),
+        FsWriteFileContent::Bytes(bytes) => bytes,
+    };
+    let result = yazi_provider::write(UrlBuf::from(Path::new(&path)), bytes)
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string());
     if result.is_ok() {
         let path_ref = Path::new(&path);
         invalidate_all_fs_caches(path_ref);
@@ -3750,9 +3770,12 @@ mod tests {
             vec!["alpha.txt"]
         );
 
-        fs_write_file(beta_path.to_string_lossy().into_owned(), "beta".to_string())
-            .await
-            .expect("fs_write_file failed");
+        fs_write_file(
+            beta_path.to_string_lossy().into_owned(),
+            FsWriteFileContent::Text("beta".to_string()),
+        )
+        .await
+        .expect("fs_write_file failed");
 
         let refreshed_entries = fs_list_dir(dir_path, false)
             .await
@@ -4570,7 +4593,7 @@ mod tests {
         let created_path = dir.path().join("nested").join("beta.txt");
         fs_write_file(
             created_path.to_string_lossy().into_owned(),
-            "beta body".to_string(),
+            FsWriteFileContent::Text("beta body".to_string()),
         )
         .await
         .expect("fs_write_file failed");
@@ -4784,7 +4807,7 @@ mod tests {
                 .join("alpha-note-2.txt")
                 .to_string_lossy()
                 .into_owned(),
-            "payload".to_string(),
+            FsWriteFileContent::Text("payload".to_string()),
         )
         .await
         .expect("fs_write_file failed");
@@ -5074,6 +5097,20 @@ mod tests {
         assert!(result.is_ok(), "fs_create_dir failed: {:?}", result);
         assert!(new_path.exists(), "directory was not created");
         assert!(new_path.is_dir(), "path is not a directory");
+    }
+
+    #[tokio::test]
+    async fn write_file_accepts_binary_payloads() {
+        let dir = tmp_dir();
+        let new_path = dir.path().join("nested").join("payload.bin");
+        let payload = vec![0_u8, 1, 2, 3, 255];
+        let result = fs_write_file(
+            new_path.to_string_lossy().into(),
+            FsWriteFileContent::Bytes(payload.clone()),
+        )
+        .await;
+        assert!(result.is_ok(), "fs_write_file failed: {:?}", result);
+        assert_eq!(fs::read(&new_path).unwrap(), payload);
     }
 
     #[tokio::test]

@@ -20,6 +20,8 @@ pub(super) struct File {
 	v_name:  Option<Value>,
 	v_path:  Option<Value>,
 	v_cache: Option<Value>,
+	v_icon:  Option<Value>,
+	v_icon_hovered: Option<Value>,
 
 	v_bare: Option<Value>,
 }
@@ -57,6 +59,8 @@ impl File {
 					v_name: None,
 					v_path: None,
 					v_cache: None,
+					v_icon:  None,
+					v_icon_hovered: None,
 
 					v_bare: None,
 				})?;
@@ -86,10 +90,24 @@ impl UserData for File {
 	fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
 		yazi_binding::impl_file_methods!(methods);
 
-		methods.add_method("icon", |_, me, ()| {
+		methods.add_method_mut("icon", |lua, me, ()| {
 			use yazi_binding::Icon;
-			// TODO: use a cache
-			Ok(yazi_config::THEME.icon.matches(me, me.is_hovered()).map(Icon::from))
+			let hovered = me.is_hovered();
+			let cached = if hovered { &me.v_icon_hovered } else { &me.v_icon };
+			if let Some(icon) = cached {
+				return Ok(icon.clone());
+			}
+
+			let icon = match yazi_config::THEME.icon.matches(me, hovered) {
+				Some(icon) => Value::UserData(lua.create_userdata(Icon::from(icon))?),
+				None => Value::Nil,
+			};
+			if hovered {
+				me.v_icon_hovered = Some(icon.clone());
+			} else {
+				me.v_icon = Some(icon.clone());
+			}
+			Ok(icon)
 		});
 		methods.add_method("size", |_, me, ()| {
 			Ok(if me.is_dir() { me.folder.files.sizes.get(&me.urn()).copied() } else { Some(me.len) })

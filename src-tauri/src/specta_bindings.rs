@@ -5,7 +5,7 @@ use crate::fs_commands::{
     DriveInfo, EntryStorageInfo, ExplorerTaskProgressEvent, FileEntry,
     FileSearchContentCacheStatus, FileSearchDiagnostics, FileSearchExecutionStrategy,
     FileSearchMatchKind, FileSearchResponse, FileSearchResult, FileTransferOperation,
-    FileTransferResult, FsRuntimeCachePolicy,
+    FileTransferResult, FsRuntimeCachePolicy, FsWriteFileContent,
 };
 use crate::plugin_commands::{PluginBackendResult, PluginDirectoryWatchEvent};
 use crate::python_commands::{
@@ -15,7 +15,12 @@ use crate::python_commands::{
 };
 use crate::screenshot_commands::{SavedScreenshot, ScreenshotPreview};
 use crate::terminal::{ExternalTerminalRequest, TerminalWriteRequest};
-use overlay_contracts::ShellBlueprint;
+use overlay_contracts::{
+    ExplorerLayoutMode, LayoutBarPosition, LayoutBehaviorConfig, LayoutChromeConfig,
+    LayoutControlDockConfig, LayoutDockSide, LayoutManifest, LayoutPinnedPanel, LayoutProfile,
+    ShellBlueprint, ThemeChromeStyle, ThemeDensity, ThemeIconStyle, ThemeMotionStyle,
+    ThemePresentation, WorkbenchPreset,
+};
 use specta_typescript::{BigIntExportBehavior, Typescript};
 use tauri_specta::{collect_commands, collect_events, Builder};
 
@@ -102,6 +107,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<EntryStorageInfo>()
         .typ::<ExplorerTaskProgressEvent>()
         .typ::<FsRuntimeCachePolicy>()
+        .typ::<FsWriteFileContent>()
         .typ::<FileTransferOperation>()
         .typ::<FileTransferResult>()
         .typ::<FileSearchMatchKind>()
@@ -125,6 +131,21 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<ScreenshotPreview>()
         .typ::<ExternalTerminalRequest>()
         .typ::<TerminalWriteRequest>()
+        .typ::<ThemeDensity>()
+        .typ::<ThemeChromeStyle>()
+        .typ::<ThemeIconStyle>()
+        .typ::<ThemeMotionStyle>()
+        .typ::<ThemePresentation>()
+        .typ::<LayoutBarPosition>()
+        .typ::<LayoutDockSide>()
+        .typ::<ExplorerLayoutMode>()
+        .typ::<LayoutPinnedPanel>()
+        .typ::<LayoutChromeConfig>()
+        .typ::<LayoutControlDockConfig>()
+        .typ::<LayoutBehaviorConfig>()
+        .typ::<LayoutProfile>()
+        .typ::<LayoutManifest>()
+        .typ::<WorkbenchPreset>()
         .typ::<yazi_specta::YaziBindingStatus>()
         .typ::<yazi_specta::YaziCrateName>()
         .typ::<yazi_specta::YaziBindingManifestEntry>()

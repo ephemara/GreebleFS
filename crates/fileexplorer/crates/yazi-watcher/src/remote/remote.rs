@@ -55,7 +55,7 @@ impl Remote {
 				}
 			}
 
-			FilesOp::mutate(ops);
+			MgrProxy::update_files_bulk(ops);
 			MgrProxy::upload(ups);
 		}
 	}

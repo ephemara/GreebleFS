@@ -1,6 +1,8 @@
+use hashbrown::{HashMap, HashSet};
+use yazi_fs::{File, FilesOp};
 use yazi_macro::{emit, relay};
 use yazi_parser::mgr::{DisplaceDoOpt, FilterOpt, FindDoOpt, OpenDoOpt, OpenOpt, SearchOpt, UpdatePeekedOpt, UpdateSpottedOpt};
-use yazi_shared::{Id, SStr, url::UrlBuf};
+use yazi_shared::{Id, SStr, path::PathBufDyn, url::UrlBuf};
 
 pub struct MgrProxy;
 
@@ -65,6 +67,35 @@ impl MgrProxy {
 
 	pub fn update_spotted(opt: UpdateSpottedOpt) {
 		emit!(Call(relay!(mgr:update_spotted).with_any("opt", opt)));
+	}
+
+	pub fn update_files(op: FilesOp) {
+		emit!(Call(relay!(mgr:update_files).with_any("op", op)));
+	}
+
+	pub fn update_files_bulk(ops: Vec<FilesOp>) {
+		let mut parents: HashMap<UrlBuf, (HashMap<PathBufDyn, File>, HashSet<PathBufDyn>)> =
+			Default::default();
+
+		for op in ops {
+			match op {
+				FilesOp::Upserting(parent, map) => parents.entry(parent).or_default().0.extend(map),
+				FilesOp::Deleting(parent, urns) => parents.entry(parent).or_default().1.extend(urns),
+				_ => unreachable!(),
+			}
+		}
+
+		for (parent, (upserting, deleting)) in parents {
+			match (upserting.is_empty(), deleting.is_empty()) {
+				(true, true) => unreachable!(),
+				(true, false) => Self::update_files(FilesOp::Deleting(parent, deleting)),
+				(false, true) => Self::update_files(FilesOp::Upserting(parent, upserting)),
+				(false, false) => {
+					Self::update_files(FilesOp::Deleting(parent.clone(), deleting));
+					Self::update_files(FilesOp::Upserting(parent, upserting));
+				}
+			}
+		}
 	}
 
 	pub fn upload<I>(urls: I)

@@ -211,6 +211,15 @@ mod tests {
 		assert!(!matches("/*.md", "/foo/bar.md"));
 	}
 
+	#[cfg(unix)]
+	#[test]
+	fn test_scheme_matching() {
+		assert!(matches("search://**/*.md", "search://kw//root/docs/readme.md"));
+		assert!(!matches("search://**/*.md", "/root/docs/readme.md"));
+		assert!(matches("local://**/*.md", "/root/docs/readme.md"));
+		assert!(matches("local://**/*.md", "search://kw//root/docs/readme.md"));
+	}
+
 	#[cfg(windows)]
 	#[test]
 	fn test_windows() {
@@ -247,5 +256,14 @@ mod tests {
 		assert!(!matches(r#"C:/*/*.md"#, r#"C:\foo.md"#));
 		assert!(!matches(r#"C:/*"#, r#"C:\foo\bar"#));
 		assert!(!matches(r#"C:/*.md"#, r#"C:\foo\bar.md"#));
+	}
+
+	#[cfg(windows)]
+	#[test]
+	fn test_scheme_matching() {
+		assert!(matches(r#"search://**/*.md"#, r#"search://kw//root/docs/readme.md"#));
+		assert!(!matches(r#"search://**/*.md"#, r#"C:\root\docs\readme.md"#));
+		assert!(matches(r#"local://*.md"#, r#"C:\root\docs\readme.md"#));
+		assert!(matches(r#"local://*.md"#, r#"search://kw//root/docs/readme.md"#));
 	}
 }

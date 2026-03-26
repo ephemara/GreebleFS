@@ -30,6 +30,7 @@ That means:
 - preserve full themeability
 - preserve layout transformability
 - avoid hardcoding the app around one temporary visual direction
+- preserve the shared interaction contract in [`docs/architecture/interaction-system.md`](/C:/Users/ephemara/.codex/worktrees/e81d/overlayterm/docs/architecture/interaction-system.md) before adding shell-specific explorer behavior
 
 ## What To Protect
 

@@ -1,58 +1,40 @@
 import { parse as parseToml } from 'smol-toml';
+import type {
+  ExplorerLayoutMode as GeneratedExplorerLayoutMode,
+  LayoutBarPosition as GeneratedLayoutBarPosition,
+  LayoutBehaviorConfig as GeneratedLayoutBehaviorConfig,
+  LayoutChromeConfig as GeneratedLayoutChromeConfig,
+  LayoutControlDockConfig as GeneratedLayoutControlDockConfig,
+  LayoutDockSide as GeneratedLayoutDockSide,
+  LayoutManifest as GeneratedLayoutManifest,
+  LayoutPinnedPanel as GeneratedLayoutPinnedPanel,
+  LayoutProfile as GeneratedLayoutProfile,
+} from '../generated/tauri';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 import {
   normalizeShellBlueprintId,
   type OverlayShellBlueprintId,
 } from './shellBlueprints';
 
+export type LayoutBarPosition = GeneratedLayoutBarPosition;
+export type LayoutDockSide = GeneratedLayoutDockSide;
+export type ExplorerLayoutMode = GeneratedExplorerLayoutMode;
 
-export type LayoutBarPosition = 'top' | 'bottom';
-export type LayoutDockSide = 'left' | 'right';
-export type ExplorerLayoutMode = 'full' | 'compact-dock';
+export type LayoutPinnedPanel = GeneratedLayoutPinnedPanel;
 
-export interface LayoutPinnedPanel {
-  panelId: string;
-  side: LayoutDockSide;
-  size: number;
-  mode: ExplorerLayoutMode;
-}
+export type LayoutChromeConfig = GeneratedLayoutChromeConfig;
 
-export interface LayoutChromeConfig {
-  barPosition: LayoutBarPosition;
-  showSettingsShortcut: boolean;
-  showPanelMenu: boolean;
-  showBlurToggle: boolean;
-  showShortcutBadge: boolean;
-}
+export type LayoutControlDockConfig = GeneratedLayoutControlDockConfig;
 
-export interface LayoutControlDockConfig {
-  enabled: boolean;
-  side: LayoutDockSide;
-  inset: number;
-}
+export type LayoutBehaviorConfig = GeneratedLayoutBehaviorConfig;
 
-export interface LayoutBehaviorConfig {
-  cycleOrder: number;
-  defaultActivePanelId: string;
-  enforcedOpenPanelIds: string[];
-}
-
-export interface LayoutProfile {
-  id: string;
-  label: string;
-  description: string;
+export type LayoutProfile = Omit<GeneratedLayoutProfile, 'shellBlueprint'> & {
   shellBlueprint: OverlayShellBlueprintId;
-  chrome: LayoutChromeConfig;
-  controlDock: LayoutControlDockConfig;
-  pinnedPanels: LayoutPinnedPanel[];
-  behavior: LayoutBehaviorConfig;
-}
+};
 
-export interface LayoutManifest {
-  version: number;
-  extendsBuiltIns: boolean;
+export type LayoutManifest = Omit<GeneratedLayoutManifest, 'profiles'> & {
   profiles: LayoutProfile[];
-}
+};
 
 type LooseRecord = Record<string, unknown>;
 

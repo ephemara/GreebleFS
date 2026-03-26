@@ -185,6 +185,60 @@ describe('appearance config helpers', () => {
     expect(getThemeSourceLabel(resolved.theme)).toBe('Package');
   });
 
+  it('reuses the resolved appearance object for repeated identical theme selections', () => {
+    const customTheme = normalizeThemeDefinition({
+      id: 'cache-lab',
+      name: 'Cache Lab',
+      palette: {
+        accent: '#44ffaa',
+        panelBackground: '#102030',
+      },
+    } as Partial<OverlayThemeDefinition>);
+    const selection = {
+      activeThemeId: 'cache-lab',
+      customThemes: [customTheme],
+      uiFontFamily: '"Space Grotesk", Inter, sans-serif',
+      monoFontFamily: '"JetBrains Mono", monospace',
+      panelTransparency: 0.35,
+    } satisfies Parameters<typeof resolveOverlayAppearance>[0];
+
+    const first = resolveOverlayAppearance(selection);
+    const second = resolveOverlayAppearance(selection);
+
+    expect(second).toBe(first);
+    expect(second.theme).toBe(first.theme);
+    expect(second.baseTheme).toBe(first.baseTheme);
+    expect(second.cssVars).toBe(first.cssVars);
+    expect(second.themes).toBe(first.themes);
+  });
+
+  it('invalidates the resolved appearance cache when panel transparency changes', () => {
+    const customTheme = normalizeThemeDefinition({
+      id: 'cache-bust-lab',
+      name: 'Cache Bust Lab',
+      palette: {
+        panelBackground: '#203040',
+      },
+    } as Partial<OverlayThemeDefinition>);
+    const customThemes = [customTheme];
+
+    const opaque = resolveOverlayAppearance({
+      activeThemeId: 'cache-bust-lab',
+      customThemes,
+      panelTransparency: 0,
+    });
+    const translucent = resolveOverlayAppearance({
+      activeThemeId: 'cache-bust-lab',
+      customThemes,
+      panelTransparency: 0.45,
+    });
+
+    expect(translucent).not.toBe(opaque);
+    expect(translucent.theme).not.toBe(opaque.theme);
+    expect(translucent.theme.palette.panelBackground).not.toBe(opaque.theme.palette.panelBackground);
+    expect(translucent.cssVars['--overlay-panel-transparency']).toBe('0.45');
+  });
+
   it('treats missing compatibility metadata as broadly supported and honors explicit shell targeting', () => {
     const universalTheme = normalizeThemeDefinition({
       id: 'universal',

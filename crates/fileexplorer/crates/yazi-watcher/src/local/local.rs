@@ -6,6 +6,7 @@ use tokio::{pin, sync::mpsc::{self, UnboundedReceiver}};
 use tokio_stream::{StreamExt, wrappers::UnboundedReceiverStream};
 use tracing::error;
 use yazi_fs::{File, FilesOp, mounts::PARTITIONS, provider::{self, Provider}};
+use yazi_proxy::MgrProxy;
 use yazi_shared::url::{UrlBuf, UrlLike};
 use yazi_vfs::VfsFile;
 
@@ -113,7 +114,7 @@ impl Local {
 				ops.push(FilesOp::Upserting(parent.into(), [(urn.into(), file)].into()));
 			}
 
-			FilesOp::mutate(ops);
+			MgrProxy::update_files_bulk(ops);
 		}
 	}
 }

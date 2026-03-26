@@ -74,6 +74,25 @@ describe('theme package loader', () => {
             shellBlueprints: ['classic-dock', 'xmb-cross-media'],
             tags: ['glass', 'cinematic'],
           },
+          designTokens: [
+            { path: 'color.accent.primary', value: '#7dd3ff', kind: 'color' },
+          ],
+          layoutPrimitives: [
+            { id: 'dock', label: 'Dock', kind: 'dock', density: 'comfortable', gap: 8, padding: 10, cornerRadius: 10 },
+          ],
+          navigationPatterns: [
+            { id: 'tabs', label: 'Tabs', kind: 'tab-strip', directionalNavigation: true, wrap: true, gestureSupport: false },
+          ],
+          animationProfiles: [
+            { id: 'package-open', label: 'Package Open', openMs: 240, closeMs: 180, easing: 'ease-out', reducedMotionId: 'instant' },
+          ],
+          iconPacks: [
+            { id: 'vista-icons', label: 'Vista Icons', description: 'Vista pack', basePath: 'icons', fallbackPackId: 'system' },
+          ],
+          renderStyles: [
+            { id: 'vista-render', label: 'Vista Render', kind: 'vs-code-workbench', entryModule: 'renderers/vista.tsx', supportsLiveSwap: true },
+          ],
+          defaultRenderStyleId: 'vista-render',
           visuals: [
             {
               id: 'glow',
@@ -174,6 +193,9 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.theme.presentation?.panelSpacing).toBe(10);
     expect(result.packages[0]?.theme.compatibility?.shellBlueprints).toEqual(['classic-dock', 'xmb-cross-media']);
     expect(result.packages[0]?.theme.compatibility?.tags).toEqual(['glass', 'cinematic']);
+    expect(result.packages[0]?.engineManifest?.designTokens).toHaveLength(1);
+    expect(result.packages[0]?.engineManifest?.renderStyles[0]?.id).toBe('vista-render');
+    expect(result.packages[0]?.engineManifest?.defaultRenderStyleId).toBe('vista-render');
     expect(result.packages[0]?.author).toBe('OverlayTerm Labs');
     expect(result.packages[0]?.homepage).toBe('https://overlayterm.local/themes/vista-glass');
     expect(result.packages[0]?.tags).toEqual(['glass', 'blue']);

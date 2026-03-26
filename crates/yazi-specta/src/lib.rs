@@ -640,3 +640,46 @@ impl From<yazi_scheduler::TaskSnap> for YaziSchedulerTaskSnap {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn binding_manifest_keeps_scheduler_bridge_exports_stable() {
+        let manifest = binding_manifest();
+        let scheduler = manifest
+            .entries
+            .iter()
+            .find(|entry| entry.crate_name == YaziCrateName::YaziScheduler)
+            .expect("scheduler manifest entry should exist");
+
+        assert_eq!(scheduler.status, YaziBindingStatus::Bridged);
+        assert!(scheduler
+            .exported_types
+            .contains(&"YaziSchedulerTaskProg".to_string()));
+        assert!(scheduler
+            .exported_types
+            .contains(&"YaziSchedulerTaskSnap".to_string()));
+        assert!(scheduler
+            .exported_types
+            .contains(&"YaziSchedulerFileProgUpload".to_string()));
+    }
+
+    #[test]
+    fn binding_manifest_marks_watcher_as_planned_until_event_dtos_ship() {
+        let manifest = binding_manifest();
+        let watcher = manifest
+            .entries
+            .iter()
+            .find(|entry| entry.crate_name == YaziCrateName::YaziWatcher)
+            .expect("watcher manifest entry should exist");
+
+        assert_eq!(watcher.status, YaziBindingStatus::Planned);
+        assert!(watcher.exported_types.is_empty());
+        assert!(watcher
+            .notes
+            .iter()
+            .any(|note| note.contains("watcher event bridge surface planned")));
+    }
+}

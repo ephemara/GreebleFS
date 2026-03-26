@@ -10,6 +10,7 @@ import {
   type OverlayThemePresentation,
   type OverlayThemeVisualLayer,
 } from './appearance';
+import type { ExplorerThemeManifest } from '../runtime/themeEngineBackend';
 import { type LoadedOverlayAnimation, loadAnimationFromSource, deriveAnimationId, deriveAnimationName } from '../components/animationRuntime';
 import {
   createResolvedIconThemeFromEntries,
@@ -34,6 +35,7 @@ interface FileEntry {
 }
 
 type LooseRecord = Record<string, unknown>;
+type ThemeManifestDraft = Partial<ExplorerThemeManifest> & Pick<ExplorerThemeManifest, 'id' | 'name'>;
 
 export interface OverlayThemePackageManifest {
   version?: number;
@@ -64,6 +66,13 @@ export interface OverlayThemePackageManifest {
   };
   presentation?: OverlayThemePresentation;
   compatibility?: OverlayThemeCompatibility;
+  designTokens?: ExplorerThemeManifest['designTokens'];
+  layoutPrimitives?: ExplorerThemeManifest['layoutPrimitives'];
+  navigationPatterns?: ExplorerThemeManifest['navigationPatterns'];
+  animationProfiles?: ExplorerThemeManifest['animationProfiles'];
+  iconPacks?: ExplorerThemeManifest['iconPacks'];
+  renderStyles?: ExplorerThemeManifest['renderStyles'];
+  defaultRenderStyleId?: ExplorerThemeManifest['defaultRenderStyleId'];
 }
 
 interface OverlayThemePackageRecord {
@@ -101,6 +110,7 @@ export interface LoadedOverlayThemePackage {
     fonts: number;
   };
   theme: OverlayThemeDefinition;
+  engineManifest?: ThemeManifestDraft;
 }
 
 export interface ThemePackageLoadResult {
@@ -267,6 +277,27 @@ function parseThemeManifestText(text: string, filePath: string): OverlayThemePac
           .map(entry => entry.trim())
         : [],
     },
+    designTokens: Array.isArray(source.designTokens)
+      ? source.designTokens as ExplorerThemeManifest['designTokens']
+      : undefined,
+    layoutPrimitives: Array.isArray(source.layoutPrimitives)
+      ? source.layoutPrimitives as ExplorerThemeManifest['layoutPrimitives']
+      : undefined,
+    navigationPatterns: Array.isArray(source.navigationPatterns)
+      ? source.navigationPatterns as ExplorerThemeManifest['navigationPatterns']
+      : undefined,
+    animationProfiles: Array.isArray(source.animationProfiles)
+      ? source.animationProfiles as ExplorerThemeManifest['animationProfiles']
+      : undefined,
+    iconPacks: Array.isArray(source.iconPacks)
+      ? source.iconPacks as ExplorerThemeManifest['iconPacks']
+      : undefined,
+    renderStyles: Array.isArray(source.renderStyles)
+      ? source.renderStyles as ExplorerThemeManifest['renderStyles']
+      : undefined,
+    defaultRenderStyleId: typeof source.defaultRenderStyleId === 'string'
+      ? source.defaultRenderStyleId.trim()
+      : undefined,
   };
 }
 
@@ -411,6 +442,50 @@ function mergeThemeAssets(
       ...(baseAssets?.iconEntries ?? {}),
       ...(packageAssets?.iconEntries ?? {}),
     },
+  };
+}
+
+function buildThemeEngineManifest(
+  packageId: string,
+  packageName: string,
+  manifest: OverlayThemePackageManifest,
+): ThemeManifestDraft | undefined {
+  const hasEngineMetadata = Boolean(
+    manifest.designTokens?.length
+      || manifest.layoutPrimitives?.length
+      || manifest.navigationPatterns?.length
+      || manifest.animationProfiles?.length
+      || manifest.iconPacks?.length
+      || manifest.renderStyles?.length
+      || manifest.defaultRenderStyleId,
+  );
+  if (!hasEngineMetadata) {
+    return undefined;
+  }
+
+  return {
+    id: packageId,
+    name: packageName,
+    extends: manifest.extends || null,
+    presentation: {
+      density: manifest.presentation?.density ?? 'comfortable',
+      chromeStyle: manifest.presentation?.chromeStyle ?? 'floating',
+      iconStyle: manifest.presentation?.iconStyle ?? 'vector',
+      motionStyle: manifest.presentation?.motionStyle ?? 'fluid',
+      cornerRadius: manifest.presentation?.cornerRadius ?? 12,
+      panelSpacing: manifest.presentation?.panelSpacing ?? 8,
+    },
+    compatibility: {
+      shellBlueprints: manifest.compatibility?.shellBlueprints ?? [],
+      tags: manifest.compatibility?.tags ?? [],
+    },
+    designTokens: manifest.designTokens ?? [],
+    layoutPrimitives: manifest.layoutPrimitives ?? [],
+    navigationPatterns: manifest.navigationPatterns ?? [],
+    animationProfiles: manifest.animationProfiles ?? [],
+    iconPacks: manifest.iconPacks ?? [],
+    renderStyles: manifest.renderStyles ?? [],
+    defaultRenderStyleId: manifest.defaultRenderStyleId ?? null,
   };
 }
 
@@ -633,6 +708,7 @@ export async function loadThemePackagesFromDirectoryEntries(
             fonts: [theme.fonts?.ui, theme.fonts?.mono].filter(Boolean).length,
           },
           theme,
+          engineManifest: buildThemeEngineManifest(theme.id, theme.name, record.manifest),
         });
         shaders.push(...packageShaders);
         animations.push(...packageAnimations);

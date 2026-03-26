@@ -2398,6 +2398,15 @@ export function SettingsPage({
                           <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
                             Default {profile.behavior.defaultActivePanelId}
                           </span>
+                          <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
+                            Primary {profile.interaction.primaryAxisOwner}
+                          </span>
+                          <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
+                            Command {profile.interaction.commandOwner}
+                          </span>
+                          <span className="rounded border px-2 py-1" style={{ borderColor: border }}>
+                            Back {profile.interaction.backBehavior}
+                          </span>
                         </div>
                       </button>
                     );

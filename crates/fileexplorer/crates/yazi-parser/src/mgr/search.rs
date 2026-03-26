@@ -77,3 +77,56 @@ impl SearchOptVia {
 		}
 	}
 }
+
+#[cfg(test)]
+mod tests {
+	use yazi_shared::event::{Action, ActionCow};
+
+	use super::*;
+
+	#[cfg(unix)]
+	const ABS_IN: &str = "/tmp/workspace";
+	#[cfg(windows)]
+	const ABS_IN: &str = r#"C:\workspace"#;
+
+	#[test]
+	fn parses_search_args_and_absolute_input() {
+		let action = Action::new_relay("mgr:search")
+			.with(0, "needle")
+			.with("via", "rg")
+			.with("args", "--hidden --glob *.rs")
+			.with("in", ABS_IN);
+
+		let opt = SearchOpt::try_from(ActionCow::from(action)).unwrap();
+
+		assert_eq!(opt.via, SearchOptVia::Rg);
+		assert_eq!(opt.subject, "needle");
+		assert_eq!(opt.args, vec!["--hidden", "--glob", "*.rs"]);
+		assert_eq!(opt.args_raw, "--hidden --glob *.rs");
+		let input = opt.r#in.unwrap();
+		assert!(input.is_absolute());
+		assert!(!input.is_search());
+	}
+
+	#[test]
+	fn rejects_relative_input() {
+		let action = Action::new_relay("mgr:search")
+			.with(0, "needle")
+			.with("via", "fd")
+			.with("in", "workspace");
+
+		let err = SearchOpt::try_from(ActionCow::from(action)).unwrap_err();
+		assert!(err.to_string().contains("invalid 'in' in SearchOpt"));
+	}
+
+	#[test]
+	fn rejects_invalid_shell_args() {
+		let action = Action::new_relay("mgr:search")
+			.with(0, "needle")
+			.with("via", "rga")
+			.with("args", "\"unterminated");
+
+		let err = SearchOpt::try_from(ActionCow::from(action)).unwrap_err();
+		assert!(err.to_string().contains("invalid 'args' in SearchOpt"));
+	}
+}

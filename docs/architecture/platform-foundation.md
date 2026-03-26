@@ -13,8 +13,10 @@
   - Owns theme semantics, presentation tokens, and CSS variable projection.
 - `src/config/shellBlueprints.ts`
   - Defines the shell paradigms the app can support: classic dock, XMB, retro desktop, tile start, dual-screen handheld.
+- `docs/architecture/interaction-system.md`
+  - Defines the shared verb, anchor, ownership, and progress contract that every shell family must preserve.
 - `src/config/layoutProfiles.ts`
-  - Chooses a shell blueprint and configures how a specific profile behaves inside that paradigm.
+  - Chooses a shell blueprint and configures how a specific profile behaves inside that paradigm, including typed interaction ownership and continuity rules.
 
 ## Rust boundaries
 

@@ -1,3 +1,10 @@
+import type {
+  ThemeChromeStyle as GeneratedThemeChromeStyle,
+  ThemeDensity as GeneratedThemeDensity,
+  ThemeIconStyle as GeneratedThemeIconStyle,
+  ThemeMotionStyle as GeneratedThemeMotionStyle,
+  ThemePresentation as GeneratedThemePresentation,
+} from '../generated/tauri';
 import type { OverlayShellBlueprintId } from './shellBlueprints';
 import { mergeResolvedIconThemes, type OverlayResolvedIconTheme } from './iconTheme';
 import { clampOverlayVisualControlValue } from './overlayWindow';
@@ -105,24 +112,17 @@ export interface OverlayThemeFonts {
   mono?: string;
 }
 
-export type OverlayThemeDensity = 'compact' | 'comfortable' | 'immersive';
-export type OverlayThemeChromeStyle = 'minimal' | 'ornate' | 'floating' | 'system';
-export type OverlayThemeIconStyle = 'system' | 'vector' | 'pixel' | 'skeuomorphic';
-export type OverlayThemeMotionStyle = 'snappy' | 'fluid' | 'dramatic' | 'instant';
+export type OverlayThemeDensity = GeneratedThemeDensity;
+export type OverlayThemeChromeStyle = GeneratedThemeChromeStyle;
+export type OverlayThemeIconStyle = GeneratedThemeIconStyle;
+export type OverlayThemeMotionStyle = GeneratedThemeMotionStyle;
 
 export interface OverlayThemeCompatibility {
   shellBlueprints?: OverlayShellBlueprintId[];
   tags?: string[];
 }
 
-export interface OverlayThemePresentation {
-  density?: OverlayThemeDensity;
-  chromeStyle?: OverlayThemeChromeStyle;
-  iconStyle?: OverlayThemeIconStyle;
-  motionStyle?: OverlayThemeMotionStyle;
-  cornerRadius?: number;
-  panelSpacing?: number;
-}
+export type OverlayThemePresentation = Partial<GeneratedThemePresentation>;
 
 export interface OverlayThemeDefinition {
   id: string;

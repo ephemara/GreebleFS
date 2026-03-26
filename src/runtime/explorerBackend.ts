@@ -1,4 +1,3 @@
-import { invoke } from '@tauri-apps/api/core';
 import type { FileSearchResponse } from '../config/searchTelemetry';
 import type { FsRuntimeCachePolicy } from '../config/runtimeCachePolicy';
 import { commands, events, unwrapTauriResult } from './tauriClient';
@@ -10,6 +9,7 @@ import {
   type FileSearchResult,
   type FileTransferOperation,
   type FileTransferResult,
+  type FsWriteFileContent,
   type YaziSchedulerTaskSnap,
 } from '../generated/tauri';
 
@@ -121,7 +121,11 @@ export async function writeExplorerFile(
   path: string,
   content: ExplorerWritableContent,
 ): Promise<void> {
-  await invoke('fs_write_file', { path, content });
+  const payload: FsWriteFileContent =
+    typeof content === 'string'
+      ? { kind: 'text', value: content }
+      : { kind: 'bytes', value: content };
+  unwrapTauriResult(await commands.fsWriteFile(path, payload));
 }
 
 export async function readExplorerTextFile(path: string): Promise<string> {
