@@ -11,7 +11,9 @@ import {
   type OverlayThemeVisualLayer,
 } from './appearance';
 import {
+  compileThemeEngineManifest,
   normalizeThemeManifestDraft,
+  type CompiledThemeEngineManifest,
   type ExplorerThemeManifest,
 } from '../runtime/themeEngineBackend';
 import { type LoadedOverlayAnimation, loadAnimationFromSource, deriveAnimationId, deriveAnimationName } from '../components/animationRuntime';
@@ -112,6 +114,7 @@ export interface LoadedOverlayThemePackage {
   };
   theme: OverlayThemeDefinition;
   engineManifest?: ExplorerThemeManifest;
+  compiledEngineManifest?: CompiledThemeEngineManifest;
 }
 
 export interface ThemePackageLoadResult {
@@ -686,6 +689,8 @@ export async function loadThemePackagesFromDirectoryEntries(
           }))
         ).filter((entry): entry is LoadedOverlayAnimation => Boolean(entry));
 
+        const engineManifest = buildThemeEngineManifest(theme.id, theme.name, record.manifest);
+
         packages.push({
           id: theme.id,
           name: theme.name,
@@ -709,7 +714,8 @@ export async function loadThemePackagesFromDirectoryEntries(
             fonts: [theme.fonts?.ui, theme.fonts?.mono].filter(Boolean).length,
           },
           theme,
-          engineManifest: buildThemeEngineManifest(theme.id, theme.name, record.manifest),
+          engineManifest,
+          compiledEngineManifest: engineManifest ? compileThemeEngineManifest(engineManifest) : undefined,
         });
         shaders.push(...packageShaders);
         animations.push(...packageAnimations);

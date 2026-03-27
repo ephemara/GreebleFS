@@ -1388,6 +1388,7 @@ export function SettingsPage({
                     const packageInfo = themePackageLookup.get(themeOption.id);
                     const description = clampThemeDescription(packageInfo?.description ?? themeOption.description);
                     const previewBackground = getThemePreviewBackground(themeOption, packageInfo?.previewUrl);
+                    const defaultRenderStyle = packageInfo?.compiledEngineManifest?.defaultRenderStyle;
                     const capabilityLabels = [
                       packageInfo?.capabilitySummary.icons ? 'Icons' : null,
                       packageInfo?.capabilitySummary.shaders ? `Shaders ${packageInfo.capabilitySummary.shaders}` : null,
@@ -1452,6 +1453,12 @@ export function SettingsPage({
                             <p className="min-h-[2.75rem] text-[11px] leading-4 opacity-35">No package summary provided yet.</p>
                           )}
                           <div className="flex flex-wrap gap-1.5">
+                            {defaultRenderStyle ? <ThemeBadge label={`Render ${defaultRenderStyle.kind}`} active={active} /> : null}
+                            {packageInfo?.compiledEngineManifest?.supportsHotSwappingRenderStyles
+                              ? <ThemeBadge label="Live Swap Ready" active={active} />
+                              : packageInfo?.compiledEngineManifest
+                                ? <ThemeBadge label="Static Render" active={active} />
+                                : null}
                             {themeOption.defaultShaderId ? <ThemeBadge label={`Shader ${themeOption.defaultShaderId}`} active={active} /> : null}
                             {themeOption.defaultOpenAnimationId ? <ThemeBadge label={`Open ${themeOption.defaultOpenAnimationId}`} active={active} /> : null}
                             {themeOption.defaultCloseAnimationId ? <ThemeBadge label={`Close ${themeOption.defaultCloseAnimationId}`} active={active} /> : null}

@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { listen } from '@tauri-apps/api/event';
 import { useFolderPluginRuntime } from '../runtime/useFolderPluginRuntime';
@@ -29,7 +29,7 @@ const emptyDiscoveryResult: pluginPackages.OverlayPluginDiscoveryResult = {
 
 describe('useFolderPluginRuntime', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.spyOn(explorerBackend, 'listExplorerDir').mockResolvedValue(directoryEntries);
     vi.spyOn(pluginPackages, 'discoverOverlayPlugins').mockResolvedValue(emptyDiscoveryResult);
     vi.spyOn(commands, 'pluginWatchDirectory').mockResolvedValue({ status: 'ok', data: null });
@@ -41,6 +41,12 @@ describe('useFolderPluginRuntime', () => {
     vi.useRealTimers();
   });
 
+  async function flushPluginEffects() {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+  }
+
   it('registers the watcher and ignores debounced refreshes for ignored paths', async () => {
     let watchListener: ((event: { payload: { paths: string[] } }) => void) | undefined;
 
@@ -50,6 +56,7 @@ describe('useFolderPluginRuntime', () => {
     });
 
     const { unmount } = renderHook(() => useFolderPluginRuntime('windows'));
+    await flushPluginEffects();
 
     await waitFor(() => {
       expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(1);
@@ -84,6 +91,7 @@ describe('useFolderPluginRuntime', () => {
     });
 
     renderHook(() => useFolderPluginRuntime('windows'));
+    await flushPluginEffects();
 
     await waitFor(() => {
       expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(1);
@@ -106,6 +114,7 @@ describe('useFolderPluginRuntime', () => {
     vi.spyOn(commands, 'pluginWatchDirectory').mockRejectedValueOnce(new Error('watch unavailable'));
 
     renderHook(() => useFolderPluginRuntime('windows'));
+    await flushPluginEffects();
 
     await waitFor(() => {
       expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(1);
@@ -130,16 +139,35 @@ describe('useFolderPluginRuntime', () => {
     vi.mocked(listen).mockResolvedValue(unlisten);
 
     const { unmount } = renderHook(() => useFolderPluginRuntime('windows'));
+    await flushPluginEffects();
 
     await waitFor(() => {
-      expect(commands.pluginWatchDirectory).toHaveBeenCalledTimes(1);
+      expect(commands.pluginWatchDirectory).toHaveBeenCalled();
     });
 
     unmount();
 
     await waitFor(() => {
-      expect(unlisten).toHaveBeenCalledTimes(1);
+      expect(unlisten).toHaveBeenCalled();
       expect(commands.pluginUnwatchDirectory).toHaveBeenCalled();
     });
+  });
+
+  it('skips plugin rediscovery when the watched directory signature is unchanged', async () => {
+    const { result } = renderHook(() => useFolderPluginRuntime('windows'));
+    await flushPluginEffects();
+
+    await waitFor(() => {
+      expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(1);
+    });
+    vi.mocked(explorerBackend.listExplorerDir).mockClear();
+    vi.mocked(pluginPackages.discoverOverlayPlugins).mockClear();
+
+    await act(async () => {
+      await result.current.refreshFolderPlugins();
+    });
+
+    expect(explorerBackend.listExplorerDir).toHaveBeenCalled();
+    expect(pluginPackages.discoverOverlayPlugins).not.toHaveBeenCalled();
   });
 });

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { FileExplorer } from '../components/FileExplorer';
 import { resolveOverlayAppearance } from '../config/appearance';
+import type { FileSearchDiagnostics } from '../config/searchTelemetry';
 import {
   EXPLORER_PERFORMANCE_HISTORY_KEY,
   loadExplorerPerformanceSnapshot,
@@ -108,6 +109,16 @@ const RUNTIME_POLICY: FsRuntimeCachePolicy = {
   searchMaxIndexedEntries: 25000,
 };
 
+const DEFAULT_SEARCH_DIAGNOSTICS: FileSearchDiagnostics = {
+  executionStrategy: 'content_index_cache_hit',
+  contentCacheStatus: 'cache_hit',
+  scannedEntryCount: 0,
+  indexedEntryCount: 64,
+  contentCacheStoredFileCount: 0,
+  contentCacheStoredByteCount: 0,
+  truncatedByScanBudget: false,
+};
+
 function renderExplorer() {
   const appearance = resolveOverlayAppearance({ activeThemeId: 'operator' });
 
@@ -128,6 +139,39 @@ function renderExplorer() {
   );
 }
 
+function installExplorerBackendMock(diagnostics: FileSearchDiagnostics) {
+  vi.mocked(invoke).mockReset();
+  vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
+    const payload = args as { paths?: string[] } | undefined;
+    switch (command) {
+      case 'fs_get_drives':
+        return [];
+      case 'fs_get_home_dir':
+        return REPO_ROOT;
+      case 'fs_get_runtime_cache_policy':
+        return RUNTIME_POLICY;
+      case 'fs_list_dir':
+      case 'fs_list_dir_uncached':
+        return EXPLORER_ENTRIES;
+      case 'fs_measure_entry_sizes':
+        return buildEntrySizeResults(payload?.paths ?? []);
+      case 'fs_resolve_native_icons':
+        return [];
+      case 'fs_search_entries_with_diagnostics':
+        return {
+          results: [SEARCH_RESULT],
+          diagnostics,
+        };
+      case 'fs_cancel_search_entries':
+      case 'fs_watch_entry_size_root':
+      case 'fs_unwatch_entry_size_root':
+        return null;
+      default:
+        throw new Error(`Unexpected invoke command: ${command}`);
+    }
+  });
+}
+
 describe('FileExplorer search telemetry', () => {
   beforeEach(() => {
     resetOverlayTermStorage(window.localStorage);
@@ -137,44 +181,7 @@ describe('FileExplorer search telemetry', () => {
     useExplorerStore.getState().replaceRail(createDefaultExplorerRailSnapshot());
     useExplorerStore.getState().clearPersistenceNotice();
 
-    vi.mocked(invoke).mockReset();
-    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
-      const payload = args as { paths?: string[] } | undefined;
-      switch (command) {
-        case 'fs_get_drives':
-          return [];
-        case 'fs_get_home_dir':
-          return REPO_ROOT;
-        case 'fs_get_runtime_cache_policy':
-          return RUNTIME_POLICY;
-        case 'fs_list_dir':
-        case 'fs_list_dir_uncached':
-          return EXPLORER_ENTRIES;
-        case 'fs_measure_entry_sizes':
-          return buildEntrySizeResults(payload?.paths ?? []);
-        case 'fs_resolve_native_icons':
-          return [];
-        case 'fs_search_entries_with_diagnostics':
-          return {
-            results: [SEARCH_RESULT],
-            diagnostics: {
-              executionStrategy: 'content_index_cache_hit',
-              contentCacheStatus: 'cache_hit',
-              scannedEntryCount: 0,
-              indexedEntryCount: 64,
-              contentCacheStoredFileCount: 0,
-              contentCacheStoredByteCount: 0,
-              truncatedByScanBudget: false,
-            },
-          };
-        case 'fs_cancel_search_entries':
-        case 'fs_watch_entry_size_root':
-        case 'fs_unwatch_entry_size_root':
-          return null;
-        default:
-          throw new Error(`Unexpected invoke command: ${command}`);
-      }
-    });
+    installExplorerBackendMock(DEFAULT_SEARCH_DIAGNOSTICS);
   });
 
   it('records backend search diagnostics alongside runtime cache policy metadata', async () => {
@@ -193,7 +200,7 @@ describe('FileExplorer search telemetry', () => {
         expect.objectContaining({
           path: REPO_ROOT,
           query: 'needle',
-          requestScope: 'primary_file_explorer',
+          requestScope: expect.stringMatching(/^file-explorer:/),
         }),
       );
       expect(loadExplorerPerformanceSnapshot(window.localStorage).samples.explorer_search).toHaveLength(1);
@@ -225,6 +232,80 @@ describe('FileExplorer search telemetry', () => {
       explorerSearchContentCacheStoredFileCount: 0,
       explorerSearchContentCacheStoredByteCount: 0,
       explorerSearchTruncatedByScanBudget: false,
+    });
+  });
+
+  it.each([
+    ['cold live scan', {
+      executionStrategy: 'live_scan',
+      contentCacheStatus: 'not_requested',
+      scannedEntryCount: 384,
+      indexedEntryCount: 0,
+      contentCacheStoredFileCount: 0,
+      contentCacheStoredByteCount: 0,
+      truncatedByScanBudget: false,
+    }],
+    ['warm cache path', {
+      executionStrategy: 'content_index_cache_hit',
+      contentCacheStatus: 'warmed',
+      scannedEntryCount: 0,
+      indexedEntryCount: 96,
+      contentCacheStoredFileCount: 12,
+      contentCacheStoredByteCount: 4096,
+      truncatedByScanBudget: false,
+    }],
+    ['over-budget fallback', {
+      executionStrategy: 'live_scan',
+      contentCacheStatus: 'over_budget_fallback',
+      scannedEntryCount: 9000,
+      indexedEntryCount: 0,
+      contentCacheStoredFileCount: 0,
+      contentCacheStoredByteCount: 0,
+      truncatedByScanBudget: true,
+    }],
+  ] as const)('records %s search telemetry', async (_, diagnostics) => {
+    installExplorerBackendMock(diagnostics);
+    renderExplorer();
+
+    await screen.findByText('alpha');
+    fireEvent.keyDown(window, { key: 'l', ctrlKey: true });
+    const omnibox = await screen.findByPlaceholderText(/Search or enter path/i);
+    fireEvent.change(omnibox, { target: { value: 'needle' } });
+    fireEvent.keyDown(omnibox, { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(loadExplorerPerformanceSnapshot(window.localStorage).samples.explorer_search).toHaveLength(1);
+    });
+
+    const searchSample = loadExplorerPerformanceSnapshot(window.localStorage).samples.explorer_search[0];
+    expect(searchSample?.metadata).toMatchObject({
+      explorerSearchExecutionStrategy: diagnostics.executionStrategy,
+      explorerSearchContentCacheStatus: diagnostics.contentCacheStatus,
+      explorerSearchScannedEntryCount: diagnostics.scannedEntryCount,
+      explorerSearchIndexedEntryCount: diagnostics.indexedEntryCount,
+      explorerSearchContentCacheStoredFileCount: diagnostics.contentCacheStoredFileCount,
+      explorerSearchContentCacheStoredByteCount: diagnostics.contentCacheStoredByteCount,
+      explorerSearchTruncatedByScanBudget: diagnostics.truncatedByScanBudget,
+    });
+  });
+
+  it('emits a scoped cancel request when the search query is cleared', async () => {
+    renderExplorer();
+
+    await screen.findByText('alpha');
+    fireEvent.keyDown(window, { key: 'l', ctrlKey: true });
+    const omnibox = await screen.findByPlaceholderText(/Search or enter path/i);
+    fireEvent.change(omnibox, { target: { value: 'needle' } });
+    fireEvent.change(omnibox, { target: { value: '' } });
+
+    await waitFor(() => {
+      expect(vi.mocked(invoke)).toHaveBeenCalledWith(
+        'fs_cancel_search_entries',
+        expect.objectContaining({
+          path: REPO_ROOT,
+          requestScope: expect.stringMatching(/^file-explorer:/),
+        }),
+      );
     });
   });
 });

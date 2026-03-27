@@ -202,6 +202,9 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.engineManifest?.renderStyles[0]?.id).toBe('vista-render');
     expect(result.packages[0]?.engineManifest?.renderStyles[0]?.kind).toBe('vs-code-workbench');
     expect(result.packages[0]?.engineManifest?.defaultRenderStyleId).toBe('vista-render');
+    expect(result.packages[0]?.compiledEngineManifest?.defaultRenderStyle?.id).toBe('vista-render');
+    expect(result.packages[0]?.compiledEngineManifest?.renderStyleLookup['vista-render']?.kind).toBe('vs-code-workbench');
+    expect(result.packages[0]?.compiledEngineManifest?.supportsHotSwappingRenderStyles).toBe(true);
     expect(result.packages[0]?.author).toBe('OverlayTerm Labs');
     expect(result.packages[0]?.homepage).toBe('https://overlayterm.local/themes/vista-glass');
     expect(result.packages[0]?.tags).toEqual(['glass', 'blue']);
@@ -304,5 +307,6 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.engineManifest?.compatibility.shellBlueprints).toEqual([]);
     expect(result.packages[0]?.engineManifest?.compatibility.tags).toEqual([]);
     expect(result.packages[0]?.engineManifest?.renderStyles[0]?.kind).toBe('ios-springboard');
+    expect(result.packages[0]?.compiledEngineManifest?.supportsHotSwappingRenderStyles).toBe(false);
   });
 });

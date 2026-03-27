@@ -2,7 +2,7 @@ import type { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/window';
 import type { CSSProperties } from 'react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import { clampOverlayVisualControlValue, overlayVisualControls } from '../config/overlayWindow';
-import { createExplorerDir, listExplorerDir } from './explorerBackend';
+import * as explorerBackend from './explorerBackend';
 
 const LOGICAL_PADDING = 12;
 
@@ -33,9 +33,9 @@ export function getParentPath(path: string, separator: string): string {
 
 export async function ensureDir(path: string): Promise<void> {
   try {
-    await listExplorerDir(path, false);
+    await explorerBackend.listExplorerDir(path, false);
   } catch {
-    await createExplorerDir(path);
+    await explorerBackend.createExplorerDir(path);
   }
 }
 

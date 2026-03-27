@@ -5,10 +5,12 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useSettingsStore, defaultSettings, mergeSettingsWithDefaults } from '../store/settingsStore';
+import { useExplorerStore } from '../store/explorerStore';
 import { overlayWindowGeometry } from '../config/overlayWindow';
 
 beforeEach(() => {
   useSettingsStore.getState().resetToDefaults();
+  useExplorerStore.getState().resetSession();
 });
 
 describe('useSettingsStore — initial state', () => {
@@ -223,6 +225,22 @@ describe('useSettingsStore.updateLayout()', () => {
     expect(settings.layout.activeProfileId).toBe('navigator-bottom');
     expect(settings.layout.configPath).toBe('M:\\layouts\\greeble.layouts.toml');
     expect(settings.appearance).toEqual(beforeAppearance);
+  });
+
+  it('keeps explorer anchors intact when switching layout profiles', () => {
+    useExplorerStore.getState().updateSession({
+      currentPath: 'M:\\OverlayTerm\\src',
+      history: ['M:\\OverlayTerm', 'M:\\OverlayTerm\\src'],
+      historyIdx: 1,
+    });
+
+    const beforeSession = { ...useExplorerStore.getState().session, history: [...useExplorerStore.getState().session.history] };
+    useSettingsStore.getState().updateLayout({ activeProfileId: 'navigator-bottom' });
+
+    const { session } = useExplorerStore.getState();
+    expect(session.currentPath).toBe(beforeSession.currentPath);
+    expect(session.history).toEqual(beforeSession.history);
+    expect(session.historyIdx).toBe(beforeSession.historyIdx);
   });
 });
 

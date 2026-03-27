@@ -203,6 +203,8 @@ export function getExplorerTaskProgressPercent(task: ExplorerSchedulerTask): num
     case 'fileCopy':
     case 'fileCut':
     case 'fileDelete':
+    case 'fileDownload':
+    case 'fileUpload':
       return task.prog.totalBytes > 0
         ? Math.min(100, Math.round((task.prog.processedBytes / task.prog.totalBytes) * 100))
         : task.prog.collected === true
@@ -220,6 +222,8 @@ export function didExplorerTaskFail(task: ExplorerSchedulerTask): boolean {
     case 'fileCopy':
     case 'fileCut':
     case 'fileDelete':
+    case 'fileDownload':
+    case 'fileUpload':
       return task.prog.cleaned === false || task.prog.collected === false;
     default:
       return false;
@@ -231,6 +235,8 @@ export function isExplorerTaskFinished(task: ExplorerSchedulerTask): boolean {
     case 'fileCopy':
     case 'fileCut':
     case 'fileDelete':
+    case 'fileDownload':
+    case 'fileUpload':
       return task.prog.cleaned !== null || task.prog.collected === false;
     default:
       return false;

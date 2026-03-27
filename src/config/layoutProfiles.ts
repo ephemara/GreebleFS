@@ -1,14 +1,19 @@
 import { parse as parseToml } from 'smol-toml';
 import type {
+  LayoutBackBehavior as GeneratedLayoutBackBehavior,
   ExplorerLayoutMode as GeneratedExplorerLayoutMode,
   LayoutBarPosition as GeneratedLayoutBarPosition,
   LayoutBehaviorConfig as GeneratedLayoutBehaviorConfig,
   LayoutChromeConfig as GeneratedLayoutChromeConfig,
   LayoutControlDockConfig as GeneratedLayoutControlDockConfig,
   LayoutDockSide as GeneratedLayoutDockSide,
+  LayoutInteractionConfig as GeneratedLayoutInteractionConfig,
+  LayoutModeExitTarget as GeneratedLayoutModeExitTarget,
   LayoutManifest as GeneratedLayoutManifest,
+  LayoutProgressOwner as GeneratedLayoutProgressOwner,
   LayoutPinnedPanel as GeneratedLayoutPinnedPanel,
   LayoutProfile as GeneratedLayoutProfile,
+  LayoutSurfaceOwner as GeneratedLayoutSurfaceOwner,
 } from '../generated/tauri';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 import {
@@ -27,6 +32,16 @@ export type LayoutChromeConfig = GeneratedLayoutChromeConfig;
 export type LayoutControlDockConfig = GeneratedLayoutControlDockConfig;
 
 export type LayoutBehaviorConfig = GeneratedLayoutBehaviorConfig;
+
+export type LayoutSurfaceOwner = GeneratedLayoutSurfaceOwner;
+
+export type LayoutBackBehavior = GeneratedLayoutBackBehavior;
+
+export type LayoutModeExitTarget = GeneratedLayoutModeExitTarget;
+
+export type LayoutProgressOwner = GeneratedLayoutProgressOwner;
+
+export type LayoutInteractionConfig = GeneratedLayoutInteractionConfig;
 
 export type LayoutProfile = Omit<GeneratedLayoutProfile, 'shellBlueprint'> & {
   shellBlueprint: OverlayShellBlueprintId;
@@ -81,6 +96,70 @@ function asStringArray(value: unknown, fallback: string[]): string[] {
     .filter(Boolean);
 
   return next.length > 0 ? Array.from(new Set(next)) : fallback;
+}
+
+function normalizeLayoutSurfaceOwner(value: unknown, fallback: LayoutSurfaceOwner): LayoutSurfaceOwner {
+  switch (value) {
+    case 'active-panel':
+    case 'pinned-rail':
+    case 'chrome':
+    case 'session':
+      return value;
+    default:
+      return fallback;
+  }
+}
+
+function normalizeLayoutBackBehavior(value: unknown, fallback: LayoutBackBehavior): LayoutBackBehavior {
+  switch (value) {
+    case 'overlay-first':
+    case 'history-first':
+      return value;
+    default:
+      return fallback;
+  }
+}
+
+function normalizeLayoutModeExitTarget(value: unknown, fallback: LayoutModeExitTarget): LayoutModeExitTarget {
+  switch (value) {
+    case 'last-browse-target':
+    case 'shell-default':
+      return value;
+    default:
+      return fallback;
+  }
+}
+
+function normalizeLayoutProgressOwner(value: unknown, fallback: LayoutProgressOwner): LayoutProgressOwner {
+  switch (value) {
+    case 'inline':
+    case 'session':
+    case 'history':
+      return value;
+    default:
+      return fallback;
+  }
+}
+
+function normalizeLayoutInteraction(
+  input: unknown,
+  fallback: LayoutInteractionConfig,
+): LayoutInteractionConfig {
+  const source = asRecord(input);
+  if (!source) {
+    return fallback;
+  }
+
+  return {
+    primaryAxisOwner: normalizeLayoutSurfaceOwner(source.primaryAxisOwner, fallback.primaryAxisOwner),
+    commandOwner: normalizeLayoutSurfaceOwner(source.commandOwner, fallback.commandOwner),
+    backBehavior: normalizeLayoutBackBehavior(source.backBehavior, fallback.backBehavior),
+    modeExitTarget: normalizeLayoutModeExitTarget(source.modeExitTarget, fallback.modeExitTarget),
+    progressOwner: normalizeLayoutProgressOwner(source.progressOwner, fallback.progressOwner),
+    preserveFocusAnchor: asBoolean(source.preserveFocusAnchor, fallback.preserveFocusAnchor),
+    preserveSelectionAnchor: asBoolean(source.preserveSelectionAnchor, fallback.preserveSelectionAnchor),
+    preserveLocationAnchor: asBoolean(source.preserveLocationAnchor, fallback.preserveLocationAnchor),
+  };
 }
 
 function normalizePinnedPanel(input: unknown): LayoutPinnedPanel | null {
@@ -151,6 +230,7 @@ function normalizeLayoutProfile(input: unknown, fallback: LayoutProfile, fallbac
         fallback.behavior.enforcedOpenPanelIds,
       ),
     },
+    interaction: normalizeLayoutInteraction(source.interaction, fallback.interaction),
   };
 }
 
@@ -187,6 +267,16 @@ const BUILT_IN_PROFILES: LayoutProfile[] = sortProfiles([
       defaultActivePanelId: 'explorer',
       enforcedOpenPanelIds: [],
     },
+    interaction: {
+      primaryAxisOwner: 'active-panel',
+      commandOwner: 'chrome',
+      backBehavior: 'overlay-first',
+      modeExitTarget: 'last-browse-target',
+      progressOwner: 'session',
+      preserveFocusAnchor: true,
+      preserveSelectionAnchor: true,
+      preserveLocationAnchor: true,
+    },
   },
   {
     id: 'navigator-bottom',
@@ -210,6 +300,16 @@ const BUILT_IN_PROFILES: LayoutProfile[] = sortProfiles([
       cycleOrder: 20,
       defaultActivePanelId: 'explorer',
       enforcedOpenPanelIds: [],
+    },
+    interaction: {
+      primaryAxisOwner: 'active-panel',
+      commandOwner: 'chrome',
+      backBehavior: 'overlay-first',
+      modeExitTarget: 'last-browse-target',
+      progressOwner: 'session',
+      preserveFocusAnchor: true,
+      preserveSelectionAnchor: true,
+      preserveLocationAnchor: true,
     },
   },
 ]);

@@ -141,4 +141,30 @@ describe('explorer backend Yazi bindings', () => {
     expect(isExplorerTaskFinished(backgroundTask)).toBe(false);
     expect(getExplorerTaskStatusLabel(backgroundTask)).toBe('Working…');
   });
+
+  it('treats upload and download scheduler variants like transfer work for progress and completion', () => {
+    const downloadTask = makeTask({
+      kind: 'fileDownload',
+      totalBytes: 400,
+      processedBytes: 100,
+      collected: null,
+      cleaned: null,
+    });
+    expect(getExplorerTaskProgressPercent(downloadTask)).toBe(25);
+    expect(didExplorerTaskFail(downloadTask)).toBe(false);
+    expect(isExplorerTaskFinished(downloadTask)).toBe(false);
+    expect(getExplorerTaskStatusLabel(downloadTask)).toBe('25%');
+
+    const uploadTask = makeTask({
+      kind: 'fileUpload',
+      totalBytes: 120,
+      processedBytes: 120,
+      collected: true,
+      cleaned: true,
+    });
+    expect(getExplorerTaskProgressPercent(uploadTask)).toBe(100);
+    expect(didExplorerTaskFail(uploadTask)).toBe(false);
+    expect(isExplorerTaskFinished(uploadTask)).toBe(true);
+    expect(getExplorerTaskStatusLabel(uploadTask)).toBe('Done');
+  });
 });

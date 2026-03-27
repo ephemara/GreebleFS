@@ -274,6 +274,50 @@ pub struct LayoutBehaviorConfig {
     pub enforced_open_panel_ids: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum LayoutSurfaceOwner {
+    ActivePanel,
+    PinnedRail,
+    Chrome,
+    Session,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum LayoutBackBehavior {
+    OverlayFirst,
+    HistoryFirst,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum LayoutModeExitTarget {
+    LastBrowseTarget,
+    ShellDefault,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
+pub enum LayoutProgressOwner {
+    Inline,
+    Session,
+    History,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LayoutInteractionConfig {
+    pub primary_axis_owner: LayoutSurfaceOwner,
+    pub command_owner: LayoutSurfaceOwner,
+    pub back_behavior: LayoutBackBehavior,
+    pub mode_exit_target: LayoutModeExitTarget,
+    pub progress_owner: LayoutProgressOwner,
+    pub preserve_focus_anchor: bool,
+    pub preserve_selection_anchor: bool,
+    pub preserve_location_anchor: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct LayoutProfile {
@@ -285,6 +329,7 @@ pub struct LayoutProfile {
     pub control_dock: LayoutControlDockConfig,
     pub pinned_panels: Vec<LayoutPinnedPanel>,
     pub behavior: LayoutBehaviorConfig,
+    pub interaction: LayoutInteractionConfig,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]

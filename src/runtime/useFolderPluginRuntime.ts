@@ -11,7 +11,7 @@ import {
   pluginSystemConfig,
   shouldRefreshForPluginWatchPaths,
 } from '../config/plugins';
-import { discoverOverlayPlugins } from '../config/pluginPackages';
+import * as pluginPackages from '../config/pluginPackages';
 import {
   isFrontendPluginFile,
   type LoadedOverlayPlugin,
@@ -26,7 +26,7 @@ import type { LoadedOverlayShader } from '../components/shaderRuntime';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
 import { getPlatformPathSeparator, joinPlatformPath, type RuntimePlatform } from '../config/platform';
 import type { OverlayRegisteredFontContribution } from '../config/appearance';
-import { listExplorerDir, openExplorerPath } from './explorerBackend';
+import * as explorerBackend from './explorerBackend';
 import type { PluginDirectoryWatchEvent } from '../generated/tauri';
 import { ensureDir, getParentPath } from './overlayRuntimeUtils';
 import { commands, unwrapTauriResult } from './tauriClient';
@@ -65,7 +65,7 @@ export function useFolderPluginRuntime(
 
   const openPluginsFolder = useCallback(async () => {
     await ensureDir(pluginSystemConfig.pluginsDirectory);
-    await openExplorerPath(pluginSystemConfig.pluginsDirectory);
+    await explorerBackend.openExplorerPath(pluginSystemConfig.pluginsDirectory);
   }, []);
 
   const createPluginApi = useCallback((plugin: OverlayPluginContext): OverlayPluginApi => {
@@ -173,7 +173,7 @@ export function useFolderPluginRuntime(
         setFolderPluginsError(null);
         try {
           await ensureDir(pluginSystemConfig.pluginsDirectory);
-          const listed = await listExplorerDir(pluginSystemConfig.pluginsDirectory, false);
+          const listed = await explorerBackend.listExplorerDir(pluginSystemConfig.pluginsDirectory, false);
           const nextSignature = listed
             .filter(entry => entry.is_dir || isFrontendPluginFile(entry))
             .sort((left, right) => left.name.localeCompare(right.name))
@@ -186,7 +186,7 @@ export function useFolderPluginRuntime(
           }
 
           pluginSignatureRef.current = nextSignature;
-          const discovered = await discoverOverlayPlugins(createPluginApi);
+          const discovered = await pluginPackages.discoverOverlayPlugins(createPluginApi);
           setFolderPlugins(discovered.plugins);
           setPluginContributedShaders(discovered.shaders);
           setPluginThemePackages(discovered.themePackages);

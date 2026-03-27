@@ -9,7 +9,7 @@
  */
 
 import React, {
-  Suspense, useState, useEffect, useRef, useCallback, useMemo,
+  Suspense, useState, useEffect, useRef, useCallback, useMemo, useId,
 } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -77,6 +77,7 @@ import {
 } from '../store/explorerTaskStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { shouldOpenExplorerEntryOnTrigger } from './fileExplorerClickBehavior';
+import { resolveExplorerSearchScope } from './fileExplorerSearchScope';
 import type { DocumentPreviewKind } from './documentPreview';
 import {
   getModelPreviewFormat,
@@ -122,7 +123,6 @@ const EXPLORER_LIST_ROW_HEIGHT = 44;
 const EXPLORER_LIST_SEARCH_ROW_HEIGHT = 72;
 const EXPLORER_LIST_OVERSCAN = 8;
 const EXPLORER_GRID_OVERSCAN_ROWS = 2;
-const EXPLORER_SEARCH_SCOPE = 'primary_file_explorer';
 const EXPLORER_LAYOUT_WHEEL_STEP_THROTTLE_MS = 140;
 
 function getExplorerPerformanceNow(): number {
@@ -1056,6 +1056,11 @@ export function FileExplorer({
     updateExplorerRail: state.updateRail,
   })));
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
+  const explorerInstanceId = useId();
+  const explorerSearchScope = useMemo(
+    () => resolveExplorerSearchScope(explorerInstanceId),
+    [explorerInstanceId],
+  );
   const isCompactDock = layoutMode === 'compact-dock';
   const sidebarBounds = getExplorerRailWidthBounds(isCompactDock);
   const uiFont = appearance?.fonts.ui ?? 'Inter,system-ui,sans-serif';
@@ -1385,7 +1390,7 @@ export function FileExplorer({
         includeContent: searchIncludeContent,
         limit: 250,
         requestId,
-        requestScope: EXPLORER_SEARCH_SCOPE,
+        requestScope: explorerSearchScope,
       });
       const results = response.results;
       if (searchRequestIdRef.current === requestId) {
@@ -1422,7 +1427,7 @@ export function FileExplorer({
         setSearchLoading(false);
       }
     }
-  }, [currentPath, recordExplorerMetric, searchIncludeContent, showHidden]);
+  }, [currentPath, explorerSearchScope, recordExplorerMetric, searchIncludeContent, showHidden]);
 
   const refresh = useCallback(async () => {
     if (!currentPath) return;
@@ -1510,7 +1515,7 @@ export function FileExplorer({
         void cancelExplorerSearchEntries({
           path: currentPath,
           requestId,
-          requestScope: EXPLORER_SEARCH_SCOPE,
+          requestScope: explorerSearchScope,
         }).catch(() => {});
       }
       setSearchResults([]);
@@ -1523,7 +1528,7 @@ export function FileExplorer({
       void cancelExplorerSearchEntries({
         path: currentPath,
         requestId,
-        requestScope: EXPLORER_SEARCH_SCOPE,
+        requestScope: explorerSearchScope,
       }).catch(() => {});
     }
     setSearchResults([]);
@@ -1538,7 +1543,7 @@ export function FileExplorer({
         setSearchLoading(false);
       }
     };
-  }, [search, runSearch]);
+  }, [currentPath, explorerSearchScope, search, runSearch]);
 
   const goBack    = () => { if (historyIdx > 0) { setHistoryIdx(i=>i-1); navigate(history[historyIdx-1], false); } };
   const goForward = () => { if (historyIdx < history.length-1) { setHistoryIdx(i=>i+1); navigate(history[historyIdx+1], false); } };

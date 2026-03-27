@@ -16,10 +16,11 @@ use crate::python_commands::{
 use crate::screenshot_commands::{SavedScreenshot, ScreenshotPreview};
 use crate::terminal::{ExternalTerminalRequest, TerminalWriteRequest};
 use overlay_contracts::{
-    ExplorerLayoutMode, LayoutBarPosition, LayoutBehaviorConfig, LayoutChromeConfig,
-    LayoutControlDockConfig, LayoutDockSide, LayoutManifest, LayoutPinnedPanel, LayoutProfile,
-    ShellBlueprint, ThemeChromeStyle, ThemeDensity, ThemeIconStyle, ThemeMotionStyle,
-    ThemePresentation, WorkbenchPreset,
+    ExplorerLayoutMode, LayoutBackBehavior, LayoutBarPosition, LayoutBehaviorConfig,
+    LayoutChromeConfig, LayoutControlDockConfig, LayoutDockSide, LayoutInteractionConfig,
+    LayoutManifest, LayoutModeExitTarget, LayoutPinnedPanel, LayoutProfile, LayoutProgressOwner,
+    LayoutSurfaceOwner, ShellBlueprint, ThemeChromeStyle, ThemeDensity, ThemeIconStyle,
+    ThemeMotionStyle, ThemePresentation, WorkbenchPreset,
 };
 use specta_typescript::{BigIntExportBehavior, Typescript};
 use tauri_specta::{collect_commands, collect_events, Builder};
@@ -158,6 +159,11 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<LayoutChromeConfig>()
         .typ::<LayoutControlDockConfig>()
         .typ::<LayoutBehaviorConfig>()
+        .typ::<LayoutSurfaceOwner>()
+        .typ::<LayoutBackBehavior>()
+        .typ::<LayoutModeExitTarget>()
+        .typ::<LayoutProgressOwner>()
+        .typ::<LayoutInteractionConfig>()
         .typ::<LayoutProfile>()
         .typ::<LayoutManifest>()
         .typ::<WorkbenchPreset>()

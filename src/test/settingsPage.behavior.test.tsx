@@ -9,6 +9,7 @@ import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/ap
 import { createDefaultFolderIconRules } from '../config/folderIcons';
 import { pluginSystemConfig } from '../config/plugins';
 import { screenshotFeatureConfig } from '../config/screenshots';
+import { compileThemeEngineManifest, normalizeThemeManifestDraft } from '../runtime/themeEngineBackend';
 import { useSettingsStore } from '../store/settingsStore';
 import { useTerminalStore } from '../store/terminalStore';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
@@ -330,6 +331,20 @@ describe('SettingsPage behavior', () => {
         accent: '#7dd3ff',
       },
     } as never);
+    const engineManifest = normalizeThemeManifestDraft({
+      id: 'vista-glass',
+      name: 'Vista Glass',
+      renderStyles: [
+        {
+          id: 'vista-render',
+          label: 'Vista Render',
+          kind: 'vs-code-workbench',
+          entryModule: 'renderers/vista.tsx',
+          supportsLiveSwap: true,
+        },
+      ],
+      defaultRenderStyleId: 'vista-render',
+    });
 
     renderSettingsPage({
       appearanceThemeId: 'vista-glass',
@@ -356,6 +371,8 @@ describe('SettingsPage behavior', () => {
         },
         warnings: [],
         theme: packageTheme,
+        engineManifest,
+        compiledEngineManifest: compileThemeEngineManifest(engineManifest),
       }],
     });
 
@@ -367,6 +384,8 @@ describe('SettingsPage behavior', () => {
     expect(screen.getByText('Shaders 1')).toBeInTheDocument();
     expect(screen.getByText('Motion 1')).toBeInTheDocument();
     expect(screen.getByText('Visuals 2')).toBeInTheDocument();
+    expect(screen.getByText('Render vs-code-workbench')).toBeInTheDocument();
+    expect(screen.getByText('Live Swap Ready')).toBeInTheDocument();
     expect(screen.getByText('Theme Folder')).toBeInTheDocument();
     expect(screen.getAllByText('themes/vista-glass').length).toBeGreaterThan(0);
     expect(screen.getByText('glass')).toBeInTheDocument();

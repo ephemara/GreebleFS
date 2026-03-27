@@ -52,7 +52,7 @@ export function compileThemeEngineManifest(manifest: ExplorerThemeManifest): Com
     manifest.renderStyles.map(style => [style.id, style] as const),
   );
   const defaultRenderStyle = manifest.defaultRenderStyleId
-    ? (renderStyleLookup[manifest.defaultRenderStyleId] ?? null)
+    ? (renderStyleLookup[manifest.defaultRenderStyleId] ?? manifest.renderStyles[0] ?? null)
     : (manifest.renderStyles[0] ?? null);
 
   return {
