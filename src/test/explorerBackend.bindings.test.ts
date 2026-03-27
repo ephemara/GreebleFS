@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   YAZI_BINDINGS_MANIFEST,
@@ -8,10 +8,12 @@ import {
   type YaziSchedulerTaskSnap,
 } from '../generated/tauri';
 import {
+  cancelExplorerSearchEntries,
   didExplorerTaskFail,
   getExplorerTaskProgressPercent,
   getExplorerTaskStatusLabel,
   isExplorerTaskFinished,
+  searchExplorerEntriesWithDiagnostics,
   type ExplorerTaskProgress,
 } from '../runtime/explorerBackend';
 
@@ -92,6 +94,54 @@ describe('explorer backend Yazi bindings', () => {
       entry => entry.crateName === 'yazi-watcher',
     );
     expect(watcherEntry?.status).toBe('planned');
+  });
+
+  it('forwards recursive search and scoped cancel arguments through the generated Tauri contract', async () => {
+    const searchSpy = vi.spyOn(commands, 'fsSearchEntriesWithDiagnostics').mockResolvedValue({
+      status: 'ok',
+      data: {
+        results: [],
+        diagnostics: {
+          executionStrategy: 'live_scan',
+          contentCacheStatus: 'not_requested',
+          scannedEntryCount: 0,
+          indexedEntryCount: 0,
+          contentCacheStoredFileCount: 0,
+          contentCacheStoredByteCount: 0,
+          truncatedByScanBudget: false,
+        },
+      },
+    });
+    const cancelSpy = vi.spyOn(commands, 'fsCancelSearchEntries').mockResolvedValue({
+      status: 'ok',
+      data: null,
+    });
+
+    await searchExplorerEntriesWithDiagnostics({
+      path: 'C:/workspace/repo',
+      query: 'needle',
+      showHidden: true,
+      includeContent: true,
+      limit: 250,
+      requestId: 42,
+      requestScope: 'file-explorer:r42',
+    });
+    await cancelExplorerSearchEntries({
+      path: 'C:/workspace/repo',
+      requestId: 43,
+      requestScope: 'file-explorer:r42',
+    });
+
+    expect(searchSpy).toHaveBeenCalledWith(
+      'C:/workspace/repo',
+      'needle',
+      true,
+      true,
+      250,
+      42,
+      'file-explorer:r42',
+    );
+    expect(cancelSpy).toHaveBeenCalledWith('C:/workspace/repo', 43, 'file-explorer:r42');
   });
 
   it('derives transfer progress, failure state, and labels from file-copy task snapshots', () => {

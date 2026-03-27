@@ -28,7 +28,7 @@ import {
 import { type LoadedOverlayShader, loadShaderFromSource, deriveShaderId, deriveShaderName, isFrontendShaderFile } from '../components/shaderRuntime';
 import { isFrontendAnimationFile } from '../components/animationRuntime';
 import { joinPlatformPath } from './platform';
-import { normalizeShellBlueprintId } from './shellBlueprints';
+import { OVERLAY_SHELL_BLUEPRINTS } from './shellBlueprints';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 
 interface FileEntry {
@@ -40,6 +40,8 @@ interface FileEntry {
 }
 
 type LooseRecord = Record<string, unknown>;
+const validShellBlueprintIds = new Set(OVERLAY_SHELL_BLUEPRINTS.map(blueprint => blueprint.id));
+
 export interface OverlayThemePackageManifest {
   version?: number;
   id?: string;
@@ -273,7 +275,8 @@ function parseThemeManifestText(text: string, filePath: string): OverlayThemePac
       shellBlueprints: Array.isArray(asRecord(source.compatibility)?.shellBlueprints)
         ? (asRecord(source.compatibility)?.shellBlueprints as unknown[])
           .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
-          .map(entry => normalizeShellBlueprintId(entry))
+          .map(entry => entry.trim())
+          .filter((entry): entry is OverlayThemeCompatibility['shellBlueprints'][number] => validShellBlueprintIds.has(entry as typeof OVERLAY_SHELL_BLUEPRINTS[number]['id']))
         : [],
       tags: Array.isArray(asRecord(source.compatibility)?.tags)
         ? (asRecord(source.compatibility)?.tags as unknown[])

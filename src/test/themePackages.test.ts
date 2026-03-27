@@ -309,4 +309,42 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.engineManifest?.renderStyles[0]?.kind).toBe('ios-springboard');
     expect(result.packages[0]?.compiledEngineManifest?.supportsHotSwappingRenderStyles).toBe(false);
   });
+
+  it('ignores invalid package shell targets instead of coercing them to classic-dock', async () => {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      const params = args as { path?: string } | undefined;
+      const normalizedPath = String(params?.path).replace(/\\/g, '/');
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'themes/compat/theme.json') {
+        return JSON.stringify({
+          id: 'compat-theme',
+          name: 'Compat Theme',
+          renderStyles: [
+            {
+              id: 'compat-render',
+              label: 'Compat Render',
+              kind: 'vs-code-workbench',
+              entryModule: 'renderers/compat.tsx',
+              supportsLiveSwap: true,
+            },
+          ],
+          compatibility: {
+            shellBlueprints: ['xmb-cross-media', ' typo-shell ', 'xmb-cross-media'],
+            tags: [' cinematic ', 'cinematic'],
+          },
+        });
+      }
+
+      throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
+    });
+
+    const result = await loadThemePackagesFromDirectoryEntries([
+      { name: 'compat', path: 'themes/compat' },
+    ], 'themes');
+
+    expect(result.sourceError).toBeNull();
+    expect(result.packages[0]?.theme.compatibility?.shellBlueprints).toEqual(['xmb-cross-media']);
+    expect(result.packages[0]?.engineManifest?.compatibility.shellBlueprints).toEqual(['xmb-cross-media']);
+    expect(result.packages[0]?.theme.compatibility?.tags).toEqual(['cinematic']);
+  });
 });

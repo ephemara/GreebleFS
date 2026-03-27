@@ -80,8 +80,16 @@ export function normalizeThemeManifestDraft(
     ...(draft.presentation ?? {}),
   };
   const compatibility: ExplorerThemeCompatibility = {
-    shellBlueprints: draft.compatibility?.shellBlueprints ?? [],
-    tags: draft.compatibility?.tags ?? [],
+    shellBlueprints: Array.from(new Set(
+      (draft.compatibility?.shellBlueprints ?? [])
+        .filter((entry): entry is ExplorerThemeCompatibility['shellBlueprints'][number] => typeof entry === 'string' && entry.trim().length > 0)
+        .map(entry => entry.trim() as ExplorerThemeCompatibility['shellBlueprints'][number]),
+    )),
+    tags: Array.from(new Set(
+      (draft.compatibility?.tags ?? [])
+        .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+        .map(entry => entry.trim()),
+    )),
   };
 
   return {

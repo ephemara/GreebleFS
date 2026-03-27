@@ -1,6 +1,8 @@
-import { commands, events, type Result } from '../generated/tauri';
+import * as tauriBindings from '../generated/tauri';
+import type { Result } from '../generated/tauri';
 
-export { commands, events };
+export const commands = tauriBindings.commands;
+export const events = tauriBindings.events;
 
 export function unwrapTauriResult<T>(result: Result<T, string>): T {
   if (result.status === 'ok') {

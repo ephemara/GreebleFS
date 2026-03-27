@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -484,47 +486,344 @@ pub fn built_in_shell_blueprints() -> Vec<ShellBlueprint> {
 }
 
 pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
-    vec![ThemeManifest {
-        id: "operator".to_string(),
-        name: "Operator".to_string(),
-        extends: None,
-        presentation: ThemePresentation {
-            density: ThemeDensity::Comfortable,
-            chrome_style: ThemeChromeStyle::Floating,
-            icon_style: ThemeIconStyle::Vector,
-            motion_style: ThemeMotionStyle::Fluid,
-            corner_radius: 12,
-            panel_spacing: 8,
+    vec![
+        ThemeManifest {
+            id: "operator".to_string(),
+            name: "Operator".to_string(),
+            extends: None,
+            presentation: ThemePresentation {
+                density: ThemeDensity::Comfortable,
+                chrome_style: ThemeChromeStyle::Floating,
+                icon_style: ThemeIconStyle::Vector,
+                motion_style: ThemeMotionStyle::Fluid,
+                corner_radius: 12,
+                panel_spacing: 8,
+            },
+            compatibility: ThemeCompatibility {
+                shell_blueprints: vec![],
+                tags: vec!["default".to_string(), "workbench".to_string()],
+            },
+            design_tokens: vec![
+                ThemeDesignToken {
+                    id: "accent-operator".to_string(),
+                    name: "Accent".to_string(),
+                    kind: ThemeTokenKind::Color,
+                    value: "#6366f1".to_string(),
+                },
+                ThemeDesignToken {
+                    id: "panel-spacing".to_string(),
+                    name: "Panel Spacing".to_string(),
+                    kind: ThemeTokenKind::Spacing,
+                    value: "8".to_string(),
+                },
+            ],
+            layout_primitives: vec![
+                ThemeLayoutPrimitive {
+                    id: "operator-stack".to_string(),
+                    name: "Operator Stack".to_string(),
+                    kind: ThemeLayoutPrimitiveKind::Stack,
+                    props: BTreeMap::from([("gap".to_string(), "8".to_string())]),
+                },
+                ThemeLayoutPrimitive {
+                    id: "operator-dock".to_string(),
+                    name: "Operator Dock".to_string(),
+                    kind: ThemeLayoutPrimitiveKind::Dock,
+                    props: BTreeMap::from([("side".to_string(), "right".to_string())]),
+                },
+            ],
+            navigation_patterns: vec![ThemeNavigationPattern {
+                id: "operator-tabs".to_string(),
+                name: "Operator Tabs".to_string(),
+                kind: ThemeNavigationPatternKind::Tabbed,
+                axis: ThemeNavigationAxis::Horizontal,
+                props: BTreeMap::from([
+                    ("defaultSurface".to_string(), "terminal".to_string()),
+                    ("focusRing".to_string(), "chrome".to_string()),
+                ]),
+            }],
+            animation_profiles: vec![ThemeAnimationProfile {
+                id: "default-motion".to_string(),
+                name: "Default Motion".to_string(),
+                duration_ms: 180,
+                easing: "ease-in-out".to_string(),
+                intensity: 50,
+            }],
+            icon_packs: vec![ThemeIconPackManifest {
+                id: "system-icons".to_string(),
+                name: "System Icons".to_string(),
+                style: ThemeIconPackStyle::System,
+            }],
+            render_styles: vec![ThemeRenderStyleManifest {
+                id: "default-render".to_string(),
+                label: "Workbench".to_string(),
+                kind: ThemeRenderStyleKind::VsCodeWorkbench,
+                entry_module: "renderers/default.tsx".to_string(),
+                supports_live_swap: true,
+                description: Some("Built-in workbench renderer placeholder".to_string()),
+            }],
+            default_render_style_id: Some("default-render".to_string()),
         },
-        compatibility: ThemeCompatibility {
-            shell_blueprints: vec![],
-            tags: vec!["default".to_string()],
+        ThemeManifest {
+            id: "aqua-light".to_string(),
+            name: "Aqua Light".to_string(),
+            extends: Some("operator".to_string()),
+            presentation: ThemePresentation {
+                density: ThemeDensity::Comfortable,
+                chrome_style: ThemeChromeStyle::Floating,
+                icon_style: ThemeIconStyle::Vector,
+                motion_style: ThemeMotionStyle::Fluid,
+                corner_radius: 14,
+                panel_spacing: 10,
+            },
+            compatibility: ThemeCompatibility {
+                shell_blueprints: vec![ShellBlueprintId::ClassicDock],
+                tags: vec!["light".to_string(), "aqua".to_string(), "chrome".to_string()],
+            },
+            design_tokens: vec![
+                ThemeDesignToken {
+                    id: "aqua-accent".to_string(),
+                    name: "Accent".to_string(),
+                    kind: ThemeTokenKind::Color,
+                    value: "#2a9df4".to_string(),
+                },
+                ThemeDesignToken {
+                    id: "aqua-radius".to_string(),
+                    name: "Card Radius".to_string(),
+                    kind: ThemeTokenKind::Radius,
+                    value: "12".to_string(),
+                },
+            ],
+            layout_primitives: vec![ThemeLayoutPrimitive {
+                id: "aqua-shell".to_string(),
+                name: "Aqua Shell".to_string(),
+                kind: ThemeLayoutPrimitiveKind::Split,
+                props: BTreeMap::from([("primaryRatio".to_string(), "0.62".to_string())]),
+            }],
+            navigation_patterns: vec![ThemeNavigationPattern {
+                id: "aqua-cascade".to_string(),
+                name: "Aqua Cascade".to_string(),
+                kind: ThemeNavigationPatternKind::Spatial,
+                axis: ThemeNavigationAxis::Both,
+                props: BTreeMap::from([("breadcrumb".to_string(), "true".to_string())]),
+            }],
+            animation_profiles: vec![ThemeAnimationProfile {
+                id: "aqua-sheen".to_string(),
+                name: "Aqua Sheen".to_string(),
+                duration_ms: 220,
+                easing: "ease-out".to_string(),
+                intensity: 42,
+            }],
+            icon_packs: vec![ThemeIconPackManifest {
+                id: "aqua-icons".to_string(),
+                name: "Aqua Icons".to_string(),
+                style: ThemeIconPackStyle::Vector,
+            }],
+            render_styles: vec![ThemeRenderStyleManifest {
+                id: "aqua-render".to_string(),
+                label: "Aqua Glass".to_string(),
+                kind: ThemeRenderStyleKind::VsCodeWorkbench,
+                entry_module: "renderers/aqua-light.tsx".to_string(),
+                supports_live_swap: true,
+                description: Some("Bright Aqua chrome and translucent panels.".to_string()),
+            }],
+            default_render_style_id: Some("aqua-render".to_string()),
         },
-        design_tokens: vec![],
-        layout_primitives: vec![],
-        navigation_patterns: vec![],
-        animation_profiles: vec![ThemeAnimationProfile {
-            id: "default-motion".to_string(),
-            name: "Default Motion".to_string(),
-            duration_ms: 180,
-            easing: "ease-in-out".to_string(),
-            intensity: 50,
-        }],
-        icon_packs: vec![ThemeIconPackManifest {
-            id: "system-icons".to_string(),
-            name: "System Icons".to_string(),
-            style: ThemeIconPackStyle::System,
-        }],
-        render_styles: vec![ThemeRenderStyleManifest {
-            id: "default-render".to_string(),
-            label: "Default Render".to_string(),
-            kind: ThemeRenderStyleKind::VsCodeWorkbench,
-            entry_module: "renderers/default.tsx".to_string(),
-            supports_live_swap: true,
-            description: Some("Built-in renderer placeholder".to_string()),
-        }],
-        default_render_style_id: Some("default-render".to_string()),
-    }]
+        ThemeManifest {
+            id: "plasma-flow".to_string(),
+            name: "Plasma Flow".to_string(),
+            extends: Some("operator".to_string()),
+            presentation: ThemePresentation {
+                density: ThemeDensity::Comfortable,
+                chrome_style: ThemeChromeStyle::Floating,
+                icon_style: ThemeIconStyle::Vector,
+                motion_style: ThemeMotionStyle::Dramatic,
+                corner_radius: 12,
+                panel_spacing: 10,
+            },
+            compatibility: ThemeCompatibility {
+                shell_blueprints: vec![ShellBlueprintId::ClassicDock],
+                tags: vec!["neon".to_string(), "plasma".to_string(), "cyber".to_string()],
+            },
+            design_tokens: vec![
+                ThemeDesignToken {
+                    id: "plasma-accent".to_string(),
+                    name: "Accent".to_string(),
+                    kind: ThemeTokenKind::Color,
+                    value: "#59e3ff".to_string(),
+                },
+                ThemeDesignToken {
+                    id: "plasma-motion".to_string(),
+                    name: "Motion".to_string(),
+                    kind: ThemeTokenKind::Motion,
+                    value: "240".to_string(),
+                },
+            ],
+            layout_primitives: vec![ThemeLayoutPrimitive {
+                id: "plasma-grid".to_string(),
+                name: "Plasma Grid".to_string(),
+                kind: ThemeLayoutPrimitiveKind::Grid,
+                props: BTreeMap::from([("cellSize".to_string(), "140".to_string())]),
+            }],
+            navigation_patterns: vec![ThemeNavigationPattern {
+                id: "plasma-trail".to_string(),
+                name: "Plasma Trail".to_string(),
+                kind: ThemeNavigationPatternKind::Xmb,
+                axis: ThemeNavigationAxis::Horizontal,
+                props: BTreeMap::from([("categoryDepth".to_string(), "2".to_string())]),
+            }],
+            animation_profiles: vec![ThemeAnimationProfile {
+                id: "plasma-surge".to_string(),
+                name: "Plasma Surge".to_string(),
+                duration_ms: 240,
+                easing: "ease-out".to_string(),
+                intensity: 62,
+            }],
+            icon_packs: vec![ThemeIconPackManifest {
+                id: "plasma-icons".to_string(),
+                name: "Plasma Icons".to_string(),
+                style: ThemeIconPackStyle::Vector,
+            }],
+            render_styles: vec![ThemeRenderStyleManifest {
+                id: "plasma-render".to_string(),
+                label: "Plasma Lab".to_string(),
+                kind: ThemeRenderStyleKind::VsCodeWorkbench,
+                entry_module: "renderers/plasma-flow.tsx".to_string(),
+                supports_live_swap: true,
+                description: Some("Neon dark shell with crisp panels.".to_string()),
+            }],
+            default_render_style_id: Some("plasma-render".to_string()),
+        },
+        ThemeManifest {
+            id: "vintage-macintosh".to_string(),
+            name: "Vintage Macintosh".to_string(),
+            extends: Some("operator".to_string()),
+            presentation: ThemePresentation {
+                density: ThemeDensity::Comfortable,
+                chrome_style: ThemeChromeStyle::Ornate,
+                icon_style: ThemeIconStyle::Skeuomorphic,
+                motion_style: ThemeMotionStyle::Dramatic,
+                corner_radius: 10,
+                panel_spacing: 12,
+            },
+            compatibility: ThemeCompatibility {
+                shell_blueprints: vec![ShellBlueprintId::RetroDesktop],
+                tags: vec!["vintage".to_string(), "macintosh".to_string(), "crt".to_string()],
+            },
+            design_tokens: vec![
+                ThemeDesignToken {
+                    id: "vintage-accent".to_string(),
+                    name: "Accent".to_string(),
+                    kind: ThemeTokenKind::Color,
+                    value: "#506f42".to_string(),
+                },
+                ThemeDesignToken {
+                    id: "vintage-radius".to_string(),
+                    name: "Bezel Radius".to_string(),
+                    kind: ThemeTokenKind::Radius,
+                    value: "10".to_string(),
+                },
+            ],
+            layout_primitives: vec![ThemeLayoutPrimitive {
+                id: "vintage-window".to_string(),
+                name: "Vintage Window".to_string(),
+                kind: ThemeLayoutPrimitiveKind::Freeform,
+                props: BTreeMap::from([("bezel".to_string(), "true".to_string())]),
+            }],
+            navigation_patterns: vec![ThemeNavigationPattern {
+                id: "vintage-desktop".to_string(),
+                name: "Vintage Desktop".to_string(),
+                kind: ThemeNavigationPatternKind::Hierarchy,
+                axis: ThemeNavigationAxis::Vertical,
+                props: BTreeMap::from([("menuBar".to_string(), "true".to_string())]),
+            }],
+            animation_profiles: vec![ThemeAnimationProfile {
+                id: "vintage-power-on".to_string(),
+                name: "Power On".to_string(),
+                duration_ms: 300,
+                easing: "ease-in-out".to_string(),
+                intensity: 58,
+            }],
+            icon_packs: vec![ThemeIconPackManifest {
+                id: "vintage-icons".to_string(),
+                name: "Vintage Icons".to_string(),
+                style: ThemeIconPackStyle::Skeuomorphic,
+            }],
+            render_styles: vec![ThemeRenderStyleManifest {
+                id: "vintage-render".to_string(),
+                label: "Vintage Desktop".to_string(),
+                kind: ThemeRenderStyleKind::DesktopWindowManager,
+                entry_module: "renderers/vintage-macintosh.tsx".to_string(),
+                supports_live_swap: true,
+                description: Some("Desktop chrome tuned for retro Macintosh shells.".to_string()),
+            }],
+            default_render_style_id: Some("vintage-render".to_string()),
+        },
+        ThemeManifest {
+            id: "vista-glass".to_string(),
+            name: "Vista Glass".to_string(),
+            extends: Some("github-dark".to_string()),
+            presentation: ThemePresentation {
+                density: ThemeDensity::Comfortable,
+                chrome_style: ThemeChromeStyle::Floating,
+                icon_style: ThemeIconStyle::Skeuomorphic,
+                motion_style: ThemeMotionStyle::Fluid,
+                corner_radius: 16,
+                panel_spacing: 10,
+            },
+            compatibility: ThemeCompatibility {
+                shell_blueprints: vec![ShellBlueprintId::ClassicDock],
+                tags: vec!["glass".to_string(), "aero".to_string(), "blue".to_string()],
+            },
+            design_tokens: vec![
+                ThemeDesignToken {
+                    id: "vista-accent".to_string(),
+                    name: "Accent".to_string(),
+                    kind: ThemeTokenKind::Color,
+                    value: "#7dd3ff".to_string(),
+                },
+                ThemeDesignToken {
+                    id: "vista-shadow".to_string(),
+                    name: "Overlay Shadow".to_string(),
+                    kind: ThemeTokenKind::Shadow,
+                    value: "0 20px 64px rgba(0, 0, 0, 0.44)".to_string(),
+                },
+            ],
+            layout_primitives: vec![ThemeLayoutPrimitive {
+                id: "vista-glass-shell".to_string(),
+                name: "Vista Glass Shell".to_string(),
+                kind: ThemeLayoutPrimitiveKind::Dock,
+                props: BTreeMap::from([("chrome".to_string(), "frosted".to_string())]),
+            }],
+            navigation_patterns: vec![ThemeNavigationPattern {
+                id: "vista-breadcrumbs".to_string(),
+                name: "Vista Breadcrumbs".to_string(),
+                kind: ThemeNavigationPatternKind::Palette,
+                axis: ThemeNavigationAxis::Horizontal,
+                props: BTreeMap::from([("searchFirst".to_string(), "true".to_string())]),
+            }],
+            animation_profiles: vec![ThemeAnimationProfile {
+                id: "vista-bloom".to_string(),
+                name: "Vista Bloom".to_string(),
+                duration_ms: 260,
+                easing: "ease-out".to_string(),
+                intensity: 54,
+            }],
+            icon_packs: vec![ThemeIconPackManifest {
+                id: "vista-icons".to_string(),
+                name: "Vista Icons".to_string(),
+                style: ThemeIconPackStyle::Skeuomorphic,
+            }],
+            render_styles: vec![ThemeRenderStyleManifest {
+                id: "vista-render".to_string(),
+                label: "Vista Glass".to_string(),
+                kind: ThemeRenderStyleKind::VsCodeWorkbench,
+                entry_module: "renderers/vista-glass.tsx".to_string(),
+                supports_live_swap: true,
+                description: Some("Glossy Aero-inspired render style for glass shells.".to_string()),
+            }],
+            default_render_style_id: Some("vista-render".to_string()),
+        },
+    ]
 }
 
 pub fn built_in_workbench_presets() -> Vec<WorkbenchPreset> {
@@ -564,6 +863,27 @@ mod tests {
     fn serializes_shell_blueprint_ids_as_kebab_case() {
         let serialized = serde_json::to_string(&ShellBlueprintId::HandheldDualScreen).unwrap();
         assert_eq!(serialized, "\"handheld-dual-screen\"");
+    }
+
+    #[test]
+    fn exposes_all_shipped_theme_manifests() {
+        let manifests = built_in_theme_manifests();
+        let ids = manifests.iter().map(|manifest| manifest.id.as_str()).collect::<Vec<_>>();
+
+        assert_eq!(
+            ids,
+            vec![
+                "operator",
+                "aqua-light",
+                "plasma-flow",
+                "vintage-macintosh",
+                "vista-glass",
+            ]
+        );
+
+        let vista = manifests.iter().find(|manifest| manifest.id == "vista-glass").unwrap();
+        assert_eq!(vista.default_render_style_id.as_deref(), Some("vista-render"));
+        assert_eq!(vista.render_styles[0].kind, ThemeRenderStyleKind::VsCodeWorkbench);
     }
 
     #[test]
