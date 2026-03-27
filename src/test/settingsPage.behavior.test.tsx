@@ -334,6 +334,47 @@ describe('SettingsPage behavior', () => {
     const engineManifest = normalizeThemeManifestDraft({
       id: 'vista-glass',
       name: 'Vista Glass',
+      designTokens: [
+        {
+          id: 'vista-accent',
+          name: 'Vista Accent',
+          kind: 'color',
+          value: '#7dd3ff',
+        },
+      ],
+      layoutPrimitives: [
+        {
+          id: 'vista-shell',
+          name: 'Vista Shell',
+          kind: 'dock',
+          props: { chrome: 'frosted' },
+        },
+      ],
+      navigationPatterns: [
+        {
+          id: 'vista-breadcrumbs',
+          name: 'Vista Breadcrumbs',
+          kind: 'palette',
+          axis: 'horizontal',
+          props: { searchFirst: 'true' },
+        },
+      ],
+      animationProfiles: [
+        {
+          id: 'vista-bloom',
+          name: 'Vista Bloom',
+          durationMs: 260,
+          easing: 'ease-out',
+          intensity: 54,
+        },
+      ],
+      iconPacks: [
+        {
+          id: 'vista-icons',
+          name: 'Vista Icons',
+          style: 'skeuomorphic',
+        },
+      ],
       renderStyles: [
         {
           id: 'vista-render',
@@ -384,7 +425,12 @@ describe('SettingsPage behavior', () => {
     expect(screen.getByText('Shaders 1')).toBeInTheDocument();
     expect(screen.getByText('Motion 1')).toBeInTheDocument();
     expect(screen.getByText('Visuals 2')).toBeInTheDocument();
+    expect(screen.getByText('Tokens 1')).toBeInTheDocument();
+    expect(screen.getByText('Layout dock')).toBeInTheDocument();
+    expect(screen.getByText('Nav palette')).toBeInTheDocument();
+    expect(screen.getByText('Icons skeuomorphic')).toBeInTheDocument();
     expect(screen.getByText('Render vs-code-workbench')).toBeInTheDocument();
+    expect(screen.getByText('Profile vista-bloom')).toBeInTheDocument();
     expect(screen.getByText('Live Swap Ready')).toBeInTheDocument();
     expect(screen.getByText('Theme Folder')).toBeInTheDocument();
     expect(screen.getAllByText('themes/vista-glass').length).toBeGreaterThan(0);

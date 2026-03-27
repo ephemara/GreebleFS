@@ -7,21 +7,17 @@ import {
 } from '../config/workbenchPresets';
 
 describe('workbench presets', () => {
-  it('ships archetype presets for the major shell directions', () => {
+  it('ships generated backend presets through the frontend catalog', () => {
     expect(BUILT_IN_WORKBENCH_PRESETS.map(preset => preset.id)).toEqual([
-      'operator-classic',
       'xmb-media-deck',
-      'hackintosh-desktop',
-      'metro-start',
-      'dual-screen-devkit',
     ]);
   });
 
   it('filters presets by shell blueprint', () => {
-    const retroPresets = getWorkbenchPresetsForShellBlueprint('retro-desktop');
+    const crossAxisPresets = getWorkbenchPresetsForShellBlueprint('xmb-cross-media');
 
-    expect(retroPresets).toHaveLength(1);
-    expect(retroPresets[0]?.id).toBe('hackintosh-desktop');
+    expect(crossAxisPresets).toHaveLength(1);
+    expect(crossAxisPresets[0]?.id).toBe('xmb-media-deck');
   });
 
   it('normalizes incomplete preset input against a shell-aware fallback', () => {
@@ -55,6 +51,6 @@ describe('workbench presets', () => {
   });
 
   it('falls back to the primary preset when a preset id is unknown', () => {
-    expect(resolveWorkbenchPreset('does-not-exist').id).toBe('operator-classic');
+    expect(resolveWorkbenchPreset('does-not-exist').id).toBe('xmb-media-deck');
   });
 });

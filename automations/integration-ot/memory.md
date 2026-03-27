@@ -1,0 +1,22 @@
+# Integration OT memory
+
+- 2026-03-27T16:44:00Z: Established the first Atlas Integration baseline for Yazi ownership and theme extensibility from the live worktree plus focused verification.
+- Verified the active contract slice already in the tree with `npx vitest run src/test/pluginWatchPaths.test.ts src/test/workbenchPresetThemes.test.ts src/test/appearance.test.ts src/test/workbenchPresets.test.ts src/test/themeEngineBackend.test.ts src/test/explorerBackend.bindings.test.ts src/test/useFolderPluginRuntime.test.tsx`, `npm run build`, and `cargo test -p yazi-specta --lib`.
+- Integration status:
+  - Frontend/theme lane is converging on backend-owned catalogs: generated workbench presets now flow through `src/generated/tauri.ts` into the frontend catalog, and the focused preset/theme normalization suites are green.
+  - Backend facade and renderer contract is currently stable at the phase-1 envelope: scheduler task DTOs remain bridged, watcher DTOs remain planned, and the generated manifest plus Rust tests keep that boundary pinned.
+  - Plugin/theme runtime coverage now includes watch-path normalization, empty-path watcher refresh behavior, and explicit preferred-theme clear semantics, which closes the main ambiguity around theme package refresh and preset recommendation ownership.
+- Durable decisions:
+  - Keep Yazi ownership split at the generated facade boundary: Rust/Yazi owns scheduler/search/watch manifests and DTO shape, while TypeScript owns presentation, fallback selection, and theme/preset composition on top of generated data.
+  - Treat `YAZI_BINDINGS_MANIFEST.version = "phase-1"` as a release gate. Any watcher export promotion or new facade DTO must land with generated binding changes and matching frontend/runtime coverage in the same slice.
+  - Preserve the theme-agnostic interaction contract from the theme lane: layout/profile state owns navigation semantics, while theme packages may vary render styles, compatibility tags, and presentation only.
+  - Preserve explicit user intent in theme extensibility flows: trimmed/deduped compatibility metadata is acceptable normalization, but blank `preferredThemeIds` remains an explicit clear and must not silently repopulate from generated recommendations.
+- Merge/conflict posture:
+  - No textual merge conflicts were present in the current worktree.
+  - The active dirty files are consistent with parallel lane work rather than divergent contract edits; the current risk is semantic drift, not unresolved merge markers.
+  - Build/export regenerated `src/generated/tauri.ts` cleanly, which confirms the current frontend expectations still match the backend facade.
+- Next execution wave:
+  - Add cross-theme navigation parity coverage around focus restoration, back behavior, and progress visibility so theme extensibility cannot regress the UX contract.
+  - Promote watcher bindings only when concrete watcher event DTOs are ready end-to-end in Rust, generated bindings, and runtime tests.
+  - Run a live Tauri validator pass for explorer refresh/progress surfaces and theme/package reload behavior, since current proof is strong in unit/build coverage but still indirect at runtime.
+- Current run time: ~4 minutes.

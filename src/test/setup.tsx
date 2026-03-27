@@ -23,16 +23,25 @@ const createMemoryStorage = (): Storage => {
 };
 
 (() => {
-  const candidate = (globalThis as Record<string, unknown>).localStorage;
-  const hasStorageApi =
-    candidate &&
+  const storageLike = (candidate: unknown): candidate is Storage =>
+    !!candidate &&
     typeof (candidate as Storage).getItem === 'function' &&
     typeof (candidate as Storage).setItem === 'function' &&
     typeof (candidate as Storage).removeItem === 'function' &&
     typeof (candidate as Storage).clear === 'function' &&
     typeof (candidate as Storage).key === 'function';
 
-  if (!hasStorageApi) {
+  // Avoid invoking Node's experimental localStorage getter, which emits a
+  // warning when --localstorage-file lacks a path. Inspect the descriptor
+  // instead; if it is an accessor or not storage-like, replace it with a
+  // quiet in-memory implementation.
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const existingValue = descriptor?.value;
+  const needsShim =
+    !storageLike(existingValue) ||
+    (descriptor && typeof descriptor.get === 'function'); // accessor triggers warning
+
+  if (needsShim) {
     const memoryStorage = createMemoryStorage();
     Object.defineProperty(globalThis, 'localStorage', {
       value: memoryStorage,

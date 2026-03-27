@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import * as TauriEvent from '@tauri-apps/api/event';
 
 import {
   YAZI_BINDINGS_MANIFEST,
@@ -13,6 +14,7 @@ import {
   getExplorerTaskProgressPercent,
   getExplorerTaskStatusLabel,
   isExplorerTaskFinished,
+  listenToExplorerTaskProgress,
   searchExplorerEntriesWithDiagnostics,
   type ExplorerTaskProgress,
 } from '../runtime/explorerBackend';
@@ -52,6 +54,29 @@ describe('explorer backend Yazi bindings', () => {
 
     expect(payload.taskId).toBe('task-1');
     expect(payload.task.prog.kind).toBe('fileCopy');
+  });
+
+  it('forwards explorer task event payloads through the runtime listener bridge', async () => {
+    const unlisten = vi.fn();
+    const eventPayload: ExplorerTaskProgress = {
+      taskId: 'task-bridge',
+      task: makeTask({ kind: 'fileUpload', processedBytes: 200, totalBytes: 400 }),
+    };
+    const listener = vi.fn();
+    const listenSpy = vi.spyOn(TauriEvent, 'listen').mockImplementationOnce(
+      async (_eventName: string, callback: (event: { payload: ExplorerTaskProgress }) => void) => {
+        callback({ payload: eventPayload });
+        return unlisten;
+      },
+    );
+
+    const dispose = await listenToExplorerTaskProgress(listener);
+
+    expect(listenSpy).toHaveBeenCalledWith('explorer-task-progress-event', expect.any(Function));
+    expect(listener).toHaveBeenCalledWith(eventPayload);
+
+    dispose();
+    expect(unlisten).toHaveBeenCalledTimes(1);
   });
 
   it('keeps scheduler manifest coverage on transfer and background progress variants', () => {
@@ -144,6 +169,48 @@ describe('explorer backend Yazi bindings', () => {
     expect(cancelSpy).toHaveBeenCalledWith('C:/workspace/repo', 43, 'file-explorer:r42');
   });
 
+  it('forwards omitted search and cancel scope arguments as nulls through the generated Tauri contract', async () => {
+    const searchSpy = vi.spyOn(commands, 'fsSearchEntriesWithDiagnostics').mockResolvedValue({
+      status: 'ok',
+      data: {
+        results: [],
+        diagnostics: {
+          executionStrategy: 'live_scan',
+          contentCacheStatus: 'not_requested',
+          scannedEntryCount: 0,
+          indexedEntryCount: 0,
+          contentCacheStoredFileCount: 0,
+          contentCacheStoredByteCount: 0,
+          truncatedByScanBudget: false,
+        },
+      },
+    });
+    const cancelSpy = vi.spyOn(commands, 'fsCancelSearchEntries').mockResolvedValue({
+      status: 'ok',
+      data: null,
+    });
+
+    await searchExplorerEntriesWithDiagnostics({
+      path: 'C:/workspace/repo',
+      query: 'needle',
+      showHidden: false,
+    });
+    await cancelExplorerSearchEntries({
+      path: 'C:/workspace/repo',
+    });
+
+    expect(searchSpy).toHaveBeenCalledWith(
+      'C:/workspace/repo',
+      'needle',
+      false,
+      false,
+      null,
+      null,
+      null,
+    );
+    expect(cancelSpy).toHaveBeenCalledWith('C:/workspace/repo', null, null);
+  });
+
   it('derives transfer progress, failure state, and labels from file-copy task snapshots', () => {
     const runningTask = makeTask({ processedBytes: 100, totalBytes: 400 });
     expect(getExplorerTaskProgressPercent(runningTask)).toBe(25);
@@ -216,5 +283,47 @@ describe('explorer backend Yazi bindings', () => {
     expect(didExplorerTaskFail(uploadTask)).toBe(false);
     expect(isExplorerTaskFinished(uploadTask)).toBe(true);
     expect(getExplorerTaskStatusLabel(uploadTask)).toBe('Done');
+  });
+
+  it('marks zero-byte transfer failures as failed work instead of leaving them indeterminate', () => {
+    const failedDelete = makeTask({
+      kind: 'fileDelete',
+      totalBytes: 0,
+      processedBytes: 0,
+      failedFiles: 2,
+      cleaned: false,
+      collected: null,
+    });
+
+    expect(getExplorerTaskProgressPercent(failedDelete)).toBe(0);
+    expect(didExplorerTaskFail(failedDelete)).toBe(true);
+    expect(isExplorerTaskFinished(failedDelete)).toBe(true);
+    expect(getExplorerTaskStatusLabel(failedDelete)).toBe('Failed');
+  });
+
+  it('treats cleaned cut tasks as finished even when collection metadata stays null', () => {
+    const finishedCut = makeTask({
+      kind: 'fileCut',
+      totalBytes: 512,
+      processedBytes: 512,
+      cleaned: true,
+      collected: null,
+    });
+
+    expect(getExplorerTaskProgressPercent(finishedCut)).toBe(100);
+    expect(didExplorerTaskFail(finishedCut)).toBe(false);
+    expect(isExplorerTaskFinished(finishedCut)).toBe(true);
+    expect(getExplorerTaskStatusLabel(finishedCut)).toBe('Done');
+  });
+
+  it('keeps the generated Yazi binding manifest pinned to the phase-1 migration envelope', () => {
+    expect(YAZI_BINDINGS_MANIFEST.version).toBe('phase-1');
+
+    const watcherEntry = YAZI_BINDINGS_MANIFEST.entries.find(
+      entry => entry.crateName === 'yazi-watcher',
+    );
+
+    expect(watcherEntry?.notes).toContain('watcher event bridge surface planned');
+    expect(watcherEntry?.exportedTypes).toEqual([]);
   });
 });

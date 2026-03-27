@@ -110,6 +110,34 @@ describe('useFolderPluginRuntime', () => {
     });
   });
 
+  it('treats watcher events without paths as refresh-worthy updates', async () => {
+    let watchListener: ((event: { payload: { paths: string[] } }) => void) | undefined;
+
+    vi.mocked(listen).mockImplementation(async (_eventName, handler) => {
+      watchListener = handler as typeof watchListener;
+      return () => {};
+    });
+
+    renderHook(() => useFolderPluginRuntime('windows'));
+    await flushPluginEffects();
+
+    await waitFor(() => {
+      expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(1);
+    });
+
+    watchListener?.({
+      payload: {
+        paths: [],
+      },
+    });
+
+    await vi.advanceTimersByTimeAsync(pluginSystemConfig.watchDebounceMs + 10);
+
+    await waitFor(() => {
+      expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('falls back to polling when watcher startup fails', async () => {
     vi.spyOn(commands, 'pluginWatchDirectory').mockRejectedValueOnce(new Error('watch unavailable'));
 

@@ -940,7 +940,8 @@ export function normalizeThemeDefinition(
     compatibility: {
       shellBlueprints: Array.from(new Set(
         (theme.compatibility?.shellBlueprints ?? fallback.compatibility?.shellBlueprints ?? [])
-          .filter((entry): entry is OverlayShellBlueprintId => typeof entry === 'string' && entry.trim().length > 0),
+          .map(entry => typeof entry === 'string' ? entry.trim() : entry)
+          .filter((entry): entry is OverlayShellBlueprintId => typeof entry === 'string' && entry.length > 0),
       )),
       tags: Array.from(new Set(
         (theme.compatibility?.tags ?? fallback.compatibility?.tags ?? [])

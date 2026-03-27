@@ -25,8 +25,26 @@ export type ExplorerWorkbenchPreset = WorkbenchPreset;
 
 export interface CompiledThemeEngineManifest {
   manifest: ExplorerThemeManifest;
+  designTokenLookup: Record<string, ExplorerThemeDesignToken>;
+  layoutPrimitiveLookup: Record<string, ExplorerThemeLayoutPrimitive>;
+  navigationPatternLookup: Record<string, ExplorerThemeNavigationPattern>;
+  animationProfileLookup: Record<string, ExplorerThemeAnimationProfile>;
+  iconPackLookup: Record<string, ExplorerThemeIconPackManifest>;
   renderStyleLookup: Record<string, ExplorerThemeRenderStyleManifest>;
+  defaultDesignToken: ExplorerThemeDesignToken | null;
+  defaultLayoutPrimitive: ExplorerThemeLayoutPrimitive | null;
+  defaultNavigationPattern: ExplorerThemeNavigationPattern | null;
+  defaultAnimationProfile: ExplorerThemeAnimationProfile | null;
+  defaultIconPack: ExplorerThemeIconPackManifest | null;
   defaultRenderStyle: ExplorerThemeRenderStyleManifest | null;
+  capabilitySummary: {
+    designTokens: number;
+    layoutPrimitives: number;
+    navigationPatterns: number;
+    animationProfiles: number;
+    iconPacks: number;
+    renderStyles: number;
+  };
   supportsHotSwappingRenderStyles: boolean;
 }
 
@@ -47,18 +65,57 @@ export async function listThemeEngineCatalog(): Promise<ThemeEngineCatalog> {
   };
 }
 
+function createLookup<T extends { id: string }>(entries: readonly T[]): Record<string, T> {
+  return Object.fromEntries(entries.map(entry => [entry.id, entry] as const));
+}
+
+function pickDefault<T extends { id: string }>(
+  entries: readonly T[],
+  lookup: Record<string, T>,
+  preferredId?: string | null,
+): T | null {
+  if (preferredId) {
+    return lookup[preferredId] ?? entries[0] ?? null;
+  }
+  return entries[0] ?? null;
+}
+
 export function compileThemeEngineManifest(manifest: ExplorerThemeManifest): CompiledThemeEngineManifest {
-  const renderStyleLookup = Object.fromEntries(
-    manifest.renderStyles.map(style => [style.id, style] as const),
-  );
-  const defaultRenderStyle = manifest.defaultRenderStyleId
-    ? (renderStyleLookup[manifest.defaultRenderStyleId] ?? manifest.renderStyles[0] ?? null)
-    : (manifest.renderStyles[0] ?? null);
+  const designTokenLookup = createLookup(manifest.designTokens);
+  const layoutPrimitiveLookup = createLookup(manifest.layoutPrimitives);
+  const navigationPatternLookup = createLookup(manifest.navigationPatterns);
+  const animationProfileLookup = createLookup(manifest.animationProfiles);
+  const iconPackLookup = createLookup(manifest.iconPacks);
+  const renderStyleLookup = createLookup(manifest.renderStyles);
+  const defaultDesignToken = pickDefault(manifest.designTokens, designTokenLookup);
+  const defaultLayoutPrimitive = pickDefault(manifest.layoutPrimitives, layoutPrimitiveLookup);
+  const defaultNavigationPattern = pickDefault(manifest.navigationPatterns, navigationPatternLookup);
+  const defaultAnimationProfile = pickDefault(manifest.animationProfiles, animationProfileLookup);
+  const defaultIconPack = pickDefault(manifest.iconPacks, iconPackLookup);
+  const defaultRenderStyle = pickDefault(manifest.renderStyles, renderStyleLookup, manifest.defaultRenderStyleId);
 
   return {
     manifest,
+    designTokenLookup,
+    layoutPrimitiveLookup,
+    navigationPatternLookup,
+    animationProfileLookup,
+    iconPackLookup,
     renderStyleLookup,
+    defaultDesignToken,
+    defaultLayoutPrimitive,
+    defaultNavigationPattern,
+    defaultAnimationProfile,
+    defaultIconPack,
     defaultRenderStyle,
+    capabilitySummary: {
+      designTokens: manifest.designTokens.length,
+      layoutPrimitives: manifest.layoutPrimitives.length,
+      navigationPatterns: manifest.navigationPatterns.length,
+      animationProfiles: manifest.animationProfiles.length,
+      iconPacks: manifest.iconPacks.length,
+      renderStyles: manifest.renderStyles.length,
+    },
     supportsHotSwappingRenderStyles: manifest.renderStyles.length > 0
       && manifest.renderStyles.every(style => style.supportsLiveSwap),
   };
@@ -104,6 +161,8 @@ export function normalizeThemeManifestDraft(
     animationProfiles: draft.animationProfiles ?? [],
     iconPacks: draft.iconPacks ?? [],
     renderStyles: draft.renderStyles ?? [],
-    defaultRenderStyleId: draft.defaultRenderStyleId ?? null,
+    defaultRenderStyleId: typeof draft.defaultRenderStyleId === 'string' && draft.defaultRenderStyleId.trim().length > 0
+      ? draft.defaultRenderStyleId.trim()
+      : null,
   };
 }

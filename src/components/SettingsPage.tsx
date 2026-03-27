@@ -1388,13 +1388,19 @@ export function SettingsPage({
                     const packageInfo = themePackageLookup.get(themeOption.id);
                     const description = clampThemeDescription(packageInfo?.description ?? themeOption.description);
                     const previewBackground = getThemePreviewBackground(themeOption, packageInfo?.previewUrl);
-                    const defaultRenderStyle = packageInfo?.compiledEngineManifest?.defaultRenderStyle;
+                    const compiledEngineManifest = packageInfo?.compiledEngineManifest;
+                    const defaultLayoutPrimitive = compiledEngineManifest?.defaultLayoutPrimitive;
+                    const defaultNavigationPattern = compiledEngineManifest?.defaultNavigationPattern;
+                    const defaultAnimationProfile = compiledEngineManifest?.defaultAnimationProfile;
+                    const defaultIconPack = compiledEngineManifest?.defaultIconPack;
+                    const defaultRenderStyle = compiledEngineManifest?.defaultRenderStyle;
                     const capabilityLabels = [
                       packageInfo?.capabilitySummary.icons ? 'Icons' : null,
                       packageInfo?.capabilitySummary.shaders ? `Shaders ${packageInfo.capabilitySummary.shaders}` : null,
                       packageInfo?.capabilitySummary.animations ? `Motion ${packageInfo.capabilitySummary.animations}` : null,
                       packageInfo?.capabilitySummary.visuals ? `Visuals ${packageInfo.capabilitySummary.visuals}` : null,
-                    ].filter((value): value is string => Boolean(value)).slice(0, 4);
+                      compiledEngineManifest?.capabilitySummary.designTokens ? `Tokens ${compiledEngineManifest.capabilitySummary.designTokens}` : null,
+                    ].filter((value): value is string => Boolean(value)).slice(0, 5);
                     return (
                       <button
                         key={themeOption.id}
@@ -1453,15 +1459,19 @@ export function SettingsPage({
                             <p className="min-h-[2.75rem] text-[11px] leading-4 opacity-35">No package summary provided yet.</p>
                           )}
                           <div className="flex flex-wrap gap-1.5">
+                            {defaultLayoutPrimitive ? <ThemeBadge label={`Layout ${defaultLayoutPrimitive.kind}`} active={active} /> : null}
+                            {defaultNavigationPattern ? <ThemeBadge label={`Nav ${defaultNavigationPattern.kind}`} active={active} /> : null}
+                            {defaultIconPack ? <ThemeBadge label={`Icons ${defaultIconPack.style}`} active={active} /> : null}
                             {defaultRenderStyle ? <ThemeBadge label={`Render ${defaultRenderStyle.kind}`} active={active} /> : null}
-                            {packageInfo?.compiledEngineManifest?.supportsHotSwappingRenderStyles
+                            {compiledEngineManifest?.supportsHotSwappingRenderStyles
                               ? <ThemeBadge label="Live Swap Ready" active={active} />
-                              : packageInfo?.compiledEngineManifest
+                              : compiledEngineManifest
                                 ? <ThemeBadge label="Static Render" active={active} />
                                 : null}
                             {themeOption.defaultShaderId ? <ThemeBadge label={`Shader ${themeOption.defaultShaderId}`} active={active} /> : null}
                             {themeOption.defaultOpenAnimationId ? <ThemeBadge label={`Open ${themeOption.defaultOpenAnimationId}`} active={active} /> : null}
                             {themeOption.defaultCloseAnimationId ? <ThemeBadge label={`Close ${themeOption.defaultCloseAnimationId}`} active={active} /> : null}
+                            {defaultAnimationProfile ? <ThemeBadge label={`Profile ${defaultAnimationProfile.id}`} active={active} /> : null}
                             {capabilityLabels.map(label => (
                               <ThemeBadge key={`${themeOption.id}-${label}`} label={label} />
                             ))}

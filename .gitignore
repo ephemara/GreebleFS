@@ -26,6 +26,7 @@ src-tauri/gen/
 
 # --- Rust ---
 target/
+target-tests/
 Cargo.lock
 **/*.rs.bk
 /output

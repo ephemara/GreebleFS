@@ -1,0 +1,23 @@
+# Theme OT memory
+
+- 2026-03-27T16:00:00Z: Defined the theme-agnostic interaction baseline for Northstar UX across XMB, iOS, Wii, and VS Code style layouts.
+- Durable decisions:
+  - Keep interaction semantics owned by layout/profile and app state, not by visual skin. Themes may change chrome, density, iconography, motion, and background treatment, but they must not change selection, navigation, or command meaning.
+  - Treat layout profiles as the source of navigation policy: `primaryAxisOwner`, `commandOwner`, `backBehavior`, `modeExitTarget`, `progressOwner`, and the preserve-focus/selection/location anchors already available in `src/config/layoutProfiles.ts` are the stable cross-theme contract.
+  - Preserve explorer behavior consistency across skins: list virtualization, row-based selection, modifier-based drag/drop intent, lazy previews, and search overlays stay identical while only presentation changes.
+  - Progress feedback must always be visible and local to the task source: explorer transfer/task status uses the status bar badge, app open/close transitions use session animation progress, and loading states use explicit placeholders/spinners instead of relying on theme affordances.
+  - Favor transferable navigation models over theme-specific affordances: chrome placement can vary, but keyboard shortcuts, command palette entry points, and panel focus behavior stay predictable.
+- UX benchmarks to validate next:
+  - Explorer open or refresh should give immediate visual acknowledgment and never leave the user without a loading state.
+  - Long-running explorer/theme asset work should surface progress in the same frame family as the task start, with no silent stalls.
+  - A theme change should not require relearning panel focus, back behavior, or command invocation.
+  - All skins should keep the same affordance hierarchy: primary content, command entry, progress, then secondary chrome.
+- Next targets:
+  - Add focused coverage for cross-theme navigation parity, especially panel focus restoration and back-behavior consistency.
+  - Add regression proof that loading/progress surfaces remain visible when explorer or theme packages are slow or partially missing.
+  - Document the layout/profile contract in a user-facing place once the interaction rules stop moving.
+- Current run note 2026-03-27T16:00:00Z:
+  - Reviewed the existing layout profile contract, explorer virtualization/loading path, and theme package merge flow.
+  - Confirmed the app already encodes the cross-skin defaults in `src/config/layoutProfiles.ts`, `src/components/FileExplorer.tsx`, and `src/config/themePackages.ts`.
+  - Stored the durable decisions here so later automation runs can keep the interaction system stable while skins continue to vary.
+  - Current run time: ~8 minutes.

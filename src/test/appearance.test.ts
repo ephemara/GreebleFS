@@ -282,6 +282,77 @@ describe('appearance config helpers', () => {
     expect(getThemeSourceLabel(resolved.theme)).toBe('Package');
   });
 
+  it('normalizes compatibility metadata by trimming duplicates and inheriting fallback targeting', () => {
+    const fallback = normalizeThemeDefinition({
+      id: 'fallback-shells',
+      name: 'Fallback Shells',
+      compatibility: {
+        shellBlueprints: ['classic-dock'],
+        tags: ['fallback'],
+      },
+    } as Partial<OverlayThemeDefinition>);
+
+    const normalized = normalizeThemeDefinition({
+      id: 'deduped-shells',
+      name: 'Deduped Shells',
+      compatibility: {
+        shellBlueprints: ['classic-dock', ' classic-dock ', 'retro-desktop'],
+        tags: [' glass ', 'glass', 'focused'],
+      },
+    } as Partial<OverlayThemeDefinition>, fallback);
+    const inherited = normalizeThemeDefinition({
+      id: 'inherited-shells',
+      name: 'Inherited Shells',
+    } as Partial<OverlayThemeDefinition>, fallback);
+
+    expect(normalized.compatibility?.shellBlueprints).toEqual(['classic-dock', 'retro-desktop']);
+    expect(normalized.compatibility?.tags).toEqual(['glass', 'focused']);
+    expect(inherited.compatibility?.shellBlueprints).toEqual(['classic-dock']);
+    expect(inherited.compatibility?.tags).toEqual(['fallback']);
+    expect(isThemeCompatibleWithShellBlueprint(normalized, 'retro-desktop')).toBe(true);
+    expect(isThemeCompatibleWithShellBlueprint(inherited, 'classic-dock')).toBe(true);
+  });
+
+  it('lets custom themes override package themes with the same id while keeping package metadata in the catalog', () => {
+    const packageTheme = normalizeThemeDefinition({
+      id: 'shared-theme',
+      name: 'Shared Theme Package',
+      source: 'package',
+      compatibility: {
+        shellBlueprints: ['classic-dock'],
+        tags: ['package'],
+      },
+      palette: {
+        accent: '#7dd3ff',
+      },
+    } as Partial<OverlayThemeDefinition>);
+    const customTheme = normalizeThemeDefinition({
+      id: 'shared-theme',
+      name: 'Shared Theme Custom',
+      source: 'custom',
+      compatibility: {
+        shellBlueprints: ['retro-desktop'],
+        tags: ['custom'],
+      },
+      palette: {
+        accent: '#ff7a18',
+      },
+    } as Partial<OverlayThemeDefinition>);
+
+    const resolved = resolveOverlayAppearance({
+      activeThemeId: 'shared-theme',
+      packageThemes: [packageTheme],
+      customThemes: [customTheme],
+    });
+
+    expect(resolved.theme.name).toBe('Shared Theme Custom');
+    expect(resolved.theme.source).toBe('custom');
+    expect(resolved.theme.palette.accent).toBe('#ff7a18');
+    expect(isThemeCompatibleWithShellBlueprint(resolved.theme, 'retro-desktop')).toBe(true);
+    expect(isThemeCompatibleWithShellBlueprint(resolved.theme, 'classic-dock')).toBe(false);
+    expect(resolved.themes.filter(theme => theme.id === 'shared-theme').map(theme => theme.source)).toEqual(['package', 'custom']);
+  });
+
   it('normalizes theme animation defaults and inherits them from the fallback when omitted', () => {
     const normalized = normalizeThemeDefinition({
       id: 'motion-lab',
