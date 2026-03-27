@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   YAZI_BINDINGS_MANIFEST,
+  commands,
   events,
   type ExplorerTaskProgressEvent,
   type YaziSchedulerTaskSnap,
@@ -51,6 +52,23 @@ describe('explorer backend Yazi bindings', () => {
     expect(payload.task.prog.kind).toBe('fileCopy');
   });
 
+  it('keeps scheduler manifest coverage on transfer and background progress variants', () => {
+    const schedulerEntry = YAZI_BINDINGS_MANIFEST.entries.find(
+      entry => entry.crateName === 'yazi-scheduler',
+    );
+
+    expect(schedulerEntry?.exportedTypes).toEqual(
+      expect.arrayContaining([
+        'YaziSchedulerFileProgCopy',
+        'YaziSchedulerFileProgCut',
+        'YaziSchedulerFileProgDelete',
+        'YaziSchedulerFileProgDownload',
+        'YaziSchedulerFileProgUpload',
+        'YaziSchedulerPluginProgEntry',
+      ]),
+    );
+  });
+
   it('exports bridged scheduler progress DTOs in the generated Yazi manifest', () => {
     const schedulerEntry = YAZI_BINDINGS_MANIFEST.entries.find(
       entry => entry.crateName === 'yazi-scheduler',
@@ -63,6 +81,19 @@ describe('explorer backend Yazi bindings', () => {
     );
   });
 
+  it('keeps generated explorer runtime commands aligned with search, watcher, and transfer flows', () => {
+    expect(typeof commands.fsSearchEntriesWithDiagnostics).toBe('function');
+    expect(typeof commands.fsCancelSearchEntries).toBe('function');
+    expect(typeof commands.fsWatchEntrySizeRoot).toBe('function');
+    expect(typeof commands.fsUnwatchEntrySizeRoot).toBe('function');
+    expect(typeof commands.fsTransferItems).toBe('function');
+
+    const watcherEntry = YAZI_BINDINGS_MANIFEST.entries.find(
+      entry => entry.crateName === 'yazi-watcher',
+    );
+    expect(watcherEntry?.status).toBe('planned');
+  });
+
   it('derives transfer progress, failure state, and labels from file-copy task snapshots', () => {
     const runningTask = makeTask({ processedBytes: 100, totalBytes: 400 });
     expect(getExplorerTaskProgressPercent(runningTask)).toBe(25);
@@ -71,7 +102,7 @@ describe('explorer backend Yazi bindings', () => {
     expect(getExplorerTaskStatusLabel(runningTask)).toBe('25%');
 
     const failedTask = makeTask({ collected: false, failedFiles: 1 });
-    expect(getExplorerTaskProgressPercent(failedTask)).toBe(0);
+    expect(getExplorerTaskProgressPercent(failedTask)).toBe(25);
     expect(didExplorerTaskFail(failedTask)).toBe(true);
     expect(isExplorerTaskFinished(failedTask)).toBe(true);
     expect(getExplorerTaskStatusLabel(failedTask)).toBe('Failed');
@@ -80,5 +111,34 @@ describe('explorer backend Yazi bindings', () => {
     expect(getExplorerTaskProgressPercent(collectedTask)).toBe(100);
     expect(isExplorerTaskFinished(collectedTask)).toBe(true);
     expect(getExplorerTaskStatusLabel(collectedTask)).toBe('Done');
+  });
+
+  it('keeps cut/delete scheduler semantics aligned for zero-byte completion and non-transfer work', () => {
+    const deleteTask = makeTask({
+      kind: 'fileDelete',
+      totalBytes: 0,
+      processedBytes: 0,
+      cleaned: true,
+      collected: true,
+    });
+    expect(getExplorerTaskProgressPercent(deleteTask)).toBe(100);
+    expect(didExplorerTaskFail(deleteTask)).toBe(false);
+    expect(isExplorerTaskFinished(deleteTask)).toBe(true);
+    expect(getExplorerTaskStatusLabel(deleteTask)).toBe('Done');
+
+    const backgroundTask = {
+      name: 'Warm preview cache',
+      prog: {
+        kind: 'pluginEntry',
+        total: 4,
+        succ: 1,
+        fail: 0,
+        found: 4,
+      },
+    } satisfies YaziSchedulerTaskSnap;
+    expect(getExplorerTaskProgressPercent(backgroundTask)).toBeNull();
+    expect(didExplorerTaskFail(backgroundTask)).toBe(false);
+    expect(isExplorerTaskFinished(backgroundTask)).toBe(false);
+    expect(getExplorerTaskStatusLabel(backgroundTask)).toBe('Working…');
   });
 });

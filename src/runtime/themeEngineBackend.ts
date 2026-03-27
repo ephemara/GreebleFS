@@ -59,14 +59,15 @@ export function compileThemeEngineManifest(manifest: ExplorerThemeManifest): Com
     manifest,
     renderStyleLookup,
     defaultRenderStyle,
-    supportsHotSwappingRenderStyles: manifest.renderStyles.every(style => style.supportsLiveSwap),
+    supportsHotSwappingRenderStyles: manifest.renderStyles.length > 0
+      && manifest.renderStyles.every(style => style.supportsLiveSwap),
   };
 }
 
 export function normalizeThemeManifestDraft(
   draft: Partial<ExplorerThemeManifest> & Pick<ExplorerThemeManifest, 'id' | 'name'>,
 ): ExplorerThemeManifest {
-  const presentation: ExplorerThemePresentation = draft.presentation ?? {
+  const presentationDefaults: ExplorerThemePresentation = {
     density: 'comfortable',
     chromeStyle: 'floating',
     iconStyle: 'vector',
@@ -74,16 +75,21 @@ export function normalizeThemeManifestDraft(
     cornerRadius: 12,
     panelSpacing: 8,
   };
+  const presentation: ExplorerThemePresentation = {
+    ...presentationDefaults,
+    ...(draft.presentation ?? {}),
+  };
+  const compatibility: ExplorerThemeCompatibility = {
+    shellBlueprints: draft.compatibility?.shellBlueprints ?? [],
+    tags: draft.compatibility?.tags ?? [],
+  };
 
   return {
     id: draft.id,
     name: draft.name,
     extends: draft.extends ?? null,
     presentation,
-    compatibility: draft.compatibility ?? {
-      shellBlueprints: [],
-      tags: [],
-    },
+    compatibility,
     designTokens: draft.designTokens ?? [],
     layoutPrimitives: draft.layoutPrimitives ?? [],
     navigationPatterns: draft.navigationPatterns ?? [],

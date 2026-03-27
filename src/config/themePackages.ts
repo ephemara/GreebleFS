@@ -10,7 +10,10 @@ import {
   type OverlayThemePresentation,
   type OverlayThemeVisualLayer,
 } from './appearance';
-import type { ExplorerThemeManifest } from '../runtime/themeEngineBackend';
+import {
+  normalizeThemeManifestDraft,
+  type ExplorerThemeManifest,
+} from '../runtime/themeEngineBackend';
 import { type LoadedOverlayAnimation, loadAnimationFromSource, deriveAnimationId, deriveAnimationName } from '../components/animationRuntime';
 import {
   createResolvedIconThemeFromEntries,
@@ -35,8 +38,6 @@ interface FileEntry {
 }
 
 type LooseRecord = Record<string, unknown>;
-type ThemeManifestDraft = Partial<ExplorerThemeManifest> & Pick<ExplorerThemeManifest, 'id' | 'name'>;
-
 export interface OverlayThemePackageManifest {
   version?: number;
   id?: string;
@@ -110,7 +111,7 @@ export interface LoadedOverlayThemePackage {
     fonts: number;
   };
   theme: OverlayThemeDefinition;
-  engineManifest?: ThemeManifestDraft;
+  engineManifest?: ExplorerThemeManifest;
 }
 
 export interface ThemePackageLoadResult {
@@ -449,7 +450,7 @@ function buildThemeEngineManifest(
   packageId: string,
   packageName: string,
   manifest: OverlayThemePackageManifest,
-): ThemeManifestDraft | undefined {
+): ExplorerThemeManifest | undefined {
   const hasEngineMetadata = Boolean(
     manifest.designTokens?.length
       || manifest.layoutPrimitives?.length
@@ -463,7 +464,7 @@ function buildThemeEngineManifest(
     return undefined;
   }
 
-  return {
+  return normalizeThemeManifestDraft({
     id: packageId,
     name: packageName,
     extends: manifest.extends || null,
@@ -486,7 +487,7 @@ function buildThemeEngineManifest(
     iconPacks: manifest.iconPacks ?? [],
     renderStyles: manifest.renderStyles ?? [],
     defaultRenderStyleId: manifest.defaultRenderStyleId ?? null,
-  };
+  });
 }
 
 async function buildPackageTheme(

@@ -194,7 +194,13 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.theme.compatibility?.shellBlueprints).toEqual(['classic-dock', 'xmb-cross-media']);
     expect(result.packages[0]?.theme.compatibility?.tags).toEqual(['glass', 'cinematic']);
     expect(result.packages[0]?.engineManifest?.designTokens).toHaveLength(1);
+    expect(result.packages[0]?.engineManifest?.presentation.density).toBe('comfortable');
+    expect(result.packages[0]?.engineManifest?.presentation.iconStyle).toBe('vector');
+    expect(result.packages[0]?.engineManifest?.presentation.motionStyle).toBe('fluid');
+    expect(result.packages[0]?.engineManifest?.compatibility.shellBlueprints).toEqual(['classic-dock', 'xmb-cross-media']);
+    expect(result.packages[0]?.engineManifest?.compatibility.tags).toEqual(['glass', 'cinematic']);
     expect(result.packages[0]?.engineManifest?.renderStyles[0]?.id).toBe('vista-render');
+    expect(result.packages[0]?.engineManifest?.renderStyles[0]?.kind).toBe('vs-code-workbench');
     expect(result.packages[0]?.engineManifest?.defaultRenderStyleId).toBe('vista-render');
     expect(result.packages[0]?.author).toBe('OverlayTerm Labs');
     expect(result.packages[0]?.homepage).toBe('https://overlayterm.local/themes/vista-glass');
@@ -258,5 +264,45 @@ describe('theme package loader', () => {
     expect(result.warnings).toEqual([
       'Broken Theme: Shader bad.tsx: Error: missing shader entry',
     ]);
+  });
+
+  it('normalizes sparse engine metadata from theme packages before exposing compatibility defaults', async () => {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      const params = args as { path?: string } | undefined;
+      const normalizedPath = String(params?.path).replace(/\\/g, '/');
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'themes/minimal/theme.json') {
+        return JSON.stringify({
+          id: 'minimal-theme',
+          name: 'Minimal Theme',
+          renderStyles: [
+            {
+              id: 'springboard',
+              label: 'Springboard',
+              kind: 'ios-springboard',
+              entryModule: 'renderers/springboard.tsx',
+              supportsLiveSwap: false,
+            },
+          ],
+          presentation: {
+            panelSpacing: 14,
+          },
+        });
+      }
+
+      throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
+    });
+
+    const result = await loadThemePackagesFromDirectoryEntries([
+      { name: 'minimal', path: 'themes/minimal' },
+    ], 'themes');
+
+    expect(result.sourceError).toBeNull();
+    expect(result.warnings).toEqual([]);
+    expect(result.packages[0]?.engineManifest?.presentation.panelSpacing).toBe(14);
+    expect(result.packages[0]?.engineManifest?.presentation.density).toBe('comfortable');
+    expect(result.packages[0]?.engineManifest?.compatibility.shellBlueprints).toEqual([]);
+    expect(result.packages[0]?.engineManifest?.compatibility.tags).toEqual([]);
+    expect(result.packages[0]?.engineManifest?.renderStyles[0]?.kind).toBe('ios-springboard');
   });
 });

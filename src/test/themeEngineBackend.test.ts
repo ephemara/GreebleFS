@@ -34,4 +34,23 @@ describe('themeEngineBackend', () => {
     expect(normalized.compatibility.shellBlueprints).toEqual([]);
     expect(normalized.renderStyles).toEqual([]);
   });
+
+  it('keeps partial presentation overrides and disables render-style hot swapping when none exist', () => {
+    const manifest = normalizeThemeManifestDraft({
+      id: 'partial',
+      name: 'Partial',
+      presentation: {
+        chromeStyle: 'system',
+      },
+      compatibility: {
+        tags: ['experimental'],
+      },
+    });
+
+    const compiled = compileThemeEngineManifest(manifest);
+    expect(manifest.presentation.chromeStyle).toBe('system');
+    expect(manifest.presentation.density).toBe('comfortable');
+    expect(manifest.compatibility.tags).toEqual(['experimental']);
+    expect(compiled.supportsHotSwappingRenderStyles).toBe(false);
+  });
 });

@@ -1,6 +1,52 @@
 // Vitest global setup — runs before every test file
 import '@testing-library/jest-dom';
 
+// Provide a resilient in-memory Storage so persistence-heavy tests work even if
+// the runtime lacks a real DOM localStorage (e.g., Node with an invalid
+// --localstorage-file flag).
+const createMemoryStorage = (): Storage => {
+  const store = new Map<string, string>();
+  return {
+    get length() {
+      return store.size;
+    },
+    clear: () => store.clear(),
+    getItem: (key: string) => (store.has(key) ? store.get(key)! : null),
+    key: (index: number) => Array.from(store.keys())[index] ?? null,
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+    setItem: (key: string, value: string) => {
+      store.set(String(key), String(value));
+    },
+  } as Storage;
+};
+
+(() => {
+  const candidate = (globalThis as Record<string, unknown>).localStorage;
+  const hasStorageApi =
+    candidate &&
+    typeof (candidate as Storage).getItem === 'function' &&
+    typeof (candidate as Storage).setItem === 'function' &&
+    typeof (candidate as Storage).removeItem === 'function' &&
+    typeof (candidate as Storage).clear === 'function' &&
+    typeof (candidate as Storage).key === 'function';
+
+  if (!hasStorageApi) {
+    const memoryStorage = createMemoryStorage();
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: memoryStorage,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(globalThis, 'sessionStorage', {
+      value: memoryStorage,
+      writable: true,
+      configurable: true,
+    });
+  }
+})();
+
 // ─── Mock the entire @tauri-apps/* surface ───────────────────────────────────
 // We are testing logic / rendering only. Real Tauri IPC is NOT available in
 // jsdom, so every `invoke`, `listen`, etc. must be stubbed.

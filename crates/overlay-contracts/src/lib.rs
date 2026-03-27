@@ -163,6 +163,17 @@ pub struct ThemeAnimationProfile {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
+pub enum ThemeRenderStyleKind {
+    VsCodeWorkbench,
+    Ps3Xmb,
+    IosSpringboard,
+    WiiChannels,
+    DesktopWindowManager,
+    Custom,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "kebab-case")]
 pub enum ThemeIconPackStyle {
     System,
     Vector,
@@ -184,7 +195,7 @@ pub struct ThemeIconPackManifest {
 pub struct ThemeRenderStyleManifest {
     pub id: String,
     pub label: String,
-    pub kind: String,
+    pub kind: ThemeRenderStyleKind,
     pub entry_module: String,
     pub supports_live_swap: bool,
     pub description: Option<String>,
@@ -462,7 +473,7 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
         render_styles: vec![ThemeRenderStyleManifest {
             id: "default-render".to_string(),
             label: "Default Render".to_string(),
-            kind: "vs-code-workbench".to_string(),
+            kind: ThemeRenderStyleKind::VsCodeWorkbench,
             entry_module: "renderers/default.tsx".to_string(),
             supports_live_swap: true,
             description: Some("Built-in renderer placeholder".to_string()),

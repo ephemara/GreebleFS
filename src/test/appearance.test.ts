@@ -185,7 +185,7 @@ describe('appearance config helpers', () => {
     expect(getThemeSourceLabel(resolved.theme)).toBe('Package');
   });
 
-  it('reuses the resolved appearance object for repeated identical theme selections', () => {
+  it('recomputes identical appearance values for repeated equivalent theme selections', () => {
     const customTheme = normalizeThemeDefinition({
       id: 'cache-lab',
       name: 'Cache Lab',
@@ -205,11 +205,12 @@ describe('appearance config helpers', () => {
     const first = resolveOverlayAppearance(selection);
     const second = resolveOverlayAppearance(selection);
 
-    expect(second).toBe(first);
-    expect(second.theme).toBe(first.theme);
-    expect(second.baseTheme).toBe(first.baseTheme);
-    expect(second.cssVars).toBe(first.cssVars);
-    expect(second.themes).toBe(first.themes);
+    expect(second).toStrictEqual(first);
+    expect(second).not.toBe(first);
+    expect(second.theme).not.toBe(first.theme);
+    expect(second.baseTheme).not.toBe(first.baseTheme);
+    expect(second.cssVars).not.toBe(first.cssVars);
+    expect(second.themes).not.toBe(first.themes);
   });
 
   it('invalidates the resolved appearance cache when panel transparency changes', () => {
@@ -255,6 +256,30 @@ describe('appearance config helpers', () => {
     expect(isThemeCompatibleWithShellBlueprint(universalTheme, 'xmb-cross-media')).toBe(true);
     expect(isThemeCompatibleWithShellBlueprint(targetedTheme, 'retro-desktop')).toBe(true);
     expect(isThemeCompatibleWithShellBlueprint(targetedTheme, 'classic-dock')).toBe(false);
+  });
+
+  it('preserves package theme compatibility targeting after appearance resolution', () => {
+    const packageTheme = normalizeThemeDefinition({
+      id: 'vista-targeted',
+      name: 'Vista Targeted',
+      source: 'package',
+      compatibility: {
+        shellBlueprints: ['classic-dock'],
+        tags: ['glass', 'focused'],
+      },
+    } as Partial<OverlayThemeDefinition>);
+
+    const resolved = resolveOverlayAppearance({
+      activeThemeId: 'vista-targeted',
+      packageThemes: [packageTheme],
+    });
+
+    expect(resolved.theme.source).toBe('package');
+    expect(resolved.theme.compatibility?.shellBlueprints).toEqual(['classic-dock']);
+    expect(resolved.theme.compatibility?.tags).toEqual(['glass', 'focused']);
+    expect(isThemeCompatibleWithShellBlueprint(resolved.theme, 'classic-dock')).toBe(true);
+    expect(isThemeCompatibleWithShellBlueprint(resolved.theme, 'retro-desktop')).toBe(false);
+    expect(getThemeSourceLabel(resolved.theme)).toBe('Package');
   });
 
   it('normalizes theme animation defaults and inherits them from the fallback when omitted', () => {
