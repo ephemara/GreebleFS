@@ -88,10 +88,10 @@ export function compileThemeEngineManifest(manifest: ExplorerThemeManifest): Com
   const iconPackLookup = createLookup(manifest.iconPacks);
   const renderStyleLookup = createLookup(manifest.renderStyles);
   const defaultDesignToken = pickDefault(manifest.designTokens, designTokenLookup);
-  const defaultLayoutPrimitive = pickDefault(manifest.layoutPrimitives, layoutPrimitiveLookup);
-  const defaultNavigationPattern = pickDefault(manifest.navigationPatterns, navigationPatternLookup);
-  const defaultAnimationProfile = pickDefault(manifest.animationProfiles, animationProfileLookup);
-  const defaultIconPack = pickDefault(manifest.iconPacks, iconPackLookup);
+  const defaultLayoutPrimitive = pickDefault(manifest.layoutPrimitives, layoutPrimitiveLookup, manifest.defaultLayoutPrimitiveId);
+  const defaultNavigationPattern = pickDefault(manifest.navigationPatterns, navigationPatternLookup, manifest.defaultNavigationPatternId);
+  const defaultAnimationProfile = pickDefault(manifest.animationProfiles, animationProfileLookup, manifest.defaultAnimationProfileId);
+  const defaultIconPack = pickDefault(manifest.iconPacks, iconPackLookup, manifest.defaultIconPackId);
   const defaultRenderStyle = pickDefault(manifest.renderStyles, renderStyleLookup, manifest.defaultRenderStyleId);
 
   return {
@@ -161,6 +161,18 @@ export function normalizeThemeManifestDraft(
     animationProfiles: draft.animationProfiles ?? [],
     iconPacks: draft.iconPacks ?? [],
     renderStyles: draft.renderStyles ?? [],
+    defaultLayoutPrimitiveId: typeof draft.defaultLayoutPrimitiveId === 'string' && draft.defaultLayoutPrimitiveId.trim().length > 0
+      ? draft.defaultLayoutPrimitiveId.trim()
+      : null,
+    defaultNavigationPatternId: typeof draft.defaultNavigationPatternId === 'string' && draft.defaultNavigationPatternId.trim().length > 0
+      ? draft.defaultNavigationPatternId.trim()
+      : null,
+    defaultAnimationProfileId: typeof draft.defaultAnimationProfileId === 'string' && draft.defaultAnimationProfileId.trim().length > 0
+      ? draft.defaultAnimationProfileId.trim()
+      : null,
+    defaultIconPackId: typeof draft.defaultIconPackId === 'string' && draft.defaultIconPackId.trim().length > 0
+      ? draft.defaultIconPackId.trim()
+      : null,
     defaultRenderStyleId: typeof draft.defaultRenderStyleId === 'string' && draft.defaultRenderStyleId.trim().length > 0
       ? draft.defaultRenderStyleId.trim()
       : null,

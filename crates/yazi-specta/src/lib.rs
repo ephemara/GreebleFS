@@ -682,4 +682,38 @@ mod tests {
             .iter()
             .any(|note| note.contains("watcher event bridge surface planned")));
     }
+
+    #[test]
+    fn binding_manifest_keeps_phase_1_transfer_exports_and_version_stable() {
+        let manifest = binding_manifest();
+        let scheduler = manifest
+            .entries
+            .iter()
+            .find(|entry| entry.crate_name == YaziCrateName::YaziScheduler)
+            .expect("scheduler manifest entry should exist");
+
+        assert_eq!(manifest.version, "phase-1");
+        assert_eq!(scheduler.status, YaziBindingStatus::Bridged);
+        assert!(scheduler
+            .exported_types
+            .contains(&"YaziSchedulerFileProgLink".to_string()));
+        assert!(scheduler
+            .exported_types
+            .contains(&"YaziSchedulerFileProgHardlink".to_string()));
+        assert!(scheduler
+            .exported_types
+            .contains(&"YaziSchedulerFileProgTrash".to_string()));
+        assert!(scheduler
+            .exported_types
+            .contains(&"YaziSchedulerFileProgDownload".to_string()));
+        assert!(scheduler
+            .exported_types
+            .contains(&"YaziSchedulerFileProgUpload".to_string()));
+        assert!(scheduler
+            .exported_types
+            .contains(&"YaziSchedulerTaskProg".to_string()));
+        assert!(scheduler
+            .exported_types
+            .contains(&"YaziSchedulerTaskSnap".to_string()));
+    }
 }

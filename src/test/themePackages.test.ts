@@ -92,6 +92,10 @@ describe('theme package loader', () => {
           renderStyles: [
             { id: 'vista-render', label: 'Vista Render', kind: 'vs-code-workbench', entryModule: 'renderers/vista.tsx', supportsLiveSwap: true },
           ],
+          defaultLayoutPrimitiveId: 'dock',
+          defaultNavigationPatternId: 'tabs',
+          defaultAnimationProfileId: 'package-open',
+          defaultIconPackId: 'vista-icons',
           defaultRenderStyleId: 'vista-render',
           visuals: [
             {
@@ -201,8 +205,16 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.engineManifest?.compatibility.tags).toEqual(['glass', 'cinematic']);
     expect(result.packages[0]?.engineManifest?.renderStyles[0]?.id).toBe('vista-render');
     expect(result.packages[0]?.engineManifest?.renderStyles[0]?.kind).toBe('vs-code-workbench');
+    expect(result.packages[0]?.engineManifest?.defaultLayoutPrimitiveId).toBe('dock');
+    expect(result.packages[0]?.engineManifest?.defaultNavigationPatternId).toBe('tabs');
+    expect(result.packages[0]?.engineManifest?.defaultAnimationProfileId).toBe('package-open');
+    expect(result.packages[0]?.engineManifest?.defaultIconPackId).toBe('vista-icons');
     expect(result.packages[0]?.engineManifest?.defaultRenderStyleId).toBe('vista-render');
     expect(result.packages[0]?.compiledEngineManifest?.defaultRenderStyle?.id).toBe('vista-render');
+    expect(result.packages[0]?.compiledEngineManifest?.defaultLayoutPrimitive?.id).toBe('dock');
+    expect(result.packages[0]?.compiledEngineManifest?.defaultNavigationPattern?.id).toBe('tabs');
+    expect(result.packages[0]?.compiledEngineManifest?.defaultAnimationProfile?.id).toBe('package-open');
+    expect(result.packages[0]?.compiledEngineManifest?.defaultIconPack?.id).toBe('vista-icons');
     expect(result.packages[0]?.compiledEngineManifest?.renderStyleLookup['vista-render']?.kind).toBe('vs-code-workbench');
     expect(result.packages[0]?.compiledEngineManifest?.supportsHotSwappingRenderStyles).toBe(true);
     expect(result.packages[0]?.author).toBe('OverlayTerm Labs');

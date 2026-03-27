@@ -77,6 +77,10 @@ export interface OverlayThemePackageManifest {
   animationProfiles?: ExplorerThemeManifest['animationProfiles'];
   iconPacks?: ExplorerThemeManifest['iconPacks'];
   renderStyles?: ExplorerThemeManifest['renderStyles'];
+  defaultLayoutPrimitiveId?: ExplorerThemeManifest['defaultLayoutPrimitiveId'];
+  defaultNavigationPatternId?: ExplorerThemeManifest['defaultNavigationPatternId'];
+  defaultAnimationProfileId?: ExplorerThemeManifest['defaultAnimationProfileId'];
+  defaultIconPackId?: ExplorerThemeManifest['defaultIconPackId'];
   defaultRenderStyleId?: ExplorerThemeManifest['defaultRenderStyleId'];
 }
 
@@ -302,6 +306,18 @@ function parseThemeManifestText(text: string, filePath: string): OverlayThemePac
     renderStyles: Array.isArray(source.renderStyles)
       ? source.renderStyles as ExplorerThemeManifest['renderStyles']
       : undefined,
+    defaultLayoutPrimitiveId: typeof source.defaultLayoutPrimitiveId === 'string'
+      ? source.defaultLayoutPrimitiveId.trim()
+      : undefined,
+    defaultNavigationPatternId: typeof source.defaultNavigationPatternId === 'string'
+      ? source.defaultNavigationPatternId.trim()
+      : undefined,
+    defaultAnimationProfileId: typeof source.defaultAnimationProfileId === 'string'
+      ? source.defaultAnimationProfileId.trim()
+      : undefined,
+    defaultIconPackId: typeof source.defaultIconPackId === 'string'
+      ? source.defaultIconPackId.trim()
+      : undefined,
     defaultRenderStyleId: typeof source.defaultRenderStyleId === 'string'
       ? source.defaultRenderStyleId.trim()
       : undefined,
@@ -464,6 +480,10 @@ function buildThemeEngineManifest(
       || manifest.animationProfiles?.length
       || manifest.iconPacks?.length
       || manifest.renderStyles?.length
+      || manifest.defaultLayoutPrimitiveId
+      || manifest.defaultNavigationPatternId
+      || manifest.defaultAnimationProfileId
+      || manifest.defaultIconPackId
       || manifest.defaultRenderStyleId,
   );
   if (!hasEngineMetadata) {
@@ -492,6 +512,10 @@ function buildThemeEngineManifest(
     animationProfiles: manifest.animationProfiles ?? [],
     iconPacks: manifest.iconPacks ?? [],
     renderStyles: manifest.renderStyles ?? [],
+    defaultLayoutPrimitiveId: manifest.defaultLayoutPrimitiveId ?? null,
+    defaultNavigationPatternId: manifest.defaultNavigationPatternId ?? null,
+    defaultAnimationProfileId: manifest.defaultAnimationProfileId ?? null,
+    defaultIconPackId: manifest.defaultIconPackId ?? null,
     defaultRenderStyleId: manifest.defaultRenderStyleId ?? null,
   });
 }

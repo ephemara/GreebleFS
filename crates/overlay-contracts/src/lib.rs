@@ -217,6 +217,10 @@ pub struct ThemeManifest {
     pub animation_profiles: Vec<ThemeAnimationProfile>,
     pub icon_packs: Vec<ThemeIconPackManifest>,
     pub render_styles: Vec<ThemeRenderStyleManifest>,
+    pub default_layout_primitive_id: Option<String>,
+    pub default_navigation_pattern_id: Option<String>,
+    pub default_animation_profile_id: Option<String>,
+    pub default_icon_pack_id: Option<String>,
     pub default_render_style_id: Option<String>,
 }
 
@@ -561,6 +565,10 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
                 supports_live_swap: true,
                 description: Some("Built-in workbench renderer placeholder".to_string()),
             }],
+            default_layout_primitive_id: Some("operator-stack".to_string()),
+            default_navigation_pattern_id: Some("operator-tabs".to_string()),
+            default_animation_profile_id: Some("default-motion".to_string()),
+            default_icon_pack_id: Some("system-icons".to_string()),
             default_render_style_id: Some("default-render".to_string()),
         },
         ThemeManifest {
@@ -626,6 +634,10 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
                 supports_live_swap: true,
                 description: Some("Bright Aqua chrome and translucent panels.".to_string()),
             }],
+            default_layout_primitive_id: Some("aqua-shell".to_string()),
+            default_navigation_pattern_id: Some("aqua-cascade".to_string()),
+            default_animation_profile_id: Some("aqua-sheen".to_string()),
+            default_icon_pack_id: Some("aqua-icons".to_string()),
             default_render_style_id: Some("aqua-render".to_string()),
         },
         ThemeManifest {
@@ -691,6 +703,10 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
                 supports_live_swap: true,
                 description: Some("Neon dark shell with crisp panels.".to_string()),
             }],
+            default_layout_primitive_id: Some("plasma-grid".to_string()),
+            default_navigation_pattern_id: Some("plasma-trail".to_string()),
+            default_animation_profile_id: Some("plasma-surge".to_string()),
+            default_icon_pack_id: Some("plasma-icons".to_string()),
             default_render_style_id: Some("plasma-render".to_string()),
         },
         ThemeManifest {
@@ -756,6 +772,10 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
                 supports_live_swap: true,
                 description: Some("Desktop chrome tuned for retro Macintosh shells.".to_string()),
             }],
+            default_layout_primitive_id: Some("vintage-window".to_string()),
+            default_navigation_pattern_id: Some("vintage-desktop".to_string()),
+            default_animation_profile_id: Some("vintage-power-on".to_string()),
+            default_icon_pack_id: Some("vintage-icons".to_string()),
             default_render_style_id: Some("vintage-render".to_string()),
         },
         ThemeManifest {
@@ -821,6 +841,10 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
                 supports_live_swap: true,
                 description: Some("Glossy Aero-inspired render style for glass shells.".to_string()),
             }],
+            default_layout_primitive_id: Some("vista-glass-shell".to_string()),
+            default_navigation_pattern_id: Some("vista-breadcrumbs".to_string()),
+            default_animation_profile_id: Some("vista-bloom".to_string()),
+            default_icon_pack_id: Some("vista-icons".to_string()),
             default_render_style_id: Some("vista-render".to_string()),
         },
     ]
@@ -882,6 +906,11 @@ mod tests {
         );
 
         let vista = manifests.iter().find(|manifest| manifest.id == "vista-glass").unwrap();
+        let operator = manifests.iter().find(|manifest| manifest.id == "operator").unwrap();
+        assert_eq!(operator.default_layout_primitive_id.as_deref(), Some("operator-stack"));
+        assert_eq!(operator.default_navigation_pattern_id.as_deref(), Some("operator-tabs"));
+        assert_eq!(operator.default_animation_profile_id.as_deref(), Some("default-motion"));
+        assert_eq!(operator.default_icon_pack_id.as_deref(), Some("system-icons"));
         assert_eq!(vista.default_render_style_id.as_deref(), Some("vista-render"));
         assert_eq!(vista.render_styles[0].kind, ThemeRenderStyleKind::VsCodeWorkbench);
     }

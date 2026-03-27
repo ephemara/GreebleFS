@@ -21,3 +21,10 @@
   - Confirmed the app already encodes the cross-skin defaults in `src/config/layoutProfiles.ts`, `src/components/FileExplorer.tsx`, and `src/config/themePackages.ts`.
   - Stored the durable decisions here so later automation runs can keep the interaction system stable while skins continue to vary.
   - Current run time: ~8 minutes.
+- Current run note 2026-03-27T20:26:28Z:
+  - Revalidated the theme-agnostic interaction system as the stable UX contract for Northstar UX across XMB, iOS, Wii, and VS Code style layouts.
+  - Friction removed stays explicit: search-active grids fall back to `details`, compact dock explorers fall back to `list`, repository-picker flows allow current-folder confirmation, single-choice repository picking blocks accidental multi-select, manual refresh bypasses warm snapshots, and shared progress uses one common badge vocabulary.
+  - Durable interaction rule: visual skins may move chrome and motion, but they must not change selection, navigation, command meaning, focus recovery, or progress ownership.
+  - Benchmarks remain the same baseline until new measured evidence replaces them: explorer navigation 120 ms, explorer search 180 ms, entry-size batch 160 ms, native icon batch 140 ms, first interactive 350 ms.
+  - Next targets are per-instance search scope derivation, typed layout/explorer contracts, layout-switch parity tests, and UX proof for back behavior, preview clarity, selection clarity, and progress handoff across contrasting shells.
+  - Current run time: ~0 minutes.

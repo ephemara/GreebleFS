@@ -61,6 +61,10 @@ describe('themeEngineBackend', () => {
           supportsLiveSwap: true,
         },
       ],
+      defaultLayoutPrimitiveId: 'crossbar',
+      defaultNavigationPatternId: 'xmb-nav',
+      defaultAnimationProfileId: 'glide',
+      defaultIconPackId: 'console-icons',
       defaultRenderStyleId: 'xmb-render',
     });
 
@@ -227,11 +231,15 @@ describe('themeEngineBackend', () => {
           supportsLiveSwap: true,
         },
       ],
+      defaultLayoutPrimitiveId: 'shell',
+      defaultNavigationPatternId: 'spatial-nav',
       defaultRenderStyleId: '   ',
     });
 
     const compiled = compileThemeEngineManifest(normalized);
     expect(normalized.defaultRenderStyleId).toBeNull();
+    expect(normalized.defaultLayoutPrimitiveId).toBe('shell');
+    expect(normalized.defaultNavigationPatternId).toBe('spatial-nav');
     expect(compiled.defaultLayoutPrimitive?.id).toBe('shell');
     expect(compiled.defaultNavigationPattern?.id).toBe('spatial-nav');
     expect(compiled.defaultRenderStyle?.id).toBe('render-primary');
