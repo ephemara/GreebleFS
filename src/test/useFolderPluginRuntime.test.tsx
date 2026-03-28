@@ -110,6 +110,37 @@ describe('useFolderPluginRuntime', () => {
     });
   });
 
+  it('refreshes when watcher payloads mix ignored and relevant paths', async () => {
+    let watchListener: ((event: { payload: { paths: string[] } }) => void) | undefined;
+
+    vi.mocked(listen).mockImplementation(async (_eventName, handler) => {
+      watchListener = handler as typeof watchListener;
+      return () => {};
+    });
+
+    renderHook(() => useFolderPluginRuntime('windows'));
+    await flushPluginEffects();
+
+    await waitFor(() => {
+      expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(1);
+    });
+
+    watchListener?.({
+      payload: {
+        paths: [
+          'plugins/node_modules/example-plugin/dist/index.js',
+          'plugins/example-plugin.tsx',
+        ],
+      },
+    });
+
+    await vi.advanceTimersByTimeAsync(pluginSystemConfig.watchDebounceMs + 10);
+
+    await waitFor(() => {
+      expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('treats watcher events without paths as refresh-worthy updates', async () => {
     let watchListener: ((event: { payload: { paths: string[] } }) => void) | undefined;
 
@@ -138,8 +169,8 @@ describe('useFolderPluginRuntime', () => {
     });
   });
 
-  it('falls back to polling when watcher startup fails', async () => {
-    vi.spyOn(commands, 'pluginWatchDirectory').mockRejectedValueOnce(new Error('watch unavailable'));
+  it('keeps initial discovery running when watcher startup fails', async () => {
+    vi.mocked(listen).mockRejectedValueOnce(new Error('listen unavailable'));
 
     renderHook(() => useFolderPluginRuntime('windows'));
     await flushPluginEffects();
@@ -147,19 +178,34 @@ describe('useFolderPluginRuntime', () => {
     await waitFor(() => {
       expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('does not start fallback polling after unmount when watcher startup fails late', async () => {
+    const watchFailure = new Error('watch unavailable');
+    let rejectWatch: ((error: Error) => void) | undefined;
+    vi.mocked(commands.pluginWatchDirectory).mockImplementationOnce(
+      () => new Promise((_resolve, reject) => {
+        rejectWatch = reject as (error: Error) => void;
+      }),
+    );
+
+    const { unmount } = renderHook(() => useFolderPluginRuntime('windows'));
+    await flushPluginEffects();
 
     await waitFor(() => {
-      expect(console.warn).toHaveBeenCalledWith(
-        'Plugin watcher unavailable, falling back to polling:',
-        expect.any(Error),
-      );
+      expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(1);
+    });
+
+    unmount();
+
+    await act(async () => {
+      rejectWatch?.(watchFailure);
+      await Promise.resolve();
     });
 
     await vi.advanceTimersByTimeAsync(pluginSystemConfig.fallbackScanIntervalMs + 10);
 
-    await waitFor(() => {
-      expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(2);
-    });
+    expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(1);
   });
 
   it('cleans up the listener and unwatches the directory on unmount', async () => {

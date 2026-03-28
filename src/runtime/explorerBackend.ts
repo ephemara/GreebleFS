@@ -212,6 +212,17 @@ export function getExplorerTaskProgressPercent(task: ExplorerSchedulerTask): num
           : task.prog.failedFiles > 0
             ? 0
             : null;
+    case 'fileHardlink':
+      return task.prog.total > 0
+        ? Math.min(100, Math.round((task.prog.success / task.prog.total) * 100))
+        : task.prog.collected === true
+          ? 100
+          : task.prog.failed > 0
+            ? 0
+            : null;
+    case 'fileLink':
+    case 'fileTrash':
+      return null;
     default:
       return null;
   }
@@ -225,6 +236,12 @@ export function didExplorerTaskFail(task: ExplorerSchedulerTask): boolean {
     case 'fileDownload':
     case 'fileUpload':
       return task.prog.cleaned === false || task.prog.collected === false;
+    case 'fileHardlink':
+      return task.prog.collected === false;
+    case 'fileLink':
+      return task.prog.state === false;
+    case 'fileTrash':
+      return task.prog.cleaned === false || task.prog.state === false;
     default:
       return false;
   }
@@ -238,6 +255,12 @@ export function isExplorerTaskFinished(task: ExplorerSchedulerTask): boolean {
     case 'fileDownload':
     case 'fileUpload':
       return task.prog.cleaned !== null || task.prog.collected === false;
+    case 'fileHardlink':
+      return task.prog.collected !== null;
+    case 'fileLink':
+      return task.prog.state !== null;
+    case 'fileTrash':
+      return task.prog.cleaned !== null || task.prog.state === false;
     default:
       return false;
   }

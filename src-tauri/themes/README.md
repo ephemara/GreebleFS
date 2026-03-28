@@ -35,6 +35,10 @@ Top-level fields:
   - Optional base theme id. Can point at a built-in theme or another package theme.
 - `theme`
   - Partial OverlayTerm theme definition with `palette`, `effects`, `xterm`, `fonts`, `cssVars`, `visuals`, `defaultShaderId`, `defaultOpenAnimationId`, and `defaultCloseAnimationId`.
+- `designTokens`, `layoutPrimitives`, `navigationPatterns`
+  - Typed backend contract slices. Token values and primitive props can be strings, numbers, booleans, or structured JSON values.
+- `renderStyles`
+  - Backend render-style contracts. Set `supportsLiveSwap` on a style when it can be hot-swapped without restarting the explorer shell.
 - `assets.background`
   - Relative path to a wallpaper/image asset.
 - `assets.preview`

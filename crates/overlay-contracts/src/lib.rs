@@ -96,13 +96,30 @@ pub enum ThemeTokenKind {
     Motion,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ThemeValue {
+    String(String),
+    Number(serde_json::Number),
+    Boolean(bool),
+    Null,
+    Array(Vec<ThemeValue>),
+    Object(BTreeMap<String, ThemeValue>),
+}
+
+impl specta::Type for ThemeValue {
+    fn inline(_: &mut specta::TypeCollection, _: specta::Generics) -> specta::datatype::DataType {
+        specta::datatype::DataType::Any
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ThemeDesignToken {
     pub id: String,
     pub name: String,
     pub kind: ThemeTokenKind,
-    pub value: String,
+    pub value: ThemeValue,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -121,7 +138,7 @@ pub struct ThemeLayoutPrimitive {
     pub id: String,
     pub name: String,
     pub kind: ThemeLayoutPrimitiveKind,
-    pub props: std::collections::BTreeMap<String, String>,
+    pub props: std::collections::BTreeMap<String, ThemeValue>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -150,7 +167,7 @@ pub struct ThemeNavigationPattern {
     pub name: String,
     pub kind: ThemeNavigationPatternKind,
     pub axis: ThemeNavigationAxis,
-    pub props: std::collections::BTreeMap<String, String>,
+    pub props: std::collections::BTreeMap<String, ThemeValue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -512,13 +529,13 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
                     id: "accent-operator".to_string(),
                     name: "Accent".to_string(),
                     kind: ThemeTokenKind::Color,
-                    value: "#6366f1".to_string(),
+                    value: ThemeValue::String("#6366f1".to_string()),
                 },
                 ThemeDesignToken {
                     id: "panel-spacing".to_string(),
                     name: "Panel Spacing".to_string(),
                     kind: ThemeTokenKind::Spacing,
-                    value: "8".to_string(),
+                    value: ThemeValue::Number(serde_json::Number::from(8)),
                 },
             ],
             layout_primitives: vec![
@@ -526,13 +543,13 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
                     id: "operator-stack".to_string(),
                     name: "Operator Stack".to_string(),
                     kind: ThemeLayoutPrimitiveKind::Stack,
-                    props: BTreeMap::from([("gap".to_string(), "8".to_string())]),
+                    props: BTreeMap::from([("gap".to_string(), ThemeValue::Number(serde_json::Number::from(8)))]),
                 },
                 ThemeLayoutPrimitive {
                     id: "operator-dock".to_string(),
                     name: "Operator Dock".to_string(),
                     kind: ThemeLayoutPrimitiveKind::Dock,
-                    props: BTreeMap::from([("side".to_string(), "right".to_string())]),
+                    props: BTreeMap::from([("side".to_string(), ThemeValue::String("right".to_string()))]),
                 },
             ],
             navigation_patterns: vec![ThemeNavigationPattern {
@@ -541,8 +558,8 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
                 kind: ThemeNavigationPatternKind::Tabbed,
                 axis: ThemeNavigationAxis::Horizontal,
                 props: BTreeMap::from([
-                    ("defaultSurface".to_string(), "terminal".to_string()),
-                    ("focusRing".to_string(), "chrome".to_string()),
+                    ("defaultSurface".to_string(), ThemeValue::String("terminal".to_string())),
+                    ("focusRing".to_string(), ThemeValue::String("chrome".to_string())),
                 ]),
             }],
             animation_profiles: vec![ThemeAnimationProfile {
@@ -592,27 +609,30 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
                     id: "aqua-accent".to_string(),
                     name: "Accent".to_string(),
                     kind: ThemeTokenKind::Color,
-                    value: "#2a9df4".to_string(),
+                    value: ThemeValue::String("#2a9df4".to_string()),
                 },
                 ThemeDesignToken {
                     id: "aqua-radius".to_string(),
                     name: "Card Radius".to_string(),
                     kind: ThemeTokenKind::Radius,
-                    value: "12".to_string(),
+                    value: ThemeValue::Number(serde_json::Number::from(12)),
                 },
             ],
             layout_primitives: vec![ThemeLayoutPrimitive {
                 id: "aqua-shell".to_string(),
                 name: "Aqua Shell".to_string(),
                 kind: ThemeLayoutPrimitiveKind::Split,
-                props: BTreeMap::from([("primaryRatio".to_string(), "0.62".to_string())]),
+                    props: BTreeMap::from([(
+                        "primaryRatio".to_string(),
+                        ThemeValue::Number(serde_json::Number::from_f64(0.62).expect("valid ratio")),
+                    )]),
             }],
             navigation_patterns: vec![ThemeNavigationPattern {
                 id: "aqua-cascade".to_string(),
                 name: "Aqua Cascade".to_string(),
                 kind: ThemeNavigationPatternKind::Spatial,
                 axis: ThemeNavigationAxis::Both,
-                props: BTreeMap::from([("breadcrumb".to_string(), "true".to_string())]),
+                    props: BTreeMap::from([("breadcrumb".to_string(), ThemeValue::Boolean(true))]),
             }],
             animation_profiles: vec![ThemeAnimationProfile {
                 id: "aqua-sheen".to_string(),
@@ -661,27 +681,27 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
                     id: "plasma-accent".to_string(),
                     name: "Accent".to_string(),
                     kind: ThemeTokenKind::Color,
-                    value: "#59e3ff".to_string(),
+                    value: ThemeValue::String("#59e3ff".to_string()),
                 },
                 ThemeDesignToken {
                     id: "plasma-motion".to_string(),
                     name: "Motion".to_string(),
                     kind: ThemeTokenKind::Motion,
-                    value: "240".to_string(),
+                    value: ThemeValue::Number(serde_json::Number::from(240)),
                 },
             ],
             layout_primitives: vec![ThemeLayoutPrimitive {
                 id: "plasma-grid".to_string(),
                 name: "Plasma Grid".to_string(),
                 kind: ThemeLayoutPrimitiveKind::Grid,
-                props: BTreeMap::from([("cellSize".to_string(), "140".to_string())]),
+                    props: BTreeMap::from([("cellSize".to_string(), ThemeValue::Number(serde_json::Number::from(140)))]),
             }],
             navigation_patterns: vec![ThemeNavigationPattern {
                 id: "plasma-trail".to_string(),
                 name: "Plasma Trail".to_string(),
                 kind: ThemeNavigationPatternKind::Xmb,
                 axis: ThemeNavigationAxis::Horizontal,
-                props: BTreeMap::from([("categoryDepth".to_string(), "2".to_string())]),
+                    props: BTreeMap::from([("categoryDepth".to_string(), ThemeValue::Number(serde_json::Number::from(2)))]),
             }],
             animation_profiles: vec![ThemeAnimationProfile {
                 id: "plasma-surge".to_string(),
@@ -730,27 +750,27 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
                     id: "vintage-accent".to_string(),
                     name: "Accent".to_string(),
                     kind: ThemeTokenKind::Color,
-                    value: "#506f42".to_string(),
+                    value: ThemeValue::String("#506f42".to_string()),
                 },
                 ThemeDesignToken {
                     id: "vintage-radius".to_string(),
                     name: "Bezel Radius".to_string(),
                     kind: ThemeTokenKind::Radius,
-                    value: "10".to_string(),
+                    value: ThemeValue::Number(serde_json::Number::from(10)),
                 },
             ],
             layout_primitives: vec![ThemeLayoutPrimitive {
                 id: "vintage-window".to_string(),
                 name: "Vintage Window".to_string(),
                 kind: ThemeLayoutPrimitiveKind::Freeform,
-                props: BTreeMap::from([("bezel".to_string(), "true".to_string())]),
+                    props: BTreeMap::from([("bezel".to_string(), ThemeValue::Boolean(true))]),
             }],
             navigation_patterns: vec![ThemeNavigationPattern {
                 id: "vintage-desktop".to_string(),
                 name: "Vintage Desktop".to_string(),
                 kind: ThemeNavigationPatternKind::Hierarchy,
                 axis: ThemeNavigationAxis::Vertical,
-                props: BTreeMap::from([("menuBar".to_string(), "true".to_string())]),
+                    props: BTreeMap::from([("menuBar".to_string(), ThemeValue::Boolean(true))]),
             }],
             animation_profiles: vec![ThemeAnimationProfile {
                 id: "vintage-power-on".to_string(),
@@ -799,27 +819,27 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
                     id: "vista-accent".to_string(),
                     name: "Accent".to_string(),
                     kind: ThemeTokenKind::Color,
-                    value: "#7dd3ff".to_string(),
+                    value: ThemeValue::String("#7dd3ff".to_string()),
                 },
                 ThemeDesignToken {
                     id: "vista-shadow".to_string(),
                     name: "Overlay Shadow".to_string(),
                     kind: ThemeTokenKind::Shadow,
-                    value: "0 20px 64px rgba(0, 0, 0, 0.44)".to_string(),
+                    value: ThemeValue::String("0 20px 64px rgba(0, 0, 0, 0.44)".to_string()),
                 },
             ],
             layout_primitives: vec![ThemeLayoutPrimitive {
                 id: "vista-glass-shell".to_string(),
                 name: "Vista Glass Shell".to_string(),
                 kind: ThemeLayoutPrimitiveKind::Dock,
-                props: BTreeMap::from([("chrome".to_string(), "frosted".to_string())]),
+                    props: BTreeMap::from([("chrome".to_string(), ThemeValue::String("frosted".to_string()))]),
             }],
             navigation_patterns: vec![ThemeNavigationPattern {
                 id: "vista-breadcrumbs".to_string(),
                 name: "Vista Breadcrumbs".to_string(),
                 kind: ThemeNavigationPatternKind::Palette,
                 axis: ThemeNavigationAxis::Horizontal,
-                props: BTreeMap::from([("searchFirst".to_string(), "true".to_string())]),
+                    props: BTreeMap::from([("searchFirst".to_string(), ThemeValue::Boolean(true))]),
             }],
             animation_profiles: vec![ThemeAnimationProfile {
                 id: "vista-bloom".to_string(),

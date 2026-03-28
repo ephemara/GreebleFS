@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { OVERLAY_THEME_MANIFESTS } from '../generated/tauri';
 import { commands } from '../runtime/tauriClient';
 import {
   compileThemeEngineManifest,
@@ -243,6 +244,22 @@ describe('themeEngineBackend', () => {
     expect(compiled.defaultLayoutPrimitive?.id).toBe('shell');
     expect(compiled.defaultNavigationPattern?.id).toBe('spatial-nav');
     expect(compiled.defaultRenderStyle?.id).toBe('render-primary');
+  });
+
+  it('preserves native ThemeValue shapes from the generated theme catalog', () => {
+    const operator = OVERLAY_THEME_MANIFESTS.find(manifest => manifest.id === 'operator');
+    const aqua = OVERLAY_THEME_MANIFESTS.find(manifest => manifest.id === 'aqua-light');
+    const vintage = OVERLAY_THEME_MANIFESTS.find(manifest => manifest.id === 'vintage-macintosh');
+
+    expect(operator?.designTokens.find(token => token.id === 'panel-spacing')?.value).toBe(8);
+    expect(operator?.layoutPrimitives.find(primitive => primitive.id === 'operator-stack')?.props.gap).toBe(8);
+    expect(aqua?.layoutPrimitives.find(primitive => primitive.id === 'aqua-shell')?.props.primaryRatio).toBe(0.62);
+    expect(aqua?.navigationPatterns.find(pattern => pattern.id === 'aqua-cascade')?.props.breadcrumb).toBe(true);
+    expect(vintage?.navigationPatterns.find(pattern => pattern.id === 'vintage-desktop')?.props.menuBar).toBe(true);
+
+    const compiled = compileThemeEngineManifest(aqua!);
+    expect(compiled.layoutPrimitiveLookup['aqua-shell']?.props.primaryRatio).toBe(0.62);
+    expect(compiled.navigationPatternLookup['aqua-cascade']?.props.breadcrumb).toBe(true);
   });
 
   it('lists theme manifests and workbench presets from the backend catalog together', async () => {

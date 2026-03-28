@@ -175,6 +175,30 @@ function asStringRecord(value: unknown): Record<string, string> {
   );
 }
 
+function parseThemeCompatibility(value: unknown): OverlayThemeCompatibility | undefined {
+  const source = asRecord(value);
+  if (!source) {
+    return undefined;
+  }
+
+  const shellBlueprints = Array.isArray(source.shellBlueprints)
+    ? (source.shellBlueprints as unknown[])
+      .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+      .map(entry => entry.trim())
+      .filter((entry): entry is OverlayThemeCompatibility['shellBlueprints'][number] => validShellBlueprintIds.has(entry as typeof OVERLAY_SHELL_BLUEPRINTS[number]['id']))
+    : [];
+  const tags = Array.isArray(source.tags)
+    ? (source.tags as unknown[])
+      .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+      .map(entry => entry.trim())
+    : [];
+
+  return {
+    shellBlueprints,
+    tags,
+  };
+}
+
 function derivePackageId(record: OverlayThemePackageRecord): string {
   const explicitId = asString(record.manifest.id) || asString(record.manifest.theme?.id);
   if (explicitId) {
@@ -275,19 +299,7 @@ function parseThemeManifestText(text: string, filePath: string): OverlayThemePac
       mono: asString(asRecord(source.fonts)?.mono),
     },
     presentation: asRecord(source.presentation) as OverlayThemePresentation | undefined,
-    compatibility: {
-      shellBlueprints: Array.isArray(asRecord(source.compatibility)?.shellBlueprints)
-        ? (asRecord(source.compatibility)?.shellBlueprints as unknown[])
-          .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
-          .map(entry => entry.trim())
-          .filter((entry): entry is OverlayThemeCompatibility['shellBlueprints'][number] => validShellBlueprintIds.has(entry as typeof OVERLAY_SHELL_BLUEPRINTS[number]['id']))
-        : [],
-      tags: Array.isArray(asRecord(source.compatibility)?.tags)
-        ? (asRecord(source.compatibility)?.tags as unknown[])
-          .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
-          .map(entry => entry.trim())
-        : [],
-    },
+    compatibility: parseThemeCompatibility(source.compatibility),
     designTokens: Array.isArray(source.designTokens)
       ? source.designTokens as ExplorerThemeManifest['designTokens']
       : undefined,
@@ -472,6 +484,7 @@ function buildThemeEngineManifest(
   packageId: string,
   packageName: string,
   manifest: OverlayThemePackageManifest,
+  resolvedTheme?: OverlayThemeDefinition,
 ): ExplorerThemeManifest | undefined {
   const hasEngineMetadata = Boolean(
     manifest.designTokens?.length
@@ -503,8 +516,12 @@ function buildThemeEngineManifest(
       panelSpacing: manifest.presentation?.panelSpacing ?? 8,
     },
     compatibility: {
-      shellBlueprints: manifest.compatibility?.shellBlueprints ?? [],
-      tags: manifest.compatibility?.tags ?? [],
+      shellBlueprints: manifest.compatibility?.shellBlueprints
+        ?? resolvedTheme?.compatibility?.shellBlueprints
+        ?? [],
+      tags: manifest.compatibility?.tags
+        ?? resolvedTheme?.compatibility?.tags
+        ?? [],
     },
     designTokens: manifest.designTokens ?? [],
     layoutPrimitives: manifest.layoutPrimitives ?? [],
@@ -716,7 +733,7 @@ export async function loadThemePackagesFromDirectoryEntries(
           }))
         ).filter((entry): entry is LoadedOverlayAnimation => Boolean(entry));
 
-        const engineManifest = buildThemeEngineManifest(theme.id, theme.name, record.manifest);
+        const engineManifest = buildThemeEngineManifest(theme.id, theme.name, record.manifest, theme);
 
         packages.push({
           id: theme.id,

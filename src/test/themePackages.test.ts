@@ -75,13 +75,13 @@ describe('theme package loader', () => {
             tags: ['glass', 'cinematic'],
           },
           designTokens: [
-            { path: 'color.accent.primary', value: '#7dd3ff', kind: 'color' },
+            { id: 'spacing-panel-gap', name: 'Panel Gap', kind: 'spacing', value: { scale: 8, unit: 'px' } },
           ],
           layoutPrimitives: [
-            { id: 'dock', label: 'Dock', kind: 'dock', density: 'comfortable', gap: 8, padding: 10, cornerRadius: 10 },
+            { id: 'dock', name: 'Dock', kind: 'dock', props: { gap: 8, padding: 10, cornerRadius: 10, pinned: true } },
           ],
           navigationPatterns: [
-            { id: 'tabs', label: 'Tabs', kind: 'tab-strip', directionalNavigation: true, wrap: true, gestureSupport: false },
+            { id: 'tabs', name: 'Tabs', kind: 'tabbed', axis: 'horizontal', props: { directionalNavigation: true, wrap: true, gestureSupport: false, breadcrumb: true } },
           ],
           animationProfiles: [
             { id: 'package-open', label: 'Package Open', openMs: 240, closeMs: 180, easing: 'ease-out', reducedMotionId: 'instant' },
@@ -198,6 +198,10 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.theme.compatibility?.shellBlueprints).toEqual(['classic-dock', 'xmb-cross-media']);
     expect(result.packages[0]?.theme.compatibility?.tags).toEqual(['glass', 'cinematic']);
     expect(result.packages[0]?.engineManifest?.designTokens).toHaveLength(1);
+    expect(result.packages[0]?.engineManifest?.designTokens[0]?.value).toEqual({ scale: 8, unit: 'px' });
+    expect(result.packages[0]?.engineManifest?.layoutPrimitives[0]?.props.gap).toBe(8);
+    expect(result.packages[0]?.engineManifest?.layoutPrimitives[0]?.props.pinned).toBe(true);
+    expect(result.packages[0]?.engineManifest?.navigationPatterns[0]?.props.breadcrumb).toBe(true);
     expect(result.packages[0]?.engineManifest?.presentation.density).toBe('comfortable');
     expect(result.packages[0]?.engineManifest?.presentation.iconStyle).toBe('vector');
     expect(result.packages[0]?.engineManifest?.presentation.motionStyle).toBe('fluid');

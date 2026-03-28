@@ -1,30 +1,33 @@
-# Theme OT memory
-
-- 2026-03-27T16:00:00Z: Defined the theme-agnostic interaction baseline for Northstar UX across XMB, iOS, Wii, and VS Code style layouts.
-- Durable decisions:
-  - Keep interaction semantics owned by layout/profile and app state, not by visual skin. Themes may change chrome, density, iconography, motion, and background treatment, but they must not change selection, navigation, or command meaning.
-  - Treat layout profiles as the source of navigation policy: `primaryAxisOwner`, `commandOwner`, `backBehavior`, `modeExitTarget`, `progressOwner`, and the preserve-focus/selection/location anchors already available in `src/config/layoutProfiles.ts` are the stable cross-theme contract.
-  - Preserve explorer behavior consistency across skins: list virtualization, row-based selection, modifier-based drag/drop intent, lazy previews, and search overlays stay identical while only presentation changes.
-  - Progress feedback must always be visible and local to the task source: explorer transfer/task status uses the status bar badge, app open/close transitions use session animation progress, and loading states use explicit placeholders/spinners instead of relying on theme affordances.
-  - Favor transferable navigation models over theme-specific affordances: chrome placement can vary, but keyboard shortcuts, command palette entry points, and panel focus behavior stay predictable.
-- UX benchmarks to validate next:
-  - Explorer open or refresh should give immediate visual acknowledgment and never leave the user without a loading state.
-  - Long-running explorer/theme asset work should surface progress in the same frame family as the task start, with no silent stalls.
-  - A theme change should not require relearning panel focus, back behavior, or command invocation.
-  - All skins should keep the same affordance hierarchy: primary content, command entry, progress, then secondary chrome.
-- Next targets:
-  - Add focused coverage for cross-theme navigation parity, especially panel focus restoration and back-behavior consistency.
-  - Add regression proof that loading/progress surfaces remain visible when explorer or theme packages are slow or partially missing.
-  - Document the layout/profile contract in a user-facing place once the interaction rules stop moving.
-- Current run note 2026-03-27T16:00:00Z:
-  - Reviewed the existing layout profile contract, explorer virtualization/loading path, and theme package merge flow.
-  - Confirmed the app already encodes the cross-skin defaults in `src/config/layoutProfiles.ts`, `src/components/FileExplorer.tsx`, and `src/config/themePackages.ts`.
-  - Stored the durable decisions here so later automation runs can keep the interaction system stable while skins continue to vary.
-  - Current run time: ~8 minutes.
-- Current run note 2026-03-27T20:26:28Z:
-  - Revalidated the theme-agnostic interaction system as the stable UX contract for Northstar UX across XMB, iOS, Wii, and VS Code style layouts.
-  - Friction removed stays explicit: search-active grids fall back to `details`, compact dock explorers fall back to `list`, repository-picker flows allow current-folder confirmation, single-choice repository picking blocks accidental multi-select, manual refresh bypasses warm snapshots, and shared progress uses one common badge vocabulary.
-  - Durable interaction rule: visual skins may move chrome and motion, but they must not change selection, navigation, command meaning, focus recovery, or progress ownership.
-  - Benchmarks remain the same baseline until new measured evidence replaces them: explorer navigation 120 ms, explorer search 180 ms, entry-size batch 160 ms, native icon batch 140 ms, first interactive 350 ms.
-  - Next targets are per-instance search scope derivation, typed layout/explorer contracts, layout-switch parity tests, and UX proof for back behavior, preview clarity, selection clarity, and progress handoff across contrasting shells.
-  - Current run time: ~0 minutes.
+- 2026-03-28T19:26:40.7754082Z: Revalidated the Northstar UX interaction contract in the current workspace and kept the same durable model in force.
+- Durable decision: layout profiles stay presentation skins, not interaction forks. XMB, iOS-style, Wii-style, VS Code-style, and future shells must preserve the same verbs and anchor semantics.
+- Durable decision: explorer semantics stay normalized across skins. Compact docks force `list`, active search resolves grid modes to `details`, hidden files default off, repository-picker confirmation can use the current folder, single-select picker stays single-select, and explicit refresh bypasses warm snapshots.
+- Durable decision: progress feedback stays shared and lightweight through the task badge. The common vocabulary is `idle`, `loading`, `working`, `success`, `warning`, and `error`, with visible task name plus percent or final status, and completed or cleaned-up work auto-clears after a short delay.
+- UX benchmarks to keep using: explorer navigation 120 ms, explorer search 180 ms, entry-size batch 160 ms, native icon batch 140 ms, and explorer first interactive 350 ms.
+- Next targets: add layout-switch tests for focus anchor, selection anchor, and visible location recovery; add back/preview/selection/scope/progress handoff tests across contrasting layouts; and capture cold, warm, over-budget, and canceled search evidence under explicit cache policy.
+- 2026-03-28T15:26:33.1385660Z: Revalidated the theme-agnostic interaction contract for Northstar UX and kept the same durable model in place.
+- Durable decision: layout profiles stay presentation skins, not interaction forks. XMB, iOS-style, Wii-style, VS Code-style, and future shells must preserve the same verbs and anchor semantics.
+- Durable decision: explorer semantics stay normalized across skins. Compact docks force `list`, active search resolves grid modes to `details`, hidden files default off, repository-picker confirmation can use the current folder, single-select picker stays single-select, and explicit refresh bypasses warm snapshots.
+- Durable decision: progress feedback stays shared and lightweight through the task badge. The common vocabulary is `idle`, `loading`, `working`, `success`, `warning`, and `error`, with visible task name plus percent or final status, and completed or cleaned-up work auto-clears after a short delay.
+- UX benchmarks to keep using: explorer navigation 120 ms, explorer search 180 ms, entry-size batch 160 ms, native icon batch 140 ms, and explorer first interactive 350 ms.
+- Next targets: add layout-switch tests for focus anchor, selection anchor, and visible location recovery; add back/preview/selection/scope/progress handoff tests across contrasting layouts; and capture cold, warm, over-budget, and canceled search evidence under explicit cache policy.
+- 2026-03-28T12:26:24.1788113Z: Revalidated the theme-agnostic interaction contract and kept the same durable model in place for Northstar UX.
+- Durable decision: layout profiles remain presentation skins, not interaction forks. XMB, iOS-style, Wii-style, VS Code-style, and future shells must preserve the same verbs and anchor semantics.
+- Durable decision: explorer semantics stay normalized across skins. Compact docks force `list`, active search resolves grid modes to `details`, hidden files default off, repository-picker confirmation can use the current folder, single-select picker stays single-select, and explicit refresh bypasses warm snapshots.
+- Durable decision: progress feedback stays shared and lightweight through the task badge. The common vocabulary is `idle`, `loading`, `working`, `success`, `warning`, and `error`, with visible task name plus percent or final status, and completed or cleaned-up work auto-clears after a short delay.
+- UX benchmarks to keep using: explorer navigation 120 ms, explorer search 180 ms, entry-size batch 160 ms, native icon batch 140 ms, and explorer first interactive 350 ms.
+- Next targets: add layout-switch tests for focus anchor, selection anchor, and visible location recovery; add back/preview/selection/scope/progress handoff tests across contrasting layouts; and capture cold, warm, over-budget, and canceled search evidence under explicit cache policy.
+- 2026-03-28T02:26:21.5832119Z: Revalidated the theme-agnostic interaction contract against the current codebase and confirmed the current friction-removal baseline still matches the documented behavior.
+- Durable decision: the interaction system remains theme-agnostic. XMB, iOS-style, Wii-style, VS Code-style, and future shells must preserve the same verbs and anchor semantics instead of forking interaction rules.
+- Durable decision: `src/config/layoutProfiles.ts` remains the typed home for shell interaction metadata, including primary axis ownership, command ownership, back behavior, mode exit target, progress ownership, and anchor preservation.
+- Durable decision: explorer semantics stay normalized across skins. Compact docks force `list`, active search resolves grid modes to `details`, hidden files default off, repository-picker confirmation can use the current folder, single-select picker stays single-select, and explicit refresh bypasses warm snapshots.
+- Durable decision: progress feedback stays shared and lightweight through the task badge. The common vocabulary is `idle`, `loading`, `working`, `success`, `warning`, and `error`, with visible task name plus percent or final status, and completed or cleaned-up work auto-clears after a short delay.
+- UX benchmarks to keep using: explorer navigation 120 ms, explorer search 180 ms, entry-size batch 160 ms, native icon batch 140 ms, and explorer first interactive 350 ms.
+- Next targets: add layout-switch tests for focus anchor, selection anchor, and visible location recovery; add back/preview/selection/scope/progress handoff tests across contrasting layouts; and capture cold, warm, over-budget, and canceled search evidence under explicit cache policy.
+- 2026-03-28T00:26:32.6544907Z: Revalidated the theme-agnostic interaction contract against the current codebase, about 1:00:57 after the previous run.
+- Durable decision: layout profiles remain presentation skins, not interaction forks. The stable verbs stay `activate`, `back`, `forward`, `up`, `search`, `refresh`, `toggle hidden`, `cycle layout`, `inspect`, `peek`, `select`, and `scope` across XMB, iOS, Wii, VS Code style, and future shells.
+- Durable decision: `src/config/layoutProfiles.ts` is the typed home for shell interaction metadata. It owns the answers for primary axis ownership, command ownership, back behavior, mode exit target, progress ownership, and anchor preservation.
+- Durable decision: explorer search scope stays per-instance via `resolveExplorerSearchScope()`; do not reintroduce a shared `primary_file_explorer` scope once multiple visible explorers are supported.
+- Durable decision: explorer semantics stay normalized across skins. Compact docks force `list`, active search resolves grid modes to `details`, hidden files default off, repository picker can confirm the current folder without dummy preselection, single-select picker stays single-select, and explicit refresh bypasses warm snapshots.
+- Durable decision: progress feedback stays shared and lightweight through the task badge. The common vocabulary is `idle`, `loading`, `working`, `success`, `warning`, and `error`, with visible task name plus percent or final status, and completed/cleaned-up work auto-clears after a short delay.
+- UX benchmarks to keep using: explorer navigation 120 ms, explorer search 180 ms, entry-size batch 160 ms, native icon batch 140 ms, and explorer first interactive 350 ms.
+- Next targets: add layout-switch tests for focus anchor, selection anchor, and visible location recovery; add back/preview/selection/scope/progress handoff tests across contrasting layouts; and capture cold, warm, over-budget, and canceled search evidence under explicit cache policy.

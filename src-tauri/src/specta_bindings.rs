@@ -215,6 +215,18 @@ fn sanitize_generated_typescript(path: &PathBuf) -> Result<(), String> {
             "import {\n\tinvoke as TAURI_INVOKE,\n\tChannel as TAURI_CHANNEL,\n} from \"@tauri-apps/api/core\";",
             "import { invoke as TAURI_INVOKE } from \"@tauri-apps/api/core\";",
         )
+        .replace(
+            "export type ThemeDesignToken = { id: string; name: string; kind: ThemeTokenKind; value: any }",
+            "export type ThemeValue = string | number | boolean | null | ThemeValue[] | { [key: string]: ThemeValue };\nexport type ThemeDesignToken = { id: string; name: string; kind: ThemeTokenKind; value: ThemeValue }",
+        )
+        .replace(
+            "export type ThemeLayoutPrimitive = { id: string; name: string; kind: ThemeLayoutPrimitiveKind; props: Partial<{ [key in string]: any }> }",
+            "export type ThemeLayoutPrimitive = { id: string; name: string; kind: ThemeLayoutPrimitiveKind; props: Partial<{ [key in string]: ThemeValue }> }",
+        )
+        .replace(
+            "export type ThemeNavigationPattern = { id: string; name: string; kind: ThemeNavigationPatternKind; axis: ThemeNavigationAxis; props: Partial<{ [key in string]: any }> }",
+            "export type ThemeNavigationPattern = { id: string; name: string; kind: ThemeNavigationPatternKind; axis: ThemeNavigationAxis; props: Partial<{ [key in string]: ThemeValue }> }",
+        )
         .replace("function __makeEvents__<", "export function __makeEvents__<");
 
     if sanitized != source {
@@ -223,4 +235,75 @@ fn sanitize_generated_typescript(path: &PathBuf) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{bindings_output_path, sanitize_generated_typescript};
+    use std::fs;
+
+    #[test]
+    fn sanitize_generated_typescript_removes_channel_import_and_exports_event_helper() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let path = tempdir.path().join("tauri.ts");
+        fs::write(
+            &path,
+            "import {\n\tinvoke as TAURI_INVOKE,\n\tChannel as TAURI_CHANNEL,\n} from \"@tauri-apps/api/core\";\nfunction __makeEvents__<T>() {}\n",
+        )
+        .expect("seed generated bindings");
+
+        sanitize_generated_typescript(&path).expect("sanitize generated bindings");
+
+        let sanitized = fs::read_to_string(&path).expect("read sanitized bindings");
+        assert!(
+            !sanitized.contains("Channel as TAURI_CHANNEL"),
+            "sanitizer should remove the unused Channel import"
+        );
+        assert!(
+            sanitized.contains("import { invoke as TAURI_INVOKE } from \"@tauri-apps/api/core\";"),
+            "sanitizer should collapse the import to the invoke binding"
+        );
+        assert!(
+            sanitized.contains("export function __makeEvents__<T>() {}"),
+            "sanitizer should export the generated event helper"
+        );
+    }
+
+    #[test]
+    fn bindings_output_path_targets_frontend_generated_contract() {
+        let output_path = bindings_output_path();
+        let normalized = output_path.to_string_lossy().replace('\\', "/");
+
+        assert!(
+            normalized.ends_with("/src/generated/tauri.ts"),
+            "unexpected bindings output path: {normalized}"
+        );
+    }
+
+    #[test]
+    fn sanitize_generated_typescript_preserves_recursive_theme_value_contract() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let path = tempdir.path().join("tauri.ts");
+        fs::write(
+            &path,
+            "export type ThemeDesignToken = { id: string; name: string; kind: ThemeTokenKind; value: any }\nexport type ThemeLayoutPrimitive = { id: string; name: string; kind: ThemeLayoutPrimitiveKind; props: Partial<{ [key in string]: any }> }\nexport type ThemeNavigationPattern = { id: string; name: string; kind: ThemeNavigationPatternKind; axis: ThemeNavigationAxis; props: Partial<{ [key in string]: any }> }\n",
+        )
+        .expect("seed generated bindings");
+
+        sanitize_generated_typescript(&path).expect("sanitize generated bindings");
+
+        let sanitized = fs::read_to_string(&path).expect("read sanitized bindings");
+        assert!(
+            sanitized.contains("export type ThemeValue = string | number | boolean | null | ThemeValue[] | { [key: string]: ThemeValue };"),
+            "sanitizer should emit a recursive ThemeValue contract"
+        );
+        assert!(
+            sanitized.contains("value: ThemeValue }"),
+            "theme design token values should use the recursive ThemeValue type"
+        );
+        assert!(
+            sanitized.contains("props: Partial<{ [key in string]: ThemeValue }> }"),
+            "theme primitive and navigation props should use the recursive ThemeValue type"
+        );
+    }
 }

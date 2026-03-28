@@ -5391,6 +5391,164 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn transfer_items_copy_invalidates_recursive_search_caches() {
+        let _serial_guard = search_test_serial_lock().await;
+        let dir = tmp_dir();
+        let source_dir = dir.path().join("source");
+        let target_dir = dir.path().join("target");
+        fs::create_dir(&source_dir).unwrap();
+        fs::create_dir(&target_dir).unwrap();
+
+        let source_file = source_dir.join("alpha-note.txt");
+        let copied_file = target_dir.join("alpha-note.txt");
+        fs::write(&source_file, "alpha body").unwrap();
+
+        let root = dir.path().to_string_lossy().into_owned();
+        let root_key = path_cache_key(dir.path());
+
+        let initial_name_results = fs_search_entries(
+            root.clone(),
+            "alpha-note".to_string(),
+            true,
+            false,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("initial names-only fs_search_entries failed");
+        assert_eq!(initial_name_results.len(), 1);
+        assert_eq!(initial_name_results[0].path, source_file.to_string_lossy());
+
+        let initial_content_results = fs_search_entries(
+            root.clone(),
+            "alpha body".to_string(),
+            true,
+            true,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("initial content fs_search_entries failed");
+        assert_eq!(initial_content_results.len(), 1);
+        assert_eq!(initial_content_results[0].path, source_file.to_string_lossy());
+
+        {
+            let name_cache = search_name_index_cache()
+                .lock()
+                .expect("search name index cache poisoned");
+            assert!(
+                name_cache
+                    .get(&root_key)
+                    .and_then(|variants| variants.get(true))
+                    .is_some(),
+                "initial names-only search should populate the cached recursive name index"
+            );
+        }
+        {
+            let content_cache = search_content_index_cache()
+                .lock()
+                .expect("search content index cache poisoned");
+            assert!(
+                content_cache
+                    .get(&root_key)
+                    .and_then(|variants| variants.get(true))
+                    .is_some(),
+                "initial content-enabled search should populate the cached recursive content index"
+            );
+        }
+
+        let transfer_results = fs_transfer_items(
+            target_dir.to_string_lossy().into_owned(),
+            vec![source_file.to_string_lossy().into_owned()],
+            FileTransferOperation::Copy,
+        )
+        .await
+        .expect("fs_transfer_items should copy and invalidate caches");
+        assert_eq!(transfer_results.len(), 1);
+        assert!(source_file.exists(), "source file should remain after copy");
+        assert!(copied_file.exists(), "target file should exist after copy");
+
+        {
+            let name_cache = search_name_index_cache()
+                .lock()
+                .expect("search name index cache poisoned");
+            assert!(
+                name_cache.get(&root_key).is_none(),
+                "transfer copy should clear ancestor recursive name-search caches"
+            );
+        }
+        {
+            let content_cache = search_content_index_cache()
+                .lock()
+                .expect("search content index cache poisoned");
+            assert!(
+                content_cache.get(&root_key).is_none(),
+                "transfer copy should clear ancestor recursive content-search caches"
+            );
+        }
+
+        let refreshed_name_results = fs_search_entries(
+            root.clone(),
+            "alpha-note".to_string(),
+            true,
+            false,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("refreshed names-only fs_search_entries failed");
+        assert_eq!(refreshed_name_results.len(), 2);
+        assert_eq!(
+            refreshed_name_results
+                .iter()
+                .filter(|entry| entry.path == source_file.to_string_lossy())
+                .count(),
+            1,
+            "copied searches should continue to include the source entry"
+        );
+        assert_eq!(
+            refreshed_name_results
+                .iter()
+                .filter(|entry| entry.path == copied_file.to_string_lossy())
+                .count(),
+            1,
+            "copied searches should include the destination entry"
+        );
+
+        let refreshed_content_results = fs_search_entries(
+            root,
+            "alpha body".to_string(),
+            true,
+            true,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("refreshed content fs_search_entries failed");
+        assert_eq!(refreshed_content_results.len(), 2);
+        assert_eq!(
+            refreshed_content_results
+                .iter()
+                .filter(|entry| entry.path == source_file.to_string_lossy())
+                .count(),
+            1,
+            "copied content searches should continue to include the source entry"
+        );
+        assert_eq!(
+            refreshed_content_results
+                .iter()
+                .filter(|entry| entry.path == copied_file.to_string_lossy())
+                .count(),
+            1,
+            "copied content searches should include the destination entry"
+        );
+    }
+
+    #[tokio::test]
     async fn transfer_items_rejects_moving_folder_into_its_descendant() {
         let dir = tmp_dir();
         let source_dir = dir.path().join("source");

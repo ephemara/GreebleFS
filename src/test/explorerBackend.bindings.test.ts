@@ -90,6 +90,9 @@ describe('explorer backend Yazi bindings', () => {
         'YaziSchedulerFileProgCut',
         'YaziSchedulerFileProgDelete',
         'YaziSchedulerFileProgDownload',
+        'YaziSchedulerFileProgHardlink',
+        'YaziSchedulerFileProgLink',
+        'YaziSchedulerFileProgTrash',
         'YaziSchedulerFileProgUpload',
         'YaziSchedulerPluginProgEntry',
       ]),
@@ -283,6 +286,59 @@ describe('explorer backend Yazi bindings', () => {
     expect(didExplorerTaskFail(uploadTask)).toBe(false);
     expect(isExplorerTaskFinished(uploadTask)).toBe(true);
     expect(getExplorerTaskStatusLabel(uploadTask)).toBe('Done');
+  });
+
+  it('treats link, hardlink, and trash scheduler variants as user-visible transfer states', () => {
+    const linkingTask = {
+      name: 'Link config',
+      prog: {
+        kind: 'fileLink',
+        state: null,
+      },
+    } satisfies YaziSchedulerTaskSnap;
+    expect(getExplorerTaskProgressPercent(linkingTask)).toBeNull();
+    expect(didExplorerTaskFail(linkingTask)).toBe(false);
+    expect(isExplorerTaskFinished(linkingTask)).toBe(false);
+    expect(getExplorerTaskStatusLabel(linkingTask)).toBe('Working…');
+
+    const failedLinkTask = {
+      name: 'Link config',
+      prog: {
+        kind: 'fileLink',
+        state: false,
+      },
+    } satisfies YaziSchedulerTaskSnap;
+    expect(didExplorerTaskFail(failedLinkTask)).toBe(true);
+    expect(isExplorerTaskFinished(failedLinkTask)).toBe(true);
+    expect(getExplorerTaskStatusLabel(failedLinkTask)).toBe('Failed');
+
+    const hardlinkTask = {
+      name: 'Hardlink cache',
+      prog: {
+        kind: 'fileHardlink',
+        total: 4,
+        success: 2,
+        failed: 0,
+        collected: null,
+      },
+    } satisfies YaziSchedulerTaskSnap;
+    expect(getExplorerTaskProgressPercent(hardlinkTask)).toBe(50);
+    expect(didExplorerTaskFail(hardlinkTask)).toBe(false);
+    expect(isExplorerTaskFinished(hardlinkTask)).toBe(false);
+    expect(getExplorerTaskStatusLabel(hardlinkTask)).toBe('50%');
+
+    const trashedTask = {
+      name: 'Trash cache',
+      prog: {
+        kind: 'fileTrash',
+        state: true,
+        cleaned: true,
+      },
+    } satisfies YaziSchedulerTaskSnap;
+    expect(getExplorerTaskProgressPercent(trashedTask)).toBeNull();
+    expect(didExplorerTaskFail(trashedTask)).toBe(false);
+    expect(isExplorerTaskFinished(trashedTask)).toBe(true);
+    expect(getExplorerTaskStatusLabel(trashedTask)).toBe('Done');
   });
 
   it('marks zero-byte transfer failures as failed work instead of leaving them indeterminate', () => {

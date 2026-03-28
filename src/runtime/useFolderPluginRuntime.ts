@@ -247,6 +247,10 @@ export function useFolderPluginRuntime(
     };
 
     const startFallbackPolling = () => {
+      if (disposed) {
+        return;
+      }
+
       if (fallbackInterval !== null) {
         return;
       }
@@ -279,6 +283,9 @@ export function useFolderPluginRuntime(
       } catch (error) {
         unlistenPlugins?.();
         unlistenPlugins = null;
+        if (disposed) {
+          return;
+        }
         console.warn('Plugin watcher unavailable, falling back to polling:', error);
         startFallbackPolling();
       }

@@ -2,6 +2,7 @@ import { isTauri } from '@tauri-apps/api/core';
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import {
+  isExplorerTaskFinished,
   listenToExplorerTaskProgress,
   type ExplorerTaskProgress,
 } from '../runtime/explorerBackend';
@@ -86,6 +87,22 @@ function cancelExplorerTaskClear(taskId: string) {
   taskClearTimers.delete(taskId);
 }
 
+function shouldAutoClearExplorerTask(taskProgress: ExplorerTaskProgress): boolean {
+  switch (taskProgress.task.prog.kind) {
+    case 'fileCopy':
+    case 'fileCut':
+    case 'fileDelete':
+    case 'fileDownload':
+    case 'fileHardlink':
+    case 'fileLink':
+    case 'fileTrash':
+    case 'fileUpload':
+      return isExplorerTaskFinished(taskProgress.task);
+    default:
+      return false;
+  }
+}
+
 async function ensureExplorerTaskProgressSubscription(): Promise<void> {
   if (!isTauri() || subscriptionReady) {
     return;
@@ -103,13 +120,8 @@ async function ensureExplorerTaskProgressSubscription(): Promise<void> {
     cancelExplorerTaskClear(taskProgress.taskId);
     useExplorerTaskStore.getState().upsertTask(taskProgress);
 
-    if (taskProgress.task.prog.kind === 'fileCopy'
-      || taskProgress.task.prog.kind === 'fileCut'
-      || taskProgress.task.prog.kind === 'fileDelete') {
-      const prog = taskProgress.task.prog;
-      if (prog.cleaned !== null || prog.collected === false) {
-        scheduleExplorerTaskClear(taskProgress.taskId);
-      }
+    if (shouldAutoClearExplorerTask(taskProgress)) {
+      scheduleExplorerTaskClear(taskProgress.taskId);
     }
   })
     .then(() => {

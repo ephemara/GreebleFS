@@ -14,4 +14,9 @@ describe('resolveExplorerSearchScope()', () => {
   it('falls back to a stable instance token when the id is blank', () => {
     expect(resolveExplorerSearchScope('   ')).toBe('file-explorer:instance');
   });
+
+  it('sanitizes recursive search scope ids into stable channel tokens', () => {
+    expect(resolveExplorerSearchScope(' repo/root::scan 42 ')).toBe('file-explorer:repo-root-scan-42');
+    expect(resolveExplorerSearchScope('...child_scope...')).toBe('file-explorer:...child_scope...');
+  });
 });
