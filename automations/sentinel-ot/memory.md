@@ -38,3 +38,17 @@
 - Durable decision: treat the generated `ThemeValue` union as a native-value contract, not a stringly fallback, and keep at least one frontend regression pinned to the emitted `OVERLAY_THEME_MANIFESTS` constants because the sanitizer and compiled catalog must agree on numbers/booleans for cross-theme behavior integrity.
 - Follow-up priority: P2 to add a deterministic regression for the watcher fallback-polling branch when `pluginWatchDirectory()` fails after `listen()` succeeds; an initial attempt was timing-sensitive and was not kept in-tree.
 - Current run time: ~6 minutes.
+- 2026-03-28T21:03:15.3260282+00:00: Added deterministic watcher fallback-polling coverage and revalidated the Sentinel Yazi/theme slice with no fresh failures.
+- Added `/C:/Dev/overlayterm/src/test/useFolderPluginRuntime.fallback.test.tsx` to cover the branch where `listen()` succeeds, `pluginWatchDirectory()` fails, the native listener is cleaned up, and fallback polling forces rediscovery on the configured interval.
+- Verified `npx vitest run src/test/useFolderPluginRuntime.fallback.test.tsx src/test/useFolderPluginRuntime.test.tsx src/test/useFolderPluginRuntime.queue.test.tsx src/test/explorerBackend.bindings.test.ts src/test/themePackages.test.ts src/test/themeEngineBackend.test.ts src/test/pluginWatchPaths.test.ts`, `cargo test -p yazi-specta --lib -- --nocapture`, and `cargo test -p overlay-theme --lib -- --nocapture`.
+- Findings: no fresh failures; focused frontend coverage passed 7 files / 41 tests, and the targeted Rust binding/theme contract suites passed. No repro steps needed from this run.
+- Durable decision: keep the watcher fallback branch under its own isolated fake-timer test file because the meaningful contract is cleanup plus polling recovery after watch registration fails, while exact cleanup call counts can vary under the hook test harness.
+- Follow-up priority: P2 to keep extending cross-theme runtime regressions, but no blocker surfaced in this run.
+- Current run time: ~4 minutes.
+- 2026-03-28T23:02:19.1211041+00:00: Revalidated the current Sentinel Yazi/theme worktree additions with no fresh failures.
+- Confirmed the expanded coverage already present in the dirty worktree passes for watcher fallback polling, debounced watcher refresh coalescing, explicit empty compatibility override semantics, generated theme catalog integrity, and Yazi scheduler binding stability.
+- Verified `npx vitest run src/test/useFolderPluginRuntime.fallback.test.tsx src/test/useFolderPluginRuntime.test.tsx src/test/useFolderPluginRuntime.queue.test.tsx src/test/appearance.test.ts src/test/themeEngineBackend.test.ts src/test/themePackages.test.ts src/test/themePackages.inheritance.test.ts src/test/explorerBackend.bindings.test.ts src/test/pluginWatchPaths.test.ts`, `cargo test -p yazi-specta --lib -- --nocapture`, and `cargo test -p overlay-theme --lib -- --nocapture`.
+- Findings: no fresh failures; focused frontend coverage passed 9 files / 63 tests, and the targeted Rust binding/theme contract suites passed. No repro steps needed from this run.
+- Durable decision: keep the explicit-empty compatibility override and debounced multi-event watcher refresh semantics covered at the frontend boundary, because both behaviors are easy to regress while integrating new theme packages or native watch events.
+- Follow-up priority: P2 to add the next cross-theme runtime regression around preset/theme selection interactions without touching unrelated generated binding output.
+- Current run time: ~3 minutes.

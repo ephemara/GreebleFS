@@ -110,6 +110,42 @@ describe('useFolderPluginRuntime', () => {
     });
   });
 
+  it('coalesces multiple relevant watch events into one debounced refresh', async () => {
+    let watchListener: ((event: { payload: { paths: string[] } }) => void) | undefined;
+
+    vi.mocked(listen).mockImplementation(async (_eventName, handler) => {
+      watchListener = handler as typeof watchListener;
+      return () => {};
+    });
+
+    renderHook(() => useFolderPluginRuntime('windows'));
+    await flushPluginEffects();
+
+    await waitFor(() => {
+      expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(1);
+    });
+
+    watchListener?.({
+      payload: {
+        paths: ['plugins/example-plugin.tsx'],
+      },
+    });
+    watchListener?.({
+      payload: {
+        paths: ['plugins/example-plugin/src/runtime.ts'],
+      },
+    });
+
+    await vi.advanceTimersByTimeAsync(pluginSystemConfig.watchDebounceMs - 50);
+    expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(60);
+
+    await waitFor(() => {
+      expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it('refreshes when watcher payloads mix ignored and relevant paths', async () => {
     let watchListener: ((event: { payload: { paths: string[] } }) => void) | undefined;
 

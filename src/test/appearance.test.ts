@@ -313,6 +313,31 @@ describe('appearance config helpers', () => {
     expect(isThemeCompatibleWithShellBlueprint(inherited, 'classic-dock')).toBe(true);
   });
 
+  it('treats explicit empty compatibility arrays as a universal override instead of inheriting fallback targeting', () => {
+    const fallback = normalizeThemeDefinition({
+      id: 'fallback-targeted',
+      name: 'Fallback Targeted',
+      compatibility: {
+        shellBlueprints: ['classic-dock'],
+        tags: ['fallback'],
+      },
+    } as Partial<OverlayThemeDefinition>);
+
+    const normalized = normalizeThemeDefinition({
+      id: 'universal-override',
+      name: 'Universal Override',
+      compatibility: {
+        shellBlueprints: [],
+        tags: [],
+      },
+    } as Partial<OverlayThemeDefinition>, fallback);
+
+    expect(normalized.compatibility?.shellBlueprints).toEqual([]);
+    expect(normalized.compatibility?.tags).toEqual([]);
+    expect(isThemeCompatibleWithShellBlueprint(normalized, 'classic-dock')).toBe(true);
+    expect(isThemeCompatibleWithShellBlueprint(normalized, 'retro-desktop')).toBe(true);
+  });
+
   it('lets custom themes override package themes with the same id while keeping package metadata in the catalog', () => {
     const packageTheme = normalizeThemeDefinition({
       id: 'shared-theme',
