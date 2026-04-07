@@ -35,6 +35,8 @@ describe('hotkey config helpers', () => {
     expect(defaults.toggleExplorerSearchScope).toBe('Ctrl+Alt+F');
     expect(defaults.cycleExplorerSortKey).toBe('Ctrl+Alt+S');
     expect(defaults.toggleExplorerSortOrder).toBe('Ctrl+Alt+O');
+    expect(defaults.selectAllExplorer).toBe('Ctrl+A');
+    expect(defaults.clearExplorerSelection).toBe('Ctrl+Shift+A');
   });
 
   it('normalizes option-based wheel bindings to alt-modified scroll gestures', () => {

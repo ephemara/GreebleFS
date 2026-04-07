@@ -1662,6 +1662,12 @@ export function FileExplorer({
   const focusExplorerPreview = useCallback(() => {
     previewRef.current = preview;
   }, [preview]);
+  const selectAllVisibleEntries = useCallback(() => {
+    setSelected(new Set(visibleEntries.map(entry => entry.path)));
+  }, [visibleEntries]);
+  const clearExplorerSelection = useCallback(() => {
+    setSelected(new Set());
+  }, []);
   const handleBookmarkCreated = useCallback((name: string, path: string) => {
     void Promise.resolve(onAddBookmark(name, path)).catch(() => {});
   }, [onAddBookmark]);
@@ -2256,6 +2262,21 @@ export function FileExplorer({
         refresh();
         return;
       }
+      if (matchesKeybinding(e, keybindings.goBackDirectory) && isExplorerFocus) {
+        e.preventDefault();
+        goBack();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.goForwardDirectory) && isExplorerFocus) {
+        e.preventDefault();
+        goForward();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.goHomeDirectory) && isExplorerFocus) {
+        e.preventDefault();
+        goHome();
+        return;
+      }
       if (matchesKeybinding(e, keybindings.renameItem) && selected.size === 1) {
         e.preventDefault();
         if (selectedEntry) {
@@ -2320,6 +2341,16 @@ export function FileExplorer({
         focusExplorerPreview();
         return;
       }
+      if (matchesKeybinding(e, keybindings.selectAllExplorer)) {
+        e.preventDefault();
+        selectAllVisibleEntries();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.clearExplorerSelection)) {
+        e.preventDefault();
+        clearExplorerSelection();
+        return;
+      }
       if (matchesKeybinding(e, keybindings.toggleExplorerLayout)) {
         e.preventDefault();
         const nextMode = stepExplorerViewMode(viewMode, 'larger');
@@ -2339,11 +2370,6 @@ export function FileExplorer({
         return;
       }
       if (e.key === 'Escape') { setClipboard(null); setNewItem({ visible:false, kind:'folder' }); }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
-        e.preventDefault();
-        setSelected(new Set(visibleEntries.map(f => f.path)));
-        return;
-      }
       if (matchesKeybinding(e, keybindings.copyPath)) {
         e.preventDefault();
         if (selectedEntries.length > 0) {
@@ -2368,7 +2394,7 @@ export function FileExplorer({
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [addressEditing, beginAddressEdit, duplicate, keybindings, newItem.visible, paste, queueClipboard, refresh, rename.active, selected, selectedEntries, showHidden, updateExplorerSettings, viewMode, visibleEntries]);
+  }, [addressEditing, beginAddressEdit, clearExplorerSelection, duplicate, focusExplorerAddressBar, focusExplorerList, focusExplorerPreview, goBack, goForward, goHome, keybindings, newItem.visible, paste, queueClipboard, refresh, rename.active, selectAllVisibleEntries, selected, selectedEntries, showHidden, updateExplorerSettings, viewMode, visibleEntries, toggleSearchScope, cycleSortKey, toggleSortOrder]);
 
   // ── Breadcrumbs ──
   const crumbs: { label:string; path:string }[] = [];

@@ -27,6 +27,8 @@ export type HotkeyBindingKey =
   | 'pasteSelection'
   | 'toggleHiddenFiles'
   | 'toggleExplorerLayout'
+  | 'selectAllExplorer'
+  | 'clearExplorerSelection'
   | 'searchExplorer'
   | 'closeTab'
   | 'find'
@@ -253,6 +255,20 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     label: 'Toggle Explorer Layout',
     description: 'Step through the explorer content-browser layouts.',
     defaultValue: 'Ctrl+L',
+    scope: 'local',
+  },
+  {
+    key: 'selectAllExplorer',
+    label: 'Select All',
+    description: 'Select every visible explorer entry.',
+    defaultValue: 'Ctrl+A',
+    scope: 'local',
+  },
+  {
+    key: 'clearExplorerSelection',
+    label: 'Clear Explorer Selection',
+    description: 'Clear the current explorer selection.',
+    defaultValue: 'Ctrl+Shift+A',
     scope: 'local',
   },
   {
