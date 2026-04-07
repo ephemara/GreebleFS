@@ -9,7 +9,7 @@ export type ExplorerViewMode =
 export type ExplorerViewPresentation = 'grid' | 'table' | 'list';
 export type ExplorerViewWheelDirection = 'larger' | 'smaller';
 
-interface ExplorerGridMetrics {
+export interface ExplorerGridMetrics {
   minWidth: number;
   gap: number;
   padding: number;
@@ -39,6 +39,10 @@ export interface ExplorerViewModeDefinition {
   grid?: ExplorerGridMetrics;
   rows?: ExplorerRowMetrics;
 }
+
+export const EXPLORER_GRID_ZOOM_MIN = 0;
+export const EXPLORER_GRID_ZOOM_MAX = 1;
+export const EXPLORER_GRID_ZOOM_STEP = 0.12;
 
 export const explorerViewModes: readonly ExplorerViewModeDefinition[] = [
   {
@@ -147,6 +151,11 @@ export const explorerViewModes: readonly ExplorerViewModeDefinition[] = [
 
 const explorerViewModeMap = new Map(explorerViewModes.map((mode) => [mode.id, mode]));
 const defaultExplorerViewMode: ExplorerViewMode = 'details';
+const explorerGridModeAnchors = [
+  { id: 'icons-m' as const, zoom: EXPLORER_GRID_ZOOM_MIN },
+  { id: 'icons-l' as const, zoom: 0.5 },
+  { id: 'icons-xl' as const, zoom: EXPLORER_GRID_ZOOM_MAX },
+] as const;
 
 export function isExplorerViewMode(value: unknown): value is ExplorerViewMode {
   return typeof value === 'string' && explorerViewModeMap.has(value as ExplorerViewMode);
@@ -164,6 +173,73 @@ export function normalizeExplorerViewMode(value: unknown): ExplorerViewMode {
 
 export function getExplorerViewModeDefinition(mode: ExplorerViewMode): ExplorerViewModeDefinition {
   return explorerViewModeMap.get(mode) ?? explorerViewModeMap.get(defaultExplorerViewMode)!;
+}
+
+export function isExplorerGridMode(mode: ExplorerViewMode): mode is 'icons-xl' | 'icons-l' | 'icons-m' {
+  return mode === 'icons-xl' || mode === 'icons-l' || mode === 'icons-m';
+}
+
+export function getExplorerGridZoomAnchor(mode: ExplorerViewMode): number {
+  const anchor = explorerGridModeAnchors.find((entry) => entry.id === mode);
+  return anchor?.zoom ?? 0.5;
+}
+
+export function normalizeExplorerGridZoom(value: unknown, fallbackMode: ExplorerViewMode = 'icons-l'): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return clamp(value, EXPLORER_GRID_ZOOM_MIN, EXPLORER_GRID_ZOOM_MAX);
+  }
+  return getExplorerGridZoomAnchor(fallbackMode);
+}
+
+export function stepExplorerGridZoom(currentZoom: number, direction: ExplorerViewWheelDirection): number {
+  const delta = direction === 'larger' ? EXPLORER_GRID_ZOOM_STEP : -EXPLORER_GRID_ZOOM_STEP;
+  return normalizeExplorerGridZoom(currentZoom + delta);
+}
+
+export function getNearestExplorerGridMode(gridZoom: number): 'icons-xl' | 'icons-l' | 'icons-m' {
+  const zoom = normalizeExplorerGridZoom(gridZoom);
+  let closest: typeof explorerGridModeAnchors[number] = explorerGridModeAnchors[0];
+  let closestDistance = Math.abs(zoom - closest.zoom);
+
+  for (const anchor of explorerGridModeAnchors.slice(1)) {
+    const distance = Math.abs(zoom - anchor.zoom);
+    if (distance < closestDistance) {
+      closest = anchor;
+      closestDistance = distance;
+    }
+  }
+
+  return closest.id;
+}
+
+export function getExplorerGridMetricsForZoom(gridZoom: number): ExplorerGridMetrics {
+  const zoom = normalizeExplorerGridZoom(gridZoom);
+  let lowerIndex = 0;
+  for (let index = 0; index < explorerGridModeAnchors.length; index += 1) {
+    if (explorerGridModeAnchors[index]!.zoom <= zoom) {
+      lowerIndex = index;
+    }
+  }
+  const upperIndex = Math.min(explorerGridModeAnchors.length - 1, lowerIndex + 1);
+  const lowerAnchor = explorerGridModeAnchors[lowerIndex]!;
+  const upperAnchor = explorerGridModeAnchors[upperIndex]!;
+  const lowerMetrics = getExplorerViewModeDefinition(lowerAnchor.id).grid!;
+  const upperMetrics = getExplorerViewModeDefinition(upperAnchor.id).grid!;
+  const range = upperAnchor.zoom - lowerAnchor.zoom;
+  const t = range <= 0 ? 0 : (zoom - lowerAnchor.zoom) / range;
+
+  return {
+    minWidth: lerp(lowerMetrics.minWidth, upperMetrics.minWidth, t),
+    gap: lerp(lowerMetrics.gap, upperMetrics.gap, t),
+    padding: lerp(lowerMetrics.padding, upperMetrics.padding, t),
+    rowHeight: lerp(lowerMetrics.rowHeight, upperMetrics.rowHeight, t),
+    searchRowHeight: lerp(lowerMetrics.searchRowHeight, upperMetrics.searchRowHeight, t),
+    newItemHeight: lerp(lowerMetrics.newItemHeight, upperMetrics.newItemHeight, t),
+    iconSize: lerp(lowerMetrics.iconSize, upperMetrics.iconSize, t),
+    iconStageSize: lerp(lowerMetrics.iconStageSize, upperMetrics.iconStageSize, t),
+    tileRadius: lerp(lowerMetrics.tileRadius, upperMetrics.tileRadius, t),
+    nameLines: Math.round(lerp(lowerMetrics.nameLines, upperMetrics.nameLines, t)),
+  };
 }
 
 export function stepExplorerViewMode(
@@ -197,4 +273,12 @@ export function resolveEffectiveExplorerViewMode(
   }
 
   return requestedMode;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function lerp(start: number, end: number, t: number): number {
+  return start + (end - start) * t;
 }

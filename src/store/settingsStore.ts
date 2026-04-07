@@ -17,6 +17,9 @@ import {
   type ExternalTerminalProfile,
 } from '../config/platform';
 import {
+  getExplorerGridZoomAnchor,
+  isExplorerGridMode,
+  normalizeExplorerGridZoom,
   normalizeExplorerViewMode,
   type ExplorerViewMode,
 } from '../config/explorerViewModes';
@@ -98,6 +101,7 @@ export interface ExplorerSettings {
   sortBy: 'name' | 'size' | 'date' | 'type';
   sortOrder: 'asc' | 'desc';
   viewMode: ExplorerViewMode;
+  gridZoom: number;
   folderClickMode: ExplorerFolderClickMode;
   confirmDelete: boolean;
   defaultFolderIcon: FolderIconValue;
@@ -215,6 +219,26 @@ export function normalizeTerminalWindowMode(value: unknown): TerminalWindowMode 
 
 export function normalizeExplorerFolderClickMode(value: unknown): ExplorerFolderClickMode {
   return value === 'single' ? 'single' : 'double';
+}
+
+function normalizeExplorerSettings(
+  base: ExplorerSettings,
+  updates?: Partial<ExplorerSettings>,
+): ExplorerSettings {
+  const nextViewMode = normalizeExplorerViewMode(updates?.viewMode ?? base.viewMode);
+  const hasExplicitGridZoom = updates != null && Object.prototype.hasOwnProperty.call(updates, 'gridZoom');
+
+  return {
+    ...base,
+    ...updates,
+    viewMode: nextViewMode,
+    gridZoom: hasExplicitGridZoom
+      ? normalizeExplorerGridZoom(updates?.gridZoom, nextViewMode)
+      : (updates?.viewMode && isExplorerGridMode(nextViewMode)
+          ? getExplorerGridZoomAnchor(nextViewMode)
+          : base.gridZoom),
+    folderClickMode: normalizeExplorerFolderClickMode(updates?.folderClickMode ?? base.folderClickMode),
+  };
 }
 
 function normalizeSavedWindowDimension(value: unknown, fallback: number, min: number): number {
@@ -453,6 +477,7 @@ export const defaultSettings: Settings = {
     sortBy: 'name',
     sortOrder: 'asc',
     viewMode: 'details',
+    gridZoom: getExplorerGridZoomAnchor('icons-l'),
     folderClickMode: 'double',
     confirmDelete: true,
     defaultFolderIcon: DEFAULT_FOLDER_ICON_VALUE,
@@ -552,6 +577,10 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
       ...base.explorer,
       ...imported?.explorer,
       viewMode: normalizeExplorerViewMode(imported?.explorer?.viewMode ?? base.explorer.viewMode),
+      gridZoom: normalizeExplorerGridZoom(
+        imported?.explorer?.gridZoom,
+        normalizeExplorerViewMode(imported?.explorer?.viewMode ?? base.explorer.viewMode),
+      ),
       folderClickMode: normalizeExplorerFolderClickMode(imported?.explorer?.folderClickMode ?? base.explorer.folderClickMode),
     },
     appearance: {
@@ -646,7 +675,7 @@ export const useSettingsStore = create<SettingsState>()(
       updateExplorer: (updates) => set((state) => ({
         settings: {
           ...state.settings,
-          explorer: { ...state.settings.explorer, ...updates },
+          explorer: normalizeExplorerSettings(state.settings.explorer, updates),
         },
       })),
       

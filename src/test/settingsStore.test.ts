@@ -44,6 +44,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.explorer.sortBy).toBe('name');
     expect(settings.explorer.sortOrder).toBe('asc');
     expect(settings.explorer.viewMode).toBe(defaultSettings.explorer.viewMode);
+    expect(settings.explorer.gridZoom).toBe(defaultSettings.explorer.gridZoom);
     expect(settings.explorer.folderClickMode).toBe('double');
   });
 
@@ -195,6 +196,14 @@ describe('useSettingsStore.updateExplorer()', () => {
     const store = useSettingsStore.getState();
     store.updateExplorer({ viewMode: 'icons-l' });
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('icons-l');
+    expect(useSettingsStore.getState().settings.explorer.gridZoom).toBe(defaultSettings.explorer.gridZoom);
+  });
+
+  it('stores custom grid zoom between icon presets', () => {
+    const store = useSettingsStore.getState();
+    store.updateExplorer({ viewMode: 'icons-m', gridZoom: 0.18 });
+    expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('icons-m');
+    expect(useSettingsStore.getState().settings.explorer.gridZoom).toBe(0.18);
   });
 
   it('updates folderClickMode', () => {
@@ -476,6 +485,7 @@ describe('mergeSettingsWithDefaults()', () => {
     });
 
     expect(mergedGrid.explorer.viewMode).toBe('icons-l');
+    expect(mergedGrid.explorer.gridZoom).toBe(defaultSettings.explorer.gridZoom);
     expect(mergedList.explorer.viewMode).toBe('details');
   });
 

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { FileExplorer } from '../components/FileExplorer';
@@ -37,6 +37,29 @@ const ENTRIES = [
   },
 ] as const;
 
+function createDataTransfer() {
+  const store = new Map<string, string>();
+  return {
+    dropEffect: 'move',
+    effectAllowed: 'all',
+    files: [],
+    items: [],
+    types: [],
+    clearData: vi.fn((format?: string) => {
+      if (format) {
+        store.delete(format);
+        return;
+      }
+      store.clear();
+    }),
+    getData: vi.fn((format: string) => store.get(format) ?? ''),
+    setData: vi.fn((format: string, value: string) => {
+      store.set(format, value);
+    }),
+    setDragImage: vi.fn(),
+  };
+}
+
 function resetOverlayTermStorage(storage: Storage) {
   storage.removeItem(SETTINGS_STORAGE_KEY);
   storage.removeItem(EXPLORER_STATE_STORAGE_KEY);
@@ -61,6 +84,25 @@ function renderExplorer() {
       onAddBookmark={async () => {}}
     />,
   );
+}
+
+function getExplorerViewport(anchorText: string) {
+  const anchor = screen.getByText(anchorText);
+  const viewport = anchor.closest('.overlay-scroll-area__content')?.parentElement as HTMLElement | null;
+  if (!viewport) {
+    throw new Error('Explorer viewport not found');
+  }
+  return viewport;
+}
+
+function dispatchLayoutWheel(anchorText: string, deltaY: number) {
+  const viewport = getExplorerViewport(anchorText);
+  viewport.dispatchEvent(new WheelEvent('wheel', {
+    bubbles: true,
+    cancelable: true,
+    ctrlKey: true,
+    deltaY,
+  }));
 }
 
 describe('FileExplorer view modes', () => {
@@ -118,6 +160,7 @@ describe('FileExplorer view modes', () => {
         case 'fs_watch_entry_size_root':
         case 'fs_unwatch_entry_size_root':
         case 'fs_cancel_search_entries':
+        case 'fs_start_native_file_drag':
           return null;
         default:
           throw new Error(`Unexpected invoke command: ${command}`);
@@ -135,16 +178,72 @@ describe('FileExplorer view modes', () => {
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('columns');
   });
 
-  it('steps the explorer layout with ctrl-wheel without changing app zoom', async () => {
+  it('scales the explorer grid with ctrl-wheel without changing app zoom', async () => {
+    useSettingsStore.getState().updateExplorer({ viewMode: 'icons-m', gridZoom: 0 });
+
     renderExplorer();
     await screen.findByText('alpha');
 
     const appearanceZoomBefore = useSettingsStore.getState().settings.appearance.appZoom;
-    fireEvent.wheel(screen.getByText('alpha'), { ctrlKey: true, deltaY: -120 });
+    dispatchLayoutWheel('alpha', -120);
 
     await waitFor(() => {
-      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('list');
+      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('icons-m');
+      expect(useSettingsStore.getState().settings.explorer.gridZoom).toBeGreaterThan(0);
     });
     expect(useSettingsStore.getState().settings.appearance.appZoom).toBe(appearanceZoomBefore);
   });
+
+  it('smoothly scales icon layouts before switching away from the grid', async () => {
+    useSettingsStore.getState().updateExplorer({ viewMode: 'icons-l', gridZoom: 0.5 });
+
+    renderExplorer();
+    await screen.findByText('alpha');
+
+    dispatchLayoutWheel('alpha', -120);
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.explorer.gridZoom).toBeGreaterThan(0.5);
+      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('icons-l');
+    });
+  });
+
+  it('extends the selection with shift+arrow navigation', async () => {
+    renderExplorer();
+    await screen.findByText('alpha');
+
+    fireEvent.click(screen.getByText('alpha'));
+    expect(screen.getByText(/1 selected/i)).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: 'ArrowDown', shiftKey: true });
+
+    await waitFor(() => {
+      expect(screen.getByText(/2 selected/i)).toBeTruthy();
+    });
+  });
+
+  it('starts the native drag bridge when alt-dragging an explorer entry', async () => {
+    renderExplorer();
+    const entry = await screen.findByText('notes.txt');
+    const dataTransfer = createDataTransfer();
+    const dragSource = entry.closest('[data-overlay-drag-source="file"]');
+    if (!(dragSource instanceof HTMLElement)) {
+      throw new Error('Expected draggable explorer entry');
+    }
+
+    const event = createEvent.dragStart(dragSource, { dataTransfer });
+    Object.defineProperty(event, 'altKey', { value: true });
+    fireEvent(dragSource, event);
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('fs_start_native_file_drag', {
+        paths: [`${REPO_ROOT}\\notes.txt`],
+      });
+    });
+    expect(dataTransfer.setData).toHaveBeenCalledWith(
+      'application/x-overlayterm-drag-intent',
+      'native-out',
+    );
+  });
+
 });

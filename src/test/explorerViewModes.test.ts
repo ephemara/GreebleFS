@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getExplorerGridMetricsForZoom,
+  getNearestExplorerGridMode,
   getExplorerViewModeDefinition,
+  normalizeExplorerGridZoom,
   normalizeExplorerViewMode,
   resolveEffectiveExplorerViewMode,
+  stepExplorerGridZoom,
   stepExplorerViewMode,
 } from '../config/explorerViewModes';
 
@@ -17,6 +21,19 @@ describe('explorerViewModes', () => {
     expect(stepExplorerViewMode('icons-l', 'larger')).toBe('icons-xl');
     expect(stepExplorerViewMode('icons-l', 'smaller')).toBe('icons-m');
     expect(stepExplorerViewMode('details', 'smaller')).toBe('details');
+  });
+
+  it('interpolates grid zoom between the icon presets', () => {
+    expect(normalizeExplorerGridZoom(99)).toBe(1);
+    expect(stepExplorerGridZoom(0.5, 'larger')).toBeGreaterThan(0.5);
+    expect(getNearestExplorerGridMode(0.1)).toBe('icons-m');
+    expect(getNearestExplorerGridMode(0.5)).toBe('icons-l');
+
+    const metrics = getExplorerGridMetricsForZoom(0.25);
+    expect(metrics.iconSize).toBeGreaterThan(42);
+    expect(metrics.iconSize).toBeLessThan(60);
+    expect(metrics.minWidth).toBeGreaterThan(122);
+    expect(metrics.minWidth).toBeLessThan(152);
   });
 
   it('falls back from icon grids to details while search is active', () => {

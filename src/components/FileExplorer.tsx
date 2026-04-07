@@ -29,9 +29,14 @@ import { getFolderIconSrc } from '../config/folderIcons';
 import { getBuiltInIconTheme, resolveFileIconSrc, resolveIconSrc } from '../config/iconTheme';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
 import {
+  getExplorerGridMetricsForZoom,
+  getExplorerGridZoomAnchor,
+  getNearestExplorerGridMode,
   explorerViewModes,
   getExplorerViewModeDefinition,
+  isExplorerGridMode,
   resolveEffectiveExplorerViewMode,
+  stepExplorerGridZoom,
   stepExplorerViewMode,
   type ExplorerViewModeDefinition,
 } from '../config/explorerViewModes';
@@ -336,6 +341,15 @@ function resolveExplorerDropOperation(
   }
 
   return event.ctrlKey ? 'copy' : 'move';
+}
+
+function formatExplorerNativeDragError(error: unknown): string {
+  const message = String(error);
+  if (/access is denied|denied|elevat|privilege|administrator/i.test(message)) {
+    return 'Native file drag was blocked by Windows permissions. If OverlayTerm is running as Administrator, drag targets like Explorer/Desktop must be elevated too.';
+  }
+
+  return message;
 }
 
 function getDefaultExplorerSortOrder(sortBy: ExplorerSortKey): 'asc' | 'desc' {
@@ -1071,6 +1085,7 @@ export function FileExplorer({
   const useNativeOsIcons = appearanceSettings.useNativeOsIcons;
   const showHidden = explorerSettings.showHiddenFiles;
   const viewMode = explorerSettings.viewMode;
+  const gridZoom = explorerSettings.gridZoom;
   const folderClickMode = explorerSettings.folderClickMode;
   // Session is only used to seed the explorer's local state. Avoid subscribing to it
   // so high-frequency local changes (typing, resizing) don't force extra store-driven renders.
@@ -1667,7 +1682,30 @@ export function FileExplorer({
   }, [visibleEntries]);
   const clearExplorerSelection = useCallback(() => {
     setSelected(new Set());
+    lastSelected.current = null;
   }, []);
+
+  const selectVisibleEntryAtIndex = useCallback((index: number, extendRange: boolean) => {
+    if (visibleEntries.length === 0) return;
+
+    const clampedIndex = Math.max(0, Math.min(index, visibleEntries.length - 1));
+    const nextEntry = visibleEntries[clampedIndex];
+    if (!nextEntry) return;
+
+    if (!extendRange) {
+      setSelected(new Set([nextEntry.path]));
+      lastSelected.current = nextEntry.path;
+      return;
+    }
+
+    const anchorPath = lastSelected.current ?? Array.from(selected)[0] ?? nextEntry.path;
+    const anchorIndex = visibleEntries.findIndex(entry => entry.path === anchorPath);
+    const rangeStart = anchorIndex >= 0 ? Math.min(anchorIndex, clampedIndex) : clampedIndex;
+    const rangeEnd = anchorIndex >= 0 ? Math.max(anchorIndex, clampedIndex) : clampedIndex;
+
+    setSelected(new Set(visibleEntries.slice(rangeStart, rangeEnd + 1).map(entry => entry.path)));
+    lastSelected.current = anchorPath;
+  }, [selected, visibleEntries]);
   const handleBookmarkCreated = useCallback((name: string, path: string) => {
     void Promise.resolve(onAddBookmark(name, path)).catch(() => {});
   }, [onAddBookmark]);
@@ -2246,6 +2284,15 @@ export function FileExplorer({
       const isExplorerFocus = document.activeElement === mainRef.current;
       const selectedEntry = visibleEntries.find(en => selected.has(en.path)) ?? null;
       const firstSelectedEntry = visibleEntries.find(en => selected.has(en.path)) ?? null;
+      const currentFocusIndex = (() => {
+        const selectedIndex = visibleEntries.findIndex(entry => selected.has(entry.path));
+        if (selectedIndex >= 0) return selectedIndex;
+        if (lastSelected.current) {
+          const rememberedIndex = visibleEntries.findIndex(entry => entry.path === lastSelected.current);
+          if (rememberedIndex >= 0) return rememberedIndex;
+        }
+        return 0;
+      })();
 
       if (matchesKeybinding(e, keybindings.searchExplorer)) {
         e.preventDefault();
@@ -2339,6 +2386,27 @@ export function FileExplorer({
       if (matchesKeybinding(e, keybindings.focusExplorerPreview)) {
         e.preventDefault();
         focusExplorerPreview();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.openInTerminal) && selectedEntry?.is_dir) {
+        e.preventDefault();
+        onOpenInTerminal(selectedEntry.path);
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.revealInExplorer) && selectedEntry) {
+        e.preventDefault();
+        void revealExplorerPath(selectedEntry.path).catch(error => setError(String(error)));
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.openAsAdmin) && selectedEntry) {
+        e.preventDefault();
+        void openAsAdmin(selectedEntry.path);
+        return;
+      }
+      if (isExplorerFocus && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+        e.preventDefault();
+        const nextIndex = e.key === 'ArrowDown' ? currentFocusIndex + 1 : currentFocusIndex - 1;
+        selectVisibleEntryAtIndex(nextIndex, e.shiftKey);
         return;
       }
       if (matchesKeybinding(e, keybindings.selectAllExplorer)) {
@@ -2446,6 +2514,15 @@ export function FileExplorer({
       };
       const uriList = dragPaths.map(toFileUri).join('\r\n');
       e.dataTransfer.setData('text/uri-list', uriList);
+      if (isTauri() && dragPaths.length > 0) {
+        void commands.fsStartNativeFileDrag(dragPaths)
+          .then(result => {
+            unwrapTauriResult(result);
+          })
+          .catch(error => {
+            setError(formatExplorerNativeDragError(error));
+          });
+      }
     }
     e.dataTransfer.effectAllowed = dragIntent === 'native-out' ? 'copy' : 'copyMove';
   };
@@ -2499,7 +2576,10 @@ export function FileExplorer({
     () => getExplorerViewModeDefinition(effectiveViewMode),
     [effectiveViewMode],
   );
-  const activeGridMetrics = effectiveViewModeDefinition.grid;
+  const activeGridMetrics = useMemo(
+    () => (effectiveViewModeDefinition.presentation === 'grid' ? getExplorerGridMetricsForZoom(gridZoom) : effectiveViewModeDefinition.grid),
+    [effectiveViewModeDefinition, gridZoom],
+  );
   const activeRowMetrics = effectiveViewModeDefinition.rows;
   const activeNewItemHeight = effectiveViewModeDefinition.presentation === 'grid'
     ? activeGridMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT
@@ -2586,15 +2666,31 @@ export function FileExplorer({
       lastLayoutWheelAtRef.current = now;
 
       const direction = event.deltaY < 0 ? 'larger' : 'smaller';
+
+      if (isExplorerGridMode(viewMode)) {
+        const nextGridZoom = stepExplorerGridZoom(gridZoom, direction);
+        if (nextGridZoom !== gridZoom) {
+          updateExplorerSettings({
+            viewMode: getNearestExplorerGridMode(nextGridZoom),
+            gridZoom: nextGridZoom,
+          });
+          return;
+        }
+      }
+
       const nextMode = stepExplorerViewMode(viewMode, direction);
       if (nextMode !== viewMode) {
-        updateExplorerSettings({ viewMode: nextMode });
+        updateExplorerSettings(
+          isExplorerGridMode(nextMode)
+            ? { viewMode: nextMode, gridZoom: getExplorerGridZoomAnchor(nextMode) }
+            : { viewMode: nextMode },
+        );
       }
     };
 
     viewport.addEventListener('wheel', handleWheel, { passive: false });
     return () => viewport.removeEventListener('wheel', handleWheel);
-  }, [isCompactDock, updateExplorerSettings, viewMode]);
+  }, [gridZoom, isCompactDock, updateExplorerSettings, viewMode]);
 
   useEffect(() => {
     if (repositoryPicker?.active) {
@@ -3195,7 +3291,11 @@ export function FileExplorer({
                           role="menuitemradio"
                           aria-checked={active}
                           onClick={() => {
-                            updateExplorerSettings({ viewMode: mode.id });
+                            updateExplorerSettings(
+                              isExplorerGridMode(mode.id)
+                                ? { viewMode: mode.id, gridZoom: getExplorerGridZoomAnchor(mode.id) }
+                                : { viewMode: mode.id },
+                            );
                             setShowLayoutMenu(false);
                           }}
                           style={{
@@ -3239,7 +3339,7 @@ export function FileExplorer({
                     })}
                   </div>
                   <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${EXP.border}`, fontSize: 10, color: EXP.muted2 }}>
-                    Ctrl/Cmd + wheel steps through layouts from icons to details.
+                    Ctrl/Cmd + wheel smoothly scales icon tiles, then continues through row layouts.
                   </div>
                 </div>
               )}

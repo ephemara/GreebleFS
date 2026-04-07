@@ -20,6 +20,9 @@ export type HotkeyBindingKey =
   | 'focusExplorerList'
   | 'focusExplorerAddressBar'
   | 'focusExplorerPreview'
+  | 'openInTerminal'
+  | 'revealInExplorer'
+  | 'openAsAdmin'
   | 'goUpDirectory'
   | 'copyPath'
   | 'copySelection'
@@ -206,6 +209,27 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     label: 'Focus Explorer Preview',
     description: 'Focus the explorer preview panel.',
     defaultValue: 'Ctrl+2',
+    scope: 'local',
+  },
+  {
+    key: 'openInTerminal',
+    label: 'Open in Terminal',
+    description: 'Open the selected folder in a terminal.',
+    defaultValue: 'Ctrl+Enter',
+    scope: 'local',
+  },
+  {
+    key: 'revealInExplorer',
+    label: 'Reveal in Explorer',
+    description: 'Reveal the selected item in the system file explorer.',
+    defaultValue: 'Ctrl+Alt+R',
+    scope: 'local',
+  },
+  {
+    key: 'openAsAdmin',
+    label: 'Open as Admin',
+    description: 'Open the selected item with elevated permissions.',
+    defaultValue: 'Ctrl+Alt+Enter',
     scope: 'local',
   },
   {

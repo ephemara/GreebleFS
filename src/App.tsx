@@ -350,6 +350,9 @@ function App() {
   const shaderSignatureRef = useRef('');
   const dragHideRestoreRef = useRef(false);
   const openTerminalPanelRef = useRef<() => void>(() => undefined);
+  // Tracks whether the overlay has been dragged away from its anchor position
+  const isFreefloatingRef = useRef(false);
+  const [isFreefloating, setIsFreefloating] = useState(false);
   const [layoutManifest, setLayoutManifest] = useState(BUILT_IN_LAYOUT_MANIFEST);
   const [layoutConfigSource, setLayoutConfigSource] = useState<string | null>(null);
   const [themePackages, setThemePackages] = useState<LoadedOverlayThemePackage[]>([]);
@@ -659,16 +662,6 @@ function App() {
   }, [systemSettings.hideAppInTray]);
 
   useEffect(() => {
-    if (!isTauri()) {
-      return;
-    }
-
-    commands.windowSetTaskbarVisibility(shouldShowInTaskbar).then(unwrapTauriResult).catch(error => {
-      console.warn('OverlayTerm: failed to sync taskbar visibility', error);
-    });
-  }, [shouldShowInTaskbar]);
-
-  useEffect(() => {
     setOverlayPluginFonts(pluginFonts);
   }, [pluginFonts]);
 
@@ -763,33 +756,11 @@ function App() {
     clearAnimationClock();
   }, [clearAnimationClock]);
 
-  const syncWindowPresentation = useCallback(async (mode: TerminalWindowMode) => {
-    if (!isTauri()) {
-      return;
-    }
-
-    const win = getCurrentWindow();
-    const isWindowed = mode === 'windowed';
-
-    if (!isWindowed) {
-      await win.unmaximize().catch(() => {});
-    }
-
-    await Promise.allSettled([
-      win.setDecorations(isWindowed),
-      win.setAlwaysOnTop(!isWindowed),
-      win.setResizable(true),
-      win.setShadow(isWindowed),
-      win.setSkipTaskbar(isWindowed ? false : !shouldShowInTaskbar),
-    ]);
-  }, [shouldShowInTaskbar]);
-
   // ── Position & show ──
   const positionAndShow = useCallback(async () => {
     clearAnimationClock();
     try {
       const win = getCurrentWindow();
-      await syncWindowPresentation('overlay');
       const scaleFactor = await win.scaleFactor();
       const monitor = await primaryMonitor();
       if (!monitor) {
@@ -798,7 +769,7 @@ function App() {
       }
 
       const store = useSettingsStore.getState().settings.terminal;
-      const rememberedBounds = runtimeOverlayBoundsRef.current;
+      const rememberedBounds = isFreefloatingRef.current ? runtimeOverlayBoundsRef.current : null;
       const layout = rememberedBounds
         ? {
             ...clampOverlayWindowBoundsToWorkArea({
@@ -841,11 +812,23 @@ function App() {
         y: layout.y,
       };
       isProgrammaticResizeRef.current = true;
-      await win.setSize(new PhysicalSize(layout.width, layout.height));
-      await win.setPosition(new PhysicalPosition(layout.x, layout.y));
+
+      // Atomic: set all window properties + geometry in one IPC call, then show
+      if (isTauri()) {
+        await commands.windowApplyMode({
+          decorations: false,
+          alwaysOnTop: true,
+          shadow: false,
+          skipTaskbar: !shouldShowInTaskbar,
+          x: layout.x,
+          y: layout.y,
+          width: layout.width,
+          height: layout.height,
+        }).catch(() => {});
+      }
       await win.show();
-      await win.setPosition(new PhysicalPosition(layout.x, layout.y));
       await win.setFocus();
+
       let committedOpenPhase = false;
       const commitOpenPhase = () => {
         if (committedOpenPhase) {
@@ -860,7 +843,6 @@ function App() {
           window.clearTimeout(animationCommitTimerRef.current);
           animationCommitTimerRef.current = null;
         }
-        void win.setPosition(new PhysicalPosition(layout.x, layout.y)).catch(() => {});
         runtimeOverlayBoundsRef.current = {
           width: layout.width,
           height: layout.height,
@@ -890,13 +872,12 @@ function App() {
       setAnimationProgress(0);
       console.warn('OverlayTerm: failed to position/show', e);
     }
-  }, [appAnimationDurationMs, clearAnimationClock, markOverlayRuntimePhase, openWithoutMonitorLayout, resolveAnimationById, resolvedOpenAnimationId, startAnimationProgress, syncWindowPresentation]);
+  }, [appAnimationDurationMs, clearAnimationClock, markOverlayRuntimePhase, openWithoutMonitorLayout, resolveAnimationById, resolvedOpenAnimationId, shouldShowInTaskbar, startAnimationProgress]);
 
   const showWindowedPanel = useCallback(async () => {
     clearAnimationClock();
     try {
       const win = getCurrentWindow();
-      await syncWindowPresentation('windowed');
       const scaleFactor = await win.scaleFactor();
       const monitor = await primaryMonitor();
       if (!monitor) {
@@ -938,10 +919,29 @@ function App() {
       }
 
       const isMaximized = await win.isMaximized().catch(() => false);
-      if (!isMaximized) {
-        isProgrammaticResizeRef.current = true;
-        await win.setSize(new PhysicalSize(layout.width, layout.height));
-        await win.setPosition(new PhysicalPosition(layout.x, layout.y));
+      isProgrammaticResizeRef.current = true;
+
+      // Atomic: set decorations + geometry in one call
+      if (isTauri() && !isMaximized) {
+        await commands.windowApplyMode({
+          decorations: true,
+          alwaysOnTop: false,
+          shadow: true,
+          skipTaskbar: false,
+          x: layout.x,
+          y: layout.y,
+          width: layout.width,
+          height: layout.height,
+        }).catch(() => {});
+      } else if (isTauri()) {
+        // Already maximized — just set the presentation flags, skip geometry
+        await commands.windowApplyMode({
+          decorations: true,
+          alwaysOnTop: false,
+          shadow: true,
+          skipTaskbar: false,
+          x: 0, y: 0, width: 0, height: 0,
+        }).catch(() => {});
       }
       await win.show();
       await win.unminimize().catch(() => {});
@@ -992,7 +992,6 @@ function App() {
     resolveAnimationById,
     resolvedOpenAnimationId,
     startAnimationProgress,
-    syncWindowPresentation,
   ]);
 
   const showCurrentPresentation = useCallback(() => {
@@ -1072,196 +1071,31 @@ function App() {
     void positionAndShow();
   }, [positionAndShow]);
 
-  const handleDragStart = useCallback((event: React.DragEvent<HTMLDivElement>) => {
-    const source = (event.target as HTMLElement | null)?.closest('[data-overlay-drag-source="file"]');
-    if (!source) {
+  // ── Overlay native drag (freely floatable) ──
+  const handleOverlayDragStart = useCallback(async () => {
+    if (!isTauri() || windowModeRef.current !== 'overlay') {
       return;
     }
-
-    const dragIntent = event.dataTransfer.getData('application/x-overlayterm-drag-intent');
-    if (dragIntent !== 'native-out') {
-      return;
-    }
-
-    const payload = event.dataTransfer.getData('application/x-overlayterm-paths');
-    if (!payload) {
-      return;
-    }
-
-    let paths: string[] = [];
     try {
-      const parsed = JSON.parse(payload);
-      if (Array.isArray(parsed)) {
-        paths = parsed.filter((entry): entry is string => typeof entry === 'string');
-      }
+      await getCurrentWindow().startDragging();
+      // After drag ends, the window is now floating — show the anchor button
+      isFreefloatingRef.current = true;
+      setIsFreefloating(true);
     } catch {
-      paths = [];
+      // startDragging may throw if called outside a mouse-down event
     }
-
-    if (paths.length === 0) {
-      return;
-    }
-
-    void (async () => {
-      try {
-        await hideOverlayForDrag();
-        unwrapTauriResult(await commands.fsStartNativeFileDrag(paths));
-      } catch (error) {
-        console.warn('OverlayTerm: failed to start native file drag', error);
-      } finally {
-        restoreOverlayAfterDrag();
-      }
-    })();
-  }, [hideOverlayForDrag, restoreOverlayAfterDrag]);
-
-  const handleDragEndCapture = useCallback(() => {
-    restoreOverlayAfterDrag();
-  }, [restoreOverlayAfterDrag]);
-
-  const handleDropCapture = useCallback(() => {
-    restoreOverlayAfterDrag();
-  }, [restoreOverlayAfterDrag]);
-
-  const toggle = useCallback(() => {
-    const now = Date.now();
-    if (now < interactionLockUntilRef.current) {
-      return;
-    }
-    if (now - lastToggleAtRef.current < 220) {
-      return;
-    }
-    lastToggleAtRef.current = now;
-
-    const currentPhase = overlayPhaseRef.current;
-    if (currentPhase === 'opening' || currentPhase === 'closing') {
-      return;
-    }
-    if (!overlayVisibleRef.current || currentPhase === 'closed') {
-      showCurrentPresentation();
-      return;
-    }
-    void hideOverlay();
-  }, [hideOverlay, showCurrentPresentation]);
-
-  const handleToggleWindowMode = useCallback(() => {
-    const currentPhase = overlayPhaseRef.current;
-    if (currentPhase !== 'open') {
-      return;
-    }
-
-    updateTerminal({
-      windowMode: windowModeRef.current === 'windowed' ? 'overlay' : 'windowed',
-    });
-  }, [updateTerminal]);
-
-  const handleOpenCommandPalette = useCallback(() => {
-    setIsCommandPaletteOpen(true);
-    if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
-      showCurrentPresentation();
-    }
-  }, [showCurrentPresentation]);
-
-  const handleCloseCommandPalette = useCallback(() => {
-    setIsCommandPaletteOpen(false);
   }, []);
 
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    listen('overlay://toggle-request', () => toggle())
-      .then(fn => { unlisten = fn; })
-      .catch(err => console.warn('overlay listen failed:', err));
-    return () => { unlisten?.(); };
-  }, [toggle]);
-
-  // Dev-mode auto-show: fires once after mount so you don't need to press
-  // the hotkey every time you restart during development.
-  // We store the current show routine in a ref so the [] dep array timer is
-  // never cancelled by useCallback reference churn while settings finish
-  // loading or the presentation mode changes.
-  const showCurrentPresentationRef = useRef(showCurrentPresentation);
-  showCurrentPresentationRef.current = showCurrentPresentation;
-  useEffect(() => {
+  // Re-anchor the overlay to its saved top/bottom edge position
+  const anchorOverlay = useCallback(async () => {
     if (!isTauri()) {
       return;
     }
-    // Show the current presentation mode on desktop startup once the React
-    // listeners are mounted. This keeps release builds from idling as a hidden
-    // tray process on first launch while still avoiding a pre-hydration flash.
-    const timer = window.setTimeout(() => {
-      if (!overlayVisibleRef.current && overlayPhaseRef.current === 'closed') {
-        showCurrentPresentationRef.current();
-      }
-    }, 400);
-    return () => window.clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // intentionally empty — fires exactly once on mount
-
-  useGlobalShortcut(keybindings.terminalToggle, toggle, true);
-  useGlobalShortcut(keybindings.terminalFocus, () => openTerminalPanelRef.current(), true);
-  useGlobalShortcut(keybindings.commandPalette, handleOpenCommandPalette, true);
-
-  // ── Escape to close / Command palette hotkey ──
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (matchesKeybinding(e, keybindings.terminalFocus)) {
-        e.preventDefault();
-        e.stopPropagation();
-        openTerminalPanelRef.current();
-        return;
-      }
-
-      if (matchesKeybinding(e, keybindings.windowModeToggle)) {
-        e.preventDefault();
-        e.stopPropagation();
-        handleToggleWindowMode();
-        return;
-      }
-
-      if (!overlayVisibleRef.current) {
-        return;
-      }
-
-      if (matchesKeybinding(e, keybindings.commandPalette)) {
-        e.preventDefault();
-        if (!isTauri()) {
-          setIsCommandPaletteOpen(current => !current);
-        }
-        return;
-      }
-
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        if (isCommandPaletteOpen) {
-          setIsCommandPaletteOpen(false);
-          return;
-        }
-        void hideOverlay();
-      }
-    };
-    window.addEventListener('keydown', handler, true);
-    return () => window.removeEventListener('keydown', handler, true);
-  }, [
-    handleOpenCommandPalette,
-    handleToggleWindowMode,
-    hideOverlay,
-    isCommandPaletteOpen,
-    keybindings.commandPalette,
-    keybindings.terminalFocus,
-    keybindings.windowModeToggle,
-  ]);
-
-  useEffect(() => {
-    if (!isTauri()) {
-      return;
-    }
-
-    void syncWindowPresentation(windowMode);
-  }, [syncWindowPresentation, windowMode]);
-
-  useEffect(() => {
-    if (!isTauri() || !overlayVisibleRef.current || overlayPhaseRef.current !== 'open') {
-      return;
-    }
+    isFreefloatingRef.current = false;
+    setIsFreefloating(false);
+    // Clear remembered bounds so positionAndShow recomputes from anchor settings
+    runtimeOverlayBoundsRef.current = null;
+    void positionAndShow();
 
     let cancelled = false;
 
