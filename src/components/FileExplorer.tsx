@@ -15,6 +15,7 @@ import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useShallow } from 'zustand/react/shallow';
 import type { EditorProps as MonacoEditorProps } from '@monaco-editor/react';
+import { motion } from 'framer-motion';
 import {
   ChevronRight, ChevronLeft, ArrowUp, Search, RefreshCw,
   X, Star, StarOff, Terminal,
@@ -130,6 +131,17 @@ const EXPLORER_LIST_ROW_HEIGHT = 44;
 const EXPLORER_LIST_SEARCH_ROW_HEIGHT = 72;
 const EXPLORER_LIST_OVERSCAN = 8;
 const EXPLORER_GRID_OVERSCAN_ROWS = 2;
+const EXPLORER_LAYOUT_WHEEL_STEP_DELTA = 80;
+const EXPLORER_ZOOM_POSITION_SPRING = {
+  type: 'spring' as const,
+  stiffness: 280,
+  damping: 34,
+  mass: 0.78,
+};
+const EXPLORER_ZOOM_SIZE_TWEEN = {
+  duration: 0.18,
+  ease: [0.22, 1, 0.36, 1] as const,
+};
 
 function getExplorerPerformanceNow(): number {
   return typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -518,11 +530,11 @@ function resolveExplorerPathInput(
 
 function SvgIcon({ src, size = 20 }: { src: string; size?: number }) {
   return (
-    <img
+    <motion.img
       src={src}
-      width={size}
-      height={size}
-      style={{ objectFit: 'contain', flexShrink: 0, transition: 'width 0.12s ease, height 0.12s ease' }}
+      animate={{ width: size, height: size }}
+      transition={EXPLORER_ZOOM_SIZE_TWEEN}
+      style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0, display: 'block', willChange: 'width, height' }}
       onError={e => { (e.target as HTMLImageElement).style.opacity = '0'; }}
       draggable={false}
     />
@@ -1154,6 +1166,7 @@ export function FileExplorer({
   const mainRef = useRef<HTMLDivElement>(null);
   const explorerViewportRef = useRef<HTMLDivElement>(null);
   const layoutMenuAnchorRef = useRef<HTMLDivElement>(null);
+  const layoutWheelDeltaAccumulatorRef = useRef(0);
   const previewWarmupStartedRef = useRef(false);
   const previewWarmupTimerRef = useRef<number | null>(null);
   const [zoomHudVisible, setZoomHudVisible] = useState(false);
@@ -2710,8 +2723,22 @@ export function FileExplorer({
       }
 
       event.preventDefault();
-      const direction = event.deltaY < 0 ? 'larger' : 'smaller';
-      const stepCount = Math.min(3, Math.max(1, Math.ceil(Math.abs(event.deltaY) / 160)));
+      layoutWheelDeltaAccumulatorRef.current += event.deltaY;
+      const accumulatedDelta = layoutWheelDeltaAccumulatorRef.current;
+      const stepCount = Math.min(
+        3,
+        Math.floor(Math.abs(accumulatedDelta) / EXPLORER_LAYOUT_WHEEL_STEP_DELTA),
+      );
+      if (stepCount <= 0) {
+        return;
+      }
+
+      const direction = accumulatedDelta < 0 ? 'larger' : 'smaller';
+      layoutWheelDeltaAccumulatorRef.current -= (
+        Math.sign(accumulatedDelta)
+        * stepCount
+        * EXPLORER_LAYOUT_WHEEL_STEP_DELTA
+      );
       let nextMode = viewMode;
       let nextGridZoom = gridZoom;
 
@@ -2746,7 +2773,10 @@ export function FileExplorer({
     };
 
     viewport.addEventListener('wheel', handleWheel, { passive: false });
-    return () => viewport.removeEventListener('wheel', handleWheel);
+    return () => {
+      layoutWheelDeltaAccumulatorRef.current = 0;
+      viewport.removeEventListener('wheel', handleWheel);
+    };
   }, [gridZoom, isCompactDock, showZoomHud, updateExplorerSettings, viewMode]);
 
   useEffect(() => {
@@ -3643,7 +3673,9 @@ export function FileExplorer({
             {/* Grid view */}
             {newItem.visible && virtualWindow.kind === 'grid' && activeGridMetrics && (
               <div style={{ padding: `0 ${activeGridMetrics.padding}px ${activeGridMetrics.padding}px`, boxSizing: 'border-box' }}>
-                <div
+                <motion.div
+                  layout="position"
+                  transition={EXPLORER_ZOOM_POSITION_SPRING}
                   style={{
                     background: `${accent}10`,
                     border: `1px solid ${accent}`,
@@ -3655,6 +3687,7 @@ export function FileExplorer({
                     gap: 8,
                     height: activeGridMetrics.newItemHeight,
                     boxSizing: 'border-box',
+                    transition: 'border-radius 0.18s cubic-bezier(0.22, 1, 0.36, 1), padding 0.18s cubic-bezier(0.22, 1, 0.36, 1)',
                   }}
                 >
                   <SvgIcon
@@ -3670,7 +3703,7 @@ export function FileExplorer({
                     placeholder={newItem.kind === 'folder' ? 'folder name' : 'name.ext'}
                     style={{ background: '#1e2130', border: `1px solid ${accent}`, borderRadius: 4, color: EXP.text, fontSize: 11, padding: '2px 6px', outline: 'none', width: '100%', boxSizing: 'border-box' as const }}
                   />
-                </div>
+                </motion.div>
               </div>
             )}
 
@@ -3694,8 +3727,10 @@ export function FileExplorer({
                     const isRenaming = rename.active && rename.path === entry.path;
                     const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
                     return (
-                      <div
+                      <motion.div
                         key={entry.path}
+                        layout="position"
+                        transition={EXPLORER_ZOOM_POSITION_SPRING}
                         draggable
                         data-overlay-drag-source="file"
                         onDragStart={e => onDragStart(e, entry)}
@@ -3724,7 +3759,7 @@ export function FileExplorer({
                           overflow: 'hidden',
                           opacity: entry.is_hidden ? 0.5 : 1,
                           userSelect: 'none',
-                          transition: 'background 0.12s ease, border-color 0.12s ease, transform 0.12s ease, border-radius 0.12s ease, padding 0.12s ease',
+                          transition: 'background 0.14s ease, border-color 0.14s ease, transform 0.14s ease, border-radius 0.18s cubic-bezier(0.22, 1, 0.36, 1), padding 0.18s cubic-bezier(0.22, 1, 0.36, 1)',
                         }}
                         onMouseEnter={e => {
                           if (!isSel && !isDrop) {
@@ -3743,7 +3778,12 @@ export function FileExplorer({
                           }
                         }}
                       >
-                        <div
+                        <motion.div
+                          animate={{
+                            width: activeGridMetrics.iconStageSize,
+                            height: activeGridMetrics.iconStageSize,
+                          }}
+                          transition={EXPLORER_ZOOM_SIZE_TWEEN}
                           style={{
                             width: activeGridMetrics.iconStageSize,
                             height: activeGridMetrics.iconStageSize,
@@ -3752,11 +3792,11 @@ export function FileExplorer({
                             justifyContent: 'center',
                             overflow: 'hidden',
                             flexShrink: 0,
-                            transition: 'width 0.12s ease, height 0.12s ease',
+                            willChange: 'width, height',
                           }}
                         >
                           <SvgIcon src={iconSrc} size={activeGridMetrics.iconSize} />
-                        </div>
+                        </motion.div>
                         {isRenaming
                           ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active: false, path: '', name: '' })} />
                           : (
@@ -3782,7 +3822,7 @@ export function FileExplorer({
                           {getEntryStorageLabel(entry)}
                         </span>
                         {renderSearchMetadata(entry)}
-                      </div>
+                      </motion.div>
                     );
                   })}
                 </div>

@@ -43,7 +43,7 @@ export interface ExplorerViewModeDefinition {
 
 export const EXPLORER_GRID_ZOOM_MIN = 0;
 export const EXPLORER_GRID_ZOOM_MAX = 1;
-export const EXPLORER_GRID_ZOOM_STEP = 0.12;
+export const EXPLORER_GRID_ZOOM_STEP = 0.08;
 
 export const explorerViewModes: readonly ExplorerViewModeDefinition[] = [
   {

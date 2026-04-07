@@ -83,6 +83,7 @@ import {
   clampOverlayVisualControlValue,
   formatOverlayVisualControlValue,
   type OverlayWindowBounds,
+  overlayWindowGeometry,
   overlayVisualControls,
 } from './config/overlayWindow';
 import { detectClientPlatform, type RuntimePlatform } from './config/platform';
@@ -341,6 +342,7 @@ function App() {
   const runtimeOverlayBoundsRef = useRef<OverlayWindowBounds | null>(null);
   const interactionLockUntilRef = useRef(0);
   const windowModeRef = useRef<TerminalWindowMode>('overlay');
+  const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const animationSignatureRef = useRef('');
   const shaderSignatureRef = useRef('');
   const dragHideRestoreRef = useRef(false);
@@ -441,8 +443,9 @@ function App() {
   const clampedAppBlurStrength = clampOverlayVisualControlValue('blurStrength', appBlurStrength);
   const overlayAnchor: OverlayWindowAnchor = settings.overlayAnchor === 'top' ? 'top' : 'bottom';
   const isTopAnchored = !isWindowedMode && overlayAnchor === 'top';
-  const scaledWidth = `${100 / clampedAppZoom}%`;
-  const scaledHeight = `${100 / clampedAppZoom}%`;
+  const effectiveWindowZoom = isWindowedMode && isWindowMaximized ? 1 : clampedAppZoom;
+  const scaledWidth = `${100 / effectiveWindowZoom}%`;
+  const scaledHeight = `${100 / effectiveWindowZoom}%`;
   const shellBackgroundColor = appBlur
     ? resolveShellBackgroundColor(theme.palette.shellBackground, theme.palette.shellBackgroundSolid, clampedAppBlurStrength)
     : theme.palette.shellBackgroundSolid;
@@ -544,7 +547,7 @@ function App() {
     verticalOrigin: overlayAnchor,
     accentColor: accent,
     blurStrength: clampedAppBlurStrength,
-    zoom: clampedAppZoom,
+    zoom: effectiveWindowZoom,
     theme,
     viewport: {
       width: typeof window === 'undefined' ? 0 : window.innerWidth,
@@ -557,7 +560,7 @@ function App() {
     appAnimationIntensity,
     clampedAppBlurStrength,
     clampedAppOpacity,
-    clampedAppZoom,
+    effectiveWindowZoom,
     overlayAnimationDirection,
     overlayAnchor,
     overlayPhase,
@@ -567,8 +570,8 @@ function App() {
   ]);
   const shellAnimationStyle = resolveAnimationShellStyle(shellAnimation, shellAnimationContext);
   const combinedShellTransform = typeof shellAnimationStyle.transform === 'string'
-    ? `${shellAnimationStyle.transform} scale(${clampedAppZoom})`
-    : `scale(${clampedAppZoom})`;
+    ? `${shellAnimationStyle.transform} scale(${effectiveWindowZoom})`
+    : `scale(${effectiveWindowZoom})`;
   const activeLayoutProfile = useMemo(
     () => resolveLayoutProfile(layoutManifest, layoutSettings.activeProfileId),
     [layoutManifest, layoutSettings.activeProfileId],
@@ -749,6 +752,32 @@ function App() {
   useEffect(() => () => {
     clearAnimationClock();
   }, [clearAnimationClock]);
+
+  useEffect(() => {
+    if (!isWindowedMode || !isTauri()) {
+      setIsWindowMaximized(false);
+      return;
+    }
+
+    let cancelled = false;
+    const win = getCurrentWindow();
+    const sync = async () => {
+      const nextValue = await win.isMaximized().catch(() => false);
+      if (!cancelled) {
+        setIsWindowMaximized(nextValue);
+      }
+    };
+
+    void sync();
+    const unlistenResize = win.onResized(() => {
+      void sync();
+    });
+
+    return () => {
+      cancelled = true;
+      void unlistenResize.then(unlisten => unlisten());
+    };
+  }, [isWindowedMode]);
 
   // ── Position & show ──
   const positionAndShow = useCallback(async () => {
@@ -1421,6 +1450,12 @@ function App() {
       const logH = Math.round(ev.payload.height / factor);
       const logW = Math.round(ev.payload.width / factor);
       if (windowModeRef.current === 'windowed') {
+        const maximized = await win.isMaximized().catch(() => false);
+        setIsWindowMaximized(maximized);
+        if (maximized) {
+          return;
+        }
+
         useSettingsStore.getState().updateTerminal({
           windowedHeight: Math.max(logH, 480),
           windowedWidth: Math.max(logW, 720),
@@ -1435,6 +1470,15 @@ function App() {
         x: position.x,
         y: position.y,
       };
+      const store = useSettingsStore.getState().settings.terminal;
+      const nextOverlayHeight = Math.max(logH, overlayWindowGeometry.minHeight);
+      const nextOverlayWidth = Math.max(logW, overlayWindowGeometry.minWidth);
+      if (nextOverlayHeight !== store.overlayHeight || nextOverlayWidth !== store.overlayWidth) {
+        useSettingsStore.getState().updateTerminal({
+          overlayHeight: nextOverlayHeight,
+          overlayWidth: nextOverlayWidth,
+        });
+      }
     });
     return () => { unlistenResize.then(fn => fn()); };
   }, []);
@@ -2303,15 +2347,19 @@ function App() {
               WebkitBackdropFilter: shellBackdropFilter,
               color: theme.palette.textPrimary,
               fontFamily: resolvedAppearance.fonts.ui,
-              boxShadow: theme.effects.overlayShadow,
-              borderTop: isWindowedMode ? `1px solid ${accent}28` : (isTopAnchored ? 'none' : `1px solid ${accent}40`),
-              borderBottom: isWindowedMode ? `1px solid ${accent}28` : (isTopAnchored ? `1px solid ${accent}40` : 'none'),
-              borderLeft: isWindowedMode ? `1px solid ${accent}28` : 'none',
-              borderRight: isWindowedMode ? `1px solid ${accent}28` : 'none',
-              borderTopLeftRadius: isWindowedMode ? 16 : (isTopAnchored ? 0 : 18),
-              borderTopRightRadius: isWindowedMode ? 16 : (isTopAnchored ? 0 : 18),
-              borderBottomLeftRadius: isWindowedMode ? 16 : (isTopAnchored ? 18 : 0),
-              borderBottomRightRadius: isWindowedMode ? 16 : (isTopAnchored ? 18 : 0),
+              boxShadow: isWindowedMode && isWindowMaximized ? 'none' : theme.effects.overlayShadow,
+              borderTop: isWindowedMode
+                ? (isWindowMaximized ? 'none' : `1px solid ${accent}28`)
+                : (isTopAnchored ? 'none' : `1px solid ${accent}40`),
+              borderBottom: isWindowedMode
+                ? (isWindowMaximized ? 'none' : `1px solid ${accent}28`)
+                : (isTopAnchored ? `1px solid ${accent}40` : 'none'),
+              borderLeft: isWindowedMode && !isWindowMaximized ? `1px solid ${accent}28` : 'none',
+              borderRight: isWindowedMode && !isWindowMaximized ? `1px solid ${accent}28` : 'none',
+              borderTopLeftRadius: isWindowedMode ? (isWindowMaximized ? 0 : 16) : (isTopAnchored ? 0 : 18),
+              borderTopRightRadius: isWindowedMode ? (isWindowMaximized ? 0 : 16) : (isTopAnchored ? 0 : 18),
+              borderBottomLeftRadius: isWindowedMode ? (isWindowMaximized ? 0 : 16) : (isTopAnchored ? 18 : 0),
+              borderBottomRightRadius: isWindowedMode ? (isWindowMaximized ? 0 : 16) : (isTopAnchored ? 18 : 0),
             }}
           >
             <ShaderSurfaceLayer
@@ -2954,6 +3002,7 @@ function TopBar({
   const supportsNativeBlur = blurPlatform === 'macos' || blurPlatform === 'windows';
   const isBottomBar = layoutProfile.chrome.barPosition === 'bottom';
   const isWindowedMode = windowMode === 'windowed';
+  const windowedChromeTopInset = isWindowedMode && blurPlatform === 'windows' && !isWindowMaximized ? 10 : 0;
   const openPanels = useMemo(
     () => getTabbedOpenPanelIds(layoutProfile, openPanelIds)
       .map(id => panels.find(panel => panel.id === id))
@@ -3336,8 +3385,10 @@ function TopBar({
       position: 'relative',
       display: 'flex',
       alignItems: 'stretch',
-      height: CHROME_HEIGHT,
+      height: CHROME_HEIGHT + windowedChromeTopInset,
       flexShrink: 0,
+      paddingTop: windowedChromeTopInset,
+      boxSizing: 'border-box',
       background: `linear-gradient(180deg, ${BG}, ${appearance.theme.palette.appBackgroundAlt})`,
       borderBottom: isBottomBar ? 'none' : `1px solid ${accent}24`,
       borderTop: isBottomBar ? `1px solid ${accent}24` : 'none',
@@ -3481,7 +3532,7 @@ function TopBar({
               boxShadow: windowMode === 'overlay' ? `0 0 0 1px ${accent}18 inset` : 'none',
             }}
           >
-            <span>{windowMode === 'windowed' ? 'App' : 'Dock'}</span>
+            <span>{windowMode === 'windowed' ? 'Dock' : 'App'}</span>
           </button>
         </div>
 
