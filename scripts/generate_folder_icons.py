@@ -42,7 +42,7 @@ except ModuleNotFoundError:
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def output_manifest_path(base_dir: Path) -> Path:
-        return base_dir / "folder-icon-manifest.json"
+        return base_dir / "scripts" / "icon-data" / "folder-icon-manifest.json"
 
     def build_generic_icon_id(index: int) -> str:
         return f"generic-{index:03d}"
@@ -59,7 +59,7 @@ except ModuleNotFoundError:
         return {
             "ui_forge_parent": str(base_dir),
             "ui_forge_root": str(base_dir),
-            "source_map": str(base_dir / "repomap.md"),
+            "source_map": str(base_dir / "docs" / "architecture" / "repomap.md"),
             "output_dir": str(base_dir / "output" / "folder-icon-library"),
             "render_formats": ["svg"],
             "ico_sizes": [16, 24, 32, 48, 64, 128, 256],
@@ -189,7 +189,7 @@ PALETTES: Dict[str, List[List[str]]] = {
 }
 
 GENERIC_BADGES = ["spark", "stack", "dotgrid", "wave", "grid", "chip", "signal", "archive"]
-TAXONOMY_PATH = BASE_DIR / "icon_taxonomy.json"
+TAXONOMY_PATH = BASE_DIR / "scripts" / "icon-data" / "icon_taxonomy.json"
 
 
 def load_enterprise_folder_library() -> List[str]:

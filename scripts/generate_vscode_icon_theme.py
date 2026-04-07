@@ -63,7 +63,7 @@ class VSCodeIconThemeGenerator:
         }
 
     def _load_taxonomy(self) -> Dict[str, Dict[str, List[str]]]:
-        taxonomy_path = Path(__file__).resolve().parent / "icon_taxonomy.json"
+        taxonomy_path = Path(__file__).resolve().parent / "icon-data" / "icon_taxonomy.json"
         if not taxonomy_path.exists():
             return {"vscode_folder_associations": {}}
         return json.loads(taxonomy_path.read_text(encoding="utf-8"))

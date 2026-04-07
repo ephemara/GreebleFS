@@ -1,7 +1,0 @@
-<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="6" y="8" width="20" height="16" rx="2" stroke="#9C4121" stroke-width="2" fill="none"/>
-  <line x1="6" y1="14" x2="26" y2="14" stroke="#9C4121" stroke-width="2"/>
-  <line x1="16" y1="8" x2="16" y2="24" stroke="#9C4121" stroke-width="2"/>
-  <text x="11" y="12" font-family="monospace" font-size="4" fill="#9C4121" text-anchor="middle">key</text>
-  <text x="21" y="12" font-family="monospace" font-size="4" fill="#9C4121" text-anchor="middle">val</text>
-</svg>

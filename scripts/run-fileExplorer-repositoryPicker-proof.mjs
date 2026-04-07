@@ -10,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 const cacheDir = path.join(repoRoot, 'node_modules', '.vite-proof', 'repository-picker');
-const proofEntry = path.join(repoRoot, 'browser-proof', 'fileExplorer.repositoryPicker.html');
+const proofEntry = path.join(repoRoot, 'public', 'browser-proof', 'fileExplorer.repositoryPicker.html');
 const screenshotPath = path.join(
   repoRoot,
   'automations',

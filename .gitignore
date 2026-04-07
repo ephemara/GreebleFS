@@ -12,7 +12,6 @@ build/
 out/
 .next/
 .nuxt/
-public/
 .env
 .env.*
 !.env.example
@@ -84,3 +83,4 @@ pip-delete-this-directory.txt
 # --- OS ---
 .DS_Store
 Thumbs.db
+desktop.ini
