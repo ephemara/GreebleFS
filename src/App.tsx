@@ -39,14 +39,12 @@ import {
   type LoadedOverlayShader,
   type OverlayShaderShellContext,
 } from './components/shaderRuntime';
-import { listen } from '@tauri-apps/api/event';
 import {
   Check,
   ChevronDown,
   Copy,
   Droplet,
   GripHorizontal,
-  GripVertical,
   LayoutGrid,
   Minus,
   Search,
@@ -64,7 +62,7 @@ import {
 } from './config/appearance';
 import { loadThemePackages as discoverThemePackages, themeSystemConfig, type LoadedOverlayThemePackage } from './config/themePackages';
 import { dispatchTerminalCommand } from './config/pluginContributions';
-import { formatHotkeyLabel, matchesKeybinding, matchesWheelHotkey } from './config/hotkeys';
+import { formatHotkeyLabel, matchesWheelHotkey } from './config/hotkeys';
 import {
   BUILT_IN_LAYOUT_MANIFEST,
   getNextLayoutProfileId,
@@ -93,7 +91,6 @@ import {
 import { detectClientPlatform, type RuntimePlatform } from './config/platform';
 import { derivePanelOpenState, reorderPanelIds } from './components/panelUtils';
 import { OverlayScrollArea } from './components/OverlayScrollArea';
-import { useGlobalShortcut } from './input/GlobalShortcuts';
 import {
   buildThemeVisualStyle,
   computePanelWindowLayout,
@@ -340,7 +337,6 @@ function App() {
   const animationFrameRef = useRef<number | null>(null);
   const animationCommitTimerRef = useRef<number | null>(null);
   const progressFrameRef = useRef<number | null>(null);
-  const lastToggleAtRef = useRef(0);
   const lastTerminalFocusAtRef = useRef(0);
   const isProgrammaticResizeRef = useRef(false);
   const runtimeOverlayBoundsRef = useRef<OverlayWindowBounds | null>(null);
@@ -352,7 +348,6 @@ function App() {
   const openTerminalPanelRef = useRef<() => void>(() => undefined);
   // Tracks whether the overlay has been dragged away from its anchor position
   const isFreefloatingRef = useRef(false);
-  const [isFreefloating, setIsFreefloating] = useState(false);
   const [layoutManifest, setLayoutManifest] = useState(BUILT_IN_LAYOUT_MANIFEST);
   const [layoutConfigSource, setLayoutConfigSource] = useState<string | null>(null);
   const [themePackages, setThemePackages] = useState<LoadedOverlayThemePackage[]>([]);
@@ -815,16 +810,16 @@ function App() {
 
       // Atomic: set all window properties + geometry in one IPC call, then show
       if (isTauri()) {
-        await commands.windowApplyMode({
-          decorations: false,
-          alwaysOnTop: true,
-          shadow: false,
-          skipTaskbar: !shouldShowInTaskbar,
-          x: layout.x,
-          y: layout.y,
-          width: layout.width,
-          height: layout.height,
-        }).catch(() => {});
+        await commands.windowApplyMode(
+          false,
+          true,
+          false,
+          !shouldShowInTaskbar,
+          layout.x,
+          layout.y,
+          layout.width,
+          layout.height,
+        ).catch(() => {});
       }
       await win.show();
       await win.setFocus();
@@ -923,25 +918,28 @@ function App() {
 
       // Atomic: set decorations + geometry in one call
       if (isTauri() && !isMaximized) {
-        await commands.windowApplyMode({
-          decorations: true,
-          alwaysOnTop: false,
-          shadow: true,
-          skipTaskbar: false,
-          x: layout.x,
-          y: layout.y,
-          width: layout.width,
-          height: layout.height,
-        }).catch(() => {});
+        await commands.windowApplyMode(
+          true,
+          false,
+          true,
+          false,
+          layout.x,
+          layout.y,
+          layout.width,
+          layout.height,
+        ).catch(() => {});
       } else if (isTauri()) {
         // Already maximized — just set the presentation flags, skip geometry
-        await commands.windowApplyMode({
-          decorations: true,
-          alwaysOnTop: false,
-          shadow: true,
-          skipTaskbar: false,
-          x: 0, y: 0, width: 0, height: 0,
-        }).catch(() => {});
+        await commands.windowApplyMode(
+          true,
+          false,
+          true,
+          false,
+          0,
+          0,
+          0,
+          0,
+        ).catch(() => {});
       }
       await win.show();
       await win.unminimize().catch(() => {});
@@ -1071,124 +1069,143 @@ function App() {
     void positionAndShow();
   }, [positionAndShow]);
 
-  // ── Overlay native drag (freely floatable) ──
-  const handleOverlayDragStart = useCallback(async () => {
-    if (!isTauri() || windowModeRef.current !== 'overlay') {
+  const syncWindowPresentation = useCallback(async (mode: TerminalWindowMode) => {
+    if (!isTauri() || !overlayVisibleRef.current) {
       return;
     }
+
     try {
-      await getCurrentWindow().startDragging();
-      // After drag ends, the window is now floating — show the anchor button
-      isFreefloatingRef.current = true;
-      setIsFreefloating(true);
-    } catch {
-      // startDragging may throw if called outside a mouse-down event
-    }
-  }, []);
+      const win = getCurrentWindow();
+      const scaleFactor = await win.scaleFactor();
+      const monitor = await primaryMonitor();
+      if (!monitor) {
+        return;
+      }
 
-  // Re-anchor the overlay to its saved top/bottom edge position
-  const anchorOverlay = useCallback(async () => {
-    if (!isTauri()) {
-      return;
-    }
-    isFreefloatingRef.current = false;
-    setIsFreefloating(false);
-    // Clear remembered bounds so positionAndShow recomputes from anchor settings
-    runtimeOverlayBoundsRef.current = null;
-    void positionAndShow();
-
-    let cancelled = false;
-
-    const applyVisibleWindowMode = async () => {
-      try {
-        const win = getCurrentWindow();
-        await syncWindowPresentation(windowMode);
-        const scaleFactor = await win.scaleFactor();
-        const monitor = await primaryMonitor();
-        if (!monitor || cancelled) {
-          return;
-        }
-
-        if (windowMode === 'windowed') {
-          const store = useSettingsStore.getState().settings.terminal;
-          const layout = computePanelWindowLayout({
-            workArea: monitor.workArea,
-            scaleFactor,
-            windowedWidth: store.windowedWidth,
-            windowedHeight: store.windowedHeight,
-          });
-          const isMaximized = await win.isMaximized().catch(() => false);
-          if (!isMaximized) {
-            isProgrammaticResizeRef.current = true;
-            await win.setSize(new PhysicalSize(layout.width, layout.height));
-            await win.setPosition(new PhysicalPosition(layout.x, layout.y));
-          }
-          if (
-            (layout.healedWidth !== null && layout.healedWidth !== store.windowedWidth)
-            || (layout.healedHeight !== null && layout.healedHeight !== store.windowedHeight)
-          ) {
-            useSettingsStore.getState().updateTerminal({
-              ...(layout.healedWidth !== null ? { windowedWidth: layout.healedWidth } : {}),
-              ...(layout.healedHeight !== null ? { windowedHeight: layout.healedHeight } : {}),
-            });
-          }
-          return;
-        }
-
+      if (mode === 'windowed') {
         const store = useSettingsStore.getState().settings.terminal;
-        const rememberedBounds = runtimeOverlayBoundsRef.current;
-        const baseLayout = rememberedBounds
-          ? clampOverlayWindowBoundsToWorkArea({
+        const layout = computePanelWindowLayout({
+          workArea: monitor.workArea,
+          scaleFactor,
+          windowedWidth: store.windowedWidth,
+          windowedHeight: store.windowedHeight,
+        });
+        const isMaximized = await win.isMaximized().catch(() => false);
+        if (!isMaximized) {
+          isProgrammaticResizeRef.current = true;
+          await commands.windowApplyMode(
+            true,
+            false,
+            true,
+            false,
+            layout.x,
+            layout.y,
+            layout.width,
+            layout.height,
+          ).catch(() => {});
+          await win.setSize(new PhysicalSize(layout.width, layout.height));
+          await win.setPosition(new PhysicalPosition(layout.x, layout.y));
+        }
+        if (
+          (layout.healedWidth !== null && layout.healedWidth !== store.windowedWidth)
+          || (layout.healedHeight !== null && layout.healedHeight !== store.windowedHeight)
+        ) {
+          useSettingsStore.getState().updateTerminal({
+            ...(layout.healedWidth !== null ? { windowedWidth: layout.healedWidth } : {}),
+            ...(layout.healedHeight !== null ? { windowedHeight: layout.healedHeight } : {}),
+          });
+        }
+        return;
+      }
+
+      const store = useSettingsStore.getState().settings.terminal;
+      const rememberedBounds = isFreefloatingRef.current ? runtimeOverlayBoundsRef.current : null;
+      const layout = rememberedBounds
+        ? {
+            ...clampOverlayWindowBoundsToWorkArea({
               workArea: monitor.workArea,
               scaleFactor,
               bounds: rememberedBounds,
-            })
-          : computeOverlayWindowLayout({
-              workArea: monitor.workArea,
-              scaleFactor,
-              overlayHeight: store.overlayHeight,
-              overlayWidth: store.overlayWidth,
-              overlayAnchor: store.overlayAnchor === 'top' ? 'top' : 'bottom',
-            });
-        const anchoredLayout = computeOverlayWindowLayout({
-          workArea: monitor.workArea,
-          scaleFactor,
-          overlayHeight: Math.round(baseLayout.height / scaleFactor),
-          overlayWidth: Math.round(baseLayout.width / scaleFactor),
-          overlayAnchor: store.overlayAnchor === 'top' ? 'top' : 'bottom',
-        });
-        const layout = {
-          ...baseLayout,
-          y: anchoredLayout.y,
-          healedHeight: 'healedHeight' in anchoredLayout ? anchoredLayout.healedHeight : null,
-        };
-        if (layout.healedHeight !== null && layout.healedHeight !== store.overlayHeight) {
-          useSettingsStore.getState().updateTerminal({ overlayHeight: layout.healedHeight });
-        }
+            }),
+            healedHeight: null,
+          }
+        : computeOverlayWindowLayout({
+            workArea: monitor.workArea,
+            scaleFactor,
+            overlayHeight: store.overlayHeight,
+            overlayWidth: store.overlayWidth,
+            overlayAnchor: store.overlayAnchor === 'top' ? 'top' : 'bottom',
+          });
 
-        runtimeOverlayBoundsRef.current = {
-          width: layout.width,
-          height: layout.height,
-          x: layout.x,
-          y: layout.y,
-        };
-        isProgrammaticResizeRef.current = true;
-        await win.setSize(new PhysicalSize(layout.width, layout.height));
-        await win.setPosition(new PhysicalPosition(layout.x, layout.y));
-      } catch (error) {
-        if (!cancelled) {
-          console.warn('OverlayTerm: failed to transition window presentation', error);
-        }
-      } finally {
-        isProgrammaticResizeRef.current = false;
+      if (layout.healedHeight !== null && layout.healedHeight !== store.overlayHeight) {
+        useSettingsStore.getState().updateTerminal({ overlayHeight: layout.healedHeight });
       }
-    };
 
-    void applyVisibleWindowMode();
+      runtimeOverlayBoundsRef.current = {
+        width: layout.width,
+        height: layout.height,
+        x: layout.x,
+        y: layout.y,
+      };
+      isProgrammaticResizeRef.current = true;
+      await commands.windowApplyMode(
+        false,
+        true,
+        false,
+        !shouldShowInTaskbar,
+        layout.x,
+        layout.y,
+        layout.width,
+        layout.height,
+      ).catch(() => {});
+      await win.setSize(new PhysicalSize(layout.width, layout.height));
+      await win.setPosition(new PhysicalPosition(layout.x, layout.y));
+    } catch (error) {
+      console.warn('OverlayTerm: failed to transition window presentation', error);
+    } finally {
+      isProgrammaticResizeRef.current = false;
+    }
+  }, [shouldShowInTaskbar]);
 
-    return () => {
-      cancelled = true;
-    };
+  const handleToggleWindowMode = useCallback(() => {
+    updateTerminal({
+      windowMode: windowMode === 'windowed' ? 'overlay' : 'windowed',
+    });
+  }, [updateTerminal, windowMode]);
+
+  const handleOpenCommandPalette = useCallback(() => {
+    if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
+      showCurrentPresentation();
+    }
+    setIsCommandPaletteOpen(true);
+  }, [showCurrentPresentation]);
+
+  const handleCloseCommandPalette = useCallback(() => {
+    setIsCommandPaletteOpen(false);
+  }, []);
+
+  const handleDragStart = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    if (!target?.closest('[data-overlay-drag-source="file"]')) {
+      return;
+    }
+    void hideOverlayForDrag();
+  }, [hideOverlayForDrag]);
+
+  const handleDragEndCapture = useCallback(() => {
+    restoreOverlayAfterDrag();
+  }, [restoreOverlayAfterDrag]);
+
+  const handleDropCapture = useCallback(() => {
+    restoreOverlayAfterDrag();
+  }, [restoreOverlayAfterDrag]);
+
+  useEffect(() => {
+    if (!isTauri() || !overlayVisibleRef.current) {
+      return;
+    }
+
+    void syncWindowPresentation(windowMode);
   }, [syncWindowPresentation, windowMode]);
 
   useEffect(() => {

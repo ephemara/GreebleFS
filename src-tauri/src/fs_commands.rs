@@ -26,6 +26,13 @@ use yazi_vfs::provider as yazi_provider;
 #[cfg(test)]
 use std::sync::atomic::{AtomicU64, Ordering};
 
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::{
+    Foundation::CloseHandle,
+    Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY},
+    System::Threading::{GetCurrentProcess, OpenProcessToken},
+};
+
 // ─── Data types ───────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
@@ -3194,6 +3201,56 @@ pub async fn fs_get_home_dir() -> Result<String, String> {
     dirs::home_dir()
         .map(|p| p.to_string_lossy().to_string())
         .ok_or_else(|| "Could not determine home directory".to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn current_process_is_elevated() -> Result<bool, String> {
+    unsafe {
+        let mut token_handle = std::ptr::null_mut();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token_handle) == 0 {
+            return Err(std::io::Error::last_os_error().to_string());
+        }
+
+        struct TokenGuard(isize);
+        impl Drop for TokenGuard {
+            fn drop(&mut self) {
+                unsafe {
+                    CloseHandle(self.0 as _);
+                }
+            }
+        }
+
+        let _token_guard = TokenGuard(token_handle as isize);
+        let mut elevation = TOKEN_ELEVATION { TokenIsElevated: 0 };
+        let mut bytes_returned = 0u32;
+
+        if GetTokenInformation(
+            token_handle,
+            TokenElevation,
+            &mut elevation as *mut _ as *mut _,
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut bytes_returned,
+        ) == 0
+        {
+            return Err(std::io::Error::last_os_error().to_string());
+        }
+
+        Ok(elevation.TokenIsElevated != 0)
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_is_process_elevated() -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        return current_process_is_elevated();
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(false)
+    }
 }
 
 // ─── Unit Tests ───────────────────────────────────────────────────────────────

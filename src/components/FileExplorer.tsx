@@ -29,9 +29,9 @@ import { getFolderIconSrc } from '../config/folderIcons';
 import { getBuiltInIconTheme, resolveFileIconSrc, resolveIconSrc } from '../config/iconTheme';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
 import {
+  getAdjacentExplorerGridMode,
   getExplorerGridMetricsForZoom,
   getExplorerGridZoomAnchor,
-  getNearestExplorerGridMode,
   explorerViewModes,
   getExplorerViewModeDefinition,
   isExplorerGridMode,
@@ -1661,7 +1661,7 @@ export function FileExplorer({
     setSearchIncludeContent(value => !value);
   }, []);
   const cycleSortKey = useCallback(() => {
-    const order: ExplorerSortKey[] = ['name', 'size', 'modified', 'type'];
+    const order: ExplorerSortKey[] = ['name', 'size', 'date', 'type'];
     const nextIndex = (order.indexOf(explorerSettings.sortBy) + 1) % order.length;
     updateExplorerSettings({ sortBy: order[nextIndex], sortOrder: getDefaultExplorerSortOrder(order[nextIndex]) });
   }, [explorerSettings.sortBy, updateExplorerSettings]);
@@ -1727,6 +1727,7 @@ export function FileExplorer({
     [visibleEntries, selected],
   );
   const activeDragPathsRef = useRef<string[]>([]);
+  const isProcessElevatedRef = useRef(false);
   const selectedDirectoryEntries = useMemo(
     () => selectedEntries.filter(entry => entry.is_dir),
     [selectedEntries],
@@ -1821,6 +1822,28 @@ export function FileExplorer({
   ): Promise<FileTransferResult[]> => {
     if (sources.length === 0) return [];
     return transferExplorerItems(targetDir, sources, operation);
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri()) {
+      isProcessElevatedRef.current = false;
+      return;
+    }
+
+    let cancelled = false;
+    void commands.fsIsProcessElevated()
+      .then(result => {
+        if (cancelled) return;
+        isProcessElevatedRef.current = Boolean(unwrapTauriResult(result));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        isProcessElevatedRef.current = false;
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -2515,12 +2538,20 @@ export function FileExplorer({
       const uriList = dragPaths.map(toFileUri).join('\r\n');
       e.dataTransfer.setData('text/uri-list', uriList);
       if (isTauri() && dragPaths.length > 0) {
+        if (runtimePlatform === 'windows' && isProcessElevatedRef.current) {
+          setError('OverlayTerm is running as Administrator, so Windows may block dragging files into normal Explorer/Desktop windows. Run OverlayTerm without elevation for drag-out support.');
+        }
         void commands.fsStartNativeFileDrag(dragPaths)
           .then(result => {
             unwrapTauriResult(result);
           })
           .catch(error => {
-            setError(formatExplorerNativeDragError(error));
+            const fallback = formatExplorerNativeDragError(error);
+            if (runtimePlatform === 'windows' && isProcessElevatedRef.current) {
+              setError('OverlayTerm is running as Administrator, so Windows blocked native drag into a non-elevated target. Run OverlayTerm without elevation for drag-out support.');
+              return;
+            }
+            setError(fallback);
           });
       }
     }
@@ -2671,7 +2702,7 @@ export function FileExplorer({
         const nextGridZoom = stepExplorerGridZoom(gridZoom, direction);
         if (nextGridZoom !== gridZoom) {
           updateExplorerSettings({
-            viewMode: getNearestExplorerGridMode(nextGridZoom),
+            viewMode: getAdjacentExplorerGridMode(viewMode, direction),
             gridZoom: nextGridZoom,
           });
           return;

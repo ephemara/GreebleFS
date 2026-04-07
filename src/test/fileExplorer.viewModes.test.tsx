@@ -121,6 +121,8 @@ describe('FileExplorer view modes', () => {
           return [];
         case 'fs_get_home_dir':
           return REPO_ROOT;
+        case 'fs_is_process_elevated':
+          return false;
         case 'fs_get_runtime_cache_policy':
           return {
             dirListCacheTtlMs: 2000,
@@ -188,7 +190,7 @@ describe('FileExplorer view modes', () => {
     dispatchLayoutWheel('alpha', -120);
 
     await waitFor(() => {
-      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('icons-m');
+      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('icons-l');
       expect(useSettingsStore.getState().settings.explorer.gridZoom).toBeGreaterThan(0);
     });
     expect(useSettingsStore.getState().settings.appearance.appZoom).toBe(appearanceZoomBefore);
@@ -204,7 +206,7 @@ describe('FileExplorer view modes', () => {
 
     await waitFor(() => {
       expect(useSettingsStore.getState().settings.explorer.gridZoom).toBeGreaterThan(0.5);
-      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('icons-l');
+      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('icons-xl');
     });
   });
 

@@ -76,6 +76,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::fs_commands::fs_search_entries_with_diagnostics,
             crate::fs_commands::git_exec,
             crate::fs_commands::fs_get_home_dir,
+            crate::fs_commands::fs_is_process_elevated,
             crate::desktop_integration::fs_resolve_native_icons,
             crate::desktop_integration::fs_start_native_file_drag,
             crate::screenshot_commands::screenshot_capture_preview,

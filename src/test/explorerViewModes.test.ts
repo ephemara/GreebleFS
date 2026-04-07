@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getAdjacentExplorerGridMode,
   getExplorerGridMetricsForZoom,
   getNearestExplorerGridMode,
   getExplorerViewModeDefinition,
@@ -34,6 +35,12 @@ describe('explorerViewModes', () => {
     expect(metrics.iconSize).toBeLessThan(60);
     expect(metrics.minWidth).toBeGreaterThan(122);
     expect(metrics.minWidth).toBeLessThan(152);
+  });
+
+  it('treats named icon layouts as anchors while zooming between them', () => {
+    expect(getAdjacentExplorerGridMode('icons-l', 'larger')).toBe('icons-xl');
+    expect(getAdjacentExplorerGridMode('icons-l', 'smaller')).toBe('icons-m');
+    expect(getAdjacentExplorerGridMode('icons-xl', 'smaller')).toBe('icons-l');
   });
 
   it('falls back from icon grids to details while search is active', () => {

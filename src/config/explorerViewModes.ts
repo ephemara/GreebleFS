@@ -212,6 +212,27 @@ export function getNearestExplorerGridMode(gridZoom: number): 'icons-xl' | 'icon
   return closest.id;
 }
 
+export function getAdjacentExplorerGridMode(
+  currentMode: ExplorerViewMode,
+  direction: ExplorerViewWheelDirection,
+): 'icons-xl' | 'icons-l' | 'icons-m' {
+  if (!isExplorerGridMode(currentMode)) {
+    return direction === 'larger' ? 'icons-m' : 'icons-xl';
+  }
+
+  if (direction === 'larger') {
+    if (currentMode === 'icons-m') {
+      return 'icons-l';
+    }
+    return 'icons-xl';
+  }
+
+  if (currentMode === 'icons-xl') {
+    return 'icons-l';
+  }
+  return 'icons-m';
+}
+
 export function getExplorerGridMetricsForZoom(gridZoom: number): ExplorerGridMetrics {
   const zoom = normalizeExplorerGridZoom(gridZoom);
   let lowerIndex = 0;
