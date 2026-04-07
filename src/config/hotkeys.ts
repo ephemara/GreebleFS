@@ -10,6 +10,16 @@ export type HotkeyBindingKey =
   | 'deleteItem'
   | 'duplicateItem'
   | 'refreshExplorer'
+  | 'goBackDirectory'
+  | 'goForwardDirectory'
+  | 'goHomeDirectory'
+  | 'clearExplorerSearch'
+  | 'toggleExplorerSearchScope'
+  | 'cycleExplorerSortKey'
+  | 'toggleExplorerSortOrder'
+  | 'focusExplorerList'
+  | 'focusExplorerAddressBar'
+  | 'focusExplorerPreview'
   | 'goUpDirectory'
   | 'copyPath'
   | 'copySelection'
@@ -124,6 +134,76 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     label: 'Refresh Explorer',
     description: 'Reload the current explorer directory.',
     defaultValue: 'F5',
+    scope: 'local',
+  },
+  {
+    key: 'goBackDirectory',
+    label: 'Go Back',
+    description: 'Navigate back through explorer history.',
+    defaultValue: 'Alt+Left',
+    scope: 'local',
+  },
+  {
+    key: 'goForwardDirectory',
+    label: 'Go Forward',
+    description: 'Navigate forward through explorer history.',
+    defaultValue: 'Alt+Right',
+    scope: 'local',
+  },
+  {
+    key: 'goHomeDirectory',
+    label: 'Go Home',
+    description: 'Jump to the explorer home directory.',
+    defaultValue: 'Alt+Home',
+    scope: 'local',
+  },
+  {
+    key: 'clearExplorerSearch',
+    label: 'Clear Explorer Search',
+    description: 'Clear the current explorer search query.',
+    defaultValue: 'Escape',
+    scope: 'local',
+  },
+  {
+    key: 'toggleExplorerSearchScope',
+    label: 'Toggle Include Text Search',
+    description: 'Toggle whether explorer search includes file contents.',
+    defaultValue: 'Ctrl+Alt+F',
+    scope: 'local',
+  },
+  {
+    key: 'cycleExplorerSortKey',
+    label: 'Cycle Sort Key',
+    description: 'Step through explorer sort keys.',
+    defaultValue: 'Ctrl+Alt+S',
+    scope: 'local',
+  },
+  {
+    key: 'toggleExplorerSortOrder',
+    label: 'Toggle Sort Order',
+    description: 'Flip the current explorer sort order.',
+    defaultValue: 'Ctrl+Alt+O',
+    scope: 'local',
+  },
+  {
+    key: 'focusExplorerList',
+    label: 'Focus Explorer List',
+    description: 'Focus the main file list.',
+    defaultValue: 'Ctrl+1',
+    scope: 'local',
+  },
+  {
+    key: 'focusExplorerAddressBar',
+    label: 'Focus Explorer Address Bar',
+    description: 'Focus the explorer address bar.',
+    defaultValue: 'Ctrl+L',
+    scope: 'local',
+  },
+  {
+    key: 'focusExplorerPreview',
+    label: 'Focus Explorer Preview',
+    description: 'Focus the explorer preview panel.',
+    defaultValue: 'Ctrl+2',
     scope: 'local',
   },
   {

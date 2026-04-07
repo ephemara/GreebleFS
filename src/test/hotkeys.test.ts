@@ -28,6 +28,13 @@ describe('hotkey config helpers', () => {
     expect(normalized.windowModeToggle).toBe(defaults.windowModeToggle);
     expect(normalized.zoomAdjust).toBe('Ctrl+Scroll');
     expect(defaults.opacityAdjust).toBe('Alt+Scroll');
+    expect(defaults.goBackDirectory).toBe('Alt+Left');
+    expect(defaults.goForwardDirectory).toBe('Alt+Right');
+    expect(defaults.goHomeDirectory).toBe('Alt+Home');
+    expect(defaults.clearExplorerSearch).toBe('Escape');
+    expect(defaults.toggleExplorerSearchScope).toBe('Ctrl+Alt+F');
+    expect(defaults.cycleExplorerSortKey).toBe('Ctrl+Alt+S');
+    expect(defaults.toggleExplorerSortOrder).toBe('Ctrl+Alt+O');
   });
 
   it('normalizes option-based wheel bindings to alt-modified scroll gestures', () => {
@@ -73,6 +80,11 @@ describe('hotkey config helpers', () => {
     expect(matchesKeybinding(
       { key: 'Escape', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false },
       'Escape',
+    )).toBe(true);
+
+    expect(matchesKeybinding(
+      { key: 'Left', ctrlKey: false, metaKey: false, altKey: true, shiftKey: false },
+      'Alt+Left',
     )).toBe(true);
   });
 });

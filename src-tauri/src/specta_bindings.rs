@@ -95,6 +95,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::window_commands::tray_set_visible,
             crate::window_commands::window_set_blur,
             crate::window_commands::window_set_taskbar_visibility,
+            crate::window_commands::window_apply_mode,
             crate::domain_commands::domain_list_shell_blueprints,
             crate::domain_commands::domain_list_theme_manifests,
             crate::domain_commands::domain_list_workbench_presets,

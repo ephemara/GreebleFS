@@ -1,6 +1,46 @@
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
 
 pub const MAIN_TRAY_ICON_ID: &str = "main-tray";
+
+/// Atomically apply all window presentation properties in one IPC call.
+/// This prevents the race condition where decorations/alwaysOnTop are set
+/// separately from geometry, causing the WM to see intermediate invalid states.
+#[tauri::command]
+#[specta::specta]
+#[allow(clippy::too_many_arguments)]
+pub fn window_apply_mode(
+    app: AppHandle,
+    decorations: bool,
+    always_on_top: bool,
+    shadow: bool,
+    skip_taskbar: bool,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Main window not found".to_string())?;
+
+    // Set presentation properties first
+    window.set_decorations(decorations).map_err(|e| e.to_string())?;
+    window.set_always_on_top(always_on_top).map_err(|e| e.to_string())?;
+    window.set_shadow(shadow).map_err(|e| e.to_string())?;
+    window.set_skip_taskbar(skip_taskbar).map_err(|e| e.to_string())?;
+
+    // Then geometry atomically — size before position
+    if width > 0 && height > 0 {
+        window
+            .set_size(PhysicalSize::new(width, height))
+            .map_err(|e| e.to_string())?;
+    }
+    window
+        .set_position(PhysicalPosition::new(x, y))
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
 
 #[tauri::command]
 #[specta::specta]
@@ -31,6 +71,7 @@ pub fn tray_set_visible(app: AppHandle, visible: bool) -> Result<(), String> {
 
     tray.set_visible(visible).map_err(|error| error.to_string())
 }
+
 
 #[cfg(target_os = "windows")]
 fn set_native_blur(

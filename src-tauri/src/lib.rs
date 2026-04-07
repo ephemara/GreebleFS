@@ -23,12 +23,7 @@ use window_commands::MAIN_TRAY_ICON_ID;
 
 fn toggle_overlay(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
-        let is_visible = win.is_visible().unwrap_or(false);
-        if is_visible {
-            let _ = win.emit("overlay://toggle-request", ());
-        } else {
-            let _ = win.emit("overlay://toggle-request", ());
-        }
+        let _ = win.emit("overlay://toggle-request", ());
     }
 }
 
@@ -42,6 +37,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_notification::init())

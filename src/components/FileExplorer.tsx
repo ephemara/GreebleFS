@@ -1548,8 +1548,8 @@ export function FileExplorer({
     };
   }, [currentPath, explorerSearchScope, search, runSearch]);
 
-  const goBack    = () => { if (historyIdx > 0) { setHistoryIdx(i=>i-1); navigate(history[historyIdx-1], false); } };
-  const goForward = () => { if (historyIdx < history.length-1) { setHistoryIdx(i=>i+1); navigate(history[historyIdx+1], false); } };
+  const goBack = useCallback(() => { if (historyIdx > 0) { setHistoryIdx(i => i - 1); navigate(history[historyIdx - 1], false); } }, [history, historyIdx, navigate]);
+  const goForward = useCallback(() => { if (historyIdx < history.length - 1) { setHistoryIdx(i => i + 1); navigate(history[historyIdx + 1], false); } }, [history, historyIdx, navigate]);
   const goUp      = () => {
     if (!currentPath) return;
     const sep = currentPath.includes('/') ? '/' : '\\';
@@ -1642,6 +1642,26 @@ export function FileExplorer({
   const goHome = useCallback(() => {
     getExplorerHomeDir().then(p => navigate(p)).catch(() => {});
   }, [navigate]);
+  const toggleSearchScope = useCallback(() => {
+    setSearchIncludeContent(value => !value);
+  }, []);
+  const cycleSortKey = useCallback(() => {
+    const order: ExplorerSortKey[] = ['name', 'size', 'modified', 'type'];
+    const nextIndex = (order.indexOf(explorerSettings.sortBy) + 1) % order.length;
+    updateExplorerSettings({ sortBy: order[nextIndex], sortOrder: getDefaultExplorerSortOrder(order[nextIndex]) });
+  }, [explorerSettings.sortBy, updateExplorerSettings]);
+  const toggleSortOrder = useCallback(() => {
+    updateExplorerSettings({ sortOrder: explorerSettings.sortOrder === 'asc' ? 'desc' : 'asc' });
+  }, [explorerSettings.sortOrder, updateExplorerSettings]);
+  const focusExplorerList = useCallback(() => {
+    mainRef.current?.focus();
+  }, []);
+  const focusExplorerAddressBar = useCallback(() => {
+    beginAddressEdit();
+  }, [beginAddressEdit]);
+  const focusExplorerPreview = useCallback(() => {
+    previewRef.current = preview;
+  }, [preview]);
   const handleBookmarkCreated = useCallback((name: string, path: string) => {
     void Promise.resolve(onAddBookmark(name, path)).catch(() => {});
   }, [onAddBookmark]);
@@ -2268,6 +2288,36 @@ export function FileExplorer({
       if (matchesKeybinding(e, keybindings.toggleHiddenFiles)) {
         e.preventDefault();
         updateExplorerSettings({ showHiddenFiles: !showHidden });
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.toggleExplorerSearchScope)) {
+        e.preventDefault();
+        toggleSearchScope();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.cycleExplorerSortKey)) {
+        e.preventDefault();
+        cycleSortKey();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.toggleExplorerSortOrder)) {
+        e.preventDefault();
+        toggleSortOrder();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.focusExplorerList)) {
+        e.preventDefault();
+        focusExplorerList();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.focusExplorerAddressBar)) {
+        e.preventDefault();
+        focusExplorerAddressBar();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.focusExplorerPreview)) {
+        e.preventDefault();
+        focusExplorerPreview();
         return;
       }
       if (matchesKeybinding(e, keybindings.toggleExplorerLayout)) {
