@@ -32,6 +32,7 @@ import {
   getAdjacentExplorerGridMode,
   getExplorerGridMetricsForZoom,
   getExplorerGridZoomAnchor,
+  getExplorerGridZoomPercent,
   explorerViewModes,
   getExplorerViewModeDefinition,
   isExplorerGridMode,
@@ -1155,8 +1156,8 @@ export function FileExplorer({
   const layoutMenuAnchorRef = useRef<HTMLDivElement>(null);
   const previewWarmupStartedRef = useRef(false);
   const previewWarmupTimerRef = useRef<number | null>(null);
-  const [renderedGridZoom, setRenderedGridZoom] = useState(gridZoom);
-  const renderedGridZoomRef = useRef(gridZoom);
+  const [zoomHudVisible, setZoomHudVisible] = useState(false);
+  const zoomHudTimerRef = useRef<number | null>(null);
   const [explorerViewportMetrics, setExplorerViewportMetrics] = useState<ViewportMetrics>({
     scrollTop: 0,
     clientHeight: 0,
@@ -2607,45 +2608,9 @@ export function FileExplorer({
     () => getExplorerViewModeDefinition(effectiveViewMode),
     [effectiveViewMode],
   );
-  useEffect(() => {
-    renderedGridZoomRef.current = renderedGridZoom;
-  }, [renderedGridZoom]);
-
-  useEffect(() => {
-    if (effectiveViewModeDefinition.presentation !== 'grid') {
-      renderedGridZoomRef.current = gridZoom;
-      setRenderedGridZoom(gridZoom);
-      return undefined;
-    }
-
-    let frameId = 0;
-    const animate = () => {
-      const current = renderedGridZoomRef.current;
-      const delta = gridZoom - current;
-
-      if (Math.abs(delta) <= 0.002) {
-        renderedGridZoomRef.current = gridZoom;
-        setRenderedGridZoom(gridZoom);
-        return;
-      }
-
-      const next = current + delta * 0.24;
-      renderedGridZoomRef.current = next;
-      setRenderedGridZoom(next);
-      frameId = window.requestAnimationFrame(animate);
-    };
-
-    frameId = window.requestAnimationFrame(animate);
-    return () => {
-      if (frameId !== 0) {
-        window.cancelAnimationFrame(frameId);
-      }
-    };
-  }, [effectiveViewModeDefinition.presentation, gridZoom]);
-
   const activeGridMetrics = useMemo(
-    () => (effectiveViewModeDefinition.presentation === 'grid' ? getExplorerGridMetricsForZoom(renderedGridZoom) : effectiveViewModeDefinition.grid),
-    [effectiveViewModeDefinition, renderedGridZoom],
+    () => (effectiveViewModeDefinition.presentation === 'grid' ? getExplorerGridMetricsForZoom(gridZoom) : effectiveViewModeDefinition.grid),
+    [effectiveViewModeDefinition, gridZoom],
   );
   const activeRowMetrics = effectiveViewModeDefinition.rows;
   const activeNewItemHeight = effectiveViewModeDefinition.presentation === 'grid'
@@ -2653,6 +2618,27 @@ export function FileExplorer({
     : activeRowMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT;
   const hasPreview = !isCompactDock && preview.type !== 'none';
   const searchModeLabel = searchIncludeContent ? 'Recursive search + text' : 'Recursive search (names only)';
+  const gridZoomPercent = useMemo(
+    () => (isExplorerGridMode(viewMode) ? getExplorerGridZoomPercent(gridZoom) : null),
+    [gridZoom, viewMode],
+  );
+
+  const showZoomHud = useCallback(() => {
+    setZoomHudVisible(true);
+    if (zoomHudTimerRef.current != null) {
+      window.clearTimeout(zoomHudTimerRef.current);
+    }
+    zoomHudTimerRef.current = window.setTimeout(() => {
+      setZoomHudVisible(false);
+      zoomHudTimerRef.current = null;
+    }, 900);
+  }, []);
+
+  useEffect(() => () => {
+    if (zoomHudTimerRef.current != null) {
+      window.clearTimeout(zoomHudTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     const viewport = explorerViewportRef.current;
@@ -2755,12 +2741,13 @@ export function FileExplorer({
             ? { viewMode: nextMode, gridZoom: nextGridZoom }
             : { viewMode: nextMode },
         );
+        showZoomHud();
       }
     };
 
     viewport.addEventListener('wheel', handleWheel, { passive: false });
     return () => viewport.removeEventListener('wheel', handleWheel);
-  }, [gridZoom, isCompactDock, updateExplorerSettings, viewMode]);
+  }, [gridZoom, isCompactDock, showZoomHud, updateExplorerSettings, viewMode]);
 
   useEffect(() => {
     if (repositoryPicker?.active) {
@@ -3330,10 +3317,55 @@ export function FileExplorer({
                 onMouseLeave={e => (e.currentTarget.style.background = showLayoutMenu ? `${accent}18` : 'transparent')}
               >
                 <ExplorerLayoutGlyph mode={selectedViewModeDefinition} accent={accent} active={showLayoutMenu} />
-                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                  {selectedViewModeDefinition.shortLabel}
+                <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                    {selectedViewModeDefinition.shortLabel}
+                  </span>
+                  {gridZoomPercent != null && (
+                    <span style={{ fontSize: 9, fontWeight: 700, color: showLayoutMenu ? EXP.text : EXP.muted2 }}>
+                      {gridZoomPercent}%
+                    </span>
+                  )}
                 </span>
               </button>
+              {zoomHudVisible && gridZoomPercent != null && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 8px)',
+                    right: 0,
+                    zIndex: 45,
+                    minWidth: 148,
+                    padding: '8px 10px',
+                    borderRadius: 10,
+                    border: `1px solid ${accent}55`,
+                    background: 'rgba(15,18,24,0.94)',
+                    boxShadow: '0 12px 30px rgba(0,0,0,0.32)',
+                    backdropFilter: 'blur(10px)',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: EXP.text }}>
+                      {selectedViewModeDefinition.shortLabel}
+                    </span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: accent }}>
+                      {gridZoomPercent}%
+                    </span>
+                  </div>
+                  <div style={{ marginTop: 8, height: 5, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        width: `${gridZoomPercent}%`,
+                        height: '100%',
+                        borderRadius: 999,
+                        background: `linear-gradient(90deg, ${accent}99, ${accent})`,
+                        transition: 'width 0.14s ease',
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
               {showLayoutMenu && (
                 <div
                   role="menu"
@@ -3366,6 +3398,7 @@ export function FileExplorer({
                                 ? { viewMode: mode.id, gridZoom: getExplorerGridZoomAnchor(mode.id) }
                                 : { viewMode: mode.id },
                             );
+                            showZoomHud();
                             setShowLayoutMenu(false);
                           }}
                           style={{
@@ -3409,7 +3442,7 @@ export function FileExplorer({
                     })}
                   </div>
                   <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${EXP.border}`, fontSize: 10, color: EXP.muted2 }}>
-                    Ctrl/Cmd + wheel smoothly scales icon tiles, then continues through row layouts.
+                    Ctrl/Cmd + wheel moves through Small, M, L, XL, then row layouts with live zoom feedback.
                   </div>
                 </div>
               )}
@@ -3652,6 +3685,7 @@ export function FileExplorer({
                     gap: activeGridMetrics.gap,
                     padding: `0 ${activeGridMetrics.padding}px`,
                     alignItems: 'stretch',
+                    transition: 'gap 0.14s ease, padding 0.14s ease',
                   }}
                 >
                   {virtualizedEntries.map(entry => {

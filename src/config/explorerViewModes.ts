@@ -2,6 +2,7 @@ export type ExplorerViewMode =
   | 'icons-xl'
   | 'icons-l'
   | 'icons-m'
+  | 'icons-s'
   | 'columns'
   | 'list'
   | 'details';
@@ -106,12 +107,32 @@ export const explorerViewModes: readonly ExplorerViewModeDefinition[] = [
     },
   },
   {
+    id: 'icons-s',
+    label: 'Small Icons',
+    shortLabel: 'S',
+    description: 'Compact tiles for dense browsing without fully dropping into rows.',
+    presentation: 'grid',
+    zoomOrder: 3,
+    grid: {
+      minWidth: 94,
+      gap: 10,
+      padding: 12,
+      rowHeight: 118,
+      searchRowHeight: 148,
+      newItemHeight: 118,
+      iconSize: 28,
+      iconStageSize: 38,
+      tileRadius: 10,
+      nameLines: 2,
+    },
+  },
+  {
     id: 'columns',
     label: 'Columns',
     shortLabel: 'Cols',
     description: 'Compact sortable columns with file data kept in view.',
     presentation: 'table',
-    zoomOrder: 3,
+    zoomOrder: 4,
     rows: {
       rowHeight: 38,
       searchRowHeight: 62,
@@ -125,7 +146,7 @@ export const explorerViewModes: readonly ExplorerViewModeDefinition[] = [
     shortLabel: 'List',
     description: 'Simple rows focused on fast scanning and selection.',
     presentation: 'list',
-    zoomOrder: 4,
+    zoomOrder: 5,
     rows: {
       rowHeight: 38,
       searchRowHeight: 66,
@@ -139,7 +160,7 @@ export const explorerViewModes: readonly ExplorerViewModeDefinition[] = [
     shortLabel: 'Details',
     description: 'Rich rows with metadata for heavier file-management work.',
     presentation: 'table',
-    zoomOrder: 5,
+    zoomOrder: 6,
     rows: {
       rowHeight: 54,
       searchRowHeight: 80,
@@ -152,8 +173,9 @@ export const explorerViewModes: readonly ExplorerViewModeDefinition[] = [
 const explorerViewModeMap = new Map(explorerViewModes.map((mode) => [mode.id, mode]));
 const defaultExplorerViewMode: ExplorerViewMode = 'details';
 const explorerGridModeAnchors = [
-  { id: 'icons-m' as const, zoom: EXPLORER_GRID_ZOOM_MIN },
-  { id: 'icons-l' as const, zoom: 0.5 },
+  { id: 'icons-s' as const, zoom: EXPLORER_GRID_ZOOM_MIN },
+  { id: 'icons-m' as const, zoom: 0.34 },
+  { id: 'icons-l' as const, zoom: 0.67 },
   { id: 'icons-xl' as const, zoom: EXPLORER_GRID_ZOOM_MAX },
 ] as const;
 
@@ -175,13 +197,13 @@ export function getExplorerViewModeDefinition(mode: ExplorerViewMode): ExplorerV
   return explorerViewModeMap.get(mode) ?? explorerViewModeMap.get(defaultExplorerViewMode)!;
 }
 
-export function isExplorerGridMode(mode: ExplorerViewMode): mode is 'icons-xl' | 'icons-l' | 'icons-m' {
-  return mode === 'icons-xl' || mode === 'icons-l' || mode === 'icons-m';
+export function isExplorerGridMode(mode: ExplorerViewMode): mode is 'icons-xl' | 'icons-l' | 'icons-m' | 'icons-s' {
+  return mode === 'icons-xl' || mode === 'icons-l' || mode === 'icons-m' || mode === 'icons-s';
 }
 
 export function getExplorerGridZoomAnchor(mode: ExplorerViewMode): number {
   const anchor = explorerGridModeAnchors.find((entry) => entry.id === mode);
-  return anchor?.zoom ?? 0.5;
+  return anchor?.zoom ?? explorerGridModeAnchors.find((entry) => entry.id === 'icons-l')!.zoom;
 }
 
 export function normalizeExplorerGridZoom(value: unknown, fallbackMode: ExplorerViewMode = 'icons-l'): number {
@@ -196,7 +218,7 @@ export function stepExplorerGridZoom(currentZoom: number, direction: ExplorerVie
   return normalizeExplorerGridZoom(currentZoom + delta);
 }
 
-export function getNearestExplorerGridMode(gridZoom: number): 'icons-xl' | 'icons-l' | 'icons-m' {
+export function getNearestExplorerGridMode(gridZoom: number): 'icons-xl' | 'icons-l' | 'icons-m' | 'icons-s' {
   const zoom = normalizeExplorerGridZoom(gridZoom);
   let closest: typeof explorerGridModeAnchors[number] = explorerGridModeAnchors[0];
   let closestDistance = Math.abs(zoom - closest.zoom);
@@ -215,22 +237,21 @@ export function getNearestExplorerGridMode(gridZoom: number): 'icons-xl' | 'icon
 export function getAdjacentExplorerGridMode(
   currentMode: ExplorerViewMode,
   direction: ExplorerViewWheelDirection,
-): 'icons-xl' | 'icons-l' | 'icons-m' {
+): 'icons-xl' | 'icons-l' | 'icons-m' | 'icons-s' {
   if (!isExplorerGridMode(currentMode)) {
-    return direction === 'larger' ? 'icons-m' : 'icons-xl';
+    return direction === 'larger' ? 'icons-s' : 'icons-xl';
+  }
+
+  const currentIndex = explorerGridModeAnchors.findIndex((anchor) => anchor.id === currentMode);
+  if (currentIndex < 0) {
+    return direction === 'larger' ? 'icons-s' : 'icons-xl';
   }
 
   if (direction === 'larger') {
-    if (currentMode === 'icons-m') {
-      return 'icons-l';
-    }
-    return 'icons-xl';
+    return explorerGridModeAnchors[Math.min(explorerGridModeAnchors.length - 1, currentIndex + 1)]!.id;
   }
 
-  if (currentMode === 'icons-xl') {
-    return 'icons-l';
-  }
-  return 'icons-m';
+  return explorerGridModeAnchors[Math.max(0, currentIndex - 1)]!.id;
 }
 
 export function getExplorerGridMetricsForZoom(gridZoom: number): ExplorerGridMetrics {
@@ -261,6 +282,10 @@ export function getExplorerGridMetricsForZoom(gridZoom: number): ExplorerGridMet
     tileRadius: lerp(lowerMetrics.tileRadius, upperMetrics.tileRadius, t),
     nameLines: Math.round(lerp(lowerMetrics.nameLines, upperMetrics.nameLines, t)),
   };
+}
+
+export function getExplorerGridZoomPercent(gridZoom: number): number {
+  return Math.round(normalizeExplorerGridZoom(gridZoom) * 100);
 }
 
 export function stepExplorerViewMode(

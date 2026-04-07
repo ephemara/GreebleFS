@@ -21,26 +21,28 @@ describe('explorerViewModes', () => {
   it('steps between layout presets in UE-style zoom order', () => {
     expect(stepExplorerViewMode('icons-l', 'larger')).toBe('icons-xl');
     expect(stepExplorerViewMode('icons-l', 'smaller')).toBe('icons-m');
+    expect(stepExplorerViewMode('icons-m', 'smaller')).toBe('icons-s');
     expect(stepExplorerViewMode('details', 'smaller')).toBe('details');
   });
 
   it('interpolates grid zoom between the icon presets', () => {
     expect(normalizeExplorerGridZoom(99)).toBe(1);
     expect(stepExplorerGridZoom(0.5, 'larger')).toBeGreaterThan(0.5);
-    expect(getNearestExplorerGridMode(0.1)).toBe('icons-m');
-    expect(getNearestExplorerGridMode(0.5)).toBe('icons-l');
+    expect(getNearestExplorerGridMode(0.1)).toBe('icons-s');
+    expect(getNearestExplorerGridMode(0.5)).toBe('icons-m');
 
     const metrics = getExplorerGridMetricsForZoom(0.25);
-    expect(metrics.iconSize).toBeGreaterThan(42);
-    expect(metrics.iconSize).toBeLessThan(60);
-    expect(metrics.minWidth).toBeGreaterThan(122);
-    expect(metrics.minWidth).toBeLessThan(152);
+    expect(metrics.iconSize).toBeGreaterThan(28);
+    expect(metrics.iconSize).toBeLessThan(42);
+    expect(metrics.minWidth).toBeGreaterThan(94);
+    expect(metrics.minWidth).toBeLessThan(122);
   });
 
   it('treats named icon layouts as anchors while zooming between them', () => {
     expect(getAdjacentExplorerGridMode('icons-l', 'larger')).toBe('icons-xl');
     expect(getAdjacentExplorerGridMode('icons-l', 'smaller')).toBe('icons-m');
     expect(getAdjacentExplorerGridMode('icons-xl', 'smaller')).toBe('icons-l');
+    expect(getAdjacentExplorerGridMode('icons-m', 'smaller')).toBe('icons-s');
   });
 
   it('falls back from icon grids to details while search is active', () => {
@@ -51,6 +53,7 @@ describe('explorerViewModes', () => {
 
   it('exposes stable labels for menu rendering', () => {
     expect(getExplorerViewModeDefinition('icons-xl').label).toBe('XL Icons');
+    expect(getExplorerViewModeDefinition('icons-s').label).toBe('Small Icons');
     expect(getExplorerViewModeDefinition('details').shortLabel).toBe('Details');
   });
 });
