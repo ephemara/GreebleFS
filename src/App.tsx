@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from 'react';
+﻿import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { useShallow } from 'zustand/react/shallow';
 import {
@@ -1246,6 +1246,13 @@ function App() {
         const scaleFactor = await win.scaleFactor();
         const monitor = await primaryMonitor();
         if (!monitor || cancelled) {
+          isProgrammaticResizeRef.current = true;
+          await commands.windowApplyMode({
+            decorations: true, alwaysOnTop: false, shadow: true, skipTaskbar: false,
+            x: isMaximized ? 0 : layout.x, y: isMaximized ? 0 : layout.y,
+            width: isMaximized ? 0 : layout.width, height: isMaximized ? 0 : layout.height,
+          }).catch(() => {});
+          isFreefloatingRef.current = false; setIsFreefloating(false);
           return;
         }
 

@@ -129,7 +129,6 @@ const EXPLORER_LIST_ROW_HEIGHT = 44;
 const EXPLORER_LIST_SEARCH_ROW_HEIGHT = 72;
 const EXPLORER_LIST_OVERSCAN = 8;
 const EXPLORER_GRID_OVERSCAN_ROWS = 2;
-const EXPLORER_LAYOUT_WHEEL_STEP_THROTTLE_MS = 140;
 
 function getExplorerPerformanceNow(): number {
   return typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -522,7 +521,7 @@ function SvgIcon({ src, size = 20 }: { src: string; size?: number }) {
       src={src}
       width={size}
       height={size}
-      style={{ objectFit: 'contain', flexShrink: 0 }}
+      style={{ objectFit: 'contain', flexShrink: 0, transition: 'width 0.12s ease, height 0.12s ease' }}
       onError={e => { (e.target as HTMLImageElement).style.opacity = '0'; }}
       draggable={false}
     />
@@ -1154,7 +1153,6 @@ export function FileExplorer({
   const mainRef = useRef<HTMLDivElement>(null);
   const explorerViewportRef = useRef<HTMLDivElement>(null);
   const layoutMenuAnchorRef = useRef<HTMLDivElement>(null);
-  const lastLayoutWheelAtRef = useRef(0);
   const previewWarmupStartedRef = useRef(false);
   const previewWarmupTimerRef = useRef<number | null>(null);
   const [explorerViewportMetrics, setExplorerViewportMetrics] = useState<ViewportMetrics>({
@@ -2688,32 +2686,35 @@ export function FileExplorer({
       }
 
       event.preventDefault();
-      const now = typeof performance !== 'undefined' && typeof performance.now === 'function'
-        ? performance.now()
-        : Date.now();
-      if (now - lastLayoutWheelAtRef.current < EXPLORER_LAYOUT_WHEEL_STEP_THROTTLE_MS) {
-        return;
-      }
-      lastLayoutWheelAtRef.current = now;
-
       const direction = event.deltaY < 0 ? 'larger' : 'smaller';
+      const stepCount = Math.min(3, Math.max(1, Math.ceil(Math.abs(event.deltaY) / 160)));
+      let nextMode = viewMode;
+      let nextGridZoom = gridZoom;
 
-      if (isExplorerGridMode(viewMode)) {
-        const nextGridZoom = stepExplorerGridZoom(gridZoom, direction);
-        if (nextGridZoom !== gridZoom) {
-          updateExplorerSettings({
-            viewMode: getAdjacentExplorerGridMode(viewMode, direction),
-            gridZoom: nextGridZoom,
-          });
-          return;
+      for (let stepIndex = 0; stepIndex < stepCount; stepIndex += 1) {
+        if (isExplorerGridMode(nextMode)) {
+          const steppedZoom = stepExplorerGridZoom(nextGridZoom, direction);
+          if (steppedZoom !== nextGridZoom) {
+            nextGridZoom = steppedZoom;
+            nextMode = getAdjacentExplorerGridMode(nextMode, direction);
+            continue;
+          }
+        }
+
+        const steppedMode = stepExplorerViewMode(nextMode, direction);
+        if (steppedMode === nextMode) {
+          break;
+        }
+        nextMode = steppedMode;
+        if (isExplorerGridMode(nextMode)) {
+          nextGridZoom = getExplorerGridZoomAnchor(nextMode);
         }
       }
 
-      const nextMode = stepExplorerViewMode(viewMode, direction);
-      if (nextMode !== viewMode) {
+      if (nextMode !== viewMode || nextGridZoom !== gridZoom) {
         updateExplorerSettings(
           isExplorerGridMode(nextMode)
-            ? { viewMode: nextMode, gridZoom: getExplorerGridZoomAnchor(nextMode) }
+            ? { viewMode: nextMode, gridZoom: nextGridZoom }
             : { viewMode: nextMode },
         );
       }
@@ -3651,7 +3652,7 @@ export function FileExplorer({
                           overflow: 'hidden',
                           opacity: entry.is_hidden ? 0.5 : 1,
                           userSelect: 'none',
-                          transition: 'background 0.12s ease, border-color 0.12s ease, transform 0.12s ease',
+                          transition: 'background 0.12s ease, border-color 0.12s ease, transform 0.12s ease, border-radius 0.12s ease, padding 0.12s ease',
                         }}
                         onMouseEnter={e => {
                           if (!isSel && !isDrop) {
@@ -3679,6 +3680,7 @@ export function FileExplorer({
                             justifyContent: 'center',
                             overflow: 'hidden',
                             flexShrink: 0,
+                            transition: 'width 0.12s ease, height 0.12s ease',
                           }}
                         >
                           <SvgIcon src={iconSrc} size={activeGridMetrics.iconSize} />
