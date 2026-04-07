@@ -315,7 +315,7 @@ function LayoutPinnedPanelSlot({
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 function App() {
-  const [overlayPhase, setOverlayPhase] = useState<OverlayAnimationPhase>('closed');
+  const [overlayPhase, setOverlayPhase] = useState<OverlayAnimationPhase>('open');
   const [overlayAnimationDirection, setOverlayAnimationDirection] = useState<OverlayAnimationDirection>('enter');
   const [activeAnimation, setActiveAnimation] = useState<LoadedOverlayAnimation | null>(null);
   const [animationProgress, setAnimationProgress] = useState(0);
@@ -748,6 +748,15 @@ function App() {
     overlayVisibleRef.current = visible;
   }, []);
 
+  const openWithoutMonitorLayout = useCallback(async (win: ReturnType<typeof getCurrentWindow>) => {
+    await win.show();
+    await win.unminimize().catch(() => {});
+    await win.setFocus();
+    markOverlayRuntimePhase('open', true);
+    setOverlayPhase('open');
+    setAnimationProgress(1);
+  }, [markOverlayRuntimePhase]);
+
   useEffect(() => () => {
     clearAnimationClock();
   }, [clearAnimationClock]);
@@ -781,7 +790,10 @@ function App() {
       await syncWindowPresentation('overlay');
       const scaleFactor = await win.scaleFactor();
       const monitor = await primaryMonitor();
-      if (!monitor) return;
+      if (!monitor) {
+        await openWithoutMonitorLayout(win);
+        return;
+      }
 
       const store = useSettingsStore.getState().settings.terminal;
       const rememberedBounds = runtimeOverlayBoundsRef.current;
@@ -876,7 +888,7 @@ function App() {
       setAnimationProgress(0);
       console.warn('OverlayTerm: failed to position/show', e);
     }
-  }, [appAnimationDurationMs, clearAnimationClock, markOverlayRuntimePhase, resolveAnimationById, resolvedOpenAnimationId, startAnimationProgress, syncWindowPresentation]);
+  }, [appAnimationDurationMs, clearAnimationClock, markOverlayRuntimePhase, openWithoutMonitorLayout, resolveAnimationById, resolvedOpenAnimationId, startAnimationProgress, syncWindowPresentation]);
 
   const showWindowedPanel = useCallback(async () => {
     clearAnimationClock();
@@ -885,7 +897,10 @@ function App() {
       await syncWindowPresentation('windowed');
       const scaleFactor = await win.scaleFactor();
       const monitor = await primaryMonitor();
-      if (!monitor) return;
+      if (!monitor) {
+        await openWithoutMonitorLayout(win);
+        return;
+      }
 
       const store = useSettingsStore.getState().settings.terminal;
       const layout = computePanelWindowLayout({
@@ -971,6 +986,7 @@ function App() {
     appAnimationDurationMs,
     clearAnimationClock,
     markOverlayRuntimePhase,
+    openWithoutMonitorLayout,
     resolveAnimationById,
     resolvedOpenAnimationId,
     startAnimationProgress,

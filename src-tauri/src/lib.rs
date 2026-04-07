@@ -68,6 +68,16 @@ pub fn run() {
                     let _ = window.emit("overlay://toggle-request", ());
                     #[cfg(target_os = "macos")]
                     let _ = app.set_dock_visibility(true);
+                } else {
+                    // Release builds start hidden in the tray by config, but we
+                    // still reveal the window here so desktop launches always have
+                    // a visible entry point even if the React-side auto-show is
+                    // delayed by a slow desktop/session startup.
+                    let _ = window.set_skip_taskbar(false);
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                    #[cfg(target_os = "macos")]
+                    let _ = app.set_dock_visibility(true);
                 }
             }
 

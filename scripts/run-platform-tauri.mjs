@@ -196,8 +196,10 @@ async function main() {
   const runtimeConfigPath = await writeRuntimeTauriConfig(packageManagerCommand);
   const cliArgs = process.argv.slice(2);
   const hasExplicitConfig = cliArgs.includes("--config") || cliArgs.includes("-c");
+  const shouldUseRuntimeConfig =
+    hasExplicitArtifactRoot || process.env.OVERLAYTERM_TAURI_CONFIG_DIR || process.env.OVERLAYTERM_TAURI_FRONTEND_DIST;
   const tauriArgs =
-    hasExplicitConfig || cliArgs.length === 0
+    hasExplicitConfig || cliArgs.length === 0 || !shouldUseRuntimeConfig
       ? cliArgs
       : [cliArgs[0], "--config", runtimeConfigPath, ...cliArgs.slice(1)];
 
