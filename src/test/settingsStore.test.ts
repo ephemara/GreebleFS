@@ -45,6 +45,8 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.explorer.sortOrder).toBe('asc');
     expect(settings.explorer.viewMode).toBe(defaultSettings.explorer.viewMode);
     expect(settings.explorer.gridZoom).toBe(defaultSettings.explorer.gridZoom);
+    expect(settings.explorer.experimentalViewMode).toBe('off');
+    expect(settings.explorer.experimentalDensity).toBe(defaultSettings.explorer.experimentalDensity);
     expect(settings.explorer.folderClickMode).toBe('double');
   });
 
@@ -204,6 +206,19 @@ describe('useSettingsStore.updateExplorer()', () => {
     store.updateExplorer({ viewMode: 'icons-m', gridZoom: 0.18 });
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('icons-m');
     expect(useSettingsStore.getState().settings.explorer.gridZoom).toBe(0.18);
+  });
+
+  it('stores experimental explorer mode and density independently from normal view mode', () => {
+    const store = useSettingsStore.getState();
+    store.updateExplorer({
+      experimentalViewMode: 'adaptive-semantic-grid',
+      experimentalDensity: 0.6,
+    });
+
+    const { explorer } = useSettingsStore.getState().settings;
+    expect(explorer.experimentalViewMode).toBe('adaptive-semantic-grid');
+    expect(explorer.experimentalDensity).toBe(0.6);
+    expect(explorer.viewMode).toBe(defaultSettings.explorer.viewMode);
   });
 
   it('updates folderClickMode', () => {
@@ -487,6 +502,17 @@ describe('mergeSettingsWithDefaults()', () => {
     expect(mergedGrid.explorer.viewMode).toBe('icons-l');
     expect(mergedGrid.explorer.gridZoom).toBe(defaultSettings.explorer.gridZoom);
     expect(mergedList.explorer.viewMode).toBe('details');
+  });
+
+  it('fills in new experimental explorer fields for older persisted settings', () => {
+    const merged = mergeSettingsWithDefaults({
+      explorer: {
+        viewMode: 'icons-l',
+      } as unknown as typeof defaultSettings.explorer,
+    });
+
+    expect(merged.explorer.experimentalViewMode).toBe('off');
+    expect(merged.explorer.experimentalDensity).toBe(defaultSettings.explorer.experimentalDensity);
   });
 
   it('normalizes unsupported window presentation values back to safe defaults', () => {

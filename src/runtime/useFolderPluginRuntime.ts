@@ -236,14 +236,32 @@ export function useFolderPluginRuntime(
     }
 
     let fallbackInterval: number | null = null;
+    let fallbackIntervalMs = pluginSystemConfig.fallbackScanIntervalMs;
     let unlistenPlugins: (() => void) | null = null;
     let disposed = false;
 
     const clearFallbackPolling = () => {
       if (fallbackInterval !== null) {
-        window.clearInterval(fallbackInterval);
+        window.clearTimeout(fallbackInterval);
         fallbackInterval = null;
       }
+    };
+
+    const queueFallbackPollingTick = () => {
+      clearFallbackPolling();
+      if (disposed) {
+        return;
+      }
+
+      fallbackInterval = window.setTimeout(async () => {
+        fallbackInterval = null;
+        await refreshFolderPluginsRef.current(true);
+        fallbackIntervalMs = Math.min(
+          fallbackIntervalMs * 2,
+          pluginSystemConfig.fallbackScanMaxIntervalMs,
+        );
+        queueFallbackPollingTick();
+      }, fallbackIntervalMs);
     };
 
     const startFallbackPolling = () => {
@@ -255,9 +273,8 @@ export function useFolderPluginRuntime(
         return;
       }
 
-      fallbackInterval = window.setInterval(() => {
-        void refreshFolderPluginsRef.current(true);
-      }, pluginSystemConfig.fallbackScanIntervalMs);
+      fallbackIntervalMs = pluginSystemConfig.fallbackScanIntervalMs;
+      queueFallbackPollingTick();
     };
 
     const startPluginWatcher = async () => {

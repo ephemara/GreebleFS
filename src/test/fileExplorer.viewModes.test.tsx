@@ -180,6 +180,32 @@ describe('FileExplorer view modes', () => {
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('columns');
   });
 
+  it('renders a dedicated experimental modes button and menu next to the standard layout control', async () => {
+    renderExplorer();
+    await screen.findByText('alpha');
+
+    fireEvent.click(screen.getByRole('button', { name: /experimental view modes:/i }));
+
+    expect(screen.getByRole('menu', { name: /explorer experimental modes menu/i })).toBeTruthy();
+    expect(screen.getByRole('menuitemradio', { name: /adaptive semantic grid/i })).toBeTruthy();
+    expect(screen.getByRole('menuitemradio', { name: /constellation view/i })).toBeDisabled();
+    expect(screen.getByRole('menuitemradio', { name: /timeline surface/i })).toBeDisabled();
+  });
+
+  it('activates adaptive semantic grid without mutating the saved normal layout mode', async () => {
+    useSettingsStore.getState().updateExplorer({ viewMode: 'columns' });
+
+    renderExplorer();
+    await screen.findByText('alpha');
+
+    fireEvent.click(screen.getByRole('button', { name: /experimental view modes:/i }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /adaptive semantic grid/i }));
+
+    expect(useSettingsStore.getState().settings.explorer.experimentalViewMode).toBe('adaptive-semantic-grid');
+    expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('columns');
+    expect(screen.getAllByText(/adaptive semantic grid/i).length).toBeGreaterThan(0);
+  });
+
   it('scales the explorer grid with ctrl-wheel without changing app zoom', async () => {
     useSettingsStore.getState().updateExplorer({ viewMode: 'icons-m', gridZoom: 0 });
 
@@ -207,6 +233,25 @@ describe('FileExplorer view modes', () => {
     await waitFor(() => {
       expect(useSettingsStore.getState().settings.explorer.gridZoom).toBeGreaterThan(0.5);
       expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('icons-xl');
+    });
+  });
+
+  it('changes adaptive density with ctrl-wheel without leaving the experimental mode', async () => {
+    useSettingsStore.getState().updateExplorer({
+      experimentalViewMode: 'adaptive-semantic-grid',
+      experimentalDensity: 0.4,
+      viewMode: 'details',
+    });
+
+    renderExplorer();
+    await screen.findByText('alpha');
+
+    dispatchLayoutWheel('alpha', -120);
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.explorer.experimentalViewMode).toBe('adaptive-semantic-grid');
+      expect(useSettingsStore.getState().settings.explorer.experimentalDensity).toBeGreaterThan(0.4);
+      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('details');
     });
   });
 

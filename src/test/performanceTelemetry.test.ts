@@ -64,6 +64,25 @@ describe('performanceTelemetry', () => {
     expect(summary.explorer_search.bestMs).toBe(100);
     expect(summary.explorer_search.worstMs).toBe(220);
     expect(summary.explorer_search.overBudgetCount).toBe(1);
+    expect(summary.explorer_search.latestMetadata).toEqual({});
+  });
+
+  it('keeps latest metadata for overlay frame telemetry samples', () => {
+    recordExplorerPerformanceSample({
+      metricId: 'overlay_frame_time',
+      durationMs: 17.2,
+      metadata: {
+        avgFps: 58.1,
+        avgFrameMs: 16.8,
+        openPanelCount: 3,
+      },
+    }, memoryStorage);
+
+    const summary = summarizeExplorerPerformance(loadExplorerPerformanceSnapshot(memoryStorage));
+    expect(summary.overlay_frame_time.count).toBe(1);
+    expect(summary.overlay_frame_time.latestMs).toBe(17.2);
+    expect(summary.overlay_frame_time.latestMetadata.avgFps).toBe(58.1);
+    expect(summary.overlay_frame_time.latestMetadata.openPanelCount).toBe(3);
   });
 
   it('resets persisted telemetry cleanly', () => {

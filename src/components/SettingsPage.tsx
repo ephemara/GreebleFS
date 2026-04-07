@@ -71,6 +71,10 @@ import {
   overlayVisualControls,
 } from '../config/overlayWindow';
 import {
+  loadExplorerPerformanceSnapshot,
+  summarizeExplorerPerformance,
+} from '../config/performanceTelemetry';
+import {
   formatHotkeyLabel,
   getHotkeyBindingDefinition,
   hotkeyBindingDefinitions,
@@ -767,6 +771,8 @@ export function SettingsPage({
     () => resolveLayoutProfile(layoutManifestState.manifest, settings.layout.activeProfileId),
     [layoutManifestState.manifest, settings.layout.activeProfileId],
   );
+  const [performanceTelemetryRevision, setPerformanceTelemetryRevision] = useState(0);
+  const PERFORMANCE_TELEMETRY_REFRESH_MS = 5000;
   const layoutSourceSummary = useMemo(() => {
     if (layoutManifestState.sourceType === 'file' && layoutManifestState.sourcePath) {
       return `Loaded from ${layoutManifestState.sourcePath}`;
@@ -776,6 +782,45 @@ export function SettingsPage({
     }
     return 'Using built-in layouts with home-directory auto-probe';
   }, [layoutManifestState.sourcePath, layoutManifestState.sourceType, settings.layout.configPath]);
+  useEffect(() => {
+    if (activeSection !== 'overview') {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      setPerformanceTelemetryRevision(current => current + 1);
+    }, PERFORMANCE_TELEMETRY_REFRESH_MS);
+    return () => window.clearInterval(interval);
+  }, [activeSection]);
+  const performanceSnapshot = useMemo(
+    () => loadExplorerPerformanceSnapshot(),
+    [performanceTelemetryRevision],
+  );
+  const performanceSummary = useMemo(
+    () => summarizeExplorerPerformance(performanceSnapshot),
+    [performanceSnapshot],
+  );
+  const overlayFrameTelemetry = performanceSummary.overlay_frame_time;
+  const overlayFrameValue = useMemo(() => {
+    if (overlayFrameTelemetry.count === 0) {
+      return 'Waiting for live sample';
+    }
+
+    const avgFps = overlayFrameTelemetry.latestMetadata.avgFps;
+    const avgFrameMs = overlayFrameTelemetry.latestMetadata.avgFrameMs;
+    const withinTarget = overlayFrameTelemetry.latestMetadata.withinTarget;
+    const fpsLabel = typeof avgFps === 'number' ? `${Math.round(avgFps)} fps` : 'fps n/a';
+    const avgLabel = typeof avgFrameMs === 'number' ? `${avgFrameMs.toFixed(1)} ms avg` : 'avg n/a';
+    const p95Label = overlayFrameTelemetry.latestMs != null
+      ? `${overlayFrameTelemetry.latestMs.toFixed(1)} ms p95`
+      : 'p95 n/a';
+    const targetLabel = withinTarget === true
+      ? 'within 60 fps target'
+      : withinTarget === false
+        ? 'over 60 fps budget'
+        : 'target status n/a';
+    return `${fpsLabel} • ${avgLabel} • ${p95Label} • ${targetLabel}`;
+  }, [overlayFrameTelemetry]);
   const filteredFolderIconOptions = useMemo(() => {
     const query = folderIconSearch.trim().toLowerCase();
     if (!query) {
@@ -805,7 +850,12 @@ export function SettingsPage({
       label: 'Source',
       value: 'Explorer import + file actions live',
     },
-  ], [activeLayoutProfile.label, effectiveTheme.name, settings.system.launchAtStartup]);
+    {
+      id: 'frames',
+      label: 'Frame Telemetry',
+      value: overlayFrameValue,
+    },
+  ], [activeLayoutProfile.label, effectiveTheme.name, overlayFrameValue, settings.system.launchAtStartup]);
   const overviewWorkflows = useMemo(() => [
     {
       id: 'explorer-to-source',

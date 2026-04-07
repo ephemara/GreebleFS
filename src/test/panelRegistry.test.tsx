@@ -151,7 +151,8 @@ describe('createBuiltInPanelDefinitions', () => {
     const git = panels.find(panel => panel.id === 'git');
 
     const explorerElement = explorer?.render() as React.ReactElement<{ repositoryPicker: typeof repositoryPicker }>;
-    const gitElement = git?.render() as React.ReactElement<{
+    const gitPanelElement = git?.render() as React.ReactElement<{ children: React.ReactNode }>;
+    const gitElement = gitPanelElement.props.children as React.ReactElement<{
       pendingRepositoryImports: string[];
       onPendingRepositoryImportsHandled: () => void;
       onRequestRepositoryImport: () => void;

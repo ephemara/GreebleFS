@@ -204,6 +204,10 @@ impl TerminalManager {
     }
 
     pub fn write(&self, id: &str, data: &[u8]) -> Result<(), String> {
+        if data.is_empty() {
+            return Ok(());
+        }
+
         let mut terminals = self.terminals.lock().unwrap();
         let instance = terminals
             .get_mut(id)
@@ -223,7 +227,13 @@ impl TerminalManager {
 
     pub fn write_many(&self, writes: &[TerminalWriteRequest]) -> Result<(), String> {
         let mut terminals = self.terminals.lock().unwrap();
+        let mut touched_terminal_ids: Vec<&str> = Vec::new();
+
         for request in writes {
+            if request.data.is_empty() {
+                continue;
+            }
+
             let instance = terminals
                 .get_mut(&request.id)
                 .ok_or_else(|| format!("Terminal {} not found", request.id))?;
@@ -232,10 +242,20 @@ impl TerminalManager {
                 .writer
                 .write_all(request.data.as_bytes())
                 .map_err(|e| format!("Write failed for {}: {}", request.id, e))?;
+
+            if !touched_terminal_ids.iter().any(|id| *id == request.id.as_str()) {
+                touched_terminal_ids.push(request.id.as_str());
+            }
+        }
+
+        for terminal_id in touched_terminal_ids {
+            let instance = terminals
+                .get_mut(terminal_id)
+                .ok_or_else(|| format!("Terminal {} not found", terminal_id))?;
             instance
                 .writer
                 .flush()
-                .map_err(|e| format!("Flush failed for {}: {}", request.id, e))?;
+                .map_err(|e| format!("Flush failed for {}: {}", terminal_id, e))?;
         }
 
         Ok(())

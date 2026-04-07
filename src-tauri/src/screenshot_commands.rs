@@ -12,6 +12,13 @@ use image::{ColorType, ImageEncoder, ImageReader, RgbaImage};
 use serde::{Deserialize, Serialize};
 use xcap::Monitor;
 
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::Foundation::HWND;
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE, WDA_NONE,
+};
+
 #[derive(Debug, Clone)]
 struct CachedCapture {
     image: RgbaImage,
@@ -53,7 +60,31 @@ pub async fn screenshot_capture_preview(
 ) -> Result<ScreenshotPreview, String> {
     validate_capture_region(width, height)?;
 
-    let image = capture_preview_image(&window, x, y, width, height)?;
+    // --- Seamless capture: exclude this window from the DXGI compositor so
+    // xcap (which uses DXGI Desktop Duplication) captures a clean desktop
+    // WITHOUT the overlay being visible in the image, while the user still
+    // sees the overlay the entire time. Same technique Discord/Teams/Zoom use.
+    let hwnd_opt = get_overlay_hwnd(&window);
+
+    if let Some(hwnd) = hwnd_opt {
+        unsafe {
+            let _ = SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
+        }
+        // Give the DWM one compositor frame to flush the exclusion flag
+        // before DXGI reads back the framebuffer.
+        std::thread::sleep(std::time::Duration::from_millis(33));
+    }
+
+    let capture_result = capture_absolute_region(x, y, width, height);
+
+    // Always restore visibility, even on error.
+    if let Some(hwnd) = hwnd_opt {
+        unsafe {
+            let _ = SetWindowDisplayAffinity(hwnd, WDA_NONE);
+        }
+    }
+
+    let image = capture_result?;
     let preview_image = build_preview_image(&image);
     let preview_png = encode_png(&preview_image)?;
     let capture_id = store_capture_image(image)?;
@@ -69,54 +100,21 @@ pub async fn screenshot_capture_preview(
     })
 }
 
-#[cfg(target_os = "windows")]
-fn capture_preview_image(
-    window: &tauri::WebviewWindow,
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
-) -> Result<RgbaImage, String> {
-    // `WDA_EXCLUDEFROMCAPTURE` can yield a blank rectangle the size of the
-    // WebView window on some Windows/WebView2 setups. A short hide/capture/show
-    // cycle is visually noisier, but it is more dependable for release builds.
-    window
-        .hide()
-        .map_err(|e| format!("Failed to hide overlay before capture: {}", e))?;
+/// Returns the raw Win32 HWND for our overlay window.
+/// Returns None on non-Windows or if the handle cannot be retrieved.
+fn get_overlay_hwnd(_window: &tauri::WebviewWindow) -> Option<HWND> {
+    #[cfg(target_os = "windows")]
+    {
+        use raw_window_handle::HasWindowHandle;
+        use raw_window_handle::RawWindowHandle;
 
-    std::thread::sleep(std::time::Duration::from_millis(80));
-    let capture_result = capture_absolute_region(x, y, width, height);
-
-    let show_result = window.show();
-    std::thread::sleep(std::time::Duration::from_millis(50));
-    let focus_result = window.set_focus();
-
-    if let Err(error) = show_result {
-        return Err(format!(
-            "Captured the desktop, but failed to restore the overlay window: {}",
-            error
-        ));
+        if let Ok(handle) = _window.window_handle() {
+            if let RawWindowHandle::Win32(h) = handle.as_raw() {
+                return Some(h.hwnd.get() as HWND);
+            }
+        }
     }
-
-    if let Err(error) = focus_result {
-        return Err(format!(
-            "Captured the desktop, but failed to refocus the overlay window: {}",
-            error
-        ));
-    }
-
-    capture_result
-}
-
-#[cfg(not(target_os = "windows"))]
-fn capture_preview_image(
-    _window: &tauri::WebviewWindow,
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
-) -> Result<RgbaImage, String> {
-    capture_absolute_region(x, y, width, height)
+    None
 }
 
 #[tauri::command]

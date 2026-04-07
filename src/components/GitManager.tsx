@@ -64,6 +64,12 @@ const FILTERS: Record<ChangeFilter, string> = {
   untracked: 'New',
 };
 
+const ACTIVE_REPO_BADGE_POLL_MS = 30_000;
+const BACKGROUND_REPO_BADGE_POLL_MS = 120_000;
+const MAX_SYNTHETIC_UNTRACKED_DIFF_BYTES = 128 * 1024;
+const CHANGE_LIST_ROW_HEIGHT = 48;
+const CHANGE_LIST_OVERSCAN = 8;
+
 const LazyMonacoEditor = React.lazy(async () => {
   const module = await import('@monaco-editor/react');
   return { default: module.default as React.ComponentType<EditorProps> };
@@ -114,7 +120,10 @@ export function GitManager({
   const deferredQuery = useDeferredValue(changeQuery);
   const [repoRailWidth, setRepoRailWidth] = usePersistentPanelSize('overlayterm-source-repo-rail-width', 208, 160, 300);
   const [changeListWidth, setChangeListWidth] = usePersistentPanelSize('overlayterm-source-change-list-width', 360, 260, 720);
+  const [changeListViewportHeight, setChangeListViewportHeight] = useState(480);
+  const [changeListScrollTop, setChangeListScrollTop] = useState(0);
   const diffContainerRef = useRef<HTMLDivElement | null>(null);
+  const changeListViewportRef = useRef<HTMLDivElement | null>(null);
   const diffEditorRef = useRef<any>(null);
   const diffMonacoRef = useRef<any>(null);
   const diffDecorationsRef = useRef<string[]>([]);
@@ -169,8 +178,7 @@ export function GitManager({
 
   const loadRepoBadge = useCallback(async (path: string): Promise<RepoBadgeState> => {
     try {
-      await runGit(path, ['rev-parse', '--is-inside-work-tree']);
-      const statusText = await safeGit(path, ['status', '--porcelain'], '');
+      const statusText = await runGit(path, ['status', '--porcelain']);
       return buildRepoBadgeState(parseGitStatus(statusText));
     } catch (loadError) {
       return {
@@ -180,32 +188,16 @@ export function GitManager({
         error: String(loadError),
       };
     }
-  }, [runGit, safeGit]);
-
-  const refreshRepoBadges = useCallback(async (targetRepos: string[] = repos) => {
-    if (targetRepos.length === 0) {
-      return;
-    }
-
-    const nextEntries = await Promise.all(
-      targetRepos.map(async repo => [repo, await loadRepoBadge(repo)] as const),
-    );
-
-    setRepoBadges(current => ({
-      ...current,
-      ...Object.fromEntries(nextEntries),
-    }));
-  }, [loadRepoBadge, repos]);
+  }, [runGit]);
 
   const loadRepoState = useCallback(async (path: string) => {
     setLoading(true);
     setError(null);
     try {
-      await runGit(path, ['rev-parse', '--is-inside-work-tree']);
       const [branch, lastCommit, statusText, unstagedStats, stagedStats] = await Promise.all([
         safeGit(path, ['rev-parse', '--abbrev-ref', 'HEAD'], 'unknown'),
         safeGit(path, ['log', '-1', '--pretty=format:%h - %s (%cr)'], 'No commits yet'),
-        safeGit(path, ['status', '--porcelain'], ''),
+        runGit(path, ['status', '--porcelain']),
         safeGit(path, ['diff', '--numstat', '--no-ext-diff'], ''),
         safeGit(path, ['diff', '--cached', '--numstat', '--no-ext-diff'], ''),
       ]);
@@ -251,14 +243,12 @@ export function GitManager({
     }
 
     let disposed = false;
+    let backgroundSweepCount = 0;
+    let syncInFlight = false;
+    let syncQueuedForceAll = false;
 
-    const syncBadges = async () => {
-      const targetRepos = [...repos];
-      const nextEntries = await Promise.all(
-        targetRepos.map(async repo => [repo, await loadRepoBadge(repo)] as const),
-      );
-
-      if (disposed) {
+    const mergeBadgeEntries = (nextEntries: readonly (readonly [string, RepoBadgeState])[]) => {
+      if (disposed || nextEntries.length === 0) {
         return;
       }
 
@@ -268,16 +258,65 @@ export function GitManager({
       }));
     };
 
-    void syncBadges();
+    const syncBadgeSubset = async (targetRepos: string[]) => {
+      if (targetRepos.length === 0) {
+        return;
+      }
+
+      const nextEntries = await Promise.all(
+        targetRepos.map(async repo => [repo, await loadRepoBadge(repo)] as const),
+      );
+
+      mergeBadgeEntries(nextEntries);
+    };
+
+    const syncBadges = async (forceAll = false) => {
+      const activeRepoTargets = selectedRepo && repos.includes(selectedRepo)
+        ? [selectedRepo]
+        : repos.slice(0, 1);
+
+      if (forceAll || repos.length <= 1) {
+        await syncBadgeSubset([...repos]);
+        return;
+      }
+
+      await syncBadgeSubset(activeRepoTargets);
+      backgroundSweepCount += ACTIVE_REPO_BADGE_POLL_MS;
+      if (backgroundSweepCount >= BACKGROUND_REPO_BADGE_POLL_MS) {
+        backgroundSweepCount = 0;
+        const backgroundRepos = repos.filter(repo => !activeRepoTargets.includes(repo));
+        await syncBadgeSubset(backgroundRepos);
+      }
+    };
+
+    const scheduleBadgeSync = async (forceAll = false) => {
+      syncQueuedForceAll = syncQueuedForceAll || forceAll;
+      if (syncInFlight) {
+        return;
+      }
+
+      syncInFlight = true;
+      try {
+        do {
+          const nextForceAll = syncQueuedForceAll;
+          syncQueuedForceAll = false;
+          await syncBadges(nextForceAll);
+        } while (syncQueuedForceAll && !disposed);
+      } finally {
+        syncInFlight = false;
+      }
+    };
+
+    void scheduleBadgeSync(true);
     const intervalId = window.setInterval(() => {
-      void syncBadges();
-    }, 30000);
+      void scheduleBadgeSync(false);
+    }, ACTIVE_REPO_BADGE_POLL_MS);
 
     return () => {
       disposed = true;
       window.clearInterval(intervalId);
     };
-  }, [loadRepoBadge, repos]);
+  }, [loadRepoBadge, repos, selectedRepo]);
 
   useEffect(() => {
     if (repos.length === 0) {
@@ -335,8 +374,8 @@ export function GitManager({
 
   const refreshRepo = useCallback(async () => {
     if (!selectedRepo) return;
-    await Promise.all([loadRepoState(selectedRepo), refreshRepoBadges()]);
-  }, [loadRepoState, refreshRepoBadges, selectedRepo]);
+    await loadRepoState(selectedRepo);
+  }, [loadRepoState, selectedRepo]);
 
   const summary = useMemo(
     () => (repoState ? summarizeGitFiles(repoState.status) : null),
@@ -719,6 +758,50 @@ export function GitManager({
       return file.file.toLowerCase().includes(query) || (file.originalFile?.toLowerCase().includes(query) ?? false);
     });
   }, [changeFilter, deferredQuery, repoState]);
+  const changeListVirtualWindow = useMemo(() => {
+    const totalRows = filteredFiles.length;
+    const viewportHeight = Math.max(changeListViewportHeight, CHANGE_LIST_ROW_HEIGHT);
+    const startIndex = Math.max(0, Math.floor(changeListScrollTop / CHANGE_LIST_ROW_HEIGHT) - CHANGE_LIST_OVERSCAN);
+    const endIndex = Math.min(
+      totalRows,
+      Math.ceil((changeListScrollTop + viewportHeight) / CHANGE_LIST_ROW_HEIGHT) + CHANGE_LIST_OVERSCAN,
+    );
+
+    return {
+      startIndex,
+      endIndex,
+      topSpacer: startIndex * CHANGE_LIST_ROW_HEIGHT,
+      bottomSpacer: Math.max(0, totalRows - endIndex) * CHANGE_LIST_ROW_HEIGHT,
+    };
+  }, [changeListScrollTop, changeListViewportHeight, filteredFiles.length]);
+  const virtualizedFilteredFiles = useMemo(
+    () => filteredFiles.slice(changeListVirtualWindow.startIndex, changeListVirtualWindow.endIndex),
+    [changeListVirtualWindow.endIndex, changeListVirtualWindow.startIndex, filteredFiles],
+  );
+
+  useEffect(() => {
+    const viewport = changeListViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    const updateViewportHeight = () => {
+      setChangeListViewportHeight(viewport.clientHeight || 480);
+    };
+
+    updateViewportHeight();
+    const observer = new ResizeObserver(updateViewportHeight);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const viewport = changeListViewportRef.current;
+    if (viewport) {
+      viewport.scrollTop = 0;
+    }
+    setChangeListScrollTop(0);
+  }, [selectedRepo, changeFilter, deferredQuery]);
 
   const jumpToDiffHunk = useCallback((index: number) => {
     if (!diffView || diffView.hunkLines.length === 0) {
@@ -1006,20 +1089,30 @@ export function GitManager({
                 <div style={{ display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr) 56px 56px', gap: 8, padding: '7px 12px', borderBottom: `1px solid ${palette.border}`, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: palette.muted }}>
                   <span>Status</span><span>File</span><span style={{ textAlign: 'right' }}>+</span><span style={{ textAlign: 'right' }}>-</span>
                 </div>
-                <OverlayScrollArea style={{ flex: 1, minHeight: 0 }}>
+                <OverlayScrollArea
+                  style={{ flex: 1, minHeight: 0 }}
+                  viewportRef={changeListViewportRef}
+                  onViewportScroll={event => setChangeListScrollTop(event.currentTarget.scrollTop)}
+                >
                   {filteredFiles.length === 0 ? (
                     <div style={{ padding: 14, color: palette.muted, fontSize: 11 }}>{repoState.status.length === 0 ? 'Working tree is clean.' : 'No files match the current filter.'}</div>
-                  ) : filteredFiles.map(file => (
-                    <button key={`${file.statusText}-${file.file}`} onClick={() => setSelectedFilePath(file.file)} style={{ width: '100%', display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr) 56px 56px', gap: 8, alignItems: 'center', padding: '7px 12px', border: 'none', borderBottom: `1px solid ${alpha(palette.border, 0.7)}`, background: selectedFilePath === file.file ? alpha(palette.accent, 0.14) : 'transparent', color: palette.text, cursor: 'pointer', textAlign: 'left' }}>
-                      <span style={{ ...pillStyle(alpha(statusColor(file, palette), 0.14), statusColor(file, palette)), justifyContent: 'center' }}>{statusLabel(file)}</span>
-                      <span style={{ minWidth: 0 }}>
-                        <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: monoFont }}>{file.file}</span>
-                        {file.originalFile && <span style={{ display: 'block', marginTop: 2, fontSize: 9.5, color: palette.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: monoFont }}>{file.originalFile}</span>}
-                      </span>
-                      <span style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: palette.green }}>+{file.additions}</span>
-                      <span style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: palette.red }}>-{file.deletions}</span>
-                    </button>
-                  ))}
+                  ) : (
+                    <>
+                      <div style={{ height: changeListVirtualWindow.topSpacer }} />
+                      {virtualizedFilteredFiles.map(file => (
+                        <button key={`${file.statusText}-${file.file}`} onClick={() => setSelectedFilePath(file.file)} style={{ width: '100%', height: CHANGE_LIST_ROW_HEIGHT, display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr) 56px 56px', gap: 8, alignItems: 'center', padding: '7px 12px', border: 'none', borderBottom: `1px solid ${alpha(palette.border, 0.7)}`, background: selectedFilePath === file.file ? alpha(palette.accent, 0.14) : 'transparent', color: palette.text, cursor: 'pointer', textAlign: 'left', boxSizing: 'border-box' }}>
+                          <span style={{ ...pillStyle(alpha(statusColor(file, palette), 0.14), statusColor(file, palette)), justifyContent: 'center' }}>{statusLabel(file)}</span>
+                          <span style={{ minWidth: 0 }}>
+                            <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: monoFont }}>{file.file}</span>
+                            {file.originalFile && <span style={{ display: 'block', marginTop: 2, fontSize: 9.5, color: palette.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: monoFont }}>{file.originalFile}</span>}
+                          </span>
+                          <span style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: palette.green }}>+{file.additions}</span>
+                          <span style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: palette.red }}>-{file.deletions}</span>
+                        </button>
+                      ))}
+                      <div style={{ height: changeListVirtualWindow.bottomSpacer }} />
+                    </>
+                  )}
                 </OverlayScrollArea>
               </ResizablePane>
 
@@ -1188,6 +1281,42 @@ function joinRepoPath(repoPath: string, filePath: string): string {
   return `${repoPath.replace(/[\\/]+$/, '')}/${filePath.replace(/\\/g, '/')}`;
 }
 
+function getParentPath(path: string): string {
+  const normalized = path.replace(/[\\/]+$/, '');
+  const match = normalized.match(/^(.*)[\\/][^\\/]+$/);
+  return match?.[1] ?? '';
+}
+
+function getBaseName(path: string): string {
+  const normalized = path.replace(/[\\/]+$/, '');
+  const match = normalized.match(/[^\\/]+$/);
+  return match?.[0] ?? normalized;
+}
+
+function looksBinaryContent(content: string): boolean {
+  return /\u0000/.test(content);
+}
+
+async function getFileSizeHint(path: string): Promise<number | null> {
+  const parentPath = getParentPath(path);
+  const baseName = getBaseName(path);
+  if (!parentPath || !baseName) {
+    return null;
+  }
+
+  try {
+    const entries = await commands.fsListDir(parentPath, true).then(unwrapTauriResult);
+    const matchingEntry = entries.find(entry => entry.name === baseName && !entry.is_dir);
+    return typeof matchingEntry?.size === 'number' ? matchingEntry.size : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildNonTextUntrackedDiff(path: string, reason: string): string {
+  return `diff --git a/${path} b/${path}\nnew file mode 100644\n--- /dev/null\n+++ b/${path}\n@@\n+${reason}\n`;
+}
+
 async function buildUnifiedDiff(
   repoPath: string,
   file: GitFileStatus,
@@ -1200,10 +1329,28 @@ async function buildUnifiedDiff(
       return `diff --git a/${file.file} b/${file.file}\nnew file mode 040000\n--- /dev/null\n+++ b/${file.file}\n@@\n+Directory added: ${file.file}\n`;
     }
 
+    const absolutePath = joinRepoPath(repoPath, file.file);
+    const sizeHint = await getFileSizeHint(absolutePath);
+    if (typeof sizeHint === 'number' && sizeHint > MAX_SYNTHETIC_UNTRACKED_DIFF_BYTES) {
+      return buildNonTextUntrackedDiff(
+        file.file,
+        `Large untracked file omitted from inline diff (${Math.round(sizeHint / 1024)} KB).`,
+      );
+    }
+
     const content = await commands
-      .fsReadTextFile(joinRepoPath(repoPath, file.file))
+      .fsReadTextFile(absolutePath)
       .then(unwrapTauriResult)
       .catch(() => '');
+
+    if (!content) {
+      return buildNonTextUntrackedDiff(file.file, 'Untracked file preview unavailable or non-text.');
+    }
+
+    if (looksBinaryContent(content)) {
+      return buildNonTextUntrackedDiff(file.file, 'Binary or non-text untracked file omitted from inline diff.');
+    }
+
     return buildSyntheticAddedDiff(file.file, content);
   }
 

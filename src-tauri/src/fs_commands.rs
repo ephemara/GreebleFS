@@ -9,7 +9,9 @@ use crate::entry_size_cache::{
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use tauri_specta::Event;
@@ -268,6 +270,8 @@ static FS_COMMAND_YAZI_SCHEDULER: OnceLock<Arc<YaziScheduler>> = OnceLock::new()
 static SEARCH_ENTRY_TEST_DELAY_MS: AtomicU64 = AtomicU64::new(0);
 #[cfg(test)]
 static SEARCH_ENTRY_TEST_SCAN_COUNT: AtomicU64 = AtomicU64::new(0);
+#[cfg(test)]
+static GIT_EXEC_TEST_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 fn parse_fs_cache_policy_u64(raw: Option<&str>, default: u64) -> u64 {
     raw.map(str::trim)
@@ -3089,15 +3093,26 @@ pub async fn fs_write_file(path: String, content: FsWriteFileContent) -> Result<
 
 // ─── git_exec ─────────────────────────────────────────────────────────────────
 // Executes a git command in the specified directory and returns stdout (or stderr on failure)
-#[tauri::command]
-#[specta::specta]
-pub async fn git_exec(repo_path: String, args: Vec<String>) -> Result<String, String> {
+const GIT_EXEC_TIMEOUT: Duration = Duration::from_secs(20);
+
+fn git_command_program() -> String {
+    std::env::var("OVERLAYTERM_GIT_EXECUTABLE")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "git".to_string())
+}
+
+fn run_git_command(repo_path: &str, args: &[String], timeout: Duration) -> Result<String, String> {
     #[cfg(target_os = "windows")]
     use std::os::windows::process::CommandExt;
-    use std::process::Command;
 
-    let mut cmd = Command::new("git");
-    cmd.current_dir(&repo_path).args(&args);
+    let program = git_command_program();
+    let mut cmd = Command::new(&program);
+    cmd.current_dir(repo_path)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     #[cfg(target_os = "windows")]
     {
@@ -3105,29 +3120,70 @@ pub async fn git_exec(repo_path: String, args: Vec<String>) -> Result<String, St
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
 
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Failed to run git: {}", e))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to run git via '{}': {}", program, e))?;
 
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).to_string())
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                let output = child
+                    .wait_with_output()
+                    .map_err(|e| format!("Failed to collect git output: {}", e))?;
+                return if output.status.success() {
+                    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    Err(if !stderr.is_empty() {
+                        stderr
+                    } else if !stdout.is_empty() {
+                        stdout
+                    } else {
+                        format!("Git exited with status {}", output.status)
+                    })
+                };
+            }
+            Ok(None) => {
+                if started.elapsed() >= timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!(
+                        "Git command timed out after {}s: {} {}",
+                        timeout.as_secs(),
+                        program,
+                        args.join(" ")
+                    ));
+                }
+                thread::sleep(Duration::from_millis(15));
+            }
+            Err(e) => return Err(format!("Failed while waiting for git: {}", e)),
+        }
     }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn git_exec(repo_path: String, args: Vec<String>) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || run_git_command(&repo_path, &args, GIT_EXEC_TIMEOUT))
+        .await
+        .map_err(|join_error| format!("Git task join failure: {}", join_error))?
 }
 
 // ─── fs_read_file_base64 ─────────────────────────────────────────────────────
 // Returns the file as a data-URI so the frontend can render it without
 // needing the asset:// protocol (which requires allow-listed paths).
+const FS_READ_FILE_BASE64_MAX_BYTES: u64 = 12 * 1024 * 1024;
 
 #[tauri::command]
 #[specta::specta]
 pub async fn fs_read_file_base64(path: String) -> Result<String, String> {
     use std::io::Read;
     let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
-    // Cap at 50 MB so previews stay responsive while still covering large images and meshes.
-    if meta.len() > 50 * 1024 * 1024 {
-        return Err("File is too large to preview (> 50 MB)".to_string());
+    // Keep previews responsive: this path reads the full file into memory and base64 inflates it.
+    if meta.len() > FS_READ_FILE_BASE64_MAX_BYTES {
+        return Err("File is too large to preview (> 12 MB)".to_string());
     }
     let mut file = std::fs::File::open(&path).map_err(|e| e.to_string())?;
     let mut buf = Vec::new();
@@ -5675,5 +5731,98 @@ mod tests {
         // Should be an absolute path
         let p = std::path::Path::new(&home);
         assert!(p.is_absolute(), "home dir '{}' should be absolute", home);
+    }
+
+    #[tokio::test]
+    async fn fs_read_file_base64_returns_data_url_for_small_file() {
+        let dir = tmp_dir();
+        let file_path = dir.path().join("preview.png");
+        fs::write(&file_path, b"png-data").unwrap();
+
+        let result = fs_read_file_base64(file_path.to_string_lossy().into()).await;
+        let data_url = result.expect("small preview should succeed");
+        assert!(data_url.starts_with("data:image/png;base64,"), "unexpected data url: {data_url}");
+    }
+
+    #[tokio::test]
+    async fn fs_read_file_base64_rejects_large_files() {
+        let dir = tmp_dir();
+        let file_path = dir.path().join("huge-preview.bin");
+        let oversized = vec![0u8; (FS_READ_FILE_BASE64_MAX_BYTES as usize) + 1];
+        fs::write(&file_path, oversized).unwrap();
+
+        let result = fs_read_file_base64(file_path.to_string_lossy().into()).await;
+        let error = result.expect_err("oversized preview should be rejected");
+        assert!(error.contains("> 12 MB"), "unexpected error: {error}");
+    }
+
+    #[tokio::test]
+    async fn git_exec_returns_stdout_for_successful_command() {
+        let _env_guard = GIT_EXEC_TEST_ENV_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("git env lock");
+
+        unsafe {
+            std::env::remove_var("OVERLAYTERM_GIT_EXECUTABLE");
+        }
+
+        let dir = TempDir::new().expect("temp dir");
+        let output = git_exec(
+            dir.path().to_string_lossy().to_string(),
+            vec!["--version".to_string()],
+        )
+        .await
+        .expect("git --version should succeed");
+
+        assert!(output.to_lowercase().contains("git version"));
+    }
+
+    #[tokio::test]
+    async fn git_exec_times_out_and_kills_slow_process() {
+        let _env_guard = GIT_EXEC_TEST_ENV_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("git env lock");
+
+        let dir = TempDir::new().expect("temp dir");
+        let script_path = dir.path().join(if cfg!(target_os = "windows") {
+            "fake-git-timeout.cmd"
+        } else {
+            "fake-git-timeout.sh"
+        });
+
+        #[cfg(target_os = "windows")]
+        let script_body = "@echo off\r\nping 127.0.0.1 -n 6 >nul\r\necho should-not-complete\r\n";
+
+        #[cfg(not(target_os = "windows"))]
+        let script_body = "#!/bin/sh\nsleep 5\necho should-not-complete\n";
+
+        fs::write(&script_path, script_body).expect("write fake git script");
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = fs::metadata(&script_path).expect("metadata").permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&script_path, permissions).expect("chmod fake git script");
+        }
+
+        unsafe {
+            std::env::set_var("OVERLAYTERM_GIT_EXECUTABLE", &script_path);
+        }
+
+        let result = run_git_command(
+            dir.path().to_string_lossy().as_ref(),
+            &["status".to_string()],
+            Duration::from_millis(150),
+        );
+
+        unsafe {
+            std::env::remove_var("OVERLAYTERM_GIT_EXECUTABLE");
+        }
+
+        let error = result.expect_err("slow fake git should time out");
+        assert!(error.contains("timed out"), "unexpected error: {error}");
     }
 }

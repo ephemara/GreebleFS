@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "OverlayTerm",
+  "version": "0.1.0",
+  "identifier": "co.overlayterm.app",
+  "build": {
+    "frontendDist": "M:\\apps\\overlayterm\\dist",
+    "beforeDevCommand": "bun.exe run dev -- --port 59949",
+    "beforeBuildCommand": "bun.exe run build",
+    "devUrl": "http://localhost:59949/?frameProbeFile=M%3A%5Capps%5Coverlayterm%5Cautomations%5Cecho%5Cevidence%5Coverlayterm.tauri-frame-probe.json"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "title": "OverlayTerm",
+        "width": 1000,
+        "height": 500,
+        "transparent": true,
+        "decorations": false,
+        "visible": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.icns",
+      "icons/icon.png"
+    ],
+    "resources": {
+      "icons/tray.ico": "icons/tray.ico",
+      "icons/icon.ico": "icons/icon.ico"
+    }
+  }
+}

@@ -19,6 +19,7 @@ export const pluginSystemConfig = {
   watchEventName: 'overlay://plugins-changed',
   watchDebounceMs: 400,
   fallbackScanIntervalMs: 20000,
+  fallbackScanMaxIntervalMs: 120000,
   ignoredWatchDirectoryNames: ['node_modules', '.git', '.turbo', 'coverage', 'target', 'backend'] as const,
   folderPanelsOpenByDefault: true,
   folderPanelsKeepMounted: false,

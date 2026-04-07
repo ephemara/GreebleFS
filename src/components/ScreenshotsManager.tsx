@@ -417,10 +417,10 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
       return;
     }
 
-    resetEditorState();
     if (openLibrary) {
       setActiveSection('library');
     }
+    resetEditorState();
   }, [resetEditorState, screenshotSettings.closeEditorAfterAction]);
 
   // ── Derived: selection in physical px ──

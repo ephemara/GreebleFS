@@ -24,6 +24,12 @@ import {
   type ExplorerViewMode,
 } from '../config/explorerViewModes';
 import {
+  DEFAULT_ADAPTIVE_SEMANTIC_DENSITY,
+  normalizeAdaptiveSemanticDensity,
+  normalizeExplorerExperimentalViewMode,
+  type ExplorerExperimentalViewMode,
+} from '../config/explorerExperimentalModes';
+import {
   createDefaultKeybindingSettings,
   normalizeKeybindingSettings,
   type HotkeyBindingSettings,
@@ -102,6 +108,8 @@ export interface ExplorerSettings {
   sortOrder: 'asc' | 'desc';
   viewMode: ExplorerViewMode;
   gridZoom: number;
+  experimentalViewMode: ExplorerExperimentalViewMode;
+  experimentalDensity: number;
   folderClickMode: ExplorerFolderClickMode;
   confirmDelete: boolean;
   defaultFolderIcon: FolderIconValue;
@@ -227,6 +235,10 @@ function normalizeExplorerSettings(
 ): ExplorerSettings {
   const nextViewMode = normalizeExplorerViewMode(updates?.viewMode ?? base.viewMode);
   const hasExplicitGridZoom = updates != null && Object.prototype.hasOwnProperty.call(updates, 'gridZoom');
+  const nextExperimentalViewMode = normalizeExplorerExperimentalViewMode(
+    updates?.experimentalViewMode ?? base.experimentalViewMode,
+  );
+  const hasExplicitExperimentalDensity = updates != null && Object.prototype.hasOwnProperty.call(updates, 'experimentalDensity');
 
   return {
     ...base,
@@ -237,6 +249,10 @@ function normalizeExplorerSettings(
       : (updates?.viewMode && isExplorerGridMode(nextViewMode)
           ? getExplorerGridZoomAnchor(nextViewMode)
           : base.gridZoom),
+    experimentalViewMode: nextExperimentalViewMode,
+    experimentalDensity: hasExplicitExperimentalDensity
+      ? normalizeAdaptiveSemanticDensity(updates?.experimentalDensity)
+      : base.experimentalDensity,
     folderClickMode: normalizeExplorerFolderClickMode(updates?.folderClickMode ?? base.folderClickMode),
   };
 }
@@ -478,6 +494,8 @@ export const defaultSettings: Settings = {
     sortOrder: 'asc',
     viewMode: 'details',
     gridZoom: getExplorerGridZoomAnchor('icons-l'),
+    experimentalViewMode: 'off',
+    experimentalDensity: DEFAULT_ADAPTIVE_SEMANTIC_DENSITY,
     folderClickMode: 'double',
     confirmDelete: true,
     defaultFolderIcon: DEFAULT_FOLDER_ICON_VALUE,
@@ -580,6 +598,12 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
       gridZoom: normalizeExplorerGridZoom(
         imported?.explorer?.gridZoom,
         normalizeExplorerViewMode(imported?.explorer?.viewMode ?? base.explorer.viewMode),
+      ),
+      experimentalViewMode: normalizeExplorerExperimentalViewMode(
+        imported?.explorer?.experimentalViewMode ?? base.explorer.experimentalViewMode,
+      ),
+      experimentalDensity: normalizeAdaptiveSemanticDensity(
+        imported?.explorer?.experimentalDensity ?? base.explorer.experimentalDensity,
       ),
       folderClickMode: normalizeExplorerFolderClickMode(imported?.explorer?.folderClickMode ?? base.explorer.folderClickMode),
     },

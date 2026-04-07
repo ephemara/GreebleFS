@@ -34,6 +34,11 @@ export const explorerPerformanceBudgets = {
     targetMs: 350,
     description: 'Explorer mount to the first completed interactive directory state.',
   },
+  overlay_frame_time: {
+    label: 'Overlay Frame p95',
+    targetMs: 16.7,
+    description: 'p95 requestAnimationFrame delta collected while the overlay is visible.',
+  },
 } as const;
 
 export type ExplorerPerformanceMetricId = keyof typeof explorerPerformanceBudgets;
@@ -65,6 +70,7 @@ export interface ExplorerPerformanceSummary {
   worstMs: number | null;
   overBudgetCount: number;
   latestAt: number | null;
+  latestMetadata: ExplorerPerformanceMetadata;
 }
 
 let cachedSnapshot: ExplorerPerformanceSnapshot | null = null;
@@ -162,6 +168,7 @@ function summarizeMetric(
       worstMs: null,
       overBudgetCount: 0,
       latestAt: null,
+      latestMetadata: {},
     };
   }
 
@@ -185,6 +192,7 @@ function summarizeMetric(
     worstMs: durations[durations.length - 1] ?? null,
     overBudgetCount: samples.filter((sample) => sample.durationMs > budget.targetMs).length,
     latestAt: latest?.recordedAt ?? null,
+    latestMetadata: latest?.metadata ?? {},
   };
 }
 
@@ -319,5 +327,6 @@ function createMetricRecord<T>(factory: (metricId: ExplorerPerformanceMetricId) 
     explorer_entry_size_batch: factory('explorer_entry_size_batch'),
     explorer_native_icon_batch: factory('explorer_native_icon_batch'),
     explorer_first_interactive: factory('explorer_first_interactive'),
+    overlay_frame_time: factory('overlay_frame_time'),
   };
 }

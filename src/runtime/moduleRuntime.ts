@@ -6,6 +6,15 @@ export interface RuntimeFileEntry {
   extension: string;
 }
 
+let typescriptModulePromise: Promise<typeof import('typescript')> | null = null;
+
+function loadTypeScriptModule(): Promise<typeof import('typescript')> {
+  if (!typescriptModulePromise) {
+    typescriptModulePromise = import('typescript');
+  }
+  return typescriptModulePromise;
+}
+
 export function isSupportedRuntimeFile(
   entry: RuntimeFileEntry,
   extensions: readonly string[],
@@ -36,7 +45,7 @@ export async function transpileRuntimeModuleSource(
   source: string,
   prependCode = '',
 ): Promise<string> {
-  const ts = await import('typescript');
+  const ts = await loadTypeScriptModule();
   const transpiled = ts.transpileModule(source, {
     compilerOptions: {
       target: ts.ScriptTarget.ES2020,

@@ -17,6 +17,11 @@ import { FolderPluginRenderer, PluginsManager } from './components/PluginsManage
 import { CommandPalette, type OverlayCommandPaletteAction } from './components/CommandPalette';
 import { animationSystemConfig, resolvePreferredAnimationId } from './config/animations';
 import {
+  recordOverlayFrameTelemetry,
+  shouldFlushOverlayFrameWindow,
+  summarizeOverlayFrameWindow,
+} from './config/frameTelemetry';
+import {
   pluginSystemConfig,
 } from './config/plugins';
 import {
@@ -107,6 +112,19 @@ import {
   type TerminalWindowMode,
 } from './store/settingsStore';
 import { useTerminalStore } from './store/terminalStore';
+
+const FRAME_PROBE_OUTPUT_PATH = (() => {
+  if (typeof window !== 'undefined') {
+    const value = new URLSearchParams(window.location.search).get('frameProbeFile')?.trim();
+    if (value) {
+      return value;
+    }
+  }
+
+  return (
+    import.meta.env as { VITE_OVERLAYTERM_FRAME_PROBE_FILE?: string }
+  ).VITE_OVERLAYTERM_FRAME_PROBE_FILE?.trim() ?? '';
+})();
 
 function clampValue(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -345,6 +363,19 @@ function App() {
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const animationSignatureRef = useRef('');
   const shaderSignatureRef = useRef('');
+  const authoredAnimationsRefreshInFlightRef = useRef(false);
+  const authoredAnimationsRefreshQueuedRef = useRef(false);
+  const authoredShadersRefreshInFlightRef = useRef(false);
+  const authoredShadersRefreshQueuedRef = useRef(false);
+  const frameTelemetryContextRef = useRef<{
+    activePanelId: string | null;
+    openPanelCount: number;
+    windowMode: TerminalWindowMode;
+  }>({
+    activePanelId: null,
+    openPanelCount: 0,
+    windowMode: 'overlay',
+  });
   const dragHideRestoreRef = useRef(false);
   const openTerminalPanelRef = useRef<() => void>(() => undefined);
   // Tracks whether the overlay has been dragged away from its anchor position
@@ -628,6 +659,20 @@ function App() {
 
   // ── Boot store ──
   useEffect(() => { initTerminalStore(); }, [initTerminalStore]);
+
+  useEffect(() => {
+    if (!FRAME_PROBE_OUTPUT_PATH || !isTauri()) {
+      return;
+    }
+
+    void commands.fsWriteFile(FRAME_PROBE_OUTPUT_PATH, {
+      kind: 'text',
+      value: JSON.stringify({
+        status: 'boot',
+        recordedAt: Date.now(),
+      }, null, 2),
+    }).then(unwrapTauriResult).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1615,36 +1660,55 @@ function App() {
     }
 
     if (force) {
-      animationSignatureRef.current = '';
+      authoredAnimationsRefreshQueuedRef.current = true;
+    }
+    if (authoredAnimationsRefreshInFlightRef.current) {
+      authoredAnimationsRefreshQueuedRef.current = true;
+      return;
     }
 
-    setAuthoredAnimationsLoading(prev => prev && !force);
-    setAuthoredAnimationsError(null);
+    authoredAnimationsRefreshInFlightRef.current = true;
     try {
-      await ensureDir(animationSystemConfig.animationsDirectory);
-      const listed = await listExplorerDir(animationSystemConfig.animationsDirectory, false);
-      const files = listed
-        .filter(isFrontendAnimationFile)
-        .sort((left, right) => left.name.localeCompare(right.name));
-      const nextSignature = files.map(file => `${file.path}:${file.modified}`).join('|');
+      do {
+        const nextForce = force || authoredAnimationsRefreshQueuedRef.current;
+        authoredAnimationsRefreshQueuedRef.current = false;
+        force = false;
 
-      if (!force && nextSignature === animationSignatureRef.current) {
-        setAuthoredAnimationsLoading(false);
-        return;
-      }
+        if (nextForce) {
+          animationSignatureRef.current = '';
+        }
 
-      animationSignatureRef.current = nextSignature;
-      const loaded = await Promise.all(files.map(async file => {
-        const source = await commands.fsReadTextFile(file.path).then(unwrapTauriResult);
-        return loadAnimationFromSource(source, file);
-      }));
+        setAuthoredAnimationsLoading(prev => prev && !nextForce);
+        setAuthoredAnimationsError(null);
+        try {
+          await ensureDir(animationSystemConfig.animationsDirectory);
+          const listed = await listExplorerDir(animationSystemConfig.animationsDirectory, false);
+          const files = listed
+            .filter(isFrontendAnimationFile)
+            .sort((left, right) => left.name.localeCompare(right.name));
+          const nextSignature = files.map(file => `${file.path}:${file.modified}`).join('|');
 
-      setAuthoredAnimations(loaded);
-    } catch (error) {
-      setAuthoredAnimations([]);
-      setAuthoredAnimationsError(String(error));
+          if (!nextForce && nextSignature === animationSignatureRef.current) {
+            setAuthoredAnimationsLoading(false);
+            continue;
+          }
+
+          animationSignatureRef.current = nextSignature;
+          const loaded = await Promise.all(files.map(async file => {
+            const source = await commands.fsReadTextFile(file.path).then(unwrapTauriResult);
+            return loadAnimationFromSource(source, file);
+          }));
+
+          setAuthoredAnimations(loaded);
+        } catch (error) {
+          setAuthoredAnimations([]);
+          setAuthoredAnimationsError(String(error));
+        } finally {
+          setAuthoredAnimationsLoading(false);
+        }
+      } while (authoredAnimationsRefreshQueuedRef.current);
     } finally {
-      setAuthoredAnimationsLoading(false);
+      authoredAnimationsRefreshInFlightRef.current = false;
     }
   }, []);
 
@@ -1657,36 +1721,55 @@ function App() {
     }
 
     if (force) {
-      shaderSignatureRef.current = '';
+      authoredShadersRefreshQueuedRef.current = true;
+    }
+    if (authoredShadersRefreshInFlightRef.current) {
+      authoredShadersRefreshQueuedRef.current = true;
+      return;
     }
 
-    setAuthoredShadersLoading(prev => prev && !force);
-    setAuthoredShadersError(null);
+    authoredShadersRefreshInFlightRef.current = true;
     try {
-      await ensureDir(shaderSystemConfig.shadersDirectory);
-      const listed = await listExplorerDir(shaderSystemConfig.shadersDirectory, false);
-      const files = listed
-        .filter(isFrontendShaderFile)
-        .sort((left, right) => left.name.localeCompare(right.name));
-      const nextSignature = files.map(file => `${file.path}:${file.modified}`).join('|');
+      do {
+        const nextForce = force || authoredShadersRefreshQueuedRef.current;
+        authoredShadersRefreshQueuedRef.current = false;
+        force = false;
 
-      if (!force && nextSignature === shaderSignatureRef.current) {
-        setAuthoredShadersLoading(false);
-        return;
-      }
+        if (nextForce) {
+          shaderSignatureRef.current = '';
+        }
 
-      shaderSignatureRef.current = nextSignature;
-      const loaded = await Promise.all(files.map(async file => {
-        const source = await commands.fsReadTextFile(file.path).then(unwrapTauriResult);
-        return loadShaderFromSource(source, file);
-      }));
+        setAuthoredShadersLoading(prev => prev && !nextForce);
+        setAuthoredShadersError(null);
+        try {
+          await ensureDir(shaderSystemConfig.shadersDirectory);
+          const listed = await listExplorerDir(shaderSystemConfig.shadersDirectory, false);
+          const files = listed
+            .filter(isFrontendShaderFile)
+            .sort((left, right) => left.name.localeCompare(right.name));
+          const nextSignature = files.map(file => `${file.path}:${file.modified}`).join('|');
 
-      setAuthoredShaders(loaded);
-    } catch (error) {
-      setAuthoredShaders([]);
-      setAuthoredShadersError(String(error));
+          if (!nextForce && nextSignature === shaderSignatureRef.current) {
+            setAuthoredShadersLoading(false);
+            continue;
+          }
+
+          shaderSignatureRef.current = nextSignature;
+          const loaded = await Promise.all(files.map(async file => {
+            const source = await commands.fsReadTextFile(file.path).then(unwrapTauriResult);
+            return loadShaderFromSource(source, file);
+          }));
+
+          setAuthoredShaders(loaded);
+        } catch (error) {
+          setAuthoredShaders([]);
+          setAuthoredShadersError(String(error));
+        } finally {
+          setAuthoredShadersLoading(false);
+        }
+      } while (authoredShadersRefreshQueuedRef.current);
     } finally {
-      setAuthoredShadersLoading(false);
+      authoredShadersRefreshInFlightRef.current = false;
     }
   }, []);
 
@@ -1909,6 +1992,82 @@ function App() {
       .filter((entry): entry is { panel: LayoutPinnedPanel; definition: OverlayPanelDefinition } => Boolean(entry.definition)),
     [activeLayoutProfile, panelLookup],
   );
+  frameTelemetryContextRef.current = {
+    activePanelId,
+    openPanelCount: openPanelIds.length,
+    windowMode: settings.windowMode,
+  };
+
+  useEffect(() => {
+    if (!isOverlayVisible || typeof window === 'undefined') {
+      return;
+    }
+
+    let rafId = 0;
+    let disposed = false;
+    let windowStartedAt = 0;
+    let lastTimestamp = 0;
+    let frameDurations: number[] = [];
+
+    const flushWindow = () => {
+      if (lastTimestamp <= windowStartedAt) {
+        return;
+      }
+
+      const stats = summarizeOverlayFrameWindow(frameDurations, lastTimestamp - windowStartedAt);
+      if (!stats) {
+        return;
+      }
+
+      const context = frameTelemetryContextRef.current;
+      const sample = recordOverlayFrameTelemetry(stats, {
+        activePanelId: context.activePanelId ?? 'none',
+        isWindowed: context.windowMode === 'windowed',
+        openPanelCount: context.openPanelCount,
+      });
+      if (FRAME_PROBE_OUTPUT_PATH && isTauri()) {
+        void commands.fsWriteFile(FRAME_PROBE_OUTPUT_PATH, {
+          kind: 'text',
+          value: JSON.stringify(sample, null, 2),
+        }).then(unwrapTauriResult).catch(() => undefined);
+      }
+      frameDurations = [];
+      windowStartedAt = lastTimestamp;
+    };
+
+    const tick = (timestamp: number) => {
+      if (disposed) {
+        return;
+      }
+
+      if (lastTimestamp === 0) {
+        lastTimestamp = timestamp;
+        windowStartedAt = timestamp;
+        rafId = window.requestAnimationFrame(tick);
+        return;
+      }
+
+      const delta = timestamp - lastTimestamp;
+      lastTimestamp = timestamp;
+      if (delta > 0 && delta <= 250) {
+        frameDurations.push(delta);
+      }
+
+      const windowDurationMs = timestamp - windowStartedAt;
+      if (shouldFlushOverlayFrameWindow(frameDurations.length, windowDurationMs)) {
+        flushWindow();
+      }
+
+      rafId = window.requestAnimationFrame(tick);
+    };
+
+    rafId = window.requestAnimationFrame(tick);
+    return () => {
+      disposed = true;
+      window.cancelAnimationFrame(rafId);
+      flushWindow();
+    };
+  }, [isOverlayVisible]);
 
   const deriveOpenPanelIdsFromState = useCallback((panelState: LayoutPanelState) => derivePanelOpenState({
     savedOpenIds: panelState.openPanelIds,

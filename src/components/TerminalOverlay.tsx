@@ -399,7 +399,8 @@ function TerminalActionToolbar({ actions, theme, detail }: TerminalActionToolbar
               key={action.id}
               onClick={action.onClick}
               disabled={action.disabled}
-              title={`${action.label}${action.title !== action.label ? ` — ${action.title}` : ''}`}
+              aria-label={action.label}
+              title={action.title || action.label}
               className="flex items-center justify-center rounded transition-all disabled:opacity-30 disabled:cursor-not-allowed"
               style={{
                 width: 26,
@@ -1113,9 +1114,9 @@ export function TerminalOverlay({
   const [sidebarWidth, setSidebarWidth] = useState(210);
   const [readyTerminalIds, setReadyTerminalIds] = useState<string[]>([]);
   const [terminalActionMessage, setTerminalActionMessage] = useState<string | null>(null);
-  const [paneTelemetry, setPaneTelemetry] = useState<Record<string, TerminalPaneTelemetry>>(() => ({
+  const paneTelemetryRef = useRef<Record<string, TerminalPaneTelemetry>>({
     [INITIAL_PANE_ID]: createPaneTelemetry(),
-  }));
+  });
   const actionMessageTimerRef = useRef<number | null>(null);
   const paneCounterRef = useRef(1);
   const tabCounterRef = useRef(1);
@@ -1163,10 +1164,7 @@ export function TerminalOverlay({
 
   const markTerminalReady = useCallback((id: string) => {
     setReadyTerminalIds(prev => prev.includes(id) ? prev : [...prev, id]);
-    setPaneTelemetry(prev => ({
-      ...prev,
-      [id]: prev[id] ?? createPaneTelemetry(),
-    }));
+    paneTelemetryRef.current[id] ??= createPaneTelemetry();
   }, []);
 
   const clearTerminalReady = useCallback((id: string) => {
@@ -1174,10 +1172,7 @@ export function TerminalOverlay({
   }, []);
 
   const updatePaneTelemetry = useCallback((paneId: string, updater: (current: TerminalPaneTelemetry) => TerminalPaneTelemetry) => {
-    setPaneTelemetry(prev => ({
-      ...prev,
-      [paneId]: updater(prev[paneId] ?? createPaneTelemetry()),
-    }));
+    paneTelemetryRef.current[paneId] = updater(paneTelemetryRef.current[paneId] ?? createPaneTelemetry());
   }, []);
 
   const markPaneFocused = useCallback((paneId: string) => {
@@ -1208,11 +1203,7 @@ export function TerminalOverlay({
       delete next[paneId];
       return next;
     });
-    setPaneTelemetry(prev => {
-      const next = { ...prev };
-      delete next[paneId];
-      return next;
-    });
+    delete paneTelemetryRef.current[paneId];
   }, [clearTerminalReady]);
 
   const writeToPaneIds = useCallback(async (paneIds: string[], data: string) => {
@@ -1346,7 +1337,7 @@ export function TerminalOverlay({
     }
 
     const output = collectTerminalBufferText(entry.xterm);
-    const metrics = paneTelemetry[paneId] ?? createPaneTelemetry();
+    const metrics = paneTelemetryRef.current[paneId] ?? createPaneTelemetry();
     const snapshot = [
       `# ${tab.label} · ${pane.label}`,
       '',
@@ -1363,7 +1354,7 @@ export function TerminalOverlay({
 
     const copied = await copyTextToClipboard(snapshot);
     setTransientActionMessage(copied ? `Snapshot copied for ${pane.label}` : 'Snapshot copy failed');
-  }, [findTabForPane, paneSessions, paneTelemetry, setTransientActionMessage, settings.shell]);
+  }, [findTabForPane, paneSessions, setTransientActionMessage, settings.shell]);
 
   const clearPane = useCallback((paneId: string) => {
     const entry = xtermRegistry.get(paneId);
@@ -1452,7 +1443,7 @@ export function TerminalOverlay({
     }];
 
     setPaneSessions(prev => ({ ...prev, [pane.id]: pane }));
-    setPaneTelemetry(prev => ({ ...prev, [pane.id]: createPaneTelemetry() }));
+    paneTelemetryRef.current[pane.id] = createPaneTelemetry();
     setTabs(nextTabs);
     setActiveTabId(tabId);
     setTransientActionMessage(`Opened ${nextTabs[nextTabs.length - 1].label}`);
@@ -1465,7 +1456,7 @@ export function TerminalOverlay({
 
     const pane = createPaneSession(`Pane ${activeTab.paneIds.length + 1}`);
     setPaneSessions(prev => ({ ...prev, [pane.id]: pane }));
-    setPaneTelemetry(prev => ({ ...prev, [pane.id]: createPaneTelemetry() }));
+    paneTelemetryRef.current[pane.id] = createPaneTelemetry();
     setTabs(prev => prev.map(tab => (
       tab.id === activeTab.id
         ? {
@@ -1586,7 +1577,7 @@ export function TerminalOverlay({
   const terminalToolbarActions = useMemo<TerminalToolbarAction[]>(() => ([
     {
       id: 'split-columns',
-      label: 'Split Side by Side',
+      label: 'Split Columns',
       title: 'Add a pane to the right',
       icon: SplitSquareHorizontal,
       onClick: () => splitActiveTab('columns'),
@@ -1594,7 +1585,7 @@ export function TerminalOverlay({
     },
     {
       id: 'split-rows',
-      label: 'Split Top / Bottom',
+      label: 'Split Rows',
       title: 'Add a pane below',
       icon: SplitSquareVertical,
       onClick: () => splitActiveTab('rows'),
@@ -1625,6 +1616,14 @@ export function TerminalOverlay({
       onClick: () => { void copyPaneOutput(activePaneId); },
       disabled: !activeTerminalReady,
       tone: 'accent',
+    },
+    {
+      id: 'copy-snapshot',
+      label: 'Copy Snapshot',
+      title: 'Copy a markdown snapshot of the active pane',
+      icon: Hash,
+      onClick: () => { void copyPaneSnapshot(activePaneId); },
+      disabled: !activeTerminalReady,
     },
     {
       id: 'clear-pane',

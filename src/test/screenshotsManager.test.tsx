@@ -38,6 +38,7 @@ function makeGalleryEntry(name: string) {
 
 describe('ScreenshotsManager', () => {
   beforeEach(() => {
+    window.localStorage.clear();
     useSettingsStore.getState().resetToDefaults();
     vi.mocked(invoke).mockReset();
     vi.mocked(availableMonitors).mockResolvedValue([DEFAULT_MONITOR]);

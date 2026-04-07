@@ -76,12 +76,18 @@ async function writeRuntimeTauriConfig(packageManagerCommand) {
   const config = JSON.parse(rawConfig);
   const runtimeConfigPath = path.join(tauriConfigDir, "tauri.vps.config.json");
   const runPrefix = `${packageManagerCommand} run`;
+  const explicitDevUrl = process.env.OVERLAYTERM_TAURI_DEV_URL?.trim();
+  const explicitDevPort = process.env.OVERLAYTERM_TAURI_DEV_PORT?.trim();
+  const beforeDevCommand = explicitDevPort
+    ? `${runPrefix} dev -- --port ${explicitDevPort}`
+    : `${runPrefix} dev`;
 
   config.build = {
     ...config.build,
-    beforeDevCommand: `${runPrefix} dev`,
+    beforeDevCommand,
     beforeBuildCommand: `${runPrefix} build`,
     frontendDist,
+    ...(explicitDevUrl ? { devUrl: explicitDevUrl } : {}),
   };
 
   await fs.mkdir(tauriConfigDir, { recursive: true });

@@ -20,12 +20,20 @@ import {
   ChevronRight, ChevronLeft, ArrowUp, Search, RefreshCw,
   X, Star, StarOff, Terminal,
   Trash2, Copy, Scissors, Clipboard, Edit3, ExternalLink,
-  Shield, Eye, AlertTriangle, Loader, Puzzle,
+  Shield, Eye, AlertTriangle, Loader, Puzzle, Sparkles,
   FilePlus, FolderPlus, CopyPlus,
 } from 'lucide-react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import type { OverlayPluginExplorerActionContribution } from '../config/pluginContributions';
 import { getExplorerRailWidthBounds } from '../config/explorerRail';
+import {
+  explorerExperimentalModes,
+  getAdaptiveSemanticDensityPercent,
+  getAdaptiveSemanticDensityStop,
+  getExplorerExperimentalModeDefinition,
+  stepAdaptiveSemanticDensity,
+  type AdaptiveSemanticDensityStopDefinition,
+} from '../config/explorerExperimentalModes';
 import { getFolderIconSrc } from '../config/folderIcons';
 import { getBuiltInIconTheme, resolveFileIconSrc, resolveIconSrc } from '../config/iconTheme';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
@@ -491,6 +499,100 @@ function normalizeExplorerPath(path: string): string {
   return /^[A-Za-z]:$/.test(path) ? `${path}\\` : path;
 }
 
+function getExplorerParentPath(path: string): string {
+  const normalized = path.replace(/[/\\]+$/, '');
+  const parts = normalized.split(/[/\\]/);
+  if (parts.length <= 1) {
+    return normalized;
+  }
+  if (/^[A-Za-z]:$/.test(parts[0] ?? '')) {
+    return `${parts.slice(0, -1).join('\\')}\\`;
+  }
+  return parts.slice(0, -1).join('/');
+}
+
+function buildAdaptiveSemanticBands(
+  entries: FileEntry[],
+  selectedPaths: Set<string>,
+  currentPath: string,
+  sortBy: ExplorerSortKey,
+  sortOrder: 'asc' | 'desc',
+): AdaptiveSemanticBand[] {
+  const sortedEntries = entries;
+  const folders = sortedEntries.filter((entry) => entry.is_dir);
+  const files = sortedEntries.filter((entry) => !entry.is_dir);
+  const primarySelectedEntry = sortedEntries.find((entry) => selectedPaths.has(entry.path)) ?? null;
+  const selectedParentPath = primarySelectedEntry ? getExplorerParentPath(primarySelectedEntry.path) : currentPath;
+  const selectedExtension = primarySelectedEntry ? getEntryExtension(primarySelectedEntry) : '';
+
+  const contextPaths = new Set<string>();
+  for (const entry of files) {
+    if (selectedPaths.has(entry.path)) {
+      contextPaths.add(entry.path);
+      continue;
+    }
+
+    const sameParent = getExplorerParentPath(entry.path) === selectedParentPath;
+    const sameExtension = selectedExtension.length > 0 && getEntryExtension(entry) === selectedExtension;
+    if (sameParent || sameExtension) {
+      contextPaths.add(entry.path);
+    }
+  }
+
+  const recentCandidates = files
+    .filter((entry) => !contextPaths.has(entry.path))
+    .sort((left, right) => right.modified - left.modified)
+    .slice(0, 10);
+  const recentPaths = new Set(recentCandidates.map((entry) => entry.path));
+  const everythingElse = files.filter((entry) => !contextPaths.has(entry.path) && !recentPaths.has(entry.path));
+
+  const bands: AdaptiveSemanticBand[] = [];
+
+  if (folders.length > 0) {
+    bands.push({
+      id: 'folders',
+      label: 'Folders',
+      description: 'Anchors and destinations stay visually dominant.',
+      dominant: true,
+      entries: folders,
+    });
+  }
+
+  const contextEntries = files.filter((entry) => contextPaths.has(entry.path));
+  if (contextEntries.length > 0) {
+    bands.push({
+      id: 'context',
+      label: 'Local Context',
+      description: 'Selection-adjacent files stay close while you change density.',
+      dominant: false,
+      entries: contextEntries,
+    });
+  }
+
+  const recentEntries = files.filter((entry) => recentPaths.has(entry.path));
+  if (recentEntries.length > 0) {
+    bands.push({
+      id: 'recent',
+      label: 'Recent Activity',
+      description: 'Fresh work stays elevated without replacing the folder map.',
+      dominant: false,
+      entries: recentEntries.sort((left, right) => compareExplorerEntries(left, right, sortBy, sortOrder)),
+    });
+  }
+
+  if (everythingElse.length > 0) {
+    bands.push({
+      id: 'everything-else',
+      label: 'Everything Else',
+      description: 'Remaining files preserve the active explorer sort.',
+      dominant: false,
+      entries: everythingElse,
+    });
+  }
+
+  return bands;
+}
+
 function isLikelyExplorerPathInput(value: string): boolean {
   const trimmed = value.trim();
   if (!trimmed) return false;
@@ -658,6 +760,29 @@ function ExplorerLayoutGlyph({ mode, accent, active }: {
       <span style={baseCellStyle} />
     </span>
   );
+}
+
+interface ExplorerExperimentalGlyphProps {
+  active: boolean;
+  accent: string;
+}
+
+function ExplorerExperimentalGlyph({ active, accent }: ExplorerExperimentalGlyphProps) {
+  return (
+    <Sparkles
+      size={14}
+      strokeWidth={2}
+      style={{ color: active ? accent : EXP.muted }}
+    />
+  );
+}
+
+interface AdaptiveSemanticBand {
+  id: string;
+  label: string;
+  description: string;
+  dominant: boolean;
+  entries: FileEntry[];
 }
 
 const MONACO_FIND_WITH_ARGS_ACTION = 'editor.actions.findWithArgs';
@@ -1098,6 +1223,8 @@ export function FileExplorer({
   const showHidden = explorerSettings.showHiddenFiles;
   const viewMode = explorerSettings.viewMode;
   const gridZoom = explorerSettings.gridZoom;
+  const experimentalViewMode = explorerSettings.experimentalViewMode;
+  const experimentalDensity = explorerSettings.experimentalDensity;
   const folderClickMode = explorerSettings.folderClickMode;
   // Session is only used to seed the explorer's local state. Avoid subscribing to it
   // so high-frequency local changes (typing, resizing) don't force extra store-driven renders.
@@ -1138,6 +1265,7 @@ export function FileExplorer({
   const [preview,      setPreview]      = useState<PreviewState>({ type:'none', path:'' });
   const [ctxMenu,      setCtxMenu]      = useState<ContextMenuState>({ visible:false, x:0, y:0, entry:null });
   const [showLayoutMenu, setShowLayoutMenu] = useState(false);
+  const [showExperimentalMenu, setShowExperimentalMenu] = useState(false);
   const [rename,       setRename]       = useState<RenameState>({ active:false, path:'', name:'' });
   const [deleteTarget, setDeleteTarget] = useState<FileEntry|null>(null);
   const [clipboard,    setClipboard]    = useState<ExplorerClipboard|null>(null);
@@ -1166,23 +1294,38 @@ export function FileExplorer({
   const mainRef = useRef<HTMLDivElement>(null);
   const explorerViewportRef = useRef<HTMLDivElement>(null);
   const layoutMenuAnchorRef = useRef<HTMLDivElement>(null);
+  const experimentalMenuAnchorRef = useRef<HTMLDivElement>(null);
   const layoutWheelDeltaAccumulatorRef = useRef(0);
   const previewWarmupStartedRef = useRef(false);
   const previewWarmupTimerRef = useRef<number | null>(null);
   const [zoomHudVisible, setZoomHudVisible] = useState(false);
   const zoomHudTimerRef = useRef<number | null>(null);
+  const [experimentalHudVisible, setExperimentalHudVisible] = useState(false);
+  const experimentalHudTimerRef = useRef<number | null>(null);
   const [explorerViewportMetrics, setExplorerViewportMetrics] = useState<ViewportMetrics>({
     scrollTop: 0,
     clientHeight: 0,
     clientWidth: 0,
   });
+  const isAdaptiveExperimentalEnabled = !isCompactDock && search.trim().length === 0 && experimentalViewMode === 'adaptive-semantic-grid';
+
+  const showExperimentalHud = useCallback(() => {
+    setExperimentalHudVisible(true);
+    if (experimentalHudTimerRef.current != null) {
+      window.clearTimeout(experimentalHudTimerRef.current);
+    }
+    experimentalHudTimerRef.current = window.setTimeout(() => {
+      setExperimentalHudVisible(false);
+      experimentalHudTimerRef.current = null;
+    }, 900);
+  }, []);
 
   useEffect(() => {
     previewRef.current = preview;
   }, [preview]);
 
   useEffect(() => {
-    if (!showLayoutMenu) {
+    if (!showLayoutMenu && !showExperimentalMenu) {
       return undefined;
     }
 
@@ -1190,12 +1333,16 @@ export function FileExplorer({
       if (layoutMenuAnchorRef.current?.contains(event.target as Node)) {
         return;
       }
+      if (experimentalMenuAnchorRef.current?.contains(event.target as Node)) {
+        return;
+      }
       setShowLayoutMenu(false);
+      setShowExperimentalMenu(false);
     };
 
     window.addEventListener('mousedown', handlePointerDown);
     return () => window.removeEventListener('mousedown', handlePointerDown);
-  }, [showLayoutMenu]);
+  }, [showExperimentalMenu, showLayoutMenu]);
 
   const flushPendingExplorerMetrics = useCallback((
     runtimePolicyMetadata: RuntimeCachePolicyTelemetryMetadata,
@@ -1648,6 +1795,25 @@ export function FileExplorer({
       explorerSettings.sortOrder,
       isSearchActive,
       searchResults,
+    ],
+  );
+  const adaptiveSemanticBands = useMemo(
+    () => (isAdaptiveExperimentalEnabled
+      ? buildAdaptiveSemanticBands(
+        visibleEntries,
+        selected,
+        currentPath,
+        explorerSettings.sortBy,
+        explorerSettings.sortOrder,
+      )
+      : []),
+    [
+      currentPath,
+      explorerSettings.sortBy,
+      explorerSettings.sortOrder,
+      isAdaptiveExperimentalEnabled,
+      selected,
+      visibleEntries,
     ],
   );
   const bookmarkPathSet = useMemo(() => new Set(
@@ -2458,6 +2624,14 @@ export function FileExplorer({
       }
       if (matchesKeybinding(e, keybindings.toggleExplorerLayout)) {
         e.preventDefault();
+        if (isAdaptiveExperimentalEnabled) {
+          const nextDensity = stepAdaptiveSemanticDensity(experimentalDensity, 'larger');
+          if (nextDensity !== experimentalDensity) {
+            updateExplorerSettings({ experimentalDensity: nextDensity });
+            showExperimentalHud();
+          }
+          return;
+        }
         const nextMode = stepExplorerViewMode(viewMode, 'larger');
         if (nextMode !== viewMode) {
           updateExplorerSettings({ viewMode: nextMode });
@@ -2499,7 +2673,7 @@ export function FileExplorer({
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [addressEditing, beginAddressEdit, clearExplorerSelection, duplicate, focusExplorerAddressBar, focusExplorerList, focusExplorerPreview, goBack, goForward, goHome, keybindings, newItem.visible, paste, queueClipboard, refresh, rename.active, selectAllVisibleEntries, selected, selectedEntries, showHidden, updateExplorerSettings, viewMode, visibleEntries, toggleSearchScope, cycleSortKey, toggleSortOrder]);
+  }, [addressEditing, beginAddressEdit, clearExplorerSelection, duplicate, experimentalDensity, focusExplorerAddressBar, focusExplorerList, focusExplorerPreview, goBack, goForward, goHome, isAdaptiveExperimentalEnabled, keybindings, newItem.visible, paste, queueClipboard, refresh, rename.active, selectAllVisibleEntries, selected, selectedEntries, showExperimentalHud, showHidden, updateExplorerSettings, viewMode, visibleEntries, toggleSearchScope, cycleSortKey, toggleSortOrder]);
 
   // ── Breadcrumbs ──
   const crumbs: { label:string; path:string }[] = [];
@@ -2613,10 +2787,32 @@ export function FileExplorer({
     () => getExplorerViewModeDefinition(viewMode),
     [viewMode],
   );
+  const selectedExperimentalModeDefinition = useMemo(
+    () => (experimentalViewMode === 'off'
+      ? null
+      : getExplorerExperimentalModeDefinition(experimentalViewMode)),
+    [experimentalViewMode],
+  );
   const effectiveViewMode = resolveEffectiveExplorerViewMode(viewMode, {
     isCompactDock,
     isSearchActive,
   });
+  const effectiveExperimentalViewMode = useMemo(
+    () => (
+      !isCompactDock
+      && !isSearchActive
+      && experimentalViewMode === 'adaptive-semantic-grid'
+        ? experimentalViewMode
+        : 'off'
+    ),
+    [experimentalViewMode, isCompactDock, isSearchActive],
+  );
+  const adaptiveDensityStop = useMemo<AdaptiveSemanticDensityStopDefinition | null>(
+    () => (experimentalViewMode === 'adaptive-semantic-grid'
+      ? getAdaptiveSemanticDensityStop(experimentalDensity)
+      : null),
+    [experimentalDensity, experimentalViewMode],
+  );
   const effectiveViewModeDefinition = useMemo(
     () => getExplorerViewModeDefinition(effectiveViewMode),
     [effectiveViewMode],
@@ -2647,9 +2843,19 @@ export function FileExplorer({
     }, 900);
   }, []);
 
+  const experimentalDensityPercent = useMemo(
+    () => (experimentalViewMode === 'adaptive-semantic-grid'
+      ? getAdaptiveSemanticDensityPercent(experimentalDensity)
+      : null),
+    [experimentalDensity, experimentalViewMode],
+  );
+
   useEffect(() => () => {
     if (zoomHudTimerRef.current != null) {
       window.clearTimeout(zoomHudTimerRef.current);
+    }
+    if (experimentalHudTimerRef.current != null) {
+      window.clearTimeout(experimentalHudTimerRef.current);
     }
   }, []);
 
@@ -2739,6 +2945,24 @@ export function FileExplorer({
         * stepCount
         * EXPLORER_LAYOUT_WHEEL_STEP_DELTA
       );
+
+      if (effectiveExperimentalViewMode === 'adaptive-semantic-grid') {
+        let nextDensity = experimentalDensity;
+        for (let stepIndex = 0; stepIndex < stepCount; stepIndex += 1) {
+          const steppedDensity = stepAdaptiveSemanticDensity(nextDensity, direction);
+          if (steppedDensity === nextDensity) {
+            break;
+          }
+          nextDensity = steppedDensity;
+        }
+
+        if (nextDensity !== experimentalDensity) {
+          updateExplorerSettings({ experimentalDensity: nextDensity });
+          showExperimentalHud();
+        }
+        return;
+      }
+
       let nextMode = viewMode;
       let nextGridZoom = gridZoom;
 
@@ -2777,7 +3001,16 @@ export function FileExplorer({
       layoutWheelDeltaAccumulatorRef.current = 0;
       viewport.removeEventListener('wheel', handleWheel);
     };
-  }, [gridZoom, isCompactDock, showZoomHud, updateExplorerSettings, viewMode]);
+  }, [
+    effectiveExperimentalViewMode,
+    experimentalDensity,
+    gridZoom,
+    isCompactDock,
+    showExperimentalHud,
+    showZoomHud,
+    updateExplorerSettings,
+    viewMode,
+  ]);
 
   useEffect(() => {
     if (repositoryPicker?.active) {
@@ -3119,6 +3352,271 @@ export function FileExplorer({
     return parts.join('  •  ');
   };
 
+  const renderAdaptiveSemanticEntry = (
+    entry: FileEntry,
+    densityStop: AdaptiveSemanticDensityStopDefinition,
+    options: { dominant: boolean },
+  ) => {
+    const isSel = selected.has(entry.path);
+    const isDrop = dragOver === entry.path && entry.is_dir;
+    const isRenaming = rename.active && rename.path === entry.path;
+    const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
+
+    if (densityStop.presentation === 'table' && densityStop.table) {
+      return (
+        <div
+          key={entry.path}
+          draggable
+          data-overlay-drag-source="file"
+          onDragStart={e => onDragStart(e, entry)}
+          onDragEnd={onDragEnd}
+          onDragOver={entry.is_dir ? e => onDragOver(e, entry.path) : undefined}
+          onDragLeave={() => setDragOver(null)}
+          onDrop={entry.is_dir ? e => onDrop(e, entry.path) : undefined}
+          onClick={e => onEntryClick(e, entry)}
+          onDoubleClick={() => onEntryDoubleClick(entry)}
+          onContextMenu={e => onRightClick(e, entry)}
+          title={entry.path}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: densityStop.table.showRichMeta
+              ? 'minmax(0, 2.3fr) minmax(110px, 0.9fr) minmax(120px, 0.9fr) minmax(96px, 0.7fr)'
+              : 'minmax(0, 2fr) minmax(120px, 0.85fr) minmax(96px, 0.7fr)',
+            alignItems: 'center',
+            gap: 12,
+            minHeight: densityStop.table.rowHeight,
+            padding: densityStop.table.showRichMeta ? '8px 14px' : '6px 14px',
+            borderBottom: `1px solid ${EXP.border}`,
+            borderRadius: 10,
+            background: isDrop ? `${accent}18` : isSel ? `${accent}11` : 'rgba(255,255,255,0.025)',
+            border: `1px solid ${isSel ? `${accent}44` : 'rgba(255,255,255,0.05)'}`,
+            cursor: 'pointer',
+            userSelect: 'none',
+          }}
+        >
+          <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: densityStop.table.iconSize + 10, display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
+              <SvgIcon src={iconSrc} size={densityStop.table.iconSize} />
+            </div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              {isRenaming
+                ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active: false, path: '', name: '' })} />
+                : (
+                  <>
+                    <div style={{ color: isSel ? EXP.text : entry.is_dir ? EXP.yellow : EXP.text, fontWeight: entry.is_dir ? 650 : 560, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {entry.name}
+                    </div>
+                    {densityStop.table.showRichMeta && (
+                      <div style={{ marginTop: 3, fontSize: 10, color: EXP.muted2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {renderEntryInlineMeta(entry)}
+                      </div>
+                    )}
+                  </>
+                )}
+            </div>
+          </div>
+          <div style={{ color: EXP.muted, fontFamily: 'monospace', fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {getEntryStorageLabel(entry)}
+          </div>
+          <div style={{ color: EXP.muted, fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {formatDate(entry.modified)}
+          </div>
+          {densityStop.table.showRichMeta && (
+            <div style={{ color: EXP.muted2, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {getEntryTypeLabel(entry)}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (!densityStop.grid) {
+      return null;
+    }
+
+    const dominantScale = options.dominant && entry.is_dir ? 1.12 : 1;
+    const minHeight = Math.round(densityStop.grid.minHeight * dominantScale);
+    const iconStageSize = Math.round(densityStop.grid.iconStageSize * dominantScale);
+    const iconSize = Math.round(densityStop.grid.iconSize * dominantScale);
+    const isCards = densityStop.presentation === 'cards';
+
+    return (
+      <div
+        key={entry.path}
+        draggable
+        data-overlay-drag-source="file"
+        onDragStart={e => onDragStart(e, entry)}
+        onDragEnd={onDragEnd}
+        onDragOver={entry.is_dir ? e => onDragOver(e, entry.path) : undefined}
+        onDragLeave={() => setDragOver(null)}
+        onDrop={entry.is_dir ? e => onDrop(e, entry.path) : undefined}
+        onClick={e => onEntryClick(e, entry)}
+        onDoubleClick={() => onEntryDoubleClick(entry)}
+        onContextMenu={e => onRightClick(e, entry)}
+        title={entry.path}
+        style={{
+          minHeight,
+          borderRadius: isCards ? 18 : 14,
+          border: `1px solid ${isDrop ? accent : isSel ? `${accent}55` : 'rgba(255,255,255,0.05)'}`,
+          background: isDrop
+            ? `${accent}18`
+            : isSel
+              ? `${accent}12`
+              : options.dominant && entry.is_dir
+                ? 'linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02))'
+                : 'rgba(255,255,255,0.025)',
+          padding: isCards ? '14px' : (iconSize <= 30 ? '10px 8px' : '12px 10px'),
+          display: 'flex',
+          flexDirection: isCards ? 'row' : 'column',
+          alignItems: isCards ? 'flex-start' : 'center',
+          justifyContent: 'flex-start',
+          gap: isCards ? 14 : 10,
+          cursor: 'pointer',
+          overflow: 'hidden',
+          userSelect: 'none',
+          boxSizing: 'border-box',
+        }}
+      >
+        <div
+          style={{
+            width: iconStageSize,
+            height: iconStageSize,
+            minWidth: iconStageSize,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: isCards ? 16 : 12,
+            background: 'rgba(255,255,255,0.04)',
+            flexShrink: 0,
+          }}
+        >
+          <SvgIcon src={iconSrc} size={iconSize} />
+        </div>
+        <div style={{ minWidth: 0, width: '100%', textAlign: isCards ? 'left' : 'center' }}>
+          {isRenaming
+            ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active: false, path: '', name: '' })} />
+            : (
+              <>
+                <div
+                  style={{
+                    color: isSel ? EXP.text : entry.is_dir ? EXP.yellow : EXP.text,
+                    fontWeight: entry.is_dir ? 650 : 560,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    display: '-webkit-box',
+                    WebkitLineClamp: densityStop.grid.titleLines,
+                    WebkitBoxOrient: 'vertical',
+                    lineHeight: 1.28,
+                  }}
+                >
+                  {entry.name}
+                </div>
+                <div style={{ marginTop: 4, fontSize: 10, color: EXP.muted2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {isCards ? renderEntryInlineMeta(entry) : getEntryTypeLabel(entry)}
+                </div>
+                {isCards && (
+                  <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 9, color: accent, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                      {entry.is_dir ? 'Folder Anchor' : 'Active File'}
+                    </span>
+                    <span style={{ fontSize: 9, color: EXP.muted }}>
+                      {formatDate(entry.modified)}
+                    </span>
+                  </div>
+                )}
+              </>
+            )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderAdaptiveSemanticBand = (band: AdaptiveSemanticBand) => {
+    if (!adaptiveDensityStop) {
+      return null;
+    }
+
+    if (adaptiveDensityStop.presentation === 'table') {
+      const showRichMeta = adaptiveDensityStop.table?.showRichMeta ?? false;
+      return (
+        <motion.section
+          key={band.id}
+          layout="position"
+          transition={EXPLORER_ZOOM_POSITION_SPRING}
+          style={{ marginBottom: 18 }}
+        >
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, padding: '0 12px', marginBottom: 8 }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: band.dominant ? accent : EXP.muted2 }}>
+                {band.label}
+              </div>
+              <div style={{ marginTop: 3, fontSize: 11, color: EXP.muted, maxWidth: 420 }}>
+                {band.description}
+              </div>
+            </div>
+            <div style={{ fontSize: 10, color: EXP.muted2 }}>{band.entries.length} items</div>
+          </div>
+          <div style={{ display: 'grid', gap: 8, padding: '0 12px' }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: showRichMeta
+                  ? 'minmax(0, 2.3fr) minmax(110px, 0.9fr) minmax(120px, 0.9fr) minmax(96px, 0.7fr)'
+                  : 'minmax(0, 2fr) minmax(120px, 0.85fr) minmax(96px, 0.7fr)',
+                gap: 12,
+                padding: '0 14px',
+                color: EXP.muted2,
+                fontSize: 10,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+              }}
+            >
+              <span>Name</span>
+              <span>Size</span>
+              <span>Modified</span>
+              {showRichMeta && <span>Type</span>}
+            </div>
+            {band.entries.map((entry) => renderAdaptiveSemanticEntry(entry, adaptiveDensityStop, { dominant: band.dominant }))}
+          </div>
+        </motion.section>
+      );
+    }
+
+    const gridMetrics = adaptiveDensityStop.grid!;
+    const bandMinWidth = band.dominant ? Math.round(gridMetrics.minWidth * 1.12) : gridMetrics.minWidth;
+    return (
+      <motion.section
+        key={band.id}
+        layout="position"
+        transition={EXPLORER_ZOOM_POSITION_SPRING}
+        style={{ marginBottom: 20 }}
+      >
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, padding: `0 ${gridMetrics.padding}px`, marginBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: band.dominant ? accent : EXP.muted2 }}>
+              {band.label}
+            </div>
+            <div style={{ marginTop: 3, fontSize: 11, color: EXP.muted, maxWidth: 420 }}>
+              {band.description}
+            </div>
+          </div>
+          <div style={{ fontSize: 10, color: EXP.muted2 }}>{band.entries.length} items</div>
+        </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: `repeat(auto-fit, minmax(${bandMinWidth}px, 1fr))`,
+            gap: gridMetrics.gap,
+            padding: `0 ${gridMetrics.padding}px`,
+            alignItems: 'stretch',
+          }}
+        >
+          {band.entries.map((entry) => renderAdaptiveSemanticEntry(entry, adaptiveDensityStop, { dominant: band.dominant }))}
+        </div>
+      </motion.section>
+    );
+  };
+
   return (
     <div
       data-overlay-explorer
@@ -3320,163 +3818,370 @@ export function FileExplorer({
 
           {/* Toolbar buttons */}
           {!isCompactDock && (
-            <div
-              ref={layoutMenuAnchorRef}
-              style={{ position: 'relative' }}
-              onClick={event => event.stopPropagation()}
-            >
-              <button
-                type="button"
-                aria-label={`Explorer layout: ${selectedViewModeDefinition.label}`}
-                aria-haspopup="menu"
-                aria-expanded={showLayoutMenu}
-                onClick={() => setShowLayoutMenu(current => !current)}
-                title={`Explorer layout: ${selectedViewModeDefinition.label}`}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  background: showLayoutMenu ? `${accent}18` : 'none',
-                  border: `1px solid ${showLayoutMenu ? `${accent}55` : 'transparent'}`,
-                  cursor: 'pointer',
-                  color: showLayoutMenu ? EXP.text : EXP.muted,
-                  padding: '4px 8px',
-                  borderRadius: 7,
-                }}
-                onMouseEnter={e => (e.currentTarget.style.background = showLayoutMenu ? `${accent}18` : 'rgba(255,255,255,0.06)')}
-                onMouseLeave={e => (e.currentTarget.style.background = showLayoutMenu ? `${accent}18` : 'transparent')}
+            <>
+              <div
+                ref={experimentalMenuAnchorRef}
+                style={{ position: 'relative' }}
+                onClick={event => event.stopPropagation()}
               >
-                <ExplorerLayoutGlyph mode={selectedViewModeDefinition} accent={accent} active={showLayoutMenu} />
-                <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                    {selectedViewModeDefinition.shortLabel}
-                  </span>
-                  {gridZoomPercent != null && (
-                    <span style={{ fontSize: 9, fontWeight: 700, color: showLayoutMenu ? EXP.text : EXP.muted2 }}>
-                      {gridZoomPercent}%
-                    </span>
-                  )}
-                </span>
-              </button>
-              {zoomHudVisible && gridZoomPercent != null && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 'calc(100% + 8px)',
-                    right: 0,
-                    zIndex: 45,
-                    minWidth: 148,
-                    padding: '8px 10px',
-                    borderRadius: 10,
-                    border: `1px solid ${accent}55`,
-                    background: 'rgba(15,18,24,0.94)',
-                    boxShadow: '0 12px 30px rgba(0,0,0,0.32)',
-                    backdropFilter: 'blur(10px)',
-                    pointerEvents: 'none',
+                <button
+                  type="button"
+                  aria-label={`Experimental view modes: ${selectedExperimentalModeDefinition?.label ?? 'Off'}`}
+                  aria-haspopup="menu"
+                  aria-expanded={showExperimentalMenu}
+                  onClick={() => {
+                    setShowLayoutMenu(false);
+                    setShowExperimentalMenu(current => !current);
                   }}
+                  title={selectedExperimentalModeDefinition?.label ?? 'Experimental view modes'}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    background: showExperimentalMenu ? `${accent}18` : 'none',
+                    border: `1px solid ${showExperimentalMenu ? `${accent}55` : 'transparent'}`,
+                    cursor: 'pointer',
+                    color: showExperimentalMenu ? EXP.text : EXP.muted,
+                    padding: '4px 8px',
+                    borderRadius: 7,
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = showExperimentalMenu ? `${accent}18` : 'rgba(255,255,255,0.06)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = showExperimentalMenu ? `${accent}18` : 'transparent')}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: EXP.text }}>
+                  <ExplorerExperimentalGlyph accent={accent} active={showExperimentalMenu || experimentalViewMode !== 'off'} />
+                  <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                      {selectedExperimentalModeDefinition?.shortLabel ?? 'Labs'}
+                    </span>
+                    {experimentalDensityPercent != null && (
+                      <span style={{ fontSize: 9, fontWeight: 700, color: showExperimentalMenu ? EXP.text : EXP.muted2 }}>
+                        {experimentalDensityPercent}%
+                      </span>
+                    )}
+                  </span>
+                </button>
+                {experimentalHudVisible && selectedExperimentalModeDefinition && experimentalDensityPercent != null && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 8px)',
+                      right: 0,
+                      zIndex: 45,
+                      minWidth: 168,
+                      padding: '8px 10px',
+                      borderRadius: 10,
+                      border: `1px solid ${accent}55`,
+                      background: 'rgba(15,18,24,0.94)',
+                      boxShadow: '0 12px 30px rgba(0,0,0,0.32)',
+                      backdropFilter: 'blur(10px)',
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: EXP.text }}>
+                        {adaptiveDensityStop?.shortLabel ?? selectedExperimentalModeDefinition.shortLabel}
+                      </span>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: accent }}>
+                        {experimentalDensityPercent}%
+                      </span>
+                    </div>
+                    <div style={{ marginTop: 8, height: 5, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          width: `${experimentalDensityPercent}%`,
+                          height: '100%',
+                          borderRadius: 999,
+                          background: `linear-gradient(90deg, ${accent}99, ${accent})`,
+                          transition: 'width 0.14s ease',
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+                {showExperimentalMenu && (
+                  <div
+                    role="menu"
+                    aria-label="Explorer experimental modes menu"
+                    style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 8px)',
+                      right: 0,
+                      zIndex: 40,
+                      minWidth: 280,
+                      borderRadius: 12,
+                      border: `1px solid ${EXP.border}`,
+                      background: '#1b1f27',
+                      boxShadow: '0 18px 42px rgba(0,0,0,0.42)',
+                      padding: 8,
+                    }}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <button
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={experimentalViewMode === 'off'}
+                        onClick={() => {
+                          updateExplorerSettings({ experimentalViewMode: 'off' });
+                          setShowExperimentalMenu(false);
+                        }}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '18px minmax(0, 1fr)',
+                          gap: 10,
+                          alignItems: 'start',
+                          width: '100%',
+                          border: 'none',
+                          borderRadius: 8,
+                          padding: '8px 10px',
+                          background: experimentalViewMode === 'off' ? `${accent}24` : 'transparent',
+                          color: EXP.text,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <span style={{ display: 'flex', justifyContent: 'center', paddingTop: 1 }}>
+                          <Puzzle size={14} style={{ color: experimentalViewMode === 'off' ? accent : EXP.muted }} />
+                        </span>
+                        <span>
+                          <span style={{ display: 'block', fontSize: 12, fontWeight: 600 }}>Standard Explorer</span>
+                          <span style={{ display: 'block', marginTop: 2, fontSize: 10, color: EXP.muted2, lineHeight: 1.35 }}>
+                            Keep using the normal explorer layout chain.
+                          </span>
+                        </span>
+                      </button>
+                      {explorerExperimentalModes.map(mode => {
+                        const active = experimentalViewMode === mode.id;
+                        const disabled = !mode.available;
+                        return (
+                          <button
+                            key={mode.id}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={active}
+                            disabled={disabled}
+                            onClick={() => {
+                              if (disabled) {
+                                return;
+                              }
+                              updateExplorerSettings({ experimentalViewMode: mode.id });
+                              showExperimentalHud();
+                              setShowExperimentalMenu(false);
+                            }}
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '18px minmax(0, 1fr)',
+                              gap: 10,
+                              alignItems: 'start',
+                              width: '100%',
+                              border: 'none',
+                              borderRadius: 8,
+                              padding: '8px 10px',
+                              background: active ? `${accent}24` : 'transparent',
+                              color: disabled ? EXP.muted2 : EXP.text,
+                              cursor: disabled ? 'not-allowed' : 'pointer',
+                              textAlign: 'left',
+                              opacity: disabled ? 0.7 : 1,
+                            }}
+                            onMouseEnter={e => {
+                              if (!active && !disabled) {
+                                e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                              }
+                            }}
+                            onMouseLeave={e => {
+                              if (!active && !disabled) {
+                                e.currentTarget.style.background = 'transparent';
+                              }
+                            }}
+                          >
+                            <span style={{ display: 'flex', justifyContent: 'center', paddingTop: 1 }}>
+                              <ExplorerExperimentalGlyph accent={accent} active={active} />
+                            </span>
+                            <span style={{ minWidth: 0 }}>
+                              <span style={{ display: 'block', fontSize: 12, fontWeight: 600 }}>
+                                {mode.label}
+                                {!mode.available && <span style={{ marginLeft: 6, fontSize: 10, color: EXP.muted2 }}>Coming soon</span>}
+                              </span>
+                              <span style={{ display: 'block', marginTop: 2, fontSize: 10, color: EXP.muted2, lineHeight: 1.35 }}>
+                                {mode.description}
+                              </span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${EXP.border}`, fontSize: 10, color: EXP.muted2 }}>
+                      Adaptive Semantic Grid keeps Ctrl/Cmd + wheel inside one semantic density system.
+                    </div>
+                    {experimentalViewMode !== 'off' && effectiveExperimentalViewMode === 'off' && (
+                      <div style={{ marginTop: 6, fontSize: 10, color: EXP.muted2 }}>
+                        Temporarily falling back to the normal explorer while search is active or the dock is compact.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div
+                ref={layoutMenuAnchorRef}
+                style={{ position: 'relative' }}
+                onClick={event => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  aria-label={`Explorer layout: ${selectedViewModeDefinition.label}`}
+                  aria-haspopup="menu"
+                  aria-expanded={showLayoutMenu}
+                  onClick={() => {
+                    setShowExperimentalMenu(false);
+                    setShowLayoutMenu(current => !current);
+                  }}
+                  title={`Explorer layout: ${selectedViewModeDefinition.label}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    background: showLayoutMenu ? `${accent}18` : 'none',
+                    border: `1px solid ${showLayoutMenu ? `${accent}55` : 'transparent'}`,
+                    cursor: 'pointer',
+                    color: showLayoutMenu ? EXP.text : EXP.muted,
+                    padding: '4px 8px',
+                    borderRadius: 7,
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = showLayoutMenu ? `${accent}18` : 'rgba(255,255,255,0.06)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = showLayoutMenu ? `${accent}18` : 'transparent')}
+                >
+                  <ExplorerLayoutGlyph mode={selectedViewModeDefinition} accent={accent} active={showLayoutMenu} />
+                  <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
                       {selectedViewModeDefinition.shortLabel}
                     </span>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: accent }}>
-                      {gridZoomPercent}%
-                    </span>
+                    {gridZoomPercent != null && (
+                      <span style={{ fontSize: 9, fontWeight: 700, color: showLayoutMenu ? EXP.text : EXP.muted2 }}>
+                        {gridZoomPercent}%
+                      </span>
+                    )}
+                  </span>
+                </button>
+                {zoomHudVisible && gridZoomPercent != null && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 8px)',
+                      right: 0,
+                      zIndex: 45,
+                      minWidth: 148,
+                      padding: '8px 10px',
+                      borderRadius: 10,
+                      border: `1px solid ${accent}55`,
+                      background: 'rgba(15,18,24,0.94)',
+                      boxShadow: '0 12px 30px rgba(0,0,0,0.32)',
+                      backdropFilter: 'blur(10px)',
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: EXP.text }}>
+                        {selectedViewModeDefinition.shortLabel}
+                      </span>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: accent }}>
+                        {gridZoomPercent}%
+                      </span>
+                    </div>
+                    <div style={{ marginTop: 8, height: 5, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          width: `${gridZoomPercent}%`,
+                          height: '100%',
+                          borderRadius: 999,
+                          background: `linear-gradient(90deg, ${accent}99, ${accent})`,
+                          transition: 'width 0.14s ease',
+                        }}
+                      />
+                    </div>
                   </div>
-                  <div style={{ marginTop: 8, height: 5, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                    <div
-                      style={{
-                        width: `${gridZoomPercent}%`,
-                        height: '100%',
-                        borderRadius: 999,
-                        background: `linear-gradient(90deg, ${accent}99, ${accent})`,
-                        transition: 'width 0.14s ease',
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-              {showLayoutMenu && (
-                <div
-                  role="menu"
-                  aria-label="Explorer layout menu"
-                  style={{
-                    position: 'absolute',
-                    top: 'calc(100% + 8px)',
-                    right: 0,
-                    zIndex: 40,
-                    minWidth: 240,
-                    borderRadius: 12,
-                    border: `1px solid ${EXP.border}`,
-                    background: '#1b1f27',
-                    boxShadow: '0 18px 42px rgba(0,0,0,0.42)',
-                    padding: 8,
-                  }}
-                >
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    {explorerViewModes.map(mode => {
-                      const active = viewMode === mode.id;
-                      return (
-                        <button
-                          key={mode.id}
-                          type="button"
-                          role="menuitemradio"
-                          aria-checked={active}
-                          onClick={() => {
-                            updateExplorerSettings(
-                              isExplorerGridMode(mode.id)
-                                ? { viewMode: mode.id, gridZoom: getExplorerGridZoomAnchor(mode.id) }
-                                : { viewMode: mode.id },
-                            );
-                            showZoomHud();
-                            setShowLayoutMenu(false);
-                          }}
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns: '18px minmax(0, 1fr)',
-                            gap: 10,
-                            alignItems: 'start',
-                            width: '100%',
-                            border: 'none',
-                            borderRadius: 8,
-                            padding: '8px 10px',
-                            background: active ? `${accent}24` : 'transparent',
-                            color: active ? EXP.text : EXP.muted,
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                          }}
-                          onMouseEnter={e => {
-                            if (!active) {
-                              e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-                            }
-                          }}
-                          onMouseLeave={e => {
-                            if (!active) {
-                              e.currentTarget.style.background = 'transparent';
-                            }
-                          }}
-                        >
-                          <span style={{ display: 'flex', justifyContent: 'center', paddingTop: 1 }}>
-                            <ExplorerLayoutGlyph mode={mode} accent={accent} active={active} />
-                          </span>
-                          <span style={{ minWidth: 0 }}>
-                            <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: active ? EXP.text : EXP.text }}>
-                              {mode.label}
+                )}
+                {showLayoutMenu && (
+                  <div
+                    role="menu"
+                    aria-label="Explorer layout menu"
+                    style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 8px)',
+                      right: 0,
+                      zIndex: 40,
+                      minWidth: 240,
+                      borderRadius: 12,
+                      border: `1px solid ${EXP.border}`,
+                      background: '#1b1f27',
+                      boxShadow: '0 18px 42px rgba(0,0,0,0.42)',
+                      padding: 8,
+                    }}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {explorerViewModes.map(mode => {
+                        const active = viewMode === mode.id;
+                        return (
+                          <button
+                            key={mode.id}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={active}
+                            onClick={() => {
+                              updateExplorerSettings(
+                                isExplorerGridMode(mode.id)
+                                  ? { viewMode: mode.id, gridZoom: getExplorerGridZoomAnchor(mode.id) }
+                                  : { viewMode: mode.id },
+                              );
+                              showZoomHud();
+                              setShowLayoutMenu(false);
+                            }}
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '18px minmax(0, 1fr)',
+                              gap: 10,
+                              alignItems: 'start',
+                              width: '100%',
+                              border: 'none',
+                              borderRadius: 8,
+                              padding: '8px 10px',
+                              background: active ? `${accent}24` : 'transparent',
+                              color: active ? EXP.text : EXP.muted,
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                            }}
+                            onMouseEnter={e => {
+                              if (!active) {
+                                e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                              }
+                            }}
+                            onMouseLeave={e => {
+                              if (!active) {
+                                e.currentTarget.style.background = 'transparent';
+                              }
+                            }}
+                          >
+                            <span style={{ display: 'flex', justifyContent: 'center', paddingTop: 1 }}>
+                              <ExplorerLayoutGlyph mode={mode} accent={accent} active={active} />
                             </span>
-                            <span style={{ display: 'block', marginTop: 2, fontSize: 10, color: EXP.muted2, lineHeight: 1.35 }}>
-                              {mode.description}
+                            <span style={{ minWidth: 0 }}>
+                              <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: active ? EXP.text : EXP.text }}>
+                                {mode.label}
+                              </span>
+                              <span style={{ display: 'block', marginTop: 2, fontSize: 10, color: EXP.muted2, lineHeight: 1.35 }}>
+                                {mode.description}
+                              </span>
                             </span>
-                          </span>
-                        </button>
-                      );
-                    })}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${EXP.border}`, fontSize: 10, color: EXP.muted2 }}>
+                      Ctrl/Cmd + wheel moves through Small, M, L, XL, then row layouts with live zoom feedback.
+                    </div>
                   </div>
-                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${EXP.border}`, fontSize: 10, color: EXP.muted2 }}>
-                    Ctrl/Cmd + wheel moves through Small, M, L, XL, then row layouts with live zoom feedback.
-                  </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            </>
           )}
 
           <button onClick={() => updateExplorerSettings({ showHiddenFiles: !showHidden })} title="Toggle hidden files"
@@ -3670,8 +4375,83 @@ export function FileExplorer({
               </div>
             )}
 
+            {!loading && effectiveExperimentalViewMode === 'adaptive-semantic-grid' && adaptiveDensityStop && (
+              <div style={{ minHeight: 0, padding: '14px 0 20px' }}>
+                {newItem.visible && (
+                  <div style={{ padding: '0 14px 16px' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                        borderRadius: 14,
+                        border: `1px solid ${accent}`,
+                        background: `${accent}10`,
+                        padding: '12px 14px',
+                      }}
+                    >
+                      <SvgIcon
+                        src={newItem.kind === 'folder'
+                          ? (resolveIconSrc(themeIconTheme.folder, themeIconTheme) ?? '/icons/folder.svg')
+                          : resolveFileIconSrc('new-file.txt', 'txt', themeIconTheme)}
+                        size={adaptiveDensityStop.presentation === 'table'
+                          ? adaptiveDensityStop.table?.iconSize ?? 18
+                          : adaptiveDensityStop.grid?.iconSize ?? 34}
+                      />
+                      <input
+                        autoFocus
+                        value={newItemName}
+                        onChange={e => setNewItemName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') commitNew(); if (e.key === 'Escape') setNewItem({ visible: false, kind: 'folder' }); }}
+                        onBlur={commitNew}
+                        placeholder={newItem.kind === 'folder' ? 'folder name' : 'name.ext'}
+                        style={{ background: '#1e2130', border: `1px solid ${accent}`, borderRadius: 4, color: EXP.text, fontSize: 12, padding: '2px 6px', outline: 'none', flex: 1 }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ padding: '0 14px 16px' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                      padding: '12px 14px',
+                      borderRadius: 16,
+                      border: `1px solid ${EXP.border}`,
+                      background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: accent }}>
+                        Adaptive Semantic Grid
+                      </div>
+                      <div style={{ marginTop: 4, fontSize: 12, color: EXP.text, fontWeight: 600 }}>
+                        {adaptiveDensityStop.label}
+                      </div>
+                      <div style={{ marginTop: 2, fontSize: 11, color: EXP.muted, maxWidth: 520 }}>
+                        {adaptiveDensityStop.description}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      <span style={{ fontSize: 10, color: EXP.muted2, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                        Density
+                      </span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: accent }}>
+                        {experimentalDensityPercent ?? 0}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {adaptiveSemanticBands.map(renderAdaptiveSemanticBand)}
+              </div>
+            )}
+
             {/* Grid view */}
-            {newItem.visible && virtualWindow.kind === 'grid' && activeGridMetrics && (
+            {effectiveExperimentalViewMode === 'off' && newItem.visible && virtualWindow.kind === 'grid' && activeGridMetrics && (
               <div style={{ padding: `0 ${activeGridMetrics.padding}px ${activeGridMetrics.padding}px`, boxSizing: 'border-box' }}>
                 <motion.div
                   layout="position"
@@ -3707,7 +4487,7 @@ export function FileExplorer({
               </div>
             )}
 
-            {!loading && virtualWindow.kind === 'grid' && activeGridMetrics && (
+            {effectiveExperimentalViewMode === 'off' && !loading && virtualWindow.kind === 'grid' && activeGridMetrics && (
               <div style={{ minHeight: 0 }}>
                 <div style={{ height: virtualWindow.topSpacer }} />
                 <div
@@ -3727,10 +4507,8 @@ export function FileExplorer({
                     const isRenaming = rename.active && rename.path === entry.path;
                     const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
                     return (
-                      <motion.div
+                      <div
                         key={entry.path}
-                        layout="position"
-                        transition={EXPLORER_ZOOM_POSITION_SPRING}
                         draggable
                         data-overlay-drag-source="file"
                         onDragStart={e => onDragStart(e, entry)}
@@ -3822,7 +4600,7 @@ export function FileExplorer({
                           {getEntryStorageLabel(entry)}
                         </span>
                         {renderSearchMetadata(entry)}
-                      </motion.div>
+                      </div>
                     );
                   })}
                 </div>
@@ -3830,7 +4608,7 @@ export function FileExplorer({
               </div>
             )}
 
-            {newItem.visible && virtualWindow.kind === 'list' && effectiveViewModeDefinition.presentation === 'list' && (
+            {effectiveExperimentalViewMode === 'off' && newItem.visible && virtualWindow.kind === 'list' && effectiveViewModeDefinition.presentation === 'list' && (
               <div
                 style={{
                   height: activeRowMetrics?.newItemHeight ?? 42,
@@ -3863,7 +4641,7 @@ export function FileExplorer({
               </div>
             )}
 
-            {!loading && virtualWindow.kind === 'list' && effectiveViewModeDefinition.presentation === 'list' && (
+            {effectiveExperimentalViewMode === 'off' && !loading && virtualWindow.kind === 'list' && effectiveViewModeDefinition.presentation === 'list' && (
               <div style={{ minHeight: 0 }}>
                 <div style={{ height: virtualWindow.topSpacer }} />
                 {virtualizedEntries.map(entry => {
@@ -3930,7 +4708,7 @@ export function FileExplorer({
               </div>
             )}
 
-            {newItem.visible && virtualWindow.kind === 'list' && effectiveViewModeDefinition.presentation === 'table' && (
+            {effectiveExperimentalViewMode === 'off' && newItem.visible && virtualWindow.kind === 'list' && effectiveViewModeDefinition.presentation === 'table' && (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <tbody>
                   <tr style={{ background: `${accent}11`, borderBottom: `1px solid ${EXP.border}`, height: activeRowMetrics?.newItemHeight ?? 42 }}>
@@ -3956,7 +4734,7 @@ export function FileExplorer({
               </table>
             )}
 
-            {!loading && virtualWindow.kind === 'list' && effectiveViewModeDefinition.presentation === 'table' && (
+            {effectiveExperimentalViewMode === 'off' && !loading && virtualWindow.kind === 'list' && effectiveViewModeDefinition.presentation === 'table' && (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, tableLayout: 'fixed' }}>
                 <thead>
                   <tr style={{ background: EXP.panel, position: 'sticky', top: 0, zIndex: 2 }}>
@@ -4085,6 +4863,13 @@ export function FileExplorer({
             <span>
               View: <span style={{ color: EXP.text }}>{selectedViewModeDefinition.label}</span>
               {effectiveViewMode !== viewMode ? ` -> ${effectiveViewModeDefinition.label}` : ''}
+            </span>
+          )}
+          {selectedExperimentalModeDefinition && (
+            <span>
+              Labs: <span style={{ color: EXP.text }}>{selectedExperimentalModeDefinition.label}</span>
+              {adaptiveDensityStop ? ` · ${adaptiveDensityStop.label}` : ''}
+              {effectiveExperimentalViewMode === 'off' ? ' (fallback)' : ''}
             </span>
           )}
           {search && <span>{searchModeLabel}: "<span style={{ color:EXP.text }}>{search}</span>"</span>}
