@@ -2255,16 +2255,6 @@ function App() {
       )}
     />
   );
-  const windowTitlebar = isWindowedMode
-    ? (
-      <WindowTitlebar
-        appearance={resolvedAppearance}
-        platform={runtimePlatform}
-        layoutLabel={activeLayoutProfile.label}
-        onClose={() => { void hideOverlay(); }}
-      />
-    )
-    : null;
 
   return (
     <div
@@ -2343,8 +2333,6 @@ function App() {
             />
 
             <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-              {windowTitlebar}
-
               {!isWindowedMode && !isTopAnchored && (
                 <div
                   className="h-[4px] shrink-0 cursor-ns-resize select-none"
@@ -2866,170 +2854,6 @@ function OverlayViewportDock({
   );
 }
 
-function WindowTitlebar({
-  appearance,
-  platform,
-  layoutLabel,
-  onClose,
-}: {
-  appearance: ResolvedOverlayAppearance;
-  platform: RuntimePlatform;
-  layoutLabel: string;
-  onClose: () => void;
-}) {
-  const BG = appearance.theme.palette.topBarBackground;
-  const BORDER = appearance.theme.palette.border;
-  const MUTED = appearance.theme.palette.textMuted;
-  const TEXT = appearance.theme.palette.textPrimary;
-  const uiFont = appearance.fonts.ui;
-  const [isWindowMaximized, setIsWindowMaximized] = useState(false);
-
-  const handleStartWindowDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || !isTauri()) {
-      return;
-    }
-
-    event.preventDefault();
-    getCurrentWindow().startDragging().catch(() => {});
-  }, []);
-
-  const handleMinimizeWindow = useCallback(() => {
-    if (!isTauri()) {
-      return;
-    }
-
-    getCurrentWindow().minimize().catch(() => {});
-  }, []);
-
-  const handleToggleMaximize = useCallback(async () => {
-    if (!isTauri()) {
-      return;
-    }
-
-    const win = getCurrentWindow();
-    const maximized = await win.isMaximized().catch(() => false);
-    if (maximized) {
-      await win.unmaximize().catch(() => {});
-      setIsWindowMaximized(false);
-      return;
-    }
-
-    await win.maximize().catch(() => {});
-    setIsWindowMaximized(true);
-  }, []);
-
-  useEffect(() => {
-    if (!isTauri()) {
-      setIsWindowMaximized(false);
-      return;
-    }
-
-    let cancelled = false;
-    const win = getCurrentWindow();
-    const sync = async () => {
-      const nextValue = await win.isMaximized().catch(() => false);
-      if (!cancelled) {
-        setIsWindowMaximized(nextValue);
-      }
-    };
-
-    void sync();
-    const unlistenResize = win.onResized(() => {
-      void sync();
-    });
-
-    return () => {
-      cancelled = true;
-      void unlistenResize.then(unlisten => unlisten());
-    };
-  }, []);
-
-  return (
-    <div
-      style={{
-        position: 'relative',
-        display: 'flex',
-        alignItems: 'center',
-        minHeight: 38,
-        flexShrink: 0,
-        background: `linear-gradient(180deg, ${BG}, ${appearance.theme.palette.appBackgroundAlt})`,
-        borderBottom: `1px solid ${BORDER}`,
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
-      }}
-    >
-      {platform === 'macos' && (
-        <WindowControls
-          platform={platform}
-          isMaximized={isWindowMaximized}
-          onMinimize={handleMinimizeWindow}
-          onMaximize={() => { void handleToggleMaximize(); }}
-          onClose={onClose}
-          textMuted={MUTED}
-        />
-      )}
-
-      <div
-        data-tauri-drag-region
-        onPointerDown={handleStartWindowDrag}
-        onDoubleClick={() => { void handleToggleMaximize(); }}
-        title="Drag Window"
-        style={{
-          flex: 1,
-          minWidth: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: platform === 'macos' ? 'center' : 'flex-start',
-          gap: 10,
-          padding: platform === 'macos' ? '0 20px' : '0 16px',
-          userSelect: 'none',
-          cursor: 'grab',
-        }}
-      >
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 800,
-            letterSpacing: '0.12em',
-            textTransform: 'uppercase',
-            color: TEXT,
-            fontFamily: uiFont,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          OverlayTerm
-        </span>
-        <span
-          style={{
-            minWidth: 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            fontSize: 10,
-            fontWeight: 600,
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase',
-            color: MUTED,
-            fontFamily: uiFont,
-          }}
-        >
-          {layoutLabel} | App Mode
-        </span>
-      </div>
-
-      {platform !== 'macos' && (
-        <WindowControls
-          platform={platform}
-          isMaximized={isWindowMaximized}
-          onMinimize={handleMinimizeWindow}
-          onMaximize={() => { void handleToggleMaximize(); }}
-          onClose={onClose}
-          textMuted={MUTED}
-        />
-      )}
-    </div>
-  );
-}
-
 function TopBar({
   appearance,
   layoutProfile,
@@ -3119,6 +2943,7 @@ function TopBar({
   const layoutMenuRef = useRef<HTMLDivElement | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isLayoutMenuOpen, setIsLayoutMenuOpen] = useState(false);
+  const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [draggedPanelId, setDraggedPanelId] = useState<string | null>(null);
   const [viewportSize, setViewportSize] = useState(() => ({
     width: window.innerWidth,
@@ -3170,6 +2995,42 @@ function TopBar({
     : (layoutSourcePath
       ? `Cycle Layout (${layoutProfile.label})\n${layoutSourcePath}\nRight-click: dock overlay to the ${nextOverlayAnchor} edge`
       : `Cycle Layout (${layoutProfile.label})\nRight-click: dock overlay to the ${nextOverlayAnchor} edge`);
+  const shouldShowLeadingWindowControls = isWindowedMode && blurPlatform === 'macos';
+  const shouldShowTrailingWindowControls = isWindowedMode && blurPlatform !== 'macos';
+
+  const handleStartWindowDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isWindowedMode || event.button !== 0 || !isTauri()) {
+      return;
+    }
+
+    event.preventDefault();
+    getCurrentWindow().startDragging().catch(() => {});
+  }, [isWindowedMode]);
+
+  const handleMinimizeWindow = useCallback(() => {
+    if (!isWindowedMode || !isTauri()) {
+      return;
+    }
+
+    getCurrentWindow().minimize().catch(() => {});
+  }, [isWindowedMode]);
+
+  const handleToggleMaximize = useCallback(async () => {
+    if (!isWindowedMode || !isTauri()) {
+      return;
+    }
+
+    const win = getCurrentWindow();
+    const maximized = await win.isMaximized().catch(() => false);
+    if (maximized) {
+      await win.unmaximize().catch(() => {});
+      setIsWindowMaximized(false);
+      return;
+    }
+
+    await win.maximize().catch(() => {});
+    setIsWindowMaximized(true);
+  }, [isWindowedMode]);
 
   useEffect(() => {
     if (!isMenuOpen && !isLayoutMenuOpen) return;
@@ -3199,6 +3060,32 @@ function TopBar({
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  useEffect(() => {
+    if (!isWindowedMode || !isTauri()) {
+      setIsWindowMaximized(false);
+      return;
+    }
+
+    let cancelled = false;
+    const win = getCurrentWindow();
+    const sync = async () => {
+      const nextValue = await win.isMaximized().catch(() => false);
+      if (!cancelled) {
+        setIsWindowMaximized(nextValue);
+      }
+    };
+
+    void sync();
+    const unlistenResize = win.onResized(() => {
+      void sync();
+    });
+
+    return () => {
+      cancelled = true;
+      void unlistenResize.then(unlisten => unlisten());
+    };
+  }, [isWindowedMode]);
 
   const panelMenu = (
     <div style={{
@@ -3461,6 +3348,18 @@ function TopBar({
       <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
         {topBarShaderLayer}
       </div>
+      {shouldShowLeadingWindowControls && (
+        <div style={{ borderRight: `1px solid ${BORDER}`, flexShrink: 0 }}>
+          <WindowControls
+            platform={blurPlatform}
+            isMaximized={isWindowMaximized}
+            onMinimize={handleMinimizeWindow}
+            onMaximize={() => { void handleToggleMaximize(); }}
+            onClose={onClose}
+            textMuted={MUTED}
+          />
+        </div>
+      )}
       <button
         onClick={onCycleLayout}
         onContextMenu={event => {
@@ -3862,6 +3761,24 @@ function TopBar({
         </OverlayScrollArea>
       </div>
 
+      {isWindowedMode && (
+        <div
+          data-tauri-drag-region
+          onPointerDown={handleStartWindowDrag}
+          onDoubleClick={() => { void handleToggleMaximize(); }}
+          title="Drag Window"
+          style={{
+            width: 72,
+            minWidth: 72,
+            flexShrink: 0,
+            borderLeft: `1px solid ${BORDER}`,
+            background: 'linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.14))',
+            cursor: 'grab',
+            userSelect: 'none',
+          }}
+        />
+      )}
+
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -3881,6 +3798,17 @@ function TopBar({
           }}>
             {toggleShortcutLabel}
           </kbd>
+        )}
+
+        {shouldShowTrailingWindowControls && (
+          <WindowControls
+            platform={blurPlatform}
+            isMaximized={isWindowMaximized}
+            onMinimize={handleMinimizeWindow}
+            onMaximize={() => { void handleToggleMaximize(); }}
+            onClose={onClose}
+            textMuted={MUTED}
+          />
         )}
 
         {!isWindowedMode && (
