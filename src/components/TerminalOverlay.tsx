@@ -39,6 +39,9 @@ import {
   Copy,
   Eraser,
   RotateCcw,
+  SplitSquareHorizontal,
+  SplitSquareVertical,
+  SquarePlus,
 } from 'lucide-react';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -271,25 +274,6 @@ function getShellDisplayLabel(shell: string): string {
   return segments[segments.length - 1] ?? normalized;
 }
 
-function formatRelativeTime(timestamp: number | null): string {
-  if (!timestamp) {
-    return 'no activity yet';
-  }
-  const seconds = Math.max(1, Math.round((Date.now() - timestamp) / 1000));
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  return `${days}d ago`;
-}
-
-function formatDataSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 function countPayloadLines(payload: string): number {
   const matches = payload.match(/\r?\n/g);
@@ -379,8 +363,9 @@ interface TerminalToolbarAction {
   id: string;
   label: string;
   title: string;
-  icon: ComponentType<{ size?: number }>;
-  onClick: () => void;
+  icon?: ComponentType<{ size?: number }>;
+  separator?: true;
+  onClick?: () => void;
   disabled?: boolean;
   tone?: 'accent' | 'default';
 }
@@ -394,48 +379,48 @@ interface TerminalActionToolbarProps {
 function TerminalActionToolbar({ actions, theme, detail }: TerminalActionToolbarProps) {
   return (
     <div
-      className="flex items-center gap-2 px-2 shrink-0 border-b"
-      style={{ minHeight: 40, background: theme.bgPanel, borderColor: theme.border }}
+      className="flex items-center gap-1 px-2 shrink-0 border-b"
+      style={{ minHeight: 36, background: theme.bgPanel, borderColor: theme.border }}
     >
-      <OverlayScrollArea
-        direction="horizontal"
-        style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0 }}
-        contentStyle={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 'max-content', paddingTop: 4, paddingBottom: 4 }}
-      >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1, minWidth: 0 }}>
         {actions.map(action => {
-          const Icon = action.icon;
+          if (action.separator) {
+            return (
+              <div
+                key={action.id}
+                style={{ width: 1, height: 16, background: theme.border, margin: '0 3px', flexShrink: 0 }}
+              />
+            );
+          }
+          const Icon = action.icon!;
           const isAccent = action.tone === 'accent';
           return (
             <button
               key={action.id}
               onClick={action.onClick}
               disabled={action.disabled}
-              title={action.title}
-              className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-all disabled:opacity-35 disabled:cursor-not-allowed whitespace-nowrap"
+              title={`${action.label}${action.title !== action.label ? ` — ${action.title}` : ''}`}
+              className="flex items-center justify-center rounded transition-all disabled:opacity-30 disabled:cursor-not-allowed"
               style={{
+                width: 26,
+                height: 26,
                 color: action.disabled
                   ? theme.textMuted
                   : isAccent
                     ? theme.accent
-                    : theme.text,
-                background: action.disabled
-                  ? 'transparent'
-                  : isAccent
-                    ? `${theme.accent}18`
-                    : 'rgba(255,255,255,0.04)',
-                border: `1px solid ${action.disabled ? theme.border : isAccent ? `${theme.accent}44` : theme.border}`,
+                    : theme.textMuted,
+                background: isAccent && !action.disabled ? `${theme.accent}14` : 'transparent',
+                border: `1px solid ${isAccent && !action.disabled ? `${theme.accent}33` : 'transparent'}`,
               }}
             >
-              <Icon size={11} />
-              <span>{action.label}</span>
+              <Icon size={12} />
             </button>
           );
         })}
-      </OverlayScrollArea>
-
+      </div>
       <span
-        className="text-[9px] select-none"
-        style={{ color: theme.textMuted, whiteSpace: 'nowrap' }}
+        className="text-[9px] select-none shrink-0"
+        style={{ color: theme.textMuted, whiteSpace: 'nowrap', paddingRight: 4 }}
       >
         {detail}
       </span>
@@ -1166,7 +1151,6 @@ export function TerminalOverlay({
   );
   const activePaneId = activeTab?.activePaneId ?? activeTab?.paneIds[0] ?? INITIAL_PANE_ID;
   const activePane = paneSessions[activePaneId] ?? null;
-  const activePaneMetrics = paneTelemetry[activePaneId] ?? createPaneTelemetry();
   const totalPaneCount = tabs.reduce((sum, tab) => sum + tab.paneIds.length, 0);
 
   const findTabForPane = useCallback((paneId: string) => (
@@ -1516,17 +1500,6 @@ export function TerminalOverlay({
     setTransientActionMessage(activeTab.broadcastInput ? 'Broadcast input disabled' : 'Broadcast input armed');
   }, [activeTab, setTransientActionMessage]);
 
-  const setActiveTabLayout = useCallback((direction: TerminalSplitDirection) => {
-    if (!activeTab) {
-      return;
-    }
-    setTabs(prev => prev.map(tab => (
-      tab.id === activeTab.id
-        ? { ...tab, splitDirection: direction }
-        : tab
-    )));
-    setTransientActionMessage(direction === 'columns' ? 'Switched to columns layout' : 'Switched to rows layout');
-  }, [activeTab, setTransientActionMessage]);
 
   const closePane = useCallback((paneId: string) => {
     const tab = findTabForPane(paneId);
@@ -1613,51 +1586,45 @@ export function TerminalOverlay({
   const terminalToolbarActions = useMemo<TerminalToolbarAction[]>(() => ([
     {
       id: 'split-columns',
-      label: 'Split Columns',
-      title: 'Add a side-by-side pane to the active workspace',
-      icon: Plus,
+      label: 'Split Side by Side',
+      title: 'Add a pane to the right',
+      icon: SplitSquareHorizontal,
       onClick: () => splitActiveTab('columns'),
-      tone: activeTab?.splitDirection === 'columns' ? 'accent' : 'default',
+      tone: activeTab?.splitDirection === 'columns' && (activeTab?.paneIds.length ?? 1) > 1 ? 'accent' : 'default',
     },
     {
       id: 'split-rows',
-      label: 'Split Rows',
-      title: 'Stack panes vertically in the active workspace',
-      icon: Plus,
+      label: 'Split Top / Bottom',
+      title: 'Add a pane below',
+      icon: SplitSquareVertical,
       onClick: () => splitActiveTab('rows'),
-      tone: activeTab?.splitDirection === 'rows' ? 'accent' : 'default',
+      tone: activeTab?.splitDirection === 'rows' && (activeTab?.paneIds.length ?? 1) > 1 ? 'accent' : 'default',
     },
     {
       id: 'fork-pane',
-      label: 'Fork Pane',
-      title: 'Create a fresh pane in the current layout',
-      icon: TerminalSquare,
+      label: 'New Pane',
+      title: 'Open a fresh terminal pane in the current layout',
+      icon: SquarePlus,
       onClick: duplicateActivePane,
     },
+    { id: 'sep-1', label: '', title: '', separator: true },
     {
       id: 'broadcast',
       label: activeTab?.broadcastInput ? 'Broadcast On' : 'Broadcast Off',
-      title: 'Mirror input to every pane inside the current tab',
+      title: 'Mirror input to every pane in this tab',
       icon: Zap,
       onClick: toggleBroadcastActiveTab,
       tone: activeTab?.broadcastInput ? 'accent' : 'default',
     },
+    { id: 'sep-2', label: '', title: '', separator: true },
     {
       id: 'copy-output',
       label: 'Copy Output',
-      title: 'Copy the selected text or the full scrollback buffer',
+      title: 'Copy the active pane scrollback',
       icon: Copy,
       onClick: () => { void copyPaneOutput(activePaneId); },
       disabled: !activeTerminalReady,
       tone: 'accent',
-    },
-    {
-      id: 'copy-snapshot',
-      label: 'Copy Snapshot',
-      title: 'Copy a markdown capture card for the active pane',
-      icon: Copy,
-      onClick: () => { void copyPaneSnapshot(activePaneId); },
-      disabled: !activeTerminalReady,
     },
     {
       id: 'clear-pane',
@@ -1693,36 +1660,6 @@ export function TerminalOverlay({
       ? `${activeTabReadyCount}/${activeTab?.paneIds.length ?? 0} panes live · ${activeTab?.broadcastInput ? 'broadcasting input' : 'focused input'}`
       : `${activeTabLabel} starting...`);
 
-  const workspaceCards = [
-    {
-      id: 'workspace',
-      label: 'Workspace',
-      value: activeTabLabel,
-      detail: `${activeTab?.paneIds.length ?? 0} pane${(activeTab?.paneIds.length ?? 0) === 1 ? '' : 's'} · ${activeTab?.splitDirection === 'rows' ? 'rows layout' : 'columns layout'}`,
-      accent: theme.accent,
-    },
-    {
-      id: 'mode',
-      label: 'Input Mode',
-      value: activeTab?.broadcastInput ? 'Broadcast live' : 'Focused input',
-      detail: activeTab?.broadcastInput ? 'Every keystroke fans out to the tab' : 'Only the active pane receives input',
-      accent: activeTab?.broadcastInput ? appearance.theme.palette.success : theme.text,
-    },
-    {
-      id: 'activity',
-      label: 'Last Burst',
-      value: formatRelativeTime(activePaneMetrics.lastOutputAt),
-      detail: `${activePaneMetrics.outputLines} lines · ${formatDataSize(activePaneMetrics.outputBytes)}`,
-      accent: appearance.theme.palette.info,
-    },
-    {
-      id: 'viewport',
-      label: 'Viewport',
-      value: activePaneMetrics.cols && activePaneMetrics.rows ? `${activePaneMetrics.cols} x ${activePaneMetrics.rows}` : 'Sizing…',
-      detail: activePane?.label ?? 'No active pane',
-      accent: theme.text,
-    },
-  ];
 
   const sidebarPanelNode = sidebarOpen && activePanel ? (
     <div
@@ -1762,67 +1699,6 @@ export function TerminalOverlay({
 
   const workspaceArea = (
     <div className="flex-1 min-w-0 min-h-0 flex flex-col" style={{ background: theme.bgTerm }}>
-      <div
-        className="grid shrink-0 gap-2 border-b p-3"
-        style={{
-          borderColor: theme.border,
-          background: `linear-gradient(180deg, ${theme.bgTerm}, ${theme.bg})`,
-          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-        }}
-      >
-        {workspaceCards.map(card => (
-          <div
-            key={card.id}
-            className="rounded-lg border px-3 py-2"
-            style={{
-              borderColor: `${card.accent}33`,
-              background: 'rgba(255,255,255,0.03)',
-              boxShadow: `0 0 0 1px ${card.accent}10 inset`,
-            }}
-          >
-            <div className="text-[9px] font-semibold uppercase tracking-[0.18em]" style={{ color: theme.textMuted }}>
-              {card.label}
-            </div>
-            <div className="mt-2 text-[12px] font-semibold" style={{ color: card.accent }}>
-              {card.value}
-            </div>
-            <div className="mt-1 text-[10px]" style={{ color: theme.textMuted }}>
-              {card.detail}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="flex items-center gap-2 px-3 py-2 border-b shrink-0" style={{ borderColor: theme.border, background: 'rgba(255,255,255,0.02)' }}>
-        <button
-          type="button"
-          onClick={() => setActiveTabLayout('columns')}
-          className="rounded px-2 py-1 text-[10px] font-medium transition-all"
-          style={{
-            color: activeTab?.splitDirection === 'columns' ? theme.accent : theme.textMuted,
-            border: `1px solid ${activeTab?.splitDirection === 'columns' ? `${theme.accent}55` : theme.border}`,
-            background: activeTab?.splitDirection === 'columns' ? `${theme.accent}14` : 'transparent',
-          }}
-        >
-          Columns
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTabLayout('rows')}
-          className="rounded px-2 py-1 text-[10px] font-medium transition-all"
-          style={{
-            color: activeTab?.splitDirection === 'rows' ? theme.accent : theme.textMuted,
-            border: `1px solid ${activeTab?.splitDirection === 'rows' ? `${theme.accent}55` : theme.border}`,
-            background: activeTab?.splitDirection === 'rows' ? `${theme.accent}14` : 'transparent',
-          }}
-        >
-          Rows
-        </button>
-        <div className="flex-1" />
-        <span className="text-[10px]" style={{ color: theme.textMuted }}>
-          Click any pane to focus it. Broadcast mode mirrors both manual typing and injected commands.
-        </span>
-      </div>
 
       <div className="flex-1 min-h-0 min-w-0 p-3">
         {activeTab && (
@@ -1835,7 +1711,6 @@ export function TerminalOverlay({
               if (!pane) {
                 return null;
               }
-              const metrics = paneTelemetry[paneId] ?? createPaneTelemetry();
               const ready = isPaneReady(paneId);
               const isActivePane = activePaneId === paneId;
               return (
@@ -1850,82 +1725,53 @@ export function TerminalOverlay({
                 >
                   <div className="flex flex-1 min-h-0 min-w-0 flex-col">
                     <div
-                      className="flex items-center gap-2 border-b px-3 py-2 shrink-0"
+                      className="group flex items-center gap-2 border-b px-2 shrink-0"
                       style={{
+                        minHeight: 30,
                         borderColor: theme.border,
-                        background: isActivePane ? `${theme.accent}10` : 'rgba(255,255,255,0.025)',
+                        background: isActivePane ? `${theme.accent}0a` : 'transparent',
                       }}
                       onMouseDown={() => focusPane(activeTab.id, paneId)}
                     >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="truncate text-[11px] font-semibold" style={{ color: theme.text }}>
-                            {pane.label}
-                          </span>
-                          <span
-                            className="rounded-full px-1.5 py-0.5 text-[8px] font-bold tracking-[0.16em]"
-                            style={{
-                              color: ready ? appearance.theme.palette.success : theme.textMuted,
-                              background: ready ? `${appearance.theme.palette.success}18` : 'rgba(255,255,255,0.06)',
-                              border: `1px solid ${ready ? `${appearance.theme.palette.success}33` : theme.border}`,
-                            }}
-                          >
-                            {ready ? 'LIVE' : 'BOOTING'}
-                          </span>
-                          {isActivePane && (
-                            <span
-                              className="rounded-full px-1.5 py-0.5 text-[8px] font-bold tracking-[0.16em]"
-                              style={{
-                                color: theme.accent,
-                                background: `${theme.accent}18`,
-                                border: `1px solid ${theme.accent}33`,
-                              }}
-                            >
-                              ACTIVE
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-1 text-[9px]" style={{ color: theme.textMuted }}>
-                          {(metrics.cols && metrics.rows) ? `${metrics.cols} x ${metrics.rows}` : 'Sizing…'} · {metrics.outputLines} lines · {formatDataSize(metrics.outputBytes)} · {formatRelativeTime(metrics.lastOutputAt ?? metrics.lastFocusAt)}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => focusPane(activeTab.id, paneId)}
-                          className="rounded px-2 py-1 text-[9px] transition-all"
-                          style={{ color: isActivePane ? theme.accent : theme.textMuted, border: `1px solid ${theme.border}` }}
-                          title="Focus pane"
-                        >
-                          Focus
-                        </button>
+                      <div
+                        className="shrink-0 rounded-full"
+                        style={{
+                          width: 6, height: 6,
+                          background: ready ? appearance.theme.palette.success : theme.textMuted,
+                          opacity: ready ? 1 : 0.4,
+                        }}
+                      />
+                      <span className="truncate text-[10px] font-medium flex-1" style={{ color: isActivePane ? theme.text : theme.textMuted }}>
+                        {pane.label}
+                      </span>
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                         <button
                           type="button"
                           onClick={() => { void copyPaneOutput(paneId); }}
-                          className="rounded px-2 py-1 text-[9px] transition-all"
-                          style={{ color: theme.textMuted, border: `1px solid ${theme.border}` }}
-                          title="Copy pane output"
+                          className="flex items-center justify-center rounded transition-all hover:bg-white/10"
+                          style={{ width: 22, height: 22, color: theme.textMuted }}
+                          title="Copy output"
                         >
-                          Copy
+                          <Copy size={11} />
                         </button>
                         <button
                           type="button"
                           onClick={() => { void restartPane(paneId); }}
-                          className="rounded px-2 py-1 text-[9px] transition-all"
-                          style={{ color: theme.textMuted, border: `1px solid ${theme.border}` }}
+                          className="flex items-center justify-center rounded transition-all hover:bg-white/10"
+                          style={{ width: 22, height: 22, color: theme.textMuted }}
                           title="Restart pane"
                         >
-                          Restart
+                          <RotateCcw size={11} />
                         </button>
                         {activeTab.paneIds.length > 1 && (
                           <button
                             type="button"
                             onClick={() => closePane(paneId)}
-                            className="rounded px-2 py-1 text-[9px] transition-all hover:bg-red-500/10"
-                            style={{ color: theme.textMuted, border: `1px solid ${theme.border}` }}
+                            className="flex items-center justify-center rounded transition-all hover:bg-red-500/10 hover:text-red-400"
+                            style={{ width: 22, height: 22, color: theme.textMuted }}
                             title="Close pane"
                           >
-                            Close
+                            <X size={11} />
                           </button>
                         )}
                       </div>

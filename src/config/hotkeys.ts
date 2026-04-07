@@ -5,6 +5,19 @@ export type HotkeyBindingKey =
   | 'windowModeToggle'
   | 'saveFile'
   | 'newFile'
+  | 'newFolder'
+  | 'renameItem'
+  | 'deleteItem'
+  | 'duplicateItem'
+  | 'refreshExplorer'
+  | 'goUpDirectory'
+  | 'copyPath'
+  | 'copySelection'
+  | 'cutSelection'
+  | 'pasteSelection'
+  | 'toggleHiddenFiles'
+  | 'toggleExplorerLayout'
+  | 'searchExplorer'
   | 'closeTab'
   | 'find'
   | 'replace'
@@ -74,8 +87,99 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
   {
     key: 'newFile',
     label: 'New File',
-    description: 'Reserved for file creation actions.',
+    description: 'Create a new file in the active explorer folder.',
     defaultValue: 'Ctrl+N',
+    scope: 'local',
+  },
+  {
+    key: 'newFolder',
+    label: 'New Folder',
+    description: 'Create a new folder in the active explorer folder.',
+    defaultValue: 'Ctrl+Shift+N',
+    scope: 'local',
+  },
+  {
+    key: 'renameItem',
+    label: 'Rename Item',
+    description: 'Rename the current explorer selection.',
+    defaultValue: 'F2',
+    scope: 'local',
+  },
+  {
+    key: 'deleteItem',
+    label: 'Delete Item',
+    description: 'Delete the current explorer selection.',
+    defaultValue: 'Delete',
+    scope: 'local',
+  },
+  {
+    key: 'duplicateItem',
+    label: 'Duplicate Item',
+    description: 'Duplicate the current explorer selection.',
+    defaultValue: 'Ctrl+D',
+    scope: 'local',
+  },
+  {
+    key: 'refreshExplorer',
+    label: 'Refresh Explorer',
+    description: 'Reload the current explorer directory.',
+    defaultValue: 'F5',
+    scope: 'local',
+  },
+  {
+    key: 'goUpDirectory',
+    label: 'Go Up Directory',
+    description: 'Navigate to the parent folder in Explorer.',
+    defaultValue: 'Backspace',
+    scope: 'local',
+  },
+  {
+    key: 'copyPath',
+    label: 'Copy Path',
+    description: 'Copy the selected path(s) to the system clipboard.',
+    defaultValue: 'Ctrl+Shift+C',
+    scope: 'local',
+  },
+  {
+    key: 'copySelection',
+    label: 'Copy Selection',
+    description: 'Copy the current explorer selection into the transfer queue.',
+    defaultValue: 'Ctrl+C',
+    scope: 'local',
+  },
+  {
+    key: 'cutSelection',
+    label: 'Cut Selection',
+    description: 'Cut the current explorer selection into the transfer queue.',
+    defaultValue: 'Ctrl+X',
+    scope: 'local',
+  },
+  {
+    key: 'pasteSelection',
+    label: 'Paste Selection',
+    description: 'Paste the current transfer queue into the active folder.',
+    defaultValue: 'Ctrl+V',
+    scope: 'local',
+  },
+  {
+    key: 'toggleHiddenFiles',
+    label: 'Toggle Hidden Files',
+    description: 'Show or hide hidden files in Explorer.',
+    defaultValue: 'Ctrl+H',
+    scope: 'local',
+  },
+  {
+    key: 'toggleExplorerLayout',
+    label: 'Toggle Explorer Layout',
+    description: 'Step through the explorer content-browser layouts.',
+    defaultValue: 'Ctrl+L',
+    scope: 'local',
+  },
+  {
+    key: 'searchExplorer',
+    label: 'Search Explorer',
+    description: 'Focus the explorer search/address bar.',
+    defaultValue: 'Ctrl+F',
     scope: 'local',
   },
   {

@@ -35,6 +35,7 @@ import {
   stepExplorerViewMode,
   type ExplorerViewModeDefinition,
 } from '../config/explorerViewModes';
+import { matchesKeybinding } from '../config/hotkeys';
 import {
   DEFAULT_NATIVE_ICON_SIZE,
   getNativeIconCacheKey,
@@ -1040,10 +1041,12 @@ export function FileExplorer({
   const {
     explorerSettings,
     appearanceSettings,
+    keybindings,
     updateExplorerSettings,
   } = useSettingsStore(useShallow(state => ({
     explorerSettings: state.settings.explorer,
     appearanceSettings: state.settings.appearance,
+    keybindings: state.settings.keybindings,
     updateExplorerSettings: state.updateExplorer,
   })));
   const {
@@ -2213,6 +2216,68 @@ export function FileExplorer({
     const h = (e: KeyboardEvent) => {
       if (rename.active || newItem.visible || addressEditing) return;
       if (isEditableKeyboardTarget(e.target)) return;
+
+      const isExplorerFocus = document.activeElement === mainRef.current;
+      const selectedEntry = visibleEntries.find(en => selected.has(en.path)) ?? null;
+      const firstSelectedEntry = visibleEntries.find(en => selected.has(en.path)) ?? null;
+
+      if (matchesKeybinding(e, keybindings.searchExplorer)) {
+        e.preventDefault();
+        beginAddressEdit();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.goUpDirectory) && isExplorerFocus) {
+        e.preventDefault();
+        goUp();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.refreshExplorer)) {
+        e.preventDefault();
+        refresh();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.renameItem) && selected.size === 1) {
+        e.preventDefault();
+        if (selectedEntry) {
+          setRename({ active: true, path: selectedEntry.path, name: selectedEntry.name });
+        }
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.deleteItem) && selected.size > 0) {
+        e.preventDefault();
+        if (firstSelectedEntry) {
+          setDeleteTarget(firstSelectedEntry);
+        }
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.newFolder)) {
+        e.preventDefault();
+        openNew('folder');
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.newFile)) {
+        e.preventDefault();
+        openNew('file');
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.duplicateItem) && selected.size > 0 && selectedEntry) {
+        e.preventDefault();
+        void duplicate(selectedEntry);
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.toggleHiddenFiles)) {
+        e.preventDefault();
+        updateExplorerSettings({ showHiddenFiles: !showHidden });
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.toggleExplorerLayout)) {
+        e.preventDefault();
+        const nextMode = stepExplorerViewMode(viewMode, 'larger');
+        if (nextMode !== viewMode) {
+          updateExplorerSettings({ viewMode: nextMode });
+        }
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
         e.preventDefault();
         beginAddressEdit();
@@ -2223,43 +2288,37 @@ export function FileExplorer({
         beginAddressEdit();
         return;
       }
-      if (e.key === 'Backspace' && document.activeElement === mainRef.current) goUp();
-      if (e.key === 'F5') refresh();
-      if (e.key === 'F2' && selected.size === 1) {
-        const entry = visibleEntries.find(en => selected.has(en.path));
-        if (entry) setRename({ active:true, path:entry.path, name:entry.name });
-      }
       if (e.key === 'Escape') { setClipboard(null); setNewItem({ visible:false, kind:'folder' }); }
-      if (e.key === 'Delete' && selected.size > 0) {
-        const first = visibleEntries.find(en => selected.has(en.path));
-        if (first) setDeleteTarget(first);
-      }
       if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
         e.preventDefault();
         setSelected(new Set(visibleEntries.map(f => f.path)));
+        return;
       }
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'c') {
+      if (matchesKeybinding(e, keybindings.copyPath)) {
         e.preventDefault();
         if (selectedEntries.length > 0) {
           void copyToSysClipboard(selectedEntries.map(entry => entry.path).join('\n'));
         }
+        return;
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+      if (matchesKeybinding(e, keybindings.copySelection)) {
         e.preventDefault();
         queueClipboard('copy');
+        return;
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'x') {
+      if (matchesKeybinding(e, keybindings.cutSelection)) {
         e.preventDefault();
         queueClipboard('cut');
+        return;
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+      if (matchesKeybinding(e, keybindings.pasteSelection)) {
         e.preventDefault();
         void paste();
       }
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [addressEditing, beginAddressEdit, newItem.visible, paste, queueClipboard, refresh, rename.active, selectedEntries, visibleEntries]);
+  }, [addressEditing, beginAddressEdit, duplicate, keybindings, newItem.visible, paste, queueClipboard, refresh, rename.active, selected, selectedEntries, showHidden, updateExplorerSettings, viewMode, visibleEntries]);
 
   // ── Breadcrumbs ──
   const crumbs: { label:string; path:string }[] = [];

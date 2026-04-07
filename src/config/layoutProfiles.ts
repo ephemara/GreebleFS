@@ -265,7 +265,7 @@ const BUILT_IN_PROFILES: LayoutProfile[] = sortProfiles([
     behavior: {
       cycleOrder: 10,
       defaultActivePanelId: 'explorer',
-      enforcedOpenPanelIds: [],
+      enforcedOpenPanelIds: ['explorer'],
     },
     interaction: {
       primaryAxisOwner: 'active-panel',
@@ -299,7 +299,7 @@ const BUILT_IN_PROFILES: LayoutProfile[] = sortProfiles([
     behavior: {
       cycleOrder: 20,
       defaultActivePanelId: 'explorer',
-      enforcedOpenPanelIds: [],
+      enforcedOpenPanelIds: ['explorer'],
     },
     interaction: {
       primaryAxisOwner: 'active-panel',

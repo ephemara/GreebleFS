@@ -1,0 +1,4 @@
+OverlayTerm workspace marker
+Session: Vivi
+Runtime: OpenClaw main workspace
+Timestamp: 2026-04-07T00:24:00Z

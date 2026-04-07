@@ -179,24 +179,6 @@ export function createBuiltInPanelDefinitions({
 
   return [
     {
-      id: 'terminal',
-      label: 'Terminal',
-      kind: 'built-in-panel',
-      icon: <TerminalIcon size={12} />,
-      description: 'Primary command workspace.',
-      defaultOpen: true,
-      keepMounted: true,
-      render: () => (
-        <MemoTerminalOverlay
-          isOpen={isOpen}
-          onClose={hideOverlay}
-          embedded
-          appearance={appearance}
-          pluginCommands={pluginCommands}
-        />
-      ),
-    },
-    {
       id: 'explorer',
       label: 'Explorer',
       kind: 'built-in-panel',
@@ -213,6 +195,24 @@ export function createBuiltInPanelDefinitions({
           onOpenInTerminal={onOpenInTerminal}
           onAddBookmark={onAddBookmark}
           pluginActions={pluginExplorerActions}
+        />
+      ),
+    },
+    {
+      id: 'terminal',
+      label: 'Terminal',
+      kind: 'built-in-panel',
+      icon: <TerminalIcon size={12} />,
+      description: 'Primary command workspace.',
+      defaultOpen: true,
+      keepMounted: true,
+      render: () => (
+        <MemoTerminalOverlay
+          isOpen={isOpen}
+          onClose={hideOverlay}
+          embedded
+          appearance={appearance}
+          pluginCommands={pluginCommands}
         />
       ),
     },

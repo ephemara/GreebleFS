@@ -42,6 +42,7 @@ import {
 import { listen } from '@tauri-apps/api/event';
 import {
   Check,
+  ChevronDown,
   Copy,
   Droplet,
   GripHorizontal,
@@ -50,6 +51,7 @@ import {
   Minus,
   Search,
   Settings2,
+  SlidersHorizontal,
   Square,
   Terminal as TerminalIcon,
   X,
@@ -2176,6 +2178,28 @@ function App() {
         badge: 'Layout',
         onSelect: handleCycleLayout,
       },
+      {
+        id: 'toggle-window-mode',
+        title: windowMode === 'windowed' ? 'Switch To Dock Mode' : 'Switch To Application Mode',
+        subtitle: windowMode === 'windowed'
+          ? 'Pin the shell back to a monitor edge and restore dock behavior.'
+          : 'Open the shell as a regular desktop window.',
+        group: 'Layout',
+        keywords: ['dock', 'window', 'mode', 'overlay', 'app'],
+        badge: windowMode === 'windowed' ? 'Dock' : 'App',
+        onSelect: handleToggleWindowMode,
+      },
+      ...(windowMode === 'overlay'
+        ? [{
+            id: 'toggle-dock-edge',
+            title: `Dock To ${overlayAnchor === 'top' ? 'Bottom' : 'Top'} Edge`,
+            subtitle: `Move the dock shell from the ${overlayAnchor} edge to the ${overlayAnchor === 'top' ? 'bottom' : 'top'} edge.`,
+            group: 'Layout',
+            keywords: ['dock', 'anchor', 'top', 'bottom', 'edge'],
+            badge: 'Edge',
+            onSelect: handleToggleOverlayAnchor,
+          } satisfies OverlayCommandPaletteAction]
+        : []),
     ];
 
     const panelActions = panelDefinitions
@@ -2210,6 +2234,9 @@ function App() {
     handleActivatePanel,
     handleCycleLayout,
     handleOpenSettings,
+    handleToggleOverlayAnchor,
+    handleToggleWindowMode,
+    overlayAnchor,
     openPluginsFolder,
     pinnedPanelIds,
     panelDefinitions,
@@ -2218,6 +2245,7 @@ function App() {
     refreshAuthoredShaders,
     refreshFolderPlugins,
     refreshThemePackages,
+    windowMode,
   ]);
 
   useEffect(() => {
@@ -2290,6 +2318,7 @@ function App() {
       onOpenSettings={handleOpenSettings}
       onCycleLayout={handleCycleLayout}
       onSelectLayoutProfile={(profileId) => updateLayout({ activeProfileId: profileId })}
+      onSetWindowMode={(mode) => updateTerminal({ windowMode: mode })}
       onOpenCommandPalette={handleOpenCommandPalette}
       onToggleOverlayAnchor={handleToggleOverlayAnchor}
       onClose={() => { void hideOverlay(); }}
@@ -2738,111 +2767,182 @@ function OverlayViewportDock({
   blurPlatform: RuntimePlatform;
 }) {
   const supportsNativeBlur = blurPlatform === 'macos' || blurPlatform === 'windows';
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
   const [activeControl, setActiveControl] = useState<'opacity' | 'panelTransparency' | 'zoom' | 'blur' | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      setActiveControl(null);
+    };
+  }, [isOpen]);
 
   return (
     <div
+      ref={rootRef}
       style={{
+        position: 'relative',
         display: 'flex',
         alignItems: 'center',
-        gap: 6,
+        gap: 4,
       }}
     >
       <button
-        onClick={() => onBlurChange(!blur)}
-        title={supportsNativeBlur
-          ? (blur ? 'Disable native window blur' : 'Enable native window blur')
-          : 'Native blur is currently only available on macOS and Windows'}
+        onClick={() => setIsOpen(open => !open)}
+        title="Open surface controls"
         style={{
-          width: 28,
-          height: 28,
+          width: 22,
+          height: 22,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: blur ? `${accent}22` : 'rgba(255,255,255,0.03)',
-          border: `1px solid ${blur ? accent : border}`,
-          color: blur ? accent : muted,
-          borderRadius: 8,
+          background: isOpen ? `${accent}18` : 'rgba(255,255,255,0.025)',
+          border: `1px solid ${isOpen ? accent : border}`,
+          color: isOpen ? text : muted,
+          borderRadius: 6,
           cursor: 'pointer',
           transition: 'all 0.15s',
-          opacity: supportsNativeBlur ? 1 : 0.65,
-          boxShadow: blur ? `0 0 0 1px ${accent}18 inset` : 'none',
+          boxShadow: isOpen ? `0 0 0 1px ${accent}18 inset` : 'none',
         }}
       >
-        <Droplet size={12} />
+        <SlidersHorizontal size={11} style={{ color: isOpen ? accent : muted }} />
       </button>
 
-      <CompactScrubberControl
-        label="Op"
-        title="Adjust window opacity."
-        value={opacity}
-        min={overlayVisualControls.opacity.min}
-        max={overlayVisualControls.opacity.max}
-        step={overlayVisualControls.opacity.step}
-        accent={accent}
-        border={border}
-        muted={muted}
-        text={text}
-        formatValue={value => formatOverlayVisualControlValue('opacity', value)}
-        active={activeControl === 'opacity'}
-        onActiveChange={next => setActiveControl(next ? 'opacity' : null)}
-        onChange={onOpacityChange}
-        onReset={() => onOpacityChange(overlayVisualControls.opacity.defaultValue)}
-      />
+      {isOpen && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 8px)',
+            right: 0,
+            width: 220,
+            padding: 8,
+            borderRadius: 12,
+            border: `1px solid ${border}`,
+            background: 'linear-gradient(180deg, rgba(12,14,24,0.96), rgba(8,10,18,0.94))',
+            boxShadow: '0 12px 28px rgba(0,0,0,0.34)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            zIndex: 60,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '2px 4px 4px' }}>
+            <span style={{ fontSize: 9, color: muted, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+              Surface
+            </span>
+            <button
+              onClick={() => onBlurChange(!blur)}
+              title={supportsNativeBlur
+                ? (blur ? 'Disable native window blur' : 'Enable native window blur')
+                : 'Native blur is currently only available on macOS and Windows'}
+              style={{
+                height: 22,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '0 8px',
+                borderRadius: 6,
+                border: `1px solid ${blur ? accent : border}`,
+                background: blur ? `${accent}18` : 'rgba(255,255,255,0.025)',
+                color: blur ? text : muted,
+                cursor: 'pointer',
+                opacity: supportsNativeBlur ? 1 : 0.65,
+              }}
+            >
+              <Droplet size={11} style={{ color: blur ? accent : muted }} />
+              <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                Blur
+              </span>
+            </button>
+          </div>
 
-      <CompactScrubberControl
-        label="Pt"
-        title="Adjust panel transparency without dimming the panel content."
-        value={panelTransparency}
-        min={overlayVisualControls.panelTransparency.min}
-        max={overlayVisualControls.panelTransparency.max}
-        step={overlayVisualControls.panelTransparency.step}
-        accent={accent}
-        border={border}
-        muted={muted}
-        text={text}
-        formatValue={value => formatOverlayVisualControlValue('panelTransparency', value)}
-        active={activeControl === 'panelTransparency'}
-        onActiveChange={next => setActiveControl(next ? 'panelTransparency' : null)}
-        onChange={onPanelTransparencyChange}
-        onReset={() => onPanelTransparencyChange(overlayVisualControls.panelTransparency.defaultValue)}
-      />
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '0 2px 2px' }}>
+            <CompactScrubberControl
+              label="Op"
+              title="Adjust window opacity."
+              value={opacity}
+              min={overlayVisualControls.opacity.min}
+              max={overlayVisualControls.opacity.max}
+              step={overlayVisualControls.opacity.step}
+              accent={accent}
+              border={border}
+              muted={muted}
+              text={text}
+              formatValue={value => formatOverlayVisualControlValue('opacity', value)}
+              active={activeControl === 'opacity'}
+              onActiveChange={next => setActiveControl(next ? 'opacity' : null)}
+              onChange={onOpacityChange}
+              onReset={() => onOpacityChange(overlayVisualControls.opacity.defaultValue)}
+            />
 
-      <CompactScrubberControl
-        label="Bl"
-        title="Adjust glass blur strength."
-        value={blurStrength}
-        min={overlayVisualControls.blurStrength.min}
-        max={overlayVisualControls.blurStrength.max}
-        step={overlayVisualControls.blurStrength.step}
-        accent={accent}
-        border={border}
-        muted={muted}
-        text={text}
-        formatValue={value => formatOverlayVisualControlValue('blurStrength', value)}
-        active={activeControl === 'blur'}
-        onActiveChange={next => setActiveControl(next ? 'blur' : null)}
-        onChange={onBlurStrengthChange}
-        onReset={() => onBlurStrengthChange(overlayVisualControls.blurStrength.defaultValue)}
-      />
+            <CompactScrubberControl
+              label="Pt"
+              title="Adjust panel transparency without dimming the panel content."
+              value={panelTransparency}
+              min={overlayVisualControls.panelTransparency.min}
+              max={overlayVisualControls.panelTransparency.max}
+              step={overlayVisualControls.panelTransparency.step}
+              accent={accent}
+              border={border}
+              muted={muted}
+              text={text}
+              formatValue={value => formatOverlayVisualControlValue('panelTransparency', value)}
+              active={activeControl === 'panelTransparency'}
+              onActiveChange={next => setActiveControl(next ? 'panelTransparency' : null)}
+              onChange={onPanelTransparencyChange}
+              onReset={() => onPanelTransparencyChange(overlayVisualControls.panelTransparency.defaultValue)}
+            />
 
-      <CompactScrubberControl
-        label="Zm"
-        title="Adjust window zoom."
-        value={zoom}
-        min={overlayVisualControls.zoom.min}
-        max={overlayVisualControls.zoom.max}
-        step={overlayVisualControls.zoom.step}
-        accent={accent}
-        border={border}
-        muted={muted}
-        text={text}
-        formatValue={value => formatOverlayVisualControlValue('zoom', value)}
-        active={activeControl === 'zoom'}
-        onActiveChange={next => setActiveControl(next ? 'zoom' : null)}
-        onChange={onZoomChange}
-        onReset={() => onZoomChange(overlayVisualControls.zoom.defaultValue)}
-      />
+            <CompactScrubberControl
+              label="Bl"
+              title="Adjust glass blur strength."
+              value={blurStrength}
+              min={overlayVisualControls.blurStrength.min}
+              max={overlayVisualControls.blurStrength.max}
+              step={overlayVisualControls.blurStrength.step}
+              accent={accent}
+              border={border}
+              muted={muted}
+              text={text}
+              formatValue={value => formatOverlayVisualControlValue('blurStrength', value)}
+              active={activeControl === 'blur'}
+              onActiveChange={next => setActiveControl(next ? 'blur' : null)}
+              onChange={onBlurStrengthChange}
+              onReset={() => onBlurStrengthChange(overlayVisualControls.blurStrength.defaultValue)}
+            />
+
+            <CompactScrubberControl
+              label="Zm"
+              title="Adjust window zoom."
+              value={zoom}
+              min={overlayVisualControls.zoom.min}
+              max={overlayVisualControls.zoom.max}
+              step={overlayVisualControls.zoom.step}
+              accent={accent}
+              border={border}
+              muted={muted}
+              text={text}
+              formatValue={value => formatOverlayVisualControlValue('zoom', value)}
+              active={activeControl === 'zoom'}
+              onActiveChange={next => setActiveControl(next ? 'zoom' : null)}
+              onChange={onZoomChange}
+              onReset={() => onZoomChange(overlayVisualControls.zoom.defaultValue)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2863,6 +2963,7 @@ function TopBar({
   onOpenSettings,
   onCycleLayout,
   onSelectLayoutProfile,
+  onSetWindowMode,
   onOpenCommandPalette,
   onToggleOverlayAnchor,
   onClose,
@@ -2900,6 +3001,7 @@ function TopBar({
   onOpenSettings: () => void;
   onCycleLayout: () => void;
   onSelectLayoutProfile: (profileId: string) => void;
+  onSetWindowMode: (mode: TerminalWindowMode) => void;
   onOpenCommandPalette: () => void;
   onToggleOverlayAnchor: () => void;
   onClose: () => void;
@@ -2931,13 +3033,16 @@ function TopBar({
   const monoFont = appearance.fonts.mono;
   const CHROME_HEIGHT = 36;
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const layoutMenuRef = useRef<HTMLDivElement | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isLayoutMenuOpen, setIsLayoutMenuOpen] = useState(false);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const [draggedPanelId, setDraggedPanelId] = useState<string | null>(null);
   const [viewportSize, setViewportSize] = useState(() => ({
     width: window.innerWidth,
     height: window.innerHeight,
   }));
+  const isExplorerActive = activePanelId === 'explorer';
   const isSettingsActive = activePanelId === 'settings';
   const supportsNativeBlur = blurPlatform === 'macos' || blurPlatform === 'windows';
   const isBottomBar = layoutProfile.chrome.barPosition === 'bottom';
@@ -2947,6 +3052,10 @@ function TopBar({
       .map(id => panels.find(panel => panel.id === id))
       .filter((panel): panel is OverlayPanelDefinition => Boolean(panel)),
     [layoutProfile, openPanelIds, panels],
+  );
+  const tabPanels = useMemo(
+    () => openPanels.filter(panel => panel.id !== 'explorer' && panel.id !== 'settings'),
+    [openPanels],
   );
   const panelGroups = useMemo(() => {
     const builtInPanels = panels.filter(panel => panel.kind === 'built-in-panel');
@@ -2970,10 +3079,8 @@ function TopBar({
   );
   const showPanelDescriptions = !compactPanelMenu && panelMenuHeight > 290;
   const nextOverlayAnchor = overlayAnchor === 'top' ? 'bottom' : 'top';
-  const layoutRailMaxWidth = Math.max(
-    180,
-    Math.min(isWindowedMode ? 360 : 320, Math.floor(viewportSize.width * (isWindowedMode ? 0.28 : 0.24))),
-  );
+  const layoutMenuWidth = Math.max(220, Math.min(320, viewportSize.width - 24));
+  const layoutMenuMaxHeight = Math.max(180, Math.min(360, viewportSize.height - 92));
   const layoutButtonTitle = isWindowedMode
     ? (layoutSourcePath
       ? `Cycle Layout (${layoutProfile.label})\n${layoutSourcePath}`
@@ -3017,17 +3124,21 @@ function TopBar({
   }, [isWindowedMode]);
 
   useEffect(() => {
-    if (!isMenuOpen) return;
+    if (!isMenuOpen && !isLayoutMenuOpen) return;
 
     const handlePointerDown = (event: PointerEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (!menuRef.current?.contains(target)) {
         setIsMenuOpen(false);
+      }
+      if (!layoutMenuRef.current?.contains(target)) {
+        setIsLayoutMenuOpen(false);
       }
     };
 
     window.addEventListener('pointerdown', handlePointerDown);
     return () => window.removeEventListener('pointerdown', handlePointerDown);
-  }, [isMenuOpen]);
+  }, [isLayoutMenuOpen, isMenuOpen]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -3216,6 +3327,101 @@ function TopBar({
     </div>
   );
 
+  const layoutMenu = (
+    <div style={{
+      position: 'absolute',
+      top: isBottomBar ? 'auto' : 'calc(100% + 8px)',
+      bottom: isBottomBar ? 'calc(100% + 8px)' : 'auto',
+      left: 0,
+      width: layoutMenuWidth,
+      maxWidth: 'calc(100vw - 16px)',
+      maxHeight: layoutMenuMaxHeight,
+      background: MENU_BG,
+      border: `1px solid ${BORDER}`,
+      borderRadius: 12,
+      boxShadow: appearance.theme.effects.shadow,
+      padding: 6,
+      zIndex: 50,
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+    }}
+    >
+      <div style={{
+        padding: '8px 10px 10px',
+        fontSize: 10,
+        color: MUTED,
+        textTransform: 'uppercase',
+        letterSpacing: '0.08em',
+        fontWeight: 700,
+        borderBottom: `1px solid ${BORDER}`,
+      }}
+      >
+        <div>Layouts</div>
+        <div style={{ marginTop: 4, fontSize: 9, letterSpacing: '0.04em', textTransform: 'none', fontWeight: 500 }}>
+          {layoutProfile.label}
+          {layoutSourcePath ? ` • ${layoutSourcePath}` : ''}
+        </div>
+      </div>
+
+      <OverlayScrollArea
+        style={{ flex: 1, minHeight: 0 }}
+        viewportStyle={{ paddingRight: 2, paddingTop: 6 }}
+        contentStyle={{ display: 'flex', flexDirection: 'column', gap: 6, paddingBottom: 4 }}
+      >
+        {layoutProfiles.map(profile => {
+          const isActive = profile.id === layoutProfile.id;
+          return (
+            <button
+              key={profile.id}
+              onClick={() => {
+                if (!isActive) {
+                  onSelectLayoutProfile(profile.id);
+                }
+                setIsLayoutMenuOpen(false);
+              }}
+              title={profile.description}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 10,
+                padding: '10px 12px',
+                border: `1px solid ${isActive ? `${accent}40` : 'transparent'}`,
+                borderRadius: 10,
+                background: isActive ? `${accent}16` : 'rgba(255,255,255,0.02)',
+                color: TEXT,
+                cursor: isActive ? 'default' : 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <span style={{
+                width: 14,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: isActive ? accent : 'transparent',
+                flexShrink: 0,
+                paddingTop: 2,
+              }}
+              >
+                <Check size={12} />
+              </span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: 'block', fontSize: 11, fontWeight: 700, color: isActive ? TEXT : MUTED }}>
+                  {profile.label}
+                </span>
+                <span style={{ display: 'block', marginTop: 4, fontSize: 10, lineHeight: 1.45, color: MUTED }}>
+                  {profile.description}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </OverlayScrollArea>
+    </div>
+  );
+
   return (
     <div style={{
       position: 'relative',
@@ -3243,16 +3449,17 @@ function TopBar({
         }}
         title={layoutButtonTitle}
         style={{
+          width: 36,
+          height: '100%',
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
-          padding: '0 12px',
+          justifyContent: 'center',
           border: 'none',
           borderRight: `1px solid ${BORDER}`,
           flexShrink: 0,
-          background: 'linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.01))',
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.008))',
           cursor: 'pointer',
-          height: '100%',
+          padding: 0,
         }}
       >
         <div style={{
@@ -3262,113 +3469,134 @@ function TopBar({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: `${accent}24`,
-          border: `1px solid ${accent}55`,
-          boxShadow: `0 0 0 1px ${accent}18 inset`,
+          background: `${accent}1e`,
+          border: `1px solid ${accent}40`,
         }}>
           <TerminalIcon size={10} style={{ color: accent }} />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, lineHeight: 1 }}>
-          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: TEXT, fontFamily: uiFont, userSelect: 'none' }}>
-            OverlayTerm
-          </span>
-          <span style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            height: 18,
-            padding: '0 6px',
-            borderRadius: 999,
-            border: `1px solid ${BORDER}`,
-            background: 'rgba(255,255,255,0.03)',
-            fontSize: 8,
-            letterSpacing: '0.14em',
-            textTransform: 'uppercase',
-            color: MUTED,
-            userSelect: 'none',
-            whiteSpace: 'nowrap',
-          }}>
-            {layoutProfile.label}
-          </span>
-        </div>
       </button>
 
-      <div style={{
+      <div ref={layoutMenuRef} style={{
+        position: 'relative',
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
-        padding: '0 10px',
+        padding: '0 6px',
         borderRight: `1px solid ${BORDER}`,
-        flexShrink: 1,
-        minWidth: 0,
-        maxWidth: layoutRailMaxWidth,
+        flexShrink: 0,
         background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.008))',
       }}>
-        <span style={{
-          fontSize: 8,
-          letterSpacing: '0.12em',
-          textTransform: 'uppercase',
-          color: MUTED,
-          fontWeight: 700,
-          whiteSpace: 'nowrap',
-          userSelect: 'none',
-        }}>
-          Layouts
-        </span>
-        <OverlayScrollArea
-          direction="horizontal"
-          style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}
-          viewportStyle={{ paddingBottom: 2 }}
-          contentStyle={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 'max-content' }}
+        <button
+          onClick={() => {
+            setIsLayoutMenuOpen(open => !open);
+            setIsMenuOpen(false);
+          }}
+          title={layoutButtonTitle}
+          style={{
+            height: 24,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '0 9px',
+            borderRadius: 999,
+            border: `1px solid ${isLayoutMenuOpen ? `${accent}58` : BORDER}`,
+            background: isLayoutMenuOpen
+              ? `linear-gradient(180deg, ${accent}24, ${accent}12)`
+              : 'rgba(255,255,255,0.03)',
+            color: TEXT,
+            fontSize: 8,
+            fontWeight: 700,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            boxShadow: isLayoutMenuOpen ? `0 0 0 1px ${accent}18 inset` : 'none',
+            transition: 'background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s',
+          }}
         >
-          {layoutProfiles.map(profile => {
-            const isActive = profile.id === layoutProfile.id;
-            return (
-              <button
-                key={profile.id}
-                onClick={() => onSelectLayoutProfile(profile.id)}
-                title={`${profile.label}\n${profile.description}`}
-                style={{
-                  height: 24,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '0 10px',
-                  borderRadius: 999,
-                  border: `1px solid ${isActive ? `${accent}58` : BORDER}`,
-                  background: isActive
-                    ? `linear-gradient(180deg, ${accent}28, ${accent}12)`
-                    : 'rgba(255,255,255,0.025)',
-                  color: isActive ? TEXT : MUTED,
-                  fontSize: 9,
-                  fontWeight: 700,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  cursor: isActive ? 'default' : 'pointer',
-                  whiteSpace: 'nowrap',
-                  boxShadow: isActive ? `0 0 0 1px ${accent}18 inset` : 'none',
-                  transition: 'background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s',
-                }}
-              >
-                {profile.label}
-              </button>
-            );
-          })}
-        </OverlayScrollArea>
+          <span>{layoutProfile.label}</span>
+          <ChevronDown size={11} style={{ color: isLayoutMenuOpen ? accent : MUTED }} />
+        </button>
+        {isLayoutMenuOpen && layoutMenu}
       </div>
 
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 6,
-        padding: '0 8px',
+        gap: 4,
+        padding: '0 6px',
         borderRight: `1px solid ${BORDER}`,
         flexShrink: 0,
         background: 'linear-gradient(180deg, rgba(0,0,0,0.14), rgba(255,255,255,0.02))',
       }}>
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <button
+            onClick={() => {
+              setIsLayoutMenuOpen(false);
+              setIsMenuOpen(false);
+              onSetWindowMode(windowMode === 'windowed' ? 'overlay' : 'windowed');
+            }}
+            onContextMenu={event => {
+              event.preventDefault();
+            }}
+            title={windowMode === 'windowed' ? 'Switch to Dock Mode' : 'Switch to Application Mode'}
+            style={{
+              height: 22,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '0 7px',
+              borderRadius: 6,
+              border: `1px solid ${windowMode === 'overlay' ? `${accent}55` : BORDER}`,
+              background: windowMode === 'overlay'
+                ? `linear-gradient(180deg, ${accent}20, ${accent}10)`
+                : 'rgba(255,255,255,0.025)',
+              color: windowMode === 'overlay' ? TEXT : MUTED,
+              fontSize: 8,
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              cursor: 'pointer',
+              transition: 'background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s',
+              boxShadow: windowMode === 'overlay' ? `0 0 0 1px ${accent}18 inset` : 'none',
+            }}
+          >
+            <span>{windowMode === 'windowed' ? 'App' : 'Dock'}</span>
+          </button>
+        </div>
+
+        {windowMode === 'overlay' && (
+          <button
+            onClick={onToggleOverlayAnchor}
+            title={`Docked to ${overlayAnchor === 'top' ? 'top' : 'bottom'} edge`}
+            style={{
+              height: 22,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '0 7px',
+              borderRadius: 6,
+              border: `1px solid ${BORDER}`,
+              background: 'rgba(255,255,255,0.025)',
+              color: MUTED,
+              fontSize: 8,
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              cursor: 'pointer',
+              transition: 'background 0.15s, border-color 0.15s, color 0.15s',
+            }}
+          >
+            <span>{overlayAnchor === 'top' ? 'Top Edge' : 'Bottom Edge'}</span>
+          </button>
+        )}
+
         {layoutProfile.chrome.showPanelMenu && (
           <div ref={menuRef} style={{ position: 'relative', flexShrink: 0, marginRight: 4 }}>
             <button
-              onClick={() => setIsMenuOpen(open => !open)}
+              onClick={() => {
+                setIsMenuOpen(open => !open);
+                setIsLayoutMenuOpen(false);
+              }}
               title="Toggle Panels"
               style={{
                 width: 22,
@@ -3489,7 +3717,7 @@ function TopBar({
             title="Open Settings"
             style={{
               height: '100%',
-              width: 40,
+              width: 34,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -3511,10 +3739,39 @@ function TopBar({
           </button>
         )}
 
+        <button
+          onClick={() => onPanelSelect('explorer')}
+          title="Open Explorer"
+          style={{
+            height: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '0 14px',
+            background: isExplorerActive
+              ? `linear-gradient(180deg, ${accent}32, ${accent}14)`
+              : 'linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.025))',
+            border: 'none',
+            borderRight: `1px solid ${BORDER}`,
+            color: isExplorerActive ? TEXT : MUTED,
+            cursor: 'pointer',
+            flexShrink: 0,
+            boxShadow: isExplorerActive ? `inset 0 -2px 0 ${accent}, inset 0 0 0 1px ${accent}18` : 'inset 0 -2px 0 transparent',
+            transition: 'background 0.15s, color 0.15s, box-shadow 0.15s, border-color 0.15s',
+          }}
+        >
+          <span style={{ display: 'flex', color: isExplorerActive ? accent : MUTED }}>
+            {panels.find(panel => panel.id === 'explorer')?.icon ?? <TerminalIcon size={12} />}
+          </span>
+          <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em' }}>Explorer</span>
+          {isExplorerActive && <span style={{ width: 4, height: 4, borderRadius: '50%', background: accent }} />}
+        </button>
+
         <OverlayScrollArea direction="horizontal" style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0, background: 'rgba(0,0,0,0.08)' }} contentStyle={{ display: 'flex', alignItems: 'stretch', minWidth: 'max-content' }}>
-          {openPanels.map(panel => {
+          {tabPanels.map(panel => {
             const isActive = panel.id === activePanelId;
             const isDragged = draggedPanelId === panel.id;
+            const isPersistentTab = layoutProfile.behavior.enforcedOpenPanelIds.includes(panel.id);
             return (
               <button
                 key={panel.id}
@@ -3536,7 +3793,7 @@ function TopBar({
                   display: 'flex',
                   alignItems: 'center',
                   gap: 6,
-                  padding: '0 10px',
+                  padding: '0 9px',
                   cursor: 'pointer',
                   background: isActive ? `linear-gradient(180deg, ${accent}18, transparent)` : 'transparent',
                   border: 'none',
@@ -3554,30 +3811,29 @@ function TopBar({
                   height: '100%',
                 }}
               >
-                <span style={{ display: 'flex', color: isActive ? accent : MUTED }}>
-                  <GripVertical size={10} />
-                </span>
                 <span style={{ display: 'flex', color: isActive ? accent : MUTED }}>{panel.icon}</span>
                 <span>{panel.label}</span>
                 {isActive && <span style={{ width: 4, height: 4, borderRadius: '50%', background: accent }} />}
-                <span
-                  onClick={event => {
-                    event.stopPropagation();
-                    onPanelClose(panel.id);
-                  }}
-                  title={`Close ${panel.label}`}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: 14,
-                    height: 14,
-                    borderRadius: 4,
-                    color: MUTED,
-                  }}
-                >
-                  <X size={10} />
-                </span>
+                {isActive && !isPersistentTab && (
+                  <span
+                    onClick={event => {
+                      event.stopPropagation();
+                      onPanelClose(panel.id);
+                    }}
+                    title={`Close ${panel.label}`}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: 14,
+                      height: 14,
+                      borderRadius: 4,
+                      color: MUTED,
+                    }}
+                  >
+                    <X size={10} />
+                  </span>
+                )}
               </button>
             );
           })}
@@ -3587,8 +3843,8 @@ function TopBar({
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
-        padding: '0 10px',
+        gap: 6,
+        padding: '0 8px',
         borderLeft: `1px solid ${BORDER}`,
         flexShrink: 0,
         background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.12))',
@@ -3601,11 +3857,11 @@ function TopBar({
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
+              width: 24,
               height: 24,
-              padding: '0 10px',
-              borderRadius: 999,
-              border: `1px solid ${accent}24`,
+              justifyContent: 'center',
+              borderRadius: 6,
+              border: `1px solid ${BORDER}`,
               background: 'rgba(255,255,255,0.025)',
               color: MUTED,
               cursor: 'grab',
@@ -3613,25 +3869,16 @@ function TopBar({
             }}
           >
             <GripHorizontal size={11} />
-            <span style={{
-              fontSize: 8,
-              fontWeight: 800,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              whiteSpace: 'nowrap',
-            }}>
-              Drag
-            </span>
           </div>
         )}
 
-        {layoutProfile.chrome.showShortcutBadge && (
+        {layoutProfile.chrome.showShortcutBadge && !isWindowedMode && (
           <kbd style={{
             fontSize: 8, fontFamily: monoFont,
-            background: 'rgba(255,255,255,0.04)',
-            padding: '1px 5px', borderRadius: 999,
-            border: `1px solid rgba(255,255,255,0.07)`,
-            color: MUTED, userSelect: 'none', marginRight: 2,
+            background: 'rgba(255,255,255,0.03)',
+            padding: '1px 4px', borderRadius: 6,
+            border: `1px solid rgba(255,255,255,0.06)`,
+            color: MUTED, userSelect: 'none',
           }}>
             {toggleShortcutLabel}
           </kbd>

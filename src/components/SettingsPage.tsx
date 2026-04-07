@@ -2107,6 +2107,39 @@ export function SettingsPage({
                   />
                 ))}
             </div>
+            <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Explorer Hotkeys</div>
+              <p className="mt-1 text-[11px] opacity-40">
+                These bindings drive the file browser directly, keeping the content-browser flow on the same data-driven shortcut system as the rest of the app.
+              </p>
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                {hotkeyBindingDefinitions
+                  .filter(definition => [
+                    'newFile',
+                    'newFolder',
+                    'renameItem',
+                    'deleteItem',
+                    'duplicateItem',
+                    'refreshExplorer',
+                    'goUpDirectory',
+                    'copyPath',
+                    'copySelection',
+                    'cutSelection',
+                    'pasteSelection',
+                    'toggleHiddenFiles',
+                    'toggleExplorerLayout',
+                    'searchExplorer',
+                  ].includes(definition.key))
+                  .map(definition => (
+                    <ShortcutField
+                      key={definition.key}
+                      bindingKey={definition.key}
+                      value={settings.keybindings[definition.key]}
+                      onCommit={value => updateKeybindings({ [definition.key]: value })}
+                    />
+                  ))}
+              </div>
+            </div>
           </section>
             )}
 
