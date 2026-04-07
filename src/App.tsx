@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { useShallow } from 'zustand/react/shallow';
 import {
@@ -919,9 +919,9 @@ function App() {
       // Atomic: set decorations + geometry in one call
       if (isTauri() && !isMaximized) {
         await commands.windowApplyMode(
-          true,
           false,
-          true,
+          false,
+          false,
           false,
           layout.x,
           layout.y,
@@ -931,14 +931,11 @@ function App() {
       } else if (isTauri()) {
         // Already maximized — just set the presentation flags, skip geometry
         await commands.windowApplyMode(
-          true,
           false,
-          true,
           false,
-          0,
-          0,
-          0,
-          0,
+          false,
+          false,
+          0, 0, 0, 0,
         ).catch(() => {});
       }
       await win.show();
@@ -1094,17 +1091,15 @@ function App() {
         if (!isMaximized) {
           isProgrammaticResizeRef.current = true;
           await commands.windowApplyMode(
-            true,
             false,
-            true,
+            false,
+            false,
             false,
             layout.x,
             layout.y,
             layout.width,
             layout.height,
           ).catch(() => {});
-          await win.setSize(new PhysicalSize(layout.width, layout.height));
-          await win.setPosition(new PhysicalPosition(layout.x, layout.y));
         }
         if (
           (layout.healedWidth !== null && layout.healedWidth !== store.windowedWidth)
@@ -1158,8 +1153,6 @@ function App() {
         layout.width,
         layout.height,
       ).catch(() => {});
-      await win.setSize(new PhysicalSize(layout.width, layout.height));
-      await win.setPosition(new PhysicalPosition(layout.x, layout.y));
     } catch (error) {
       console.warn('OverlayTerm: failed to transition window presentation', error);
     } finally {
@@ -1246,13 +1239,6 @@ function App() {
         const scaleFactor = await win.scaleFactor();
         const monitor = await primaryMonitor();
         if (!monitor || cancelled) {
-          isProgrammaticResizeRef.current = true;
-          await commands.windowApplyMode({
-            decorations: true, alwaysOnTop: false, shadow: true, skipTaskbar: false,
-            x: isMaximized ? 0 : layout.x, y: isMaximized ? 0 : layout.y,
-            width: isMaximized ? 0 : layout.width, height: isMaximized ? 0 : layout.height,
-          }).catch(() => {});
-          isFreefloatingRef.current = false; setIsFreefloating(false);
           return;
         }
 
@@ -1295,8 +1281,11 @@ function App() {
           y: layout.y,
         };
         isProgrammaticResizeRef.current = true;
-        await win.setSize(new PhysicalSize(layout.width, layout.height));
-        await win.setPosition(new PhysicalPosition(layout.x, layout.y));
+        await commands.windowApplyMode(
+          false, true, false, !shouldShowInTaskbar,
+          layout.x, layout.y, layout.width, layout.height,
+        ).catch(() => {});
+
       } catch (error) {
         console.warn('OverlayTerm: failed to re-anchor overlay', error);
       } finally {

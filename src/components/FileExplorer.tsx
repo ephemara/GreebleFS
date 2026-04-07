@@ -1155,6 +1155,8 @@ export function FileExplorer({
   const layoutMenuAnchorRef = useRef<HTMLDivElement>(null);
   const previewWarmupStartedRef = useRef(false);
   const previewWarmupTimerRef = useRef<number | null>(null);
+  const [renderedGridZoom, setRenderedGridZoom] = useState(gridZoom);
+  const renderedGridZoomRef = useRef(gridZoom);
   const [explorerViewportMetrics, setExplorerViewportMetrics] = useState<ViewportMetrics>({
     scrollTop: 0,
     clientHeight: 0,
@@ -2605,9 +2607,45 @@ export function FileExplorer({
     () => getExplorerViewModeDefinition(effectiveViewMode),
     [effectiveViewMode],
   );
+  useEffect(() => {
+    renderedGridZoomRef.current = renderedGridZoom;
+  }, [renderedGridZoom]);
+
+  useEffect(() => {
+    if (effectiveViewModeDefinition.presentation !== 'grid') {
+      renderedGridZoomRef.current = gridZoom;
+      setRenderedGridZoom(gridZoom);
+      return undefined;
+    }
+
+    let frameId = 0;
+    const animate = () => {
+      const current = renderedGridZoomRef.current;
+      const delta = gridZoom - current;
+
+      if (Math.abs(delta) <= 0.002) {
+        renderedGridZoomRef.current = gridZoom;
+        setRenderedGridZoom(gridZoom);
+        return;
+      }
+
+      const next = current + delta * 0.24;
+      renderedGridZoomRef.current = next;
+      setRenderedGridZoom(next);
+      frameId = window.requestAnimationFrame(animate);
+    };
+
+    frameId = window.requestAnimationFrame(animate);
+    return () => {
+      if (frameId !== 0) {
+        window.cancelAnimationFrame(frameId);
+      }
+    };
+  }, [effectiveViewModeDefinition.presentation, gridZoom]);
+
   const activeGridMetrics = useMemo(
-    () => (effectiveViewModeDefinition.presentation === 'grid' ? getExplorerGridMetricsForZoom(gridZoom) : effectiveViewModeDefinition.grid),
-    [effectiveViewModeDefinition, gridZoom],
+    () => (effectiveViewModeDefinition.presentation === 'grid' ? getExplorerGridMetricsForZoom(renderedGridZoom) : effectiveViewModeDefinition.grid),
+    [effectiveViewModeDefinition, renderedGridZoom],
   );
   const activeRowMetrics = effectiveViewModeDefinition.rows;
   const activeNewItemHeight = effectiveViewModeDefinition.presentation === 'grid'
