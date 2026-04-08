@@ -9,7 +9,7 @@
  */
 
 import React, {
-  Suspense, useState, useEffect, useRef, useCallback, useMemo, useId,
+  Suspense, useState, useEffect, useRef, useCallback, useMemo, useId, type CSSProperties,
 } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -34,6 +34,13 @@ import {
   stepAdaptiveSemanticDensity,
   type AdaptiveSemanticDensityStopDefinition,
 } from '../config/explorerExperimentalModes';
+import {
+  applyExplorerThemeToAdaptiveDensityStop,
+  applyExplorerThemeToGridMetrics,
+  applyExplorerThemeToRowMetrics,
+  resolveExplorerThemeRecipe,
+  type ResolvedExplorerThemeRecipe,
+} from '../config/explorerTheme';
 import { getFolderIconSrc } from '../config/folderIcons';
 import { getBuiltInIconTheme, resolveFileIconSrc, resolveIconSrc } from '../config/iconTheme';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
@@ -210,6 +217,74 @@ const EXP = {
   selected:'var(--overlay-bg-selection)', selBord: 'var(--overlay-accent)',
   red:     'var(--overlay-danger)', green:   'var(--overlay-success)', yellow:  'var(--overlay-warning)',
 };
+
+interface ExplorerEntrySurfaceState {
+  background: string;
+  borderColor: string;
+  boxShadow: string;
+  transform: string;
+}
+
+function getExplorerEntryStateSurface(
+  explorerTheme: ResolvedExplorerThemeRecipe,
+  state: 'idle' | 'selected' | 'drop',
+): ExplorerEntrySurfaceState {
+  if (state === 'idle') {
+    return {
+      background: 'transparent',
+      borderColor: 'transparent',
+      boxShadow: 'none',
+      transform: 'translateY(0)',
+    };
+  }
+
+  if (state === 'drop') {
+    return {
+      background: 'var(--overlay-explorer-item-drop-bg)',
+      borderColor: 'var(--overlay-explorer-item-drop-border)',
+      boxShadow: explorerTheme.selectionStyle === 'glow'
+        ? 'var(--overlay-explorer-item-focus-shadow)'
+        : 'none',
+      transform: 'translateY(0)',
+    };
+  }
+
+  return {
+    background: explorerTheme.selectionStyle === 'outline'
+      ? 'transparent'
+      : 'var(--overlay-explorer-item-selected-bg)',
+    borderColor: 'var(--overlay-explorer-item-selected-border)',
+    boxShadow: explorerTheme.selectionStyle === 'glow'
+      ? 'var(--overlay-explorer-item-focus-shadow)'
+      : 'none',
+    transform: 'translateY(0)',
+  };
+}
+
+function getExplorerHoverSurface(
+  explorerTheme: ResolvedExplorerThemeRecipe,
+): ExplorerEntrySurfaceState {
+  return {
+    background: 'var(--overlay-explorer-item-hover-bg)',
+    borderColor: 'var(--overlay-explorer-item-hover-border)',
+    boxShadow: explorerTheme.hoverStyle === 'glow'
+      ? 'var(--overlay-explorer-item-focus-shadow)'
+      : 'none',
+    transform: explorerTheme.hoverStyle === 'lift' || explorerTheme.hoverStyle === 'glow'
+      ? 'translateY(calc(var(--overlay-explorer-hover-lift) * -1))'
+      : 'translateY(0)',
+  };
+}
+
+function applyExplorerEntrySurface(
+  target: HTMLElement,
+  surface: ExplorerEntrySurfaceState,
+): void {
+  target.style.background = surface.background;
+  target.style.borderColor = surface.borderColor;
+  target.style.boxShadow = surface.boxShadow;
+  target.style.transform = surface.transform;
+}
 
 const EXT_TYPE_LABEL: Record<string, string> = {
   rs: 'Rust',
@@ -683,8 +758,8 @@ function ContextMenu({ state, items, onClose }: { state: ContextMenuState; items
   return (
     <div ref={ref} style={{
       position:'fixed', left:state.x, top:state.y, zIndex:9999, opacity: 0,
-      background:'#1a1c25', border:`1px solid ${EXP.border}`,
-      borderRadius:8, boxShadow:'0 16px 48px rgba(0,0,0,0.8)',
+      background:'var(--overlay-explorer-preview-bg)', border:'1px solid var(--overlay-explorer-preview-border)',
+      borderRadius:'var(--overlay-explorer-panel-radius)', boxShadow:'0 16px 48px rgba(0,0,0,0.8)',
       minWidth:210, padding:'4px 0', fontFamily:'Inter,system-ui,sans-serif',
     }}>
       {items.map((item, i) => item.divider
@@ -697,7 +772,7 @@ function ContextMenu({ state, items, onClose }: { state: ContextMenuState; items
               cursor:'pointer', color:item.danger ? EXP.red : EXP.text,
               fontSize:12, textAlign:'left',
             }}
-            onMouseEnter={e => (e.currentTarget.style.background = item.danger ? 'rgba(248,113,113,0.1)' : 'rgba(255,255,255,0.06)')}
+            onMouseEnter={e => (e.currentTarget.style.background = item.danger ? 'rgba(248,113,113,0.1)' : 'var(--overlay-explorer-chip-active-bg)')}
             onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
           >
             <span style={{ opacity:0.7, display:'flex' }}>{item.icon}</span>
@@ -903,6 +978,7 @@ function PreviewPanel({
   onCopyPath,
   viewMode,
   onViewModeChange,
+  explorerTheme,
 }: {
   preview: PreviewState;
   width: number;
@@ -912,6 +988,7 @@ function PreviewPanel({
   onCopyPath: (path: string) => void;
   viewMode: ExplorerDocumentViewMode;
   onViewModeChange: (mode: ExplorerDocumentViewMode) => void;
+  explorerTheme: ResolvedExplorerThemeRecipe;
 }) {
   const dragging = useRef(false);
   const startX   = useRef(0);
@@ -929,7 +1006,7 @@ function PreviewPanel({
     const move = (e: MouseEvent) => {
       if (!dragging.current) return;
       const delta = startX.current - e.clientX; // dragging left grows the panel
-      onWidthChange(Math.max(220, Math.min(800, startW.current + delta)));
+      onWidthChange(Math.max(220, Math.min(920, startW.current + delta)));
     };
     const up = () => { dragging.current = false; };
     window.addEventListener('mousemove', move);
@@ -944,9 +1021,36 @@ function PreviewPanel({
   const previewTitle = preview.type === 'none' ? 'Preview' : preview.name;
   const copyPathLabel = copiedPath === preview.path ? 'Copied' : 'Copy Path';
   const supportsRenderedPreview = preview.type === 'text' && preview.renderKind !== 'none';
+  const previewShellStyle: CSSProperties = explorerTheme.previewStyle === 'attached'
+    ? {
+        width,
+        background: 'var(--overlay-explorer-preview-bg)',
+        borderLeft: '1px solid var(--overlay-explorer-preview-border)',
+        display: 'flex',
+        flexDirection: 'column',
+        flexShrink: 0,
+        overflow: 'hidden',
+        position: 'relative',
+      }
+    : {
+        width,
+        margin: 'var(--overlay-explorer-chrome-inset)',
+        marginLeft: 0,
+        background: 'var(--overlay-explorer-preview-bg)',
+        border: '1px solid var(--overlay-explorer-preview-border)',
+        borderRadius: 'var(--overlay-explorer-panel-radius)',
+        boxShadow: 'var(--overlay-explorer-toolbar-shadow)',
+        backdropFilter: explorerTheme.previewStyle === 'glass' ? 'blur(18px)' : 'none',
+        WebkitBackdropFilter: explorerTheme.previewStyle === 'glass' ? 'blur(18px)' : 'none',
+        display: 'flex',
+        flexDirection: 'column',
+        flexShrink: 0,
+        overflow: 'hidden',
+        position: 'relative',
+      };
 
   return (
-    <div style={{ width, background:EXP.panel, borderLeft:`1px solid ${EXP.border}`, display:'flex', flexDirection:'column', flexShrink:0, overflow:'hidden', position:'relative' }}>
+    <div style={previewShellStyle}>
       {/* Drag handle */}
       <div
         onMouseDown={onMouseDown}
@@ -959,9 +1063,9 @@ function PreviewPanel({
         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
       />
       {/* Header */}
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:10, padding:'8px 12px 8px 16px', borderBottom:`1px solid ${EXP.border}`, background:EXP.sidebar, flexShrink:0 }}>
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:10, padding:'8px 12px 8px 16px', borderBottom:'1px solid var(--overlay-explorer-preview-border)', background:'var(--overlay-explorer-preview-header-bg)', flexShrink:0 }}>
         <div style={{ minWidth:0, flex:1 }}>
-          <div style={{ fontSize:11, color:EXP.text, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+          <div style={{ fontSize:'var(--overlay-explorer-toolbar-font-size)', color:EXP.text, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
             {previewTitle}
           </div>
           {preview.type !== 'none' && (
@@ -975,7 +1079,7 @@ function PreviewPanel({
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
           {supportsRenderedPreview && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: 2, borderRadius: 7, border: `1px solid ${EXP.border}`, background: 'rgba(255,255,255,0.03)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: 2, borderRadius: 'var(--overlay-explorer-control-radius)', border: '1px solid var(--overlay-explorer-chip-border)', background: 'var(--overlay-explorer-chip-bg)' }}>
               {([
                 { id: 'edit', label: 'Edit' },
                 { id: 'preview', label: 'Preview' },
@@ -988,13 +1092,13 @@ function PreviewPanel({
                     onClick={() => onViewModeChange(option.id)}
                     style={{
                       border: 'none',
-                      borderRadius: 5,
+                      borderRadius: 'var(--overlay-explorer-control-radius)',
                       cursor: 'pointer',
                       padding: '4px 8px',
                       fontSize: 10,
                       fontWeight: 700,
                       color: active ? EXP.text : EXP.muted,
-                      background: active ? `${EXP.accent}22` : 'transparent',
+                      background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'transparent',
                     }}
                   >
                     {option.label}
@@ -1009,7 +1113,7 @@ function PreviewPanel({
                 onCopyPath(preview.path);
                 setCopiedPath(preview.path);
               }}
-              style={{ display:'flex', alignItems:'center', gap:4, background:'none', border:`1px solid ${EXP.border}`, borderRadius:6, cursor:'pointer', color:EXP.muted, padding:'4px 8px', fontSize:10 }}
+              style={{ display:'flex', alignItems:'center', gap:4, background:'var(--overlay-explorer-chip-bg)', border:'1px solid var(--overlay-explorer-chip-border)', borderRadius:'var(--overlay-explorer-control-radius)', cursor:'pointer', color:EXP.muted, padding:'4px 8px', fontSize:10 }}
             >
               <Copy size={11} />
               {copyPathLabel}
@@ -1025,7 +1129,7 @@ function PreviewPanel({
             <img
               src={preview.content}   /* data-URI — always works */
               alt="preview"
-              style={{ maxWidth:'100%', maxHeight:'100%', objectFit:'contain', borderRadius:6, boxShadow:'0 4px 24px rgba(0,0,0,0.6)' }}
+              style={{ maxWidth:'100%', maxHeight:'100%', objectFit:'contain', borderRadius:'var(--overlay-explorer-control-radius)', boxShadow:'0 4px 24px rgba(0,0,0,0.6)' }}
             />
           </div>
         )}
@@ -1056,7 +1160,7 @@ function PreviewPanel({
         )}
       </div>
       {preview.type === 'text' && (
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, padding:'4px 10px', borderTop:`1px solid ${EXP.border}`, background:EXP.sidebar, fontSize:10, color:EXP.muted }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, padding:'4px 10px', borderTop:'1px solid var(--overlay-explorer-preview-border)', background:'var(--overlay-explorer-preview-header-bg)', fontSize:'var(--overlay-explorer-status-font-size)', color:EXP.muted }}>
           <span>{preview.content.length} chars · {preview.content.split(/\s+/).filter(Boolean).length} words · {preview.content.split('\n').length} lines</span>
           <span style={{ color: preview.error ? EXP.red : preview.isDirty ? EXP.yellow : EXP.green }}>
             {preview.error ? 'Save failed' : preview.isSaving ? 'Saving…' : preview.isDirty ? 'Pending auto-save' : 'Auto-saved'}
@@ -1069,7 +1173,7 @@ function PreviewPanel({
 
 function DocumentPreviewFallback({ label }: { label: string }) {
   return (
-    <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', background: '#171a22', color: EXP.muted, fontSize: 11 }}>
+    <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', background: 'var(--overlay-explorer-preview-bg)', color: EXP.muted, fontSize: 11 }}>
       {label}
     </div>
   );
@@ -1083,7 +1187,7 @@ function ModelPreviewFallback({
   format: ModelPreviewFormat;
 }) {
   return (
-    <div style={{ width: '100%', height: '100%', background: '#090d12', display: 'grid', placeItems: 'center' }}>
+    <div style={{ width: '100%', height: '100%', background: 'var(--overlay-explorer-preview-bg)', display: 'grid', placeItems: 'center' }}>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: EXP.muted, fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
         <Loader size={16} style={{ animation: 'spin 1s linear infinite' }} />
         <span>Loading {format.toUpperCase()} Preview</span>
@@ -1110,7 +1214,7 @@ function RenameInput({ state, onCommit, onCancel }: { state: RenameState; onComm
       onBlur={() => val.trim() ? onCommit(val.trim()) : onCancel()}
       onKeyDown={e => { if (e.key==='Enter') { e.preventDefault(); val.trim() ? onCommit(val.trim()) : onCancel(); } if (e.key==='Escape') onCancel(); }}
       onClick={e => e.stopPropagation()}
-      style={{ background:'#1e2130', border:`1px solid ${EXP.accent}`, borderRadius:4, color:EXP.text, fontSize:12, padding:'2px 6px', outline:'none', width:'100%', boxSizing:'border-box' }}
+      style={{ background:'var(--overlay-explorer-input-bg)', border:'1px solid var(--overlay-explorer-input-border)', borderRadius:'var(--overlay-explorer-control-radius)', color:EXP.text, fontSize:12, padding:'2px 6px', outline:'none', width:'100%', boxSizing:'border-box' }}
     />
   );
 }
@@ -1120,7 +1224,7 @@ function RenameInput({ state, onCommit, onCancel }: { state: RenameState; onComm
 function DeleteDialog({ entry, onConfirm, onCancel }: { entry: FileEntry; onConfirm: () => void; onCancel: () => void }) {
   return (
     <div style={{ position:'fixed', inset:0, zIndex:10000, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center' }}>
-      <div style={{ background:'#1a1c25', border:`1px solid ${EXP.border}`, borderRadius:12, padding:24, minWidth:320, boxShadow:'0 24px 64px rgba(0,0,0,0.9)' }}>
+      <div style={{ background:'var(--overlay-explorer-preview-bg)', border:'1px solid var(--overlay-explorer-preview-border)', borderRadius:'var(--overlay-explorer-panel-radius)', padding:24, minWidth:320, boxShadow:'0 24px 64px rgba(0,0,0,0.9)' }}>
         <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
           <AlertTriangle size={18} style={{ color:EXP.red }} />
           <span style={{ color:EXP.text, fontWeight:600, fontSize:14 }}>Delete Permanently</span>
@@ -1129,8 +1233,8 @@ function DeleteDialog({ entry, onConfirm, onCancel }: { entry: FileEntry; onConf
           Delete <strong style={{ color:EXP.text }}>{entry.name}</strong>? This cannot be undone.
         </p>
         <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
-          <button onClick={onCancel} style={{ background:'rgba(255,255,255,0.06)', border:`1px solid ${EXP.border}`, borderRadius:6, color:EXP.text, padding:'6px 14px', fontSize:12, cursor:'pointer' }}>Cancel</button>
-          <button onClick={onConfirm} style={{ background:'rgba(248,113,113,0.2)', border:`1px solid rgba(248,113,113,0.4)`, borderRadius:6, color:EXP.red, padding:'6px 14px', fontSize:12, cursor:'pointer', fontWeight:600 }}>Delete</button>
+          <button onClick={onCancel} style={{ background:'var(--overlay-explorer-chip-bg)', border:'1px solid var(--overlay-explorer-chip-border)', borderRadius:'var(--overlay-explorer-control-radius)', color:EXP.text, padding:'6px 14px', fontSize:12, cursor:'pointer' }}>Cancel</button>
+          <button onClick={onConfirm} style={{ background:'rgba(248,113,113,0.2)', border:'1px solid rgba(248,113,113,0.4)', borderRadius:'var(--overlay-explorer-control-radius)', color:EXP.red, padding:'6px 14px', fontSize:12, cursor:'pointer', fontWeight:600 }}>Delete</button>
         </div>
       </div>
     </div>
@@ -1216,6 +1320,10 @@ export function FileExplorer({
     [explorerInstanceId],
   );
   const isCompactDock = layoutMode === 'compact-dock';
+  const explorerTheme = useMemo(
+    () => resolveExplorerThemeRecipe(appearance),
+    [appearance],
+  );
   const sidebarBounds = getExplorerRailWidthBounds(isCompactDock);
   const uiFont = appearance?.fonts.ui ?? 'Inter,system-ui,sans-serif';
   const themeIconTheme = appearance?.theme.assets?.iconTheme ?? getBuiltInIconTheme();
@@ -1238,14 +1346,14 @@ export function FileExplorer({
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const width = typeof initialSession.sidebarWidth === 'number'
       ? initialSession.sidebarWidth
-      : sidebarBounds.defaultWidth;
+      : Math.round(explorerTheme.metrics.railWidth);
     return Math.max(sidebarBounds.minWidth, Math.min(sidebarBounds.maxWidth, width));
   });
   const [previewWidth, setPreviewWidth] = useState(() => {
     if (typeof initialSession.previewWidth === 'number') {
-      return Math.max(220, Math.min(800, initialSession.previewWidth));
+      return Math.max(220, Math.min(920, initialSession.previewWidth));
     }
-    return 380;
+    return Math.max(220, Math.min(920, Math.round(explorerTheme.metrics.previewWidth)));
   });
   const [entries,      setEntries]      = useState<FileEntry[]>([]);
   const [entrySizes,   setEntrySizes]   = useState<Record<string, EntryStorageInfo>>({});
@@ -1307,7 +1415,23 @@ export function FileExplorer({
     clientHeight: 0,
     clientWidth: 0,
   });
-  const isAdaptiveExperimentalEnabled = !isCompactDock && search.trim().length === 0 && experimentalViewMode === 'adaptive-semantic-grid';
+  const isAdaptiveExperimentalEnabled = !isCompactDock
+    && search.trim().length === 0
+    && (
+      experimentalViewMode === 'adaptive-semantic-grid'
+      || (
+        experimentalViewMode === 'off'
+        && explorerTheme.preferredExperimentalViewMode === 'adaptive-semantic-grid'
+      )
+    );
+
+  useEffect(() => {
+    setSidebarWidth(current => Math.max(sidebarBounds.minWidth, Math.min(sidebarBounds.maxWidth, current)));
+  }, [sidebarBounds.maxWidth, sidebarBounds.minWidth]);
+
+  useEffect(() => {
+    setPreviewWidth(current => Math.max(220, Math.min(920, current)));
+  }, [explorerTheme.metrics.previewWidth]);
 
   const showExperimentalHud = useCallback(() => {
     setExperimentalHudVisible(true);
@@ -2783,17 +2907,33 @@ export function FileExplorer({
     } catch(e) { setError(String(e)); }
   };
 
+  const themedViewMode = useMemo(
+    () => (
+      viewMode === 'details' && explorerTheme.preferredViewMode
+        ? explorerTheme.preferredViewMode
+        : viewMode
+    ),
+    [explorerTheme.preferredViewMode, viewMode],
+  );
+  const themedExperimentalViewMode = useMemo(
+    () => (
+      experimentalViewMode === 'off' && explorerTheme.preferredExperimentalViewMode
+        ? explorerTheme.preferredExperimentalViewMode
+        : experimentalViewMode
+    ),
+    [experimentalViewMode, explorerTheme.preferredExperimentalViewMode],
+  );
   const selectedViewModeDefinition = useMemo(
-    () => getExplorerViewModeDefinition(viewMode),
-    [viewMode],
+    () => getExplorerViewModeDefinition(themedViewMode),
+    [themedViewMode],
   );
   const selectedExperimentalModeDefinition = useMemo(
-    () => (experimentalViewMode === 'off'
+    () => (themedExperimentalViewMode === 'off'
       ? null
-      : getExplorerExperimentalModeDefinition(experimentalViewMode)),
-    [experimentalViewMode],
+      : getExplorerExperimentalModeDefinition(themedExperimentalViewMode)),
+    [themedExperimentalViewMode],
   );
-  const effectiveViewMode = resolveEffectiveExplorerViewMode(viewMode, {
+  const effectiveViewMode = resolveEffectiveExplorerViewMode(themedViewMode, {
     isCompactDock,
     isSearchActive,
   });
@@ -2801,35 +2941,44 @@ export function FileExplorer({
     () => (
       !isCompactDock
       && !isSearchActive
-      && experimentalViewMode === 'adaptive-semantic-grid'
-        ? experimentalViewMode
+      && themedExperimentalViewMode === 'adaptive-semantic-grid'
+        ? themedExperimentalViewMode
         : 'off'
     ),
-    [experimentalViewMode, isCompactDock, isSearchActive],
+    [isCompactDock, isSearchActive, themedExperimentalViewMode],
   );
   const adaptiveDensityStop = useMemo<AdaptiveSemanticDensityStopDefinition | null>(
-    () => (experimentalViewMode === 'adaptive-semantic-grid'
-      ? getAdaptiveSemanticDensityStop(experimentalDensity)
+    () => (themedExperimentalViewMode === 'adaptive-semantic-grid'
+      ? applyExplorerThemeToAdaptiveDensityStop(getAdaptiveSemanticDensityStop(experimentalDensity), explorerTheme)
       : null),
-    [experimentalDensity, experimentalViewMode],
+    [experimentalDensity, explorerTheme, themedExperimentalViewMode],
   );
   const effectiveViewModeDefinition = useMemo(
     () => getExplorerViewModeDefinition(effectiveViewMode),
     [effectiveViewMode],
   );
   const activeGridMetrics = useMemo(
-    () => (effectiveViewModeDefinition.presentation === 'grid' ? getExplorerGridMetricsForZoom(gridZoom) : effectiveViewModeDefinition.grid),
-    [effectiveViewModeDefinition, gridZoom],
+    () => (
+      effectiveViewModeDefinition.presentation === 'grid'
+        ? applyExplorerThemeToGridMetrics(getExplorerGridMetricsForZoom(gridZoom), explorerTheme)
+        : (effectiveViewModeDefinition.grid
+            ? applyExplorerThemeToGridMetrics(effectiveViewModeDefinition.grid, explorerTheme)
+            : effectiveViewModeDefinition.grid)
+    ),
+    [effectiveViewModeDefinition, explorerTheme, gridZoom],
   );
-  const activeRowMetrics = effectiveViewModeDefinition.rows;
+  const activeRowMetrics = useMemo(
+    () => applyExplorerThemeToRowMetrics(effectiveViewModeDefinition.rows, explorerTheme),
+    [effectiveViewModeDefinition.rows, explorerTheme],
+  );
   const activeNewItemHeight = effectiveViewModeDefinition.presentation === 'grid'
     ? activeGridMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT
     : activeRowMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT;
   const hasPreview = !isCompactDock && preview.type !== 'none';
   const searchModeLabel = searchIncludeContent ? 'Recursive search + text' : 'Recursive search (names only)';
   const gridZoomPercent = useMemo(
-    () => (isExplorerGridMode(viewMode) ? getExplorerGridZoomPercent(gridZoom) : null),
-    [gridZoom, viewMode],
+    () => (isExplorerGridMode(themedViewMode) ? getExplorerGridZoomPercent(gridZoom) : null),
+    [gridZoom, themedViewMode],
   );
 
   const showZoomHud = useCallback(() => {
@@ -2844,11 +2993,115 @@ export function FileExplorer({
   }, []);
 
   const experimentalDensityPercent = useMemo(
-    () => (experimentalViewMode === 'adaptive-semantic-grid'
+    () => (themedExperimentalViewMode === 'adaptive-semantic-grid'
       ? getAdaptiveSemanticDensityPercent(experimentalDensity)
       : null),
-    [experimentalDensity, experimentalViewMode],
+    [experimentalDensity, themedExperimentalViewMode],
   );
+  const effectiveRailPosition = isCompactDock ? 'left' : explorerTheme.railPosition;
+  const idleEntrySurface = useMemo(
+    () => getExplorerEntryStateSurface(explorerTheme, 'idle'),
+    [explorerTheme],
+  );
+  const selectedEntrySurface = useMemo(
+    () => getExplorerEntryStateSurface(explorerTheme, 'selected'),
+    [explorerTheme],
+  );
+  const dropEntrySurface = useMemo(
+    () => getExplorerEntryStateSurface(explorerTheme, 'drop'),
+    [explorerTheme],
+  );
+  const hoverEntrySurface = useMemo(
+    () => getExplorerHoverSurface(explorerTheme),
+    [explorerTheme],
+  );
+  const explorerRootStyle = useMemo<CSSProperties>(() => ({
+    ...(explorerTheme.cssVars as CSSProperties),
+    flex: 1,
+    display: 'flex',
+    overflow: 'hidden',
+    background: 'var(--overlay-explorer-root-bg)',
+    color: EXP.text,
+    fontFamily: uiFont,
+    position: 'relative',
+    flexDirection: effectiveRailPosition === 'right' ? 'row-reverse' : 'row',
+  }), [effectiveRailPosition, explorerTheme.cssVars, uiFont]);
+  const sidebarPaneStyle = useMemo<CSSProperties>(() => ({
+    borderRight: effectiveRailPosition === 'left'
+      ? '1px solid var(--overlay-explorer-sidebar-border)'
+      : 'none',
+    borderLeft: effectiveRailPosition === 'right'
+      ? '1px solid var(--overlay-explorer-sidebar-border)'
+      : 'none',
+    background: 'var(--overlay-explorer-sidebar-bg)',
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: 0,
+  }), [effectiveRailPosition]);
+  const toolbarContainerStyle = useMemo<CSSProperties>(() => {
+    const usesFloatingShell = explorerTheme.toolbarStyle === 'floating' || explorerTheme.toolbarStyle === 'glass';
+    const usesInset = usesFloatingShell || explorerTheme.toolbarStyle === 'minimal';
+    return {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 'var(--overlay-explorer-toolbar-gap)',
+      padding: 'var(--overlay-explorer-toolbar-padding)',
+      background: explorerTheme.toolbarStyle === 'minimal'
+        ? 'transparent'
+        : 'var(--overlay-explorer-toolbar-bg)',
+      borderBottom: usesFloatingShell || explorerTheme.toolbarStyle === 'minimal'
+        ? 'none'
+        : '1px solid var(--overlay-explorer-toolbar-border)',
+      border: usesFloatingShell ? '1px solid var(--overlay-explorer-toolbar-border)' : 'none',
+      borderRadius: usesFloatingShell ? 'var(--overlay-explorer-panel-radius)' : 0,
+      margin: usesInset ? 'var(--overlay-explorer-chrome-inset)' : 0,
+      marginBottom: 0,
+      boxShadow: usesFloatingShell ? 'var(--overlay-explorer-toolbar-shadow)' : 'none',
+      backdropFilter: explorerTheme.toolbarStyle === 'glass' || explorerTheme.toolbarStyle === 'floating'
+        ? 'blur(18px)'
+        : 'none',
+      WebkitBackdropFilter: explorerTheme.toolbarStyle === 'glass' || explorerTheme.toolbarStyle === 'floating'
+        ? 'blur(18px)'
+        : 'none',
+      flexShrink: 0,
+    };
+  }, [explorerTheme.toolbarStyle]);
+  const mainColumnStyle = useMemo<CSSProperties>(() => ({
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    background: 'var(--overlay-explorer-content-bg)',
+  }), []);
+  const fileAreaStyle = useMemo<CSSProperties>(() => ({
+    flex: 1,
+    display: 'flex',
+    overflow: 'hidden',
+    background: 'var(--overlay-explorer-content-bg)',
+  }), []);
+  const shouldRenderStatusBar = explorerTheme.statusBarStyle !== 'hidden';
+  const statusBarStyle = useMemo<CSSProperties>(() => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    padding: '3px 12px',
+    background: 'var(--overlay-explorer-status-bg)',
+    borderTop: '1px solid var(--overlay-explorer-status-border)',
+    fontSize: 'var(--overlay-explorer-status-font-size)',
+    color: EXP.muted,
+    flexShrink: 0,
+    margin: explorerTheme.statusBarStyle === 'floating'
+      ? '0 var(--overlay-explorer-chrome-inset) var(--overlay-explorer-chrome-inset)'
+      : 0,
+    borderRadius: explorerTheme.statusBarStyle === 'floating'
+      ? 'var(--overlay-explorer-panel-radius)'
+      : 0,
+    boxShadow: explorerTheme.statusBarStyle === 'floating'
+      ? 'var(--overlay-explorer-toolbar-shadow)'
+      : 'none',
+    backdropFilter: explorerTheme.statusBarStyle === 'floating' ? 'blur(18px)' : 'none',
+    WebkitBackdropFilter: explorerTheme.statusBarStyle === 'floating' ? 'blur(18px)' : 'none',
+  }), [explorerTheme.statusBarStyle]);
 
   useEffect(() => () => {
     if (zoomHudTimerRef.current != null) {
@@ -2963,7 +3216,7 @@ export function FileExplorer({
         return;
       }
 
-      let nextMode = viewMode;
+      let nextMode = themedViewMode;
       let nextGridZoom = gridZoom;
 
       for (let stepIndex = 0; stepIndex < stepCount; stepIndex += 1) {
@@ -2986,7 +3239,7 @@ export function FileExplorer({
         }
       }
 
-      if (nextMode !== viewMode || nextGridZoom !== gridZoom) {
+      if (nextMode !== themedViewMode || nextGridZoom !== gridZoom) {
         updateExplorerSettings(
           isExplorerGridMode(nextMode)
             ? { viewMode: nextMode, gridZoom: nextGridZoom }
@@ -3008,8 +3261,8 @@ export function FileExplorer({
     isCompactDock,
     showExperimentalHud,
     showZoomHud,
+    themedViewMode,
     updateExplorerSettings,
-    viewMode,
   ]);
 
   useEffect(() => {
@@ -3386,12 +3639,24 @@ export function FileExplorer({
             gap: 12,
             minHeight: densityStop.table.rowHeight,
             padding: densityStop.table.showRichMeta ? '8px 14px' : '6px 14px',
-            borderBottom: `1px solid ${EXP.border}`,
+            borderBottom: '1px solid var(--overlay-explorer-toolbar-border)',
             borderRadius: 10,
-            background: isDrop ? `${accent}18` : isSel ? `${accent}11` : 'rgba(255,255,255,0.025)',
-            border: `1px solid ${isSel ? `${accent}44` : 'rgba(255,255,255,0.05)'}`,
+            background: isDrop ? dropEntrySurface.background : isSel ? selectedEntrySurface.background : 'var(--overlay-explorer-chip-bg)',
+            border: `1px solid ${isDrop ? dropEntrySurface.borderColor : isSel ? selectedEntrySurface.borderColor : 'var(--overlay-explorer-chip-border)'}`,
             cursor: 'pointer',
             userSelect: 'none',
+            boxShadow: isDrop ? dropEntrySurface.boxShadow : isSel ? selectedEntrySurface.boxShadow : 'none',
+            transform: isDrop ? dropEntrySurface.transform : isSel ? selectedEntrySurface.transform : 'translateY(0)',
+          }}
+          onMouseEnter={e => {
+            if (!isSel && !isDrop) {
+              applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, hoverEntrySurface);
+            }
+          }}
+          onMouseLeave={e => {
+            if (!isSel && !isDrop) {
+              applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, idleEntrySurface);
+            }
           }}
         >
           <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -3457,14 +3722,14 @@ export function FileExplorer({
         style={{
           minHeight,
           borderRadius: isCards ? 18 : 14,
-          border: `1px solid ${isDrop ? accent : isSel ? `${accent}55` : 'rgba(255,255,255,0.05)'}`,
+          border: `1px solid ${isDrop ? dropEntrySurface.borderColor : isSel ? selectedEntrySurface.borderColor : 'var(--overlay-explorer-chip-border)'}`,
           background: isDrop
-            ? `${accent}18`
+            ? dropEntrySurface.background
             : isSel
-              ? `${accent}12`
+              ? selectedEntrySurface.background
               : options.dominant && entry.is_dir
-                ? 'linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02))'
-                : 'rgba(255,255,255,0.025)',
+                ? 'linear-gradient(180deg, color-mix(in srgb, white 10%, transparent), color-mix(in srgb, white 4%, transparent))'
+                : 'var(--overlay-explorer-chip-bg)',
           padding: isCards ? '14px' : (iconSize <= 30 ? '10px 8px' : '12px 10px'),
           display: 'flex',
           flexDirection: isCards ? 'row' : 'column',
@@ -3475,6 +3740,18 @@ export function FileExplorer({
           overflow: 'hidden',
           userSelect: 'none',
           boxSizing: 'border-box',
+          boxShadow: isDrop ? dropEntrySurface.boxShadow : isSel ? selectedEntrySurface.boxShadow : 'none',
+          transform: isDrop ? dropEntrySurface.transform : isSel ? selectedEntrySurface.transform : 'translateY(0)',
+        }}
+        onMouseEnter={e => {
+          if (!isSel && !isDrop) {
+            applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, hoverEntrySurface);
+          }
+        }}
+        onMouseLeave={e => {
+          if (!isSel && !isDrop) {
+            applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, idleEntrySurface);
+          }
         }}
       >
         <div
@@ -3620,7 +3897,7 @@ export function FileExplorer({
   return (
     <div
       data-overlay-explorer
-      style={{ flex:1, display:'flex', overflow:'hidden', background:EXP.bg, color:EXP.text, fontFamily:uiFont, position:'relative' }}
+      style={explorerRootStyle}
       onClick={() => { setSelected(new Set()); setCtxMenu(c => ({...c, visible:false})); }}
       onContextMenu={e => { e.preventDefault(); setCtxMenu(c => ({...c, visible:false})); }}
     >
@@ -3631,16 +3908,12 @@ export function FileExplorer({
         maxSize={sidebarBounds.maxWidth}
         onSizeChange={setSidebarWidth}
         borderColor={`${accent}55`}
-        style={{
-          borderRight: `1px solid ${EXP.border}`,
-          background: EXP.sidebar,
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: 0,
-        }}
+        handleSide={effectiveRailPosition === 'right' ? 'left' : 'right'}
+        style={sidebarPaneStyle}
       >
         <ExplorerSideRail
           accent={accent}
+          brandLabel={explorerTheme.railBrandLabel}
           sidebarWidth={sidebarWidth}
           currentPath={currentPath}
           drives={drives}
@@ -3654,18 +3927,18 @@ export function FileExplorer({
       </ResizablePane>
 
       {/* ══ MAIN ══ */}
-      <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+      <div style={mainColumnStyle}>
 
         {/* Toolbar */}
-        <div style={{ display:'flex', alignItems:'center', gap:6, padding:isCompactDock ? '6px 8px' : '6px 10px', background:EXP.panel, borderBottom:`1px solid ${EXP.border}`, flexShrink:0 }}>
+        <div style={toolbarContainerStyle}>
           {[
             { icon:<ChevronLeft size={14}/>,  action:goBack,    disabled:historyIdx<=0,                  title:'Back' },
             { icon:<ChevronRight size={14}/>, action:goForward, disabled:historyIdx>=history.length-1,   title:'Forward' },
             { icon:<ArrowUp size={14}/>,      action:goUp,      disabled:false,                          title:'Up' },
           ].map((btn, i) => (
             <button key={i} onClick={btn.action} disabled={btn.disabled} title={btn.title}
-              style={{ background:'none', border:'none', cursor:btn.disabled?'default':'pointer', color:btn.disabled?EXP.muted2:EXP.muted, padding:5, borderRadius:5, display:'flex', alignItems:'center' }}
-              onMouseEnter={e => !btn.disabled && (e.currentTarget.style.background='rgba(255,255,255,0.06)', e.currentTarget.style.color=EXP.text)}
+              style={{ background:'var(--overlay-explorer-chip-bg)', border:'1px solid transparent', cursor:btn.disabled?'default':'pointer', color:btn.disabled?EXP.muted2:EXP.muted, padding:5, borderRadius:'var(--overlay-explorer-control-radius)', display:'flex', alignItems:'center' }}
+              onMouseEnter={e => !btn.disabled && (e.currentTarget.style.background='var(--overlay-explorer-chip-active-bg)', e.currentTarget.style.color=EXP.text)}
               onMouseLeave={e => (e.currentTarget.style.background='transparent', e.currentTarget.style.color=btn.disabled?EXP.muted2:EXP.muted)}
             >{btn.icon}</button>
           ))}
@@ -3682,9 +3955,9 @@ export function FileExplorer({
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              background: EXP.bg,
-              borderRadius: 6,
-              border: `1px solid ${EXP.border}`,
+              background: 'var(--overlay-explorer-omnibox-bg)',
+              borderRadius: 'var(--overlay-explorer-control-radius)',
+              border: '1px solid var(--overlay-explorer-omnibox-border)',
               padding: '3px 10px',
               overflow: 'hidden',
               cursor: addressEditing ? 'text' : 'pointer',
@@ -3715,7 +3988,7 @@ export function FileExplorer({
                   border: 'none',
                   outline: 'none',
                   color: EXP.text,
-                  fontSize: 11,
+                  fontSize: 'var(--overlay-explorer-breadcrumb-font-size)',
                   minWidth: 0,
                 }}
               />
@@ -3732,13 +4005,20 @@ export function FileExplorer({
                             navigate(c.path);
                           }}
                           style={{
-                            background: 'none',
                             border: 'none',
                             cursor: 'pointer',
                             color: i === crumbs.length - 1 ? EXP.text : EXP.muted,
-                            fontSize: 11,
+                            fontSize: 'var(--overlay-explorer-breadcrumb-font-size)',
                             fontWeight: i === crumbs.length - 1 ? 600 : 400,
-                            padding: '0 2px',
+                            padding: explorerTheme.breadcrumbStyle === 'plain' ? '0 2px' : '3px 8px',
+                            borderRadius: explorerTheme.breadcrumbStyle === 'plain'
+                              ? 4
+                              : 'var(--overlay-explorer-control-radius)',
+                            background: explorerTheme.breadcrumbStyle === 'plain'
+                              ? 'transparent'
+                              : (i === crumbs.length - 1
+                                  ? 'var(--overlay-explorer-chip-active-bg)'
+                                  : 'var(--overlay-explorer-chip-bg)'),
                             whiteSpace: 'nowrap',
                             flexShrink: 0,
                           }}
@@ -3748,7 +4028,7 @@ export function FileExplorer({
                       </React.Fragment>
                     ))
                   ) : (
-                    <span style={{ fontSize: 11, color: EXP.muted, whiteSpace: 'nowrap' }}>Search or enter a path</span>
+                    <span style={{ fontSize: 'var(--overlay-explorer-breadcrumb-font-size)', color: EXP.muted, whiteSpace: 'nowrap' }}>Search or enter a path</span>
                   )}
                 </div>
                 {isSearchActive && (
@@ -3761,9 +4041,9 @@ export function FileExplorer({
                         gap: 6,
                         maxWidth: isCompactDock ? 140 : 260,
                         padding: '2px 8px',
-                        borderRadius: 999,
-                        border: `1px solid ${EXP.border}`,
-                        background: `${accent}12`,
+                        borderRadius: 'var(--overlay-explorer-control-radius)',
+                        border: '1px solid var(--overlay-explorer-chip-border)',
+                        background: 'var(--overlay-explorer-chip-active-bg)',
                         color: EXP.text,
                         fontSize: 10,
                         flexShrink: 0,
@@ -3800,17 +4080,17 @@ export function FileExplorer({
               display: 'flex',
               alignItems: 'center',
               gap: 4,
-              background: searchIncludeContent ? `${accent}22` : 'none',
-              border: `1px solid ${searchIncludeContent ? `${accent}66` : EXP.border}`,
+              background: searchIncludeContent ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
+              border: `1px solid ${searchIncludeContent ? 'var(--overlay-explorer-chip-active-border)' : 'var(--overlay-explorer-chip-border)'}`,
               cursor: 'pointer',
-              color: searchIncludeContent ? accent : EXP.muted,
+              color: searchIncludeContent ? 'var(--overlay-explorer-chip-active-text)' : EXP.muted,
               padding: '4px 8px',
-              borderRadius: 6,
-              fontSize: 11,
+              borderRadius: 'var(--overlay-explorer-control-radius)',
+              fontSize: 'var(--overlay-explorer-toolbar-font-size)',
               flexShrink: 0,
             }}
-            onMouseEnter={e => (e.currentTarget.style.background = searchIncludeContent ? `${accent}28` : 'rgba(255,255,255,0.06)')}
-            onMouseLeave={e => (e.currentTarget.style.background = searchIncludeContent ? `${accent}22` : 'transparent')}
+            onMouseEnter={e => (e.currentTarget.style.background = searchIncludeContent ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-active-bg)')}
+            onMouseLeave={e => (e.currentTarget.style.background = searchIncludeContent ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
           >
             <span style={{ fontWeight: 700, letterSpacing: '0.02em' }}>Aa</span>
             <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Text</span>
@@ -3838,17 +4118,17 @@ export function FileExplorer({
                     display: 'flex',
                     alignItems: 'center',
                     gap: 6,
-                    background: showExperimentalMenu ? `${accent}18` : 'none',
-                    border: `1px solid ${showExperimentalMenu ? `${accent}55` : 'transparent'}`,
+                    background: showExperimentalMenu ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
+                    border: `1px solid ${showExperimentalMenu ? 'var(--overlay-explorer-chip-active-border)' : 'var(--overlay-explorer-chip-border)'}`,
                     cursor: 'pointer',
                     color: showExperimentalMenu ? EXP.text : EXP.muted,
                     padding: '4px 8px',
-                    borderRadius: 7,
+                    borderRadius: 'var(--overlay-explorer-control-radius)',
                   }}
-                  onMouseEnter={e => (e.currentTarget.style.background = showExperimentalMenu ? `${accent}18` : 'rgba(255,255,255,0.06)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = showExperimentalMenu ? `${accent}18` : 'transparent')}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = showExperimentalMenu ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
                 >
-                  <ExplorerExperimentalGlyph accent={accent} active={showExperimentalMenu || experimentalViewMode !== 'off'} />
+                  <ExplorerExperimentalGlyph accent={accent} active={showExperimentalMenu || themedExperimentalViewMode !== 'off'} />
                   <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
                     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
                       {selectedExperimentalModeDefinition?.shortLabel ?? 'Labs'}
@@ -3908,9 +4188,9 @@ export function FileExplorer({
                       right: 0,
                       zIndex: 40,
                       minWidth: 280,
-                      borderRadius: 12,
-                      border: `1px solid ${EXP.border}`,
-                      background: '#1b1f27',
+                      borderRadius: 'var(--overlay-explorer-panel-radius)',
+                      border: '1px solid var(--overlay-explorer-toolbar-border)',
+                      background: 'var(--overlay-explorer-toolbar-bg)',
                       boxShadow: '0 18px 42px rgba(0,0,0,0.42)',
                       padding: 8,
                     }}
@@ -3919,7 +4199,7 @@ export function FileExplorer({
                       <button
                         type="button"
                         role="menuitemradio"
-                        aria-checked={experimentalViewMode === 'off'}
+                        aria-checked={themedExperimentalViewMode === 'off'}
                         onClick={() => {
                           updateExplorerSettings({ experimentalViewMode: 'off' });
                           setShowExperimentalMenu(false);
@@ -3933,14 +4213,14 @@ export function FileExplorer({
                           border: 'none',
                           borderRadius: 8,
                           padding: '8px 10px',
-                          background: experimentalViewMode === 'off' ? `${accent}24` : 'transparent',
+                          background: themedExperimentalViewMode === 'off' ? 'var(--overlay-explorer-chip-active-bg)' : 'transparent',
                           color: EXP.text,
                           cursor: 'pointer',
                           textAlign: 'left',
                         }}
                       >
                         <span style={{ display: 'flex', justifyContent: 'center', paddingTop: 1 }}>
-                          <Puzzle size={14} style={{ color: experimentalViewMode === 'off' ? accent : EXP.muted }} />
+                          <Puzzle size={14} style={{ color: themedExperimentalViewMode === 'off' ? accent : EXP.muted }} />
                         </span>
                         <span>
                           <span style={{ display: 'block', fontSize: 12, fontWeight: 600 }}>Standard Explorer</span>
@@ -3950,7 +4230,7 @@ export function FileExplorer({
                         </span>
                       </button>
                       {explorerExperimentalModes.map(mode => {
-                        const active = experimentalViewMode === mode.id;
+                        const active = themedExperimentalViewMode === mode.id;
                         const disabled = !mode.available;
                         return (
                           <button
@@ -3976,7 +4256,7 @@ export function FileExplorer({
                               border: 'none',
                               borderRadius: 8,
                               padding: '8px 10px',
-                              background: active ? `${accent}24` : 'transparent',
+                              background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'transparent',
                               color: disabled ? EXP.muted2 : EXP.text,
                               cursor: disabled ? 'not-allowed' : 'pointer',
                               textAlign: 'left',
@@ -3984,7 +4264,7 @@ export function FileExplorer({
                             }}
                             onMouseEnter={e => {
                               if (!active && !disabled) {
-                                e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                                e.currentTarget.style.background = 'var(--overlay-explorer-chip-bg)';
                               }
                             }}
                             onMouseLeave={e => {
@@ -4009,10 +4289,10 @@ export function FileExplorer({
                         );
                       })}
                     </div>
-                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${EXP.border}`, fontSize: 10, color: EXP.muted2 }}>
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--overlay-explorer-toolbar-border)', fontSize: 10, color: EXP.muted2 }}>
                       Adaptive Semantic Grid keeps Ctrl/Cmd + wheel inside one semantic density system.
                     </div>
-                    {experimentalViewMode !== 'off' && effectiveExperimentalViewMode === 'off' && (
+                    {themedExperimentalViewMode !== 'off' && effectiveExperimentalViewMode === 'off' && (
                       <div style={{ marginTop: 6, fontSize: 10, color: EXP.muted2 }}>
                         Temporarily falling back to the normal explorer while search is active or the dock is compact.
                       </div>
@@ -4040,15 +4320,15 @@ export function FileExplorer({
                     display: 'flex',
                     alignItems: 'center',
                     gap: 6,
-                    background: showLayoutMenu ? `${accent}18` : 'none',
-                    border: `1px solid ${showLayoutMenu ? `${accent}55` : 'transparent'}`,
+                    background: showLayoutMenu ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
+                    border: `1px solid ${showLayoutMenu ? 'var(--overlay-explorer-chip-active-border)' : 'var(--overlay-explorer-chip-border)'}`,
                     cursor: 'pointer',
                     color: showLayoutMenu ? EXP.text : EXP.muted,
                     padding: '4px 8px',
-                    borderRadius: 7,
+                    borderRadius: 'var(--overlay-explorer-control-radius)',
                   }}
-                  onMouseEnter={e => (e.currentTarget.style.background = showLayoutMenu ? `${accent}18` : 'rgba(255,255,255,0.06)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = showLayoutMenu ? `${accent}18` : 'transparent')}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = showLayoutMenu ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
                 >
                   <ExplorerLayoutGlyph mode={selectedViewModeDefinition} accent={accent} active={showLayoutMenu} />
                   <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
@@ -4110,16 +4390,16 @@ export function FileExplorer({
                       right: 0,
                       zIndex: 40,
                       minWidth: 240,
-                      borderRadius: 12,
-                      border: `1px solid ${EXP.border}`,
-                      background: '#1b1f27',
+                      borderRadius: 'var(--overlay-explorer-panel-radius)',
+                      border: '1px solid var(--overlay-explorer-toolbar-border)',
+                      background: 'var(--overlay-explorer-toolbar-bg)',
                       boxShadow: '0 18px 42px rgba(0,0,0,0.42)',
                       padding: 8,
                     }}
                   >
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       {explorerViewModes.map(mode => {
-                        const active = viewMode === mode.id;
+                        const active = themedViewMode === mode.id;
                         return (
                           <button
                             key={mode.id}
@@ -4144,14 +4424,14 @@ export function FileExplorer({
                               border: 'none',
                               borderRadius: 8,
                               padding: '8px 10px',
-                              background: active ? `${accent}24` : 'transparent',
+                              background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'transparent',
                               color: active ? EXP.text : EXP.muted,
                               cursor: 'pointer',
                               textAlign: 'left',
                             }}
                             onMouseEnter={e => {
                               if (!active) {
-                                e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                                e.currentTarget.style.background = 'var(--overlay-explorer-chip-bg)';
                               }
                             }}
                             onMouseLeave={e => {
@@ -4175,7 +4455,7 @@ export function FileExplorer({
                         );
                       })}
                     </div>
-                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${EXP.border}`, fontSize: 10, color: EXP.muted2 }}>
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--overlay-explorer-toolbar-border)', fontSize: 10, color: EXP.muted2 }}>
                       Ctrl/Cmd + wheel moves through Small, M, L, XL, then row layouts with live zoom feedback.
                     </div>
                   </div>
@@ -4185,34 +4465,34 @@ export function FileExplorer({
           )}
 
           <button onClick={() => updateExplorerSettings({ showHiddenFiles: !showHidden })} title="Toggle hidden files"
-            style={{ background:showHidden?`${accent}22`:'none', border:'none', cursor:'pointer', color:showHidden?accent:EXP.muted, padding:5, borderRadius:5, display:'flex' }}
-            onMouseEnter={e=>(e.currentTarget.style.background='rgba(255,255,255,0.06)')}
-            onMouseLeave={e=>(e.currentTarget.style.background=showHidden?`${accent}22`:'transparent')}
+            style={{ background:showHidden?'var(--overlay-explorer-chip-active-bg)':'var(--overlay-explorer-chip-bg)', border:'1px solid transparent', cursor:'pointer', color:showHidden?'var(--overlay-explorer-chip-active-text)':EXP.muted, padding:5, borderRadius:'var(--overlay-explorer-control-radius)', display:'flex' }}
+            onMouseEnter={e=>(e.currentTarget.style.background='var(--overlay-explorer-chip-active-bg)')}
+            onMouseLeave={e=>(e.currentTarget.style.background=showHidden?'var(--overlay-explorer-chip-active-bg)':'var(--overlay-explorer-chip-bg)')}
           ><Eye size={14}/></button>
 
           <button onClick={refresh} title="Refresh (F5)"
-            style={{ background:'none', border:'none', cursor:'pointer', color:EXP.muted, padding:5, borderRadius:5, display:'flex' }}
-            onMouseEnter={e=>(e.currentTarget.style.background='rgba(255,255,255,0.06)')}
-            onMouseLeave={e=>(e.currentTarget.style.background='transparent')}
+            style={{ background:'var(--overlay-explorer-chip-bg)', border:'1px solid transparent', cursor:'pointer', color:EXP.muted, padding:5, borderRadius:'var(--overlay-explorer-control-radius)', display:'flex' }}
+            onMouseEnter={e=>(e.currentTarget.style.background='var(--overlay-explorer-chip-active-bg)')}
+            onMouseLeave={e=>(e.currentTarget.style.background='var(--overlay-explorer-chip-bg)')}
           ><RefreshCw size={14}/></button>
 
           <div style={{ width:1, height:16, background:EXP.border }} />
 
           <button onClick={() => openNew('folder')} title="New Folder"
-            style={{ display:'flex', alignItems:'center', gap:4, background:'none', border:'none', cursor:'pointer', color:EXP.muted, padding:'4px 7px', borderRadius:5, fontSize:11 }}
-            onMouseEnter={e=>(e.currentTarget.style.background='rgba(255,255,255,0.06)', (e.currentTarget.style.color=EXP.text))}
-            onMouseLeave={e=>(e.currentTarget.style.background='transparent', (e.currentTarget.style.color=EXP.muted))}
+            style={{ display:'flex', alignItems:'center', gap:4, background:'var(--overlay-explorer-chip-bg)', border:'1px solid transparent', cursor:'pointer', color:EXP.muted, padding:'4px 7px', borderRadius:'var(--overlay-explorer-control-radius)', fontSize:'var(--overlay-explorer-toolbar-font-size)' }}
+            onMouseEnter={e=>(e.currentTarget.style.background='var(--overlay-explorer-chip-active-bg)', (e.currentTarget.style.color=EXP.text))}
+            onMouseLeave={e=>(e.currentTarget.style.background='var(--overlay-explorer-chip-bg)', (e.currentTarget.style.color=EXP.muted))}
           ><FolderPlus size={13}/> Folder</button>
 
           <button onClick={() => openNew('file')} title="New File"
-            style={{ display:'flex', alignItems:'center', gap:4, background:'none', border:'none', cursor:'pointer', color:EXP.muted, padding:'4px 7px', borderRadius:5, fontSize:11 }}
-            onMouseEnter={e=>(e.currentTarget.style.background='rgba(255,255,255,0.06)', (e.currentTarget.style.color=EXP.text))}
-            onMouseLeave={e=>(e.currentTarget.style.background='transparent', (e.currentTarget.style.color=EXP.muted))}
+            style={{ display:'flex', alignItems:'center', gap:4, background:'var(--overlay-explorer-chip-bg)', border:'1px solid transparent', cursor:'pointer', color:EXP.muted, padding:'4px 7px', borderRadius:'var(--overlay-explorer-control-radius)', fontSize:'var(--overlay-explorer-toolbar-font-size)' }}
+            onMouseEnter={e=>(e.currentTarget.style.background='var(--overlay-explorer-chip-active-bg)', (e.currentTarget.style.color=EXP.text))}
+            onMouseLeave={e=>(e.currentTarget.style.background='var(--overlay-explorer-chip-bg)', (e.currentTarget.style.color=EXP.muted))}
           ><FilePlus size={13}/> File</button>
 
           {clipboard && (
             <button onClick={paste} title={`Paste ${clipboard.entries.length} item${clipboard.entries.length === 1 ? '' : 's'} (Ctrl+V)`}
-              style={{ display:'flex', alignItems:'center', gap:4, background:`${accent}22`, border:`1px solid ${accent}44`, borderRadius:5, cursor:'pointer', color:accent, padding:'3px 8px', fontSize:11 }}>
+              style={{ display:'flex', alignItems:'center', gap:4, background:'var(--overlay-explorer-chip-active-bg)', border:'1px solid var(--overlay-explorer-chip-active-border)', borderRadius:'var(--overlay-explorer-control-radius)', cursor:'pointer', color:'var(--overlay-explorer-chip-active-text)', padding:'3px 8px', fontSize:'var(--overlay-explorer-toolbar-font-size)' }}>
               <Clipboard size={12}/> Paste {clipboard.entries.length > 1 ? clipboard.entries.length : ''}
             </button>
           )}
@@ -4225,8 +4505,8 @@ export function FileExplorer({
               alignItems: 'center',
               gap: 10,
               padding: '8px 12px',
-              background: `${accent}10`,
-              borderBottom: `1px solid ${EXP.border}`,
+              background: 'var(--overlay-explorer-chip-active-bg)',
+              borderBottom: '1px solid var(--overlay-explorer-toolbar-border)',
               flexShrink: 0,
             }}
           >
@@ -4266,9 +4546,9 @@ export function FileExplorer({
               style={{
                 minHeight: 30,
                 padding: '0 12px',
-                borderRadius: 8,
+                borderRadius: 'var(--overlay-explorer-control-radius)',
                 border: `1px solid ${canConfirmRepositorySelection ? accent : EXP.border}`,
-                background: canConfirmRepositorySelection ? accent : 'rgba(255,255,255,0.04)',
+                background: canConfirmRepositorySelection ? accent : 'var(--overlay-explorer-chip-bg)',
                 color: canConfirmRepositorySelection ? '#fff' : EXP.muted,
                 cursor: canConfirmRepositorySelection ? 'pointer' : 'default',
                 fontSize: 11,
@@ -4283,9 +4563,9 @@ export function FileExplorer({
               style={{
                 minHeight: 30,
                 padding: '0 12px',
-                borderRadius: 8,
-                border: `1px solid ${EXP.border}`,
-                background: 'rgba(255,255,255,0.04)',
+                borderRadius: 'var(--overlay-explorer-control-radius)',
+                border: '1px solid var(--overlay-explorer-chip-border)',
+                background: 'var(--overlay-explorer-chip-bg)',
                 color: EXP.text,
                 cursor: 'pointer',
                 fontSize: 11,
@@ -4306,14 +4586,14 @@ export function FileExplorer({
         )}
 
         {/* File area + preview */}
-        <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
+        <div style={fileAreaStyle}>
           <OverlayScrollArea
             style={{ flex: 1, minHeight: 0 }}
             viewportStyle={{ padding: 0 }}
             viewportRef={explorerViewportRef}
           >
           <div ref={mainRef} tabIndex={0}
-            style={{ minHeight: '100%', outline:'none' }}
+            style={{ minHeight: '100%', outline:'none', background:'var(--overlay-explorer-content-bg)' }}
             onClick={() => mainRef.current?.focus()}
             onDragOver={e => {
               e.preventDefault();
@@ -4384,9 +4664,9 @@ export function FileExplorer({
                         display: 'flex',
                         alignItems: 'center',
                         gap: 12,
-                        borderRadius: 14,
-                        border: `1px solid ${accent}`,
-                        background: `${accent}10`,
+                        borderRadius: 'var(--overlay-explorer-panel-radius)',
+                        border: '1px solid var(--overlay-explorer-item-selected-border)',
+                        background: 'var(--overlay-explorer-item-selected-bg)',
                         padding: '12px 14px',
                       }}
                     >
@@ -4405,7 +4685,7 @@ export function FileExplorer({
                         onKeyDown={e => { if (e.key === 'Enter') commitNew(); if (e.key === 'Escape') setNewItem({ visible: false, kind: 'folder' }); }}
                         onBlur={commitNew}
                         placeholder={newItem.kind === 'folder' ? 'folder name' : 'name.ext'}
-                        style={{ background: '#1e2130', border: `1px solid ${accent}`, borderRadius: 4, color: EXP.text, fontSize: 12, padding: '2px 6px', outline: 'none', flex: 1 }}
+                        style={{ background: 'var(--overlay-explorer-input-bg)', border: '1px solid var(--overlay-explorer-input-border)', borderRadius: 'var(--overlay-explorer-control-radius)', color: EXP.text, fontSize: 12, padding: '2px 6px', outline: 'none', flex: 1 }}
                       />
                     </div>
                   </div>
@@ -4419,9 +4699,9 @@ export function FileExplorer({
                       justifyContent: 'space-between',
                       gap: 12,
                       padding: '12px 14px',
-                      borderRadius: 16,
-                      border: `1px solid ${EXP.border}`,
-                      background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015))',
+                      borderRadius: 'var(--overlay-explorer-panel-radius)',
+                      border: '1px solid var(--overlay-explorer-toolbar-border)',
+                      background: 'var(--overlay-explorer-toolbar-bg)',
                     }}
                   >
                     <div>
@@ -4457,8 +4737,8 @@ export function FileExplorer({
                   layout="position"
                   transition={EXPLORER_ZOOM_POSITION_SPRING}
                   style={{
-                    background: `${accent}10`,
-                    border: `1px solid ${accent}`,
+                    background: 'var(--overlay-explorer-item-selected-bg)',
+                    border: '1px solid var(--overlay-explorer-item-selected-border)',
                     borderRadius: activeGridMetrics.tileRadius,
                     padding: activeGridMetrics.iconSize <= 46 ? '8px 6px 6px' : '10px 8px 8px',
                     display: 'flex',
@@ -4481,7 +4761,7 @@ export function FileExplorer({
                     onKeyDown={e => { if (e.key === 'Enter') commitNew(); if (e.key === 'Escape') setNewItem({ visible: false, kind: 'folder' }); }}
                     onBlur={commitNew}
                     placeholder={newItem.kind === 'folder' ? 'folder name' : 'name.ext'}
-                    style={{ background: '#1e2130', border: `1px solid ${accent}`, borderRadius: 4, color: EXP.text, fontSize: 11, padding: '2px 6px', outline: 'none', width: '100%', boxSizing: 'border-box' as const }}
+                    style={{ background: 'var(--overlay-explorer-input-bg)', border: '1px solid var(--overlay-explorer-input-border)', borderRadius: 'var(--overlay-explorer-control-radius)', color: EXP.text, fontSize: 11, padding: '2px 6px', outline: 'none', width: '100%', boxSizing: 'border-box' as const }}
                   />
                 </motion.div>
               </div>
@@ -4521,8 +4801,8 @@ export function FileExplorer({
                         onContextMenu={e => onRightClick(e, entry)}
                         title={getSearchTooltip(entry)}
                         style={{
-                          background: isDrop ? `${accent}18` : isSel ? `${accent}10` : 'transparent',
-                          border: `1px solid ${isDrop ? accent : isSel ? `${accent}88` : 'transparent'}`,
+                          background: isDrop ? dropEntrySurface.background : isSel ? selectedEntrySurface.background : idleEntrySurface.background,
+                          border: `1px solid ${isDrop ? dropEntrySurface.borderColor : isSel ? selectedEntrySurface.borderColor : idleEntrySurface.borderColor}`,
                           borderRadius: activeGridMetrics.tileRadius,
                           padding: activeGridMetrics.iconSize <= 46 ? '8px 6px 6px' : '10px 8px 8px',
                           cursor: 'pointer',
@@ -4537,22 +4817,18 @@ export function FileExplorer({
                           overflow: 'hidden',
                           opacity: entry.is_hidden ? 0.5 : 1,
                           userSelect: 'none',
+                          boxShadow: isDrop ? dropEntrySurface.boxShadow : isSel ? selectedEntrySurface.boxShadow : idleEntrySurface.boxShadow,
+                          transform: isDrop ? dropEntrySurface.transform : isSel ? selectedEntrySurface.transform : idleEntrySurface.transform,
                           transition: 'background 0.14s ease, border-color 0.14s ease, transform 0.14s ease, border-radius 0.18s cubic-bezier(0.22, 1, 0.36, 1), padding 0.18s cubic-bezier(0.22, 1, 0.36, 1)',
                         }}
                         onMouseEnter={e => {
                           if (!isSel && !isDrop) {
-                            const target = e.currentTarget as HTMLDivElement;
-                            target.style.background = 'rgba(255,255,255,0.035)';
-                            target.style.borderColor = 'rgba(255,255,255,0.08)';
-                            target.style.transform = 'translateY(-1px)';
+                            applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, hoverEntrySurface);
                           }
                         }}
                         onMouseLeave={e => {
                           if (!isSel && !isDrop) {
-                            const target = e.currentTarget as HTMLDivElement;
-                            target.style.background = 'transparent';
-                            target.style.borderColor = 'transparent';
-                            target.style.transform = 'translateY(0)';
+                            applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, idleEntrySurface);
                           }
                         }}
                       >
@@ -4580,8 +4856,8 @@ export function FileExplorer({
                           : (
                             <span
                               style={{
-                                fontSize: 11,
-                                textAlign: 'center',
+                                fontSize: 'var(--overlay-explorer-entry-title-size)',
+                                textAlign: explorerTheme.labelMode === 'inline' ? 'left' : 'center',
                                 color: EXP.text,
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
@@ -4590,13 +4866,15 @@ export function FileExplorer({
                                 WebkitBoxOrient: 'vertical',
                                 width: '100%',
                                 lineHeight: 1.28,
+                                fontWeight: 'var(--overlay-explorer-entry-title-weight)',
+                                letterSpacing: 'var(--overlay-explorer-label-spacing)',
                               }}
                             >
                               {entry.name}
                             </span>
                           )
                         }
-                        <span style={{ fontSize: 9, textAlign: 'center', color: EXP.muted2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%', marginTop: -2 }}>
+                        <span style={{ fontSize: 'var(--overlay-explorer-entry-meta-size)', textAlign: explorerTheme.labelMode === 'inline' ? 'left' : 'center', color: EXP.muted2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%', marginTop: -2 }}>
                           {getEntryStorageLabel(entry)}
                         </span>
                         {renderSearchMetadata(entry)}
@@ -4616,8 +4894,8 @@ export function FileExplorer({
                   alignItems: 'center',
                   gap: 10,
                   padding: '0 12px',
-                  borderBottom: `1px solid ${EXP.border}`,
-                  background: `${accent}11`,
+                  borderBottom: '1px solid var(--overlay-explorer-toolbar-border)',
+                  background: 'var(--overlay-explorer-item-selected-bg)',
                 }}
               >
                 <SvgIcon
@@ -4636,7 +4914,7 @@ export function FileExplorer({
                   onKeyDown={e => { if (e.key === 'Enter') commitNew(); if (e.key === 'Escape') setNewItem({ visible: false, kind: 'folder' }); }}
                   onBlur={commitNew}
                   placeholder={newItem.kind === 'folder' ? 'folder name' : 'notes.md / app.py'}
-                  style={{ background: '#1e2130', border: `1px solid ${accent}`, borderRadius: 4, color: EXP.text, fontSize: 12, padding: '2px 6px', outline: 'none', flex: 1 }}
+                  style={{ background: 'var(--overlay-explorer-input-bg)', border: '1px solid var(--overlay-explorer-input-border)', borderRadius: 'var(--overlay-explorer-control-radius)', color: EXP.text, fontSize: 12, padding: '2px 6px', outline: 'none', flex: 1 }}
                 />
               </div>
             )}
@@ -4670,14 +4948,17 @@ export function FileExplorer({
                         gap: 12,
                         minHeight: virtualWindow.rowHeight,
                         padding: '0 12px',
-                        borderBottom: `1px solid ${EXP.border}`,
-                        background: isDrop ? `${accent}22` : isSel ? EXP.selected : 'transparent',
+                        borderBottom: '1px solid var(--overlay-explorer-toolbar-border)',
+                        background: isDrop ? dropEntrySurface.background : isSel ? selectedEntrySurface.background : idleEntrySurface.background,
                         cursor: 'pointer',
                         opacity: entry.is_hidden ? 0.5 : 1,
                         userSelect: 'none',
+                        boxShadow: isDrop ? dropEntrySurface.boxShadow : isSel ? selectedEntrySurface.boxShadow : idleEntrySurface.boxShadow,
+                        borderColor: isDrop ? dropEntrySurface.borderColor : isSel ? selectedEntrySurface.borderColor : idleEntrySurface.borderColor,
+                        transform: isDrop ? dropEntrySurface.transform : isSel ? selectedEntrySurface.transform : idleEntrySurface.transform,
                       }}
-                      onMouseEnter={e => { if (!isSel && !isDrop) (e.currentTarget as HTMLDivElement).style.background = EXP.cardHov; }}
-                      onMouseLeave={e => { if (!isSel && !isDrop) (e.currentTarget as HTMLDivElement).style.background = 'transparent'; }}
+                      onMouseEnter={e => { if (!isSel && !isDrop) applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, hoverEntrySurface); }}
+                      onMouseLeave={e => { if (!isSel && !isDrop) applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, idleEntrySurface); }}
                     >
                       <div style={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'center', gap: 10 }}>
                         <SvgIcon src={iconSrc} size={activeRowMetrics?.iconSize ?? 16} />
@@ -4689,7 +4970,7 @@ export function FileExplorer({
                                 <span style={{ color: isSel ? EXP.text : entry.is_dir ? EXP.yellow : EXP.text, fontWeight: entry.is_dir ? 600 : 450, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
                                   {entry.name}
                                 </span>
-                                {entry.is_symlink && <span style={{ fontSize: 9, color: EXP.muted, background: 'rgba(255,255,255,0.06)', borderRadius: 3, padding: '1px 4px', flexShrink: 0 }}>symlink</span>}
+                                {entry.is_symlink && <span style={{ fontSize: 9, color: EXP.muted, background: 'var(--overlay-explorer-chip-bg)', borderRadius: 'var(--overlay-explorer-control-radius)', padding: '1px 4px', flexShrink: 0 }}>symlink</span>}
                               </div>
                             )}
                           <div style={{ marginTop: 2, fontSize: 10, color: EXP.muted2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -4711,7 +4992,7 @@ export function FileExplorer({
             {effectiveExperimentalViewMode === 'off' && newItem.visible && virtualWindow.kind === 'list' && effectiveViewModeDefinition.presentation === 'table' && (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <tbody>
-                  <tr style={{ background: `${accent}11`, borderBottom: `1px solid ${EXP.border}`, height: activeRowMetrics?.newItemHeight ?? 42 }}>
+                  <tr style={{ background: 'var(--overlay-explorer-item-selected-bg)', borderBottom: '1px solid var(--overlay-explorer-toolbar-border)', height: activeRowMetrics?.newItemHeight ?? 42 }}>
                     <td style={{ padding: '4px 12px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <SvgIcon src={newItem.kind === 'folder' ? getIconSrc({ name: 'folder', path: currentPath, is_dir: true, size: 0, modified: 0, extension: '', is_hidden: false, is_symlink: false }, false, {
@@ -4722,7 +5003,7 @@ export function FileExplorer({
                           onKeyDown={e => { if (e.key === 'Enter') commitNew(); if (e.key === 'Escape') setNewItem({ visible: false, kind: 'folder' }); }}
                           onBlur={commitNew}
                           placeholder={newItem.kind === 'folder' ? 'folder name' : 'notes.md / app.py'}
-                          style={{ background: '#1e2130', border: `1px solid ${accent}`, borderRadius: 4, color: EXP.text, fontSize: 12, padding: '2px 6px', outline: 'none', flex: 1 }}
+                          style={{ background: 'var(--overlay-explorer-input-bg)', border: '1px solid var(--overlay-explorer-input-border)', borderRadius: 'var(--overlay-explorer-control-radius)', color: EXP.text, fontSize: 12, padding: '2px 6px', outline: 'none', flex: 1 }}
                         />
                       </div>
                     </td>
@@ -4737,14 +5018,14 @@ export function FileExplorer({
             {effectiveExperimentalViewMode === 'off' && !loading && virtualWindow.kind === 'list' && effectiveViewModeDefinition.presentation === 'table' && (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, tableLayout: 'fixed' }}>
                 <thead>
-                  <tr style={{ background: EXP.panel, position: 'sticky', top: 0, zIndex: 2 }}>
+                  <tr style={{ background: 'var(--overlay-explorer-toolbar-bg)', position: 'sticky', top: 0, zIndex: 2 }}>
                     {[
                       { key: 'name', label: 'Name' },
                       { key: 'size', label: 'Size' },
                       { key: 'date', label: 'Modified' },
                       { key: 'type', label: 'Type' },
                     ].map(column => (
-                      <th key={column.key} style={{ padding: '6px 12px', textAlign: 'left', color: EXP.muted, fontWeight: 600, fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', borderBottom: `1px solid ${EXP.border}` }}>
+                      <th key={column.key} style={{ padding: '6px 12px', textAlign: 'left', color: EXP.muted, fontWeight: 600, fontSize: 10, letterSpacing: '0.06em', textTransform: 'uppercase', borderBottom: '1px solid var(--overlay-explorer-toolbar-border)' }}>
                         <button
                           type="button"
                           onClick={() => toggleSort(column.key as ExplorerSortKey)}
@@ -4798,9 +5079,9 @@ export function FileExplorer({
                         onDoubleClick={() => onEntryDoubleClick(entry)}
                         onContextMenu={e => onRightClick(e, entry)}
                         title={getSearchTooltip(entry)}
-                        style={{ background: isDrop ? `${accent}22` : isSel ? EXP.selected : 'transparent', cursor: 'pointer', opacity: entry.is_hidden ? 0.5 : 1, userSelect: 'none', borderBottom: `1px solid ${EXP.border}`, height: virtualWindow.rowHeight }}
-                        onMouseEnter={e => { if (!isSel && !isDrop) (e.currentTarget as HTMLTableRowElement).style.background = EXP.cardHov; }}
-                        onMouseLeave={e => { if (!isSel && !isDrop) (e.currentTarget as HTMLTableRowElement).style.background = 'transparent'; }}
+                        style={{ background: isDrop ? dropEntrySurface.background : isSel ? selectedEntrySurface.background : idleEntrySurface.background, cursor: 'pointer', opacity: entry.is_hidden ? 0.5 : 1, userSelect: 'none', borderBottom: '1px solid var(--overlay-explorer-toolbar-border)', height: virtualWindow.rowHeight, boxShadow: isDrop ? dropEntrySurface.boxShadow : isSel ? selectedEntrySurface.boxShadow : idleEntrySurface.boxShadow, transform: isDrop ? dropEntrySurface.transform : isSel ? selectedEntrySurface.transform : idleEntrySurface.transform }}
+                        onMouseEnter={e => { if (!isSel && !isDrop) applyExplorerEntrySurface(e.currentTarget as HTMLTableRowElement, hoverEntrySurface); }}
+                        onMouseLeave={e => { if (!isSel && !isDrop) applyExplorerEntrySurface(e.currentTarget as HTMLTableRowElement, idleEntrySurface); }}
                       >
                         <td style={{ padding: isDetailsMode ? '6px 12px' : '4px 12px', verticalAlign: 'top', overflow: 'hidden' }}>
                           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
@@ -4813,7 +5094,7 @@ export function FileExplorer({
                                     <span style={{ color: isSel ? EXP.text : entry.is_dir ? EXP.yellow : EXP.text, fontWeight: entry.is_dir ? 600 : isDetailsMode ? 500 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>
                                       {entry.name}
                                     </span>
-                                    {entry.is_symlink && <span style={{ fontSize: 9, color: EXP.muted, background: 'rgba(255,255,255,0.06)', borderRadius: 3, padding: '1px 4px', flexShrink: 0 }}>symlink</span>}
+                                    {entry.is_symlink && <span style={{ fontSize: 9, color: EXP.muted, background: 'var(--overlay-explorer-chip-bg)', borderRadius: 'var(--overlay-explorer-control-radius)', padding: '1px 4px', flexShrink: 0 }}>symlink</span>}
                                   </div>
                                 )}
                               {isDetailsMode && !isRenaming && (
@@ -4850,19 +5131,21 @@ export function FileExplorer({
               onCopyPath={copyToSysClipboard}
               viewMode={documentViewMode}
               onViewModeChange={setDocumentViewMode}
+              explorerTheme={explorerTheme}
               onClose={() => { void closePreview(); }}
             />
           )}
         </div>
 
         {/* Status bar */}
-        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'3px 12px', background:EXP.sidebar, borderTop:`1px solid ${EXP.border}`, fontSize:10, color:EXP.muted, flexShrink:0 }}>
+        {shouldRenderStatusBar && (
+        <div style={statusBarStyle}>
           <span>{visibleEntries.length} item{visibleEntries.length!==1?'s':''}</span>
           {selected.size > 0 && <span style={{ color:accent }}>{selected.size} selected</span>}
           {!isCompactDock && (
             <span>
               View: <span style={{ color: EXP.text }}>{selectedViewModeDefinition.label}</span>
-              {effectiveViewMode !== viewMode ? ` -> ${effectiveViewModeDefinition.label}` : ''}
+              {effectiveViewMode !== themedViewMode ? ` -> ${effectiveViewModeDefinition.label}` : ''}
             </span>
           )}
           {selectedExperimentalModeDefinition && (
@@ -4891,6 +5174,7 @@ export function FileExplorer({
           )}
           {previewLoading && <span style={{ color:accent, display:'flex', alignItems:'center', gap:4 }}><Loader size={9} style={{ animation:'spin 1s linear infinite' }} /> Loading…</span>}
         </div>
+        )}
       </div>
 
       {/* Context menu */}

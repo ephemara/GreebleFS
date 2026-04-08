@@ -62,6 +62,17 @@ describe('theme package loader', () => {
           theme: {
             defaultOpenAnimationId: 'package-open',
             defaultCloseAnimationId: 'burn',
+            explorer: {
+              preset: 'xmb',
+              railBrandLabel: 'Cross Media',
+              toolbarStyle: 'floating',
+              metrics: {
+                railWidth: 244,
+              },
+              cssVars: {
+                '--overlay-explorer-brand': 'cross-media',
+              },
+            },
             palette: {
               accent: '#7dd3ff',
             },
@@ -193,6 +204,10 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.theme.assets?.iconTheme?.fileExtensions.ts).toBe('typescript');
     expect(result.packages[0]?.theme.defaultOpenAnimationId).toBe('package-open');
     expect(result.packages[0]?.theme.defaultCloseAnimationId).toBe('burn');
+    expect(result.packages[0]?.theme.explorer?.preset).toBe('xmb');
+    expect(result.packages[0]?.theme.explorer?.toolbarStyle).toBe('floating');
+    expect(result.packages[0]?.theme.explorer?.metrics?.railWidth).toBe(244);
+    expect(result.packages[0]?.theme.explorer?.cssVars?.['--overlay-explorer-brand']).toBe('cross-media');
     expect(result.packages[0]?.theme.presentation?.chromeStyle).toBe('system');
     expect(result.packages[0]?.theme.presentation?.panelSpacing).toBe(10);
     expect(result.packages[0]?.theme.compatibility?.shellBlueprints).toEqual(['classic-dock', 'xmb-cross-media']);

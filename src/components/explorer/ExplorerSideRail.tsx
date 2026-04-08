@@ -401,7 +401,7 @@ export function ExplorerSideRail({
               <button
                 type="button"
                 onClick={() => updateRail(clearExplorerBookmarkCategoryFilters(rail))}
-                style={categoryChipStyle(accent, rail.activeCategoryIds.length === 0)}
+                style={categoryChipStyle(rail.activeCategoryIds.length === 0)}
               >
                 All
               </button>
@@ -413,7 +413,7 @@ export function ExplorerSideRail({
                     type="button"
                     onClick={() => updateRail(toggleExplorerBookmarkCategoryFilter(rail, category.id))}
                     style={{
-                      ...categoryChipStyle(accent, active),
+                      ...categoryChipStyle(active),
                       borderColor: active ? category.color : 'var(--overlay-border)',
                       color: active ? category.color : 'var(--overlay-text-muted)',
                     }}
@@ -886,7 +886,7 @@ function draftPrimaryButtonStyle(accent: string): React.CSSProperties {
   };
 }
 
-function categoryChipStyle(accent: string, active: boolean): React.CSSProperties {
+function categoryChipStyle(active: boolean): React.CSSProperties {
   return {
     display: 'inline-flex',
     alignItems: 'center',

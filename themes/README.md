@@ -34,7 +34,8 @@ Top-level fields:
 - `extends`
   - Optional base theme id. Can point at a built-in theme or another package theme.
 - `theme`
-  - Partial OverlayTerm theme definition with `palette`, `effects`, `xterm`, `fonts`, `cssVars`, `visuals`, `defaultShaderId`, `defaultOpenAnimationId`, and `defaultCloseAnimationId`.
+  - Partial OverlayTerm theme definition with `palette`, `effects`, `xterm`, `fonts`, `cssVars`, `visuals`, `defaultShaderId`, `defaultOpenAnimationId`, `defaultCloseAnimationId`, and `explorer`.
+  - `theme.explorer` is the explorer-shell recipe layer. It is where package authors can swap between high-level presets like `workbench`, `xmb`, and `channel-grid`, set structural choices such as `toolbarStyle`, `breadcrumbStyle`, `previewStyle`, `statusBarStyle`, `railPosition`, `preferredViewMode`, and `preferredExperimentalViewMode`, and then override geometry/surfaces through `metrics`, `surfaces`, `typography`, and raw explorer-scoped `cssVars`.
 - `designTokens`, `layoutPrimitives`, `navigationPatterns`
   - Typed backend contract slices. Token values and primitive props can be strings, numbers, booleans, or structured JSON values.
 - `renderStyles`
@@ -53,6 +54,21 @@ Top-level fields:
   - Optional list of relative animation module paths. When omitted, OverlayTerm auto-discovers supported files from the package `animations/` folder.
 - `visuals`
   - Declarative animated layers rendered behind the shell content.
+
+## Explorer Recipe Highlights
+
+- `theme.explorer.preset`
+  - `workbench`, `xmb`, `channel-grid`, or `custom`
+- `theme.explorer.metrics`
+  - `railWidth`, `previewWidth`, `chromeInset`, `toolbarPaddingX`, `toolbarPaddingY`, `toolbarGap`, `controlRadius`, `panelRadius`, `spacingScale`, `gridScale`, `rowHeightScale`, `iconScale`, `hoverLiftPx`
+- `theme.explorer.surfaces`
+  - High-level chrome/entry colors for the root shell, toolbar, omnibox, preview, status bar, chips, hover state, selected state, and drop state
+- `theme.explorer.typography`
+  - Explorer-specific font sizing and label weighting without touching the rest of the workbench
+- `theme.explorer.cssVars`
+  - Raw escape hatch for explorer-only CSS variables when the typed fields are not enough
+
+This is the layer that makes theme packages capable of approximating shells like PS3 XMB flows, Wii channel grids, glassy dock navigators, or heavier desktop workbenches without forking the explorer component.
 
 ## Icon Theme JSON
 

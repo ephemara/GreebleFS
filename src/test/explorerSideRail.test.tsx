@@ -24,6 +24,7 @@ describe('ExplorerSideRail', () => {
     render(
       <ExplorerSideRail
         accent="#7c3aed"
+        brandLabel="Explorer"
         sidebarWidth={220}
         currentPath="M:\\OverlayTerm"
         drives={[]}
@@ -49,6 +50,7 @@ describe('ExplorerSideRail', () => {
     render(
       <ExplorerSideRail
         accent="#7c3aed"
+        brandLabel="Explorer"
         sidebarWidth={220}
         currentPath="M:\\OverlayTerm"
         drives={[]}
@@ -71,6 +73,7 @@ describe('ExplorerSideRail', () => {
     render(
       <ExplorerSideRail
         accent="#7c3aed"
+        brandLabel="Explorer"
         sidebarWidth={240}
         currentPath="M:\\OverlayTerm"
         drives={[]}
