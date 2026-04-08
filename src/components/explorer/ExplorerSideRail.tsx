@@ -39,6 +39,7 @@ import type { ExplorerDriveInfo } from '../../runtime/explorerBackend';
 
 interface ExplorerSideRailProps {
   accent: string;
+  brandLabel: string;
   sidebarWidth: number;
   currentPath: string;
   drives: ExplorerDriveInfo[];
@@ -65,6 +66,7 @@ interface TreeRowProps {
 
 export function ExplorerSideRail({
   accent,
+  brandLabel,
   sidebarWidth,
   currentPath,
   drives,
@@ -197,8 +199,8 @@ export function ExplorerSideRail({
             <div style={{ fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--overlay-text-dim)', fontWeight: 700 }}>
               Explorer Rail
             </div>
-            <div style={{ fontSize: dense ? 12 : 14, color: 'var(--overlay-text-primary)', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              OverlayTerm
+            <div style={{ fontSize: 'var(--overlay-explorer-rail-title-size)', color: 'var(--overlay-text-primary)', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {brandLabel}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 4 }}>
@@ -316,7 +318,7 @@ export function ExplorerSideRail({
                   padding: dense ? '5px 7px' : '8px 10px',
                   borderRadius: 9,
                   border: `1px solid ${isActive ? `${accent}66` : 'var(--overlay-border)'}`,
-                  background: isActive ? `${accent}17` : 'rgba(255,255,255,0.02)',
+                  background: isActive ? `${accent}17` : 'var(--overlay-explorer-chip-bg)',
                   color: 'var(--overlay-text-primary)',
                   display: 'grid',
                   gridTemplateColumns: dense ? 'auto 1fr' : 'auto 1fr',
@@ -509,7 +511,7 @@ export function ExplorerSideRail({
               padding: 3,
               borderRadius: 10,
               border: `1px dashed ${dropTargetFolderId === null ? `${accent}55` : 'transparent'}`,
-              background: dropTargetFolderId === null ? `${accent}10` : 'transparent',
+              background: dropTargetFolderId === null ? `${accent}10` : 'var(--overlay-explorer-chip-bg)',
             }}
           >
             <button type="button" onClick={onGoHome} style={bookmarkQuickLinkStyle(accent, dense, currentPath === '')}>
@@ -553,7 +555,7 @@ export function ExplorerSideRail({
       </OverlayScrollArea>
 
       {editingNodeId && (
-        <div style={{ padding: dense ? '8px 10px' : '10px 12px', borderTop: '1px solid var(--overlay-border)', background: 'rgba(255,255,255,0.02)' }}>
+        <div style={{ padding: dense ? '8px 10px' : '10px 12px', borderTop: '1px solid var(--overlay-border)', background: 'var(--overlay-explorer-chip-bg)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <input
               autoFocus
@@ -783,9 +785,9 @@ function formatBytes(bytes: number): string {
 const dismissButtonStyle: React.CSSProperties = {
   width: 18,
   height: 18,
-  borderRadius: 999,
-  border: '1px solid var(--overlay-border)',
-  background: 'transparent',
+  borderRadius: 'var(--overlay-explorer-control-radius)',
+  border: '1px solid var(--overlay-explorer-chip-border)',
+  background: 'var(--overlay-explorer-chip-bg)',
   color: 'var(--overlay-text-dim)',
   display: 'inline-flex',
   alignItems: 'center',
@@ -797,9 +799,9 @@ const dismissButtonStyle: React.CSSProperties = {
 const treeIconButtonStyle: React.CSSProperties = {
   width: 20,
   height: 20,
-  borderRadius: 999,
-  border: '1px solid var(--overlay-border)',
-  background: 'transparent',
+  borderRadius: 'var(--overlay-explorer-control-radius)',
+  border: '1px solid var(--overlay-explorer-chip-border)',
+  background: 'var(--overlay-explorer-chip-bg)',
   color: 'var(--overlay-text-dim)',
   display: 'inline-flex',
   alignItems: 'center',
@@ -819,7 +821,7 @@ const searchInputStyle: React.CSSProperties = {
 };
 
 const quickLinkTitleStyle: React.CSSProperties = {
-  fontSize: 11,
+  fontSize: 'var(--overlay-explorer-breadcrumb-font-size)',
   fontWeight: 600,
   color: 'var(--overlay-text-primary)',
   overflow: 'hidden',
@@ -834,7 +836,7 @@ const quickLinkMetaStyle: React.CSSProperties = {
 };
 
 const bookmarkTitleStyle: React.CSSProperties = {
-  fontSize: 10.5,
+  fontSize: 'var(--overlay-explorer-breadcrumb-font-size)',
   fontWeight: 600,
   color: 'var(--overlay-text-primary)',
   overflow: 'hidden',
@@ -854,9 +856,9 @@ const bookmarkMetaStyle: React.CSSProperties = {
 const draftPanelStyle: React.CSSProperties = {
   marginTop: 8,
   padding: '8px 9px',
-  borderRadius: 9,
-  border: '1px solid var(--overlay-border)',
-  background: 'rgba(255,255,255,0.03)',
+  borderRadius: 'var(--overlay-explorer-control-radius)',
+  border: '1px solid var(--overlay-explorer-chip-border)',
+  background: 'var(--overlay-explorer-chip-bg)',
 };
 
 const draftActionRowStyle: React.CSSProperties = {
@@ -866,9 +868,9 @@ const draftActionRowStyle: React.CSSProperties = {
 };
 
 const draftSecondaryButtonStyle: React.CSSProperties = {
-  borderRadius: 999,
-  border: '1px solid var(--overlay-border)',
-  background: 'transparent',
+  borderRadius: 'var(--overlay-explorer-control-radius)',
+  border: '1px solid var(--overlay-explorer-chip-border)',
+  background: 'var(--overlay-explorer-chip-bg)',
   color: 'var(--overlay-text-muted)',
   fontSize: 9.5,
   padding: '3px 8px',
@@ -889,10 +891,10 @@ function categoryChipStyle(accent: string, active: boolean): React.CSSProperties
     display: 'inline-flex',
     alignItems: 'center',
     gap: 5,
-    borderRadius: 999,
-    border: `1px solid ${active ? `${accent}66` : 'var(--overlay-border)'}`,
-    background: active ? `${accent}14` : 'transparent',
-    color: active ? accent : 'var(--overlay-text-muted)',
+    borderRadius: 'var(--overlay-explorer-control-radius)',
+    border: `1px solid ${active ? 'var(--overlay-explorer-chip-active-border)' : 'var(--overlay-explorer-chip-border)'}`,
+    background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
+    color: active ? 'var(--overlay-explorer-chip-active-text)' : 'var(--overlay-text-muted)',
     fontSize: 9.5,
     padding: '3px 7px',
     cursor: 'pointer',
@@ -907,9 +909,9 @@ function quickLinkButtonStyle(active: boolean, accent: string, dense: boolean): 
     alignItems: 'center',
     gap: 7,
     padding: dense ? '5px 7px' : '8px 10px',
-    borderRadius: 9,
-    border: `1px solid ${active ? `${accent}55` : 'var(--overlay-border)'}`,
-    background: active ? `${accent}14` : 'rgba(255,255,255,0.02)',
+    borderRadius: 'var(--overlay-explorer-control-radius)',
+    border: `1px solid ${active ? `${accent}55` : 'var(--overlay-explorer-chip-border)'}`,
+    background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
     color: 'var(--overlay-text-primary)',
     cursor: 'pointer',
     textAlign: 'left',
@@ -923,9 +925,9 @@ function bookmarkQuickLinkStyle(accent: string, dense: boolean, active: boolean)
     alignItems: 'center',
     gap: 7,
     padding: dense ? '4px 6px' : '6px 8px',
-    borderRadius: 9,
+    borderRadius: 'var(--overlay-explorer-control-radius)',
     border: `1px solid ${active ? `${accent}44` : 'transparent'}`,
-    background: active ? `${accent}12` : 'transparent',
+    background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'transparent',
     color: 'var(--overlay-text-primary)',
     cursor: 'pointer',
     textAlign: 'left',

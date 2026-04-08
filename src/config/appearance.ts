@@ -5,6 +5,10 @@ import type {
   ThemeMotionStyle as GeneratedThemeMotionStyle,
   ThemePresentation as GeneratedThemePresentation,
 } from '../generated/tauri';
+import {
+  normalizeExplorerThemeRecipe,
+  type OverlayExplorerThemeRecipe,
+} from './explorerTheme';
 import type { OverlayShellBlueprintId } from './shellBlueprints';
 import { mergeResolvedIconThemes, type OverlayResolvedIconTheme } from './iconTheme';
 import { clampOverlayVisualControlValue } from './overlayWindow';
@@ -142,6 +146,7 @@ export interface OverlayThemeDefinition {
   cssVars?: Record<string, string>;
   presentation?: OverlayThemePresentation;
   compatibility?: OverlayThemeCompatibility;
+  explorer?: OverlayExplorerThemeRecipe;
 }
 
 export interface OverlayAppearanceSelection {
@@ -957,6 +962,7 @@ export function normalizeThemeDefinition(
       ...(fallback.cssVars ?? {}),
       ...(theme.cssVars ?? {}),
     },
+    explorer: normalizeExplorerThemeRecipe(theme.explorer, fallback.explorer),
   };
 }
 

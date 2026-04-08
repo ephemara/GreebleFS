@@ -13,10 +13,11 @@ OverlayTerm is a Tauri desktop command overlay that keeps the terminal, file exp
 
 ## Quick Start
 
-1. Run `bun install`.
-2. Start the frontend with `bun run dev` or the desktop shell with `bun run tauri dev`.
-3. Open the `Source` panel and import a repository from `Explorer`.
-4. Use `Settings > Overview` to open the authoring roots for plugins, themes, shaders, animations, and screenshots.
+1. Install dependencies with `bun install` or `npm install`.
+2. Start the frontend with `bun run dev` or `npm run dev`.
+3. Start the desktop shell with `bun run tauri dev` or `npm run tauri dev`.
+4. Open the `Source` panel and import a repository from `Explorer`.
+5. Use `Settings > Overview` to open the authoring roots for plugins, themes, shaders, animations, and screenshots.
 
 ## Workspace Roots
 
@@ -29,9 +30,9 @@ OverlayTerm is a Tauri desktop command overlay that keeps the terminal, file exp
 
 ## Verification
 
-- Unit tests: `bun run test:unit`
-- Browser tests: `bun run test:browser`
-- Production build: `bun run build`
+- Unit tests: `bun run test:unit` or `npm run test:unit`
+- Browser tests: `bun run test:browser` or `npm run test:browser`
+- Production build: `bun run build` or `npm run build`
 
 ## Recommended IDE Setup
 

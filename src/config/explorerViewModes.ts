@@ -23,7 +23,7 @@ export interface ExplorerGridMetrics {
   nameLines: number;
 }
 
-interface ExplorerRowMetrics {
+export interface ExplorerRowMetrics {
   rowHeight: number;
   searchRowHeight: number;
   newItemHeight: number;

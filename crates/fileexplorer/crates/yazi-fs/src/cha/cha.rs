@@ -59,7 +59,7 @@ impl Cha {
 	where
 		U: AsUrl,
 	{
-		let kind = ChaKind::DUMMY;
+		let mut kind = ChaKind::DUMMY;
 		let mode = r#type.map(ChaMode::from_bare).unwrap_or_default();
 
 		#[cfg(unix)]

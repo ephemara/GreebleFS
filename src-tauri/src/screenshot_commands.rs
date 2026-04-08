@@ -64,25 +64,12 @@ pub async fn screenshot_capture_preview(
     // xcap (which uses DXGI Desktop Duplication) captures a clean desktop
     // WITHOUT the overlay being visible in the image, while the user still
     // sees the overlay the entire time. Same technique Discord/Teams/Zoom use.
-    let hwnd_opt = get_overlay_hwnd(&window);
-
-    if let Some(hwnd) = hwnd_opt {
-        unsafe {
-            let _ = SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
-        }
-        // Give the DWM one compositor frame to flush the exclusion flag
-        // before DXGI reads back the framebuffer.
-        std::thread::sleep(std::time::Duration::from_millis(33));
-    }
+    exclude_overlay_from_capture(&window);
 
     let capture_result = capture_absolute_region(x, y, width, height);
 
     // Always restore visibility, even on error.
-    if let Some(hwnd) = hwnd_opt {
-        unsafe {
-            let _ = SetWindowDisplayAffinity(hwnd, WDA_NONE);
-        }
-    }
+    restore_overlay_capture(&window);
 
     let image = capture_result?;
     let preview_image = build_preview_image(&image);
@@ -102,20 +89,46 @@ pub async fn screenshot_capture_preview(
 
 /// Returns the raw Win32 HWND for our overlay window.
 /// Returns None on non-Windows or if the handle cannot be retrieved.
-fn get_overlay_hwnd(_window: &tauri::WebviewWindow) -> Option<HWND> {
-    #[cfg(target_os = "windows")]
-    {
-        use raw_window_handle::HasWindowHandle;
-        use raw_window_handle::RawWindowHandle;
+#[cfg(target_os = "windows")]
+fn get_overlay_hwnd(window: &tauri::WebviewWindow) -> Option<HWND> {
+    use raw_window_handle::HasWindowHandle;
+    use raw_window_handle::RawWindowHandle;
 
-        if let Ok(handle) = _window.window_handle() {
-            if let RawWindowHandle::Win32(h) = handle.as_raw() {
-                return Some(h.hwnd.get() as HWND);
-            }
+    if let Ok(handle) = window.window_handle() {
+        if let RawWindowHandle::Win32(handle) = handle.as_raw() {
+            return Some(handle.hwnd.get() as HWND);
         }
     }
+
     None
 }
+
+#[cfg(target_os = "windows")]
+fn exclude_overlay_from_capture(window: &tauri::WebviewWindow) {
+    if let Some(hwnd) = get_overlay_hwnd(window) {
+        unsafe {
+            let _ = SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
+        }
+        // Give the DWM one compositor frame to flush the exclusion flag
+        // before DXGI reads back the framebuffer.
+        std::thread::sleep(std::time::Duration::from_millis(33));
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn exclude_overlay_from_capture(_window: &tauri::WebviewWindow) {}
+
+#[cfg(target_os = "windows")]
+fn restore_overlay_capture(window: &tauri::WebviewWindow) {
+    if let Some(hwnd) = get_overlay_hwnd(window) {
+        unsafe {
+            let _ = SetWindowDisplayAffinity(hwnd, WDA_NONE);
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn restore_overlay_capture(_window: &tauri::WebviewWindow) {}
 
 #[tauri::command]
 #[specta::specta]
