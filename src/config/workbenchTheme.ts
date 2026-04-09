@@ -1,4 +1,12 @@
+import type {
+  ThemeChromeStyle,
+  ThemeDensity,
+} from '../generated/tauri';
 import type { OverlayThemeDefinition } from './appearance';
+import {
+  readThemeNumberProp,
+  resolveThemeEngineBindings,
+} from './themeEngineBindings';
 
 export type OverlayWorkbenchThemePreset = 'workbench' | 'xmb' | 'channel-grid' | 'custom';
 export type OverlayWorkbenchChromeStyle = 'solid' | 'glass' | 'floating' | 'minimal';
@@ -61,6 +69,9 @@ export interface OverlayWorkbenchThemeTypography {
 export interface OverlayWorkbenchThemeRecipe {
   preset?: OverlayWorkbenchThemePreset;
   brandLabel?: string;
+  layoutPrimitiveId?: string;
+  navigationPatternId?: string;
+  renderStyleId?: string;
   topBarStyle?: OverlayWorkbenchChromeStyle;
   panelStyle?: OverlayWorkbenchPanelStyle;
   commandPaletteStyle?: OverlayWorkbenchPanelStyle;
@@ -76,6 +87,9 @@ export interface OverlayWorkbenchThemeRecipe {
 export interface ResolvedWorkbenchThemeRecipe {
   preset: OverlayWorkbenchThemePreset;
   brandLabel: string;
+  layoutPrimitiveId: string | null;
+  navigationPatternId: string | null;
+  renderStyleId: string | null;
   topBarStyle: OverlayWorkbenchChromeStyle;
   panelStyle: OverlayWorkbenchPanelStyle;
   commandPaletteStyle: OverlayWorkbenchPanelStyle;
@@ -198,6 +212,9 @@ export function normalizeWorkbenchThemeRecipe(
   return {
     preset: recipe?.preset ?? fallback?.preset,
     brandLabel: asTrimmedString(recipe?.brandLabel) ?? asTrimmedString(fallback?.brandLabel),
+    layoutPrimitiveId: asTrimmedString(recipe?.layoutPrimitiveId) ?? asTrimmedString(fallback?.layoutPrimitiveId),
+    navigationPatternId: asTrimmedString(recipe?.navigationPatternId) ?? asTrimmedString(fallback?.navigationPatternId),
+    renderStyleId: asTrimmedString(recipe?.renderStyleId) ?? asTrimmedString(fallback?.renderStyleId),
     topBarStyle: recipe?.topBarStyle ?? fallback?.topBarStyle,
     panelStyle: recipe?.panelStyle ?? fallback?.panelStyle,
     commandPaletteStyle: recipe?.commandPaletteStyle ?? fallback?.commandPaletteStyle,
@@ -406,6 +423,243 @@ function getPresetRecipe(preset: OverlayWorkbenchThemePreset): OverlayWorkbenchT
   }
 }
 
+function inferWorkbenchPresetFromEngine(theme: OverlayThemeDefinition): OverlayWorkbenchThemePreset | undefined {
+  const bindings = resolveThemeEngineBindings(theme.compiledEngineManifest, theme.workbench);
+  const renderKind = bindings.renderStyle?.kind;
+  if (renderKind === 'ps-3-xmb') {
+    return 'xmb';
+  }
+  if (renderKind === 'wii-channels' || renderKind === 'ios-springboard') {
+    return 'channel-grid';
+  }
+  if (bindings.navigationPattern?.kind === 'xmb') {
+    return 'xmb';
+  }
+  if (bindings.layoutPrimitive?.kind === 'grid' && bindings.navigationPattern?.kind === 'spatial') {
+    return 'channel-grid';
+  }
+  return undefined;
+}
+
+function createWorkbenchStyleSeed(
+  chromeStyle: ThemeChromeStyle | null | undefined,
+): Pick<
+  OverlayWorkbenchThemeRecipe,
+  'topBarStyle' | 'panelStyle' | 'commandPaletteStyle' | 'terminalStyle' | 'settingsStyle'
+> {
+  switch (chromeStyle) {
+    case 'floating':
+      return {
+        topBarStyle: 'floating',
+        panelStyle: 'floating',
+        commandPaletteStyle: 'floating',
+        terminalStyle: 'floating',
+        settingsStyle: 'floating',
+      };
+    case 'minimal':
+      return {
+        topBarStyle: 'minimal',
+        panelStyle: 'floating',
+        commandPaletteStyle: 'floating',
+        terminalStyle: 'solid',
+        settingsStyle: 'floating',
+      };
+    case 'ornate':
+      return {
+        topBarStyle: 'glass',
+        panelStyle: 'glass',
+        commandPaletteStyle: 'glass',
+        terminalStyle: 'glass',
+        settingsStyle: 'glass',
+      };
+    default:
+      return {
+        topBarStyle: 'solid',
+        panelStyle: 'solid',
+        commandPaletteStyle: 'solid',
+        terminalStyle: 'solid',
+        settingsStyle: 'solid',
+      };
+  }
+}
+
+function getDensityMetricDelta(density: ThemeDensity | null | undefined): number {
+  switch (density) {
+    case 'compact':
+      return -2;
+    case 'immersive':
+      return 4;
+    default:
+      return 0;
+  }
+}
+
+function createWorkbenchEngineRecipe(theme: OverlayThemeDefinition): OverlayWorkbenchThemeRecipe {
+  if (!theme.compiledEngineManifest) {
+    return {};
+  }
+
+  const bindings = resolveThemeEngineBindings(theme.compiledEngineManifest, theme.workbench);
+  const presentation = bindings.presentation;
+  const layoutPrimitive = bindings.layoutPrimitive;
+  const navigationPattern = bindings.navigationPattern;
+  const renderStyle = bindings.renderStyle;
+  const styleSeed = createWorkbenchStyleSeed(presentation?.chromeStyle);
+  const densityMetricDelta = getDensityMetricDelta(presentation?.density);
+  const panelSpacing = clampNumber(
+    Math.round(presentation?.panelSpacing ?? defaultMetrics.panelGap),
+    4,
+    24,
+  );
+  const cornerRadius = clampNumber(
+    Math.round(presentation?.cornerRadius ?? defaultMetrics.panelRadius),
+    4,
+    999,
+  );
+  const layoutGap = clampNumber(
+    Math.round(
+      readThemeNumberProp(layoutPrimitive?.props, 'gap')
+      ?? readThemeNumberProp(layoutPrimitive?.props, 'gutter')
+      ?? panelSpacing,
+    ),
+    4,
+    32,
+  );
+
+  let topBarStyle = styleSeed.topBarStyle;
+  let panelStyle = styleSeed.panelStyle;
+  let commandPaletteStyle = styleSeed.commandPaletteStyle;
+  let terminalStyle = styleSeed.terminalStyle;
+  let settingsStyle = styleSeed.settingsStyle;
+  let tabStyle: OverlayWorkbenchTabStyle = navigationPattern?.kind === 'tabbed'
+    ? 'segment'
+    : navigationPattern?.kind === 'hierarchy'
+      ? 'underline'
+      : navigationPattern?.kind === 'spatial' || navigationPattern?.kind === 'xmb'
+        ? 'capsule'
+        : 'underline';
+  let chromeHeight = defaultMetrics.chromeHeight + densityMetricDelta;
+  let controlRadius = cornerRadius;
+  let panelRadius = clampNumber(Math.max(cornerRadius, 8), 8, 48);
+  let shellInset = presentation?.chromeStyle === 'floating'
+    ? panelSpacing
+    : presentation?.chromeStyle === 'minimal'
+      ? Math.round(panelSpacing * 0.5)
+      : 0;
+  let commandPaletteWidth = layoutPrimitive?.kind === 'grid'
+    ? 840
+    : layoutPrimitive?.kind === 'freeform'
+      ? 800
+      : layoutPrimitive?.kind === 'split'
+        ? 780
+        : defaultMetrics.commandPaletteWidth;
+  let commandPaletteTopInset = defaultMetrics.commandPaletteTopInset + shellInset + Math.max(densityMetricDelta, 0);
+  let pagePadding = panelSpacing + (presentation?.density === 'immersive' ? 4 : presentation?.density === 'compact' ? -1 : 1);
+  let panelGap = layoutGap;
+
+  if (navigationPattern?.kind === 'palette') {
+    commandPaletteStyle = presentation?.chromeStyle === 'ornate' ? 'glass' : 'floating';
+    commandPaletteWidth += 48;
+  }
+
+  switch (layoutPrimitive?.kind) {
+    case 'grid':
+      commandPaletteWidth += 24;
+      pagePadding += 1;
+      break;
+    case 'dock':
+      shellInset = Math.max(shellInset, panelSpacing);
+      settingsStyle = settingsStyle === 'solid' ? 'floating' : settingsStyle;
+      break;
+    case 'freeform':
+      panelStyle = 'floating';
+      settingsStyle = 'floating';
+      panelRadius = clampNumber(panelRadius + 4, 8, 48);
+      shellInset = Math.max(shellInset, panelSpacing);
+      break;
+    default:
+      break;
+  }
+
+  switch (renderStyle?.kind) {
+    case 'ps-3-xmb':
+      topBarStyle = 'floating';
+      panelStyle = 'glass';
+      commandPaletteStyle = 'glass';
+      terminalStyle = 'glass';
+      settingsStyle = 'glass';
+      tabStyle = 'capsule';
+      controlRadius = 999;
+      panelRadius = clampNumber(Math.max(panelRadius, 24), 8, 48);
+      shellInset = Math.max(shellInset, 12);
+      commandPaletteWidth = Math.max(commandPaletteWidth, 820);
+      break;
+    case 'ios-springboard':
+      topBarStyle = 'minimal';
+      panelStyle = 'floating';
+      commandPaletteStyle = 'floating';
+      settingsStyle = 'floating';
+      tabStyle = 'capsule';
+      controlRadius = Math.max(controlRadius, 18);
+      panelRadius = clampNumber(Math.max(panelRadius, 24), 8, 48);
+      shellInset = Math.max(shellInset, panelSpacing);
+      commandPaletteWidth = Math.max(commandPaletteWidth, 800);
+      break;
+    case 'wii-channels':
+      topBarStyle = 'minimal';
+      panelStyle = 'floating';
+      commandPaletteStyle = 'floating';
+      settingsStyle = 'floating';
+      tabStyle = 'capsule';
+      controlRadius = Math.max(controlRadius, 16);
+      panelRadius = clampNumber(Math.max(panelRadius, 28), 8, 48);
+      shellInset = Math.max(shellInset, 10);
+      break;
+    case 'desktop-window-manager':
+      topBarStyle = 'solid';
+      panelStyle = 'solid';
+      commandPaletteStyle = 'solid';
+      terminalStyle = 'solid';
+      settingsStyle = 'solid';
+      tabStyle = 'segment';
+      controlRadius = clampNumber(Math.min(controlRadius, 8), 4, 999);
+      panelRadius = clampNumber(Math.min(Math.max(panelRadius, 10), 18), 8, 48);
+      shellInset = 0;
+      break;
+    default:
+      break;
+  }
+
+  if (navigationPattern?.kind === 'xmb') {
+    topBarStyle = 'floating';
+    panelStyle = renderStyle?.kind === 'ps-3-xmb' ? panelStyle : 'glass';
+    commandPaletteStyle = renderStyle?.kind === 'ps-3-xmb' ? commandPaletteStyle : 'glass';
+    tabStyle = 'capsule';
+  }
+
+  return {
+    layoutPrimitiveId: layoutPrimitive?.id,
+    navigationPatternId: navigationPattern?.id,
+    renderStyleId: renderStyle?.id,
+    topBarStyle,
+    panelStyle,
+    commandPaletteStyle,
+    terminalStyle,
+    settingsStyle,
+    tabStyle,
+    metrics: {
+      chromeHeight,
+      controlRadius,
+      panelRadius,
+      shellInset,
+      commandPaletteWidth,
+      commandPaletteTopInset,
+      pagePadding,
+      panelGap,
+    },
+  };
+}
+
 function formatLength(value: number): string {
   return `${Math.round(value)}px`;
 }
@@ -414,26 +668,32 @@ export function resolveWorkbenchThemeRecipe(
   theme: OverlayThemeDefinition,
 ): ResolvedWorkbenchThemeRecipe {
   const userRecipe = theme.workbench;
-  const preset = userRecipe?.preset ?? inferWorkbenchPreset(theme);
+  const engineRecipe = createWorkbenchEngineRecipe(theme);
+  const engineBindings = resolveThemeEngineBindings(theme.compiledEngineManifest, userRecipe);
+  const preset = userRecipe?.preset
+    ?? inferWorkbenchPresetFromEngine(theme)
+    ?? inferWorkbenchPreset(theme);
   const presetRecipe = getPresetRecipe(preset);
   const metrics = {
-    chromeHeight: Math.round(userRecipe?.metrics?.chromeHeight ?? presetRecipe.metrics?.chromeHeight ?? defaultMetrics.chromeHeight),
-    controlRadius: Math.round(userRecipe?.metrics?.controlRadius ?? presetRecipe.metrics?.controlRadius ?? defaultMetrics.controlRadius),
-    panelRadius: Math.round(userRecipe?.metrics?.panelRadius ?? presetRecipe.metrics?.panelRadius ?? defaultMetrics.panelRadius),
-    shellInset: Math.round(userRecipe?.metrics?.shellInset ?? presetRecipe.metrics?.shellInset ?? defaultMetrics.shellInset),
-    commandPaletteWidth: Math.round(userRecipe?.metrics?.commandPaletteWidth ?? presetRecipe.metrics?.commandPaletteWidth ?? defaultMetrics.commandPaletteWidth),
-    commandPaletteTopInset: Math.round(userRecipe?.metrics?.commandPaletteTopInset ?? presetRecipe.metrics?.commandPaletteTopInset ?? defaultMetrics.commandPaletteTopInset),
-    pagePadding: Math.round(userRecipe?.metrics?.pagePadding ?? presetRecipe.metrics?.pagePadding ?? defaultMetrics.pagePadding),
-    panelGap: Math.round(userRecipe?.metrics?.panelGap ?? presetRecipe.metrics?.panelGap ?? defaultMetrics.panelGap),
+    chromeHeight: Math.round(userRecipe?.metrics?.chromeHeight ?? engineRecipe.metrics?.chromeHeight ?? presetRecipe.metrics?.chromeHeight ?? defaultMetrics.chromeHeight),
+    controlRadius: Math.round(userRecipe?.metrics?.controlRadius ?? engineRecipe.metrics?.controlRadius ?? presetRecipe.metrics?.controlRadius ?? defaultMetrics.controlRadius),
+    panelRadius: Math.round(userRecipe?.metrics?.panelRadius ?? engineRecipe.metrics?.panelRadius ?? presetRecipe.metrics?.panelRadius ?? defaultMetrics.panelRadius),
+    shellInset: Math.round(userRecipe?.metrics?.shellInset ?? engineRecipe.metrics?.shellInset ?? presetRecipe.metrics?.shellInset ?? defaultMetrics.shellInset),
+    commandPaletteWidth: Math.round(userRecipe?.metrics?.commandPaletteWidth ?? engineRecipe.metrics?.commandPaletteWidth ?? presetRecipe.metrics?.commandPaletteWidth ?? defaultMetrics.commandPaletteWidth),
+    commandPaletteTopInset: Math.round(userRecipe?.metrics?.commandPaletteTopInset ?? engineRecipe.metrics?.commandPaletteTopInset ?? presetRecipe.metrics?.commandPaletteTopInset ?? defaultMetrics.commandPaletteTopInset),
+    pagePadding: Math.round(userRecipe?.metrics?.pagePadding ?? engineRecipe.metrics?.pagePadding ?? presetRecipe.metrics?.pagePadding ?? defaultMetrics.pagePadding),
+    panelGap: Math.round(userRecipe?.metrics?.panelGap ?? engineRecipe.metrics?.panelGap ?? presetRecipe.metrics?.panelGap ?? defaultMetrics.panelGap),
   };
   const surfaces = {
     ...defaultSurfaces,
     ...compactObject(presetRecipe.surfaces),
+    ...compactObject(engineRecipe.surfaces),
     ...compactObject(userRecipe?.surfaces),
   };
   const typography = {
     ...defaultTypography,
     ...compactObject(presetRecipe.typography),
+    ...compactObject(engineRecipe.typography),
     ...compactObject(userRecipe?.typography),
   };
   const cssVars = {
@@ -487,12 +747,15 @@ export function resolveWorkbenchThemeRecipe(
   return {
     preset,
     brandLabel: userRecipe?.brandLabel?.trim() || presetRecipe.brandLabel || 'Command Center',
-    topBarStyle: userRecipe?.topBarStyle ?? presetRecipe.topBarStyle ?? 'solid',
-    panelStyle: userRecipe?.panelStyle ?? presetRecipe.panelStyle ?? 'solid',
-    commandPaletteStyle: userRecipe?.commandPaletteStyle ?? presetRecipe.commandPaletteStyle ?? 'solid',
-    terminalStyle: userRecipe?.terminalStyle ?? presetRecipe.terminalStyle ?? 'solid',
-    settingsStyle: userRecipe?.settingsStyle ?? presetRecipe.settingsStyle ?? 'solid',
-    tabStyle: userRecipe?.tabStyle ?? presetRecipe.tabStyle ?? 'underline',
+    layoutPrimitiveId: engineBindings.layoutPrimitive?.id ?? null,
+    navigationPatternId: engineBindings.navigationPattern?.id ?? null,
+    renderStyleId: engineBindings.renderStyle?.id ?? null,
+    topBarStyle: userRecipe?.topBarStyle ?? engineRecipe.topBarStyle ?? presetRecipe.topBarStyle ?? 'solid',
+    panelStyle: userRecipe?.panelStyle ?? engineRecipe.panelStyle ?? presetRecipe.panelStyle ?? 'solid',
+    commandPaletteStyle: userRecipe?.commandPaletteStyle ?? engineRecipe.commandPaletteStyle ?? presetRecipe.commandPaletteStyle ?? 'solid',
+    terminalStyle: userRecipe?.terminalStyle ?? engineRecipe.terminalStyle ?? presetRecipe.terminalStyle ?? 'solid',
+    settingsStyle: userRecipe?.settingsStyle ?? engineRecipe.settingsStyle ?? presetRecipe.settingsStyle ?? 'solid',
+    tabStyle: userRecipe?.tabStyle ?? engineRecipe.tabStyle ?? presetRecipe.tabStyle ?? 'underline',
     metrics: {
       chromeHeight: clampNumber(metrics.chromeHeight, 30, 72),
       controlRadius: clampNumber(metrics.controlRadius, 4, 999),

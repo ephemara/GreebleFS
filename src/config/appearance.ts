@@ -15,6 +15,11 @@ import {
   type OverlayWorkbenchThemeRecipe,
   type ResolvedWorkbenchThemeRecipe,
 } from './workbenchTheme';
+import {
+  compileThemeEngineManifest,
+  type CompiledThemeEngineManifest,
+  type ExplorerThemeManifest,
+} from '../runtime/themeEngineBackend';
 import type { OverlayShellBlueprintId } from './shellBlueprints';
 import { mergeResolvedIconThemes, type OverlayResolvedIconTheme } from './iconTheme';
 import { clampOverlayVisualControlValue } from './overlayWindow';
@@ -154,6 +159,8 @@ export interface OverlayThemeDefinition {
   compatibility?: OverlayThemeCompatibility;
   workbench?: OverlayWorkbenchThemeRecipe;
   explorer?: OverlayExplorerThemeRecipe;
+  engineManifest?: ExplorerThemeManifest;
+  compiledEngineManifest?: CompiledThemeEngineManifest;
 }
 
 export interface OverlayAppearanceSelection {
@@ -913,6 +920,9 @@ export function normalizeThemeDefinition(
   fallbackTheme?: OverlayThemeDefinition,
 ): OverlayThemeDefinition {
   const fallback = fallbackTheme ?? presetMap.get('operator') ?? overlayThemePresets[0];
+  const engineManifest = theme.engineManifest;
+  const compiledEngineManifest = theme.compiledEngineManifest
+    ?? (engineManifest ? compileThemeEngineManifest(engineManifest) : undefined);
   return {
     ...fallback,
     ...theme,
@@ -972,6 +982,8 @@ export function normalizeThemeDefinition(
     },
     workbench: normalizeWorkbenchThemeRecipe(theme.workbench, fallback.workbench),
     explorer: normalizeExplorerThemeRecipe(theme.explorer, fallback.explorer),
+    engineManifest,
+    compiledEngineManifest,
   };
 }
 

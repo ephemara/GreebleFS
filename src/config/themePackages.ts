@@ -734,6 +734,12 @@ export async function loadThemePackagesFromDirectoryEntries(
         ).filter((entry): entry is LoadedOverlayAnimation => Boolean(entry));
 
         const engineManifest = buildThemeEngineManifest(theme.id, theme.name, record.manifest, theme);
+        const compiledEngineManifest = engineManifest ? compileThemeEngineManifest(engineManifest) : undefined;
+        const themeWithEngineManifest: OverlayThemeDefinition = {
+          ...theme,
+          engineManifest,
+          compiledEngineManifest,
+        };
 
         packages.push({
           id: theme.id,
@@ -757,9 +763,9 @@ export async function loadThemePackagesFromDirectoryEntries(
             animations: packageAnimations.length,
             fonts: [theme.fonts?.ui, theme.fonts?.mono].filter(Boolean).length,
           },
-          theme,
+          theme: themeWithEngineManifest,
           engineManifest,
-          compiledEngineManifest: engineManifest ? compileThemeEngineManifest(engineManifest) : undefined,
+          compiledEngineManifest,
         });
         shaders.push(...packageShaders);
         animations.push(...packageAnimations);

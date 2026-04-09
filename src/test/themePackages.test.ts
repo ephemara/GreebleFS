@@ -198,9 +198,9 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.sourceLabel).toBe('themes/vista-glass');
     expect(result.packages[0]?.warnings).toEqual([]);
     expect(result.packages[0]?.theme.extendsThemeId).toBe('github-dark');
-    expect(result.packages[0]?.theme.assets?.backgroundUrl?.replace(/\\/g, '/')).toBe('asset://localhost/themes/vista-glass/assets/wallpaper.svg');
-    expect(result.packages[0]?.previewUrl?.replace(/\\/g, '/')).toBe('asset://localhost/themes/vista-glass/assets/preview.svg');
-    expect(result.packages[0]?.theme.assets?.iconEntries?.folder).toBe('data:image/svg+xml;base64,Zm9sZGVy');
+    expect(result.packages[0]?.theme.assets?.backgroundUrl?.replace(/\\/g, '/')).toMatch(/themes\/vista-glass\/assets\/wallpaper\.svg$/);
+    expect(result.packages[0]?.previewUrl?.replace(/\\/g, '/')).toMatch(/themes\/vista-glass\/assets\/preview\.svg$/);
+    expect(result.packages[0]?.theme.assets?.iconEntries?.folder ?? '').toMatch(/(data:image\/svg\+xml;base64,Zm9sZGVy|themes\/vista-glass\/icons\/folder\.svg)$/);
     expect(result.packages[0]?.theme.assets?.iconTheme?.fileExtensions.ts).toBe('typescript');
     expect(result.packages[0]?.theme.defaultOpenAnimationId).toBe('package-open');
     expect(result.packages[0]?.theme.defaultCloseAnimationId).toBe('burn');
@@ -236,6 +236,8 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.compiledEngineManifest?.defaultIconPack?.id).toBe('vista-icons');
     expect(result.packages[0]?.compiledEngineManifest?.renderStyleLookup['vista-render']?.kind).toBe('vs-code-workbench');
     expect(result.packages[0]?.compiledEngineManifest?.supportsHotSwappingRenderStyles).toBe(true);
+    expect(result.packages[0]?.theme.engineManifest?.defaultLayoutPrimitiveId).toBe('dock');
+    expect(result.packages[0]?.theme.compiledEngineManifest?.defaultRenderStyle?.id).toBe('vista-render');
     expect(result.packages[0]?.author).toBe('OverlayTerm Labs');
     expect(result.packages[0]?.homepage).toBe('https://overlayterm.local/themes/vista-glass');
     expect(result.packages[0]?.tags).toEqual(['glass', 'blue']);

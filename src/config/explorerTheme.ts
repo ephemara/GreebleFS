@@ -1,5 +1,10 @@
 import type { ResolvedOverlayAppearance } from './appearance';
 import type {
+  ThemeDensity,
+  ThemeIconStyle,
+  ThemeMotionStyle,
+} from '../generated/tauri';
+import type {
   AdaptiveSemanticDensityStopDefinition,
   ExplorerExperimentalViewMode,
 } from './explorerExperimentalModes';
@@ -8,6 +13,11 @@ import type {
   ExplorerRowMetrics,
   ExplorerViewMode,
 } from './explorerViewModes';
+import {
+  readThemeNumberProp,
+  readThemeStringProp,
+  resolveThemeEngineBindings,
+} from './themeEngineBindings';
 
 export type OverlayExplorerThemePreset = 'workbench' | 'xmb' | 'channel-grid' | 'custom';
 export type OverlayExplorerToolbarStyle = 'solid' | 'glass' | 'floating' | 'minimal';
@@ -80,6 +90,9 @@ export interface OverlayExplorerThemeTypography {
 
 export interface OverlayExplorerThemeRecipe {
   preset?: OverlayExplorerThemePreset;
+  layoutPrimitiveId?: string;
+  navigationPatternId?: string;
+  renderStyleId?: string;
   railPosition?: OverlayExplorerRailPosition;
   railBrandLabel?: string;
   toolbarStyle?: OverlayExplorerToolbarStyle;
@@ -99,6 +112,9 @@ export interface OverlayExplorerThemeRecipe {
 
 export interface ResolvedExplorerThemeRecipe {
   preset: OverlayExplorerThemePreset;
+  layoutPrimitiveId: string | null;
+  navigationPatternId: string | null;
+  renderStyleId: string | null;
   railPosition: OverlayExplorerRailPosition;
   railBrandLabel: string;
   toolbarStyle: OverlayExplorerToolbarStyle;
@@ -248,6 +264,9 @@ export function normalizeExplorerThemeRecipe(
 
   const next: OverlayExplorerThemeRecipe = {
     preset: recipe?.preset ?? fallback?.preset,
+    layoutPrimitiveId: asTrimmedString(recipe?.layoutPrimitiveId) ?? asTrimmedString(fallback?.layoutPrimitiveId),
+    navigationPatternId: asTrimmedString(recipe?.navigationPatternId) ?? asTrimmedString(fallback?.navigationPatternId),
+    renderStyleId: asTrimmedString(recipe?.renderStyleId) ?? asTrimmedString(fallback?.renderStyleId),
     railPosition: recipe?.railPosition ?? fallback?.railPosition,
     railBrandLabel: asTrimmedString(recipe?.railBrandLabel) ?? asTrimmedString(fallback?.railBrandLabel),
     toolbarStyle: recipe?.toolbarStyle ?? fallback?.toolbarStyle,
@@ -517,6 +536,342 @@ function createPresetRecipe(preset: OverlayExplorerThemePreset): OverlayExplorer
   }
 }
 
+function inferExplorerPresetFromEngine(appearance?: ResolvedOverlayAppearance): OverlayExplorerThemePreset | undefined {
+  const bindings = resolveThemeEngineBindings(appearance?.baseTheme.compiledEngineManifest, appearance?.baseTheme.explorer);
+  const renderKind = bindings.renderStyle?.kind;
+  if (renderKind === 'ps-3-xmb') {
+    return 'xmb';
+  }
+  if (renderKind === 'wii-channels' || renderKind === 'ios-springboard') {
+    return 'channel-grid';
+  }
+  if (bindings.navigationPattern?.kind === 'xmb') {
+    return 'xmb';
+  }
+  if (bindings.layoutPrimitive?.kind === 'grid' && bindings.navigationPattern?.kind === 'spatial') {
+    return 'channel-grid';
+  }
+  return undefined;
+}
+
+function getDensitySpacingScale(density: ThemeDensity | null | undefined): number {
+  switch (density) {
+    case 'compact':
+      return 0.92;
+    case 'immersive':
+      return 1.16;
+    default:
+      return 1;
+  }
+}
+
+function getIconStyleScale(iconStyle: ThemeIconStyle | null | undefined): number {
+  switch (iconStyle) {
+    case 'pixel':
+      return 0.94;
+    case 'skeuomorphic':
+      return 1.18;
+    default:
+      return 1;
+  }
+}
+
+function getHoverLiftFromMotion(motionStyle: ThemeMotionStyle | null | undefined): number {
+  switch (motionStyle) {
+    case 'instant':
+      return 0;
+    case 'snappy':
+      return 1;
+    case 'dramatic':
+      return 4;
+    default:
+      return 2;
+  }
+}
+
+function createExplorerStyleSeed(
+  appearance?: ResolvedOverlayAppearance,
+): Pick<
+  OverlayExplorerThemeRecipe,
+  'toolbarStyle' | 'breadcrumbStyle' | 'selectionStyle' | 'hoverStyle' | 'previewStyle' | 'statusBarStyle' | 'labelMode'
+> {
+  const chromeStyle = appearance?.baseTheme.compiledEngineManifest?.manifest.presentation.chromeStyle;
+  switch (chromeStyle) {
+    case 'floating':
+      return {
+        toolbarStyle: 'floating',
+        breadcrumbStyle: 'segmented',
+        selectionStyle: 'outline',
+        hoverStyle: 'lift',
+        previewStyle: 'floating',
+        statusBarStyle: 'floating',
+        labelMode: 'stacked',
+      };
+    case 'minimal':
+      return {
+        toolbarStyle: 'minimal',
+        breadcrumbStyle: 'plain',
+        selectionStyle: 'outline',
+        hoverStyle: 'lift',
+        previewStyle: 'floating',
+        statusBarStyle: 'hidden',
+        labelMode: 'stacked',
+      };
+    case 'ornate':
+      return {
+        toolbarStyle: 'glass',
+        breadcrumbStyle: 'capsule',
+        selectionStyle: 'glow',
+        hoverStyle: 'glow',
+        previewStyle: 'glass',
+        statusBarStyle: 'floating',
+        labelMode: 'stacked',
+      };
+    default:
+      return {
+        toolbarStyle: 'solid',
+        breadcrumbStyle: 'plain',
+        selectionStyle: 'fill',
+        hoverStyle: 'fill',
+        previewStyle: 'attached',
+        statusBarStyle: 'solid',
+        labelMode: 'stacked',
+      };
+  }
+}
+
+function createExplorerEngineRecipe(
+  appearance?: ResolvedOverlayAppearance,
+): OverlayExplorerThemeRecipe {
+  if (!appearance?.baseTheme.compiledEngineManifest) {
+    return {};
+  }
+
+  const userRecipe = appearance?.baseTheme.explorer;
+  const bindings = resolveThemeEngineBindings(appearance?.baseTheme.compiledEngineManifest, userRecipe);
+  const presentation = bindings.presentation;
+  const layoutPrimitive = bindings.layoutPrimitive;
+  const navigationPattern = bindings.navigationPattern;
+  const renderStyle = bindings.renderStyle;
+  const styleSeed = createExplorerStyleSeed(appearance);
+  const spacingScale = getDensitySpacingScale(presentation?.density);
+  const panelSpacing = clampNumber(
+    Math.round(presentation?.panelSpacing ?? workbenchMetrics.toolbarGap),
+    4,
+    24,
+  );
+  const panelRadius = clampNumber(
+    Math.round(presentation?.cornerRadius ?? workbenchMetrics.panelRadius),
+    8,
+    48,
+  );
+  let controlRadius = clampNumber(
+    Math.round((presentation?.cornerRadius ?? workbenchMetrics.controlRadius) * 0.9),
+    4,
+    999,
+  );
+  const layoutGap = readThemeNumberProp(layoutPrimitive?.props, 'gap')
+    ?? readThemeNumberProp(layoutPrimitive?.props, 'gutter')
+    ?? panelSpacing;
+  const layoutSide = readThemeStringProp(layoutPrimitive?.props, 'side');
+
+  let railPosition: OverlayExplorerRailPosition = layoutSide === 'right' ? 'right' : 'left';
+  let toolbarStyle = styleSeed.toolbarStyle;
+  let breadcrumbStyle = styleSeed.breadcrumbStyle;
+  let selectionStyle = styleSeed.selectionStyle;
+  let hoverStyle = styleSeed.hoverStyle;
+  let previewStyle = styleSeed.previewStyle;
+  let statusBarStyle = styleSeed.statusBarStyle;
+  let labelMode = styleSeed.labelMode;
+  let preferredViewMode: ExplorerViewMode | null = null;
+  let preferredExperimentalViewMode: ExplorerExperimentalViewMode | null = null;
+  let railWidth = layoutPrimitive?.kind === 'dock' ? 236 : workbenchMetrics.railWidth;
+  let previewWidth = layoutPrimitive?.kind === 'split' ? 440 : workbenchMetrics.previewWidth;
+  let chromeInset = presentation?.chromeStyle === 'floating'
+    ? Math.round(panelSpacing)
+    : presentation?.chromeStyle === 'minimal'
+      ? Math.round(panelSpacing * 0.5)
+      : 0;
+  let toolbarPaddingX = Math.max(8, Math.round(panelSpacing + 2));
+  let toolbarPaddingY = Math.max(6, Math.round(panelSpacing * 0.7));
+  let toolbarGap = Math.max(6, Math.round(layoutGap));
+  let metricsSpacingScale = spacingScale;
+  let gridScale = layoutPrimitive?.kind === 'grid' ? 1.18 : 1;
+  let rowHeightScale = presentation?.density === 'compact'
+    ? 0.94
+    : presentation?.density === 'immersive'
+      ? 1.08
+      : 1;
+  let iconScale = getIconStyleScale(presentation?.iconStyle);
+  let hoverLiftPx = getHoverLiftFromMotion(presentation?.motionStyle);
+
+  switch (layoutPrimitive?.kind) {
+    case 'grid':
+      preferredViewMode = 'icons-xl';
+      labelMode = 'stacked';
+      previewWidth = Math.max(previewWidth, 420);
+      break;
+    case 'freeform':
+      preferredViewMode = 'icons-l';
+      labelMode = 'stacked';
+      previewStyle = previewStyle === 'attached' ? 'floating' : previewStyle;
+      gridScale = Math.max(gridScale, 1.1);
+      break;
+    case 'split':
+      preferredViewMode = 'columns';
+      labelMode = 'inline';
+      previewWidth = Math.max(previewWidth, 460);
+      break;
+    case 'stack':
+      preferredViewMode = 'details';
+      labelMode = 'inline';
+      break;
+    case 'dock':
+      preferredViewMode = 'list';
+      railWidth = Math.max(railWidth, 232);
+      break;
+    default:
+      break;
+  }
+
+  switch (navigationPattern?.kind) {
+    case 'xmb':
+      toolbarStyle = 'floating';
+      breadcrumbStyle = 'capsule';
+      selectionStyle = 'glow';
+      hoverStyle = 'glow';
+      previewStyle = 'glass';
+      statusBarStyle = 'floating';
+      labelMode = 'stacked';
+      preferredViewMode = preferredViewMode ?? 'icons-xl';
+      preferredExperimentalViewMode = 'adaptive-semantic-grid';
+      gridScale = Math.max(gridScale, 1.2);
+      iconScale = Math.max(iconScale, 1.2);
+      hoverLiftPx = Math.max(hoverLiftPx, 3);
+      break;
+    case 'spatial':
+      breadcrumbStyle = 'capsule';
+      selectionStyle = 'outline';
+      hoverStyle = 'lift';
+      previewStyle = previewStyle === 'attached' ? 'floating' : previewStyle;
+      labelMode = 'stacked';
+      preferredViewMode = preferredViewMode ?? 'icons-xl';
+      gridScale = Math.max(gridScale, 1.14);
+      break;
+    case 'hierarchy':
+      breadcrumbStyle = 'segmented';
+      selectionStyle = 'outline';
+      hoverStyle = 'lift';
+      labelMode = 'inline';
+      preferredViewMode = preferredViewMode ?? 'columns';
+      break;
+    case 'palette':
+      toolbarStyle = toolbarStyle === 'minimal' ? toolbarStyle : 'solid';
+      previewStyle = 'attached';
+      preferredViewMode = preferredViewMode ?? 'list';
+      break;
+    case 'tabbed':
+      breadcrumbStyle = 'segmented';
+      preferredViewMode = preferredViewMode ?? 'columns';
+      break;
+    default:
+      break;
+  }
+
+  switch (renderStyle?.kind) {
+    case 'ps-3-xmb':
+      toolbarStyle = 'floating';
+      breadcrumbStyle = 'capsule';
+      selectionStyle = 'glow';
+      hoverStyle = 'glow';
+      previewStyle = 'glass';
+      statusBarStyle = 'floating';
+      preferredViewMode = 'icons-xl';
+      preferredExperimentalViewMode = 'adaptive-semantic-grid';
+      controlRadius = 999;
+      railWidth = Math.max(railWidth, 232);
+      previewWidth = Math.max(previewWidth, 460);
+      chromeInset = Math.max(chromeInset, 12);
+      gridScale = Math.max(gridScale, 1.2);
+      iconScale = Math.max(iconScale, 1.3);
+      hoverLiftPx = Math.max(hoverLiftPx, 4);
+      break;
+    case 'wii-channels':
+      toolbarStyle = 'minimal';
+      breadcrumbStyle = 'segmented';
+      selectionStyle = 'outline';
+      hoverStyle = 'lift';
+      previewStyle = 'floating';
+      statusBarStyle = 'hidden';
+      preferredViewMode = 'icons-xl';
+      railWidth = Math.max(railWidth, 244);
+      previewWidth = Math.max(previewWidth, 420);
+      chromeInset = Math.max(chromeInset, 10);
+      gridScale = Math.max(gridScale, 1.24);
+      iconScale = Math.max(iconScale, 1.2);
+      break;
+    case 'ios-springboard':
+      toolbarStyle = 'minimal';
+      breadcrumbStyle = 'plain';
+      selectionStyle = 'outline';
+      hoverStyle = 'lift';
+      previewStyle = 'floating';
+      statusBarStyle = 'hidden';
+      preferredViewMode = 'icons-xl';
+      labelMode = 'stacked';
+      railWidth = Math.max(railWidth, 220);
+      previewWidth = Math.max(previewWidth, 400);
+      chromeInset = Math.max(chromeInset, 8);
+      gridScale = Math.max(gridScale, 1.22);
+      iconScale = Math.max(iconScale, 1.12);
+      break;
+    case 'desktop-window-manager':
+      toolbarStyle = 'solid';
+      breadcrumbStyle = 'plain';
+      selectionStyle = 'fill';
+      hoverStyle = 'fill';
+      previewStyle = 'attached';
+      statusBarStyle = 'solid';
+      preferredViewMode = preferredViewMode ?? 'details';
+      labelMode = 'inline';
+      railWidth = Math.max(railWidth, 260);
+      break;
+    default:
+      break;
+  }
+
+  return {
+    layoutPrimitiveId: layoutPrimitive?.id,
+    navigationPatternId: navigationPattern?.id,
+    renderStyleId: renderStyle?.id,
+    railPosition,
+    toolbarStyle,
+    breadcrumbStyle,
+    selectionStyle,
+    hoverStyle,
+    previewStyle,
+    statusBarStyle,
+    labelMode,
+    preferredViewMode: preferredViewMode ?? undefined,
+    preferredExperimentalViewMode: preferredExperimentalViewMode ?? undefined,
+    metrics: {
+      railWidth,
+      previewWidth,
+      chromeInset,
+      toolbarPaddingX,
+      toolbarPaddingY,
+      toolbarGap,
+      controlRadius,
+      panelRadius,
+      spacingScale: metricsSpacingScale,
+      gridScale,
+      rowHeightScale,
+      iconScale,
+      hoverLiftPx,
+    },
+  };
+}
+
 function formatLength(value: number): string {
   return `${Math.round(value)}px`;
 }
@@ -568,16 +923,44 @@ export function resolveExplorerThemeRecipe(
   appearance?: ResolvedOverlayAppearance,
 ): ResolvedExplorerThemeRecipe {
   const userRecipe = appearance?.baseTheme.explorer;
-  const preset = userRecipe?.preset ?? inferPreset(appearance);
+  const engineRecipe = createExplorerEngineRecipe(appearance);
+  const engineBindings = resolveThemeEngineBindings(appearance?.baseTheme.compiledEngineManifest, userRecipe);
+  const preset = userRecipe?.preset
+    ?? inferExplorerPresetFromEngine(appearance)
+    ?? inferPreset(appearance);
   const presetRecipe = createPresetRecipe(preset);
-  const metrics = resolveMetrics(presetRecipe.metrics, userRecipe?.metrics);
-  const surfaces = resolveSurfaces(presetRecipe.surfaces, userRecipe?.surfaces);
-  const typography = resolveTypography(presetRecipe.typography, userRecipe?.typography);
+  const metrics = resolveMetrics(
+    {
+      ...compactObject(presetRecipe.metrics),
+      ...compactObject(engineRecipe.metrics),
+    },
+    userRecipe?.metrics,
+  );
+  const surfaces = resolveSurfaces(
+    {
+      ...compactObject(presetRecipe.surfaces),
+      ...compactObject(engineRecipe.surfaces),
+    },
+    userRecipe?.surfaces,
+  );
+  const typography = resolveTypography(
+    {
+      ...compactObject(presetRecipe.typography),
+      ...compactObject(engineRecipe.typography),
+    },
+    userRecipe?.typography,
+  );
   const railBrandLabel = userRecipe?.railBrandLabel?.trim()
     || presetRecipe.railBrandLabel
     || 'Explorer';
-  const preferredViewMode = userRecipe?.preferredViewMode ?? presetRecipe.preferredViewMode ?? null;
-  const preferredExperimentalViewMode = userRecipe?.preferredExperimentalViewMode ?? presetRecipe.preferredExperimentalViewMode ?? null;
+  const preferredViewMode = userRecipe?.preferredViewMode
+    ?? engineRecipe.preferredViewMode
+    ?? presetRecipe.preferredViewMode
+    ?? null;
+  const preferredExperimentalViewMode = userRecipe?.preferredExperimentalViewMode
+    ?? engineRecipe.preferredExperimentalViewMode
+    ?? presetRecipe.preferredExperimentalViewMode
+    ?? null;
 
   const cssVars = {
     '--overlay-explorer-root-bg': surfaces.rootBackground,
@@ -630,15 +1013,18 @@ export function resolveExplorerThemeRecipe(
 
   return {
     preset,
-    railPosition: userRecipe?.railPosition ?? presetRecipe.railPosition ?? 'left',
+    layoutPrimitiveId: engineBindings.layoutPrimitive?.id ?? null,
+    navigationPatternId: engineBindings.navigationPattern?.id ?? null,
+    renderStyleId: engineBindings.renderStyle?.id ?? null,
+    railPosition: userRecipe?.railPosition ?? engineRecipe.railPosition ?? presetRecipe.railPosition ?? 'left',
     railBrandLabel,
-    toolbarStyle: userRecipe?.toolbarStyle ?? presetRecipe.toolbarStyle ?? 'solid',
-    breadcrumbStyle: userRecipe?.breadcrumbStyle ?? presetRecipe.breadcrumbStyle ?? 'plain',
-    selectionStyle: userRecipe?.selectionStyle ?? presetRecipe.selectionStyle ?? 'fill',
-    hoverStyle: userRecipe?.hoverStyle ?? presetRecipe.hoverStyle ?? 'fill',
-    previewStyle: userRecipe?.previewStyle ?? presetRecipe.previewStyle ?? 'attached',
-    statusBarStyle: userRecipe?.statusBarStyle ?? presetRecipe.statusBarStyle ?? 'solid',
-    labelMode: userRecipe?.labelMode ?? presetRecipe.labelMode ?? 'stacked',
+    toolbarStyle: userRecipe?.toolbarStyle ?? engineRecipe.toolbarStyle ?? presetRecipe.toolbarStyle ?? 'solid',
+    breadcrumbStyle: userRecipe?.breadcrumbStyle ?? engineRecipe.breadcrumbStyle ?? presetRecipe.breadcrumbStyle ?? 'plain',
+    selectionStyle: userRecipe?.selectionStyle ?? engineRecipe.selectionStyle ?? presetRecipe.selectionStyle ?? 'fill',
+    hoverStyle: userRecipe?.hoverStyle ?? engineRecipe.hoverStyle ?? presetRecipe.hoverStyle ?? 'fill',
+    previewStyle: userRecipe?.previewStyle ?? engineRecipe.previewStyle ?? presetRecipe.previewStyle ?? 'attached',
+    statusBarStyle: userRecipe?.statusBarStyle ?? engineRecipe.statusBarStyle ?? presetRecipe.statusBarStyle ?? 'solid',
+    labelMode: userRecipe?.labelMode ?? engineRecipe.labelMode ?? presetRecipe.labelMode ?? 'stacked',
     preferredViewMode: preferredViewMode && isExplorerViewMode(preferredViewMode) ? preferredViewMode : null,
     preferredExperimentalViewMode: preferredExperimentalViewMode && isExplorerExperimentalViewMode(preferredExperimentalViewMode)
       ? preferredExperimentalViewMode
