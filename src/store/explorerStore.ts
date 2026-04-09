@@ -14,7 +14,10 @@ import {
 export const EXPLORER_STATE_STORAGE_KEY = 'overlayterm-explorer-state-v3';
 export const EXPLORER_STATE_BACKUP_KEY = 'overlayterm-explorer-state-v3.backup';
 export const EXPLORER_LEGACY_BOOKMARKS_KEY = 'fs-bookmarks-v2';
-export const EXPLORER_STATE_VERSION = 3;
+export const EXPLORER_STATE_VERSION = 4;
+export const PRIMARY_EXPLORER_INSTANCE_ID = 'primary';
+export const CONTENT_BROWSER_DRAWER_EXPLORER_INSTANCE_ID = 'content-browser-drawer';
+export const CONTENT_BROWSER_DOCK_EXPLORER_INSTANCE_ID = 'content-browser-dock';
 const EXPLORER_PERSIST_DEBOUNCE_MS = (() => {
   // Vitest runs in a browser-like environment; keep persistence synchronous so unit tests
   // can assert immediately after calling store actions.
@@ -24,6 +27,7 @@ const EXPLORER_PERSIST_DEBOUNCE_MS = (() => {
 })();
 
 export type ExplorerDocumentViewMode = 'edit' | 'preview';
+export type ExplorerInstanceId = string;
 
 export interface ExplorerSessionSnapshot {
   currentPath: string;
@@ -36,6 +40,7 @@ export interface ExplorerSessionSnapshot {
   search: string;
   searchIncludeContent: boolean;
   documentViewMode: ExplorerDocumentViewMode;
+  sourcesVisible: boolean;
 }
 
 export interface ExplorerPersistenceNotice {
@@ -55,6 +60,7 @@ export const defaultExplorerSession: ExplorerSessionSnapshot = {
   search: '',
   searchIncludeContent: true,
   documentViewMode: 'edit',
+  sourcesVisible: true,
 };
 
 const defaultExplorerPersistenceNotice: ExplorerPersistenceNotice = {
@@ -63,18 +69,43 @@ const defaultExplorerPersistenceNotice: ExplorerPersistenceNotice = {
   hasBackup: false,
 };
 
+function cloneExplorerSessionSnapshot(session: ExplorerSessionSnapshot): ExplorerSessionSnapshot {
+  return {
+    ...session,
+    history: [...session.history],
+  };
+}
+
+function createDefaultExplorerSessions(): Record<ExplorerInstanceId, ExplorerSessionSnapshot> {
+  return {
+    [PRIMARY_EXPLORER_INSTANCE_ID]: cloneExplorerSessionSnapshot(defaultExplorerSession),
+  };
+}
+
+function getPrimaryExplorerSession(
+  sessions: Record<ExplorerInstanceId, ExplorerSessionSnapshot>,
+): ExplorerSessionSnapshot {
+  return sessions[PRIMARY_EXPLORER_INSTANCE_ID] ?? cloneExplorerSessionSnapshot(defaultExplorerSession);
+}
+
 export interface PersistedExplorerState {
   version: number;
-  session: ExplorerSessionSnapshot;
+  session?: ExplorerSessionSnapshot;
+  sessions?: Record<ExplorerInstanceId, ExplorerSessionSnapshot>;
   rail: ExplorerRailSnapshot;
 }
 
 interface ExplorerStoreState {
+  sessions: Record<ExplorerInstanceId, ExplorerSessionSnapshot>;
   session: ExplorerSessionSnapshot;
   rail: ExplorerRailSnapshot;
   persistence: ExplorerPersistenceNotice;
+  getSession: (instanceId?: ExplorerInstanceId) => ExplorerSessionSnapshot;
   updateSession: (updates: Partial<ExplorerSessionSnapshot>) => void;
+  updateSessionForInstance: (instanceId: ExplorerInstanceId, updates: Partial<ExplorerSessionSnapshot>) => void;
   resetSession: () => void;
+  resetSessionForInstance: (instanceId: ExplorerInstanceId) => void;
+  copySession: (sourceInstanceId: ExplorerInstanceId, targetInstanceId: ExplorerInstanceId) => void;
   updateRail: (updates: Partial<ExplorerRailSnapshot> | ((current: ExplorerRailSnapshot) => ExplorerRailSnapshot)) => void;
   replaceRail: (nextRail: ExplorerRailSnapshot) => void;
   restoreRailBackup: () => void;
@@ -82,6 +113,7 @@ interface ExplorerStoreState {
 }
 
 interface ExplorerHydrationResult {
+  sessions: Record<ExplorerInstanceId, ExplorerSessionSnapshot>;
   session: ExplorerSessionSnapshot;
   rail: ExplorerRailSnapshot;
   persistence: ExplorerPersistenceNotice;
@@ -110,14 +142,43 @@ export function normalizeExplorerSessionSnapshot(value: unknown): ExplorerSessio
     search: typeof source?.search === 'string' ? source.search : '',
     searchIncludeContent: typeof source?.searchIncludeContent === 'boolean' ? source.searchIncludeContent : true,
     documentViewMode: source?.documentViewMode === 'preview' ? 'preview' : 'edit',
+    sourcesVisible: typeof source?.sourcesVisible === 'boolean'
+      ? source.sourcesVisible
+      : defaultExplorerSession.sourcesVisible,
+  };
+}
+
+function normalizeExplorerSessionsSnapshot(
+  value: unknown,
+  legacyPrimarySession?: unknown,
+): Record<ExplorerInstanceId, ExplorerSessionSnapshot> {
+  const source = asRecord(value);
+  const entries = source
+    ? Object.entries(source)
+      .filter(([instanceId]) => instanceId.trim().length > 0)
+      .map(([instanceId, session]) => [instanceId, normalizeExplorerSessionSnapshot(session)] as const)
+    : [];
+
+  if (entries.length > 0) {
+    const sessions = Object.fromEntries(entries);
+    if (!sessions[PRIMARY_EXPLORER_INSTANCE_ID]) {
+      sessions[PRIMARY_EXPLORER_INSTANCE_ID] = normalizeExplorerSessionSnapshot(legacyPrimarySession);
+    }
+    return sessions;
+  }
+
+  return {
+    [PRIMARY_EXPLORER_INSTANCE_ID]: normalizeExplorerSessionSnapshot(legacyPrimarySession),
   };
 }
 
 export function loadExplorerPersistedState(storage: Storage | null = getStorage()): ExplorerHydrationResult {
   const hasBackup = Boolean(storage?.getItem(EXPLORER_STATE_BACKUP_KEY));
   if (!storage) {
+    const sessions = createDefaultExplorerSessions();
     return {
-      session: defaultExplorerSession,
+      sessions,
+      session: getPrimaryExplorerSession(sessions),
       rail: defaultExplorerRailSnapshot,
       persistence: defaultExplorerPersistenceNotice,
     };
@@ -127,8 +188,10 @@ export function loadExplorerPersistedState(storage: Storage | null = getStorage(
   if (primaryValue) {
     try {
       const parsed = JSON.parse(primaryValue) as Partial<PersistedExplorerState>;
+      const sessions = normalizeExplorerSessionsSnapshot(parsed.sessions, parsed.session);
       return {
-        session: normalizeExplorerSessionSnapshot(parsed.session),
+        sessions,
+        session: getPrimaryExplorerSession(sessions),
         rail: normalizeExplorerRailSnapshot(parsed.rail),
         persistence: {
           status: 'ready',
@@ -150,7 +213,8 @@ export function loadExplorerPersistedState(storage: Storage | null = getStorage(
       }
 
       return {
-        session: defaultExplorerSession,
+        sessions: createDefaultExplorerSessions(),
+        session: cloneExplorerSessionSnapshot(defaultExplorerSession),
         rail: createDefaultExplorerRailSnapshot(),
         persistence: {
           status: 'corrupted-reset',
@@ -167,7 +231,8 @@ export function loadExplorerPersistedState(storage: Storage | null = getStorage(
       const legacyBookmarks = migrateLegacyExplorerBookmarks(JSON.parse(legacyValue));
       if (legacyBookmarks.length > 0) {
         return {
-          session: defaultExplorerSession,
+          sessions: createDefaultExplorerSessions(),
+          session: cloneExplorerSessionSnapshot(defaultExplorerSession),
           rail: {
             ...createDefaultExplorerRailSnapshot(),
             nodes: legacyBookmarks,
@@ -184,8 +249,10 @@ export function loadExplorerPersistedState(storage: Storage | null = getStorage(
     }
   }
 
+  const sessions = createDefaultExplorerSessions();
   return {
-    session: defaultExplorerSession,
+    sessions,
+    session: getPrimaryExplorerSession(sessions),
     rail: createDefaultExplorerRailSnapshot(),
     persistence: {
       status: 'ready',
@@ -207,9 +274,12 @@ export function persistExplorerState(
   }
 
   try {
+    const sessions = normalizeExplorerSessionsSnapshot(state.sessions, state.session);
+    const primarySession = getPrimaryExplorerSession(sessions);
     const serialized = JSON.stringify({
       version: EXPLORER_STATE_VERSION,
-      session: normalizeExplorerSessionSnapshot(state.session),
+      session: primarySession,
+      sessions,
       rail: normalizeExplorerRailSnapshot(state.rail),
     } satisfies PersistedExplorerState);
     const previous = storage.getItem(EXPLORER_STATE_STORAGE_KEY);
@@ -238,6 +308,7 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
   const persistLatest = (successNotice?: Partial<ExplorerPersistenceNotice>) => {
     const result = persistExplorerState({
       version: EXPLORER_STATE_VERSION,
+      sessions: get().sessions,
       session: get().session,
       rail: get().rail,
     });
@@ -312,23 +383,83 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
   installFlushListeners();
 
   return {
+    sessions: hydratedState.sessions,
     session: hydratedState.session,
     rail: hydratedState.rail,
     persistence: hydratedState.persistence,
+    getSession: (instanceId = PRIMARY_EXPLORER_INSTANCE_ID) => (
+      get().sessions[instanceId] ?? cloneExplorerSessionSnapshot(defaultExplorerSession)
+    ),
     updateSession: (updates) => {
+      const current = get().sessions[PRIMARY_EXPLORER_INSTANCE_ID] ?? cloneExplorerSessionSnapshot(defaultExplorerSession);
+      const nextSession = normalizeExplorerSessionSnapshot({
+        ...current,
+        ...updates,
+      });
       set((state) => ({
-        session: {
-          ...state.session,
-          ...updates,
+        sessions: {
+          ...state.sessions,
+          [PRIMARY_EXPLORER_INSTANCE_ID]: nextSession,
         },
+        session: nextSession,
+      }));
+      schedulePersistLatest(hydratedState.persistence.status === 'legacy-imported'
+        ? { status: 'ready', message: null }
+        : undefined);
+    },
+    updateSessionForInstance: (instanceId, updates) => {
+      const normalizedInstanceId = instanceId.trim() || PRIMARY_EXPLORER_INSTANCE_ID;
+      const current = get().sessions[normalizedInstanceId] ?? cloneExplorerSessionSnapshot(defaultExplorerSession);
+      const nextSession = normalizeExplorerSessionSnapshot({
+        ...current,
+        ...updates,
+      });
+      set((state) => ({
+        sessions: {
+          ...state.sessions,
+          [normalizedInstanceId]: nextSession,
+        },
+        session: normalizedInstanceId === PRIMARY_EXPLORER_INSTANCE_ID ? nextSession : state.session,
       }));
       schedulePersistLatest(hydratedState.persistence.status === 'legacy-imported'
         ? { status: 'ready', message: null }
         : undefined);
     },
     resetSession: () => {
-      set({ session: defaultExplorerSession });
+      const sessions = createDefaultExplorerSessions();
+      set({
+        sessions,
+        session: getPrimaryExplorerSession(sessions),
+      });
       schedulePersistLatest();
+    },
+    resetSessionForInstance: (instanceId) => {
+      const normalizedInstanceId = instanceId.trim() || PRIMARY_EXPLORER_INSTANCE_ID;
+      const nextSession = cloneExplorerSessionSnapshot(defaultExplorerSession);
+      set((state) => ({
+        sessions: {
+          ...state.sessions,
+          [normalizedInstanceId]: nextSession,
+        },
+        session: normalizedInstanceId === PRIMARY_EXPLORER_INSTANCE_ID ? nextSession : state.session,
+      }));
+      schedulePersistLatest();
+    },
+    copySession: (sourceInstanceId, targetInstanceId) => {
+      const sourceId = sourceInstanceId.trim() || PRIMARY_EXPLORER_INSTANCE_ID;
+      const targetId = targetInstanceId.trim() || PRIMARY_EXPLORER_INSTANCE_ID;
+      const sourceSession = get().sessions[sourceId] ?? cloneExplorerSessionSnapshot(defaultExplorerSession);
+      const nextSession = cloneExplorerSessionSnapshot(sourceSession);
+      set((state) => ({
+        sessions: {
+          ...state.sessions,
+          [targetId]: nextSession,
+        },
+        session: targetId === PRIMARY_EXPLORER_INSTANCE_ID ? nextSession : state.session,
+      }));
+      schedulePersistLatest(hydratedState.persistence.status === 'legacy-imported'
+        ? { status: 'ready', message: null }
+        : undefined);
     },
     updateRail: (updates) => {
       set((state) => ({
@@ -364,6 +495,7 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
       }
 
       set({
+        sessions: backup.sessions,
         session: backup.session,
         rail: backup.rail,
       });
@@ -396,8 +528,10 @@ function loadExplorerBackup(storage: Storage | null = getStorage()): Omit<Explor
 
   try {
     const parsed = JSON.parse(backupValue) as Partial<PersistedExplorerState>;
+    const sessions = normalizeExplorerSessionsSnapshot(parsed.sessions, parsed.session);
     return {
-      session: normalizeExplorerSessionSnapshot(parsed.session),
+      sessions,
+      session: getPrimaryExplorerSession(sessions),
       rail: normalizeExplorerRailSnapshot(parsed.rail),
     };
   } catch {

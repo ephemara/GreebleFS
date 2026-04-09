@@ -43,8 +43,22 @@ export type LayoutProgressOwner = GeneratedLayoutProgressOwner;
 
 export type LayoutInteractionConfig = GeneratedLayoutInteractionConfig;
 
+export type LayoutContentBrowserDockMode = 'drawer-and-tab';
+export type LayoutContentBrowserDockPlacement = 'bottom' | 'left' | 'right';
+export type LayoutContentBrowserDockPresentation = 'drawer' | 'docked';
+
+export interface LayoutContentBrowserDockConfig {
+  mode: LayoutContentBrowserDockMode;
+  defaultPlacement: LayoutContentBrowserDockPlacement;
+  defaultPresentation: LayoutContentBrowserDockPresentation;
+  defaultOpen: boolean;
+  drawerSize: number;
+  dockSize: number;
+}
+
 export type LayoutProfile = Omit<GeneratedLayoutProfile, 'shellBlueprint'> & {
   shellBlueprint: OverlayShellBlueprintId;
+  contentBrowserDock: LayoutContentBrowserDockConfig | null;
 };
 
 export type LayoutManifest = Omit<GeneratedLayoutManifest, 'profiles'> & {
@@ -61,6 +75,8 @@ const DEFAULT_LAYOUT_CONFIG_LOCATIONS = [
   { relativeDir: '.overlayterm', basename: 'snapyard.layouts' },
 ] as const;
 const DEFAULT_CONFIG_EXTENSIONS = ['json', 'toml'] as const;
+const MIN_CONTENT_BROWSER_DOCK_SIZE = 220;
+const MAX_CONTENT_BROWSER_DOCK_SIZE = 720;
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -184,6 +200,92 @@ function normalizePinnedPanel(input: unknown): LayoutPinnedPanel | null {
   };
 }
 
+function createDefaultContentBrowserDockConfig(
+  overrides: Partial<LayoutContentBrowserDockConfig> = {},
+): LayoutContentBrowserDockConfig {
+  return {
+    mode: 'drawer-and-tab',
+    defaultPlacement: overrides.defaultPlacement ?? 'bottom',
+    defaultPresentation: overrides.defaultPresentation ?? 'drawer',
+    defaultOpen: overrides.defaultOpen ?? false,
+    drawerSize: clampNumber(
+      asNumber(overrides.drawerSize, 320),
+      MIN_CONTENT_BROWSER_DOCK_SIZE,
+      MAX_CONTENT_BROWSER_DOCK_SIZE,
+    ),
+    dockSize: clampNumber(
+      asNumber(overrides.dockSize, 320),
+      MIN_CONTENT_BROWSER_DOCK_SIZE,
+      MAX_CONTENT_BROWSER_DOCK_SIZE,
+    ),
+  };
+}
+
+function normalizeContentBrowserDock(
+  input: unknown,
+  fallback: LayoutContentBrowserDockConfig | null,
+): LayoutContentBrowserDockConfig | null {
+  if (input == null) {
+    return fallback;
+  }
+
+  const source = asRecord(input);
+  if (!source) {
+    return fallback;
+  }
+
+  const base = fallback ?? createDefaultContentBrowserDockConfig();
+  return {
+    mode: 'drawer-and-tab',
+    defaultPlacement: source.defaultPlacement === 'left'
+      ? 'left'
+      : source.defaultPlacement === 'right'
+        ? 'right'
+        : 'bottom',
+    defaultPresentation: source.defaultPresentation === 'docked' ? 'docked' : 'drawer',
+    defaultOpen: asBoolean(source.defaultOpen, base.defaultOpen),
+    drawerSize: clampNumber(
+      asNumber(source.drawerSize, base.drawerSize),
+      MIN_CONTENT_BROWSER_DOCK_SIZE,
+      MAX_CONTENT_BROWSER_DOCK_SIZE,
+    ),
+    dockSize: clampNumber(
+      asNumber(source.dockSize, base.dockSize),
+      MIN_CONTENT_BROWSER_DOCK_SIZE,
+      MAX_CONTENT_BROWSER_DOCK_SIZE,
+    ),
+  };
+}
+
+function resolveLegacyContentBrowserDockFromPinnedPanels(
+  pinnedPanels: LayoutPinnedPanel[],
+): {
+  contentBrowserDock: LayoutContentBrowserDockConfig | null;
+  pinnedPanels: LayoutPinnedPanel[];
+} {
+  const legacyExplorerDockPanel = pinnedPanels.find(
+    panel => panel.panelId === 'explorer' && panel.mode === 'compact-dock',
+  );
+
+  return {
+    contentBrowserDock: legacyExplorerDockPanel
+      ? createDefaultContentBrowserDockConfig({
+        defaultPlacement: legacyExplorerDockPanel.side === 'right'
+          ? 'right'
+          : legacyExplorerDockPanel.side === 'left'
+            ? 'left'
+            : 'bottom',
+        defaultPresentation: 'docked',
+        defaultOpen: true,
+        dockSize: legacyExplorerDockPanel.size,
+      })
+      : null,
+    pinnedPanels: pinnedPanels.filter(
+      panel => !(panel.panelId === 'explorer' && panel.mode === 'compact-dock'),
+    ),
+  };
+}
+
 function normalizeLayoutProfile(input: unknown, fallback: LayoutProfile, fallbackOrder: number): LayoutProfile {
   const source = asRecord(input);
   if (!source) {
@@ -200,9 +302,17 @@ function normalizeLayoutProfile(input: unknown, fallback: LayoutProfile, fallbac
   const controlDock = asRecord(source.controlDock);
   const behavior = asRecord(source.behavior);
   const pinnedPanelsSource = Array.isArray(source.pinnedPanels) ? source.pinnedPanels : fallback.pinnedPanels;
-  const pinnedPanels = pinnedPanelsSource
+  const normalizedPinnedPanels = pinnedPanelsSource
     .map(normalizePinnedPanel)
     .filter((entry): entry is LayoutPinnedPanel => Boolean(entry));
+  const {
+    contentBrowserDock: legacyContentBrowserDock,
+    pinnedPanels,
+  } = resolveLegacyContentBrowserDockFromPinnedPanels(normalizedPinnedPanels);
+  const contentBrowserDock = normalizeContentBrowserDock(
+    source.contentBrowserDock,
+    fallback.contentBrowserDock ?? legacyContentBrowserDock,
+  );
 
   return {
     id: asString(source.id, fallback.id),
@@ -221,6 +331,7 @@ function normalizeLayoutProfile(input: unknown, fallback: LayoutProfile, fallbac
       side: controlDock?.side === 'left' ? 'left' : controlDock?.side === 'right' ? 'right' : fallback.controlDock.side,
       inset: clampNumber(asNumber(controlDock?.inset, fallback.controlDock.inset), 0, 48),
     },
+    contentBrowserDock,
     pinnedPanels,
     behavior: {
       cycleOrder: asNumber(behavior?.cycleOrder, fallbackOrder),
@@ -261,6 +372,13 @@ const BUILT_IN_PROFILES: LayoutProfile[] = sortProfiles([
       side: 'right',
       inset: 12,
     },
+    contentBrowserDock: createDefaultContentBrowserDockConfig({
+      defaultPlacement: 'bottom',
+      defaultPresentation: 'drawer',
+      defaultOpen: false,
+      drawerSize: 320,
+      dockSize: 320,
+    }),
     pinnedPanels: [],
     behavior: {
       cycleOrder: 10,
@@ -295,11 +413,59 @@ const BUILT_IN_PROFILES: LayoutProfile[] = sortProfiles([
       side: 'right',
       inset: 12,
     },
+    contentBrowserDock: createDefaultContentBrowserDockConfig({
+      defaultPlacement: 'bottom',
+      defaultPresentation: 'drawer',
+      defaultOpen: false,
+      drawerSize: 320,
+      dockSize: 320,
+    }),
     pinnedPanels: [],
     behavior: {
       cycleOrder: 20,
       defaultActivePanelId: 'explorer',
       enforcedOpenPanelIds: ['explorer'],
+    },
+    interaction: {
+      primaryAxisOwner: 'active-panel',
+      commandOwner: 'chrome',
+      backBehavior: 'overlay-first',
+      modeExitTarget: 'last-browse-target',
+      progressOwner: 'session',
+      preserveFocusAnchor: true,
+      preserveSelectionAnchor: true,
+      preserveLocationAnchor: true,
+    },
+  },
+  {
+    id: 'ue-content-browser',
+    label: 'UE Content Browser',
+    description: 'Persistent bottom content browser dock with drawer promotion and UE-style explorer flow.',
+    shellBlueprint: 'classic-dock',
+    chrome: {
+      barPosition: 'top',
+      showSettingsShortcut: true,
+      showPanelMenu: true,
+      showBlurToggle: true,
+      showShortcutBadge: true,
+    },
+    controlDock: {
+      enabled: true,
+      side: 'right',
+      inset: 12,
+    },
+    contentBrowserDock: createDefaultContentBrowserDockConfig({
+      defaultPlacement: 'bottom',
+      defaultPresentation: 'docked',
+      defaultOpen: true,
+      drawerSize: 320,
+      dockSize: 336,
+    }),
+    pinnedPanels: [],
+    behavior: {
+      cycleOrder: 30,
+      defaultActivePanelId: 'terminal',
+      enforcedOpenPanelIds: ['terminal'],
     },
     interaction: {
       primaryAxisOwner: 'active-panel',

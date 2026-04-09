@@ -103,7 +103,12 @@ import {
   resolveRepositoryPickerConfirmationPaths,
 } from './explorer/repositoryPickerState';
 import { ResizablePane } from './ResizablePane';
-import { useExplorerStore, type ExplorerDocumentViewMode } from '../store/explorerStore';
+import {
+  PRIMARY_EXPLORER_INSTANCE_ID,
+  useExplorerStore,
+  type ExplorerDocumentViewMode,
+  type ExplorerInstanceId,
+} from '../store/explorerStore';
 import {
   useCurrentExplorerTaskProgress,
   useExplorerTaskProgressFeed,
@@ -167,6 +172,97 @@ const EXPLORER_ZOOM_SIZE_TWEEN = {
   duration: 0.18,
   ease: [0.22, 1, 0.36, 1] as const,
 };
+type ExplorerSurfaceKind = 'workspace' | 'drawer' | 'dock';
+
+type ExplorerSearchCacheEntry = {
+  results: FileSearchResult[];
+  diagnostics: Awaited<ReturnType<ExplorerBackendContract['searchEntriesWithDiagnostics']>>['diagnostics'];
+};
+
+const explorerDirectoryResultCache = new Map<string, Promise<FileEntry[]> | FileEntry[]>();
+const explorerSearchResultCache = new Map<string, Promise<ExplorerSearchCacheEntry> | ExplorerSearchCacheEntry>();
+
+function getExplorerDirectoryCacheKey(path: string, showHidden: boolean): string {
+  return `${showHidden ? 'hidden' : 'visible'}::${path}`;
+}
+
+function getExplorerSearchCacheKey(args: {
+  path: string;
+  query: string;
+  showHidden: boolean;
+  includeContent: boolean;
+}): string {
+  return [
+    args.path,
+    args.query.trim().toLowerCase(),
+    args.showHidden ? 'hidden' : 'visible',
+    args.includeContent ? 'content' : 'names',
+  ].join('::');
+}
+
+async function getOrLoadCachedExplorerDirectoryEntries(
+  key: string,
+  loader: () => Promise<FileEntry[]>,
+): Promise<FileEntry[]> {
+  const cachedValue = explorerDirectoryResultCache.get(key);
+  if (cachedValue) {
+    return cachedValue instanceof Promise ? cachedValue : cachedValue;
+  }
+
+  const pending = loader()
+    .then((entries) => {
+      explorerDirectoryResultCache.set(key, entries);
+      return entries;
+    })
+    .catch((error) => {
+      explorerDirectoryResultCache.delete(key);
+      throw error;
+    });
+  explorerDirectoryResultCache.set(key, pending);
+  return pending;
+}
+
+async function getOrLoadCachedExplorerSearchResults(
+  key: string,
+  loader: () => Promise<ExplorerSearchCacheEntry>,
+): Promise<ExplorerSearchCacheEntry> {
+  const cachedValue = explorerSearchResultCache.get(key);
+  if (cachedValue) {
+    return cachedValue instanceof Promise ? cachedValue : cachedValue;
+  }
+
+  const pending = loader()
+    .then((results) => {
+      explorerSearchResultCache.set(key, results);
+      return results;
+    })
+    .catch((error) => {
+      explorerSearchResultCache.delete(key);
+      throw error;
+    });
+  explorerSearchResultCache.set(key, pending);
+  return pending;
+}
+
+function invalidateExplorerResultCaches(pathPrefix?: string): void {
+  if (!pathPrefix) {
+    explorerDirectoryResultCache.clear();
+    explorerSearchResultCache.clear();
+    return;
+  }
+
+  for (const key of explorerDirectoryResultCache.keys()) {
+    if (key.includes(`::${pathPrefix}`) || key.endsWith(`::${pathPrefix}`)) {
+      explorerDirectoryResultCache.delete(key);
+    }
+  }
+
+  for (const key of explorerSearchResultCache.keys()) {
+    if (key.startsWith(`${pathPrefix}::`) || key.includes(`::${pathPrefix}::`)) {
+      explorerSearchResultCache.delete(key);
+    }
+  }
+}
 
 function getExplorerPerformanceNow(): number {
   return typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -1756,6 +1852,9 @@ interface FileExplorerProps {
   onAddBookmark: (name: string, path: string) => void;
   pluginActions?: OverlayPluginExplorerActionContribution[];
   layoutMode?: ExplorerLayoutMode;
+  instanceId?: ExplorerInstanceId;
+  surfaceKind?: ExplorerSurfaceKind;
+  focusAddressBarSignal?: number;
   repositoryPicker?: {
     active: boolean;
     allowMultiple: boolean;
@@ -1773,6 +1872,9 @@ export function FileExplorer({
   onAddBookmark,
   pluginActions = [],
   layoutMode = 'full',
+  instanceId = PRIMARY_EXPLORER_INSTANCE_ID,
+  surfaceKind = 'workspace',
+  focusAddressBarSignal = 0,
   repositoryPicker = null,
 }: FileExplorerProps) {
   const {
@@ -1811,20 +1913,21 @@ export function FileExplorer({
   })));
   const {
     explorerRail,
-    updateExplorerSession,
+    updateExplorerSessionForInstance,
     updateExplorerRail,
   } = useExplorerStore(useShallow(state => ({
     explorerRail: state.rail,
-    updateExplorerSession: state.updateSession,
+    updateExplorerSessionForInstance: state.updateSessionForInstance,
     updateExplorerRail: state.updateRail,
   })));
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
-  const explorerInstanceId = useId();
+  const explorerSearchScopeId = useId();
   const explorerSearchScope = useMemo(
-    () => resolveExplorerSearchScope(explorerInstanceId),
-    [explorerInstanceId],
+    () => resolveExplorerSearchScope(explorerSearchScopeId),
+    [explorerSearchScopeId],
   );
   const isCompactDock = layoutMode === 'compact-dock';
+  const isContentBrowserSurface = surfaceKind === 'drawer' || surfaceKind === 'dock';
   const explorerTheme = useMemo(
     () => resolveExplorerThemeRecipe(appearance),
     [appearance],
@@ -1841,7 +1944,7 @@ export function FileExplorer({
   const folderClickMode = explorerSettings.folderClickMode;
   // Session is only used to seed the explorer's local state. Avoid subscribing to it
   // so high-frequency local changes (typing, resizing) don't force extra store-driven renders.
-  const initialSessionRef = useRef(useExplorerStore.getState().session);
+  const initialSessionRef = useRef(useExplorerStore.getState().getSession(instanceId));
   const initialSession = initialSessionRef.current;
   const initialSessionPathRef = useRef(initialSession.currentPath.trim());
   const initialShellLayout = getExplorerShellLayoutDefinition(initialSession.shellLayoutId);
@@ -1884,6 +1987,7 @@ export function FileExplorer({
   const [documentViewMode, setDocumentViewMode] = useState<ExplorerDocumentViewMode>(() => initialSession.documentViewMode);
   const [previewEnabled, setPreviewEnabled] = useState(() => initialSession.previewEnabled);
   const [shellLayoutId, setShellLayoutId] = useState<ExplorerShellLayoutId>(() => initialShellLayout.id);
+  const [sourcesVisible, setSourcesVisible] = useState(() => initialSession.sourcesVisible);
   const [preview,      setPreview]      = useState<PreviewState>({ type:'none', path:'' });
   const [ctxMenu,      setCtxMenu]      = useState<ContextMenuState>({ visible:false, x:0, y:0, entry:null });
   const [showShellLayoutMenu, setShowShellLayoutMenu] = useState(false);
@@ -1911,6 +2015,7 @@ export function FileExplorer({
   const addressInputRef = useRef<HTMLInputElement>(null);
   const [addressEditing, setAddressEditing] = useState(false);
   const [addressDraft, setAddressDraft] = useState('');
+  const lastFocusAddressBarSignalRef = useRef(focusAddressBarSignal);
   useExplorerTaskProgressFeed();
   const explorerTaskProgress = useCurrentExplorerTaskProgress();
 
@@ -2075,7 +2180,7 @@ export function FileExplorer({
   }, [previewEnabled]);
 
   useEffect(() => {
-    updateExplorerSession({
+    updateExplorerSessionForInstance(instanceId, {
       currentPath,
       history,
       historyIdx,
@@ -2086,6 +2191,7 @@ export function FileExplorer({
       search,
       searchIncludeContent,
       documentViewMode,
+      sourcesVisible,
     });
   }, [
     currentPath,
@@ -2098,7 +2204,9 @@ export function FileExplorer({
     searchIncludeContent,
     shellLayoutId,
     sidebarWidth,
-    updateExplorerSession,
+    sourcesVisible,
+    instanceId,
+    updateExplorerSessionForInstance,
   ]);
 
   // ── Boot ──
@@ -2116,7 +2224,7 @@ export function FileExplorer({
         setCurrentPath('');
         setHistory([]);
         setHistoryIdx(-1);
-        updateExplorerSession({
+        updateExplorerSessionForInstance(instanceId, {
           currentPath: '',
           history: [],
           historyIdx: -1,
@@ -2156,12 +2264,13 @@ export function FileExplorer({
         .catch(() => navigate(getFallbackExplorerPath(runtimePlatform)));
     }
 
-  }, [explorerSettings.defaultPath, runtimePlatform]);
+  }, [explorerSettings.defaultPath, instanceId, runtimePlatform, updateExplorerSessionForInstance]);
 
   // ── Navigate ──
   const navigate = useCallback(async (path: string, push = true) => {
     const startedAt = getExplorerPerformanceNow();
     const normalizedPath = normalizeExplorerPath(path);
+    const directoryCacheKey = getExplorerDirectoryCacheKey(normalizedPath, showHidden);
     setCurrentPath(normalizedPath); setSelected(new Set()); setSearch(''); setSearchResults([]); setSearchLoading(false); setError(null);
     setEntrySizeLoadingPaths(new Set());
     setAddressEditing(false);
@@ -2169,7 +2278,10 @@ export function FileExplorer({
     if (push) { setHistory(h => [...h.slice(0, historyIdx + 1), normalizedPath]); setHistoryIdx(i => i + 1); }
     setLoading(true);
     try {
-      const nextEntries = await listExplorerDir(normalizedPath, showHidden);
+      const nextEntries = await getOrLoadCachedExplorerDirectoryEntries(
+        directoryCacheKey,
+        () => listExplorerDir(normalizedPath, showHidden),
+      );
       setEntries(nextEntries);
       recordExplorerMetric({
         metricId: 'explorer_navigation',
@@ -2208,16 +2320,31 @@ export function FileExplorer({
 
     setSearchLoading(true);
     const startedAt = getExplorerPerformanceNow();
+    const searchCacheKey = getExplorerSearchCacheKey({
+      path: currentPath,
+      query: trimmed,
+      showHidden,
+      includeContent: searchIncludeContent,
+    });
     try {
-      const response = await searchExplorerEntriesWithDiagnostics({
-        path: currentPath,
-        query: trimmed,
-        showHidden,
-        includeContent: searchIncludeContent,
-        limit: 250,
-        requestId,
-        requestScope: explorerSearchScope,
-      });
+      const response = await getOrLoadCachedExplorerSearchResults(
+        searchCacheKey,
+        async () => {
+          const nextResponse = await searchExplorerEntriesWithDiagnostics({
+            path: currentPath,
+            query: trimmed,
+            showHidden,
+            includeContent: searchIncludeContent,
+            limit: 250,
+            requestId,
+            requestScope: explorerSearchScope,
+          });
+          return {
+            results: nextResponse.results,
+            diagnostics: nextResponse.diagnostics,
+          };
+        },
+      );
       const results = response.results;
       if (searchRequestIdRef.current === requestId) {
         setSearchResults(results);
@@ -2258,6 +2385,7 @@ export function FileExplorer({
   const refresh = useCallback(async () => {
     if (!currentPath) return;
     const entriesToInvalidate = search.trim() ? searchResults : entries;
+    invalidateExplorerResultCaches(currentPath);
     setLoading(true);
     setEntrySizes(current => {
       if (entriesToInvalidate.length === 0) {
@@ -2274,7 +2402,14 @@ export function FileExplorer({
       return changed ? next : current;
     });
     setEntrySizeLoadingPaths(new Set());
-    try { setEntries(await listExplorerDirUncached(currentPath, showHidden)); }
+    try {
+      const nextEntries = await listExplorerDirUncached(currentPath, showHidden);
+      explorerDirectoryResultCache.set(
+        getExplorerDirectoryCacheKey(currentPath, showHidden),
+        nextEntries,
+      );
+      setEntries(nextEntries);
+    }
     catch (e) { setError(String(e)); }
     finally { setLoading(false); }
     if (search.trim()) {
@@ -2384,6 +2519,15 @@ export function FileExplorer({
     setAddressDraft(search.trim() ? search : currentPath);
     setAddressEditing(true);
   }, [currentPath, search]);
+
+  useEffect(() => {
+    if (focusAddressBarSignal === lastFocusAddressBarSignalRef.current) {
+      return;
+    }
+
+    lastFocusAddressBarSignalRef.current = focusAddressBarSignal;
+    beginAddressEdit();
+  }, [beginAddressEdit, focusAddressBarSignal]);
 
   const clearSearch = useCallback(() => {
     searchRequestIdRef.current += 1;
@@ -2661,8 +2805,10 @@ export function FileExplorer({
     operation: FileTransferOperation,
   ): Promise<FileTransferResult[]> => {
     if (sources.length === 0) return [];
-    return transferExplorerItems(targetDir, sources, operation);
-  }, []);
+    const results = await transferExplorerItems(targetDir, sources, operation);
+    invalidateExplorerResultCaches();
+    return results;
+  }, [transferExplorerItems]);
 
   useEffect(() => {
     if (!isTauri()) {
@@ -2759,6 +2905,7 @@ export function FileExplorer({
 
     try {
       await writeExplorerFile(path, contentAtSave);
+      invalidateExplorerResultCaches();
       setPreview(prev => {
         if (prev.type !== 'text' || prev.path !== path) return prev;
         const isStillSame = prev.content === contentAtSave;
@@ -2993,6 +3140,7 @@ export function FileExplorer({
         && previewRef.current.path === oldPath
         && previewRef.current.isDirty;
       await renameExplorerPath(oldPath, newPath);
+      invalidateExplorerResultCaches();
       if (previewSaveTimer.current) {
         window.clearTimeout(previewSaveTimer.current);
         previewSaveTimer.current = null;
@@ -3021,6 +3169,7 @@ export function FileExplorer({
     if (!deleteTarget) return;
     try {
       await deleteExplorerPath(deleteTarget.path, deleteTarget.is_dir);
+      invalidateExplorerResultCaches();
       if (preview.path === deleteTarget.path) setPreview({ type:'none', path:'' });
       if (previewSaveTimer.current) {
         window.clearTimeout(previewSaveTimer.current);
@@ -3404,6 +3553,7 @@ export function FileExplorer({
       } else {
         await writeExplorerFile(joinPlatformPath(base, name, runtimePlatform), '');
       }
+      invalidateExplorerResultCaches();
       refresh();
     } catch(e) { setError(String(e)); }
     finally { setNewItem({ visible:false, kind:'folder' }); }
@@ -3562,7 +3712,11 @@ export function FileExplorer({
   const activeNewItemHeight = effectiveViewModeDefinition.presentation === 'grid'
     ? activeGridMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT
     : activeRowMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT;
-  const shouldRenderRail = isCompactDock ? true : shellLayout.showRail;
+  const shouldRenderRail = isCompactDock
+    ? true
+    : isContentBrowserSurface
+      ? sourcesVisible
+      : shellLayout.showRail;
   const hasPreview = !isCompactDock && previewEnabled && preview.type !== 'none';
   const searchModeLabel = searchIncludeContent ? 'Recursive search + text' : 'Recursive search (names only)';
   const gridZoomPercent = useMemo(
@@ -3610,7 +3764,7 @@ export function FileExplorer({
       visibleEntries,
     ],
   );
-  const effectiveRailPosition = isCompactDock ? 'left' : explorerTheme.railPosition;
+  const effectiveRailPosition = isCompactDock || isContentBrowserSurface ? 'left' : explorerTheme.railPosition;
   const idleEntrySurface = useMemo(
     () => getExplorerEntryStateSurface(explorerTheme, 'idle'),
     [explorerTheme],

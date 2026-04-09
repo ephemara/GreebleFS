@@ -201,8 +201,10 @@ export function createBuiltInPanelDefinitions({
       render: () => (
         <MemoFileExplorer
           appearance={appearance}
+          instanceId="primary"
           layoutMode={explorerLayoutMode}
           repositoryPicker={explorerRepoPicker}
+          surfaceKind="workspace"
           theme={explorerTheme}
           onOpenInTerminal={onOpenInTerminal}
           onAddBookmark={onAddBookmark}
