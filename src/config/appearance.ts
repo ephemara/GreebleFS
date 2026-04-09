@@ -9,6 +9,12 @@ import {
   normalizeExplorerThemeRecipe,
   type OverlayExplorerThemeRecipe,
 } from './explorerTheme';
+import {
+  normalizeWorkbenchThemeRecipe,
+  resolveWorkbenchThemeRecipe,
+  type OverlayWorkbenchThemeRecipe,
+  type ResolvedWorkbenchThemeRecipe,
+} from './workbenchTheme';
 import type { OverlayShellBlueprintId } from './shellBlueprints';
 import { mergeResolvedIconThemes, type OverlayResolvedIconTheme } from './iconTheme';
 import { clampOverlayVisualControlValue } from './overlayWindow';
@@ -146,6 +152,7 @@ export interface OverlayThemeDefinition {
   cssVars?: Record<string, string>;
   presentation?: OverlayThemePresentation;
   compatibility?: OverlayThemeCompatibility;
+  workbench?: OverlayWorkbenchThemeRecipe;
   explorer?: OverlayExplorerThemeRecipe;
 }
 
@@ -166,6 +173,7 @@ export interface ResolvedOverlayAppearance {
     ui: string;
     mono: string;
   };
+  workbenchTheme: ResolvedWorkbenchThemeRecipe;
   cssVars: Record<string, string>;
   panelTransparency: number;
 }
@@ -962,6 +970,7 @@ export function normalizeThemeDefinition(
       ...(fallback.cssVars ?? {}),
       ...(theme.cssVars ?? {}),
     },
+    workbench: normalizeWorkbenchThemeRecipe(theme.workbench, fallback.workbench),
     explorer: normalizeExplorerThemeRecipe(theme.explorer, fallback.explorer),
   };
 }
@@ -1005,6 +1014,7 @@ export function resolveOverlayAppearance(selection?: OverlayAppearanceSelection)
 
   const baseTheme = themeLookup.get(activeThemeId) ?? overlayThemePresets[0];
   const theme = applyPanelTransparency(baseTheme, panelTransparency);
+  const workbenchTheme = resolveWorkbenchThemeRecipe(theme);
   const fonts = {
     ui: selection?.uiFontFamily?.trim() || baseTheme.fonts?.ui || defaultUiFont,
     mono: selection?.monoFontFamily?.trim() || baseTheme.fonts?.mono || defaultMonoFont,
@@ -1015,6 +1025,7 @@ export function resolveOverlayAppearance(selection?: OverlayAppearanceSelection)
     baseTheme,
     themes: [...overlayThemePresets, ...packageThemes, ...customThemes],
     fonts,
+    workbenchTheme,
     panelTransparency,
     cssVars: {
       '--overlay-font-ui': fonts.ui,
@@ -1066,6 +1077,7 @@ export function resolveOverlayAppearance(selection?: OverlayAppearanceSelection)
       '--overlay-motion-style': theme.presentation?.motionStyle ?? 'fluid',
       '--overlay-corner-radius': String(theme.presentation?.cornerRadius ?? 18),
       '--overlay-panel-spacing': String(theme.presentation?.panelSpacing ?? 12),
+      ...workbenchTheme.cssVars,
       ...(theme.cssVars ?? {}),
     },
   };

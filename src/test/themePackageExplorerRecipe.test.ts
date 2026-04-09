@@ -14,6 +14,16 @@ describe('theme package explorer recipe loading', () => {
           name: 'XMB Shell',
           extends: 'catppuccin',
           theme: {
+            workbench: {
+              preset: 'xmb',
+              brandLabel: 'Cross Media',
+              topBarStyle: 'floating',
+              commandPaletteStyle: 'glass',
+              tabStyle: 'capsule',
+              cssVars: {
+                '--overlay-workbench-brand': 'cross-media',
+              },
+            },
             explorer: {
               preset: 'xmb',
               railBrandLabel: 'Cross Media',
@@ -50,5 +60,9 @@ describe('theme package explorer recipe loading', () => {
     expect(result.packages[0]?.theme.explorer?.previewStyle).toBe('glass');
     expect(result.packages[0]?.theme.explorer?.metrics?.railWidth).toBe(240);
     expect(result.packages[0]?.theme.explorer?.cssVars?.['--overlay-explorer-brand']).toBe('cross-media');
+    expect(result.packages[0]?.theme.workbench?.preset).toBe('xmb');
+    expect(result.packages[0]?.theme.workbench?.topBarStyle).toBe('floating');
+    expect(result.packages[0]?.theme.workbench?.commandPaletteStyle).toBe('glass');
+    expect(result.packages[0]?.theme.workbench?.cssVars?.['--overlay-workbench-brand']).toBe('cross-media');
   });
 });

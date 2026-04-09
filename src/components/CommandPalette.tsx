@@ -118,6 +118,8 @@ export function CommandPalette({
   const panelAlt = appearance.theme.palette.panelAltBackground;
   const text = appearance.theme.palette.textPrimary;
   const muted = appearance.theme.palette.textMuted;
+  const workbench = appearance.workbenchTheme;
+  const floatingPalette = workbench.commandPaletteStyle === 'floating' || workbench.commandPaletteStyle === 'glass';
 
   return (
     <div
@@ -128,10 +130,10 @@ export function CommandPalette({
         display: 'flex',
         alignItems: 'flex-start',
         justifyContent: 'center',
-        padding: '56px 20px 20px',
-        background: 'rgba(0, 0, 0, 0.36)',
-        backdropFilter: 'blur(10px)',
-        WebkitBackdropFilter: 'blur(10px)',
+        padding: `var(--overlay-workbench-command-palette-top-inset) 20px 20px`,
+        background: 'var(--overlay-workbench-command-palette-scrim-bg)',
+        backdropFilter: workbench.commandPaletteStyle === 'glass' ? 'blur(14px)' : 'blur(10px)',
+        WebkitBackdropFilter: workbench.commandPaletteStyle === 'glass' ? 'blur(14px)' : 'blur(10px)',
       }}
       onMouseDown={event => {
         if (event.target === event.currentTarget) {
@@ -141,15 +143,19 @@ export function CommandPalette({
     >
       <div
         style={{
-          width: 'min(760px, 100%)',
+          width: `min(var(--overlay-workbench-command-palette-width), 100%)`,
           maxHeight: 'min(72vh, 760px)',
-          borderRadius: 18,
-          border: `1px solid ${border}`,
-          background: `linear-gradient(180deg, ${panelAlt}, ${panel})`,
-          boxShadow: appearance.theme.effects.shadow,
+          borderRadius: 'var(--overlay-workbench-panel-radius)',
+          border: '1px solid var(--overlay-workbench-command-palette-border)',
+          background: floatingPalette
+            ? 'var(--overlay-workbench-command-palette-bg)'
+            : `linear-gradient(180deg, ${panelAlt}, ${panel})`,
+          boxShadow: 'var(--overlay-workbench-shell-shadow)',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
+          backdropFilter: workbench.commandPaletteStyle === 'glass' ? 'blur(18px)' : 'none',
+          WebkitBackdropFilter: workbench.commandPaletteStyle === 'glass' ? 'blur(18px)' : 'none',
         }}
       >
         <div
@@ -158,14 +164,14 @@ export function CommandPalette({
             alignItems: 'center',
             gap: 12,
             padding: '14px 16px',
-            borderBottom: `1px solid ${border}`,
+            borderBottom: '1px solid var(--overlay-workbench-command-palette-border)',
           }}
         >
           <div
             style={{
               width: 30,
               height: 30,
-              borderRadius: 10,
+              borderRadius: 'var(--overlay-workbench-control-radius)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -190,10 +196,12 @@ export function CommandPalette({
               minWidth: 0,
               border: 'none',
               outline: 'none',
-              background: 'transparent',
+              background: 'var(--overlay-workbench-command-palette-input-bg)',
               color: text,
               fontSize: 14,
               fontFamily: appearance.fonts.ui,
+              borderRadius: 'var(--overlay-workbench-control-radius)',
+              padding: '8px 10px',
             }}
           />
           <kbd
@@ -201,10 +209,10 @@ export function CommandPalette({
               fontSize: 10,
               fontFamily: appearance.fonts.mono,
               color: muted,
-              border: `1px solid ${border}`,
-              borderRadius: 999,
+              border: '1px solid var(--overlay-workbench-command-palette-border)',
+              borderRadius: 'var(--overlay-workbench-control-radius)',
               padding: '3px 8px',
-              background: 'rgba(255,255,255,0.04)',
+              background: 'var(--overlay-workbench-command-palette-item-bg)',
               whiteSpace: 'nowrap',
             }}
           >
@@ -218,8 +226,8 @@ export function CommandPalette({
               <div
                 style={{
                   padding: 16,
-                  borderRadius: 14,
-                  border: `1px dashed ${border}`,
+                  borderRadius: 'var(--overlay-workbench-panel-radius)',
+                  border: '1px dashed var(--overlay-workbench-command-palette-border)',
                   color: muted,
                   fontSize: 12,
                 }}
@@ -243,9 +251,9 @@ export function CommandPalette({
                     width: '100%',
                     textAlign: 'left',
                     padding: '12px 14px',
-                    borderRadius: 14,
-                    border: `1px solid ${isSelected ? `${accent}66` : border}`,
-                    background: isSelected ? `${accent}14` : 'rgba(255,255,255,0.02)',
+                    borderRadius: 'var(--overlay-workbench-panel-radius)',
+                    border: `1px solid ${isSelected ? `${accent}66` : 'var(--overlay-workbench-command-palette-border)'}`,
+                    background: isSelected ? 'var(--overlay-workbench-command-palette-item-active-bg)' : 'var(--overlay-workbench-command-palette-item-bg)',
                     color: text,
                     cursor: 'pointer',
                     display: 'flex',
@@ -263,8 +271,8 @@ export function CommandPalette({
                             letterSpacing: '0.08em',
                             textTransform: 'uppercase',
                             padding: '3px 6px',
-                            borderRadius: 999,
-                            border: `1px solid ${border}`,
+                            borderRadius: 'var(--overlay-workbench-control-radius)',
+                            border: '1px solid var(--overlay-workbench-command-palette-border)',
                             color: muted,
                           }}
                         >

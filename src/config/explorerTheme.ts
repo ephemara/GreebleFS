@@ -215,6 +215,16 @@ function normalizeCssVarRecord(value: Record<string, unknown> | undefined): Reco
   ) as Record<string, string>;
 }
 
+function compactObject<T extends object>(input: T | undefined): Partial<T> {
+  if (!input) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== undefined),
+  ) as Partial<T>;
+}
+
 export function normalizeExplorerThemeRecipe(
   recipe?: OverlayExplorerThemeRecipe,
   fallback?: OverlayExplorerThemeRecipe,
@@ -538,8 +548,8 @@ function resolveSurfaces(
 ): Required<OverlayExplorerThemeSurfaces> {
   return {
     ...workbenchSurfaces,
-    ...(presetSurfaces ?? {}),
-    ...(overrideSurfaces ?? {}),
+    ...compactObject(presetSurfaces),
+    ...compactObject(overrideSurfaces),
   };
 }
 
@@ -549,8 +559,8 @@ function resolveTypography(
 ): Required<OverlayExplorerThemeTypography> {
   return {
     ...workbenchTypography,
-    ...(presetTypography ?? {}),
-    ...(overrideTypography ?? {}),
+    ...compactObject(presetTypography),
+    ...compactObject(overrideTypography),
   };
 }
 

@@ -56,6 +56,7 @@ import {
   type OverlayThemeDefinition,
   type ResolvedOverlayAppearance,
 } from '../config/appearance';
+import type { ResolvedWorkbenchThemeRecipe } from '../config/workbenchTheme';
 import {
   buildManagedPythonReplCommand,
   createPythonRuntimeConfig,
@@ -85,6 +86,7 @@ interface Theme {
   bg: string;
   bgPanel: string;
   bgTerm: string;
+  statusBg?: string;
   accent: string;
   text: string;
   textMuted: string;
@@ -100,16 +102,22 @@ interface Theme {
   };
 }
 
-function themeFromAppearance(theme: OverlayThemeDefinition): Theme {
+function themeFromAppearance(
+  theme: OverlayThemeDefinition,
+  workbenchTheme: ResolvedWorkbenchThemeRecipe,
+): Theme {
   return {
     name: theme.name,
-    bg: theme.palette.shellBackground,
-    bgPanel: theme.palette.panelBackground,
-    bgTerm: multiplyColorAlpha(theme.palette.terminalBackground, 0.78),
+    bg: workbenchTheme.surfaces.terminalBackground,
+    bgPanel: workbenchTheme.surfaces.terminalPanelBackground,
+    bgTerm: workbenchTheme.terminalStyle === 'glass'
+      ? multiplyColorAlpha(workbenchTheme.surfaces.terminalPaneBackground, 0.86)
+      : workbenchTheme.surfaces.terminalPaneBackground,
+    statusBg: workbenchTheme.surfaces.terminalStatusBackground,
     accent: theme.palette.accent,
     text: theme.palette.textPrimary,
     textMuted: theme.palette.textMuted,
-    border: theme.palette.border,
+    border: workbenchTheme.surfaces.terminalBorder,
     xt: theme.xterm,
   };
 }
@@ -380,7 +388,7 @@ function TerminalActionToolbar({ actions, theme, detail }: TerminalActionToolbar
   return (
     <div
       className="flex items-center gap-1 px-2 shrink-0 border-b"
-      style={{ minHeight: 36, background: theme.bgPanel, borderColor: theme.border }}
+      style={{ minHeight: 36, background: 'var(--overlay-workbench-terminal-panel-bg)', borderColor: 'var(--overlay-workbench-terminal-border)' }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1, minWidth: 0 }}>
         {actions.map(action => {
@@ -410,8 +418,9 @@ function TerminalActionToolbar({ actions, theme, detail }: TerminalActionToolbar
                   : isAccent
                     ? theme.accent
                     : theme.textMuted,
-                background: isAccent && !action.disabled ? `${theme.accent}14` : 'transparent',
-                border: `1px solid ${isAccent && !action.disabled ? `${theme.accent}33` : 'transparent'}`,
+                background: isAccent && !action.disabled ? 'var(--overlay-workbench-chrome-button-active-bg)' : 'var(--overlay-workbench-chrome-button-bg)',
+                border: `1px solid ${isAccent && !action.disabled ? 'var(--overlay-workbench-chrome-button-active-border)' : 'transparent'}`,
+                borderRadius: 'var(--overlay-workbench-control-radius)',
               }}
             >
               <Icon size={12} />
@@ -1080,7 +1089,10 @@ export function TerminalOverlay({
     }),
     [appearanceProp, appearanceSettings.activeThemeId, appearanceSettings.customThemes, appearanceSettings.panelTransparency, appearanceSettings.uiFontFamily, settings.fontFamily],
   );
-  const theme = useMemo(() => themeFromAppearance(appearance.theme), [appearance.theme]);
+  const theme = useMemo(
+    () => themeFromAppearance(appearance.theme, appearance.workbenchTheme),
+    [appearance.theme, appearance.workbenchTheme],
+  );
   const uiFont = appearance.fonts.ui;
 
   useEffect(() => {
@@ -1663,7 +1675,7 @@ export function TerminalOverlay({
   const sidebarPanelNode = sidebarOpen && activePanel ? (
     <div
       className="shrink-0 overflow-hidden relative"
-      style={{ width: sidebarWidth, background: theme.bgPanel, borderRight: `1px solid ${theme.border}`, color: theme.text }}
+      style={{ width: sidebarWidth, background: 'var(--overlay-workbench-terminal-panel-bg)', borderRight: '1px solid var(--overlay-workbench-terminal-border)', color: theme.text }}
     >
       <SidebarContent
         panel={activePanel}
@@ -1717,9 +1729,10 @@ export function TerminalOverlay({
                   key={paneId}
                   className="flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border"
                   style={{
-                    borderColor: isActivePane ? `${theme.accent}66` : theme.border,
-                    background: theme.bg,
+                    borderColor: isActivePane ? `${theme.accent}66` : 'var(--overlay-workbench-terminal-border)',
+                    background: 'var(--overlay-workbench-terminal-pane-bg)',
                     boxShadow: isActivePane ? `0 0 0 1px ${theme.accent}18 inset` : 'none',
+                    borderRadius: 'var(--overlay-workbench-panel-radius)',
                   }}
                 >
                   <div className="flex flex-1 min-h-0 min-w-0 flex-col">
@@ -1727,7 +1740,7 @@ export function TerminalOverlay({
                       className="group flex items-center gap-2 border-b px-2 shrink-0"
                       style={{
                         minHeight: 30,
-                        borderColor: theme.border,
+                        borderColor: 'var(--overlay-workbench-terminal-border)',
                         background: isActivePane ? `${theme.accent}0a` : 'transparent',
                       }}
                       onMouseDown={() => focusPane(activeTab.id, paneId)}
@@ -1883,7 +1896,7 @@ export function TerminalOverlay({
   const statusBar = (
     <div
       className="flex items-center gap-3 px-3 shrink-0 border-t"
-      style={{ height: embedded ? 20 : 22, background: `${theme.accent}18`, borderColor: theme.border }}
+      style={{ height: embedded ? 20 : 22, background: theme.statusBg ?? `${theme.accent}18`, borderColor: 'var(--overlay-workbench-terminal-border)' }}
     >
       <div className="flex items-center gap-1.5">
         <Circle size={embedded ? 5 : 6} className="fill-current" style={{ color: appearance.theme.palette.success }} />
@@ -1905,11 +1918,11 @@ export function TerminalOverlay({
     return (
       <div
         className="flex flex-col overflow-hidden"
-        style={{ flex: 1, background: theme.bg, color: theme.text, fontFamily: uiFont }}
+        style={{ flex: 1, background: 'var(--overlay-workbench-terminal-bg)', color: theme.text, fontFamily: uiFont, borderRadius: 'var(--overlay-workbench-panel-radius)' }}
       >
         <div
           className="flex items-stretch shrink-0 border-b"
-          style={{ background: theme.bgPanel, height: 38, borderColor: theme.border }}
+          style={{ background: 'var(--overlay-workbench-terminal-panel-bg)', height: 38, borderColor: 'var(--overlay-workbench-terminal-border)' }}
         >
           <div className="flex items-center gap-0.5 px-2 border-r shrink-0" style={{ borderColor: theme.border }}>
             {TERMINAL_SIDEBAR_ITEMS.map(({ id, icon: Icon, title, accent }) => {
@@ -1949,11 +1962,13 @@ export function TerminalOverlay({
     <div
       className={`absolute inset-0 flex flex-col overflow-hidden transition-all duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${slideClass}`}
       style={{
-        background: theme.bg,
+        background: 'var(--overlay-workbench-terminal-bg)',
         color: theme.text,
         fontFamily: uiFont,
-        boxShadow: `0 -4px 0 0 ${theme.accent}, 0 -32px 80px rgba(0,0,0,0.98)`,
-        borderTop: `1px solid ${theme.accent}40`,
+        boxShadow: 'var(--overlay-workbench-shell-shadow)',
+        borderTop: '1px solid var(--overlay-workbench-terminal-border)',
+        backdropFilter: appearance.workbenchTheme.terminalStyle === 'glass' ? 'blur(18px)' : 'none',
+        WebkitBackdropFilter: appearance.workbenchTheme.terminalStyle === 'glass' ? 'blur(18px)' : 'none',
       }}
     >
       <div
@@ -1969,7 +1984,7 @@ export function TerminalOverlay({
 
       <div
         className="flex items-stretch shrink-0 border-b"
-        style={{ background: theme.bgPanel, height: 40, borderColor: theme.border }}
+        style={{ background: 'var(--overlay-workbench-terminal-panel-bg)', height: 40, borderColor: 'var(--overlay-workbench-terminal-border)' }}
       >
         <div className="flex items-center gap-2 px-3 border-r shrink-0" style={{ borderColor: theme.border }}>
           <div
@@ -2007,7 +2022,7 @@ export function TerminalOverlay({
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <div className="flex flex-col items-center gap-0.5 py-2 shrink-0"
-          style={{ width: 36, background: theme.bgPanel, borderRight: `1px solid ${theme.border}` }}>
+          style={{ width: 36, background: 'var(--overlay-workbench-terminal-panel-bg)', borderRight: '1px solid var(--overlay-workbench-terminal-border)' }}>
           {TERMINAL_SIDEBAR_ITEMS.map(({ id, icon: Icon, title, accent }) => {
             const active = activePanel === id && sidebarOpen;
             return (

@@ -26,14 +26,25 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Explorer rail, bookmarks, drives, and bookmark authoring.
 - `src/config/appearance.ts`
   Core overlay theme model and resolved CSS variables.
+- `src/config/workbenchTheme.ts`
+  App-wide workbench recipe resolution and workbench-scoped CSS variable contract.
 - `src/config/explorerTheme.ts`
   Explorer-specific theme recipe resolution, metrics scaling, and explorer-scoped CSS variable contract.
 - `src/config/themePackages.ts`
   Theme package discovery and manifest loading from `themes/`.
 
-## Theme / Explorer Architecture
+## Theme / Workbench Architecture
 
 - Overlay themes still own the global palette, effects, fonts, icon theme, visuals, and shader/motion defaults.
+- Workbench theming is now a first-class recipe layer under `theme.workbench`.
+- `theme.workbench` supports structural presets like `workbench`, `xmb`, and `channel-grid`, plus app-wide overrides for:
+  - top bar chrome
+  - command palette chrome
+  - terminal shell chrome
+  - settings shell chrome
+  - shared tabs and button treatment
+  - shell insets, radii, and panel spacing
+  - workbench-scoped CSS vars
 - Explorer theming is now a first-class recipe layer under `theme.explorer`.
 - `theme.explorer` supports structural presets like `workbench`, `xmb`, and `channel-grid`, plus local overrides for:
   - chrome style
@@ -55,6 +66,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - adaptive semantic density metrics
   - preview panel chrome
   - status bar visibility/treatment
+- `App.tsx`, `CommandPalette.tsx`, `TerminalOverlay.tsx`, and `SettingsPage.tsx` now consume the resolved workbench recipe and apply it to shared command-center chrome.
 
 ## Important Folders
 
@@ -77,15 +89,15 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 
 ## Validation Commands
 
-- `npx vitest run --environment node src/test/explorerTheme.test.ts src/test/themePackageExplorerRecipe.test.ts`
-- `npx tsc --noEmit --skipLibCheck --jsx react-jsx --module esnext --target es2022 --moduleResolution bundler --allowSyntheticDefaultImports --types vitest/globals,@testing-library/jest-dom src/vite-env.d.ts src/config/explorerTheme.ts src/components/explorer/ExplorerSideRail.tsx src/components/FileExplorer.tsx src/test/explorerTheme.test.ts src/test/themePackageExplorerRecipe.test.ts src/test/themePackages.test.ts src/test/explorerSideRail.test.tsx`
+- `npx vitest run --environment node src/test/workbenchTheme.test.ts src/test/explorerTheme.test.ts src/test/themePackageExplorerRecipe.test.ts`
+- `npx tsc --noEmit --skipLibCheck --jsx react-jsx --module esnext --target es2022 --moduleResolution bundler --allowSyntheticDefaultImports --types vitest/globals,@testing-library/jest-dom src/vite-env.d.ts src/config/workbenchTheme.ts src/config/explorerTheme.ts src/config/appearance.ts src/components/CommandPalette.tsx src/components/TerminalOverlay.tsx src/components/SettingsPage.tsx src/components/explorer/ExplorerSideRail.tsx src/components/FileExplorer.tsx src/App.tsx src/test/workbenchTheme.test.ts src/test/explorerTheme.test.ts src/test/themePackageExplorerRecipe.test.ts src/test/themePackages.test.ts src/test/explorerSideRail.test.tsx`
 - `bun run test:unit`
 - `bun run test:browser`
 - `bun run build`
 
 ## Common Errors / Lessons Learned
 
-- Repo-wide `npx tsc --noEmit` is currently red on several pre-existing generated-contract and test typing issues unrelated to the explorer theme system. Use the targeted typecheck command above for the explorer/theme slice.
+- Repo-wide `npx tsc --noEmit` is currently red on several pre-existing generated-contract and test typing issues unrelated to the workbench/explorer theme system. The narrowed command above now only leaves `src/runtime/useFolderPluginRuntime.ts` as an unrelated pre-existing failure.
 - JSDOM-backed Vitest runs currently fail in this workspace because `html-encoding-sniffer` requires an ESM dependency through a CommonJS path. Node-environment tests still work, so keep pure logic/package-loader tests runnable there until the dependency issue is fixed.
 - The explorer component is large and performance-sensitive. Route new chrome/metric changes through `src/config/explorerTheme.ts` instead of scattering new magic numbers through `FileExplorer.tsx`.
-- Theme package manifests can now carry explorer shell structure via `theme.explorer`; prefer that over ad hoc `cssVars` whenever a behavior or metric deserves a named contract.
+- Theme package manifests can now carry app-wide shell structure via `theme.workbench` and explorer-specific structure via `theme.explorer`; prefer those over ad hoc `cssVars` whenever a behavior or metric deserves a named contract.

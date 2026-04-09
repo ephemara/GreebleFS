@@ -452,6 +452,7 @@ function App() {
   );
   const theme = resolvedAppearance.theme;
   const accent = theme.palette.accent;
+  const workbench = resolvedAppearance.workbenchTheme;
   const isOverlayVisible = overlayPhase !== 'closed';
   overlayVisibleRef.current = isOverlayVisible;
   const windowMode: TerminalWindowMode = settings.windowMode === 'windowed' ? 'windowed' : 'overlay';
@@ -2506,19 +2507,19 @@ function App() {
               WebkitBackdropFilter: shellBackdropFilter,
               color: theme.palette.textPrimary,
               fontFamily: resolvedAppearance.fonts.ui,
-              boxShadow: isWindowedMode && isWindowMaximized ? 'none' : theme.effects.overlayShadow,
+              boxShadow: isWindowedMode && isWindowMaximized ? 'none' : 'var(--overlay-workbench-shell-shadow)',
               borderTop: isWindowedMode
-                ? (isWindowMaximized ? 'none' : `1px solid ${accent}28`)
-                : (isTopAnchored ? 'none' : `1px solid ${accent}40`),
+                ? (isWindowMaximized ? 'none' : '1px solid var(--overlay-workbench-chrome-border)')
+                : (isTopAnchored ? 'none' : '1px solid var(--overlay-workbench-chrome-border)'),
               borderBottom: isWindowedMode
-                ? (isWindowMaximized ? 'none' : `1px solid ${accent}28`)
-                : (isTopAnchored ? `1px solid ${accent}40` : 'none'),
-              borderLeft: isWindowedMode && !isWindowMaximized ? `1px solid ${accent}28` : 'none',
-              borderRight: isWindowedMode && !isWindowMaximized ? `1px solid ${accent}28` : 'none',
-              borderTopLeftRadius: isWindowedMode ? (isWindowMaximized ? 0 : 16) : (isTopAnchored ? 0 : 18),
-              borderTopRightRadius: isWindowedMode ? (isWindowMaximized ? 0 : 16) : (isTopAnchored ? 0 : 18),
-              borderBottomLeftRadius: isWindowedMode ? (isWindowMaximized ? 0 : 16) : (isTopAnchored ? 18 : 0),
-              borderBottomRightRadius: isWindowedMode ? (isWindowMaximized ? 0 : 16) : (isTopAnchored ? 18 : 0),
+                ? (isWindowMaximized ? 'none' : '1px solid var(--overlay-workbench-chrome-border)')
+                : (isTopAnchored ? '1px solid var(--overlay-workbench-chrome-border)' : 'none'),
+              borderLeft: isWindowedMode && !isWindowMaximized ? '1px solid var(--overlay-workbench-chrome-border)' : 'none',
+              borderRight: isWindowedMode && !isWindowMaximized ? '1px solid var(--overlay-workbench-chrome-border)' : 'none',
+              borderTopLeftRadius: isWindowedMode ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? 0 : workbench.metrics.panelRadius),
+              borderTopRightRadius: isWindowedMode ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? 0 : workbench.metrics.panelRadius),
+              borderBottomLeftRadius: isWindowedMode ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? workbench.metrics.panelRadius : 0),
+              borderBottomRightRadius: isWindowedMode ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? workbench.metrics.panelRadius : 0),
             }}
           >
             <ShaderSurfaceLayer
@@ -3138,14 +3139,15 @@ function TopBar({
   toggleShortcutLabel: string;
   topBarShaderLayer?: React.ReactNode;
 }) {
-  const BG = appearance.theme.palette.topBarBackground;
-  const MENU_BG = appearance.theme.palette.topBarMenuBackground;
   const BORDER = appearance.theme.palette.border;
   const MUTED = appearance.theme.palette.textMuted;
   const TEXT = appearance.theme.palette.textPrimary;
+  const workbench = appearance.workbenchTheme;
   const uiFont = appearance.fonts.ui;
   const monoFont = appearance.fonts.mono;
-  const CHROME_HEIGHT = 36;
+  const CHROME_HEIGHT = workbench.metrics.chromeHeight;
+  const usesFloatingTopBar = workbench.topBarStyle === 'floating' || workbench.topBarStyle === 'glass';
+  const usesInsetTopBar = usesFloatingTopBar || workbench.topBarStyle === 'minimal';
   const menuRef = useRef<HTMLDivElement | null>(null);
   const layoutMenuRef = useRef<HTMLDivElement | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -3305,15 +3307,17 @@ function TopBar({
       maxWidth: 'calc(100vw - 16px)',
       height: panelMenuHeight,
       maxHeight: panelMenuMaxHeight,
-      background: MENU_BG,
-      border: `1px solid ${BORDER}`,
-      borderRadius: 12,
-      boxShadow: appearance.theme.effects.shadow,
+      background: 'var(--overlay-workbench-chrome-menu-bg)',
+      border: '1px solid var(--overlay-workbench-chrome-border)',
+      borderRadius: workbench.metrics.panelRadius,
+      boxShadow: 'var(--overlay-workbench-shell-shadow)',
       padding: 6,
       zIndex: 50,
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden',
+      backdropFilter: workbench.topBarStyle === 'glass' ? 'blur(18px)' : 'none',
+      WebkitBackdropFilter: workbench.topBarStyle === 'glass' ? 'blur(18px)' : 'none',
     }}
     >
       <div style={{
@@ -3323,7 +3327,7 @@ function TopBar({
         textTransform: 'uppercase',
         letterSpacing: '0.08em',
         fontWeight: 700,
-        borderBottom: `1px solid ${BORDER}`,
+        borderBottom: '1px solid var(--overlay-workbench-chrome-border)',
       }}
       >
         <div>Panels</div>
@@ -3378,13 +3382,13 @@ function TopBar({
                     alignItems: 'center',
                     gap: compactPanelMenu ? 8 : 10,
                     padding: compactPanelMenu ? '8px 10px' : '9px 10px',
-                    border: `1px solid ${isActive ? `${accent}30` : 'transparent'}`,
+                    border: `1px solid ${isActive ? 'var(--overlay-workbench-chrome-button-active-border)' : 'transparent'}`,
                     borderRadius: 9,
                     background: isActive
-                      ? `${accent}16`
+                      ? 'var(--overlay-workbench-chrome-tab-active-bg)'
                       : isOpen
-                        ? 'rgba(255,255,255,0.04)'
-                        : 'rgba(255,255,255,0.015)',
+                        ? 'var(--overlay-workbench-chrome-tab-bg)'
+                        : 'var(--overlay-workbench-chrome-button-bg)',
                     color: TEXT,
                     cursor: isPinned ? 'default' : 'pointer',
                     textAlign: 'left',
@@ -3427,9 +3431,9 @@ function TopBar({
                     textTransform: 'uppercase',
                     color: isPinned || isOpen ? accent : MUTED,
                     padding: '3px 6px',
-                    borderRadius: 999,
-                    border: `1px solid ${isPinned || isOpen ? `${accent}36` : `${BORDER}`}`,
-                    background: isPinned || isOpen ? `${accent}12` : 'rgba(255,255,255,0.02)',
+                    borderRadius: workbench.metrics.controlRadius,
+                    border: `1px solid ${isPinned || isOpen ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
+                    background: isPinned || isOpen ? 'var(--overlay-workbench-chrome-button-active-bg)' : 'var(--overlay-workbench-chrome-button-bg)',
                     flexShrink: 0,
                   }}
                   >
@@ -3453,15 +3457,17 @@ function TopBar({
       width: layoutMenuWidth,
       maxWidth: 'calc(100vw - 16px)',
       maxHeight: layoutMenuMaxHeight,
-      background: MENU_BG,
-      border: `1px solid ${BORDER}`,
-      borderRadius: 12,
-      boxShadow: appearance.theme.effects.shadow,
+      background: 'var(--overlay-workbench-chrome-menu-bg)',
+      border: '1px solid var(--overlay-workbench-chrome-border)',
+      borderRadius: workbench.metrics.panelRadius,
+      boxShadow: 'var(--overlay-workbench-shell-shadow)',
       padding: 6,
       zIndex: 50,
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden',
+      backdropFilter: workbench.topBarStyle === 'glass' ? 'blur(18px)' : 'none',
+      WebkitBackdropFilter: workbench.topBarStyle === 'glass' ? 'blur(18px)' : 'none',
     }}
     >
       <div style={{
@@ -3471,7 +3477,7 @@ function TopBar({
         textTransform: 'uppercase',
         letterSpacing: '0.08em',
         fontWeight: 700,
-        borderBottom: `1px solid ${BORDER}`,
+        borderBottom: '1px solid var(--overlay-workbench-chrome-border)',
       }}
       >
         <div>Layouts</div>
@@ -3504,9 +3510,9 @@ function TopBar({
                 alignItems: 'flex-start',
                 gap: 10,
                 padding: '10px 12px',
-                border: `1px solid ${isActive ? `${accent}40` : 'transparent'}`,
+                border: `1px solid ${isActive ? 'var(--overlay-workbench-chrome-button-active-border)' : 'transparent'}`,
                 borderRadius: 10,
-                background: isActive ? `${accent}16` : 'rgba(255,255,255,0.02)',
+                background: isActive ? 'var(--overlay-workbench-chrome-tab-active-bg)' : 'var(--overlay-workbench-chrome-button-bg)',
                 color: TEXT,
                 cursor: isActive ? 'default' : 'pointer',
                 textAlign: 'left',
@@ -3548,12 +3554,26 @@ function TopBar({
       flexShrink: 0,
       paddingTop: windowedChromeTopInset,
       boxSizing: 'border-box',
-      background: `linear-gradient(180deg, ${BG}, ${appearance.theme.palette.appBackgroundAlt})`,
-      borderBottom: isBottomBar ? 'none' : `1px solid ${accent}24`,
-      borderTop: isBottomBar ? `1px solid ${accent}24` : 'none',
-      boxShadow: isBottomBar
-        ? 'inset 0 -1px 0 rgba(255,255,255,0.04), 0 -8px 18px rgba(0,0,0,0.2)'
-        : 'inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 18px rgba(0,0,0,0.2)',
+      margin: usesInsetTopBar ? 'var(--overlay-workbench-shell-inset)' : 0,
+      background: workbench.topBarStyle === 'minimal'
+        ? 'transparent'
+        : `linear-gradient(180deg, var(--overlay-workbench-chrome-bg), ${appearance.theme.palette.appBackgroundAlt})`,
+      borderBottom: usesFloatingTopBar || workbench.topBarStyle === 'minimal'
+        ? 'none'
+        : (isBottomBar ? 'none' : '1px solid var(--overlay-workbench-chrome-border)'),
+      borderTop: usesFloatingTopBar || workbench.topBarStyle === 'minimal'
+        ? 'none'
+        : (isBottomBar ? '1px solid var(--overlay-workbench-chrome-border)' : 'none'),
+      border: usesFloatingTopBar ? '1px solid var(--overlay-workbench-chrome-border)' : 'none',
+      borderRadius: usesInsetTopBar ? workbench.metrics.panelRadius : 0,
+      boxShadow: usesFloatingTopBar
+        ? 'var(--overlay-workbench-shell-shadow)'
+        : (isBottomBar
+            ? 'inset 0 -1px 0 rgba(255,255,255,0.04), 0 -8px 18px rgba(0,0,0,0.2)'
+            : 'inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 18px rgba(0,0,0,0.2)'),
+      overflow: 'hidden',
+      backdropFilter: workbench.topBarStyle === 'glass' ? 'blur(18px)' : 'none',
+      WebkitBackdropFilter: workbench.topBarStyle === 'glass' ? 'blur(18px)' : 'none',
     }}>
       <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
         {topBarShaderLayer}
@@ -3588,7 +3608,7 @@ function TopBar({
           border: 'none',
           borderRight: `1px solid ${BORDER}`,
           flexShrink: 0,
-          background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.008))',
+          background: 'var(--overlay-workbench-chrome-button-bg)',
           cursor: 'pointer',
           padding: 0,
         }}
@@ -3596,7 +3616,7 @@ function TopBar({
         <div style={{
           width: 18,
           height: 18,
-          borderRadius: 5,
+          borderRadius: workbench.metrics.controlRadius,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -3614,7 +3634,7 @@ function TopBar({
         padding: '0 6px',
         borderRight: `1px solid ${BORDER}`,
         flexShrink: 0,
-        background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.008))',
+        background: 'var(--overlay-workbench-chrome-button-bg)',
       }}>
         <button
           onClick={() => {
@@ -3628,15 +3648,15 @@ function TopBar({
             alignItems: 'center',
             gap: 6,
             padding: '0 9px',
-            borderRadius: 999,
-            border: `1px solid ${isLayoutMenuOpen ? `${accent}58` : BORDER}`,
+            borderRadius: workbench.metrics.controlRadius,
+            border: `1px solid ${isLayoutMenuOpen ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
             background: isLayoutMenuOpen
-              ? `linear-gradient(180deg, ${accent}24, ${accent}12)`
-              : 'rgba(255,255,255,0.03)',
+              ? 'var(--overlay-workbench-chrome-button-active-bg)'
+              : 'var(--overlay-workbench-chrome-button-bg)',
             color: TEXT,
-            fontSize: 8,
+            fontSize: 'var(--overlay-workbench-chrome-meta-size)',
             fontWeight: 700,
-            letterSpacing: '0.08em',
+            letterSpacing: 'var(--overlay-workbench-label-spacing)',
             textTransform: 'uppercase',
             cursor: 'pointer',
             whiteSpace: 'nowrap',
@@ -3657,7 +3677,7 @@ function TopBar({
         padding: '0 6px',
         borderRight: `1px solid ${BORDER}`,
         flexShrink: 0,
-        background: 'linear-gradient(180deg, rgba(0,0,0,0.14), rgba(255,255,255,0.02))',
+        background: 'var(--overlay-workbench-chrome-button-bg)',
       }}>
         <div style={{ position: 'relative', flexShrink: 0 }}>
           <button
@@ -3676,15 +3696,15 @@ function TopBar({
               alignItems: 'center',
               gap: 4,
               padding: '0 7px',
-              borderRadius: 6,
-              border: `1px solid ${windowMode === 'overlay' ? `${accent}55` : BORDER}`,
+              borderRadius: workbench.metrics.controlRadius,
+              border: `1px solid ${windowMode === 'overlay' ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
               background: windowMode === 'overlay'
-                ? `linear-gradient(180deg, ${accent}20, ${accent}10)`
-                : 'rgba(255,255,255,0.025)',
+                ? 'var(--overlay-workbench-chrome-button-active-bg)'
+                : 'var(--overlay-workbench-chrome-button-bg)',
               color: windowMode === 'overlay' ? TEXT : MUTED,
-              fontSize: 8,
+              fontSize: 'var(--overlay-workbench-chrome-meta-size)',
               fontWeight: 700,
-              letterSpacing: '0.08em',
+              letterSpacing: 'var(--overlay-workbench-label-spacing)',
               textTransform: 'uppercase',
               cursor: 'pointer',
               transition: 'background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s',
@@ -3705,13 +3725,13 @@ function TopBar({
               alignItems: 'center',
               gap: 4,
               padding: '0 7px',
-              borderRadius: 6,
-              border: `1px solid ${BORDER}`,
-              background: 'rgba(255,255,255,0.025)',
+              borderRadius: workbench.metrics.controlRadius,
+              border: '1px solid var(--overlay-workbench-chrome-border)',
+              background: 'var(--overlay-workbench-chrome-button-bg)',
               color: MUTED,
-              fontSize: 8,
+              fontSize: 'var(--overlay-workbench-chrome-meta-size)',
               fontWeight: 700,
-              letterSpacing: '0.08em',
+              letterSpacing: 'var(--overlay-workbench-label-spacing)',
               textTransform: 'uppercase',
               cursor: 'pointer',
               transition: 'background 0.15s, border-color 0.15s, color 0.15s',
@@ -3736,10 +3756,10 @@ function TopBar({
                 alignItems: 'center',
                 justifyContent: 'center',
                 background: isMenuOpen
-                  ? `linear-gradient(180deg, ${accent}22, ${accent}12)`
-                  : 'rgba(255,255,255,0.02)',
-                border: `1px solid ${isMenuOpen ? `${accent}55` : BORDER}`,
-                borderRadius: 6,
+                  ? 'var(--overlay-workbench-chrome-button-active-bg)'
+                  : 'var(--overlay-workbench-chrome-button-bg)',
+                border: `1px solid ${isMenuOpen ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
+                borderRadius: workbench.metrics.controlRadius,
                 color: isMenuOpen ? TEXT : MUTED,
                 cursor: 'pointer',
                 boxShadow: isMenuOpen ? `0 0 0 1px ${accent}22 inset` : 'none',
@@ -3824,13 +3844,13 @@ function TopBar({
           title={`Open Command Palette (${commandPaletteShortcutLabel})`}
           style={{
             width: 22,
-            height: 22,
-            padding: 0,
-            background: 'rgba(255,255,255,0.025)',
-            border: `1px solid ${BORDER}`,
-            color: MUTED,
-            borderRadius: 6,
-            display: 'flex',
+              height: 22,
+              padding: 0,
+              background: 'var(--overlay-workbench-chrome-button-bg)',
+              border: '1px solid var(--overlay-workbench-chrome-border)',
+              color: MUTED,
+              borderRadius: workbench.metrics.controlRadius,
+              display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             cursor: 'pointer',
@@ -3853,11 +3873,11 @@ function TopBar({
               alignItems: 'center',
               justifyContent: 'center',
               background: isSettingsActive
-                ? `linear-gradient(180deg, ${accent}32, ${accent}14)`
-                : 'linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02))',
+                ? 'var(--overlay-workbench-chrome-tab-active-bg)'
+                : 'var(--overlay-workbench-chrome-tab-bg)',
               border: 'none',
               borderRight: `1px solid ${BORDER}`,
-              borderLeft: `1px solid ${isSettingsActive ? `${accent}40` : BORDER}`,
+              borderLeft: `1px solid ${isSettingsActive ? 'var(--overlay-workbench-chrome-button-active-border)' : BORDER}`,
               color: isSettingsActive ? TEXT : MUTED,
               cursor: 'pointer',
               flexShrink: 0,
@@ -3880,8 +3900,8 @@ function TopBar({
             gap: 8,
             padding: '0 14px',
             background: isExplorerActive
-              ? `linear-gradient(180deg, ${accent}32, ${accent}14)`
-              : 'linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.025))',
+              ? 'var(--overlay-workbench-chrome-tab-active-bg)'
+              : 'var(--overlay-workbench-chrome-tab-bg)',
             border: 'none',
             borderRight: `1px solid ${BORDER}`,
             color: isExplorerActive ? TEXT : MUTED,
@@ -3898,7 +3918,7 @@ function TopBar({
           {isExplorerActive && <span style={{ width: 4, height: 4, borderRadius: '50%', background: accent }} />}
         </button>
 
-        <OverlayScrollArea direction="horizontal" style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0, background: 'rgba(0,0,0,0.08)' }} contentStyle={{ display: 'flex', alignItems: 'stretch', minWidth: 'max-content' }}>
+          <OverlayScrollArea direction="horizontal" style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0, background: 'rgba(0,0,0,0.08)' }} contentStyle={{ display: 'flex', alignItems: 'stretch', minWidth: 'max-content' }}>
           {tabPanels.map(panel => {
             const isActive = panel.id === activePanelId;
             const isDragged = draggedPanelId === panel.id;
@@ -3926,13 +3946,13 @@ function TopBar({
                   gap: 6,
                   padding: '0 9px',
                   cursor: 'pointer',
-                  background: isActive ? `linear-gradient(180deg, ${accent}18, transparent)` : 'transparent',
+                  background: isActive ? 'var(--overlay-workbench-chrome-tab-active-bg)' : (workbench.tabStyle === 'segment' ? 'var(--overlay-workbench-chrome-tab-bg)' : 'transparent'),
                   border: 'none',
                   borderBottom: isBottomBar ? 'none' : `2px solid ${isActive ? accent : 'transparent'}`,
                   borderTop: isBottomBar ? `2px solid ${isActive ? accent : 'transparent'}` : 'none',
                   borderRight: `1px solid ${BORDER}`,
                   color: isActive ? TEXT : MUTED,
-                  fontSize: 11,
+                  fontSize: 'var(--overlay-workbench-tab-label-size)',
                   fontWeight: isActive ? 700 : 500,
                   fontFamily: uiFont,
                   transition: 'background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s',
@@ -3940,6 +3960,8 @@ function TopBar({
                   userSelect: 'none',
                   opacity: isDragged ? 0.45 : 1,
                   height: '100%',
+                  borderRadius: workbench.tabStyle === 'capsule' ? workbench.metrics.controlRadius : 0,
+                  margin: workbench.tabStyle === 'capsule' ? '4px 4px' : 0,
                 }}
               >
                 <span style={{ display: 'flex', color: isActive ? accent : MUTED }}>{panel.icon}</span>
@@ -3982,7 +4004,7 @@ function TopBar({
             minWidth: 72,
             flexShrink: 0,
             borderLeft: `1px solid ${BORDER}`,
-            background: 'linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.14))',
+            background: 'var(--overlay-workbench-chrome-button-bg)',
             cursor: 'grab',
             userSelect: 'none',
           }}
@@ -3996,14 +4018,14 @@ function TopBar({
         padding: '0 8px',
         borderLeft: `1px solid ${BORDER}`,
         flexShrink: 0,
-        background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.12))',
+        background: 'var(--overlay-workbench-chrome-button-bg)',
       }}>
         {layoutProfile.chrome.showShortcutBadge && !isWindowedMode && (
           <kbd style={{
-            fontSize: 8, fontFamily: monoFont,
-            background: 'rgba(255,255,255,0.03)',
-            padding: '1px 4px', borderRadius: 6,
-            border: `1px solid rgba(255,255,255,0.06)`,
+            fontSize: 'var(--overlay-workbench-chrome-meta-size)', fontFamily: monoFont,
+            background: 'var(--overlay-workbench-chrome-button-bg)',
+            padding: '1px 4px', borderRadius: workbench.metrics.controlRadius,
+            border: '1px solid var(--overlay-workbench-chrome-border)',
             color: MUTED, userSelect: 'none',
           }}>
             {toggleShortcutLabel}
@@ -4027,7 +4049,7 @@ function TopBar({
             title="Close (Esc)"
             style={{
               background: 'transparent', border: 'none', cursor: 'pointer',
-              color: MUTED, padding: 4, borderRadius: 5, display: 'flex', alignItems: 'center',
+              color: MUTED, padding: 4, borderRadius: workbench.metrics.controlRadius, display: 'flex', alignItems: 'center',
               transition: 'background 0.12s, color 0.12s',
             }}
             onMouseEnter={e => { e.currentTarget.style.background = 'rgba(248,113,113,0.12)'; e.currentTarget.style.color = appearance.theme.palette.danger; }}

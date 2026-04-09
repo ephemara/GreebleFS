@@ -7,6 +7,25 @@
   "tags": ["xmb", "console", "media", "cinematic"],
   "extends": "plasma-flow",
   "theme": {
+    "workbench": {
+      "preset": "xmb",
+      "brandLabel": "Cross Media",
+      "topBarStyle": "floating",
+      "commandPaletteStyle": "glass",
+      "terminalStyle": "glass",
+      "settingsStyle": "glass",
+      "tabStyle": "capsule",
+      "metrics": {
+        "chromeHeight": 40,
+        "panelRadius": 24,
+        "controlRadius": 999,
+        "shellInset": 12,
+        "commandPaletteWidth": 840
+      },
+      "cssVars": {
+        "--overlay-workbench-brand": "cross-media"
+      }
+    },
     "palette": {
       "accent": "#5ddfff",
       "accentSoft": "rgba(93, 223, 255, 0.16)",

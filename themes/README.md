@@ -34,7 +34,8 @@ Top-level fields:
 - `extends`
   - Optional base theme id. Can point at a built-in theme or another package theme.
 - `theme`
-  - Partial OverlayTerm theme definition with `palette`, `effects`, `xterm`, `fonts`, `cssVars`, `visuals`, `defaultShaderId`, `defaultOpenAnimationId`, `defaultCloseAnimationId`, and `explorer`.
+  - Partial OverlayTerm theme definition with `palette`, `effects`, `xterm`, `fonts`, `cssVars`, `visuals`, `defaultShaderId`, `defaultOpenAnimationId`, `defaultCloseAnimationId`, `workbench`, and `explorer`.
+  - `theme.workbench` is the app-wide shell recipe layer. It controls the command-center chrome, command palette, terminal shell, settings shell, tabs, shell radii, and shared workbench surfaces.
   - `theme.explorer` is the explorer-shell recipe layer. It is where package authors can swap between high-level presets like `workbench`, `xmb`, and `channel-grid`, set structural choices such as `toolbarStyle`, `breadcrumbStyle`, `previewStyle`, `statusBarStyle`, `railPosition`, `preferredViewMode`, and `preferredExperimentalViewMode`, and then override geometry/surfaces through `metrics`, `surfaces`, `typography`, and raw explorer-scoped `cssVars`.
 - `designTokens`, `layoutPrimitives`, `navigationPatterns`
   - Typed backend contract slices. Token values and primitive props can be strings, numbers, booleans, or structured JSON values.
@@ -69,6 +70,40 @@ Top-level fields:
   - Raw escape hatch for explorer-only CSS variables when the typed fields are not enough
 
 This is the layer that makes theme packages capable of approximating shells like PS3 XMB flows, Wii channel grids, glassy dock navigators, or heavier desktop workbenches without forking the explorer component.
+
+## Workbench Recipe Highlights
+
+- `theme.workbench.preset`
+  - `workbench`, `xmb`, `channel-grid`, or `custom`
+- `theme.workbench.topBarStyle`
+  - `solid`, `glass`, `floating`, or `minimal`
+- `theme.workbench.commandPaletteStyle`, `theme.workbench.terminalStyle`, `theme.workbench.settingsStyle`
+  - `solid`, `glass`, or `floating`
+- `theme.workbench.tabStyle`
+  - `underline`, `capsule`, or `segment`
+- `theme.workbench.metrics`
+  - `chromeHeight`, `controlRadius`, `panelRadius`, `shellInset`, `commandPaletteWidth`, `commandPaletteTopInset`, `pagePadding`, `panelGap`
+- `theme.workbench.surfaces`
+  - App-wide shell surfaces for chrome, menus, command palette, settings shell, terminal shell, and shared button/tab treatments
+- `theme.workbench.cssVars`
+  - Raw escape hatch for workbench-only CSS variables when the typed fields are not enough
+
+## Authoring Format
+
+- Theme manifests are authored in `JSON` or `TOML`.
+- Color/effect/layout values are mostly CSS-like strings and numbers.
+  - Examples: `rgba(...)`, `linear-gradient(...)`, `blur(18px)`, `24`, `0.18`
+- Icon themes are authored in `JSON`.
+- Shaders and animations are authored as `TSX` runtime modules inside `shaders/` and `animations/`.
+
+So the practical answer is:
+
+- theme package structure and recipes: `JSON` or `TOML`
+- icon mapping: `JSON`
+- motion and shader contributions: `TSX`
+- most styling primitives inside the manifest: CSS-like values
+
+That means an XMB-like theme is mainly a data package, not a custom React fork.
 
 ## Icon Theme JSON
 

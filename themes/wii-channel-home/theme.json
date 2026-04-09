@@ -7,6 +7,24 @@
   "tags": ["wii", "channels", "bright", "home"],
   "extends": "aqua-light",
   "theme": {
+    "workbench": {
+      "preset": "channel-grid",
+      "brandLabel": "Channels",
+      "topBarStyle": "minimal",
+      "commandPaletteStyle": "floating",
+      "settingsStyle": "floating",
+      "tabStyle": "capsule",
+      "metrics": {
+        "chromeHeight": 40,
+        "panelRadius": 30,
+        "controlRadius": 18,
+        "shellInset": 10,
+        "commandPaletteWidth": 780
+      },
+      "cssVars": {
+        "--overlay-workbench-brand": "channels"
+      }
+    },
     "palette": {
       "accent": "#35b9ff",
       "accentSoft": "rgba(53, 185, 255, 0.14)",

@@ -91,8 +91,8 @@ function ThemeBadge({ label, active = false }: { label: string; active?: boolean
     <span
       className="rounded px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]"
       style={{
-        border: `1px solid ${active ? 'currentColor' : 'rgba(255,255,255,0.12)'}`,
-        background: active ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)',
+        border: `1px solid ${active ? 'currentColor' : 'var(--overlay-workbench-settings-badge-border)'}`,
+        background: active ? 'var(--overlay-workbench-chrome-button-active-bg)' : 'var(--overlay-workbench-settings-badge-bg)',
       }}
     >
       {label}
@@ -131,7 +131,7 @@ function getThemePackageSourceBadgeLabel(sourceKind: LoadedOverlayThemePackage['
 
 function ColorToken({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
-    <label className="flex flex-col gap-1 rounded border border-white/8 bg-white/[0.03] p-2">
+    <label className="flex flex-col gap-1 rounded border p-2" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
       <span className="text-[9px] font-semibold uppercase tracking-wide opacity-50">{label}</span>
       <div className="flex items-center gap-2">
         <input type="color" value={value} onChange={event => onChange(event.target.value)} className="h-7 w-9 rounded border-0 bg-transparent p-0" />
@@ -179,7 +179,7 @@ function RangeField({
   onChange: (value: number) => void;
 }) {
   return (
-    <label className="rounded border border-white/8 bg-white/[0.03] p-3">
+    <label className="rounded border p-3" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">{label}</div>
@@ -238,7 +238,7 @@ function ShortcutField({
   }, [definition.defaultValue, draft, onCommit]);
 
   return (
-    <label className="rounded border border-white/8 bg-white/[0.03] p-3">
+    <label className="rounded border p-3" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">{definition.label}</div>
@@ -345,7 +345,7 @@ function SettingsRailButton({
       className="w-full rounded px-2 py-2 text-left transition-colors"
       style={{
         border: `1px solid ${active ? `${accent}88` : border}`,
-        background: active ? `${accent}12` : 'rgba(255,255,255,0.02)',
+        background: active ? 'var(--overlay-workbench-chrome-button-active-bg)' : 'var(--overlay-workbench-settings-rail-bg)',
         color: text,
         boxShadow: active ? `inset 0 0 0 1px ${accent}22` : 'none',
       }}
@@ -354,9 +354,9 @@ function SettingsRailButton({
         <div
           className="flex h-6 w-6 shrink-0 items-center justify-center rounded"
           style={{
-            background: active ? `${accent}18` : 'rgba(255,255,255,0.035)',
+            background: active ? 'var(--overlay-workbench-chrome-button-active-bg)' : 'var(--overlay-workbench-settings-badge-bg)',
             color: active ? accent : muted,
-            border: `1px solid ${active ? `${accent}55` : 'rgba(255,255,255,0.06)'}`,
+            border: `1px solid ${active ? `${accent}55` : 'var(--overlay-workbench-settings-badge-border)'}`,
           }}
         >
           {icon}
@@ -392,7 +392,7 @@ function OverviewCard({
   children: ReactNode;
 }) {
   return (
-    <div className="rounded border p-3" style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.025)' }}>
+    <div className="rounded border p-3" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">{title}</div>
@@ -404,7 +404,7 @@ function OverviewCard({
               <span
                 key={badge}
                 className="rounded border px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em]"
-                style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)' }}
+                style={{ borderColor: 'var(--overlay-workbench-settings-badge-border)', background: 'var(--overlay-workbench-settings-badge-bg)' }}
               >
                 {badge}
               </span>
@@ -766,6 +766,7 @@ export function SettingsPage({
   const text = effectiveTheme.palette.textPrimary;
   const muted = effectiveTheme.palette.textMuted;
   const accent = effectiveTheme.palette.accent;
+  const workbench = appearance.workbenchTheme;
   const themeIconTheme = editableTheme.assets?.iconTheme ?? getBuiltInIconTheme();
   const activeLayoutProfile = useMemo(
     () => resolveLayoutProfile(layoutManifestState.manifest, settings.layout.activeProfileId),
@@ -1147,7 +1148,9 @@ export function SettingsPage({
         minHeight: 0,
         minWidth: 0,
         fontFamily: appearance.fonts.ui,
-        background: `linear-gradient(180deg, ${effectiveTheme.palette.appBackgroundAlt} 0%, ${panelBackground} 100%)`,
+        background: 'var(--overlay-workbench-settings-bg)',
+        gap: 'var(--overlay-workbench-panel-gap)',
+        padding: 'var(--overlay-workbench-page-padding)',
       }}
     >
       <ResizablePane
@@ -1156,7 +1159,20 @@ export function SettingsPage({
         maxSize={320}
         onSizeChange={setRailWidth}
         borderColor={`${accent}55`}
-        style={{ display: 'flex', minHeight: 0, flexDirection: 'column', borderRight: `1px solid ${border}`, background: 'rgba(255,255,255,0.02)' }}
+        style={{
+          display: 'flex',
+          minHeight: 0,
+          flexDirection: 'column',
+          border: `1px solid var(--overlay-workbench-settings-card-border)`,
+          borderRadius: workbench.metrics.panelRadius,
+          background: 'var(--overlay-workbench-settings-rail-bg)',
+          boxShadow: workbench.settingsStyle === 'floating' || workbench.settingsStyle === 'glass'
+            ? 'var(--overlay-workbench-shell-shadow)'
+            : 'none',
+          backdropFilter: workbench.settingsStyle === 'glass' ? 'blur(18px)' : 'none',
+          WebkitBackdropFilter: workbench.settingsStyle === 'glass' ? 'blur(18px)' : 'none',
+          overflow: 'hidden',
+        }}
       >
         <div className="border-b px-4 py-3" style={{ borderColor: border }}>
           <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: muted }}>
@@ -1188,7 +1204,7 @@ export function SettingsPage({
       </ResizablePane>
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="border-b px-4 py-3" style={{ borderColor: border }}>
+        <div className="border-b px-4 py-3" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', borderRadius: workbench.settingsStyle === 'floating' || workbench.settingsStyle === 'glass' ? workbench.metrics.panelRadius : 0, background: 'var(--overlay-workbench-settings-card-bg)' }}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0 flex-1">
               <p className="min-w-[240px] flex-1 text-[11px] leading-4" style={{ color: muted }}>
@@ -1198,32 +1214,32 @@ export function SettingsPage({
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
               <span
                 className="rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em]"
-                style={{ border: `1px solid ${border}`, color: muted, background: 'rgba(255,255,255,0.03)' }}
+                style={{ border: '1px solid var(--overlay-workbench-settings-badge-border)', color: muted, background: 'var(--overlay-workbench-settings-badge-bg)' }}
               >
                 Theme · {effectiveTheme.name}
               </span>
               <span
                 className="rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em]"
-                style={{ border: `1px solid ${border}`, color: muted, background: 'rgba(255,255,255,0.03)' }}
+                style={{ border: '1px solid var(--overlay-workbench-settings-badge-border)', color: muted, background: 'var(--overlay-workbench-settings-badge-bg)' }}
               >
                 Layout · {activeLayoutProfile.label}
               </span>
               <span
                 className="rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em]"
-                style={{ border: `1px solid ${border}`, color: muted, background: 'rgba(255,255,255,0.03)' }}
+                style={{ border: '1px solid var(--overlay-workbench-settings-badge-border)', color: muted, background: 'var(--overlay-workbench-settings-badge-bg)' }}
               >
                 Startup · {settings.system.launchAtStartup ? 'Enabled' : 'Disabled'}
               </span>
               <span
                 className="hidden rounded px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] xl:inline-flex"
-                style={{ border: `1px solid ${border}`, color: muted, background: 'rgba(255,255,255,0.03)' }}
+                style={{ border: '1px solid var(--overlay-workbench-settings-badge-border)', color: muted, background: 'var(--overlay-workbench-settings-badge-bg)' }}
               >
                 {activeSectionMeta.summary}
               </span>
               <button
                 onClick={() => resetToDefaults()}
                 className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
-                style={{ border: `1px solid ${border}`, color: text, background: 'rgba(255,255,255,0.04)' }}
+                style={{ border: '1px solid var(--overlay-workbench-settings-badge-border)', color: text, background: 'var(--overlay-workbench-settings-badge-bg)' }}
               >
                 <RotateCcw size={12} />
                 Reset Defaults
@@ -1232,10 +1248,10 @@ export function SettingsPage({
           </div>
         </div>
 
-        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 12 }}>
+        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 0 }}>
           <div className="mx-auto flex w-full max-w-[1080px] flex-col gap-3 pb-5">
             {activeSection === 'overview' && (
-              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+              <section className="rounded border p-4" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
                 <SectionTitle
                   icon={<Sparkles size={12} />}
                   title="Overview"
@@ -1366,7 +1382,7 @@ export function SettingsPage({
             )}
 
             {activeSection === 'appearance' && (
-              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+              <section className="rounded border p-4" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
             <SectionTitle
               icon={<Palette size={12} />}
               title="Appearance"
@@ -1444,7 +1460,11 @@ export function SettingsPage({
                     const defaultAnimationProfile = compiledEngineManifest?.defaultAnimationProfile;
                     const defaultIconPack = compiledEngineManifest?.defaultIconPack;
                     const defaultRenderStyle = compiledEngineManifest?.defaultRenderStyle;
+                    const workbenchPreset = themeOption.workbench?.preset;
+                    const explorerPreset = themeOption.explorer?.preset;
                     const capabilityLabels = [
+                      workbenchPreset ? `Shell ${workbenchPreset}` : null,
+                      explorerPreset ? `Explorer ${explorerPreset}` : null,
                       packageInfo?.capabilitySummary.icons ? 'Icons' : null,
                       packageInfo?.capabilitySummary.shaders ? `Shaders ${packageInfo.capabilitySummary.shaders}` : null,
                       packageInfo?.capabilitySummary.animations ? `Motion ${packageInfo.capabilitySummary.animations}` : null,
