@@ -30,10 +30,20 @@ import {
   explorerExperimentalModes,
   getAdaptiveSemanticDensityPercent,
   getAdaptiveSemanticDensityStop,
+  getExplorerExperimentalDensityDescriptor,
   getExplorerExperimentalModeDefinition,
   stepAdaptiveSemanticDensity,
   type AdaptiveSemanticDensityStopDefinition,
+  type ExplorerExperimentalViewMode,
 } from '../config/explorerExperimentalModes';
+import {
+  EXPLORER_PREVIEW_WIDTH_BOUNDS,
+  explorerShellLayouts,
+  getExplorerShellLayoutDefinition,
+  getExplorerShellLayoutWidthSuggestion,
+  type ExplorerShellLayoutDefinition,
+  type ExplorerShellLayoutId,
+} from '../config/explorerShellLayouts';
 import {
   applyExplorerThemeToAdaptiveDensityStop,
   applyExplorerThemeToGridMetrics,
@@ -668,6 +678,371 @@ function buildAdaptiveSemanticBands(
   return bands;
 }
 
+function buildConstellationOrbitBands(
+  bands: AdaptiveSemanticBand[],
+  selectedPaths: Set<string>,
+  density: number,
+): ConstellationOrbitBand[] {
+  const normalizedDensity = Math.min(1, Math.max(0, density));
+  const maxVisibleNodes = Math.max(6, Math.min(24, Math.round(6 + normalizedDensity * 18)));
+
+  return bands
+    .filter((band) => band.entries.length > 0)
+    .map((band) => {
+      const visibleEntries = band.entries.slice(0, maxVisibleNodes);
+      const hubBaseSize = band.dominant ? 46 : 42;
+      const nodeBaseSize = band.dominant ? 34 : 30;
+      const nodes = visibleEntries.map((entry, index) => {
+        const entryHash = hashExplorerString(entry.path);
+        const jitterAngle = ((entryHash % 41) / 41) * 0.44 - 0.22;
+        const ringIndex = Math.floor(index / 6);
+        const angle = ((index + 1) / Math.max(visibleEntries.length + 1, 2)) * Math.PI * 2 + jitterAngle;
+        const radiusX = 18 + ringIndex * 10 + normalizedDensity * 12 + ((entryHash >> 2) % 7);
+        const radiusY = 12 + ringIndex * 8 + normalizedDensity * 10 + ((entryHash >> 5) % 5);
+        const x = clampConstellationCoordinate(50 + Math.cos(angle) * radiusX, 11, 89);
+        const y = clampConstellationCoordinate(50 + Math.sin(angle) * radiusY, 12, 88);
+        const emphasis = selectedPaths.has(entry.path)
+          ? 'selected'
+          : entry.is_dir || (band.dominant && index < 3)
+            ? 'anchor'
+            : 'satellite';
+        const size = Math.max(
+          26,
+          Math.round(
+            (emphasis === 'anchor' ? hubBaseSize : emphasis === 'selected' ? hubBaseSize - 2 : nodeBaseSize)
+            - normalizedDensity * 8
+            - ringIndex * 2,
+          ),
+        );
+        return {
+          entry,
+          x,
+          y,
+          size,
+          labelVisible: normalizedDensity > 0.28 || emphasis !== 'satellite' || index < 3,
+          emphasis,
+        } satisfies ConstellationOrbitNode;
+      });
+
+      return {
+        ...band,
+        nodes,
+        hiddenEntryCount: Math.max(0, band.entries.length - visibleEntries.length),
+      };
+    });
+}
+
+function buildTimelineSurfaceBands(
+  entries: FileEntry[],
+  density: number,
+  sortBy: ExplorerSortKey,
+  sortOrder: 'asc' | 'desc',
+  nowMs = Date.now(),
+): TimelineSurfaceBand[] {
+  const now = new Date(nowMs);
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfYesterday = startOfToday - 24 * 60 * 60 * 1000;
+  const dayOfWeekOffset = (now.getDay() + 6) % 7;
+  const startOfWeek = startOfToday - dayOfWeekOffset * 24 * 60 * 60 * 1000;
+  const startOfLastWeek = startOfWeek - 7 * 24 * 60 * 60 * 1000;
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const startOfYear = new Date(now.getFullYear(), 0, 1).getTime();
+  const lastThirtyDays = startOfToday - 30 * 24 * 60 * 60 * 1000;
+  const lastNinetyDays = startOfToday - 90 * 24 * 60 * 60 * 1000;
+  const densityStopId = getAdaptiveSemanticDensityStop(density).id;
+
+  const bucketDefinitions: Array<{
+    id: string;
+    label: string;
+    description: string;
+    dominant: boolean;
+    matches: (entry: FileEntry) => boolean;
+  }> = densityStopId === 'small-icons'
+    ? [
+        {
+          id: 'recent',
+          label: 'Recent',
+          description: 'Fresh work from the last month stays at the front of the timeline.',
+          dominant: true,
+          matches: (entry) => entry.modified >= lastThirtyDays,
+        },
+        {
+          id: 'this-year',
+          label: 'This Year',
+          description: 'Everything else from the current year remains grouped together.',
+          dominant: false,
+          matches: (entry) => entry.modified >= startOfYear,
+        },
+        {
+          id: 'archive',
+          label: 'Archive',
+          description: 'Older files collapse into a long-range archive band.',
+          dominant: false,
+          matches: () => true,
+        },
+      ]
+    : densityStopId === 'medium-icons'
+      ? [
+          {
+            id: 'last-90-days',
+            label: 'Last 90 Days',
+            description: 'Recent quarters stay compressed into one practical band.',
+            dominant: true,
+            matches: (entry) => entry.modified >= lastNinetyDays,
+          },
+          {
+            id: 'this-year',
+            label: 'This Year',
+            description: 'Current-year history remains visible without splitting too far.',
+            dominant: false,
+            matches: (entry) => entry.modified >= startOfYear,
+          },
+          {
+            id: 'archive',
+            label: 'Archive',
+            description: 'Older work folds into one archival lane.',
+            dominant: false,
+            matches: () => true,
+          },
+        ]
+      : densityStopId === 'large-icons'
+        ? [
+            {
+              id: 'today',
+              label: 'Today',
+              description: 'The freshest changes sit on the leading edge.',
+              dominant: true,
+              matches: (entry) => entry.modified >= startOfToday,
+            },
+            {
+              id: 'this-week',
+              label: 'This Week',
+              description: 'Current-week edits form the active work lane.',
+              dominant: false,
+              matches: (entry) => entry.modified >= startOfWeek,
+            },
+            {
+              id: 'this-month',
+              label: 'This Month',
+              description: 'Monthly context keeps short-term history together.',
+              dominant: false,
+              matches: (entry) => entry.modified >= startOfMonth,
+            },
+            {
+              id: 'archive',
+              label: 'Archive',
+              description: 'Older work falls into a broader historical band.',
+              dominant: false,
+              matches: () => true,
+            },
+          ]
+        : densityStopId === 'rich-cards'
+          ? [
+              {
+                id: 'today',
+                label: 'Today',
+                description: 'Same-day edits remain closest to the front edge.',
+                dominant: true,
+                matches: (entry) => entry.modified >= startOfToday,
+              },
+              {
+                id: 'yesterday',
+                label: 'Yesterday',
+                description: 'Yesterday forms its own recent handoff band.',
+                dominant: false,
+                matches: (entry) => entry.modified >= startOfYesterday,
+              },
+              {
+                id: 'this-week',
+                label: 'This Week',
+                description: 'The rest of the week stays grouped as one burst window.',
+                dominant: false,
+                matches: (entry) => entry.modified >= startOfWeek,
+              },
+              {
+                id: 'this-month',
+                label: 'This Month',
+                description: 'Monthly context fills in the wider story arc.',
+                dominant: false,
+                matches: (entry) => entry.modified >= startOfMonth,
+              },
+              {
+                id: 'archive',
+                label: 'Archive',
+                description: 'Older work remains visible as historical layers.',
+                dominant: false,
+                matches: () => true,
+              },
+            ]
+          : densityStopId === 'columns'
+            ? [
+                {
+                  id: 'today',
+                  label: 'Today',
+                  description: 'Today stays isolated for quick scanning.',
+                  dominant: true,
+                  matches: (entry) => entry.modified >= startOfToday,
+                },
+                {
+                  id: 'yesterday',
+                  label: 'Yesterday',
+                  description: 'Yesterday remains visible as a short handoff band.',
+                  dominant: false,
+                  matches: (entry) => entry.modified >= startOfYesterday,
+                },
+                {
+                  id: 'this-week',
+                  label: 'This Week',
+                  description: 'This week becomes a compact activity lane.',
+                  dominant: false,
+                  matches: (entry) => entry.modified >= startOfWeek,
+                },
+                {
+                  id: 'last-30-days',
+                  label: 'Last 30 Days',
+                  description: 'Recent month-scale work stays separated from older history.',
+                  dominant: false,
+                  matches: (entry) => entry.modified >= lastThirtyDays,
+                },
+                {
+                  id: 'this-year',
+                  label: 'This Year',
+                  description: 'Remaining current-year work keeps a broader historical lane.',
+                  dominant: false,
+                  matches: (entry) => entry.modified >= startOfYear,
+                },
+                {
+                  id: 'archive',
+                  label: 'Archive',
+                  description: 'Older work compacts into a long-tail archive.',
+                  dominant: false,
+                  matches: () => true,
+                },
+              ]
+            : [
+                {
+                  id: 'today',
+                  label: 'Today',
+                  description: 'Same-day changes stay closest to the current moment.',
+                  dominant: true,
+                  matches: (entry) => entry.modified >= startOfToday,
+                },
+                {
+                  id: 'yesterday',
+                  label: 'Yesterday',
+                  description: 'Yesterday keeps its own band for immediate recall.',
+                  dominant: false,
+                  matches: (entry) => entry.modified >= startOfYesterday,
+                },
+                {
+                  id: 'this-week',
+                  label: 'This Week',
+                  description: 'The current week remains readable as a dedicated lane.',
+                  dominant: false,
+                  matches: (entry) => entry.modified >= startOfWeek,
+                },
+                {
+                  id: 'last-week',
+                  label: 'Last Week',
+                  description: 'Last week is split out so short-term history does not blur.',
+                  dominant: false,
+                  matches: (entry) => entry.modified >= startOfLastWeek,
+                },
+                {
+                  id: 'last-30-days',
+                  label: 'Last 30 Days',
+                  description: 'The last month keeps a wider but still active band.',
+                  dominant: false,
+                  matches: (entry) => entry.modified >= lastThirtyDays,
+                },
+                {
+                  id: 'last-90-days',
+                  label: 'Last 90 Days',
+                  description: 'Quarter-scale work remains separate from the archive.',
+                  dominant: false,
+                  matches: (entry) => entry.modified >= lastNinetyDays,
+                },
+                {
+                  id: 'this-year',
+                  label: 'This Year',
+                  description: 'Current-year history stays visible before the archive drop-off.',
+                  dominant: false,
+                  matches: (entry) => entry.modified >= startOfYear,
+                },
+                {
+                  id: 'archive',
+                  label: 'Archive',
+                  description: 'Older work compresses into a deep-time archive lane.',
+                  dominant: false,
+                  matches: () => true,
+                },
+              ];
+
+  const buckets = new Map<string, FileEntry[]>();
+  const undatedEntries: FileEntry[] = [];
+  for (const entry of entries) {
+    if (!entry.modified) {
+      undatedEntries.push(entry);
+      continue;
+    }
+
+    const matchedBucket = bucketDefinitions.find((bucket) => bucket.matches(entry));
+    if (!matchedBucket) {
+      undatedEntries.push(entry);
+      continue;
+    }
+    const bucketEntries = buckets.get(matchedBucket.id) ?? [];
+    bucketEntries.push(entry);
+    buckets.set(matchedBucket.id, bucketEntries);
+  }
+
+  const timelineBands = bucketDefinitions
+    .map((bucket) => {
+      const bucketEntries = buckets.get(bucket.id) ?? [];
+      if (bucketEntries.length === 0) {
+        return null;
+      }
+      return {
+        id: bucket.id,
+        label: bucket.label,
+        description: bucket.description,
+        dominant: bucket.dominant,
+        entries: bucketEntries.sort((left, right) => {
+          const dateComparison = compareExplorerEntries(left, right, 'date', 'desc');
+          return dateComparison !== 0
+            ? dateComparison
+            : compareExplorerEntries(left, right, sortBy, sortOrder);
+        }),
+      } satisfies TimelineSurfaceBand;
+    })
+    .filter((band): band is TimelineSurfaceBand => band != null);
+
+  if (undatedEntries.length > 0) {
+    timelineBands.push({
+      id: 'undated',
+      label: 'Undated',
+      description: 'Files without usable timestamps stay grouped at the tail of the surface.',
+      dominant: false,
+      entries: undatedEntries.sort((left, right) => compareExplorerEntries(left, right, sortBy, sortOrder)),
+    });
+  }
+
+  return timelineBands;
+}
+
+function hashExplorerString(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash) + value.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function clampConstellationCoordinate(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
 function isLikelyExplorerPathInput(value: string): boolean {
   const trimmed = value.trim();
   if (!trimmed) return false;
@@ -837,22 +1212,147 @@ function ExplorerLayoutGlyph({ mode, accent, active }: {
   );
 }
 
+function ExplorerShellLayoutGlyph({ layout, accent, active }: {
+  layout: ExplorerShellLayoutDefinition;
+  accent: string;
+  active: boolean;
+}) {
+  const color = active ? accent : EXP.muted;
+  const borderColor = active ? `${accent}66` : 'rgba(255,255,255,0.14)';
+  const cellBackground = active ? `${accent}1e` : 'rgba(255,255,255,0.04)';
+
+  return (
+    <span style={{ width: 14, height: 14, display: 'grid', gridTemplateColumns: layout.showRail ? '4px 1fr' : '1fr', gap: 2 }}>
+      {layout.showRail && (
+        <span
+          style={{
+            borderRadius: 2,
+            border: `1px solid ${borderColor}`,
+            background: cellBackground,
+          }}
+        />
+      )}
+      <span
+        style={{
+          display: 'grid',
+          gridTemplateColumns: layout.previewPlacement === 'leading' ? '1fr 2px 2fr' : '2fr 2px 1fr',
+          gap: 2,
+        }}
+      >
+        <span
+          style={{
+            borderRadius: 2,
+            border: `1px solid ${borderColor}`,
+            background: cellBackground,
+          }}
+        />
+        <span
+          style={{
+            borderRadius: 999,
+            background: color,
+            opacity: 0.6,
+          }}
+        />
+        <span
+          style={{
+            borderRadius: 2,
+            border: `1px solid ${borderColor}`,
+            background: cellBackground,
+          }}
+        />
+      </span>
+    </span>
+  );
+}
+
 interface ExplorerExperimentalGlyphProps {
   active: boolean;
   accent: string;
+  mode: ExplorerExperimentalViewMode | 'all';
 }
 
-function ExplorerExperimentalGlyph({ active, accent }: ExplorerExperimentalGlyphProps) {
+function ExplorerExperimentalGlyph({ active, accent, mode }: ExplorerExperimentalGlyphProps) {
+  const color = active ? accent : EXP.muted;
+  const borderColor = active ? `${accent}66` : 'rgba(255,255,255,0.16)';
+  const fill = active ? `${accent}1f` : 'rgba(255,255,255,0.05)';
+
+  if (mode === 'adaptive-semantic-grid') {
+    return (
+      <span style={{ width: 14, height: 14, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 2 }}>
+        {Array.from({ length: 4 }).map((_, index) => (
+          <span
+            key={index}
+            style={{
+              borderRadius: 2,
+              border: `1px solid ${borderColor}`,
+              background: fill,
+            }}
+          />
+        ))}
+      </span>
+    );
+  }
+
+  if (mode === 'constellation') {
+    return (
+      <span style={{ width: 14, height: 14, position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+        <span style={{ position: 'absolute', width: 2, height: 2, borderRadius: 999, background: color, left: 6, top: 6 }} />
+        <span style={{ position: 'absolute', width: 1, height: 1, borderRadius: 999, background: color, left: 1, top: 3 }} />
+        <span style={{ position: 'absolute', width: 1, height: 1, borderRadius: 999, background: color, left: 10, top: 2 }} />
+        <span style={{ position: 'absolute', width: 1, height: 1, borderRadius: 999, background: color, left: 11, top: 10 }} />
+        <span style={{ position: 'absolute', width: 1, height: 1, borderRadius: 999, background: color, left: 2, top: 11 }} />
+        <span style={{ position: 'absolute', width: 8, height: 1, background: color, opacity: 0.7, left: 2, top: 4, transform: 'rotate(18deg)', transformOrigin: 'left center' }} />
+        <span style={{ position: 'absolute', width: 7, height: 1, background: color, opacity: 0.45, left: 6, top: 7, transform: 'rotate(38deg)', transformOrigin: 'left center' }} />
+        <span style={{ position: 'absolute', width: 7, height: 1, background: color, opacity: 0.4, left: 2, top: 10, transform: 'rotate(-26deg)', transformOrigin: 'left center' }} />
+      </span>
+    );
+  }
+
+  if (mode === 'timeline-surface') {
+    return (
+      <span style={{ width: 14, height: 14, display: 'grid', gridTemplateColumns: '4px 1fr', gap: 3, alignItems: 'stretch' }}>
+        <span style={{ borderRadius: 999, background: color, opacity: 0.8 }} />
+        <span style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '1px 0' }}>
+          <span style={{ height: 2, borderRadius: 999, background: fill, border: `1px solid ${borderColor}` }} />
+          <span style={{ height: 2, borderRadius: 999, background: fill, border: `1px solid ${borderColor}`, opacity: 0.82 }} />
+          <span style={{ height: 2, borderRadius: 999, background: fill, border: `1px solid ${borderColor}`, opacity: 0.68 }} />
+        </span>
+      </span>
+    );
+  }
+
   return (
     <Sparkles
       size={14}
       strokeWidth={2}
-      style={{ color: active ? accent : EXP.muted }}
+      style={{ color }}
     />
   );
 }
 
 interface AdaptiveSemanticBand {
+  id: string;
+  label: string;
+  description: string;
+  dominant: boolean;
+  entries: FileEntry[];
+}
+
+interface ConstellationOrbitNode {
+  entry: FileEntry;
+  x: number;
+  y: number;
+  size: number;
+  labelVisible: boolean;
+  emphasis: 'anchor' | 'selected' | 'satellite';
+}
+
+interface ConstellationOrbitBand extends AdaptiveSemanticBand {
+  nodes: ConstellationOrbitNode[];
+  hiddenEntryCount: number;
+}
+
+interface TimelineSurfaceBand {
   id: string;
   label: string;
   description: string;
@@ -1006,7 +1506,12 @@ function PreviewPanel({
     const move = (e: MouseEvent) => {
       if (!dragging.current) return;
       const delta = startX.current - e.clientX; // dragging left grows the panel
-      onWidthChange(Math.max(220, Math.min(920, startW.current + delta)));
+      onWidthChange(
+        Math.max(
+          EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
+          Math.min(EXPLORER_PREVIEW_WIDTH_BOUNDS.max, startW.current + delta),
+        ),
+      );
     };
     const up = () => { dragging.current = false; };
     window.addEventListener('mousemove', move);
@@ -1339,6 +1844,7 @@ export function FileExplorer({
   const initialSessionRef = useRef(useExplorerStore.getState().session);
   const initialSession = initialSessionRef.current;
   const initialSessionPathRef = useRef(initialSession.currentPath.trim());
+  const initialShellLayout = getExplorerShellLayoutDefinition(initialSession.shellLayoutId);
 
   const [currentPath,  setCurrentPath]  = useState(() => initialSession.currentPath);
   const [history,      setHistory]      = useState<string[]>(() => initialSession.history);
@@ -1351,9 +1857,15 @@ export function FileExplorer({
   });
   const [previewWidth, setPreviewWidth] = useState(() => {
     if (typeof initialSession.previewWidth === 'number') {
-      return Math.max(220, Math.min(920, initialSession.previewWidth));
+      return Math.max(
+        EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
+        Math.min(EXPLORER_PREVIEW_WIDTH_BOUNDS.max, initialSession.previewWidth),
+      );
     }
-    return Math.max(220, Math.min(920, Math.round(explorerTheme.metrics.previewWidth)));
+    return Math.max(
+      EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
+      Math.min(EXPLORER_PREVIEW_WIDTH_BOUNDS.max, Math.round(explorerTheme.metrics.previewWidth)),
+    );
   });
   const [entries,      setEntries]      = useState<FileEntry[]>([]);
   const [entrySizes,   setEntrySizes]   = useState<Record<string, EntryStorageInfo>>({});
@@ -1370,8 +1882,11 @@ export function FileExplorer({
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchIncludeContent, setSearchIncludeContent] = useState(() => initialSession.searchIncludeContent);
   const [documentViewMode, setDocumentViewMode] = useState<ExplorerDocumentViewMode>(() => initialSession.documentViewMode);
+  const [previewEnabled, setPreviewEnabled] = useState(() => initialSession.previewEnabled);
+  const [shellLayoutId, setShellLayoutId] = useState<ExplorerShellLayoutId>(() => initialShellLayout.id);
   const [preview,      setPreview]      = useState<PreviewState>({ type:'none', path:'' });
   const [ctxMenu,      setCtxMenu]      = useState<ContextMenuState>({ visible:false, x:0, y:0, entry:null });
+  const [showShellLayoutMenu, setShowShellLayoutMenu] = useState(false);
   const [showLayoutMenu, setShowLayoutMenu] = useState(false);
   const [showExperimentalMenu, setShowExperimentalMenu] = useState(false);
   const [rename,       setRename]       = useState<RenameState>({ active:false, path:'', name:'' });
@@ -1401,6 +1916,7 @@ export function FileExplorer({
 
   const mainRef = useRef<HTMLDivElement>(null);
   const explorerViewportRef = useRef<HTMLDivElement>(null);
+  const shellLayoutMenuAnchorRef = useRef<HTMLDivElement>(null);
   const layoutMenuAnchorRef = useRef<HTMLDivElement>(null);
   const experimentalMenuAnchorRef = useRef<HTMLDivElement>(null);
   const layoutWheelDeltaAccumulatorRef = useRef(0);
@@ -1415,22 +1931,14 @@ export function FileExplorer({
     clientHeight: 0,
     clientWidth: 0,
   });
-  const isAdaptiveExperimentalEnabled = !isCompactDock
-    && search.trim().length === 0
-    && (
-      experimentalViewMode === 'adaptive-semantic-grid'
-      || (
-        experimentalViewMode === 'off'
-        && explorerTheme.preferredExperimentalViewMode === 'adaptive-semantic-grid'
-      )
-    );
+  const isExperimentalViewEligible = !isCompactDock && search.trim().length === 0;
 
   useEffect(() => {
     setSidebarWidth(current => Math.max(sidebarBounds.minWidth, Math.min(sidebarBounds.maxWidth, current)));
   }, [sidebarBounds.maxWidth, sidebarBounds.minWidth]);
 
   useEffect(() => {
-    setPreviewWidth(current => Math.max(220, Math.min(920, current)));
+    setPreviewWidth(current => Math.max(EXPLORER_PREVIEW_WIDTH_BOUNDS.min, Math.min(EXPLORER_PREVIEW_WIDTH_BOUNDS.max, current)));
   }, [explorerTheme.metrics.previewWidth]);
 
   const showExperimentalHud = useCallback(() => {
@@ -1449,24 +1957,28 @@ export function FileExplorer({
   }, [preview]);
 
   useEffect(() => {
-    if (!showLayoutMenu && !showExperimentalMenu) {
+    if (!showShellLayoutMenu && !showLayoutMenu && !showExperimentalMenu) {
       return undefined;
     }
 
     const handlePointerDown = (event: MouseEvent) => {
+      if (shellLayoutMenuAnchorRef.current?.contains(event.target as Node)) {
+        return;
+      }
       if (layoutMenuAnchorRef.current?.contains(event.target as Node)) {
         return;
       }
       if (experimentalMenuAnchorRef.current?.contains(event.target as Node)) {
         return;
       }
+      setShowShellLayoutMenu(false);
       setShowLayoutMenu(false);
       setShowExperimentalMenu(false);
     };
 
     window.addEventListener('mousedown', handlePointerDown);
     return () => window.removeEventListener('mousedown', handlePointerDown);
-  }, [showExperimentalMenu, showLayoutMenu]);
+  }, [showExperimentalMenu, showLayoutMenu, showShellLayoutMenu]);
 
   const flushPendingExplorerMetrics = useCallback((
     runtimePolicyMetadata: RuntimeCachePolicyTelemetryMetadata,
@@ -1556,12 +2068,21 @@ export function FileExplorer({
   }, [isCompactDock, sidebarBounds.maxWidth, sidebarBounds.minWidth]);
 
   useEffect(() => {
+    if (!previewEnabled) {
+      setPreview({ type: 'none', path: '' });
+      setPreviewLoading(false);
+    }
+  }, [previewEnabled]);
+
+  useEffect(() => {
     updateExplorerSession({
       currentPath,
       history,
       historyIdx,
       sidebarWidth,
       previewWidth,
+      previewEnabled,
+      shellLayoutId,
       search,
       searchIncludeContent,
       documentViewMode,
@@ -1571,9 +2092,11 @@ export function FileExplorer({
     history,
     historyIdx,
     documentViewMode,
+    previewEnabled,
     previewWidth,
     search,
     searchIncludeContent,
+    shellLayoutId,
     sidebarWidth,
     updateExplorerSession,
   ]);
@@ -1921,8 +2444,19 @@ export function FileExplorer({
       searchResults,
     ],
   );
-  const adaptiveSemanticBands = useMemo(
-    () => (isAdaptiveExperimentalEnabled
+  const experimentalSemanticBands = useMemo(
+    () => (isExperimentalViewEligible
+      && (
+        experimentalViewMode === 'adaptive-semantic-grid'
+        || (
+          experimentalViewMode === 'off'
+          && (
+            explorerTheme.preferredExperimentalViewMode === 'adaptive-semantic-grid'
+            || explorerTheme.preferredExperimentalViewMode === 'constellation'
+          )
+        )
+        || experimentalViewMode === 'constellation'
+      )
       ? buildAdaptiveSemanticBands(
         visibleEntries,
         selected,
@@ -1935,7 +2469,9 @@ export function FileExplorer({
       currentPath,
       explorerSettings.sortBy,
       explorerSettings.sortOrder,
-      isAdaptiveExperimentalEnabled,
+      experimentalViewMode,
+      explorerTheme.preferredExperimentalViewMode,
+      isExperimentalViewEligible,
       selected,
       visibleEntries,
     ],
@@ -2286,7 +2822,45 @@ export function FileExplorer({
     setPreview({ type: 'none', path: '' });
   }, [flushPreviewTextSave]);
 
+  const applyShellLayoutPreset = useCallback((nextLayoutId: ExplorerShellLayoutId) => {
+    const nextLayout = getExplorerShellLayoutDefinition(nextLayoutId);
+    const suggestedWidths = getExplorerShellLayoutWidthSuggestion({
+      layoutId: nextLayout.id,
+      railWidth: explorerTheme.metrics.railWidth,
+      railMinWidth: sidebarBounds.minWidth,
+      railMaxWidth: sidebarBounds.maxWidth,
+      previewWidth: explorerTheme.metrics.previewWidth,
+      previewMinWidth: EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
+      previewMaxWidth: EXPLORER_PREVIEW_WIDTH_BOUNDS.max,
+    });
+
+    setShellLayoutId(nextLayout.id);
+    setSidebarWidth(suggestedWidths.sidebarWidth);
+    setPreviewWidth(suggestedWidths.previewWidth);
+    setShowShellLayoutMenu(false);
+  }, [
+    explorerTheme.metrics.previewWidth,
+    explorerTheme.metrics.railWidth,
+    sidebarBounds.maxWidth,
+    sidebarBounds.minWidth,
+  ]);
+
+  const togglePreviewEnabled = useCallback(() => {
+    if (previewEnabled) {
+      setPreviewEnabled(false);
+      void closePreview();
+      return;
+    }
+
+    setPreviewEnabled(true);
+  }, [closePreview, previewEnabled]);
+
   const previewEntry = useCallback(async (entry: FileEntry, focusTarget: EditorSearchFocusTarget | null = null) => {
+    if (!previewEnabled || isCompactDock) {
+      setPreview({ type: 'none', path: '' });
+      return;
+    }
+
     if (entry.is_dir) {
       setPreview({ type: 'none', path: '' });
       return;
@@ -2348,9 +2922,8 @@ export function FileExplorer({
       finally { setPreviewLoading(false); }
       return;
     }
-
     setPreview({ type: 'none', path: '' });
-  }, [flushPreviewTextSave]);
+  }, [flushPreviewTextSave, isCompactDock, previewEnabled]);
 
   const openEntry = useCallback(async (entry: FileEntry) => {
     if (entry.is_dir) {
@@ -2359,13 +2932,14 @@ export function FileExplorer({
     }
     const ext = getEntryExtension(entry);
     const focusTarget = getSearchFocusTarget(entry);
+    const canInlinePreview = previewEnabled && !isCompactDock;
 
-    if (isEditableTextEntry(entry)) {
+    if (canInlinePreview && isEditableTextEntry(entry)) {
       await previewEntry(entry, focusTarget);
       return;
     }
 
-    if (getModelPreviewFormat(ext) || isImagePreviewExtension(ext)) {
+    if (canInlinePreview && (getModelPreviewFormat(ext) || isImagePreviewExtension(ext))) {
       await previewEntry(entry, focusTarget);
       return;
     }
@@ -2376,7 +2950,7 @@ export function FileExplorer({
     }
 
     await openExplorerPath(entry.path).catch(e => setError(String(e)));
-  }, [getSearchFocusTarget, navigate, previewEntry]);
+  }, [getSearchFocusTarget, isCompactDock, navigate, openExplorerPath, previewEnabled, previewEntry]);
 
   // ── Duplicate ──
   const duplicate = useCallback(async (entry: FileEntry) => {
@@ -2577,7 +3151,7 @@ export function FileExplorer({
       void openEntry(entry);
       return;
     }
-    if (plainClick && !entry.is_dir) {
+    if (previewEnabled && !isCompactDock && plainClick && !entry.is_dir) {
       void previewEntry(entry, getSearchFocusTarget(entry));
     }
   };
@@ -2748,7 +3322,11 @@ export function FileExplorer({
       }
       if (matchesKeybinding(e, keybindings.toggleExplorerLayout)) {
         e.preventDefault();
-        if (isAdaptiveExperimentalEnabled) {
+        if (
+          !isCompactDock
+          && !isSearchActive
+          && (experimentalViewMode !== 'off' || explorerTheme.preferredExperimentalViewMode != null)
+        ) {
           const nextDensity = stepAdaptiveSemanticDensity(experimentalDensity, 'larger');
           if (nextDensity !== experimentalDensity) {
             updateExplorerSettings({ experimentalDensity: nextDensity });
@@ -2797,7 +3375,7 @@ export function FileExplorer({
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [addressEditing, beginAddressEdit, clearExplorerSelection, duplicate, experimentalDensity, focusExplorerAddressBar, focusExplorerList, focusExplorerPreview, goBack, goForward, goHome, isAdaptiveExperimentalEnabled, keybindings, newItem.visible, paste, queueClipboard, refresh, rename.active, selectAllVisibleEntries, selected, selectedEntries, showExperimentalHud, showHidden, updateExplorerSettings, viewMode, visibleEntries, toggleSearchScope, cycleSortKey, toggleSortOrder]);
+  }, [addressEditing, beginAddressEdit, clearExplorerSelection, duplicate, experimentalDensity, experimentalViewMode, explorerTheme.preferredExperimentalViewMode, focusExplorerAddressBar, focusExplorerList, focusExplorerPreview, goBack, goForward, goHome, isCompactDock, isSearchActive, keybindings, newItem.visible, paste, queueClipboard, refresh, rename.active, selectAllVisibleEntries, selected, selectedEntries, showExperimentalHud, showHidden, updateExplorerSettings, viewMode, visibleEntries, toggleSearchScope, cycleSortKey, toggleSortOrder]);
 
   // ── Breadcrumbs ──
   const crumbs: { label:string; path:string }[] = [];
@@ -2927,6 +3505,10 @@ export function FileExplorer({
     () => getExplorerViewModeDefinition(themedViewMode),
     [themedViewMode],
   );
+  const shellLayout = useMemo(
+    () => getExplorerShellLayoutDefinition(shellLayoutId),
+    [shellLayoutId],
+  );
   const selectedExperimentalModeDefinition = useMemo(
     () => (themedExperimentalViewMode === 'off'
       ? null
@@ -2941,7 +3523,7 @@ export function FileExplorer({
     () => (
       !isCompactDock
       && !isSearchActive
-      && themedExperimentalViewMode === 'adaptive-semantic-grid'
+      && themedExperimentalViewMode !== 'off'
         ? themedExperimentalViewMode
         : 'off'
     ),
@@ -2952,6 +3534,12 @@ export function FileExplorer({
       ? applyExplorerThemeToAdaptiveDensityStop(getAdaptiveSemanticDensityStop(experimentalDensity), explorerTheme)
       : null),
     [experimentalDensity, explorerTheme, themedExperimentalViewMode],
+  );
+  const experimentalDensityDescriptor = useMemo(
+    () => (themedExperimentalViewMode === 'off'
+      ? null
+      : getExplorerExperimentalDensityDescriptor(themedExperimentalViewMode, experimentalDensity)),
+    [experimentalDensity, themedExperimentalViewMode],
   );
   const effectiveViewModeDefinition = useMemo(
     () => getExplorerViewModeDefinition(effectiveViewMode),
@@ -2974,7 +3562,8 @@ export function FileExplorer({
   const activeNewItemHeight = effectiveViewModeDefinition.presentation === 'grid'
     ? activeGridMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT
     : activeRowMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT;
-  const hasPreview = !isCompactDock && preview.type !== 'none';
+  const shouldRenderRail = isCompactDock ? true : shellLayout.showRail;
+  const hasPreview = !isCompactDock && previewEnabled && preview.type !== 'none';
   const searchModeLabel = searchIncludeContent ? 'Recursive search + text' : 'Recursive search (names only)';
   const gridZoomPercent = useMemo(
     () => (isExplorerGridMode(themedViewMode) ? getExplorerGridZoomPercent(gridZoom) : null),
@@ -2993,10 +3582,33 @@ export function FileExplorer({
   }, []);
 
   const experimentalDensityPercent = useMemo(
-    () => (themedExperimentalViewMode === 'adaptive-semantic-grid'
+    () => (themedExperimentalViewMode !== 'off'
       ? getAdaptiveSemanticDensityPercent(experimentalDensity)
       : null),
     [experimentalDensity, themedExperimentalViewMode],
+  );
+  const constellationOrbitBands = useMemo(
+    () => (effectiveExperimentalViewMode === 'constellation'
+      ? buildConstellationOrbitBands(experimentalSemanticBands, selected, experimentalDensity)
+      : []),
+    [effectiveExperimentalViewMode, experimentalDensity, experimentalSemanticBands, selected],
+  );
+  const timelineSurfaceBands = useMemo(
+    () => (effectiveExperimentalViewMode === 'timeline-surface'
+      ? buildTimelineSurfaceBands(
+        visibleEntries,
+        experimentalDensity,
+        explorerSettings.sortBy,
+        explorerSettings.sortOrder,
+      )
+      : []),
+    [
+      effectiveExperimentalViewMode,
+      experimentalDensity,
+      explorerSettings.sortBy,
+      explorerSettings.sortOrder,
+      visibleEntries,
+    ],
   );
   const effectiveRailPosition = isCompactDock ? 'left' : explorerTheme.railPosition;
   const idleEntrySurface = useMemo(
@@ -3076,9 +3688,10 @@ export function FileExplorer({
   const fileAreaStyle = useMemo<CSSProperties>(() => ({
     flex: 1,
     display: 'flex',
+    flexDirection: shellLayout.previewPlacement === 'leading' ? 'row-reverse' : 'row',
     overflow: 'hidden',
     background: 'var(--overlay-explorer-content-bg)',
-  }), []);
+  }), [shellLayout.previewPlacement]);
   const shouldRenderStatusBar = explorerTheme.statusBarStyle !== 'hidden';
   const statusBarStyle = useMemo<CSSProperties>(() => ({
     display: 'flex',
@@ -3199,7 +3812,7 @@ export function FileExplorer({
         * EXPLORER_LAYOUT_WHEEL_STEP_DELTA
       );
 
-      if (effectiveExperimentalViewMode === 'adaptive-semantic-grid') {
+      if (effectiveExperimentalViewMode !== 'off') {
         let nextDensity = experimentalDensity;
         for (let stepIndex = 0; stepIndex < stepCount; stepIndex += 1) {
           const steppedDensity = stepAdaptiveSemanticDensity(nextDensity, direction);
@@ -3808,6 +4421,56 @@ export function FileExplorer({
     );
   };
 
+  const renderExperimentalInlineNewItem = (iconSize: number) => {
+    if (!newItem.visible) {
+      return null;
+    }
+
+    return (
+      <div style={{ padding: '0 14px 16px' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            borderRadius: 'var(--overlay-explorer-panel-radius)',
+            border: '1px solid var(--overlay-explorer-item-selected-border)',
+            background: 'var(--overlay-explorer-item-selected-bg)',
+            padding: '12px 14px',
+          }}
+        >
+          <SvgIcon
+            src={newItem.kind === 'folder'
+              ? (resolveIconSrc(themeIconTheme.folder, themeIconTheme) ?? '/icons/folder.svg')
+              : resolveFileIconSrc('new-file.txt', 'txt', themeIconTheme)}
+            size={iconSize}
+          />
+          <input
+            autoFocus
+            value={newItemName}
+            onChange={e => setNewItemName(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') commitNew();
+              if (e.key === 'Escape') setNewItem({ visible: false, kind: 'folder' });
+            }}
+            onBlur={commitNew}
+            placeholder={newItem.kind === 'folder' ? 'folder name' : 'name.ext'}
+            style={{
+              background: 'var(--overlay-explorer-input-bg)',
+              border: '1px solid var(--overlay-explorer-input-border)',
+              borderRadius: 'var(--overlay-explorer-control-radius)',
+              color: EXP.text,
+              fontSize: 12,
+              padding: '2px 6px',
+              outline: 'none',
+              flex: 1,
+            }}
+          />
+        </div>
+      </div>
+    );
+  };
+
   const renderAdaptiveSemanticBand = (band: AdaptiveSemanticBand) => {
     if (!adaptiveDensityStop) {
       return null;
@@ -3894,6 +4557,341 @@ export function FileExplorer({
     );
   };
 
+  const renderConstellationOrbitBand = (band: ConstellationOrbitBand) => {
+    const fieldHeight = band.dominant ? 280 : 236;
+    return (
+      <motion.section
+        key={band.id}
+        layout="position"
+        transition={EXPLORER_ZOOM_POSITION_SPRING}
+        style={{ marginBottom: 22 }}
+      >
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, padding: '0 14px', marginBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: band.dominant ? accent : EXP.muted2 }}>
+              {band.label}
+            </div>
+            <div style={{ marginTop: 3, fontSize: 11, color: EXP.muted, maxWidth: 460 }}>
+              {band.description}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: EXP.muted2, fontSize: 10 }}>
+            <span>{band.entries.length} stars</span>
+            {band.hiddenEntryCount > 0 && (
+              <span style={{ color: accent }}>+{band.hiddenEntryCount} hidden by density</span>
+            )}
+          </div>
+        </div>
+        <div
+          style={{
+            position: 'relative',
+            minHeight: fieldHeight,
+            margin: '0 14px',
+            borderRadius: 22,
+            border: '1px solid var(--overlay-explorer-toolbar-border)',
+            background: 'linear-gradient(180deg, color-mix(in srgb, var(--overlay-accent) 10%, transparent), rgba(9, 12, 18, 0.82))',
+            overflow: 'hidden',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
+          }}
+        >
+          <svg
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
+          >
+            <defs>
+              <radialGradient id={`explorer-constellation-core-${band.id}`}>
+                <stop offset="0%" stopColor={accent} stopOpacity="0.26" />
+                <stop offset="100%" stopColor={accent} stopOpacity="0" />
+              </radialGradient>
+            </defs>
+            <rect x="0" y="0" width="100" height="100" fill={`url(#explorer-constellation-core-${band.id})`} />
+            {band.nodes.map((node) => (
+              <line
+                key={`line-${node.entry.path}`}
+                x1="50"
+                y1="50"
+                x2={node.x}
+                y2={node.y}
+                stroke={node.emphasis === 'selected' ? accent : 'rgba(255,255,255,0.18)'}
+                strokeOpacity={node.emphasis === 'satellite' ? 0.42 : 0.82}
+                strokeWidth={node.emphasis === 'anchor' ? 0.55 : 0.35}
+              />
+            ))}
+            <circle cx="50" cy="50" r="8.5" fill={accent} fillOpacity="0.12" stroke={accent} strokeOpacity="0.44" />
+            <circle cx="50" cy="50" r="2.2" fill={accent} fillOpacity="0.88" />
+          </svg>
+          <div
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: 184,
+              maxWidth: 'calc(100% - 64px)',
+              borderRadius: 18,
+              border: '1px solid rgba(255,255,255,0.08)',
+              background: 'rgba(10, 12, 18, 0.76)',
+              backdropFilter: 'blur(12px)',
+              padding: '14px 16px',
+              textAlign: 'center',
+              boxShadow: '0 16px 34px rgba(0,0,0,0.22)',
+              pointerEvents: 'none',
+            }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: accent }}>
+              Orbit Map
+            </div>
+            <div style={{ marginTop: 6, fontSize: 14, fontWeight: 650, color: EXP.text }}>
+              {band.label}
+            </div>
+            <div style={{ marginTop: 5, fontSize: 11, lineHeight: 1.45, color: EXP.muted }}>
+              {band.description}
+            </div>
+          </div>
+          {band.nodes.map((node) => {
+            const isSel = selected.has(node.entry.path);
+            const isDrop = dragOver === node.entry.path && node.entry.is_dir;
+            const isRenaming = rename.active && rename.path === node.entry.path;
+            const iconSrc = getRenderableIconSrc(node.entry, isSel || isDrop);
+            const highlightBackground = node.emphasis === 'anchor'
+              ? 'linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.04))'
+              : 'var(--overlay-explorer-chip-bg)';
+            return (
+              <div
+                key={node.entry.path}
+                draggable
+                data-overlay-drag-source="file"
+                onDragStart={e => onDragStart(e, node.entry)}
+                onDragEnd={onDragEnd}
+                onDragOver={node.entry.is_dir ? e => onDragOver(e, node.entry.path) : undefined}
+                onDragLeave={() => setDragOver(null)}
+                onDrop={node.entry.is_dir ? e => onDrop(e, node.entry.path) : undefined}
+                onClick={e => onEntryClick(e, node.entry)}
+                onDoubleClick={() => onEntryDoubleClick(node.entry)}
+                onContextMenu={e => onRightClick(e, node.entry)}
+                title={node.entry.path}
+                style={{
+                  position: 'absolute',
+                  left: `${node.x}%`,
+                  top: `${node.y}%`,
+                  transform: 'translate(-50%, -50%)',
+                  minWidth: node.labelVisible ? Math.max(88, node.size + 42) : node.size + 18,
+                  maxWidth: 172,
+                  minHeight: node.size + 14,
+                  borderRadius: 999,
+                  border: `1px solid ${isDrop ? dropEntrySurface.borderColor : isSel ? selectedEntrySurface.borderColor : node.emphasis === 'anchor' ? `${accent}55` : 'var(--overlay-explorer-chip-border)'}`,
+                  background: isDrop
+                    ? dropEntrySurface.background
+                    : isSel
+                      ? selectedEntrySurface.background
+                      : highlightBackground,
+                  boxShadow: isDrop
+                    ? dropEntrySurface.boxShadow
+                    : isSel
+                      ? selectedEntrySurface.boxShadow
+                      : node.emphasis === 'anchor'
+                        ? `0 12px 26px ${accent}18`
+                        : '0 8px 16px rgba(0,0,0,0.14)',
+                  color: EXP.text,
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  padding: node.labelVisible ? '8px 12px' : '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                }}
+                onMouseEnter={e => {
+                  if (!isSel && !isDrop) {
+                    applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, hoverEntrySurface);
+                  }
+                }}
+                onMouseLeave={e => {
+                  if (!isSel && !isDrop) {
+                    applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, idleEntrySurface);
+                    e.currentTarget.style.background = highlightBackground;
+                    e.currentTarget.style.borderColor = node.emphasis === 'anchor'
+                      ? `${accent}55`
+                      : 'var(--overlay-explorer-chip-border)';
+                    e.currentTarget.style.boxShadow = node.emphasis === 'anchor'
+                      ? `0 12px 26px ${accent}18`
+                      : '0 8px 16px rgba(0,0,0,0.14)';
+                  }
+                }}
+              >
+                <div
+                  style={{
+                    width: node.size,
+                    height: node.size,
+                    minWidth: node.size,
+                    borderRadius: 999,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: 'rgba(255,255,255,0.06)',
+                  }}
+                >
+                  <SvgIcon src={iconSrc} size={Math.max(14, node.size - 12)} />
+                </div>
+                {node.labelVisible && (
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    {isRenaming
+                      ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active: false, path: '', name: '' })} />
+                      : (
+                        <>
+                          <div style={{ color: isSel ? EXP.text : node.entry.is_dir ? EXP.yellow : EXP.text, fontWeight: node.entry.is_dir ? 650 : 560, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {node.entry.name}
+                          </div>
+                          <div style={{ marginTop: 3, fontSize: 10, color: EXP.muted2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {getEntryTypeLabel(node.entry)}
+                          </div>
+                        </>
+                      )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </motion.section>
+    );
+  };
+
+  const renderTimelineSurfaceEntry = (entry: FileEntry) => {
+    const isSel = selected.has(entry.path);
+    const isDrop = dragOver === entry.path && entry.is_dir;
+    const isRenaming = rename.active && rename.path === entry.path;
+    const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
+    return (
+      <div
+        key={entry.path}
+        draggable
+        data-overlay-drag-source="file"
+        onDragStart={e => onDragStart(e, entry)}
+        onDragEnd={onDragEnd}
+        onDragOver={entry.is_dir ? e => onDragOver(e, entry.path) : undefined}
+        onDragLeave={() => setDragOver(null)}
+        onDrop={entry.is_dir ? e => onDrop(e, entry.path) : undefined}
+        onClick={e => onEntryClick(e, entry)}
+        onDoubleClick={() => onEntryDoubleClick(entry)}
+        onContextMenu={e => onRightClick(e, entry)}
+        title={entry.path}
+        style={{
+          borderRadius: 18,
+          border: `1px solid ${isDrop ? dropEntrySurface.borderColor : isSel ? selectedEntrySurface.borderColor : 'var(--overlay-explorer-chip-border)'}`,
+          background: isDrop ? dropEntrySurface.background : isSel ? selectedEntrySurface.background : 'var(--overlay-explorer-chip-bg)',
+          boxShadow: isDrop ? dropEntrySurface.boxShadow : isSel ? selectedEntrySurface.boxShadow : '0 10px 24px rgba(0,0,0,0.12)',
+          padding: '12px 14px',
+          display: 'grid',
+          gridTemplateColumns: 'auto minmax(0, 1fr)',
+          gap: 12,
+          cursor: 'pointer',
+          userSelect: 'none',
+          minHeight: 92,
+        }}
+        onMouseEnter={e => {
+          if (!isSel && !isDrop) {
+            applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, hoverEntrySurface);
+          }
+        }}
+        onMouseLeave={e => {
+          if (!isSel && !isDrop) {
+            applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, idleEntrySurface);
+            e.currentTarget.style.background = 'var(--overlay-explorer-chip-bg)';
+            e.currentTarget.style.borderColor = 'var(--overlay-explorer-chip-border)';
+            e.currentTarget.style.boxShadow = '0 10px 24px rgba(0,0,0,0.12)';
+          }
+        }}
+      >
+        <div
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: 14,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(255,255,255,0.05)',
+          }}
+        >
+          <SvgIcon src={iconSrc} size={24} />
+        </div>
+        <div style={{ minWidth: 0 }}>
+          {isRenaming
+            ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active: false, path: '', name: '' })} />
+            : (
+              <>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ color: isSel ? EXP.text : entry.is_dir ? EXP.yellow : EXP.text, fontWeight: entry.is_dir ? 650 : 560, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {entry.name}
+                    </div>
+                    <div style={{ marginTop: 4, fontSize: 10, color: EXP.muted2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {renderEntryInlineMeta(entry)}
+                    </div>
+                  </div>
+                  <div style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, color: accent, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                    {entry.modified ? formatDate(entry.modified) : 'Undated'}
+                  </div>
+                </div>
+                <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 9, color: EXP.muted2, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                    {getEntryTypeLabel(entry)}
+                  </span>
+                  {entry.is_symlink && (
+                    <span style={{ fontSize: 9, color: EXP.muted, background: 'rgba(255,255,255,0.05)', borderRadius: 999, padding: '2px 7px' }}>
+                      symlink
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderTimelineSurfaceBand = (band: TimelineSurfaceBand) => {
+    const timelineColumnWidth = Math.max(220, Math.round(332 - experimentalDensity * 120));
+    return (
+      <motion.section
+        key={band.id}
+        layout="position"
+        transition={EXPLORER_ZOOM_POSITION_SPRING}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(120px, 156px) minmax(0, 1fr)',
+          gap: 18,
+          marginBottom: 24,
+          padding: '0 14px',
+        }}
+      >
+        <div style={{ position: 'relative', paddingLeft: 14 }}>
+          <div style={{ position: 'absolute', left: 0, top: 4, bottom: 4, width: 2, borderRadius: 999, background: band.dominant ? accent : 'rgba(255,255,255,0.10)' }} />
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: band.dominant ? accent : EXP.muted2 }}>
+            {band.label}
+          </div>
+          <div style={{ marginTop: 5, fontSize: 11, color: EXP.muted, lineHeight: 1.45 }}>
+            {band.description}
+          </div>
+          <div style={{ marginTop: 8, fontSize: 10, color: EXP.muted2 }}>
+            {band.entries.length} items
+          </div>
+        </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: `repeat(auto-fit, minmax(${timelineColumnWidth}px, 1fr))`,
+            gap: 12,
+            alignItems: 'stretch',
+          }}
+        >
+          {band.entries.map(renderTimelineSurfaceEntry)}
+        </div>
+      </motion.section>
+    );
+  };
+
   return (
     <div
       data-overlay-explorer
@@ -3902,29 +4900,31 @@ export function FileExplorer({
       onContextMenu={e => { e.preventDefault(); setCtxMenu(c => ({...c, visible:false})); }}
     >
       {/* ══ SIDEBAR ══ */}
-      <ResizablePane
-        size={sidebarWidth}
-        minSize={sidebarBounds.minWidth}
-        maxSize={sidebarBounds.maxWidth}
-        onSizeChange={setSidebarWidth}
-        borderColor={`${accent}55`}
-        handleSide={effectiveRailPosition === 'right' ? 'left' : 'right'}
-        style={sidebarPaneStyle}
-      >
-        <ExplorerSideRail
-          accent={accent}
-          brandLabel={explorerTheme.railBrandLabel}
-          sidebarWidth={sidebarWidth}
-          currentPath={currentPath}
-          drives={drives}
-          drivesLoading={drivesLoading}
-          isCompactDock={isCompactDock}
-          onNavigate={navigate}
-          onGoHome={goHome}
-          onBookmarkCreated={handleBookmarkCreated}
-          resolveDroppedSources={resolveDroppedBookmarkSources}
-        />
-      </ResizablePane>
+      {shouldRenderRail && (
+        <ResizablePane
+          size={sidebarWidth}
+          minSize={sidebarBounds.minWidth}
+          maxSize={sidebarBounds.maxWidth}
+          onSizeChange={setSidebarWidth}
+          borderColor={`${accent}55`}
+          handleSide={effectiveRailPosition === 'right' ? 'left' : 'right'}
+          style={sidebarPaneStyle}
+        >
+          <ExplorerSideRail
+            accent={accent}
+            brandLabel={explorerTheme.railBrandLabel}
+            sidebarWidth={sidebarWidth}
+            currentPath={currentPath}
+            drives={drives}
+            drivesLoading={drivesLoading}
+            isCompactDock={isCompactDock}
+            onNavigate={navigate}
+            onGoHome={goHome}
+            onBookmarkCreated={handleBookmarkCreated}
+            resolveDroppedSources={resolveDroppedBookmarkSources}
+          />
+        </ResizablePane>
+      )}
 
       {/* ══ MAIN ══ */}
       <div style={mainColumnStyle}>
@@ -4110,6 +5110,7 @@ export function FileExplorer({
                   aria-haspopup="menu"
                   aria-expanded={showExperimentalMenu}
                   onClick={() => {
+                    setShowShellLayoutMenu(false);
                     setShowLayoutMenu(false);
                     setShowExperimentalMenu(current => !current);
                   }}
@@ -4128,7 +5129,11 @@ export function FileExplorer({
                   onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
                   onMouseLeave={e => (e.currentTarget.style.background = showExperimentalMenu ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
                 >
-                  <ExplorerExperimentalGlyph accent={accent} active={showExperimentalMenu || themedExperimentalViewMode !== 'off'} />
+                  <ExplorerExperimentalGlyph
+                    accent={accent}
+                    active={showExperimentalMenu || themedExperimentalViewMode !== 'off'}
+                    mode={selectedExperimentalModeDefinition?.id ?? 'all'}
+                  />
                   <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
                     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
                       {selectedExperimentalModeDefinition?.shortLabel ?? 'Labs'}
@@ -4159,7 +5164,7 @@ export function FileExplorer({
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
                       <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: EXP.text }}>
-                        {adaptiveDensityStop?.shortLabel ?? selectedExperimentalModeDefinition.shortLabel}
+                        {experimentalDensityDescriptor?.shortLabel ?? selectedExperimentalModeDefinition.shortLabel}
                       </span>
                       <span style={{ fontSize: 10, fontWeight: 700, color: accent }}>
                         {experimentalDensityPercent}%
@@ -4274,7 +5279,7 @@ export function FileExplorer({
                             }}
                           >
                             <span style={{ display: 'flex', justifyContent: 'center', paddingTop: 1 }}>
-                              <ExplorerExperimentalGlyph accent={accent} active={active} />
+                              <ExplorerExperimentalGlyph accent={accent} active={active} mode={mode.id} />
                             </span>
                             <span style={{ minWidth: 0 }}>
                               <span style={{ display: 'block', fontSize: 12, fontWeight: 600 }}>
@@ -4290,13 +5295,122 @@ export function FileExplorer({
                       })}
                     </div>
                     <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--overlay-explorer-toolbar-border)', fontSize: 10, color: EXP.muted2 }}>
-                      Adaptive Semantic Grid keeps Ctrl/Cmd + wheel inside one semantic density system.
+                      Experimental layouts keep Ctrl/Cmd + wheel inside a mode-specific detail scale.
                     </div>
                     {themedExperimentalViewMode !== 'off' && effectiveExperimentalViewMode === 'off' && (
                       <div style={{ marginTop: 6, fontSize: 10, color: EXP.muted2 }}>
                         Temporarily falling back to the normal explorer while search is active or the dock is compact.
                       </div>
                     )}
+                  </div>
+                )}
+              </div>
+
+              <div
+                ref={shellLayoutMenuAnchorRef}
+                style={{ position: 'relative' }}
+                onClick={event => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  aria-label={`Explorer shell layout: ${shellLayout.label}`}
+                  aria-haspopup="menu"
+                  aria-expanded={showShellLayoutMenu}
+                  onClick={() => {
+                    setShowExperimentalMenu(false);
+                    setShowLayoutMenu(false);
+                    setShowShellLayoutMenu(current => !current);
+                  }}
+                  title={`Explorer shell layout: ${shellLayout.label}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    background: showShellLayoutMenu ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
+                    border: `1px solid ${showShellLayoutMenu ? 'var(--overlay-explorer-chip-active-border)' : 'var(--overlay-explorer-chip-border)'}`,
+                    cursor: 'pointer',
+                    color: showShellLayoutMenu ? EXP.text : EXP.muted,
+                    padding: '4px 8px',
+                    borderRadius: 'var(--overlay-explorer-control-radius)',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = showShellLayoutMenu ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
+                >
+                  <ExplorerShellLayoutGlyph layout={shellLayout} accent={accent} active={showShellLayoutMenu} />
+                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                    {shellLayout.shortLabel}
+                  </span>
+                </button>
+                {showShellLayoutMenu && (
+                  <div
+                    role="menu"
+                    aria-label="Explorer shell layouts menu"
+                    style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 8px)',
+                      right: 0,
+                      zIndex: 40,
+                      minWidth: 280,
+                      borderRadius: 'var(--overlay-explorer-panel-radius)',
+                      border: '1px solid var(--overlay-explorer-toolbar-border)',
+                      background: 'var(--overlay-explorer-toolbar-bg)',
+                      boxShadow: '0 18px 42px rgba(0,0,0,0.42)',
+                      padding: 8,
+                    }}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {explorerShellLayouts.map(layout => {
+                        const active = shellLayout.id === layout.id;
+                        return (
+                          <button
+                            key={layout.id}
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={active}
+                            onClick={() => applyShellLayoutPreset(layout.id)}
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '18px minmax(0, 1fr)',
+                              gap: 10,
+                              alignItems: 'start',
+                              width: '100%',
+                              border: 'none',
+                              borderRadius: 8,
+                              padding: '8px 10px',
+                              background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'transparent',
+                              color: EXP.text,
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                            }}
+                            onMouseEnter={e => {
+                              if (!active) {
+                                e.currentTarget.style.background = 'var(--overlay-explorer-chip-bg)';
+                              }
+                            }}
+                            onMouseLeave={e => {
+                              if (!active) {
+                                e.currentTarget.style.background = 'transparent';
+                              }
+                            }}
+                          >
+                            <span style={{ display: 'flex', justifyContent: 'center', paddingTop: 1 }}>
+                              <ExplorerShellLayoutGlyph layout={layout} accent={accent} active={active} />
+                            </span>
+                            <span style={{ minWidth: 0 }}>
+                              <span style={{ display: 'block', fontSize: 12, fontWeight: 600 }}>
+                                {layout.label}
+                              </span>
+                              <span style={{ display: 'block', marginTop: 2, fontSize: 10, color: EXP.muted2, lineHeight: 1.35 }}>
+                                {layout.description}
+                              </span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--overlay-explorer-toolbar-border)', fontSize: 10, color: EXP.muted2 }}>
+                      Shell layouts rebalance the rail and preview panes without changing your file card density.
+                    </div>
                   </div>
                 )}
               </div>
@@ -4312,6 +5426,7 @@ export function FileExplorer({
                   aria-haspopup="menu"
                   aria-expanded={showLayoutMenu}
                   onClick={() => {
+                    setShowShellLayoutMenu(false);
                     setShowExperimentalMenu(false);
                     setShowLayoutMenu(current => !current);
                   }}
@@ -4461,6 +5576,35 @@ export function FileExplorer({
                   </div>
                 )}
               </div>
+
+              <button
+                type="button"
+                aria-pressed={previewEnabled}
+                onClick={togglePreviewEnabled}
+                title={previewEnabled
+                  ? 'Turn off inline preview for previewable files'
+                  : 'Turn on inline preview for previewable files'}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  background: previewEnabled ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
+                  border: `1px solid ${previewEnabled ? 'var(--overlay-explorer-chip-active-border)' : 'var(--overlay-explorer-chip-border)'}`,
+                  cursor: 'pointer',
+                  color: previewEnabled ? 'var(--overlay-explorer-chip-active-text)' : EXP.muted,
+                  padding: '4px 8px',
+                  borderRadius: 'var(--overlay-explorer-control-radius)',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
+                onMouseLeave={e => (e.currentTarget.style.background = previewEnabled ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
+              >
+                <Eye size={12} />
+                Preview
+              </button>
             </>
           )}
 
@@ -4657,38 +5801,10 @@ export function FileExplorer({
 
             {!loading && effectiveExperimentalViewMode === 'adaptive-semantic-grid' && adaptiveDensityStop && (
               <div style={{ minHeight: 0, padding: '14px 0 20px' }}>
-                {newItem.visible && (
-                  <div style={{ padding: '0 14px 16px' }}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 12,
-                        borderRadius: 'var(--overlay-explorer-panel-radius)',
-                        border: '1px solid var(--overlay-explorer-item-selected-border)',
-                        background: 'var(--overlay-explorer-item-selected-bg)',
-                        padding: '12px 14px',
-                      }}
-                    >
-                      <SvgIcon
-                        src={newItem.kind === 'folder'
-                          ? (resolveIconSrc(themeIconTheme.folder, themeIconTheme) ?? '/icons/folder.svg')
-                          : resolveFileIconSrc('new-file.txt', 'txt', themeIconTheme)}
-                        size={adaptiveDensityStop.presentation === 'table'
-                          ? adaptiveDensityStop.table?.iconSize ?? 18
-                          : adaptiveDensityStop.grid?.iconSize ?? 34}
-                      />
-                      <input
-                        autoFocus
-                        value={newItemName}
-                        onChange={e => setNewItemName(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') commitNew(); if (e.key === 'Escape') setNewItem({ visible: false, kind: 'folder' }); }}
-                        onBlur={commitNew}
-                        placeholder={newItem.kind === 'folder' ? 'folder name' : 'name.ext'}
-                        style={{ background: 'var(--overlay-explorer-input-bg)', border: '1px solid var(--overlay-explorer-input-border)', borderRadius: 'var(--overlay-explorer-control-radius)', color: EXP.text, fontSize: 12, padding: '2px 6px', outline: 'none', flex: 1 }}
-                      />
-                    </div>
-                  </div>
+                {renderExperimentalInlineNewItem(
+                  adaptiveDensityStop.presentation === 'table'
+                    ? adaptiveDensityStop.table?.iconSize ?? 18
+                    : adaptiveDensityStop.grid?.iconSize ?? 34,
                 )}
 
                 <div style={{ padding: '0 14px 16px' }}>
@@ -4717,7 +5833,7 @@ export function FileExplorer({
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                       <span style={{ fontSize: 10, color: EXP.muted2, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                        Density
+                        {selectedExperimentalModeDefinition?.densityAxisLabel ?? 'Density'}
                       </span>
                       <span style={{ fontSize: 12, fontWeight: 700, color: accent }}>
                         {experimentalDensityPercent ?? 0}%
@@ -4726,7 +5842,89 @@ export function FileExplorer({
                   </div>
                 </div>
 
-                {adaptiveSemanticBands.map(renderAdaptiveSemanticBand)}
+                {experimentalSemanticBands.map(renderAdaptiveSemanticBand)}
+              </div>
+            )}
+
+            {!loading && effectiveExperimentalViewMode === 'constellation' && (
+              <div style={{ minHeight: 0, padding: '14px 0 24px' }}>
+                {renderExperimentalInlineNewItem(26)}
+                <div style={{ padding: '0 14px 18px' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                      padding: '14px 16px',
+                      borderRadius: 20,
+                      border: '1px solid var(--overlay-explorer-toolbar-border)',
+                      background: 'linear-gradient(180deg, color-mix(in srgb, var(--overlay-accent) 14%, transparent), var(--overlay-explorer-toolbar-bg))',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: accent }}>
+                        Constellation View
+                      </div>
+                      <div style={{ marginTop: 4, fontSize: 12, color: EXP.text, fontWeight: 600 }}>
+                        {experimentalDensityDescriptor?.label ?? 'Orbit'}
+                      </div>
+                      <div style={{ marginTop: 2, fontSize: 11, color: EXP.muted, maxWidth: 520 }}>
+                        {experimentalDensityDescriptor?.description ?? 'Cluster files by relationship and navigate the orbit field.'}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      <span style={{ fontSize: 10, color: EXP.muted2, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                        {selectedExperimentalModeDefinition?.densityAxisLabel ?? 'Link Density'}
+                      </span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: accent }}>
+                        {experimentalDensityPercent ?? 0}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                {constellationOrbitBands.map(renderConstellationOrbitBand)}
+              </div>
+            )}
+
+            {!loading && effectiveExperimentalViewMode === 'timeline-surface' && (
+              <div style={{ minHeight: 0, padding: '14px 0 24px' }}>
+                {renderExperimentalInlineNewItem(22)}
+                <div style={{ padding: '0 14px 18px' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                      padding: '14px 16px',
+                      borderRadius: 20,
+                      border: '1px solid var(--overlay-explorer-toolbar-border)',
+                      background: 'linear-gradient(180deg, color-mix(in srgb, var(--overlay-accent) 10%, transparent), var(--overlay-explorer-toolbar-bg))',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: accent }}>
+                        Timeline Surface
+                      </div>
+                      <div style={{ marginTop: 4, fontSize: 12, color: EXP.text, fontWeight: 600 }}>
+                        {experimentalDensityDescriptor?.label ?? 'Months'}
+                      </div>
+                      <div style={{ marginTop: 2, fontSize: 11, color: EXP.muted, maxWidth: 520 }}>
+                        {experimentalDensityDescriptor?.description ?? 'Browse folders and files as time-banded activity surfaces.'}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      <span style={{ fontSize: 10, color: EXP.muted2, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                        {selectedExperimentalModeDefinition?.densityAxisLabel ?? 'Granularity'}
+                      </span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: accent }}>
+                        {experimentalDensityPercent ?? 0}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                {timelineSurfaceBands.map(renderTimelineSurfaceBand)}
               </div>
             )}
 
@@ -5148,10 +6346,20 @@ export function FileExplorer({
               {effectiveViewMode !== themedViewMode ? ` -> ${effectiveViewModeDefinition.label}` : ''}
             </span>
           )}
+          {!isCompactDock && (
+            <span>
+              Shell: <span style={{ color: EXP.text }}>{shellLayout.label}</span>
+            </span>
+          )}
+          {!isCompactDock && (
+            <span>
+              Preview: <span style={{ color: previewEnabled ? accent : EXP.text }}>{previewEnabled ? 'On' : 'Off'}</span>
+            </span>
+          )}
           {selectedExperimentalModeDefinition && (
             <span>
               Labs: <span style={{ color: EXP.text }}>{selectedExperimentalModeDefinition.label}</span>
-              {adaptiveDensityStop ? ` · ${adaptiveDensityStop.label}` : ''}
+              {experimentalDensityDescriptor ? ` · ${experimentalDensityDescriptor.label}` : ''}
               {effectiveExperimentalViewMode === 'off' ? ' (fallback)' : ''}
             </span>
           )}

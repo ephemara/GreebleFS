@@ -1,7 +1,0 @@
-<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="0" y="0" width="32" height="32" fill="#0D0D0D" stroke="none" stroke-width="2"/>
-  <path d="M 6 2 L 6 30 L 26 30 L 26 8 L 20 2 Z" fill="#F0F0F0" stroke="#FF2D55" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <polygon points="20,2 20,8 26,8" fill="#FF2D55" stroke="none" stroke-width="0"/>
-  <rect x="6" y="12" width="20" height="7" fill="#FF2D55" stroke="none" stroke-width="0"/>
-  <text x="16" y="17" font-family="monospace" font-size="5" font-weight="bold" fill="#F0F0F0" text-anchor="middle">PDF</text>
-</svg>

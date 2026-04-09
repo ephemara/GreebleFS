@@ -137,6 +137,10 @@ describe('FileExplorer view modes', () => {
         case 'fs_list_dir':
         case 'fs_list_dir_uncached':
           return ENTRIES;
+        case 'fs_read_text_file':
+          return 'hello from preview';
+        case 'fs_read_file_base64':
+          return 'data:text/plain;base64,aGVsbG8=';
         case 'fs_measure_entry_sizes':
           return (payload?.paths ?? []).map(path => ({
             path,
@@ -180,6 +184,39 @@ describe('FileExplorer view modes', () => {
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('columns');
   });
 
+  it('lets the user switch explorer shell layouts from the toolbar', async () => {
+    renderExplorer();
+    await screen.findByText('alpha');
+
+    expect(screen.getByText('Explorer Rail')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /explorer shell layout:/i }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /focus/i }));
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.shellLayoutId).toBe('focus');
+      expect(screen.queryByText('Explorer Rail')).toBeNull();
+    });
+  });
+
+  it('honors the preview toggle before opening previewable files', async () => {
+    renderExplorer();
+    await screen.findByText('notes.txt');
+
+    fireEvent.click(screen.getByRole('button', { name: /^preview$/i }));
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.previewEnabled).toBe(false);
+    });
+
+    fireEvent.click(screen.getByText('notes.txt'));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /copy path/i })).toBeNull();
+    });
+    expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_read_text_file')).toBe(false);
+  });
+
   it('renders a dedicated experimental modes button and menu next to the standard layout control', async () => {
     renderExplorer();
     await screen.findByText('alpha');
@@ -188,8 +225,8 @@ describe('FileExplorer view modes', () => {
 
     expect(screen.getByRole('menu', { name: /explorer experimental modes menu/i })).toBeTruthy();
     expect(screen.getByRole('menuitemradio', { name: /adaptive semantic grid/i })).toBeTruthy();
-    expect(screen.getByRole('menuitemradio', { name: /constellation view/i })).toBeDisabled();
-    expect(screen.getByRole('menuitemradio', { name: /timeline surface/i })).toBeDisabled();
+    expect(screen.getByRole('menuitemradio', { name: /constellation view/i })).not.toBeDisabled();
+    expect(screen.getByRole('menuitemradio', { name: /timeline surface/i })).not.toBeDisabled();
   });
 
   it('activates adaptive semantic grid without mutating the saved normal layout mode', async () => {
@@ -204,6 +241,35 @@ describe('FileExplorer view modes', () => {
     expect(useSettingsStore.getState().settings.explorer.experimentalViewMode).toBe('adaptive-semantic-grid');
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('columns');
     expect(screen.getAllByText(/adaptive semantic grid/i).length).toBeGreaterThan(0);
+  });
+
+  it('activates constellation view without mutating the saved normal layout mode', async () => {
+    useSettingsStore.getState().updateExplorer({ viewMode: 'details' });
+
+    renderExplorer();
+    await screen.findByText('alpha');
+
+    fireEvent.click(screen.getByRole('button', { name: /experimental view modes:/i }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /constellation view/i }));
+
+    expect(useSettingsStore.getState().settings.explorer.experimentalViewMode).toBe('constellation');
+    expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('details');
+    expect(screen.getAllByText(/constellation view/i).length).toBeGreaterThan(0);
+  });
+
+  it('activates timeline surface without mutating the saved normal layout mode', async () => {
+    useSettingsStore.getState().updateExplorer({ viewMode: 'columns' });
+
+    renderExplorer();
+    await screen.findByText('alpha');
+
+    fireEvent.click(screen.getByRole('button', { name: /experimental view modes:/i }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /timeline surface/i }));
+
+    expect(useSettingsStore.getState().settings.explorer.experimentalViewMode).toBe('timeline-surface');
+    expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('columns');
+    expect(screen.getAllByText(/timeline surface/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/undated/i).length).toBeGreaterThan(0);
   });
 
   it('scales the explorer grid with ctrl-wheel without changing app zoom', async () => {

@@ -11,6 +11,8 @@
     "dev:vps": "bash scripts/with-vps-artifacts.sh bun run dev",
     "build": "node scripts/sync-canonical-icons.mjs && cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings && vite build",
     "build:vps": "bash scripts/with-vps-artifacts.sh bun run build",
+    "release:linux:install": "bash scripts/build-and-install-linux-local-release.sh",
+    "release:linux:install:launch": "bash scripts/build-and-install-linux-local-release.sh --launch",
     "preview": "vite preview",
     "tauri": "node scripts/run-platform-tauri.mjs",
     "tauri:vps": "bash scripts/with-vps-artifacts.sh bun run tauri",

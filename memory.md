@@ -1,5 +1,54 @@
 # GreebleFS Memory
 
+## 2026-04-09 — Explorer Experimental Layouts Completed
+
+- Finished the two previously stubbed explorer experimental modes in `src/components/FileExplorer.tsx`:
+  - `constellation`
+  - `timeline-surface`
+- `src/config/explorerExperimentalModes.ts` now treats all three experimental layouts as shipped and adds mode-specific density descriptors so the same persisted `experimentalDensity` value can mean:
+  - semantic density for `adaptive-semantic-grid`
+  - link density for `constellation`
+  - timeline granularity for `timeline-surface`
+- `FileExplorer.tsx` now uses one shared experimental control plane across all modes:
+  - the toolbar Labs button shows the active mode glyph and density percentage
+  - the HUD reflects the active mode’s density descriptor instead of assuming adaptive-only labels
+  - Ctrl/Cmd + wheel and the layout toggle hotkey step density for any active experimental mode, not just the adaptive grid
+  - compact dock and active search still force the existing fallback to the normal explorer
+- `constellation` reuses the semantic grouping system from the adaptive grid and renders those bands as orbital cluster fields with direct entry interaction.
+- `timeline-surface` renders entries into time-banded surfaces whose bucket granularity changes with the same persisted density setting.
+- Added/updated focused coverage in:
+  - `src/test/explorerExperimentalModes.test.ts`
+  - `src/test/fileExplorer.viewModes.test.tsx`
+- Validation that passed for this change:
+  - narrowed `tsc --noEmit` over `src/config/explorerExperimentalModes.ts`, `src/components/FileExplorer.tsx`, and the touched tests
+- Validation that is still blocked by workspace issues:
+  - `vitest run` remains blocked by the existing `html-encoding-sniffer` / `@exodus/bytes` JSDOM worker failure recorded in `ARCHITECTURE.md`
+
+## 2026-04-09 — Explorer Shell Layout Presets + Real Preview Toggle
+
+- Added `src/config/explorerShellLayouts.ts` as a data-driven explorer shell layout layer separate from theme recipes.
+- Explorer shell layout presets now include:
+  - `balanced`
+  - `navigator`
+  - `focus`
+  - `inspector`
+- These presets are session-persisted through `src/store/explorerStore.ts` via `session.shellLayoutId`.
+- Explorer inline preview now has a real persisted enable/disable flag through `session.previewEnabled`.
+- `src/components/FileExplorer.tsx` now treats the preview toggle as authoritative:
+  - single-click no longer auto-previews files when preview is off
+  - `openEntry()` no longer routes text/image/model files into the inline preview when preview is off
+  - turning preview off closes the current preview and keeps the side pane hidden
+- The shell layout presets currently change explorer structure without needing a theme swap:
+  - `focus` hides the side rail
+  - `inspector` moves the preview pane to the leading edge and enlarges it
+  - `navigator` emphasizes the rail and de-emphasizes preview width
+- Added focused coverage in:
+  - `src/test/fileExplorer.viewModes.test.tsx`
+  - `src/test/explorerStore.test.ts`
+- Validation that passed for this change:
+  - `npx vitest run src/test/explorerStore.test.ts src/test/fileExplorer.viewModes.test.tsx`
+  - narrow `tsc --noEmit` over the touched explorer files
+
 ## 2026-04-08 — Workbench + Explorer Theme Recipe System
 
 - Added a first-class app-wide theming layer under `theme.workbench`.

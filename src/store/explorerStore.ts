@@ -6,6 +6,10 @@ import {
   normalizeExplorerRailSnapshot,
   type ExplorerRailSnapshot,
 } from '../components/explorer/explorerRailState';
+import {
+  getExplorerShellLayoutDefinition,
+  type ExplorerShellLayoutId,
+} from '../config/explorerShellLayouts';
 
 export const EXPLORER_STATE_STORAGE_KEY = 'overlayterm-explorer-state-v3';
 export const EXPLORER_STATE_BACKUP_KEY = 'overlayterm-explorer-state-v3.backup';
@@ -27,6 +31,8 @@ export interface ExplorerSessionSnapshot {
   historyIdx: number;
   sidebarWidth: number | null;
   previewWidth: number | null;
+  previewEnabled: boolean;
+  shellLayoutId: ExplorerShellLayoutId;
   search: string;
   searchIncludeContent: boolean;
   documentViewMode: ExplorerDocumentViewMode;
@@ -44,6 +50,8 @@ export const defaultExplorerSession: ExplorerSessionSnapshot = {
   historyIdx: -1,
   sidebarWidth: null,
   previewWidth: null,
+  previewEnabled: true,
+  shellLayoutId: 'balanced',
   search: '',
   searchIncludeContent: true,
   documentViewMode: 'edit',
@@ -95,6 +103,10 @@ export function normalizeExplorerSessionSnapshot(value: unknown): ExplorerSessio
     historyIdx: Math.max(-1, Math.min(history.length - 1, historyIdxValue)),
     sidebarWidth: normalizeOptionalNumber(source?.sidebarWidth),
     previewWidth: normalizeOptionalNumber(source?.previewWidth),
+    previewEnabled: typeof source?.previewEnabled === 'boolean'
+      ? source.previewEnabled
+      : defaultExplorerSession.previewEnabled,
+    shellLayoutId: getExplorerShellLayoutDefinition(source?.shellLayoutId).id,
     search: typeof source?.search === 'string' ? source.search : '',
     searchIncludeContent: typeof source?.searchIncludeContent === 'boolean' ? source.searchIncludeContent : true,
     documentViewMode: source?.documentViewMode === 'preview' ? 'preview' : 'edit',

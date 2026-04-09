@@ -1,8 +1,0 @@
-<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="0" y="0" width="32" height="32" fill="#0D0D0D" stroke="none" stroke-width="2"/>
-  <path d="M 6 8 A 10 4 0 0 1 26 8 A 10 4 0 0 1 6 8 Z" fill="#FF00FF" stroke="#F0F0F0" stroke-width="0" stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="6" y="8" width="20" height="16" fill="#FF00FF" stroke="none" stroke-width="0"/>
-  <path d="M 6 24 A 10 4 0 0 0 26 24" fill="#FF00FF" stroke="#FF00FF" stroke-width="0" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M 6 8 L 6 24 A 10 4 0 0 0 26 24 L 26 8" fill="none" stroke="#CC00FF" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="16" y="19" font-family="monospace" font-size="6" font-weight="bold" fill="#F0F0F0" text-anchor="middle">SQL</text>
-</svg>

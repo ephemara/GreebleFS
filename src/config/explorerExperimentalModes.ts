@@ -46,7 +46,14 @@ export interface ExplorerExperimentalModeDefinition {
   label: string;
   shortLabel: string;
   description: string;
+  densityAxisLabel: string;
   available: boolean;
+}
+
+export interface ExplorerExperimentalDensityDescriptor {
+  label: string;
+  shortLabel: string;
+  description: string;
 }
 
 export const ADAPTIVE_SEMANTIC_DENSITY_STEP = 0.16;
@@ -155,6 +162,7 @@ export const explorerExperimentalModes: readonly ExplorerExperimentalModeDefinit
     label: 'Adaptive Semantic Grid',
     shortLabel: 'Adaptive',
     description: 'A density-driven semantic explorer with grouped context and modern transitions.',
+    densityAxisLabel: 'Density',
     available: true,
   },
   {
@@ -162,14 +170,82 @@ export const explorerExperimentalModes: readonly ExplorerExperimentalModeDefinit
     label: 'Constellation View',
     shortLabel: 'Constellation',
     description: 'Clusters files by relationship and reveals stronger links as you zoom.',
-    available: false,
+    densityAxisLabel: 'Link Density',
+    available: true,
   },
   {
     id: 'timeline-surface',
     label: 'Timeline Surface',
     shortLabel: 'Timeline',
     description: 'Maps files across temporal bands so you browse eras, days, and moments.',
-    available: false,
+    densityAxisLabel: 'Granularity',
+    available: true,
+  },
+] as const;
+
+const constellationDensityDescriptors: readonly ExplorerExperimentalDensityDescriptor[] = [
+  {
+    label: 'Core',
+    shortLabel: 'Core',
+    description: 'Only the strongest hubs and nearest neighbors stay in view.',
+  },
+  {
+    label: 'Orbit',
+    shortLabel: 'Orbit',
+    description: 'Balanced anchors and satellites with clear breathing room.',
+  },
+  {
+    label: 'Scatter',
+    shortLabel: 'Scatter',
+    description: 'Broader orbital spacing exposes more nearby relationships.',
+  },
+  {
+    label: 'Mesh',
+    shortLabel: 'Mesh',
+    description: 'A denser star field that reveals wider neighborhood structure.',
+  },
+  {
+    label: 'Web',
+    shortLabel: 'Web',
+    description: 'Compact links and more visible nodes create a connected map.',
+  },
+  {
+    label: 'Full Map',
+    shortLabel: 'Map',
+    description: 'Maximum surface detail with the richest visible network context.',
+  },
+] as const;
+
+const timelineDensityDescriptors: readonly ExplorerExperimentalDensityDescriptor[] = [
+  {
+    label: 'Eras',
+    shortLabel: 'Eras',
+    description: 'Large time blocks keep the timeline broad and cinematic.',
+  },
+  {
+    label: 'Years',
+    shortLabel: 'Years',
+    description: 'Coarse time slices reveal long-term project drift.',
+  },
+  {
+    label: 'Seasons',
+    shortLabel: 'Seasons',
+    description: 'Quarter-like bands balance history with readable structure.',
+  },
+  {
+    label: 'Months',
+    shortLabel: 'Months',
+    description: 'Monthly buckets foreground medium-term activity clusters.',
+  },
+  {
+    label: 'Weeks',
+    shortLabel: 'Weeks',
+    description: 'Weekly lanes make active stretches of work easy to scan.',
+  },
+  {
+    label: 'Days',
+    shortLabel: 'Days',
+    description: 'Fine-grained daily grouping exposes moments and bursts.',
   },
 ] as const;
 
@@ -229,6 +305,23 @@ export function getAdaptiveSemanticDensityStop(
 
 export function getAdaptiveSemanticDensityPercent(density: number): number {
   return Math.round(normalizeAdaptiveSemanticDensity(density) * 100);
+}
+
+export function getExplorerExperimentalDensityDescriptor(
+  mode: Exclude<ExplorerExperimentalViewMode, 'off'>,
+  density: number,
+): ExplorerExperimentalDensityDescriptor {
+  if (mode === 'adaptive-semantic-grid') {
+    return getAdaptiveSemanticDensityStop(density);
+  }
+
+  const stopId = getAdaptiveSemanticDensityStopId(density);
+  const stopIndex = adaptiveSemanticDensityStops.findIndex((stop) => stop.id === stopId);
+  const descriptorIndex = stopIndex < 0 ? 2 : stopIndex;
+  const descriptorSet = mode === 'constellation'
+    ? constellationDensityDescriptors
+    : timelineDensityDescriptors;
+  return descriptorSet[descriptorIndex] ?? descriptorSet[2]!;
 }
 
 export function stepAdaptiveSemanticDensity(

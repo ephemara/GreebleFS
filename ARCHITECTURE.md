@@ -21,7 +21,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/panels/panelRegistry.tsx`
   Built-in panel registration and prop wiring.
 - `src/components/FileExplorer.tsx`
-  Main explorer shell, navigation, preview, layout modes, and explorer runtime UI.
+  Main explorer shell, navigation, preview, standard layout modes, and experimental explorer runtimes.
 - `src/components/explorer/ExplorerSideRail.tsx`
   Explorer rail, bookmarks, drives, and bookmark authoring.
 - `src/config/appearance.ts`
@@ -30,6 +30,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   App-wide workbench recipe resolution and workbench-scoped CSS variable contract.
 - `src/config/explorerTheme.ts`
   Explorer-specific theme recipe resolution, metrics scaling, and explorer-scoped CSS variable contract.
+- `src/config/explorerShellLayouts.ts`
+  User-selectable explorer pane-layout presets that rebalance the rail and preview pane independently from theme recipes.
 - `src/config/themeEngineBindings.ts`
   Shared engine-manifest binding helpers for layout/navigation/render-driven recipe defaults.
 - `src/config/workbenchRenderRuntime.ts`
@@ -81,6 +83,19 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - adaptive semantic density metrics
   - preview panel chrome
   - status bar visibility/treatment
+- `FileExplorer.tsx` also layers user-controlled explorer session state on top of the theme recipe:
+  - persisted inline preview enable/disable
+  - persisted shell layout presets (`balanced`, `navigator`, `focus`, `inspector`)
+  - shell presets can hide the rail or move the preview pane without requiring a theme swap
+- The explorer now ships three experimental folder-view runtimes behind the Labs control:
+  - `adaptive-semantic-grid`
+  - `constellation`
+  - `timeline-surface`
+- `src/config/explorerExperimentalModes.ts` owns the shared metadata for those modes, including whether a mode is shipped and the meaning of the shared density/granularity control for each runtime.
+- `FileExplorer.tsx` keeps the control plane shared across those experimental runtimes:
+  - one persisted `experimentalViewMode`
+  - one persisted `experimentalDensity`
+  - Ctrl/Cmd + wheel and the layout hotkey now route into the active experimental runtime instead of only the adaptive grid
 - `App.tsx`, `CommandPalette.tsx`, `TerminalOverlay.tsx`, and `SettingsPage.tsx` now consume the resolved workbench recipe and apply it to shared command-center chrome.
 
 ## Important Folders
