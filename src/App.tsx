@@ -463,7 +463,8 @@ function App() {
     openPluginsFolder,
     refreshFolderPlugins,
     createPluginApi,
-  } = useFolderPluginRuntime(runtimePlatform);
+  } = useFolderPluginRuntime(runtimePlatform, { liveReloadEnabled: systemSettings.developerMode });
+  const liveReloadEnabled = systemSettings.developerMode;
   const combinedThemePackages = useMemo(
     () => [...themePackages, ...pluginThemePackages],
     [pluginThemePackages, themePackages],
@@ -1946,7 +1947,7 @@ function App() {
   }, [isOverlayVisible, refreshAuthoredShaders]);
 
   useEffect(() => {
-    if (!isOverlayVisible || !animationSystemConfig.runtimeAssetPollingEnabled) {
+    if (!isOverlayVisible || !liveReloadEnabled || !animationSystemConfig.runtimeAssetPollingEnabled) {
       return;
     }
     const interval = window.setInterval(() => {
@@ -1954,10 +1955,10 @@ function App() {
     }, animationSystemConfig.scanIntervalMs);
 
     return () => window.clearInterval(interval);
-  }, [isOverlayVisible, refreshAuthoredAnimations]);
+  }, [isOverlayVisible, liveReloadEnabled, refreshAuthoredAnimations]);
 
   useEffect(() => {
-    if (!isOverlayVisible || !shaderSystemConfig.runtimeAssetPollingEnabled) {
+    if (!isOverlayVisible || !liveReloadEnabled || !shaderSystemConfig.runtimeAssetPollingEnabled) {
       return;
     }
     const interval = window.setInterval(() => {
@@ -1965,7 +1966,7 @@ function App() {
     }, shaderSystemConfig.scanIntervalMs);
 
     return () => window.clearInterval(interval);
-  }, [isOverlayVisible, refreshAuthoredShaders]);
+  }, [isOverlayVisible, liveReloadEnabled, refreshAuthoredShaders]);
 
   useEffect(() => {
     void refreshThemePackages();

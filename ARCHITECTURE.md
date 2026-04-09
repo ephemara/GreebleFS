@@ -45,7 +45,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/store/explorerStore.ts`
   Persisted explorer rail plus named explorer session snapshots.
 - `src/store/settingsStore.ts`
-  Persisted layout/profile settings and the native `windowMode` presentation toggle.
+  Persisted layout/profile settings, the native `windowMode` presentation toggle, and machine-level developer-mode behavior.
 
 ## Theme / Workbench Architecture
 
@@ -91,6 +91,15 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - shell layout preset
   - explorer view mode
   - preview toggle
+- `settings.system.developerMode` is now the live-reload gate for expensive development-only watchers:
+  - plugin directory watch / fallback polling in `useFolderPluginRuntime.ts`
+  - authored shader polling in `App.tsx`
+  - authored animation polling in `App.tsx`
+  - explorer entry-size root watching in `FileExplorer.tsx`
+- Production/default behavior is manual refresh:
+  - Plugins panel `Refresh`
+  - Settings `Refresh Shaders`
+  - Settings `Refresh Animations`
 - Layout profiles still shape the shell through `shellBlueprint`, `chrome`, `controlDock`, `interaction`, and optional pinned panels. They do not define a separate content-browser drawer contract.
 - `FileExplorer.tsx` consumes the resolved explorer recipe and applies it to:
   - shell chrome
@@ -109,6 +118,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/store/explorerStore.ts` supports named explorer sessions, but the shipping dock behavior is the same explorer surface rendered in compact mode rather than a separate drawer/dock subsystem.
 - `FileExplorer.tsx` shares directory/search result caches across explorer sessions so alternate surfaces do not duplicate backend reads unless a mutation invalidates the cache.
 - `FileExplorer.tsx` still owns file-centric actions like search scope, refresh, and create file/folder, but embedded shell-level layout toggles are suppressed when the explorer is hosted inside the command center.
+- `FileExplorer.tsx` had a dev-only infinite update loop risk in the virtualized entry-size and native-icon batching effects because in-flight `Set` state was being cleared/re-added on every render. Those effects now leave in-flight batches intact until async completion.
 - Overlay monitor placement is now resolved from the current or last-active monitor instead of always using the primary monitor, and `computeOverlayWindowLayout()` now left-anchors the overlay on X instead of centering it.
 - The explorer now ships three experimental folder-view runtimes behind the Labs control:
   - `adaptive-semantic-grid`

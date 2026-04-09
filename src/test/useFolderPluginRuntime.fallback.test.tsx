@@ -47,7 +47,7 @@ describe('useFolderPluginRuntime fallback polling', () => {
     vi.mocked(listen).mockResolvedValue(unlisten);
     vi.spyOn(commands, 'pluginWatchDirectory').mockRejectedValue(new Error('watch unavailable'));
 
-    const { unmount } = renderHook(() => useFolderPluginRuntime('windows'));
+    const { unmount } = renderHook(() => useFolderPluginRuntime('windows', { liveReloadEnabled: true }));
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);

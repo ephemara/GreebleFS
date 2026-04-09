@@ -146,6 +146,7 @@ export interface SystemSettings {
   launchAtStartup: boolean;
   hideAppInTray: boolean;
   showInTaskbar: boolean;
+  developerMode: boolean;
 }
 
 export interface ScreenshotSettings {
@@ -350,6 +351,7 @@ function normalizeSystemSettings(
     launchAtStartup: Boolean(merged.launchAtStartup),
     hideAppInTray: merged.hideAppInTray !== false,
     showInTaskbar: Boolean(merged.showInTaskbar),
+    developerMode: Boolean(merged.developerMode),
   };
 
   // Keep at least one desktop entry point visible so the overlay is always recoverable.
@@ -530,6 +532,7 @@ export const defaultSettings: Settings = {
     launchAtStartup: false,
     hideAppInTray: true,
     showInTaskbar: true,
+    developerMode: false,
   },
   screenshots: {
     saveDirectory: screenshotFeatureConfig.defaultSaveDirectory,

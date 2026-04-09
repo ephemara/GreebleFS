@@ -47,6 +47,18 @@ describe('useFolderPluginRuntime', () => {
     });
   }
 
+  it('defaults to manual refresh mode when live reload is disabled', async () => {
+    renderHook(() => useFolderPluginRuntime('windows'));
+    await flushPluginEffects();
+
+    await waitFor(() => {
+      expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(1);
+    });
+
+    expect(listen).not.toHaveBeenCalled();
+    expect(commands.pluginWatchDirectory).not.toHaveBeenCalled();
+  });
+
   it('registers the watcher and ignores debounced refreshes for ignored paths', async () => {
     let watchListener: ((event: { payload: { paths: string[] } }) => void) | undefined;
 
@@ -55,7 +67,7 @@ describe('useFolderPluginRuntime', () => {
       return () => {};
     });
 
-    const { unmount } = renderHook(() => useFolderPluginRuntime('windows'));
+    const { unmount } = renderHook(() => useFolderPluginRuntime('windows', { liveReloadEnabled: true }));
     await flushPluginEffects();
 
     await waitFor(() => {
@@ -90,7 +102,7 @@ describe('useFolderPluginRuntime', () => {
       return () => {};
     });
 
-    renderHook(() => useFolderPluginRuntime('windows'));
+    renderHook(() => useFolderPluginRuntime('windows', { liveReloadEnabled: true }));
     await flushPluginEffects();
 
     await waitFor(() => {
@@ -118,7 +130,7 @@ describe('useFolderPluginRuntime', () => {
       return () => {};
     });
 
-    renderHook(() => useFolderPluginRuntime('windows'));
+    renderHook(() => useFolderPluginRuntime('windows', { liveReloadEnabled: true }));
     await flushPluginEffects();
 
     await waitFor(() => {
@@ -154,7 +166,7 @@ describe('useFolderPluginRuntime', () => {
       return () => {};
     });
 
-    renderHook(() => useFolderPluginRuntime('windows'));
+    renderHook(() => useFolderPluginRuntime('windows', { liveReloadEnabled: true }));
     await flushPluginEffects();
 
     await waitFor(() => {
@@ -185,7 +197,7 @@ describe('useFolderPluginRuntime', () => {
       return () => {};
     });
 
-    renderHook(() => useFolderPluginRuntime('windows'));
+    renderHook(() => useFolderPluginRuntime('windows', { liveReloadEnabled: true }));
     await flushPluginEffects();
 
     await waitFor(() => {
@@ -208,7 +220,7 @@ describe('useFolderPluginRuntime', () => {
   it('keeps initial discovery running when watcher startup fails', async () => {
     vi.mocked(listen).mockRejectedValueOnce(new Error('listen unavailable'));
 
-    renderHook(() => useFolderPluginRuntime('windows'));
+    renderHook(() => useFolderPluginRuntime('windows', { liveReloadEnabled: true }));
     await flushPluginEffects();
 
     await waitFor(() => {
@@ -225,7 +237,7 @@ describe('useFolderPluginRuntime', () => {
       }),
     );
 
-    const { unmount } = renderHook(() => useFolderPluginRuntime('windows'));
+    const { unmount } = renderHook(() => useFolderPluginRuntime('windows', { liveReloadEnabled: true }));
     await flushPluginEffects();
 
     await waitFor(() => {
@@ -248,7 +260,7 @@ describe('useFolderPluginRuntime', () => {
     const unlisten = vi.fn();
     vi.mocked(listen).mockResolvedValue(unlisten);
 
-    const { unmount } = renderHook(() => useFolderPluginRuntime('windows'));
+    const { unmount } = renderHook(() => useFolderPluginRuntime('windows', { liveReloadEnabled: true }));
     await flushPluginEffects();
 
     await waitFor(() => {

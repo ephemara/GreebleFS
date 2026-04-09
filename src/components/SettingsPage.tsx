@@ -2588,12 +2588,25 @@ export function SettingsPage({
                   onChange={event => setShowInTaskbar(event.target.checked)}
                 />
               </label>
+              <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                <div>
+                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Developer Mode</div>
+                  <p className="mt-1 text-[11px] opacity-40">
+                    Enables live watchers and hot reload for plugins, shaders, animations, and explorer metadata. Leave this off for the normal production path and use manual refresh actions instead.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={settings.system.developerMode}
+                  onChange={event => updateSystem({ developerMode: event.target.checked })}
+                />
+              </label>
               <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: startupSyncError ? '#fda4af' : muted }}>
                 {startupSyncPending
                   ? 'Updating OS startup registration...'
                   : startupSyncError
                     ? `Startup registration failed: ${startupSyncError}`
-                  : `Current status: startup ${settings.system.launchAtStartup ? 'enabled' : 'disabled'} · tray ${settings.system.hideAppInTray ? 'enabled' : 'disabled'} · ${platform === 'macos' ? 'Dock' : 'taskbar'} ${settings.system.showInTaskbar ? 'enabled' : 'disabled'}`}
+                  : `Current status: startup ${settings.system.launchAtStartup ? 'enabled' : 'disabled'} · tray ${settings.system.hideAppInTray ? 'enabled' : 'disabled'} · ${platform === 'macos' ? 'Dock' : 'taskbar'} ${settings.system.showInTaskbar ? 'enabled' : 'disabled'} · developer mode ${settings.system.developerMode ? 'enabled' : 'disabled'}`}
               </div>
             </div>
           </section>

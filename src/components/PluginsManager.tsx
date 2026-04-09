@@ -139,6 +139,9 @@ export function PluginsManager({
               Open Folder
             </button>
           </div>
+          <div style={{ marginTop: 8, fontSize: 11, color: MUTED }}>
+            Manual refresh is the default path. Turn on Developer Mode in Settings only when you need live plugin hot reload.
+          </div>
         </div>
 
         <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 10 }}>

@@ -45,9 +45,15 @@ export interface UseFolderPluginRuntimeResult {
   createPluginApi: (plugin: OverlayPluginContext) => OverlayPluginApi;
 }
 
+export interface UseFolderPluginRuntimeOptions {
+  liveReloadEnabled?: boolean;
+}
+
 export function useFolderPluginRuntime(
   runtimePlatform: RuntimePlatform,
+  options: UseFolderPluginRuntimeOptions = {},
 ): UseFolderPluginRuntimeResult {
+  const liveReloadEnabled = options.liveReloadEnabled === true;
   const [folderPlugins, setFolderPlugins] = useState<LoadedOverlayPlugin[]>([]);
   const [pluginContributedShaders, setPluginContributedShaders] = useState<LoadedOverlayShader[]>([]);
   const [pluginThemePackages, setPluginThemePackages] = useState<LoadedOverlayThemePackage[]>([]);
@@ -231,12 +237,16 @@ export function useFolderPluginRuntime(
   }, [refreshFolderPlugins]);
 
   useEffect(() => {
+    if (!liveReloadEnabled) {
+      return;
+    }
+
     if (typeof window === 'undefined' || !isTauri()) {
       return;
     }
 
     let fallbackInterval: number | null = null;
-    let fallbackIntervalMs = pluginSystemConfig.fallbackScanIntervalMs;
+    let fallbackIntervalMs: number = pluginSystemConfig.fallbackScanIntervalMs;
     let unlistenPlugins: (() => void) | null = null;
     let disposed = false;
 
@@ -320,7 +330,7 @@ export function useFolderPluginRuntime(
       unlistenPlugins?.();
       void commands.pluginUnwatchDirectory().then(unwrapTauriResult).catch(() => undefined);
     };
-  }, [schedulePluginRefresh]);
+  }, [liveReloadEnabled, schedulePluginRefresh]);
 
   return {
     folderPlugins,

@@ -1903,11 +1903,13 @@ export function FileExplorer({
   const {
     explorerSettings,
     appearanceSettings,
+    systemSettings,
     keybindings,
     updateExplorerSettings,
   } = useSettingsStore(useShallow(state => ({
     explorerSettings: state.settings.explorer,
     appearanceSettings: state.settings.appearance,
+    systemSettings: state.settings.system,
     keybindings: state.settings.keybindings,
     updateExplorerSettings: state.updateExplorer,
   })));
@@ -2442,7 +2444,7 @@ export function FileExplorer({
   useEffect(() => { refresh(); }, [showHidden]);
 
   useEffect(() => {
-    if (!currentPath || !isTauri()) {
+    if (!currentPath || !isTauri() || !systemSettings.developerMode) {
       return undefined;
     }
 
@@ -2453,7 +2455,7 @@ export function FileExplorer({
     return () => {
       void unwatchExplorerEntrySizeRoot(currentPath).catch(() => {});
     };
-  }, [currentPath]);
+  }, [currentPath, systemSettings.developerMode]);
 
   useEffect(() => {
     if (initialInteractiveRecordedRef.current || !currentPath || loading) {
@@ -4153,7 +4155,6 @@ export function FileExplorer({
 
   useEffect(() => {
     if (loading || virtualizedEntries.length === 0) {
-      setEntrySizeLoadingPaths(current => (current.size === 0 ? current : new Set()));
       return;
     }
 
@@ -4171,16 +4172,19 @@ export function FileExplorer({
     const unresolvedPaths = nextBatch.map(entry => entry.path);
 
     if (unresolvedPaths.length === 0) {
-      setEntrySizeLoadingPaths(current => (current.size === 0 ? current : new Set()));
       return;
     }
 
     setEntrySizeLoadingPaths(current => {
       const next = new Set(current);
+      let changed = false;
       for (const path of unresolvedPaths) {
-        next.add(path);
+        if (!next.has(path)) {
+          next.add(path);
+          changed = true;
+        }
       }
-      return next;
+      return changed ? next : current;
     });
 
     const startedAt = getExplorerPerformanceNow();
@@ -4248,7 +4252,6 @@ export function FileExplorer({
 
   useEffect(() => {
     if (!useNativeOsIcons || loading || virtualizedEntries.length === 0) {
-      setNativeIconLoadingKeys(current => (current.size === 0 ? current : new Set()));
       return;
     }
 
@@ -4261,7 +4264,6 @@ export function FileExplorer({
       .slice(0, 48);
 
     if (pendingEntries.length === 0) {
-      setNativeIconLoadingKeys(current => (current.size === 0 ? current : new Set()));
       return;
     }
 
@@ -4270,10 +4272,14 @@ export function FileExplorer({
 
     setNativeIconLoadingKeys(current => {
       const next = new Set(current);
+      let changed = false;
       for (const key of pendingKeys) {
-        next.add(key);
+        if (!next.has(key)) {
+          next.add(key);
+          changed = true;
+        }
       }
-      return next;
+      return changed ? next : current;
     });
 
     const startedAt = getExplorerPerformanceNow();

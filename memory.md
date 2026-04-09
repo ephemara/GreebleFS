@@ -18,6 +18,16 @@
   - view mode cycling
   - preview toggle
 - `src/components/FileExplorer.tsx` no longer exposes drawer/dock surface semantics. It now renders as the same explorer surface in either `full` or `compact-dock` mode, and embedded shell-layout/view/preview controls are suppressed when the command center owns them in the top bar.
+- Added `settings.system.developerMode` and flipped live watcher behavior to opt-in:
+  - plugin directory watching and fallback polling only run when developer mode is enabled
+  - authored shader polling only runs when developer mode is enabled
+  - authored animation polling only runs when developer mode is enabled
+  - explorer entry-size root watching only runs when developer mode is enabled
+- Manual refresh is now the default production path:
+  - Plugins panel `Refresh`
+  - Settings `Refresh Shaders`
+  - Settings `Refresh Animations`
+- Fixed the `FileExplorer.tsx` update-depth loop in the virtualized batching effects by keeping in-flight entry-size/native-icon sets stable until the async batch resolves instead of clearing/re-adding them every render.
 - Removed the incorrect drawer/dock subsystem:
   - deleted `src/components/WorkbenchContentBrowserDock.tsx`
   - removed `contentBrowserDock` from `src/config/layoutProfiles.ts`
@@ -41,6 +51,7 @@
   - `bunx vite build`
   - `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
   - `cargo build --manifest-path src-tauri/Cargo.toml --release`
+  - narrowed `bunx tsc --noEmit --skipLibCheck ... src/store/settingsStore.ts src/runtime/useFolderPluginRuntime.ts src/components/FileExplorer.tsx src/components/PluginsManager.tsx src/components/SettingsPage.tsx src/App.tsx`
 - Validation/workflow blockers still present in the workspace:
   - JSDOM-backed `vitest` runs are still blocked by the existing `html-encoding-sniffer` / `@exodus/bytes` ESM worker failure
   - `bun run release:linux:install*` currently fails on Node 18 because `scripts/sync-canonical-icons.mjs` uses JSON import attributes; use the direct Bun/Cargo build path until Node is upgraded
