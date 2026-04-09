@@ -87,6 +87,12 @@ export interface OverlayPanelDefinition {
   description: string;
   defaultOpen: boolean;
   keepMounted?: boolean;
+  navigation?: {
+    groupId: string;
+    groupLabel: string;
+    groupOrder?: number;
+    itemOrder?: number;
+  };
   render: () => React.ReactNode;
 }
 
@@ -186,6 +192,12 @@ export function createBuiltInPanelDefinitions({
       description: 'File browser and asset navigation.',
       defaultOpen: true,
       keepMounted: true,
+      navigation: {
+        groupId: 'browse',
+        groupLabel: 'Browse',
+        groupOrder: 10,
+        itemOrder: 10,
+      },
       render: () => (
         <MemoFileExplorer
           appearance={appearance}
@@ -206,6 +218,12 @@ export function createBuiltInPanelDefinitions({
       description: 'Primary command workspace.',
       defaultOpen: true,
       keepMounted: true,
+      navigation: {
+        groupId: 'work',
+        groupLabel: 'Work',
+        groupOrder: 20,
+        itemOrder: 10,
+      },
       render: () => (
         <MemoTerminalOverlay
           isOpen={isOpen}
@@ -223,6 +241,12 @@ export function createBuiltInPanelDefinitions({
       icon: <GitBranch size={12} />,
       description: 'Git tools and diff management.',
       defaultOpen: true,
+      navigation: {
+        groupId: 'work',
+        groupLabel: 'Work',
+        groupOrder: 20,
+        itemOrder: 20,
+      },
       render: () => (
         <DeferredPanel>
           <LazyGitManager
@@ -241,6 +265,12 @@ export function createBuiltInPanelDefinitions({
       icon: <StickyNote size={12} />,
       description: 'Scratchpads and structured notes.',
       defaultOpen: true,
+      navigation: {
+        groupId: 'work',
+        groupLabel: 'Work',
+        groupOrder: 20,
+        itemOrder: 30,
+      },
       render: () => (
         <DeferredPanel>
           <LazyNotesManager appearance={appearance} />
@@ -254,6 +284,12 @@ export function createBuiltInPanelDefinitions({
       icon: <Camera size={12} />,
       description: 'Built-in example plugin for capture and clipboard workflows.',
       defaultOpen: true,
+      navigation: {
+        groupId: 'capture',
+        groupLabel: 'Capture',
+        groupOrder: 30,
+        itemOrder: 10,
+      },
       render: () => (
         <DeferredPanel>
           <LazyScreenshotsManager appearance={appearance} />
@@ -267,6 +303,12 @@ export function createBuiltInPanelDefinitions({
       icon: <SlidersHorizontal size={12} />,
       description: 'Application-wide appearance, terminal, and explorer settings.',
       defaultOpen: false,
+      navigation: {
+        groupId: 'system',
+        groupLabel: 'System',
+        groupOrder: 50,
+        itemOrder: 10,
+      },
       render: () => (
         <DeferredPanel>
           <LazySettingsPage
@@ -303,6 +345,12 @@ export function createBuiltInPanelDefinitions({
       icon: <Puzzle size={12} />,
       description: 'Plugin browser and drop-in loader workspace.',
       defaultOpen: true,
+      navigation: {
+        groupId: 'extensions',
+        groupLabel: 'Extensions',
+        groupOrder: 40,
+        itemOrder: 10,
+      },
       render: renderPluginsManager,
     },
   ];
@@ -325,6 +373,11 @@ export function createFolderPluginPanelDefinitions({
     description: plugin.description ?? `Folder plugin loaded from ${plugin.filePath}.`,
     defaultOpen: plugin.defaultOpen,
     keepMounted: plugin.keepMounted,
+    navigation: {
+      groupId: 'extensions',
+      groupLabel: 'Extensions',
+      groupOrder: 40,
+    },
     render: () => (
       <FolderPluginRenderer
         plugin={plugin}

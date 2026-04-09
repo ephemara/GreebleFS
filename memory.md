@@ -28,6 +28,23 @@
   - `src/test/explorerTheme.test.ts`
   - `src/test/themePackageExplorerRecipe.test.ts`
 
+## 2026-04-08 — Live Render Runtime Layer
+
+- Added `src/config/workbenchRenderRuntime.ts` so render styles now resolve into an actual shell interaction runtime instead of staying metadata-only.
+- The runtime currently supports four interaction models:
+  - `workbench-tabs`
+  - `cross-axis-media`
+  - `channel-launcher`
+  - `desktop-stack`
+- `src/components/WorkbenchNavigationSurface.tsx` now renders a runtime-specific launcher rail for cross-axis, channel-grid, and desktop-style shells.
+- `src/App.tsx` now delegates shell navigation/content structure to the resolved runtime:
+  - tabbed workbench keeps the old chrome tab strip
+  - cross-axis themes get grouped launcher navigation
+  - iOS / Wii style themes get larger grouped launcher tiles
+  - desktop-style themes get dock/list navigation with card-style panel presentation
+- `src/panels/panelRegistry.tsx` now attaches navigation metadata to panels so runtimes can regroup panels by domain without app-wide ad hoc switch statements.
+- This keeps the system generalized: themes define `renderStyles`, `navigationPatterns`, `layoutPrimitives`, and `presentation`, and the app picks a runtime from those descriptors rather than from hardcoded theme names.
+
 ## Validation Notes
 
 - Narrowed workbench/explorer typecheck passed except for the existing unrelated `src/runtime/useFolderPluginRuntime.ts` failure recorded in `ARCHITECTURE.md`.

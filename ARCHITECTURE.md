@@ -32,8 +32,12 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Explorer-specific theme recipe resolution, metrics scaling, and explorer-scoped CSS variable contract.
 - `src/config/themeEngineBindings.ts`
   Shared engine-manifest binding helpers for layout/navigation/render-driven recipe defaults.
+- `src/config/workbenchRenderRuntime.ts`
+  Resolves the active workbench interaction runtime from the theme engine manifest and layout profile.
 - `src/config/themePackages.ts`
   Theme package discovery and manifest loading from `themes/`.
+- `src/components/WorkbenchNavigationSurface.tsx`
+  Runtime-swappable launcher surface for cross-axis, channel-grid, desktop, and tabbed shells.
 
 ## Theme / Workbench Architecture
 
@@ -62,6 +66,12 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - typography
   - raw explorer-only CSS vars
 - When no recipe seed is provided, `src/config/workbenchTheme.ts` and `src/config/explorerTheme.ts` now derive shell defaults from the active engine-manifest presentation, layout primitive, navigation pattern, and render style.
+- Render styles are no longer passive metadata. `src/config/workbenchRenderRuntime.ts` now maps the active theme engine state and active layout shell blueprint into a live interaction runtime:
+  - `workbench-tabs`
+  - `cross-axis-media`
+  - `channel-launcher`
+  - `desktop-stack`
+- `App.tsx` now uses that runtime to swap navigation behavior and content presentation, and `OverlayPanelDefinition.navigation` metadata in `src/panels/panelRegistry.tsx` gives render runtimes enough structure to regroup panels without hardcoded one-off app logic.
 - `FileExplorer.tsx` consumes the resolved explorer recipe and applies it to:
   - shell chrome
   - rail placement

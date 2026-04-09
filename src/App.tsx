@@ -17,6 +17,10 @@ import { FolderPluginRenderer, PluginsManager } from './components/PluginsManage
 import { CommandPalette, type OverlayCommandPaletteAction } from './components/CommandPalette';
 import { animationSystemConfig, resolvePreferredAnimationId } from './config/animations';
 import {
+  resolveWorkbenchRenderRuntime,
+  type ResolvedWorkbenchRenderRuntime,
+} from './config/workbenchRenderRuntime';
+import {
   recordOverlayFrameTelemetry,
   shouldFlushOverlayFrameWindow,
   summarizeOverlayFrameWindow,
@@ -94,6 +98,7 @@ import {
 import { detectClientPlatform, type RuntimePlatform } from './config/platform';
 import { derivePanelOpenState, reorderPanelIds } from './components/panelUtils';
 import { OverlayScrollArea } from './components/OverlayScrollArea';
+import { WorkbenchNavigationSurface } from './components/WorkbenchNavigationSurface';
 import { WindowControls } from './components/WindowControls';
 import { useGlobalShortcut } from './input/GlobalShortcuts';
 import {
@@ -607,6 +612,10 @@ function App() {
   const activeLayoutProfile = useMemo(
     () => resolveLayoutProfile(layoutManifest, layoutSettings.activeProfileId),
     [layoutManifest, layoutSettings.activeProfileId],
+  );
+  const renderRuntime = useMemo(
+    () => resolveWorkbenchRenderRuntime(resolvedAppearance, activeLayoutProfile),
+    [activeLayoutProfile, resolvedAppearance],
   );
   const pinnedExplorerPanel = useMemo(
     () => activeLayoutProfile.pinnedPanels.find(panel => panel.panelId === 'explorer') ?? null,
@@ -2383,6 +2392,39 @@ function App() {
   }, [appBlur, clampedAppBlurStrength, overlayPhase]);
 
   const activeContentPanel = activePanelId ? panelLookup.get(activePanelId) ?? null : null;
+  const usesNavigationSidebar = renderRuntime.launcherPlacement === 'sidebar';
+  const usesInsetContentShell = renderRuntime.contentLayout !== 'tabbed';
+  const contentStagePadding = renderRuntime.contentLayout === 'desktop-card'
+    ? 14
+    : usesNavigationSidebar
+      ? 10
+      : 0;
+  const contentShellStyle: CSSProperties = usesInsetContentShell
+    ? {
+        flex: 1,
+        minWidth: 0,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        margin: contentStagePadding,
+        border: '1px solid var(--overlay-workbench-chrome-border)',
+        borderRadius: workbench.metrics.panelRadius,
+        background: renderRuntime.contentLayout === 'desktop-card'
+          ? 'var(--overlay-workbench-shell-bg)'
+          : 'var(--overlay-bg-panel)',
+        boxShadow: 'var(--overlay-workbench-shell-shadow)',
+        backdropFilter: workbench.panelStyle === 'glass' ? 'blur(18px)' : 'none',
+        WebkitBackdropFilter: workbench.panelStyle === 'glass' ? 'blur(18px)' : 'none',
+      }
+    : {
+        flex: 1,
+        minWidth: 0,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      };
   const shellShaderContext = useMemo<OverlayShaderShellContext>(() => ({
     ...(activeShader ?? {
       id: shaderSystemConfig.fallbackShaderId,
@@ -2415,6 +2457,7 @@ function App() {
   const chromeBar = (
     <TopBar
       appearance={resolvedAppearance}
+      renderRuntime={renderRuntime}
       layoutProfile={activeLayoutProfile}
       layoutProfiles={layoutManifest.profiles}
       layoutSourcePath={layoutConfigSource}
@@ -2559,82 +2602,100 @@ function App() {
                   <LayoutPinnedPanelSlot key={`${panel.side}:${panel.panelId}`} panel={panel} definition={definition} />
                 ))}
 
-                <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
-                  {panelDefinitions.map(panel => {
-                    const isPanelOpen = openPanelIds.includes(panel.id);
-                    const isActive = panel.id === activePanelId;
-                    const isPinned = pinnedPanelIds.includes(panel.id);
-                    // keepMounted means "stay mounted while open, even when not the active tab".
-                    // Closed panels should unmount to avoid background work.
-                    const shouldMount = !isPinned && (panel.keepMounted ? isPanelOpen : isPanelOpen && isActive);
-
-                    if (!shouldMount) return null;
-
-                    return (
-                      <div
-                        key={panel.id}
-                        style={{
-                          flex: 1,
-                          display: isPanelOpen && isActive ? 'flex' : 'none',
-                          flexDirection: 'column',
-                          overflow: 'hidden',
-                        }}
-                      >
-                        {panel.kind === 'folder-plugin'
-                          ? (
-                            <FolderPluginRenderer
-                              plugin={folderPlugins.find(candidate => candidate.id === panel.id) ?? {
-                                id: panel.id,
-                                name: panel.label,
-                                filePath: '',
-                                pluginRoot: '',
-                                pluginDirectory: '',
-                                backendDirectory: '',
-                                modified: 0,
-                                defaultOpen: panel.defaultOpen ?? false,
-                                keepMounted: panel.keepMounted ?? false,
-                                component: null,
-                                error: 'Plugin definition not found.',
-                                diagnostics: {
-                                  sourceKind: 'file-plugin',
-                                  sourceLabel: panel.label,
-                                  warnings: ['Plugin definition not found.'],
-                                  capabilities: {
-                                    panel: true,
-                                    themes: 0,
-                                    shaders: 0,
-                                    fonts: 0,
-                                    commands: 0,
-                                    explorerActions: 0,
-                                  },
-                                },
-                              }}
-                              appearance={resolvedAppearance}
-                              createPluginApi={createPluginApi}
-                              hostMode="panel-tab"
-                              isActive={isActive}
-                            />
-                          )
-                          : panel.render()}
-                      </div>
-                    );
-                  })}
-
-                  {!activeContentPanel && openPanels.length === 0 && (
-                    <div style={{
-                      flex: 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: theme.palette.textMuted,
-                      fontSize: 13,
-                      background: theme.palette.shellBackground,
-                      fontFamily: resolvedAppearance.fonts.ui,
-                    }}
-                    >
-                      No tabbed panels are open. Use the panel menu to bring one back.
-                    </div>
+                <div style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
+                  {usesNavigationSidebar && (
+                    <WorkbenchNavigationSurface
+                      appearance={resolvedAppearance}
+                      runtime={renderRuntime}
+                      panels={panelDefinitions}
+                      pinnedPanelIds={pinnedPanelIds}
+                      activePanelId={activePanelId}
+                      openPanelIds={openPanelIds}
+                      onActivatePanel={handleActivatePanel}
+                    />
                   )}
+
+                  <div style={contentShellStyle}>
+                    {panelDefinitions.map(panel => {
+                      const isPanelOpen = openPanelIds.includes(panel.id);
+                      const isActive = panel.id === activePanelId;
+                      const isPinned = pinnedPanelIds.includes(panel.id);
+                      // keepMounted means "stay mounted while open, even when not the active tab".
+                      // Closed panels should unmount to avoid background work.
+                      const shouldMount = !isPinned && (panel.keepMounted ? isPanelOpen : isPanelOpen && isActive);
+
+                      if (!shouldMount) return null;
+
+                      return (
+                        <div
+                          key={panel.id}
+                          style={{
+                            flex: 1,
+                            display: isPanelOpen && isActive ? 'flex' : 'none',
+                            flexDirection: 'column',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          {panel.kind === 'folder-plugin'
+                            ? (
+                              <FolderPluginRenderer
+                                plugin={folderPlugins.find(candidate => candidate.id === panel.id) ?? {
+                                  id: panel.id,
+                                  name: panel.label,
+                                  filePath: '',
+                                  pluginRoot: '',
+                                  pluginDirectory: '',
+                                  backendDirectory: '',
+                                  modified: 0,
+                                  defaultOpen: panel.defaultOpen ?? false,
+                                  keepMounted: panel.keepMounted ?? false,
+                                  component: null,
+                                  error: 'Plugin definition not found.',
+                                  diagnostics: {
+                                    sourceKind: 'file-plugin',
+                                    sourceLabel: panel.label,
+                                    warnings: ['Plugin definition not found.'],
+                                    capabilities: {
+                                      panel: true,
+                                      themes: 0,
+                                      shaders: 0,
+                                      fonts: 0,
+                                      commands: 0,
+                                      explorerActions: 0,
+                                    },
+                                  },
+                                }}
+                                appearance={resolvedAppearance}
+                                createPluginApi={createPluginApi}
+                                hostMode="panel-tab"
+                                isActive={isActive}
+                              />
+                            )
+                            : panel.render()}
+                        </div>
+                      );
+                    })}
+
+                    {!activeContentPanel && openPanels.length === 0 && (
+                      <div style={{
+                        flex: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: theme.palette.textMuted,
+                        fontSize: 13,
+                        background: usesInsetContentShell ? 'transparent' : theme.palette.shellBackground,
+                        fontFamily: resolvedAppearance.fonts.ui,
+                        padding: 24,
+                        textAlign: 'center',
+                      }}
+                      >
+                        {usesNavigationSidebar
+                          ? 'Choose a panel from the launcher to bring its surface forward.'
+                          : 'No tabbed panels are open. Use the panel menu to bring one back.'}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {rightPinnedPanels.map(({ panel, definition }) => (
@@ -3064,6 +3125,7 @@ function OverlayViewportDock({
 
 function TopBar({
   appearance,
+  renderRuntime,
   layoutProfile,
   layoutProfiles,
   layoutSourcePath,
@@ -3102,6 +3164,7 @@ function TopBar({
   topBarShaderLayer,
 }: {
   appearance: ResolvedOverlayAppearance;
+  renderRuntime: ResolvedWorkbenchRenderRuntime;
   layoutProfile: LayoutProfile;
   layoutProfiles: LayoutProfile[];
   layoutSourcePath: string | null;
@@ -3158,8 +3221,10 @@ function TopBar({
     width: window.innerWidth,
     height: window.innerHeight,
   }));
+  const activePanelDefinition = activePanelId ? panels.find(panel => panel.id === activePanelId) ?? null : null;
   const isExplorerActive = activePanelId === 'explorer';
   const isSettingsActive = activePanelId === 'settings';
+  const runtimeUsesTabbedNavigation = renderRuntime.showTabStrip;
   const supportsNativeBlur = blurPlatform === 'macos' || blurPlatform === 'windows';
   const isBottomBar = layoutProfile.chrome.barPosition === 'bottom';
   const isWindowedMode = windowMode === 'windowed';
@@ -3862,7 +3927,7 @@ function TopBar({
       </div>
 
       <div style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0 }}>
-        {layoutProfile.chrome.showSettingsShortcut && (
+        {layoutProfile.chrome.showSettingsShortcut && renderRuntime.showSettingsShortcut && (
           <button
             onClick={onOpenSettings}
             title="Open Settings"
@@ -3890,107 +3955,136 @@ function TopBar({
           </button>
         )}
 
-        <button
-          onClick={() => onPanelSelect('explorer')}
-          title="Open Explorer"
-          style={{
-            height: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '0 14px',
-            background: isExplorerActive
-              ? 'var(--overlay-workbench-chrome-tab-active-bg)'
-              : 'var(--overlay-workbench-chrome-tab-bg)',
-            border: 'none',
-            borderRight: `1px solid ${BORDER}`,
-            color: isExplorerActive ? TEXT : MUTED,
-            cursor: 'pointer',
-            flexShrink: 0,
-            boxShadow: isExplorerActive ? `inset 0 -2px 0 ${accent}, inset 0 0 0 1px ${accent}18` : 'inset 0 -2px 0 transparent',
-            transition: 'background 0.15s, color 0.15s, box-shadow 0.15s, border-color 0.15s',
-          }}
-        >
-          <span style={{ display: 'flex', color: isExplorerActive ? accent : MUTED }}>
-            {panels.find(panel => panel.id === 'explorer')?.icon ?? <TerminalIcon size={12} />}
-          </span>
-          <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em' }}>Explorer</span>
-          {isExplorerActive && <span style={{ width: 4, height: 4, borderRadius: '50%', background: accent }} />}
-        </button>
+        {renderRuntime.showExplorerShortcut && (
+          <button
+            onClick={() => onPanelSelect('explorer')}
+            title="Open Explorer"
+            style={{
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '0 14px',
+              background: isExplorerActive
+                ? 'var(--overlay-workbench-chrome-tab-active-bg)'
+                : 'var(--overlay-workbench-chrome-tab-bg)',
+              border: 'none',
+              borderRight: `1px solid ${BORDER}`,
+              color: isExplorerActive ? TEXT : MUTED,
+              cursor: 'pointer',
+              flexShrink: 0,
+              boxShadow: isExplorerActive ? `inset 0 -2px 0 ${accent}, inset 0 0 0 1px ${accent}18` : 'inset 0 -2px 0 transparent',
+              transition: 'background 0.15s, color 0.15s, box-shadow 0.15s, border-color 0.15s',
+            }}
+          >
+            <span style={{ display: 'flex', color: isExplorerActive ? accent : MUTED }}>
+              {panels.find(panel => panel.id === 'explorer')?.icon ?? <TerminalIcon size={12} />}
+            </span>
+            <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em' }}>Explorer</span>
+            {isExplorerActive && <span style={{ width: 4, height: 4, borderRadius: '50%', background: accent }} />}
+          </button>
+        )}
 
+        {runtimeUsesTabbedNavigation ? (
           <OverlayScrollArea direction="horizontal" style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0, background: 'rgba(0,0,0,0.08)' }} contentStyle={{ display: 'flex', alignItems: 'stretch', minWidth: 'max-content' }}>
-          {tabPanels.map(panel => {
-            const isActive = panel.id === activePanelId;
-            const isDragged = draggedPanelId === panel.id;
-            const isPersistentTab = layoutProfile.behavior.enforcedOpenPanelIds.includes(panel.id);
-            return (
-              <button
-                key={panel.id}
-                draggable
-                onClick={() => onPanelSelect(panel.id)}
-                onDragStart={() => setDraggedPanelId(panel.id)}
-                onDragEnd={() => setDraggedPanelId(null)}
-                onDragOver={event => {
-                  event.preventDefault();
-                }}
-                onDrop={event => {
-                  event.preventDefault();
-                  if (draggedPanelId && draggedPanelId !== panel.id) {
-                    onPanelReorder(draggedPanelId, panel.id);
-                  }
-                  setDraggedPanelId(null);
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '0 9px',
-                  cursor: 'pointer',
-                  background: isActive ? 'var(--overlay-workbench-chrome-tab-active-bg)' : (workbench.tabStyle === 'segment' ? 'var(--overlay-workbench-chrome-tab-bg)' : 'transparent'),
-                  border: 'none',
-                  borderBottom: isBottomBar ? 'none' : `2px solid ${isActive ? accent : 'transparent'}`,
-                  borderTop: isBottomBar ? `2px solid ${isActive ? accent : 'transparent'}` : 'none',
-                  borderRight: `1px solid ${BORDER}`,
-                  color: isActive ? TEXT : MUTED,
-                  fontSize: 'var(--overlay-workbench-tab-label-size)',
-                  fontWeight: isActive ? 700 : 500,
-                  fontFamily: uiFont,
-                  transition: 'background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s',
-                  flexShrink: 0,
-                  userSelect: 'none',
-                  opacity: isDragged ? 0.45 : 1,
-                  height: '100%',
-                  borderRadius: workbench.tabStyle === 'capsule' ? workbench.metrics.controlRadius : 0,
-                  margin: workbench.tabStyle === 'capsule' ? '4px 4px' : 0,
-                }}
-              >
-                <span style={{ display: 'flex', color: isActive ? accent : MUTED }}>{panel.icon}</span>
-                <span>{panel.label}</span>
-                {isActive && <span style={{ width: 4, height: 4, borderRadius: '50%', background: accent }} />}
-                {isActive && !isPersistentTab && (
-                  <span
-                    onClick={event => {
-                      event.stopPropagation();
-                      onPanelClose(panel.id);
-                    }}
-                    title={`Close ${panel.label}`}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: 14,
-                      height: 14,
-                      borderRadius: 4,
-                      color: MUTED,
-                    }}
-                  >
-                    <X size={10} />
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </OverlayScrollArea>
+            {tabPanels.map(panel => {
+              const isActive = panel.id === activePanelId;
+              const isDragged = draggedPanelId === panel.id;
+              const isPersistentTab = layoutProfile.behavior.enforcedOpenPanelIds.includes(panel.id);
+              return (
+                <button
+                  key={panel.id}
+                  draggable
+                  onClick={() => onPanelSelect(panel.id)}
+                  onDragStart={() => setDraggedPanelId(panel.id)}
+                  onDragEnd={() => setDraggedPanelId(null)}
+                  onDragOver={event => {
+                    event.preventDefault();
+                  }}
+                  onDrop={event => {
+                    event.preventDefault();
+                    if (draggedPanelId && draggedPanelId !== panel.id) {
+                      onPanelReorder(draggedPanelId, panel.id);
+                    }
+                    setDraggedPanelId(null);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '0 9px',
+                    cursor: 'pointer',
+                    background: isActive ? 'var(--overlay-workbench-chrome-tab-active-bg)' : (workbench.tabStyle === 'segment' ? 'var(--overlay-workbench-chrome-tab-bg)' : 'transparent'),
+                    border: 'none',
+                    borderBottom: isBottomBar ? 'none' : `2px solid ${isActive ? accent : 'transparent'}`,
+                    borderTop: isBottomBar ? `2px solid ${isActive ? accent : 'transparent'}` : 'none',
+                    borderRight: `1px solid ${BORDER}`,
+                    color: isActive ? TEXT : MUTED,
+                    fontSize: 'var(--overlay-workbench-tab-label-size)',
+                    fontWeight: isActive ? 700 : 500,
+                    fontFamily: uiFont,
+                    transition: 'background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s',
+                    flexShrink: 0,
+                    userSelect: 'none',
+                    opacity: isDragged ? 0.45 : 1,
+                    height: '100%',
+                    borderRadius: workbench.tabStyle === 'capsule' ? workbench.metrics.controlRadius : 0,
+                    margin: workbench.tabStyle === 'capsule' ? '4px 4px' : 0,
+                  }}
+                >
+                  <span style={{ display: 'flex', color: isActive ? accent : MUTED }}>{panel.icon}</span>
+                  <span>{panel.label}</span>
+                  {isActive && <span style={{ width: 4, height: 4, borderRadius: '50%', background: accent }} />}
+                  {isActive && !isPersistentTab && (
+                    <span
+                      onClick={event => {
+                        event.stopPropagation();
+                        onPanelClose(panel.id);
+                      }}
+                      title={`Close ${panel.label}`}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: 14,
+                        height: 14,
+                        borderRadius: 4,
+                        color: MUTED,
+                      }}
+                    >
+                      <X size={10} />
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </OverlayScrollArea>
+        ) : (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              flex: 1,
+              minWidth: 0,
+              padding: '0 14px',
+              background: 'rgba(0,0,0,0.08)',
+              borderLeft: `1px solid ${BORDER}`,
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+              <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: MUTED }}>
+                {renderRuntime.label}
+              </span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: TEXT, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {activePanelDefinition?.label ?? 'Launcher Ready'}
+              </span>
+            </div>
+            <span style={{ fontSize: 'var(--overlay-workbench-chrome-meta-size)', color: MUTED, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {renderRuntime.description}
+            </span>
+          </div>
+        )}
       </div>
 
       {isWindowedMode && (

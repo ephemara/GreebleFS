@@ -40,7 +40,7 @@ Top-level fields:
 - `designTokens`, `layoutPrimitives`, `navigationPatterns`
   - Typed backend contract slices. Token values and primitive props can be strings, numbers, booleans, or structured JSON values.
 - `renderStyles`
-  - Backend render-style contracts. Set `supportsLiveSwap` on a style when it can be hot-swapped without restarting the explorer shell.
+  - Backend render-style contracts. These now drive the live shell interaction runtime, not just theme metadata. Set `supportsLiveSwap` on a style when it can be hot-swapped without restarting the explorer shell.
 - `assets.background`
   - Relative path to a wallpaper/image asset.
 - `assets.preview`
@@ -66,6 +66,13 @@ Top-level fields:
   - `theme.explorer.layoutPrimitiveId`, `theme.explorer.navigationPatternId`, `theme.explorer.renderStyleId`
 
 The practical effect is that the system is not limited to a few named examples. XMB, Wii, iOS, desktop, media-center, and custom shells can all come from the same underlying manifest vocabulary, with recipes used only where you want stronger overrides.
+
+Current built-in runtime mappings:
+
+- `vs-code-workbench` -> tabbed workbench
+- `ps-3-xmb` -> cross-axis media runtime
+- `ios-springboard` / `wii-channels` -> launcher-grid runtime
+- `desktop-window-manager` -> desktop-stack runtime
 
 ## Explorer Recipe Highlights
 
