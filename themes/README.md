@@ -35,8 +35,8 @@ Top-level fields:
   - Optional base theme id. Can point at a built-in theme or another package theme.
 - `theme`
   - Partial OverlayTerm theme definition with `palette`, `effects`, `xterm`, `fonts`, `cssVars`, `visuals`, `defaultShaderId`, `defaultOpenAnimationId`, `defaultCloseAnimationId`, `workbench`, and `explorer`.
-  - `theme.workbench` is the app-wide shell recipe layer. It controls the command-center chrome, command palette, terminal shell, settings shell, tabs, shell radii, and shared workbench surfaces.
-  - `theme.explorer` is the explorer-shell recipe layer. It is where package authors can swap between high-level presets like `workbench`, `xmb`, and `channel-grid`, set structural choices such as `toolbarStyle`, `breadcrumbStyle`, `previewStyle`, `statusBarStyle`, `railPosition`, `preferredViewMode`, and `preferredExperimentalViewMode`, and then override geometry/surfaces through `metrics`, `surfaces`, `typography`, and raw explorer-scoped `cssVars`.
+  - `theme.workbench` is the app-wide shell recipe overlay. It controls the command-center chrome, command palette, terminal shell, settings shell, tabs, shell radii, and shared workbench surfaces.
+  - `theme.explorer` is the explorer-shell recipe overlay. It controls structural choices such as `toolbarStyle`, `breadcrumbStyle`, `previewStyle`, `statusBarStyle`, `railPosition`, `preferredViewMode`, and `preferredExperimentalViewMode`, then lets authors override geometry/surfaces through `metrics`, `surfaces`, `typography`, and raw explorer-scoped `cssVars`.
 - `designTokens`, `layoutPrimitives`, `navigationPatterns`
   - Typed backend contract slices. Token values and primitive props can be strings, numbers, booleans, or structured JSON values.
 - `renderStyles`
@@ -56,10 +56,23 @@ Top-level fields:
 - `visuals`
   - Declarative animated layers rendered behind the shell content.
 
+## Generalized Authoring Model
+
+- `presentation`, `layoutPrimitives`, `navigationPatterns`, and `renderStyles` describe the theme in generic terms.
+- `theme.workbench` and `theme.explorer` are optional override layers on top of that engine manifest.
+- If you omit the recipe `preset`, GreebleFS now derives sensible workbench and explorer defaults from the active layout primitive, navigation pattern, render style, density, chrome style, radius, spacing, icon style, and motion style.
+- Recipes can explicitly bind to a non-default engine descriptor with:
+  - `theme.workbench.layoutPrimitiveId`, `theme.workbench.navigationPatternId`, `theme.workbench.renderStyleId`
+  - `theme.explorer.layoutPrimitiveId`, `theme.explorer.navigationPatternId`, `theme.explorer.renderStyleId`
+
+The practical effect is that the system is not limited to a few named examples. XMB, Wii, iOS, desktop, media-center, and custom shells can all come from the same underlying manifest vocabulary, with recipes used only where you want stronger overrides.
+
 ## Explorer Recipe Highlights
 
 - `theme.explorer.preset`
-  - `workbench`, `xmb`, `channel-grid`, or `custom`
+  - Optional recipe seed: `workbench`, `xmb`, `channel-grid`, or `custom`
+- `theme.explorer.layoutPrimitiveId`, `theme.explorer.navigationPatternId`, `theme.explorer.renderStyleId`
+  - Optional binding ids for selecting which engine manifest entries drive the explorer recipe defaults
 - `theme.explorer.metrics`
   - `railWidth`, `previewWidth`, `chromeInset`, `toolbarPaddingX`, `toolbarPaddingY`, `toolbarGap`, `controlRadius`, `panelRadius`, `spacingScale`, `gridScale`, `rowHeightScale`, `iconScale`, `hoverLiftPx`
 - `theme.explorer.surfaces`
@@ -69,12 +82,14 @@ Top-level fields:
 - `theme.explorer.cssVars`
   - Raw escape hatch for explorer-only CSS variables when the typed fields are not enough
 
-This is the layer that makes theme packages capable of approximating shells like PS3 XMB flows, Wii channel grids, glassy dock navigators, or heavier desktop workbenches without forking the explorer component.
+This is the layer that makes theme packages capable of approximating shells like PS3 XMB flows, Wii channel grids, iOS-inspired launchers, glassy dock navigators, or heavier desktop workbenches without forking the explorer component.
 
 ## Workbench Recipe Highlights
 
 - `theme.workbench.preset`
-  - `workbench`, `xmb`, `channel-grid`, or `custom`
+  - Optional recipe seed: `workbench`, `xmb`, `channel-grid`, or `custom`
+- `theme.workbench.layoutPrimitiveId`, `theme.workbench.navigationPatternId`, `theme.workbench.renderStyleId`
+  - Optional binding ids for selecting which engine manifest entries drive the workbench recipe defaults
 - `theme.workbench.topBarStyle`
   - `solid`, `glass`, `floating`, or `minimal`
 - `theme.workbench.commandPaletteStyle`, `theme.workbench.terminalStyle`, `theme.workbench.settingsStyle`

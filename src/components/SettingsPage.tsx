@@ -932,7 +932,7 @@ export function SettingsPage({
     {
       id: 'appearance',
       title: 'Appearance',
-      summary: 'Theme presets, blur, transparency, and fonts.',
+      summary: 'Theme recipes, blur, transparency, and fonts.',
       action: () => setActiveSection('appearance'),
     },
     {
@@ -1056,7 +1056,7 @@ export function SettingsPage({
       label: 'Appearance',
       subtitle: 'Theme, opacity, panel transparency, blur, and zoom.',
       summary: `${effectiveTheme.name} · ${settings.appearance.useNativeOsIcons ? 'OS Icons' : 'Theme Icons'} · ${formatOverlayVisualControlValue('opacity', settings.appearance.appOpacity)} OP · ${formatOverlayVisualControlValue('panelTransparency', settings.appearance.panelTransparency)} PT · ${formatOverlayVisualControlValue('zoom', settings.appearance.appZoom)} ZM · ${formatOverlayVisualControlValue('blurStrength', settings.appearance.appBlurStrength)} BL`,
-      detail: 'Tune the shell look and feel, from presets and palette tokens to blur, transparency, and UI typography.',
+      detail: 'Tune the shell look and feel, from engine-driven recipes and palette tokens to blur, transparency, and UI typography.',
       icon: <Palette size={14} />,
     },
     {
@@ -1134,7 +1134,7 @@ export function SettingsPage({
       label: 'Theme JSON',
       subtitle: 'Raw theme authoring and import.',
       summary: 'Direct JSON editing',
-      detail: 'Paste, tweak, and version full theme definitions directly when presets and token pickers are not enough.',
+      detail: 'Paste, tweak, and version full theme definitions directly when the recipe controls and token pickers are not enough.',
       icon: <Type size={14} />,
     },
   ];
@@ -1386,7 +1386,7 @@ export function SettingsPage({
             <SectionTitle
               icon={<Palette size={12} />}
               title="Appearance"
-              subtitle="Theme presets, UI fonts, and direct palette editing."
+              subtitle="Theme recipes, UI fonts, and direct palette editing."
             />
 
             <div className="mt-4 space-y-4">
@@ -1447,7 +1447,7 @@ export function SettingsPage({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Theme Presets</label>
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Theme Catalog</label>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                   {appearance.themes.map(themeOption => {
                     const active = settings.appearance.activeThemeId === themeOption.id;
@@ -1463,7 +1463,7 @@ export function SettingsPage({
                     const workbenchPreset = themeOption.workbench?.preset;
                     const explorerPreset = themeOption.explorer?.preset;
                     const capabilityLabels = [
-                      workbenchPreset ? `Shell ${workbenchPreset}` : null,
+                      workbenchPreset ? `Workbench ${workbenchPreset}` : null,
                       explorerPreset ? `Explorer ${explorerPreset}` : null,
                       packageInfo?.capabilitySummary.icons ? 'Icons' : null,
                       packageInfo?.capabilitySummary.shaders ? `Shaders ${packageInfo.capabilitySummary.shaders}` : null,
@@ -2139,7 +2139,7 @@ export function SettingsPage({
                   />
                   <RangeField
                     label="Animation Intensity"
-                    description="Push the translation, breakup, and glow harder without changing presets."
+                    description="Push the translation, breakup, and glow harder without changing the active recipe."
                     min={0.55}
                     max={1.8}
                     step={0.05}

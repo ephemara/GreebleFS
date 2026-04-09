@@ -7,9 +7,11 @@
 - New resolvers live in:
   - `src/config/workbenchTheme.ts`
   - `src/config/explorerTheme.ts`
-- The workbench recipe supports shell presets (`workbench`, `xmb`, `channel-grid`) plus overrides for top bar chrome, command palette chrome, terminal shell chrome, settings shell chrome, tabs, metrics, surfaces, typography, and raw workbench CSS vars.
-- The explorer recipe supports shell presets (`workbench`, `xmb`, `channel-grid`) plus overrides for chrome, preview, status bar, breadcrumb style, rail position, view-mode preference, metrics, surfaces, typography, and raw explorer-only CSS vars.
-- `src/config/appearance.ts` now preserves and inherits both `theme.workbench` and `theme.explorer` data through normal theme normalization, so built-ins, custom imports, and package themes all use the same merge path.
+- Added `src/config/themeEngineBindings.ts` so workbench/explorer recipe resolution can bind to generalized theme-engine descriptors instead of only hardcoded archetypes.
+- The workbench recipe supports optional recipe seeds (`workbench`, `xmb`, `channel-grid`), explicit `layoutPrimitiveId` / `navigationPatternId` / `renderStyleId` bindings, plus overrides for top bar chrome, command palette chrome, terminal shell chrome, settings shell chrome, tabs, metrics, surfaces, typography, and raw workbench CSS vars.
+- The explorer recipe supports optional recipe seeds (`workbench`, `xmb`, `channel-grid`), explicit `layoutPrimitiveId` / `navigationPatternId` / `renderStyleId` bindings, plus overrides for chrome, preview, status bar, breadcrumb style, rail position, view-mode preference, metrics, surfaces, typography, and raw explorer-only CSS vars.
+- `src/config/appearance.ts` now preserves compiled engine manifests on themes and compiles raw engine manifests when present, so built-ins, custom imports, and package themes can all feed the same live recipe path.
+- Theme packages now carry `engineManifest` and `compiledEngineManifest` directly on their resolved `theme` object, which lets the active workbench/explorer recipes derive defaults from generic layout/navigation/render descriptors.
 - `src/components/FileExplorer.tsx` now consumes the resolved explorer recipe and uses it to drive:
   - root/toolbar/preview/status chrome
   - rail placement

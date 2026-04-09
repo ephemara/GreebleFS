@@ -30,14 +30,18 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   App-wide workbench recipe resolution and workbench-scoped CSS variable contract.
 - `src/config/explorerTheme.ts`
   Explorer-specific theme recipe resolution, metrics scaling, and explorer-scoped CSS variable contract.
+- `src/config/themeEngineBindings.ts`
+  Shared engine-manifest binding helpers for layout/navigation/render-driven recipe defaults.
 - `src/config/themePackages.ts`
   Theme package discovery and manifest loading from `themes/`.
 
 ## Theme / Workbench Architecture
 
 - Overlay themes still own the global palette, effects, fonts, icon theme, visuals, and shader/motion defaults.
+- Theme packages can also ship a generalized engine manifest through `presentation`, `layoutPrimitives`, `navigationPatterns`, and `renderStyles`.
+- `src/config/appearance.ts` now preserves compiled engine manifests on the active theme so recipe resolution can use them at runtime.
 - Workbench theming is now a first-class recipe layer under `theme.workbench`.
-- `theme.workbench` supports structural presets like `workbench`, `xmb`, and `channel-grid`, plus app-wide overrides for:
+- `theme.workbench` supports optional recipe seeds like `workbench`, `xmb`, and `channel-grid`, plus explicit `layoutPrimitiveId` / `navigationPatternId` / `renderStyleId` bindings and app-wide overrides for:
   - top bar chrome
   - command palette chrome
   - terminal shell chrome
@@ -46,7 +50,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - shell insets, radii, and panel spacing
   - workbench-scoped CSS vars
 - Explorer theming is now a first-class recipe layer under `theme.explorer`.
-- `theme.explorer` supports structural presets like `workbench`, `xmb`, and `channel-grid`, plus local overrides for:
+- `theme.explorer` supports optional recipe seeds like `workbench`, `xmb`, and `channel-grid`, plus explicit `layoutPrimitiveId` / `navigationPatternId` / `renderStyleId` bindings and local overrides for:
   - chrome style
   - breadcrumb style
   - preview style
@@ -57,6 +61,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - surfaces
   - typography
   - raw explorer-only CSS vars
+- When no recipe seed is provided, `src/config/workbenchTheme.ts` and `src/config/explorerTheme.ts` now derive shell defaults from the active engine-manifest presentation, layout primitive, navigation pattern, and render style.
 - `FileExplorer.tsx` consumes the resolved explorer recipe and applies it to:
   - shell chrome
   - rail placement
