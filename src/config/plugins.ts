@@ -1,14 +1,14 @@
+import { getManagedContentDirectory } from './appContentDirectories';
 import { joinPlatformPath } from './platform';
 
 export function resolvePluginsDirectory(): string {
-  const configured = (import.meta.env as {
-    VITE_OVERLAYTERM_PLUGINS_DIR?: string;
-  }).VITE_OVERLAYTERM_PLUGINS_DIR?.trim();
-  return configured && configured.length > 0 ? configured : 'plugins';
+  return getManagedContentDirectory('plugins');
 }
 
 export const pluginSystemConfig = {
-  pluginsDirectory: resolvePluginsDirectory(),
+  get pluginsDirectory(): string {
+    return resolvePluginsDirectory();
+  },
   frontendExtensions: ['tsx', 'ts', 'jsx', 'js'] as const,
   backendDirectoryName: 'backend',
   runtimeModuleName: 'overlayterm-plugin',
@@ -23,7 +23,7 @@ export const pluginSystemConfig = {
   ignoredWatchDirectoryNames: ['node_modules', '.git', '.turbo', 'coverage', 'target', 'backend'] as const,
   folderPanelsOpenByDefault: true,
   folderPanelsKeepMounted: false,
-} as const;
+};
 
 export type FrontendPluginExtension =
   typeof pluginSystemConfig.frontendExtensions[number];

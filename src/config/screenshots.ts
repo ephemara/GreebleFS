@@ -1,3 +1,5 @@
+import { getManagedContentDirectory } from './appContentDirectories';
+
 export const screenshotCaptureModes = [
   {
     id: 'region',
@@ -30,7 +32,9 @@ export const screenshotOutputActions = [
 ] as const;
 
 export const screenshotFeatureConfig = {
-  defaultSaveDirectory: 'M:\\Assets\\Showcase\\TermOverlay',
+  get defaultSaveDirectory(): string {
+    return getManagedContentDirectory('screenshots');
+  },
   supportedExtensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] as const,
   filePrefix: 'overlayterm-shot',
   defaultCaptureMode: screenshotCaptureModes[0].id,
@@ -53,7 +57,7 @@ export const screenshotFeatureConfig = {
   },
   captureModes: screenshotCaptureModes,
   outputActions: screenshotOutputActions,
-} as const;
+};
 
 export type SupportedScreenshotExtension =
   typeof screenshotFeatureConfig.supportedExtensions[number];

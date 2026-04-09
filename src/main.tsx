@@ -1,6 +1,5 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App";
 import "./App.css";
 import {
     shouldAllowDocumentSelection,
@@ -10,6 +9,7 @@ import {
     formatGlobalErrorDetail,
     reportGlobalError,
 } from "./runtime/globalErrorPanel";
+import { initializeManagedContentDirectories } from "./config/appContentDirectories";
 
 window.addEventListener("error", (event) => {
     reportGlobalError(
@@ -56,12 +56,19 @@ document.addEventListener('keydown', (e) => {
     }
 }, { capture: true });
 
-try {
-    ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-      <React.StrictMode>
-        <App />
-      </React.StrictMode>
-    );
-} catch (error) {
-    reportGlobalError("OverlayTerm render bootstrap failed", formatGlobalErrorDetail(error));
+async function bootstrapApp() {
+    try {
+        await initializeManagedContentDirectories();
+        const { default: App } = await import("./App");
+
+        ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+          <React.StrictMode>
+            <App />
+          </React.StrictMode>
+        );
+    } catch (error) {
+        reportGlobalError("OverlayTerm render bootstrap failed", formatGlobalErrorDetail(error));
+    }
 }
+
+void bootstrapApp();

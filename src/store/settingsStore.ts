@@ -51,6 +51,7 @@ import {
   type ScreenshotCaptureModeId,
   type ScreenshotOutputActionId,
 } from '../config/screenshots';
+import { isLegacyScreenshotDirectory } from '../config/appContentDirectories';
 import {
   getDefaultLayoutProfile,
 } from '../config/layoutProfiles';
@@ -590,6 +591,14 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
   const legacyUiFont = importedAppearance?.uiFontFamily ?? importedAppearance?.uiFont ?? importedTerminal?.uiFont;
   const { uiFont: _legacyAppearanceUiFont, ...importedAppearanceSettings } = importedAppearance ?? {};
 
+  const importedScreenshots = imported?.screenshots;
+  const migratedImportedScreenshots = importedScreenshots && isLegacyScreenshotDirectory(importedScreenshots.saveDirectory)
+    ? {
+        ...importedScreenshots,
+        saveDirectory: base.screenshots.saveDirectory,
+      }
+    : importedScreenshots;
+
   return {
     ...base,
     ...imported,
@@ -620,7 +629,7 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
       }),
     },
     system: normalizeSystemSettings(base.system, (imported as Partial<Settings> | undefined)?.system),
-    screenshots: normalizeScreenshotSettings(base.screenshots, imported?.screenshots),
+    screenshots: normalizeScreenshotSettings(base.screenshots, migratedImportedScreenshots),
     keybindings: normalizeKeybindingSettings({ ...base.keybindings, ...imported?.keybindings }),
     polygemini: { ...base.polygemini, ...imported?.polygemini },
     layout: {

@@ -52,6 +52,26 @@
   - `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
   - `cargo build --manifest-path src-tauri/Cargo.toml --release`
   - narrowed `bunx tsc --noEmit --skipLibCheck ... src/store/settingsStore.ts src/runtime/useFolderPluginRuntime.ts src/components/FileExplorer.tsx src/components/PluginsManager.tsx src/components/SettingsPage.tsx src/App.tsx`
+- Added a real local Linux installer entrypoint:
+  - root `install.sh`
+  - fixed `scripts/build-and-install-linux-local-release.sh`
+  - patched `package.json` build/dev icon-sync commands to use Bun instead of Node for the JSON import-attribute script
+- Corrected the release/install content-root behavior that was creating top-level home folders like `~/plugins`, `~/themes`, `~/shaders`, `~/animations`, and `~/Screenshots`:
+  - added `src/config/appContentDirectories.ts`
+  - `tauri dev` still uses repo-relative content folders for in-repo authoring
+  - installed/release builds now resolve managed content under Tauri `AppLocalData`
+  - `src/main.tsx` now initializes managed content directories before importing `App`
+  - screenshot settings imports now migrate away from the old bad default path when loading persisted settings
+  - the Linux installer now seeds `plugins`, `themes`, `shaders`, and `animations` into `~/.local/share/co.overlayterm.app`
+- The installer now performs the full build/install flow directly:
+  - sync icons
+  - regenerate Tauri bindings
+  - build frontend
+  - build release binary
+  - install to `~/.local/opt/overlayterm`
+  - update `~/.local/bin/overlayterm`
+  - update the desktop entry and icon
+- Verified end-to-end with `bash ./install.sh`.
 - Validation/workflow blockers still present in the workspace:
   - JSDOM-backed `vitest` runs are still blocked by the existing `html-encoding-sniffer` / `@exodus/bytes` ESM worker failure
   - `bun run release:linux:install*` currently fails on Node 18 because `scripts/sync-canonical-icons.mjs` uses JSON import attributes; use the direct Bun/Cargo build path until Node is upgraded

@@ -27,6 +27,7 @@ import {
 } from './iconTheme';
 import { type LoadedOverlayShader, loadShaderFromSource, deriveShaderId, deriveShaderName, isFrontendShaderFile } from '../components/shaderRuntime';
 import { isFrontendAnimationFile } from '../components/animationRuntime';
+import { getManagedContentDirectory } from './appContentDirectories';
 import { joinPlatformPath } from './platform';
 import { OVERLAY_SHELL_BLUEPRINTS } from './shellBlueprints';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
@@ -138,17 +139,16 @@ export interface ThemePackageLoadOptions {
 }
 
 export const themeSystemConfig = {
-  themesDirectory: resolveThemesDirectory(),
+  get themesDirectory(): string {
+    return resolveThemesDirectory();
+  },
   manifestNames: ['theme.json', 'theme.toml', 'manifest.json', 'manifest.toml'] as const,
   packageShadersDirectoryName: 'shaders',
   packageAnimationsDirectoryName: 'animations',
-} as const;
+};
 
 function resolveThemesDirectory(): string {
-  const configured = (import.meta.env as {
-    VITE_OVERLAYTERM_THEMES_DIR?: string;
-  }).VITE_OVERLAYTERM_THEMES_DIR?.trim();
-  return configured && configured.length > 0 ? configured : 'themes';
+  return getManagedContentDirectory('themes');
 }
 
 function asRecord(value: unknown): LooseRecord | null {

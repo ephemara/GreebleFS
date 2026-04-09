@@ -96,6 +96,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - authored shader polling in `App.tsx`
   - authored animation polling in `App.tsx`
   - explorer entry-size root watching in `FileExplorer.tsx`
+- Managed content roots now split by runtime mode:
+  - `tauri dev` keeps repo-relative `plugins/`, `themes/`, `shaders/`, and `animations/` so authoring stays in the workspace
+  - installed/release builds resolve those directories under Tauri `AppLocalData` instead of creating top-level `$HOME/plugins`, `$HOME/themes`, `$HOME/shaders`, `$HOME/animations`, or `$HOME/Screenshots`
+  - `src/config/appContentDirectories.ts` owns that bootstrap and the legacy-home-path detection/migration rules
 - Production/default behavior is manual refresh:
   - Plugins panel `Refresh`
   - Settings `Refresh Shaders`
@@ -157,12 +161,17 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `bun run test:unit`
 - `bun run test:browser`
 - `bun run build`
+- `bash ./install.sh`
+- `bash ./install.sh --launch`
+- `bun run release:linux:install`
 
 ## Common Errors / Lessons Learned
 
 - Repo-wide `npx tsc --noEmit` is currently red on several pre-existing generated-contract and test typing issues unrelated to the workbench/explorer theme system. The narrowed command above now only leaves `src/runtime/useFolderPluginRuntime.ts` as an unrelated pre-existing failure.
 - JSDOM-backed Vitest runs currently fail in this workspace because `html-encoding-sniffer` requires an ESM dependency through a CommonJS path. Node-environment tests still work, so keep pure logic/package-loader tests runnable there until the dependency issue is fixed.
-- `bun run build` and the Linux release wrapper currently assume a newer Node runtime than the machine provides. On Node 18 hosts, run `bun scripts/sync-canonical-icons.mjs`, `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`, `bunx vite build`, and `cargo build --manifest-path src-tauri/Cargo.toml --release`, then install the produced binary manually until Node is upgraded.
+- The local Linux installer now avoids the old Node/Tauri wrapper path. `install.sh` and `scripts/build-and-install-linux-local-release.sh` build with Bun + Cargo directly, then install into `~/.local/opt/overlayterm`.
+- The local Linux installer now also seeds the managed content directories into `~/.local/share/co.overlayterm.app/{plugins,themes,shaders,animations}` so the installed release has writable runtime content without polluting the top level of `$HOME`.
+- Vite still prints a Node 18 warning during builds, but `bunx vite build` succeeds in this workspace and the installer completes successfully on that host setup.
 - The explorer component is large and performance-sensitive. Route new chrome/metric changes through `src/config/explorerTheme.ts` instead of scattering new magic numbers through `FileExplorer.tsx`.
 - If the Linux/native overlay appears on the wrong display, inspect the monitor-resolution path in `App.tsx` before touching Rust window flags. The frontend now owns monitor selection and overlay geometry; `windowApplyMode` should only apply the chosen presentation atomically.
 - Theme package manifests can now carry app-wide shell structure via `theme.workbench` and explorer-specific structure via `theme.explorer`; prefer those over ad hoc `cssVars` whenever a behavior or metric deserves a named contract.

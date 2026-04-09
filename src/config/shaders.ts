@@ -1,3 +1,4 @@
+import { getManagedContentDirectory } from './appContentDirectories';
 import { resolveRuntimeAssetPollingEnabled } from './runtimeAssetPolling';
 
 export const overlayShaderSurfaces = [
@@ -21,20 +22,19 @@ export const overlayShaderSurfaces = [
 export type OverlayShaderSurfaceId = typeof overlayShaderSurfaces[number]['id'];
 
 export function resolveShadersDirectory(): string {
-  const configured = (import.meta.env as {
-    VITE_OVERLAYTERM_SHADERS_DIR?: string;
-  }).VITE_OVERLAYTERM_SHADERS_DIR?.trim();
-  return configured && configured.length > 0 ? configured : 'shaders';
+  return getManagedContentDirectory('shaders');
 }
 
 export const shaderSystemConfig = {
-  shadersDirectory: resolveShadersDirectory(),
+  get shadersDirectory(): string {
+    return resolveShadersDirectory();
+  },
   frontendExtensions: ['tsx', 'ts', 'jsx', 'js'] as const,
   runtimeModuleName: 'overlayterm-shader',
   runtimeAssetPollingEnabled: resolveRuntimeAssetPollingEnabled(),
   scanIntervalMs: 2000,
   fallbackShaderId: 'none',
-} as const;
+};
 
 export type FrontendShaderExtension =
   typeof shaderSystemConfig.frontendExtensions[number];
