@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  CONTENT_BROWSER_DOCK_EXPLORER_INSTANCE_ID,
   EXPLORER_LEGACY_BOOKMARKS_KEY,
   EXPLORER_STATE_BACKUP_KEY,
   EXPLORER_STATE_STORAGE_KEY,
@@ -110,27 +109,29 @@ describe('explorerStore persistence', () => {
     expect(useExplorerStore.getState().persistence.status).toBe('restored-backup');
   });
 
-  it('persists drawer and dock explorer sessions independently', () => {
+  it('persists named explorer sessions independently', () => {
     const store = useExplorerStore.getState();
+    const compactExplorerInstanceId = 'compact-overlay';
+    const workspaceExplorerInstanceId = 'workspace-secondary';
 
-    store.updateSessionForInstance('content-browser-drawer', {
+    store.updateSessionForInstance(compactExplorerInstanceId, {
       currentPath: 'M:\\Drawer',
       search: 'props',
       sourcesVisible: false,
     });
-    store.copySession('content-browser-drawer', CONTENT_BROWSER_DOCK_EXPLORER_INSTANCE_ID);
-    store.updateSessionForInstance(CONTENT_BROWSER_DOCK_EXPLORER_INSTANCE_ID, {
+    store.copySession(compactExplorerInstanceId, workspaceExplorerInstanceId);
+    store.updateSessionForInstance(workspaceExplorerInstanceId, {
       currentPath: 'M:\\Dock',
       search: 'materials',
     });
 
     const hydrated = loadExplorerPersistedState(window.localStorage);
-    expect(hydrated.sessions['content-browser-drawer']).toMatchObject({
+    expect(hydrated.sessions[compactExplorerInstanceId]).toMatchObject({
       currentPath: 'M:\\Drawer',
       search: 'props',
       sourcesVisible: false,
     });
-    expect(hydrated.sessions[CONTENT_BROWSER_DOCK_EXPLORER_INSTANCE_ID]).toMatchObject({
+    expect(hydrated.sessions[workspaceExplorerInstanceId]).toMatchObject({
       currentPath: 'M:\\Dock',
       search: 'materials',
       sourcesVisible: false,

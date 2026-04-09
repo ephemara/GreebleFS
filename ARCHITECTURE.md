@@ -21,9 +21,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/panels/panelRegistry.tsx`
   Built-in panel registration and prop wiring.
 - `src/components/FileExplorer.tsx`
-  Main explorer shell, navigation, preview, standard layout modes, experimental explorer runtimes, and per-instance explorer sessions (`primary`, content-browser drawer, content-browser dock).
-- `src/components/WorkbenchContentBrowserDock.tsx`
-  Dedicated UE-style content-browser drawer/dock surface that mounts `FileExplorer` as a workbench dock region instead of a tabbed panel.
+  Main explorer shell, navigation, preview, standard layout modes, experimental explorer runtimes, and the compact dock presentation used when the app switches into overlay mode.
 - `src/components/explorer/ExplorerSideRail.tsx`
   Explorer rail, bookmarks, drives, and bookmark authoring.
 - `src/config/appearance.ts`
@@ -39,15 +37,15 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/config/workbenchRenderRuntime.ts`
   Resolves the active workbench interaction runtime from the theme engine manifest and layout profile.
 - `src/config/layoutProfiles.ts`
-  Built-in and external layout manifest normalization, including the `contentBrowserDock` contract and legacy `compact-dock` compatibility mapping.
+  Built-in and external layout manifest normalization for shell blueprints, pinned panels, control docks, and top/bottom chrome behavior.
 - `src/config/themePackages.ts`
   Theme package discovery and manifest loading from `themes/`.
 - `src/components/WorkbenchNavigationSurface.tsx`
   Runtime-swappable launcher surface for cross-axis, channel-grid, desktop, and tabbed shells.
 - `src/store/explorerStore.ts`
-  Persisted explorer rail plus per-instance explorer session snapshots.
+  Persisted explorer rail plus named explorer session snapshots.
 - `src/store/settingsStore.ts`
-  Persisted layout/profile settings, including per-profile content-browser dock state and native `windowMode` presentation settings.
+  Persisted layout/profile settings and the native `windowMode` presentation toggle.
 
 ## Theme / Workbench Architecture
 
@@ -82,15 +80,18 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `channel-launcher`
   - `desktop-stack`
 - `App.tsx` now uses that runtime to swap navigation behavior and content presentation, and `OverlayPanelDefinition.navigation` metadata in `src/panels/panelRegistry.tsx` gives render runtimes enough structure to regroup panels without hardcoded one-off app logic.
-- Layout profiles can now declare `contentBrowserDock`, which makes the UE-style content browser a first-class shell surface instead of a fake pinned explorer panel.
-- The dock contract currently supports:
-  - `mode: 'drawer-and-tab'`
-  - `defaultPlacement: 'bottom' | 'left' | 'right'`
-  - `defaultPresentation: 'drawer' | 'docked'`
-  - `defaultOpen`
-  - persisted `drawerSize` and `dockSize`
-- Legacy external manifests that still pin the explorer with `mode: 'compact-dock'` are normalized into the new dock contract and the legacy pinned explorer entry is removed so the browser does not render twice.
-- Built-in profile `ue-content-browser` now opens a persistent bottom dock by default and keeps the main tabbed surface focused on the rest of the workbench.
+- The shell is a hybrid presentation system again:
+  - `settings.terminal.windowMode === 'windowed'` is the larger application shell
+  - `settings.terminal.windowMode === 'overlay'` is the compact dock shell
+  - `App.tsx` forces the explorer forward when entering overlay mode and passes `explorerLayoutMode: 'compact-dock'` into the explorer panel wiring
+- Active explorer shell controls now belong to the command-center top bar instead of the explorer toolbar:
+  - sources visibility
+  - focus search
+  - experimental mode
+  - shell layout preset
+  - explorer view mode
+  - preview toggle
+- Layout profiles still shape the shell through `shellBlueprint`, `chrome`, `controlDock`, `interaction`, and optional pinned panels. They do not define a separate content-browser drawer contract.
 - `FileExplorer.tsx` consumes the resolved explorer recipe and applies it to:
   - shell chrome
   - rail placement
@@ -103,14 +104,11 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `FileExplorer.tsx` also layers user-controlled explorer session state on top of the theme recipe:
   - persisted inline preview enable/disable
   - persisted shell layout presets (`balanced`, `navigator`, `focus`, `inspector`)
-  - persisted per-instance path/history/search/layout/preview/source-panel state
+  - persisted path/history/search/layout/preview/source-panel state
   - shell presets can hide the rail or move the preview pane without requiring a theme swap
-- `src/store/explorerStore.ts` no longer assumes one global explorer session. The primary explorer, content drawer, and content dock persist independently and can copy state on first drawer-to-dock promotion.
-- `FileExplorer.tsx` now shares directory/search result caches across explorer instances so opening drawer + dock on the same folder does not duplicate backend reads unless a mutation invalidates the cache.
-- Closed content-browser surfaces unmount, which is the current guarantee that drawer/dock previews and model loads do not keep running in the background.
-- Overlay/window presentation is now explicitly separate from content-browser docking:
-  - `settings.terminal.windowMode` controls native `overlay` vs `windowed`
-  - `layout.contentBrowserDockByProfile` controls explorer drawer/dock behavior
+- `src/store/explorerStore.ts` supports named explorer sessions, but the shipping dock behavior is the same explorer surface rendered in compact mode rather than a separate drawer/dock subsystem.
+- `FileExplorer.tsx` shares directory/search result caches across explorer sessions so alternate surfaces do not duplicate backend reads unless a mutation invalidates the cache.
+- `FileExplorer.tsx` still owns file-centric actions like search scope, refresh, and create file/folder, but embedded shell-level layout toggles are suppressed when the explorer is hosted inside the command center.
 - Overlay monitor placement is now resolved from the current or last-active monitor instead of always using the primary monitor, and `computeOverlayWindowLayout()` now left-anchors the overlay on X instead of centering it.
 - The explorer now ships three experimental folder-view runtimes behind the Labs control:
   - `adaptive-semantic-grid`
@@ -154,6 +152,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 
 - Repo-wide `npx tsc --noEmit` is currently red on several pre-existing generated-contract and test typing issues unrelated to the workbench/explorer theme system. The narrowed command above now only leaves `src/runtime/useFolderPluginRuntime.ts` as an unrelated pre-existing failure.
 - JSDOM-backed Vitest runs currently fail in this workspace because `html-encoding-sniffer` requires an ESM dependency through a CommonJS path. Node-environment tests still work, so keep pure logic/package-loader tests runnable there until the dependency issue is fixed.
+- `bun run build` and the Linux release wrapper currently assume a newer Node runtime than the machine provides. On Node 18 hosts, run `bun scripts/sync-canonical-icons.mjs`, `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`, `bunx vite build`, and `cargo build --manifest-path src-tauri/Cargo.toml --release`, then install the produced binary manually until Node is upgraded.
 - The explorer component is large and performance-sensitive. Route new chrome/metric changes through `src/config/explorerTheme.ts` instead of scattering new magic numbers through `FileExplorer.tsx`.
 - If the Linux/native overlay appears on the wrong display, inspect the monitor-resolution path in `App.tsx` before touching Rust window flags. The frontend now owns monitor selection and overlay geometry; `windowApplyMode` should only apply the chosen presentation atomically.
 - Theme package manifests can now carry app-wide shell structure via `theme.workbench` and explorer-specific structure via `theme.explorer`; prefer those over ad hoc `cssVars` whenever a behavior or metric deserves a named contract.

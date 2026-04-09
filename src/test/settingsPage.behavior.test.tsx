@@ -98,7 +98,7 @@ describe('SettingsPage behavior', () => {
     expect(screen.getByText('Core Workflows')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Terminal Settings' }));
-    expect(screen.getByText('Windowed and overlay presentation, integrated shell defaults, and external terminal handoff.')).toBeInTheDocument();
+    expect(screen.getByText('Application mode, dock mode, integrated shell defaults, and external terminal handoff.')).toBeInTheDocument();
 
     await user.click(findSectionButton('Overview'));
     await user.click(screen.getByRole('button', { name: 'Open Plugins Folder' }));
@@ -261,7 +261,7 @@ describe('SettingsPage behavior', () => {
     renderSettingsPage();
 
     await user.click(findSectionButton('Terminal'));
-    await user.click(screen.getByRole('button', { name: /Windowed Mode/ }));
+    await user.click(screen.getByRole('button', { name: /Application Mode/ }));
 
     await waitFor(() => {
       expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('windowed');
@@ -273,7 +273,7 @@ describe('SettingsPage behavior', () => {
     expect(useSettingsStore.getState().settings.terminal.windowedWidth).toBe(1560);
     expect(useSettingsStore.getState().settings.terminal.windowedHeight).toBe(960);
 
-    await user.click(screen.getByRole('button', { name: /Overlay Mode/ }));
+    await user.click(screen.getByRole('button', { name: /Dock Mode/ }));
 
     await waitFor(() => {
       expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('overlay');

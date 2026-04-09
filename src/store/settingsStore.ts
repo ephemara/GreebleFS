@@ -53,7 +53,6 @@ import {
 } from '../config/screenshots';
 import {
   getDefaultLayoutProfile,
-  type LayoutContentBrowserDockPlacement,
 } from '../config/layoutProfiles';
 
 // ============================================================================
@@ -175,22 +174,12 @@ export interface LayoutSettings {
   activeProfileId: string;
   configPath: string;
   panelStateByProfile: Record<string, LayoutPanelState>;
-  contentBrowserDockByProfile: Record<string, LayoutContentBrowserDockState>;
 }
 
 export interface LayoutPanelState {
   openPanelIds: string[];
   activePanelId: string | null;
   dismissedPanelIds: string[];
-}
-
-export interface LayoutContentBrowserDockState {
-  drawerOpen: boolean;
-  dockOpen: boolean;
-  dockCreated: boolean;
-  placement: LayoutContentBrowserDockPlacement;
-  drawerSize: number | null;
-  dockSize: number | null;
 }
 
 export interface Settings {
@@ -242,10 +231,6 @@ export function normalizeExplorerFolderClickMode(value: unknown): ExplorerFolder
   return value === 'single' ? 'single' : 'double';
 }
 
-function normalizeContentBrowserDockPlacement(value: unknown): LayoutContentBrowserDockPlacement {
-  return value === 'left' ? 'left' : value === 'right' ? 'right' : 'bottom';
-}
-
 function normalizeExplorerSettings(
   base: ExplorerSettings,
   updates?: Partial<ExplorerSettings>,
@@ -280,20 +265,6 @@ function normalizeSavedWindowDimension(value: unknown, fallback: number, min: nu
   }
 
   return Math.max(Math.round(value), min);
-}
-
-const CONTENT_BROWSER_DOCK_SIZE_MIN = 220;
-const CONTENT_BROWSER_DOCK_SIZE_MAX = 720;
-
-function normalizeOptionalDockSize(value: unknown): number | null {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return null;
-  }
-
-  return Math.max(
-    CONTENT_BROWSER_DOCK_SIZE_MIN,
-    Math.min(CONTENT_BROWSER_DOCK_SIZE_MAX, Math.round(value)),
-  );
 }
 
 function normalizeTerminalSettings(
@@ -580,7 +551,6 @@ export const defaultSettings: Settings = {
     activeProfileId: getDefaultLayoutProfile().id,
     configPath: '',
     panelStateByProfile: {},
-    contentBrowserDockByProfile: {},
   },
 };
 
@@ -606,33 +576,6 @@ function normalizePanelStateByProfile(value: unknown): Record<string, LayoutPane
     Object.entries(value as Record<string, unknown>).map(([profileId, panelState]) => [
       profileId,
       normalizeLayoutPanelState(panelState),
-    ]),
-  );
-}
-
-function normalizeLayoutContentBrowserDockState(value: unknown): LayoutContentBrowserDockState {
-  const source = value && typeof value === 'object' ? value as Partial<LayoutContentBrowserDockState> : {};
-  return {
-    drawerOpen: Boolean(source.drawerOpen),
-    dockOpen: Boolean(source.dockOpen),
-    dockCreated: Boolean(source.dockCreated),
-    placement: normalizeContentBrowserDockPlacement(source.placement),
-    drawerSize: normalizeOptionalDockSize(source.drawerSize),
-    dockSize: normalizeOptionalDockSize(source.dockSize),
-  };
-}
-
-function normalizeContentBrowserDockByProfile(
-  value: unknown,
-): Record<string, LayoutContentBrowserDockState> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
-  }
-
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).map(([profileId, dockState]) => [
-      profileId,
-      normalizeLayoutContentBrowserDockState(dockState),
     ]),
   );
 }
@@ -682,9 +625,6 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
       ...(imported as Partial<Settings> | undefined)?.layout,
       panelStateByProfile: normalizePanelStateByProfile(
         (imported as Partial<Settings> | undefined)?.layout?.panelStateByProfile ?? base.layout.panelStateByProfile,
-      ),
-      contentBrowserDockByProfile: normalizeContentBrowserDockByProfile(
-        (imported as Partial<Settings> | undefined)?.layout?.contentBrowserDockByProfile ?? base.layout.contentBrowserDockByProfile,
       ),
     },
   };

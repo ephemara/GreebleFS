@@ -38,13 +38,12 @@ describe('layoutProfiles', () => {
 
     const profile = resolveLayoutProfile(manifest, 'navigator-bottom');
     expect(profile.label).toBe('Navigator XL');
-    expect(profile.pinnedPanels).toEqual([]);
-    expect(profile.contentBrowserDock).toMatchObject({
-      defaultPlacement: 'left',
-      defaultPresentation: 'docked',
-      defaultOpen: true,
-      dockSize: 420,
-    });
+    expect(profile.pinnedPanels).toEqual([{
+      panelId: 'explorer',
+      side: 'left',
+      size: 420,
+      mode: 'compact-dock',
+    }]);
     expect(profile.interaction.primaryAxisOwner).toBe('pinned-rail');
     expect(profile.interaction.commandOwner).toBe('chrome');
     expect(profile.interaction.backBehavior).toBe('overlay-first');
@@ -77,11 +76,9 @@ describe('layoutProfiles', () => {
   it('cycles layout ids in manifest order', () => {
     const firstId = BUILT_IN_LAYOUT_MANIFEST.profiles[0]?.id ?? '';
     const secondId = BUILT_IN_LAYOUT_MANIFEST.profiles[1]?.id ?? '';
-    const thirdId = BUILT_IN_LAYOUT_MANIFEST.profiles[2]?.id ?? '';
 
     expect(getNextLayoutProfileId(BUILT_IN_LAYOUT_MANIFEST, firstId)).toBe(secondId);
-    expect(getNextLayoutProfileId(BUILT_IN_LAYOUT_MANIFEST, secondId)).toBe(thirdId);
-    expect(getNextLayoutProfileId(BUILT_IN_LAYOUT_MANIFEST, thirdId)).toBe(firstId);
+    expect(getNextLayoutProfileId(BUILT_IN_LAYOUT_MANIFEST, secondId)).toBe(firstId);
   });
 
   it('keeps navigator-bottom as classic dock with only the bar flipped', () => {
@@ -91,7 +88,6 @@ describe('layoutProfiles', () => {
     expect(profile.shellBlueprint).toBe('classic-dock');
     expect(profile.chrome.barPosition).toBe('bottom');
     expect(profile.controlDock).toEqual(classicProfile.controlDock);
-    expect(profile.contentBrowserDock).toEqual(classicProfile.contentBrowserDock);
     expect(profile.pinnedPanels).toEqual([]);
     expect(classicProfile.behavior.defaultActivePanelId).toBe('explorer');
     expect(profile.behavior.defaultActivePanelId).toBe('explorer');
@@ -115,20 +111,5 @@ describe('layoutProfiles', () => {
     });
 
     expect(manifest.profiles[0]?.shellBlueprint).toBe('handheld-dual-screen');
-  });
-
-  it('ships a ue-style content browser profile with a persistent bottom dock', () => {
-    const profile = resolveLayoutProfile(BUILT_IN_LAYOUT_MANIFEST, 'ue-content-browser');
-
-    expect(profile.contentBrowserDock).toEqual({
-      mode: 'drawer-and-tab',
-      defaultPlacement: 'bottom',
-      defaultPresentation: 'docked',
-      defaultOpen: true,
-      drawerSize: 320,
-      dockSize: 336,
-    });
-    expect(profile.behavior.defaultActivePanelId).toBe('terminal');
-    expect(profile.behavior.enforcedOpenPanelIds).toEqual(['terminal']);
   });
 });

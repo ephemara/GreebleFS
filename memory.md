@@ -1,51 +1,53 @@
 # GreebleFS Memory
 
-## 2026-04-09 — UE Content Browser Dock Overhaul
+## 2026-04-09 — Hybrid App Mode / Dock Mode Correction
 
-- Reframed the UE-style content browser as a first-class layout contract instead of a side effect of pinned explorer panels or native overlay window mode.
-- `src/config/layoutProfiles.ts` now exposes `contentBrowserDock` on `LayoutProfile` with:
-  - `mode: 'drawer-and-tab'`
-  - `defaultPlacement`
-  - `defaultPresentation`
-  - `defaultOpen`
-  - `drawerSize`
-  - `dockSize`
-- Legacy external layout manifests that still use a pinned explorer with `mode: 'compact-dock'` now normalize into the new dock contract and drop the old pinned explorer entry so the browser does not render twice.
-- Added built-in profile `ue-content-browser`:
-  - bottom dock by default
-  - persistent dock open on launch
-  - main tabbed workbench defaults to `terminal` instead of duplicating the explorer as a tab
-- `src/store/settingsStore.ts` now persists per-profile content-browser dock state in `settings.layout.contentBrowserDockByProfile`.
-- `src/store/explorerStore.ts` now persists explorer sessions by stable instance id instead of one global snapshot:
-  - `primary`
-  - `content-browser-drawer`
-  - `content-browser-dock`
-- Explorer sessions now persist `sourcesVisible` per instance in addition to path/history/search/layout/preview state.
-- `src/components/FileExplorer.tsx` now:
-  - seeds from an explicit explorer instance id
-  - supports `surfaceKind: 'workspace' | 'drawer' | 'dock'`
-  - syncs drawer/dock source-panel visibility from the per-instance store
-  - shares directory/search result caches across explorer instances
-  - invalidates those caches on create/rename/delete/move/write mutations
-- Added `src/components/WorkbenchContentBrowserDock.tsx` as the dedicated shell dock surface. It:
-  - renders either the temporary drawer or the persistent dock
-  - keeps hidden surfaces unmounted so previews/model loads do not continue in the background
-  - exposes explicit shell actions for dock/undock/close/toggle-sources/focus-search
-- `src/App.tsx` now routes explorer activation into the new content-browser controller when a layout profile declares `contentBrowserDock`, instead of opening the explorer as a normal tab.
-- Added focused App-level RTL coverage in `src/test/app.contentBrowserDock.test.tsx` for:
-  - UE profile persistent-dock behavior
-  - first drawer-to-dock promotion copying drawer session state into the dock
-  - repeat dock promotion preserving an existing dock session instead of overwriting it
-  - windowed/overlay presentation toggles preserving dock-managed explorer state
-- Native presentation copy is now `Windowed/Overlay` in the shell/settings/hotkeys so `dock` refers only to the content-browser system.
-- Linux/native overlay positioning was corrected on the frontend side:
-  - monitor selection now prefers the current or last-active monitor instead of `primaryMonitor()`
-  - `computeOverlayWindowLayout()` now edge-anchors the overlay on X instead of centering it
-- Focused validation that passed:
-  - `bunx vitest run src/test/app.contentBrowserDock.test.tsx src/test/layoutProfiles.test.ts src/test/explorerStore.test.ts src/test/overlayWindow.test.ts src/test/settingsPage.behavior.test.tsx`
+- Corrected the shell model after the drawer misread:
+  - `windowed` is the larger application shell
+  - `overlay` is the compact dock shell
+  - dock mode is not a separate in-app content drawer
+- `src/App.tsx` now drives the explorer directly from `settings.terminal.windowMode` again:
+  - `windowed` passes `explorerLayoutMode: 'full'`
+  - `overlay` passes `explorerLayoutMode: 'compact-dock'`
+  - entering dock mode forces the explorer panel forward so the compact shell behaves like the portable UE-style browser
+- Explorer shell controls were lifted back into the command-center top bar:
+  - sources visibility
+  - focus search
+  - experimental mode cycling
+  - shell layout cycling
+  - view mode cycling
+  - preview toggle
+- `src/components/FileExplorer.tsx` no longer exposes drawer/dock surface semantics. It now renders as the same explorer surface in either `full` or `compact-dock` mode, and embedded shell-layout/view/preview controls are suppressed when the command center owns them in the top bar.
+- Removed the incorrect drawer/dock subsystem:
+  - deleted `src/components/WorkbenchContentBrowserDock.tsx`
+  - removed `contentBrowserDock` from `src/config/layoutProfiles.ts`
+  - removed `layout.contentBrowserDockByProfile` from `src/store/settingsStore.ts`
+  - removed the old content-browser-specific explorer instance ids from `src/store/explorerStore.ts`
+- Restored shell copy and controls back to the actual product language:
+  - `App/Dock Mode` in the shell and hotkeys
+  - `Application Mode` / `Dock Mode` in settings
+- Added focused app coverage in `src/test/app.dockMode.test.tsx` for:
+  - full explorer rendering in application mode
+  - compact explorer rendering in dock mode
+  - foregrounding explorer when switching into dock mode
+- Updated supporting tests to match the corrected model:
+  - `src/test/layoutProfiles.test.ts`
+  - `src/test/settingsPage.behavior.test.tsx`
+  - `src/test/explorerStore.test.ts`
+- Linux/native overlay positioning improvements remain in place:
+  - monitor selection prefers the current or last-active monitor instead of `primaryMonitor()`
+  - `computeOverlayWindowLayout()` left-anchors the overlay on X instead of centering it
+- Validation that passed:
   - `bunx vite build`
-- Known follow-up risk:
-  - the new App coverage is intentionally narrow and mock-heavy; the next hardening pass should add browser-level proof around the real dock surface UI if launcher/menu regressions start slipping past RTL.
+  - `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - `cargo build --manifest-path src-tauri/Cargo.toml --release`
+- Validation/workflow blockers still present in the workspace:
+  - JSDOM-backed `vitest` runs are still blocked by the existing `html-encoding-sniffer` / `@exodus/bytes` ESM worker failure
+  - `bun run release:linux:install*` currently fails on Node 18 because `scripts/sync-canonical-icons.mjs` uses JSON import attributes; use the direct Bun/Cargo build path until Node is upgraded
+- Release binary was rebuilt and reinstalled manually to:
+  - `/home/ephemara/.local/opt/overlayterm/overlayterm`
+  - symlink `/home/ephemara/.local/bin/overlayterm`
+  - desktop entry `/home/ephemara/.local/share/applications/co.overlayterm.app.desktop`
 
 ## 2026-04-09 — Explorer Experimental Layouts Completed
 

@@ -173,7 +173,6 @@ const EXPLORER_ZOOM_SIZE_TWEEN = {
   duration: 0.18,
   ease: [0.22, 1, 0.36, 1] as const,
 };
-type ExplorerSurfaceKind = 'workspace' | 'drawer' | 'dock';
 
 type ExplorerSearchCacheEntry = {
   results: FileSearchResult[];
@@ -1854,7 +1853,7 @@ interface FileExplorerProps {
   pluginActions?: OverlayPluginExplorerActionContribution[];
   layoutMode?: ExplorerLayoutMode;
   instanceId?: ExplorerInstanceId;
-  surfaceKind?: ExplorerSurfaceKind;
+  chromeControlSurface?: 'toolbar' | 'topbar';
   focusAddressBarSignal?: number;
   repositoryPicker?: {
     active: boolean;
@@ -1874,7 +1873,7 @@ export function FileExplorer({
   pluginActions = [],
   layoutMode = 'full',
   instanceId = PRIMARY_EXPLORER_INSTANCE_ID,
-  surfaceKind = 'workspace',
+  chromeControlSurface = 'toolbar',
   focusAddressBarSignal = 0,
   repositoryPicker = null,
 }: FileExplorerProps) {
@@ -1924,6 +1923,12 @@ export function FileExplorer({
   const storedSourcesVisible = useExplorerStore(
     state => state.sessions[instanceId]?.sourcesVisible ?? defaultExplorerSession.sourcesVisible,
   );
+  const storedPreviewEnabled = useExplorerStore(
+    state => state.sessions[instanceId]?.previewEnabled ?? defaultExplorerSession.previewEnabled,
+  );
+  const storedShellLayoutId = useExplorerStore(
+    state => state.sessions[instanceId]?.shellLayoutId ?? defaultExplorerSession.shellLayoutId,
+  );
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
   const explorerSearchScopeId = useId();
   const explorerSearchScope = useMemo(
@@ -1931,7 +1936,7 @@ export function FileExplorer({
     [explorerSearchScopeId],
   );
   const isCompactDock = layoutMode === 'compact-dock';
-  const isContentBrowserSurface = surfaceKind === 'drawer' || surfaceKind === 'dock';
+  const showsGlobalChromeControls = chromeControlSurface === 'topbar';
   const explorerTheme = useMemo(
     () => resolveExplorerThemeRecipe(appearance),
     [appearance],
@@ -2045,6 +2050,14 @@ export function FileExplorer({
   useEffect(() => {
     setSourcesVisible(storedSourcesVisible);
   }, [storedSourcesVisible]);
+
+  useEffect(() => {
+    setPreviewEnabled(storedPreviewEnabled);
+  }, [storedPreviewEnabled]);
+
+  useEffect(() => {
+    setShellLayoutId(storedShellLayoutId);
+  }, [storedShellLayoutId]);
 
   useEffect(() => {
     setSidebarWidth(current => Math.max(sidebarBounds.minWidth, Math.min(sidebarBounds.maxWidth, current)));
@@ -3720,11 +3733,7 @@ export function FileExplorer({
   const activeNewItemHeight = effectiveViewModeDefinition.presentation === 'grid'
     ? activeGridMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT
     : activeRowMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT;
-  const shouldRenderRail = isCompactDock
-    ? true
-    : isContentBrowserSurface
-      ? sourcesVisible
-      : shellLayout.showRail;
+  const shouldRenderRail = sourcesVisible && (isCompactDock || shellLayout.showRail);
   const hasPreview = !isCompactDock && previewEnabled && preview.type !== 'none';
   const searchModeLabel = searchIncludeContent ? 'Recursive search + text' : 'Recursive search (names only)';
   const gridZoomPercent = useMemo(
@@ -3772,7 +3781,7 @@ export function FileExplorer({
       visibleEntries,
     ],
   );
-  const effectiveRailPosition = isCompactDock || isContentBrowserSurface ? 'left' : explorerTheme.railPosition;
+  const effectiveRailPosition = isCompactDock ? 'left' : explorerTheme.railPosition;
   const idleEntrySurface = useMemo(
     () => getExplorerEntryStateSurface(explorerTheme, 'idle'),
     [explorerTheme],
@@ -5259,7 +5268,7 @@ export function FileExplorer({
           </button>
 
           {/* Toolbar buttons */}
-          {!isCompactDock && (
+          {!isCompactDock && !showsGlobalChromeControls && (
             <>
               <div
                 ref={experimentalMenuAnchorRef}

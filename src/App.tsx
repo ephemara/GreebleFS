@@ -17,6 +17,19 @@ import { FolderPluginRenderer, PluginsManager } from './components/PluginsManage
 import { CommandPalette, type OverlayCommandPaletteAction } from './components/CommandPalette';
 import { animationSystemConfig, resolvePreferredAnimationId } from './config/animations';
 import {
+  explorerExperimentalModes,
+  type ExplorerExperimentalViewMode,
+} from './config/explorerExperimentalModes';
+import {
+  explorerShellLayouts,
+  getExplorerShellLayoutDefinition,
+  type ExplorerShellLayoutId,
+} from './config/explorerShellLayouts';
+import {
+  explorerViewModes,
+  getExplorerViewModeDefinition,
+} from './config/explorerViewModes';
+import {
   resolveWorkbenchRenderRuntime,
   type ResolvedWorkbenchRenderRuntime,
 } from './config/workbenchRenderRuntime';
@@ -116,6 +129,11 @@ import {
   type OverlayWindowAnchor,
   type TerminalWindowMode,
 } from './store/settingsStore';
+import {
+  PRIMARY_EXPLORER_INSTANCE_ID,
+  defaultExplorerSession,
+  useExplorerStore,
+} from './store/explorerStore';
 import { useTerminalStore } from './store/terminalStore';
 
 const FRAME_PROBE_OUTPUT_PATH = (() => {
@@ -395,28 +413,37 @@ function App() {
   const [repositoryPickerRequestId, setRepositoryPickerRequestId] = useState(0);
   const [isRepositoryPickerActive, setIsRepositoryPickerActive] = useState(false);
   const [pendingRepositoryImports, setPendingRepositoryImports] = useState<string[]>([]);
+  const [explorerFocusAddressBarSignal, setExplorerFocusAddressBarSignal] = useState(0);
 
   const {
     settings,
     appearance,
+    explorerSettings,
     keybindings,
     layoutSettings,
     systemSettings,
     updateTerminal,
     updateAppearance,
+    updateExplorer,
     updateLayout,
     updateSystem,
   } = useSettingsStore(useShallow(state => ({
     settings: state.settings.terminal,
     appearance: state.settings.appearance,
+    explorerSettings: state.settings.explorer,
     keybindings: state.settings.keybindings,
     layoutSettings: state.settings.layout,
     systemSettings: state.settings.system,
     updateTerminal: state.updateTerminal,
     updateAppearance: state.updateAppearance,
+    updateExplorer: state.updateExplorer,
     updateLayout: state.updateLayout,
     updateSystem: state.updateSystem,
   })));
+  const primaryExplorerSession = useExplorerStore(
+    state => state.sessions[PRIMARY_EXPLORER_INSTANCE_ID] ?? defaultExplorerSession,
+  );
+  const updateExplorerSessionForInstance = useExplorerStore(state => state.updateSessionForInstance);
   const {
     initStore: initTerminalStore,
     addDirectoryBookmark,
@@ -619,6 +646,20 @@ function App() {
     [activeLayoutProfile],
   );
   const explorerPanelLayoutMode = windowMode === 'overlay' ? 'compact-dock' : 'full';
+  const activeExplorerShellLayout = useMemo(
+    () => getExplorerShellLayoutDefinition(primaryExplorerSession.shellLayoutId),
+    [primaryExplorerSession.shellLayoutId],
+  );
+  const activeExplorerViewMode = useMemo(
+    () => getExplorerViewModeDefinition(explorerSettings.viewMode),
+    [explorerSettings.viewMode],
+  );
+  const activeExplorerExperimentalMode = useMemo(() => {
+    if (explorerSettings.experimentalViewMode === 'off') {
+      return null;
+    }
+    return explorerExperimentalModes.find(mode => mode.id === explorerSettings.experimentalViewMode) ?? null;
+  }, [explorerSettings.experimentalViewMode]);
   const renderRuntime = useMemo(
     () => resolveWorkbenchRenderRuntime(resolvedAppearance, activeLayoutProfile),
     [activeLayoutProfile, resolvedAppearance],
@@ -653,6 +694,50 @@ function App() {
     setIsRepositoryPickerActive(true);
     setPanelOpenStateDirectly('explorer');
   }, [setPanelOpenStateDirectly]);
+  const handleFocusExplorerSearch = useCallback(() => {
+    setExplorerFocusAddressBarSignal(current => current + 1);
+    setPanelOpenStateDirectly('explorer');
+  }, [setPanelOpenStateDirectly]);
+  const handleToggleExplorerSources = useCallback(() => {
+    updateExplorerSessionForInstance(PRIMARY_EXPLORER_INSTANCE_ID, {
+      sourcesVisible: !primaryExplorerSession.sourcesVisible,
+    });
+    setPanelOpenStateDirectly('explorer');
+  }, [primaryExplorerSession.sourcesVisible, setPanelOpenStateDirectly, updateExplorerSessionForInstance]);
+  const handleCycleExplorerExperimentalMode = useCallback(() => {
+    const cycleOrder: ExplorerExperimentalViewMode[] = [
+      'off',
+      ...explorerExperimentalModes.map(mode => mode.id),
+    ];
+    const currentIndex = cycleOrder.findIndex(mode => mode === explorerSettings.experimentalViewMode);
+    const nextMode = cycleOrder[(currentIndex + 1 + cycleOrder.length) % cycleOrder.length] ?? 'off';
+    updateExplorer({ experimentalViewMode: nextMode });
+    setPanelOpenStateDirectly('explorer');
+  }, [explorerSettings.experimentalViewMode, setPanelOpenStateDirectly, updateExplorer]);
+  const handleCycleExplorerShellLayout = useCallback(() => {
+    const currentIndex = explorerShellLayouts.findIndex(layout => layout.id === activeExplorerShellLayout.id);
+    const nextLayout = explorerShellLayouts[(currentIndex + 1 + explorerShellLayouts.length) % explorerShellLayouts.length];
+    if (!nextLayout) {
+      return;
+    }
+    updateExplorerSessionForInstance(PRIMARY_EXPLORER_INSTANCE_ID, { shellLayoutId: nextLayout.id });
+    setPanelOpenStateDirectly('explorer');
+  }, [activeExplorerShellLayout.id, setPanelOpenStateDirectly, updateExplorerSessionForInstance]);
+  const handleCycleExplorerViewMode = useCallback(() => {
+    const currentIndex = explorerViewModes.findIndex(mode => mode.id === explorerSettings.viewMode);
+    const nextMode = explorerViewModes[(currentIndex + 1 + explorerViewModes.length) % explorerViewModes.length];
+    if (!nextMode) {
+      return;
+    }
+    updateExplorer({ viewMode: nextMode.id });
+    setPanelOpenStateDirectly('explorer');
+  }, [explorerSettings.viewMode, setPanelOpenStateDirectly, updateExplorer]);
+  const handleToggleExplorerPreview = useCallback(() => {
+    updateExplorerSessionForInstance(PRIMARY_EXPLORER_INSTANCE_ID, {
+      previewEnabled: !primaryExplorerSession.previewEnabled,
+    });
+    setPanelOpenStateDirectly('explorer');
+  }, [primaryExplorerSession.previewEnabled, setPanelOpenStateDirectly, updateExplorerSessionForInstance]);
   const handleCancelRepositoryImport = useCallback(() => {
     setIsRepositoryPickerActive(false);
   }, []);
@@ -1890,6 +1975,8 @@ function App() {
     () => [
       ...createBuiltInPanelDefinitions({
         appearance: resolvedAppearance,
+        explorerChromeControlSurface: 'topbar',
+        explorerFocusAddressBarSignal,
         explorerLayoutMode: explorerPanelLayoutMode,
         explorerRepoPicker: isRepositoryPickerActive
           ? {
@@ -1985,6 +2072,7 @@ function App() {
       repositoryPickerRequestId,
       resolvedAppearance,
       combinedThemePackages,
+      explorerFocusAddressBarSignal,
       explorerPanelLayoutMode,
       themePackagesError,
       themePackagesLoading,
@@ -2528,16 +2616,28 @@ function App() {
       openPanelIds={openPanelIds}
       pinnedPanelIds={pinnedPanelIds}
       activePanelId={activePanelId}
+      showExplorerControls={activePanelId === 'explorer'}
+      explorerExperimentalModeLabel={activeExplorerExperimentalMode?.shortLabel ?? 'Standard'}
+      explorerPreviewEnabled={primaryExplorerSession.previewEnabled}
+      explorerShellLayoutLabel={activeExplorerShellLayout.shortLabel}
+      explorerSourcesVisible={primaryExplorerSession.sourcesVisible}
+      explorerViewModeLabel={activeExplorerViewMode.shortLabel}
       onPanelSelect={handleSelectPanel}
       onPanelToggle={handleTogglePanel}
       onPanelClose={handleClosePanel}
       onPanelReorder={handleReorderPanels}
       onOpenSettings={handleOpenSettings}
       onCycleLayout={handleCycleLayout}
+      onCycleExplorerExperimentalMode={handleCycleExplorerExperimentalMode}
+      onCycleExplorerShellLayout={handleCycleExplorerShellLayout}
+      onCycleExplorerViewMode={handleCycleExplorerViewMode}
+      onFocusExplorerSearch={handleFocusExplorerSearch}
       onSelectLayoutProfile={(profileId) => updateLayout({ activeProfileId: profileId })}
       onSetWindowMode={(mode) => updateTerminal({ windowMode: mode })}
       onOpenCommandPalette={handleOpenCommandPalette}
       onToggleOverlayAnchor={handleToggleOverlayAnchor}
+      onToggleExplorerPreview={handleToggleExplorerPreview}
+      onToggleExplorerSources={handleToggleExplorerSources}
       onClose={() => { void hideOverlay(); }}
       accent={accent}
       opacity={clampedAppOpacity}
@@ -3195,16 +3295,28 @@ function TopBar({
   openPanelIds,
   pinnedPanelIds,
   activePanelId,
+  showExplorerControls,
+  explorerExperimentalModeLabel,
+  explorerPreviewEnabled,
+  explorerShellLayoutLabel,
+  explorerSourcesVisible,
+  explorerViewModeLabel,
   onPanelSelect,
   onPanelToggle,
   onPanelClose,
   onPanelReorder,
+  onCycleExplorerExperimentalMode,
+  onCycleExplorerShellLayout,
+  onCycleExplorerViewMode,
+  onFocusExplorerSearch,
   onOpenSettings,
   onCycleLayout,
   onSelectLayoutProfile,
   onSetWindowMode,
   onOpenCommandPalette,
   onToggleOverlayAnchor,
+  onToggleExplorerPreview,
+  onToggleExplorerSources,
   onClose,
   accent,
   opacity,
@@ -3234,16 +3346,28 @@ function TopBar({
   openPanelIds: string[];
   pinnedPanelIds: string[];
   activePanelId: string | null;
+  showExplorerControls: boolean;
+  explorerExperimentalModeLabel: string;
+  explorerPreviewEnabled: boolean;
+  explorerShellLayoutLabel: string;
+  explorerSourcesVisible: boolean;
+  explorerViewModeLabel: string;
   onPanelSelect: (panelId: string | null) => void;
   onPanelToggle: (panelId: string) => void;
   onPanelClose: (panelId: string) => void;
   onPanelReorder: (draggedId: string, targetId: string) => void;
+  onCycleExplorerExperimentalMode: () => void;
+  onCycleExplorerShellLayout: () => void;
+  onCycleExplorerViewMode: () => void;
+  onFocusExplorerSearch: () => void;
   onOpenSettings: () => void;
   onCycleLayout: () => void;
   onSelectLayoutProfile: (profileId: string) => void;
   onSetWindowMode: (mode: TerminalWindowMode) => void;
   onOpenCommandPalette: () => void;
   onToggleOverlayAnchor: () => void;
+  onToggleExplorerPreview: () => void;
+  onToggleExplorerSources: () => void;
   onClose: () => void;
   accent: string;
   opacity: number;
@@ -3866,6 +3990,162 @@ function TopBar({
           >
             <span>{overlayAnchor === 'top' ? 'Top Edge' : 'Bottom Edge'}</span>
           </button>
+        )}
+
+        {showExplorerControls && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              paddingLeft: 2,
+              marginRight: 4,
+            }}
+          >
+            <button
+              onClick={onToggleExplorerSources}
+              title={explorerSourcesVisible ? 'Hide explorer sources' : 'Show explorer sources'}
+              style={{
+                height: 22,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '0 7px',
+                borderRadius: workbench.metrics.controlRadius,
+                border: `1px solid ${explorerSourcesVisible ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
+                background: explorerSourcesVisible
+                  ? 'var(--overlay-workbench-chrome-button-active-bg)'
+                  : 'var(--overlay-workbench-chrome-button-bg)',
+                color: explorerSourcesVisible ? TEXT : MUTED,
+                fontSize: 'var(--overlay-workbench-chrome-meta-size)',
+                fontWeight: 700,
+                letterSpacing: 'var(--overlay-workbench-label-spacing)',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+              }}
+            >
+              <span>Sources</span>
+            </button>
+
+            <button
+              onClick={onFocusExplorerSearch}
+              title="Focus explorer search"
+              style={{
+                height: 22,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '0 7px',
+                borderRadius: workbench.metrics.controlRadius,
+                border: '1px solid var(--overlay-workbench-chrome-border)',
+                background: 'var(--overlay-workbench-chrome-button-bg)',
+                color: MUTED,
+                fontSize: 'var(--overlay-workbench-chrome-meta-size)',
+                fontWeight: 700,
+                letterSpacing: 'var(--overlay-workbench-label-spacing)',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+              }}
+            >
+              <span>Search</span>
+            </button>
+
+            <button
+              onClick={onCycleExplorerExperimentalMode}
+              title={`Cycle explorer labs mode (${explorerExperimentalModeLabel})`}
+              style={{
+                height: 22,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '0 7px',
+                borderRadius: workbench.metrics.controlRadius,
+                border: `1px solid ${explorerExperimentalModeLabel === 'Standard' ? 'var(--overlay-workbench-chrome-border)' : 'var(--overlay-workbench-chrome-button-active-border)'}`,
+                background: explorerExperimentalModeLabel === 'Standard'
+                  ? 'var(--overlay-workbench-chrome-button-bg)'
+                  : 'var(--overlay-workbench-chrome-button-active-bg)',
+                color: explorerExperimentalModeLabel === 'Standard' ? MUTED : TEXT,
+                fontSize: 'var(--overlay-workbench-chrome-meta-size)',
+                fontWeight: 700,
+                letterSpacing: 'var(--overlay-workbench-label-spacing)',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+              }}
+            >
+              <span>{explorerExperimentalModeLabel}</span>
+            </button>
+
+            <button
+              onClick={onCycleExplorerShellLayout}
+              title={`Cycle explorer shell layout (${explorerShellLayoutLabel})`}
+              style={{
+                height: 22,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '0 7px',
+                borderRadius: workbench.metrics.controlRadius,
+                border: '1px solid var(--overlay-workbench-chrome-border)',
+                background: 'var(--overlay-workbench-chrome-button-bg)',
+                color: MUTED,
+                fontSize: 'var(--overlay-workbench-chrome-meta-size)',
+                fontWeight: 700,
+                letterSpacing: 'var(--overlay-workbench-label-spacing)',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+              }}
+            >
+              <span>{explorerShellLayoutLabel}</span>
+            </button>
+
+            <button
+              onClick={onCycleExplorerViewMode}
+              title={`Cycle explorer view mode (${explorerViewModeLabel})`}
+              style={{
+                height: 22,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '0 7px',
+                borderRadius: workbench.metrics.controlRadius,
+                border: '1px solid var(--overlay-workbench-chrome-border)',
+                background: 'var(--overlay-workbench-chrome-button-bg)',
+                color: MUTED,
+                fontSize: 'var(--overlay-workbench-chrome-meta-size)',
+                fontWeight: 700,
+                letterSpacing: 'var(--overlay-workbench-label-spacing)',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+              }}
+            >
+              <span>{explorerViewModeLabel}</span>
+            </button>
+
+            <button
+              onClick={onToggleExplorerPreview}
+              title={explorerPreviewEnabled ? 'Disable explorer preview' : 'Enable explorer preview'}
+              style={{
+                height: 22,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '0 7px',
+                borderRadius: workbench.metrics.controlRadius,
+                border: `1px solid ${explorerPreviewEnabled ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
+                background: explorerPreviewEnabled
+                  ? 'var(--overlay-workbench-chrome-button-active-bg)'
+                  : 'var(--overlay-workbench-chrome-button-bg)',
+                color: explorerPreviewEnabled ? TEXT : MUTED,
+                fontSize: 'var(--overlay-workbench-chrome-meta-size)',
+                fontWeight: 700,
+                letterSpacing: 'var(--overlay-workbench-label-spacing)',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+              }}
+            >
+              <span>Preview</span>
+            </button>
+          </div>
         )}
 
         {layoutProfile.chrome.showPanelMenu && (

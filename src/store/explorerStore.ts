@@ -16,8 +16,6 @@ export const EXPLORER_STATE_BACKUP_KEY = 'overlayterm-explorer-state-v3.backup';
 export const EXPLORER_LEGACY_BOOKMARKS_KEY = 'fs-bookmarks-v2';
 export const EXPLORER_STATE_VERSION = 4;
 export const PRIMARY_EXPLORER_INSTANCE_ID = 'primary';
-export const CONTENT_BROWSER_DRAWER_EXPLORER_INSTANCE_ID = 'content-browser-drawer';
-export const CONTENT_BROWSER_DOCK_EXPLORER_INSTANCE_ID = 'content-browser-dock';
 const EXPLORER_PERSIST_DEBOUNCE_MS = (() => {
   // Vitest runs in a browser-like environment; keep persistence synchronous so unit tests
   // can assert immediately after calling store actions.
