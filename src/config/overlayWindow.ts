@@ -137,7 +137,7 @@ export function computeOverlayWindowLayout(args: {
   );
   const minX = args.workArea.position.x + physicalPadding;
   const maxX = Math.max(minX, args.workArea.position.x + args.workArea.size.width - width - physicalPadding);
-  const centeredX = args.workArea.position.x + Math.round((args.workArea.size.width - width) / 2);
+  const anchoredX = minX;
   const minY = args.workArea.position.y + physicalPadding;
   const maxY = Math.max(minY, args.workArea.position.y + args.workArea.size.height - height - physicalPadding);
   const anchoredY = args.overlayAnchor === 'top'
@@ -147,7 +147,7 @@ export function computeOverlayWindowLayout(args: {
   return {
     width,
     height,
-    x: clampValue(centeredX, minX, maxX),
+    x: clampValue(anchoredX, minX, maxX),
     y: clampValue(anchoredY, minY, maxY),
     healedHeight,
   };

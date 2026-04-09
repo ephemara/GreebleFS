@@ -155,8 +155,6 @@ export function WorkbenchContentBrowserDock({
       style={{
         display: 'flex',
         flexDirection: isBottomPlacement ? 'column' : 'row',
-        minWidth: 0,
-        minHeight: 0,
         width: isBottomPlacement ? '100%' : activeSize,
         minWidth: isBottomPlacement ? 0 : activeSize,
         maxWidth: isBottomPlacement ? '100%' : activeSize,

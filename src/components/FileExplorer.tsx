@@ -105,6 +105,7 @@ import {
 import { ResizablePane } from './ResizablePane';
 import {
   PRIMARY_EXPLORER_INSTANCE_ID,
+  defaultExplorerSession,
   useExplorerStore,
   type ExplorerDocumentViewMode,
   type ExplorerInstanceId,
@@ -1920,6 +1921,9 @@ export function FileExplorer({
     updateExplorerSessionForInstance: state.updateSessionForInstance,
     updateExplorerRail: state.updateRail,
   })));
+  const storedSourcesVisible = useExplorerStore(
+    state => state.sessions[instanceId]?.sourcesVisible ?? defaultExplorerSession.sourcesVisible,
+  );
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
   const explorerSearchScopeId = useId();
   const explorerSearchScope = useMemo(
@@ -2037,6 +2041,10 @@ export function FileExplorer({
     clientWidth: 0,
   });
   const isExperimentalViewEligible = !isCompactDock && search.trim().length === 0;
+
+  useEffect(() => {
+    setSourcesVisible(storedSourcesVisible);
+  }, [storedSourcesVisible]);
 
   useEffect(() => {
     setSidebarWidth(current => Math.max(sidebarBounds.minWidth, Math.min(sidebarBounds.maxWidth, current)));
