@@ -1,5 +1,52 @@
 # GreebleFS Memory
 
+## 2026-04-09 — UE Content Browser Dock Overhaul
+
+- Reframed the UE-style content browser as a first-class layout contract instead of a side effect of pinned explorer panels or native overlay window mode.
+- `src/config/layoutProfiles.ts` now exposes `contentBrowserDock` on `LayoutProfile` with:
+  - `mode: 'drawer-and-tab'`
+  - `defaultPlacement`
+  - `defaultPresentation`
+  - `defaultOpen`
+  - `drawerSize`
+  - `dockSize`
+- Legacy external layout manifests that still use a pinned explorer with `mode: 'compact-dock'` now normalize into the new dock contract and drop the old pinned explorer entry so the browser does not render twice.
+- Added built-in profile `ue-content-browser`:
+  - bottom dock by default
+  - persistent dock open on launch
+  - main tabbed workbench defaults to `terminal` instead of duplicating the explorer as a tab
+- `src/store/settingsStore.ts` now persists per-profile content-browser dock state in `settings.layout.contentBrowserDockByProfile`.
+- `src/store/explorerStore.ts` now persists explorer sessions by stable instance id instead of one global snapshot:
+  - `primary`
+  - `content-browser-drawer`
+  - `content-browser-dock`
+- Explorer sessions now persist `sourcesVisible` per instance in addition to path/history/search/layout/preview state.
+- `src/components/FileExplorer.tsx` now:
+  - seeds from an explicit explorer instance id
+  - supports `surfaceKind: 'workspace' | 'drawer' | 'dock'`
+  - syncs drawer/dock source-panel visibility from the per-instance store
+  - shares directory/search result caches across explorer instances
+  - invalidates those caches on create/rename/delete/move/write mutations
+- Added `src/components/WorkbenchContentBrowserDock.tsx` as the dedicated shell dock surface. It:
+  - renders either the temporary drawer or the persistent dock
+  - keeps hidden surfaces unmounted so previews/model loads do not continue in the background
+  - exposes explicit shell actions for dock/undock/close/toggle-sources/focus-search
+- `src/App.tsx` now routes explorer activation into the new content-browser controller when a layout profile declares `contentBrowserDock`, instead of opening the explorer as a normal tab.
+- Added focused App-level RTL coverage in `src/test/app.contentBrowserDock.test.tsx` for:
+  - UE profile persistent-dock behavior
+  - first drawer-to-dock promotion copying drawer session state into the dock
+  - repeat dock promotion preserving an existing dock session instead of overwriting it
+  - windowed/overlay presentation toggles preserving dock-managed explorer state
+- Native presentation copy is now `Windowed/Overlay` in the shell/settings/hotkeys so `dock` refers only to the content-browser system.
+- Linux/native overlay positioning was corrected on the frontend side:
+  - monitor selection now prefers the current or last-active monitor instead of `primaryMonitor()`
+  - `computeOverlayWindowLayout()` now edge-anchors the overlay on X instead of centering it
+- Focused validation that passed:
+  - `bunx vitest run src/test/app.contentBrowserDock.test.tsx src/test/layoutProfiles.test.ts src/test/explorerStore.test.ts src/test/overlayWindow.test.ts src/test/settingsPage.behavior.test.tsx`
+  - `bunx vite build`
+- Known follow-up risk:
+  - the new App coverage is intentionally narrow and mock-heavy; the next hardening pass should add browser-level proof around the real dock surface UI if launcher/menu regressions start slipping past RTL.
+
 ## 2026-04-09 — Explorer Experimental Layouts Completed
 
 - Finished the two previously stubbed explorer experimental modes in `src/components/FileExplorer.tsx`:

@@ -11,7 +11,7 @@ const WORK_AREA = {
 };
 
 describe('computeOverlayWindowLayout', () => {
-  it('centers the default launch window horizontally', () => {
+  it('anchors the default launch window to the left work-area edge', () => {
     const layout = computeOverlayWindowLayout({
       workArea: WORK_AREA,
       scaleFactor: 1,
@@ -22,7 +22,7 @@ describe('computeOverlayWindowLayout', () => {
 
     expect(layout.width).toBe(overlayWindowGeometry.defaultWidth);
     expect(layout.height).toBe(overlayWindowGeometry.defaultHeight);
-    expect(layout.x).toBe(Math.round((WORK_AREA.size.width - overlayWindowGeometry.defaultWidth) / 2));
+    expect(layout.x).toBe(overlayWindowGeometry.logicalPadding);
     expect(layout.y).toBe(
       WORK_AREA.size.height
       - overlayWindowGeometry.defaultHeight
@@ -30,7 +30,7 @@ describe('computeOverlayWindowLayout', () => {
     );
   });
 
-  it('uses configured top anchoring without forcing the window left', () => {
+  it('uses configured top anchoring while keeping the overlay edge-anchored', () => {
     const layout = computeOverlayWindowLayout({
       workArea: WORK_AREA,
       scaleFactor: 1,
@@ -39,7 +39,7 @@ describe('computeOverlayWindowLayout', () => {
       overlayAnchor: 'top',
     });
 
-    expect(layout.x).toBe(Math.round((WORK_AREA.size.width - 1200) / 2));
+    expect(layout.x).toBe(overlayWindowGeometry.logicalPadding);
     expect(layout.y).toBe(overlayWindowGeometry.logicalPadding);
   });
 });

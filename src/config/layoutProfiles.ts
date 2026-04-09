@@ -257,35 +257,6 @@ function normalizeContentBrowserDock(
   };
 }
 
-function resolveLegacyContentBrowserDockFromPinnedPanels(
-  pinnedPanels: LayoutPinnedPanel[],
-): {
-  contentBrowserDock: LayoutContentBrowserDockConfig | null;
-  pinnedPanels: LayoutPinnedPanel[];
-} {
-  const legacyExplorerDockPanel = pinnedPanels.find(
-    panel => panel.panelId === 'explorer' && panel.mode === 'compact-dock',
-  );
-
-  return {
-    contentBrowserDock: legacyExplorerDockPanel
-      ? createDefaultContentBrowserDockConfig({
-        defaultPlacement: legacyExplorerDockPanel.side === 'right'
-          ? 'right'
-          : legacyExplorerDockPanel.side === 'left'
-            ? 'left'
-            : 'bottom',
-        defaultPresentation: 'docked',
-        defaultOpen: true,
-        dockSize: legacyExplorerDockPanel.size,
-      })
-      : null,
-    pinnedPanels: pinnedPanels.filter(
-      panel => !(panel.panelId === 'explorer' && panel.mode === 'compact-dock'),
-    ),
-  };
-}
-
 function normalizeLayoutProfile(input: unknown, fallback: LayoutProfile, fallbackOrder: number): LayoutProfile {
   const source = asRecord(input);
   if (!source) {
@@ -302,16 +273,12 @@ function normalizeLayoutProfile(input: unknown, fallback: LayoutProfile, fallbac
   const controlDock = asRecord(source.controlDock);
   const behavior = asRecord(source.behavior);
   const pinnedPanelsSource = Array.isArray(source.pinnedPanels) ? source.pinnedPanels : fallback.pinnedPanels;
-  const normalizedPinnedPanels = pinnedPanelsSource
+  const pinnedPanels = pinnedPanelsSource
     .map(normalizePinnedPanel)
     .filter((entry): entry is LayoutPinnedPanel => Boolean(entry));
-  const {
-    contentBrowserDock: legacyContentBrowserDock,
-    pinnedPanels,
-  } = resolveLegacyContentBrowserDockFromPinnedPanels(normalizedPinnedPanels);
   const contentBrowserDock = normalizeContentBrowserDock(
     source.contentBrowserDock,
-    fallback.contentBrowserDock ?? legacyContentBrowserDock,
+    fallback.contentBrowserDock,
   );
 
   return {
@@ -372,13 +339,7 @@ const BUILT_IN_PROFILES: LayoutProfile[] = sortProfiles([
       side: 'right',
       inset: 12,
     },
-    contentBrowserDock: createDefaultContentBrowserDockConfig({
-      defaultPlacement: 'bottom',
-      defaultPresentation: 'drawer',
-      defaultOpen: false,
-      drawerSize: 320,
-      dockSize: 320,
-    }),
+    contentBrowserDock: null,
     pinnedPanels: [],
     behavior: {
       cycleOrder: 10,
@@ -413,59 +374,12 @@ const BUILT_IN_PROFILES: LayoutProfile[] = sortProfiles([
       side: 'right',
       inset: 12,
     },
-    contentBrowserDock: createDefaultContentBrowserDockConfig({
-      defaultPlacement: 'bottom',
-      defaultPresentation: 'drawer',
-      defaultOpen: false,
-      drawerSize: 320,
-      dockSize: 320,
-    }),
+    contentBrowserDock: null,
     pinnedPanels: [],
     behavior: {
       cycleOrder: 20,
       defaultActivePanelId: 'explorer',
       enforcedOpenPanelIds: ['explorer'],
-    },
-    interaction: {
-      primaryAxisOwner: 'active-panel',
-      commandOwner: 'chrome',
-      backBehavior: 'overlay-first',
-      modeExitTarget: 'last-browse-target',
-      progressOwner: 'session',
-      preserveFocusAnchor: true,
-      preserveSelectionAnchor: true,
-      preserveLocationAnchor: true,
-    },
-  },
-  {
-    id: 'ue-content-browser',
-    label: 'UE Content Browser',
-    description: 'Persistent bottom content browser dock with drawer promotion and UE-style explorer flow.',
-    shellBlueprint: 'classic-dock',
-    chrome: {
-      barPosition: 'top',
-      showSettingsShortcut: true,
-      showPanelMenu: true,
-      showBlurToggle: true,
-      showShortcutBadge: true,
-    },
-    controlDock: {
-      enabled: true,
-      side: 'right',
-      inset: 12,
-    },
-    contentBrowserDock: createDefaultContentBrowserDockConfig({
-      defaultPlacement: 'bottom',
-      defaultPresentation: 'docked',
-      defaultOpen: true,
-      drawerSize: 320,
-      dockSize: 336,
-    }),
-    pinnedPanels: [],
-    behavior: {
-      cycleOrder: 30,
-      defaultActivePanelId: 'terminal',
-      enforcedOpenPanelIds: ['terminal'],
     },
     interaction: {
       primaryAxisOwner: 'active-panel',

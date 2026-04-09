@@ -6,8 +6,6 @@ import {
   currentMonitor,
   getCurrentWindow,
   monitorFromPoint,
-  PhysicalSize,
-  PhysicalPosition,
   primaryMonitor,
 } from '@tauri-apps/api/window';
 import {
@@ -79,7 +77,6 @@ import {
   getTabbedOpenPanelIds,
   loadExternalLayoutManifest,
   resolveLayoutProfile,
-  type LayoutContentBrowserDockConfig,
   type LayoutPinnedPanel,
   type LayoutProfile,
 } from './config/layoutProfiles';
@@ -101,7 +98,6 @@ import {
 import { detectClientPlatform, type RuntimePlatform } from './config/platform';
 import { derivePanelOpenState, reorderPanelIds } from './components/panelUtils';
 import { OverlayScrollArea } from './components/OverlayScrollArea';
-import { WorkbenchContentBrowserDock } from './components/WorkbenchContentBrowserDock';
 import { WorkbenchNavigationSurface } from './components/WorkbenchNavigationSurface';
 import { WindowControls } from './components/WindowControls';
 import { useGlobalShortcut } from './input/GlobalShortcuts';
@@ -115,13 +111,7 @@ import { listExplorerDir, openExplorerPath } from './runtime/explorerBackend';
 import { commands, unwrapTauriResult } from './runtime/tauriClient';
 import { useFolderPluginRuntime } from './runtime/useFolderPluginRuntime';
 import {
-  CONTENT_BROWSER_DOCK_EXPLORER_INSTANCE_ID,
-  CONTENT_BROWSER_DRAWER_EXPLORER_INSTANCE_ID,
-  useExplorerStore,
-} from './store/explorerStore';
-import {
   useSettingsStore,
-  type LayoutContentBrowserDockState,
   type LayoutPanelState,
   type OverlayWindowAnchor,
   type TerminalWindowMode,
@@ -259,17 +249,6 @@ const EMPTY_LAYOUT_PANEL_STATE: LayoutPanelState = {
   dismissedPanelIds: [],
 };
 
-const EMPTY_CONTENT_BROWSER_DOCK_STATE: LayoutContentBrowserDockState = {
-  drawerOpen: false,
-  dockOpen: false,
-  dockCreated: false,
-  placement: 'bottom',
-  drawerSize: null,
-  dockSize: null,
-};
-
-type VisibleContentBrowserSurface = 'drawer' | 'dock' | null;
-
 function uniquePanelIds(ids: string[]): string[] {
   return Array.from(new Set(ids.filter(Boolean)));
 }
@@ -288,84 +267,14 @@ function areLayoutPanelStatesEqual(left: LayoutPanelState, right: LayoutPanelSta
     && areStringArraysEqual(left.dismissedPanelIds, right.dismissedPanelIds);
 }
 
-function buildDefaultContentBrowserDockState(
-  config: LayoutContentBrowserDockConfig | null,
-): LayoutContentBrowserDockState {
-  if (!config) {
-    return EMPTY_CONTENT_BROWSER_DOCK_STATE;
-  }
-
-  const defaultState: LayoutContentBrowserDockState = {
-    drawerOpen: false,
-    dockOpen: false,
-    dockCreated: false,
-    placement: config.defaultPlacement,
-    drawerSize: config.drawerSize,
-    dockSize: config.dockSize,
-  };
-
-  if (!config.defaultOpen) {
-    return defaultState;
-  }
-
-  if (config.defaultPresentation === 'docked') {
-    return {
-      ...defaultState,
-      dockOpen: true,
-      dockCreated: true,
-    };
-  }
-
-  return {
-    ...defaultState,
-    drawerOpen: true,
-  };
-}
-
-function resolveContentBrowserDockState(
-  config: LayoutContentBrowserDockConfig | null,
-  state: LayoutContentBrowserDockState | undefined,
-): LayoutContentBrowserDockState {
-  const base = buildDefaultContentBrowserDockState(config);
-  if (!config) {
-    return base;
-  }
-
-  const resolved = {
-    ...base,
-    ...(state ?? {}),
-    placement: state?.placement ?? config.defaultPlacement,
-    drawerSize: state?.drawerSize ?? config.drawerSize,
-    dockSize: state?.dockSize ?? config.dockSize,
-  };
-
-  if (!resolved.dockCreated && resolved.dockOpen) {
-    resolved.dockCreated = true;
-  }
-
-  return resolved;
-}
-
-function getVisibleContentBrowserSurface(state: LayoutContentBrowserDockState): VisibleContentBrowserSurface {
-  if (state.drawerOpen) {
-    return 'drawer';
-  }
-
-  if (state.dockOpen) {
-    return 'dock';
-  }
-
-  return null;
-}
-
 function sanitizeLayoutPanelState(
   panelState: LayoutPanelState | undefined,
   availablePanelIds: string[],
-  managedPanelIds: string[],
+  pinnedPanelIds: string[],
 ): LayoutPanelState {
   const source = panelState ?? EMPTY_LAYOUT_PANEL_STATE;
   const availableSet = new Set(availablePanelIds);
-  const pinnedSet = new Set(managedPanelIds);
+  const pinnedSet = new Set(pinnedPanelIds);
   const normalizeIds = (ids: string[]) => uniquePanelIds(
     ids.filter(id => availableSet.has(id) && !pinnedSet.has(id)),
   );
@@ -705,52 +614,15 @@ function App() {
     () => resolveLayoutProfile(layoutManifest, layoutSettings.activeProfileId),
     [layoutManifest, layoutSettings.activeProfileId],
   );
-  const copyExplorerSession = useExplorerStore(state => state.copySession);
-  const activeContentBrowserDockConfig = activeLayoutProfile.contentBrowserDock;
-  const activeContentBrowserDockState = useMemo(
-    () => resolveContentBrowserDockState(
-      activeContentBrowserDockConfig,
-      layoutSettings.contentBrowserDockByProfile[activeLayoutProfile.id],
-    ),
-    [activeContentBrowserDockConfig, activeLayoutProfile.id, layoutSettings.contentBrowserDockByProfile],
+  const activePinnedPanelIds = useMemo(
+    () => getPinnedPanelIds(activeLayoutProfile),
+    [activeLayoutProfile],
   );
-  const visibleContentBrowserSurface = useMemo(
-    () => getVisibleContentBrowserSurface(activeContentBrowserDockState),
-    [activeContentBrowserDockState],
-  );
+  const explorerPanelLayoutMode = windowMode === 'overlay' ? 'compact-dock' : 'full';
   const renderRuntime = useMemo(
     () => resolveWorkbenchRenderRuntime(resolvedAppearance, activeLayoutProfile),
     [activeLayoutProfile, resolvedAppearance],
   );
-  const dockManagedPanelIds = useMemo(
-    () => activeContentBrowserDockConfig ? ['explorer'] : [],
-    [activeContentBrowserDockConfig],
-  );
-  const managedPanelIds = useMemo(
-    () => uniquePanelIds([...getPinnedPanelIds(activeLayoutProfile), ...dockManagedPanelIds]),
-    [activeLayoutProfile, dockManagedPanelIds],
-  );
-  const updateContentBrowserDockState = useCallback((updates: Partial<LayoutContentBrowserDockState>) => {
-    if (!activeContentBrowserDockConfig) {
-      return;
-    }
-
-    const settingsState = useSettingsStore.getState();
-    const currentByProfile = settingsState.settings.layout.contentBrowserDockByProfile;
-    const currentState = resolveContentBrowserDockState(
-      activeContentBrowserDockConfig,
-      currentByProfile[activeLayoutProfile.id],
-    );
-    settingsState.updateLayout({
-      contentBrowserDockByProfile: {
-        ...currentByProfile,
-        [activeLayoutProfile.id]: {
-          ...currentState,
-          ...updates,
-        },
-      },
-    });
-  }, [activeContentBrowserDockConfig, activeLayoutProfile.id]);
   const setPanelOpenStateDirectly = useCallback((panelId: string) => {
     const settingsState = useSettingsStore.getState();
     const currentByProfile = settingsState.settings.layout.panelStateByProfile;
@@ -762,7 +634,7 @@ function App() {
       ? currentState.dismissedPanelIds.filter((value): value is string => typeof value === 'string')
       : [];
     const activePanelId = typeof currentState.activePanelId === 'string' ? currentState.activePanelId : null;
-    const isPinned = managedPanelIds.includes(panelId);
+    const isPinned = activePinnedPanelIds.includes(panelId);
 
     settingsState.updateLayout({
       panelStateByProfile: {
@@ -774,61 +646,13 @@ function App() {
         },
       },
     });
-  }, [activeLayoutProfile.id, managedPanelIds]);
-  const handleOpenContentBrowserDrawer = useCallback(() => {
-    if (!activeContentBrowserDockConfig) {
-      setPanelOpenStateDirectly('explorer');
-      return;
-    }
-
-    updateContentBrowserDockState({
-      drawerOpen: true,
-    });
-  }, [activeContentBrowserDockConfig, setPanelOpenStateDirectly, updateContentBrowserDockState]);
-  const handleDockContentBrowserInLayout = useCallback(() => {
-    if (!activeContentBrowserDockConfig) {
-      return;
-    }
-
-    const currentState = activeContentBrowserDockState;
-    if (!currentState.dockCreated) {
-      copyExplorerSession(
-        CONTENT_BROWSER_DRAWER_EXPLORER_INSTANCE_ID,
-        CONTENT_BROWSER_DOCK_EXPLORER_INSTANCE_ID,
-      );
-    }
-    updateContentBrowserDockState({
-      dockCreated: true,
-      dockOpen: true,
-      drawerOpen: false,
-    });
-  }, [activeContentBrowserDockConfig, activeContentBrowserDockState, copyExplorerSession, updateContentBrowserDockState]);
-  const handleUndockContentBrowserToDrawer = useCallback(() => {
-    if (!activeContentBrowserDockConfig) {
-      return;
-    }
-
-    updateContentBrowserDockState({
-      drawerOpen: true,
-      dockOpen: false,
-    });
-  }, [activeContentBrowserDockConfig, updateContentBrowserDockState]);
-  const handleCloseContentBrowserDock = useCallback(() => {
-    updateContentBrowserDockState({ dockOpen: false });
-  }, [updateContentBrowserDockState]);
-  const handleCloseContentBrowserDrawer = useCallback(() => {
-    updateContentBrowserDockState({ drawerOpen: false });
-  }, [updateContentBrowserDockState]);
+  }, [activeLayoutProfile.id, activePinnedPanelIds]);
   const handleRequestRepositoryImport = useCallback(() => {
     setPendingRepositoryImports([]);
     setRepositoryPickerRequestId(current => current + 1);
     setIsRepositoryPickerActive(true);
-    if (activeContentBrowserDockConfig) {
-      handleOpenContentBrowserDrawer();
-      return;
-    }
     setPanelOpenStateDirectly('explorer');
-  }, [activeContentBrowserDockConfig, handleOpenContentBrowserDrawer, setPanelOpenStateDirectly]);
+  }, [setPanelOpenStateDirectly]);
   const handleCancelRepositoryImport = useCallback(() => {
     setIsRepositoryPickerActive(false);
   }, []);
@@ -1073,7 +897,7 @@ function App() {
     try {
       const win = getCurrentWindow();
       const scaleFactor = await win.scaleFactor();
-      const monitor = await primaryMonitor();
+      const monitor = await resolvePreferredMonitor();
       if (!monitor) {
         await openWithoutMonitorLayout(win);
         return;
@@ -1190,7 +1014,7 @@ function App() {
     try {
       const win = getCurrentWindow();
       const scaleFactor = await win.scaleFactor();
-      const monitor = await primaryMonitor();
+      const monitor = await resolvePreferredMonitor();
       if (!monitor) {
         await openWithoutMonitorLayout(win);
         return;
@@ -1376,6 +1200,7 @@ function App() {
     let cancelled = false;
     const startupTimer = window.setTimeout(() => {
       const syncInitialPresentation = async () => {
+        const win = getCurrentWindow();
         const visible = (await getCurrentWindow().isVisible?.().catch(() => false)) ?? false;
         if (
           cancelled
@@ -1386,6 +1211,7 @@ function App() {
           return;
         }
 
+        await win.hide().catch(() => {});
         handleToggleOverlayRequest();
       };
 
@@ -1451,7 +1277,7 @@ function App() {
     try {
       const win = getCurrentWindow();
       const scaleFactor = await win.scaleFactor();
-      const monitor = await primaryMonitor();
+      const monitor = await resolvePreferredMonitor();
       if (!monitor) {
         return;
       }
@@ -1538,10 +1364,14 @@ function App() {
   }, [shouldShowInTaskbar]);
 
   const handleToggleWindowMode = useCallback(() => {
+    const nextWindowMode = windowMode === 'windowed' ? 'overlay' : 'windowed';
     updateTerminal({
-      windowMode: windowMode === 'windowed' ? 'overlay' : 'windowed',
+      windowMode: nextWindowMode,
     });
-  }, [updateTerminal, windowMode]);
+    if (nextWindowMode === 'overlay') {
+      setPanelOpenStateDirectly('explorer');
+    }
+  }, [setPanelOpenStateDirectly, updateTerminal, windowMode]);
 
   const handleOpenCommandPalette = useCallback(() => {
     if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
@@ -1614,7 +1444,7 @@ function App() {
       try {
         const win = getCurrentWindow();
         const scaleFactor = await win.scaleFactor();
-        const monitor = await primaryMonitor();
+        const monitor = await resolvePreferredMonitor();
         if (!monitor || cancelled) {
           return;
         }
@@ -2060,7 +1890,7 @@ function App() {
     () => [
       ...createBuiltInPanelDefinitions({
         appearance: resolvedAppearance,
-        explorerLayoutMode: 'full',
+        explorerLayoutMode: explorerPanelLayoutMode,
         explorerRepoPicker: isRepositoryPickerActive
           ? {
               active: true,
@@ -2155,6 +1985,7 @@ function App() {
       repositoryPickerRequestId,
       resolvedAppearance,
       combinedThemePackages,
+      explorerPanelLayoutMode,
       themePackagesError,
       themePackagesLoading,
       themePackagesWarnings,
@@ -2169,24 +2000,24 @@ function App() {
     [panelDefinitions],
   );
   const pinnedPanelIds = useMemo(
-    () => getPinnedPanelIds(activeLayoutProfile),
-    [activeLayoutProfile],
+    () => activePinnedPanelIds,
+    [activePinnedPanelIds],
   );
   const defaultOpenPanelIds = useMemo(
     () => uniquePanelIds(
       panelDefinitions
-        .filter(panel => panel.defaultOpen && panelLookup.has(panel.id) && !managedPanelIds.includes(panel.id))
+        .filter(panel => panel.defaultOpen && panelLookup.has(panel.id))
         .map(panel => panel.id),
     ),
-    [managedPanelIds, panelDefinitions, panelLookup],
+    [panelDefinitions, panelLookup],
   );
   const savedPanelState = useMemo(
     () => sanitizeLayoutPanelState(
       layoutSettings.panelStateByProfile[activeLayoutProfile.id],
       availablePanelIds,
-      managedPanelIds,
+      pinnedPanelIds,
     ),
-    [activeLayoutProfile.id, availablePanelIds, layoutSettings.panelStateByProfile, managedPanelIds],
+    [activeLayoutProfile.id, availablePanelIds, layoutSettings.panelStateByProfile, pinnedPanelIds],
   );
   const openPanelIds = useMemo(
     () => derivePanelOpenState({
@@ -2205,8 +2036,8 @@ function App() {
     ],
   );
   const tabbedOpenPanelIds = useMemo(
-    () => openPanelIds.filter(panelId => !managedPanelIds.includes(panelId)),
-    [managedPanelIds, openPanelIds],
+    () => getTabbedOpenPanelIds(activeLayoutProfile, openPanelIds),
+    [activeLayoutProfile, openPanelIds],
   );
   const activePanelId = useMemo(
     () => resolveActiveTabPanelId({
@@ -2321,9 +2152,9 @@ function App() {
 
   const resolveActivePanelIdFromState = useCallback((panelState: LayoutPanelState) => resolveActiveTabPanelId({
     activePanelId: panelState.activePanelId,
-    openPanelIds: deriveOpenPanelIdsFromState(panelState).filter(panelId => !managedPanelIds.includes(panelId)),
+    openPanelIds: getTabbedOpenPanelIds(activeLayoutProfile, deriveOpenPanelIdsFromState(panelState)),
     defaultActivePanelId: activeLayoutProfile.behavior.defaultActivePanelId,
-  }), [activeLayoutProfile.behavior.defaultActivePanelId, deriveOpenPanelIdsFromState, managedPanelIds]);
+  }), [activeLayoutProfile, deriveOpenPanelIdsFromState]);
 
   const updateActiveLayoutPanelState = useCallback((updater: (current: LayoutPanelState) => LayoutPanelState) => {
     const settingsState = useSettingsStore.getState();
@@ -2331,12 +2162,12 @@ function App() {
     const currentState = sanitizeLayoutPanelState(
       currentByProfile[activeLayoutProfile.id],
       availablePanelIds,
-      managedPanelIds,
+      pinnedPanelIds,
     );
     const nextState = sanitizeLayoutPanelState(
       updater(currentState),
       availablePanelIds,
-      managedPanelIds,
+      pinnedPanelIds,
     );
 
     if (areLayoutPanelStatesEqual(currentState, nextState)) {
@@ -2349,23 +2180,10 @@ function App() {
         [activeLayoutProfile.id]: nextState,
       },
     });
-  }, [activeLayoutProfile.id, availablePanelIds, managedPanelIds]);
+  }, [activeLayoutProfile.id, availablePanelIds, pinnedPanelIds]);
 
   const handleSelectPanel = useCallback((panelId: string | null) => {
-    if (!panelId || !panelLookup.has(panelId)) {
-      return;
-    }
-
-    if (panelId === 'explorer' && activeContentBrowserDockConfig) {
-      if (activeContentBrowserDockState.dockOpen && !activeContentBrowserDockState.drawerOpen) {
-        updateContentBrowserDockState({ dockOpen: true, drawerOpen: false });
-      } else {
-        handleOpenContentBrowserDrawer();
-      }
-      return;
-    }
-
-    if (managedPanelIds.includes(panelId)) {
+    if (!panelId || pinnedPanelIds.includes(panelId) || !panelLookup.has(panelId)) {
       return;
     }
 
@@ -2373,36 +2191,10 @@ function App() {
       ...current,
       activePanelId: panelId,
     }));
-  }, [
-    activeContentBrowserDockConfig,
-    activeContentBrowserDockState.dockOpen,
-    activeContentBrowserDockState.drawerOpen,
-    handleOpenContentBrowserDrawer,
-    managedPanelIds,
-    panelLookup,
-    updateActiveLayoutPanelState,
-    updateContentBrowserDockState,
-  ]);
+  }, [panelLookup, pinnedPanelIds, updateActiveLayoutPanelState]);
 
   const handleTogglePanel = useCallback((panelId: string) => {
-    if (!panelLookup.has(panelId)) {
-      return;
-    }
-
-    if (panelId === 'explorer' && activeContentBrowserDockConfig) {
-      if (activeContentBrowserDockState.drawerOpen) {
-        handleCloseContentBrowserDrawer();
-        return;
-      }
-      if (activeContentBrowserDockState.dockOpen) {
-        handleCloseContentBrowserDock();
-        return;
-      }
-      handleOpenContentBrowserDrawer();
-      return;
-    }
-
-    if (managedPanelIds.includes(panelId)) {
+    if (pinnedPanelIds.includes(panelId) || !panelLookup.has(panelId)) {
       return;
     }
 
@@ -2428,35 +2220,10 @@ function App() {
         dismissedPanelIds: current.dismissedPanelIds.filter(id => id !== panelId),
       };
     });
-  }, [
-    activeContentBrowserDockConfig,
-    activeContentBrowserDockState.dockOpen,
-    activeContentBrowserDockState.drawerOpen,
-    handleCloseContentBrowserDock,
-    handleCloseContentBrowserDrawer,
-    handleOpenContentBrowserDrawer,
-    managedPanelIds,
-    openPanelIds,
-    panelLookup,
-    resolveActivePanelIdFromState,
-    updateActiveLayoutPanelState,
-  ]);
+  }, [openPanelIds, panelLookup, pinnedPanelIds, resolveActivePanelIdFromState, updateActiveLayoutPanelState]);
 
   const handleClosePanel = useCallback((panelId: string) => {
-    if (!panelLookup.has(panelId)) {
-      return;
-    }
-
-    if (panelId === 'explorer' && activeContentBrowserDockConfig) {
-      if (activeContentBrowserDockState.drawerOpen) {
-        handleCloseContentBrowserDrawer();
-      } else if (activeContentBrowserDockState.dockOpen) {
-        handleCloseContentBrowserDock();
-      }
-      return;
-    }
-
-    if (managedPanelIds.includes(panelId)) {
+    if (pinnedPanelIds.includes(panelId) || !panelLookup.has(panelId)) {
       return;
     }
 
@@ -2472,17 +2239,7 @@ function App() {
         activePanelId: resolveActivePanelIdFromState(nextState),
       };
     });
-  }, [
-    activeContentBrowserDockConfig,
-    activeContentBrowserDockState.dockOpen,
-    activeContentBrowserDockState.drawerOpen,
-    handleCloseContentBrowserDock,
-    handleCloseContentBrowserDrawer,
-    managedPanelIds,
-    panelLookup,
-    resolveActivePanelIdFromState,
-    updateActiveLayoutPanelState,
-  ]);
+  }, [panelLookup, pinnedPanelIds, resolveActivePanelIdFromState, updateActiveLayoutPanelState]);
 
   const handleReorderPanels = useCallback((draggedId: string, targetId: string) => {
     updateActiveLayoutPanelState(current => ({
@@ -2500,20 +2257,7 @@ function App() {
   }, [updateActiveLayoutPanelState]);
 
   const handleActivatePanel = useCallback((panelId: string) => {
-    if (!panelLookup.has(panelId)) {
-      return;
-    }
-
-    if (panelId === 'explorer' && activeContentBrowserDockConfig) {
-      if (activeContentBrowserDockState.dockOpen && !activeContentBrowserDockState.drawerOpen) {
-        updateContentBrowserDockState({ dockOpen: true, drawerOpen: false });
-      } else {
-        handleOpenContentBrowserDrawer();
-      }
-      return;
-    }
-
-    if (managedPanelIds.includes(panelId)) {
+    if (!panelLookup.has(panelId) || pinnedPanelIds.includes(panelId)) {
       return;
     }
 
@@ -2522,16 +2266,7 @@ function App() {
       activePanelId: panelId,
       dismissedPanelIds: current.dismissedPanelIds.filter(id => id !== panelId),
     }));
-  }, [
-    activeContentBrowserDockConfig,
-    activeContentBrowserDockState.dockOpen,
-    activeContentBrowserDockState.drawerOpen,
-    handleOpenContentBrowserDrawer,
-    managedPanelIds,
-    panelLookup,
-    updateActiveLayoutPanelState,
-    updateContentBrowserDockState,
-  ]);
+  }, [panelLookup, pinnedPanelIds, updateActiveLayoutPanelState]);
 
   const handleOpenTerminalPanel = useCallback(() => {
     const now = Date.now();
@@ -2628,13 +2363,13 @@ function App() {
       },
       {
         id: 'toggle-window-mode',
-        title: windowMode === 'windowed' ? 'Switch To Overlay Mode' : 'Switch To Windowed Mode',
+        title: windowMode === 'windowed' ? 'Switch To Dock Mode' : 'Switch To Application Mode',
         subtitle: windowMode === 'windowed'
-          ? 'Pin the shell back to a monitor edge and restore overlay presentation.'
+          ? 'Pin the shell back to a monitor edge and restore dock behavior.'
           : 'Open the shell as a regular desktop window.',
         group: 'Layout',
-        keywords: ['overlay', 'windowed', 'window', 'mode', 'presentation'],
-        badge: windowMode === 'windowed' ? 'Overlay' : 'Windowed',
+        keywords: ['dock', 'window', 'mode', 'overlay', 'app'],
+        badge: windowMode === 'windowed' ? 'Dock' : 'App',
         onSelect: handleToggleWindowMode,
       },
       ...(windowMode === 'overlay'
@@ -2647,52 +2382,6 @@ function App() {
             badge: 'Edge',
             onSelect: handleToggleOverlayAnchor,
           } satisfies OverlayCommandPaletteAction]
-        : []),
-      ...(activeContentBrowserDockConfig
-        ? [
-            {
-              id: 'open-content-browser-drawer',
-              title: 'Open Content Drawer',
-              subtitle: 'Show the temporary UE-style content drawer without replacing the persistent dock.',
-              group: 'Content Browser',
-              keywords: ['content', 'browser', 'drawer', 'explorer', 'assets'],
-              badge: 'Drawer',
-              onSelect: handleOpenContentBrowserDrawer,
-            },
-            {
-              id: 'dock-content-browser',
-              title: 'Dock Content Browser In Layout',
-              subtitle: 'Promote the current drawer session into the persistent dock surface.',
-              group: 'Content Browser',
-              keywords: ['content', 'browser', 'dock', 'layout', 'ue'],
-              badge: 'Dock',
-              onSelect: handleDockContentBrowserInLayout,
-            },
-            {
-              id: 'undock-content-browser',
-              title: 'Undock Content Browser To Drawer',
-              subtitle: 'Hide the persistent dock and reopen the temporary drawer surface.',
-              group: 'Content Browser',
-              keywords: ['content', 'browser', 'undock', 'drawer'],
-              badge: 'Drawer',
-              onSelect: handleUndockContentBrowserToDrawer,
-            },
-            {
-              id: 'close-content-browser',
-              title: 'Close Content Browser Surface',
-              subtitle: 'Close whichever content-browser surface is currently visible.',
-              group: 'Content Browser',
-              keywords: ['content', 'browser', 'close', 'drawer', 'dock'],
-              badge: 'Close',
-              onSelect: () => {
-                if (visibleContentBrowserSurface === 'drawer') {
-                  handleCloseContentBrowserDrawer();
-                  return;
-                }
-                handleCloseContentBrowserDock();
-              },
-            },
-          ]
         : []),
     ];
 
@@ -2725,17 +2414,11 @@ function App() {
     ];
   }, [
     activeLayoutProfile.label,
-    activeContentBrowserDockConfig,
-    handleCloseContentBrowserDock,
-    handleCloseContentBrowserDrawer,
     handleActivatePanel,
     handleCycleLayout,
-    handleDockContentBrowserInLayout,
-    handleOpenContentBrowserDrawer,
     handleOpenSettings,
     handleToggleOverlayAnchor,
     handleToggleWindowMode,
-    handleUndockContentBrowserToDrawer,
     overlayAnchor,
     openPluginsFolder,
     pinnedPanelIds,
@@ -2745,7 +2428,6 @@ function App() {
     refreshAuthoredShaders,
     refreshFolderPlugins,
     refreshThemePackages,
-    visibleContentBrowserSurface,
     windowMode,
   ]);
 
@@ -2883,57 +2565,6 @@ function App() {
       )}
     />
   );
-  const contentBrowserRepositoryPicker = isRepositoryPickerActive
-    ? {
-        active: true,
-        allowMultiple: true,
-        requestId: repositoryPickerRequestId,
-        onConfirm: handleConfirmRepositoryImport,
-        onCancel: handleCancelRepositoryImport,
-      }
-    : null;
-  const handleContentBrowserDockSurfaceUpdate = useCallback((updates: Partial<LayoutContentBrowserDockState>) => {
-    if (!activeContentBrowserDockConfig) {
-      return;
-    }
-
-    const isFirstDockPromotion = visibleContentBrowserSurface === 'drawer'
-      && updates.dockOpen === true
-      && updates.drawerOpen === false
-      && !activeContentBrowserDockState.dockCreated;
-    if (isFirstDockPromotion) {
-      copyExplorerSession(
-        CONTENT_BROWSER_DRAWER_EXPLORER_INSTANCE_ID,
-        CONTENT_BROWSER_DOCK_EXPLORER_INSTANCE_ID,
-      );
-    }
-
-    updateContentBrowserDockState({
-      ...updates,
-      ...(updates.dockOpen ? { dockCreated: true } : {}),
-    });
-  }, [
-    activeContentBrowserDockConfig,
-    activeContentBrowserDockState.dockCreated,
-    copyExplorerSession,
-    updateContentBrowserDockState,
-    visibleContentBrowserSurface,
-  ]);
-  const contentBrowserDockSurface = activeContentBrowserDockConfig && visibleContentBrowserSurface
-    ? (
-      <WorkbenchContentBrowserDock
-        appearance={resolvedAppearance}
-        dockConfig={activeContentBrowserDockConfig}
-        dockState={activeContentBrowserDockState}
-        onUpdateDockState={handleContentBrowserDockSurfaceUpdate}
-        onOpenInTerminal={handleOpenInTerminal}
-        onAddBookmark={handleAddBookmark}
-        pluginActions={pluginExplorerActions}
-        repositoryPicker={contentBrowserRepositoryPicker}
-      />
-    )
-    : null;
-
   return (
     <div
       className="overlay-window-host w-full h-full overflow-hidden"
@@ -3028,118 +2659,110 @@ function App() {
               {(isWindowedMode || activeLayoutProfile.chrome.barPosition === 'top') && chromeBar}
 
               {/* ══ Content ══ */}
-              <div style={{ position: 'relative', display: 'flex', flex: 1, flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-                <div style={{ position: 'relative', display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-                  {leftPinnedPanels.map(({ panel, definition }) => (
-                    <LayoutPinnedPanelSlot key={`${panel.side}:${panel.panelId}`} panel={panel} definition={definition} />
-                  ))}
+              <div style={{ position: 'relative', display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                {leftPinnedPanels.map(({ panel, definition }) => (
+                  <LayoutPinnedPanelSlot key={`${panel.side}:${panel.panelId}`} panel={panel} definition={definition} />
+                ))}
 
-                  {activeContentBrowserDockState.placement === 'left' && contentBrowserDockSurface}
+                <div style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
+                  {usesNavigationSidebar && (
+                    <WorkbenchNavigationSurface
+                      appearance={resolvedAppearance}
+                      runtime={renderRuntime}
+                      panels={panelDefinitions}
+                      pinnedPanelIds={pinnedPanelIds}
+                      activePanelId={activePanelId}
+                      openPanelIds={openPanelIds}
+                      onActivatePanel={handleActivatePanel}
+                    />
+                  )}
 
-                  <div style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
-                    {usesNavigationSidebar && (
-                      <WorkbenchNavigationSurface
-                        appearance={resolvedAppearance}
-                        runtime={renderRuntime}
-                        panels={panelDefinitions}
-                        pinnedPanelIds={pinnedPanelIds}
-                        activePanelId={activePanelId}
-                        openPanelIds={openPanelIds}
-                        onActivatePanel={handleActivatePanel}
-                      />
-                    )}
+                  <div style={contentShellStyle}>
+                    {panelDefinitions.map(panel => {
+                      const isPanelOpen = openPanelIds.includes(panel.id);
+                      const isActive = panel.id === activePanelId;
+                      const isPinned = pinnedPanelIds.includes(panel.id);
+                      // keepMounted means "stay mounted while open, even when not the active tab".
+                      // Closed panels should unmount to avoid background work.
+                      const shouldMount = !isPinned && (panel.keepMounted ? isPanelOpen : isPanelOpen && isActive);
 
-                    <div style={contentShellStyle}>
-                      {panelDefinitions.map(panel => {
-                        const isPanelOpen = openPanelIds.includes(panel.id);
-                        const isActive = panel.id === activePanelId;
-                        const isPinned = managedPanelIds.includes(panel.id);
-                        // keepMounted means "stay mounted while open, even when not the active tab".
-                        // Closed panels should unmount to avoid background work.
-                        const shouldMount = !isPinned && (panel.keepMounted ? isPanelOpen : isPanelOpen && isActive);
+                      if (!shouldMount) return null;
 
-                        if (!shouldMount) return null;
-
-                        return (
-                          <div
-                            key={panel.id}
-                            style={{
-                              flex: 1,
-                              display: isPanelOpen && isActive ? 'flex' : 'none',
-                              flexDirection: 'column',
-                              overflow: 'hidden',
-                            }}
-                          >
-                            {panel.kind === 'folder-plugin'
-                              ? (
-                                <FolderPluginRenderer
-                                  plugin={folderPlugins.find(candidate => candidate.id === panel.id) ?? {
-                                    id: panel.id,
-                                    name: panel.label,
-                                    filePath: '',
-                                    pluginRoot: '',
-                                    pluginDirectory: '',
-                                    backendDirectory: '',
-                                    modified: 0,
-                                    defaultOpen: panel.defaultOpen ?? false,
-                                    keepMounted: panel.keepMounted ?? false,
-                                    component: null,
-                                    error: 'Plugin definition not found.',
-                                    diagnostics: {
-                                      sourceKind: 'file-plugin',
-                                      sourceLabel: panel.label,
-                                      warnings: ['Plugin definition not found.'],
-                                      capabilities: {
-                                        panel: true,
-                                        themes: 0,
-                                        shaders: 0,
-                                        fonts: 0,
-                                        commands: 0,
-                                        explorerActions: 0,
-                                      },
-                                    },
-                                  }}
-                                  appearance={resolvedAppearance}
-                                  createPluginApi={createPluginApi}
-                                  hostMode="panel-tab"
-                                  isActive={isActive}
-                                />
-                              )
-                              : panel.render()}
-                          </div>
-                        );
-                      })}
-
-                      {!activeContentPanel && openPanels.length === 0 && (
-                        <div style={{
-                          flex: 1,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: theme.palette.textMuted,
-                          fontSize: 13,
-                          background: usesInsetContentShell ? 'transparent' : theme.palette.shellBackground,
-                          fontFamily: resolvedAppearance.fonts.ui,
-                          padding: 24,
-                          textAlign: 'center',
-                        }}
+                      return (
+                        <div
+                          key={panel.id}
+                          style={{
+                            flex: 1,
+                            display: isPanelOpen && isActive ? 'flex' : 'none',
+                            flexDirection: 'column',
+                            overflow: 'hidden',
+                          }}
                         >
-                          {usesNavigationSidebar
-                            ? 'Choose a panel from the launcher to bring its surface forward.'
-                            : 'No tabbed panels are open. Use the panel menu to bring one back.'}
+                          {panel.kind === 'folder-plugin'
+                            ? (
+                              <FolderPluginRenderer
+                                plugin={folderPlugins.find(candidate => candidate.id === panel.id) ?? {
+                                  id: panel.id,
+                                  name: panel.label,
+                                  filePath: '',
+                                  pluginRoot: '',
+                                  pluginDirectory: '',
+                                  backendDirectory: '',
+                                  modified: 0,
+                                  defaultOpen: panel.defaultOpen ?? false,
+                                  keepMounted: panel.keepMounted ?? false,
+                                  component: null,
+                                  error: 'Plugin definition not found.',
+                                  diagnostics: {
+                                    sourceKind: 'file-plugin',
+                                    sourceLabel: panel.label,
+                                    warnings: ['Plugin definition not found.'],
+                                    capabilities: {
+                                      panel: true,
+                                      themes: 0,
+                                      shaders: 0,
+                                      fonts: 0,
+                                      commands: 0,
+                                      explorerActions: 0,
+                                    },
+                                  },
+                                }}
+                                appearance={resolvedAppearance}
+                                createPluginApi={createPluginApi}
+                                hostMode="panel-tab"
+                                isActive={isActive}
+                              />
+                            )
+                            : panel.render()}
                         </div>
-                      )}
-                    </div>
+                      );
+                    })}
+
+                    {!activeContentPanel && openPanels.length === 0 && (
+                      <div style={{
+                        flex: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: theme.palette.textMuted,
+                        fontSize: 13,
+                        background: usesInsetContentShell ? 'transparent' : theme.palette.shellBackground,
+                        fontFamily: resolvedAppearance.fonts.ui,
+                        padding: 24,
+                        textAlign: 'center',
+                      }}
+                      >
+                        {usesNavigationSidebar
+                          ? 'Choose a panel from the launcher to bring its surface forward.'
+                          : 'No tabbed panels are open. Use the panel menu to bring one back.'}
+                      </div>
+                    )}
                   </div>
-
-                  {activeContentBrowserDockState.placement === 'right' && contentBrowserDockSurface}
-
-                  {rightPinnedPanels.map(({ panel, definition }) => (
-                    <LayoutPinnedPanelSlot key={`${panel.side}:${panel.panelId}`} panel={panel} definition={definition} />
-                  ))}
                 </div>
 
-                {activeContentBrowserDockState.placement === 'bottom' && contentBrowserDockSurface}
+                {rightPinnedPanels.map(({ panel, definition }) => (
+                  <LayoutPinnedPanelSlot key={`${panel.side}:${panel.panelId}`} panel={panel} definition={definition} />
+                ))}
               </div>
 
               {!isWindowedMode && activeLayoutProfile.chrome.barPosition === 'bottom' && chromeBar}

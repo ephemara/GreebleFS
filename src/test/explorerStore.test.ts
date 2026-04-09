@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  CONTENT_BROWSER_DOCK_EXPLORER_INSTANCE_ID,
   EXPLORER_LEGACY_BOOKMARKS_KEY,
   EXPLORER_STATE_BACKUP_KEY,
   EXPLORER_STATE_STORAGE_KEY,
+  PRIMARY_EXPLORER_INSTANCE_ID,
   defaultExplorerSession,
   loadExplorerPersistedState,
   persistExplorerState,
@@ -20,6 +22,7 @@ beforeEach(() => {
 describe('explorerStore persistence', () => {
   it('starts with the default explorer session snapshot', () => {
     expect(useExplorerStore.getState().session).toEqual(defaultExplorerSession);
+    expect(useExplorerStore.getState().sessions[PRIMARY_EXPLORER_INSTANCE_ID]).toEqual(defaultExplorerSession);
     expect(useExplorerStore.getState().rail).toEqual(createDefaultExplorerRailSnapshot());
   });
 
@@ -41,6 +44,7 @@ describe('explorerStore persistence', () => {
 
     const hydrated = loadExplorerPersistedState(window.localStorage);
     expect(hydrated.session.currentPath).toBe('M:\\OverlayTerm\\src');
+    expect(hydrated.sessions[PRIMARY_EXPLORER_INSTANCE_ID]?.currentPath).toBe('M:\\OverlayTerm\\src');
     expect(hydrated.session.sidebarWidth).toBe(244);
     expect(hydrated.session.previewEnabled).toBe(false);
     expect(hydrated.session.shellLayoutId).toBe('inspector');
@@ -104,5 +108,32 @@ describe('explorerStore persistence', () => {
     useExplorerStore.getState().restoreRailBackup();
     expect(useExplorerStore.getState().session.currentPath).toBe('M:\\Backup');
     expect(useExplorerStore.getState().persistence.status).toBe('restored-backup');
+  });
+
+  it('persists drawer and dock explorer sessions independently', () => {
+    const store = useExplorerStore.getState();
+
+    store.updateSessionForInstance('content-browser-drawer', {
+      currentPath: 'M:\\Drawer',
+      search: 'props',
+      sourcesVisible: false,
+    });
+    store.copySession('content-browser-drawer', CONTENT_BROWSER_DOCK_EXPLORER_INSTANCE_ID);
+    store.updateSessionForInstance(CONTENT_BROWSER_DOCK_EXPLORER_INSTANCE_ID, {
+      currentPath: 'M:\\Dock',
+      search: 'materials',
+    });
+
+    const hydrated = loadExplorerPersistedState(window.localStorage);
+    expect(hydrated.sessions['content-browser-drawer']).toMatchObject({
+      currentPath: 'M:\\Drawer',
+      search: 'props',
+      sourcesVisible: false,
+    });
+    expect(hydrated.sessions[CONTENT_BROWSER_DOCK_EXPLORER_INSTANCE_ID]).toMatchObject({
+      currentPath: 'M:\\Dock',
+      search: 'materials',
+      sourcesVisible: false,
+    });
   });
 });
