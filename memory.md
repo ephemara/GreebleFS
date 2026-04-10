@@ -1,5 +1,50 @@
 # GreebleFS Memory
 
+## 2026-04-09 — Explorer Rail + Drag UX Pass
+
+- Reworked explorer drag behavior so file drag-out is no longer hidden behind `Alt`:
+  - `src/components/FileExplorer.tsx` now defaults explorer drags to the native drag bridge and only forces an internal-only drag when `Shift` is held
+  - explorer entries still publish the internal `application/x-overlayterm-paths` payload, so in-explorer drops keep their custom move/copy path available
+  - explorer drag sources now tag themselves with `data-overlay-drag-intent` during drag start so the shell can distinguish native-export drags from internal explorer drags
+- `src/App.tsx` no longer hides the entire overlay for ordinary explorer file drags unless a drag source explicitly opts into overlay-hide behavior.
+  - durable reason: the old blanket hide-on-drag made “drag a file out” and “drag a file into another explorer folder” share the same shell teardown path, which made the whole interaction feel broken and fragile
+- `src/components/explorer/ExplorerSideRail.tsx` was simplified into a navigator-first rail:
+  - the header now foregrounds the current location and bookmark count
+  - bookmark organization controls moved behind a deliberate `Manage` mode instead of always occupying the rail chrome
+  - bookmark row controls for nested-folder creation, rename, recolor, and delete are hidden unless `Manage` is active
+  - bookmark search remains always-on, but category chips and creation controls only surface when managing or when active filters are in play
+  - the duplicate `Home` row inside the bookmark tree was removed to reduce visual repetition
+- Explorer rail defaults were tightened:
+  - `src/config/explorerRail.ts` now uses slimmer full/compact width bounds
+  - `src/components/FileExplorer.tsx` now seeds the initial rail width from `getExplorerRailWidthBounds()` instead of the broader theme metric
+- Added targeted regression updates in:
+  - `src/test/fileExplorer.viewModes.test.tsx`
+  - `src/test/explorerSideRail.test.tsx`
+- Validation for this pass:
+  - passed: narrowed `bunx tsc --noEmit --skipLibCheck --jsx react-jsx --module esnext --target es2022 --moduleResolution bundler --allowSyntheticDefaultImports --types node,vitest/globals,@testing-library/jest-dom src/vite-env.d.ts src/App.tsx src/components/FileExplorer.tsx src/components/explorer/ExplorerSideRail.tsx src/config/explorerRail.ts src/store/explorerStore.ts src/test/explorerSideRail.test.tsx src/test/fileExplorer.viewModes.test.tsx`
+  - blocked: Vitest/JSDOM coverage is still failing in this workspace because of the existing `html-encoding-sniffer` -> `@exodus/bytes` CommonJS/ESM incompatibility
+
+## 2026-04-09 — Explorer UI Responsiveness Pass
+
+- Reduced frontend jank in `src/components/FileExplorer.tsx` by moving large explorer result adoption onto React transitions:
+  - directory loads now `startTransition()` the bulk `entries` update
+  - search responses now `startTransition()` the `searchResults` update
+  - background native-icon and entry-size maps now update through transitions instead of competing with active input/scroll work
+- Added short viewport-settle delays before launching background enrichment work for visible entries:
+  - entry-size batches wait `72ms`
+  - native-icon batches wait `96ms`
+- The settle-delay avoids firing repeated `fs_measure_entry_sizes` / `fs_resolve_native_icons` batches while the user is still scrolling the virtualized viewport, which reduces Tauri IPC churn and unnecessary rerender pressure during fast navigation.
+- Exported `invalidateExplorerResultCaches()` from `src/components/FileExplorer.tsx` so tests and support tooling can explicitly clear the shared explorer directory/search caches when they need isolated backend state.
+- Updated `src/test/fileExplorer.searchTelemetry.test.tsx` to clear the shared explorer caches in `beforeEach`, which keeps the diagnostics assertions honest now that cache reuse is an intentional cross-mount behavior.
+- Validation completed for this pass:
+  - `bun run test:browser`
+  - `npx vitest run src/test/fileExplorer.searchTelemetry.test.tsx --reporter verbose`
+  - `bun run build`
+- Validation still blocked by pre-existing workspace issues:
+  - `bun run test:unit` still does not complete cleanly within a 45s timeout and reports unrelated failures in `terminalOverlay`, `app.dockMode`, `pluginRuntime`, and `animationRuntime`
+  - JSDOM still logs repeated `HTMLCanvasElement.getContext()` not-implemented warnings in this workspace without the optional `canvas` package
+
+
 ## 2026-04-09 — Shader Runtime Performance Pass
 
 - Targeted the shell shader path because the sluggishness was coming from the built-in shader surfaces doing React-driven animation every frame.

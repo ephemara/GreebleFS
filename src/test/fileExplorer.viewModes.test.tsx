@@ -335,7 +335,7 @@ describe('FileExplorer view modes', () => {
     });
   });
 
-  it('starts the native drag bridge when alt-dragging an explorer entry', async () => {
+  it('starts the native drag bridge when dragging an explorer entry without a modifier', async () => {
     renderExplorer();
     const entry = await screen.findByText('notes.txt');
     const dataTransfer = createDataTransfer();
@@ -345,7 +345,6 @@ describe('FileExplorer view modes', () => {
     }
 
     const event = createEvent.dragStart(dragSource, { dataTransfer });
-    Object.defineProperty(event, 'altKey', { value: true });
     fireEvent(dragSource, event);
 
     await waitFor(() => {
@@ -356,6 +355,28 @@ describe('FileExplorer view modes', () => {
     expect(dataTransfer.setData).toHaveBeenCalledWith(
       'application/x-overlayterm-drag-intent',
       'native-out',
+    );
+  });
+
+  it('keeps explorer drag internal when shift is held', async () => {
+    renderExplorer();
+    const entry = await screen.findByText('notes.txt');
+    const dataTransfer = createDataTransfer();
+    const dragSource = entry.closest('[data-overlay-drag-source=\"file\"]');
+    if (!(dragSource instanceof HTMLElement)) {
+      throw new Error('Expected draggable explorer entry');
+    }
+
+    const event = createEvent.dragStart(dragSource, { dataTransfer });
+    Object.defineProperty(event, 'shiftKey', { value: true });
+    fireEvent(dragSource, event);
+
+    expect(invoke).not.toHaveBeenCalledWith('fs_start_native_file_drag', {
+      paths: [`${REPO_ROOT}\\\\notes.txt`],
+    });
+    expect(dataTransfer.setData).toHaveBeenCalledWith(
+      'application/x-overlayterm-drag-intent',
+      'internal',
     );
   });
 

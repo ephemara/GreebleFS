@@ -139,8 +139,18 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - shell presets can hide the rail or move the preview pane without requiring a theme swap
 - `src/store/explorerStore.ts` supports named explorer sessions, but the shipping dock behavior is the same explorer surface rendered in compact mode rather than a separate drawer/dock subsystem.
 - `FileExplorer.tsx` shares directory/search result caches across explorer sessions so alternate surfaces do not duplicate backend reads unless a mutation invalidates the cache.
+- `FileExplorer.tsx` now settle-batches viewport enrichment work so visible-entry size measurement and native-icon resolution only launch after a short scroll idle window instead of hammering Tauri on every transient virtualized viewport shift.
 - `FileExplorer.tsx` still owns file-centric actions like search scope, refresh, and create file/folder, but embedded shell-level layout toggles are suppressed when the explorer is hosted inside the command center.
 - `FileExplorer.tsx` had a dev-only infinite update loop risk in the virtualized entry-size and native-icon batching effects because in-flight `Set` state was being cleared/re-added on every render. Those effects now leave in-flight batches intact until async completion.
+- Explorer drag behavior is now hybrid by default:
+  - plain explorer drag starts the native file-drag bridge and publishes `text/uri-list`
+  - the custom `application/x-overlayterm-paths` payload is still always attached so in-explorer drops keep working
+  - `Shift` is the explicit internal-drag override for explorer-only move/copy gestures
+- `ExplorerSideRail.tsx` is now navigator-first instead of bookmark-authoring-first:
+  - the rail header foregrounds the current location and pinned-count summary
+  - bookmark search is always available
+  - bookmark structure editing, category authoring, recolor, rename, and delete controls only appear in `Manage` mode
+  - this keeps the default rail lighter in compact dock mode without removing the deeper bookmark tooling
 - Overlay monitor placement is now resolved from the current or last-active monitor instead of always using the primary monitor, and `computeOverlayWindowLayout()` now left-anchors the overlay on X instead of centering it.
 - Overlay/dock mode now treats position as edge-owned state:
   - `src/config/overlayWindow.ts` exposes `computeAnchoredOverlayWindowLayout()` so current overlay bounds can preserve size without preserving stale X/Y drift
@@ -193,12 +203,14 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 
 - Repo-wide `npx tsc --noEmit` is currently red on several pre-existing generated-contract and test typing issues unrelated to the workbench/explorer theme system. The narrowed command above now only leaves `src/runtime/useFolderPluginRuntime.ts` as an unrelated pre-existing failure.
 - JSDOM-backed Vitest runs currently fail in this workspace because `html-encoding-sniffer` requires an ESM dependency through a CommonJS path. Node-environment tests still work, so keep pure logic/package-loader tests runnable there until the dependency issue is fixed.
+- Explorer interaction tests that need DOM drag/drop still need a browser-like environment, so the current JSDOM dependency failure blocks the most relevant explorer UI regressions even when the narrowed TypeScript pass is green.
 - The local Linux installer now avoids the old Node/Tauri wrapper path. `install.sh` and `scripts/build-and-install-linux-local-release.sh` build with Bun + Cargo directly, then install into `~/.local/opt/overlayterm`.
 - Do not keep `build.devUrl` in the base `src-tauri/tauri.conf.json` for release-capable paths. In this workspace, a direct `cargo build --release` will otherwise compile a binary that keeps trying to boot from `http://localhost:1420`. `scripts/run-platform-tauri.mjs` now injects `devUrl` only for the `tauri dev` command.
 - This repo is a Cargo workspace, so release binaries land under the workspace-level `target/` directory, not `src-tauri/target/`. Linux install scripts should resolve `cargo metadata` `target_directory` before copying binaries, or they can silently reinstall a stale executable from an old `src-tauri/target/release/greeble`.
 - The local Linux installer now also seeds the managed content directories into `~/.local/share/co.overlayterm.app/{plugins,themes,shaders,animations}` so the installed release has writable runtime content without polluting the top level of `$HOME`.
 - Vite still prints a Node 18 warning during builds, but `bunx vite build` succeeds in this workspace and the installer completes successfully on that host setup.
 - The explorer component is large and performance-sensitive. Route new chrome/metric changes through `src/config/explorerTheme.ts` instead of scattering new magic numbers through `FileExplorer.tsx`.
+- Explorer directory/search caches are intentionally shared at the module level across explorer mounts. Tests or one-off diagnostics harnesses that need isolated backend behavior should call the exported `invalidateExplorerResultCaches()` helper before rendering.
 - If the Linux/native overlay appears on the wrong display, inspect the monitor-resolution path in `App.tsx` before touching Rust window flags. The frontend now owns monitor selection and overlay geometry; `windowApplyMode` should only apply the chosen presentation atomically.
 - If Linux dock mode starts floating in the middle of the screen again, check the post-show re-dock path in `App.tsx` and confirm overlay move/resize listeners are not re-persisting raw X/Y coordinates into `runtimeOverlayBoundsRef`.
 - On Linux, do not let `window_apply_mode` abort geometry just because a WM rejects `set_shadow`, `set_skip_taskbar`, or another presentation-only flag. The TS call sites should unwrap the returned Tauri `Result`, and the Rust command should log best-effort flag failures while still applying size/position.

@@ -246,7 +246,7 @@ async function getOrLoadCachedExplorerSearchResults(
   return pending;
 }
 
-function invalidateExplorerResultCaches(pathPrefix?: string): void {
+export function invalidateExplorerResultCaches(pathPrefix?: string): void {
   if (!pathPrefix) {
     explorerDirectoryResultCache.clear();
     explorerSearchResultCache.clear();
@@ -531,8 +531,8 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
     || Boolean(element.closest('.monaco-editor'));
 }
 
-function resolveExplorerDragIntent(event: Pick<React.DragEvent, 'altKey'>): ExplorerDragIntent {
-  return event.altKey ? 'native-out' : 'internal';
+function resolveExplorerDragIntent(event: Pick<React.DragEvent, 'shiftKey'>): ExplorerDragIntent {
+  return event.shiftKey ? 'internal' : 'native-out';
 }
 
 function resolveExplorerDropOperation(
@@ -1972,7 +1972,7 @@ export function FileExplorer({
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const width = typeof initialSession.sidebarWidth === 'number'
       ? initialSession.sidebarWidth
-      : Math.round(explorerTheme.metrics.railWidth);
+      : sidebarBounds.defaultWidth;
     return Math.max(sidebarBounds.minWidth, Math.min(sidebarBounds.maxWidth, width));
   });
   const [previewWidth, setPreviewWidth] = useState(() => {
@@ -3602,11 +3602,12 @@ export function FileExplorer({
   };
 
   // ── Drag and Drop ──
-  const onDragStart = (e: React.DragEvent, entry: FileEntry) => {
+  const onDragStart = (e: React.DragEvent<HTMLElement>, entry: FileEntry) => {
     const dragEntries = resolveEntriesForAction(entry);
     const dragPaths = dragEntries.map(item => item.path);
     const dragIntent = resolveExplorerDragIntent(e);
     activeDragPathsRef.current = dragPaths;
+    e.currentTarget.dataset.overlayDragIntent = dragIntent;
     e.dataTransfer.setData('text/plain', dragPaths[0] ?? entry.path);
     e.dataTransfer.setData('application/x-overlayterm-paths', JSON.stringify(dragPaths));
     e.dataTransfer.setData('application/x-overlayterm-drag-intent', dragIntent);
@@ -3640,7 +3641,8 @@ export function FileExplorer({
     e.dataTransfer.effectAllowed = dragIntent === 'native-out' ? 'copy' : 'copyMove';
   };
 
-  const onDragEnd = () => {
+  const onDragEnd = (e: React.DragEvent<HTMLElement>) => {
+    delete e.currentTarget.dataset.overlayDragIntent;
     activeDragPathsRef.current = [];
     setDragOver(null);
   };
@@ -4194,20 +4196,20 @@ export function FileExplorer({
       return;
     }
 
-    setEntrySizeLoadingPaths(current => {
-      const next = new Set(current);
-      let changed = false;
-      for (const path of unresolvedPaths) {
-        if (!next.has(path)) {
-          next.add(path);
-          changed = true;
-        }
-      }
-      return changed ? next : current;
-    });
-
     let disposed = false;
     const batchTimer = window.setTimeout(() => {
+      setEntrySizeLoadingPaths(current => {
+        const next = new Set(current);
+        let changed = false;
+        for (const path of unresolvedPaths) {
+          if (!next.has(path)) {
+            next.add(path);
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+
       const startedAt = getExplorerPerformanceNow();
       void measureExplorerEntrySizes(unresolvedPaths, false)
         .then(results => {
@@ -4310,20 +4312,20 @@ export function FileExplorer({
     const pendingKeys = pendingEntries.map(item => item.key);
     const requests = pendingEntries.map(item => getNativeIconRequest(item.entry));
 
-    setNativeIconLoadingKeys(current => {
-      const next = new Set(current);
-      let changed = false;
-      for (const key of pendingKeys) {
-        if (!next.has(key)) {
-          next.add(key);
-          changed = true;
-        }
-      }
-      return changed ? next : current;
-    });
-
     let disposed = false;
     const batchTimer = window.setTimeout(() => {
+      setNativeIconLoadingKeys(current => {
+        const next = new Set(current);
+        let changed = false;
+        for (const key of pendingKeys) {
+          if (!next.has(key)) {
+            next.add(key);
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+
       const startedAt = getExplorerPerformanceNow();
       void commands.fsResolveNativeIcons(
         requests.map(request => ({

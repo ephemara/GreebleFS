@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
-import { FileExplorer } from '../components/FileExplorer';
+import { FileExplorer, invalidateExplorerResultCaches } from '../components/FileExplorer';
 import { resolveOverlayAppearance } from '../config/appearance';
 import type { FileSearchDiagnostics } from '../config/searchTelemetry';
 import {
@@ -176,6 +176,7 @@ describe('FileExplorer search telemetry', () => {
   beforeEach(() => {
     resetOverlayTermStorage(window.localStorage);
     resetExplorerPerformanceSnapshot(window.localStorage);
+    invalidateExplorerResultCaches();
     useSettingsStore.getState().resetToDefaults();
     useExplorerStore.getState().resetSession();
     useExplorerStore.getState().replaceRail(createDefaultExplorerRailSnapshot());

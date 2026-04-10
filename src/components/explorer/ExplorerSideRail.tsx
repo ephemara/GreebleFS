@@ -6,6 +6,7 @@ import {
   FolderTree,
   HardDrive,
   Home,
+  Pencil,
   Search,
   Star,
   Tag,
@@ -54,11 +55,13 @@ interface ExplorerSideRailProps {
 interface TreeRowProps {
   accent: string;
   dense: boolean;
+  manageMode: boolean;
   currentPath: string;
   row: ExplorerBookmarkTreeNode;
   dropTargetFolderId: string | null;
   onNavigate: (path: string) => void;
   onQueueFolderCreate: (parentId: string | null) => void;
+  onRenameNode: (nodeId: string, nodeName: string) => void;
   onDropIntoFolder: (event: React.DragEvent, folderId: string | null) => void;
   onDragOverFolder: (event: React.DragEvent, folderId: string | null) => void;
   onDragLeaveFolder: () => void;
@@ -85,6 +88,7 @@ export function ExplorerSideRail({
 
   const dense = isCompactDock || sidebarWidth < 260;
   const ultraDense = isCompactDock || sidebarWidth < 220;
+  const [isManageMode, setIsManageMode] = useState(false);
   const [draftFolderParentId, setDraftFolderParentId] = useState<string | null | false>(false);
   const [draftFolderName, setDraftFolderName] = useState('New Folder');
   const [draftCategoryName, setDraftCategoryName] = useState('');
@@ -95,6 +99,12 @@ export function ExplorerSideRail({
 
   const deferredQuery = useDeferredValue(rail.searchQuery);
   const categories = useMemo(() => getAllExplorerBookmarkCategories(rail.customCategories), [rail.customCategories]);
+  const bookmarkCount = useMemo(
+    () => rail.nodes.filter((node) => node.kind === 'bookmark').length,
+    [rail.nodes],
+  );
+  const locationTitle = currentPath.trim() || 'Home';
+  const locationLabel = getPathLeaf(locationTitle);
   const filteredRail = useMemo(() => ({
     ...rail,
     searchQuery: deferredQuery,
@@ -194,32 +204,45 @@ export function ExplorerSideRail({
       onDrop={(event) => handleBookmarkDrop(event, null)}
     >
       <div style={{ padding: dense ? '8px 8px 6px' : '12px 12px 10px', borderBottom: '1px solid var(--overlay-border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <div style={{ minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--overlay-text-dim)', fontWeight: 700 }}>
-              Explorer Rail
-            </div>
-            <div style={{ fontSize: 'var(--overlay-explorer-rail-title-size)', color: 'var(--overlay-text-primary)', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {brandLabel}
             </div>
+            <div style={{ marginTop: 2, fontSize: 'var(--overlay-explorer-rail-title-size)', color: 'var(--overlay-text-primary)', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {locationLabel}
+            </div>
+            <div title={locationTitle} style={{ marginTop: 3, fontSize: 9.5, color: 'var(--overlay-text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {locationTitle}
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: 4 }}>
-            <RailIconButton
-              label="Create bookmark folder"
-              onClick={() => {
-                setDraftFolderParentId(null);
-                setDraftFolderName('New Folder');
-              }}
-            >
-              <FolderPlus size={13} />
-            </RailIconButton>
-            <RailIconButton
-              label="Create custom category"
-              onClick={() => setDraftCategoryName((current) => current || 'New Category')}
-            >
-              <Tag size={13} />
-            </RailIconButton>
-          </div>
+          <button
+            type="button"
+            aria-pressed={isManageMode}
+            onClick={() => {
+              setIsManageMode((current) => {
+                const next = !current;
+                if (!next) {
+                  setDraftFolderParentId(false);
+                  setDraftCategoryName('');
+                }
+                return next;
+              });
+            }}
+            style={manageToggleButtonStyle(accent, isManageMode)}
+          >
+            {isManageMode ? 'Done' : 'Manage'}
+          </button>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+          <span style={railMetaPillStyle}>
+            {bookmarkCount} pinned
+          </span>
+          {!dense && (
+            <span style={railMetaPillStyle}>
+              Plain drag exports files. Shift keeps drag inside the explorer.
+            </span>
+          )}
         </div>
         {persistence.message && (
           <div
@@ -356,7 +379,7 @@ export function ExplorerSideRail({
           onToggle={() => updateRail(toggleExplorerRailSection(rail, 'bookmarks'))}
           grow
         >
-            <div
+          <div
             style={{
               padding: dense ? '6px 7px' : '8px 10px',
               borderRadius: 9,
@@ -385,47 +408,73 @@ export function ExplorerSideRail({
               )}
             </div>
 
-            <div
-              className={dense ? 'overlay-scrollbars-none' : undefined}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-                marginTop: 6,
-                flexWrap: dense ? 'nowrap' : 'wrap',
-                overflowX: dense ? 'auto' : 'visible',
-                overflowY: 'hidden',
-                paddingBottom: dense ? 2 : 0,
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => updateRail(clearExplorerBookmarkCategoryFilters(rail))}
-                style={categoryChipStyle(rail.activeCategoryIds.length === 0)}
+            {(isManageMode || rail.activeCategoryIds.length > 0 || draftCategoryName.length > 0) && (
+              <div
+                className={dense ? 'overlay-scrollbars-none' : undefined}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  marginTop: 6,
+                  flexWrap: dense ? 'nowrap' : 'wrap',
+                  overflowX: dense ? 'auto' : 'visible',
+                  overflowY: 'hidden',
+                  paddingBottom: dense ? 2 : 0,
+                }}
               >
-                All
-              </button>
-              {categories.map((category) => {
-                const active = rail.activeCategoryIds.includes(category.id);
-                return (
-                  <button
-                    key={category.id}
-                    type="button"
-                    onClick={() => updateRail(toggleExplorerBookmarkCategoryFilter(rail, category.id))}
-                    style={{
-                      ...categoryChipStyle(active),
-                      borderColor: active ? category.color : 'var(--overlay-border)',
-                      color: active ? category.color : 'var(--overlay-text-muted)',
-                    }}
-                  >
-                    <span style={{ width: 7, height: 7, borderRadius: 999, background: category.color, flexShrink: 0 }} />
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: dense ? 64 : 110 }}>
-                      {category.name}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+                <button
+                  type="button"
+                  onClick={() => updateRail(clearExplorerBookmarkCategoryFilters(rail))}
+                  style={categoryChipStyle(rail.activeCategoryIds.length === 0)}
+                >
+                  All
+                </button>
+                {categories.map((category) => {
+                  const active = rail.activeCategoryIds.includes(category.id);
+                  return (
+                    <button
+                      key={category.id}
+                      type="button"
+                      onClick={() => updateRail(toggleExplorerBookmarkCategoryFilter(rail, category.id))}
+                      style={{
+                        ...categoryChipStyle(active),
+                        borderColor: active ? category.color : 'var(--overlay-border)',
+                        color: active ? category.color : 'var(--overlay-text-muted)',
+                      }}
+                    >
+                      <span style={{ width: 7, height: 7, borderRadius: 999, background: category.color, flexShrink: 0 }} />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: dense ? 64 : 110 }}>
+                        {category.name}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {isManageMode && (
+              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                <button
+                  type="button"
+                  aria-label="Create bookmark folder"
+                  onClick={() => {
+                    setDraftFolderParentId(null);
+                    setDraftFolderName('New Folder');
+                  }}
+                  style={draftPrimaryButtonStyle(accent)}
+                >
+                  New Group
+                </button>
+                <button
+                  type="button"
+                  aria-label="Create custom category"
+                  onClick={() => setDraftCategoryName((current) => current || 'New Category')}
+                  style={draftSecondaryButtonStyle}
+                >
+                  New Tag
+                </button>
+              </div>
+            )}
           </div>
 
           {draftFolderParentId !== false && (
@@ -514,17 +563,9 @@ export function ExplorerSideRail({
               background: dropTargetFolderId === null ? `${accent}10` : 'var(--overlay-explorer-chip-bg)',
             }}
           >
-            <button type="button" onClick={onGoHome} style={bookmarkQuickLinkStyle(accent, dense, currentPath === '')}>
-              <Star size={dense ? 10.5 : 12} style={{ color: accent, flexShrink: 0 }} />
-              <div style={{ minWidth: 0 }}>
-                <div style={bookmarkTitleStyle}>Home</div>
-                {!dense && <div style={bookmarkMetaStyle}>Pinned quick jump</div>}
-              </div>
-            </button>
-
             {bookmarkTree.length === 0 && (
               <div style={{ padding: dense ? '10px 8px' : '14px 10px', color: 'var(--overlay-text-dim)', fontSize: 9.5, lineHeight: 1.4 }}>
-                Drag folders here, or use the folder button to build nested bookmark groups.
+                Drag folders here to pin them. Open Manage when you want to organize groups, tags, or colors.
               </div>
             )}
 
@@ -533,6 +574,7 @@ export function ExplorerSideRail({
                 key={row.node.id}
                 accent={accent}
                 dense={dense}
+                manageMode={isManageMode}
                 currentPath={currentPath}
                 row={row}
                 dropTargetFolderId={dropTargetFolderId}
@@ -540,6 +582,11 @@ export function ExplorerSideRail({
                 onQueueFolderCreate={(parentId) => {
                   setDraftFolderParentId(parentId);
                   setDraftFolderName('New Folder');
+                }}
+                onRenameNode={(nodeId, nodeName) => {
+                  setEditingNodeId(nodeId);
+                  setEditingNodeName(nodeName);
+                  setIsManageMode(true);
                 }}
                 onDragOverFolder={(event, folderId) => {
                   event.preventDefault();
@@ -582,11 +629,13 @@ export function ExplorerSideRail({
 function BookmarkTreeRow({
   accent,
   dense,
+  manageMode,
   currentPath,
   row,
   dropTargetFolderId,
   onNavigate,
   onQueueFolderCreate,
+  onRenameNode,
   onDropIntoFolder,
   onDragOverFolder,
   onDragLeaveFolder,
@@ -665,17 +714,26 @@ function BookmarkTreeRow({
           </div>
         </button>
 
-        {isFolder && (
+        {manageMode && isFolder && (
           <button type="button" aria-label="Create nested bookmark folder" onClick={() => onQueueFolderCreate(row.node.id)} style={treeIconButtonStyle}>
             <FolderPlus size={11} />
           </button>
         )}
-        <button type="button" aria-label="Cycle bookmark color" onClick={() => updateRail(cycleExplorerBookmarkNodeColor(rail, row.node.id))} style={treeIconButtonStyle}>
-          <span style={{ width: 11, height: 11, borderRadius: 999, background: row.node.color ?? accent }} />
-        </button>
-        <button type="button" aria-label="Remove bookmark node" onClick={() => updateRail(removeExplorerBookmarkNode(rail, row.node.id))} style={treeIconButtonStyle}>
-          <X size={11} />
-        </button>
+        {manageMode && (
+          <button type="button" aria-label="Rename bookmark node" onClick={() => onRenameNode(row.node.id, row.node.name)} style={treeIconButtonStyle}>
+            <Pencil size={11} />
+          </button>
+        )}
+        {manageMode && (
+          <button type="button" aria-label="Cycle bookmark color" onClick={() => updateRail(cycleExplorerBookmarkNodeColor(rail, row.node.id))} style={treeIconButtonStyle}>
+            <span style={{ width: 11, height: 11, borderRadius: 999, background: row.node.color ?? accent }} />
+          </button>
+        )}
+        {manageMode && (
+          <button type="button" aria-label="Remove bookmark node" onClick={() => updateRail(removeExplorerBookmarkNode(rail, row.node.id))} style={treeIconButtonStyle}>
+            <X size={11} />
+          </button>
+        )}
       </div>
 
       {isFolder && isExpanded && row.children.map((child) => (
@@ -683,11 +741,13 @@ function BookmarkTreeRow({
           key={child.node.id}
           accent={accent}
           dense={dense}
+          manageMode={manageMode}
           currentPath={currentPath}
           row={child}
           dropTargetFolderId={dropTargetFolderId}
           onNavigate={onNavigate}
           onQueueFolderCreate={onQueueFolderCreate}
+          onRenameNode={onRenameNode}
           onDragOverFolder={onDragOverFolder}
           onDragLeaveFolder={onDragLeaveFolder}
           onDropIntoFolder={onDropIntoFolder}
@@ -750,22 +810,6 @@ function RailSection({
   );
 }
 
-function RailIconButton({
-  label,
-  onClick,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button type="button" aria-label={label} onClick={onClick} style={treeIconButtonStyle}>
-      {children}
-    </button>
-  );
-}
-
 function formatBytes(bytes: number): string {
   if (bytes <= 0) {
     return '0 B';
@@ -780,6 +824,15 @@ function formatBytes(bytes: number): string {
     return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
   }
   return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+}
+
+function getPathLeaf(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, '');
+  if (!trimmed) {
+    return 'Home';
+  }
+  const segments = trimmed.split(/[\\/]/).filter(Boolean);
+  return segments[segments.length - 1] ?? trimmed;
 }
 
 const dismissButtonStyle: React.CSSProperties = {
@@ -808,6 +861,18 @@ const treeIconButtonStyle: React.CSSProperties = {
   justifyContent: 'center',
   cursor: 'pointer',
   flexShrink: 0,
+};
+
+const railMetaPillStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 5,
+  borderRadius: 999,
+  border: '1px solid var(--overlay-explorer-chip-border)',
+  background: 'var(--overlay-explorer-chip-bg)',
+  color: 'var(--overlay-text-dim)',
+  fontSize: 9,
+  padding: '3px 8px',
 };
 
 const searchInputStyle: React.CSSProperties = {
@@ -918,18 +983,17 @@ function quickLinkButtonStyle(active: boolean, accent: string, dense: boolean): 
   };
 }
 
-function bookmarkQuickLinkStyle(accent: string, dense: boolean, active: boolean): React.CSSProperties {
+function manageToggleButtonStyle(accent: string, active: boolean): React.CSSProperties {
   return {
-    width: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 7,
-    padding: dense ? '4px 6px' : '6px 8px',
-    borderRadius: 'var(--overlay-explorer-control-radius)',
-    border: `1px solid ${active ? `${accent}44` : 'transparent'}`,
-    background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'transparent',
-    color: 'var(--overlay-text-primary)',
+    borderRadius: 999,
+    border: `1px solid ${active ? `${accent}66` : 'var(--overlay-explorer-chip-border)'}`,
+    background: active ? `${accent}18` : 'var(--overlay-explorer-chip-bg)',
+    color: active ? accent : 'var(--overlay-text-primary)',
+    fontSize: 9.5,
+    fontWeight: 700,
+    letterSpacing: '0.04em',
+    padding: '5px 10px',
     cursor: 'pointer',
-    textAlign: 'left',
+    flexShrink: 0,
   };
 }

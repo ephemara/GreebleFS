@@ -37,6 +37,7 @@ describe('ExplorerSideRail', () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole('button', { name: 'Manage' }));
     fireEvent.click(screen.getByLabelText(/create bookmark folder/i));
     fireEvent.change(screen.getByLabelText(/new bookmark folder name/i), { target: { value: 'Work' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
@@ -44,6 +45,47 @@ describe('ExplorerSideRail', () => {
     expect(useExplorerStore.getState().rail.nodes).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'folder', name: 'Work' }),
     ]));
+  }, 20000);
+
+  it('keeps bookmark row management controls hidden until manage mode is enabled', () => {
+    const timestamp = Date.now();
+    useExplorerStore.getState().replaceRail({
+      ...createDefaultExplorerRailSnapshot(),
+      nodes: [
+        {
+          id: 'bookmark-1',
+          kind: 'bookmark',
+          parentId: null,
+          name: 'Workspace',
+          path: 'M:\\Workspace',
+          color: '#7c3aed',
+          categoryIds: [],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          targetKind: 'directory',
+        },
+      ],
+    });
+
+    render(
+      <ExplorerSideRail
+        accent="#7c3aed"
+        brandLabel="Explorer"
+        sidebarWidth={240}
+        currentPath="M:\\Workspace"
+        drives={[]}
+        drivesLoading={false}
+        isCompactDock={false}
+        onNavigate={vi.fn()}
+        onGoHome={vi.fn()}
+        onBookmarkCreated={vi.fn()}
+        resolveDroppedSources={() => []}
+      />,
+    );
+
+    expect(screen.queryByLabelText(/remove bookmark node/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Manage' }));
+    expect(screen.getByLabelText(/remove bookmark node/i)).toBeInTheDocument();
   }, 20000);
 
   it('stores collapsed section state when sections are toggled', () => {

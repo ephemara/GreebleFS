@@ -1650,7 +1650,11 @@ function App() {
 
   const handleDragStart = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     const target = event.target instanceof HTMLElement ? event.target : null;
-    if (!target?.closest('[data-overlay-drag-source="file"]')) {
+    const dragSource = target?.closest<HTMLElement>('[data-overlay-drag-source="file"]');
+    if (!dragSource) {
+      return;
+    }
+    if (dragSource.dataset.overlayDragIntent !== 'native-out' || dragSource.dataset.overlayDragHide !== 'true') {
       return;
     }
     void hideOverlayForDrag();

@@ -20,14 +20,14 @@ export interface ExplorerBookmarkColorOption {
 
 export const explorerRailWidthBoundsByLayout: Record<'full' | 'compact', ExplorerRailWidthBounds> = {
   full: {
-    defaultWidth: 236,
-    minWidth: 176,
-    maxWidth: 420,
+    defaultWidth: 220,
+    minWidth: 168,
+    maxWidth: 360,
   },
   compact: {
-    defaultWidth: 182,
-    minWidth: 148,
-    maxWidth: 280,
+    defaultWidth: 172,
+    minWidth: 144,
+    maxWidth: 260,
   },
 };
 
