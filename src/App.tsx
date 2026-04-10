@@ -16,6 +16,7 @@ import {
 import { FolderPluginRenderer, PluginsManager } from './components/PluginsManager';
 import { CommandPalette, type OverlayCommandPaletteAction } from './components/CommandPalette';
 import { animationSystemConfig, resolvePreferredAnimationId } from './config/animations';
+import { wallpaperSystemConfig } from './config/wallpapers';
 import {
   explorerExperimentalModes,
   type ExplorerExperimentalViewMode,
@@ -63,6 +64,17 @@ import {
   type OverlayShaderShellContext,
 } from './components/shaderRuntime';
 import {
+  WallpaperBackgroundLayer,
+  createMediaWallpaperFromFile,
+  createThemeAssetWallpaper,
+  isFrontendWallpaperFile,
+  isMediaWallpaperFile,
+  loadWallpaperFromSource,
+  resolveActiveWallpaper,
+  type LoadedOverlayWallpaper,
+  type OverlayWallpaperRenderContext,
+} from './components/wallpaperRuntime';
+import {
   Check,
   ChevronDown,
   Droplet,
@@ -107,7 +119,7 @@ import {
   overlayWindowGeometry,
   overlayVisualControls,
 } from './config/overlayWindow';
-import { detectClientPlatform, type RuntimePlatform } from './config/platform';
+import { detectClientPlatform, joinPlatformPath, type RuntimePlatform } from './config/platform';
 import { derivePanelOpenState, reorderPanelIds } from './components/panelUtils';
 import { OverlayScrollArea } from './components/OverlayScrollArea';
 import { WorkbenchNavigationSurface } from './components/WorkbenchNavigationSurface';
@@ -119,7 +131,7 @@ import {
   ensureDir,
   parseExternalArgs,
 } from './runtime/overlayRuntimeUtils';
-import { listExplorerDir, openExplorerPath } from './runtime/explorerBackend';
+import { listExplorerDir, openExplorerPath, writeExplorerFile } from './runtime/explorerBackend';
 import { commands, unwrapTauriResult } from './runtime/tauriClient';
 import { useFolderPluginRuntime } from './runtime/useFolderPluginRuntime';
 import {
@@ -154,6 +166,33 @@ function clampValue(value: number, min: number, max: number): number {
 
 function clampUnit(value: number): number {
   return clampValue(value, 0, 1);
+}
+
+function sanitizeImportedWallpaperFileName(fileName: string): string {
+  const dotIndex = fileName.lastIndexOf('.');
+  const rawBase = dotIndex >= 0 ? fileName.slice(0, dotIndex) : fileName;
+  const rawExtension = dotIndex >= 0 ? fileName.slice(dotIndex + 1) : '';
+  const safeBase = rawBase
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'wallpaper';
+  const safeExtension = rawExtension
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+  return safeExtension ? `${safeBase}.${safeExtension}` : safeBase;
+}
+
+function isThemeAssetDuplicatedInEffects(backgroundUrl: string | undefined, backgroundImage: string | undefined): boolean {
+  if (!backgroundUrl || !backgroundImage) {
+    return false;
+  }
+
+  const trimmedBackgroundImage = backgroundImage.trim();
+  return trimmedBackgroundImage === `url("${backgroundUrl}")`
+    || trimmedBackgroundImage === `url('${backgroundUrl}')`
+    || trimmedBackgroundImage === `url(${backgroundUrl})`;
 }
 
 function applyWheelVisualControlAdjust(args: {
@@ -364,10 +403,14 @@ function App() {
   const [authoredShaders, setAuthoredShaders] = useState<LoadedOverlayShader[]>([]);
   const [authoredShadersError, setAuthoredShadersError] = useState<string | null>(null);
   const [authoredShadersLoading, setAuthoredShadersLoading] = useState(true);
+  const [authoredWallpapers, setAuthoredWallpapers] = useState<LoadedOverlayWallpaper[]>([]);
+  const [authoredWallpapersError, setAuthoredWallpapersError] = useState<string | null>(null);
+  const [authoredWallpapersLoading, setAuthoredWallpapersLoading] = useState(true);
   const [themeContributedAnimations, setThemeContributedAnimations] = useState<LoadedOverlayAnimation[]>([]);
   const [themeContributedShaders, setThemeContributedShaders] = useState<LoadedOverlayShader[]>([]);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
+  const [linuxDisplayServer, setLinuxDisplayServer] = useState<'unknown' | 'wayland' | 'x11'>('unknown');
   const builtInAnimations = useMemo(() => createBuiltInOverlayAnimations(), []);
   const builtInShaders = useMemo(() => createBuiltInOverlayShaders(), []);
   const overlayPhaseRef = useRef<OverlayAnimationPhase>('closed');
@@ -386,10 +429,13 @@ function App() {
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const animationSignatureRef = useRef('');
   const shaderSignatureRef = useRef('');
+  const wallpaperSignatureRef = useRef('');
   const authoredAnimationsRefreshInFlightRef = useRef(false);
   const authoredAnimationsRefreshQueuedRef = useRef(false);
   const authoredShadersRefreshInFlightRef = useRef(false);
   const authoredShadersRefreshQueuedRef = useRef(false);
+  const authoredWallpapersRefreshInFlightRef = useRef(false);
+  const authoredWallpapersRefreshQueuedRef = useRef(false);
   const frameTelemetryContextRef = useRef<{
     activePanelId: string | null;
     openPanelCount: number;
@@ -491,6 +537,7 @@ function App() {
   const windowMode: TerminalWindowMode = settings.windowMode === 'windowed' ? 'windowed' : 'overlay';
   windowModeRef.current = windowMode;
   const isWindowedMode = windowMode === 'windowed';
+  const isWaylandOverlaySession = runtimePlatform === 'linux' && linuxDisplayServer === 'wayland' && !isWindowedMode;
   const shouldShowInTaskbar = systemSettings.showInTaskbar || isWindowedMode;
   const appOpacity = appearance.appOpacity ?? 1.0;
   const panelTransparency = appearance.panelTransparency ?? overlayVisualControls.panelTransparency.defaultValue;
@@ -506,6 +553,7 @@ function App() {
   const clampedPanelTransparency = clampOverlayVisualControlValue('panelTransparency', panelTransparency);
   const clampedAppZoom = clampOverlayVisualControlValue('zoom', appZoom);
   const clampedAppBlurStrength = clampOverlayVisualControlValue('blurStrength', appBlurStrength);
+  const wallpaperOpacity = clampOverlayVisualControlValue('opacity', appearance.wallpaperOpacity ?? 1);
   const overlayAnchor: OverlayWindowAnchor = settings.overlayAnchor === 'top' ? 'top' : 'bottom';
   const isTopAnchored = !isWindowedMode && overlayAnchor === 'top';
   const effectiveWindowZoom = isWindowedMode && isWindowMaximized ? 1 : clampedAppZoom;
@@ -528,6 +576,73 @@ function App() {
     () => mergeOverlayShaders(builtInShaders, [...authoredShaders, ...themeContributedShaders, ...pluginContributedShaders]),
     [authoredShaders, builtInShaders, pluginContributedShaders, themeContributedShaders],
   );
+  const availableWallpapers = useMemo(() => {
+    const wallpaperById = new Map<string, LoadedOverlayWallpaper>();
+    [...authoredWallpapers]
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .forEach(wallpaper => {
+        const existing = wallpaperById.get(wallpaper.id);
+        if (!existing || (existing.error && !wallpaper.error)) {
+          wallpaperById.set(wallpaper.id, wallpaper);
+        }
+      });
+    return Array.from(wallpaperById.values());
+  }, [authoredWallpapers]);
+  const themeWallpaper = useMemo(() => {
+    const assetUrl = resolvedAppearance.baseTheme.assets?.backgroundUrl;
+    if (!assetUrl) {
+      return null;
+    }
+
+    return createThemeAssetWallpaper({
+      themeId: resolvedAppearance.baseTheme.id,
+      themeName: resolvedAppearance.baseTheme.name,
+      assetUrl,
+    });
+  }, [
+    resolvedAppearance.baseTheme.assets?.backgroundUrl,
+    resolvedAppearance.baseTheme.id,
+    resolvedAppearance.baseTheme.name,
+  ]);
+  const wallpaperSelection = useMemo(() => resolveActiveWallpaper({
+    availableWallpapers,
+    userOverrideId: appearance.activeWallpaperId,
+    themeWallpaper,
+  }), [appearance.activeWallpaperId, availableWallpapers, themeWallpaper]);
+  const activeWallpaper = wallpaperSelection.wallpaper;
+  const shellWallpaperContext = useMemo<OverlayWallpaperRenderContext>(() => ({
+    wallpaper: activeWallpaper ?? themeWallpaper ?? {
+      id: wallpaperSystemConfig.noneWallpaperId,
+      name: 'No Wallpaper',
+      filePath: 'builtin:none',
+      wallpaperRoot: 'builtin',
+      source: 'theme-asset',
+      kind: 'image',
+    },
+    theme,
+    viewport: {
+      width: typeof window === 'undefined' ? 0 : window.innerWidth,
+      height: typeof window === 'undefined' ? 0 : window.innerHeight,
+    },
+    fitMode: appearance.wallpaperFitMode ?? 'cover',
+    opacity: wallpaperOpacity,
+    muted: appearance.wallpaperMuted !== false,
+    motionEnabled: animationsEnabled,
+  }), [
+    activeWallpaper,
+    animationsEnabled,
+    appearance.wallpaperFitMode,
+    appearance.wallpaperMuted,
+    theme,
+    themeWallpaper,
+    wallpaperOpacity,
+  ]);
+  const shellThemeEffectBackgroundImage = isThemeAssetDuplicatedInEffects(
+    resolvedAppearance.baseTheme.assets?.backgroundUrl,
+    theme.effects.backgroundImage,
+  )
+    ? undefined
+    : theme.effects.backgroundImage;
   const availableAnimationsById = useMemo(
     () => new Map(availableAnimations.map(animation => [animation.id, animation])),
     [availableAnimations],
@@ -976,6 +1091,37 @@ function App() {
     };
   }, [isWindowedMode]);
 
+  useEffect(() => {
+    if (!isTauri() || runtimePlatform !== 'linux') {
+      setLinuxDisplayServer('unknown');
+      return;
+    }
+
+    let cancelled = false;
+    commands.windowGetLinuxDisplayServer()
+      .then(unwrapTauriResult)
+      .then(displayServer => {
+        if (cancelled) {
+          return;
+        }
+
+        setLinuxDisplayServer(
+          displayServer === 'wayland' || displayServer === 'x11'
+            ? displayServer
+            : 'unknown',
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLinuxDisplayServer('unknown');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [runtimePlatform]);
+
   const resolveDockOverlayLayout = useCallback((args: {
     monitor: Awaited<ReturnType<typeof currentMonitor>>;
     scaleFactor: number;
@@ -1006,20 +1152,32 @@ function App() {
       useSettingsStore.getState().updateTerminal({ overlayHeight: layout.healedHeight });
     }
 
-    runtimeOverlayBoundsRef.current = {
-      width: layout.width,
-      height: layout.height,
-      x: layout.x,
-      y: layout.y,
-    };
+    const nextRuntimeBounds = isWaylandOverlaySession
+      ? (args.currentBounds ?? runtimeOverlayBoundsRef.current ?? {
+          width: layout.width,
+          height: layout.height,
+          x: layout.x,
+          y: layout.y,
+        })
+      : {
+          width: layout.width,
+          height: layout.height,
+          x: layout.x,
+          y: layout.y,
+        };
+    runtimeOverlayBoundsRef.current = nextRuntimeBounds;
 
     if (args.deferMs && args.deferMs > 0) {
       await new Promise(resolve => window.setTimeout(resolve, args.deferMs));
     }
 
+    if (isWaylandOverlaySession) {
+      return layout;
+    }
+
     isProgrammaticResizeRef.current = true;
     try {
-      await commands.windowApplyMode(
+      unwrapTauriResult(await commands.windowApplyMode(
         false,
         true,
         false,
@@ -1028,13 +1186,13 @@ function App() {
         layout.y,
         layout.width,
         layout.height,
-      ).catch(() => {});
+      ));
     } finally {
       isProgrammaticResizeRef.current = false;
     }
 
     return layout;
-  }, [resolveDockOverlayLayout, shouldShowInTaskbar]);
+  }, [isWaylandOverlaySession, resolveDockOverlayLayout, shouldShowInTaskbar]);
 
   // ── Position & show ──
   const positionAndShow = useCallback(async () => {
@@ -1081,7 +1239,7 @@ function App() {
       });
       await win.show();
       await win.setFocus();
-      if (runtimePlatform === 'linux') {
+      if (runtimePlatform === 'linux' && !isWaylandOverlaySession) {
         await applyDockOverlayLayout({
           monitor,
           scaleFactor,
@@ -1109,12 +1267,19 @@ function App() {
           window.clearTimeout(animationCommitTimerRef.current);
           animationCommitTimerRef.current = null;
         }
-        runtimeOverlayBoundsRef.current = {
-          width: layout.width,
-          height: layout.height,
-          x: layout.x,
-          y: layout.y,
-        };
+        runtimeOverlayBoundsRef.current = isWaylandOverlaySession
+          ? (runtimeOverlayBoundsRef.current ?? {
+              width: layout.width,
+              height: layout.height,
+              x: layout.x,
+              y: layout.y,
+            })
+          : {
+              width: layout.width,
+              height: layout.height,
+              x: layout.x,
+              y: layout.y,
+            };
         isProgrammaticResizeRef.current = false;
         markOverlayRuntimePhase('opening', true);
         setOverlayPhase('opening');
@@ -1138,7 +1303,7 @@ function App() {
       setAnimationProgress(0);
       console.warn('OverlayTerm: failed to position/show', e);
     }
-  }, [appAnimationDurationMs, applyDockOverlayLayout, clearAnimationClock, markOverlayRuntimePhase, openWithoutMonitorLayout, resolveAnimationById, resolveDockOverlayLayout, resolvedOpenAnimationId, runtimePlatform, startAnimationProgress]);
+  }, [appAnimationDurationMs, applyDockOverlayLayout, clearAnimationClock, isWaylandOverlaySession, markOverlayRuntimePhase, openWithoutMonitorLayout, resolveAnimationById, resolveDockOverlayLayout, resolvedOpenAnimationId, runtimePlatform, startAnimationProgress]);
 
   const showWindowedPanel = useCallback(async () => {
     clearAnimationClock();
@@ -1189,7 +1354,7 @@ function App() {
 
       // Atomic: set decorations + geometry in one call
       if (isTauri() && !isMaximized) {
-        await commands.windowApplyMode(
+        unwrapTauriResult(await commands.windowApplyMode(
           false,
           false,
           false,
@@ -1198,16 +1363,16 @@ function App() {
           layout.y,
           layout.width,
           layout.height,
-        ).catch(() => {});
+        ));
       } else if (isTauri()) {
         // Already maximized — just set the presentation flags, skip geometry
-        await commands.windowApplyMode(
+        unwrapTauriResult(await commands.windowApplyMode(
           false,
           false,
           false,
           false,
           0, 0, 0, 0,
-        ).catch(() => {});
+        ));
       }
       await win.show();
       await win.unminimize().catch(() => {});
@@ -1271,6 +1436,7 @@ function App() {
 
 
   const handleToggleOverlayAnchor = useCallback(() => {
+    isFreefloatingRef.current = false;
     updateTerminal({
       overlayAnchor: overlayAnchor === 'top' ? 'bottom' : 'top',
     });
@@ -1425,16 +1591,20 @@ function App() {
         const isMaximized = await win.isMaximized().catch(() => false);
         if (!isMaximized) {
           isProgrammaticResizeRef.current = true;
-          await commands.windowApplyMode(
-            false,
-            false,
-            false,
-            false,
-            layout.x,
-            layout.y,
-            layout.width,
-            layout.height,
-          ).catch(() => {});
+          try {
+            unwrapTauriResult(await commands.windowApplyMode(
+              false,
+              false,
+              false,
+              false,
+              layout.x,
+              layout.y,
+              layout.width,
+              layout.height,
+            ));
+          } finally {
+            isProgrammaticResizeRef.current = false;
+          }
         }
         if (
           (layout.healedWidth !== null && layout.healedWidth !== store.windowedWidth)
@@ -1642,6 +1812,7 @@ function App() {
         x: position.x,
         y: position.y,
       };
+      isFreefloatingRef.current = true;
       runtimeOverlayBoundsRef.current = currentBounds;
       const store = useSettingsStore.getState().settings.terminal;
       const nextOverlayHeight = Math.max(logH, overlayWindowGeometry.minHeight);
@@ -1677,6 +1848,7 @@ function App() {
         x: ev.payload.x,
         y: ev.payload.y,
       };
+      isFreefloatingRef.current = true;
       runtimeOverlayBoundsRef.current = currentBounds;
       const scaleFactor = await win.scaleFactor().catch(() => 1);
       const monitor = await resolvePreferredMonitor();
@@ -1796,6 +1968,100 @@ function App() {
     await ensureDir(shaderSystemConfig.shadersDirectory);
     await openExplorerPath(shaderSystemConfig.shadersDirectory);
   }, []);
+
+  const openWallpapersFolder = useCallback(async () => {
+    if (!isTauri()) {
+      return;
+    }
+
+    await ensureDir(wallpaperSystemConfig.wallpapersDirectory);
+    await openExplorerPath(wallpaperSystemConfig.wallpapersDirectory);
+  }, []);
+
+  const refreshAuthoredWallpapers = useCallback(async (force = false) => {
+    if (!isTauri()) {
+      setAuthoredWallpapers([]);
+      setAuthoredWallpapersError(null);
+      setAuthoredWallpapersLoading(false);
+      return;
+    }
+
+    if (force) {
+      authoredWallpapersRefreshQueuedRef.current = true;
+    }
+    if (authoredWallpapersRefreshInFlightRef.current) {
+      authoredWallpapersRefreshQueuedRef.current = true;
+      return;
+    }
+
+    authoredWallpapersRefreshInFlightRef.current = true;
+    try {
+      do {
+        const nextForce = force || authoredWallpapersRefreshQueuedRef.current;
+        authoredWallpapersRefreshQueuedRef.current = false;
+        force = false;
+
+        if (nextForce) {
+          wallpaperSignatureRef.current = '';
+        }
+
+        setAuthoredWallpapersLoading(prev => prev && !nextForce);
+        setAuthoredWallpapersError(null);
+        try {
+          await ensureDir(wallpaperSystemConfig.wallpapersDirectory);
+          const listed = await listExplorerDir(wallpaperSystemConfig.wallpapersDirectory, false);
+          const files = listed
+            .filter(file => isFrontendWallpaperFile(file) || isMediaWallpaperFile(file))
+            .sort((left, right) => left.name.localeCompare(right.name));
+          const nextSignature = files.map(file => `${file.path}:${file.modified}`).join('|');
+
+          if (!nextForce && nextSignature === wallpaperSignatureRef.current) {
+            setAuthoredWallpapersLoading(false);
+            continue;
+          }
+
+          wallpaperSignatureRef.current = nextSignature;
+          const loaded = await Promise.all(files.map(async file => {
+            if (isMediaWallpaperFile(file)) {
+              return createMediaWallpaperFromFile(file);
+            }
+
+            const source = await commands.fsReadTextFile(file.path).then(unwrapTauriResult);
+            return loadWallpaperFromSource(source, file);
+          }));
+
+          setAuthoredWallpapers(loaded);
+        } catch (error) {
+          setAuthoredWallpapers([]);
+          setAuthoredWallpapersError(String(error));
+        } finally {
+          setAuthoredWallpapersLoading(false);
+        }
+      } while (authoredWallpapersRefreshQueuedRef.current);
+    } finally {
+      authoredWallpapersRefreshInFlightRef.current = false;
+    }
+  }, []);
+
+  const importWallpaperFiles = useCallback(async (files: File[]) => {
+    if (!isTauri() || files.length === 0) {
+      return;
+    }
+
+    await ensureDir(wallpaperSystemConfig.wallpapersDirectory);
+    await Promise.all(files.map(async (file, index) => {
+      const timestamp = `${Date.now()}-${index}`;
+      const safeFileName = sanitizeImportedWallpaperFileName(file.name);
+      const targetPath = joinPlatformPath(
+        wallpaperSystemConfig.wallpapersDirectory,
+        `${timestamp}-${safeFileName}`,
+        runtimePlatform,
+      );
+      const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
+      await writeExplorerFile(targetPath, bytes);
+    }));
+    await refreshAuthoredWallpapers(true);
+  }, [refreshAuthoredWallpapers, runtimePlatform]);
 
   const refreshAuthoredAnimations = useCallback(async (force = false) => {
     if (!isTauri()) {
@@ -1934,6 +2200,13 @@ function App() {
   }, [isOverlayVisible, refreshAuthoredShaders]);
 
   useEffect(() => {
+    if (!isOverlayVisible) {
+      return;
+    }
+    void refreshAuthoredWallpapers(true);
+  }, [isOverlayVisible, refreshAuthoredWallpapers]);
+
+  useEffect(() => {
     if (!isOverlayVisible || !liveReloadEnabled || !animationSystemConfig.runtimeAssetPollingEnabled) {
       return;
     }
@@ -1954,6 +2227,17 @@ function App() {
 
     return () => window.clearInterval(interval);
   }, [isOverlayVisible, liveReloadEnabled, refreshAuthoredShaders]);
+
+  useEffect(() => {
+    if (!isOverlayVisible || !liveReloadEnabled || !wallpaperSystemConfig.runtimeAssetPollingEnabled) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void refreshAuthoredWallpapers();
+    }, wallpaperSystemConfig.scanIntervalMs);
+
+    return () => window.clearInterval(interval);
+  }, [isOverlayVisible, liveReloadEnabled, refreshAuthoredWallpapers]);
 
   useEffect(() => {
     void refreshThemePackages();
@@ -2005,6 +2289,14 @@ function App() {
         animationsError: authoredAnimationsError,
         onRefreshAnimations: () => refreshAuthoredAnimations(true),
         onOpenAnimationsFolder: openAnimationsFolder,
+        wallpapers: availableWallpapers,
+        wallpaperDiagnostics: authoredWallpapers.filter(wallpaper => Boolean(wallpaper.error)),
+        wallpapersDirectory: wallpaperSystemConfig.wallpapersDirectory,
+        wallpapersLoading: authoredWallpapersLoading,
+        wallpapersError: authoredWallpapersError,
+        onRefreshWallpapers: () => refreshAuthoredWallpapers(true),
+        onOpenWallpapersFolder: openWallpapersFolder,
+        onImportWallpaperFiles: importWallpaperFiles,
         renderPluginsManager: () => (
           <PluginsManager
             appearance={resolvedAppearance}
@@ -2043,7 +2335,11 @@ function App() {
       authoredShaders,
       authoredShadersError,
       authoredShadersLoading,
+      authoredWallpapers,
+      authoredWallpapersError,
+      authoredWallpapersLoading,
       availableAnimations,
+      availableWallpapers,
       availableShaders,
       pluginContributedShaders,
       pluginCommands,
@@ -2051,15 +2347,18 @@ function App() {
       openAnimationsFolder,
       openShadersFolder,
       openPluginsFolder,
+      openWallpapersFolder,
       openThemesFolder,
       pendingRepositoryImports,
       refreshThemePackages,
       refreshAuthoredAnimations,
+      refreshAuthoredWallpapers,
       refreshAuthoredShaders,
       refreshFolderPlugins,
       repositoryPickerRequestId,
       resolvedAppearance,
       combinedThemePackages,
+      importWallpaperFiles,
       explorerFocusAddressBarSignal,
       explorerPanelLayoutMode,
       themePackagesError,
@@ -2429,6 +2728,24 @@ function App() {
         onSelect: () => refreshAuthoredAnimations(true),
       },
       {
+        id: 'refresh-wallpapers',
+        title: 'Refresh Wallpapers',
+        subtitle: 'Reload imported and authored wallpapers.',
+        group: 'App',
+        keywords: ['wallpapers', 'backgrounds', 'reload'],
+        badge: 'Refresh',
+        onSelect: () => refreshAuthoredWallpapers(true),
+      },
+      {
+        id: 'open-wallpapers-folder',
+        title: 'Open Wallpapers Folder',
+        subtitle: wallpaperSystemConfig.wallpapersDirectory,
+        group: 'App',
+        keywords: ['wallpapers', 'backgrounds', 'folder'],
+        badge: 'Folder',
+        onSelect: openWallpapersFolder,
+      },
+      {
         id: 'cycle-layout',
         title: 'Cycle Layout',
         subtitle: `Switch from ${activeLayoutProfile.label} to the next layout profile.`,
@@ -2497,10 +2814,12 @@ function App() {
     handleToggleWindowMode,
     overlayAnchor,
     openPluginsFolder,
+    openWallpapersFolder,
     pinnedPanelIds,
     panelDefinitions,
     pluginCommands,
     refreshAuthoredAnimations,
+    refreshAuthoredWallpapers,
     refreshAuthoredShaders,
     refreshFolderPlugins,
     refreshThemePackages,
@@ -2693,9 +3012,6 @@ function App() {
               width: '100%',
               height: '100%',
               backgroundColor: shellBackgroundColor,
-              backgroundImage: theme.effects.backgroundImage,
-              backgroundSize: theme.effects.backgroundSize,
-              backgroundPosition: theme.effects.backgroundPosition,
               backdropFilter: shellBackdropFilter,
               WebkitBackdropFilter: shellBackdropFilter,
               color: theme.palette.textPrimary,
@@ -2715,6 +3031,24 @@ function App() {
               borderBottomRightRadius: isWindowedMode ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? workbench.metrics.panelRadius : 0),
             }}
           >
+            <WallpaperBackgroundLayer
+              wallpaper={activeWallpaper}
+              context={shellWallpaperContext}
+            />
+            {shellThemeEffectBackgroundImage ? (
+              <div
+                aria-hidden
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  pointerEvents: 'none',
+                  backgroundImage: shellThemeEffectBackgroundImage,
+                  backgroundSize: theme.effects.backgroundSize,
+                  backgroundPosition: theme.effects.backgroundPosition,
+                  backgroundRepeat: 'no-repeat',
+                }}
+              />
+            ) : null}
             <ShaderSurfaceLayer
               shader={activeShader}
               shellContext={shellShaderContext}

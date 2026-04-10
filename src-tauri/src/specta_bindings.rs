@@ -94,6 +94,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::startup_commands::startup_get_launch_at_startup,
             crate::startup_commands::startup_set_launch_at_startup,
             crate::window_commands::tray_set_visible,
+            crate::window_commands::window_get_linux_display_server,
             crate::window_commands::window_set_blur,
             crate::window_commands::window_set_taskbar_visibility,
             crate::window_commands::window_apply_mode,

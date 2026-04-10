@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "id": "windows-xp-luna",
+  "name": "Windows XP Luna",
+  "description": "Rounded blue shell with sunny gradients, glossy panels, and a friendlier desktop feel.",
+  "author": "Codex",
+  "tags": ["windows", "xp", "luna", "desktop"],
+  "extends": "github-dark",
+  "fonts": {
+    "ui": "\"Trebuchet MS\", \"Segoe UI\", sans-serif",
+    "mono": "\"IBM Plex Mono\", \"Cascadia Code\", monospace"
+  },
+  "presentation": {
+    "chromeStyle": "floating",
+    "density": "comfortable",
+    "iconStyle": "system",
+    "motionStyle": "fluid",
+    "cornerRadius": 14,
+    "panelSpacing": 8
+  },
+  "theme": {
+    "palette": {
+      "appBackground": "#57a4ff",
+      "appBackgroundAlt": "#7ac56f",
+      "shellBackground": "rgba(230, 241, 255, 0.9)",
+      "shellBackgroundSolid": "rgba(230, 241, 255, 0.98)",
+      "topBarBackground": "rgba(51, 114, 214, 0.94)",
+      "topBarMenuBackground": "rgba(72, 132, 226, 0.96)",
+      "sidebarBackground": "rgba(215, 232, 255, 0.94)",
+      "panelBackground": "rgba(247, 251, 255, 0.94)",
+      "panelAltBackground": "rgba(221, 237, 255, 0.96)",
+      "cardBackground": "rgba(255, 255, 255, 0.94)",
+      "cardHoverBackground": "rgba(242, 248, 255, 0.98)",
+      "contextMenuBackground": "rgba(247, 251, 255, 0.98)",
+      "inputBackground": "#ffffff",
+      "terminalBackground": "#08244f",
+      "selectionBackground": "rgba(49, 110, 209, 0.18)",
+      "textPrimary": "#0f2242",
+      "textSecondary": "#14315c",
+      "textMuted": "rgba(15, 34, 66, 0.68)",
+      "textDim": "rgba(15, 34, 66, 0.42)",
+      "textInverse": "#ffffff",
+      "border": "rgba(51, 114, 214, 0.24)",
+      "borderStrong": "rgba(51, 114, 214, 0.48)",
+      "accent": "#2f7ef7",
+      "accentSoft": "rgba(47, 126, 247, 0.16)",
+      "accentContrast": "#ffffff",
+      "success": "#5cb85c",
+      "warning": "#f0ad4e",
+      "danger": "#d9534f",
+      "info": "#5bc0de"
+    },
+    "effects": {
+      "backgroundImage": "radial-gradient(circle at 20% 18%, rgba(255,255,255,0.28), transparent 24%), linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0) 48%)",
+      "shadow": "0 16px 36px rgba(24, 69, 143, 0.24)",
+      "overlayShadow": "0 -3px 0 0 #9fd1ff, 0 -18px 46px rgba(17, 42, 86, 0.38)"
+    },
+    "workbench": {
+      "brandLabel": "Luna",
+      "topBarStyle": "floating",
+      "commandPaletteStyle": "floating",
+      "terminalStyle": "solid",
+      "settingsStyle": "floating",
+      "tabStyle": "capsule",
+      "metrics": {
+        "chromeHeight": 38,
+        "controlRadius": 10,
+        "panelRadius": 14,
+        "shellInset": 10,
+        "pagePadding": 12,
+        "panelGap": 8
+      }
+    },
+    "explorer": {
+      "railBrandLabel": "My Files",
+      "toolbarStyle": "floating",
+      "breadcrumbStyle": "segmented",
+      "selectionStyle": "outline",
+      "hoverStyle": "lift",
+      "previewStyle": "floating",
+      "statusBarStyle": "solid",
+      "preferredViewMode": "icons-l",
+      "metrics": {
+        "railWidth": 248,
+        "previewWidth": 430,
+        "panelRadius": 14,
+        "gridScale": 1.08,
+        "iconScale": 1.1
+      }
+    }
+  },
+  "layoutPrimitives": [
+    {
+      "id": "xp-desktop",
+      "name": "XP Desktop",
+      "kind": "freeform",
+      "props": {
+        "chrome": "glossy"
+      }
+    }
+  ],
+  "navigationPatterns": [
+    {
+      "id": "xp-tree",
+      "name": "XP Explorer",
+      "kind": "hierarchy",
+      "axis": "vertical",
+      "props": {
+        "menuBar": true
+      }
+    }
+  ],
+  "renderStyles": [
+    {
+      "id": "xp-render",
+      "label": "XP Desktop",
+      "description": "Rounded desktop-style render path for Windows XP inspired shells.",
+      "kind": "desktop-window-manager",
+      "entryModule": "renderers/windows-xp.tsx",
+      "supportsLiveSwap": true
+    }
+  ],
+  "defaultLayoutPrimitiveId": "xp-desktop",
+  "defaultNavigationPatternId": "xp-tree",
+  "defaultRenderStyleId": "xp-render",
+  "visuals": [
+    {
+      "id": "xp-cloud-haze",
+      "backgroundImage": "radial-gradient(circle at 16% 16%, rgba(255,255,255,0.35), transparent 26%), radial-gradient(circle at 82% 14%, rgba(168,223,255,0.28), transparent 24%)",
+      "opacity": 0.96,
+      "blendMode": "screen"
+    }
+  ]
+}

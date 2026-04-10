@@ -45,6 +45,11 @@ import {
   overlayWindowGeometry,
 } from '../config/overlayWindow';
 import {
+  normalizeOverlayWallpaperFitMode,
+  wallpaperSystemConfig,
+  type OverlayWallpaperFitMode,
+} from '../config/wallpapers';
+import {
   isScreenshotCaptureModeId,
   isScreenshotOutputActionId,
   screenshotFeatureConfig,
@@ -123,6 +128,10 @@ export interface AppearanceSettings {
   theme: 'dark' | 'light' | 'system';
   activeThemeId: string;
   customThemes: OverlayThemeDefinition[];
+  activeWallpaperId?: string | null;
+  wallpaperFitMode: OverlayWallpaperFitMode;
+  wallpaperOpacity: number;
+  wallpaperMuted: boolean;
   activeShaderId?: string | null;
   shaderControlValues: Record<string, Record<string, number>>;
   uiFontFamily: string;
@@ -371,6 +380,14 @@ function normalizeAppearanceSettings(
   return {
     ...merged,
     customThemes: (merged.customThemes ?? base.customThemes).map(theme => normalizeThemeDefinition(theme)),
+    activeWallpaperId: typeof merged.activeWallpaperId === 'string'
+      ? merged.activeWallpaperId.trim() || null
+      : merged.activeWallpaperId === null
+        ? null
+        : base.activeWallpaperId ?? null,
+    wallpaperFitMode: normalizeOverlayWallpaperFitMode(merged.wallpaperFitMode ?? base.wallpaperFitMode),
+    wallpaperOpacity: clampOverlayVisualControlValue('opacity', merged.wallpaperOpacity),
+    wallpaperMuted: merged.wallpaperMuted !== false,
     activeShaderId: typeof merged.activeShaderId === 'string'
       ? merged.activeShaderId.trim() || null
       : merged.activeShaderId === null
@@ -510,6 +527,10 @@ export const defaultSettings: Settings = {
     theme: 'dark',
     activeThemeId: 'operator',
     customThemes: [],
+    activeWallpaperId: null,
+    wallpaperFitMode: 'cover',
+    wallpaperOpacity: overlayVisualControls.opacity.defaultValue,
+    wallpaperMuted: true,
     activeShaderId: null,
     shaderControlValues: {},
     uiFontFamily: 'Inter, system-ui, sans-serif',

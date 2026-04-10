@@ -1,5 +1,45 @@
 # GreebleFS Memory
 
+## 2026-04-09 — Theme Wallpapers + Wallpaper Runtime Layer
+
+- Added a first-class wallpaper runtime so backgrounds are no longer limited to theme CSS gradients.
+- Managed content now includes a `wallpapers/` root alongside `themes/`, `shaders/`, and `animations/`.
+- New wallpaper runtime files:
+  - `src/config/wallpapers.ts`
+  - `src/components/wallpaperRuntime.tsx`
+- Wallpapers now support:
+  - theme-default wallpaper assets via `theme.assets.backgroundUrl`
+  - imported image/video wallpapers saved into `wallpapers/`
+  - authored live wallpaper modules in `wallpapers/`
+- Wallpaper selection is now part of `settings.appearance`:
+  - `activeWallpaperId: null` follows the active theme
+  - `activeWallpaperId: 'none'` disables the wallpaper layer
+  - any other id selects an imported/authored wallpaper override
+  - `wallpaperFitMode`, `wallpaperOpacity`, and `wallpaperMuted` now persist too
+- `src/App.tsx` render order was intentionally changed so the layers compose instead of replacing each other:
+  - wallpaper base layer
+  - theme effect layer
+  - shader background surface
+  - theme visuals
+  - shader border surface
+  - shell animation overlay
+- This specifically preserves the user-requested behavior:
+  - wallpapers can remain part of the theme system
+  - user wallpaper overrides can still sit under live shader passes
+  - wallpaper and shader effects can both be active at the same time
+- `src/components/SettingsPage.tsx` now has a dedicated Wallpapers section for:
+  - importing media/runtime wallpaper files
+  - opening and refreshing the wallpaper folder
+  - following the theme wallpaper, disabling the wallpaper layer, or choosing a user override
+  - changing wallpaper fit, opacity, and mute state
+- `src/panels/panelRegistry.tsx` and the Settings panel prop contract were extended so wallpaper catalog data and actions flow through the normal panel system.
+- Durable implementation note:
+  - theme packages often used `theme.effects.backgroundImage` as a fallback wallpaper path before this change
+  - the runtime now suppresses that fallback only when it duplicates `theme.assets.backgroundUrl`, so explicit theme effect gradients still layer correctly above wallpapers
+- Validation that passed:
+  - narrowed `bunx tsc --noEmit --skipLibCheck --jsx react-jsx --module esnext --target es2022 --moduleResolution bundler --allowSyntheticDefaultImports --types vitest/globals,@testing-library/jest-dom ...`
+  - `bunx vitest run src/test/settingsStore.test.ts src/test/panelRegistry.test.tsx src/test/settingsPage.behavior.test.tsx src/test/settingsPage.shaders.test.tsx src/test/wallpaperRuntime.test.ts`
+
 ## 2026-04-09 — Hybrid App Mode / Dock Mode Correction
 
 - Corrected the shell model after the drawer misread:
@@ -69,6 +109,14 @@
   - Linux overlay open now performs a short delayed re-dock pass after `show()` to override WM recentering
   - overlay move/resize listeners now snap overlay mode back to the dock edge instead of persisting floating coordinates
   - added regression coverage in `src/test/overlayWindow.test.ts`
+- Hardened the Linux dock path so presentation-only window flag failures do not cancel geometry:
+  - `src-tauri/src/window_commands.rs` now logs best-effort failures for `set_decorations`, `set_always_on_top`, `set_shadow`, and `set_skip_taskbar` instead of aborting before `set_size` / `set_position`
+  - `src/App.tsx` now unwraps `windowApplyMode()` results so Tauri command errors surface instead of being silently ignored on the TS side
+  - this specifically protects `tauri dev` on Linux where some WMs reject transparent/undecorated presentation changes during startup
+- Added a Linux backend-selection fallback in `src-tauri/src/main.rs`:
+  - Wayland sessions with XWayland available now default to `WINIT_UNIX_BACKEND=x11` and `GDK_BACKEND=x11` before Tauri initializes
+  - this is controlled by `OVERLAYTERM_LINUX_BACKEND=auto|x11|wayland`
+  - the goal is pragmatic: the current Tauri/winit Wayland path cannot honor dock window positioning, so edge-anchored overlay mode needs X11 unless a future layer-shell path is added
 - The installer now performs the full build/install flow directly:
   - sync icons
   - regenerate Tauri bindings
@@ -194,3 +242,26 @@
   - floating/glass preview shells
   - status-bar hidden/floating modes
   - theme-preferred initial explorer layout selection
+
+## 2026-04-09 — Theme Pack Expansion
+
+- Added ten new package themes under `themes/` so the theme picker has a broader range of shell personalities without requiring any app-code changes:
+  - `windows-95-classic`
+  - `windows-xp-luna`
+  - `vista-aero-glass`
+  - `amber-cathode`
+  - `dos-navigator`
+  - `palm-organizer`
+  - `gamecube-orbital`
+  - `dreamcast-skyline`
+  - `synthwave-highway`
+  - `midnight-noir`
+- The new set intentionally spans multiple runtime families instead of only palette swaps:
+  - desktop-window-manager shells for the Windows-inspired themes
+  - launcher-grid shells for Palm / GameCube / Dreamcast inspired themes
+  - cross-axis media styling for `synthwave-highway`
+  - denser workbench shells for `amber-cathode`, `dos-navigator`, and `midnight-noir`
+- Each theme is authored as a self-contained `theme.json` package with its own palette, workbench recipe, explorer recipe, engine metadata, and visual overlay layer.
+- Validation completed for this pass:
+  - all `themes/*/theme.json` files parse as valid JSON
+  - theme ids are unique across the current package set

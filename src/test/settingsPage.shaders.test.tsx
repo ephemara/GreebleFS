@@ -71,6 +71,14 @@ describe('SettingsPage shaders section', () => {
         animationsError={null}
         onRefreshAnimations={async () => {}}
         onOpenAnimationsFolder={async () => {}}
+        wallpapers={[]}
+        wallpaperDiagnostics={[]}
+        wallpapersDirectory="wallpapers"
+        wallpapersLoading={false}
+        wallpapersError={null}
+        onRefreshWallpapers={async () => {}}
+        onOpenWallpapersFolder={async () => {}}
+        onImportWallpaperFiles={async () => {}}
       />,
     );
 

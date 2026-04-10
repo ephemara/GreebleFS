@@ -40,16 +40,21 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Built-in and external layout manifest normalization for shell blueprints, pinned panels, control docks, and top/bottom chrome behavior.
 - `src/config/themePackages.ts`
   Theme package discovery and manifest loading from `themes/`.
+- `src/config/wallpapers.ts`
+  Wallpaper directory resolution, fit-mode contract, and wallpaper runtime config.
 - `src/components/WorkbenchNavigationSurface.tsx`
   Runtime-swappable launcher surface for cross-axis, channel-grid, desktop, and tabbed shells.
+- `src/components/wallpaperRuntime.tsx`
+  Imported image/video wallpapers, authored live wallpaper modules, and theme-wallpaper selection helpers.
 - `src/store/explorerStore.ts`
   Persisted explorer rail plus named explorer session snapshots.
 - `src/store/settingsStore.ts`
-  Persisted layout/profile settings, the native `windowMode` presentation toggle, and machine-level developer-mode behavior.
+  Persisted layout/profile settings, wallpaper/shader/animation overrides, the native `windowMode` presentation toggle, and machine-level developer-mode behavior.
 
 ## Theme / Workbench Architecture
 
 - Overlay themes still own the global palette, effects, fonts, icon theme, visuals, and shader/motion defaults.
+- Theme packages can ship a wallpaper asset through `theme.assets.backgroundUrl`; that asset is now the theme-default wallpaper layer instead of only preview metadata.
 - Theme packages can also ship a generalized engine manifest through `presentation`, `layoutPrimitives`, `navigationPatterns`, and `renderStyles`.
 - `src/config/appearance.ts` now preserves compiled engine manifests on the active theme so recipe resolution can use them at runtime.
 - Workbench theming is now a first-class recipe layer under `theme.workbench`.
@@ -80,6 +85,19 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `channel-launcher`
   - `desktop-stack`
 - `App.tsx` now uses that runtime to swap navigation behavior and content presentation, and `OverlayPanelDefinition.navigation` metadata in `src/panels/panelRegistry.tsx` gives render runtimes enough structure to regroup panels without hardcoded one-off app logic.
+- Wallpaper rendering is now a first-class layered pass in `App.tsx`:
+  - theme wallpaper asset or user-selected wallpaper renders as the base layer
+  - `theme.effects.backgroundImage` renders as the theme effect layer above the wallpaper
+  - shader background/border surfaces still render above wallpapers
+  - `theme.visuals` still render above the shader background
+- Wallpaper selection is part of the persisted appearance contract:
+  - `settings.appearance.activeWallpaperId === null` follows the active theme wallpaper
+  - `settings.appearance.activeWallpaperId === 'none'` disables the wallpaper layer
+  - any other id targets an imported or authored wallpaper in `wallpapers/`
+- Wallpapers now support three sources:
+  - theme asset wallpapers from `theme.assets.backgroundUrl`
+  - imported media wallpapers in `wallpapers/` (`png`, `jpg`, `gif`, `webp`, `svg`, `mp4`, `webm`, etc.)
+  - authored live wallpaper runtime modules in `wallpapers/` (`ts`, `tsx`, `js`, `jsx`)
 - The shell is a hybrid presentation system again:
   - `settings.terminal.windowMode === 'windowed'` is the larger application shell
   - `settings.terminal.windowMode === 'overlay'` is the compact dock shell
@@ -97,8 +115,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - authored animation polling in `App.tsx`
   - explorer entry-size root watching in `FileExplorer.tsx`
 - Managed content roots now split by runtime mode:
-  - `tauri dev` keeps repo-relative `plugins/`, `themes/`, `shaders/`, and `animations/` so authoring stays in the workspace
-  - installed/release builds resolve those directories under Tauri `AppLocalData` instead of creating top-level `$HOME/plugins`, `$HOME/themes`, `$HOME/shaders`, `$HOME/animations`, or `$HOME/Screenshots`
+  - `tauri dev` keeps repo-relative `plugins/`, `themes/`, `shaders/`, `animations/`, and `wallpapers/` so authoring stays in the workspace
+  - installed/release builds resolve those directories under Tauri `AppLocalData` instead of creating top-level `$HOME/plugins`, `$HOME/themes`, `$HOME/shaders`, `$HOME/animations`, `$HOME/wallpapers`, or `$HOME/Screenshots`
   - `src/config/appContentDirectories.ts` owns that bootstrap and the legacy-home-path detection/migration rules
 - Production/default behavior is manual refresh:
   - Plugins panel `Refresh`
@@ -144,7 +162,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/`
   UI components and explorer runtime surfaces.
 - `src/config/`
-  Theme, explorer, layout, shader, animation, plugin, and runtime configuration.
+  Theme, explorer, layout, wallpaper, shader, animation, plugin, and runtime configuration.
 - `src/runtime/`
   Tauri/backend bridge helpers.
 - `src/store/`
@@ -153,6 +171,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Theme packages discovered at runtime.
 - `animations/`
   Authored animation modules.
+- `wallpapers/`
+  Imported wallpaper media and authored live wallpaper modules.
 - `shaders/`
   Authored shader modules.
 - `src-tauri/`
@@ -179,4 +199,11 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - The explorer component is large and performance-sensitive. Route new chrome/metric changes through `src/config/explorerTheme.ts` instead of scattering new magic numbers through `FileExplorer.tsx`.
 - If the Linux/native overlay appears on the wrong display, inspect the monitor-resolution path in `App.tsx` before touching Rust window flags. The frontend now owns monitor selection and overlay geometry; `windowApplyMode` should only apply the chosen presentation atomically.
 - If Linux dock mode starts floating in the middle of the screen again, check the post-show re-dock path in `App.tsx` and confirm overlay move/resize listeners are not re-persisting raw X/Y coordinates into `runtimeOverlayBoundsRef`.
+- On Linux, do not let `window_apply_mode` abort geometry just because a WM rejects `set_shadow`, `set_skip_taskbar`, or another presentation-only flag. The TS call sites should unwrap the returned Tauri `Result`, and the Rust command should log best-effort flag failures while still applying size/position.
+- `bun run tauri dev` uses the generated runtime Tauri config from `scripts/run-platform-tauri.mjs`, which points Tauri at the Vite `devUrl`. TS/React edits hot-reload through Vite during that session, but binding generation and startup prep scripts only rerun when the Tauri dev process starts.
+- `src-tauri/src/main.rs` now picks the Linux window backend before Tauri builds its event loop:
+  - `OVERLAYTERM_LINUX_BACKEND=auto` is the default behavior
+  - on Wayland sessions with XWayland available (`DISPLAY` present), the app now forces `WINIT_UNIX_BACKEND=x11` and `GDK_BACKEND=x11` so dock positioning works
+  - override with `OVERLAYTERM_LINUX_BACKEND=wayland` if you explicitly want native Wayland behavior
 - Theme package manifests can now carry app-wide shell structure via `theme.workbench` and explorer-specific structure via `theme.explorer`; prefer those over ad hoc `cssVars` whenever a behavior or metric deserves a named contract.
+- If a theme needs a default wallpaper, put the asset in `theme.assets.backgroundUrl`. Reserve `theme.effects.backgroundImage` for overlay gradients/effects so theme wallpaper assets and shader layers can stack cleanly instead of duplicating the same image twice.

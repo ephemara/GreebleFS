@@ -54,6 +54,10 @@ describe('useSettingsStore — initial state', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.appearance.theme).toBe('dark');
     expect(settings.appearance.activeThemeId).toBe('operator');
+    expect(settings.appearance.activeWallpaperId).toBeNull();
+    expect(settings.appearance.wallpaperFitMode).toBe('cover');
+    expect(settings.appearance.wallpaperOpacity).toBe(1);
+    expect(settings.appearance.wallpaperMuted).toBe(true);
     expect(settings.appearance.activeShaderId).toBeNull();
     expect(settings.appearance.shaderControlValues).toEqual({});
     expect(settings.appearance.uiFontFamily).toBe('Inter, system-ui, sans-serif');

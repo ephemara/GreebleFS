@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Camera, FolderOpen, GitBranch, LayoutGrid, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Type } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Camera, FolderOpen, GitBranch, Image, LayoutGrid, MonitorPlay, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Type, VolumeX } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import type { LoadedOverlayAnimation } from './animationRuntime';
+import { getOverlayWallpaperKindLabel, type LoadedOverlayWallpaper } from './wallpaperRuntime';
 import {
   normalizeShaderControlValue,
   resolveShaderComputedUniforms,
@@ -46,6 +47,11 @@ import {
 } from '../config/explorerViewModes';
 import { getBuiltInIconTheme } from '../config/iconTheme';
 import { animationSystemConfig, resolvePreferredAnimationId } from '../config/animations';
+import {
+  getOverlayWallpaperFitModeLabel,
+  overlayWallpaperFitModes,
+  wallpaperSystemConfig,
+} from '../config/wallpapers';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 import {
@@ -304,6 +310,7 @@ const DEFAULT_LOADED_LAYOUT_MANIFEST: LoadedLayoutManifest = {
 type SettingsSectionKey =
   | 'overview'
   | 'appearance'
+  | 'wallpapers'
   | 'shaders'
   | 'animations'
   | 'terminal'
@@ -441,6 +448,14 @@ export function SettingsPage({
   animationsError,
   onRefreshAnimations,
   onOpenAnimationsFolder,
+  wallpapers,
+  wallpaperDiagnostics,
+  wallpapersDirectory,
+  wallpapersLoading,
+  wallpapersError,
+  onRefreshWallpapers,
+  onOpenWallpapersFolder,
+  onImportWallpaperFiles,
 }: {
   appearance: ResolvedOverlayAppearance;
   themePackages: LoadedOverlayThemePackage[];
@@ -464,6 +479,14 @@ export function SettingsPage({
   animationsError: string | null;
   onRefreshAnimations: () => Promise<void>;
   onOpenAnimationsFolder: () => Promise<void>;
+  wallpapers: LoadedOverlayWallpaper[];
+  wallpaperDiagnostics: LoadedOverlayWallpaper[];
+  wallpapersDirectory: string;
+  wallpapersLoading: boolean;
+  wallpapersError: string | null;
+  onRefreshWallpapers: () => Promise<void>;
+  onOpenWallpapersFolder: () => Promise<void>;
+  onImportWallpaperFiles: (files: File[]) => Promise<void>;
 }) {
   const platform = useMemo(() => detectClientPlatform(), []);
   const platformLabel = useMemo(() => {
@@ -506,11 +529,18 @@ export function SettingsPage({
   const [startupSyncError, setStartupSyncError] = useState<string | null>(null);
   const [overviewNotice, setOverviewNotice] = useState<string | null>(null);
   const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [wallpaperNotice, setWallpaperNotice] = useState<string | null>(null);
+  const [wallpaperImportError, setWallpaperImportError] = useState<string | null>(null);
   const [layoutManifestState, setLayoutManifestState] = useState<LoadedLayoutManifest>(DEFAULT_LOADED_LAYOUT_MANIFEST);
   const [railWidth, setRailWidth] = usePersistentPanelSize('overlayterm-settings-rail-width', 236, 190, 320);
+  const wallpaperFileInputRef = useRef<HTMLInputElement | null>(null);
   const availableAnimations = useMemo(
     () => animations.filter(animation => !animation.error),
     [animations],
+  );
+  const availableWallpapers = useMemo(
+    () => wallpapers.filter(wallpaper => !wallpaper.error),
+    [wallpapers],
   );
   const themePackageLookup = useMemo(
     () => new Map(themePackages.map(pkg => [pkg.id, pkg] as const)),
@@ -540,6 +570,10 @@ export function SettingsPage({
     () => animationDiagnostics.filter(animation => Boolean(animation.error)),
     [animationDiagnostics],
   );
+  const wallpaperFailures = useMemo(
+    () => wallpaperDiagnostics.filter(wallpaper => Boolean(wallpaper.error)),
+    [wallpaperDiagnostics],
+  );
   const shaderFailures = useMemo(
     () => shaderDiagnostics.filter(shader => Boolean(shader.error)),
     [shaderDiagnostics],
@@ -548,6 +582,13 @@ export function SettingsPage({
     () => availableShaders.map(shader => shader.id),
     [availableShaders],
   );
+  const activeWallpaperSelectionId = settings.appearance.activeWallpaperId ?? null;
+  const themeWallpaperAvailable = Boolean(appearance.baseTheme.assets?.backgroundUrl);
+  const wallpaperSelectionSummary = activeWallpaperSelectionId == null
+    ? (themeWallpaperAvailable ? 'Theme Default' : 'No Wallpaper')
+    : activeWallpaperSelectionId === wallpaperSystemConfig.noneWallpaperId
+      ? 'Disabled'
+      : 'Settings Override';
   const effectiveShaderId = useMemo(
     () => resolvePreferredShaderId({
       availableShaderIds,
@@ -759,6 +800,27 @@ export function SettingsPage({
     }
   }, [ensureWorkspaceDirectory]);
 
+  const handleWallpaperFileSelection = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (selectedFiles.length === 0) {
+      return;
+    }
+
+    setWallpaperNotice(null);
+    setWallpaperImportError(null);
+    try {
+      await onImportWallpaperFiles(selectedFiles);
+      setWallpaperNotice(`Imported ${selectedFiles.length} wallpaper file${selectedFiles.length === 1 ? '' : 's'}.`);
+    } catch (error) {
+      setWallpaperImportError(`Failed to import wallpaper files: ${String(error)}`);
+    }
+  }, [onImportWallpaperFiles]);
+
+  const triggerWallpaperImport = useCallback(() => {
+    wallpaperFileInputRef.current?.click();
+  }, []);
+
   const effectiveTheme = appearance.theme;
   const editableTheme = appearance.baseTheme;
   const panelBackground = effectiveTheme.palette.panelBackground;
@@ -878,7 +940,7 @@ export function SettingsPage({
       id: 'plugins-and-assets',
       icon: <Puzzle size={13} />,
       title: 'Plugins + Assets',
-      description: 'Drop plugins, themes, shaders, and animations into their workspace folders so OverlayTerm can discover them as live runtime modules.',
+      description: 'Drop plugins, themes, wallpapers, shaders, and animations into their workspace folders so OverlayTerm can discover them as live runtime modules.',
       actionLabel: 'Appearance Settings',
       action: () => setActiveSection('appearance'),
     },
@@ -917,6 +979,12 @@ export function SettingsPage({
       description: 'Author open and close motion modules here.',
     },
     {
+      id: 'wallpapers',
+      label: 'Wallpapers',
+      path: wallpapersDirectory,
+      description: 'Import images, videos, and live wallpaper modules here.',
+    },
+    {
       id: 'screenshots',
       label: 'Screenshots',
       path: settings.screenshots.saveDirectory || screenshotFeatureConfig.defaultSaveDirectory,
@@ -927,6 +995,7 @@ export function SettingsPage({
     settings.screenshots.saveDirectory,
     shadersDirectory,
     themePackagesDirectory,
+    wallpapersDirectory,
   ]);
   const settingsJumpCards = useMemo(() => [
     {
@@ -934,6 +1003,12 @@ export function SettingsPage({
       title: 'Appearance',
       summary: 'Theme recipes, blur, transparency, and fonts.',
       action: () => setActiveSection('appearance'),
+    },
+    {
+      id: 'wallpapers',
+      title: 'Wallpapers',
+      summary: 'Theme-integrated image, video, and live wallpaper layering.',
+      action: () => setActiveSection('wallpapers'),
     },
     {
       id: 'layouts',
@@ -1058,6 +1133,14 @@ export function SettingsPage({
       summary: `${effectiveTheme.name} · ${settings.appearance.useNativeOsIcons ? 'OS Icons' : 'Theme Icons'} · ${formatOverlayVisualControlValue('opacity', settings.appearance.appOpacity)} OP · ${formatOverlayVisualControlValue('panelTransparency', settings.appearance.panelTransparency)} PT · ${formatOverlayVisualControlValue('zoom', settings.appearance.appZoom)} ZM · ${formatOverlayVisualControlValue('blurStrength', settings.appearance.appBlurStrength)} BL`,
       detail: 'Tune the shell look and feel, from engine-driven recipes and palette tokens to blur, transparency, and UI typography.',
       icon: <Palette size={14} />,
+    },
+    {
+      key: 'wallpapers',
+      label: 'Wallpapers',
+      subtitle: 'Theme-backed wallpapers plus custom image, video, and live backgrounds.',
+      summary: `${availableWallpapers.length} catalog items${themeWallpaperAvailable ? ' · theme default available' : ''}${wallpaperFailures.length > 0 ? ` · ${wallpaperFailures.length} errors` : ''}`,
+      detail: 'Wallpapers stay in the theme system, can be overridden per user, and still render underneath shader and visual layers instead of replacing them.',
+      icon: <MonitorPlay size={14} />,
     },
     {
       key: 'shaders',
@@ -1667,6 +1750,309 @@ export function SettingsPage({
               </label>
             </div>
           </section>
+            )}
+
+            {activeSection === 'wallpapers' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                <SectionTitle
+                  icon={<MonitorPlay size={12} />}
+                  title="Wallpapers"
+                  subtitle="Theme-backed wallpaper defaults, user overrides, and authored live backgrounds that still stack with shader passes."
+                />
+
+                <input
+                  ref={wallpaperFileInputRef}
+                  type="file"
+                  accept=".png,.jpg,.jpeg,.gif,.webp,.bmp,.svg,.avif,.mp4,.webm,.mov,.m4v,.ogv,.ts,.tsx,.js,.jsx"
+                  multiple
+                  hidden
+                  onChange={event => { void handleWallpaperFileSelection(event); }}
+                />
+
+                <div className="mt-4 space-y-4">
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Wallpaper Stack</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          Wallpapers render as the base pass. Theme gradients, theme visuals, and shader surfaces stay above them, so animated backgrounds and shader atmospherics can run together instead of competing.
+                        </p>
+                      </div>
+                      <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: accent, background: `${accent}14`, color: accent }}>
+                        {wallpaperSelectionSummary}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px]">
+                      <div className="opacity-45">
+                        {availableWallpapers.length} ready wallpapers
+                        {themeWallpaperAvailable ? ' · theme wallpaper available' : ''}
+                        {wallpaperFailures.length > 0 ? ` · ${wallpaperFailures.length} failed loads` : ''}
+                        {wallpapersLoading ? ' · refreshing…' : ''}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void onRefreshWallpapers()}
+                          className="inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 transition-colors"
+                          style={{ borderColor: border, background: 'rgba(255,255,255,0.03)', color: text }}
+                        >
+                          <RefreshCw size={12} />
+                          Refresh Wallpapers
+                        </button>
+                        <button
+                          type="button"
+                          onClick={triggerWallpaperImport}
+                          className="inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 transition-colors"
+                          style={{ borderColor: accent, background: `${accent}16`, color: text }}
+                        >
+                          <Plus size={12} />
+                          Import Files
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void onOpenWallpapersFolder()}
+                          className="inline-flex items-center gap-1.5 rounded border px-2.5 py-1.5 transition-colors"
+                          style={{ borderColor: accent, background: `${accent}16`, color: text }}
+                        >
+                          <FolderOpen size={12} />
+                          Open Folder
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                      <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Authoring Folder</div>
+                      <div className="mt-1 break-all opacity-55">{wallpapersDirectory}</div>
+                      {wallpapersError ? (
+                        <div className="mt-2 rounded border px-2 py-1.5 text-[10px]" style={{ borderColor: 'rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.08)', color: text }}>
+                          {wallpapersError}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {wallpaperNotice ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${accent}44`, background: `${accent}12`, color: text }}>
+                        {wallpaperNotice}
+                      </div>
+                    ) : null}
+                    {wallpaperImportError ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.18)', color: '#fecaca' }}>
+                        {wallpaperImportError}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-[1.25fr_0.75fr]">
+                    <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Live Assignment</div>
+                          <p className="mt-1 text-[11px] opacity-40">
+                            Following the theme keeps wallpaper selection inside the theme system. A user override swaps only the base wallpaper layer and leaves theme visuals plus shader treatments intact.
+                          </p>
+                        </div>
+                        <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: accent, background: `${accent}14`, color: accent }}>
+                          {getOverlayWallpaperFitModeLabel(settings.appearance.wallpaperFitMode)}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={() => updateAppearance({ activeWallpaperId: null })}
+                          className="overflow-hidden rounded text-left transition-colors"
+                          style={{
+                            border: `1px solid ${activeWallpaperSelectionId == null ? accent : border}`,
+                            background: activeWallpaperSelectionId == null ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                            color: text,
+                          }}
+                        >
+                          <div
+                            className="h-24 w-full"
+                            style={{
+                              backgroundImage: appearance.baseTheme.assets?.backgroundUrl
+                                ? `linear-gradient(180deg, rgba(5,10,18,0.18), rgba(5,10,18,0.72)), url("${appearance.baseTheme.assets.backgroundUrl}")`
+                                : `linear-gradient(135deg, ${appearance.theme.palette.appBackgroundAlt}, ${appearance.theme.palette.appBackground})`,
+                              backgroundSize: 'cover',
+                              backgroundPosition: 'center',
+                            }}
+                          />
+                          <div className="space-y-1 px-3 py-3">
+                            <div className="flex items-center gap-2 text-[11px] font-semibold">
+                              <Palette size={13} />
+                              <span>Follow Theme Wallpaper</span>
+                            </div>
+                            <p className="text-[10px] leading-4 opacity-55">
+                              {themeWallpaperAvailable
+                                ? `Use ${appearance.baseTheme.name}'s packaged wallpaper asset as the base render layer.`
+                                : `${appearance.baseTheme.name} does not currently ship a wallpaper asset, so the base layer stays empty.`}
+                            </p>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => updateAppearance({ activeWallpaperId: wallpaperSystemConfig.noneWallpaperId })}
+                          className="overflow-hidden rounded text-left transition-colors"
+                          style={{
+                            border: `1px solid ${activeWallpaperSelectionId === wallpaperSystemConfig.noneWallpaperId ? accent : border}`,
+                            background: activeWallpaperSelectionId === wallpaperSystemConfig.noneWallpaperId ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                            color: text,
+                          }}
+                        >
+                          <div className="flex h-24 w-full items-center justify-center" style={{ background: `linear-gradient(135deg, ${appearance.theme.palette.appBackgroundAlt}, ${appearance.theme.palette.panelBackground})` }}>
+                            <Image size={28} style={{ color: muted }} />
+                          </div>
+                          <div className="space-y-1 px-3 py-3">
+                            <div className="flex items-center gap-2 text-[11px] font-semibold">
+                              <Image size={13} />
+                              <span>Disable Wallpaper Layer</span>
+                            </div>
+                            <p className="text-[10px] leading-4 opacity-55">
+                              Keep the shell on theme gradients, theme visuals, and shaders without any wallpaper asset at the base.
+                            </p>
+                          </div>
+                        </button>
+
+                        {availableWallpapers.map(wallpaper => {
+                          const active = activeWallpaperSelectionId === wallpaper.id;
+                          const previewBackground = wallpaper.previewUrl
+                            ? `linear-gradient(180deg, rgba(5,10,18,0.14), rgba(5,10,18,0.72)), url("${wallpaper.previewUrl}")`
+                            : `linear-gradient(135deg, ${appearance.theme.palette.appBackgroundAlt}, ${appearance.theme.palette.panelBackground})`;
+                          return (
+                            <button
+                              key={wallpaper.id}
+                              type="button"
+                              onClick={() => updateAppearance({ activeWallpaperId: wallpaper.id })}
+                              className="overflow-hidden rounded text-left transition-colors"
+                              style={{
+                                border: `1px solid ${active ? accent : border}`,
+                                background: active ? `${accent}12` : 'rgba(255,255,255,0.03)',
+                                color: text,
+                              }}
+                            >
+                              <div className="relative h-24 w-full" style={{ backgroundImage: previewBackground, backgroundSize: 'cover', backgroundPosition: 'center' }}>
+                                <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-2 p-2">
+                                  <ThemeBadge label={getOverlayWallpaperKindLabel(wallpaper.kind)} active={active} />
+                                  <ThemeBadge label={wallpaper.source === 'theme-asset' ? 'Theme' : 'Library'} />
+                                </div>
+                                {!wallpaper.previewUrl ? (
+                                  <div className="absolute inset-0 flex items-center justify-center">
+                                    {wallpaper.kind === 'video'
+                                      ? <MonitorPlay size={28} style={{ color: muted }} />
+                                      : wallpaper.kind === 'live'
+                                        ? <Sparkles size={28} style={{ color: muted }} />
+                                        : <Image size={28} style={{ color: muted }} />}
+                                  </div>
+                                ) : null}
+                              </div>
+                              <div className="space-y-1 px-3 py-3">
+                                <div className="flex items-center gap-2 text-[11px] font-semibold">
+                                  <span>{wallpaper.name}</span>
+                                  {active ? <ThemeBadge label="Live" active /> : null}
+                                </div>
+                                <p className="text-[10px] leading-4 opacity-55">
+                                  {wallpaper.description ?? `${getOverlayWallpaperKindLabel(wallpaper.kind)} wallpaper from ${wallpaper.source === 'theme-asset' ? 'the active theme' : 'the wallpaper library'}.`}
+                                </p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  <ThemeBadge label={wallpaper.group} />
+                                  {wallpaper.tags.slice(0, 2).map(tag => (
+                                    <ThemeBadge key={`${wallpaper.id}-${tag}`} label={tag} />
+                                  ))}
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Wallpaper Controls</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          These controls apply to both theme-provided wallpapers and user overrides.
+                        </p>
+                        <div className="mt-3 space-y-2">
+                          <RangeField
+                            label="Wallpaper Opacity"
+                            description="Fade the wallpaper base layer without turning off shader or theme passes above it."
+                            min={overlayVisualControls.opacity.min}
+                            max={overlayVisualControls.opacity.max}
+                            step={overlayVisualControls.opacity.step}
+                            value={settings.appearance.wallpaperOpacity}
+                            valueLabel={formatOverlayVisualControlValue('opacity', settings.appearance.wallpaperOpacity)}
+                            onChange={value => updateAppearance({ wallpaperOpacity: clampOverlayVisualControlValue('opacity', value) })}
+                          />
+
+                          <div className="rounded border p-3" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
+                            <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Wallpaper Fit</div>
+                            <div className="mt-2 grid grid-cols-1 gap-2">
+                              {overlayWallpaperFitModes.map(mode => {
+                                const active = settings.appearance.wallpaperFitMode === mode.id;
+                                return (
+                                  <button
+                                    key={mode.id}
+                                    type="button"
+                                    onClick={() => updateAppearance({ wallpaperFitMode: mode.id })}
+                                    className="rounded px-3 py-2 text-left transition-colors"
+                                    style={{
+                                      border: `1px solid ${active ? accent : border}`,
+                                      background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                                      color: text,
+                                    }}
+                                  >
+                                    <div className="text-[11px] font-semibold">{mode.label}</div>
+                                    <div className="mt-1 text-[10px] leading-4 opacity-55">{mode.description}</div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                            <div>
+                              <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Mute Wallpaper Audio</div>
+                              <p className="mt-1 text-[11px] opacity-40">Keep imported video or live wallpapers silent unless you explicitly want sound in the shell.</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <VolumeX size={14} style={{ color: muted }} />
+                              <input
+                                type="checkbox"
+                                checked={settings.appearance.wallpaperMuted}
+                                onChange={event => updateAppearance({ wallpaperMuted: event.target.checked })}
+                              />
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+
+                      {wallpaperFailures.length > 0 ? (
+                        <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Load Errors</div>
+                          <div className="mt-3 space-y-2">
+                            {wallpaperFailures.map(wallpaper => (
+                              <div
+                                key={`wallpaper-error-${wallpaper.filePath}`}
+                                className="rounded border px-3 py-2"
+                                style={{ borderColor: 'rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.08)', color: text }}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="text-[11px] font-semibold">{wallpaper.name}</div>
+                                  <span className="text-[9px] uppercase tracking-[0.12em] opacity-55">Load Error</span>
+                                </div>
+                                <div className="mt-1 break-all text-[10px] opacity-55">{wallpaper.filePath}</div>
+                                <pre className="mt-2 whitespace-pre-wrap text-[10px] leading-4 opacity-80">{wallpaper.error}</pre>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              </section>
             )}
 
             {activeSection === 'shaders' && (

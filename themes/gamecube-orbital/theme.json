@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "id": "gamecube-orbital",
+  "name": "GameCube Orbital",
+  "description": "Purple console chrome with crisp cubes, cool glass panels, and a launch-grid shell.",
+  "author": "Codex",
+  "tags": ["console", "gamecube", "purple", "launcher"],
+  "extends": "catppuccin",
+  "fonts": {
+    "ui": "\"Space Grotesk\", Inter, sans-serif",
+    "mono": "\"JetBrains Mono\", \"Cascadia Code\", monospace"
+  },
+  "presentation": {
+    "chromeStyle": "glass",
+    "density": "comfortable",
+    "iconStyle": "vector",
+    "motionStyle": "dramatic",
+    "cornerRadius": 22,
+    "panelSpacing": 10
+  },
+  "theme": {
+    "palette": {
+      "accent": "#8b73ff",
+      "accentSoft": "rgba(139, 115, 255, 0.16)",
+      "panelBackground": "rgba(22, 18, 44, 0.72)",
+      "sidebarBackground": "rgba(18, 14, 36, 0.76)",
+      "cardBackground": "rgba(42, 33, 72, 0.72)",
+      "cardHoverBackground": "rgba(58, 45, 100, 0.8)",
+      "border": "rgba(169, 154, 255, 0.18)",
+      "borderStrong": "rgba(169, 154, 255, 0.34)",
+      "info": "#8bd2ff"
+    },
+    "effects": {
+      "backgroundImage": "radial-gradient(circle at 18% 14%, rgba(139,115,255,0.24), transparent 28%), radial-gradient(circle at 80% 18%, rgba(139,210,255,0.12), transparent 20%), linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0) 34%)",
+      "shadow": "0 20px 56px rgba(0, 0, 0, 0.46)",
+      "overlayShadow": "0 -4px 0 0 #8b73ff, 0 -30px 72px rgba(4, 4, 12, 0.86)"
+    },
+    "workbench": {
+      "brandLabel": "Orbital",
+      "topBarStyle": "glass",
+      "commandPaletteStyle": "glass",
+      "terminalStyle": "glass",
+      "settingsStyle": "glass",
+      "tabStyle": "capsule",
+      "metrics": {
+        "chromeHeight": 40,
+        "controlRadius": 16,
+        "panelRadius": 22,
+        "shellInset": 12,
+        "pagePadding": 12,
+        "panelGap": 10
+      }
+    },
+    "explorer": {
+      "railBrandLabel": "Cube Grid",
+      "toolbarStyle": "floating",
+      "breadcrumbStyle": "capsule",
+      "selectionStyle": "glow",
+      "hoverStyle": "glow",
+      "previewStyle": "glass",
+      "statusBarStyle": "floating",
+      "preferredViewMode": "icons-xl",
+      "preferredExperimentalViewMode": "constellation",
+      "metrics": {
+        "railWidth": 244,
+        "previewWidth": 430,
+        "panelRadius": 22,
+        "gridScale": 1.18,
+        "iconScale": 1.22,
+        "hoverLiftPx": 4
+      }
+    }
+  },
+  "layoutPrimitives": [
+    {
+      "id": "cube-grid",
+      "name": "Cube Grid",
+      "kind": "grid",
+      "props": {
+        "cellSize": 148
+      }
+    }
+  ],
+  "navigationPatterns": [
+    {
+      "id": "cube-launcher",
+      "name": "Cube Launcher",
+      "kind": "spatial",
+      "axis": "both",
+      "props": {
+        "breadcrumb": false
+      }
+    }
+  ],
+  "renderStyles": [
+    {
+      "id": "cube-render",
+      "label": "Orbital Grid",
+      "description": "Large channel-grid launcher styling for console-inspired browsing.",
+      "kind": "wii-channels",
+      "entryModule": "renderers/gamecube-orbital.tsx",
+      "supportsLiveSwap": true
+    }
+  ],
+  "defaultLayoutPrimitiveId": "cube-grid",
+  "defaultNavigationPatternId": "cube-launcher",
+  "defaultRenderStyleId": "cube-render",
+  "visuals": [
+    {
+      "id": "cube-sheen",
+      "backgroundImage": "radial-gradient(circle at 18% 18%, rgba(255,255,255,0.08), transparent 20%), linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0) 30%)",
+      "opacity": 0.92,
+      "blendMode": "screen"
+    }
+  ]
+}

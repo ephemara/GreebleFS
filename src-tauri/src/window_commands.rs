@@ -31,6 +31,10 @@ pub fn window_apply_mode(
     log_optional_window_error(window.set_shadow(shadow), "set_shadow");
     log_optional_window_error(window.set_skip_taskbar(skip_taskbar), "set_skip_taskbar");
 
+    if should_preserve_hidden_wayland_overlay_geometry(&window, decorations, always_on_top) {
+        return Ok(());
+    }
+
     // Then geometry atomically — size before position
     if width > 0 && height > 0 {
         window
@@ -72,6 +76,12 @@ pub fn tray_set_visible(app: AppHandle, visible: bool) -> Result<(), String> {
         .ok_or_else(|| "Main tray icon not found".to_string())?;
 
     tray.set_visible(visible).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn window_get_linux_display_server() -> Option<String> {
+    detect_linux_display_server().map(str::to_string)
 }
 
 
@@ -173,6 +183,44 @@ fn log_optional_window_error<T, E: std::fmt::Display>(result: Result<T, E>, oper
     if let Err(error) = result {
         eprintln!("OverlayTerm: window_apply_mode {operation} failed: {error}");
     }
+}
+
+#[cfg(target_os = "linux")]
+fn detect_linux_display_server() -> Option<&'static str> {
+    if std::env::var_os("WAYLAND_DISPLAY").is_some()
+        || std::env::var("XDG_SESSION_TYPE")
+            .map(|value| value.eq_ignore_ascii_case("wayland"))
+            .unwrap_or(false)
+    {
+        return Some("wayland");
+    }
+
+    if std::env::var_os("DISPLAY").is_some()
+        || std::env::var("XDG_SESSION_TYPE")
+            .map(|value| value.eq_ignore_ascii_case("x11"))
+            .unwrap_or(false)
+    {
+        return Some("x11");
+    }
+
+    None
+}
+
+#[cfg(not(target_os = "linux"))]
+fn detect_linux_display_server() -> Option<&'static str> {
+    None
+}
+
+fn should_preserve_hidden_wayland_overlay_geometry(
+    window: &WebviewWindow,
+    decorations: bool,
+    always_on_top: bool,
+) -> bool {
+    if detect_linux_display_server() != Some("wayland") || decorations || !always_on_top {
+        return false;
+    }
+
+    !window.is_visible().unwrap_or(true)
 }
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]

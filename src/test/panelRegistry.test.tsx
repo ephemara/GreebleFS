@@ -77,6 +77,14 @@ describe('createBuiltInPanelDefinitions', () => {
       animationsError: null,
       onRefreshAnimations: async () => {},
       onOpenAnimationsFolder: async () => {},
+      wallpapers: [],
+      wallpaperDiagnostics: [],
+      wallpapersDirectory: 'wallpapers',
+      wallpapersLoading: false,
+      wallpapersError: null,
+      onRefreshWallpapers: async () => {},
+      onOpenWallpapersFolder: async () => {},
+      onImportWallpaperFiles: async () => {},
       renderPluginsManager: () => null,
     });
 
@@ -144,6 +152,14 @@ describe('createBuiltInPanelDefinitions', () => {
       animationsError: null,
       onRefreshAnimations: async () => {},
       onOpenAnimationsFolder: async () => {},
+      wallpapers: [],
+      wallpaperDiagnostics: [],
+      wallpapersDirectory: 'wallpapers',
+      wallpapersLoading: false,
+      wallpapersError: null,
+      onRefreshWallpapers: async () => {},
+      onOpenWallpapersFolder: async () => {},
+      onImportWallpaperFiles: async () => {},
       renderPluginsManager: () => null,
     });
 

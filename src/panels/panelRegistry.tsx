@@ -10,6 +10,7 @@ import { FileExplorer } from '../components/FileExplorer';
 import { FolderPluginRenderer } from '../components/PluginsManager';
 import type { LoadedOverlayAnimation } from '../components/animationRuntime';
 import type { LoadedOverlayShader } from '../components/shaderRuntime';
+import type { LoadedOverlayWallpaper } from '../components/wallpaperRuntime';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
 import type {
@@ -132,6 +133,14 @@ export function createBuiltInPanelDefinitions({
   animationsError,
   onRefreshAnimations,
   onOpenAnimationsFolder,
+  wallpapers,
+  wallpaperDiagnostics,
+  wallpapersDirectory,
+  wallpapersLoading,
+  wallpapersError,
+  onRefreshWallpapers,
+  onOpenWallpapersFolder,
+  onImportWallpaperFiles,
   renderPluginsManager,
 }: {
   appearance: ResolvedOverlayAppearance;
@@ -175,6 +184,14 @@ export function createBuiltInPanelDefinitions({
   animationsError: string | null;
   onRefreshAnimations: () => Promise<void>;
   onOpenAnimationsFolder: () => Promise<void>;
+  wallpapers: LoadedOverlayWallpaper[];
+  wallpaperDiagnostics: LoadedOverlayWallpaper[];
+  wallpapersDirectory: string;
+  wallpapersLoading: boolean;
+  wallpapersError: string | null;
+  onRefreshWallpapers: () => Promise<void>;
+  onOpenWallpapersFolder: () => Promise<void>;
+  onImportWallpaperFiles: (files: File[]) => Promise<void>;
   renderPluginsManager: () => React.ReactNode;
 }): OverlayPanelDefinition[] {
   const accent = appearance.theme.palette.accent;
@@ -341,6 +358,14 @@ export function createBuiltInPanelDefinitions({
             animationsError={animationsError}
             onRefreshAnimations={onRefreshAnimations}
             onOpenAnimationsFolder={onOpenAnimationsFolder}
+            wallpapers={wallpapers}
+            wallpaperDiagnostics={wallpaperDiagnostics}
+            wallpapersDirectory={wallpapersDirectory}
+            wallpapersLoading={wallpapersLoading}
+            wallpapersError={wallpapersError}
+            onRefreshWallpapers={onRefreshWallpapers}
+            onOpenWallpapersFolder={onOpenWallpapersFolder}
+            onImportWallpaperFiles={onImportWallpaperFiles}
           />
         </DeferredPanel>
       ),

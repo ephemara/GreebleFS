@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "id": "synthwave-highway",
+  "name": "Synthwave Highway",
+  "description": "Hot pink horizon lines, cyan glow, and a loud cross-media shell built for neon browsing.",
+  "author": "Codex",
+  "tags": ["retro", "synthwave", "xmb", "neon"],
+  "extends": "dracula",
+  "fonts": {
+    "ui": "\"Space Grotesk\", Inter, sans-serif",
+    "mono": "\"JetBrains Mono\", \"Cascadia Code\", monospace"
+  },
+  "presentation": {
+    "chromeStyle": "glass",
+    "density": "comfortable",
+    "iconStyle": "vector",
+    "motionStyle": "dramatic",
+    "cornerRadius": 24,
+    "panelSpacing": 10
+  },
+  "theme": {
+    "palette": {
+      "accent": "#ff4fd8",
+      "accentSoft": "rgba(255, 79, 216, 0.16)",
+      "panelBackground": "rgba(22, 12, 40, 0.68)",
+      "sidebarBackground": "rgba(14, 8, 30, 0.74)",
+      "cardBackground": "rgba(30, 18, 56, 0.68)",
+      "cardHoverBackground": "rgba(47, 28, 84, 0.76)",
+      "border": "rgba(255, 79, 216, 0.16)",
+      "borderStrong": "rgba(102, 233, 255, 0.28)",
+      "info": "#66e9ff",
+      "prompt": "#ff9df5"
+    },
+    "effects": {
+      "backgroundImage": "radial-gradient(circle at 14% 16%, rgba(255,79,216,0.24), transparent 28%), radial-gradient(circle at 82% 16%, rgba(102,233,255,0.18), transparent 24%), linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0) 40%)",
+      "shadow": "0 18px 54px rgba(0, 0, 0, 0.52)",
+      "overlayShadow": "0 -4px 0 0 #ff4fd8, 0 -28px 72px rgba(5, 2, 14, 0.9)"
+    },
+    "workbench": {
+      "preset": "xmb",
+      "brandLabel": "Neon Rail",
+      "topBarStyle": "floating",
+      "commandPaletteStyle": "glass",
+      "terminalStyle": "glass",
+      "settingsStyle": "glass",
+      "tabStyle": "capsule",
+      "metrics": {
+        "chromeHeight": 40,
+        "controlRadius": 999,
+        "panelRadius": 24,
+        "shellInset": 12,
+        "commandPaletteWidth": 820
+      }
+    },
+    "explorer": {
+      "preset": "xmb",
+      "railBrandLabel": "Highway",
+      "toolbarStyle": "glass",
+      "breadcrumbStyle": "capsule",
+      "selectionStyle": "glow",
+      "hoverStyle": "glow",
+      "previewStyle": "glass",
+      "statusBarStyle": "floating",
+      "preferredViewMode": "icons-xl",
+      "preferredExperimentalViewMode": "adaptive-semantic-grid",
+      "metrics": {
+        "railWidth": 240,
+        "previewWidth": 470,
+        "gridScale": 1.2,
+        "iconScale": 1.26,
+        "hoverLiftPx": 4
+      }
+    }
+  },
+  "layoutPrimitives": [
+    {
+      "id": "synthwave-strip",
+      "name": "Synthwave Strip",
+      "kind": "grid",
+      "props": {
+        "cellSize": 148
+      }
+    }
+  ],
+  "navigationPatterns": [
+    {
+      "id": "synthwave-xmb",
+      "name": "Synthwave XMB",
+      "kind": "xmb",
+      "axis": "horizontal",
+      "props": {
+        "categoryDepth": 2
+      }
+    }
+  ],
+  "renderStyles": [
+    {
+      "id": "synthwave-render",
+      "label": "Synthwave Cross Media",
+      "description": "Cross-axis media runtime for neon console themes.",
+      "kind": "ps-3-xmb",
+      "entryModule": "renderers/synthwave-highway.tsx",
+      "supportsLiveSwap": true
+    }
+  ],
+  "defaultLayoutPrimitiveId": "synthwave-strip",
+  "defaultNavigationPatternId": "synthwave-xmb",
+  "defaultRenderStyleId": "synthwave-render",
+  "visuals": [
+    {
+      "id": "synthwave-laser-grid",
+      "backgroundImage": "linear-gradient(180deg, rgba(255,79,216,0.12), transparent 30%), repeating-linear-gradient(90deg, rgba(102,233,255,0.08) 0 1px, transparent 1px 34px)",
+      "opacity": 0.84,
+      "blendMode": "screen"
+    }
+  ]
+}

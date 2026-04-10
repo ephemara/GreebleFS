@@ -56,6 +56,14 @@ function renderSettingsPage(options?: {
       animationsError={null}
       onRefreshAnimations={async () => {}}
       onOpenAnimationsFolder={async () => {}}
+      wallpapers={[]}
+      wallpaperDiagnostics={[]}
+      wallpapersDirectory="wallpapers"
+      wallpapersLoading={false}
+      wallpapersError={null}
+      onRefreshWallpapers={async () => {}}
+      onOpenWallpapersFolder={async () => {}}
+      onImportWallpaperFiles={async () => {}}
     />,
   );
 }
@@ -379,6 +387,7 @@ describe('SettingsPage behavior', () => {
         {
           id: 'vista-render',
           label: 'Vista Render',
+          description: 'Vista shell render style',
           kind: 'vs-code-workbench',
           entryModule: 'renderers/vista.tsx',
           supportsLiveSwap: true,
