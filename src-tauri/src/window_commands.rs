@@ -23,21 +23,23 @@ pub fn window_apply_mode(
         .get_webview_window("main")
         .ok_or_else(|| "Main window not found".to_string())?;
 
-    // Set presentation properties first
-    window.set_decorations(decorations).map_err(|e| e.to_string())?;
-    window.set_always_on_top(always_on_top).map_err(|e| e.to_string())?;
-    window.set_shadow(shadow).map_err(|e| e.to_string())?;
-    window.set_skip_taskbar(skip_taskbar).map_err(|e| e.to_string())?;
+    // Some Linux WMs reject presentation-only flags during startup or for
+    // transparent undecorated windows. Geometry must still apply so the dock
+    // cannot get stranded in the center of the screen.
+    log_optional_window_error(window.set_decorations(decorations), "set_decorations");
+    log_optional_window_error(window.set_always_on_top(always_on_top), "set_always_on_top");
+    log_optional_window_error(window.set_shadow(shadow), "set_shadow");
+    log_optional_window_error(window.set_skip_taskbar(skip_taskbar), "set_skip_taskbar");
 
     // Then geometry atomically — size before position
     if width > 0 && height > 0 {
         window
             .set_size(PhysicalSize::new(width, height))
-            .map_err(|e| e.to_string())?;
+            .map_err(|error| format!("window_apply_mode set_size failed: {error}"))?;
     }
     window
         .set_position(PhysicalPosition::new(x, y))
-        .map_err(|e| e.to_string())?;
+        .map_err(|error| format!("window_apply_mode set_position failed: {error}"))?;
 
     Ok(())
 }
@@ -165,6 +167,12 @@ fn set_native_taskbar_visibility(
     window
         .set_skip_taskbar(!visible)
         .map_err(|error| error.to_string())
+}
+
+fn log_optional_window_error<T, E: std::fmt::Display>(result: Result<T, E>, operation: &str) {
+    if let Err(error) = result {
+        eprintln!("OverlayTerm: window_apply_mode {operation} failed: {error}");
+    }
 }
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]

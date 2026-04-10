@@ -100,8 +100,7 @@ import {
   type OverlayAnimationPhase,
 } from './config/overlayAnimations';
 import {
-  clampOverlayWindowBoundsToWorkArea,
-  computeOverlayWindowLayout,
+  computeAnchoredOverlayWindowLayout,
   clampOverlayVisualControlValue,
   formatOverlayVisualControlValue,
   type OverlayWindowBounds,
@@ -977,6 +976,66 @@ function App() {
     };
   }, [isWindowedMode]);
 
+  const resolveDockOverlayLayout = useCallback((args: {
+    monitor: Awaited<ReturnType<typeof currentMonitor>>;
+    scaleFactor: number;
+    currentBounds?: OverlayWindowBounds | null;
+  }) => {
+    const store = useSettingsStore.getState().settings.terminal;
+
+    return computeAnchoredOverlayWindowLayout({
+      workArea: args.monitor.workArea,
+      scaleFactor: args.scaleFactor,
+      overlayHeight: store.overlayHeight,
+      overlayWidth: store.overlayWidth,
+      overlayAnchor: store.overlayAnchor === 'top' ? 'top' : 'bottom',
+      currentBounds: args.currentBounds ?? null,
+    });
+  }, []);
+
+  const applyDockOverlayLayout = useCallback(async (args: {
+    monitor: Awaited<ReturnType<typeof currentMonitor>>;
+    scaleFactor: number;
+    currentBounds?: OverlayWindowBounds | null;
+    deferMs?: number;
+  }) => {
+    const layout = resolveDockOverlayLayout(args);
+    const store = useSettingsStore.getState().settings.terminal;
+
+    if (layout.healedHeight !== null && layout.healedHeight !== store.overlayHeight) {
+      useSettingsStore.getState().updateTerminal({ overlayHeight: layout.healedHeight });
+    }
+
+    runtimeOverlayBoundsRef.current = {
+      width: layout.width,
+      height: layout.height,
+      x: layout.x,
+      y: layout.y,
+    };
+
+    if (args.deferMs && args.deferMs > 0) {
+      await new Promise(resolve => window.setTimeout(resolve, args.deferMs));
+    }
+
+    isProgrammaticResizeRef.current = true;
+    try {
+      await commands.windowApplyMode(
+        false,
+        true,
+        false,
+        !shouldShowInTaskbar,
+        layout.x,
+        layout.y,
+        layout.width,
+        layout.height,
+      ).catch(() => {});
+    } finally {
+      isProgrammaticResizeRef.current = false;
+    }
+
+    return layout;
+  }, [resolveDockOverlayLayout, shouldShowInTaskbar]);
+
   // ── Position & show ──
   const positionAndShow = useCallback(async () => {
     clearAnimationClock();
@@ -991,22 +1050,11 @@ function App() {
 
       const store = useSettingsStore.getState().settings.terminal;
       const rememberedBounds = isFreefloatingRef.current ? runtimeOverlayBoundsRef.current : null;
-      const layout = rememberedBounds
-        ? {
-            ...clampOverlayWindowBoundsToWorkArea({
-              workArea: monitor.workArea,
-              scaleFactor,
-              bounds: rememberedBounds,
-            }),
-            healedHeight: null,
-          }
-        : computeOverlayWindowLayout({
-            workArea: monitor.workArea,
-            scaleFactor,
-            overlayHeight: store.overlayHeight,
-            overlayWidth: store.overlayWidth,
-            overlayAnchor: store.overlayAnchor === 'top' ? 'top' : 'bottom',
-          });
+      const layout = resolveDockOverlayLayout({
+        monitor,
+        scaleFactor,
+        currentBounds: rememberedBounds,
+      });
       const nextAnimation = resolveAnimationById(
         resolvedOpenAnimationId,
         animationSystemConfig.defaultOpenAnimationId,
@@ -1026,29 +1074,26 @@ function App() {
       if (layout.healedHeight !== null && layout.healedHeight !== store.overlayHeight) {
         useSettingsStore.getState().updateTerminal({ overlayHeight: layout.healedHeight });
       }
-      runtimeOverlayBoundsRef.current = {
-        width: layout.width,
-        height: layout.height,
-        x: layout.x,
-        y: layout.y,
-      };
-      isProgrammaticResizeRef.current = true;
-
-      // Atomic: set all window properties + geometry in one IPC call, then show
-      if (isTauri()) {
-        await commands.windowApplyMode(
-          false,
-          true,
-          false,
-          !shouldShowInTaskbar,
-          layout.x,
-          layout.y,
-          layout.width,
-          layout.height,
-        ).catch(() => {});
-      }
+      await applyDockOverlayLayout({
+        monitor,
+        scaleFactor,
+        currentBounds: rememberedBounds,
+      });
       await win.show();
       await win.setFocus();
+      if (runtimePlatform === 'linux') {
+        await applyDockOverlayLayout({
+          monitor,
+          scaleFactor,
+          currentBounds: {
+            width: layout.width,
+            height: layout.height,
+            x: layout.x,
+            y: layout.y,
+          },
+          deferMs: 34,
+        });
+      }
 
       let committedOpenPhase = false;
       const commitOpenPhase = () => {
@@ -1093,7 +1138,7 @@ function App() {
       setAnimationProgress(0);
       console.warn('OverlayTerm: failed to position/show', e);
     }
-  }, [appAnimationDurationMs, clearAnimationClock, markOverlayRuntimePhase, openWithoutMonitorLayout, resolveAnimationById, resolvedOpenAnimationId, shouldShowInTaskbar, startAnimationProgress]);
+  }, [appAnimationDurationMs, applyDockOverlayLayout, clearAnimationClock, markOverlayRuntimePhase, openWithoutMonitorLayout, resolveAnimationById, resolveDockOverlayLayout, resolvedOpenAnimationId, runtimePlatform, startAnimationProgress]);
 
   const showWindowedPanel = useCallback(async () => {
     clearAnimationClock();
@@ -1223,6 +1268,7 @@ function App() {
 
     void positionAndShow();
   }, [positionAndShow, showWindowedPanel]);
+
 
   const handleToggleOverlayAnchor = useCallback(() => {
     updateTerminal({
@@ -1402,52 +1448,15 @@ function App() {
         return;
       }
 
-      const store = useSettingsStore.getState().settings.terminal;
-      const rememberedBounds = isFreefloatingRef.current ? runtimeOverlayBoundsRef.current : null;
-      const layout = rememberedBounds
-        ? {
-            ...clampOverlayWindowBoundsToWorkArea({
-              workArea: monitor.workArea,
-              scaleFactor,
-              bounds: rememberedBounds,
-            }),
-            healedHeight: null,
-          }
-        : computeOverlayWindowLayout({
-            workArea: monitor.workArea,
-            scaleFactor,
-            overlayHeight: store.overlayHeight,
-            overlayWidth: store.overlayWidth,
-            overlayAnchor: store.overlayAnchor === 'top' ? 'top' : 'bottom',
-          });
-
-      if (layout.healedHeight !== null && layout.healedHeight !== store.overlayHeight) {
-        useSettingsStore.getState().updateTerminal({ overlayHeight: layout.healedHeight });
-      }
-
-      runtimeOverlayBoundsRef.current = {
-        width: layout.width,
-        height: layout.height,
-        x: layout.x,
-        y: layout.y,
-      };
-      isProgrammaticResizeRef.current = true;
-      await commands.windowApplyMode(
-        false,
-        true,
-        false,
-        !shouldShowInTaskbar,
-        layout.x,
-        layout.y,
-        layout.width,
-        layout.height,
-      ).catch(() => {});
+      await applyDockOverlayLayout({
+        monitor,
+        scaleFactor,
+        currentBounds: isFreefloatingRef.current ? runtimeOverlayBoundsRef.current : null,
+      });
     } catch (error) {
       console.warn('OverlayTerm: failed to transition window presentation', error);
-    } finally {
-      isProgrammaticResizeRef.current = false;
     }
-  }, [shouldShowInTaskbar]);
+  }, [applyDockOverlayLayout]);
 
   const handleToggleWindowMode = useCallback(() => {
     const nextWindowMode = windowMode === 'windowed' ? 'overlay' : 'windowed';
@@ -1535,54 +1544,13 @@ function App() {
           return;
         }
 
-        const store = useSettingsStore.getState().settings.terminal;
-        const rememberedBounds = runtimeOverlayBoundsRef.current;
-        const baseLayout = rememberedBounds
-          ? clampOverlayWindowBoundsToWorkArea({
-              workArea: monitor.workArea,
-              scaleFactor,
-              bounds: rememberedBounds,
-            })
-          : computeOverlayWindowLayout({
-              workArea: monitor.workArea,
-              scaleFactor,
-              overlayHeight: store.overlayHeight,
-              overlayWidth: store.overlayWidth,
-              overlayAnchor: store.overlayAnchor === 'top' ? 'top' : 'bottom',
-            });
-        const anchoredLayout = computeOverlayWindowLayout({
-          workArea: monitor.workArea,
+        await applyDockOverlayLayout({
+          monitor,
           scaleFactor,
-          overlayHeight: Math.round(baseLayout.height / scaleFactor),
-          overlayWidth: Math.round(baseLayout.width / scaleFactor),
-          overlayAnchor: store.overlayAnchor === 'top' ? 'top' : 'bottom',
+          currentBounds: runtimeOverlayBoundsRef.current,
         });
-        const layout = {
-          ...baseLayout,
-          y: anchoredLayout.y,
-          healedHeight: anchoredLayout.healedHeight,
-        };
-
-        if (layout.healedHeight !== null && layout.healedHeight !== store.overlayHeight) {
-          useSettingsStore.getState().updateTerminal({ overlayHeight: layout.healedHeight });
-        }
-
-        runtimeOverlayBoundsRef.current = {
-          width: layout.width,
-          height: layout.height,
-          x: layout.x,
-          y: layout.y,
-        };
-        isProgrammaticResizeRef.current = true;
-        await commands.windowApplyMode(
-          false, true, false, !shouldShowInTaskbar,
-          layout.x, layout.y, layout.width, layout.height,
-        ).catch(() => {});
-
       } catch (error) {
         console.warn('OverlayTerm: failed to re-anchor overlay', error);
-      } finally {
-        isProgrammaticResizeRef.current = false;
       }
     };
 
@@ -1591,7 +1559,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [overlayAnchor, windowMode]);
+  }, [applyDockOverlayLayout, overlayAnchor, windowMode, resolvePreferredMonitor]);
 
   useEffect(() => {
     if (!isOverlayVisible || typeof window === 'undefined' || !isTauri()) {
@@ -1668,12 +1636,13 @@ function App() {
       }
 
       const position = await win.outerPosition().catch(() => runtimeOverlayBoundsRef.current ?? { x: 0, y: 0 });
-      runtimeOverlayBoundsRef.current = {
+      const currentBounds = {
         width: ev.payload.width,
         height: ev.payload.height,
         x: position.x,
         y: position.y,
       };
+      runtimeOverlayBoundsRef.current = currentBounds;
       const store = useSettingsStore.getState().settings.terminal;
       const nextOverlayHeight = Math.max(logH, overlayWindowGeometry.minHeight);
       const nextOverlayWidth = Math.max(logW, overlayWindowGeometry.minWidth);
@@ -1683,9 +1652,17 @@ function App() {
           overlayWidth: nextOverlayWidth,
         });
       }
+      const monitor = await resolvePreferredMonitor();
+      if (monitor) {
+        await applyDockOverlayLayout({
+          monitor,
+          scaleFactor: factor,
+          currentBounds,
+        });
+      }
     });
     return () => { unlistenResize.then(fn => fn()); };
-  }, []);
+  }, [applyDockOverlayLayout, resolvePreferredMonitor]);
 
   useEffect(() => {
     const unlistenMove = getCurrentWindow().onMoved(async ev => {
@@ -1694,15 +1671,25 @@ function App() {
       }
       const win = getCurrentWindow();
       const size = await win.outerSize().catch(() => runtimeOverlayBoundsRef.current ?? { width: 0, height: 0 });
-      runtimeOverlayBoundsRef.current = {
+      const currentBounds = {
         width: size.width,
         height: size.height,
         x: ev.payload.x,
         y: ev.payload.y,
       };
+      runtimeOverlayBoundsRef.current = currentBounds;
+      const scaleFactor = await win.scaleFactor().catch(() => 1);
+      const monitor = await resolvePreferredMonitor();
+      if (monitor) {
+        await applyDockOverlayLayout({
+          monitor,
+          scaleFactor,
+          currentBounds,
+        });
+      }
     });
     return () => { unlistenMove.then(fn => fn()); };
-  }, []);
+  }, [applyDockOverlayLayout, resolvePreferredMonitor]);
 
   // ── Explorer → Terminal bridge ──
   const handleOpenInTerminal = useCallback(async (path: string) => {

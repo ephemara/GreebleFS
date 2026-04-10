@@ -153,6 +153,36 @@ export function computeOverlayWindowLayout(args: {
   };
 }
 
+export function computeAnchoredOverlayWindowLayout(args: {
+  workArea: OverlayWindowArea;
+  scaleFactor: number;
+  overlayHeight: number;
+  overlayWidth: number;
+  overlayAnchor: 'top' | 'bottom';
+  currentBounds?: OverlayWindowBounds | null;
+}): OverlayWindowLayout {
+  const resolvedOverlayHeight = args.currentBounds
+    ? Math.max(
+        overlayWindowGeometry.minHeight,
+        Math.round(args.currentBounds.height / args.scaleFactor),
+      )
+    : args.overlayHeight;
+  const resolvedOverlayWidth = args.currentBounds
+    ? Math.max(
+        overlayWindowGeometry.minWidth,
+        Math.round(args.currentBounds.width / args.scaleFactor),
+      )
+    : args.overlayWidth;
+
+  return computeOverlayWindowLayout({
+    workArea: args.workArea,
+    scaleFactor: args.scaleFactor,
+    overlayHeight: resolvedOverlayHeight,
+    overlayWidth: resolvedOverlayWidth,
+    overlayAnchor: args.overlayAnchor,
+  });
+}
+
 export function clampOverlayWindowBoundsToWorkArea(args: {
   workArea: OverlayWindowArea;
   scaleFactor: number;

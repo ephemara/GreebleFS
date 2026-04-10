@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  computeAnchoredOverlayWindowLayout,
   clampOverlayWindowBoundsToWorkArea,
   computeOverlayWindowLayout,
   overlayWindowGeometry,
@@ -41,6 +42,26 @@ describe('computeOverlayWindowLayout', () => {
 
     expect(layout.x).toBe(overlayWindowGeometry.logicalPadding);
     expect(layout.y).toBe(overlayWindowGeometry.logicalPadding);
+  });
+
+  it('re-docks to the edge while preserving the current size', () => {
+    const layout = computeAnchoredOverlayWindowLayout({
+      workArea: WORK_AREA,
+      scaleFactor: 1,
+      overlayHeight: overlayWindowGeometry.defaultHeight,
+      overlayWidth: overlayWindowGeometry.defaultWidth,
+      overlayAnchor: 'bottom',
+      currentBounds: { width: 1440, height: 620, x: 420, y: 180 },
+    });
+
+    expect(layout.width).toBe(1440);
+    expect(layout.height).toBe(620);
+    expect(layout.x).toBe(overlayWindowGeometry.logicalPadding);
+    expect(layout.y).toBe(
+      WORK_AREA.size.height
+      - 620
+      - overlayWindowGeometry.logicalPadding,
+    );
   });
 });
 

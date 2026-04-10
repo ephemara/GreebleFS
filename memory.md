@@ -63,6 +63,12 @@
   - `src/main.tsx` now initializes managed content directories before importing `App`
   - screenshot settings imports now migrate away from the old bad default path when loading persisted settings
   - the Linux installer now seeds `plugins`, `themes`, `shaders`, and `animations` into `~/.local/share/co.overlayterm.app`
+- Fixed Linux dock-mode geometry regression where the overlay WM could recenter the dock in the middle of the screen after show:
+  - added `computeAnchoredOverlayWindowLayout()` in `src/config/overlayWindow.ts`
+  - `src/App.tsx` now preserves overlay size but always re-derives dock X/Y from the active monitor edge
+  - Linux overlay open now performs a short delayed re-dock pass after `show()` to override WM recentering
+  - overlay move/resize listeners now snap overlay mode back to the dock edge instead of persisting floating coordinates
+  - added regression coverage in `src/test/overlayWindow.test.ts`
 - The installer now performs the full build/install flow directly:
   - sync icons
   - regenerate Tauri bindings
