@@ -34,7 +34,11 @@ npm run tauri build
 # 5. Global Install
 echo "Installing to ~/.local/bin..."
 mkdir -p ~/.local/bin
-cp src-tauri/target/release/greeble ~/.local/bin/
+TARGET_DIR="$(
+  cargo metadata --manifest-path src-tauri/Cargo.toml --no-deps --format-version 1 \
+    | node -e 'let input = ""; process.stdin.on("data", (chunk) => input += chunk); process.stdin.on("end", () => process.stdout.write(JSON.parse(input).target_directory));'
+)"
+cp "$TARGET_DIR/release/greeble" ~/.local/bin/
 
 echo "Creating Desktop Entry..."
 mkdir -p ~/.local/share/applications/

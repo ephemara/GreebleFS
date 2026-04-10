@@ -1099,7 +1099,6 @@ function App() {
 
     let cancelled = false;
     commands.windowGetLinuxDisplayServer()
-      .then(unwrapTauriResult)
       .then(displayServer => {
         if (cancelled) {
           return;

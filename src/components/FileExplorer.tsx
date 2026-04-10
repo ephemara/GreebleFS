@@ -9,7 +9,7 @@
  */
 
 import React, {
-  Suspense, useState, useEffect, useRef, useCallback, useMemo, useId, type CSSProperties,
+  Suspense, startTransition, useState, useEffect, useRef, useCallback, useMemo, useId, type CSSProperties,
 } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -163,6 +163,8 @@ const EXPLORER_LIST_SEARCH_ROW_HEIGHT = 72;
 const EXPLORER_LIST_OVERSCAN = 8;
 const EXPLORER_GRID_OVERSCAN_ROWS = 2;
 const EXPLORER_LAYOUT_WHEEL_STEP_DELTA = 80;
+const EXPLORER_ENTRY_SIZE_BATCH_SETTLE_MS = 72;
+const EXPLORER_NATIVE_ICON_BATCH_SETTLE_MS = 96;
 const EXPLORER_ZOOM_POSITION_SPRING = {
   type: 'spring' as const,
   stiffness: 280,
@@ -791,8 +793,12 @@ function buildConstellationOrbitBands(
       const nodes = visibleEntries.map((entry, index) => {
         const entryHash = hashExplorerString(entry.path);
         const jitterAngle = ((entryHash % 41) / 41) * 0.44 - 0.22;
-        const ringIndex = Math.floor(index / 6);
-        const angle = ((index + 1) / Math.max(visibleEntries.length + 1, 2)) * Math.PI * 2 + jitterAngle;
+        
+        // Use hash-based stable visual distribution to prevent everything jumping when an item becomes selected/unselected
+        const ringIndex = (entryHash % 4);
+        const stableAngleMultiplier = (entryHash % 360) / 360;
+        const angle = stableAngleMultiplier * Math.PI * 2 + jitterAngle;
+        
         const radiusX = 18 + ringIndex * 10 + normalizedDensity * 12 + ((entryHash >> 2) % 7);
         const radiusY = 12 + ringIndex * 8 + normalizedDensity * 10 + ((entryHash >> 5) % 5);
         const x = clampConstellationCoordinate(50 + Math.cos(angle) * radiusX, 11, 89);
@@ -2305,7 +2311,9 @@ export function FileExplorer({
         directoryCacheKey,
         () => listExplorerDir(normalizedPath, showHidden),
       );
-      setEntries(nextEntries);
+      startTransition(() => {
+        setEntries(nextEntries);
+      });
       recordExplorerMetric({
         metricId: 'explorer_navigation',
         durationMs: getExplorerPerformanceNow() - startedAt,
@@ -2318,7 +2326,10 @@ export function FileExplorer({
       });
     }
     catch (e) {
-      setError(String(e)); setEntries([]);
+      setError(String(e));
+      startTransition(() => {
+        setEntries([]);
+      });
       recordExplorerMetric({
         metricId: 'explorer_navigation',
         durationMs: getExplorerPerformanceNow() - startedAt,
@@ -2336,7 +2347,9 @@ export function FileExplorer({
   const runSearch = useCallback(async (query: string, requestId: number) => {
     const trimmed = query.trim();
     if (!trimmed || !currentPath) {
-      setSearchResults([]);
+      startTransition(() => {
+        setSearchResults([]);
+      });
       setSearchLoading(false);
       return;
     }
@@ -2370,7 +2383,9 @@ export function FileExplorer({
       );
       const results = response.results;
       if (searchRequestIdRef.current === requestId) {
-        setSearchResults(results);
+        startTransition(() => {
+          setSearchResults(results);
+        });
         recordExplorerMetric({
           metricId: 'explorer_search',
           durationMs: getExplorerPerformanceNow() - startedAt,
@@ -2385,7 +2400,9 @@ export function FileExplorer({
       }
     } catch (searchError) {
       if (searchRequestIdRef.current === requestId) {
-        setSearchResults([]);
+        startTransition(() => {
+          setSearchResults([]);
+        });
         setError(`Search failed: ${searchError}`);
         recordExplorerMetric({
           metricId: 'explorer_search',
@@ -2431,7 +2448,9 @@ export function FileExplorer({
         getExplorerDirectoryCacheKey(currentPath, showHidden),
         nextEntries,
       );
-      setEntries(nextEntries);
+      startTransition(() => {
+        setEntries(nextEntries);
+      });
     }
     catch (e) { setError(String(e)); }
     finally { setLoading(false); }
@@ -4187,59 +4206,80 @@ export function FileExplorer({
       return changed ? next : current;
     });
 
-    const startedAt = getExplorerPerformanceNow();
-    void measureExplorerEntrySizes(unresolvedPaths, false)
-      .then(results => {
-        recordExplorerMetric({
-          metricId: 'explorer_entry_size_batch',
-          durationMs: getExplorerPerformanceNow() - startedAt,
-          metadata: {
-            directoryCount: nextBatch.filter((entry) => entry.is_dir).length,
-            pathCount: unresolvedPaths.length,
-            resultCount: results.length,
-            success: true,
-          },
-        });
-        setEntrySizes(current => {
-          const next = { ...current };
-          for (const result of results) {
-            next[result.path] = result;
+    let disposed = false;
+    const batchTimer = window.setTimeout(() => {
+      const startedAt = getExplorerPerformanceNow();
+      void measureExplorerEntrySizes(unresolvedPaths, false)
+        .then(results => {
+          if (disposed) {
+            return;
           }
-          return next;
-        });
-        setEntrySizeLoadingPaths(current => {
-          if (current.size === 0) {
-            return current;
+
+          recordExplorerMetric({
+            metricId: 'explorer_entry_size_batch',
+            durationMs: getExplorerPerformanceNow() - startedAt,
+            metadata: {
+              directoryCount: nextBatch.filter((entry) => entry.is_dir).length,
+              pathCount: unresolvedPaths.length,
+              resultCount: results.length,
+              success: true,
+            },
+          });
+
+          startTransition(() => {
+            setEntrySizes(current => {
+              const next = { ...current };
+              for (const result of results) {
+                next[result.path] = result;
+              }
+              return next;
+            });
+          });
+
+          setEntrySizeLoadingPaths(current => {
+            if (current.size === 0) {
+              return current;
+            }
+            const next = new Set(current);
+            for (const path of unresolvedPaths) {
+              next.delete(path);
+            }
+            return next.size === current.size ? current : next;
+          });
+        })
+        .catch(() => {
+          if (disposed) {
+            return;
           }
-          const next = new Set(current);
-          for (const path of unresolvedPaths) {
-            next.delete(path);
-          }
-          return next.size === current.size ? current : next;
+
+          recordExplorerMetric({
+            metricId: 'explorer_entry_size_batch',
+            durationMs: getExplorerPerformanceNow() - startedAt,
+            metadata: {
+              directoryCount: nextBatch.filter((entry) => entry.is_dir).length,
+              pathCount: unresolvedPaths.length,
+              resultCount: 0,
+              success: false,
+            },
+          });
+
+          setEntrySizeLoadingPaths(current => {
+            if (current.size === 0) {
+              return current;
+            }
+            const next = new Set(current);
+            for (const path of unresolvedPaths) {
+              next.delete(path);
+            }
+            return next.size === current.size ? current : next;
+          });
         });
-      })
-      .catch(() => {
-        recordExplorerMetric({
-          metricId: 'explorer_entry_size_batch',
-          durationMs: getExplorerPerformanceNow() - startedAt,
-          metadata: {
-            directoryCount: nextBatch.filter((entry) => entry.is_dir).length,
-            pathCount: unresolvedPaths.length,
-            resultCount: 0,
-            success: false,
-          },
-        });
-        setEntrySizeLoadingPaths(current => {
-          if (current.size === 0) {
-            return current;
-          }
-          const next = new Set(current);
-          for (const path of unresolvedPaths) {
-            next.delete(path);
-          }
-          return next.size === current.size ? current : next;
-        });
-      });
+    }, EXPLORER_ENTRY_SIZE_BATCH_SETTLE_MS);
+
+    return () => {
+      disposed = true;
+      window.clearTimeout(batchTimer);
+    };
   }, [
     effectiveViewMode,
     entrySizes,
@@ -4282,64 +4322,88 @@ export function FileExplorer({
       return changed ? next : current;
     });
 
-    const startedAt = getExplorerPerformanceNow();
-    void commands.fsResolveNativeIcons(
-      requests.map(request => ({
-        ...request,
-        size: request.size ?? null,
-      })),
-    )
-      .then(unwrapTauriResult)
-      .then(results => {
-        recordExplorerMetric({
-          metricId: 'explorer_native_icon_batch',
-          durationMs: getExplorerPerformanceNow() - startedAt,
-          metadata: {
-            pathCount: pendingKeys.length,
-            resultCount: results.length,
-            success: true,
-          },
-        });
-        setNativeIconMap(current => {
-          const next = { ...current };
-          for (const result of results) {
-            next[getNativeIconCacheKey(result.path, DEFAULT_NATIVE_ICON_SIZE)] = result.src ?? null;
+    let disposed = false;
+    const batchTimer = window.setTimeout(() => {
+      const startedAt = getExplorerPerformanceNow();
+      void commands.fsResolveNativeIcons(
+        requests.map(request => ({
+          ...request,
+          size: request.size ?? null,
+        })),
+      )
+        .then(unwrapTauriResult)
+        .then(results => {
+          if (disposed) {
+            return;
           }
-          return next;
-        });
-        setNativeIconLoadingKeys(current => {
-          const next = new Set(current);
-          for (const key of pendingKeys) {
-            next.delete(key);
+
+          recordExplorerMetric({
+            metricId: 'explorer_native_icon_batch',
+            durationMs: getExplorerPerformanceNow() - startedAt,
+            metadata: {
+              pathCount: pendingKeys.length,
+              resultCount: results.length,
+              success: true,
+            },
+          });
+
+          startTransition(() => {
+            setNativeIconMap(current => {
+              const next = { ...current };
+              for (const result of results) {
+                next[getNativeIconCacheKey(result.path, DEFAULT_NATIVE_ICON_SIZE)] = result.src ?? null;
+              }
+              return next;
+            });
+          });
+
+          setNativeIconLoadingKeys(current => {
+            const next = new Set(current);
+            for (const key of pendingKeys) {
+              next.delete(key);
+            }
+            return next.size === current.size ? current : next;
+          });
+        })
+        .catch(() => {
+          if (disposed) {
+            return;
           }
-          return next.size === current.size ? current : next;
+
+          recordExplorerMetric({
+            metricId: 'explorer_native_icon_batch',
+            durationMs: getExplorerPerformanceNow() - startedAt,
+            metadata: {
+              pathCount: pendingKeys.length,
+              resultCount: 0,
+              success: false,
+            },
+          });
+
+          startTransition(() => {
+            setNativeIconMap(current => {
+              const next = { ...current };
+              for (const key of pendingKeys) {
+                next[key] = null;
+              }
+              return next;
+            });
+          });
+
+          setNativeIconLoadingKeys(current => {
+            const next = new Set(current);
+            for (const key of pendingKeys) {
+              next.delete(key);
+            }
+            return next.size === current.size ? current : next;
+          });
         });
-      })
-      .catch(() => {
-        recordExplorerMetric({
-          metricId: 'explorer_native_icon_batch',
-          durationMs: getExplorerPerformanceNow() - startedAt,
-          metadata: {
-            pathCount: pendingKeys.length,
-            resultCount: 0,
-            success: false,
-          },
-        });
-        setNativeIconMap(current => {
-          const next = { ...current };
-          for (const key of pendingKeys) {
-            next[key] = null;
-          }
-          return next;
-        });
-        setNativeIconLoadingKeys(current => {
-          const next = new Set(current);
-          for (const key of pendingKeys) {
-            next.delete(key);
-          }
-          return next.size === current.size ? current : next;
-        });
-      });
+    }, EXPLORER_NATIVE_ICON_BATCH_SETTLE_MS);
+
+    return () => {
+      disposed = true;
+      window.clearTimeout(batchTimer);
+    };
   }, [loading, nativeIconLoadingKeys, nativeIconMap, recordExplorerMetric, useNativeOsIcons, virtualizedEntries]);
 
   const renderSearchMetadata = (entry: FileEntry) => {
@@ -4852,7 +4916,7 @@ export function FileExplorer({
                   position: 'absolute',
                   left: `${node.x}%`,
                   top: `${node.y}%`,
-                  transform: 'translate(-50%, -50%)',
+                  transform: `translate(-50%, -50%) ${isDrop ? dropEntrySurface.transform : isSel ? selectedEntrySurface.transform : idleEntrySurface.transform}`,
                   minWidth: node.labelVisible ? Math.max(88, node.size + 42) : node.size + 18,
                   maxWidth: 172,
                   minHeight: node.size + 14,
@@ -4881,11 +4945,13 @@ export function FileExplorer({
                 onMouseEnter={e => {
                   if (!isSel && !isDrop) {
                     applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, hoverEntrySurface);
+                    e.currentTarget.style.transform = `translate(-50%, -50%) ${hoverEntrySurface.transform}`;
                   }
                 }}
                 onMouseLeave={e => {
                   if (!isSel && !isDrop) {
                     applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, idleEntrySurface);
+                    e.currentTarget.style.transform = `translate(-50%, -50%) ${idleEntrySurface.transform}`;
                     e.currentTarget.style.background = highlightBackground;
                     e.currentTarget.style.borderColor = node.emphasis === 'anchor'
                       ? `${accent}55`

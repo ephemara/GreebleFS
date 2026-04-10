@@ -1,4 +1,4 @@
-import React, { type CSSProperties, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import React, { type CSSProperties, useEffect, useMemo, useRef } from 'react';
 import * as TauriCore from '@tauri-apps/api/core';
 import * as TauriEvent from '@tauri-apps/api/event';
 import * as TauriWindow from '@tauri-apps/api/window';
@@ -417,6 +417,55 @@ export function resolveShaderSurfaceStyle(
   }
 }
 
+const BUILT_IN_SHADER_ANIMATION_STYLE_ID = 'overlayterm-built-in-shader-keyframes';
+
+function ensureBuiltInShaderAnimationStyles(): void {
+  if (typeof document === 'undefined' || document.getElementById(BUILT_IN_SHADER_ANIMATION_STYLE_ID)) {
+    return;
+  }
+
+  const style = document.createElement('style');
+  style.id = BUILT_IN_SHADER_ANIMATION_STYLE_ID;
+  style.textContent = `
+@keyframes overlayterm-nebula-drift {
+  0% { transform: scale(1.01) translate3d(-3%, -2%, 0) rotate(-2deg); }
+  50% { transform: scale(1.05) translate3d(2%, 2%, 0) rotate(1deg); }
+  100% { transform: scale(1.02) translate3d(4%, -1%, 0) rotate(3deg); }
+}
+@keyframes overlayterm-nebula-pulse {
+  0% { opacity: 0.34; transform: translate3d(-4%, 0, 0); }
+  50% { opacity: 0.46; transform: translate3d(2%, 0, 0); }
+  100% { opacity: 0.38; transform: translate3d(5%, 0, 0); }
+}
+@keyframes overlayterm-topbar-sweep {
+  0% { transform: translate3d(-10%, 0, 0) skewX(-5deg); opacity: 0.52; }
+  50% { transform: translate3d(0%, 0, 0) skewX(0deg); opacity: 0.8; }
+  100% { transform: translate3d(10%, 0, 0) skewX(5deg); opacity: 0.56; }
+}
+@keyframes overlayterm-rail-pulse {
+  0% { opacity: 0.24; filter: saturate(0.92); }
+  50% { opacity: 0.44; filter: saturate(1.08); }
+  100% { opacity: 0.3; filter: saturate(0.96); }
+}
+@keyframes overlayterm-prism-rotate {
+  0% { transform: rotate(-5deg) scale(1.01); opacity: 0.56; }
+  50% { transform: rotate(4deg) scale(1.06); opacity: 0.76; }
+  100% { transform: rotate(10deg) scale(1.02); opacity: 0.6; }
+}
+@keyframes overlayterm-prism-topbar {
+  0% { transform: translate3d(-8%, 0, 0); opacity: 0.5; }
+  50% { transform: translate3d(0%, 0, 0); opacity: 0.78; }
+  100% { transform: translate3d(8%, 0, 0); opacity: 0.54; }
+}
+@keyframes overlayterm-border-pulse {
+  0% { opacity: 0.24; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04), 0 0 10px rgba(255,255,255,0.08); }
+  50% { opacity: 0.42; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08), 0 0 20px rgba(255,255,255,0.16); }
+  100% { opacity: 0.28; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05), 0 0 12px rgba(255,255,255,0.1); }
+}
+`;
+  document.head.appendChild(style);
+}
+
 export const ShaderSurfaceLayer = React.memo(function ShaderSurfaceLayer({
   shader,
   shellContext,
@@ -428,6 +477,10 @@ export const ShaderSurfaceLayer = React.memo(function ShaderSurfaceLayer({
   surface: OverlayShaderSurfaceId;
   style?: CSSProperties;
 }) {
+  useEffect(() => {
+    ensureBuiltInShaderAnimationStyles();
+  }, []);
+
   const context = useMemo(
     () => buildShaderRenderContext({ shader, shellContext, surface }),
     [shader, shellContext, surface],
@@ -619,72 +672,14 @@ function normalizeSurfaceDefinition(
   return surface;
 }
 
-type RafClockListener = () => void;
-
-// Single shared RAF clock for all built-in shader surfaces. This avoids each surface
-// spinning up its own RAF loop + React state updates.
-const sharedRafClock = (() => {
-  let nowSeconds = 0;
-  let rafId = 0;
-  const listeners = new Set<RafClockListener>();
-
-  const tick = (nowMs: number) => {
-    nowSeconds = nowMs * 0.001;
-    for (const listener of listeners) {
-      listener();
-    }
-    if (listeners.size > 0) {
-      rafId = window.requestAnimationFrame(tick);
-    } else {
-      rafId = 0;
-    }
-  };
-
-  const startIfNeeded = () => {
-    if (rafId !== 0) {
-      return;
-    }
-    rafId = window.requestAnimationFrame(tick);
-  };
-
-  return {
-    subscribe(listener: RafClockListener) {
-      listeners.add(listener);
-      // rAF is throttled in background tabs; we still start so the clock can't get "stuck"
-      // if the first subscription happens while hidden.
-      startIfNeeded();
-      return () => {
-        listeners.delete(listener);
-        if (listeners.size === 0 && rafId !== 0) {
-          window.cancelAnimationFrame(rafId);
-          rafId = 0;
-        }
-      };
-    },
-    getSnapshot() {
-      return nowSeconds;
-    },
-    getServerSnapshot() {
-      return 0;
-    },
-  };
-})();
-
-function useAnimationClock(speed = 1): number {
-  const base = useSyncExternalStore(
-    sharedRafClock.subscribe,
-    sharedRafClock.getSnapshot,
-    sharedRafClock.getServerSnapshot,
-  );
-  return base * speed;
-}
-
 type CanvasAnimatorListener = (nowMs: number) => void;
 
 // One shared animator for all canvas-backed shader surfaces.
 const sharedCanvasAnimator = (() => {
   let rafId = 0;
+  let lastBroadcastMs = 0;
   const listeners = new Set<CanvasAnimatorListener>();
+  const targetFrameMs = 1000 / 24;
 
   const tick = (nowMs: number) => {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
@@ -692,6 +687,13 @@ const sharedCanvasAnimator = (() => {
       rafId = window.requestAnimationFrame(tick);
       return;
     }
+
+    if (lastBroadcastMs !== 0 && nowMs - lastBroadcastMs < targetFrameMs) {
+      rafId = listeners.size > 0 ? window.requestAnimationFrame(tick) : 0;
+      return;
+    }
+
+    lastBroadcastMs = nowMs;
 
     for (const listener of listeners) {
       listener(nowMs);
@@ -716,6 +718,7 @@ const sharedCanvasAnimator = (() => {
         if (listeners.size === 0 && rafId !== 0) {
           window.cancelAnimationFrame(rafId);
           rafId = 0;
+          lastBroadcastMs = 0;
         }
       };
     },
@@ -723,7 +726,6 @@ const sharedCanvasAnimator = (() => {
 })();
 
 function NebulaBackgroundSurface({ context }: OverlayShaderSurfaceProps) {
-  const time = useAnimationClock(0.9);
   const accentAlpha = Number(context.sharedUniforms.accentAlpha ?? 0.72);
   const accentLift = Number(context.sharedUniforms.accentLift ?? 0.28);
 
@@ -734,13 +736,14 @@ function NebulaBackgroundSurface({ context }: OverlayShaderSurfaceProps) {
           position: 'absolute',
           inset: '-8%',
           background: [
-            `radial-gradient(circle at ${40 + Math.sin(time * 0.5) * 16}% ${34 + Math.cos(time * 0.35) * 12}%, ${context.accentColor}${Math.round(accentAlpha * 255).toString(16).padStart(2, '0')} 0%, transparent 28%)`,
+            `radial-gradient(circle at 42% 36%, ${context.accentColor}${Math.round(accentAlpha * 255).toString(16).padStart(2, '0')} 0%, transparent 28%)`,
             'radial-gradient(circle at 76% 22%, rgba(255,255,255,0.14) 0%, transparent 18%)',
             'radial-gradient(circle at 18% 76%, rgba(56,189,248,0.18) 0%, transparent 24%)',
           ].join(', '),
           filter: `blur(${18 + context.blurStrength * 0.45}px) saturate(${1.08 + accentLift})`,
-          transform: `scale(${1.02 + Math.sin(time * 0.22) * 0.02}) rotate(${Math.sin(time * 0.16) * 3}deg)`,
           opacity: 0.82,
+          animation: 'overlayterm-nebula-drift 18s ease-in-out infinite alternate',
+          willChange: 'transform, opacity',
         }}
       />
       <div
@@ -749,7 +752,8 @@ function NebulaBackgroundSurface({ context }: OverlayShaderSurfaceProps) {
           inset: 0,
           backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0))',
           mixBlendMode: 'screen',
-          opacity: 0.42 + Math.sin(time * 0.9) * 0.06,
+          animation: 'overlayterm-nebula-pulse 9s ease-in-out infinite alternate',
+          willChange: 'transform, opacity',
         }}
       />
     </div>
@@ -757,8 +761,6 @@ function NebulaBackgroundSurface({ context }: OverlayShaderSurfaceProps) {
 }
 
 function TopBarNebulaSurface({ context }: OverlayShaderSurfaceProps) {
-  const time = useAnimationClock(1.4);
-
   return (
     <div style={{ position: 'absolute', inset: 0 }}>
       <div
@@ -766,10 +768,11 @@ function TopBarNebulaSurface({ context }: OverlayShaderSurfaceProps) {
           position: 'absolute',
           inset: '-25% 0',
           background: `linear-gradient(90deg, transparent 0%, ${context.accentColor}18 30%, rgba(255,255,255,0.18) 50%, ${context.accentColor}14 72%, transparent 100%)`,
-          transform: `translateX(${Math.sin(time * 0.8) * 18}%) skewX(${Math.sin(time * 0.45) * 8}deg)`,
           opacity: 0.78,
           filter: 'blur(10px)',
           mixBlendMode: 'screen',
+          animation: 'overlayterm-topbar-sweep 12s ease-in-out infinite alternate',
+          willChange: 'transform, opacity',
         }}
       />
     </div>
@@ -777,9 +780,6 @@ function TopBarNebulaSurface({ context }: OverlayShaderSurfaceProps) {
 }
 
 function AccentRailSurface({ context }: OverlayShaderSurfaceProps) {
-  const time = useAnimationClock(1.1);
-  const railOpacity = 0.38 + Math.sin(time * 1.6) * 0.08;
-
   return (
     <div style={{ position: 'absolute', inset: 0 }}>
       {[
@@ -798,8 +798,11 @@ function AccentRailSurface({ context }: OverlayShaderSurfaceProps) {
             background: index < 2
               ? `linear-gradient(90deg, transparent 0%, ${context.accentColor} 18%, rgba(255,255,255,0.95) 50%, ${context.accentColor} 82%, transparent 100%)`
               : `linear-gradient(180deg, transparent 0%, ${context.accentColor} 18%, rgba(255,255,255,0.95) 50%, ${context.accentColor} 82%, transparent 100%)`,
-            opacity: railOpacity,
+            opacity: 0.32,
             boxShadow: `0 0 14px ${context.accentColor}66`,
+            animation: `overlayterm-rail-pulse ${3.8 + index * 0.4}s ease-in-out infinite alternate`,
+            animationDelay: `${index * 0.18}s`,
+            willChange: 'opacity, filter',
           }}
         />
       ))}
@@ -855,7 +858,7 @@ function CanvasGridRenderer({
         return;
       }
 
-      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.25);
       if (clientWidth !== lastClientWidth || clientHeight !== lastClientHeight || dpr !== lastDpr) {
         lastClientWidth = clientWidth;
         lastClientHeight = clientHeight;
@@ -911,8 +914,6 @@ function CanvasGridRenderer({
 }
 
 function PrismBackgroundSurface({ context }: OverlayShaderSurfaceProps) {
-  const time = useAnimationClock(0.7);
-
   return (
     <div style={{ position: 'absolute', inset: '-14%' }}>
       <div
@@ -920,13 +921,14 @@ function PrismBackgroundSurface({ context }: OverlayShaderSurfaceProps) {
           position: 'absolute',
           inset: '-10%',
           background: [
-            `conic-gradient(from ${time * 28}deg at 50% 50%, rgba(255,255,255,0.12), ${context.accentColor}22, rgba(59,130,246,0.16), rgba(255,255,255,0.08), ${context.accentColor}18)`,
+            `conic-gradient(from 24deg at 50% 50%, rgba(255,255,255,0.12), ${context.accentColor}22, rgba(59,130,246,0.16), rgba(255,255,255,0.08), ${context.accentColor}18)`,
             'radial-gradient(circle at 24% 18%, rgba(255,255,255,0.18), transparent 24%)',
           ].join(', '),
           mixBlendMode: 'screen',
           filter: `blur(${16 + context.blurStrength * 0.3}px) saturate(1.2)`,
-          transform: `rotate(${Math.sin(time * 0.25) * 10}deg) scale(${1.04 + Math.cos(time * 0.2) * 0.04})`,
           opacity: 0.72,
+          animation: 'overlayterm-prism-rotate 24s linear infinite',
+          willChange: 'transform, opacity',
         }}
       />
     </div>
@@ -934,34 +936,32 @@ function PrismBackgroundSurface({ context }: OverlayShaderSurfaceProps) {
 }
 
 function PrismTopBarSurface({ context }: OverlayShaderSurfaceProps) {
-  const time = useAnimationClock(1.2);
-
   return (
     <div
       style={{
         position: 'absolute',
         inset: 0,
         background: `linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.14) 28%, ${context.accentColor}1f 50%, rgba(255,255,255,0.14) 72%, transparent 100%)`,
-        transform: `translateX(${Math.sin(time * 0.6) * 14}%)`,
         opacity: 0.78,
         filter: 'blur(8px)',
         mixBlendMode: 'screen',
+        animation: 'overlayterm-prism-topbar 10s ease-in-out infinite alternate',
+        willChange: 'transform, opacity',
       }}
     />
   );
 }
 
 function PrismBorderSurface({ context }: OverlayShaderSurfaceProps) {
-  const time = useAnimationClock(1.8);
-  const opacity = 0.34 + Math.cos(time * 1.8) * 0.08;
-
   return (
     <div
       style={{
         position: 'absolute',
         inset: 0,
-        border: `1px solid ${context.accentColor}${Math.round(opacity * 255).toString(16).padStart(2, '0')}`,
+        border: `1px solid ${context.accentColor}52`,
         boxShadow: `inset 0 0 0 1px rgba(255,255,255,0.06), 0 0 20px ${context.accentColor}33`,
+        animation: 'overlayterm-border-pulse 5.2s ease-in-out infinite alternate',
+        willChange: 'opacity, box-shadow',
       }}
     />
   );

@@ -9,7 +9,6 @@ data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
 app_local_data_root="$data_home/co.overlayterm.app"
 applications_dir="$data_home/applications"
 icons_dir="$data_home/icons/hicolor/128x128/apps"
-binary_source="$repo_root/src-tauri/target/release/greeble"
 binary_target="$install_root/overlayterm"
 desktop_entry_path="$applications_dir/co.overlayterm.app.desktop"
 icon_target="$icons_dir/overlayterm.png"
@@ -44,6 +43,12 @@ if ! command -v cargo >/dev/null 2>&1; then
   echo "cargo is required to build OverlayTerm." >&2
   exit 1
 fi
+
+cargo_target_dir="$(
+  cargo metadata --manifest-path "$repo_root/src-tauri/Cargo.toml" --no-deps --format-version 1 \
+    | bun -e 'const metadata = JSON.parse(await Bun.stdin.text()); process.stdout.write(metadata.target_directory);'
+)"
+binary_source="$cargo_target_dir/release/greeble"
 
 echo "[1/5] Syncing canonical icons..."
 bun scripts/sync-canonical-icons.mjs

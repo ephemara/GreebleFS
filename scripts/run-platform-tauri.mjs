@@ -70,7 +70,7 @@ async function pathExists(targetPath) {
   }
 }
 
-async function writeRuntimeTauriConfig(packageManagerCommand) {
+async function writeRuntimeTauriConfig(packageManagerCommand, tauriCommand) {
   const tauriConfigPath = path.join(projectRoot, "src-tauri", "tauri.conf.json");
   const rawConfig = await fs.readFile(tauriConfigPath, "utf8");
   const config = JSON.parse(rawConfig);
@@ -78,6 +78,11 @@ async function writeRuntimeTauriConfig(packageManagerCommand) {
   const runPrefix = `${packageManagerCommand} run`;
   const explicitDevUrl = process.env.OVERLAYTERM_TAURI_DEV_URL?.trim();
   const explicitDevPort = process.env.OVERLAYTERM_TAURI_DEV_PORT?.trim();
+  const isDevCommand = tauriCommand === "dev";
+  const resolvedDevPort = explicitDevPort || "1420";
+  const resolvedDevUrl = isDevCommand
+    ? explicitDevUrl || `http://localhost:${resolvedDevPort}`
+    : null;
   const beforeDevCommand = explicitDevPort
     ? `${runPrefix} dev -- --port ${explicitDevPort}`
     : `${runPrefix} dev`;
@@ -87,8 +92,13 @@ async function writeRuntimeTauriConfig(packageManagerCommand) {
     beforeDevCommand,
     beforeBuildCommand: `${runPrefix} build`,
     frontendDist,
-    ...(explicitDevUrl ? { devUrl: explicitDevUrl } : {}),
   };
+
+  if (resolvedDevUrl) {
+    config.build.devUrl = resolvedDevUrl;
+  } else {
+    delete config.build.devUrl;
+  }
 
   await fs.mkdir(tauriConfigDir, { recursive: true });
   await fs.writeFile(runtimeConfigPath, `${JSON.stringify(config, null, 2)}\n`);
@@ -200,8 +210,9 @@ async function main() {
     ? `${cacheNodeModules}${path.delimiter}${process.env.NODE_PATH}`
     : cacheNodeModules;
   const cliArgs = process.argv.slice(2);
+  const tauriCommand = cliArgs.find((arg) => !arg.startsWith("-")) ?? null;
   const hasExplicitConfig = cliArgs.includes("--config") || cliArgs.includes("-c");
-  const runtimeConfigPath = await writeRuntimeTauriConfig(packageManagerCommand);
+  const runtimeConfigPath = await writeRuntimeTauriConfig(packageManagerCommand, tauriCommand);
   const tauriArgs = hasExplicitConfig
     ? cliArgs
     : cliArgs.length === 0

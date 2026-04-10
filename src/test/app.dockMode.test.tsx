@@ -129,6 +129,7 @@ vi.mock('../runtime/tauriClient', () => ({
     traySetVisible: vi.fn(async () => undefined),
     terminalOpenExternal: vi.fn(async () => undefined),
     windowApplyMode: vi.fn(async () => undefined),
+    windowGetLinuxDisplayServer: vi.fn(async () => 'x11'),
     windowSetBlur: vi.fn(async () => undefined),
   },
 }));

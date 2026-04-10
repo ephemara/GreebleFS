@@ -1,5 +1,36 @@
 # GreebleFS Memory
 
+## 2026-04-09 — Shader Runtime Performance Pass
+
+- Targeted the shell shader path because the sluggishness was coming from the built-in shader surfaces doing React-driven animation every frame.
+- `src/components/shaderRuntime.tsx` now keeps the built-in animated shader surfaces off the React RAF path:
+  - Nebula and Prism background/top-bar/border surfaces now use injected CSS keyframes instead of `useSyncExternalStore` + React rerenders every frame
+  - this removes the shared built-in shader RAF clock entirely
+- Canvas-backed shader surfaces still animate, but they are now throttled to roughly 24 FPS through the shared canvas animator instead of drawing every browser frame.
+- Canvas shader DPR is now capped at `1.25` instead of `1.5` to reduce fill-rate pressure on large translucent surfaces.
+- Validation that passed:
+  - narrowed `bunx tsc --noEmit --skipLibCheck --jsx react-jsx --module esnext --target es2022 --moduleResolution bundler --allowSyntheticDefaultImports --types node,vitest/globals,@testing-library/jest-dom ...`
+  - `bunx vitest run --environment node src/test/shaderRuntime.test.ts`
+- Remaining likely hotspots if the UI still feels slow after this pass:
+  - shell-wide `backdrop-filter` blur
+  - live wallpapers / video wallpapers
+  - large explorer panel renders while shaders, wallpaper, and animation overlays are stacked together
+
+## 2026-04-09 — Linux Local Installer Stale Binary Fix
+
+- Fixed the local Linux install scripts so they no longer copy `src-tauri/target/release/greeble`.
+- Root cause: this repo is a Cargo workspace, and `cargo build --manifest-path src-tauri/Cargo.toml --release` writes the fresh binary to the workspace target directory at `target/release/greeble`.
+- The stale install symptom was caused by older binaries still sitting under `src-tauri/target/release/greeble`, which made the installed app show an older UI even though `bun run tauri dev` reflected current frontend changes.
+- Follow-up root cause: the base `src-tauri/tauri.conf.json` also carried `build.devUrl`, which caused direct release builds to keep trying `http://localhost:1420` and surface the "Could not connect to localhost: Connection refused" startup error.
+- `src-tauri/tauri.conf.json` now keeps only release-safe build settings, and `scripts/run-platform-tauri.mjs` injects `devUrl` only when running `tauri dev`.
+- `scripts/build-and-install-linux-local-release.sh` now resolves `cargo metadata` `target_directory` with Bun and installs from that real workspace output.
+- `scripts/platform/install_linux.sh` now resolves the same `target_directory` with Node before copying the built binary into `~/.local/bin`.
+- Verified end-to-end with `bash ./install.sh` and confirmed:
+  - `/home/ephemara/Dev/Apps-2D/GreebleFS/target/release/greeble` matches `/home/ephemara/.local/opt/overlayterm/overlayterm`
+  - the installed binary no longer matches the stale `/home/ephemara/Dev/Apps-2D/GreebleFS/src-tauri/target/release/greeble`
+  - `strace -f -e trace=connect` against the rebuilt installed binary shows no more connection attempts to `127.0.0.1:1420`
+  - `timeout 20s bun run tauri dev` still starts Vite on `http://localhost:1420/` and reaches the Tauri dev runner
+
 ## 2026-04-09 — Theme Wallpapers + Wallpaper Runtime Layer
 
 - Added a first-class wallpaper runtime so backgrounds are no longer limited to theme CSS gradients.
@@ -113,10 +144,11 @@
   - `src-tauri/src/window_commands.rs` now logs best-effort failures for `set_decorations`, `set_always_on_top`, `set_shadow`, and `set_skip_taskbar` instead of aborting before `set_size` / `set_position`
   - `src/App.tsx` now unwraps `windowApplyMode()` results so Tauri command errors surface instead of being silently ignored on the TS side
   - this specifically protects `tauri dev` on Linux where some WMs reject transparent/undecorated presentation changes during startup
-- Added a Linux backend-selection fallback in `src-tauri/src/main.rs`:
-  - Wayland sessions with XWayland available now default to `WINIT_UNIX_BACKEND=x11` and `GDK_BACKEND=x11` before Tauri initializes
-  - this is controlled by `OVERLAYTERM_LINUX_BACKEND=auto|x11|wayland`
-  - the goal is pragmatic: the current Tauri/winit Wayland path cannot honor dock window positioning, so edge-anchored overlay mode needs X11 unless a future layer-shell path is added
+- Replaced the backend-forcing detour with a targeted Wayland toggle fix:
+  - reverted the `src-tauri/src/main.rs` backend override so native Wayland stays enabled
+  - added `window_get_linux_display_server()` in `src-tauri/src/window_commands.rs`
+  - Wayland overlay reopen now preserves compositor-managed placement by skipping dock geometry reapplication during the hidden overlay open path
+  - `src/App.tsx` now marks `isFreefloatingRef.current = true` on real overlay move/resize events so a snapped bottom-edge dock can survive `Ctrl+Space` close/open cycles
 - The installer now performs the full build/install flow directly:
   - sync icons
   - regenerate Tauri bindings
