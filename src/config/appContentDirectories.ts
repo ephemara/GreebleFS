@@ -8,6 +8,7 @@ export type ManagedContentDirectoryId =
   | 'shaders'
   | 'animations'
   | 'wallpapers'
+  | 'notes'
   | 'screenshots';
 
 const LEGACY_RELATIVE_DIRECTORY_NAMES: Record<ManagedContentDirectoryId, string> = {
@@ -16,6 +17,7 @@ const LEGACY_RELATIVE_DIRECTORY_NAMES: Record<ManagedContentDirectoryId, string>
   shaders: 'shaders',
   animations: 'animations',
   wallpapers: 'wallpapers',
+  notes: 'notes',
   screenshots: 'Screenshots',
 };
 
@@ -25,6 +27,7 @@ const RELEASE_DIRECTORY_NAMES: Record<ManagedContentDirectoryId, string> = {
   shaders: 'shaders',
   animations: 'animations',
   wallpapers: 'wallpapers',
+  notes: 'notes',
   screenshots: 'screenshots',
 };
 
@@ -38,11 +41,12 @@ let resolvedLegacyHomeDirectories: Partial<Record<ManagedContentDirectoryId, str
 function readDirectoryOverride(id: ManagedContentDirectoryId): string | null {
   const env = import.meta.env as {
     VITE_OVERLAYTERM_PLUGINS_DIR?: string;
-      VITE_OVERLAYTERM_THEMES_DIR?: string;
-      VITE_OVERLAYTERM_SHADERS_DIR?: string;
-      VITE_OVERLAYTERM_ANIMATIONS_DIR?: string;
-      VITE_OVERLAYTERM_WALLPAPERS_DIR?: string;
-      VITE_OVERLAYTERM_SCREENSHOTS_DIR?: string;
+    VITE_OVERLAYTERM_THEMES_DIR?: string;
+    VITE_OVERLAYTERM_SHADERS_DIR?: string;
+    VITE_OVERLAYTERM_ANIMATIONS_DIR?: string;
+    VITE_OVERLAYTERM_WALLPAPERS_DIR?: string;
+    VITE_OVERLAYTERM_NOTES_DIR?: string;
+    VITE_OVERLAYTERM_SCREENSHOTS_DIR?: string;
   };
 
   const rawValue = (() => {
@@ -57,6 +61,8 @@ function readDirectoryOverride(id: ManagedContentDirectoryId): string | null {
         return env.VITE_OVERLAYTERM_ANIMATIONS_DIR;
       case 'wallpapers':
         return env.VITE_OVERLAYTERM_WALLPAPERS_DIR;
+      case 'notes':
+        return env.VITE_OVERLAYTERM_NOTES_DIR;
       case 'screenshots':
         return env.VITE_OVERLAYTERM_SCREENSHOTS_DIR;
       default:
@@ -88,6 +94,7 @@ async function buildReleaseManagedDirectoryMap(): Promise<Record<ManagedContentD
     shaders: await join(root, RELEASE_DIRECTORY_NAMES.shaders),
     animations: await join(root, RELEASE_DIRECTORY_NAMES.animations),
     wallpapers: await join(root, RELEASE_DIRECTORY_NAMES.wallpapers),
+    notes: await join(root, RELEASE_DIRECTORY_NAMES.notes),
     screenshots: await join(root, RELEASE_DIRECTORY_NAMES.screenshots),
   };
 }
@@ -101,6 +108,7 @@ async function buildLegacyHomeDirectoryMap(): Promise<Record<ManagedContentDirec
     shaders: await join(root, LEGACY_RELATIVE_DIRECTORY_NAMES.shaders),
     animations: await join(root, LEGACY_RELATIVE_DIRECTORY_NAMES.animations),
     wallpapers: await join(root, LEGACY_RELATIVE_DIRECTORY_NAMES.wallpapers),
+    notes: await join(root, LEGACY_RELATIVE_DIRECTORY_NAMES.notes),
     screenshots: await join(root, LEGACY_RELATIVE_DIRECTORY_NAMES.screenshots),
   };
 }
