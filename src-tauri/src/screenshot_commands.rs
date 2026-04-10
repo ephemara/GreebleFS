@@ -72,6 +72,8 @@ pub async fn screenshot_capture_preview(
     restore_overlay_capture(&window);
 
     let image = capture_result?;
+    let image_width = image.width();
+    let image_height = image.height();
     let preview_image = build_preview_image(&image);
     let preview_png = encode_png(&preview_image)?;
     let capture_id = store_capture_image(image)?;
@@ -82,8 +84,8 @@ pub async fn screenshot_capture_preview(
             "data:image/png;base64,{}",
             BASE64_STANDARD.encode(preview_png)
         ),
-        image_width: width,
-        image_height: height,
+        image_width,
+        image_height,
     })
 }
 

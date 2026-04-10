@@ -1,5 +1,27 @@
 # GreebleFS Memory
 
+## 2026-04-10 — Screenshot Task Isolation + Managed Notes Root
+
+- Fixed the screenshot panel status-bar bleed-through in `src/components/ScreenshotsManager.tsx`:
+  - removed the `explorerTaskStore` subscription from the screenshot UI
+  - durable reason: the explorer/Yazi task feed is global, so screenshot capture errors were surfacing unrelated delete jobs like stale note-file cleanup and making the screenshot tool look like it was deleting arbitrary files
+- Fixed cross-platform path joining for screenshot annotated saves:
+  - annotated saves now use `joinPlatformPath()` instead of forcing `\\`
+  - this keeps Linux/macOS from writing odd backslash-bearing filenames when the screenshot library path is repo-relative or app-data-relative
+- Moved notes storage off the old hardcoded Windows root in `src/components/NotesManager.tsx`:
+  - new `src/config/notes.ts` resolves notes through `getManagedContentDirectory('notes')`
+  - `src/config/appContentDirectories.ts` now treats `notes` as a first-class managed content root in both dev and release/runtime modes
+  - note category/file paths now use platform-aware joining instead of manual `\\` concatenation
+- This change addresses the bug that was creating literal filenames like `M:\\Assets\\OverlayTerm\\notes\\...md` inside the Linux workspace and then exposing those paths through unrelated explorer delete-task UI.
+- Added focused regression coverage in:
+  - `src/test/screenshotsManager.test.tsx`
+  - `src/test/notesConfig.test.ts`
+- Validation that passed:
+  - `bunx vitest run src/test/screenshotsManager.test.tsx src/test/notesConfig.test.ts`
+  - `bunx tsc --noEmit --skipLibCheck --jsx react-jsx --module esnext --target es2022 --moduleResolution bundler --allowSyntheticDefaultImports --types node,vitest/globals,@testing-library/jest-dom src/vite-env.d.ts src/components/ScreenshotsManager.tsx src/components/NotesManager.tsx src/config/appContentDirectories.ts src/config/notes.ts src/test/screenshotsManager.test.tsx src/test/notesConfig.test.ts`
+- Follow-up cleanup still recommended:
+  - remove any already-created stray bug artifacts such as repo-local filenames that literally include `M:\\Assets\\OverlayTerm\\...` once the user confirms they are disposable
+
 ## 2026-04-09 — Explorer Rail + Drag UX Pass
 
 - Reworked explorer drag behavior so file drag-out is no longer hidden behind `Alt`:

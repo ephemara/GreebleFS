@@ -3218,7 +3218,7 @@ function App() {
 
 // ─── TopBar ───────────────────────────────────────────────────────────────────
 
-function CompactScrubberControl({
+function ViewportRangeControl({
   label,
   title,
   value,
@@ -3230,8 +3230,6 @@ function CompactScrubberControl({
   muted,
   text,
   formatValue,
-  active,
-  onActiveChange,
   onChange,
   onReset,
 }: {
@@ -3246,12 +3244,9 @@ function CompactScrubberControl({
   muted: string;
   text: string;
   formatValue: (value: number) => string;
-  active: boolean;
-  onActiveChange: (next: boolean) => void;
   onChange: (value: number) => void;
   onReset: () => void;
 }) {
-  const rootRef = useRef<HTMLDivElement | null>(null);
   const handleWheelAdjust = useCallback((event: { deltaY: number; shiftKey: boolean; preventDefault: () => void }) => {
     event.preventDefault();
     const direction = event.deltaY < 0 ? 1 : -1;
@@ -3259,139 +3254,82 @@ function CompactScrubberControl({
     onChange(clampValue(value + (step * direction * multiplier), min, max));
   }, [max, min, onChange, step, value]);
 
-  useEffect(() => {
-    if (!active) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        onActiveChange(false);
-      }
-    };
-
-    window.addEventListener('pointerdown', handlePointerDown);
-    return () => window.removeEventListener('pointerdown', handlePointerDown);
-  }, [active, onActiveChange]);
-
-  const normalizedValue = (value - min) / (max - min);
-
   return (
-    <div ref={rootRef} style={{ position: 'relative' }}>
-      <button
-        title={title}
-        onClick={() => onActiveChange(!active)}
-        onDoubleClick={onReset}
-        onWheel={handleWheelAdjust}
+    <div
+      title={title}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        flexWrap: 'wrap',
+        padding: '10px 12px',
+        borderRadius: 12,
+        border: `1px solid ${border}`,
+        background: 'rgba(255,255,255,0.03)',
+      }}
+    >
+      <div
         style={{
-          width: 30,
-          height: 30,
-          borderRadius: 10,
-          border: `1px solid ${active ? accent : border}`,
-          background: active ? `${accent}18` : 'rgba(255,255,255,0.025)',
-          color: active ? text : muted,
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 2,
-          cursor: 'pointer',
-          transition: 'all 0.15s',
-          boxShadow: active ? `0 0 0 1px ${accent}18 inset` : 'none',
+          gap: 3,
+          minWidth: 92,
+          flex: '0 0 92px',
         }}
       >
-        <span style={{ fontSize: 8, lineHeight: 1, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-          {label}
-        </span>
-        <span style={{ fontSize: 8, lineHeight: 1, color: active ? accent : text }}>
-          {formatValue(value)}
-        </span>
-      </button>
-
-      {active && (
-        <div
+        <span
           style={{
-            position: 'absolute',
-            top: 'calc(100% + 8px)',
-            right: 0,
-            width: 52,
-            padding: '8px 6px',
-            borderRadius: 12,
-            border: `1px solid ${border}`,
-            background: 'linear-gradient(180deg, rgba(12,14,24,0.94), rgba(8,10,18,0.92))',
-            boxShadow: '0 12px 28px rgba(0,0,0,0.34)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 8,
+            fontSize: 9,
+            lineHeight: 1,
+            color: muted,
+            fontWeight: 800,
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
           }}
         >
-          <span style={{ fontSize: 8, color: muted, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-            {label}
-          </span>
-          <div style={{ position: 'relative', width: 22, height: 118, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div
-              aria-hidden
-              style={{
-                position: 'absolute',
-                width: 4,
-                height: 110,
-                borderRadius: 999,
-                background: 'rgba(255,255,255,0.08)',
-                overflow: 'hidden',
-              }}
-            >
-              <div
-                style={{
-                  position: 'absolute',
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  height: `${normalizedValue * 100}%`,
-                  background: `linear-gradient(180deg, ${accent}aa, ${accent})`,
-                }}
-              />
-            </div>
-            <input
-              type="range"
-              min={min}
-              max={max}
-              step={step}
-              value={value}
-              onChange={event => onChange(parseFloat(event.target.value))}
-              onWheel={handleWheelAdjust}
-              style={{
-                width: 110,
-                height: 22,
-                margin: 0,
-                transform: 'rotate(-90deg)',
-                transformOrigin: 'center',
-                cursor: 'ns-resize',
-                accentColor: accent,
-                background: 'transparent',
-              }}
-            />
-          </div>
-          <button
-            onClick={onReset}
-            style={{
-              width: '100%',
-              height: 20,
-              borderRadius: 8,
-              border: `1px solid ${border}`,
-              background: 'rgba(255,255,255,0.025)',
-              color: text,
-              fontSize: 8,
-              fontWeight: 800,
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase',
-              cursor: 'pointer',
-            }}
-          >
-            Reset
-          </button>
-        </div>
-      )}
+          {label}
+        </span>
+        <span style={{ fontSize: 12, lineHeight: 1.1, color: text, fontWeight: 700 }}>
+          {formatValue(value)}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={event => onChange(parseFloat(event.target.value))}
+        onWheel={handleWheelAdjust}
+        title={title}
+        style={{
+          flex: '1 1 160px',
+          minWidth: 148,
+          margin: 0,
+          accentColor: accent,
+          cursor: 'ew-resize',
+          background: 'transparent',
+        }}
+      />
+      <button
+        onClick={onReset}
+        style={{
+          height: 24,
+          padding: '0 9px',
+          borderRadius: 8,
+          border: `1px solid ${border}`,
+          background: 'rgba(255,255,255,0.025)',
+          color: text,
+          fontSize: 9,
+          fontWeight: 800,
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          cursor: 'pointer',
+          flexShrink: 0,
+        }}
+      >
+        Default
+      </button>
     </div>
   );
 }
@@ -3412,6 +3350,7 @@ function OverlayViewportDock({
   blurStrength,
   onBlurStrengthChange,
   blurPlatform,
+  menuPlacement,
 }: {
   accent: string;
   border: string;
@@ -3428,11 +3367,11 @@ function OverlayViewportDock({
   blurStrength: number;
   onBlurStrengthChange: (v: number) => void;
   blurPlatform: RuntimePlatform;
+  menuPlacement: 'above' | 'below';
 }) {
   const supportsNativeBlur = blurPlatform === 'macos' || blurPlatform === 'windows';
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
-  const [activeControl, setActiveControl] = useState<'opacity' | 'panelTransparency' | 'zoom' | 'blur' | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
@@ -3448,9 +3387,15 @@ function OverlayViewportDock({
     window.addEventListener('pointerdown', handlePointerDown);
     return () => {
       window.removeEventListener('pointerdown', handlePointerDown);
-      setActiveControl(null);
     };
   }, [isOpen]);
+
+  const handleResetControls = useCallback(() => {
+    onOpacityChange(overlayVisualControls.opacity.defaultValue);
+    onPanelTransparencyChange(overlayVisualControls.panelTransparency.defaultValue);
+    onBlurStrengthChange(overlayVisualControls.blurStrength.defaultValue);
+    onZoomChange(overlayVisualControls.zoom.defaultValue);
+  }, [onBlurStrengthChange, onOpacityChange, onPanelTransparencyChange, onZoomChange]);
 
   return (
     <div
@@ -3460,80 +3405,124 @@ function OverlayViewportDock({
         display: 'flex',
         alignItems: 'center',
         gap: 4,
+        flexShrink: 0,
       }}
     >
       <button
         onClick={() => setIsOpen(open => !open)}
         title="Open surface controls"
         style={{
-          width: 22,
           height: 22,
-          display: 'flex',
+          display: 'inline-flex',
           alignItems: 'center',
-          justifyContent: 'center',
+          gap: 6,
+          padding: '0 8px',
           background: isOpen ? `${accent}18` : 'rgba(255,255,255,0.025)',
           border: `1px solid ${isOpen ? accent : border}`,
           color: isOpen ? text : muted,
-          borderRadius: 6,
+          borderRadius: 7,
           cursor: 'pointer',
           transition: 'all 0.15s',
           boxShadow: isOpen ? `0 0 0 1px ${accent}18 inset` : 'none',
+          whiteSpace: 'nowrap',
         }}
       >
         <SlidersHorizontal size={11} style={{ color: isOpen ? accent : muted }} />
+        <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+          Surface
+        </span>
       </button>
 
       {isOpen && (
         <div
           style={{
             position: 'absolute',
-            top: 'calc(100% + 8px)',
+            ...(menuPlacement === 'above'
+              ? { bottom: 'calc(100% + 8px)' }
+              : { top: 'calc(100% + 8px)' }),
             right: 0,
-            width: 220,
-            padding: 8,
-            borderRadius: 12,
+            width: 'min(440px, calc(100vw - 24px))',
+            maxWidth: 'calc(100vw - 24px)',
+            padding: 10,
+            borderRadius: 14,
             border: `1px solid ${border}`,
-            background: 'linear-gradient(180deg, rgba(12,14,24,0.96), rgba(8,10,18,0.94))',
-            boxShadow: '0 12px 28px rgba(0,0,0,0.34)',
+            background: 'linear-gradient(180deg, rgba(12,14,24,0.97), rgba(8,10,18,0.94))',
+            boxShadow: '0 16px 34px rgba(0,0,0,0.38)',
             display: 'flex',
             flexDirection: 'column',
-            gap: 8,
+            gap: 10,
             zIndex: 60,
+            backdropFilter: 'blur(18px)',
+            WebkitBackdropFilter: 'blur(18px)',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '2px 4px 4px' }}>
-            <span style={{ fontSize: 9, color: muted, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-              Surface
-            </span>
-            <button
-              onClick={() => onBlurChange(!blur)}
-              title={supportsNativeBlur
-                ? (blur ? 'Disable native window blur' : 'Enable native window blur')
-                : 'Native blur is currently only available on macOS and Windows'}
-              style={{
-                height: 22,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '0 8px',
-                borderRadius: 6,
-                border: `1px solid ${blur ? accent : border}`,
-                background: blur ? `${accent}18` : 'rgba(255,255,255,0.025)',
-                color: blur ? text : muted,
-                cursor: 'pointer',
-                opacity: supportsNativeBlur ? 1 : 0.65,
-              }}
-            >
-              <Droplet size={11} style={{ color: blur ? accent : muted }} />
-              <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                Blur
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: 12,
+              padding: '2px 2px 4px',
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+              <span style={{ fontSize: 9, color: muted, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+                Surface
               </span>
-            </button>
+              <span style={{ fontSize: 11, color: text, lineHeight: 1.35 }}>
+                Opacity, panels, blur, and zoom in one place.
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                onClick={handleResetControls}
+                style={{
+                  height: 24,
+                  padding: '0 9px',
+                  borderRadius: 8,
+                  border: `1px solid ${border}`,
+                  background: 'rgba(255,255,255,0.025)',
+                  color: text,
+                  fontSize: 9,
+                  fontWeight: 800,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  cursor: 'pointer',
+                }}
+              >
+                Reset All
+              </button>
+              <button
+                onClick={() => onBlurChange(!blur)}
+                title={supportsNativeBlur
+                  ? (blur ? 'Disable native window blur' : 'Enable native window blur')
+                  : 'Native blur is currently only available on macOS and Windows'}
+                style={{
+                  height: 24,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '0 9px',
+                  borderRadius: 8,
+                  border: `1px solid ${blur ? accent : border}`,
+                  background: blur ? `${accent}18` : 'rgba(255,255,255,0.025)',
+                  color: blur ? text : muted,
+                  cursor: 'pointer',
+                  opacity: supportsNativeBlur ? 1 : 0.65,
+                }}
+              >
+                <Droplet size={11} style={{ color: blur ? accent : muted }} />
+                <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  Native Blur
+                </span>
+              </button>
+            </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '0 2px 2px' }}>
-            <CompactScrubberControl
-              label="Op"
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <ViewportRangeControl
+              label="Opacity"
               title="Adjust window opacity."
               value={opacity}
               min={overlayVisualControls.opacity.min}
@@ -3543,15 +3532,12 @@ function OverlayViewportDock({
               border={border}
               muted={muted}
               text={text}
-              formatValue={value => formatOverlayVisualControlValue('opacity', value)}
-              active={activeControl === 'opacity'}
-              onActiveChange={next => setActiveControl(next ? 'opacity' : null)}
+              formatValue={nextValue => formatOverlayVisualControlValue('opacity', nextValue)}
               onChange={onOpacityChange}
               onReset={() => onOpacityChange(overlayVisualControls.opacity.defaultValue)}
             />
-
-            <CompactScrubberControl
-              label="Pt"
+            <ViewportRangeControl
+              label="Panels"
               title="Adjust panel transparency without dimming the panel content."
               value={panelTransparency}
               min={overlayVisualControls.panelTransparency.min}
@@ -3561,15 +3547,12 @@ function OverlayViewportDock({
               border={border}
               muted={muted}
               text={text}
-              formatValue={value => formatOverlayVisualControlValue('panelTransparency', value)}
-              active={activeControl === 'panelTransparency'}
-              onActiveChange={next => setActiveControl(next ? 'panelTransparency' : null)}
+              formatValue={nextValue => formatOverlayVisualControlValue('panelTransparency', nextValue)}
               onChange={onPanelTransparencyChange}
               onReset={() => onPanelTransparencyChange(overlayVisualControls.panelTransparency.defaultValue)}
             />
-
-            <CompactScrubberControl
-              label="Bl"
+            <ViewportRangeControl
+              label="Blur"
               title="Adjust glass blur strength."
               value={blurStrength}
               min={overlayVisualControls.blurStrength.min}
@@ -3579,15 +3562,12 @@ function OverlayViewportDock({
               border={border}
               muted={muted}
               text={text}
-              formatValue={value => formatOverlayVisualControlValue('blurStrength', value)}
-              active={activeControl === 'blur'}
-              onActiveChange={next => setActiveControl(next ? 'blur' : null)}
+              formatValue={nextValue => formatOverlayVisualControlValue('blurStrength', nextValue)}
               onChange={onBlurStrengthChange}
               onReset={() => onBlurStrengthChange(overlayVisualControls.blurStrength.defaultValue)}
             />
-
-            <CompactScrubberControl
-              label="Zm"
+            <ViewportRangeControl
+              label="Zoom"
               title="Adjust window zoom."
               value={zoom}
               min={overlayVisualControls.zoom.min}
@@ -3597,9 +3577,7 @@ function OverlayViewportDock({
               border={border}
               muted={muted}
               text={text}
-              formatValue={value => formatOverlayVisualControlValue('zoom', value)}
-              active={activeControl === 'zoom'}
-              onActiveChange={next => setActiveControl(next ? 'zoom' : null)}
+              formatValue={nextValue => formatOverlayVisualControlValue('zoom', nextValue)}
               onChange={onZoomChange}
               onReset={() => onZoomChange(overlayVisualControls.zoom.defaultValue)}
             />
@@ -4317,6 +4295,53 @@ function TopBar({
           </button>
         )}
 
+        {showViewportControls && (
+          <OverlayViewportDock
+            accent={accent}
+            border={BORDER}
+            muted={MUTED}
+            text={TEXT}
+            opacity={opacity}
+            onOpacityChange={onOpacityChange}
+            panelTransparency={panelTransparency}
+            onPanelTransparencyChange={onPanelTransparencyChange}
+            zoom={zoom}
+            onZoomChange={onZoomChange}
+            blur={blur}
+            onBlurChange={onBlurChange}
+            blurStrength={blurStrength}
+            onBlurStrengthChange={onBlurStrengthChange}
+            blurPlatform={blurPlatform}
+            menuPlacement={isBottomBar ? 'above' : 'below'}
+          />
+        )}
+
+        {!showViewportControls && layoutProfile.chrome.showBlurToggle && (
+          <button
+            onClick={() => onBlurChange(!blur)}
+            title={supportsNativeBlur
+              ? (blur ? 'Disable native window blur' : 'Enable native window blur')
+              : 'Native blur is currently only available on macOS and Windows'}
+            style={{
+              width: 22,
+              height: 22,
+              padding: 0,
+              background: blur ? `${accent}22` : 'rgba(255,255,255,0.025)',
+              border: `1px solid ${blur ? accent : BORDER}`,
+              color: blur ? accent : MUTED,
+              borderRadius: 6,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+              opacity: supportsNativeBlur ? 1 : 0.65,
+            }}
+          >
+            <Droplet size={11} />
+          </button>
+        )}
+
         {showExplorerControls && (
           <div
             style={{
@@ -4503,72 +4528,6 @@ function TopBar({
 
             {isMenuOpen && panelMenu}
           </div>
-        )}
-
-        {layoutProfile.chrome.showBlurToggle && showViewportControls && (
-          <OverlayViewportDock
-            accent={accent}
-            border={BORDER}
-            muted={MUTED}
-            text={TEXT}
-            opacity={opacity}
-            onOpacityChange={onOpacityChange}
-            panelTransparency={panelTransparency}
-            onPanelTransparencyChange={onPanelTransparencyChange}
-            zoom={zoom}
-            onZoomChange={onZoomChange}
-            blur={blur}
-            onBlurChange={onBlurChange}
-            blurStrength={blurStrength}
-            onBlurStrengthChange={onBlurStrengthChange}
-            blurPlatform={blurPlatform}
-          />
-        )}
-
-        {layoutProfile.chrome.showBlurToggle && !showViewportControls && (
-          <button
-            onClick={() => onBlurChange(!blur)}
-            title={supportsNativeBlur
-              ? (blur ? 'Disable native window blur' : 'Enable native window blur')
-              : 'Native blur is currently only available on macOS and Windows'}
-            style={{
-              width: 22,
-              height: 22,
-              padding: 0,
-              background: blur ? `${accent}22` : 'rgba(255,255,255,0.025)',
-              border: `1px solid ${blur ? accent : BORDER}`,
-              color: blur ? accent : MUTED,
-              borderRadius: 6,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              transition: 'all 0.15s',
-              opacity: supportsNativeBlur ? 1 : 0.65,
-            }}
-          >
-            <Droplet size={11} />
-          </button>
-        )}
-
-        {!layoutProfile.chrome.showBlurToggle && showViewportControls && (
-          <OverlayViewportDock
-            accent={accent}
-            border={BORDER}
-            muted={MUTED}
-            text={TEXT}
-            opacity={opacity}
-            onOpacityChange={onOpacityChange}
-            panelTransparency={panelTransparency}
-            onPanelTransparencyChange={onPanelTransparencyChange}
-            zoom={zoom}
-            onZoomChange={onZoomChange}
-            blur={blur}
-            onBlurChange={onBlurChange}
-            blurStrength={blurStrength}
-            onBlurStrengthChange={onBlurStrengthChange}
-            blurPlatform={blurPlatform}
-          />
         )}
 
         <button

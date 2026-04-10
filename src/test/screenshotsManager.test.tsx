@@ -9,8 +9,10 @@ import {
 } from '@tauri-apps/api/window';
 import type { Monitor as TauriMonitor } from '@tauri-apps/api/window';
 import { ScreenshotsManager } from '../components/ScreenshotsManager';
+import { joinPlatformPath } from '../config/platform';
 import { screenshotFeatureConfig } from '../config/screenshots';
 import { useSettingsStore } from '../store/settingsStore';
+import { useExplorerTaskStore } from '../store/explorerTaskStore';
 
 const DEFAULT_MONITOR = {
   name: 'Primary Display',
@@ -26,7 +28,7 @@ const DEFAULT_MONITOR = {
 function makeGalleryEntry(name: string) {
   return {
     name,
-    path: `${screenshotFeatureConfig.defaultSaveDirectory}\\${name}`,
+    path: joinPlatformPath(screenshotFeatureConfig.defaultSaveDirectory, name),
     is_dir: false,
     size: 2048,
     modified: Date.UTC(2026, 2, 22, 10, 30, 0),
@@ -40,6 +42,12 @@ describe('ScreenshotsManager', () => {
   beforeEach(() => {
     window.localStorage.clear();
     useSettingsStore.getState().resetToDefaults();
+    useExplorerTaskStore.setState({
+      tasks: {},
+      taskOrder: [],
+      subscriptionState: 'idle',
+      subscriptionError: null,
+    });
     vi.mocked(invoke).mockReset();
     vi.mocked(availableMonitors).mockResolvedValue([DEFAULT_MONITOR]);
     vi.mocked(currentMonitor).mockResolvedValue(DEFAULT_MONITOR);
@@ -255,6 +263,115 @@ describe('ScreenshotsManager', () => {
         path: screenshot.path,
         maxWidth: screenshotFeatureConfig.galleryThumbnail.maxWidth,
         maxHeight: screenshotFeatureConfig.galleryThumbnail.maxHeight,
+      });
+    });
+  });
+
+  it('does not surface unrelated explorer tasks in the screenshot status bar', async () => {
+    const invokeMock = vi.mocked(invoke);
+    const screenshot = makeGalleryEntry('overlayterm-shot-task-isolation.png');
+
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'fs_list_dir') {
+        return [screenshot];
+      }
+      if (command === 'screenshot_capture_preview') {
+        return {
+          captureId: 'capture-1',
+          previewUrl: 'data:image/png;base64,ZmFrZQ==',
+          imageWidth: 1920,
+          imageHeight: 1080,
+        };
+      }
+      if (command === 'screenshot_read_gallery_thumbnail') {
+        return 'data:image/png;base64,ZmFrZQ==';
+      }
+      return null;
+    });
+
+    useExplorerTaskStore.getState().upsertTask({
+      taskId: 'rogue-delete-task',
+      task: {
+        name: 'Delete M:\\Assets\\OverlayTerm\\notes\\new-note_1775861948830-jzyb4i.md',
+        prog: {
+          kind: 'fileDelete',
+          totalFiles: 1,
+          successFiles: 0,
+          failedFiles: 0,
+          totalBytes: 100,
+          processedBytes: 0,
+          collected: null,
+          cleaned: null,
+        },
+      },
+    });
+
+    render(<ScreenshotsManager />);
+
+    expect(await screen.findByText(screenshot.name)).toBeInTheDocument();
+    expect(screen.queryByText(/Delete M:\\Assets\\OverlayTerm\\notes\\/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Working…')).not.toBeInTheDocument();
+  });
+
+  it('captures Linux high-DPI monitor previews with logical bounds', async () => {
+    const invokeMock = vi.mocked(invoke);
+
+    Object.defineProperty(window.navigator, 'platform', {
+      configurable: true,
+      value: 'Linux x86_64',
+    });
+
+    vi.mocked(availableMonitors).mockResolvedValue([{
+      ...DEFAULT_MONITOR,
+      size: { width: 3840, height: 2160 },
+      scaleFactor: 2,
+      workArea: {
+        position: { x: 0, y: 0 },
+        size: { width: 3840, height: 2160 },
+      },
+    } as TauriMonitor]);
+    vi.mocked(currentMonitor).mockResolvedValue({
+      ...DEFAULT_MONITOR,
+      size: { width: 3840, height: 2160 },
+      scaleFactor: 2,
+      workArea: {
+        position: { x: 0, y: 0 },
+        size: { width: 3840, height: 2160 },
+      },
+    } as TauriMonitor);
+    vi.mocked(primaryMonitor).mockResolvedValue({
+      ...DEFAULT_MONITOR,
+      size: { width: 3840, height: 2160 },
+      scaleFactor: 2,
+      workArea: {
+        position: { x: 0, y: 0 },
+        size: { width: 3840, height: 2160 },
+      },
+    } as TauriMonitor);
+
+    invokeMock.mockImplementation(async (command: string) => {
+      if (command === 'fs_list_dir') {
+        return [];
+      }
+      if (command === 'screenshot_capture_preview') {
+        return {
+          captureId: 'capture-linux-hidpi',
+          previewUrl: 'data:image/png;base64,ZmFrZQ==',
+          imageWidth: 3840,
+          imageHeight: 2160,
+        };
+      }
+      return null;
+    });
+
+    render(<ScreenshotsManager />);
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('screenshot_capture_preview', {
+        x: 0,
+        y: 0,
+        width: 1920,
+        height: 1080,
       });
     });
   });

@@ -27,12 +27,8 @@ import {
   Trash2,
 } from 'lucide-react';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
-import { ExplorerTaskStatusBadge } from './explorer/ExplorerTaskStatusBadge';
 import { useSettingsStore } from '../store/settingsStore';
-import {
-  useCurrentExplorerTaskProgress,
-  useExplorerTaskProgressFeed,
-} from '../store/explorerTaskStore';
+import { detectClientPlatform, joinPlatformPath } from '../config/platform';
 import { screenshotFeatureConfig } from '../config/screenshots';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import {
@@ -120,13 +116,15 @@ function toMonitorCapture(monitor: TauriMonitor, activeId: string | null): Monit
   const sf = monitor.scaleFactor || 1;
   const logicalWidth  = Math.round(monitor.size.width  / sf);
   const logicalHeight = Math.round(monitor.size.height / sf);
+  const logicalX = Math.round(monitor.position.x / sf);
+  const logicalY = Math.round(monitor.position.y / sf);
   const id = [monitor.name ?? 'display', monitor.position.x, monitor.position.y, monitor.size.width, monitor.size.height].join(':');
   const displayName = monitor.name?.trim() || 'Display';
   return {
     id,
     label: `${displayName} · ${logicalWidth}×${logicalHeight}`,
-    logicalX: monitor.position.x,
-    logicalY: monitor.position.y,
+    logicalX,
+    logicalY,
     logicalWidth,
     logicalHeight,
     physicalX:      monitor.position.x,
@@ -303,6 +301,7 @@ function revokePreviewUrls(urls: Iterable<string | null | undefined>): void {
 
 export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverlayAppearance }) {
   const accent = appearance?.theme.palette.accent ?? 'var(--overlay-accent)';
+  const captureUsesLogicalMonitorBounds = detectClientPlatform() === 'linux';
   const screenshotSettings = useSettingsStore(s => s.settings.screenshots);
   const screenshotDir = screenshotSettings.saveDirectory || screenshotFeatureConfig.defaultSaveDirectory;
 
@@ -350,8 +349,6 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
   const [copiedPath,      setCopiedPath]      = useState<string | null>(null);
   const [deletingPath,    setDeletingPath]    = useState<string | null>(null);
   const [libraryWidth, setLibraryWidth] = usePersistentPanelSize('overlayterm-screenshots-library-width', 280, 220, 480);
-  useExplorerTaskProgressFeed();
-  const explorerTaskProgress = useCurrentExplorerTaskProgress();
 
   const activeMonitor = monitors.find(m => m.id === activeMonitorId) ?? null;
   const shouldLoadGalleryPreviews = activeSection === 'library';
@@ -504,10 +501,10 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
       const results: MonitorCapture[] = [];
       for (const mon of base) {
         const preview = await commands.screenshotCapturePreview(
-          mon.physicalX,
-          mon.physicalY,
-          mon.physicalWidth,
-          mon.physicalHeight,
+          captureUsesLogicalMonitorBounds ? mon.logicalX : mon.physicalX,
+          captureUsesLogicalMonitorBounds ? mon.logicalY : mon.physicalY,
+          captureUsesLogicalMonitorBounds ? mon.logicalWidth : mon.physicalWidth,
+          captureUsesLogicalMonitorBounds ? mon.logicalHeight : mon.physicalHeight,
         ).then(unwrapTauriResult);
         results.push({
           ...mon,
@@ -538,7 +535,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
         setIsCapturing(false);
       }
     }
-  }, [replaceMonitors]);
+  }, [captureUsesLogicalMonitorBounds, replaceMonitors]);
 
   const refreshAll = useCallback(async () => {
     await Promise.all([captureMonitors(), loadGallery()]);
@@ -929,7 +926,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
         await ensureDir(screenshotDir);
         const ts = Date.now();
         fileName = `${screenshotFeatureConfig.filePrefix}-${ts}.png`;
-        const fullPath = `${screenshotDir}\\${fileName}`;
+        const fullPath = joinPlatformPath(screenshotDir, fileName);
         await writeExplorerFile(fullPath, bytes);
       }
 
@@ -1326,19 +1323,10 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
         </div>
 
         {/* Status / error bar */}
-        {(error || statusMsg || explorerTaskProgress) && (
+        {(error || statusMsg) && (
           <div style={{ padding: '5px 10px', fontSize: 10, borderBottom: `1px solid ${BORDER}`, background: error ? 'rgba(127,29,29,0.28)' : `${accent}12`, color: error ? '#fca5a5' : '#e7ebff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
-              {(error || statusMsg) && <span>{error ?? statusMsg}</span>}
-              <ExplorerTaskStatusBadge
-                taskProgress={explorerTaskProgress}
-                accent={accent}
-                text="#f4f6ff"
-                muted={MUTED}
-                border={BORDER}
-                danger="var(--overlay-danger)"
-                background="rgba(255,255,255,0.04)"
-              />
+              <span>{error ?? statusMsg}</span>
             </div>
             {(error || statusMsg) && (
               <button type="button" onClick={() => { setError(null); setStatusMsg(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: 2, opacity: 0.7 }}>✕</button>

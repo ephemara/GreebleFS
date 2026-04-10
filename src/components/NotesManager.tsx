@@ -6,8 +6,10 @@ import {
   ArrowUpDown,
 } from 'lucide-react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
-import { getManagedContentDirectory } from '../config/appContentDirectories';
-import { joinPlatformPath } from '../config/platform';
+import {
+  getManagedNoteCategoryDirectory,
+  joinManagedNotePath,
+} from '../config/notes';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 import {
@@ -19,6 +21,7 @@ import {
 } from '../runtime/explorerBackend';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
+
 const PALETTE = {
   bg: 'var(--overlay-bg-shell)',
   sidebar: 'var(--overlay-bg-sidebar)',
@@ -166,8 +169,7 @@ function deserializeNote(raw: string): NoteEntry | null {
 }
 
 function getCategoryPath(cat: NoteCategory): string {
-  const cfg = CATEGORIES.find(c => c.id === cat)!;
-  return joinPlatformPath(getManagedContentDirectory('notes'), cfg.folder);
+  return getManagedNoteCategoryDirectory(cat);
 }
 
 function getNoteFilename(note: NoteEntry): string {
@@ -207,13 +209,13 @@ async function loadAllNotes(category: NoteCategory): Promise<NoteEntry[]> {
 async function saveNote(note: NoteEntry): Promise<void> {
   const dir = getCategoryPath(note.category);
   await ensureDir(dir);
-  const filePath = joinPlatformPath(dir, getNoteFilename(note));
+  const filePath = joinManagedNotePath(dir, getNoteFilename(note));
   await writeExplorerFile(filePath, serializeNote(note));
 }
 
 async function deleteNoteFile(note: NoteEntry): Promise<void> {
   const dir = getCategoryPath(note.category);
-  const filePath = joinPlatformPath(dir, getNoteFilename(note));
+  const filePath = joinManagedNotePath(dir, getNoteFilename(note));
   try {
     await deleteExplorerPath(filePath, false);
   } catch { /* already gone */ }

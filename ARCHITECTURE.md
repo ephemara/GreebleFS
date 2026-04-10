@@ -115,8 +115,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - authored animation polling in `App.tsx`
   - explorer entry-size root watching in `FileExplorer.tsx`
 - Managed content roots now split by runtime mode:
-  - `tauri dev` keeps repo-relative `plugins/`, `themes/`, `shaders/`, `animations/`, and `wallpapers/` so authoring stays in the workspace
-  - installed/release builds resolve those directories under Tauri `AppLocalData` instead of creating top-level `$HOME/plugins`, `$HOME/themes`, `$HOME/shaders`, `$HOME/animations`, `$HOME/wallpapers`, or `$HOME/Screenshots`
+  - `tauri dev` keeps repo-relative `plugins/`, `themes/`, `shaders/`, `animations/`, `wallpapers/`, and `notes/` so authoring stays in the workspace
+  - installed/release builds resolve those directories under Tauri `AppLocalData` instead of creating top-level `$HOME/plugins`, `$HOME/themes`, `$HOME/shaders`, `$HOME/animations`, `$HOME/wallpapers`, `$HOME/notes`, or `$HOME/Screenshots`
   - `src/config/appContentDirectories.ts` owns that bootstrap and the legacy-home-path detection/migration rules
 - Production/default behavior is manual refresh:
   - Plugins panel `Refresh`
@@ -183,6 +183,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Authored animation modules.
 - `wallpapers/`
   Imported wallpaper media and authored live wallpaper modules.
+- `notes/`
+  Managed notes/todos/bugs/prompts content root in development. Release builds move the same root under Tauri `AppLocalData`.
 - `shaders/`
   Authored shader modules.
 - `src-tauri/`
@@ -203,6 +205,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 
 - Repo-wide `npx tsc --noEmit` is currently red on several pre-existing generated-contract and test typing issues unrelated to the workbench/explorer theme system. The narrowed command above now only leaves `src/runtime/useFolderPluginRuntime.ts` as an unrelated pre-existing failure.
 - JSDOM-backed Vitest runs currently fail in this workspace because `html-encoding-sniffer` requires an ESM dependency through a CommonJS path. Node-environment tests still work, so keep pure logic/package-loader tests runnable there until the dependency issue is fixed.
+- Do not wire the screenshot panel to `explorerTaskStore`. That store is global explorer/Yazi task state; rendering it inside screenshot status chrome leaks unrelated delete/copy jobs into screenshot errors and makes debugging cross-subsystem issues much harder.
 - Explorer interaction tests that need DOM drag/drop still need a browser-like environment, so the current JSDOM dependency failure blocks the most relevant explorer UI regressions even when the narrowed TypeScript pass is green.
 - The local Linux installer now avoids the old Node/Tauri wrapper path. `install.sh` and `scripts/build-and-install-linux-local-release.sh` build with Bun + Cargo directly, then install into `~/.local/opt/overlayterm`.
 - Do not keep `build.devUrl` in the base `src-tauri/tauri.conf.json` for release-capable paths. In this workspace, a direct `cargo build --release` will otherwise compile a binary that keeps trying to boot from `http://localhost:1420`. `scripts/run-platform-tauri.mjs` now injects `devUrl` only for the `tauri dev` command.
