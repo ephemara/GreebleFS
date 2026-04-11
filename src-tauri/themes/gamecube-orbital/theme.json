@@ -102,6 +102,17 @@
       "supportsLiveSwap": true
     }
   ],
+  "themeRenderer": {
+    "entryModule": "renderers/gamecube-orbital.tsx",
+    "apiVersion": 1,
+    "supportsLiveSwap": true,
+    "fallbackRuntime": "channel-launcher",
+    "capabilities": {
+      "customScreens": true,
+      "wallpaperScene": true,
+      "surfaceAdapters": true
+    }
+  },
   "defaultLayoutPrimitiveId": "cube-grid",
   "defaultNavigationPatternId": "cube-launcher",
   "defaultRenderStyleId": "cube-render",

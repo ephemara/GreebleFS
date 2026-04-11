@@ -5,7 +5,7 @@
   "description": "Purple console chrome with crisp cubes, cool glass panels, and a launch-grid shell.",
   "author": "Codex",
   "tags": ["console", "gamecube", "purple", "launcher"],
-  "extends": "catppuccin",
+  "extends": "operator",
   "fonts": {
     "ui": "\"Space Grotesk\", Inter, sans-serif",
     "mono": "\"JetBrains Mono\", \"Cascadia Code\", monospace"
@@ -20,20 +20,45 @@
   },
   "theme": {
     "palette": {
-      "accent": "#8b73ff",
-      "accentSoft": "rgba(139, 115, 255, 0.16)",
-      "panelBackground": "rgba(22, 18, 44, 0.72)",
-      "sidebarBackground": "rgba(18, 14, 36, 0.76)",
-      "cardBackground": "rgba(42, 33, 72, 0.72)",
-      "cardHoverBackground": "rgba(58, 45, 100, 0.8)",
-      "border": "rgba(169, 154, 255, 0.18)",
-      "borderStrong": "rgba(169, 154, 255, 0.34)",
-      "info": "#8bd2ff"
+      "appBackground": "#080912",
+      "appBackgroundAlt": "#0d1020",
+      "shellBackground": "rgba(12, 13, 26, 0.92)",
+      "shellBackgroundSolid": "#101222",
+      "topBarBackground": "rgba(22, 24, 39, 0.84)",
+      "topBarMenuBackground": "rgba(20, 21, 36, 0.96)",
+      "sidebarBackground": "rgba(18, 19, 34, 0.92)",
+      "panelBackground": "rgba(24, 26, 46, 0.92)",
+      "panelAltBackground": "rgba(16, 18, 32, 0.96)",
+      "cardBackground": "rgba(38, 40, 66, 0.84)",
+      "cardHoverBackground": "rgba(52, 55, 90, 0.92)",
+      "contextMenuBackground": "rgba(18, 20, 36, 0.98)",
+      "inputBackground": "rgba(12, 13, 24, 0.88)",
+      "terminalBackground": "#0a0b16",
+      "selectionBackground": "rgba(115, 103, 240, 0.28)",
+      "scrimBackground": "rgba(4, 5, 12, 0.66)",
+      "textPrimary": "#f1f4ff",
+      "textSecondary": "#c6cbe6",
+      "textMuted": "#9aa2ca",
+      "textDim": "#6e759d",
+      "textInverse": "#101222",
+      "border": "rgba(126, 135, 188, 0.2)",
+      "borderStrong": "rgba(124, 110, 255, 0.38)",
+      "accent": "#7367f0",
+      "accentSoft": "rgba(115, 103, 240, 0.2)",
+      "accentContrast": "#f8f9ff",
+      "success": "#59c679",
+      "warning": "#f2ca54",
+      "danger": "#d25d78",
+      "info": "#5bc7ff",
+      "note": "#cfd5e8",
+      "todo": "#59c679",
+      "bug": "#d25d78",
+      "prompt": "#f2ca54"
     },
     "effects": {
-      "backgroundImage": "radial-gradient(circle at 18% 14%, rgba(139,115,255,0.24), transparent 28%), radial-gradient(circle at 80% 18%, rgba(139,210,255,0.12), transparent 20%), linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0) 34%)",
-      "shadow": "0 20px 56px rgba(0, 0, 0, 0.46)",
-      "overlayShadow": "0 -4px 0 0 #8b73ff, 0 -30px 72px rgba(4, 4, 12, 0.86)"
+      "backgroundImage": "radial-gradient(circle at 18% 14%, rgba(115,103,240,0.22), transparent 28%), radial-gradient(circle at 82% 18%, rgba(91,199,255,0.1), transparent 22%), linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0) 24%)",
+      "shadow": "0 24px 64px rgba(0, 0, 0, 0.58)",
+      "overlayShadow": "0 -4px 0 0 #7367f0, 0 -30px 72px rgba(3, 4, 12, 0.9)"
     },
     "workbench": {
       "brandLabel": "Orbital",
@@ -117,11 +142,11 @@
   "defaultNavigationPatternId": "cube-launcher",
   "defaultRenderStyleId": "cube-render",
   "visuals": [
-    {
-      "id": "cube-sheen",
-      "backgroundImage": "radial-gradient(circle at 18% 18%, rgba(255,255,255,0.08), transparent 20%), linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0) 30%)",
-      "opacity": 0.92,
-      "blendMode": "screen"
-    }
+      {
+        "id": "cube-sheen",
+        "backgroundImage": "radial-gradient(circle at 20% 18%, rgba(201,194,255,0.08), transparent 20%), linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0) 26%)",
+        "opacity": 0.88,
+        "blendMode": "screen"
+      }
   ]
 }

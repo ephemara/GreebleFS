@@ -386,6 +386,8 @@ function LayoutPinnedPanelSlot({
         width: panel.size,
         minWidth: panel.size,
         maxWidth: panel.size,
+        minHeight: 0,
+        height: '100%',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -2985,6 +2987,10 @@ function App() {
         key={`panel-surface:${panel.id}`}
         style={{
           flex: 1,
+          width: '100%',
+          height: '100%',
+          minWidth: 0,
+          minHeight: 0,
           display: shouldDisplay ? 'flex' : 'none',
           flexDirection: 'column',
           overflow: 'hidden',

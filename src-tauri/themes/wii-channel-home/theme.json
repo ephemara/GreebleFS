@@ -57,6 +57,17 @@
       }
     }
   },
+  "themeRenderer": {
+    "entryModule": "renderers/wii-channel-home.tsx",
+    "apiVersion": 1,
+    "supportsLiveSwap": true,
+    "fallbackRuntime": "channel-launcher",
+    "capabilities": {
+      "customScreens": true,
+      "wallpaperScene": true,
+      "surfaceAdapters": true
+    }
+  },
   "visuals": [
     {
       "id": "channel-bloom",
