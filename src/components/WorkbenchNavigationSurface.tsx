@@ -143,7 +143,7 @@ export function WorkbenchNavigationSurface({
         maxWidth: railWidth,
         display: 'flex',
         flexDirection: 'column',
-        gap: 10,
+        gap: 12,
         padding: 12,
         borderRight: `1px solid ${border}`,
         background: 'var(--overlay-workbench-settings-rail-bg)',
@@ -151,15 +151,6 @@ export function WorkbenchNavigationSurface({
         overflow: 'hidden',
       }}
     >
-      <div>
-        <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: muted }}>
-          {runtime.label}
-        </div>
-        <div style={{ marginTop: 6, fontSize: 12, lineHeight: 1.45, color: text }}>
-          {runtime.description}
-        </div>
-      </div>
-
       {runtime.navigationSurface === 'cross-axis' && activeGroup ? (
         <>
           <OverlayScrollArea

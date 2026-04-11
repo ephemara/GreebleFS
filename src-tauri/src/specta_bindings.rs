@@ -1,6 +1,10 @@
 use std::{fs, path::PathBuf};
 
 use crate::desktop_integration::{NativeIconRequest, NativeIconResponse};
+use crate::cloud_commands::{
+    CloudAccountSummary, CloudAccountsSnapshot, CloudAuthSession, CloudAuthStatus,
+    CloudBreadcrumb, CloudDirectoryListing, CloudProviderConfigurationStatus,
+};
 use crate::fs_commands::{
     DriveInfo, EntryStorageInfo, ExplorerTaskProgressEvent, FileEntry,
     FileSearchContentCacheStatus, FileSearchDiagnostics, FileSearchExecutionStrategy,
@@ -52,6 +56,20 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::terminal::terminal_resize,
             crate::terminal::terminal_kill,
             crate::terminal::terminal_open_external,
+            crate::cloud_commands::cloud_list_accounts,
+            crate::cloud_commands::cloud_begin_auth,
+            crate::cloud_commands::cloud_poll_auth,
+            crate::cloud_commands::cloud_disconnect_account,
+            crate::cloud_commands::cloud_list_dir,
+            crate::cloud_commands::cloud_open_file,
+            crate::cloud_commands::cloud_read_text_file,
+            crate::cloud_commands::cloud_read_file_base64,
+            crate::cloud_commands::cloud_write_file,
+            crate::cloud_commands::cloud_create_file,
+            crate::cloud_commands::cloud_create_directory,
+            crate::cloud_commands::cloud_rename_path,
+            crate::cloud_commands::cloud_delete_path,
+            crate::cloud_commands::cloud_transfer_items,
             crate::fs_commands::fs_list_dir,
             crate::fs_commands::fs_get_drives,
             crate::fs_commands::fs_measure_entry_sizes,
@@ -59,8 +77,10 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::entry_size_cache::fs_unwatch_entry_size_root,
             crate::fs_commands::fs_read_text_file,
             crate::fs_commands::fs_open_file,
+            crate::fs_commands::fs_open_with_dialog,
             crate::fs_commands::fs_open_as_admin,
             crate::fs_commands::fs_reveal_in_explorer,
+            crate::fs_commands::fs_show_item_properties,
             crate::fs_commands::fs_delete,
             crate::fs_commands::fs_rename,
             crate::fs_commands::fs_move,
@@ -112,6 +132,13 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<overlay_contracts::ThemeNavigationAxis>()
         .typ::<NativeIconRequest>()
         .typ::<NativeIconResponse>()
+        .typ::<CloudProviderConfigurationStatus>()
+        .typ::<CloudAccountSummary>()
+        .typ::<CloudAccountsSnapshot>()
+        .typ::<CloudAuthSession>()
+        .typ::<CloudAuthStatus>()
+        .typ::<CloudBreadcrumb>()
+        .typ::<CloudDirectoryListing>()
         .typ::<FileEntry>()
         .typ::<DriveInfo>()
         .typ::<EntryStorageInfo>()

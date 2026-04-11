@@ -1553,6 +1553,7 @@ export function SettingsPage({
                       packageInfo?.capabilitySummary.animations ? `Motion ${packageInfo.capabilitySummary.animations}` : null,
                       packageInfo?.capabilitySummary.visuals ? `Visuals ${packageInfo.capabilitySummary.visuals}` : null,
                       compiledEngineManifest?.capabilitySummary.designTokens ? `Tokens ${compiledEngineManifest.capabilitySummary.designTokens}` : null,
+                      packageInfo?.capabilitySummary.themeRenderer ? 'Renderer V2' : null,
                     ].filter((value): value is string => Boolean(value)).slice(0, 5);
                     return (
                       <button

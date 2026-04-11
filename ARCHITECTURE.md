@@ -102,7 +102,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `settings.terminal.windowMode === 'windowed'` is the larger application shell
   - `settings.terminal.windowMode === 'overlay'` is the compact dock shell
   - `App.tsx` forces the explorer forward when entering overlay mode and passes `explorerLayoutMode: 'compact-dock'` into the explorer panel wiring
-- Active explorer shell controls now belong to the command-center top bar instead of the explorer toolbar:
+- Active explorer shell controls now belong to the explorer toolbar / omnibox row instead of the shared command-center top bar:
   - sources visibility
   - focus search
   - experimental mode
@@ -140,7 +140,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/store/explorerStore.ts` supports named explorer sessions, but the shipping dock behavior is the same explorer surface rendered in compact mode rather than a separate drawer/dock subsystem.
 - `FileExplorer.tsx` shares directory/search result caches across explorer sessions so alternate surfaces do not duplicate backend reads unless a mutation invalidates the cache.
 - `FileExplorer.tsx` now settle-batches viewport enrichment work so visible-entry size measurement and native-icon resolution only launch after a short scroll idle window instead of hammering Tauri on every transient virtualized viewport shift.
-- `FileExplorer.tsx` still owns file-centric actions like search scope, refresh, and create file/folder, but embedded shell-level layout toggles are suppressed when the explorer is hosted inside the command center.
+- `FileExplorer.tsx` owns both file-centric actions and explorer-local shell controls, so the shared top bar stays panel-agnostic while the explorer keeps its mode/source/preview controls adjacent to the path/search field.
 - `FileExplorer.tsx` had a dev-only infinite update loop risk in the virtualized entry-size and native-icon batching effects because in-flight `Set` state was being cleared/re-added on every render. Those effects now leave in-flight batches intact until async completion.
 - Explorer drag behavior is now hybrid by default:
   - plain explorer drag starts the native file-drag bridge and publishes `text/uri-list`

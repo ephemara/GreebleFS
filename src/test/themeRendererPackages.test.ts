@@ -1,0 +1,52 @@
+import { readFileSync } from 'node:fs';
+
+import { describe, expect, it } from 'vitest';
+
+import { loadThemeRendererFromSource } from '../components/themeRendererRuntime';
+
+const rendererFixtures = [
+  {
+    name: 'arcade-atrium',
+    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/arcade-atrium/renderers/arcade-atrium-shell.tsx',
+  },
+  {
+    name: 'xmb-crosswave',
+    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/xmb-crosswave/renderers/xmb-crosswave.tsx',
+  },
+  {
+    name: 'wii-channel-home',
+    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/wii-channel-home/renderers/wii-channel-home.tsx',
+  },
+  {
+    name: 'gamecube-orbital',
+    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/gamecube-orbital/renderers/gamecube-orbital.tsx',
+  },
+  {
+    name: 'dreamcast-skyline',
+    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/dreamcast-skyline/renderers/dreamcast-skyline.tsx',
+  },
+];
+
+describe('theme renderer package fixtures', () => {
+  it.each(rendererFixtures)('loads %s without runtime errors', async fixture => {
+    const source = readFileSync(fixture.filePath, 'utf8');
+    const renderer = await loadThemeRendererFromSource(source, {
+      name: fixture.filePath.split('/').pop() ?? `${fixture.name}.tsx`,
+      path: fixture.filePath,
+      is_dir: false,
+      extension: 'tsx',
+      modified: 1,
+    }, {
+      context: {
+        id: `${fixture.name}-renderer`,
+        name: fixture.name,
+        filePath: fixture.filePath,
+        rendererRoot: fixture.filePath.replace(/\/renderers\/[^/]+$/, ''),
+        entryModule: fixture.filePath.split('/renderers/')[1] ?? '',
+      },
+    });
+
+    expect(renderer.error).toBeNull();
+    expect(typeof renderer.component).toBe('function');
+  });
+});

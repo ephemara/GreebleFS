@@ -103,6 +103,17 @@ describe('theme package loader', () => {
           renderStyles: [
             { id: 'vista-render', label: 'Vista Render', kind: 'vs-code-workbench', entryModule: 'renderers/vista.tsx', supportsLiveSwap: true },
           ],
+          themeRenderer: {
+            entryModule: 'renderers/vista-shell.tsx',
+            apiVersion: 1,
+            supportsLiveSwap: true,
+            fallbackRuntime: 'workbench-tabs',
+            capabilities: {
+              wallpaperScene: true,
+              customScreens: true,
+              surfaceAdapters: true,
+            },
+          },
           defaultLayoutPrimitiveId: 'dock',
           defaultNavigationPatternId: 'tabs',
           defaultAnimationProfileId: 'package-open',
@@ -159,6 +170,34 @@ describe('theme package loader', () => {
             name: 'Package Open',
             open: {
               durationMs: 240,
+            },
+          });
+        `;
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'themes/vista-glass/renderers/vista-shell.tsx') {
+        return `
+          import { defineThemeRenderer } from 'overlayterm-theme-renderer';
+
+          export default defineThemeRenderer({
+            name: 'Vista Shell',
+            apiVersion: 1,
+            supportsLiveSwap: true,
+            fallbackRuntime: 'workbench-tabs',
+            capabilities: {
+              wallpaperScene: true,
+              customScreens: true,
+              surfaceAdapters: true,
+            },
+            component({ host }) {
+              return (
+                <div style={{ position: 'relative', display: 'flex', flex: 1, minHeight: 0 }}>
+                  {host.wallpaper.renderBackdropStack()}
+                  <div style={{ position: 'relative', zIndex: 1, display: 'flex', flex: 1, minHeight: 0 }}>
+                    {host.renderDefaultShellBody()}
+                  </div>
+                </div>
+              );
             },
           });
         `;
@@ -238,6 +277,12 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.compiledEngineManifest?.supportsHotSwappingRenderStyles).toBe(true);
     expect(result.packages[0]?.theme.engineManifest?.defaultLayoutPrimitiveId).toBe('dock');
     expect(result.packages[0]?.theme.compiledEngineManifest?.defaultRenderStyle?.id).toBe('vista-render');
+    expect(result.packages[0]?.theme.themeRenderer?.name).toBe('Vista Shell');
+    expect(result.packages[0]?.theme.themeRenderer?.apiVersion).toBe(1);
+    expect(result.packages[0]?.theme.themeRenderer?.fallbackRuntime).toBe('workbench-tabs');
+    expect(result.packages[0]?.theme.themeRenderer?.capabilities.wallpaperScene).toBe(true);
+    expect(result.packages[0]?.theme.themeRenderer?.error).toBeNull();
+    expect(result.packages[0]?.themeRenderer?.entryModule).toBe('renderers/vista-shell.tsx');
     expect(result.packages[0]?.author).toBe('OverlayTerm Labs');
     expect(result.packages[0]?.homepage).toBe('https://overlayterm.local/themes/vista-glass');
     expect(result.packages[0]?.tags).toEqual(['glass', 'blue']);
@@ -245,6 +290,7 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.capabilitySummary.wallpaper).toBe(true);
     expect(result.packages[0]?.capabilitySummary.shaders).toBe(1);
     expect(result.packages[0]?.capabilitySummary.animations).toBe(1);
+    expect(result.packages[0]?.capabilitySummary.themeRenderer).toBe(true);
     expect(result.packages[0]?.theme.visuals).toHaveLength(1);
     expect(result.shaders).toHaveLength(1);
     expect(result.shaders[0]?.shaderRoot.replace(/\\/g, '/')).toBe('themes/vista-glass');

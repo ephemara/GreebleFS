@@ -18,6 +18,10 @@ import {
 } from '../runtime/themeEngineBackend';
 import { type LoadedOverlayAnimation, loadAnimationFromSource, deriveAnimationId, deriveAnimationName } from '../components/animationRuntime';
 import {
+  loadThemeRendererFromSource,
+  type LoadedOverlayThemeRenderer,
+} from '../components/themeRendererRuntime';
+import {
   createResolvedIconThemeFromEntries,
   getBuiltInIconTheme,
   mergeResolvedIconThemes,
@@ -30,6 +34,7 @@ import { isFrontendAnimationFile } from '../components/animationRuntime';
 import { getManagedContentDirectory } from './appContentDirectories';
 import { joinPlatformPath } from './platform';
 import { OVERLAY_SHELL_BLUEPRINTS } from './shellBlueprints';
+import type { WorkbenchRenderRuntimeKind } from './workbenchRenderRuntime';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 
 interface FileEntry {
@@ -83,6 +88,17 @@ export interface OverlayThemePackageManifest {
   defaultAnimationProfileId?: ExplorerThemeManifest['defaultAnimationProfileId'];
   defaultIconPackId?: ExplorerThemeManifest['defaultIconPackId'];
   defaultRenderStyleId?: ExplorerThemeManifest['defaultRenderStyleId'];
+  themeRenderer?: {
+    entryModule?: string;
+    apiVersion?: number;
+    supportsLiveSwap?: boolean;
+    fallbackRuntime?: WorkbenchRenderRuntimeKind;
+    capabilities?: {
+      customScreens?: boolean;
+      wallpaperScene?: boolean;
+      surfaceAdapters?: boolean;
+    };
+  };
 }
 
 interface OverlayThemePackageRecord {
@@ -118,10 +134,12 @@ export interface LoadedOverlayThemePackage {
     shaders: number;
     animations: number;
     fonts: number;
+    themeRenderer: boolean;
   };
   theme: OverlayThemeDefinition;
   engineManifest?: ExplorerThemeManifest;
   compiledEngineManifest?: CompiledThemeEngineManifest;
+  themeRenderer?: LoadedOverlayThemeRenderer;
 }
 
 export interface ThemePackageLoadResult {
@@ -173,6 +191,13 @@ function asStringRecord(value: unknown): Record<string, string> {
       .filter(([, entry]) => typeof entry === 'string' && entry.trim().length > 0)
       .map(([key, entry]) => [key, String(entry).trim()]),
   );
+}
+
+function isWorkbenchRenderRuntimeKind(value: unknown): value is WorkbenchRenderRuntimeKind {
+  return value === 'workbench-tabs'
+    || value === 'cross-axis-media'
+    || value === 'channel-launcher'
+    || value === 'desktop-stack';
 }
 
 function parseThemeCompatibility(value: unknown): OverlayThemeCompatibility | undefined {
@@ -333,6 +358,37 @@ function parseThemeManifestText(text: string, filePath: string): OverlayThemePac
     defaultRenderStyleId: typeof source.defaultRenderStyleId === 'string'
       ? source.defaultRenderStyleId.trim()
       : undefined,
+    themeRenderer: (() => {
+      const rendererSource = asRecord(source.themeRenderer);
+      if (!rendererSource) {
+        return undefined;
+      }
+      const capabilitiesSource = asRecord(rendererSource.capabilities);
+
+      return {
+        entryModule: asString(rendererSource.entryModule ?? rendererSource.entry),
+        apiVersion: typeof rendererSource.apiVersion === 'number'
+          ? rendererSource.apiVersion
+          : undefined,
+        supportsLiveSwap: typeof rendererSource.supportsLiveSwap === 'boolean'
+          ? rendererSource.supportsLiveSwap
+          : undefined,
+        fallbackRuntime: isWorkbenchRenderRuntimeKind(rendererSource.fallbackRuntime)
+          ? rendererSource.fallbackRuntime
+          : undefined,
+        capabilities: {
+          customScreens: typeof capabilitiesSource?.customScreens === 'boolean'
+            ? capabilitiesSource.customScreens
+            : undefined,
+          wallpaperScene: typeof capabilitiesSource?.wallpaperScene === 'boolean'
+            ? capabilitiesSource.wallpaperScene
+            : undefined,
+          surfaceAdapters: typeof capabilitiesSource?.surfaceAdapters === 'boolean'
+            ? capabilitiesSource.surfaceAdapters
+            : undefined,
+        },
+      };
+    })(),
   };
 }
 
@@ -732,6 +788,34 @@ export async function loadThemePackagesFromDirectoryEntries(
             }
           }))
         ).filter((entry): entry is LoadedOverlayAnimation => Boolean(entry));
+        const rendererManifest = record.manifest.themeRenderer;
+        let packageThemeRenderer: LoadedOverlayThemeRenderer | undefined;
+        if (rendererManifest?.entryModule) {
+          try {
+            const rendererEntry = createRelativeFileEntry(record.directoryPath, rendererManifest.entryModule);
+            const source = await commands.fsReadTextFile(rendererEntry.path).then(unwrapTauriResult);
+            packageThemeRenderer = await loadThemeRendererFromSource(source, rendererEntry, {
+              context: {
+                id: `${theme.id}-renderer`,
+                name: `${theme.name} Renderer`,
+                filePath: rendererEntry.path,
+                rendererRoot: record.directoryPath,
+                entryModule: rendererManifest.entryModule,
+              },
+              defaults: {
+                apiVersion: rendererManifest.apiVersion,
+                supportsLiveSwap: rendererManifest.supportsLiveSwap,
+                fallbackRuntime: rendererManifest.fallbackRuntime,
+                capabilities: rendererManifest.capabilities,
+              },
+            });
+            if (packageThemeRenderer.error) {
+              packageWarnings.push(`Theme renderer ${rendererManifest.entryModule}: ${packageThemeRenderer.error}`);
+            }
+          } catch (error) {
+            packageWarnings.push(`Theme renderer ${rendererManifest.entryModule}: ${String(error)}`);
+          }
+        }
 
         const engineManifest = buildThemeEngineManifest(theme.id, theme.name, record.manifest, theme);
         const compiledEngineManifest = engineManifest ? compileThemeEngineManifest(engineManifest) : undefined;
@@ -739,6 +823,7 @@ export async function loadThemePackagesFromDirectoryEntries(
           ...theme,
           engineManifest,
           compiledEngineManifest,
+          themeRenderer: packageThemeRenderer,
         };
 
         packages.push({
@@ -762,10 +847,12 @@ export async function loadThemePackagesFromDirectoryEntries(
             shaders: packageShaders.length,
             animations: packageAnimations.length,
             fonts: [theme.fonts?.ui, theme.fonts?.mono].filter(Boolean).length,
+            themeRenderer: Boolean(rendererManifest?.entryModule),
           },
           theme: themeWithEngineManifest,
           engineManifest,
           compiledEngineManifest,
+          themeRenderer: packageThemeRenderer,
         });
         shaders.push(...packageShaders);
         animations.push(...packageAnimations);

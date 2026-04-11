@@ -1,5 +1,18 @@
 # GreebleFS Memory
 
+## 2026-04-10 — Explorer Controls Returned To The Omnibox Row
+
+- Moved explorer-only shell controls out of the shared top bar and back into the explorer chrome:
+  - `src/App.tsx` now hosts the explorer with `explorerChromeControlSurface: 'toolbar'`
+  - the shared `TopBar` no longer renders `Sources`, `Search`, Labs mode, shell layout, view mode, or preview controls
+- `src/components/FileExplorer.tsx` now keeps the full explorer control cluster beside the path/search field in the local toolbar:
+  - added `Sources` and `Search` buttons to the existing omnibox control row
+  - retained the existing Labs, shell layout, view mode, and preview controls in that same row
+- Removed the now-dead App/panel-registry wiring that only existed to push explorer toolbar actions through the top bar.
+- Durable rationale:
+  - the shared top bar should stay panel-agnostic and preserve horizontal space for global shell controls
+  - explorer mode/source/preview controls are contextual and belong next to the explorer’s oversized path/search bar, where their impact on navigation is immediate
+
 ## 2026-04-10 — Screenshot Task Isolation + Managed Notes Root
 
 - Fixed the screenshot panel status-bar bleed-through in `src/components/ScreenshotsManager.tsx`:

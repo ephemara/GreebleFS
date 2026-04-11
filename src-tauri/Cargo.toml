@@ -45,6 +45,13 @@ file_icon_provider = "1.0.0"
 notify = "8.2.0"
 rusqlite = { version = "0.32.1", features = ["bundled"] }
 tokio = { version = "1", features = ["time"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
+keyring = "3.6.2"
+rand = "0.8"
+sha2 = "0.10"
+url = "2"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+uuid = { version = "1", features = ["v4", "serde"] }
 overlay-contracts = { path = "../crates/overlay-contracts" }
 yazi-specta = { path = "../crates/yazi-specta" }
 yazi-boot = { path = "../crates/fileexplorer/crates/yazi-boot" }

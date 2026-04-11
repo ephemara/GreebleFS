@@ -1,3 +1,4 @@
+pub mod cloud_commands;
 pub mod desktop_integration;
 pub mod domain_commands;
 pub mod entry_size_cache;
@@ -11,6 +12,7 @@ pub mod terminal;
 pub mod window_commands;
 
 use entry_size_cache::{initialize_entry_size_cache, EntrySizeWatcherState};
+use cloud_commands::CloudRuntimeState;
 use fs_commands::initialize_fs_command_events;
 use plugin_commands::PluginWatcherState;
 use tauri::{
@@ -47,6 +49,7 @@ pub fn run() {
             builder.mount_events(app);
             initialize_fs_command_events(app.handle().clone());
             app.manage(TerminalManager::new());
+            app.manage(CloudRuntimeState::default());
             initialize_entry_size_cache(app.handle())?;
             app.manage(EntrySizeWatcherState::default());
             app.manage(PluginWatcherState::default());

@@ -116,6 +116,17 @@
       "supportsLiveSwap": true
     }
   ],
+  "themeRenderer": {
+    "entryModule": "renderers/dreamcast-skyline.tsx",
+    "apiVersion": 1,
+    "supportsLiveSwap": true,
+    "fallbackRuntime": "channel-launcher",
+    "capabilities": {
+      "customScreens": true,
+      "wallpaperScene": true,
+      "surfaceAdapters": true
+    }
+  },
   "defaultLayoutPrimitiveId": "dreamcast-grid",
   "defaultNavigationPatternId": "dreamcast-spatial",
   "defaultRenderStyleId": "dreamcast-render",

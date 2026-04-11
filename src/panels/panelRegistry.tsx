@@ -100,7 +100,6 @@ export interface OverlayPanelDefinition {
 export function createBuiltInPanelDefinitions({
   appearance,
   explorerChromeControlSurface,
-  explorerFocusAddressBarSignal,
   explorerLayoutMode,
   explorerRepoPicker,
   isOpen,
@@ -145,7 +144,6 @@ export function createBuiltInPanelDefinitions({
 }: {
   appearance: ResolvedOverlayAppearance;
   explorerChromeControlSurface?: 'toolbar' | 'topbar';
-  explorerFocusAddressBarSignal?: number;
   explorerLayoutMode?: ExplorerLayoutMode;
   explorerRepoPicker?: {
     active: boolean;
@@ -223,7 +221,6 @@ export function createBuiltInPanelDefinitions({
         <MemoFileExplorer
           appearance={appearance}
           chromeControlSurface={explorerChromeControlSurface}
-          focusAddressBarSignal={explorerFocusAddressBarSignal}
           instanceId="primary"
           layoutMode={explorerLayoutMode}
           repositoryPicker={explorerRepoPicker}

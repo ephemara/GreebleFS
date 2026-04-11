@@ -158,22 +158,13 @@ function resolveRuntimeKind(
   return 'workbench-tabs';
 }
 
-export function resolveWorkbenchRenderRuntime(
+function buildResolvedWorkbenchRuntime(
+  runtimeKind: WorkbenchRenderRuntimeKind,
   appearance: ResolvedOverlayAppearance,
   layoutProfile: LayoutProfile,
+  renderStyleKind: ThemeRenderStyleKind | null,
+  engineBindings: ReturnType<typeof resolveThemeEngineBindings>,
 ): ResolvedWorkbenchRenderRuntime {
-  const engineBindings = resolveThemeEngineBindings(
-    appearance.baseTheme.compiledEngineManifest,
-    appearance.baseTheme.workbench,
-  );
-  const renderStyleKind = engineBindings.renderStyle?.kind ?? null;
-  const runtimeKind = resolveRuntimeKind(
-    renderStyleKind,
-    layoutProfile.shellBlueprint,
-    engineBindings.navigationPattern?.kind ?? null,
-    engineBindings.layoutPrimitive?.kind ?? null,
-  );
-
   switch (runtimeKind) {
     case 'cross-axis-media':
       return {
@@ -252,4 +243,30 @@ export function resolveWorkbenchRenderRuntime(
         useGroupedNavigation: false,
       };
   }
+}
+
+export function resolveWorkbenchRenderRuntime(
+  appearance: ResolvedOverlayAppearance,
+  layoutProfile: LayoutProfile,
+  forcedRuntimeKind?: WorkbenchRenderRuntimeKind | null,
+): ResolvedWorkbenchRenderRuntime {
+  const engineBindings = resolveThemeEngineBindings(
+    appearance.baseTheme.compiledEngineManifest,
+    appearance.baseTheme.workbench,
+  );
+  const renderStyleKind = engineBindings.renderStyle?.kind ?? null;
+  const runtimeKind = forcedRuntimeKind ?? resolveRuntimeKind(
+    renderStyleKind,
+    layoutProfile.shellBlueprint,
+    engineBindings.navigationPattern?.kind ?? null,
+    engineBindings.layoutPrimitive?.kind ?? null,
+  );
+
+  return buildResolvedWorkbenchRuntime(
+    runtimeKind,
+    appearance,
+    layoutProfile,
+    renderStyleKind,
+    engineBindings,
+  );
 }

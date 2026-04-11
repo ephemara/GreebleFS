@@ -57,6 +57,17 @@
       }
     }
   },
+  "themeRenderer": {
+    "entryModule": "renderers/xmb-crosswave.tsx",
+    "apiVersion": 1,
+    "supportsLiveSwap": true,
+    "fallbackRuntime": "cross-axis-media",
+    "capabilities": {
+      "customScreens": true,
+      "wallpaperScene": true,
+      "surfaceAdapters": true
+    }
+  },
   "visuals": [
     {
       "id": "crosswave-sheen",

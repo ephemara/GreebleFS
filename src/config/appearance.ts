@@ -20,6 +20,7 @@ import {
   type CompiledThemeEngineManifest,
   type ExplorerThemeManifest,
 } from '../runtime/themeEngineBackend';
+import type { LoadedOverlayThemeRenderer } from '../components/themeRendererRuntime';
 import type { OverlayShellBlueprintId } from './shellBlueprints';
 import { mergeResolvedIconThemes, type OverlayResolvedIconTheme } from './iconTheme';
 import { clampOverlayVisualControlValue } from './overlayWindow';
@@ -161,6 +162,7 @@ export interface OverlayThemeDefinition {
   explorer?: OverlayExplorerThemeRecipe;
   engineManifest?: ExplorerThemeManifest;
   compiledEngineManifest?: CompiledThemeEngineManifest;
+  themeRenderer?: LoadedOverlayThemeRenderer;
 }
 
 export interface OverlayAppearanceSelection {

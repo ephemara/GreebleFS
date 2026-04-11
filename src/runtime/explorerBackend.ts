@@ -35,7 +35,9 @@ export type ExplorerBackendContract = {
   watchEntrySizeRoot: typeof watchExplorerEntrySizeRoot;
   unwatchEntrySizeRoot: typeof unwatchExplorerEntrySizeRoot;
   openPath: typeof openExplorerPath;
+  openWithDialog: typeof openExplorerPathWithDialog;
   revealPath: typeof revealExplorerPath;
+  showPathProperties: typeof showExplorerPathProperties;
   openPathAsAdmin: typeof openExplorerPathAsAdmin;
   createDir: typeof createExplorerDir;
   transferItems: typeof transferExplorerItems;
@@ -120,8 +122,16 @@ export async function openExplorerPath(path: string): Promise<void> {
   unwrapTauriResult(await commands.fsOpenFile(path));
 }
 
+export async function openExplorerPathWithDialog(path: string): Promise<void> {
+  unwrapTauriResult(await commands.fsOpenWithDialog(path));
+}
+
 export async function revealExplorerPath(path: string): Promise<void> {
   unwrapTauriResult(await commands.fsRevealInExplorer(path));
+}
+
+export async function showExplorerPathProperties(path: string): Promise<void> {
+  unwrapTauriResult(await commands.fsShowItemProperties(path));
 }
 
 export async function openExplorerPathAsAdmin(path: string): Promise<void> {
@@ -179,7 +189,9 @@ export const explorerBackendContract: ExplorerBackendContract = {
   watchEntrySizeRoot: watchExplorerEntrySizeRoot,
   unwatchEntrySizeRoot: unwatchExplorerEntrySizeRoot,
   openPath: openExplorerPath,
+  openWithDialog: openExplorerPathWithDialog,
   revealPath: revealExplorerPath,
+  showPathProperties: showExplorerPathProperties,
   openPathAsAdmin: openExplorerPathAsAdmin,
   createDir: createExplorerDir,
   transferItems: transferExplorerItems,

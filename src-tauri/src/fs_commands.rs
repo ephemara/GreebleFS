@@ -2439,6 +2439,95 @@ fn open_with_default_application(path: &Path) -> Result<(), String> {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn escape_powershell_single_quoted_string(value: &str) -> String {
+    value.replace('\'', "''")
+}
+
+fn open_with_system_picker(path: &Path) -> Result<(), String> {
+    let _ = path;
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("rundll32.exe")
+            .arg("shell32.dll,OpenAs_RunDLL")
+            .arg(path)
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let script = format!(
+            "set targetFile to POSIX file \"{}\"\nset chosenApp to choose application with prompt \"Open With\"\ntell application chosenApp\n  activate\n  open targetFile\nend tell",
+            escape_applescript_string(&path.to_string_lossy())
+        );
+
+        std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(script)
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        Err("Native Open With dialogs are not currently supported on Linux.".to_string())
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        Err("Open With is not supported on this platform.".to_string())
+    }
+}
+
+fn show_path_properties(path: &Path) -> Result<(), String> {
+    let _ = path;
+
+    #[cfg(target_os = "windows")]
+    {
+        let script = format!(
+            "$path = '{}'; $shell = New-Object -ComObject Shell.Application; $folder = Split-Path -LiteralPath $path; $name = Split-Path -Leaf -LiteralPath $path; $item = $shell.Namespace($folder).ParseName($name); if ($null -eq $item) {{ throw 'Unable to resolve shell item.' }}; $item.InvokeVerb('properties')",
+            escape_powershell_single_quoted_string(&path.to_string_lossy())
+        );
+
+        std::process::Command::new("powershell")
+            .arg("-NoProfile")
+            .arg("-Command")
+            .arg(script)
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let script = format!(
+            "tell application \"Finder\"\n  activate\n  set targetItem to POSIX file \"{}\" as alias\n  select targetItem\n  open information window of targetItem\nend tell",
+            escape_applescript_string(&path.to_string_lossy())
+        );
+
+        std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(script)
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        Err("Native file properties are not currently supported on Linux.".to_string())
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        Err("File properties are not supported on this platform.".to_string())
+    }
+}
+
 fn execute_path(path: &Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -2573,6 +2662,17 @@ pub async fn fs_open_file(path: String) -> Result<(), String> {
     open_with_default_application(&target)
 }
 
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_open_with_dialog(path: String) -> Result<(), String> {
+    let target = PathBuf::from(&path);
+    if !target.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+
+    open_with_system_picker(&target)
+}
+
 // ─── fs_open_as_admin (Windows runas) ────────────────────────────────────────
 
 #[tauri::command]
@@ -2690,6 +2790,17 @@ pub async fn fs_reveal_in_explorer(path: String) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
         return Ok(());
     }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_show_item_properties(path: String) -> Result<(), String> {
+    let target = PathBuf::from(&path);
+    if !target.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+
+    show_path_properties(&target)
 }
 
 // ─── fs_delete ────────────────────────────────────────────────────────────────

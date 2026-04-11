@@ -20,7 +20,7 @@ import {
   ChevronRight, ChevronLeft, ArrowUp, Search, RefreshCw,
   X, Star, StarOff, Terminal,
   Trash2, Copy, Scissors, Clipboard, Edit3, ExternalLink,
-  Shield, Eye, AlertTriangle, Loader, Puzzle, Sparkles,
+  Shield, Eye, AlertTriangle, Info, Loader, Puzzle, Sparkles,
   FilePlus, FolderPlus, CopyPlus,
 } from 'lucide-react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
@@ -1894,11 +1894,13 @@ export function FileExplorer({
     listDirUncached: listExplorerDirUncached,
     measureEntrySizes: measureExplorerEntrySizes,
     openPath: openExplorerPath,
+    openWithDialog: openExplorerPathWithDialog,
     openPathAsAdmin: openExplorerPathAsAdmin,
     readFileBase64: readExplorerFileBase64,
     readTextFile: readExplorerTextFile,
     renamePath: renameExplorerPath,
     revealPath: revealExplorerPath,
+    showPathProperties: showExplorerPathProperties,
     searchEntriesWithDiagnostics: searchExplorerEntriesWithDiagnostics,
     transferItems: transferExplorerItems,
     unwatchEntrySizeRoot: unwatchExplorerEntrySizeRoot,
@@ -2841,6 +2843,14 @@ export function FileExplorer({
     await openExplorerPathAsAdmin(path).catch(e => setError(String(e)));
   }, []);
 
+  const openWithSystemPicker = useCallback(async (path: string) => {
+    await openExplorerPathWithDialog(path).catch(error => setError(String(error)));
+  }, [openExplorerPathWithDialog]);
+
+  const showNativeProperties = useCallback(async (path: string) => {
+    await showExplorerPathProperties(path).catch(error => setError(String(error)));
+  }, [showExplorerPathProperties]);
+
   const transferIntoDirectory = useCallback(async (
     targetDir: string,
     sources: string[],
@@ -3151,9 +3161,9 @@ export function FileExplorer({
   }, [currentPath, refresh, transferIntoDirectory]);
 
   // ── Clipboard (system) ──
-  const copyToSysClipboard = async (text: string) => {
+  const copyToSysClipboard = useCallback(async (text: string) => {
     try { await navigator.clipboard.writeText(text); } catch {}
-  };
+  }, []);
 
   // ── Paste ──
   const paste = useCallback(async () => {
@@ -3221,6 +3231,15 @@ export function FileExplorer({
     } catch(e) { setError(String(e)); }
   };
 
+  const revealPathLabel = runtimePlatform === 'macos'
+    ? 'Reveal in Finder'
+    : runtimePlatform === 'linux'
+      ? 'Show in File Manager'
+      : 'Reveal in Explorer';
+  const propertiesLabel = runtimePlatform === 'macos' ? 'Get Info' : 'Properties';
+  const supportsNativeOpenWith = runtimePlatform !== 'linux';
+  const supportsNativeProperties = runtimePlatform !== 'linux';
+
   // ── Context menu builder ──
   const buildCtxItems = useCallback((entry: FileEntry): CtxItem[] => {
     const isBookmarked = bookmarkPathSet.has(entry.path);
@@ -3252,9 +3271,11 @@ export function FileExplorer({
 
     return [
       { label:'Open',               icon:<ExternalLink size={13}/>, action:() => openEntry(entry) },
+      ...(supportsNativeOpenWith ? [{ label:'Open With...', icon:<ExternalLink size={13}/>, action:() => openWithSystemPicker(entry.path) }] : []),
       { label: entry.is_dir ? 'Open Folder as Admin' : 'Open as Admin', icon:<Shield size={13}/>, action:() => openAsAdmin(entry.path) },
       ...(entry.is_dir ? [{ label:'Open in Terminal', icon:<Terminal size={13}/>, action:() => onOpenInTerminal(entry.path) }] : []),
-      { label:'Reveal in Explorer', icon:<Eye size={13}/>,          action:() => revealExplorerPath(entry.path).catch(e=>setError(String(e))) },
+      { label: revealPathLabel,     icon:<Eye size={13}/>,          action:() => revealExplorerPath(entry.path).catch(e=>setError(String(e))) },
+      ...(supportsNativeProperties ? [{ label: propertiesLabel, icon:<Info size={13}/>, action:() => showNativeProperties(entry.path) }] : []),
       { label:'Copy Path',          icon:<Copy size={13}/>,         action:() => copyToSysClipboard(entry.path) },
       { label: '', icon:null, divider:true, action:()=>{} },
       { label:'Copy',               icon:<Copy size={13}/>,         action:() => queueClipboard('copy', entry) },
@@ -3281,17 +3302,21 @@ export function FileExplorer({
       { label: '', icon:null, divider:true, action:()=>{} },
       { label:'Delete', icon:<Trash2 size={13}/>, danger:true, action:() => setDeleteTarget(entry) },
     ];
-  }, [bookmarkPathSet, duplicate, explorerRail, handleBookmarkCreated, onOpenInTerminal, openAsAdmin, openEntry, pluginActions, queueClipboard, updateExplorerRail]);
+  }, [bookmarkPathSet, copyToSysClipboard, duplicate, explorerRail, handleBookmarkCreated, onOpenInTerminal, openAsAdmin, openEntry, openWithSystemPicker, pluginActions, propertiesLabel, queueClipboard, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeOpenWith, supportsNativeProperties, updateExplorerRail]);
 
   const buildEmptyCtxItems = useCallback((): CtxItem[] => {
     return [
       { label:'New Folder', icon:<FolderPlus size={13}/>, action:() => openNew('folder') },
       { label:'New File...', icon:<FilePlus size={13}/>, action:() => openNew('file') },
-      { label:'Open Folder as Admin', icon:<Shield size={13}/>, action:() => openAsAdmin(currentPath) },
       ...(clipboard ? [{ label:'Paste', icon:<Clipboard size={13}/>, action:() => paste() }] : []),
+      { label: '', icon:null, divider:true, action:()=>{} },
+      { label:'Open Folder as Admin', icon:<Shield size={13}/>, action:() => openAsAdmin(currentPath) },
+      { label: revealPathLabel, icon:<Eye size={13}/>, action:() => revealExplorerPath(currentPath).catch(e => setError(String(e))) },
+      ...(supportsNativeOpenWith ? [{ label:'Open With...', icon:<ExternalLink size={13}/>, action:() => openWithSystemPicker(currentPath) }] : []),
+      ...(supportsNativeProperties ? [{ label: propertiesLabel, icon:<Info size={13}/>, action:() => showNativeProperties(currentPath) }] : []),
       { label:'Refresh', icon:<RefreshCw size={13}/>, action:() => refresh() },
     ];
-  }, [clipboard, currentPath, openAsAdmin, paste, refresh]);
+  }, [clipboard, currentPath, openAsAdmin, openWithSystemPicker, paste, propertiesLabel, refresh, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeOpenWith, supportsNativeProperties]);
 
   // ── Right-click ──
   const onRightClick = (e: React.MouseEvent, entry: FileEntry) => {
@@ -5142,7 +5167,15 @@ export function FileExplorer({
       data-overlay-explorer
       style={explorerRootStyle}
       onClick={() => { setSelected(new Set()); setCtxMenu(c => ({...c, visible:false})); }}
-      onContextMenu={e => { e.preventDefault(); setCtxMenu(c => ({...c, visible:false})); }}
+      onContextMenu={e => {
+        const target = e.target instanceof HTMLElement ? e.target : null;
+        if (target?.closest('input, textarea, button, a, [contenteditable="true"], [role="button"]')) {
+          return;
+        }
+        e.preventDefault();
+        setSelected(new Set());
+        setCtxMenu({ visible:true, x:e.clientX, y:e.clientY, entry:null });
+      }}
     >
       {/* ══ SIDEBAR ══ */}
       {shouldRenderRail && (
@@ -5344,6 +5377,59 @@ export function FileExplorer({
           {/* Toolbar buttons */}
           {!isCompactDock && !showsGlobalChromeControls && (
             <>
+              <button
+                type="button"
+                aria-pressed={sourcesVisible}
+                onClick={() => setSourcesVisible(current => !current)}
+                title={sourcesVisible ? 'Hide explorer sources' : 'Show explorer sources'}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  background: sourcesVisible ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
+                  border: `1px solid ${sourcesVisible ? 'var(--overlay-explorer-chip-active-border)' : 'var(--overlay-explorer-chip-border)'}`,
+                  cursor: 'pointer',
+                  color: sourcesVisible ? 'var(--overlay-explorer-chip-active-text)' : EXP.muted,
+                  padding: '4px 8px',
+                  borderRadius: 'var(--overlay-explorer-control-radius)',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
+                onMouseLeave={e => (e.currentTarget.style.background = sourcesVisible ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
+              >
+                Sources
+              </button>
+
+              <button
+                type="button"
+                aria-pressed={addressEditing || isSearchActive}
+                onClick={focusExplorerAddressBar}
+                title="Focus explorer search or path bar"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  background: addressEditing || isSearchActive ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
+                  border: `1px solid ${addressEditing || isSearchActive ? 'var(--overlay-explorer-chip-active-border)' : 'var(--overlay-explorer-chip-border)'}`,
+                  cursor: 'pointer',
+                  color: addressEditing || isSearchActive ? 'var(--overlay-explorer-chip-active-text)' : EXP.muted,
+                  padding: '4px 8px',
+                  borderRadius: 'var(--overlay-explorer-control-radius)',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
+                onMouseLeave={e => (e.currentTarget.style.background = addressEditing || isSearchActive ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
+              >
+                <Search size={12} />
+                Search
+              </button>
+
               <div
                 ref={experimentalMenuAnchorRef}
                 style={{ position: 'relative' }}

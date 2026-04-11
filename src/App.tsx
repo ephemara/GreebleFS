@@ -18,19 +18,6 @@ import { CommandPalette, type OverlayCommandPaletteAction } from './components/C
 import { animationSystemConfig, resolvePreferredAnimationId } from './config/animations';
 import { wallpaperSystemConfig } from './config/wallpapers';
 import {
-  explorerExperimentalModes,
-  type ExplorerExperimentalViewMode,
-} from './config/explorerExperimentalModes';
-import {
-  explorerShellLayouts,
-  getExplorerShellLayoutDefinition,
-  type ExplorerShellLayoutId,
-} from './config/explorerShellLayouts';
-import {
-  explorerViewModes,
-  getExplorerViewModeDefinition,
-} from './config/explorerViewModes';
-import {
   resolveWorkbenchRenderRuntime,
   type ResolvedWorkbenchRenderRuntime,
 } from './config/workbenchRenderRuntime';
@@ -73,7 +60,14 @@ import {
   resolveActiveWallpaper,
   type LoadedOverlayWallpaper,
   type OverlayWallpaperRenderContext,
+  type ResolvedWallpaperSelection,
 } from './components/wallpaperRuntime';
+import {
+  ThemeRendererBoundary,
+  overlayThemeRendererApiVersion,
+  type OverlayThemeRendererHost,
+  type OverlayThemeRendererPanel,
+} from './components/themeRendererRuntime';
 import {
   Check,
   ChevronDown,
@@ -141,8 +135,6 @@ import {
   type TerminalWindowMode,
 } from './store/settingsStore';
 import {
-  PRIMARY_EXPLORER_INSTANCE_ID,
-  defaultExplorerSession,
   useExplorerStore,
 } from './store/explorerStore';
 import { useTerminalStore } from './store/terminalStore';
@@ -455,10 +447,10 @@ function App() {
   const [themePackagesLoading, setThemePackagesLoading] = useState(true);
   const [themePackagesError, setThemePackagesError] = useState<string | null>(null);
   const [themePackagesWarnings, setThemePackagesWarnings] = useState<string[]>([]);
+  const [themeRendererRuntimeError, setThemeRendererRuntimeError] = useState<string | null>(null);
   const [repositoryPickerRequestId, setRepositoryPickerRequestId] = useState(0);
   const [isRepositoryPickerActive, setIsRepositoryPickerActive] = useState(false);
   const [pendingRepositoryImports, setPendingRepositoryImports] = useState<string[]>([]);
-  const [explorerFocusAddressBarSignal, setExplorerFocusAddressBarSignal] = useState(0);
 
   const {
     settings,
@@ -485,10 +477,6 @@ function App() {
     updateLayout: state.updateLayout,
     updateSystem: state.updateSystem,
   })));
-  const primaryExplorerSession = useExplorerStore(
-    state => state.sessions[PRIMARY_EXPLORER_INSTANCE_ID] ?? defaultExplorerSession,
-  );
-  const updateExplorerSessionForInstance = useExplorerStore(state => state.updateSessionForInstance);
   const {
     initStore: initTerminalStore,
     addDirectoryBookmark,
@@ -761,23 +749,18 @@ function App() {
     [activeLayoutProfile],
   );
   const explorerPanelLayoutMode = windowMode === 'overlay' ? 'compact-dock' : 'full';
-  const activeExplorerShellLayout = useMemo(
-    () => getExplorerShellLayoutDefinition(primaryExplorerSession.shellLayoutId),
-    [primaryExplorerSession.shellLayoutId],
-  );
-  const activeExplorerViewMode = useMemo(
-    () => getExplorerViewModeDefinition(explorerSettings.viewMode),
-    [explorerSettings.viewMode],
-  );
-  const activeExplorerExperimentalMode = useMemo(() => {
-    if (explorerSettings.experimentalViewMode === 'off') {
-      return null;
-    }
-    return explorerExperimentalModes.find(mode => mode.id === explorerSettings.experimentalViewMode) ?? null;
-  }, [explorerSettings.experimentalViewMode]);
+  const activeThemeRenderer = resolvedAppearance.baseTheme.themeRenderer ?? null;
   const renderRuntime = useMemo(
-    () => resolveWorkbenchRenderRuntime(resolvedAppearance, activeLayoutProfile),
-    [activeLayoutProfile, resolvedAppearance],
+    () => resolveWorkbenchRenderRuntime(
+      resolvedAppearance,
+      activeLayoutProfile,
+      activeThemeRenderer?.error
+        || themeRendererRuntimeError
+        || (activeThemeRenderer && activeThemeRenderer.apiVersion !== overlayThemeRendererApiVersion)
+        ? activeThemeRenderer?.fallbackRuntime
+        : null,
+    ),
+    [activeLayoutProfile, activeThemeRenderer, resolvedAppearance, themeRendererRuntimeError],
   );
   const setPanelOpenStateDirectly = useCallback((panelId: string) => {
     const settingsState = useSettingsStore.getState();
@@ -809,50 +792,6 @@ function App() {
     setIsRepositoryPickerActive(true);
     setPanelOpenStateDirectly('explorer');
   }, [setPanelOpenStateDirectly]);
-  const handleFocusExplorerSearch = useCallback(() => {
-    setExplorerFocusAddressBarSignal(current => current + 1);
-    setPanelOpenStateDirectly('explorer');
-  }, [setPanelOpenStateDirectly]);
-  const handleToggleExplorerSources = useCallback(() => {
-    updateExplorerSessionForInstance(PRIMARY_EXPLORER_INSTANCE_ID, {
-      sourcesVisible: !primaryExplorerSession.sourcesVisible,
-    });
-    setPanelOpenStateDirectly('explorer');
-  }, [primaryExplorerSession.sourcesVisible, setPanelOpenStateDirectly, updateExplorerSessionForInstance]);
-  const handleCycleExplorerExperimentalMode = useCallback(() => {
-    const cycleOrder: ExplorerExperimentalViewMode[] = [
-      'off',
-      ...explorerExperimentalModes.map(mode => mode.id),
-    ];
-    const currentIndex = cycleOrder.findIndex(mode => mode === explorerSettings.experimentalViewMode);
-    const nextMode = cycleOrder[(currentIndex + 1 + cycleOrder.length) % cycleOrder.length] ?? 'off';
-    updateExplorer({ experimentalViewMode: nextMode });
-    setPanelOpenStateDirectly('explorer');
-  }, [explorerSettings.experimentalViewMode, setPanelOpenStateDirectly, updateExplorer]);
-  const handleCycleExplorerShellLayout = useCallback(() => {
-    const currentIndex = explorerShellLayouts.findIndex(layout => layout.id === activeExplorerShellLayout.id);
-    const nextLayout = explorerShellLayouts[(currentIndex + 1 + explorerShellLayouts.length) % explorerShellLayouts.length];
-    if (!nextLayout) {
-      return;
-    }
-    updateExplorerSessionForInstance(PRIMARY_EXPLORER_INSTANCE_ID, { shellLayoutId: nextLayout.id });
-    setPanelOpenStateDirectly('explorer');
-  }, [activeExplorerShellLayout.id, setPanelOpenStateDirectly, updateExplorerSessionForInstance]);
-  const handleCycleExplorerViewMode = useCallback(() => {
-    const currentIndex = explorerViewModes.findIndex(mode => mode.id === explorerSettings.viewMode);
-    const nextMode = explorerViewModes[(currentIndex + 1 + explorerViewModes.length) % explorerViewModes.length];
-    if (!nextMode) {
-      return;
-    }
-    updateExplorer({ viewMode: nextMode.id });
-    setPanelOpenStateDirectly('explorer');
-  }, [explorerSettings.viewMode, setPanelOpenStateDirectly, updateExplorer]);
-  const handleToggleExplorerPreview = useCallback(() => {
-    updateExplorerSessionForInstance(PRIMARY_EXPLORER_INSTANCE_ID, {
-      previewEnabled: !primaryExplorerSession.previewEnabled,
-    });
-    setPanelOpenStateDirectly('explorer');
-  }, [primaryExplorerSession.previewEnabled, setPanelOpenStateDirectly, updateExplorerSessionForInstance]);
   const handleCancelRepositoryImport = useCallback(() => {
     setIsRepositoryPickerActive(false);
   }, []);
@@ -923,6 +862,20 @@ function App() {
     ensureFontFamilyLoaded(resolvedAppearance.fonts.ui);
     ensureFontFamilyLoaded(resolvedAppearance.fonts.mono);
   }, [resolvedAppearance.fonts.mono, resolvedAppearance.fonts.ui]);
+
+  useEffect(() => {
+    setThemeRendererRuntimeError(null);
+  }, [activeThemeRenderer?.filePath, resolvedAppearance.baseTheme.id]);
+
+  useEffect(() => {
+    if (!activeThemeRenderer || activeThemeRenderer.apiVersion === overlayThemeRendererApiVersion) {
+      return;
+    }
+
+    console.warn(
+      `OverlayTerm: theme renderer "${activeThemeRenderer.name}" targets apiVersion ${activeThemeRenderer.apiVersion}, but the host supports ${overlayThemeRendererApiVersion}. Falling back to the built-in shell.`,
+    );
+  }, [activeThemeRenderer]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2250,8 +2203,7 @@ function App() {
     () => [
       ...createBuiltInPanelDefinitions({
         appearance: resolvedAppearance,
-        explorerChromeControlSurface: 'topbar',
-        explorerFocusAddressBarSignal,
+        explorerChromeControlSurface: 'toolbar',
         explorerLayoutMode: explorerPanelLayoutMode,
         explorerRepoPicker: isRepositoryPickerActive
           ? {
@@ -2362,7 +2314,6 @@ function App() {
       resolvedAppearance,
       combinedThemePackages,
       importWallpaperFiles,
-      explorerFocusAddressBarSignal,
       explorerPanelLayoutMode,
       themePackagesError,
       themePackagesLoading,
@@ -2915,6 +2866,178 @@ function App() {
     clampedPanelTransparency,
     theme,
   ]);
+  const renderWallpaperBackground = useCallback((contextOverrides?: Partial<OverlayWallpaperRenderContext>) => (
+    <WallpaperBackgroundLayer
+      wallpaper={activeWallpaper}
+      context={{
+        ...shellWallpaperContext,
+        ...(contextOverrides ?? {}),
+      }}
+    />
+  ), [activeWallpaper, shellWallpaperContext]);
+  const renderWallpaperBackdropStack = useCallback(() => (
+    <>
+      {renderWallpaperBackground()}
+      {shellThemeEffectBackgroundImage ? (
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            backgroundImage: shellThemeEffectBackgroundImage,
+            backgroundSize: theme.effects.backgroundSize,
+            backgroundPosition: theme.effects.backgroundPosition,
+            backgroundRepeat: 'no-repeat',
+          }}
+        />
+      ) : null}
+    </>
+  ), [
+    renderWallpaperBackground,
+    shellThemeEffectBackgroundImage,
+    theme.effects.backgroundPosition,
+    theme.effects.backgroundSize,
+  ]);
+  const renderPanelBody = useCallback((panel: OverlayPanelDefinition, isActive: boolean) => {
+    if (panel.kind === 'folder-plugin') {
+      return (
+        <FolderPluginRenderer
+          plugin={folderPlugins.find(candidate => candidate.id === panel.id) ?? {
+            id: panel.id,
+            name: panel.label,
+            filePath: '',
+            pluginRoot: '',
+            pluginDirectory: '',
+            backendDirectory: '',
+            modified: 0,
+            defaultOpen: panel.defaultOpen ?? false,
+            keepMounted: panel.keepMounted ?? false,
+            component: null,
+            error: 'Plugin definition not found.',
+            diagnostics: {
+              sourceKind: 'file-plugin',
+              sourceLabel: panel.label,
+              warnings: ['Plugin definition not found.'],
+              capabilities: {
+                panel: true,
+                themes: 0,
+                shaders: 0,
+                fonts: 0,
+                commands: 0,
+                explorerActions: 0,
+              },
+            },
+          }}
+          appearance={resolvedAppearance}
+          createPluginApi={createPluginApi}
+          hostMode="panel-tab"
+          isActive={isActive}
+        />
+      );
+    }
+
+    return panel.render();
+  }, [createPluginApi, folderPlugins, resolvedAppearance]);
+  const renderManagedPanelSurface = useCallback((
+    panelId: string,
+    options?: {
+      forceMount?: boolean;
+      forceVisible?: boolean;
+      style?: CSSProperties;
+    },
+  ) => {
+    const panel = panelLookup.get(panelId);
+    if (!panel) {
+      return null;
+    }
+
+    const isPanelOpen = openPanelIds.includes(panel.id);
+    const isActive = panel.id === activePanelId;
+    const isPinned = pinnedPanelIds.includes(panel.id);
+    const shouldMount = options?.forceMount
+      ?? (!isPinned && (panel.keepMounted ? isPanelOpen : isPanelOpen && isActive));
+
+    if (!shouldMount) {
+      return null;
+    }
+
+    const shouldDisplay = options?.forceVisible ?? (isPinned || (isPanelOpen && isActive));
+    return (
+      <div
+        key={`panel-surface:${panel.id}`}
+        style={{
+          flex: 1,
+          display: shouldDisplay ? 'flex' : 'none',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          ...(options?.style ?? {}),
+        }}
+      >
+        {renderPanelBody(panel, isActive)}
+      </div>
+    );
+  }, [
+    activePanelId,
+    openPanelIds,
+    panelLookup,
+    pinnedPanelIds,
+    renderPanelBody,
+  ]);
+  const renderPinnedPanelSurface = useCallback((side: 'left' | 'right') => {
+    const entries = side === 'left' ? leftPinnedPanels : rightPinnedPanels;
+    return entries.map(({ panel, definition }) => (
+      <LayoutPinnedPanelSlot key={`${panel.side}:${panel.panelId}`} panel={panel} definition={definition} />
+    ));
+  }, [leftPinnedPanels, rightPinnedPanels]);
+  const defaultNavigationSurface = usesNavigationSidebar ? (
+    <WorkbenchNavigationSurface
+      appearance={resolvedAppearance}
+      runtime={renderRuntime}
+      panels={panelDefinitions}
+      pinnedPanelIds={pinnedPanelIds}
+      activePanelId={activePanelId}
+      openPanelIds={openPanelIds}
+      onActivatePanel={handleActivatePanel}
+    />
+  ) : null;
+  const defaultContentSurface = (
+    <div style={contentShellStyle}>
+      {panelDefinitions.map(panel => renderManagedPanelSurface(panel.id))}
+
+      {!activeContentPanel && openPanels.length === 0 && (
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: theme.palette.textMuted,
+          fontSize: 13,
+          background: usesInsetContentShell ? 'transparent' : theme.palette.shellBackground,
+          fontFamily: resolvedAppearance.fonts.ui,
+          padding: 24,
+          textAlign: 'center',
+        }}
+        >
+          {usesNavigationSidebar
+            ? 'Choose a panel from the launcher to bring its surface forward.'
+            : 'No tabbed panels are open. Use the panel menu to bring one back.'}
+        </div>
+      )}
+    </div>
+  );
+  const defaultWorkbenchContent = (
+    <div style={{ position: 'relative', display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      {renderPinnedPanelSurface('left')}
+
+      <div style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
+        {defaultNavigationSurface}
+        {defaultContentSurface}
+      </div>
+
+      {renderPinnedPanelSurface('right')}
+    </div>
+  );
   const chromeBar = (
     <TopBar
       appearance={resolvedAppearance}
@@ -2926,28 +3049,16 @@ function App() {
       openPanelIds={openPanelIds}
       pinnedPanelIds={pinnedPanelIds}
       activePanelId={activePanelId}
-      showExplorerControls={activePanelId === 'explorer'}
-      explorerExperimentalModeLabel={activeExplorerExperimentalMode?.shortLabel ?? 'Standard'}
-      explorerPreviewEnabled={primaryExplorerSession.previewEnabled}
-      explorerShellLayoutLabel={activeExplorerShellLayout.shortLabel}
-      explorerSourcesVisible={primaryExplorerSession.sourcesVisible}
-      explorerViewModeLabel={activeExplorerViewMode.shortLabel}
       onPanelSelect={handleSelectPanel}
       onPanelToggle={handleTogglePanel}
       onPanelClose={handleClosePanel}
       onPanelReorder={handleReorderPanels}
       onOpenSettings={handleOpenSettings}
       onCycleLayout={handleCycleLayout}
-      onCycleExplorerExperimentalMode={handleCycleExplorerExperimentalMode}
-      onCycleExplorerShellLayout={handleCycleExplorerShellLayout}
-      onCycleExplorerViewMode={handleCycleExplorerViewMode}
-      onFocusExplorerSearch={handleFocusExplorerSearch}
       onSelectLayoutProfile={(profileId) => updateLayout({ activeProfileId: profileId })}
       onSetWindowMode={(mode) => updateTerminal({ windowMode: mode })}
       onOpenCommandPalette={handleOpenCommandPalette}
       onToggleOverlayAnchor={handleToggleOverlayAnchor}
-      onToggleExplorerPreview={handleToggleExplorerPreview}
-      onToggleExplorerSources={handleToggleExplorerSources}
       onClose={() => { void hideOverlay(); }}
       accent={accent}
       opacity={clampedAppOpacity}
@@ -2975,6 +3086,152 @@ function App() {
       )}
     />
   );
+  const defaultShellBody = (
+    <>
+      {!isWindowedMode && !isTopAnchored && (
+        <div
+          className="h-[4px] shrink-0 cursor-ns-resize select-none"
+          style={{ background: `linear-gradient(90deg, transparent 0%, ${accent}99 30%, ${accent} 50%, ${accent}99 70%, transparent 100%)` }}
+          onPointerDown={e => {
+            if (e.buttons === 1) { e.preventDefault(); getCurrentWindow().startResizeDragging('North').catch(() => {}); }
+          }}
+        />
+      )}
+
+      {(isWindowedMode || activeLayoutProfile.chrome.barPosition === 'top') && chromeBar}
+
+      {defaultWorkbenchContent}
+
+      {!isWindowedMode && activeLayoutProfile.chrome.barPosition === 'bottom' && chromeBar}
+
+      {!isWindowedMode && isTopAnchored && (
+        <div
+          className="h-[4px] shrink-0 cursor-ns-resize select-none"
+          style={{ background: `linear-gradient(90deg, transparent 0%, ${accent}99 30%, ${accent} 50%, ${accent}99 70%, transparent 100%)` }}
+          onPointerDown={e => {
+            if (e.buttons === 1) { e.preventDefault(); getCurrentWindow().startResizeDragging('South').catch(() => {}); }
+          }}
+        />
+      )}
+    </>
+  );
+  const themeRendererPanels = useMemo<OverlayThemeRendererPanel[]>(
+    () => panelDefinitions.map(panel => ({
+      id: panel.id,
+      label: panel.label,
+      description: panel.description,
+      kind: panel.kind,
+      icon: panel.icon,
+      navigation: panel.navigation,
+      defaultOpen: panel.defaultOpen,
+      keepMounted: panel.keepMounted ?? false,
+      isActive: panel.id === activePanelId,
+      isOpen: openPanelIds.includes(panel.id),
+      isPinned: pinnedPanelIds.includes(panel.id),
+    })),
+    [activePanelId, openPanelIds, panelDefinitions, pinnedPanelIds],
+  );
+  const themeRendererHost = useMemo<OverlayThemeRendererHost>(() => ({
+    appearance: resolvedAppearance,
+    theme,
+    layoutProfile: activeLayoutProfile,
+    renderRuntime,
+    layout: {
+      windowMode,
+      overlayAnchor,
+      isWindowMaximized,
+      shellBackgroundColor,
+      shellBackdropFilter,
+      usesNavigationSidebar,
+      usesInsetContentShell,
+      contentStagePadding,
+      scaledWidth,
+      scaledHeight,
+    },
+    panels: themeRendererPanels,
+    activePanelId,
+    openPanelIds,
+    pinnedPanelIds,
+    wallpaper: {
+      activeWallpaper,
+      themeWallpaper,
+      selection: wallpaperSelection as ResolvedWallpaperSelection,
+      renderContext: shellWallpaperContext,
+      renderBackground: renderWallpaperBackground,
+      renderBackdropStack: renderWallpaperBackdropStack,
+    },
+    activatePanel: handleActivatePanel,
+    openPanel: handleActivatePanel,
+    closePanel: handleClosePanel,
+    togglePanel: handleTogglePanel,
+    openSettings: handleOpenSettings,
+    renderChromeBar: () => chromeBar,
+    renderDefaultNavigationSurface: () => defaultNavigationSurface,
+    renderPanelSurface: renderManagedPanelSurface,
+    renderPinnedPanels: renderPinnedPanelSurface,
+    renderDefaultContentSurface: () => defaultContentSurface,
+    renderDefaultShellBody: () => defaultShellBody,
+  }), [
+    activeLayoutProfile,
+    activePanelId,
+    activeWallpaper,
+    chromeBar,
+    contentStagePadding,
+    defaultNavigationSurface,
+    defaultShellBody,
+    defaultContentSurface,
+    handleActivatePanel,
+    handleClosePanel,
+    handleOpenSettings,
+    handleTogglePanel,
+    isWindowMaximized,
+    openPanelIds,
+    overlayAnchor,
+    pinnedPanelIds,
+    renderManagedPanelSurface,
+    renderPinnedPanelSurface,
+    renderRuntime,
+    renderWallpaperBackdropStack,
+    renderWallpaperBackground,
+    resolvedAppearance,
+    scaledHeight,
+    scaledWidth,
+    shellBackdropFilter,
+    shellBackgroundColor,
+    shellWallpaperContext,
+    theme,
+    themeRendererPanels,
+    themeWallpaper,
+    usesInsetContentShell,
+    usesNavigationSidebar,
+    wallpaperSelection,
+    windowMode,
+  ]);
+  const themeRendererApiSupported = !activeThemeRenderer
+    || activeThemeRenderer.apiVersion === overlayThemeRendererApiVersion;
+  const canRenderThemeRenderer = Boolean(activeThemeRenderer?.component)
+    && !activeThemeRenderer?.error
+    && !themeRendererRuntimeError
+    && themeRendererApiSupported;
+  const themeRendererControlsWallpaper = Boolean(
+    canRenderThemeRenderer
+      && activeThemeRenderer.capabilities.wallpaperScene,
+  );
+  const shellBody = canRenderThemeRenderer
+    ? (
+      <ThemeRendererBoundary
+        renderer={activeThemeRenderer}
+        fallback={defaultShellBody}
+        onError={error => setThemeRendererRuntimeError(String(error))}
+        render={RendererComponent => (
+          <RendererComponent
+            renderer={activeThemeRenderer}
+            host={themeRendererHost}
+          />
+        )}
+      />
+      )
+    : defaultShellBody;
   return (
     <div
       className="overlay-window-host w-full h-full overflow-hidden"
@@ -3034,24 +3291,7 @@ function App() {
               borderBottomRightRadius: isWindowedMode ? (isWindowMaximized ? 0 : workbench.metrics.panelRadius) : (isTopAnchored ? workbench.metrics.panelRadius : 0),
             }}
           >
-            <WallpaperBackgroundLayer
-              wallpaper={activeWallpaper}
-              context={shellWallpaperContext}
-            />
-            {shellThemeEffectBackgroundImage ? (
-              <div
-                aria-hidden
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  pointerEvents: 'none',
-                  backgroundImage: shellThemeEffectBackgroundImage,
-                  backgroundSize: theme.effects.backgroundSize,
-                  backgroundPosition: theme.effects.backgroundPosition,
-                  backgroundRepeat: 'no-repeat',
-                }}
-              />
-            ) : null}
+            {!themeRendererControlsWallpaper && renderWallpaperBackdropStack()}
             <ShaderSurfaceLayer
               shader={activeShader}
               shellContext={shellShaderContext}
@@ -3071,136 +3311,7 @@ function App() {
             />
 
             <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-              {!isWindowedMode && !isTopAnchored && (
-                <div
-                  className="h-[4px] shrink-0 cursor-ns-resize select-none"
-                  style={{ background: `linear-gradient(90deg, transparent 0%, ${accent}99 30%, ${accent} 50%, ${accent}99 70%, transparent 100%)` }}
-                  onPointerDown={e => {
-                    if (e.buttons === 1) { e.preventDefault(); getCurrentWindow().startResizeDragging('North').catch(() => {}); }
-                  }}
-                />
-              )}
-
-              {(isWindowedMode || activeLayoutProfile.chrome.barPosition === 'top') && chromeBar}
-
-              {/* ══ Content ══ */}
-              <div style={{ position: 'relative', display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-                {leftPinnedPanels.map(({ panel, definition }) => (
-                  <LayoutPinnedPanelSlot key={`${panel.side}:${panel.panelId}`} panel={panel} definition={definition} />
-                ))}
-
-                <div style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
-                  {usesNavigationSidebar && (
-                    <WorkbenchNavigationSurface
-                      appearance={resolvedAppearance}
-                      runtime={renderRuntime}
-                      panels={panelDefinitions}
-                      pinnedPanelIds={pinnedPanelIds}
-                      activePanelId={activePanelId}
-                      openPanelIds={openPanelIds}
-                      onActivatePanel={handleActivatePanel}
-                    />
-                  )}
-
-                  <div style={contentShellStyle}>
-                    {panelDefinitions.map(panel => {
-                      const isPanelOpen = openPanelIds.includes(panel.id);
-                      const isActive = panel.id === activePanelId;
-                      const isPinned = pinnedPanelIds.includes(panel.id);
-                      // keepMounted means "stay mounted while open, even when not the active tab".
-                      // Closed panels should unmount to avoid background work.
-                      const shouldMount = !isPinned && (panel.keepMounted ? isPanelOpen : isPanelOpen && isActive);
-
-                      if (!shouldMount) return null;
-
-                      return (
-                        <div
-                          key={panel.id}
-                          style={{
-                            flex: 1,
-                            display: isPanelOpen && isActive ? 'flex' : 'none',
-                            flexDirection: 'column',
-                            overflow: 'hidden',
-                          }}
-                        >
-                          {panel.kind === 'folder-plugin'
-                            ? (
-                              <FolderPluginRenderer
-                                plugin={folderPlugins.find(candidate => candidate.id === panel.id) ?? {
-                                  id: panel.id,
-                                  name: panel.label,
-                                  filePath: '',
-                                  pluginRoot: '',
-                                  pluginDirectory: '',
-                                  backendDirectory: '',
-                                  modified: 0,
-                                  defaultOpen: panel.defaultOpen ?? false,
-                                  keepMounted: panel.keepMounted ?? false,
-                                  component: null,
-                                  error: 'Plugin definition not found.',
-                                  diagnostics: {
-                                    sourceKind: 'file-plugin',
-                                    sourceLabel: panel.label,
-                                    warnings: ['Plugin definition not found.'],
-                                    capabilities: {
-                                      panel: true,
-                                      themes: 0,
-                                      shaders: 0,
-                                      fonts: 0,
-                                      commands: 0,
-                                      explorerActions: 0,
-                                    },
-                                  },
-                                }}
-                                appearance={resolvedAppearance}
-                                createPluginApi={createPluginApi}
-                                hostMode="panel-tab"
-                                isActive={isActive}
-                              />
-                            )
-                            : panel.render()}
-                        </div>
-                      );
-                    })}
-
-                    {!activeContentPanel && openPanels.length === 0 && (
-                      <div style={{
-                        flex: 1,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: theme.palette.textMuted,
-                        fontSize: 13,
-                        background: usesInsetContentShell ? 'transparent' : theme.palette.shellBackground,
-                        fontFamily: resolvedAppearance.fonts.ui,
-                        padding: 24,
-                        textAlign: 'center',
-                      }}
-                      >
-                        {usesNavigationSidebar
-                          ? 'Choose a panel from the launcher to bring its surface forward.'
-                          : 'No tabbed panels are open. Use the panel menu to bring one back.'}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {rightPinnedPanels.map(({ panel, definition }) => (
-                  <LayoutPinnedPanelSlot key={`${panel.side}:${panel.panelId}`} panel={panel} definition={definition} />
-                ))}
-              </div>
-
-              {!isWindowedMode && activeLayoutProfile.chrome.barPosition === 'bottom' && chromeBar}
-
-              {!isWindowedMode && isTopAnchored && (
-                <div
-                  className="h-[4px] shrink-0 cursor-ns-resize select-none"
-                  style={{ background: `linear-gradient(90deg, transparent 0%, ${accent}99 30%, ${accent} 50%, ${accent}99 70%, transparent 100%)` }}
-                  onPointerDown={e => {
-                    if (e.buttons === 1) { e.preventDefault(); getCurrentWindow().startResizeDragging('South').catch(() => {}); }
-                  }}
-                />
-              )}
+              {shellBody}
             </div>
           </div>
         </div>
@@ -3598,28 +3709,16 @@ function TopBar({
   openPanelIds,
   pinnedPanelIds,
   activePanelId,
-  showExplorerControls,
-  explorerExperimentalModeLabel,
-  explorerPreviewEnabled,
-  explorerShellLayoutLabel,
-  explorerSourcesVisible,
-  explorerViewModeLabel,
   onPanelSelect,
   onPanelToggle,
   onPanelClose,
   onPanelReorder,
-  onCycleExplorerExperimentalMode,
-  onCycleExplorerShellLayout,
-  onCycleExplorerViewMode,
-  onFocusExplorerSearch,
   onOpenSettings,
   onCycleLayout,
   onSelectLayoutProfile,
   onSetWindowMode,
   onOpenCommandPalette,
   onToggleOverlayAnchor,
-  onToggleExplorerPreview,
-  onToggleExplorerSources,
   onClose,
   accent,
   opacity,
@@ -3649,28 +3748,16 @@ function TopBar({
   openPanelIds: string[];
   pinnedPanelIds: string[];
   activePanelId: string | null;
-  showExplorerControls: boolean;
-  explorerExperimentalModeLabel: string;
-  explorerPreviewEnabled: boolean;
-  explorerShellLayoutLabel: string;
-  explorerSourcesVisible: boolean;
-  explorerViewModeLabel: string;
   onPanelSelect: (panelId: string | null) => void;
   onPanelToggle: (panelId: string) => void;
   onPanelClose: (panelId: string) => void;
   onPanelReorder: (draggedId: string, targetId: string) => void;
-  onCycleExplorerExperimentalMode: () => void;
-  onCycleExplorerShellLayout: () => void;
-  onCycleExplorerViewMode: () => void;
-  onFocusExplorerSearch: () => void;
   onOpenSettings: () => void;
   onCycleLayout: () => void;
   onSelectLayoutProfile: (profileId: string) => void;
   onSetWindowMode: (mode: TerminalWindowMode) => void;
   onOpenCommandPalette: () => void;
   onToggleOverlayAnchor: () => void;
-  onToggleExplorerPreview: () => void;
-  onToggleExplorerSources: () => void;
   onClose: () => void;
   accent: string;
   opacity: number;
@@ -4340,162 +4427,6 @@ function TopBar({
           >
             <Droplet size={11} />
           </button>
-        )}
-
-        {showExplorerControls && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              paddingLeft: 2,
-              marginRight: 4,
-            }}
-          >
-            <button
-              onClick={onToggleExplorerSources}
-              title={explorerSourcesVisible ? 'Hide explorer sources' : 'Show explorer sources'}
-              style={{
-                height: 22,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: '0 7px',
-                borderRadius: workbench.metrics.controlRadius,
-                border: `1px solid ${explorerSourcesVisible ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
-                background: explorerSourcesVisible
-                  ? 'var(--overlay-workbench-chrome-button-active-bg)'
-                  : 'var(--overlay-workbench-chrome-button-bg)',
-                color: explorerSourcesVisible ? TEXT : MUTED,
-                fontSize: 'var(--overlay-workbench-chrome-meta-size)',
-                fontWeight: 700,
-                letterSpacing: 'var(--overlay-workbench-label-spacing)',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-              }}
-            >
-              <span>Sources</span>
-            </button>
-
-            <button
-              onClick={onFocusExplorerSearch}
-              title="Focus explorer search"
-              style={{
-                height: 22,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: '0 7px',
-                borderRadius: workbench.metrics.controlRadius,
-                border: '1px solid var(--overlay-workbench-chrome-border)',
-                background: 'var(--overlay-workbench-chrome-button-bg)',
-                color: MUTED,
-                fontSize: 'var(--overlay-workbench-chrome-meta-size)',
-                fontWeight: 700,
-                letterSpacing: 'var(--overlay-workbench-label-spacing)',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-              }}
-            >
-              <span>Search</span>
-            </button>
-
-            <button
-              onClick={onCycleExplorerExperimentalMode}
-              title={`Cycle explorer labs mode (${explorerExperimentalModeLabel})`}
-              style={{
-                height: 22,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: '0 7px',
-                borderRadius: workbench.metrics.controlRadius,
-                border: `1px solid ${explorerExperimentalModeLabel === 'Standard' ? 'var(--overlay-workbench-chrome-border)' : 'var(--overlay-workbench-chrome-button-active-border)'}`,
-                background: explorerExperimentalModeLabel === 'Standard'
-                  ? 'var(--overlay-workbench-chrome-button-bg)'
-                  : 'var(--overlay-workbench-chrome-button-active-bg)',
-                color: explorerExperimentalModeLabel === 'Standard' ? MUTED : TEXT,
-                fontSize: 'var(--overlay-workbench-chrome-meta-size)',
-                fontWeight: 700,
-                letterSpacing: 'var(--overlay-workbench-label-spacing)',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-              }}
-            >
-              <span>{explorerExperimentalModeLabel}</span>
-            </button>
-
-            <button
-              onClick={onCycleExplorerShellLayout}
-              title={`Cycle explorer shell layout (${explorerShellLayoutLabel})`}
-              style={{
-                height: 22,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: '0 7px',
-                borderRadius: workbench.metrics.controlRadius,
-                border: '1px solid var(--overlay-workbench-chrome-border)',
-                background: 'var(--overlay-workbench-chrome-button-bg)',
-                color: MUTED,
-                fontSize: 'var(--overlay-workbench-chrome-meta-size)',
-                fontWeight: 700,
-                letterSpacing: 'var(--overlay-workbench-label-spacing)',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-              }}
-            >
-              <span>{explorerShellLayoutLabel}</span>
-            </button>
-
-            <button
-              onClick={onCycleExplorerViewMode}
-              title={`Cycle explorer view mode (${explorerViewModeLabel})`}
-              style={{
-                height: 22,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: '0 7px',
-                borderRadius: workbench.metrics.controlRadius,
-                border: '1px solid var(--overlay-workbench-chrome-border)',
-                background: 'var(--overlay-workbench-chrome-button-bg)',
-                color: MUTED,
-                fontSize: 'var(--overlay-workbench-chrome-meta-size)',
-                fontWeight: 700,
-                letterSpacing: 'var(--overlay-workbench-label-spacing)',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-              }}
-            >
-              <span>{explorerViewModeLabel}</span>
-            </button>
-
-            <button
-              onClick={onToggleExplorerPreview}
-              title={explorerPreviewEnabled ? 'Disable explorer preview' : 'Enable explorer preview'}
-              style={{
-                height: 22,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: '0 7px',
-                borderRadius: workbench.metrics.controlRadius,
-                border: `1px solid ${explorerPreviewEnabled ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
-                background: explorerPreviewEnabled
-                  ? 'var(--overlay-workbench-chrome-button-active-bg)'
-                  : 'var(--overlay-workbench-chrome-button-bg)',
-                color: explorerPreviewEnabled ? TEXT : MUTED,
-                fontSize: 'var(--overlay-workbench-chrome-meta-size)',
-                fontWeight: 700,
-                letterSpacing: 'var(--overlay-workbench-label-spacing)',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-              }}
-            >
-              <span>Preview</span>
-            </button>
-          </div>
         )}
 
         {layoutProfile.chrome.showPanelMenu && (

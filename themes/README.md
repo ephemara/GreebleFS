@@ -15,6 +15,8 @@ themes/
       ambient-shell.tsx
     animations/
       open-bloom.tsx
+    renderers/
+      custom-shell.tsx
     icons/
       folder.svg
       folder_open.svg
@@ -41,6 +43,18 @@ Top-level fields:
   - Typed backend contract slices. Token values and primitive props can be strings, numbers, booleans, or structured JSON values.
 - `renderStyles`
   - Backend render-style contracts. These now drive the live shell interaction runtime, not just theme metadata. Set `supportsLiveSwap` on a style when it can be hot-swapped without restarting the explorer shell.
+- `themeRenderer`
+  - Optional V2 shell renderer module. This is the opt-in path for themes that want to replace the built-in workbench presentation with a theme-authored React shell while still using host-owned panels, navigation state, wallpaper APIs, and native capabilities.
+  - `entryModule`
+    - Relative path to a `TSX` renderer module, for example `renderers/custom-shell.tsx`.
+  - `apiVersion`
+    - Renderer host contract version. Current value: `1`.
+  - `supportsLiveSwap`
+    - Marks renderers that are safe to reload without dropping back to the built-in shell.
+  - `fallbackRuntime`
+    - Optional built-in runtime kind to use if the renderer fails. Supported values: `workbench-tabs`, `cross-axis-media`, `channel-launcher`, `desktop-stack`.
+  - `capabilities`
+    - Optional booleans for `customScreens`, `wallpaperScene`, and `surfaceAdapters`.
 - `assets.background`
   - Relative path to a wallpaper/image asset.
 - `assets.preview`
@@ -125,7 +139,7 @@ So the practical answer is:
 - motion and shader contributions: `TSX`
 - most styling primitives inside the manifest: CSS-like values
 
-That means an XMB-like theme is mainly a data package, not a custom React fork.
+That means a theme can stay a mostly declarative data package, or it can opt into a host-constrained custom React shell through `themeRenderer` when the built-in runtime mappings are not enough.
 
 ## Icon Theme JSON
 
