@@ -5,6 +5,13 @@ use crate::cloud_commands::{
     CloudAccountSummary, CloudAccountsSnapshot, CloudAuthSession, CloudAuthStatus,
     CloudBreadcrumb, CloudDirectoryListing, CloudProviderConfigurationStatus,
 };
+use crate::explorer_pro_commands::{
+    ExplorerDuplicateGroup, ExplorerDuplicateScanStartResponse, ExplorerDuplicateScanStatus,
+    ExplorerPathTagAssignment, ExplorerSavedSearchRecord, ExplorerSavedSearchSaveRequest,
+    ExplorerTagMutationMode, ExplorerTagMutationRequest, ExplorerTagRecord,
+    ExplorerTagSnapshot, ExplorerTrashActionRecord, ExplorerTrashRestoreResult,
+    ExplorerTrashedEntryRecord, FsBatchRenameItem, FsBatchRenameResult,
+};
 use crate::fs_commands::{
     DriveInfo, EntryStorageInfo, ExplorerTaskProgressEvent, FileEntry,
     FileSearchContentCacheStatus, FileSearchDiagnostics, FileSearchExecutionStrategy,
@@ -85,6 +92,12 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::fs_commands::fs_rename,
             crate::fs_commands::fs_move,
             crate::fs_commands::fs_copy,
+            crate::explorer_pro_commands::fs_trash,
+            crate::explorer_pro_commands::fs_restore_recent_trash_action,
+            crate::explorer_pro_commands::fs_batch_rename,
+            crate::explorer_pro_commands::fs_find_duplicates_start,
+            crate::explorer_pro_commands::fs_find_duplicates_poll,
+            crate::explorer_pro_commands::fs_find_duplicates_cancel,
             crate::fs_commands::fs_transfer_items,
             crate::fs_commands::fs_create_dir,
             crate::fs_commands::fs_read_file_base64,
@@ -97,6 +110,11 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::fs_commands::git_exec,
             crate::fs_commands::fs_get_home_dir,
             crate::fs_commands::fs_is_process_elevated,
+            crate::explorer_pro_commands::explorer_tags_list,
+            crate::explorer_pro_commands::explorer_tags_set_for_paths,
+            crate::explorer_pro_commands::explorer_saved_searches_list,
+            crate::explorer_pro_commands::explorer_saved_searches_save,
+            crate::explorer_pro_commands::explorer_saved_searches_delete,
             crate::desktop_integration::fs_resolve_native_icons,
             crate::desktop_integration::fs_start_native_file_drag,
             crate::screenshot_commands::screenshot_capture_preview,
@@ -145,6 +163,21 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<ExplorerTaskProgressEvent>()
         .typ::<FsRuntimeCachePolicy>()
         .typ::<FsWriteFileContent>()
+        .typ::<ExplorerTagRecord>()
+        .typ::<ExplorerPathTagAssignment>()
+        .typ::<ExplorerTagSnapshot>()
+        .typ::<ExplorerTagMutationMode>()
+        .typ::<ExplorerTagMutationRequest>()
+        .typ::<ExplorerSavedSearchRecord>()
+        .typ::<ExplorerSavedSearchSaveRequest>()
+        .typ::<ExplorerTrashedEntryRecord>()
+        .typ::<ExplorerTrashActionRecord>()
+        .typ::<ExplorerTrashRestoreResult>()
+        .typ::<FsBatchRenameItem>()
+        .typ::<FsBatchRenameResult>()
+        .typ::<ExplorerDuplicateScanStartResponse>()
+        .typ::<ExplorerDuplicateGroup>()
+        .typ::<ExplorerDuplicateScanStatus>()
         .typ::<FileTransferOperation>()
         .typ::<FileTransferResult>()
         .typ::<FileSearchMatchKind>()

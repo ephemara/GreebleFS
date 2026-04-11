@@ -6,7 +6,7 @@ import type {
   OverlayPluginExplorerActionContribution,
 } from '../config/pluginContributions';
 import TerminalOverlay from '../components/TerminalOverlay';
-import { FileExplorer } from '../components/FileExplorer';
+import { ExplorerWorkspace } from '../components/explorer/ExplorerWorkspace';
 import { FolderPluginRenderer } from '../components/PluginsManager';
 import type { LoadedOverlayAnimation } from '../components/animationRuntime';
 import type { LoadedOverlayShader } from '../components/shaderRuntime';
@@ -69,8 +69,8 @@ function DeferredPanel({
 // Prevent keep-mounted heavy panels from rerendering on unrelated App state updates.
 const MemoTerminalOverlay = React.memo(TerminalOverlay);
 MemoTerminalOverlay.displayName = 'MemoTerminalOverlay';
-const MemoFileExplorer = React.memo(FileExplorer);
-MemoFileExplorer.displayName = 'MemoFileExplorer';
+const MemoExplorerWorkspace = React.memo(ExplorerWorkspace);
+MemoExplorerWorkspace.displayName = 'MemoExplorerWorkspace';
 
 export interface PanelCatalogEntry {
   id: string;
@@ -218,10 +218,9 @@ export function createBuiltInPanelDefinitions({
         itemOrder: 10,
       },
       render: () => (
-        <MemoFileExplorer
+        <MemoExplorerWorkspace
           appearance={appearance}
           chromeControlSurface={explorerChromeControlSurface}
-          instanceId="primary"
           layoutMode={explorerLayoutMode}
           repositoryPicker={explorerRepoPicker}
           theme={explorerTheme}

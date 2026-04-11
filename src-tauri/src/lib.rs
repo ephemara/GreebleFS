@@ -2,6 +2,7 @@ pub mod cloud_commands;
 pub mod desktop_integration;
 pub mod domain_commands;
 pub mod entry_size_cache;
+pub mod explorer_pro_commands;
 pub mod fs_commands;
 pub mod plugin_commands;
 pub mod python_commands;

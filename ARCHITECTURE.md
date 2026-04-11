@@ -22,8 +22,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Built-in panel registration and prop wiring.
 - `src/components/FileExplorer.tsx`
   Main explorer shell, navigation, preview, standard layout modes, experimental explorer runtimes, and the compact dock presentation used when the app switches into overlay mode.
+- `src/components/explorer/ExplorerWorkspace.tsx`
+  Explorer-local workspace shell that wraps `FileExplorer` instances with explorer tabs, dual-pane layout, pane focus, and split sizing.
 - `src/components/explorer/ExplorerSideRail.tsx`
-  Explorer rail, bookmarks, drives, and bookmark authoring.
+  Explorer rail, drives, bookmarks, saved searches, and tag-filter browsing.
 - `src/config/appearance.ts`
   Core overlay theme model and resolved CSS variables.
 - `src/config/workbenchTheme.ts`
@@ -47,7 +49,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/wallpaperRuntime.tsx`
   Imported image/video wallpapers, authored live wallpaper modules, and theme-wallpaper selection helpers.
 - `src/store/explorerStore.ts`
-  Persisted explorer rail plus named explorer session snapshots.
+  Persisted explorer rail, named explorer session snapshots, and explorer-local workspace state for tabs/dual-pane layout.
 - `src/store/settingsStore.ts`
   Persisted layout/profile settings, wallpaper/shader/animation overrides, the native `windowMode` presentation toggle, and machine-level developer-mode behavior.
 
@@ -138,10 +140,18 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - persisted path/history/search/layout/preview/source-panel state
   - shell presets can hide the rail or move the preview pane without requiring a theme swap
 - `src/store/explorerStore.ts` supports named explorer sessions, but the shipping dock behavior is the same explorer surface rendered in compact mode rather than a separate drawer/dock subsystem.
+- The explorer now has a local workspace shell separate from the global workbench tabs:
+  - `ExplorerWorkspace.tsx` owns explorer tabs and one-pane/two-pane rendering
+  - each tab maps to a distinct `ExplorerInstanceId`, so the existing `FileExplorer` session model still owns path/history/search/preview state
+  - `explorerStore.ts` persists the workspace snapshot (`tabs`, pane activity, layout mode, focused pane, split ratio) alongside the underlying named sessions
 - `FileExplorer.tsx` shares directory/search result caches across explorer sessions so alternate surfaces do not duplicate backend reads unless a mutation invalidates the cache.
 - `FileExplorer.tsx` now settle-batches viewport enrichment work so visible-entry size measurement and native-icon resolution only launch after a short scroll idle window instead of hammering Tauri on every transient virtualized viewport shift.
 - `FileExplorer.tsx` owns both file-centric actions and explorer-local shell controls, so the shared top bar stays panel-agnostic while the explorer keeps its mode/source/preview controls adjacent to the path/search field.
 - `FileExplorer.tsx` had a dev-only infinite update loop risk in the virtualized entry-size and native-icon batching effects because in-flight `Set` state was being cleared/re-added on every render. Those effects now leave in-flight batches intact until async completion.
+- Explorer Pro metadata and long-running utilities now route through Rust instead of TS-only persistence:
+  - `src-tauri/src/explorer_pro_commands.rs` owns app-managed trash + undo, batch rename, duplicate-scan lifecycle, tags, and saved searches
+  - tags and saved searches live under Tauri app-local explorer metadata
+  - trash currently uses a GreebleFS-managed trash root so restore locations stay deterministic across platforms
 - Explorer drag behavior is now hybrid by default:
   - plain explorer drag starts the native file-drag bridge and publishes `text/uri-list`
   - the custom `application/x-overlayterm-paths` payload is still always attached so in-explorer drops keep working
@@ -189,6 +199,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Authored shader modules.
 - `src-tauri/`
   Native host and Rust-side integration.
+  `src-tauri/src/explorer_pro_commands.rs` is the explorer-pro feature backend for trash/undo, batch rename, duplicate scans, tags, and saved searches.
 
 ## Validation Commands
 

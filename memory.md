@@ -1,5 +1,38 @@
 # GreebleFS Memory
 
+## 2026-04-10 — Explorer Pro Basics Tranche 1 Substrate
+
+- Landed the first explorer-local workspace pass instead of extending the global workbench tab system:
+  - new `src/components/explorer/ExplorerWorkspace.tsx` now owns explorer-local tabs, single/dual-pane layout, active pane focus, and persisted split ratio
+  - `src/panels/panelRegistry.tsx` now mounts the explorer through `ExplorerWorkspace`, while each pane/tab still renders the existing `FileExplorer` with a distinct `instanceId`
+  - `src/store/explorerStore.ts` now persists a workspace snapshot alongside named explorer sessions, including tabs, pane activity, layout mode, focus, and split ratio
+- Added Rust-backed Explorer Pro commands in `src-tauri/src/explorer_pro_commands.rs` and exported them through Specta:
+  - local app-managed trash with undoable recent action journal
+  - batch rename validation/execution
+  - progressive duplicate scan start/poll/cancel
+  - app-data explorer metadata for tags and saved searches
+- `src/runtime/explorerBackend.ts` now exposes the new explorer-pro command surface to the frontend instead of forcing ad hoc Tauri calls from components.
+- `src/components/FileExplorer.tsx` picked up the first end-user integrations:
+  - trash-by-default confirm flow with explicit permanent delete fallback
+  - undo trash toolbar action
+  - batch rename dialog with TS-side preview and Rust execution
+  - duplicate finder dialog backed by the progressive scan commands
+  - saved-search save/apply/delete flow
+  - manual tags plus tag-filtered visible entries
+  - explorer side rail now has saved-search and tag filter sections
+- Durable implementation choices:
+  - trash is currently app-managed under Tauri app data rather than OS-native trash because reliable cross-platform undo needs full control over restore locations
+  - tags and saved searches are Rust-owned metadata, not project manifests or file xattrs
+  - duplicate scanning is rooted at the current local folder tree and intentionally excludes cloud paths in v1
+- Focused validation that passed:
+  - `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - `bunx vitest run src/test/explorerStore.test.ts`
+  - `cargo test --manifest-path src-tauri/Cargo.toml explorer_pro_commands`
+- Follow-up still recommended:
+  - move explorer clipboard state out of `FileExplorer` local state so copy/cut/paste works seamlessly across dual panes
+  - break more explorer-pro dialogs and metadata surfaces out of the monolithic `FileExplorer.tsx` once behavior stabilizes
+  - add targeted UI tests around saved-search/tag rail sections and duplicate-finder actions when the current test environment is less noisy
+
 ## 2026-04-10 — Explorer Controls Returned To The Omnibox Row
 
 - Moved explorer-only shell controls out of the shared top bar and back into the explorer chrome:

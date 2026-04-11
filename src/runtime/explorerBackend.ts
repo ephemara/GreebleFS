@@ -12,12 +12,22 @@ import {
   type CloudProviderId,
   type DriveInfo,
   type EntryStorageInfo,
+  type ExplorerDuplicateScanStartResponse,
+  type ExplorerDuplicateScanStatus,
+  type ExplorerSavedSearchRecord,
+  type ExplorerSavedSearchSaveRequest,
+  type ExplorerTagMutationRequest,
+  type ExplorerTagSnapshot,
+  type ExplorerTrashActionRecord,
+  type ExplorerTrashRestoreResult,
   type ExplorerTaskProgressEvent,
   type FileEntry,
   type FileSearchResult,
   type FileTransferOperation,
   type FileTransferResult,
   type FsWriteFileContent,
+  type FsBatchRenameItem,
+  type FsBatchRenameResult,
   type YaziSchedulerTaskSnap,
 } from '../generated/tauri';
 
@@ -36,6 +46,16 @@ export type ExplorerCloudAccountsSnapshot = CloudAccountsSnapshot;
 export type ExplorerCloudAuthSession = CloudAuthSession;
 export type ExplorerCloudAuthStatus = CloudAuthStatus;
 export type ExplorerCloudProviderConfigurationStatus = CloudProviderConfigurationStatus;
+export type ExplorerTagMetadataSnapshot = ExplorerTagSnapshot;
+export type ExplorerTagMutation = ExplorerTagMutationRequest;
+export type ExplorerSavedSearch = ExplorerSavedSearchRecord;
+export type ExplorerSavedSearchInput = ExplorerSavedSearchSaveRequest;
+export type ExplorerTrashAction = ExplorerTrashActionRecord;
+export type ExplorerTrashRestore = ExplorerTrashRestoreResult;
+export type ExplorerBatchRenameItem = FsBatchRenameItem;
+export type ExplorerBatchRenameResult = FsBatchRenameResult;
+export type ExplorerDuplicateScanStart = ExplorerDuplicateScanStartResponse;
+export type ExplorerDuplicateScan = ExplorerDuplicateScanStatus;
 
 export type ExplorerLocationBreadcrumb = {
   label: string;
@@ -244,6 +264,17 @@ export type ExplorerBackendContract = {
   readFileBase64: typeof readExplorerFileBase64;
   renamePath: typeof renameExplorerPath;
   deletePath: typeof deleteExplorerPath;
+  trashPaths: typeof trashExplorerPaths;
+  restoreRecentTrashAction: typeof restoreExplorerTrashAction;
+  batchRename: typeof batchRenameExplorerPaths;
+  startDuplicateScan: typeof startExplorerDuplicateScan;
+  pollDuplicateScan: typeof pollExplorerDuplicateScan;
+  cancelDuplicateScan: typeof cancelExplorerDuplicateScan;
+  listTags: typeof listExplorerTags;
+  setTagsForPaths: typeof setExplorerTagsForPaths;
+  listSavedSearches: typeof listExplorerSavedSearches;
+  saveSavedSearch: typeof saveExplorerSavedSearch;
+  deleteSavedSearch: typeof deleteExplorerSavedSearch;
   isCloudPath: typeof isCloudExplorerPath;
   supportsSearch: typeof supportsExplorerSearch;
   supportsNativeIntegration: typeof supportsExplorerNativeIntegration;
@@ -511,6 +542,63 @@ export async function deleteExplorerPath(path: string, recursive: boolean): Prom
   unwrapTauriResult(await commands.fsDelete(path, recursive));
 }
 
+export async function trashExplorerPaths(paths: string[]): Promise<ExplorerTrashAction> {
+  const localPaths = paths.filter((path) => !isCloudExplorerPath(path));
+  if (localPaths.length !== paths.length) {
+    throw new Error('Trash is only available for local filesystem items.');
+  }
+  return unwrapTauriResult(await commands.fsTrash(localPaths));
+}
+
+export async function restoreExplorerTrashAction(): Promise<ExplorerTrashRestore | null> {
+  return unwrapTauriResult(await commands.fsRestoreRecentTrashAction());
+}
+
+export async function batchRenameExplorerPaths(
+  items: ExplorerBatchRenameItem[],
+): Promise<ExplorerBatchRenameResult[]> {
+  return unwrapTauriResult(await commands.fsBatchRename(items));
+}
+
+export async function startExplorerDuplicateScan(rootPath: string): Promise<ExplorerDuplicateScanStart> {
+  if (isCloudExplorerPath(rootPath)) {
+    throw new Error('Duplicate scanning is only available for local filesystem roots.');
+  }
+  return unwrapTauriResult(await commands.fsFindDuplicatesStart(rootPath));
+}
+
+export async function pollExplorerDuplicateScan(scanId: string): Promise<ExplorerDuplicateScan> {
+  return unwrapTauriResult(await commands.fsFindDuplicatesPoll(scanId));
+}
+
+export async function cancelExplorerDuplicateScan(scanId: string): Promise<void> {
+  unwrapTauriResult(await commands.fsFindDuplicatesCancel(scanId));
+}
+
+export async function listExplorerTags(paths: string[] = []): Promise<ExplorerTagMetadataSnapshot> {
+  return unwrapTauriResult(await commands.explorerTagsList(paths.length > 0 ? paths : null));
+}
+
+export async function setExplorerTagsForPaths(
+  request: ExplorerTagMutation,
+): Promise<ExplorerTagMetadataSnapshot> {
+  return unwrapTauriResult(await commands.explorerTagsSetForPaths(request));
+}
+
+export async function listExplorerSavedSearches(): Promise<ExplorerSavedSearch[]> {
+  return unwrapTauriResult(await commands.explorerSavedSearchesList());
+}
+
+export async function saveExplorerSavedSearch(
+  request: ExplorerSavedSearchInput,
+): Promise<ExplorerSavedSearch> {
+  return unwrapTauriResult(await commands.explorerSavedSearchesSave(request));
+}
+
+export async function deleteExplorerSavedSearch(id: string): Promise<void> {
+  unwrapTauriResult(await commands.explorerSavedSearchesDelete(id));
+}
+
 export function supportsExplorerSearch(path: string): boolean {
   return !isCloudExplorerPath(path);
 }
@@ -565,6 +653,17 @@ export const explorerBackendContract: ExplorerBackendContract = {
   readFileBase64: readExplorerFileBase64,
   renamePath: renameExplorerPath,
   deletePath: deleteExplorerPath,
+  trashPaths: trashExplorerPaths,
+  restoreRecentTrashAction: restoreExplorerTrashAction,
+  batchRename: batchRenameExplorerPaths,
+  startDuplicateScan: startExplorerDuplicateScan,
+  pollDuplicateScan: pollExplorerDuplicateScan,
+  cancelDuplicateScan: cancelExplorerDuplicateScan,
+  listTags: listExplorerTags,
+  setTagsForPaths: setExplorerTagsForPaths,
+  listSavedSearches: listExplorerSavedSearches,
+  saveSavedSearch: saveExplorerSavedSearch,
+  deleteSavedSearch: deleteExplorerSavedSearch,
   isCloudPath: isCloudExplorerPath,
   supportsSearch: supportsExplorerSearch,
   supportsNativeIntegration: supportsExplorerNativeIntegration,

@@ -1,4 +1,4 @@
-export type ExplorerRailSectionId = 'quick-access' | 'drives' | 'bookmarks';
+export type ExplorerRailSectionId = 'quick-access' | 'drives' | 'saved-searches' | 'tags' | 'bookmarks';
 
 export interface ExplorerRailWidthBounds {
   defaultWidth: number;
@@ -34,6 +34,8 @@ export const explorerRailWidthBoundsByLayout: Record<'full' | 'compact', Explore
 export const explorerRailSectionOrder: ExplorerRailSectionId[] = [
   'quick-access',
   'drives',
+  'saved-searches',
+  'tags',
   'bookmarks',
 ];
 

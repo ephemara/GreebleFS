@@ -3,7 +3,9 @@ import {
   EXPLORER_LEGACY_BOOKMARKS_KEY,
   EXPLORER_STATE_BACKUP_KEY,
   EXPLORER_STATE_STORAGE_KEY,
+  PRIMARY_EXPLORER_TAB_ID,
   PRIMARY_EXPLORER_INSTANCE_ID,
+  defaultExplorerWorkspace,
   defaultExplorerSession,
   loadExplorerPersistedState,
   persistExplorerState,
@@ -22,6 +24,7 @@ describe('explorerStore persistence', () => {
   it('starts with the default explorer session snapshot', () => {
     expect(useExplorerStore.getState().session).toEqual(defaultExplorerSession);
     expect(useExplorerStore.getState().sessions[PRIMARY_EXPLORER_INSTANCE_ID]).toEqual(defaultExplorerSession);
+    expect(useExplorerStore.getState().workspace).toEqual(defaultExplorerWorkspace);
     expect(useExplorerStore.getState().rail).toEqual(createDefaultExplorerRailSnapshot());
   });
 
@@ -48,6 +51,7 @@ describe('explorerStore persistence', () => {
     expect(hydrated.session.previewEnabled).toBe(false);
     expect(hydrated.session.shellLayoutId).toBe('inspector');
     expect(hydrated.session.documentViewMode).toBe('preview');
+    expect(hydrated.workspace.tabs[0]?.id).toBe(PRIMARY_EXPLORER_TAB_ID);
     expect(hydrated.rail.nodes).toHaveLength(1);
     expect(hydrated.rail.nodes[0].kind).toBe('folder');
   });
@@ -136,5 +140,37 @@ describe('explorerStore persistence', () => {
       search: 'materials',
       sourcesVisible: false,
     });
+  });
+
+  it('creates, focuses, and closes explorer workspace tabs across panes', () => {
+    const store = useExplorerStore.getState();
+    const nextTab = store.createWorkspaceTab({
+      sourceInstanceId: PRIMARY_EXPLORER_INSTANCE_ID,
+      pane: 'right',
+    });
+
+    expect(useExplorerStore.getState().workspace.tabs).toHaveLength(2);
+    expect(useExplorerStore.getState().workspace.activeTabIdByPane.right).toBe(nextTab.id);
+
+    store.focusWorkspaceTab(PRIMARY_EXPLORER_TAB_ID);
+    expect(useExplorerStore.getState().workspace.activeTabIdByPane.left).toBe(PRIMARY_EXPLORER_TAB_ID);
+
+    store.closeWorkspaceTab(nextTab.id);
+    expect(useExplorerStore.getState().workspace.tabs).toHaveLength(1);
+    expect(useExplorerStore.getState().workspace.activeTabIdByPane.right).toBeNull();
+  });
+
+  it('persists dual-pane workspace layout state', () => {
+    const store = useExplorerStore.getState();
+    const rightTab = store.createWorkspaceTab({ pane: 'right' });
+    store.setWorkspaceLayoutMode('dual');
+    store.setFocusedPane('right');
+    store.setWorkspaceSplitRatio(0.61);
+
+    const hydrated = loadExplorerPersistedState(window.localStorage);
+    expect(hydrated.workspace.layoutMode).toBe('dual');
+    expect(hydrated.workspace.focusedPane).toBe('right');
+    expect(hydrated.workspace.activeTabIdByPane.right).toBe(rightTab.id);
+    expect(hydrated.workspace.splitRatio).toBe(0.61);
   });
 });

@@ -14,8 +14,9 @@ import {
 export const EXPLORER_STATE_STORAGE_KEY = 'overlayterm-explorer-state-v3';
 export const EXPLORER_STATE_BACKUP_KEY = 'overlayterm-explorer-state-v3.backup';
 export const EXPLORER_LEGACY_BOOKMARKS_KEY = 'fs-bookmarks-v2';
-export const EXPLORER_STATE_VERSION = 4;
+export const EXPLORER_STATE_VERSION = 5;
 export const PRIMARY_EXPLORER_INSTANCE_ID = 'primary';
+export const PRIMARY_EXPLORER_TAB_ID = 'tab-primary';
 const EXPLORER_PERSIST_DEBOUNCE_MS = (() => {
   // Vitest runs in a browser-like environment; keep persistence synchronous so unit tests
   // can assert immediately after calling store actions.
@@ -26,6 +27,24 @@ const EXPLORER_PERSIST_DEBOUNCE_MS = (() => {
 
 export type ExplorerDocumentViewMode = 'edit' | 'preview';
 export type ExplorerInstanceId = string;
+export type ExplorerPaneId = 'left' | 'right';
+export type ExplorerWorkspaceLayoutMode = 'single' | 'dual';
+
+export interface ExplorerTabSnapshot {
+  id: string;
+  instanceId: ExplorerInstanceId;
+  pane: ExplorerPaneId;
+  title: string;
+}
+
+export interface ExplorerWorkspaceSnapshot {
+  tabs: ExplorerTabSnapshot[];
+  activeTabIdByPane: Record<ExplorerPaneId, string | null>;
+  layoutMode: ExplorerWorkspaceLayoutMode;
+  focusedPane: ExplorerPaneId;
+  splitRatio: number;
+  nextTabOrdinal: number;
+}
 
 export interface ExplorerSessionSnapshot {
   currentPath: string;
@@ -46,6 +65,23 @@ export interface ExplorerPersistenceNotice {
   message: string | null;
   hasBackup: boolean;
 }
+
+export const defaultExplorerWorkspace: ExplorerWorkspaceSnapshot = {
+  tabs: [{
+    id: PRIMARY_EXPLORER_TAB_ID,
+    instanceId: PRIMARY_EXPLORER_INSTANCE_ID,
+    pane: 'left',
+    title: 'Explorer',
+  }],
+  activeTabIdByPane: {
+    left: PRIMARY_EXPLORER_TAB_ID,
+    right: null,
+  },
+  layoutMode: 'single',
+  focusedPane: 'left',
+  splitRatio: 0.5,
+  nextTabOrdinal: 2,
+};
 
 export const defaultExplorerSession: ExplorerSessionSnapshot = {
   currentPath: '',
@@ -74,10 +110,33 @@ function cloneExplorerSessionSnapshot(session: ExplorerSessionSnapshot): Explore
   };
 }
 
+function cloneExplorerTabSnapshot(tab: ExplorerTabSnapshot): ExplorerTabSnapshot {
+  return {
+    ...tab,
+  };
+}
+
+function cloneExplorerWorkspaceSnapshot(
+  workspace: ExplorerWorkspaceSnapshot,
+): ExplorerWorkspaceSnapshot {
+  return {
+    ...workspace,
+    tabs: workspace.tabs.map(cloneExplorerTabSnapshot),
+    activeTabIdByPane: {
+      left: workspace.activeTabIdByPane.left,
+      right: workspace.activeTabIdByPane.right,
+    },
+  };
+}
+
 function createDefaultExplorerSessions(): Record<ExplorerInstanceId, ExplorerSessionSnapshot> {
   return {
     [PRIMARY_EXPLORER_INSTANCE_ID]: cloneExplorerSessionSnapshot(defaultExplorerSession),
   };
+}
+
+function createDefaultExplorerWorkspace(): ExplorerWorkspaceSnapshot {
+  return cloneExplorerWorkspaceSnapshot(defaultExplorerWorkspace);
 }
 
 function getPrimaryExplorerSession(
@@ -90,12 +149,14 @@ export interface PersistedExplorerState {
   version: number;
   session?: ExplorerSessionSnapshot;
   sessions?: Record<ExplorerInstanceId, ExplorerSessionSnapshot>;
+  workspace?: ExplorerWorkspaceSnapshot;
   rail: ExplorerRailSnapshot;
 }
 
 interface ExplorerStoreState {
   sessions: Record<ExplorerInstanceId, ExplorerSessionSnapshot>;
   session: ExplorerSessionSnapshot;
+  workspace: ExplorerWorkspaceSnapshot;
   rail: ExplorerRailSnapshot;
   persistence: ExplorerPersistenceNotice;
   getSession: (instanceId?: ExplorerInstanceId) => ExplorerSessionSnapshot;
@@ -104,6 +165,19 @@ interface ExplorerStoreState {
   resetSession: () => void;
   resetSessionForInstance: (instanceId: ExplorerInstanceId) => void;
   copySession: (sourceInstanceId: ExplorerInstanceId, targetInstanceId: ExplorerInstanceId) => void;
+  createWorkspaceTab: (args?: {
+    sourceInstanceId?: ExplorerInstanceId;
+    pane?: ExplorerPaneId;
+    title?: string;
+    activate?: boolean;
+  }) => ExplorerTabSnapshot;
+  closeWorkspaceTab: (tabId: string) => void;
+  focusWorkspaceTab: (tabId: string) => void;
+  moveWorkspaceTabToPane: (tabId: string, pane: ExplorerPaneId) => void;
+  updateWorkspaceTabTitle: (tabId: string, title: string) => void;
+  setWorkspaceLayoutMode: (layoutMode: ExplorerWorkspaceLayoutMode) => void;
+  setFocusedPane: (pane: ExplorerPaneId) => void;
+  setWorkspaceSplitRatio: (splitRatio: number) => void;
   updateRail: (updates: Partial<ExplorerRailSnapshot> | ((current: ExplorerRailSnapshot) => ExplorerRailSnapshot)) => void;
   replaceRail: (nextRail: ExplorerRailSnapshot) => void;
   restoreRailBackup: () => void;
@@ -113,6 +187,7 @@ interface ExplorerStoreState {
 interface ExplorerHydrationResult {
   sessions: Record<ExplorerInstanceId, ExplorerSessionSnapshot>;
   session: ExplorerSessionSnapshot;
+  workspace: ExplorerWorkspaceSnapshot;
   rail: ExplorerRailSnapshot;
   persistence: ExplorerPersistenceNotice;
 }
@@ -170,6 +245,92 @@ function normalizeExplorerSessionsSnapshot(
   };
 }
 
+function normalizeExplorerPaneId(value: unknown): ExplorerPaneId {
+  return value === 'right' ? 'right' : 'left';
+}
+
+function clampExplorerWorkspaceSplitRatio(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return defaultExplorerWorkspace.splitRatio;
+  }
+  return Math.max(0.3, Math.min(0.7, value));
+}
+
+function normalizeExplorerWorkspaceSnapshot(
+  value: unknown,
+  sessions: Record<ExplorerInstanceId, ExplorerSessionSnapshot>,
+): ExplorerWorkspaceSnapshot {
+  const source = asRecord(value);
+  const rawTabs = Array.isArray(source?.tabs) ? source.tabs : [];
+  const normalizedTabs = rawTabs
+    .map((candidate, index): ExplorerTabSnapshot | null => {
+      const record = asRecord(candidate);
+      if (!record) {
+        return null;
+      }
+      const instanceId = typeof record.instanceId === 'string' && record.instanceId.trim().length > 0
+        ? record.instanceId.trim()
+        : null;
+      if (!instanceId) {
+        return null;
+      }
+      return {
+        id: typeof record.id === 'string' && record.id.trim().length > 0
+          ? record.id.trim()
+          : `tab-${index + 1}`,
+        instanceId,
+        pane: normalizeExplorerPaneId(record.pane),
+        title: typeof record.title === 'string' && record.title.trim().length > 0
+          ? record.title
+          : `Explorer ${index + 1}`,
+      };
+    })
+    .filter((tab): tab is ExplorerTabSnapshot => Boolean(tab));
+
+  const tabs = normalizedTabs.length > 0
+    ? normalizedTabs.filter((tab, index, collection) => (
+      collection.findIndex((candidate) => candidate.id === tab.id) === index
+    ))
+    : createDefaultExplorerWorkspace().tabs;
+
+  const missingPrimaryTab = !tabs.some((tab) => tab.instanceId === PRIMARY_EXPLORER_INSTANCE_ID);
+  if (missingPrimaryTab && sessions[PRIMARY_EXPLORER_INSTANCE_ID]) {
+    tabs.unshift({
+      id: PRIMARY_EXPLORER_TAB_ID,
+      instanceId: PRIMARY_EXPLORER_INSTANCE_ID,
+      pane: 'left',
+      title: 'Explorer',
+    });
+  }
+
+  const leftTabs = tabs.filter((tab) => tab.pane === 'left');
+  const rightTabs = tabs.filter((tab) => tab.pane === 'right');
+  const activeSource = asRecord(source?.activeTabIdByPane);
+  const leftActiveCandidate = typeof activeSource?.left === 'string' ? activeSource.left : null;
+  const rightActiveCandidate = typeof activeSource?.right === 'string' ? activeSource.right : null;
+  const activeTabIdByPane = {
+    left: leftTabs.some((tab) => tab.id === leftActiveCandidate)
+      ? leftActiveCandidate
+      : leftTabs[0]?.id ?? null,
+    right: rightTabs.some((tab) => tab.id === rightActiveCandidate)
+      ? rightActiveCandidate
+      : rightTabs[0]?.id ?? null,
+  } satisfies Record<ExplorerPaneId, string | null>;
+
+  const nextTabOrdinalValue = typeof source?.nextTabOrdinal === 'number' && Number.isFinite(source.nextTabOrdinal)
+    ? Math.max(1, Math.trunc(source.nextTabOrdinal))
+    : tabs.length + 1;
+
+  return {
+    tabs,
+    activeTabIdByPane,
+    layoutMode: source?.layoutMode === 'dual' ? 'dual' : 'single',
+    focusedPane: normalizeExplorerPaneId(source?.focusedPane),
+    splitRatio: clampExplorerWorkspaceSplitRatio(source?.splitRatio),
+    nextTabOrdinal: nextTabOrdinalValue,
+  };
+}
+
 export function loadExplorerPersistedState(storage: Storage | null = getStorage()): ExplorerHydrationResult {
   const hasBackup = Boolean(storage?.getItem(EXPLORER_STATE_BACKUP_KEY));
   if (!storage) {
@@ -177,6 +338,7 @@ export function loadExplorerPersistedState(storage: Storage | null = getStorage(
     return {
       sessions,
       session: getPrimaryExplorerSession(sessions),
+      workspace: createDefaultExplorerWorkspace(),
       rail: defaultExplorerRailSnapshot,
       persistence: defaultExplorerPersistenceNotice,
     };
@@ -187,9 +349,11 @@ export function loadExplorerPersistedState(storage: Storage | null = getStorage(
     try {
       const parsed = JSON.parse(primaryValue) as Partial<PersistedExplorerState>;
       const sessions = normalizeExplorerSessionsSnapshot(parsed.sessions, parsed.session);
+      const workspace = normalizeExplorerWorkspaceSnapshot(parsed.workspace, sessions);
       return {
         sessions,
         session: getPrimaryExplorerSession(sessions),
+        workspace,
         rail: normalizeExplorerRailSnapshot(parsed.rail),
         persistence: {
           status: 'ready',
@@ -213,6 +377,7 @@ export function loadExplorerPersistedState(storage: Storage | null = getStorage(
       return {
         sessions: createDefaultExplorerSessions(),
         session: cloneExplorerSessionSnapshot(defaultExplorerSession),
+        workspace: createDefaultExplorerWorkspace(),
         rail: createDefaultExplorerRailSnapshot(),
         persistence: {
           status: 'corrupted-reset',
@@ -231,6 +396,7 @@ export function loadExplorerPersistedState(storage: Storage | null = getStorage(
         return {
           sessions: createDefaultExplorerSessions(),
           session: cloneExplorerSessionSnapshot(defaultExplorerSession),
+          workspace: createDefaultExplorerWorkspace(),
           rail: {
             ...createDefaultExplorerRailSnapshot(),
             nodes: legacyBookmarks,
@@ -251,6 +417,7 @@ export function loadExplorerPersistedState(storage: Storage | null = getStorage(
   return {
     sessions,
     session: getPrimaryExplorerSession(sessions),
+    workspace: createDefaultExplorerWorkspace(),
     rail: createDefaultExplorerRailSnapshot(),
     persistence: {
       status: 'ready',
@@ -274,10 +441,12 @@ export function persistExplorerState(
   try {
     const sessions = normalizeExplorerSessionsSnapshot(state.sessions, state.session);
     const primarySession = getPrimaryExplorerSession(sessions);
+    const workspace = normalizeExplorerWorkspaceSnapshot(state.workspace, sessions);
     const serialized = JSON.stringify({
       version: EXPLORER_STATE_VERSION,
       session: primarySession,
       sessions,
+      workspace,
       rail: normalizeExplorerRailSnapshot(state.rail),
     } satisfies PersistedExplorerState);
     const previous = storage.getItem(EXPLORER_STATE_STORAGE_KEY);
@@ -308,6 +477,7 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
       version: EXPLORER_STATE_VERSION,
       sessions: get().sessions,
       session: get().session,
+      workspace: get().workspace,
       rail: get().rail,
     });
     set((state) => ({
@@ -383,6 +553,7 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
   return {
     sessions: hydratedState.sessions,
     session: hydratedState.session,
+    workspace: hydratedState.workspace,
     rail: hydratedState.rail,
     persistence: hydratedState.persistence,
     getSession: (instanceId = PRIMARY_EXPLORER_INSTANCE_ID) => (
@@ -428,6 +599,7 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
       set({
         sessions,
         session: getPrimaryExplorerSession(sessions),
+        workspace: createDefaultExplorerWorkspace(),
       });
       schedulePersistLatest();
     },
@@ -458,6 +630,161 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
       schedulePersistLatest(hydratedState.persistence.status === 'legacy-imported'
         ? { status: 'ready', message: null }
         : undefined);
+    },
+    createWorkspaceTab: (args = {}) => {
+      const workspace = get().workspace;
+      const pane = args.pane ?? workspace.focusedPane;
+      const sourceInstanceId = args.sourceInstanceId?.trim() || PRIMARY_EXPLORER_INSTANCE_ID;
+      const nextInstanceId = `explorer-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const nextTab: ExplorerTabSnapshot = {
+        id: `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        instanceId: nextInstanceId,
+        pane,
+        title: args.title?.trim() || `Explorer ${workspace.nextTabOrdinal}`,
+      };
+      const sourceSession = get().sessions[sourceInstanceId] ?? cloneExplorerSessionSnapshot(defaultExplorerSession);
+      const nextSession = cloneExplorerSessionSnapshot(sourceSession);
+      set((state) => ({
+        sessions: {
+          ...state.sessions,
+          [nextInstanceId]: nextSession,
+        },
+        workspace: {
+          ...state.workspace,
+          tabs: [...state.workspace.tabs, nextTab],
+          activeTabIdByPane: {
+            ...state.workspace.activeTabIdByPane,
+            [pane]: args.activate === false ? state.workspace.activeTabIdByPane[pane] : nextTab.id,
+          },
+          focusedPane: pane,
+          nextTabOrdinal: state.workspace.nextTabOrdinal + 1,
+        },
+      }));
+      schedulePersistLatest();
+      return nextTab;
+    },
+    closeWorkspaceTab: (tabId) => {
+      const workspace = get().workspace;
+      if (workspace.tabs.length <= 1) {
+        return;
+      }
+      const tab = workspace.tabs.find((candidate) => candidate.id === tabId);
+      if (!tab) {
+        return;
+      }
+      const nextTabs = workspace.tabs.filter((candidate) => candidate.id !== tabId);
+      const nextActiveTabIdByPane = { ...workspace.activeTabIdByPane };
+      const paneTabs = nextTabs.filter((candidate) => candidate.pane === tab.pane);
+      if (nextActiveTabIdByPane[tab.pane] === tabId) {
+        nextActiveTabIdByPane[tab.pane] = paneTabs[0]?.id ?? null;
+      }
+      const referencedInstanceIds = new Set(nextTabs.map((candidate) => candidate.instanceId));
+      const nextFocusedPane = workspace.focusedPane === tab.pane && !nextActiveTabIdByPane[tab.pane]
+        ? (tab.pane === 'left' ? 'right' : 'left')
+        : workspace.focusedPane;
+      set((state) => {
+        const nextSessions = Object.fromEntries(
+          Object.entries(state.sessions).filter(([instanceId]) => (
+            instanceId === PRIMARY_EXPLORER_INSTANCE_ID || referencedInstanceIds.has(instanceId)
+          )),
+        );
+        return {
+          sessions: nextSessions,
+          session: getPrimaryExplorerSession(nextSessions),
+          workspace: {
+            ...state.workspace,
+            tabs: nextTabs,
+            activeTabIdByPane: nextActiveTabIdByPane,
+            focusedPane: nextFocusedPane,
+          },
+        };
+      });
+      schedulePersistLatest();
+    },
+    focusWorkspaceTab: (tabId) => {
+      const workspace = get().workspace;
+      const tab = workspace.tabs.find((candidate) => candidate.id === tabId);
+      if (!tab) {
+        return;
+      }
+      set((state) => ({
+        workspace: {
+          ...state.workspace,
+          activeTabIdByPane: {
+            ...state.workspace.activeTabIdByPane,
+            [tab.pane]: tab.id,
+          },
+          focusedPane: tab.pane,
+        },
+      }));
+      schedulePersistLatest();
+    },
+    moveWorkspaceTabToPane: (tabId, pane) => {
+      const workspace = get().workspace;
+      const tab = workspace.tabs.find((candidate) => candidate.id === tabId);
+      if (!tab || tab.pane === pane) {
+        return;
+      }
+      const originPane = tab.pane;
+      const nextTabs = workspace.tabs.map((candidate) => (
+        candidate.id === tabId
+          ? { ...candidate, pane }
+          : candidate
+      ));
+      const nextActiveTabIdByPane = { ...workspace.activeTabIdByPane };
+      if (nextActiveTabIdByPane[originPane] === tabId) {
+        nextActiveTabIdByPane[originPane] = nextTabs.find((candidate) => candidate.pane === originPane)?.id ?? null;
+      }
+      nextActiveTabIdByPane[pane] = tabId;
+      set((state) => ({
+        workspace: {
+          ...state.workspace,
+          tabs: nextTabs,
+          activeTabIdByPane: nextActiveTabIdByPane,
+          focusedPane: pane,
+        },
+      }));
+      schedulePersistLatest();
+    },
+    updateWorkspaceTabTitle: (tabId, title) => {
+      set((state) => ({
+        workspace: {
+          ...state.workspace,
+          tabs: state.workspace.tabs.map((tab) => (
+            tab.id === tabId
+              ? { ...tab, title: title.trim() || tab.title }
+              : tab
+          )),
+        },
+      }));
+      schedulePersistLatest();
+    },
+    setWorkspaceLayoutMode: (layoutMode) => {
+      set((state) => ({
+        workspace: {
+          ...state.workspace,
+          layoutMode,
+        },
+      }));
+      schedulePersistLatest();
+    },
+    setFocusedPane: (pane) => {
+      set((state) => ({
+        workspace: {
+          ...state.workspace,
+          focusedPane: pane,
+        },
+      }));
+      schedulePersistLatest();
+    },
+    setWorkspaceSplitRatio: (splitRatio) => {
+      set((state) => ({
+        workspace: {
+          ...state.workspace,
+          splitRatio: clampExplorerWorkspaceSplitRatio(splitRatio),
+        },
+      }));
+      schedulePersistLatest();
     },
     updateRail: (updates) => {
       set((state) => ({
@@ -495,6 +822,7 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
       set({
         sessions: backup.sessions,
         session: backup.session,
+        workspace: backup.workspace,
         rail: backup.rail,
       });
       persistLatestNow({
@@ -527,9 +855,11 @@ function loadExplorerBackup(storage: Storage | null = getStorage()): Omit<Explor
   try {
     const parsed = JSON.parse(backupValue) as Partial<PersistedExplorerState>;
     const sessions = normalizeExplorerSessionsSnapshot(parsed.sessions, parsed.session);
+    const workspace = normalizeExplorerWorkspaceSnapshot(parsed.workspace, sessions);
     return {
       sessions,
       session: getPrimaryExplorerSession(sessions),
+      workspace,
       rail: normalizeExplorerRailSnapshot(parsed.rail),
     };
   } catch {

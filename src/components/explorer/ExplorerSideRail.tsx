@@ -36,7 +36,7 @@ import {
   type ExplorerBookmarkImportSource,
   type ExplorerBookmarkTreeNode,
 } from './explorerRailState';
-import type { ExplorerDriveInfo } from '../../runtime/explorerBackend';
+import type { ExplorerDriveInfo, ExplorerSavedSearch, ExplorerTagMetadataSnapshot } from '../../runtime/explorerBackend';
 
 interface ExplorerSideRailProps {
   accent: string;
@@ -48,8 +48,15 @@ interface ExplorerSideRailProps {
   drives: ExplorerDriveInfo[];
   drivesLoading: boolean;
   isCompactDock: boolean;
+  savedSearches?: ExplorerSavedSearch[];
+  availableTags?: ExplorerTagMetadataSnapshot['tags'];
+  activeTagFilterIds?: string[];
   onNavigate: (path: string) => void;
   onGoHome: () => void;
+  onOpenSavedSearch?: (savedSearch: ExplorerSavedSearch) => void;
+  onDeleteSavedSearch?: (savedSearchId: string) => void;
+  onToggleTagFilter?: (tagId: string) => void;
+  onClearTagFilters?: () => void;
   onBookmarkCreated: (name: string, path: string) => void;
   resolveDroppedSources: (paths: string[]) => ExplorerBookmarkImportSource[];
 }
@@ -79,8 +86,15 @@ export function ExplorerSideRail({
   drives,
   drivesLoading,
   isCompactDock,
+  savedSearches = [],
+  availableTags = [],
+  activeTagFilterIds = [],
   onNavigate,
   onGoHome,
+  onOpenSavedSearch,
+  onDeleteSavedSearch,
+  onToggleTagFilter,
+  onClearTagFilters,
   onBookmarkCreated,
   resolveDroppedSources,
 }: ExplorerSideRailProps) {
@@ -421,6 +435,121 @@ export function ExplorerSideRail({
             );
           })}
         </RailSection>
+
+        <RailSection
+          title="Saved Searches"
+          collapsed={isExplorerRailSectionCollapsed(rail, 'saved-searches')}
+          onToggle={() => updateRail(toggleExplorerRailSection(rail, 'saved-searches'))}
+        >
+          {savedSearches.length === 0 && (
+            <div style={{ fontSize: 10, color: 'var(--overlay-text-dim)', padding: '4px 2px 2px' }}>
+              Save a search from the explorer toolbar to pin it here.
+            </div>
+          )}
+          {savedSearches.map((savedSearch) => (
+            <div
+              key={savedSearch.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                marginBottom: 4,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => onOpenSavedSearch?.(savedSearch)}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  display: 'grid',
+                  gridTemplateColumns: 'auto 1fr',
+                  gap: 8,
+                  alignItems: 'center',
+                  padding: dense ? '5px 7px' : '7px 9px',
+                  borderRadius: 9,
+                  border: '1px solid var(--overlay-border)',
+                  background: 'var(--overlay-explorer-chip-bg)',
+                  color: 'var(--overlay-text-primary)',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <Search size={dense ? 11 : 13} style={{ color: accent, flexShrink: 0 }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: dense ? 9.5 : 10.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {savedSearch.name}
+                  </div>
+                  {!dense && (
+                    <div style={{ marginTop: 3, fontSize: 8.5, color: 'var(--overlay-text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {savedSearch.query}
+                    </div>
+                  )}
+                </div>
+              </button>
+              {onDeleteSavedSearch && (
+                <button
+                  type="button"
+                  onClick={() => onDeleteSavedSearch(savedSearch.id)}
+                  style={dismissButtonStyle}
+                  aria-label={`Delete saved search ${savedSearch.name}`}
+                >
+                  <X size={11} />
+                </button>
+              )}
+            </div>
+          ))}
+        </RailSection>
+
+        <RailSection
+          title="Tags"
+          collapsed={isExplorerRailSectionCollapsed(rail, 'tags')}
+          onToggle={() => updateRail(toggleExplorerRailSection(rail, 'tags'))}
+        >
+          {availableTags.length === 0 && (
+            <div style={{ fontSize: 10, color: 'var(--overlay-text-dim)', padding: '4px 2px 2px' }}>
+              Tag files from the explorer toolbar or context menu to filter them here.
+            </div>
+          )}
+          {(activeTagFilterIds.length > 0 || availableTags.length > 0) && (
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 5,
+                marginBottom: availableTags.length > 0 ? 6 : 0,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => onClearTagFilters?.()}
+                style={categoryChipStyle(activeTagFilterIds.length === 0)}
+              >
+                All
+              </button>
+              {availableTags.map((tag) => {
+                const active = activeTagFilterIds.includes(tag.id);
+                return (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => onToggleTagFilter?.(tag.id)}
+                    style={{
+                      ...categoryChipStyle(active),
+                      borderColor: active ? accent : 'var(--overlay-border)',
+                      color: active ? accent : 'var(--overlay-text-muted)',
+                    }}
+                  >
+                    <Tag size={10} />
+                    <span>{tag.label}</span>
+                    <span style={{ color: 'var(--overlay-text-dim)' }}>{tag.pathCount}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </RailSection>
+
         <RailSection
           title="Bookmarks"
           collapsed={isExplorerRailSectionCollapsed(rail, 'bookmarks')}

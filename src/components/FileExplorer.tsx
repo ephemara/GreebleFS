@@ -19,8 +19,8 @@ import {
   ChevronRight, ChevronLeft, ArrowUp, Search, RefreshCw,
   X, Star, StarOff, Terminal,
   Trash2, Copy, Scissors, Clipboard, Edit3, ExternalLink,
-  Shield, Eye, AlertTriangle, Info, Loader, Puzzle, Sparkles,
-  FilePlus, FolderPlus, CopyPlus,
+  Shield, Eye, Info, Loader, Puzzle, Sparkles,
+  FilePlus, FolderPlus, CopyPlus, Save, Tags, Undo2,
 } from 'lucide-react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import type { OverlayPluginExplorerActionContribution } from '../config/pluginContributions';
@@ -134,7 +134,9 @@ import {
 import { dispatchTerminalCommand, resolvePluginCommandTemplate } from '../config/pluginContributions';
 import {
   explorerBackendContract,
+  type ExplorerBatchRenameItem,
   type ExplorerBackendContract,
+  type ExplorerDuplicateScan,
   type ExplorerDriveInfo as DriveInfo,
   type ExplorerEntryStorageInfo as EntryStorageInfo,
   type ExplorerFileEntry as FileEntry,
@@ -142,6 +144,8 @@ import {
   type ExplorerFileTransferResult as FileTransferResult,
   type ExplorerFileSearchResult as FileSearchResult,
   type ExplorerLocationListing,
+  type ExplorerSavedSearch,
+  type ExplorerTagMetadataSnapshot,
 } from '../runtime/explorerBackend';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 
@@ -282,6 +286,25 @@ interface ViewportMetrics {
 }
 interface ContextMenuState { visible: boolean; x: number; y: number; entry: FileEntry | null; }
 interface RenameState    { active: boolean; path: string; name: string; }
+interface BatchRenameState {
+  visible: boolean;
+  findText: string;
+  replaceText: string;
+  prefix: string;
+  suffix: string;
+  startingNumber: number;
+  padding: number;
+}
+interface SaveSearchState {
+  visible: boolean;
+  name: string;
+}
+interface DuplicateFinderState {
+  visible: boolean;
+  scanId: string | null;
+  status: ExplorerDuplicateScan | null;
+  loading: boolean;
+}
 type PreviewState =
   | { type: 'none'; path: string }
   | { type: 'image'; path: string; name: string; content: string }
@@ -315,6 +338,33 @@ const EXP = {
   selected:'var(--overlay-bg-selection)', selBord: 'var(--overlay-accent)',
   red:     'var(--overlay-danger)', green:   'var(--overlay-success)', yellow:  'var(--overlay-warning)',
 };
+
+function getPathLeaf(path: string): string {
+  const trimmed = path.trim();
+  if (!trimmed) {
+    return 'Home';
+  }
+  const parts = trimmed.split(/[\\/]/).filter(Boolean);
+  return parts.length > 0 ? (parts[parts.length - 1] ?? trimmed) : trimmed;
+}
+
+function toolbarChipButtonStyle(disabled: boolean): CSSProperties {
+  return {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    background: disabled ? 'var(--overlay-explorer-chip-bg)' : 'var(--overlay-explorer-chip-active-bg)',
+    border: `1px solid ${disabled ? 'var(--overlay-explorer-chip-border)' : 'var(--overlay-explorer-chip-active-border)'}`,
+    cursor: disabled ? 'default' : 'pointer',
+    color: disabled ? EXP.muted2 : 'var(--overlay-explorer-chip-active-text)',
+    padding: '4px 8px',
+    borderRadius: 'var(--overlay-explorer-control-radius)',
+    fontSize: 10,
+    fontWeight: 700,
+    opacity: disabled ? 0.55 : 1,
+    flexShrink: 0,
+  };
+}
 
 interface ExplorerEntrySurfaceState {
   background: string;
@@ -1838,27 +1888,219 @@ function RenameInput({ state, onCommit, onCancel }: { state: RenameState; onComm
   );
 }
 
-// ─── Delete confirm ───────────────────────────────────────────────────────────
+// ─── Trash confirm ────────────────────────────────────────────────────────────
 
-function DeleteDialog({ entry, onConfirm, onCancel }: { entry: FileEntry; onConfirm: () => void; onCancel: () => void }) {
+function TrashDialog({
+  entries,
+  onConfirm,
+  onDeletePermanently,
+  onCancel,
+}: {
+  entries: FileEntry[];
+  onConfirm: () => void;
+  onDeletePermanently: () => void;
+  onCancel: () => void;
+}) {
+  const primaryLabel = entries.length === 1 ? entries[0]?.name ?? 'item' : `${entries.length} items`;
   return (
     <div style={{ position:'fixed', inset:0, zIndex:10000, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center' }}>
       <div style={{ background:'var(--overlay-explorer-preview-bg)', border:'1px solid var(--overlay-explorer-preview-border)', borderRadius:'var(--overlay-explorer-panel-radius)', padding:24, minWidth:320, boxShadow:'0 24px 64px rgba(0,0,0,0.9)' }}>
         <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
-          <AlertTriangle size={18} style={{ color:EXP.red }} />
-          <span style={{ color:EXP.text, fontWeight:600, fontSize:14 }}>Delete Permanently</span>
+          <Trash2 size={18} style={{ color:EXP.accent }} />
+          <span style={{ color:EXP.text, fontWeight:600, fontSize:14 }}>Move to Trash</span>
         </div>
         <p style={{ color:EXP.muted, fontSize:12, marginBottom:20, lineHeight:1.5 }}>
-          Delete <strong style={{ color:EXP.text }}>{entry.name}</strong>? This cannot be undone.
+          Move <strong style={{ color:EXP.text }}>{primaryLabel}</strong> to the GreebleFS trash? You can undo the most recent trash action from the toolbar.
         </p>
         <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
           <button onClick={onCancel} style={{ background:'var(--overlay-explorer-chip-bg)', border:'1px solid var(--overlay-explorer-chip-border)', borderRadius:'var(--overlay-explorer-control-radius)', color:EXP.text, padding:'6px 14px', fontSize:12, cursor:'pointer' }}>Cancel</button>
-          <button onClick={onConfirm} style={{ background:'rgba(248,113,113,0.2)', border:'1px solid rgba(248,113,113,0.4)', borderRadius:'var(--overlay-explorer-control-radius)', color:EXP.red, padding:'6px 14px', fontSize:12, cursor:'pointer', fontWeight:600 }}>Delete</button>
+          <button onClick={onDeletePermanently} style={{ background:'rgba(248,113,113,0.12)', border:'1px solid rgba(248,113,113,0.28)', borderRadius:'var(--overlay-explorer-control-radius)', color:EXP.red, padding:'6px 14px', fontSize:12, cursor:'pointer' }}>Delete Permanently</button>
+          <button onClick={onConfirm} style={{ background:'var(--overlay-explorer-chip-active-bg)', border:'1px solid var(--overlay-explorer-chip-active-border)', borderRadius:'var(--overlay-explorer-control-radius)', color:'var(--overlay-explorer-chip-active-text)', padding:'6px 14px', fontSize:12, cursor:'pointer', fontWeight:600 }}>Move to Trash</button>
         </div>
       </div>
     </div>
   );
 }
+
+function SaveSearchDialog({
+  state,
+  onChangeName,
+  onConfirm,
+  onCancel,
+}: {
+  state: SaveSearchState;
+  onChangeName: (value: string) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:10000, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <div style={{ background:'var(--overlay-explorer-preview-bg)', border:'1px solid var(--overlay-explorer-preview-border)', borderRadius:'var(--overlay-explorer-panel-radius)', padding:24, minWidth:360, boxShadow:'0 24px 64px rgba(0,0,0,0.9)' }}>
+        <div style={{ color:EXP.text, fontWeight:700, fontSize:14, marginBottom:12 }}>Save Search</div>
+        <input
+          autoFocus
+          value={state.name}
+          onChange={(event) => onChangeName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') onConfirm();
+            if (event.key === 'Escape') onCancel();
+          }}
+          placeholder="Search name"
+          style={{ width:'100%', background:'var(--overlay-explorer-input-bg)', border:'1px solid var(--overlay-explorer-input-border)', borderRadius:'var(--overlay-explorer-control-radius)', color:EXP.text, fontSize:12, padding:'8px 10px', outline:'none', boxSizing:'border-box' }}
+        />
+        <div style={{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:16 }}>
+          <button onClick={onCancel} style={{ background:'var(--overlay-explorer-chip-bg)', border:'1px solid var(--overlay-explorer-chip-border)', borderRadius:'var(--overlay-explorer-control-radius)', color:EXP.text, padding:'6px 14px', fontSize:12, cursor:'pointer' }}>Cancel</button>
+          <button onClick={onConfirm} style={{ background:'var(--overlay-explorer-chip-active-bg)', border:'1px solid var(--overlay-explorer-chip-active-border)', borderRadius:'var(--overlay-explorer-control-radius)', color:'var(--overlay-explorer-chip-active-text)', padding:'6px 14px', fontSize:12, cursor:'pointer', fontWeight:600 }}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BatchRenameDialog({
+  state,
+  preview,
+  onChange,
+  onConfirm,
+  onCancel,
+}: {
+  state: BatchRenameState;
+  preview: Array<{ entry: FileEntry; nextName: string }>;
+  onChange: (updates: Partial<BatchRenameState>) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:10000, background:'rgba(0,0,0,0.72)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <div style={{ width:'min(920px, 94vw)', maxHeight:'82vh', display:'flex', flexDirection:'column', background:'var(--overlay-explorer-preview-bg)', border:'1px solid var(--overlay-explorer-preview-border)', borderRadius:'var(--overlay-explorer-panel-radius)', padding:20, boxShadow:'0 24px 64px rgba(0,0,0,0.9)' }}>
+        <div style={{ color:EXP.text, fontWeight:700, fontSize:14, marginBottom:12 }}>Batch Rename</div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, minmax(0, 1fr))', gap:10 }}>
+          <input value={state.findText} onChange={(event) => onChange({ findText: event.target.value })} placeholder="Find text" style={dialogInputStyle} />
+          <input value={state.replaceText} onChange={(event) => onChange({ replaceText: event.target.value })} placeholder="Replace with" style={dialogInputStyle} />
+          <input value={state.prefix} onChange={(event) => onChange({ prefix: event.target.value })} placeholder="Prefix" style={dialogInputStyle} />
+          <input value={state.suffix} onChange={(event) => onChange({ suffix: event.target.value })} placeholder="Suffix" style={dialogInputStyle} />
+          <input value={state.startingNumber} onChange={(event) => onChange({ startingNumber: Number(event.target.value) || 1 })} placeholder="Start #" type="number" style={dialogInputStyle} />
+          <input value={state.padding} onChange={(event) => onChange({ padding: Number(event.target.value) || 1 })} placeholder="Pad width" type="number" style={dialogInputStyle} />
+        </div>
+        <div style={{ marginTop:14, border:'1px solid var(--overlay-border)', borderRadius:12, overflow:'hidden', minHeight:0, flex:1 }}>
+          <OverlayScrollArea style={{ maxHeight:'46vh' }}>
+            <div style={{ display:'grid', gap:1, background:'var(--overlay-border)' }}>
+              {preview.map(({ entry, nextName }) => (
+                <div key={entry.path} style={{ display:'grid', gridTemplateColumns:'minmax(0, 1fr) minmax(0, 1fr)', gap:12, background:'var(--overlay-bg-panel)', padding:'9px 12px' }}>
+                  <span style={{ color:EXP.muted, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{entry.name}</span>
+                  <span style={{ color:EXP.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{nextName}</span>
+                </div>
+              ))}
+            </div>
+          </OverlayScrollArea>
+        </div>
+        <div style={{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:14 }}>
+          <button onClick={onCancel} style={{ background:'var(--overlay-explorer-chip-bg)', border:'1px solid var(--overlay-explorer-chip-border)', borderRadius:'var(--overlay-explorer-control-radius)', color:EXP.text, padding:'6px 14px', fontSize:12, cursor:'pointer' }}>Cancel</button>
+          <button onClick={onConfirm} style={{ background:'var(--overlay-explorer-chip-active-bg)', border:'1px solid var(--overlay-explorer-chip-active-border)', borderRadius:'var(--overlay-explorer-control-radius)', color:'var(--overlay-explorer-chip-active-text)', padding:'6px 14px', fontSize:12, cursor:'pointer', fontWeight:600 }}>Rename</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DuplicateFinderDialog({
+  state,
+  onCancelScan,
+  onClose,
+  onSelectPath,
+  onRevealPath,
+  onTrashPath,
+  onDeletePath,
+}: {
+  state: DuplicateFinderState;
+  onCancelScan: () => void;
+  onClose: () => void;
+  onSelectPath: (path: string) => void;
+  onRevealPath: (path: string) => void;
+  onTrashPath: (path: string) => void;
+  onDeletePath: (path: string) => void;
+}) {
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:10000, background:'rgba(0,0,0,0.72)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <div style={{ width:'min(1100px, 96vw)', maxHeight:'86vh', display:'flex', flexDirection:'column', background:'var(--overlay-explorer-preview-bg)', border:'1px solid var(--overlay-explorer-preview-border)', borderRadius:'var(--overlay-explorer-panel-radius)', padding:20, boxShadow:'0 24px 64px rgba(0,0,0,0.9)' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginBottom:14 }}>
+          <div>
+            <div style={{ color:EXP.text, fontWeight:700, fontSize:14 }}>Duplicate Finder</div>
+            <div style={{ marginTop:4, color:EXP.muted, fontSize:11 }}>
+              {state.status
+                ? `${state.status.groups.length} groups, ${state.status.scannedFileCount} files scanned`
+                : (state.loading ? 'Scanning current folder tree…' : 'Preparing duplicate scan…')}
+            </div>
+          </div>
+          <div style={{ display:'flex', gap:8 }}>
+            {state.loading && <button onClick={onCancelScan} style={dialogSecondaryButtonStyle}>Cancel Scan</button>}
+            <button onClick={onClose} style={dialogSecondaryButtonStyle}>Close</button>
+          </div>
+        </div>
+        <div style={{ minHeight:0, flex:1, border:'1px solid var(--overlay-border)', borderRadius:12, overflow:'hidden' }}>
+          <OverlayScrollArea style={{ maxHeight:'68vh' }}>
+            <div style={{ display:'grid', gap:12, padding:12 }}>
+              {state.status?.groups.map((group) => (
+                <div key={`${group.contentHash}-${group.fileSize}`} style={{ border:'1px solid var(--overlay-border)', borderRadius:12, overflow:'hidden', background:'var(--overlay-bg-panel)' }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', gap:12, padding:'10px 12px', borderBottom:'1px solid var(--overlay-border)' }}>
+                    <span style={{ color:EXP.text, fontSize:12, fontWeight:700 }}>{group.entries.length} duplicates</span>
+                    <span style={{ color:EXP.muted, fontSize:11 }}>{formatSize(group.fileSize)}</span>
+                  </div>
+                  {group.entries.map((entry, index) => (
+                    <div key={entry.path} style={{ display:'grid', gridTemplateColumns:'minmax(0, 1fr) auto', gap:12, padding:'9px 12px', borderTop:index === 0 ? 'none' : '1px solid var(--overlay-border)' }}>
+                      <div style={{ minWidth:0 }}>
+                        <div style={{ color:EXP.text, fontSize:11.5, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{entry.name}</div>
+                        <div style={{ marginTop:3, color:EXP.muted, fontSize:10, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{entry.path}</div>
+                      </div>
+                      <div style={{ display:'flex', gap:6 }}>
+                        <button onClick={() => onSelectPath(entry.path)} style={dialogSecondaryButtonStyle}>Select</button>
+                        <button onClick={() => onRevealPath(entry.path)} style={dialogSecondaryButtonStyle}>Reveal</button>
+                        <button onClick={() => onTrashPath(entry.path)} style={dialogSecondaryButtonStyle}>Trash</button>
+                        <button onClick={() => onDeletePath(entry.path)} style={dialogDangerButtonStyle}>Delete</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </OverlayScrollArea>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const dialogInputStyle: CSSProperties = {
+  width: '100%',
+  background: 'var(--overlay-explorer-input-bg)',
+  border: '1px solid var(--overlay-explorer-input-border)',
+  borderRadius: 'var(--overlay-explorer-control-radius)',
+  color: EXP.text,
+  fontSize: 12,
+  padding: '8px 10px',
+  outline: 'none',
+  boxSizing: 'border-box',
+};
+
+const dialogSecondaryButtonStyle: CSSProperties = {
+  background: 'var(--overlay-explorer-chip-bg)',
+  border: '1px solid var(--overlay-explorer-chip-border)',
+  borderRadius: 'var(--overlay-explorer-control-radius)',
+  color: EXP.text,
+  padding: '6px 12px',
+  fontSize: 12,
+  cursor: 'pointer',
+};
+
+const dialogDangerButtonStyle: CSSProperties = {
+  background: 'rgba(248,113,113,0.12)',
+  border: '1px solid rgba(248,113,113,0.28)',
+  borderRadius: 'var(--overlay-explorer-control-radius)',
+  color: EXP.red,
+  padding: '6px 12px',
+  fontSize: 12,
+  cursor: 'pointer',
+};
 
 // ─── Main FileExplorer ────────────────────────────────────────────────────────
 
@@ -1897,6 +2139,8 @@ export function FileExplorer({
 }: FileExplorerProps) {
   const {
     cancelSearchEntries: cancelExplorerSearchEntries,
+    cancelDuplicateScan: cancelExplorerDuplicateScan,
+    batchRename: batchRenameExplorerPaths,
     createDir: createExplorerDir,
     createFile: createExplorerFile,
     deletePath: deleteExplorerPath,
@@ -1914,11 +2158,18 @@ export function FileExplorer({
     readTextFile: readExplorerTextFile,
     renamePath: renameExplorerPath,
     revealPath: revealExplorerPath,
+    restoreRecentTrashAction: restoreExplorerTrashAction,
     showPathProperties: showExplorerPathProperties,
+    listSavedSearches: listExplorerSavedSearches,
+    listTags: listExplorerTags,
     searchEntriesWithDiagnostics: searchExplorerEntriesWithDiagnostics,
+    saveSavedSearch: saveExplorerSavedSearch,
+    setTagsForPaths: setExplorerTagsForPaths,
     supportsNativeDragOut,
     supportsNativeIntegration,
     supportsSearch,
+    startDuplicateScan: startExplorerDuplicateScan,
+    trashPaths: trashExplorerPaths,
     transferItems: transferExplorerItems,
     unwatchEntrySizeRoot: unwatchExplorerEntrySizeRoot,
     watchEntrySizeRoot: watchExplorerEntrySizeRoot,
@@ -2031,11 +2282,30 @@ export function FileExplorer({
   const [showLayoutMenu, setShowLayoutMenu] = useState(false);
   const [showExperimentalMenu, setShowExperimentalMenu] = useState(false);
   const [rename,       setRename]       = useState<RenameState>({ active:false, path:'', name:'' });
-  const [deleteTarget, setDeleteTarget] = useState<FileEntry|null>(null);
+  const [deleteTargets, setDeleteTargets] = useState<FileEntry[]>([]);
   const [clipboard,    setClipboard]    = useState<ExplorerClipboard|null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [newItem,      setNewItem]      = useState<NewItemState>({ visible:false, kind:'folder' });
   const [newItemName,  setNewItemName]  = useState('');
+  const [batchRename, setBatchRename] = useState<BatchRenameState>({
+    visible: false,
+    findText: '',
+    replaceText: '',
+    prefix: '',
+    suffix: '',
+    startingNumber: 1,
+    padding: 2,
+  });
+  const [saveSearchState, setSaveSearchState] = useState<SaveSearchState>({ visible: false, name: '' });
+  const [duplicateFinder, setDuplicateFinder] = useState<DuplicateFinderState>({
+    visible: false,
+    scanId: null,
+    status: null,
+    loading: false,
+  });
+  const [tagMetadata, setTagMetadata] = useState<ExplorerTagMetadataSnapshot>({ tags: [], assignments: [] });
+  const [savedSearches, setSavedSearches] = useState<ExplorerSavedSearch[]>([]);
+  const [activeTagFilterIds, setActiveTagFilterIds] = useState<string[]>([]);
   const [dragOver,     setDragOver]     = useState<string|null>(null); // path being dragged over
   const [windowDropState, setWindowDropState] = useState<{ active: boolean; count: number }>({ active: false, count: 0 });
   const lastSelected   = useRef<string|null>(null);
@@ -2077,6 +2347,47 @@ export function FileExplorer({
   });
   const currentPathIsCloud = currentPath.length > 0 && isCloudExplorerPath(currentPath);
   const isExperimentalViewEligible = !isCompactDock && search.trim().length === 0;
+
+  useEffect(() => {
+    let disposed = false;
+    void listExplorerSavedSearches()
+      .then((records) => {
+        if (!disposed) {
+          setSavedSearches(records);
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          setSavedSearches([]);
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [listExplorerSavedSearches]);
+
+  useEffect(() => {
+    if (currentPathIsCloud) {
+      setTagMetadata({ tags: [], assignments: [] });
+      return;
+    }
+    let disposed = false;
+    const paths = Array.from(new Set([...entries, ...searchResults].map((entry) => entry.path))).slice(0, 500);
+    void listExplorerTags(paths)
+      .then((snapshot) => {
+        if (!disposed) {
+          setTagMetadata(snapshot);
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          setTagMetadata({ tags: [], assignments: [] });
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [currentPathIsCloud, entries, listExplorerTags, searchResults]);
 
   useEffect(() => {
     setSourcesVisible(storedSourcesVisible);
@@ -2669,8 +2980,21 @@ export function FileExplorer({
     explorerSettings.sortOrder,
     updateExplorerSettings,
   ]);
+  const pathTagIdsByPath = useMemo(() => new Map(
+    tagMetadata.assignments.map((assignment) => [assignment.path, assignment.tag_ids] as const),
+  ), [tagMetadata.assignments]);
+  const filteredEntries = useMemo(
+    () => (isSearchActive ? searchResults : entries).filter((entry) => {
+      if (activeTagFilterIds.length === 0) {
+        return true;
+      }
+      const tagIds = pathTagIdsByPath.get(entry.path) ?? [];
+      return activeTagFilterIds.every((tagId) => tagIds.includes(tagId));
+    }),
+    [activeTagFilterIds, entries, isSearchActive, pathTagIdsByPath, searchResults],
+  );
   const visibleEntries = useMemo(
-    () => [...(isSearchActive ? searchResults : entries)].sort((left, right) => (
+    () => [...filteredEntries].sort((left, right) => (
       compareExplorerEntries(
         left,
         right,
@@ -2679,11 +3003,9 @@ export function FileExplorer({
       )
     )),
     [
-      entries,
+      filteredEntries,
       explorerSettings.sortBy,
       explorerSettings.sortOrder,
-      isSearchActive,
-      searchResults,
     ],
   );
   const experimentalSemanticBands = useMemo(
@@ -2736,6 +3058,20 @@ export function FileExplorer({
     }
     return lookup;
   }, [entries, searchResults]);
+  const duplicateEntryLookup = useMemo(() => {
+    const lookup = new Map<string, FileEntry>();
+    for (const entry of [...entries, ...searchResults]) {
+      lookup.set(entry.path, entry);
+    }
+    for (const group of duplicateFinder.status?.groups ?? []) {
+      for (const entry of group.entries) {
+        if (!lookup.has(entry.path)) {
+          lookup.set(entry.path, entry);
+        }
+      }
+    }
+    return lookup;
+  }, [duplicateFinder.status?.groups, entries, searchResults]);
   const goHome = useCallback(() => {
     getExplorerHomeDir().then(p => navigate(p)).catch(() => {});
   }, [navigate]);
@@ -2844,7 +3180,7 @@ export function FileExplorer({
     }
     setSelected(new Set());
     setCtxMenu({ visible: false, x: 0, y: 0, entry: null });
-    setDeleteTarget(null);
+    setDeleteTargets([]);
   }, [repositoryPicker?.active, repositoryPicker?.requestId]);
 
   const getEntryStorageLabel = useCallback((entry: FileEntry) => {
@@ -3270,20 +3606,199 @@ export function FileExplorer({
     catch(e) { setError(String(e)); }
   };
 
-  // ── Delete ──
-  const confirmDelete = async () => {
-    if (!deleteTarget) return;
+  const openTrashDialog = useCallback((targets: FileEntry[]) => {
+    setDeleteTargets(targets);
+  }, []);
+
+  const applyTagsToPaths = useCallback(async (
+    paths: string[],
+    rawTagInput: string,
+    mode: 'add' | 'remove',
+  ) => {
+    const tagNames = rawTagInput
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (tagNames.length === 0 || paths.length === 0) {
+      return;
+    }
     try {
-      await deleteExplorerPath(deleteTarget.path, deleteTarget.is_dir);
+      const snapshot = await setExplorerTagsForPaths({
+        paths,
+        tagNames,
+        mode,
+      });
+      setTagMetadata(snapshot);
+    } catch (tagError) {
+      setError(String(tagError));
+    }
+  }, [setExplorerTagsForPaths]);
+
+  const batchRenamePreview = useMemo(() => {
+    const renameTargets = (selectedEntries.length > 0 ? selectedEntries : visibleEntries)
+      .filter((entry) => !entry.is_dir);
+    return renameTargets.map((entry, index) => {
+      const extensionMatch = entry.name.match(/(\.[^.]+)$/);
+      const extension = extensionMatch?.[1] ?? '';
+      const stem = extension ? entry.name.slice(0, -extension.length) : entry.name;
+      const replacedStem = batchRename.findText
+        ? stem.split(batchRename.findText).join(batchRename.replaceText)
+        : stem;
+      const numbering = String(batchRename.startingNumber + index).padStart(
+        Math.max(1, batchRename.padding),
+        '0',
+      );
+      const nextName = `${batchRename.prefix}${replacedStem}${batchRename.suffix}${numbering}${extension}`;
+      const separator = entry.path.includes('\\') ? '\\' : '/';
+      const parentPath = entry.path.replace(/[/\\][^/\\]+$/, '');
+      return {
+        entry,
+        nextName,
+        destinationPath: `${parentPath}${separator}${nextName}`,
+      };
+    });
+  }, [batchRename, selectedEntries, visibleEntries]);
+
+  const commitBatchRename = useCallback(async () => {
+    const items = batchRenamePreview
+      .filter(({ entry, destinationPath }) => entry.path !== destinationPath)
+      .map(({ entry, destinationPath }): ExplorerBatchRenameItem => ({
+        sourcePath: entry.path,
+        destinationPath,
+      }));
+    if (items.length === 0) {
+      setBatchRename((current) => ({ ...current, visible: false }));
+      return;
+    }
+    try {
+      await batchRenameExplorerPaths(items);
       invalidateExplorerResultCaches();
-      if (preview.path === deleteTarget.path) setPreview({ type:'none', path:'' });
+      setBatchRename((current) => ({ ...current, visible: false }));
+      refresh();
+    } catch (renameError) {
+      setError(String(renameError));
+    }
+  }, [batchRenameExplorerPaths, batchRenamePreview, refresh]);
+
+  const saveCurrentSearch = useCallback(async () => {
+    const name = saveSearchState.name.trim() || search.trim();
+    if (!name || !currentPath || !search.trim()) {
+      return;
+    }
+    try {
+      const record = await saveExplorerSavedSearch({
+        id: null,
+        name,
+        rootPath: currentPath,
+        query: search.trim(),
+        includeContent: searchIncludeContent,
+        tagFilterIds: activeTagFilterIds,
+      });
+      setSavedSearches((current) => {
+        const next = [record, ...current.filter((candidate) => candidate.id !== record.id)];
+        return next.sort((left, right) => right.updatedAt - left.updatedAt);
+      });
+      setSaveSearchState({ visible: false, name: '' });
+    } catch (saveError) {
+      setError(String(saveError));
+    }
+  }, [activeTagFilterIds, currentPath, saveExplorerSavedSearch, saveSearchState.name, search, searchIncludeContent]);
+
+  const applySavedSearch = useCallback(async (savedSearch: ExplorerSavedSearch) => {
+    if (savedSearch.rootPath !== currentPath) {
+      await navigate(savedSearch.rootPath);
+    }
+    setSearch(savedSearch.query);
+    setSearchIncludeContent(savedSearch.includeContent);
+    setActiveTagFilterIds(savedSearch.tagFilterIds);
+  }, [currentPath, navigate]);
+
+  const startDuplicateFinder = useCallback(async () => {
+    if (!currentPath || currentPathIsCloud) {
+      return;
+    }
+    setDuplicateFinder({ visible: true, scanId: null, status: null, loading: true });
+    try {
+      const response = await startExplorerDuplicateScan(currentPath);
+      setDuplicateFinder({ visible: true, scanId: response.scanId, status: null, loading: true });
+    } catch (scanError) {
+      setError(String(scanError));
+      setDuplicateFinder({ visible: false, scanId: null, status: null, loading: false });
+    }
+  }, [currentPath, currentPathIsCloud, startExplorerDuplicateScan]);
+
+  useEffect(() => {
+    if (!duplicateFinder.visible || !duplicateFinder.scanId) {
+      return;
+    }
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const status = await pollExplorerDuplicateScan(duplicateFinder.scanId ?? '');
+        if (!cancelled) {
+          setDuplicateFinder((current) => ({
+            ...current,
+            status,
+            loading: !status.completed && !status.cancelled,
+          }));
+          if (!status.completed && !status.cancelled) {
+            window.setTimeout(tick, 700);
+          }
+        }
+      } catch (scanError) {
+        if (!cancelled) {
+          setError(String(scanError));
+        }
+      }
+    };
+    void tick();
+    return () => {
+      cancelled = true;
+    };
+  }, [duplicateFinder.scanId, duplicateFinder.visible, pollExplorerDuplicateScan]);
+
+  const confirmTrash = async () => {
+    if (deleteTargets.length === 0) return;
+    try {
+      await trashExplorerPaths(deleteTargets.map((entry) => entry.path));
+      invalidateExplorerResultCaches();
+      if (deleteTargets.some((entry) => preview.path === entry.path)) {
+        setPreview({ type: 'none', path: '' });
+      }
       if (previewSaveTimer.current) {
         window.clearTimeout(previewSaveTimer.current);
         previewSaveTimer.current = null;
       }
-      setDeleteTarget(null); refresh();
-    } catch(e) { setError(String(e)); }
+      setDeleteTargets([]);
+      refresh();
+    } catch (deleteError) {
+      setError(String(deleteError));
+    }
   };
+
+  const permanentlyDeleteTargets = async () => {
+    if (deleteTargets.length === 0) return;
+    try {
+      for (const target of deleteTargets) {
+        await deleteExplorerPath(target.path, target.is_dir);
+      }
+      invalidateExplorerResultCaches();
+      setDeleteTargets([]);
+      refresh();
+    } catch (deleteError) {
+      setError(String(deleteError));
+    }
+  };
+
+  const undoTrash = useCallback(async () => {
+    try {
+      await restoreExplorerTrashAction();
+      invalidateExplorerResultCaches();
+      refresh();
+    } catch (restoreError) {
+      setError(String(restoreError));
+    }
+  }, [refresh, restoreExplorerTrashAction]);
 
   const revealPathLabel = runtimePlatform === 'macos'
     ? 'Reveal in Finder'
@@ -3337,6 +3852,18 @@ export function FileExplorer({
       { label:'Cut',                icon:<Scissors size={13}/>,     action:() => queueClipboard('cut', entry) },
       { label:'Duplicate',          icon:<CopyPlus size={13}/>,     action:() => duplicate(entry) },
       { label:'Rename (F2)',        icon:<Edit3 size={13}/>,        action:() => setRename({ active:true, path:entry.path, name:entry.name }) },
+      { label:'Add Tags...',        icon:<Tags size={13}/>,         action:() => {
+        const input = window.prompt('Add tags (comma-separated):', '');
+        if (input) {
+          void applyTagsToPaths([entry.path], input, 'add');
+        }
+      } },
+      { label:'Remove Tags...',     icon:<Tags size={13}/>,         action:() => {
+        const input = window.prompt('Remove tags (comma-separated):', '');
+        if (input) {
+          void applyTagsToPaths([entry.path], input, 'remove');
+        }
+      } },
       { label: '', icon:null, divider:true, action:()=>{} },
       { label: isBookmarked ? 'Remove Bookmark' : 'Add to Bookmarks', icon: isBookmarked ? <StarOff size={13}/> : <Star size={13}/>, action:() => {
         if (isBookmarked) {
@@ -3355,9 +3882,9 @@ export function FileExplorer({
       }},
       ...(matchedPluginActions.length > 0 ? [{ label: '', icon:null, divider:true, action:()=>{} }, ...matchedPluginActions] : []),
       { label: '', icon:null, divider:true, action:()=>{} },
-      { label:'Delete', icon:<Trash2 size={13}/>, danger:true, action:() => setDeleteTarget(entry) },
+      { label:'Move to Trash', icon:<Trash2 size={13}/>, danger:true, action:() => openTrashDialog([entry]) },
     ];
-  }, [bookmarkPathSet, copyToSysClipboard, duplicate, explorerRail, handleBookmarkCreated, isCloudExplorerPath, onOpenInTerminal, openAsAdmin, openEntry, openWithSystemPicker, pluginActions, propertiesLabel, queueClipboard, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties, updateExplorerRail]);
+  }, [applyTagsToPaths, bookmarkPathSet, copyToSysClipboard, duplicate, explorerRail, handleBookmarkCreated, isCloudExplorerPath, onOpenInTerminal, openAsAdmin, openEntry, openTrashDialog, openWithSystemPicker, pluginActions, propertiesLabel, queueClipboard, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties, updateExplorerRail]);
 
   const buildEmptyCtxItems = useCallback((): CtxItem[] => {
     const canUseNativeIntegration = supportsNativeIntegration(currentPath);
@@ -3506,8 +4033,8 @@ export function FileExplorer({
       }
       if (matchesKeybinding(e, keybindings.deleteItem) && selected.size > 0) {
         e.preventDefault();
-        if (firstSelectedEntry) {
-          setDeleteTarget(firstSelectedEntry);
+        if (selectedEntries.length > 0) {
+          openTrashDialog(selectedEntries);
         }
         return;
       }
@@ -5254,8 +5781,23 @@ export function FileExplorer({
             drives={drives}
             drivesLoading={drivesLoading}
             isCompactDock={isCompactDock}
+            savedSearches={savedSearches}
+            availableTags={tagMetadata.tags}
+            activeTagFilterIds={activeTagFilterIds}
             onNavigate={navigate}
             onGoHome={goHome}
+            onOpenSavedSearch={(savedSearch) => { void applySavedSearch(savedSearch); }}
+            onDeleteSavedSearch={(savedSearchId) => {
+              void deleteExplorerSavedSearch(savedSearchId)
+                .then(() => setSavedSearches((current) => current.filter((savedSearch) => savedSearch.id !== savedSearchId)))
+                .catch((deleteError) => setError(String(deleteError)));
+            }}
+            onToggleTagFilter={(tagId) => setActiveTagFilterIds((current) => (
+              current.includes(tagId)
+                ? current.filter((candidate) => candidate !== tagId)
+                : [...current, tagId]
+            ))}
+            onClearTagFilters={() => setActiveTagFilterIds([])}
             onBookmarkCreated={handleBookmarkCreated}
             resolveDroppedSources={resolveDroppedBookmarkSources}
           />
@@ -5444,6 +5986,65 @@ export function FileExplorer({
             <span style={{ fontWeight: 700, letterSpacing: '0.02em' }}>Aa</span>
             <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Text</span>
           </button>
+
+          {!currentPathIsCloud && (
+            <>
+              <button
+                type="button"
+                onClick={() => setSaveSearchState({ visible: true, name: search.trim() || getPathLeaf(currentPath) })}
+                disabled={!search.trim()}
+                title="Save current search"
+                style={toolbarChipButtonStyle(!search.trim())}
+              >
+                <Save size={11} />
+                <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Save Search</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setBatchRename((current) => ({ ...current, visible: true }))}
+                disabled={(selectedEntries.length > 0 ? selectedEntries : visibleEntries).filter((entry) => !entry.is_dir).length === 0}
+                title="Batch rename visible or selected files"
+                style={toolbarChipButtonStyle((selectedEntries.length > 0 ? selectedEntries : visibleEntries).filter((entry) => !entry.is_dir).length === 0)}
+              >
+                <Edit3 size={11} />
+                <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Batch Rename</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const input = window.prompt('Add tags to the current selection (comma-separated):', '');
+                  if (input) {
+                    void applyTagsToPaths(selectedEntries.map((entry) => entry.path), input, 'add');
+                  }
+                }}
+                disabled={selectedEntries.length === 0}
+                title="Apply tags to the current selection"
+                style={toolbarChipButtonStyle(selectedEntries.length === 0)}
+              >
+                <Tags size={11} />
+                <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Tag</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void startDuplicateFinder()}
+                disabled={!currentPath}
+                title="Scan the current folder tree for duplicates"
+                style={toolbarChipButtonStyle(!currentPath)}
+              >
+                <Sparkles size={11} />
+                <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Duplicates</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void undoTrash()}
+                title="Undo the most recent trash action"
+                style={toolbarChipButtonStyle(false)}
+              >
+                <Undo2 size={11} />
+                <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Undo Trash</span>
+              </button>
+            </>
+          )}
 
           {/* Toolbar buttons */}
           {!isCompactDock && !showsGlobalChromeControls && (
@@ -6786,8 +7387,67 @@ export function FileExplorer({
       {/* Context menu */}
       <ContextMenu state={ctxMenu} items={ctxMenu.entry ? buildCtxItems(ctxMenu.entry) : buildEmptyCtxItems()} onClose={() => setCtxMenu(c => ({...c, visible:false}))} />
 
-      {/* Delete dialog */}
-      {deleteTarget && <DeleteDialog entry={deleteTarget} onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)} />}
+      {deleteTargets.length > 0 && (
+        <TrashDialog
+          entries={deleteTargets}
+          onConfirm={() => { void confirmTrash(); }}
+          onDeletePermanently={() => { void permanentlyDeleteTargets(); }}
+          onCancel={() => setDeleteTargets([])}
+        />
+      )}
+
+      {saveSearchState.visible && (
+        <SaveSearchDialog
+          state={saveSearchState}
+          onChangeName={(name) => setSaveSearchState((current) => ({ ...current, name }))}
+          onConfirm={() => { void saveCurrentSearch(); }}
+          onCancel={() => setSaveSearchState({ visible: false, name: '' })}
+        />
+      )}
+
+      {batchRename.visible && (
+        <BatchRenameDialog
+          state={batchRename}
+          preview={batchRenamePreview}
+          onChange={(updates) => setBatchRename((current) => ({ ...current, ...updates }))}
+          onConfirm={() => { void commitBatchRename(); }}
+          onCancel={() => setBatchRename((current) => ({ ...current, visible: false }))}
+        />
+      )}
+
+      {duplicateFinder.visible && (
+        <DuplicateFinderDialog
+          state={duplicateFinder}
+          onCancelScan={() => {
+            if (duplicateFinder.scanId) {
+              void cancelExplorerDuplicateScan(duplicateFinder.scanId);
+            }
+            setDuplicateFinder((current) => ({ ...current, loading: false }));
+          }}
+          onClose={() => setDuplicateFinder({ visible: false, scanId: null, status: null, loading: false })}
+          onSelectPath={(path) => {
+            const parentPath = path.replace(/[/\\][^/\\]+$/, '');
+            if (parentPath && parentPath !== currentPath) {
+              void navigate(parentPath).finally(() => setSelected(new Set([path])));
+            } else {
+              setSelected(new Set([path]));
+            }
+          }}
+          onRevealPath={(path) => { void revealExplorerPath(path).catch((revealError) => setError(String(revealError))); }}
+          onTrashPath={(path) => {
+            const entry = duplicateEntryLookup.get(path);
+            if (entry) {
+              openTrashDialog([entry]);
+            }
+          }}
+          onDeletePath={(path) => {
+            const entry = duplicateEntryLookup.get(path);
+            if (entry) {
+              setDeleteTargets([entry]);
+            }
+          }}
+        />
+      )}
 
       <style>{`@keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }`}</style>
     </div>

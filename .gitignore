@@ -50,6 +50,7 @@ x64/
 x86/
 out/
 build/
+website/
 
 # --- Unreal Engine 5 ---
 Binaries/
