@@ -2,6 +2,14 @@ import type { FileSearchResponse } from '../config/searchTelemetry';
 import type { FsRuntimeCachePolicy } from '../config/runtimeCachePolicy';
 import { commands, events, unwrapTauriResult } from './tauriClient';
 import {
+  type CloudAccountStatus,
+  type CloudAccountSummary,
+  type CloudAccountsSnapshot,
+  type CloudAuthSession,
+  type CloudAuthStatus,
+  type CloudBreadcrumb,
+  type CloudProviderConfigurationStatus,
+  type CloudProviderId,
   type DriveInfo,
   type EntryStorageInfo,
   type ExplorerTaskProgressEvent,
@@ -15,17 +23,206 @@ import {
 
 export type ExplorerFileEntry = FileEntry;
 export type ExplorerFileSearchResult = FileSearchResult;
-export type ExplorerDriveInfo = DriveInfo;
 export type ExplorerEntryStorageInfo = EntryStorageInfo;
 export type ExplorerFileTransferOperation = FileTransferOperation;
 export type ExplorerFileTransferResult = FileTransferResult;
 export type ExplorerTaskProgress = ExplorerTaskProgressEvent;
 export type ExplorerSchedulerTask = YaziSchedulerTaskSnap;
 export type ExplorerWritableContent = string | number[];
+export type ExplorerCloudProviderId = CloudProviderId;
+export type ExplorerCloudAccountStatus = CloudAccountStatus;
+export type ExplorerCloudAccountSummary = CloudAccountSummary;
+export type ExplorerCloudAccountsSnapshot = CloudAccountsSnapshot;
+export type ExplorerCloudAuthSession = CloudAuthSession;
+export type ExplorerCloudAuthStatus = CloudAuthStatus;
+export type ExplorerCloudProviderConfigurationStatus = CloudProviderConfigurationStatus;
+
+export type ExplorerLocationBreadcrumb = {
+  label: string;
+  path: string;
+};
+
+export type ExplorerLocationListing = {
+  kind: 'local' | 'cloud';
+  path: string;
+  parentPath: string | null;
+  breadcrumbs: ExplorerLocationBreadcrumb[];
+  entries: ExplorerFileEntry[];
+};
+
+export type ExplorerLocalDriveInfo = DriveInfo & {
+  kind: 'local';
+  id: string;
+  path: string;
+};
+
+export type ExplorerCloudDriveInfo = {
+  kind: 'cloud';
+  id: string;
+  path: string;
+  label: string;
+  provider: ExplorerCloudProviderId;
+  accountId: string;
+  email: string;
+  status: ExplorerCloudAccountStatus;
+  avatarUrl: string | null;
+};
+
+export type ExplorerDriveInfo = ExplorerLocalDriveInfo | ExplorerCloudDriveInfo;
+
+function toWritablePayload(content: ExplorerWritableContent): FsWriteFileContent {
+  return typeof content === 'string'
+    ? { kind: 'text', value: content }
+    : { kind: 'bytes', value: content };
+}
+
+export function isCloudExplorerPath(path: string): boolean {
+  return path.trim().startsWith('cloud://');
+}
+
+function buildLocalBreadcrumbs(path: string): ExplorerLocationBreadcrumb[] {
+  const normalizedPath = path.trim();
+  if (!normalizedPath) {
+    return [];
+  }
+
+  if (/^[A-Za-z]:\\?$/.test(normalizedPath)) {
+    const drivePath = normalizedPath.endsWith('\\') ? normalizedPath : `${normalizedPath}\\`;
+    return [{ label: drivePath, path: drivePath }];
+  }
+
+  if (/^[A-Za-z]:[\\/]/.test(normalizedPath)) {
+    const drivePath = `${normalizedPath.slice(0, 2)}\\`;
+    const parts = normalizedPath.replace(/[/\\]+$/, '').split(/[/\\]/).filter(Boolean);
+    const breadcrumbs: ExplorerLocationBreadcrumb[] = [{ label: drivePath, path: drivePath }];
+
+    for (let index = 1; index < parts.length; index += 1) {
+      const nextPath = `${parts.slice(0, index + 1).join('\\')}${index === parts.length - 1 ? '' : ''}`;
+      breadcrumbs.push({ label: parts[index] ?? '', path: nextPath });
+    }
+
+    return breadcrumbs;
+  }
+
+  if (normalizedPath.startsWith('/')) {
+    const parts = normalizedPath.replace(/\/+$/, '').split('/').filter(Boolean);
+    const breadcrumbs: ExplorerLocationBreadcrumb[] = [{ label: '/', path: '/' }];
+    for (let index = 0; index < parts.length; index += 1) {
+      breadcrumbs.push({
+        label: parts[index] ?? '',
+        path: `/${parts.slice(0, index + 1).join('/')}`,
+      });
+    }
+    return breadcrumbs;
+  }
+
+  const parts = normalizedPath.replace(/[/\\]+$/, '').split(/[/\\]/).filter(Boolean);
+  return parts.map((label, index) => ({
+    label,
+    path: parts.slice(0, index + 1).join('/'),
+  }));
+}
+
+function getLocalParentPath(path: string): string | null {
+  const normalized = path.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  if (/^[A-Za-z]:\\?$/.test(normalized) || normalized === '/') {
+    return null;
+  }
+
+  const trimmed = normalized.replace(/[/\\]+$/, '');
+  const parts = trimmed.split(/[/\\]/);
+  if (parts.length <= 1) {
+    return null;
+  }
+
+  if (/^[A-Za-z]:$/.test(parts[0] ?? '')) {
+    return parts.length === 2 ? `${parts[0]}\\` : `${parts.slice(0, -1).join('\\')}\\`;
+  }
+
+  return trimmed.startsWith('/')
+    ? `/${parts.slice(0, -1).filter(Boolean).join('/')}` || '/'
+    : parts.slice(0, -1).join('/');
+}
+
+function getCloudParentPath(path: string): string | null {
+  const trimmed = path.replace(/\/+$/, '');
+  if (!trimmed.startsWith('cloud://')) {
+    return null;
+  }
+
+  const segments = trimmed.split('/');
+  if (segments.length <= 5) {
+    return null;
+  }
+
+  return segments.slice(0, -1).join('/');
+}
+
+function toExplorerCloudBreadcrumbs(breadcrumbs: CloudBreadcrumb[]): ExplorerLocationBreadcrumb[] {
+  return breadcrumbs.map((breadcrumb) => ({
+    label: breadcrumb.label,
+    path: breadcrumb.path,
+  }));
+}
+
+function getLeafName(path: string): string {
+  const trimmed = path.replace(/[/\\]+$/, '');
+  const match = trimmed.match(/([^/\\]+)$/);
+  return match?.[1] ?? trimmed;
+}
+
+function getParentDir(path: string): string {
+  if (isCloudExplorerPath(path)) {
+    const parentPath = getCloudParentPath(path);
+    if (!parentPath) {
+      throw new Error('Cloud root folders cannot be created without a parent path.');
+    }
+    return parentPath;
+  }
+
+  const trimmed = path.replace(/[/\\]+$/, '');
+  const parentPath = trimmed.replace(/[/\\][^/\\]+$/, '');
+  if (parentPath === trimmed) {
+    throw new Error(`Unable to derive parent directory for ${path}`);
+  }
+  if (/^[A-Za-z]:$/.test(parentPath)) {
+    return `${parentPath}\\`;
+  }
+  return parentPath || '/';
+}
+
+function toLocalDriveInfo(drive: DriveInfo): ExplorerLocalDriveInfo {
+  return {
+    ...drive,
+    kind: 'local',
+    id: drive.letter,
+    path: drive.letter,
+  };
+}
+
+function toCloudDriveInfo(account: CloudAccountSummary): ExplorerCloudDriveInfo {
+  return {
+    kind: 'cloud',
+    id: account.id,
+    path: account.root_path,
+    label: account.drive_label,
+    provider: account.provider,
+    accountId: account.id,
+    email: account.email,
+    status: account.status,
+    avatarUrl: account.avatar_url,
+  };
+}
 
 export type ExplorerBackendContract = {
   listDir: typeof listExplorerDir;
   listDirUncached: typeof listExplorerDirUncached;
+  listLocation: typeof listExplorerLocation;
+  listLocationUncached: typeof listExplorerLocationUncached;
   getDrives: typeof getExplorerDrives;
   measureEntrySizes: typeof measureExplorerEntrySizes;
   getRuntimeCachePolicy: typeof getExplorerRuntimeCachePolicy;
@@ -40,34 +237,98 @@ export type ExplorerBackendContract = {
   showPathProperties: typeof showExplorerPathProperties;
   openPathAsAdmin: typeof openExplorerPathAsAdmin;
   createDir: typeof createExplorerDir;
+  createFile: typeof createExplorerFile;
   transferItems: typeof transferExplorerItems;
   writeFile: typeof writeExplorerFile;
   readTextFile: typeof readExplorerTextFile;
   readFileBase64: typeof readExplorerFileBase64;
   renamePath: typeof renameExplorerPath;
   deletePath: typeof deleteExplorerPath;
+  isCloudPath: typeof isCloudExplorerPath;
+  supportsSearch: typeof supportsExplorerSearch;
+  supportsNativeIntegration: typeof supportsExplorerNativeIntegration;
+  supportsNativeDragOut: typeof supportsExplorerNativeDragOut;
 };
 
+export async function listExplorerLocation(
+  path: string,
+  showHidden: boolean,
+): Promise<ExplorerLocationListing> {
+  if (isCloudExplorerPath(path)) {
+    const listing = unwrapTauriResult(await commands.cloudListDir(path));
+    return {
+      kind: 'cloud',
+      path: listing.path,
+      parentPath: listing.parent_path,
+      breadcrumbs: toExplorerCloudBreadcrumbs(listing.breadcrumbs),
+      entries: listing.entries,
+    };
+  }
+
+  const normalizedPath = /^[A-Za-z]:$/.test(path) ? `${path}\\` : path;
+  const entries = unwrapTauriResult(await commands.fsListDir(normalizedPath, showHidden));
+  return {
+    kind: 'local',
+    path: normalizedPath,
+    parentPath: getLocalParentPath(normalizedPath),
+    breadcrumbs: buildLocalBreadcrumbs(normalizedPath),
+    entries,
+  };
+}
+
+export async function listExplorerLocationUncached(
+  path: string,
+  showHidden: boolean,
+): Promise<ExplorerLocationListing> {
+  if (isCloudExplorerPath(path)) {
+    return listExplorerLocation(path, showHidden);
+  }
+
+  const normalizedPath = /^[A-Za-z]:$/.test(path) ? `${path}\\` : path;
+  const entries = unwrapTauriResult(await commands.fsListDirUncached(normalizedPath, showHidden));
+  return {
+    kind: 'local',
+    path: normalizedPath,
+    parentPath: getLocalParentPath(normalizedPath),
+    breadcrumbs: buildLocalBreadcrumbs(normalizedPath),
+    entries,
+  };
+}
+
 export async function listExplorerDir(path: string, showHidden: boolean): Promise<ExplorerFileEntry[]> {
-  return unwrapTauriResult(await commands.fsListDir(path, showHidden));
+  return (await listExplorerLocation(path, showHidden)).entries;
 }
 
 export async function listExplorerDirUncached(
   path: string,
   showHidden: boolean,
 ): Promise<ExplorerFileEntry[]> {
-  return unwrapTauriResult(await commands.fsListDirUncached(path, showHidden));
+  return (await listExplorerLocationUncached(path, showHidden)).entries;
 }
 
 export async function getExplorerDrives(): Promise<ExplorerDriveInfo[]> {
-  return unwrapTauriResult(await commands.fsGetDrives());
+  const [localDrives, cloudSnapshot] = await Promise.all([
+    commands.fsGetDrives().then(unwrapTauriResult),
+    listCloudAccounts().catch((): ExplorerCloudAccountsSnapshot => ({ accounts: [], providers: [] })),
+  ]);
+
+  return [
+    ...localDrives.map(toLocalDriveInfo),
+    ...cloudSnapshot.accounts
+      .filter((account) => account.status === 'connected')
+      .map(toCloudDriveInfo),
+  ];
 }
 
 export async function measureExplorerEntrySizes(
   paths: string[],
   forceRefresh = false,
 ): Promise<ExplorerEntryStorageInfo[]> {
-  return unwrapTauriResult(await commands.fsMeasureEntrySizes(paths, forceRefresh));
+  const localPaths = paths.filter((path) => !isCloudExplorerPath(path));
+  if (localPaths.length === 0) {
+    return [];
+  }
+  return unwrapTauriResult(await commands.fsMeasureEntrySizes(localPaths, forceRefresh));
 }
 
 export async function getExplorerRuntimeCachePolicy(): Promise<FsRuntimeCachePolicy> {
@@ -87,6 +348,10 @@ export async function searchExplorerEntriesWithDiagnostics(args: {
   requestId?: number;
   requestScope?: string;
 }): Promise<FileSearchResponse<ExplorerFileSearchResult>> {
+  if (isCloudExplorerPath(args.path)) {
+    throw new Error('Search is not available for cloud drives yet.');
+  }
+
   return unwrapTauriResult(await commands.fsSearchEntriesWithDiagnostics(
     args.path,
     args.query,
@@ -103,6 +368,10 @@ export async function cancelExplorerSearchEntries(args: {
   requestId?: number;
   requestScope?: string;
 }): Promise<void> {
+  if (isCloudExplorerPath(args.path)) {
+    return;
+  }
+
   unwrapTauriResult(await commands.fsCancelSearchEntries(
     args.path,
     args.requestId ?? null,
@@ -111,35 +380,79 @@ export async function cancelExplorerSearchEntries(args: {
 }
 
 export async function watchExplorerEntrySizeRoot(path: string): Promise<void> {
+  if (isCloudExplorerPath(path)) {
+    return;
+  }
   unwrapTauriResult(await commands.fsWatchEntrySizeRoot(path));
 }
 
 export async function unwatchExplorerEntrySizeRoot(path: string): Promise<void> {
+  if (isCloudExplorerPath(path)) {
+    return;
+  }
   unwrapTauriResult(await commands.fsUnwatchEntrySizeRoot(path));
 }
 
 export async function openExplorerPath(path: string): Promise<void> {
+  if (isCloudExplorerPath(path)) {
+    unwrapTauriResult(await commands.cloudOpenFile(path));
+    return;
+  }
   unwrapTauriResult(await commands.fsOpenFile(path));
 }
 
 export async function openExplorerPathWithDialog(path: string): Promise<void> {
+  if (isCloudExplorerPath(path)) {
+    throw new Error('Open With is only available for local filesystem items.');
+  }
   unwrapTauriResult(await commands.fsOpenWithDialog(path));
 }
 
 export async function revealExplorerPath(path: string): Promise<void> {
+  if (isCloudExplorerPath(path)) {
+    throw new Error('Reveal in the OS file manager is only available for local filesystem items.');
+  }
   unwrapTauriResult(await commands.fsRevealInExplorer(path));
 }
 
 export async function showExplorerPathProperties(path: string): Promise<void> {
+  if (isCloudExplorerPath(path)) {
+    throw new Error('Properties are only available for local filesystem items.');
+  }
   unwrapTauriResult(await commands.fsShowItemProperties(path));
 }
 
 export async function openExplorerPathAsAdmin(path: string): Promise<void> {
+  if (isCloudExplorerPath(path)) {
+    throw new Error('Administrative open is only available for local filesystem items.');
+  }
   unwrapTauriResult(await commands.fsOpenAsAdmin(path));
 }
 
 export async function createExplorerDir(path: string): Promise<void> {
+  if (isCloudExplorerPath(path)) {
+    unwrapTauriResult(await commands.cloudCreateDirectory(getParentDir(path), getLeafName(path)));
+    return;
+  }
   unwrapTauriResult(await commands.fsCreateDir(path));
+}
+
+export async function createExplorerFile(
+  parentPath: string,
+  name: string,
+  content: ExplorerWritableContent = '',
+): Promise<void> {
+  if (isCloudExplorerPath(parentPath)) {
+    unwrapTauriResult(await commands.cloudCreateFile(parentPath, name, toWritablePayload(content)));
+    return;
+  }
+
+  const separator = parentPath.includes('\\') ? '\\' : '/';
+  const normalizedParent = parentPath.replace(/[/\\]+$/, '');
+  const nextPath = normalizedParent
+    ? `${normalizedParent}${separator}${name}`
+    : name;
+  unwrapTauriResult(await commands.fsWriteFile(nextPath, toWritablePayload(content)));
 }
 
 export async function transferExplorerItems(
@@ -147,6 +460,9 @@ export async function transferExplorerItems(
   sources: string[],
   operation: ExplorerFileTransferOperation,
 ): Promise<ExplorerFileTransferResult[]> {
+  if (isCloudExplorerPath(targetDir) || sources.some(isCloudExplorerPath)) {
+    return unwrapTauriResult(await commands.cloudTransferItems(targetDir, sources, operation));
+  }
   return unwrapTauriResult(await commands.fsTransferItems(targetDir, sources, operation));
 }
 
@@ -154,32 +470,80 @@ export async function writeExplorerFile(
   path: string,
   content: ExplorerWritableContent,
 ): Promise<void> {
-  const payload: FsWriteFileContent =
-    typeof content === 'string'
-      ? { kind: 'text', value: content }
-      : { kind: 'bytes', value: content };
+  const payload = toWritablePayload(content);
+  if (isCloudExplorerPath(path)) {
+    unwrapTauriResult(await commands.cloudWriteFile(path, payload));
+    return;
+  }
   unwrapTauriResult(await commands.fsWriteFile(path, payload));
 }
 
 export async function readExplorerTextFile(path: string): Promise<string> {
+  if (isCloudExplorerPath(path)) {
+    return unwrapTauriResult(await commands.cloudReadTextFile(path));
+  }
   return unwrapTauriResult(await commands.fsReadTextFile(path));
 }
 
 export async function readExplorerFileBase64(path: string): Promise<string> {
+  if (isCloudExplorerPath(path)) {
+    return unwrapTauriResult(await commands.cloudReadFileBase64(path));
+  }
   return unwrapTauriResult(await commands.fsReadFileBase64(path));
 }
 
 export async function renameExplorerPath(oldPath: string, newPath: string): Promise<void> {
+  if (isCloudExplorerPath(oldPath) || isCloudExplorerPath(newPath)) {
+    if (!isCloudExplorerPath(oldPath) || !isCloudExplorerPath(newPath)) {
+      throw new Error('Renaming between local and cloud locations is not supported.');
+    }
+    unwrapTauriResult(await commands.cloudRenamePath(oldPath, getLeafName(newPath)));
+    return;
+  }
   unwrapTauriResult(await commands.fsRename(oldPath, newPath));
 }
 
 export async function deleteExplorerPath(path: string, recursive: boolean): Promise<void> {
+  if (isCloudExplorerPath(path)) {
+    unwrapTauriResult(await commands.cloudDeletePath(path));
+    return;
+  }
   unwrapTauriResult(await commands.fsDelete(path, recursive));
+}
+
+export function supportsExplorerSearch(path: string): boolean {
+  return !isCloudExplorerPath(path);
+}
+
+export function supportsExplorerNativeIntegration(path: string): boolean {
+  return !isCloudExplorerPath(path);
+}
+
+export function supportsExplorerNativeDragOut(paths: string[]): boolean {
+  return paths.every((path) => !isCloudExplorerPath(path));
+}
+
+export async function listCloudAccounts(): Promise<ExplorerCloudAccountsSnapshot> {
+  return unwrapTauriResult(await commands.cloudListAccounts());
+}
+
+export async function beginCloudAuth(provider: ExplorerCloudProviderId): Promise<ExplorerCloudAuthSession> {
+  return unwrapTauriResult(await commands.cloudBeginAuth(provider));
+}
+
+export async function pollCloudAuth(requestId: string): Promise<ExplorerCloudAuthStatus> {
+  return unwrapTauriResult(await commands.cloudPollAuth(requestId));
+}
+
+export async function disconnectCloudAccount(accountId: string): Promise<void> {
+  unwrapTauriResult(await commands.cloudDisconnectAccount(accountId));
 }
 
 export const explorerBackendContract: ExplorerBackendContract = {
   listDir: listExplorerDir,
   listDirUncached: listExplorerDirUncached,
+  listLocation: listExplorerLocation,
+  listLocationUncached: listExplorerLocationUncached,
   getDrives: getExplorerDrives,
   measureEntrySizes: measureExplorerEntrySizes,
   getRuntimeCachePolicy: getExplorerRuntimeCachePolicy,
@@ -194,12 +558,17 @@ export const explorerBackendContract: ExplorerBackendContract = {
   showPathProperties: showExplorerPathProperties,
   openPathAsAdmin: openExplorerPathAsAdmin,
   createDir: createExplorerDir,
+  createFile: createExplorerFile,
   transferItems: transferExplorerItems,
   writeFile: writeExplorerFile,
   readTextFile: readExplorerTextFile,
   readFileBase64: readExplorerFileBase64,
   renamePath: renameExplorerPath,
   deletePath: deleteExplorerPath,
+  isCloudPath: isCloudExplorerPath,
+  supportsSearch: supportsExplorerSearch,
+  supportsNativeIntegration: supportsExplorerNativeIntegration,
+  supportsNativeDragOut: supportsExplorerNativeDragOut,
 };
 
 export async function listenToExplorerTaskProgress(

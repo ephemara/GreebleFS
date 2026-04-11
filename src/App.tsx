@@ -160,6 +160,20 @@ function clampUnit(value: number): number {
   return clampValue(value, 0, 1);
 }
 
+function resolveConditionalBlurFilter(args: {
+  enabled: boolean;
+  blurPx: number;
+  saturateBoost?: number;
+}): string {
+  if (!args.enabled || args.blurPx <= 0) {
+    return 'none';
+  }
+
+  const saturateBoost = args.saturateBoost ?? 0.35;
+  const blurRatio = Math.min(Math.max(args.blurPx / 18, 0), 1);
+  return `blur(${args.blurPx}px) saturate(${(1.05 + blurRatio * saturateBoost).toFixed(2)})`;
+}
+
 function sanitizeImportedWallpaperFileName(fileName: string): string {
   const dotIndex = fileName.lastIndexOf('.');
   const rawBase = dotIndex >= 0 ? fileName.slice(0, dotIndex) : fileName;
@@ -550,12 +564,11 @@ function App() {
   const shellBackgroundColor = appBlur
     ? resolveShellBackgroundColor(theme.palette.shellBackground, theme.palette.shellBackgroundSolid, clampedAppBlurStrength)
     : theme.palette.shellBackgroundSolid;
-  const blurStrengthRatio = overlayVisualControls.blurStrength.max > 0
-    ? clampedAppBlurStrength / overlayVisualControls.blurStrength.max
-    : 0;
-  const shellBackdropFilter = appBlur && clampedAppBlurStrength > 0
-    ? `blur(${clampedAppBlurStrength}px) saturate(${(1.05 + blurStrengthRatio * 0.35).toFixed(2)})`
-    : 'none';
+  const shellBackdropFilter = resolveConditionalBlurFilter({
+    enabled: appBlur,
+    blurPx: clampedAppBlurStrength,
+    saturateBoost: 0.35,
+  });
   const availableAnimations = useMemo(
     () => mergeOverlayAnimations(builtInAnimations, [...authoredAnimations, ...themeContributedAnimations]),
     [authoredAnimations, builtInAnimations, themeContributedAnimations],
@@ -2826,8 +2839,12 @@ function App() {
           ? 'var(--overlay-workbench-shell-bg)'
           : 'var(--overlay-bg-panel)',
         boxShadow: 'var(--overlay-workbench-shell-shadow)',
-        backdropFilter: workbench.panelStyle === 'glass' ? 'blur(18px)' : 'none',
-        WebkitBackdropFilter: workbench.panelStyle === 'glass' ? 'blur(18px)' : 'none',
+        backdropFilter: appBlur && workbench.panelStyle === 'glass'
+          ? resolveConditionalBlurFilter({ enabled: true, blurPx: Math.min(clampedAppBlurStrength, 18) })
+          : 'none',
+        WebkitBackdropFilter: appBlur && workbench.panelStyle === 'glass'
+          ? resolveConditionalBlurFilter({ enabled: true, blurPx: Math.min(clampedAppBlurStrength, 18) })
+          : 'none',
       }
     : {
         flex: 1,
@@ -3319,6 +3336,7 @@ function App() {
       <CommandPalette
         isOpen={isCommandPaletteOpen}
         appearance={resolvedAppearance}
+        blurEnabled={appBlur}
         actions={commandPaletteActions}
         shortcutLabel={formatHotkeyLabel(keybindings.commandPalette)}
         onClose={handleCloseCommandPalette}
@@ -3563,8 +3581,12 @@ function OverlayViewportDock({
             flexDirection: 'column',
             gap: 10,
             zIndex: 60,
-            backdropFilter: 'blur(18px)',
-            WebkitBackdropFilter: 'blur(18px)',
+            backdropFilter: blur
+              ? resolveConditionalBlurFilter({ enabled: true, blurPx: Math.min(blurStrength, 18) })
+              : 'none',
+            WebkitBackdropFilter: blur
+              ? resolveConditionalBlurFilter({ enabled: true, blurPx: Math.min(blurStrength, 18) })
+              : 'none',
           }}
         >
           <div
@@ -3805,6 +3827,10 @@ function TopBar({
   const isBottomBar = layoutProfile.chrome.barPosition === 'bottom';
   const isWindowedMode = windowMode === 'windowed';
   const windowedChromeTopInset = isWindowedMode && blurPlatform === 'windows' && !isWindowMaximized ? 10 : 0;
+  const topBarBackdropFilter = resolveConditionalBlurFilter({
+    enabled: blur && workbench.topBarStyle === 'glass',
+    blurPx: Math.min(blurStrength, 18),
+  });
   const openPanels = useMemo(
     () => getTabbedOpenPanelIds(layoutProfile, openPanelIds)
       .map(id => panels.find(panel => panel.id === id))
@@ -3957,8 +3983,8 @@ function TopBar({
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden',
-      backdropFilter: workbench.topBarStyle === 'glass' ? 'blur(18px)' : 'none',
-      WebkitBackdropFilter: workbench.topBarStyle === 'glass' ? 'blur(18px)' : 'none',
+      backdropFilter: topBarBackdropFilter,
+      WebkitBackdropFilter: topBarBackdropFilter,
     }}
     >
       <div style={{
@@ -4107,8 +4133,8 @@ function TopBar({
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden',
-      backdropFilter: workbench.topBarStyle === 'glass' ? 'blur(18px)' : 'none',
-      WebkitBackdropFilter: workbench.topBarStyle === 'glass' ? 'blur(18px)' : 'none',
+      backdropFilter: topBarBackdropFilter,
+      WebkitBackdropFilter: topBarBackdropFilter,
     }}
     >
       <div style={{
@@ -4213,8 +4239,8 @@ function TopBar({
             ? 'inset 0 -1px 0 rgba(255,255,255,0.04), 0 -8px 18px rgba(0,0,0,0.2)'
             : 'inset 0 1px 0 rgba(255,255,255,0.04), 0 8px 18px rgba(0,0,0,0.2)'),
       overflow: 'hidden',
-      backdropFilter: workbench.topBarStyle === 'glass' ? 'blur(18px)' : 'none',
-      WebkitBackdropFilter: workbench.topBarStyle === 'glass' ? 'blur(18px)' : 'none',
+      backdropFilter: topBarBackdropFilter,
+      WebkitBackdropFilter: topBarBackdropFilter,
     }}>
       <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
         {topBarShaderLayer}

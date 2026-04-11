@@ -16,12 +16,14 @@ export interface OverlayCommandPaletteAction {
 export function CommandPalette({
   isOpen,
   appearance,
+  blurEnabled,
   actions,
   shortcutLabel,
   onClose,
 }: {
   isOpen: boolean;
   appearance: ResolvedOverlayAppearance;
+  blurEnabled: boolean;
   actions: OverlayCommandPaletteAction[];
   shortcutLabel: string;
   onClose: () => void;
@@ -132,8 +134,12 @@ export function CommandPalette({
         justifyContent: 'center',
         padding: `var(--overlay-workbench-command-palette-top-inset) 20px 20px`,
         background: 'var(--overlay-workbench-command-palette-scrim-bg)',
-        backdropFilter: workbench.commandPaletteStyle === 'glass' ? 'blur(14px)' : 'blur(10px)',
-        WebkitBackdropFilter: workbench.commandPaletteStyle === 'glass' ? 'blur(14px)' : 'blur(10px)',
+        backdropFilter: blurEnabled
+          ? (workbench.commandPaletteStyle === 'glass' ? 'blur(14px)' : 'blur(10px)')
+          : 'none',
+        WebkitBackdropFilter: blurEnabled
+          ? (workbench.commandPaletteStyle === 'glass' ? 'blur(14px)' : 'blur(10px)')
+          : 'none',
       }}
       onMouseDown={event => {
         if (event.target === event.currentTarget) {
@@ -154,8 +160,8 @@ export function CommandPalette({
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
-          backdropFilter: workbench.commandPaletteStyle === 'glass' ? 'blur(18px)' : 'none',
-          WebkitBackdropFilter: workbench.commandPaletteStyle === 'glass' ? 'blur(18px)' : 'none',
+          backdropFilter: blurEnabled && workbench.commandPaletteStyle === 'glass' ? 'blur(18px)' : 'none',
+          WebkitBackdropFilter: blurEnabled && workbench.commandPaletteStyle === 'glass' ? 'blur(18px)' : 'none',
         }}
       >
         <div

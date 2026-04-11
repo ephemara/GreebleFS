@@ -1,6 +1,7 @@
 use crate::fs_commands::{
     fs_open_file, FileEntry, FileTransferOperation, FileTransferResult, FsWriteFileContent,
 };
+use async_recursion::async_recursion;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
 use chrono::{DateTime, Utc};
@@ -494,8 +495,9 @@ pub async fn cloud_poll_auth(
         &token.access_token,
         token.expires_in,
     )?;
+    let account_id = account.id.clone();
     let summary = CloudAccountSummary {
-        id: account.id,
+        id: account_id.clone(),
         provider: account.provider,
         display_name: account.display_name,
         email: account.email,
@@ -503,7 +505,7 @@ pub async fn cloud_poll_auth(
         connected_at: account.connected_at,
         status: CloudAccountStatus::Connected,
         drive_label: account.drive_label,
-        root_path: build_cloud_root_path(account.provider, &account.id),
+        root_path: build_cloud_root_path(account.provider, &account_id),
     };
     let mut sessions = state
         .auth_sessions
@@ -2182,6 +2184,7 @@ async fn transfer_cloud_to_cloud(
     }
 }
 
+#[async_recursion]
 async fn upload_local_path(
     client: &Client,
     target: &CloudPathRef,
@@ -2245,13 +2248,17 @@ async fn find_child_by_name(
     match parent.provider() {
         CloudProviderId::GoogleDrive => {
             let parent_id = parent.item_id().unwrap_or("root");
+            let query = vec![
+                (
+                    "q",
+                    format!("trashed = false and '{parent_id}' in parents and name = '{child_name}'"),
+                ),
+                ("fields", "files(id,name)".to_string()),
+                ("pageSize", "100".to_string()),
+            ];
             let url = Url::parse_with_params(
                 "https://www.googleapis.com/drive/v3/files",
-                &[
-                    ("q", &format!("trashed = false and '{parent_id}' in parents and name = '{child_name}'")),
-                    ("fields", "files(id,name)"),
-                    ("pageSize", "100"),
-                ],
+                &query,
             )
             .map_err(|error| format!("Failed to build Google Drive child lookup URL: {error}"))?;
             let response = client
@@ -2276,6 +2283,7 @@ async fn find_child_by_name(
     }
 }
 
+#[async_recursion]
 async fn download_google_item_to_local(
     client: &Client,
     access_token: &str,
@@ -2289,7 +2297,11 @@ async fn download_google_item_to_local(
             .map_err(|error| format!("Failed to create local folder from Google Drive item: {error}"))?;
         let children = google_list_children(client, access_token, &metadata.id, account_id).await?;
         for child in children {
-            let child_metadata = google_get_file_metadata(client, access_token, child.path.split('/').last().unwrap_or("")).await;
+            let child_ref = parse_cloud_path(&child.path)?;
+            let child_item_id = child_ref
+                .item_id()
+                .ok_or_else(|| "Google Drive child item is missing an identifier.".to_string())?;
+            let child_metadata = google_get_file_metadata(client, access_token, child_item_id).await;
             if let Ok(child_metadata) = child_metadata {
                 download_google_item_to_local(client, access_token, &child_metadata, account_id, &destination).await?;
             }
@@ -2315,6 +2327,7 @@ async fn download_google_item_to_local(
     }
 }
 
+#[async_recursion]
 async fn download_dropbox_item_to_local(
     client: &Client,
     access_token: &str,

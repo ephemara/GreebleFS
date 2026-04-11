@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Camera, FolderOpen, GitBranch, Image, LayoutGrid, MonitorPlay, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Type, VolumeX } from 'lucide-react';
+import { Camera, FolderOpen, GitBranch, HardDrive, Image, LayoutGrid, MonitorPlay, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Type, VolumeX } from 'lucide-react';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { useShallow } from 'zustand/react/shallow';
 import type { LoadedOverlayAnimation } from './animationRuntime';
 import { getOverlayWallpaperKindLabel, type LoadedOverlayWallpaper } from './wallpaperRuntime';
@@ -29,9 +30,16 @@ import {
   type ExternalTerminalProfile,
 } from '../config/platform';
 import {
+  beginCloudAuth,
+  disconnectCloudAccount,
   createExplorerDir,
+  listCloudAccounts,
   listExplorerDir,
   openExplorerPath,
+  pollCloudAuth,
+  type ExplorerCloudAccountSummary,
+  type ExplorerCloudAccountsSnapshot,
+  type ExplorerCloudProviderId,
 } from '../runtime/explorerBackend';
 import {
   createDefaultFolderIconRules,
@@ -315,6 +323,7 @@ type SettingsSectionKey =
   | 'animations'
   | 'terminal'
   | 'explorer'
+  | 'cloud'
   | 'screenshots'
   | 'layouts'
   | 'hotkeys'
@@ -424,6 +433,15 @@ function OverviewCard({
   );
 }
 
+const EMPTY_CLOUD_ACCOUNTS_SNAPSHOT: ExplorerCloudAccountsSnapshot = {
+  accounts: [],
+  providers: [],
+};
+
+function getCloudProviderLabel(provider: ExplorerCloudProviderId): string {
+  return provider === 'google-drive' ? 'Google Drive' : 'Dropbox';
+}
+
 
 export function SettingsPage({
   appearance,
@@ -529,6 +547,11 @@ export function SettingsPage({
   const [startupSyncError, setStartupSyncError] = useState<string | null>(null);
   const [overviewNotice, setOverviewNotice] = useState<string | null>(null);
   const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [cloudSnapshot, setCloudSnapshot] = useState<ExplorerCloudAccountsSnapshot>(EMPTY_CLOUD_ACCOUNTS_SNAPSHOT);
+  const [cloudLoading, setCloudLoading] = useState(false);
+  const [cloudNotice, setCloudNotice] = useState<string | null>(null);
+  const [cloudError, setCloudError] = useState<string | null>(null);
+  const [cloudAuthProvider, setCloudAuthProvider] = useState<ExplorerCloudProviderId | null>(null);
   const [wallpaperNotice, setWallpaperNotice] = useState<string | null>(null);
   const [wallpaperImportError, setWallpaperImportError] = useState<string | null>(null);
   const [layoutManifestState, setLayoutManifestState] = useState<LoadedLayoutManifest>(DEFAULT_LOADED_LAYOUT_MANIFEST);
@@ -582,6 +605,7 @@ export function SettingsPage({
     () => availableShaders.map(shader => shader.id),
     [availableShaders],
   );
+  const blurEnabled = settings.appearance.appBlur !== false;
   const activeWallpaperSelectionId = settings.appearance.activeWallpaperId ?? null;
   const themeWallpaperAvailable = Boolean(appearance.baseTheme.assets?.backgroundUrl);
   const wallpaperSelectionSummary = activeWallpaperSelectionId == null
@@ -799,6 +823,71 @@ export function SettingsPage({
       setOverviewError(`Failed to open ${label}: ${String(error)}`);
     }
   }, [ensureWorkspaceDirectory]);
+
+  const refreshCloudAccounts = useCallback(async () => {
+    setCloudLoading(true);
+    try {
+      const snapshot = await listCloudAccounts();
+      setCloudSnapshot(snapshot);
+      setCloudError(null);
+    } catch (error) {
+      setCloudError(`Failed to load cloud accounts: ${String(error)}`);
+    } finally {
+      setCloudLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshCloudAccounts();
+  }, [refreshCloudAccounts]);
+
+  const connectCloudProvider = useCallback(async (provider: ExplorerCloudProviderId) => {
+    setCloudError(null);
+    setCloudNotice(null);
+    setCloudAuthProvider(provider);
+
+    try {
+      const session = await beginCloudAuth(provider);
+      await openUrl(session.authorization_url);
+      setCloudNotice(`Opened ${getCloudProviderLabel(provider)} in the system browser. Finish sign-in there and this page will update automatically.`);
+
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < 5 * 60_000) {
+        const status = await pollCloudAuth(session.request_id);
+        if (status.status === 'pending') {
+          await new Promise((resolve) => window.setTimeout(resolve, 1200));
+          continue;
+        }
+
+        if (status.status === 'completed') {
+          await refreshCloudAccounts();
+          const accountLabel = status.account?.email || status.account?.display_name || getCloudProviderLabel(provider);
+          setCloudNotice(`Connected ${accountLabel}.`);
+          return;
+        }
+
+        throw new Error(status.error || `Authentication failed with status: ${status.status}`);
+      }
+
+      throw new Error('Timed out waiting for the browser sign-in flow to finish.');
+    } catch (error) {
+      setCloudError(`Failed to connect ${getCloudProviderLabel(provider)}: ${String(error)}`);
+    } finally {
+      setCloudAuthProvider(null);
+    }
+  }, [refreshCloudAccounts]);
+
+  const disconnectProviderAccount = useCallback(async (account: ExplorerCloudAccountSummary) => {
+    setCloudError(null);
+    setCloudNotice(null);
+    try {
+      await disconnectCloudAccount(account.id);
+      await refreshCloudAccounts();
+      setCloudNotice(`Disconnected ${account.email || account.display_name}.`);
+    } catch (error) {
+      setCloudError(`Failed to disconnect ${account.email || account.display_name}: ${String(error)}`);
+    }
+  }, [refreshCloudAccounts]);
 
   const handleWallpaperFileSelection = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files ?? []);
@@ -1029,6 +1118,8 @@ export function SettingsPage({
       action: () => setActiveSection('theme-json'),
     },
   ], []);
+  const connectedCloudAccountCount = cloudSnapshot.accounts.filter(account => account.status === 'connected').length;
+  const configuredCloudProviderCount = cloudSnapshot.providers.filter(provider => provider.configured).length;
 
   const patchFolderRules = useCallback((rules: FolderIconRule[]) => {
     updateExplorer({ folderIconRules: rules });
@@ -1175,6 +1266,14 @@ export function SettingsPage({
       icon: <FolderOpen size={14} />,
     },
     {
+      key: 'cloud',
+      label: 'Cloud',
+      subtitle: 'OAuth-backed Google Drive and Dropbox accounts.',
+      summary: `${connectedCloudAccountCount} connected · ${configuredCloudProviderCount}/2 providers configured`,
+      detail: 'Connect real cloud accounts through the system browser, keep tokens off the settings store, and surface each connected account as an explorer drive.',
+      icon: <HardDrive size={14} />,
+    },
+    {
       key: 'screenshots',
       label: 'Screenshots',
       subtitle: 'Capture defaults, save path, and proof-focused editor behavior.',
@@ -1252,8 +1351,8 @@ export function SettingsPage({
           boxShadow: workbench.settingsStyle === 'floating' || workbench.settingsStyle === 'glass'
             ? 'var(--overlay-workbench-shell-shadow)'
             : 'none',
-          backdropFilter: workbench.settingsStyle === 'glass' ? 'blur(18px)' : 'none',
-          WebkitBackdropFilter: workbench.settingsStyle === 'glass' ? 'blur(18px)' : 'none',
+          backdropFilter: blurEnabled && workbench.settingsStyle === 'glass' ? 'blur(18px)' : 'none',
+          WebkitBackdropFilter: blurEnabled && workbench.settingsStyle === 'glass' ? 'blur(18px)' : 'none',
           overflow: 'hidden',
         }}
       >
@@ -3272,6 +3371,151 @@ export function SettingsPage({
               </button>
             </div>
           </section>
+            )}
+
+            {activeSection === 'cloud' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                <SectionTitle
+                  icon={<HardDrive size={12} />}
+                  title="Cloud Accounts"
+                  subtitle="Browser-based OAuth for Google Drive and Dropbox, with one drive rail entry per connected account."
+                />
+
+                <div className="mt-4 space-y-4">
+                  <div className="rounded border p-3" style={{ borderColor: `${accent}44`, background: `${accent}0d` }}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="max-w-[720px]">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: muted }}>Cloud Drive Integration</div>
+                        <p className="mt-1 text-[11px] leading-5" style={{ color: muted }}>
+                          Connected accounts appear in the explorer `Drives` rail as first-class locations. Tokens stay in the OS keychain; only lightweight account metadata is kept in app storage.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-[0.12em]">
+                        <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                          {connectedCloudAccountCount} Connected
+                        </span>
+                        <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                          {configuredCloudProviderCount}/2 Providers Ready
+                        </span>
+                      </div>
+                    </div>
+                    {cloudNotice ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${accent}55`, background: `${accent}10`, color: text }}>
+                        {cloudNotice}
+                      </div>
+                    ) : null}
+                    {cloudError ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: 'rgba(248,113,113,0.4)', background: 'rgba(248,113,113,0.12)', color: '#fecaca' }}>
+                        {cloudError}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                    {(['google-drive', 'dropbox'] as const).map(providerId => {
+                      const provider = cloudSnapshot.providers.find(item => item.provider === providerId) ?? {
+                        provider: providerId,
+                        configured: false,
+                        missing_configuration: ['provider configuration unavailable'],
+                      };
+                      const providerAccounts = cloudSnapshot.accounts.filter(account => account.provider === providerId);
+                      const providerLabel = getCloudProviderLabel(providerId);
+                      const providerBusy = cloudAuthProvider === providerId;
+
+                      return (
+                        <div key={providerId} className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">{providerLabel}</div>
+                              <p className="mt-1 text-[11px] opacity-40">
+                                {provider.configured
+                                  ? 'Use the system browser to connect one or more accounts. Each connected account becomes its own explorer drive.'
+                                  : 'Provider credentials are missing in the runtime environment, so OAuth cannot start yet.'}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={!provider.configured || providerBusy}
+                              onClick={() => void connectCloudProvider(providerId)}
+                              className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                              style={{
+                                border: `1px solid ${provider.configured ? `${accent}55` : border}`,
+                                background: provider.configured ? `${accent}18` : 'rgba(255,255,255,0.04)',
+                                color: provider.configured ? text : muted,
+                                opacity: providerBusy ? 0.7 : 1,
+                              }}
+                            >
+                              {providerBusy ? 'Waiting...' : providerAccounts.length > 0 ? 'Connect Another' : 'Connect Account'}
+                            </button>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-[0.12em]">
+                            <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: provider.configured ? text : '#fda4af' }}>
+                              {provider.configured ? 'Configured' : 'Needs Credentials'}
+                            </span>
+                            <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                              {providerAccounts.length} account{providerAccounts.length === 1 ? '' : 's'}
+                            </span>
+                          </div>
+
+                          {!provider.configured && provider.missing_configuration.length > 0 ? (
+                            <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: 'rgba(248,113,113,0.28)', background: 'rgba(248,113,113,0.08)', color: '#fecaca' }}>
+                              Missing: {provider.missing_configuration.join(', ')}
+                            </div>
+                          ) : null}
+
+                          <div className="mt-3 space-y-2">
+                            {providerAccounts.length === 0 ? (
+                              <div className="rounded border px-3 py-3 text-[11px] opacity-45" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: muted }}>
+                                {cloudLoading ? 'Loading account state...' : `No ${providerLabel} accounts connected yet.`}
+                              </div>
+                            ) : providerAccounts.map(account => (
+                              <div key={account.id} className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="text-[11px] font-semibold" style={{ color: text }}>
+                                      {account.display_name}
+                                    </div>
+                                    <div className="mt-1 text-[11px] opacity-45" style={{ color: muted }}>
+                                      {account.email}
+                                    </div>
+                                    <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-[0.12em]">
+                                      <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: account.status === 'connected' ? text : '#fda4af' }}>
+                                        {account.status}
+                                      </span>
+                                      <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                                        {account.drive_label}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => void disconnectProviderAccount(account)}
+                                    className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                                    style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: muted }}
+                                  >
+                                    Disconnect
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => void refreshCloudAccounts()}
+                    className="inline-flex items-center gap-2 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                    style={{ background: 'rgba(255,255,255,0.04)', color: text, border: `1px solid ${border}` }}
+                  >
+                    <RefreshCw size={11} />
+                    Refresh Cloud Status
+                  </button>
+                </div>
+              </section>
             )}
 
             {activeSection === 'screenshots' && (

@@ -1094,6 +1094,7 @@ export function TerminalOverlay({
     [appearance.theme, appearance.workbenchTheme],
   );
   const uiFont = appearance.fonts.ui;
+  const blurEnabled = appearanceSettings.appBlur !== false;
 
   useEffect(() => {
     ensureFontFamilyLoaded(uiFont);
@@ -1967,8 +1968,8 @@ export function TerminalOverlay({
         fontFamily: uiFont,
         boxShadow: 'var(--overlay-workbench-shell-shadow)',
         borderTop: '1px solid var(--overlay-workbench-terminal-border)',
-        backdropFilter: appearance.workbenchTheme.terminalStyle === 'glass' ? 'blur(18px)' : 'none',
-        WebkitBackdropFilter: appearance.workbenchTheme.terminalStyle === 'glass' ? 'blur(18px)' : 'none',
+        backdropFilter: blurEnabled && appearance.workbenchTheme.terminalStyle === 'glass' ? 'blur(18px)' : 'none',
+        WebkitBackdropFilter: blurEnabled && appearance.workbenchTheme.terminalStyle === 'glass' ? 'blur(18px)' : 'none',
       }}
     >
       <div

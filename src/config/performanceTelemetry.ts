@@ -36,7 +36,7 @@ export const explorerPerformanceBudgets = {
   },
   overlay_frame_time: {
     label: 'Overlay Frame p95',
-    targetMs: 16.7,
+    targetMs: 8.3,
     description: 'p95 requestAnimationFrame delta collected while the overlay is visible.',
   },
 } as const;

@@ -43,6 +43,8 @@ interface ExplorerSideRailProps {
   brandLabel: string;
   sidebarWidth: number;
   currentPath: string;
+  locationTitle?: string;
+  locationLabel?: string;
   drives: ExplorerDriveInfo[];
   drivesLoading: boolean;
   isCompactDock: boolean;
@@ -72,6 +74,8 @@ export function ExplorerSideRail({
   brandLabel,
   sidebarWidth,
   currentPath,
+  locationTitle: locationTitleProp,
+  locationLabel: locationLabelProp,
   drives,
   drivesLoading,
   isCompactDock,
@@ -103,8 +107,8 @@ export function ExplorerSideRail({
     () => rail.nodes.filter((node) => node.kind === 'bookmark').length,
     [rail.nodes],
   );
-  const locationTitle = currentPath.trim() || 'Home';
-  const locationLabel = getPathLeaf(locationTitle);
+  const locationTitle = locationTitleProp ?? (currentPath.trim() || 'Home');
+  const locationLabel = locationLabelProp ?? getPathLeaf(locationTitle);
   const filteredRail = useMemo(() => ({
     ...rail,
     searchQuery: deferredQuery,
@@ -328,14 +332,58 @@ export function ExplorerSideRail({
           )}
 
           {!drivesLoading && drives.map((drive) => {
+            const isCloudDrive = drive.kind === 'cloud';
+            const drivePath = drive.path;
+            const isActive = isCloudDrive
+              ? currentPath === drivePath || currentPath.startsWith(`${drivePath}/`)
+              : currentPath.toUpperCase().startsWith(drive.path.toUpperCase());
+
+            if (isCloudDrive) {
+              return (
+                <button
+                  key={drive.id}
+                  type="button"
+                  onClick={() => onNavigate(drive.path)}
+                  style={{
+                    width: '100%',
+                    padding: dense ? '5px 7px' : '8px 10px',
+                    borderRadius: 9,
+                    border: `1px solid ${isActive ? `${accent}66` : 'var(--overlay-border)'}`,
+                    background: isActive ? `${accent}17` : 'var(--overlay-explorer-chip-bg)',
+                    color: 'var(--overlay-text-primary)',
+                    display: 'grid',
+                    gridTemplateColumns: 'auto 1fr',
+                    gap: dense ? 6 : 10,
+                    alignItems: 'center',
+                    cursor: 'pointer',
+                    marginBottom: 4,
+                  }}
+                >
+                  <FolderTree size={dense ? 11 : 14} style={{ color: isActive ? accent : 'var(--overlay-text-muted)' }} />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                      <span style={{ fontSize: dense ? 9.5 : 11, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {drive.label}
+                      </span>
+                      <span style={{ fontSize: 9, color: 'var(--overlay-text-dim)', textTransform: 'uppercase' }}>
+                        {drive.provider === 'google-drive' ? 'Drive' : 'Dropbox'}
+                      </span>
+                    </div>
+                    <div style={{ marginTop: 4, fontSize: 8.5, color: 'var(--overlay-text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {drive.email}
+                    </div>
+                  </div>
+                </button>
+              );
+            }
+
             const usedBytes = Math.max(drive.total_bytes - drive.free_bytes, 0);
             const usedRatio = drive.total_bytes > 0 ? usedBytes / drive.total_bytes : 0;
-            const isActive = currentPath.toUpperCase().startsWith(drive.letter.toUpperCase());
             return (
               <button
-                key={drive.letter}
+                key={drive.id}
                 type="button"
-                onClick={() => onNavigate(drive.letter)}
+                onClick={() => onNavigate(drive.path)}
                 style={{
                   width: '100%',
                   padding: dense ? '5px 7px' : '8px 10px',
@@ -344,7 +392,7 @@ export function ExplorerSideRail({
                   background: isActive ? `${accent}17` : 'var(--overlay-explorer-chip-bg)',
                   color: 'var(--overlay-text-primary)',
                   display: 'grid',
-                  gridTemplateColumns: dense ? 'auto 1fr' : 'auto 1fr',
+                  gridTemplateColumns: 'auto 1fr',
                   gap: dense ? 6 : 10,
                   alignItems: 'center',
                   cursor: 'pointer',

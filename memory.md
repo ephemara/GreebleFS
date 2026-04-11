@@ -13,6 +13,25 @@
   - the shared top bar should stay panel-agnostic and preserve horizontal space for global shell controls
   - explorer mode/source/preview controls are contextual and belong next to the explorer’s oversized path/search bar, where their impact on navigation is immediate
 
+## 2026-04-10 — First Smoothness Pass For 120 Hz
+
+- Landed a deliberate first pass focused on perceived smoothness rather than visual richness.
+- `src/components/FileExplorer.tsx` no longer uses Framer Motion in the explorer hot path:
+  - icon-size changes now use CSS transitions
+  - experimental layout sections now render without JS-driven layout animation
+  - the new-item grid placeholder no longer animates through Framer Motion
+- The global blur toggle is now honored across the major shell surfaces:
+  - explorer preview / toolbar / status / zoom HUD / experimental HUD
+  - top bar and top bar menus
+  - command palette scrim and body
+  - settings shell
+  - terminal shell
+- `src/config/performanceTelemetry.ts` now records `overlay_frame_time` against an `8.3ms` p95 target so the stored frame budget matches a 120 Hz goal.
+- Narrow validation passed with:
+  - `bunx tsc --noEmit --skipLibCheck --jsx react-jsx --module esnext --target es2022 --moduleResolution bundler --allowSyntheticDefaultImports src/vite-env.d.ts src/App.tsx src/components/FileExplorer.tsx src/components/CommandPalette.tsx src/components/SettingsPage.tsx src/components/TerminalOverlay.tsx src/config/performanceTelemetry.ts`
+- Recommended next step:
+  - profile release-mode wallpaper/shader/animation layer stacking and any remaining scroll-selection hotspots after testing with blur disabled
+
 ## 2026-04-10 — Screenshot Task Isolation + Managed Notes Root
 
 - Fixed the screenshot panel status-bar bleed-through in `src/components/ScreenshotsManager.tsx`:

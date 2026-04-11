@@ -15,7 +15,6 @@ import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useShallow } from 'zustand/react/shallow';
 import type { EditorProps as MonacoEditorProps } from '@monaco-editor/react';
-import { motion } from 'framer-motion';
 import {
   ChevronRight, ChevronLeft, ArrowUp, Search, RefreshCw,
   X, Star, StarOff, Terminal,
@@ -142,6 +141,7 @@ import {
   type ExplorerFileTransferOperation as FileTransferOperation,
   type ExplorerFileTransferResult as FileTransferResult,
   type ExplorerFileSearchResult as FileSearchResult,
+  type ExplorerLocationListing,
 } from '../runtime/explorerBackend';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 
@@ -165,23 +165,13 @@ const EXPLORER_GRID_OVERSCAN_ROWS = 2;
 const EXPLORER_LAYOUT_WHEEL_STEP_DELTA = 80;
 const EXPLORER_ENTRY_SIZE_BATCH_SETTLE_MS = 72;
 const EXPLORER_NATIVE_ICON_BATCH_SETTLE_MS = 96;
-const EXPLORER_ZOOM_POSITION_SPRING = {
-  type: 'spring' as const,
-  stiffness: 280,
-  damping: 34,
-  mass: 0.78,
-};
-const EXPLORER_ZOOM_SIZE_TWEEN = {
-  duration: 0.18,
-  ease: [0.22, 1, 0.36, 1] as const,
-};
 
 type ExplorerSearchCacheEntry = {
   results: FileSearchResult[];
   diagnostics: Awaited<ReturnType<ExplorerBackendContract['searchEntriesWithDiagnostics']>>['diagnostics'];
 };
 
-const explorerDirectoryResultCache = new Map<string, Promise<FileEntry[]> | FileEntry[]>();
+const explorerDirectoryResultCache = new Map<string, Promise<ExplorerLocationListing> | ExplorerLocationListing>();
 const explorerSearchResultCache = new Map<string, Promise<ExplorerSearchCacheEntry> | ExplorerSearchCacheEntry>();
 
 function getExplorerDirectoryCacheKey(path: string, showHidden: boolean): string {
@@ -204,8 +194,8 @@ function getExplorerSearchCacheKey(args: {
 
 async function getOrLoadCachedExplorerDirectoryEntries(
   key: string,
-  loader: () => Promise<FileEntry[]>,
-): Promise<FileEntry[]> {
+  loader: () => Promise<ExplorerLocationListing>,
+): Promise<ExplorerLocationListing> {
   const cachedValue = explorerDirectoryResultCache.get(key);
   if (cachedValue) {
     return cachedValue instanceof Promise ? cachedValue : cachedValue;
@@ -679,10 +669,21 @@ function formatDate(ms: number): string {
 }
 
 function normalizeExplorerPath(path: string): string {
+  if (path.startsWith('cloud://')) {
+    return path.replace(/\/+$/, '') || path;
+  }
   return /^[A-Za-z]:$/.test(path) ? `${path}\\` : path;
 }
 
 function getExplorerParentPath(path: string): string {
+  if (path.startsWith('cloud://')) {
+    const trimmed = path.replace(/\/+$/, '');
+    const segments = trimmed.split('/');
+    if (segments.length <= 5) {
+      return trimmed;
+    }
+    return segments.slice(0, -1).join('/');
+  }
   const normalized = path.replace(/[/\\]+$/, '');
   const parts = normalized.split(/[/\\]/);
   if (parts.length <= 1) {
@@ -1148,6 +1149,7 @@ function clampConstellationCoordinate(value: number, min: number, max: number): 
 function isLikelyExplorerPathInput(value: string): boolean {
   const trimmed = value.trim();
   if (!trimmed) return false;
+  if (trimmed.startsWith('cloud://')) return true;
   if (/^[A-Za-z]:[\\/]/.test(trimmed) || /^[A-Za-z]:$/.test(trimmed)) return true;
   if (trimmed.startsWith('\\\\')) return true;
   if (trimmed.startsWith('~')) return true;
@@ -1161,6 +1163,9 @@ function resolveExplorerPathInput(
   runtimePlatform: ReturnType<typeof detectClientPlatform>,
 ): string {
   const trimmed = input.trim();
+  if (trimmed.startsWith('cloud://')) {
+    return normalizeExplorerPath(trimmed);
+  }
   const separator = getPlatformPathSeparator(runtimePlatform);
   const normalizedSeparators = trimmed.replace(/[\\/]+/g, separator);
 
@@ -1184,11 +1189,16 @@ function resolveExplorerPathInput(
 
 function SvgIcon({ src, size = 20 }: { src: string; size?: number }) {
   return (
-    <motion.img
+    <img
       src={src}
-      animate={{ width: size, height: size }}
-      transition={EXPLORER_ZOOM_SIZE_TWEEN}
-      style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0, display: 'block', willChange: 'width, height' }}
+      style={{
+        width: size,
+        height: size,
+        objectFit: 'contain',
+        flexShrink: 0,
+        display: 'block',
+        transition: 'width 0.18s cubic-bezier(0.22, 1, 0.36, 1), height 0.18s cubic-bezier(0.22, 1, 0.36, 1)',
+      }}
       onError={e => { (e.target as HTMLImageElement).style.opacity = '0'; }}
       draggable={false}
     />
@@ -1581,6 +1591,7 @@ function PreviewPanel({
   viewMode,
   onViewModeChange,
   explorerTheme,
+  blurEnabled,
 }: {
   preview: PreviewState;
   width: number;
@@ -1591,6 +1602,7 @@ function PreviewPanel({
   viewMode: ExplorerDocumentViewMode;
   onViewModeChange: (mode: ExplorerDocumentViewMode) => void;
   explorerTheme: ResolvedExplorerThemeRecipe;
+  blurEnabled: boolean;
 }) {
   const dragging = useRef(false);
   const startX   = useRef(0);
@@ -1647,8 +1659,8 @@ function PreviewPanel({
         border: '1px solid var(--overlay-explorer-preview-border)',
         borderRadius: 'var(--overlay-explorer-panel-radius)',
         boxShadow: 'var(--overlay-explorer-toolbar-shadow)',
-        backdropFilter: explorerTheme.previewStyle === 'glass' ? 'blur(18px)' : 'none',
-        WebkitBackdropFilter: explorerTheme.previewStyle === 'glass' ? 'blur(18px)' : 'none',
+        backdropFilter: blurEnabled && explorerTheme.previewStyle === 'glass' ? 'blur(18px)' : 'none',
+        WebkitBackdropFilter: blurEnabled && explorerTheme.previewStyle === 'glass' ? 'blur(18px)' : 'none',
         display: 'flex',
         flexDirection: 'column',
         flexShrink: 0,
@@ -1886,12 +1898,14 @@ export function FileExplorer({
   const {
     cancelSearchEntries: cancelExplorerSearchEntries,
     createDir: createExplorerDir,
+    createFile: createExplorerFile,
     deletePath: deleteExplorerPath,
     getDrives: getExplorerDrives,
     getHomeDir: getExplorerHomeDir,
     getRuntimeCachePolicy: getExplorerRuntimeCachePolicy,
-    listDir: listExplorerDir,
-    listDirUncached: listExplorerDirUncached,
+    isCloudPath: isCloudExplorerPath,
+    listLocation: listExplorerLocation,
+    listLocationUncached: listExplorerLocationUncached,
     measureEntrySizes: measureExplorerEntrySizes,
     openPath: openExplorerPath,
     openWithDialog: openExplorerPathWithDialog,
@@ -1902,6 +1916,9 @@ export function FileExplorer({
     revealPath: revealExplorerPath,
     showPathProperties: showExplorerPathProperties,
     searchEntriesWithDiagnostics: searchExplorerEntriesWithDiagnostics,
+    supportsNativeDragOut,
+    supportsNativeIntegration,
+    supportsSearch,
     transferItems: transferExplorerItems,
     unwatchEntrySizeRoot: unwatchExplorerEntrySizeRoot,
     watchEntrySizeRoot: watchExplorerEntrySizeRoot,
@@ -1955,6 +1972,7 @@ export function FileExplorer({
   const uiFont = appearance?.fonts.ui ?? 'Inter,system-ui,sans-serif';
   const themeIconTheme = appearance?.theme.assets?.iconTheme ?? getBuiltInIconTheme();
   const useNativeOsIcons = appearanceSettings.useNativeOsIcons;
+  const explorerBlurEnabled = appearanceSettings.appBlur !== false;
   const showHidden = explorerSettings.showHiddenFiles;
   const viewMode = explorerSettings.viewMode;
   const gridZoom = explorerSettings.gridZoom;
@@ -2034,6 +2052,8 @@ export function FileExplorer({
   const addressInputRef = useRef<HTMLInputElement>(null);
   const [addressEditing, setAddressEditing] = useState(false);
   const [addressDraft, setAddressDraft] = useState('');
+  const [locationBreadcrumbs, setLocationBreadcrumbs] = useState<{ label: string; path: string }[]>([]);
+  const [locationParentPath, setLocationParentPath] = useState<string | null>(null);
   const lastFocusAddressBarSignalRef = useRef(focusAddressBarSignal);
   useExplorerTaskProgressFeed();
   const explorerTaskProgress = useCurrentExplorerTaskProgress();
@@ -2055,6 +2075,7 @@ export function FileExplorer({
     clientHeight: 0,
     clientWidth: 0,
   });
+  const currentPathIsCloud = currentPath.length > 0 && isCloudExplorerPath(currentPath);
   const isExperimentalViewEligible = !isCompactDock && search.trim().length === 0;
 
   useEffect(() => {
@@ -2309,19 +2330,21 @@ export function FileExplorer({
     if (push) { setHistory(h => [...h.slice(0, historyIdx + 1), normalizedPath]); setHistoryIdx(i => i + 1); }
     setLoading(true);
     try {
-      const nextEntries = await getOrLoadCachedExplorerDirectoryEntries(
+      const nextListing = await getOrLoadCachedExplorerDirectoryEntries(
         directoryCacheKey,
-        () => listExplorerDir(normalizedPath, showHidden),
+        () => listExplorerLocation(normalizedPath, showHidden),
       );
       startTransition(() => {
-        setEntries(nextEntries);
+        setEntries(nextListing.entries);
       });
+      setLocationBreadcrumbs(nextListing.breadcrumbs);
+      setLocationParentPath(nextListing.parentPath);
       recordExplorerMetric({
         metricId: 'explorer_navigation',
         durationMs: getExplorerPerformanceNow() - startedAt,
         metadata: {
-          entryCount: nextEntries.length,
-          pathDepth: normalizedPath.split(/[\\/]/).filter(Boolean).length,
+          entryCount: nextListing.entries.length,
+          pathDepth: nextListing.breadcrumbs.length,
           showHidden,
           success: true,
         },
@@ -2332,6 +2355,8 @@ export function FileExplorer({
       startTransition(() => {
         setEntries([]);
       });
+      setLocationBreadcrumbs([]);
+      setLocationParentPath(null);
       recordExplorerMetric({
         metricId: 'explorer_navigation',
         durationMs: getExplorerPerformanceNow() - startedAt,
@@ -2344,7 +2369,7 @@ export function FileExplorer({
       });
     }
     finally { setLoading(false); }
-  }, [historyIdx, recordExplorerMetric, showHidden]);
+  }, [historyIdx, isCloudExplorerPath, listExplorerLocation, recordExplorerMetric, showHidden]);
 
   const runSearch = useCallback(async (query: string, requestId: number) => {
     const trimmed = query.trim();
@@ -2353,6 +2378,15 @@ export function FileExplorer({
         setSearchResults([]);
       });
       setSearchLoading(false);
+      return;
+    }
+
+    if (!supportsSearch(currentPath)) {
+      startTransition(() => {
+        setSearchResults([]);
+      });
+      setSearchLoading(false);
+      setError('Search is not available for cloud drives yet.');
       return;
     }
 
@@ -2422,7 +2456,7 @@ export function FileExplorer({
         setSearchLoading(false);
       }
     }
-  }, [currentPath, explorerSearchScope, recordExplorerMetric, searchIncludeContent, showHidden]);
+  }, [currentPath, explorerSearchScope, recordExplorerMetric, searchIncludeContent, showHidden, supportsSearch]);
 
   const refresh = useCallback(async () => {
     if (!currentPath) return;
@@ -2445,27 +2479,29 @@ export function FileExplorer({
     });
     setEntrySizeLoadingPaths(new Set());
     try {
-      const nextEntries = await listExplorerDirUncached(currentPath, showHidden);
+      const nextListing = await listExplorerLocationUncached(currentPath, showHidden);
       explorerDirectoryResultCache.set(
         getExplorerDirectoryCacheKey(currentPath, showHidden),
-        nextEntries,
+        nextListing,
       );
       startTransition(() => {
-        setEntries(nextEntries);
+        setEntries(nextListing.entries);
       });
+      setLocationBreadcrumbs(nextListing.breadcrumbs);
+      setLocationParentPath(nextListing.parentPath);
     }
     catch (e) { setError(String(e)); }
     finally { setLoading(false); }
-    if (search.trim()) {
+    if (search.trim() && supportsSearch(currentPath)) {
       const requestId = ++searchRequestIdRef.current;
       void runSearch(search, requestId);
     }
-  }, [currentPath, entries, search, searchResults, showHidden, runSearch]);
+  }, [currentPath, entries, listExplorerLocationUncached, search, searchResults, showHidden, runSearch, supportsSearch]);
 
   useEffect(() => { refresh(); }, [showHidden]);
 
   useEffect(() => {
-    if (!currentPath || !isTauri() || !systemSettings.developerMode) {
+    if (!currentPath || currentPathIsCloud || !isTauri() || !systemSettings.developerMode) {
       return undefined;
     }
 
@@ -2476,7 +2512,7 @@ export function FileExplorer({
     return () => {
       void unwatchExplorerEntrySizeRoot(currentPath).catch(() => {});
     };
-  }, [currentPath, systemSettings.developerMode]);
+  }, [currentPath, currentPathIsCloud, systemSettings.developerMode]);
 
   useEffect(() => {
     if (initialInteractiveRecordedRef.current || !currentPath || loading) {
@@ -2528,6 +2564,12 @@ export function FileExplorer({
       return;
     }
 
+    if (!supportsSearch(currentPath)) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+
     const requestId = ++searchRequestIdRef.current;
     if (currentPath) {
       void cancelExplorerSearchEntries({
@@ -2548,12 +2590,18 @@ export function FileExplorer({
         setSearchLoading(false);
       }
     };
-  }, [currentPath, explorerSearchScope, search, runSearch]);
+  }, [currentPath, explorerSearchScope, search, runSearch, supportsSearch]);
 
   const goBack = useCallback(() => { if (historyIdx > 0) { setHistoryIdx(i => i - 1); navigate(history[historyIdx - 1], false); } }, [history, historyIdx, navigate]);
   const goForward = useCallback(() => { if (historyIdx < history.length - 1) { setHistoryIdx(i => i + 1); navigate(history[historyIdx + 1], false); } }, [history, historyIdx, navigate]);
   const goUp      = () => {
     if (!currentPath) return;
+    if (currentPathIsCloud) {
+      if (locationParentPath) {
+        void navigate(locationParentPath);
+      }
+      return;
+    }
     const sep = currentPath.includes('/') ? '/' : '\\';
     const parts = currentPath.replace(/[/\\]+$/, '').split(/[/\\]/);
     if (parts.length > 1) { parts.pop(); const p = parts.join(sep); navigate(p.endsWith(':') ? p+'\\' : p || sep); }
@@ -2596,9 +2644,15 @@ export function FileExplorer({
       return;
     }
 
+    if (!supportsSearch(currentPath)) {
+      setAddressDraft(currentPath);
+      setError('Search is not available for cloud drives yet.');
+      return;
+    }
+
     setAddressDraft(trimmed);
     setSearch(trimmed);
-  }, [currentPath, navigate, runtimePlatform, search]);
+  }, [currentPath, navigate, runtimePlatform, search, supportsSearch]);
 
   const isSearchActive = search.trim().length > 0;
   const toggleSort = useCallback((nextSortBy: ExplorerSortKey) => {
@@ -3245,6 +3299,7 @@ export function FileExplorer({
     const isBookmarked = bookmarkPathSet.has(entry.path);
     const parentPath = entry.path.replace(/[/\\\\][^/\\\\]+$/, '');
     const stem = entry.name.replace(/\.[^.]+$/, '');
+    const canUseNativeIntegration = supportsNativeIntegration(entry.path);
     const matchedPluginActions = pluginActions
       .filter(action => (
         action.appliesTo === 'any'
@@ -3271,11 +3326,11 @@ export function FileExplorer({
 
     return [
       { label:'Open',               icon:<ExternalLink size={13}/>, action:() => openEntry(entry) },
-      ...(supportsNativeOpenWith ? [{ label:'Open With...', icon:<ExternalLink size={13}/>, action:() => openWithSystemPicker(entry.path) }] : []),
-      { label: entry.is_dir ? 'Open Folder as Admin' : 'Open as Admin', icon:<Shield size={13}/>, action:() => openAsAdmin(entry.path) },
-      ...(entry.is_dir ? [{ label:'Open in Terminal', icon:<Terminal size={13}/>, action:() => onOpenInTerminal(entry.path) }] : []),
-      { label: revealPathLabel,     icon:<Eye size={13}/>,          action:() => revealExplorerPath(entry.path).catch(e=>setError(String(e))) },
-      ...(supportsNativeProperties ? [{ label: propertiesLabel, icon:<Info size={13}/>, action:() => showNativeProperties(entry.path) }] : []),
+      ...(supportsNativeOpenWith && canUseNativeIntegration ? [{ label:'Open With...', icon:<ExternalLink size={13}/>, action:() => openWithSystemPicker(entry.path) }] : []),
+      ...(canUseNativeIntegration ? [{ label: entry.is_dir ? 'Open Folder as Admin' : 'Open as Admin', icon:<Shield size={13}/>, action:() => openAsAdmin(entry.path) }] : []),
+      ...(entry.is_dir && !isCloudExplorerPath(entry.path) ? [{ label:'Open in Terminal', icon:<Terminal size={13}/>, action:() => onOpenInTerminal(entry.path) }] : []),
+      ...(canUseNativeIntegration ? [{ label: revealPathLabel, icon:<Eye size={13}/>, action:() => revealExplorerPath(entry.path).catch(e=>setError(String(e))) }] : []),
+      ...(supportsNativeProperties && canUseNativeIntegration ? [{ label: propertiesLabel, icon:<Info size={13}/>, action:() => showNativeProperties(entry.path) }] : []),
       { label:'Copy Path',          icon:<Copy size={13}/>,         action:() => copyToSysClipboard(entry.path) },
       { label: '', icon:null, divider:true, action:()=>{} },
       { label:'Copy',               icon:<Copy size={13}/>,         action:() => queueClipboard('copy', entry) },
@@ -3302,21 +3357,22 @@ export function FileExplorer({
       { label: '', icon:null, divider:true, action:()=>{} },
       { label:'Delete', icon:<Trash2 size={13}/>, danger:true, action:() => setDeleteTarget(entry) },
     ];
-  }, [bookmarkPathSet, copyToSysClipboard, duplicate, explorerRail, handleBookmarkCreated, onOpenInTerminal, openAsAdmin, openEntry, openWithSystemPicker, pluginActions, propertiesLabel, queueClipboard, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeOpenWith, supportsNativeProperties, updateExplorerRail]);
+  }, [bookmarkPathSet, copyToSysClipboard, duplicate, explorerRail, handleBookmarkCreated, isCloudExplorerPath, onOpenInTerminal, openAsAdmin, openEntry, openWithSystemPicker, pluginActions, propertiesLabel, queueClipboard, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties, updateExplorerRail]);
 
   const buildEmptyCtxItems = useCallback((): CtxItem[] => {
+    const canUseNativeIntegration = supportsNativeIntegration(currentPath);
     return [
       { label:'New Folder', icon:<FolderPlus size={13}/>, action:() => openNew('folder') },
       { label:'New File...', icon:<FilePlus size={13}/>, action:() => openNew('file') },
       ...(clipboard ? [{ label:'Paste', icon:<Clipboard size={13}/>, action:() => paste() }] : []),
       { label: '', icon:null, divider:true, action:()=>{} },
-      { label:'Open Folder as Admin', icon:<Shield size={13}/>, action:() => openAsAdmin(currentPath) },
-      { label: revealPathLabel, icon:<Eye size={13}/>, action:() => revealExplorerPath(currentPath).catch(e => setError(String(e))) },
-      ...(supportsNativeOpenWith ? [{ label:'Open With...', icon:<ExternalLink size={13}/>, action:() => openWithSystemPicker(currentPath) }] : []),
-      ...(supportsNativeProperties ? [{ label: propertiesLabel, icon:<Info size={13}/>, action:() => showNativeProperties(currentPath) }] : []),
+      ...(canUseNativeIntegration ? [{ label:'Open Folder as Admin', icon:<Shield size={13}/>, action:() => openAsAdmin(currentPath) }] : []),
+      ...(canUseNativeIntegration ? [{ label: revealPathLabel, icon:<Eye size={13}/>, action:() => revealExplorerPath(currentPath).catch(e => setError(String(e))) }] : []),
+      ...(supportsNativeOpenWith && canUseNativeIntegration ? [{ label:'Open With...', icon:<ExternalLink size={13}/>, action:() => openWithSystemPicker(currentPath) }] : []),
+      ...(supportsNativeProperties && canUseNativeIntegration ? [{ label: propertiesLabel, icon:<Info size={13}/>, action:() => showNativeProperties(currentPath) }] : []),
       { label:'Refresh', icon:<RefreshCw size={13}/>, action:() => refresh() },
     ];
-  }, [clipboard, currentPath, openAsAdmin, openWithSystemPicker, paste, propertiesLabel, refresh, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeOpenWith, supportsNativeProperties]);
+  }, [clipboard, currentPath, openAsAdmin, openWithSystemPicker, paste, propertiesLabel, refresh, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties]);
 
   // ── Right-click ──
   const onRightClick = (e: React.MouseEvent, entry: FileEntry) => {
@@ -3594,15 +3650,12 @@ export function FileExplorer({
   }, [addressEditing, beginAddressEdit, clearExplorerSelection, duplicate, experimentalDensity, experimentalViewMode, explorerTheme.preferredExperimentalViewMode, focusExplorerAddressBar, focusExplorerList, focusExplorerPreview, goBack, goForward, goHome, isCompactDock, isSearchActive, keybindings, newItem.visible, paste, queueClipboard, refresh, rename.active, selectAllVisibleEntries, selected, selectedEntries, showExperimentalHud, showHidden, updateExplorerSettings, viewMode, visibleEntries, toggleSearchScope, cycleSortKey, toggleSortOrder]);
 
   // ── Breadcrumbs ──
-  const crumbs: { label:string; path:string }[] = [];
-  if (/^[A-Za-z]:/.test(currentPath)) {
-    const drive = currentPath.slice(0, 2) + '\\';
-    crumbs.push({ label:drive, path:drive });
-    const parts = currentPath.replace(/[/\\]+$/, '').split(/[/\\]/).filter(Boolean);
-    for (let i = 1; i < parts.length; i++) {
-      crumbs.push({ label:parts[i], path:parts.slice(0, i+1).join('\\') });
-    }
-  }
+  const crumbs: { label:string; path:string }[] = locationBreadcrumbs;
+  const locationTitle = crumbs.length > 0
+    ? crumbs.map((crumb) => crumb.label).join(' / ')
+    : (currentPath || 'Home');
+  const locationLabel = crumbs[crumbs.length - 1]?.label
+    ?? (currentPathIsCloud ? currentPath.split('/').filter(Boolean).at(-1) ?? 'Cloud' : currentPath || 'Home');
 
   // ── Inline new item creation ──
   const openNew = (kind: 'file' | 'folder') => {
@@ -3616,9 +3669,13 @@ export function FileExplorer({
     const base = currentPath.replace(/[/\\]+$/, '');
     try {
       if (newItem.kind === 'folder') {
-        await createExplorerDir(joinPlatformPath(base, name, runtimePlatform));
+        if (currentPathIsCloud) {
+          await createExplorerDir(`${base}/${name}`);
+        } else {
+          await createExplorerDir(joinPlatformPath(base, name, runtimePlatform));
+        }
       } else {
-        await writeExplorerFile(joinPlatformPath(base, name, runtimePlatform), '');
+        await createExplorerFile(currentPath, name, '');
       }
       invalidateExplorerResultCaches();
       refresh();
@@ -3630,7 +3687,10 @@ export function FileExplorer({
   const onDragStart = (e: React.DragEvent<HTMLElement>, entry: FileEntry) => {
     const dragEntries = resolveEntriesForAction(entry);
     const dragPaths = dragEntries.map(item => item.path);
-    const dragIntent = resolveExplorerDragIntent(e);
+    const requestedDragIntent = resolveExplorerDragIntent(e);
+    const dragIntent = requestedDragIntent === 'native-out' && !supportsNativeDragOut(dragPaths)
+      ? 'internal'
+      : requestedDragIntent;
     activeDragPathsRef.current = dragPaths;
     e.currentTarget.dataset.overlayDragIntent = dragIntent;
     e.dataTransfer.setData('text/plain', dragPaths[0] ?? entry.path);
@@ -3662,6 +3722,9 @@ export function FileExplorer({
             setError(fallback);
           });
       }
+    }
+    if (requestedDragIntent === 'native-out' && dragIntent === 'internal') {
+      setError('Native drag-out is only available for local filesystem items. Cloud files still drag inside the explorer.');
     }
     e.dataTransfer.effectAllowed = dragIntent === 'native-out' ? 'copy' : 'copyMove';
   };
@@ -3888,15 +3951,15 @@ export function FileExplorer({
       margin: usesInset ? 'var(--overlay-explorer-chrome-inset)' : 0,
       marginBottom: 0,
       boxShadow: usesFloatingShell ? 'var(--overlay-explorer-toolbar-shadow)' : 'none',
-      backdropFilter: explorerTheme.toolbarStyle === 'glass' || explorerTheme.toolbarStyle === 'floating'
+      backdropFilter: explorerBlurEnabled && (explorerTheme.toolbarStyle === 'glass' || explorerTheme.toolbarStyle === 'floating')
         ? 'blur(18px)'
         : 'none',
-      WebkitBackdropFilter: explorerTheme.toolbarStyle === 'glass' || explorerTheme.toolbarStyle === 'floating'
+      WebkitBackdropFilter: explorerBlurEnabled && (explorerTheme.toolbarStyle === 'glass' || explorerTheme.toolbarStyle === 'floating')
         ? 'blur(18px)'
         : 'none',
       flexShrink: 0,
     };
-  }, [explorerTheme.toolbarStyle]);
+  }, [explorerBlurEnabled, explorerTheme.toolbarStyle]);
   const mainColumnStyle = useMemo<CSSProperties>(() => ({
     flex: 1,
     display: 'flex',
@@ -3931,9 +3994,9 @@ export function FileExplorer({
     boxShadow: explorerTheme.statusBarStyle === 'floating'
       ? 'var(--overlay-explorer-toolbar-shadow)'
       : 'none',
-    backdropFilter: explorerTheme.statusBarStyle === 'floating' ? 'blur(18px)' : 'none',
-    WebkitBackdropFilter: explorerTheme.statusBarStyle === 'floating' ? 'blur(18px)' : 'none',
-  }), [explorerTheme.statusBarStyle]);
+    backdropFilter: explorerBlurEnabled && explorerTheme.statusBarStyle === 'floating' ? 'blur(18px)' : 'none',
+    WebkitBackdropFilter: explorerBlurEnabled && explorerTheme.statusBarStyle === 'floating' ? 'blur(18px)' : 'none',
+  }), [explorerBlurEnabled, explorerTheme.statusBarStyle]);
 
   useEffect(() => () => {
     if (zoomHudTimerRef.current != null) {
@@ -4747,10 +4810,8 @@ export function FileExplorer({
     if (adaptiveDensityStop.presentation === 'table') {
       const showRichMeta = adaptiveDensityStop.table?.showRichMeta ?? false;
       return (
-        <motion.section
+        <section
           key={band.id}
-          layout="position"
-          transition={EXPLORER_ZOOM_POSITION_SPRING}
           style={{ marginBottom: 18 }}
         >
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, padding: '0 12px', marginBottom: 8 }}>
@@ -4786,17 +4847,15 @@ export function FileExplorer({
             </div>
             {band.entries.map((entry) => renderAdaptiveSemanticEntry(entry, adaptiveDensityStop, { dominant: band.dominant }))}
           </div>
-        </motion.section>
+        </section>
       );
     }
 
     const gridMetrics = adaptiveDensityStop.grid!;
     const bandMinWidth = band.dominant ? Math.round(gridMetrics.minWidth * 1.12) : gridMetrics.minWidth;
     return (
-      <motion.section
+      <section
         key={band.id}
-        layout="position"
-        transition={EXPLORER_ZOOM_POSITION_SPRING}
         style={{ marginBottom: 20 }}
       >
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, padding: `0 ${gridMetrics.padding}px`, marginBottom: 10 }}>
@@ -4821,17 +4880,15 @@ export function FileExplorer({
         >
           {band.entries.map((entry) => renderAdaptiveSemanticEntry(entry, adaptiveDensityStop, { dominant: band.dominant }))}
         </div>
-      </motion.section>
+      </section>
     );
   };
 
   const renderConstellationOrbitBand = (band: ConstellationOrbitBand) => {
     const fieldHeight = band.dominant ? 280 : 236;
     return (
-      <motion.section
+      <section
         key={band.id}
-        layout="position"
-        transition={EXPLORER_ZOOM_POSITION_SPRING}
         style={{ marginBottom: 22 }}
       >
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, padding: '0 14px', marginBottom: 10 }}>
@@ -4900,7 +4957,8 @@ export function FileExplorer({
               borderRadius: 18,
               border: '1px solid rgba(255,255,255,0.08)',
               background: 'rgba(10, 12, 18, 0.76)',
-              backdropFilter: 'blur(12px)',
+              backdropFilter: explorerBlurEnabled ? 'blur(12px)' : 'none',
+              WebkitBackdropFilter: explorerBlurEnabled ? 'blur(12px)' : 'none',
               padding: '14px 16px',
               textAlign: 'center',
               boxShadow: '0 16px 34px rgba(0,0,0,0.22)',
@@ -5023,7 +5081,7 @@ export function FileExplorer({
             );
           })}
         </div>
-      </motion.section>
+      </section>
     );
   };
 
@@ -5124,10 +5182,8 @@ export function FileExplorer({
   const renderTimelineSurfaceBand = (band: TimelineSurfaceBand) => {
     const timelineColumnWidth = Math.max(220, Math.round(332 - experimentalDensity * 120));
     return (
-      <motion.section
+      <section
         key={band.id}
-        layout="position"
-        transition={EXPLORER_ZOOM_POSITION_SPRING}
         style={{
           display: 'grid',
           gridTemplateColumns: 'minmax(120px, 156px) minmax(0, 1fr)',
@@ -5158,7 +5214,7 @@ export function FileExplorer({
         >
           {band.entries.map(renderTimelineSurfaceEntry)}
         </div>
-      </motion.section>
+      </section>
     );
   };
 
@@ -5193,6 +5249,8 @@ export function FileExplorer({
             brandLabel={explorerTheme.railBrandLabel}
             sidebarWidth={sidebarWidth}
             currentPath={currentPath}
+            locationTitle={locationTitle}
+            locationLabel={locationLabel}
             drives={drives}
             drivesLoading={drivesLoading}
             isCompactDock={isCompactDock}
@@ -5352,23 +5410,36 @@ export function FileExplorer({
 
           {/* Include text */}
           <button
-            onClick={() => setSearchIncludeContent(v => !v)}
-            title={searchIncludeContent ? 'Include file text in search (on)' : 'Include file text in search (off)'}
+            onClick={() => {
+              if (!currentPathIsCloud) {
+                setSearchIncludeContent(v => !v);
+              }
+            }}
+            title={currentPathIsCloud ? 'Cloud search is not available yet' : (searchIncludeContent ? 'Include file text in search (on)' : 'Include file text in search (off)')}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 4,
               background: searchIncludeContent ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
               border: `1px solid ${searchIncludeContent ? 'var(--overlay-explorer-chip-active-border)' : 'var(--overlay-explorer-chip-border)'}`,
-              cursor: 'pointer',
-              color: searchIncludeContent ? 'var(--overlay-explorer-chip-active-text)' : EXP.muted,
+              cursor: currentPathIsCloud ? 'default' : 'pointer',
+              color: currentPathIsCloud ? EXP.muted2 : (searchIncludeContent ? 'var(--overlay-explorer-chip-active-text)' : EXP.muted),
               padding: '4px 8px',
               borderRadius: 'var(--overlay-explorer-control-radius)',
               fontSize: 'var(--overlay-explorer-toolbar-font-size)',
               flexShrink: 0,
+              opacity: currentPathIsCloud ? 0.6 : 1,
             }}
-            onMouseEnter={e => (e.currentTarget.style.background = searchIncludeContent ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-active-bg)')}
-            onMouseLeave={e => (e.currentTarget.style.background = searchIncludeContent ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
+            onMouseEnter={e => {
+              if (!currentPathIsCloud) {
+                e.currentTarget.style.background = searchIncludeContent ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-active-bg)';
+              }
+            }}
+            onMouseLeave={e => {
+              if (!currentPathIsCloud) {
+                e.currentTarget.style.background = searchIncludeContent ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)';
+              }
+            }}
           >
             <span style={{ fontWeight: 700, letterSpacing: '0.02em' }}>Aa</span>
             <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Text</span>
@@ -5489,7 +5560,8 @@ export function FileExplorer({
                       border: `1px solid ${accent}55`,
                       background: 'rgba(15,18,24,0.94)',
                       boxShadow: '0 12px 30px rgba(0,0,0,0.32)',
-                      backdropFilter: 'blur(10px)',
+                      backdropFilter: explorerBlurEnabled ? 'blur(10px)' : 'none',
+                      WebkitBackdropFilter: explorerBlurEnabled ? 'blur(10px)' : 'none',
                       pointerEvents: 'none',
                     }}
                   >
@@ -5801,7 +5873,8 @@ export function FileExplorer({
                       border: `1px solid ${accent}55`,
                       background: 'rgba(15,18,24,0.94)',
                       boxShadow: '0 12px 30px rgba(0,0,0,0.32)',
-                      backdropFilter: 'blur(10px)',
+                      backdropFilter: explorerBlurEnabled ? 'blur(10px)' : 'none',
+                      WebkitBackdropFilter: explorerBlurEnabled ? 'blur(10px)' : 'none',
                       pointerEvents: 'none',
                     }}
                   >
@@ -6008,9 +6081,9 @@ export function FileExplorer({
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
                   }}
-                  title={currentPath}
+                  title={locationTitle}
                 >
-                  Current folder: {currentPath}
+                  Current folder: {locationTitle}
                 </div>
               ) : null}
             </div>
@@ -6262,9 +6335,7 @@ export function FileExplorer({
             {/* Grid view */}
             {effectiveExperimentalViewMode === 'off' && newItem.visible && virtualWindow.kind === 'grid' && activeGridMetrics && (
               <div style={{ padding: `0 ${activeGridMetrics.padding}px ${activeGridMetrics.padding}px`, boxSizing: 'border-box' }}>
-                <motion.div
-                  layout="position"
-                  transition={EXPLORER_ZOOM_POSITION_SPRING}
+                <div
                   style={{
                     background: 'var(--overlay-explorer-item-selected-bg)',
                     border: '1px solid var(--overlay-explorer-item-selected-border)',
@@ -6292,7 +6363,7 @@ export function FileExplorer({
                     placeholder={newItem.kind === 'folder' ? 'folder name' : 'name.ext'}
                     style={{ background: 'var(--overlay-explorer-input-bg)', border: '1px solid var(--overlay-explorer-input-border)', borderRadius: 'var(--overlay-explorer-control-radius)', color: EXP.text, fontSize: 11, padding: '2px 6px', outline: 'none', width: '100%', boxSizing: 'border-box' as const }}
                   />
-                </motion.div>
+                </div>
               </div>
             )}
 
@@ -6361,12 +6432,7 @@ export function FileExplorer({
                           }
                         }}
                       >
-                        <motion.div
-                          animate={{
-                            width: activeGridMetrics.iconStageSize,
-                            height: activeGridMetrics.iconStageSize,
-                          }}
-                          transition={EXPLORER_ZOOM_SIZE_TWEEN}
+                        <div
                           style={{
                             width: activeGridMetrics.iconStageSize,
                             height: activeGridMetrics.iconStageSize,
@@ -6375,11 +6441,11 @@ export function FileExplorer({
                             justifyContent: 'center',
                             overflow: 'hidden',
                             flexShrink: 0,
-                            willChange: 'width, height',
+                            transition: 'width 0.18s cubic-bezier(0.22, 1, 0.36, 1), height 0.18s cubic-bezier(0.22, 1, 0.36, 1)',
                           }}
                         >
                           <SvgIcon src={iconSrc} size={activeGridMetrics.iconSize} />
-                        </motion.div>
+                        </div>
                         {isRenaming
                           ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active: false, path: '', name: '' })} />
                           : (
@@ -6661,6 +6727,7 @@ export function FileExplorer({
               viewMode={documentViewMode}
               onViewModeChange={setDocumentViewMode}
               explorerTheme={explorerTheme}
+              blurEnabled={explorerBlurEnabled}
               onClose={() => { void closePreview(); }}
             />
           )}
