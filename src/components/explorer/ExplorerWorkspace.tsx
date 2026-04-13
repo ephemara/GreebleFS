@@ -259,6 +259,21 @@ export function ExplorerWorkspace({
             alignItems: 'center',
             gap: 8,
             minWidth: 0,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span style={paneBadgeStyle(activePane === 'left', theme.accent)}>L {leftTabs.length}</span>
+          <span style={paneBadgeStyle(activePane === 'right', theme.accent)}>R {rightTabs.length}</span>
+          <span style={workspaceMetaStyle}>
+            {workspace.layoutMode === 'dual' ? 'Dual pane' : 'Single pane'} · {activePane === 'left' ? 'Left active' : 'Right active'}
+          </span>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              minWidth: 0,
+            minWidth: 0,
             overflowX: 'auto',
           }}
         >
@@ -442,4 +457,27 @@ const toolbarButtonStyle: React.CSSProperties = {
   background: 'var(--overlay-explorer-chip-bg)',
   color: 'var(--overlay-text-primary)',
   cursor: 'pointer',
+};
+
+function paneBadgeStyle(active: boolean, accent: string): React.CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 34,
+    padding: '3px 8px',
+    borderRadius: 999,
+    border: `1px solid ${active ? `${accent}66` : 'var(--overlay-border)'}`,
+    background: active ? `${accent}18` : 'var(--overlay-explorer-chip-bg)',
+    color: active ? 'var(--overlay-text-primary)' : 'var(--overlay-text-muted)',
+    fontSize: 10,
+    fontWeight: 700,
+  };
+}
+
+const workspaceMetaStyle: React.CSSProperties = {
+  color: 'var(--overlay-text-dim)',
+  fontSize: 10.5,
+  fontWeight: 600,
+  whiteSpace: 'nowrap',
 };

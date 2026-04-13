@@ -6,6 +6,12 @@
 - The clipboard payload is now normalized into a small shared snapshot (`path`, `name`, `is_dir`) instead of holding raw React entry objects.
 - Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
 
+## 2026-04-13 — Explorer Workspace Pane Clarity Pass
+
+- Added explicit left/right pane badges and active-pane text to the `ExplorerWorkspace` chrome, so dual-pane mode is easier to read at a glance.
+- The explorer workspace header now tells you how many tabs live in each pane and which side has focus, which should reduce confusion when moving tabs between panes.
+- Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
+
 ## 2026-04-13 — File Explorer Preview Clarity Pass
 
 - The explorer footer now names the active preview type when preview is open, instead of only showing preview on/off.
