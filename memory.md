@@ -6,6 +6,12 @@
 - The clipboard payload is now normalized into a small shared snapshot (`path`, `name`, `is_dir`) instead of holding raw React entry objects.
 - Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
 
+## 2026-04-13 — File Explorer Responsiveness Pass
+
+- Reduced frontend pressure in `src/components/FileExplorer.tsx` by trimming the background viewport enrichment batches.
+- File size measurement batches now top out lower, and native icon fetch bursts are smaller, which should help the explorer feel less busy on large folders.
+- Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
+
 ## 2026-04-13 — File Explorer Filter Count Clarity Pass
 
 - The explorer footer now shows filtered-vs-source counts, so large folders and tagged searches are easier to reason about.

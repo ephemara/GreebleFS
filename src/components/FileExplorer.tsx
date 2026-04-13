@@ -4817,14 +4817,14 @@ export function FileExplorer({
     const shouldMeasureDirectories = !isSearchActive;
     const pendingFiles = virtualizedEntries
       .filter(entry => !entry.is_dir && !entrySizes[entry.path] && !entrySizeLoadingPaths.has(entry.path))
-      .slice(0, 12);
+      .slice(0, 8);
     const pendingDirectories = shouldMeasureDirectories
       ? virtualizedEntries
         .filter(entry => entry.is_dir && !entrySizes[entry.path] && !entrySizeLoadingPaths.has(entry.path))
         .slice(0, 1)
       : [];
 
-    const nextBatch = (pendingFiles.length > 0 ? pendingFiles : pendingDirectories).slice(0, 12);
+    const nextBatch = (pendingFiles.length > 0 ? pendingFiles : pendingDirectories).slice(0, 8);
     const unresolvedPaths = nextBatch.map(entry => entry.path);
 
     if (unresolvedPaths.length === 0) {
@@ -4938,7 +4938,7 @@ export function FileExplorer({
         key: getNativeIconCacheKey(entry.path, DEFAULT_NATIVE_ICON_SIZE),
       }))
       .filter(({ key }) => nativeIconMap[key] === undefined && !nativeIconLoadingKeys.has(key))
-      .slice(0, 48);
+      .slice(0, 24);
 
     if (pendingEntries.length === 0) {
       return;
