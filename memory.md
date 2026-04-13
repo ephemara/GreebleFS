@@ -6,6 +6,12 @@
 - The clipboard payload is now normalized into a small shared snapshot (`path`, `name`, `is_dir`) instead of holding raw React entry objects.
 - Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
 
+## 2026-04-13 — File Explorer Preview Trust Pass
+
+- The preview header now shows whether a text preview is saved, dirty, or currently saving.
+- This makes the inline editor feel less ambiguous when you’re actively changing files in the explorer.
+- Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
+
 ## 2026-04-13 — File Explorer Responsiveness Pass
 
 - Reduced frontend pressure in `src/components/FileExplorer.tsx` by trimming the background viewport enrichment batches.

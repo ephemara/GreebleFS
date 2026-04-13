@@ -1689,6 +1689,9 @@ function PreviewPanel({
   }, [preview.path]);
 
   const previewTitle = preview.type === 'none' ? 'Preview' : preview.name;
+  const previewStateLabel = preview.type === 'text'
+    ? (preview.isSaving ? 'Saving…' : preview.isDirty ? 'Unsaved' : 'Saved')
+    : null;
   const copyPathLabel = copiedPath === preview.path ? 'Copied' : 'Copy Path';
   const supportsRenderedPreview = preview.type === 'text' && preview.renderKind !== 'none';
   const previewShellStyle: CSSProperties = explorerTheme.previewStyle === 'attached'
@@ -1748,7 +1751,14 @@ function PreviewPanel({
           )}
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
+          {previewStateLabel && (
+            <span style={{ fontSize: 9, fontWeight: 700, color: preview.isSaving ? EXP.yellow : (preview.isDirty ? EXP.red : EXP.green), padding: '3px 7px', borderRadius: 999, border: '1px solid var(--overlay-explorer-chip-border)', background: 'var(--overlay-explorer-chip-bg)' }}>
+              {previewStateLabel}
+            </span>
+          )}
           {supportsRenderedPreview && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: 2, borderRadius: 'var(--overlay-explorer-control-radius)', border: '1px solid var(--overlay-explorer-chip-border)', background: 'var(--overlay-explorer-chip-bg)' }}>
+              {([          {supportsRenderedPreview && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: 2, borderRadius: 'var(--overlay-explorer-control-radius)', border: '1px solid var(--overlay-explorer-chip-border)', background: 'var(--overlay-explorer-chip-bg)' }}>
               {([
                 { id: 'edit', label: 'Edit' },
