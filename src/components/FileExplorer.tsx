@@ -6810,8 +6810,17 @@ export function FileExplorer({
             )}
 
             {!loading && !searchLoading && visibleEntries.length === 0 && (
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:120, color:EXP.muted, fontSize:12 }}>
-                {isSearchActive ? `No results for "${search.trim()}"` : 'Empty folder'}
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:120, color:EXP.muted, fontSize:12, textAlign:'center', padding: '0 16px' }}>
+                {isSearchActive
+                  ? (
+                    <span>
+                      No results for "{search.trim()}"<br />
+                      <span style={{ color: EXP.muted2, fontSize: 11 }}>
+                        {searchIncludeContent ? 'Recursive text search is on.' : 'Names-only search is on.'}
+                      </span>
+                    </span>
+                  )
+                  : 'Empty folder'}
               </div>
             )}
 
@@ -7373,7 +7382,12 @@ export function FileExplorer({
               {effectiveExperimentalViewMode === 'off' ? ' (fallback)' : ''}
             </span>
           )}
-          {search && <span>{searchModeLabel}: "<span style={{ color:EXP.text }}>{search}</span>"</span>}
+          {search && (
+            <span>
+              {searchModeLabel}: <span style={{ color: EXP.text }}>&quot;{search}&quot;</span>
+              <span style={{ color: EXP.muted2 }}>{searchLoading ? ' · searching…' : ` · ${visibleEntries.length} result${visibleEntries.length === 1 ? '' : 's'}`}</span>
+            </span>
+          )}
           <ExplorerTaskStatusBadge
             taskProgress={explorerTaskProgress}
             accent={accent}

@@ -6,6 +6,12 @@
 - The clipboard payload is now normalized into a small shared snapshot (`path`, `name`, `is_dir`) instead of holding raw React entry objects.
 - Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
 
+## 2026-04-13 — File Explorer Search Clarity Pass
+
+- Tightened the explorer footer search affordance in `src/components/FileExplorer.tsx` so active searches now show result counts and loading state inline.
+- The empty search state now explains whether recursive text search or names-only search is active, which should reduce confusion when results are sparse.
+- Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
+
 ## 2026-04-13 — File Explorer Tag Filter Clarity Pass
 
 - Added a compact active-filter summary to `src/components/explorer/ExplorerSideRail.tsx`, so tag filters are easier to notice and clear at a glance.
