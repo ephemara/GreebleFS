@@ -3012,6 +3012,8 @@ export function FileExplorer({
       explorerSettings.sortOrder,
     ],
   );
+  const sourceEntryCount = isSearchActive ? searchResults.length : entries.length;
+  const filteredEntryCount = visibleEntries.length;
   const experimentalSemanticBands = useMemo(
     () => (isExperimentalViewEligible
       && (
@@ -7364,7 +7366,12 @@ export function FileExplorer({
         {/* Status bar */}
         {shouldRenderStatusBar && (
         <div style={statusBarStyle}>
-          <span>{visibleEntries.length} item{visibleEntries.length!==1?'s':''}</span>
+          <span>{filteredEntryCount} item{filteredEntryCount !== 1 ? 's' : ''}</span>
+          {sourceEntryCount !== filteredEntryCount && (
+            <span style={{ color: EXP.muted2 }}>
+              of {sourceEntryCount}
+            </span>
+          )}
           {selected.size > 0 && <span style={{ color:accent }}>{selected.size} selected</span>}
           {!isCompactDock && (
             <span>
@@ -7395,7 +7402,10 @@ export function FileExplorer({
           {search && (
             <span>
               {searchModeLabel}: <span style={{ color: EXP.text }}>&quot;{search}&quot;</span>
-              <span style={{ color: EXP.muted2 }}>{searchLoading ? ' · searching…' : ` · ${visibleEntries.length} result${visibleEntries.length === 1 ? '' : 's'}`}</span>
+              <span style={{ color: EXP.muted2 }}>{searchLoading ? ' · searching…' : ` · ${filteredEntryCount} result${filteredEntryCount === 1 ? '' : 's'}`}</span>
+              {activeTagFilterIds.length > 0 && sourceEntryCount !== filteredEntryCount && (
+                <span style={{ color: EXP.muted2 }}>{` · ${sourceEntryCount - filteredEntryCount} hidden by tags`}</span>
+              )}
             </span>
           )}
           <ExplorerTaskStatusBadge

@@ -6,6 +6,12 @@
 - The clipboard payload is now normalized into a small shared snapshot (`path`, `name`, `is_dir`) instead of holding raw React entry objects.
 - Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
 
+## 2026-04-13 — File Explorer Filter Count Clarity Pass
+
+- The explorer footer now shows filtered-vs-source counts, so large folders and tagged searches are easier to reason about.
+- When tag filters hide part of the result set, the footer now says how many items are hidden, which should reduce the “where did my files go?” moment.
+- Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
+
 ## 2026-04-13 — Explorer Workspace Pane Clarity Pass
 
 - Added explicit left/right pane badges and active-pane text to the `ExplorerWorkspace` chrome, so dual-pane mode is easier to read at a glance.
