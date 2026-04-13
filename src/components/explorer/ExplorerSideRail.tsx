@@ -512,6 +512,30 @@ export function ExplorerSideRail({
             </div>
           )}
           {(activeTagFilterIds.length > 0 || availableTags.length > 0) && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+              <div style={{ fontSize: 9.5, color: 'var(--overlay-text-dim)', fontWeight: 600 }}>
+                {activeTagFilterIds.length > 0 ? `${activeTagFilterIds.length} tag filter${activeTagFilterIds.length === 1 ? '' : 's'} active` : 'Tag filters'}
+              </div>
+              {activeTagFilterIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => onClearTagFilters?.()}
+                  style={{
+                    border: '1px solid var(--overlay-border)',
+                    borderRadius: 999,
+                    padding: '3px 8px',
+                    background: 'transparent',
+                    color: 'var(--overlay-text-muted)',
+                    fontSize: 9,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
+          {(activeTagFilterIds.length > 0 || availableTags.length > 0) && (
             <div
               style={{
                 display: 'flex',
