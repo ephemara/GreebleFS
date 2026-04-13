@@ -167,6 +167,8 @@ export function ExplorerWorkspace({
 
   const renderPane = (pane: ExplorerPaneId, tab: ExplorerTabSnapshot | null) => {
     const isActivePane = workspace.focusedPane === pane;
+    const paneLabel = pane === 'left' ? 'Left pane' : 'Right pane';
+    const panePath = tab ? (sessions[tab.instanceId]?.currentPath ?? '') : '';
     if (!tab) {
       return (
         <div
@@ -218,6 +220,12 @@ export function ExplorerWorkspace({
         }}
         onMouseDown={() => setFocusedPane(pane)}
       >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--overlay-border)', background: 'color-mix(in srgb, var(--overlay-bg-panel) 92%, black 8%)' }}>
+          <span style={{ fontSize: 10.5, fontWeight: 700, color: isActivePane ? 'var(--overlay-text-primary)' : 'var(--overlay-text-muted)' }}>{paneLabel}</span>
+          <span title={panePath} style={{ fontSize: 10, color: 'var(--overlay-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1, textAlign: 'right' }}>
+            {panePath || 'No path'}
+          </span>
+        </div>
         <FileExplorer
           appearance={appearance}
           chromeControlSurface={chromeControlSurface}
