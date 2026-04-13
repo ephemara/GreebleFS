@@ -4384,6 +4384,13 @@ export function FileExplorer({
     : activeRowMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT;
   const shouldRenderRail = sourcesVisible && (isCompactDock || shellLayout.showRail);
   const hasPreview = !isCompactDock && previewEnabled && preview.type !== 'none';
+  const previewModeLabel = preview.type === 'text'
+    ? (preview.renderKind === 'markdown' ? 'Text preview (markdown)' : 'Text preview')
+    : preview.type === 'image'
+      ? 'Image preview'
+      : preview.type === 'model3d'
+        ? '3D preview'
+        : 'Preview';
   const searchModeLabel = searchIncludeContent ? 'Recursive search + text' : 'Recursive search (names only)';
   const gridZoomPercent = useMemo(
     () => (isExplorerGridMode(themedViewMode) ? getExplorerGridZoomPercent(gridZoom) : null),
@@ -7373,6 +7380,9 @@ export function FileExplorer({
           {!isCompactDock && (
             <span>
               Preview: <span style={{ color: previewEnabled ? accent : EXP.text }}>{previewEnabled ? 'On' : 'Off'}</span>
+              {hasPreview && (
+                <span style={{ color: EXP.muted2 }}>{` · ${previewModeLabel}: ${getPathLeaf(preview.path)}`}</span>
+              )}
             </span>
           )}
           {selectedExperimentalModeDefinition && (

@@ -6,6 +6,12 @@
 - The clipboard payload is now normalized into a small shared snapshot (`path`, `name`, `is_dir`) instead of holding raw React entry objects.
 - Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
 
+## 2026-04-13 — File Explorer Preview Clarity Pass
+
+- The explorer footer now names the active preview type when preview is open, instead of only showing preview on/off.
+- Text previews, image previews, and 3D previews now surface their mode alongside the current file name, which makes inline preview state easier to trust at a glance.
+- Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
+
 ## 2026-04-13 — File Explorer Search Clarity Pass
 
 - Tightened the explorer footer search affordance in `src/components/FileExplorer.tsx` so active searches now show result counts and loading state inline.
