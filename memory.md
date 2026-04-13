@@ -6,6 +6,12 @@
 - The clipboard payload is now normalized into a small shared snapshot (`path`, `name`, `is_dir`) instead of holding raw React entry objects.
 - Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
 
+## 2026-04-13 — Explorer Workspace Tab Side Pass
+
+- Tab chips in `ExplorerWorkspace` now carry an explicit `L` or `R` marker, so it’s easier to see which pane each tab belongs to.
+- This complements the pane headers and action buttons, tightening the mental model for dual-pane work.
+- Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
+
 ## 2026-04-13 — Explorer Workspace Pane Identity Pass
 
 - Each dual-pane view now shows a small pane header with its side label and current path, which makes the split feel anchored and easier to scan.

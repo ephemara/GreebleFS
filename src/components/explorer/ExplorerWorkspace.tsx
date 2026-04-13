@@ -333,6 +333,9 @@ export function ExplorerWorkspace({
                   <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11.5, fontWeight: 600 }}>
                     {getTabDisplayLabel(tab, currentPath)}
                   </span>
+                  <span style={{ fontSize: 9.5, fontWeight: 700, color: isActive ? 'var(--overlay-text-primary)' : 'var(--overlay-text-dim)', opacity: 0.8 }}>
+                    {tab.pane === 'left' ? 'L' : 'R'}
+                  </span>
                 </button>
                 {workspace.layoutMode === 'dual' && (
                   <button
