@@ -1,5 +1,11 @@
 # GreebleFS Memory
 
+## 2026-04-13 — File Explorer Clipboard Shared Across Panes
+
+- Moved the explorer clipboard from `FileExplorer` local state into `src/store/explorerStore.ts`, so copy/cut/paste now survives switching panes and multiple explorer instances inside the same workspace.
+- The clipboard payload is now normalized into a small shared snapshot (`path`, `name`, `is_dir`) instead of holding raw React entry objects.
+- Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
+
 ## 2026-04-13 — File Explorer Heartbeat Plan
 
 - Current explorer posture: `ExplorerWorkspace` owns tabs and panes, while `FileExplorer` remains the main work surface for navigation, preview, drag/drop, search, experimental modes, explorer-pro, and toolbar/rail controls.

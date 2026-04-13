@@ -106,6 +106,7 @@ import {
   PRIMARY_EXPLORER_INSTANCE_ID,
   defaultExplorerSession,
   useExplorerStore,
+  type ExplorerClipboardSnapshot,
   type ExplorerDocumentViewMode,
   type ExplorerInstanceId,
 } from '../store/explorerStore';
@@ -323,7 +324,7 @@ type PreviewState =
     }
   | { type: 'model3d'; path: string; format: ModelPreviewFormat; name: string; size: number };
 interface NewItemState   { visible: boolean; kind: 'file'|'folder'; }
-interface ExplorerClipboard { action:'copy'|'cut'; entries: FileEntry[]; }
+type ExplorerClipboard = ExplorerClipboardSnapshot;
 type ExplorerDragIntent = 'internal' | 'native-out';
 type ExplorerSortKey = 'name' | 'size' | 'date' | 'type';
 
@@ -2193,10 +2194,14 @@ export function FileExplorer({
     explorerRail,
     updateExplorerSessionForInstance,
     updateExplorerRail,
+    clipboard,
+    setClipboard,
   } = useExplorerStore(useShallow(state => ({
     explorerRail: state.rail,
     updateExplorerSessionForInstance: state.updateSessionForInstance,
     updateExplorerRail: state.updateRail,
+    clipboard: state.clipboard,
+    setClipboard: state.setClipboard,
   })));
   const storedSourcesVisible = useExplorerStore(
     state => state.sessions[instanceId]?.sourcesVisible ?? defaultExplorerSession.sourcesVisible,
@@ -2283,7 +2288,6 @@ export function FileExplorer({
   const [showExperimentalMenu, setShowExperimentalMenu] = useState(false);
   const [rename,       setRename]       = useState<RenameState>({ active:false, path:'', name:'' });
   const [deleteTargets, setDeleteTargets] = useState<FileEntry[]>([]);
-  const [clipboard,    setClipboard]    = useState<ExplorerClipboard|null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [newItem,      setNewItem]      = useState<NewItemState>({ visible:false, kind:'folder' });
   const [newItemName,  setNewItemName]  = useState('');
@@ -3226,8 +3230,15 @@ export function FileExplorer({
   const queueClipboard = useCallback((action: 'copy' | 'cut', entry?: FileEntry) => {
     const entriesForAction = resolveEntriesForAction(entry);
     if (entriesForAction.length === 0) return;
-    setClipboard({ action, entries: entriesForAction });
-  }, [resolveEntriesForAction]);
+    setClipboard({
+      action,
+      entries: entriesForAction.map((item) => ({
+        path: item.path,
+        name: item.name,
+        is_dir: item.is_dir,
+      })),
+    });
+  }, [resolveEntriesForAction, setClipboard]);
 
   const openAsAdmin = useCallback(async (path: string) => {
     await openExplorerPathAsAdmin(path).catch(e => setError(String(e)));
