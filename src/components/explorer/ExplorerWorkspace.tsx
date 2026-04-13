@@ -161,6 +161,10 @@ export function ExplorerWorkspace({
     moveWorkspaceTabToPane(activeTab.id, targetPane);
   };
 
+  const focusOtherPane = () => {
+    setFocusedPane(activePane === 'left' ? 'right' : 'left');
+  };
+
   const renderPane = (pane: ExplorerPaneId, tab: ExplorerTabSnapshot | null) => {
     const isActivePane = workspace.focusedPane === pane;
     if (!tab) {
@@ -378,9 +382,26 @@ export function ExplorerWorkspace({
           <button type="button" onClick={duplicateActiveTab} title="Duplicate active tab" style={toolbarButtonStyle}>
             <CopyPlus size={13} />
           </button>
-          <button type="button" onClick={moveActiveTabToOtherPane} title="Move active tab to the other pane" style={toolbarButtonStyle}>
-            <SquareSplitHorizontal size={13} />
-          </button>
+          {workspace.layoutMode === 'dual' ? (
+            <>
+              <button type="button" onClick={() => setFocusedPane('left')} title="Focus left pane" style={paneActionButtonStyle(activePane === 'left', theme.accent)}>
+                Left
+              </button>
+              <button type="button" onClick={() => setFocusedPane('right')} title="Focus right pane" style={paneActionButtonStyle(activePane === 'right', theme.accent)}>
+                Right
+              </button>
+              <button type="button" onClick={moveActiveTabToOtherPane} title="Move active tab to the other pane" style={paneActionButtonStyle(false, theme.accent)}>
+                Move
+              </button>
+              <button type="button" onClick={focusOtherPane} title="Switch focus to the other pane" style={paneActionButtonStyle(false, theme.accent)}>
+                Swap
+              </button>
+            </>
+          ) : (
+            <button type="button" onClick={toggleDualPane} title="Open dual pane" style={paneActionButtonStyle(false, theme.accent)}>
+              Split
+            </button>
+          )}
           <button type="button" onClick={toggleDualPane} title={workspace.layoutMode === 'dual' ? 'Return to single pane' : 'Open dual pane'} style={toolbarButtonStyle}>
             <Columns2 size={13} />
           </button>
@@ -481,3 +502,20 @@ const workspaceMetaStyle: React.CSSProperties = {
   fontWeight: 600,
   whiteSpace: 'nowrap',
 };
+
+function paneActionButtonStyle(active: boolean, accent: string): React.CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 0,
+    padding: '6px 10px',
+    borderRadius: 999,
+    border: `1px solid ${active ? `${accent}66` : 'var(--overlay-border)'}`,
+    background: active ? `${accent}18` : 'var(--overlay-explorer-chip-bg)',
+    color: active ? 'var(--overlay-text-primary)' : 'var(--overlay-text-muted)',
+    cursor: 'pointer',
+    fontSize: 10.5,
+    fontWeight: 700,
+  };
+}

@@ -6,6 +6,12 @@
 - The clipboard payload is now normalized into a small shared snapshot (`path`, `name`, `is_dir`) instead of holding raw React entry objects.
 - Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
 
+## 2026-04-13 — Explorer Workspace Pane Action Pass
+
+- Added explicit left/right focus and move controls in the `ExplorerWorkspace` toolbar, so dual-pane tab movement is more discoverable.
+- This reduces the “where do I send this tab?” moment and makes the workspace feel more like a real two-pane workbench.
+- Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
+
 ## 2026-04-13 — File Explorer Preview Trust Pass
 
 - The preview header now shows whether a text preview is saved, dirty, or currently saving.
