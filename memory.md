@@ -6,6 +6,12 @@
 - The clipboard payload is now normalized into a small shared snapshot (`path`, `name`, `is_dir`) instead of holding raw React entry objects.
 - Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
 
+## 2026-04-13 — Explorer Workspace Focus Cue Pass
+
+- The active pane header now shows a small `Focused` badge, so the current work side is easier to spot instantly.
+- This keeps dual-pane navigation from feeling ambiguous when both sides are full of tabs.
+- Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
+
 ## 2026-04-13 — Explorer Workspace Tab Side Pass
 
 - Tab chips in `ExplorerWorkspace` now carry an explicit `L` or `R` marker, so it’s easier to see which pane each tab belongs to.

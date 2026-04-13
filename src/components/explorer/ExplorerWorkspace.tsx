@@ -221,7 +221,14 @@ export function ExplorerWorkspace({
         onMouseDown={() => setFocusedPane(pane)}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--overlay-border)', background: 'color-mix(in srgb, var(--overlay-bg-panel) 92%, black 8%)' }}>
-          <span style={{ fontSize: 10.5, fontWeight: 700, color: isActivePane ? 'var(--overlay-text-primary)' : 'var(--overlay-text-muted)' }}>{paneLabel}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 700, color: isActivePane ? 'var(--overlay-text-primary)' : 'var(--overlay-text-muted)' }}>{paneLabel}</span>
+            {isActivePane && (
+              <span style={{ fontSize: 9, fontWeight: 700, color: theme.accent, padding: '2px 6px', borderRadius: 999, border: `1px solid ${theme.accent}55`, background: `${theme.accent}14` }}>
+                Focused
+              </span>
+            )}
+          </div>
           <span title={panePath} style={{ fontSize: 10, color: 'var(--overlay-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1, textAlign: 'right' }}>
             {panePath || 'No path'}
           </span>
