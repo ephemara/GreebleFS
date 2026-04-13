@@ -1,5 +1,12 @@
 # GreebleFS Memory
 
+## 2026-04-13 — File Explorer Heartbeat Plan
+
+- Current explorer posture: `ExplorerWorkspace` owns tabs and panes, while `FileExplorer` remains the main work surface for navigation, preview, drag/drop, search, experimental modes, explorer-pro, and toolbar/rail controls.
+- Shipping loop: run focused 20-minute passes, aiming for one meaningful explorer improvement per pass.
+- Keep `AGENTS.md` and this file current as priorities shift, especially around monetizable polish, speed, and ergonomics.
+- Near-term value targets: cross-pane clipboard flow, sharper search/filtering, preview ergonomics, smoother large-directory performance, and more obvious power-user affordances.
+
 ## 2026-04-10 — Explorer Pro Basics Tranche 1 Substrate
 
 - Landed the first explorer-local workspace pass instead of extending the global workbench tab system:
