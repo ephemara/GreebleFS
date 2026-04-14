@@ -17,18 +17,21 @@ This is the active serialized OT strike-wave.
 
 - One lane runs at a time.
 - Every lane must read `.openclaw/OT_WAVE_HANDOFF.md` before changing direction.
+- This wave is code-first. A pass only counts if it lands code, tests, or a real environment fix. Markdown-only churn does not count.
+- Do not reopen already-closed spec paperwork just to stay busy. Use `SHIPPLAN.md`, live repo state, and the handoff to drive implementation.
 - Every lane must leave a concrete handoff for the next lane, not a vague summary.
 - Handoffs should name files touched, tests run, blockers, and the next best move.
+- Keep handoff edits tight. Do not spam timestamps, repeat the same validation note, or rewrite large sections without new information.
 - OT QA closes the wave with validation notes and explicit follow-ups for the next OT Cleo pass.
 - Seat assignment and live activation are managed externally by Kaino before each lane starts.
 
 ## Lane intent
 
-- `ot-cleo`: choose the concrete strike objective for this wave and prevent lane collisions.
-- `ot-aristotle`: pressure-test the chosen path and tighten the implementation edge, but do not reopen closed work unless the repo shows a concrete regression gap.
-- `ot-dalmascus`: drive the main implementation move.
-- `ot-native`: handle native, Rust, PTY, watcher, or subprocess fallout opened by the implementation.
+- `ot-cleo`: pick the concrete code objective for this wave, kill lane drift, and open the implementation path.
+- `ot-aristotle`: pressure-test the chosen implementation path and tighten the invariant set before more code lands.
+- `ot-dalmascus`: drive the main code move.
+- `ot-native`: handle native, Rust, watcher, tray, window, or subprocess fallout opened by the implementation.
 - `ot-runtime`: handle frontend runtime, settings, stores, and orchestration fallout.
-- `ot-terminal`: push terminal-specific follow-through.
-- `ot-explorer`: push explorer and UX follow-through.
+- `ot-terminal`: own terminal and shell-mode follow-through when the objective touches presentation or handoff behavior.
+- `ot-explorer`: own explorer and UX follow-through when the objective touches panel layout, dock mode, or user-facing interactions.
 - `ot-qa`: validate the wave, record regressions, and leave the next-cycle reality check.
