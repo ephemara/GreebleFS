@@ -58,3 +58,9 @@
 - Reviewer: OT Cleo / OverlayTerm coordination lane
 - Status: Draft
 - Notes: Initial standard spec created from live repo architecture and current `SHIPPLAN.md` priorities. Ready for execution and refinement during implementation.
+## Execution Notes
+
+- 2026-04-14, terminal throughput pass: removed per-write flushes from `src-tauri/src/terminal.rs` to reduce PTY write pressure.
+- 2026-04-14, GitManager churn pass: coalesced overlapping repo-state refreshes so repeated refresh triggers do not stack on top of each other while a load is already in flight.
+- Validation attempt: `cargo test --manifest-path src-tauri/Cargo.toml terminal::tests:: -- --nocapture` failed in the local environment because `x86_64-w64-mingw32-gcc` could not link `-lgcc_eh` / `-lgcc`.
+- Validation attempt: `bunx vitest run src/test/gitManager.behavior.test.tsx` failed locally because the repo environment could not resolve `vitest` from `vitest.config.ts`.

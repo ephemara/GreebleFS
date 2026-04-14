@@ -128,6 +128,9 @@ export function GitManager({
   const diffMonacoRef = useRef<any>(null);
   const diffDecorationsRef = useRef<string[]>([]);
   const reposRef = useRef<string[]>([]);
+  const untrackedSizeHintCacheRef = useRef(new Map<string, number | null>());
+  const repoStateLoadInFlightRef = useRef<Promise<void> | null>(null);
+  const repoStateLoadQueuedPathRef = useRef<string | null>(null);
 
   useEffect(() => {
     try {
@@ -191,43 +194,65 @@ export function GitManager({
   }, [runGit]);
 
   const loadRepoState = useCallback(async (path: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [branch, lastCommit, statusText, unstagedStats, stagedStats] = await Promise.all([
-        safeGit(path, ['rev-parse', '--abbrev-ref', 'HEAD'], 'unknown'),
-        safeGit(path, ['log', '-1', '--pretty=format:%h - %s (%cr)'], 'No commits yet'),
-        runGit(path, ['status', '--porcelain']),
-        safeGit(path, ['diff', '--numstat', '--no-ext-diff'], ''),
-        safeGit(path, ['diff', '--cached', '--numstat', '--no-ext-diff'], ''),
-      ]);
-      const status = mergeGitStatusWithStats(parseGitStatus(statusText), parseGitNumstat(unstagedStats), parseGitNumstat(stagedStats));
-
-      setRepoState({
-        path,
-        name: path.split(/[/\\]/).pop() || path,
-        branch: branch.trim() || 'unknown',
-        status,
-        lastCommit: lastCommit.trim() || 'No commits yet',
-        loadedAt: Date.now(),
-      });
-      setRepoBadges(current => ({ ...current, [path]: buildRepoBadgeState(status) }));
-    } catch (loadError) {
-      setError(String(loadError));
-      setRepoState(null);
-      setRepoBadges(current => ({
-        ...current,
-        [path]: {
-          changeCount: 0,
-          conflictedCount: 0,
-          loadedAt: Date.now(),
-          error: String(loadError),
-        },
-      }));
-    } finally {
-      setLoading(false);
+    const currentLoad = repoStateLoadInFlightRef.current;
+    if (currentLoad) {
+      repoStateLoadQueuedPathRef.current = path;
+      await currentLoad;
+      return;
     }
-  }, [runGit, safeGit]);
+
+    const runLoad = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [branch, lastCommit, statusText, unstagedStats, stagedStats] = await Promise.all([
+          safeGit(path, ['rev-parse', '--abbrev-ref', 'HEAD'], 'unknown'),
+          safeGit(path, ['log', '-1', '--pretty=format:%h - %s (%cr)'], 'No commits yet'),
+          runGit(path, ['status', '--porcelain']),
+          safeGit(path, ['diff', '--numstat', '--no-ext-diff'], ''),
+          safeGit(path, ['diff', '--cached', '--numstat', '--no-ext-diff'], ''),
+        ]);
+        const status = mergeGitStatusWithStats(parseGitStatus(statusText), parseGitNumstat(unstagedStats), parseGitNumstat(stagedStats));
+
+        setRepoState({
+          path,
+          name: path.split(/[/\\]/).pop() || path,
+          branch: branch.trim() || 'unknown',
+          status,
+          lastCommit: lastCommit.trim() || 'No commits yet',
+          loadedAt: Date.now(),
+        });
+        setRepoBadges(current => ({ ...current, [path]: buildRepoBadgeState(status) }));
+      } catch (loadError) {
+        setError(String(loadError));
+        setRepoState(null);
+        setRepoBadges(current => ({
+          ...current,
+          [path]: {
+            changeCount: 0,
+            conflictedCount: 0,
+            loadedAt: Date.now(),
+            error: String(loadError),
+          },
+        }));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const loadPromise = runLoad();
+    repoStateLoadInFlightRef.current = loadPromise;
+    try {
+      await loadPromise;
+    } finally {
+      repoStateLoadInFlightRef.current = null;
+      const queuedPath = repoStateLoadQueuedPathRef.current;
+      repoStateLoadQueuedPathRef.current = null;
+      if (queuedPath) {
+        void loadRepoState(queuedPath);
+      }
+    }
+  }, [runGit, safeGit, selectedRepo]);
 
   useEffect(() => {
     if (!selectedRepo) {
@@ -246,6 +271,7 @@ export function GitManager({
     let backgroundSweepCount = 0;
     let syncInFlight = false;
     let syncQueuedForceAll = false;
+    const isDocumentVisible = () => document.visibilityState === 'visible';
 
     const mergeBadgeEntries = (nextEntries: readonly (readonly [string, RepoBadgeState])[]) => {
       if (disposed || nextEntries.length === 0) {
@@ -309,12 +335,24 @@ export function GitManager({
 
     void scheduleBadgeSync(true);
     const intervalId = window.setInterval(() => {
+      if (!isDocumentVisible()) {
+        return;
+      }
       void scheduleBadgeSync(false);
     }, ACTIVE_REPO_BADGE_POLL_MS);
+
+    const handleVisibilityChange = () => {
+      if (!disposed && isDocumentVisible()) {
+        void scheduleBadgeSync(false);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       disposed = true;
       window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [loadRepoBadge, repos, selectedRepo]);
 
@@ -1297,18 +1335,29 @@ function looksBinaryContent(content: string): boolean {
   return /\u0000/.test(content);
 }
 
-async function getFileSizeHint(path: string): Promise<number | null> {
+async function getFileSizeHint(
+  path: string,
+  cache?: Map<string, number | null>,
+): Promise<number | null> {
+  if (cache?.has(path)) {
+    return cache.get(path) ?? null;
+  }
+
   const parentPath = getParentPath(path);
   const baseName = getBaseName(path);
   if (!parentPath || !baseName) {
+    cache?.set(path, null);
     return null;
   }
 
   try {
     const entries = await commands.fsListDir(parentPath, true).then(unwrapTauriResult);
     const matchingEntry = entries.find(entry => entry.name === baseName && !entry.is_dir);
-    return typeof matchingEntry?.size === 'number' ? matchingEntry.size : null;
+    const sizeHint = typeof matchingEntry?.size === 'number' ? matchingEntry.size : null;
+    cache?.set(path, sizeHint);
+    return sizeHint;
   } catch {
+    cache?.set(path, null);
     return null;
   }
 }
@@ -1330,7 +1379,7 @@ async function buildUnifiedDiff(
     }
 
     const absolutePath = joinRepoPath(repoPath, file.file);
-    const sizeHint = await getFileSizeHint(absolutePath);
+    const sizeHint = await getFileSizeHint(absolutePath, untrackedSizeHintCacheRef.current);
     if (typeof sizeHint === 'number' && sizeHint > MAX_SYNTHETIC_UNTRACKED_DIFF_BYTES) {
       return buildNonTextUntrackedDiff(
         file.file,
@@ -1630,3 +1679,4 @@ function repositoryPathListsEqual(left: string[], right: string[]): boolean {
     getRepositoryComparablePath(path) === getRepositoryComparablePath(right[index] ?? '')
   ));
 }
+
