@@ -24,6 +24,15 @@ Think of it like this:
 - React/TypeScript is the shell and presentation layer
 - themes/layouts/plugins transform the experience without forking the whole app
 
+## Shipping Loop: File Explorer Heartbeat
+
+When working on the file explorer, prefer 20-minute passes that end with one concrete improvement or a clear next step.
+
+- Re-check `FileExplorer`, `ExplorerWorkspace`, `ExplorerSideRail`, and the explorer config before each pass.
+- Favor the highest-leverage UI, UX, performance, or workflow change available.
+- Keep `AGENTS.md` and `memory.md` updated when the explorer direction or lessons change.
+- Preserve the split: Rust owns truth, TS runtime/store orchestrates, components render.
+
 ## Architecture Intent
 
 The intended split is:

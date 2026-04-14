@@ -162,8 +162,14 @@ export function ExplorerWorkspace({
     moveWorkspaceTabToPane(activeTab.id, targetPane);
   };
 
+  const focusOtherPane = () => {
+    setFocusedPane(activePane === 'left' ? 'right' : 'left');
+  };
+
   const renderPane = (pane: ExplorerPaneId, tab: ExplorerTabSnapshot | null) => {
     const isActivePane = workspace.focusedPane === pane;
+    const paneLabel = pane === 'left' ? 'Left pane' : 'Right pane';
+    const panePath = tab ? (sessions[tab.instanceId]?.currentPath ?? '') : '';
     if (!tab) {
       return (
         <div
@@ -229,6 +235,19 @@ export function ExplorerWorkspace({
         }}
         onMouseDown={() => setFocusedPane(pane)}
       >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--overlay-border)', background: isActivePane ? `color-mix(in srgb, ${theme.accent} 12%, var(--overlay-bg-panel) 88%)` : 'color-mix(in srgb, var(--overlay-bg-panel) 92%, black 8%)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 700, color: isActivePane ? 'var(--overlay-text-primary)' : 'var(--overlay-text-muted)' }}>{paneLabel}</span>
+            {isActivePane && (
+              <span style={{ fontSize: 9, fontWeight: 700, color: theme.accent, padding: '2px 6px', borderRadius: 999, border: `1px solid ${theme.accent}55`, background: `${theme.accent}14` }}>
+                Focused
+              </span>
+            )}
+          </div>
+          <span title={panePath} style={{ fontSize: 10, color: 'var(--overlay-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1, textAlign: 'right' }}>
+            {panePath || 'No path'}
+          </span>
+        </div>
         <FileExplorer
           appearance={appearance}
           chromeControlSurface={chromeControlSurface}
@@ -273,6 +292,26 @@ export function ExplorerWorkspace({
             display: 'flex',
             alignItems: 'center',
             gap: 8,
+            minWidth: 0,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span style={paneBadgeStyle(activePane === 'left', theme.accent)}>L {leftTabs.length}</span>
+          <span style={paneBadgeStyle(activePane === 'right', theme.accent)}>R {rightTabs.length}</span>
+          <span style={workspaceMetaStyle}>
+            {workspace.layoutMode === 'dual' ? 'Dual pane' : 'Single pane'} · {activePane === 'left' ? 'Left active' : 'Right active'}
+          </span>
+          {workspace.layoutMode === 'dual' && (
+            <span style={{ ...workspaceMetaStyle, color: theme.accent }}>
+              Move tabs with the chip arrow or the Move button
+            </span>
+          )}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              minWidth: 0,
             minWidth: 0,
             overflowX: 'auto',
           }}
@@ -321,6 +360,14 @@ export function ExplorerWorkspace({
                   <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11.5, fontWeight: 600 }}>
                     {getTabDisplayLabel(tab, currentPath)}
                   </span>
+                  <span style={{ fontSize: 9.5, fontWeight: 700, color: isActive ? 'var(--overlay-text-primary)' : 'var(--overlay-text-dim)', opacity: 0.8 }}>
+                    {tab.pane === 'left' ? 'L' : 'R'}
+                  </span>
+                  {isActive && (
+                    <span style={{ fontSize: 9, fontWeight: 800, color: theme.accent, padding: '2px 5px', borderRadius: 999, border: `1px solid ${theme.accent}55`, background: `${theme.accent}14` }}>
+                      Active
+                    </span>
+                  )}
                 </button>
                 {workspace.layoutMode === 'dual' && (
                   <button
@@ -378,9 +425,26 @@ export function ExplorerWorkspace({
           <button type="button" onClick={duplicateActiveTab} title="Duplicate active tab" style={toolbarButtonStyle}>
             <CopyPlus size={13} />
           </button>
-          <button type="button" onClick={moveActiveTabToOtherPane} title="Move active tab to the other pane" style={toolbarButtonStyle}>
-            <SquareSplitHorizontal size={13} />
-          </button>
+          {workspace.layoutMode === 'dual' ? (
+            <>
+              <button type="button" onClick={() => setFocusedPane('left')} title="Focus left pane" style={paneActionButtonStyle(activePane === 'left', theme.accent)}>
+                Left
+              </button>
+              <button type="button" onClick={() => setFocusedPane('right')} title="Focus right pane" style={paneActionButtonStyle(activePane === 'right', theme.accent)}>
+                Right
+              </button>
+              <button type="button" onClick={moveActiveTabToOtherPane} title="Move active tab to the other pane" style={paneActionButtonStyle(false, theme.accent)}>
+                Move
+              </button>
+              <button type="button" onClick={focusOtherPane} title="Switch focus to the other pane" style={paneActionButtonStyle(false, theme.accent)}>
+                Swap
+              </button>
+            </>
+          ) : (
+            <button type="button" onClick={toggleDualPane} title="Open dual pane" style={paneActionButtonStyle(false, theme.accent)}>
+              Split
+            </button>
+          )}
           <button type="button" onClick={toggleDualPane} title={workspace.layoutMode === 'dual' ? 'Return to single pane' : 'Open dual pane'} style={toolbarButtonStyle}>
             <Columns2 size={13} />
           </button>
@@ -458,3 +522,43 @@ const toolbarButtonStyle: React.CSSProperties = {
   color: 'var(--overlay-text-primary)',
   cursor: 'pointer',
 };
+
+function paneBadgeStyle(active: boolean, accent: string): React.CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 34,
+    padding: '3px 8px',
+    borderRadius: 999,
+    border: `1px solid ${active ? `${accent}66` : 'var(--overlay-border)'}`,
+    background: active ? `${accent}18` : 'var(--overlay-explorer-chip-bg)',
+    color: active ? 'var(--overlay-text-primary)' : 'var(--overlay-text-muted)',
+    fontSize: 10,
+    fontWeight: 700,
+  };
+}
+
+const workspaceMetaStyle: React.CSSProperties = {
+  color: 'var(--overlay-text-dim)',
+  fontSize: 10.5,
+  fontWeight: 600,
+  whiteSpace: 'nowrap',
+};
+
+function paneActionButtonStyle(active: boolean, accent: string): React.CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 0,
+    padding: '6px 10px',
+    borderRadius: 999,
+    border: `1px solid ${active ? `${accent}66` : 'var(--overlay-border)'}`,
+    background: active ? `${accent}18` : 'var(--overlay-explorer-chip-bg)',
+    color: active ? 'var(--overlay-text-primary)' : 'var(--overlay-text-muted)',
+    cursor: 'pointer',
+    fontSize: 10.5,
+    fontWeight: 700,
+  };
+}

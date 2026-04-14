@@ -106,6 +106,7 @@ import {
   PRIMARY_EXPLORER_INSTANCE_ID,
   defaultExplorerSession,
   useExplorerStore,
+  type ExplorerClipboardSnapshot,
   type ExplorerDocumentViewMode,
   type ExplorerInstanceId,
 } from '../store/explorerStore';
@@ -323,7 +324,7 @@ type PreviewState =
     }
   | { type: 'model3d'; path: string; format: ModelPreviewFormat; name: string; size: number };
 interface NewItemState   { visible: boolean; kind: 'file'|'folder'; }
-interface ExplorerClipboard { action:'copy'|'cut'; entries: FileEntry[]; }
+type ExplorerClipboard = ExplorerClipboardSnapshot;
 type ExplorerDragIntent = 'internal' | 'native-out';
 type ExplorerSortKey = 'name' | 'size' | 'date' | 'type';
 
@@ -572,8 +573,7 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
 }
 
 function resolveExplorerDragIntent(event: Pick<React.DragEvent, 'shiftKey'>): ExplorerDragIntent {
-  // Keep explorer drags pane-to-pane by default; Shift opts into a native file export.
-  return event.shiftKey ? 'native-out' : 'internal';
+  return event.shiftKey ? 'internal' : 'native-out';
 }
 
 function resolveExplorerDropOperation(
@@ -1635,8 +1635,6 @@ function EditorFallback({ label }: { label: string }) {
 function PreviewPanel({
   preview,
   width,
-  minWidth,
-  maxWidth,
   onClose,
   onWidthChange,
   onTextChange,
@@ -1648,8 +1646,6 @@ function PreviewPanel({
 }: {
   preview: PreviewState;
   width: number;
-  minWidth: number;
-  maxWidth: number;
   onClose: () => void;
   onWidthChange: (width: number) => void;
   onTextChange: (path: string, content: string) => void;
@@ -1677,8 +1673,8 @@ function PreviewPanel({
       const delta = startX.current - e.clientX; // dragging left grows the panel
       onWidthChange(
         Math.max(
-          minWidth,
-          Math.min(maxWidth, startW.current + delta),
+          EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
+          Math.min(EXPLORER_PREVIEW_WIDTH_BOUNDS.max, startW.current + delta),
         ),
       );
     };
@@ -1686,13 +1682,16 @@ function PreviewPanel({
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
     return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
-  }, [maxWidth, minWidth, onWidthChange]);
+  }, [onWidthChange]);
 
   useEffect(() => {
     setCopiedPath(null);
   }, [preview.path]);
 
   const previewTitle = preview.type === 'none' ? 'Preview' : preview.name;
+  const previewStateLabel = preview.type === 'text'
+    ? (preview.isSaving ? 'Saving…' : preview.isDirty ? 'Unsaved' : 'Saved')
+    : null;
   const copyPathLabel = copiedPath === preview.path ? 'Copied' : 'Copy Path';
   const supportsRenderedPreview = preview.type === 'text' && preview.renderKind !== 'none';
   const previewShellStyle: CSSProperties = explorerTheme.previewStyle === 'attached'
@@ -1752,7 +1751,14 @@ function PreviewPanel({
           )}
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
+          {previewStateLabel && (
+            <span style={{ fontSize: 9, fontWeight: 700, color: preview.isSaving ? EXP.yellow : (preview.isDirty ? EXP.red : EXP.green), padding: '3px 7px', borderRadius: 999, border: '1px solid var(--overlay-explorer-chip-border)', background: 'var(--overlay-explorer-chip-bg)' }}>
+              {previewStateLabel}
+            </span>
+          )}
           {supportsRenderedPreview && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: 2, borderRadius: 'var(--overlay-explorer-control-radius)', border: '1px solid var(--overlay-explorer-chip-border)', background: 'var(--overlay-explorer-chip-bg)' }}>
+              {([          {supportsRenderedPreview && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: 2, borderRadius: 'var(--overlay-explorer-control-radius)', border: '1px solid var(--overlay-explorer-chip-border)', background: 'var(--overlay-explorer-chip-bg)' }}>
               {([
                 { id: 'edit', label: 'Edit' },
@@ -2117,7 +2123,6 @@ interface FileExplorerProps {
   onAddBookmark: (name: string, path: string) => void;
   pluginActions?: OverlayPluginExplorerActionContribution[];
   layoutMode?: ExplorerLayoutMode;
-  workspacePaneMode?: 'standalone' | 'split';
   instanceId?: ExplorerInstanceId;
   chromeControlSurface?: 'toolbar' | 'topbar';
   focusAddressBarSignal?: number;
@@ -2138,7 +2143,6 @@ export function FileExplorer({
   onAddBookmark,
   pluginActions = [],
   layoutMode = 'full',
-  workspacePaneMode = 'standalone',
   instanceId = PRIMARY_EXPLORER_INSTANCE_ID,
   chromeControlSurface = 'toolbar',
   focusAddressBarSignal = 0,
@@ -2169,7 +2173,6 @@ export function FileExplorer({
     showPathProperties: showExplorerPathProperties,
     listSavedSearches: listExplorerSavedSearches,
     listTags: listExplorerTags,
-    pollDuplicateScan: pollExplorerDuplicateScan,
     searchEntriesWithDiagnostics: searchExplorerEntriesWithDiagnostics,
     saveSavedSearch: saveExplorerSavedSearch,
     setTagsForPaths: setExplorerTagsForPaths,
@@ -2177,7 +2180,6 @@ export function FileExplorer({
     supportsNativeIntegration,
     supportsSearch,
     startDuplicateScan: startExplorerDuplicateScan,
-    deleteSavedSearch: deleteExplorerSavedSearch,
     trashPaths: trashExplorerPaths,
     transferItems: transferExplorerItems,
     unwatchEntrySizeRoot: unwatchExplorerEntrySizeRoot,
@@ -2202,10 +2204,14 @@ export function FileExplorer({
     explorerRail,
     updateExplorerSessionForInstance,
     updateExplorerRail,
+    clipboard,
+    setClipboard,
   } = useExplorerStore(useShallow(state => ({
     explorerRail: state.rail,
     updateExplorerSessionForInstance: state.updateSessionForInstance,
     updateExplorerRail: state.updateRail,
+    clipboard: state.clipboard,
+    setClipboard: state.setClipboard,
   })));
   const storedSourcesVisible = useExplorerStore(
     state => state.sessions[instanceId]?.sourcesVisible ?? defaultExplorerSession.sourcesVisible,
@@ -2223,21 +2229,12 @@ export function FileExplorer({
     [explorerSearchScopeId],
   );
   const isCompactDock = layoutMode === 'compact-dock';
-  const isSplitPane = workspacePaneMode === 'split';
-  const usesConstrainedPaneLayout = isCompactDock || isSplitPane;
   const showsGlobalChromeControls = chromeControlSurface === 'topbar';
   const explorerTheme = useMemo(
     () => resolveExplorerThemeRecipe(appearance),
     [appearance],
   );
-  const sidebarBounds = getExplorerRailWidthBounds(usesConstrainedPaneLayout);
-  const previewWidthBounds = useMemo(
-    () => ({
-      min: EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
-      max: isSplitPane ? 320 : EXPLORER_PREVIEW_WIDTH_BOUNDS.max,
-    }),
-    [isSplitPane],
-  );
+  const sidebarBounds = getExplorerRailWidthBounds(isCompactDock);
   const uiFont = appearance?.fonts.ui ?? 'Inter,system-ui,sans-serif';
   const themeIconTheme = appearance?.theme.assets?.iconTheme ?? getBuiltInIconTheme();
   const useNativeOsIcons = appearanceSettings.useNativeOsIcons;
@@ -2267,13 +2264,13 @@ export function FileExplorer({
   const [previewWidth, setPreviewWidth] = useState(() => {
     if (typeof initialSession.previewWidth === 'number') {
       return Math.max(
-        previewWidthBounds.min,
-        Math.min(previewWidthBounds.max, initialSession.previewWidth),
+        EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
+        Math.min(EXPLORER_PREVIEW_WIDTH_BOUNDS.max, initialSession.previewWidth),
       );
     }
     return Math.max(
-      previewWidthBounds.min,
-      Math.min(previewWidthBounds.max, Math.round(explorerTheme.metrics.previewWidth)),
+      EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
+      Math.min(EXPLORER_PREVIEW_WIDTH_BOUNDS.max, Math.round(explorerTheme.metrics.previewWidth)),
     );
   });
   const [entries,      setEntries]      = useState<FileEntry[]>([]);
@@ -2301,7 +2298,6 @@ export function FileExplorer({
   const [showExperimentalMenu, setShowExperimentalMenu] = useState(false);
   const [rename,       setRename]       = useState<RenameState>({ active:false, path:'', name:'' });
   const [deleteTargets, setDeleteTargets] = useState<FileEntry[]>([]);
-  const [clipboard,    setClipboard]    = useState<ExplorerClipboard|null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [newItem,      setNewItem]      = useState<NewItemState>({ visible:false, kind:'folder' });
   const [newItemName,  setNewItemName]  = useState('');
@@ -2364,7 +2360,7 @@ export function FileExplorer({
     clientWidth: 0,
   });
   const currentPathIsCloud = currentPath.length > 0 && isCloudExplorerPath(currentPath);
-  const isExperimentalViewEligible = !usesConstrainedPaneLayout && search.trim().length === 0;
+  const isExperimentalViewEligible = !isCompactDock && search.trim().length === 0;
 
   useEffect(() => {
     let disposed = false;
@@ -2424,8 +2420,8 @@ export function FileExplorer({
   }, [sidebarBounds.maxWidth, sidebarBounds.minWidth]);
 
   useEffect(() => {
-    setPreviewWidth(current => Math.max(previewWidthBounds.min, Math.min(previewWidthBounds.max, current)));
-  }, [previewWidthBounds.max, previewWidthBounds.min]);
+    setPreviewWidth(current => Math.max(EXPLORER_PREVIEW_WIDTH_BOUNDS.min, Math.min(EXPLORER_PREVIEW_WIDTH_BOUNDS.max, current)));
+  }, [explorerTheme.metrics.previewWidth]);
 
   const showExperimentalHud = useCallback(() => {
     setExperimentalHudVisible(true);
@@ -2547,10 +2543,11 @@ export function FileExplorer({
   }, [flushPendingExplorerMetrics]);
 
   useEffect(() => {
-    if (usesConstrainedPaneLayout) {
+    if (isCompactDock) {
       setSidebarWidth(current => Math.max(sidebarBounds.minWidth, Math.min(current, sidebarBounds.maxWidth)));
+      setPreview({ type: 'none', path: '' });
     }
-  }, [sidebarBounds.maxWidth, sidebarBounds.minWidth, usesConstrainedPaneLayout]);
+  }, [isCompactDock, sidebarBounds.maxWidth, sidebarBounds.minWidth]);
 
   useEffect(() => {
     if (!previewEnabled) {
@@ -2998,7 +2995,7 @@ export function FileExplorer({
     updateExplorerSettings,
   ]);
   const pathTagIdsByPath = useMemo(() => new Map(
-    tagMetadata.assignments.map((assignment) => [assignment.path, assignment.tagIds] as const),
+    tagMetadata.assignments.map((assignment) => [assignment.path, assignment.tag_ids] as const),
   ), [tagMetadata.assignments]);
   const filteredEntries = useMemo(
     () => (isSearchActive ? searchResults : entries).filter((entry) => {
@@ -3025,6 +3022,8 @@ export function FileExplorer({
       explorerSettings.sortOrder,
     ],
   );
+  const sourceEntryCount = isSearchActive ? searchResults.length : entries.length;
+  const filteredEntryCount = visibleEntries.length;
   const experimentalSemanticBands = useMemo(
     () => (isExperimentalViewEligible
       && (
@@ -3243,8 +3242,15 @@ export function FileExplorer({
   const queueClipboard = useCallback((action: 'copy' | 'cut', entry?: FileEntry) => {
     const entriesForAction = resolveEntriesForAction(entry);
     if (entriesForAction.length === 0) return;
-    setClipboard({ action, entries: entriesForAction });
-  }, [resolveEntriesForAction]);
+    setClipboard({
+      action,
+      entries: entriesForAction.map((item) => ({
+        path: item.path,
+        name: item.name,
+        is_dir: item.is_dir,
+      })),
+    });
+  }, [resolveEntriesForAction, setClipboard]);
 
   const openAsAdmin = useCallback(async (path: string) => {
     await openExplorerPathAsAdmin(path).catch(e => setError(String(e)));
@@ -3436,8 +3442,8 @@ export function FileExplorer({
       railMinWidth: sidebarBounds.minWidth,
       railMaxWidth: sidebarBounds.maxWidth,
       previewWidth: explorerTheme.metrics.previewWidth,
-      previewMinWidth: previewWidthBounds.min,
-      previewMaxWidth: previewWidthBounds.max,
+      previewMinWidth: EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
+      previewMaxWidth: EXPLORER_PREVIEW_WIDTH_BOUNDS.max,
     });
 
     setShellLayoutId(nextLayout.id);
@@ -3447,8 +3453,6 @@ export function FileExplorer({
   }, [
     explorerTheme.metrics.previewWidth,
     explorerTheme.metrics.railWidth,
-    previewWidthBounds.max,
-    previewWidthBounds.min,
     sidebarBounds.maxWidth,
     sidebarBounds.minWidth,
   ]);
@@ -3464,7 +3468,7 @@ export function FileExplorer({
   }, [closePreview, previewEnabled]);
 
   const previewEntry = useCallback(async (entry: FileEntry, focusTarget: EditorSearchFocusTarget | null = null) => {
-    if (!previewEnabled) {
+    if (!previewEnabled || isCompactDock) {
       setPreview({ type: 'none', path: '' });
       return;
     }
@@ -3531,7 +3535,7 @@ export function FileExplorer({
       return;
     }
     setPreview({ type: 'none', path: '' });
-  }, [flushPreviewTextSave, previewEnabled]);
+  }, [flushPreviewTextSave, isCompactDock, previewEnabled]);
 
   const openEntry = useCallback(async (entry: FileEntry) => {
     if (entry.is_dir) {
@@ -3540,7 +3544,7 @@ export function FileExplorer({
     }
     const ext = getEntryExtension(entry);
     const focusTarget = getSearchFocusTarget(entry);
-    const canInlinePreview = previewEnabled;
+    const canInlinePreview = previewEnabled && !isCompactDock;
 
     if (canInlinePreview && isEditableTextEntry(entry)) {
       await previewEntry(entry, focusTarget);
@@ -3558,7 +3562,7 @@ export function FileExplorer({
     }
 
     await openExplorerPath(entry.path).catch(e => setError(String(e)));
-  }, [getSearchFocusTarget, navigate, openExplorerPath, previewEnabled, previewEntry]);
+  }, [getSearchFocusTarget, isCompactDock, navigate, openExplorerPath, previewEnabled, previewEntry]);
 
   // ── Duplicate ──
   const duplicate = useCallback(async (entry: FileEntry) => {
@@ -3969,7 +3973,7 @@ export function FileExplorer({
       void openEntry(entry);
       return;
     }
-    if (previewEnabled && plainClick && !entry.is_dir) {
+    if (previewEnabled && !isCompactDock && plainClick && !entry.is_dir) {
       void previewEntry(entry, getSearchFocusTarget(entry));
     }
   };
@@ -4141,7 +4145,7 @@ export function FileExplorer({
       if (matchesKeybinding(e, keybindings.toggleExplorerLayout)) {
         e.preventDefault();
         if (
-          !usesConstrainedPaneLayout
+          !isCompactDock
           && !isSearchActive
           && (experimentalViewMode !== 'off' || explorerTheme.preferredExperimentalViewMode != null)
         ) {
@@ -4193,7 +4197,7 @@ export function FileExplorer({
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [addressEditing, beginAddressEdit, clearExplorerSelection, duplicate, experimentalDensity, experimentalViewMode, explorerTheme.preferredExperimentalViewMode, focusExplorerAddressBar, focusExplorerList, focusExplorerPreview, goBack, goForward, goHome, isSearchActive, keybindings, newItem.visible, paste, queueClipboard, refresh, rename.active, selectAllVisibleEntries, selected, selectedEntries, showExperimentalHud, showHidden, updateExplorerSettings, usesConstrainedPaneLayout, viewMode, visibleEntries, toggleSearchScope, cycleSortKey, toggleSortOrder]);
+  }, [addressEditing, beginAddressEdit, clearExplorerSelection, duplicate, experimentalDensity, experimentalViewMode, explorerTheme.preferredExperimentalViewMode, focusExplorerAddressBar, focusExplorerList, focusExplorerPreview, goBack, goForward, goHome, isCompactDock, isSearchActive, keybindings, newItem.visible, paste, queueClipboard, refresh, rename.active, selectAllVisibleEntries, selected, selectedEntries, showExperimentalHud, showHidden, updateExplorerSettings, viewMode, visibleEntries, toggleSearchScope, cycleSortKey, toggleSortOrder]);
 
   // ── Breadcrumbs ──
   const crumbs: { label:string; path:string }[] = locationBreadcrumbs;
@@ -4239,11 +4243,6 @@ export function FileExplorer({
       : requestedDragIntent;
     activeDragPathsRef.current = dragPaths;
     e.currentTarget.dataset.overlayDragIntent = dragIntent;
-    if (dragIntent === 'native-out') {
-      e.currentTarget.dataset.overlayDragHide = 'true';
-    } else {
-      delete e.currentTarget.dataset.overlayDragHide;
-    }
     e.dataTransfer.setData('text/plain', dragPaths[0] ?? entry.path);
     e.dataTransfer.setData('application/x-overlayterm-paths', JSON.stringify(dragPaths));
     e.dataTransfer.setData('application/x-overlayterm-drag-intent', dragIntent);
@@ -4282,7 +4281,6 @@ export function FileExplorer({
 
   const onDragEnd = (e: React.DragEvent<HTMLElement>) => {
     delete e.currentTarget.dataset.overlayDragIntent;
-    delete e.currentTarget.dataset.overlayDragHide;
     activeDragPathsRef.current = [];
     setDragOver(null);
   };
@@ -4350,18 +4348,18 @@ export function FileExplorer({
     [themedExperimentalViewMode],
   );
   const effectiveViewMode = resolveEffectiveExplorerViewMode(themedViewMode, {
-    isCompactDock: usesConstrainedPaneLayout,
+    isCompactDock,
     isSearchActive,
   });
   const effectiveExperimentalViewMode = useMemo(
     () => (
-      !usesConstrainedPaneLayout
+      !isCompactDock
       && !isSearchActive
       && themedExperimentalViewMode !== 'off'
         ? themedExperimentalViewMode
         : 'off'
     ),
-    [isSearchActive, themedExperimentalViewMode, usesConstrainedPaneLayout],
+    [isCompactDock, isSearchActive, themedExperimentalViewMode],
   );
   const adaptiveDensityStop = useMemo<AdaptiveSemanticDensityStopDefinition | null>(
     () => (themedExperimentalViewMode === 'adaptive-semantic-grid'
@@ -4397,7 +4395,14 @@ export function FileExplorer({
     ? activeGridMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT
     : activeRowMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT;
   const shouldRenderRail = sourcesVisible && (isCompactDock || shellLayout.showRail);
-  const hasPreview = previewEnabled && preview.type !== 'none';
+  const hasPreview = !isCompactDock && previewEnabled && preview.type !== 'none';
+  const previewModeLabel = preview.type === 'text'
+    ? (preview.renderKind === 'markdown' ? 'Text preview (markdown)' : 'Text preview')
+    : preview.type === 'image'
+      ? 'Image preview'
+      : preview.type === 'model3d'
+        ? '3D preview'
+        : 'Preview';
   const searchModeLabel = searchIncludeContent ? 'Recursive search + text' : 'Recursive search (names only)';
   const gridZoomPercent = useMemo(
     () => (isExplorerGridMode(themedViewMode) ? getExplorerGridZoomPercent(gridZoom) : null),
@@ -4464,10 +4469,6 @@ export function FileExplorer({
   const explorerRootStyle = useMemo<CSSProperties>(() => ({
     ...(explorerTheme.cssVars as CSSProperties),
     flex: 1,
-    width: '100%',
-    height: '100%',
-    minWidth: 0,
-    minHeight: 0,
     display: 'flex',
     overflow: 'hidden',
     background: 'var(--overlay-explorer-root-bg)',
@@ -4617,7 +4618,7 @@ export function FileExplorer({
 
   useEffect(() => {
     const viewport = explorerViewportRef.current;
-    if (!viewport || usesConstrainedPaneLayout) {
+    if (!viewport || isCompactDock) {
       return undefined;
     }
 
@@ -4709,11 +4710,11 @@ export function FileExplorer({
     effectiveExperimentalViewMode,
     experimentalDensity,
     gridZoom,
+    isCompactDock,
     showExperimentalHud,
     showZoomHud,
     themedViewMode,
     updateExplorerSettings,
-    usesConstrainedPaneLayout,
   ]);
 
   useEffect(() => {
@@ -4826,14 +4827,14 @@ export function FileExplorer({
     const shouldMeasureDirectories = !isSearchActive;
     const pendingFiles = virtualizedEntries
       .filter(entry => !entry.is_dir && !entrySizes[entry.path] && !entrySizeLoadingPaths.has(entry.path))
-      .slice(0, 12);
+      .slice(0, 8);
     const pendingDirectories = shouldMeasureDirectories
       ? virtualizedEntries
         .filter(entry => entry.is_dir && !entrySizes[entry.path] && !entrySizeLoadingPaths.has(entry.path))
         .slice(0, 1)
       : [];
 
-    const nextBatch = (pendingFiles.length > 0 ? pendingFiles : pendingDirectories).slice(0, 12);
+    const nextBatch = (pendingFiles.length > 0 ? pendingFiles : pendingDirectories).slice(0, 8);
     const unresolvedPaths = nextBatch.map(entry => entry.path);
 
     if (unresolvedPaths.length === 0) {
@@ -4947,7 +4948,7 @@ export function FileExplorer({
         key: getNativeIconCacheKey(entry.path, DEFAULT_NATIVE_ICON_SIZE),
       }))
       .filter(({ key }) => nativeIconMap[key] === undefined && !nativeIconLoadingKeys.has(key))
-      .slice(0, 48);
+      .slice(0, 24);
 
     if (pendingEntries.length === 0) {
       return;
@@ -6828,8 +6829,17 @@ export function FileExplorer({
             )}
 
             {!loading && !searchLoading && visibleEntries.length === 0 && (
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:120, color:EXP.muted, fontSize:12 }}>
-                {isSearchActive ? `No results for "${search.trim()}"` : 'Empty folder'}
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:120, color:EXP.muted, fontSize:12, textAlign:'center', padding: '0 16px' }}>
+                {isSearchActive
+                  ? (
+                    <span>
+                      No results for "{search.trim()}"<br />
+                      <span style={{ color: EXP.muted2, fontSize: 11 }}>
+                        {searchIncludeContent ? 'Recursive text search is on.' : 'Names-only search is on.'}
+                      </span>
+                    </span>
+                  )
+                  : 'Empty folder'}
               </div>
             )}
 
@@ -7366,7 +7376,12 @@ export function FileExplorer({
         {/* Status bar */}
         {shouldRenderStatusBar && (
         <div style={statusBarStyle}>
-          <span>{visibleEntries.length} item{visibleEntries.length!==1?'s':''}</span>
+          <span>{filteredEntryCount} item{filteredEntryCount !== 1 ? 's' : ''}</span>
+          {sourceEntryCount !== filteredEntryCount && (
+            <span style={{ color: EXP.muted2 }}>
+              of {sourceEntryCount}
+            </span>
+          )}
           {selected.size > 0 && <span style={{ color:accent }}>{selected.size} selected</span>}
           {!isCompactDock && (
             <span>
@@ -7379,9 +7394,14 @@ export function FileExplorer({
               Shell: <span style={{ color: EXP.text }}>{shellLayout.label}</span>
             </span>
           )}
-          <span>
-            Preview: <span style={{ color: previewEnabled ? accent : EXP.text }}>{previewEnabled ? 'On' : 'Off'}</span>
-          </span>
+          {!isCompactDock && (
+            <span>
+              Preview: <span style={{ color: previewEnabled ? accent : EXP.text }}>{previewEnabled ? 'On' : 'Off'}</span>
+              {hasPreview && (
+                <span style={{ color: EXP.muted2 }}>{` · ${previewModeLabel}: ${getPathLeaf(preview.path)}`}</span>
+              )}
+            </span>
+          )}
           {selectedExperimentalModeDefinition && (
             <span>
               Labs: <span style={{ color: EXP.text }}>{selectedExperimentalModeDefinition.label}</span>
@@ -7389,7 +7409,15 @@ export function FileExplorer({
               {effectiveExperimentalViewMode === 'off' ? ' (fallback)' : ''}
             </span>
           )}
-          {search && <span>{searchModeLabel}: "<span style={{ color:EXP.text }}>{search}</span>"</span>}
+          {search && (
+            <span>
+              {searchModeLabel}: <span style={{ color: EXP.text }}>&quot;{search}&quot;</span>
+              <span style={{ color: EXP.muted2 }}>{searchLoading ? ' · searching…' : ` · ${filteredEntryCount} result${filteredEntryCount === 1 ? '' : 's'}`}</span>
+              {activeTagFilterIds.length > 0 && sourceEntryCount !== filteredEntryCount && (
+                <span style={{ color: EXP.muted2 }}>{` · ${sourceEntryCount - filteredEntryCount} hidden by tags`}</span>
+              )}
+            </span>
+          )}
           <ExplorerTaskStatusBadge
             taskProgress={explorerTaskProgress}
             accent={accent}

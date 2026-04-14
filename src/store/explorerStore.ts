@@ -29,6 +29,18 @@ export type ExplorerDocumentViewMode = 'edit' | 'preview';
 export type ExplorerInstanceId = string;
 export type ExplorerPaneId = 'left' | 'right';
 export type ExplorerWorkspaceLayoutMode = 'single' | 'dual';
+export type ExplorerClipboardAction = 'copy' | 'cut';
+
+export interface ExplorerClipboardEntry {
+  path: string;
+  name: string;
+  is_dir: boolean;
+}
+
+export interface ExplorerClipboardSnapshot {
+  action: ExplorerClipboardAction;
+  entries: ExplorerClipboardEntry[];
+}
 
 export interface ExplorerTabSnapshot {
   id: string;
@@ -158,6 +170,7 @@ interface ExplorerStoreState {
   session: ExplorerSessionSnapshot;
   workspace: ExplorerWorkspaceSnapshot;
   rail: ExplorerRailSnapshot;
+  clipboard: ExplorerClipboardSnapshot | null;
   persistence: ExplorerPersistenceNotice;
   getSession: (instanceId?: ExplorerInstanceId) => ExplorerSessionSnapshot;
   updateSession: (updates: Partial<ExplorerSessionSnapshot>) => void;
@@ -189,6 +202,7 @@ interface ExplorerHydrationResult {
   session: ExplorerSessionSnapshot;
   workspace: ExplorerWorkspaceSnapshot;
   rail: ExplorerRailSnapshot;
+  clipboard: ExplorerClipboardSnapshot | null;
   persistence: ExplorerPersistenceNotice;
 }
 
@@ -340,6 +354,7 @@ export function loadExplorerPersistedState(storage: Storage | null = getStorage(
       session: getPrimaryExplorerSession(sessions),
       workspace: createDefaultExplorerWorkspace(),
       rail: defaultExplorerRailSnapshot,
+      clipboard: null,
       persistence: defaultExplorerPersistenceNotice,
     };
   }
@@ -355,6 +370,7 @@ export function loadExplorerPersistedState(storage: Storage | null = getStorage(
         session: getPrimaryExplorerSession(sessions),
         workspace,
         rail: normalizeExplorerRailSnapshot(parsed.rail),
+        clipboard: null,
         persistence: {
           status: 'ready',
           message: null,
@@ -379,6 +395,7 @@ export function loadExplorerPersistedState(storage: Storage | null = getStorage(
         session: cloneExplorerSessionSnapshot(defaultExplorerSession),
         workspace: createDefaultExplorerWorkspace(),
         rail: createDefaultExplorerRailSnapshot(),
+        clipboard: null,
         persistence: {
           status: 'corrupted-reset',
           message: 'Explorer layout was reset because the saved state could not be decoded.',
@@ -401,6 +418,7 @@ export function loadExplorerPersistedState(storage: Storage | null = getStorage(
             ...createDefaultExplorerRailSnapshot(),
             nodes: legacyBookmarks,
           },
+          clipboard: null,
           persistence: {
             status: 'legacy-imported',
             message: 'Legacy explorer bookmarks were imported into the new bookmark folders system.',
@@ -419,6 +437,7 @@ export function loadExplorerPersistedState(storage: Storage | null = getStorage(
     session: getPrimaryExplorerSession(sessions),
     workspace: createDefaultExplorerWorkspace(),
     rail: createDefaultExplorerRailSnapshot(),
+    clipboard: null,
     persistence: {
       status: 'ready',
       message: null,
@@ -555,6 +574,7 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
     session: hydratedState.session,
     workspace: hydratedState.workspace,
     rail: hydratedState.rail,
+    clipboard: hydratedState.clipboard,
     persistence: hydratedState.persistence,
     getSession: (instanceId = PRIMARY_EXPLORER_INSTANCE_ID) => (
       get().sessions[instanceId] ?? cloneExplorerSessionSnapshot(defaultExplorerSession)
@@ -785,6 +805,9 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
         },
       }));
       schedulePersistLatest();
+    },
+    setClipboard: (clipboard) => {
+      set({ clipboard });
     },
     updateRail: (updates) => {
       set((state) => ({
