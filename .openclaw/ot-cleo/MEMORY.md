@@ -16,4 +16,5 @@ Push OverlayTerm toward premium, monetizable, final-boss quality.
 - 2026-04-14 — Terminal lane check: the PTY path already avoids per-write flushes, drops the shared map mutex before reads, and scopes lookup/resize locks narrowly, so the remaining value is mostly validation and any future lock hot-spot proof.
 - 2026-04-14 — Validation closure pass: the active performance spec is still aligned, the open work is now mostly task 6.2 notes and environment-blocked validation proof, and no new code path was worth changing this pass.
 - 2026-04-14 — Hourly wave closeout: the 60fps performance spec is green, and the current wave objective is now just a no-new-code handoff audit unless Aristotle finds a real regression gap.
+- 2026-04-14 — 11:43 UTC wave refresh: the ot-cleo -> ot-aristotle handoff was tightened to name the exact review files and blockers, but the strike objective stayed the same, no-code closeout unless a concrete gap appears.
 
