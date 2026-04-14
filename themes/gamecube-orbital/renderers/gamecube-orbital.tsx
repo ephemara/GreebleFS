@@ -48,6 +48,17 @@ function orbitPoint(index, total, radiusX, radiusY) {
   };
 }
 
+function resolveCssLength(host, name, fallback) {
+  const value = host.appearance.cssVars?.[name];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback;
+}
+
+function resolveCssNumber(host, name, fallback) {
+  const value = host.appearance.cssVars?.[name];
+  const parsed = typeof value === 'string' ? Number.parseFloat(value) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 export default defineThemeRenderer({
   name: 'GameCube Orbital Shell',
   apiVersion: 1,
@@ -61,6 +72,51 @@ export default defineThemeRenderer({
   component({ host }) {
     const panels = host.panels.filter(panel => !panel.isPinned);
     const activePanel = panels.find(panel => panel.id === host.activePanelId) ?? panels[0] ?? null;
+    const centerStageWidth = resolveCssLength(
+      host,
+      '--overlay-workbench-gamecube-stage-width',
+      'min(calc(100% - 88px), 1260px)',
+    );
+    const centerStageHeight = resolveCssLength(
+      host,
+      '--overlay-workbench-gamecube-stage-height',
+      'min(calc(100% - 96px), 700px)',
+    );
+    const orbitalHaloSize = resolveCssNumber(
+      host,
+      '--overlay-workbench-gamecube-halo-size',
+      720,
+    );
+    const orbitalHaloInnerRing = resolveCssNumber(
+      host,
+      '--overlay-workbench-gamecube-halo-inner-ring',
+      126,
+    );
+    const orbitalHaloOuterRing = resolveCssNumber(
+      host,
+      '--overlay-workbench-gamecube-halo-outer-ring',
+      246,
+    );
+    const outerOrbitRadiusX = resolveCssNumber(
+      host,
+      '--overlay-workbench-gamecube-orbit-radius-x-outer',
+      492,
+    );
+    const outerOrbitRadiusY = resolveCssNumber(
+      host,
+      '--overlay-workbench-gamecube-orbit-radius-y-outer',
+      276,
+    );
+    const innerOrbitRadiusX = resolveCssNumber(
+      host,
+      '--overlay-workbench-gamecube-orbit-radius-x-inner',
+      398,
+    );
+    const innerOrbitRadiusY = resolveCssNumber(
+      host,
+      '--overlay-workbench-gamecube-orbit-radius-y-inner',
+      224,
+    );
 
     return (
       <div
@@ -79,7 +135,7 @@ export default defineThemeRenderer({
           style={{
             position: 'absolute',
             inset: 0,
-            background: 'radial-gradient(circle at center, rgba(115,103,240,0.18), transparent 36%), radial-gradient(circle at 50% 58%, rgba(76,180,255,0.08), transparent 52%), linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0) 28%)',
+            background: 'radial-gradient(circle at center, rgba(115,103,240,0.11), transparent 40%), radial-gradient(circle at 50% 58%, rgba(76,180,255,0.05), transparent 54%), linear-gradient(180deg, rgba(255,255,255,0.018), rgba(255,255,255,0) 20%)',
             pointerEvents: 'none',
           }}
         />
@@ -103,8 +159,8 @@ export default defineThemeRenderer({
               position: 'relative',
               minHeight: 0,
               borderRadius: 40,
-              border: '1px solid rgba(117, 123, 172, 0.18)',
-              background: 'radial-gradient(circle at center, rgba(25,24,52,0.92), rgba(10,10,20,0.96))',
+              border: '1px solid rgba(117, 123, 172, 0.24)',
+              background: 'radial-gradient(circle at center, rgba(18,18,38,0.94), rgba(7,8,18,0.985))',
               boxShadow: '0 34px 84px rgba(2, 2, 10, 0.62)',
               backdropFilter: 'blur(22px)',
               WebkitBackdropFilter: 'blur(22px)',
@@ -123,11 +179,11 @@ export default defineThemeRenderer({
               <div
                 aria-hidden
                 style={{
-                  width: 560,
-                  height: 560,
+                  width: orbitalHaloSize,
+                  height: orbitalHaloSize,
                   borderRadius: '50%',
                   border: '1px solid rgba(124, 110, 255, 0.14)',
-                  boxShadow: '0 0 0 92px rgba(124,110,255,0.05), 0 0 0 182px rgba(77,199,255,0.03)',
+                  boxShadow: `0 0 0 ${orbitalHaloInnerRing}px rgba(124,110,255,0.05), 0 0 0 ${orbitalHaloOuterRing}px rgba(77,199,255,0.03)`,
                 }}
               />
             </div>
@@ -142,8 +198,8 @@ export default defineThemeRenderer({
                 gap: 10,
                 padding: '10px 14px',
                 borderRadius: 999,
-                border: '1px solid rgba(117, 123, 172, 0.2)',
-                background: 'rgba(15,16,31,0.76)',
+                border: '1px solid rgba(117, 123, 172, 0.24)',
+                background: 'rgba(8,10,20,0.9)',
                 color: '#f2f4ff',
                 fontSize: 11,
                 fontWeight: 700,
@@ -167,8 +223,8 @@ export default defineThemeRenderer({
                 gap: 10,
                 padding: '10px 14px',
                 borderRadius: 999,
-                border: '1px solid rgba(117, 123, 172, 0.2)',
-                background: 'rgba(15,16,31,0.76)',
+                border: '1px solid rgba(117, 123, 172, 0.24)',
+                background: 'rgba(8,10,20,0.9)',
                 color: '#d9def4',
                 fontSize: 11,
                 fontWeight: 700,
@@ -187,12 +243,12 @@ export default defineThemeRenderer({
                 position: 'absolute',
                 left: '50%',
                 top: '50%',
-                width: 'min(68%, 760px)',
-                height: 'min(66%, 520px)',
+                width: centerStageWidth,
+                height: centerStageHeight,
                 transform: 'translate(-50%, -50%)',
                 borderRadius: 32,
-                border: '1px solid rgba(124, 110, 255, 0.24)',
-                background: 'linear-gradient(180deg, rgba(34,31,64,0.9), rgba(12,12,24,0.9))',
+                border: '1px solid rgba(124, 110, 255, 0.28)',
+                background: 'linear-gradient(180deg, rgba(20,18,40,0.95), rgba(8,9,18,0.95))',
                 boxShadow: '0 30px 80px rgba(3, 4, 16, 0.58)',
                 overflow: 'hidden',
               }}
@@ -205,8 +261,8 @@ export default defineThemeRenderer({
               const point = orbitPoint(
                 index,
                 panels.length,
-                useOuterRing ? 390 : 310,
-                useOuterRing ? 240 : 188,
+                useOuterRing ? outerOrbitRadiusX : innerOrbitRadiusX,
+                useOuterRing ? outerOrbitRadiusY : innerOrbitRadiusY,
               );
               const isActive = panel.id === activePanel?.id;
               const colors = controllerPalette[index % controllerPalette.length];
@@ -220,13 +276,13 @@ export default defineThemeRenderer({
                     left: point.left,
                     top: point.top,
                     transform: `translate(-50%, -50%) rotate(${point.angle}rad)`,
-                    width: isActive ? 132 : 104,
-                    height: isActive ? 132 : 104,
-                    borderRadius: 30,
+                    width: isActive ? 120 : 94,
+                    height: isActive ? 120 : 94,
+                    borderRadius: 28,
                     border: isActive ? `1px solid ${colors.border}` : '1px solid rgba(117, 123, 172, 0.18)',
                     background: isActive
-                      ? `linear-gradient(180deg, ${colors.glow}, rgba(20,20,40,0.96))`
-                      : 'linear-gradient(180deg, rgba(28,30,52,0.92), rgba(13,14,28,0.9))',
+                      ? `linear-gradient(180deg, ${colors.glow}, rgba(14,15,30,0.98))`
+                      : 'linear-gradient(180deg, rgba(19,21,38,0.94), rgba(9,10,18,0.94))',
                     boxShadow: isActive
                       ? `0 0 0 1px ${colors.glow}, 0 20px 44px rgba(0,0,0,0.38)`
                       : '0 14px 32px rgba(0,0,0,0.3)',
@@ -243,8 +299,8 @@ export default defineThemeRenderer({
                   <span
                     style={{
                       transform: `rotate(${-point.angle}rad)`,
-                      width: isActive ? 50 : 40,
-                      height: isActive ? 50 : 40,
+                      width: isActive ? 46 : 36,
+                      height: isActive ? 46 : 36,
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -261,6 +317,7 @@ export default defineThemeRenderer({
                       fontSize: isActive ? 11 : 10,
                       fontWeight: 700,
                       letterSpacing: '0.04em',
+                      textShadow: '0 1px 10px rgba(0,0,0,0.55)',
                     }}
                   >
                     {panel.label}
@@ -287,8 +344,8 @@ export default defineThemeRenderer({
               style={{
               padding: '12px 18px',
               borderRadius: 999,
-              border: '1px solid rgba(117, 123, 172, 0.22)',
-              background: 'rgba(15,16,31,0.8)',
+              border: '1px solid rgba(117, 123, 172, 0.24)',
+              background: 'rgba(8,10,20,0.9)',
               boxShadow: '0 18px 38px rgba(4,4,12,0.3)',
               color: '#f2f4ff',
               backdropFilter: 'blur(18px)',

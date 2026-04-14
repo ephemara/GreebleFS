@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "id": "arcade-arcology",
+  "name": "Arcade Arcology",
+  "description": "A neon desktop-arcology shell with district rails, tower stages, and a skyline of launch windows.",
+  "author": "Codex",
+  "tags": ["arcade", "city", "desktop", "stack", "neon"],
+  "extends": "plasma-flow",
+  "assets": {
+    "background": "assets/wallpaper.svg"
+  },
+  "fonts": {
+    "ui": "\"IBM Plex Sans\", \"Space Grotesk\", Inter, sans-serif",
+    "mono": "\"JetBrains Mono\", \"Cascadia Code\", monospace"
+  },
+  "presentation": {
+    "chromeStyle": "floating",
+    "density": "comfortable",
+    "iconStyle": "vector",
+    "motionStyle": "dramatic",
+    "cornerRadius": 18,
+    "panelSpacing": 12
+  },
+  "theme": {
+    "palette": {
+      "appBackground": "#04060b",
+      "appBackgroundAlt": "#0a0f18",
+      "shellBackground": "rgba(8, 11, 18, 0.92)",
+      "shellBackgroundSolid": "#0d121d",
+      "topBarBackground": "rgba(16, 20, 30, 0.86)",
+      "topBarMenuBackground": "rgba(13, 16, 25, 0.96)",
+      "sidebarBackground": "rgba(11, 14, 22, 0.92)",
+      "panelBackground": "rgba(17, 22, 34, 0.92)",
+      "panelAltBackground": "rgba(10, 12, 20, 0.96)",
+      "cardBackground": "rgba(28, 34, 50, 0.86)",
+      "cardHoverBackground": "rgba(41, 50, 72, 0.94)",
+      "contextMenuBackground": "rgba(10, 12, 19, 0.98)",
+      "inputBackground": "rgba(8, 11, 18, 0.9)",
+      "terminalBackground": "#070b13",
+      "selectionBackground": "rgba(255, 155, 90, 0.24)",
+      "scrimBackground": "rgba(3, 4, 8, 0.72)",
+      "textPrimary": "#f5f8ff",
+      "textSecondary": "#c2d0e2",
+      "textMuted": "#8a9ab5",
+      "textDim": "#5f6e89",
+      "textInverse": "#0d121d",
+      "border": "rgba(146, 164, 191, 0.18)",
+      "borderStrong": "rgba(255, 155, 90, 0.34)",
+      "accent": "#ff9b5a",
+      "accentSoft": "rgba(255, 155, 90, 0.18)",
+      "accentContrast": "#fff7ef",
+      "success": "#8ff38d",
+      "warning": "#ffd066",
+      "danger": "#ff6f8e",
+      "info": "#6be7ff",
+      "note": "#dce7f4",
+      "todo": "#8ff38d",
+      "bug": "#ff6f8e",
+      "prompt": "#ffd066"
+    },
+    "effects": {
+      "backgroundImage": "radial-gradient(circle at 14% 20%, rgba(255,155,90,0.14), transparent 22%), radial-gradient(circle at 82% 18%, rgba(107,231,255,0.12), transparent 18%), linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0) 30%)",
+      "shadow": "0 24px 68px rgba(0, 0, 0, 0.66)",
+      "overlayShadow": "0 -4px 0 0 #ff9b5a, 0 -28px 68px rgba(3, 4, 12, 0.94)"
+    },
+    "workbench": {
+      "brandLabel": "Arcology",
+      "topBarStyle": "glass",
+      "commandPaletteStyle": "glass",
+      "terminalStyle": "glass",
+      "settingsStyle": "glass",
+      "tabStyle": "segment",
+      "metrics": {
+        "chromeHeight": 40,
+        "controlRadius": 16,
+        "panelRadius": 18,
+        "shellInset": 12,
+        "pagePadding": 12,
+        "panelGap": 12
+      },
+      "cssVars": {
+        "--overlay-workbench-arcology-stage-width": "min(78%, 1080px)",
+        "--overlay-workbench-arcology-stage-height": "min(70%, 660px)",
+        "--overlay-workbench-arcology-rail-width": "300",
+        "--overlay-workbench-arcology-skyline-gap": "10"
+      }
+    },
+    "explorer": {
+      "railBrandLabel": "Arcology",
+      "toolbarStyle": "solid",
+      "breadcrumbStyle": "segmented",
+      "selectionStyle": "glow",
+      "hoverStyle": "lift",
+      "previewStyle": "floating",
+      "statusBarStyle": "floating",
+      "preferredViewMode": "icons-xl",
+      "preferredExperimentalViewMode": "adaptive-semantic-grid",
+      "metrics": {
+        "railWidth": 252,
+        "previewWidth": 460,
+        "panelRadius": 20,
+        "gridScale": 1.12,
+        "iconScale": 1.16,
+        "hoverLiftPx": 5
+      },
+      "cssVars": {
+        "--overlay-explorer-brand": "arcology"
+      }
+    }
+  },
+  "layoutPrimitives": [
+    {
+      "id": "arcology-tower",
+      "name": "Arcology Tower",
+      "kind": "freeform",
+      "props": {
+        "tower": true,
+        "skyline": true
+      }
+    }
+  ],
+  "navigationPatterns": [
+    {
+      "id": "arcology-district",
+      "name": "Arcology District",
+      "kind": "hierarchy",
+      "axis": "vertical",
+      "props": {
+        "menuBar": true,
+        "breadcrumb": true,
+        "wrap": false
+      }
+    }
+  ],
+  "renderStyles": [
+    {
+      "id": "arcology-render",
+      "label": "Arcology Stack",
+      "description": "Desktop-window-manager styling with skyline cards, tower stages, and district rails.",
+      "kind": "desktop-window-manager",
+      "entryModule": "renderers/arcade-arcology.tsx",
+      "supportsLiveSwap": true
+    }
+  ],
+  "themeRenderer": {
+    "entryModule": "renderers/arcade-arcology.tsx",
+    "apiVersion": 1,
+    "supportsLiveSwap": true,
+    "fallbackRuntime": "desktop-stack",
+    "capabilities": {
+      "customScreens": true,
+      "wallpaperScene": true,
+      "surfaceAdapters": true
+    }
+  },
+  "defaultLayoutPrimitiveId": "arcology-tower",
+  "defaultNavigationPatternId": "arcology-district",
+  "defaultRenderStyleId": "arcology-render",
+  "visuals": [
+    {
+      "id": "arcology-bloom",
+      "backgroundImage": "radial-gradient(circle at 18% 18%, rgba(255,155,90,0.14), transparent 22%), radial-gradient(circle at 82% 16%, rgba(107,231,255,0.12), transparent 18%), linear-gradient(180deg, rgba(255,255,255,0.03), transparent 34%)",
+      "opacity": 0.92,
+      "blendMode": "screen"
+    }
+  ]
+}

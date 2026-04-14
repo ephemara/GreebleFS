@@ -1,5 +1,5 @@
 /**
- * WindowControls — Platform-adaptive traffic light / title bar buttons.
+ * WindowControls - Platform-adaptive traffic light / title bar buttons.
  *
  * - macOS: coloured dot cluster (top-left), matching native HIG sizing.
  * - Windows / Linux: horizontal strip (top-right), Win11-style.
@@ -8,7 +8,8 @@
  * via the Tauri WebviewWindow API — no Rust commands needed.
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { type RuntimePlatform } from '../config/platform';
 
@@ -185,15 +186,32 @@ export function WindowControls({
   onClose,
   textMuted = 'rgba(255,255,255,0.45)',
 }: WindowControlsProps) {
-  const win = getCurrentWindow();
+  const win = useMemo(() => {
+    if (!isTauri()) {
+      return null;
+    }
+
+    try {
+      return getCurrentWindow();
+    } catch {
+      return null;
+    }
+  }, []);
 
   const handleMinimize = useCallback(async () => {
     if (onMinimize) { onMinimize(); return; }
+    if (!win) {
+      return;
+    }
     await win.minimize().catch(() => {});
   }, [onMinimize, win]);
 
   const handleMaximize = useCallback(async () => {
     if (onMaximize) { onMaximize(); return; }
+    if (!win) {
+      return;
+    }
+
     if (isMaximized) {
       await win.unmaximize().catch(() => {});
     } else {
@@ -203,7 +221,10 @@ export function WindowControls({
 
   const handleClose = useCallback(async () => {
     if (onClose) { onClose(); return; }
-    // Default close hides the window (overlay app — don't quit on X)
+    // Default close hides the window (overlay app - don't quit on X)
+    if (!win) {
+      return;
+    }
     await win.hide().catch(() => {});
   }, [onClose, win]);
 

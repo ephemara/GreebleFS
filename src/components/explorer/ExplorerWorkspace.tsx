@@ -1,5 +1,6 @@
 import React, { useMemo, useRef } from 'react';
 import { Columns2, CopyPlus, Plus, SquareSplitHorizontal, X } from 'lucide-react';
+import { useShallow } from 'zustand/react/shallow';
 import type { ResolvedOverlayAppearance } from '../../config/appearance';
 import type { OverlayPluginExplorerActionContribution } from '../../config/pluginContributions';
 import type { ExplorerLayoutMode } from '../../config/layoutProfiles';
@@ -76,7 +77,7 @@ export function ExplorerWorkspace({
     setWorkspaceLayoutMode,
     setFocusedPane,
     setWorkspaceSplitRatio,
-  } = useExplorerStore((state) => ({
+  } = useExplorerStore(useShallow((state) => ({
     sessions: state.sessions,
     workspace: state.workspace,
     createWorkspaceTab: state.createWorkspaceTab,
@@ -86,7 +87,7 @@ export function ExplorerWorkspace({
     setWorkspaceLayoutMode: state.setWorkspaceLayoutMode,
     setFocusedPane: state.setFocusedPane,
     setWorkspaceSplitRatio: state.setWorkspaceSplitRatio,
-  }));
+  })));
 
   const containerRef = useRef<HTMLDivElement>(null);
   const tabs = workspace.tabs;
@@ -167,18 +168,28 @@ export function ExplorerWorkspace({
       return (
         <div
           style={{
-            flex: 1,
             minWidth: 0,
             minHeight: 0,
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
             border: '1px dashed var(--overlay-border)',
             borderRadius: 14,
-            display: 'grid',
-            placeItems: 'center',
             background: 'var(--overlay-bg-panel)',
             color: 'var(--overlay-text-muted)',
           }}
           onMouseDown={() => setFocusedPane(pane)}
         >
+          <div
+            style={{
+              flex: 1,
+              minWidth: 0,
+              minHeight: 0,
+              display: 'grid',
+              placeItems: 'center',
+            }}
+          >
           <button
             type="button"
             onClick={() => createWorkspaceTab({
@@ -196,6 +207,7 @@ export function ExplorerWorkspace({
           >
             Open Pane
           </button>
+          </div>
         </div>
       );
     }
@@ -203,9 +215,12 @@ export function ExplorerWorkspace({
     return (
       <div
         style={{
-          flex: 1,
           minWidth: 0,
           minHeight: 0,
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
           border: '1px solid var(--overlay-border)',
           borderRadius: 14,
           overflow: 'hidden',

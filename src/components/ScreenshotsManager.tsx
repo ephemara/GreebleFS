@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 import { useSettingsStore } from '../store/settingsStore';
-import { detectClientPlatform, joinPlatformPath } from '../config/platform';
+import { joinPlatformPath } from '../config/platform';
 import { screenshotFeatureConfig } from '../config/screenshots';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import {
@@ -246,62 +246,10 @@ function redrawCanvas(
   if (liveAnnotation) drawAnnotation(ctx, liveAnnotation);
 }
 
-function dataUrlToObjectUrl(dataUrl: string): string {
-  if (
-    typeof URL === 'undefined'
-    || typeof URL.createObjectURL !== 'function'
-  ) {
-    return dataUrl;
-  }
-
-  const match = dataUrl.match(/^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,(.+)$/);
-  if (!match) {
-    return dataUrl;
-  }
-
-  try {
-    const mimeType = match[1] || 'application/octet-stream';
-    const binary = atob(match[2]);
-    const bytes = new Uint8Array(binary.length);
-
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[index] = binary.charCodeAt(index);
-    }
-
-    return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
-  } catch {
-    return dataUrl;
-  }
-}
-
-function revokePreviewUrl(url: string | null | undefined): void {
-  if (
-    !url
-    || !url.startsWith('blob:')
-    || typeof URL === 'undefined'
-    || typeof URL.revokeObjectURL !== 'function'
-  ) {
-    return;
-  }
-
-  try {
-    URL.revokeObjectURL(url);
-  } catch {
-    // Ignore best-effort cleanup failures.
-  }
-}
-
-function revokePreviewUrls(urls: Iterable<string | null | undefined>): void {
-  for (const url of urls) {
-    revokePreviewUrl(url);
-  }
-}
-
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverlayAppearance }) {
   const accent = appearance?.theme.palette.accent ?? 'var(--overlay-accent)';
-  const captureUsesLogicalMonitorBounds = detectClientPlatform() === 'linux';
   const screenshotSettings = useSettingsStore(s => s.settings.screenshots);
   const screenshotDir = screenshotSettings.saveDirectory || screenshotFeatureConfig.defaultSaveDirectory;
 
@@ -316,8 +264,6 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
   const liveAnnotationRef = useRef<Annotation | null>(null);
   const galleryRequestIdRef = useRef(0);
   const captureRequestIdRef = useRef(0);
-  const galleryPreviewUrlsRef = useRef<string[]>([]);
-  const monitorPreviewUrlsRef = useRef<string[]>([]);
 
   // Cached at pointerDown — never re-read during a drag
   const dragRectRef   = useRef<DOMRect | null>(null);
@@ -368,34 +314,14 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
   useEffect(() => () => {
     galleryRequestIdRef.current += 1;
     captureRequestIdRef.current += 1;
-    revokePreviewUrls(galleryPreviewUrlsRef.current);
-    revokePreviewUrls(monitorPreviewUrlsRef.current);
-    galleryPreviewUrlsRef.current = [];
-    monitorPreviewUrlsRef.current = [];
   }, []);
 
   const replaceGalleryItems = useCallback((nextItems: ScreenshotItem[]) => {
-    const nextPreviewUrls = nextItems
-      .map(item => item.previewUrl)
-      .filter((url): url is string => Boolean(url));
-
-    setItems(() => {
-      revokePreviewUrls(galleryPreviewUrlsRef.current);
-      galleryPreviewUrlsRef.current = nextPreviewUrls;
-      return nextItems;
-    });
+    setItems(nextItems);
   }, []);
 
   const replaceMonitors = useCallback((nextMonitors: MonitorCapture[]) => {
-    const nextPreviewUrls = nextMonitors
-      .map(monitor => monitor.previewUrl)
-      .filter((url): url is string => Boolean(url));
-
-    setMonitors(() => {
-      revokePreviewUrls(monitorPreviewUrlsRef.current);
-      monitorPreviewUrlsRef.current = nextPreviewUrls;
-      return nextMonitors;
-    });
+    setMonitors(nextMonitors);
   }, []);
 
   const resetEditorState = useCallback(() => {
@@ -454,7 +380,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
                   screenshotFeatureConfig.galleryThumbnail.maxWidth,
                   screenshotFeatureConfig.galleryThumbnail.maxHeight,
                 ).then(unwrapTauriResult);
-                return { ...entry, previewUrl: dataUrlToObjectUrl(previewDataUrl) };
+                return { ...entry, previewUrl: previewDataUrl };
               } catch {
                 return { ...entry, previewUrl: null };
               }
@@ -463,7 +389,6 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
         : visible.map(entry => ({ ...entry, previewUrl: null }));
 
       if (requestId !== galleryRequestIdRef.current) {
-        revokePreviewUrls(withPreviews.map(item => item.previewUrl));
         return;
       }
 
@@ -501,22 +426,21 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
       const results: MonitorCapture[] = [];
       for (const mon of base) {
         const preview = await commands.screenshotCapturePreview(
-          captureUsesLogicalMonitorBounds ? mon.logicalX : mon.physicalX,
-          captureUsesLogicalMonitorBounds ? mon.logicalY : mon.physicalY,
-          captureUsesLogicalMonitorBounds ? mon.logicalWidth : mon.physicalWidth,
-          captureUsesLogicalMonitorBounds ? mon.logicalHeight : mon.physicalHeight,
+          mon.physicalX,
+          mon.physicalY,
+          mon.physicalWidth,
+          mon.physicalHeight,
         ).then(unwrapTauriResult);
         results.push({
           ...mon,
           captureId: preview.captureId,
-          previewUrl: dataUrlToObjectUrl(preview.previewUrl),
+          previewUrl: preview.previewUrl,
           imageWidth: preview.imageWidth,
           imageHeight: preview.imageHeight,
         });
       }
 
       if (requestId !== captureRequestIdRef.current) {
-        revokePreviewUrls(results.map(result => result.previewUrl));
         return;
       }
 
@@ -535,7 +459,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
         setIsCapturing(false);
       }
     }
-  }, [captureUsesLogicalMonitorBounds, replaceMonitors]);
+  }, [replaceMonitors]);
 
   const refreshAll = useCallback(async () => {
     await Promise.all([captureMonitors(), loadGallery()]);
@@ -1055,6 +979,9 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
             onPointerCancel={handlePointerUp}
             style={{
               position: 'relative',
+              alignSelf: 'stretch',
+              width: 'auto',
+              height: '100%',
               // Use explicit max constraints so the container never overflows its parent
               maxWidth: '100%',
               maxHeight: '100%',

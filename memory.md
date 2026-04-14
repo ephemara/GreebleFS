@@ -1,5 +1,147 @@
 # GreebleFS Memory
 
+## 2026-04-13 — Clarity Line Clean Theme
+
+- Added `themes/clarity-line/` as a new restrained theme package instead of mutating the existing GameCube layouts.
+- The package is intentionally quiet:
+  - light editorial palette with neutral white and slate surfaces
+  - compact workbench chrome with minimal top-bar treatment
+  - explorer defaults tuned to reduce bloat: `details` view, minimal toolbar, plain breadcrumbs, hidden status bar, inline labels, and no experimental view mode
+- The custom shell renderer keeps the layout simple:
+  - left navigation rail
+  - host chrome bar
+  - pinned panels and default content surface in a restrained main column
+  - no extra ornament beyond a subtle wallpaper wash
+- The package ships a single wallpaper SVG and uses it for both shell background and picker preview fallback.
+- Validation still needed after file creation:
+  - run the theme renderer fixture test
+  - parse the new manifest JSON to catch any syntax slips
+
+## 2026-04-13 — ExplorerWorkspace Full-Height Stretch Fix
+
+- Fixed the explorer workspace wrapper so the mounted `FileExplorer` fills the entire panel slot again after the dual-pane workspace shell changes.
+- Root cause:
+  - `ExplorerWorkspace.tsx` pane shells were plain block containers, while `FileExplorer.tsx` expects to live in a flex column and was only given `flex: 1`
+  - that let the explorer size itself to content height instead of the available panel height, leaving dead space below the explorer surface
+- Durable fix:
+  - pane shells in `ExplorerWorkspace.tsx` now explicitly use `width: 100%`, `height: 100%`, and `display: flex`
+  - the `FileExplorer.tsx` root now also declares `width: 100%`, `height: 100%`, `minWidth: 0`, and `minHeight: 0` so it is resilient when mounted through other wrappers
+- Added a regression assertion in `src/test/ExplorerWorkspace.test.tsx` that checks the rendered pane wrapper stretches to full height.
+- Validation that passed:
+  - `bunx vitest run src/test/ExplorerWorkspace.test.tsx`
+
+## 2026-04-13 — GameCube Orbital Contrast + Stage Width Pass
+
+- Rebalanced the `gamecube-orbital` theme so bright glass layers stop washing out chrome and explorer text:
+  - darkened the top bar, sidebar, panel, card, and input palette tokens
+  - raised text/border contrast slightly
+  - reduced the bright background sheen in the theme effect stack
+- Widened the orbital center stage substantially and tuned the ring geometry around it:
+  - stage now targets `min(calc(100% - 88px), 1260px)` wide and `min(calc(100% - 96px), 700px)` tall
+  - halo/orbit radii were expanded to match the larger center stage
+  - orbit buttons were slightly reduced so the radial shell reads as framing, not crowding
+- The GameCube theme is still duplicated under both `themes/gamecube-orbital/` and `src-tauri/themes/gamecube-orbital/`; keep those manifests/renderers in sync until the duplicate packaged-content path is removed.
+- Validation that passed:
+  - `npx vitest run --environment node src/test/workbenchTheme.test.ts src/test/themePackageExplorerRecipe.test.ts src/test/themePackages.test.ts src/test/themeRendererPackages.test.ts`
+
+## 2026-04-13 — GameCube Prism Contrast + Width Pass
+
+- Rebalanced the `gamecube-prism` shell to stop gray glass chrome from colliding with text:
+  - darkened the top bar, sidebar, panel, card, and input palette tokens
+  - raised text/border contrast slightly
+  - reduced the bright sheen/background overlays in both the theme manifest and custom renderer
+- Widened the prism layout so the center stage uses more of the screen:
+  - stage now targets `min(calc(100% - 92px), 1320px)` wide and `min(calc(100% - 108px), 720px)` tall
+  - renderer padding/gaps were reduced and the right-side focus rail shrank from `316px` to `284px`
+  - orbit pods were pushed farther outward and reduced slightly so they frame the stage instead of squeezing it
+- Validation that passed:
+  - `npx vitest run --environment node src/test/workbenchTheme.test.ts src/test/themePackageExplorerRecipe.test.ts src/test/themePackages.test.ts src/test/themeRendererPackages.test.ts`
+
+## 2026-04-13 — New Console Shell Theme Pack
+
+- Added three new custom theme packages under `themes/`:
+  - `gamecube-prism` for a crystalline orbited-launch layout with a diamond core
+  - `gamecube-helix` for a vertical ribbon/spiral launcher with capsule panels
+  - `arcade-arcology` for a neon desktop-arcology shell with district rails and skyline cards
+- Each package now ships:
+  - `theme.json` with explicit workbench/explorer recipe fields
+  - a `themeRenderer` entry and matching `renderStyles` entry so the package binds to a live shell runtime and a documented fallback runtime
+  - a local `assets/wallpaper.svg` asset so theme cards have a preview fallback without requiring extra artwork
+- Geometry in the new renderers is driven from package CSS variables instead of hardcoded component constants where it materially matters.
+- Renderer fixture coverage was extended in `src/test/themeRendererPackages.test.ts` so the new theme modules are loaded in the same runtime path as the existing authored shells.
+- Validation that passed:
+  - `bunx vitest run src/test/themeRendererPackages.test.ts`
+  - `node -e "JSON.parse(...)` on the three new manifest files
+- Follow-up still recommended:
+  - add optional preview SVGs or motion assets if these themes should be more visibly branded in the theme picker
+  - keep the custom-shell package pattern consistent if more “insane layout” variants are added later
+
+## 2026-04-13 — Screenshot Preview Layout And Linux Capture Fix
+
+- Fixed the screenshot manager so monitor previews no longer collapse to a tiny centered tile in the tool view.
+- Removed the blob-URL conversion / revocation path for screenshot preview images and gallery thumbnails:
+  - preview data now stays as the Rust-generated data URL
+  - this avoids StrictMode replay revoking a fresh blob URL inside a state updater
+- Corrected Linux monitor capture to stay in physical pixel space end-to-end:
+  - Tauri `Monitor.position` / `Monitor.size` are physical pixels
+  - the frontend sends those physical bounds when requesting monitor previews
+  - the Rust preview command now uses xcap's full-monitor `capture_image()` path instead of `capture_region()`, which avoids Linux logical-bound validation on HiDPI displays
+  - crop/save still operate on the cached full-monitor physical image
+  - logical dimensions remain for labels only
+- Updated the Linux HiDPI regression test to assert physical capture bounds instead of logical ones.
+- Added a layout tweak so the active preview wrapper stretches to the available panel height instead of shrinking to intrinsic image size.
+- Follow-up still recommended:
+  - add a focused UI regression around the preview wrapper sizing if the layout ever regresses again
+  - consider a separate crop/annotation test for fractional scales if HiDPI selection drift becomes visible
+  - if Linux previews still show the overlay window itself, the next step is a Linux-specific hide/show or portal-based exclusion path; the current fix only addresses the xcap bounds mismatch
+
+## 2026-04-13 — Root Cleanup And Scratch Target Pruning
+
+- Removed the top-level generated build trees and caches: `target/`, `dist/`, `node_modules/`, and `target-codex-tests/`.
+- Removed nested frontend artifacts from `website/`: `dist-web/` and `node_modules/`.
+- Removed the tracked scratch Cargo target trees under `src-tauri/` that were only carrying probe/test outputs: `target-check-icons/` and the `target-tests*` directories.
+- Tightened ignore rules so future probe/test runs do not repopulate the repo root with the same scratch directories.
+- Safe-to-regenerate notes:
+  - `scripts/run-overlayterm-tauri-frame-probe.mjs` recreates `target-codex-tests/tauri-frame-probe` on demand.
+  - `scripts/run-platform-tauri.mjs` writes `tauri.vps.config.json` into the runtime Tauri config directory.
+- `docs/architecture/repomap.md` still contains historical `target-*` entries; treat it as a reference map rather than a live filesystem snapshot until it is regenerated.
+
+## 2026-04-13 — Explorer Dock Preview And Drag UX Repair
+
+- Restored preview rendering in `compact-dock` explorer mode:
+  - the explorer no longer force-clears preview state just because the shell is compact
+  - plain clicks and inline preview opens now work in dock mode again
+  - the status bar preview indicator is visible in both full and compact shells
+- Rebalanced explorer drag semantics so pane-to-pane moves stay inside the app by default:
+  - plain drag now stays internal and keeps `application/x-overlayterm-paths` available for in-app drops
+  - `Shift` now requests native file-drag export for OS targets
+  - the dock hide hint is now tagged onto native drag-out sources so the overlay can disappear while exporting files
+- Native drag previews now use the dragged file's native icon when available, with a generated file-shaped fallback instead of the app icon.
+- Added regression coverage for:
+  - compact-dock preview availability
+  - internal-vs-native drag intent selection
+  - the native-drag-out hide hint
+- Validation still needs a real run in this workspace because the browser-side explorer tests depend on the local Vitest/jsdom setup.
+- `bun run test:browser` currently fails here because the Playwright browser config launches headed Chromium and this workspace has no X server. Use `xvfb-run` or a headless browser config if you want to validate the browser suite locally.
+
+## 2026-04-12 — Tauri Bridge Guard + ExplorerWorkspace Snapshot Fix
+
+- Fixed a native-shell crash path in `src/components/WindowControls.tsx`:
+  - `getCurrentWindow()` is now only touched when `isTauri()` says the bridge exists
+  - browser/dev-server rendering now falls back to inert no-op window controls instead of throwing during mount
+- Fixed a React external-store instability in `src/components/explorer/ExplorerWorkspace.tsx`:
+  - the `useExplorerStore` selector now uses `useShallow`
+  - this removes the unstable snapshot warning that was producing the `getRootForUpdatedFiber` / `forceStoreRerender` stack in dev
+- Added regression coverage:
+  - `src/test/WindowControls.test.tsx`
+  - `src/test/ExplorerWorkspace.test.tsx`
+- Validation that passed:
+  - `bunx vitest run src/test/WindowControls.test.tsx src/test/ExplorerWorkspace.test.tsx`
+  - browser smoke check confirmed the snapshot warning count dropped to zero
+- Environment note:
+  - the Linux workspace was also missing `libpipewire-0.3-dev` / `libspa-0.2-dev`, which blocked `xcap` until installed
+  - after installing those packages, `cargo check --manifest-path src-tauri/Cargo.toml` and `bun run tauri dev` could reach the normal startup path again
+
 ## 2026-04-10 — Explorer Pro Basics Tranche 1 Substrate
 
 - Landed the first explorer-local workspace pass instead of extending the global workbench tab system:

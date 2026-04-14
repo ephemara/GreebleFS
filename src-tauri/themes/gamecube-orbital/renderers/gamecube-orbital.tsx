@@ -1,5 +1,44 @@
 import { defineThemeRenderer } from 'overlayterm-theme-renderer';
 
+const controllerPalette = [
+  {
+    border: 'rgba(124, 110, 255, 0.54)',
+    glow: 'rgba(124, 110, 255, 0.28)',
+    icon: '#cbbfff',
+    iconBackground: 'rgba(124, 110, 255, 0.16)',
+  },
+  {
+    border: 'rgba(91, 198, 121, 0.5)',
+    glow: 'rgba(91, 198, 121, 0.24)',
+    icon: '#bff3cb',
+    iconBackground: 'rgba(91, 198, 121, 0.14)',
+  },
+  {
+    border: 'rgba(214, 219, 236, 0.42)',
+    glow: 'rgba(214, 219, 236, 0.18)',
+    icon: '#eff3ff',
+    iconBackground: 'rgba(214, 219, 236, 0.12)',
+  },
+  {
+    border: 'rgba(218, 92, 118, 0.46)',
+    glow: 'rgba(218, 92, 118, 0.22)',
+    icon: '#ffd2dc',
+    iconBackground: 'rgba(218, 92, 118, 0.14)',
+  },
+  {
+    border: 'rgba(242, 202, 84, 0.48)',
+    glow: 'rgba(242, 202, 84, 0.24)',
+    icon: '#fff0b4',
+    iconBackground: 'rgba(242, 202, 84, 0.14)',
+  },
+  {
+    border: 'rgba(91, 199, 255, 0.48)',
+    glow: 'rgba(91, 199, 255, 0.22)',
+    icon: '#c9eeff',
+    iconBackground: 'rgba(91, 199, 255, 0.14)',
+  },
+];
+
 function orbitPoint(index, total, radiusX, radiusY) {
   const angle = ((Math.PI * 2) / total) * index - Math.PI / 2;
   return {
@@ -7,6 +46,17 @@ function orbitPoint(index, total, radiusX, radiusY) {
     left: `calc(50% + ${Math.cos(angle) * radiusX}px)`,
     top: `calc(50% + ${Math.sin(angle) * radiusY}px)`,
   };
+}
+
+function resolveCssLength(host, name, fallback) {
+  const value = host.appearance.cssVars?.[name];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback;
+}
+
+function resolveCssNumber(host, name, fallback) {
+  const value = host.appearance.cssVars?.[name];
+  const parsed = typeof value === 'string' ? Number.parseFloat(value) : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 export default defineThemeRenderer({
@@ -22,6 +72,51 @@ export default defineThemeRenderer({
   component({ host }) {
     const panels = host.panels.filter(panel => !panel.isPinned);
     const activePanel = panels.find(panel => panel.id === host.activePanelId) ?? panels[0] ?? null;
+    const centerStageWidth = resolveCssLength(
+      host,
+      '--overlay-workbench-gamecube-stage-width',
+      'min(calc(100% - 88px), 1260px)',
+    );
+    const centerStageHeight = resolveCssLength(
+      host,
+      '--overlay-workbench-gamecube-stage-height',
+      'min(calc(100% - 96px), 700px)',
+    );
+    const orbitalHaloSize = resolveCssNumber(
+      host,
+      '--overlay-workbench-gamecube-halo-size',
+      720,
+    );
+    const orbitalHaloInnerRing = resolveCssNumber(
+      host,
+      '--overlay-workbench-gamecube-halo-inner-ring',
+      126,
+    );
+    const orbitalHaloOuterRing = resolveCssNumber(
+      host,
+      '--overlay-workbench-gamecube-halo-outer-ring',
+      246,
+    );
+    const outerOrbitRadiusX = resolveCssNumber(
+      host,
+      '--overlay-workbench-gamecube-orbit-radius-x-outer',
+      492,
+    );
+    const outerOrbitRadiusY = resolveCssNumber(
+      host,
+      '--overlay-workbench-gamecube-orbit-radius-y-outer',
+      276,
+    );
+    const innerOrbitRadiusX = resolveCssNumber(
+      host,
+      '--overlay-workbench-gamecube-orbit-radius-x-inner',
+      398,
+    );
+    const innerOrbitRadiusY = resolveCssNumber(
+      host,
+      '--overlay-workbench-gamecube-orbit-radius-y-inner',
+      224,
+    );
 
     return (
       <div
@@ -40,7 +135,7 @@ export default defineThemeRenderer({
           style={{
             position: 'absolute',
             inset: 0,
-            background: 'radial-gradient(circle at center, rgba(139,115,255,0.16), transparent 34%), radial-gradient(circle at center, rgba(139,210,255,0.08), transparent 54%), linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0) 34%)',
+            background: 'radial-gradient(circle at center, rgba(115,103,240,0.11), transparent 40%), radial-gradient(circle at 50% 58%, rgba(76,180,255,0.05), transparent 54%), linear-gradient(180deg, rgba(255,255,255,0.018), rgba(255,255,255,0) 20%)',
             pointerEvents: 'none',
           }}
         />
@@ -64,9 +159,9 @@ export default defineThemeRenderer({
               position: 'relative',
               minHeight: 0,
               borderRadius: 40,
-              border: '1px solid rgba(169,154,255,0.16)',
-              background: 'radial-gradient(circle at center, rgba(18,14,36,0.8), rgba(8,8,18,0.74))',
-              boxShadow: '0 30px 72px rgba(4, 4, 12, 0.48)',
+              border: '1px solid rgba(117, 123, 172, 0.24)',
+              background: 'radial-gradient(circle at center, rgba(18,18,38,0.94), rgba(7,8,18,0.985))',
+              boxShadow: '0 34px 84px rgba(2, 2, 10, 0.62)',
               backdropFilter: 'blur(22px)',
               WebkitBackdropFilter: 'blur(22px)',
               overflow: 'hidden',
@@ -84,11 +179,11 @@ export default defineThemeRenderer({
               <div
                 aria-hidden
                 style={{
-                  width: 560,
-                  height: 560,
+                  width: orbitalHaloSize,
+                  height: orbitalHaloSize,
                   borderRadius: '50%',
-                  border: '1px solid rgba(169,154,255,0.12)',
-                  boxShadow: '0 0 0 92px rgba(139,115,255,0.03), 0 0 0 182px rgba(139,115,255,0.02)',
+                  border: '1px solid rgba(124, 110, 255, 0.14)',
+                  boxShadow: `0 0 0 ${orbitalHaloInnerRing}px rgba(124,110,255,0.05), 0 0 0 ${orbitalHaloOuterRing}px rgba(77,199,255,0.03)`,
                 }}
               />
             </div>
@@ -103,9 +198,9 @@ export default defineThemeRenderer({
                 gap: 10,
                 padding: '10px 14px',
                 borderRadius: 999,
-                border: '1px solid rgba(169,154,255,0.14)',
-                background: 'rgba(18,14,36,0.62)',
-                color: '#f5efff',
+                border: '1px solid rgba(117, 123, 172, 0.24)',
+                background: 'rgba(8,10,20,0.9)',
+                color: '#f2f4ff',
                 fontSize: 11,
                 fontWeight: 700,
                 letterSpacing: '0.14em',
@@ -115,7 +210,7 @@ export default defineThemeRenderer({
               }}
             >
               <span>Orbital Focus</span>
-              <span style={{ color: '#8bd2ff' }}>{activePanel?.label ?? 'Launcher'}</span>
+              <span style={{ color: '#5bc7ff' }}>{activePanel?.label ?? 'Launcher'}</span>
             </div>
 
             <div
@@ -128,9 +223,9 @@ export default defineThemeRenderer({
                 gap: 10,
                 padding: '10px 14px',
                 borderRadius: 999,
-                border: '1px solid rgba(169,154,255,0.14)',
-                background: 'rgba(18,14,36,0.62)',
-                color: '#d7cfff',
+                border: '1px solid rgba(117, 123, 172, 0.24)',
+                background: 'rgba(8,10,20,0.9)',
+                color: '#d9def4',
                 fontSize: 11,
                 fontWeight: 700,
                 letterSpacing: '0.14em',
@@ -140,7 +235,7 @@ export default defineThemeRenderer({
               }}
             >
               <span>Cube Ring</span>
-              <span style={{ color: '#8b73ff' }}>{panels.length}</span>
+              <span style={{ color: '#7c6eff' }}>{panels.length}</span>
             </div>
 
             <div
@@ -148,13 +243,13 @@ export default defineThemeRenderer({
                 position: 'absolute',
                 left: '50%',
                 top: '50%',
-                width: 'min(68%, 760px)',
-                height: 'min(66%, 520px)',
+                width: centerStageWidth,
+                height: centerStageHeight,
                 transform: 'translate(-50%, -50%)',
                 borderRadius: 32,
-                border: '1px solid rgba(169,154,255,0.22)',
-                background: 'linear-gradient(180deg, rgba(26,20,52,0.88), rgba(12,12,24,0.8))',
-                boxShadow: '0 26px 62px rgba(4, 4, 12, 0.44)',
+                border: '1px solid rgba(124, 110, 255, 0.28)',
+                background: 'linear-gradient(180deg, rgba(20,18,40,0.95), rgba(8,9,18,0.95))',
+                boxShadow: '0 30px 80px rgba(3, 4, 16, 0.58)',
                 overflow: 'hidden',
               }}
             >
@@ -166,10 +261,11 @@ export default defineThemeRenderer({
               const point = orbitPoint(
                 index,
                 panels.length,
-                useOuterRing ? 390 : 310,
-                useOuterRing ? 240 : 188,
+                useOuterRing ? outerOrbitRadiusX : innerOrbitRadiusX,
+                useOuterRing ? outerOrbitRadiusY : innerOrbitRadiusY,
               );
               const isActive = panel.id === activePanel?.id;
+              const colors = controllerPalette[index % controllerPalette.length];
 
               return (
                 <button
@@ -180,15 +276,17 @@ export default defineThemeRenderer({
                     left: point.left,
                     top: point.top,
                     transform: `translate(-50%, -50%) rotate(${point.angle}rad)`,
-                    width: isActive ? 132 : 104,
-                    height: isActive ? 132 : 104,
-                    borderRadius: 30,
-                    border: isActive ? '1px solid rgba(169,154,255,0.38)' : '1px solid rgba(169,154,255,0.14)',
+                    width: isActive ? 120 : 94,
+                    height: isActive ? 120 : 94,
+                    borderRadius: 28,
+                    border: isActive ? `1px solid ${colors.border}` : '1px solid rgba(117, 123, 172, 0.18)',
                     background: isActive
-                      ? 'linear-gradient(180deg, rgba(70,52,122,0.94), rgba(38,29,68,0.88))'
-                      : 'linear-gradient(180deg, rgba(30,24,58,0.84), rgba(18,14,36,0.76))',
-                    boxShadow: isActive ? '0 20px 44px rgba(0,0,0,0.34)' : '0 12px 28px rgba(0,0,0,0.22)',
-                    color: '#f6f1ff',
+                      ? `linear-gradient(180deg, ${colors.glow}, rgba(14,15,30,0.98))`
+                      : 'linear-gradient(180deg, rgba(19,21,38,0.94), rgba(9,10,18,0.94))',
+                    boxShadow: isActive
+                      ? `0 0 0 1px ${colors.glow}, 0 20px 44px rgba(0,0,0,0.38)`
+                      : '0 14px 32px rgba(0,0,0,0.3)',
+                    color: '#f6f3ff',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
@@ -201,14 +299,14 @@ export default defineThemeRenderer({
                   <span
                     style={{
                       transform: `rotate(${-point.angle}rad)`,
-                      width: isActive ? 50 : 40,
-                      height: isActive ? 50 : 40,
+                      width: isActive ? 46 : 36,
+                      height: isActive ? 46 : 36,
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       borderRadius: 18,
-                      background: isActive ? 'rgba(139,115,255,0.16)' : 'rgba(255,255,255,0.06)',
-                      color: isActive ? '#8bd2ff' : '#d7cfff',
+                      background: isActive ? colors.iconBackground : 'rgba(255,255,255,0.05)',
+                      color: isActive ? colors.icon : '#d9def4',
                     }}
                   >
                     {panel.icon}
@@ -219,6 +317,7 @@ export default defineThemeRenderer({
                       fontSize: isActive ? 11 : 10,
                       fontWeight: 700,
                       letterSpacing: '0.04em',
+                      textShadow: '0 1px 10px rgba(0,0,0,0.55)',
                     }}
                   >
                     {panel.label}
@@ -243,23 +342,23 @@ export default defineThemeRenderer({
 
             <div
               style={{
-                padding: '12px 18px',
-                borderRadius: 999,
-                border: '1px solid rgba(169,154,255,0.16)',
-                background: 'rgba(18,14,36,0.72)',
-                boxShadow: '0 18px 38px rgba(4,4,12,0.22)',
-                color: '#f5efff',
-                backdropFilter: 'blur(18px)',
-                WebkitBackdropFilter: 'blur(18px)',
-              }}
-            >
-              <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(215,207,255,0.58)' }}>
+              padding: '12px 18px',
+              borderRadius: 999,
+              border: '1px solid rgba(117, 123, 172, 0.24)',
+              background: 'rgba(8,10,20,0.9)',
+              boxShadow: '0 18px 38px rgba(4,4,12,0.3)',
+              color: '#f2f4ff',
+              backdropFilter: 'blur(18px)',
+              WebkitBackdropFilter: 'blur(18px)',
+            }}
+          >
+              <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(173,181,214,0.62)' }}>
                 Center Stage
               </div>
               <div style={{ marginTop: 6, fontSize: 18, fontWeight: 700 }}>
                 {activePanel?.label ?? 'Launcher'}
               </div>
-              <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.45, color: 'rgba(215,207,255,0.72)', maxWidth: 420 }}>
+              <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.45, color: 'rgba(201,206,235,0.74)', maxWidth: 420 }}>
                 {activePanel?.description ?? 'Rotate a cube to pull a panel into the center stage.'}
               </div>
             </div>

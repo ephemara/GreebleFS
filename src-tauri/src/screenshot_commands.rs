@@ -60,13 +60,12 @@ pub async fn screenshot_capture_preview(
 ) -> Result<ScreenshotPreview, String> {
     validate_capture_region(width, height)?;
 
-    // --- Seamless capture: exclude this window from the DXGI compositor so
-    // xcap (which uses DXGI Desktop Duplication) captures a clean desktop
-    // WITHOUT the overlay being visible in the image, while the user still
-    // sees the overlay the entire time. Same technique Discord/Teams/Zoom use.
+    // Preview capture should grab the full monitor image, not a region slice.
+    // xcap's Linux region path validates against logical monitor bounds, which
+    // breaks HiDPI previews when the frontend is already working in physical px.
     exclude_overlay_from_capture(&window);
 
-    let capture_result = capture_absolute_region(x, y, width, height);
+    let capture_result = capture_monitor_image(x, y);
 
     // Always restore visibility, even on error.
     restore_overlay_capture(&window);
@@ -218,19 +217,7 @@ fn validate_thumbnail_bounds(max_width: u32, max_height: u32) -> Result<(), Stri
     Ok(())
 }
 
-fn capture_absolute_region(x: i32, y: i32, width: u32, height: u32) -> Result<RgbaImage, String> {
-    let (monitor, relative_x, relative_y) = resolve_monitor_region(x, y, width, height)?;
-    monitor
-        .capture_region(relative_x, relative_y, width, height)
-        .map_err(|e| format!("Failed to capture screenshot region: {}", e))
-}
-
-fn resolve_monitor_region(
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
-) -> Result<(Monitor, u32, u32), String> {
+fn capture_monitor_image(x: i32, y: i32) -> Result<RgbaImage, String> {
     let monitor = Monitor::from_point(x, y).map_err(|e| {
         format!(
             "Failed to locate monitor for capture point ({}, {}): {}",
@@ -238,48 +225,9 @@ fn resolve_monitor_region(
         )
     })?;
 
-    let monitor_x = monitor
-        .x()
-        .map_err(|e| format!("Failed to read monitor origin: {}", e))?;
-    let monitor_y = monitor
-        .y()
-        .map_err(|e| format!("Failed to read monitor origin: {}", e))?;
-    let monitor_width = monitor
-        .width()
-        .map_err(|e| format!("Failed to read monitor width: {}", e))?;
-    let monitor_height = monitor
-        .height()
-        .map_err(|e| format!("Failed to read monitor height: {}", e))?;
-
-    let relative_x = x
-        .checked_sub(monitor_x)
-        .ok_or_else(|| "Capture origin falls outside the selected monitor.".to_string())?;
-    let relative_y = y
-        .checked_sub(monitor_y)
-        .ok_or_else(|| "Capture origin falls outside the selected monitor.".to_string())?;
-
-    if relative_x < 0 || relative_y < 0 {
-        return Err("Capture origin falls outside the selected monitor.".to_string());
-    }
-
-    let relative_x = relative_x as u32;
-    let relative_y = relative_y as u32;
-
-    let within_width = relative_x
-        .checked_add(width)
-        .is_some_and(|end_x| end_x <= monitor_width);
-    let within_height = relative_y
-        .checked_add(height)
-        .is_some_and(|end_y| end_y <= monitor_height);
-
-    if !within_width || !within_height {
-        return Err(format!(
-            "Capture region extends beyond monitor bounds (monitor: {}x{}, requested offset: {}, {} size: {}x{}).",
-            monitor_width, monitor_height, relative_x, relative_y, width, height
-        ));
-    }
-
-    Ok((monitor, relative_x, relative_y))
+    monitor
+        .capture_image()
+        .map_err(|e| format!("Failed to capture screenshot preview: {}", e))
 }
 
 fn build_preview_image(image: &RgbaImage) -> RgbaImage {

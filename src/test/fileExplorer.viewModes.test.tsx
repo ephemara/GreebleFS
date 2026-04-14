@@ -67,7 +67,7 @@ function resetOverlayTermStorage(storage: Storage) {
   storage.removeItem(EXPLORER_LEGACY_BOOKMARKS_KEY);
 }
 
-function renderExplorer() {
+function renderExplorer(options: { layoutMode?: 'full' | 'compact-dock' } = {}) {
   const appearance = resolveOverlayAppearance({ activeThemeId: 'operator' });
   return render(
     <FileExplorer
@@ -80,6 +80,7 @@ function renderExplorer() {
         textMuted: appearance.theme.palette.textMuted,
       }}
       appearance={appearance}
+      layoutMode={options.layoutMode}
       onOpenInTerminal={() => {}}
       onAddBookmark={async () => {}}
     />,
@@ -217,6 +218,18 @@ describe('FileExplorer view modes', () => {
     expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_read_text_file')).toBe(false);
   });
 
+  it('keeps the preview pane available in compact dock mode', async () => {
+    renderExplorer({ layoutMode: 'compact-dock' });
+    await screen.findByText('notes.txt');
+
+    fireEvent.click(screen.getByText('notes.txt'));
+
+    await waitFor(() => {
+      expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_read_text_file')).toBe(true);
+      expect(screen.getByRole('button', { name: /copy path/i })).toBeTruthy();
+    });
+  });
+
   it('renders a dedicated experimental modes button and menu next to the standard layout control', async () => {
     renderExplorer();
     await screen.findByText('alpha');
@@ -335,7 +348,7 @@ describe('FileExplorer view modes', () => {
     });
   });
 
-  it('starts the native drag bridge when dragging an explorer entry without a modifier', async () => {
+  it('keeps plain explorer drag internal so files can move between panes', async () => {
     renderExplorer();
     const entry = await screen.findByText('notes.txt');
     const dataTransfer = createDataTransfer();
@@ -347,18 +360,16 @@ describe('FileExplorer view modes', () => {
     const event = createEvent.dragStart(dragSource, { dataTransfer });
     fireEvent(dragSource, event);
 
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith('fs_start_native_file_drag', {
-        paths: [`${REPO_ROOT}\\notes.txt`],
-      });
-    });
     expect(dataTransfer.setData).toHaveBeenCalledWith(
       'application/x-overlayterm-drag-intent',
-      'native-out',
+      'internal',
     );
+    expect(invoke).not.toHaveBeenCalledWith('fs_start_native_file_drag', {
+      paths: [`${REPO_ROOT}\\notes.txt`],
+    });
   });
 
-  it('keeps explorer drag internal when shift is held', async () => {
+  it('starts the native drag bridge when shift is held for an external drag-out', async () => {
     renderExplorer();
     const entry = await screen.findByText('notes.txt');
     const dataTransfer = createDataTransfer();
@@ -371,13 +382,16 @@ describe('FileExplorer view modes', () => {
     Object.defineProperty(event, 'shiftKey', { value: true });
     fireEvent(dragSource, event);
 
-    expect(invoke).not.toHaveBeenCalledWith('fs_start_native_file_drag', {
-      paths: [`${REPO_ROOT}\\\\notes.txt`],
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith('fs_start_native_file_drag', {
+        paths: [`${REPO_ROOT}\\\\notes.txt`],
+      });
     });
     expect(dataTransfer.setData).toHaveBeenCalledWith(
       'application/x-overlayterm-drag-intent',
-      'internal',
+      'native-out',
     );
+    expect(dragSource.dataset.overlayDragHide).toBe('true');
   });
 
 });

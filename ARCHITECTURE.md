@@ -139,6 +139,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - persisted shell layout presets (`balanced`, `navigator`, `focus`, `inspector`)
   - persisted path/history/search/layout/preview/source-panel state
   - shell presets can hide the rail or move the preview pane without requiring a theme swap
+- Compact dock mode still uses the same explorer surface, but preview is no longer force-cleared just because the shell is compact. The dock can keep an inline preview pane active when the user wants file inspection/editing inside the overlay shell.
 - `src/store/explorerStore.ts` supports named explorer sessions, but the shipping dock behavior is the same explorer surface rendered in compact mode rather than a separate drawer/dock subsystem.
 - The explorer now has a local workspace shell separate from the global workbench tabs:
   - `ExplorerWorkspace.tsx` owns explorer tabs and one-pane/two-pane rendering
@@ -152,10 +153,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src-tauri/src/explorer_pro_commands.rs` owns app-managed trash + undo, batch rename, duplicate-scan lifecycle, tags, and saved searches
   - tags and saved searches live under Tauri app-local explorer metadata
   - trash currently uses a GreebleFS-managed trash root so restore locations stay deterministic across platforms
-- Explorer drag behavior is now hybrid by default:
-  - plain explorer drag starts the native file-drag bridge and publishes `text/uri-list`
-  - the custom `application/x-overlayterm-paths` payload is still always attached so in-explorer drops keep working
-  - `Shift` is the explicit internal-drag override for explorer-only move/copy gestures
+- Explorer drag behavior now keeps pane-to-pane moves internal by default:
+  - plain explorer drag stays inside the explorer and still publishes `application/x-overlayterm-paths` for in-app drops
+  - `Shift` opts into native file-drag export for OS targets
+  - native drag previews use the dragged item's native icon when available, with a generated file-shaped fallback instead of the app icon
 - `ExplorerSideRail.tsx` is now navigator-first instead of bookmark-authoring-first:
   - the rail header foregrounds the current location and pinned-count summary
   - bookmark search is always available
@@ -216,6 +217,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 
 - Repo-wide `npx tsc --noEmit` is currently red on several pre-existing generated-contract and test typing issues unrelated to the workbench/explorer theme system. The narrowed command above now only leaves `src/runtime/useFolderPluginRuntime.ts` as an unrelated pre-existing failure.
 - JSDOM-backed Vitest runs currently fail in this workspace because `html-encoding-sniffer` requires an ESM dependency through a CommonJS path. Node-environment tests still work, so keep pure logic/package-loader tests runnable there until the dependency issue is fixed.
+- `bun run test:browser` currently launches a headed Playwright Chromium session in this workspace. Without an X server it fails before any tests run; use `xvfb-run` or a headless browser config if you need browser validation locally.
 - Do not wire the screenshot panel to `explorerTaskStore`. That store is global explorer/Yazi task state; rendering it inside screenshot status chrome leaks unrelated delete/copy jobs into screenshot errors and makes debugging cross-subsystem issues much harder.
 - Explorer interaction tests that need DOM drag/drop still need a browser-like environment, so the current JSDOM dependency failure blocks the most relevant explorer UI regressions even when the narrowed TypeScript pass is green.
 - The local Linux installer now avoids the old Node/Tauri wrapper path. `install.sh` and `scripts/build-and-install-linux-local-release.sh` build with Bun + Cargo directly, then install into `~/.local/opt/overlayterm`.
@@ -228,6 +230,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - If the Linux/native overlay appears on the wrong display, inspect the monitor-resolution path in `App.tsx` before touching Rust window flags. The frontend now owns monitor selection and overlay geometry; `windowApplyMode` should only apply the chosen presentation atomically.
 - If Linux dock mode starts floating in the middle of the screen again, check the post-show re-dock path in `App.tsx` and confirm overlay move/resize listeners are not re-persisting raw X/Y coordinates into `runtimeOverlayBoundsRef`.
 - On Linux, do not let `window_apply_mode` abort geometry just because a WM rejects `set_shadow`, `set_skip_taskbar`, or another presentation-only flag. The TS call sites should unwrap the returned Tauri `Result`, and the Rust command should log best-effort flag failures while still applying size/position.
+- Screenshot capture uses physical monitor geometry end-to-end for preview selection and crop/save math. Tauri `Monitor.size` / `Monitor.position` are physical pixels, while the Rust preview path should capture the full monitor image and the crop/save path should stay on the cached physical-pixel image. Keep logical scaling for human-readable labels only.
+- Screenshot preview images should stay on stable data URLs or equally stable sources. Avoid converting them to blob URLs and revoking them inside a React state updater, because `React.StrictMode` can replay that updater and revoke the fresh preview before the browser finishes loading it.
 - `bun run tauri dev` uses the generated runtime Tauri config from `scripts/run-platform-tauri.mjs`, which points Tauri at the Vite `devUrl`. TS/React edits hot-reload through Vite during that session, but binding generation and startup prep scripts only rerun when the Tauri dev process starts.
 - Wayland overlay handling is now compositor-preserving instead of backend-forcing:
   - `window_get_linux_display_server()` exposes whether the Linux session is running on Wayland or X11

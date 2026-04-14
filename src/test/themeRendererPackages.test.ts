@@ -10,6 +10,14 @@ const rendererFixtures = [
     filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/arcade-atrium/renderers/arcade-atrium-shell.tsx',
   },
   {
+    name: 'arcade-arcology',
+    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/arcade-arcology/renderers/arcade-arcology.tsx',
+  },
+  {
+    name: 'clarity-line',
+    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/clarity-line/renderers/clarity-line-shell.tsx',
+  },
+  {
     name: 'xmb-crosswave',
     filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/xmb-crosswave/renderers/xmb-crosswave.tsx',
   },
@@ -20,6 +28,14 @@ const rendererFixtures = [
   {
     name: 'gamecube-orbital',
     filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/gamecube-orbital/renderers/gamecube-orbital.tsx',
+  },
+  {
+    name: 'gamecube-prism',
+    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/gamecube-prism/renderers/gamecube-prism.tsx',
+  },
+  {
+    name: 'gamecube-helix',
+    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/gamecube-helix/renderers/gamecube-helix.tsx',
   },
   {
     name: 'dreamcast-skyline',

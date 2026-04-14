@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="80" y1="40" x2="1520" y2="960" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fbfcfe"/>
+      <stop offset="1" stop-color="#eef3f8"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1230 240) rotate(90) scale(240 240)">
+      <stop offset="0" stop-color="#dbe6f3" stop-opacity="0.92"/>
+      <stop offset="0.55" stop-color="#dbe6f3" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#dbe6f3" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="line" x1="220" y1="760" x2="1410" y2="500" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2f6fed" stop-opacity="0.14"/>
+      <stop offset="0.5" stop-color="#64748b" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#0f172a" stop-opacity="0.10"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="1000" fill="url(#bg)"/>
+  <rect width="1600" height="1000" fill="url(#halo)"/>
+
+  <g opacity="0.52">
+    <path d="M120 220H1480" stroke="#d6dee8" stroke-width="1"/>
+    <path d="M120 340H1480" stroke="#dfe6ee" stroke-width="1"/>
+    <path d="M120 460H1480" stroke="#d6dee8" stroke-width="1"/>
+    <path d="M120 580H1480" stroke="#dfe6ee" stroke-width="1"/>
+    <path d="M120 700H1480" stroke="#d6dee8" stroke-width="1"/>
+    <path d="M120 820H1480" stroke="#dfe6ee" stroke-width="1"/>
+  </g>
+
+  <g opacity="0.45">
+    <path d="M260 120V900" stroke="#d9e0ea" stroke-width="1"/>
+    <path d="M420 120V900" stroke="#e4e9f0" stroke-width="1"/>
+    <path d="M580 120V900" stroke="#d9e0ea" stroke-width="1"/>
+    <path d="M740 120V900" stroke="#e4e9f0" stroke-width="1"/>
+    <path d="M900 120V900" stroke="#d9e0ea" stroke-width="1"/>
+    <path d="M1060 120V900" stroke="#e4e9f0" stroke-width="1"/>
+    <path d="M1220 120V900" stroke="#d9e0ea" stroke-width="1"/>
+  </g>
+
+  <path d="M180 740C420 580 620 560 790 650C950 735 1130 720 1420 510" stroke="url(#line)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M240 178H1360" stroke="#cfd8e3" stroke-width="1.5" opacity="0.72"/>
+  <path d="M220 870H1380" stroke="#cfd8e3" stroke-width="1.5" opacity="0.62"/>
+  <circle cx="1230" cy="240" r="128" stroke="#c5d2df" stroke-width="1.5" opacity="0.58"/>
+  <circle cx="1230" cy="240" r="182" fill="#dbe6f3" fill-opacity="0.18"/>
+
+  <path d="M300 120L440 230L580 120L720 230L860 120" stroke="#d7dfe8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.72"/>
+  <path d="M1340 840L1480 720" stroke="#d7dfe8" stroke-width="1.5" stroke-linecap="round" opacity="0.48"/>
+</svg>

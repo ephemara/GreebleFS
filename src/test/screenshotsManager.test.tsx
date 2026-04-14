@@ -313,7 +313,7 @@ describe('ScreenshotsManager', () => {
     expect(screen.queryByText('Working…')).not.toBeInTheDocument();
   });
 
-  it('captures Linux high-DPI monitor previews with logical bounds', async () => {
+  it('captures Linux high-DPI monitor previews with physical bounds', async () => {
     const invokeMock = vi.mocked(invoke);
 
     Object.defineProperty(window.navigator, 'platform', {
@@ -370,8 +370,8 @@ describe('ScreenshotsManager', () => {
       expect(invokeMock).toHaveBeenCalledWith('screenshot_capture_preview', {
         x: 0,
         y: 0,
-        width: 1920,
-        height: 1080,
+        width: 3840,
+        height: 2160,
       });
     });
   });

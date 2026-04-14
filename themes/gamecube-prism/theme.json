@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "id": "gamecube-prism",
+  "name": "GameCube Prism",
+  "description": "A crystalline GameCube-inspired shell with a diamond core, orbiting panel pods, and a neon launch deck.",
+  "author": "Codex",
+  "tags": ["console", "gamecube", "prism", "launcher", "radial"],
+  "extends": "operator",
+  "assets": {
+    "background": "assets/wallpaper.svg"
+  },
+  "fonts": {
+    "ui": "\"Space Grotesk\", Inter, sans-serif",
+    "mono": "\"JetBrains Mono\", \"Cascadia Code\", monospace"
+  },
+  "presentation": {
+    "chromeStyle": "glass",
+    "density": "comfortable",
+    "iconStyle": "vector",
+    "motionStyle": "dramatic",
+    "cornerRadius": 24,
+    "panelSpacing": 12
+  },
+  "theme": {
+    "palette": {
+      "appBackground": "#060812",
+      "appBackgroundAlt": "#0c1020",
+      "shellBackground": "rgba(7, 9, 18, 0.96)",
+      "shellBackgroundSolid": "#101426",
+      "topBarBackground": "rgba(9, 11, 21, 0.94)",
+      "topBarMenuBackground": "rgba(10, 11, 22, 0.98)",
+      "sidebarBackground": "rgba(10, 12, 22, 0.95)",
+      "panelBackground": "rgba(13, 15, 28, 0.95)",
+      "panelAltBackground": "rgba(8, 10, 20, 0.98)",
+      "cardBackground": "rgba(24, 27, 46, 0.92)",
+      "cardHoverBackground": "rgba(37, 41, 70, 0.96)",
+      "contextMenuBackground": "rgba(16, 18, 32, 0.98)",
+      "inputBackground": "rgba(7, 9, 18, 0.95)",
+      "terminalBackground": "#090b16",
+      "selectionBackground": "rgba(115, 103, 240, 0.36)",
+      "scrimBackground": "rgba(4, 5, 12, 0.68)",
+      "textPrimary": "#f2f5ff",
+      "textSecondary": "#d8def3",
+      "textMuted": "#aab4d8",
+      "textDim": "#7882ab",
+      "textInverse": "#101426",
+      "border": "rgba(136, 145, 196, 0.24)",
+      "borderStrong": "rgba(124, 110, 255, 0.46)",
+      "accent": "#7367f0",
+      "accentSoft": "rgba(115, 103, 240, 0.2)",
+      "accentContrast": "#f8f9ff",
+      "success": "#59c679",
+      "warning": "#f2ca54",
+      "danger": "#d25d78",
+      "info": "#5bc7ff",
+      "note": "#d7dcf0",
+      "todo": "#59c679",
+      "bug": "#d25d78",
+      "prompt": "#f2ca54"
+    },
+    "effects": {
+      "backgroundImage": "radial-gradient(circle at 50% 20%, rgba(115,103,240,0.16), transparent 26%), radial-gradient(circle at 82% 18%, rgba(91,199,255,0.08), transparent 18%), linear-gradient(180deg, rgba(255,255,255,0.018), rgba(255,255,255,0) 22%)",
+      "shadow": "0 26px 72px rgba(0, 0, 0, 0.62)",
+      "overlayShadow": "0 -4px 0 0 #7367f0, 0 -28px 72px rgba(3, 4, 12, 0.92)"
+    },
+    "workbench": {
+      "brandLabel": "Prism",
+      "topBarStyle": "glass",
+      "commandPaletteStyle": "glass",
+      "terminalStyle": "glass",
+      "settingsStyle": "glass",
+      "tabStyle": "capsule",
+      "metrics": {
+        "chromeHeight": 40,
+        "controlRadius": 16,
+        "panelRadius": 24,
+        "shellInset": 12,
+        "pagePadding": 12,
+        "panelGap": 10
+      },
+      "cssVars": {
+        "--overlay-workbench-prism-stage-width": "min(calc(100% - 92px), 1320px)",
+        "--overlay-workbench-prism-stage-height": "min(calc(100% - 108px), 720px)",
+        "--overlay-workbench-prism-core-size": "728",
+        "--overlay-workbench-prism-ring-x-outer": "486",
+        "--overlay-workbench-prism-ring-y-outer": "272",
+        "--overlay-workbench-prism-ring-x-inner": "362",
+        "--overlay-workbench-prism-ring-y-inner": "204"
+      }
+    },
+    "explorer": {
+      "railBrandLabel": "Prism Grid",
+      "toolbarStyle": "floating",
+      "breadcrumbStyle": "capsule",
+      "selectionStyle": "glow",
+      "hoverStyle": "glow",
+      "previewStyle": "glass",
+      "statusBarStyle": "floating",
+      "preferredViewMode": "icons-xl",
+      "preferredExperimentalViewMode": "constellation",
+      "metrics": {
+        "railWidth": 248,
+        "previewWidth": 440,
+        "panelRadius": 24,
+        "gridScale": 1.18,
+        "iconScale": 1.22,
+        "hoverLiftPx": 4
+      },
+      "cssVars": {
+        "--overlay-explorer-brand": "prism-grid"
+      }
+    }
+  },
+  "layoutPrimitives": [
+    {
+      "id": "prism-hub",
+      "name": "Prism Hub",
+      "kind": "grid",
+      "props": {
+        "cellSize": 154
+      }
+    }
+  ],
+  "navigationPatterns": [
+    {
+      "id": "prism-loop",
+      "name": "Prism Loop",
+      "kind": "spatial",
+      "axis": "both",
+      "props": {
+        "breadcrumb": false,
+        "wrap": true
+      }
+    }
+  ],
+  "renderStyles": [
+    {
+      "id": "prism-render",
+      "label": "Prism Orbit",
+      "description": "Crystalline launcher styling with a diamond center stage and orbiting panel pods.",
+      "kind": "wii-channels",
+      "entryModule": "renderers/gamecube-prism.tsx",
+      "supportsLiveSwap": true
+    }
+  ],
+  "themeRenderer": {
+    "entryModule": "renderers/gamecube-prism.tsx",
+    "apiVersion": 1,
+    "supportsLiveSwap": true,
+    "fallbackRuntime": "channel-launcher",
+    "capabilities": {
+      "customScreens": true,
+      "wallpaperScene": true,
+      "surfaceAdapters": true
+    }
+  },
+  "defaultLayoutPrimitiveId": "prism-hub",
+  "defaultNavigationPatternId": "prism-loop",
+  "defaultRenderStyleId": "prism-render",
+  "visuals": [
+    {
+      "id": "prism-sheen",
+      "backgroundImage": "radial-gradient(circle at 50% 24%, rgba(124,110,255,0.2), transparent 22%), radial-gradient(circle at 72% 18%, rgba(91,199,255,0.12), transparent 16%), linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0) 30%)",
+      "opacity": 0.92,
+      "blendMode": "screen"
+    }
+  ]
+}

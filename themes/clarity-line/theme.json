@@ -1,0 +1,250 @@
+{
+  "version": 1,
+  "id": "clarity-line",
+  "name": "Clarity Line",
+  "description": "A restrained editorial shell with thin borders, compact explorer chrome, and calm neutral contrast.",
+  "author": "Codex",
+  "homepage": "https://overlayterm.local/themes/clarity-line",
+  "tags": ["minimal", "clean", "editorial", "light", "custom-renderer"],
+  "extends": "aqua-light",
+  "assets": {
+    "background": "assets/wallpaper.svg",
+    "preview": "assets/wallpaper.svg"
+  },
+  "fonts": {
+    "ui": "\"Geist\", Inter, system-ui, sans-serif",
+    "mono": "\"JetBrains Mono\", \"Cascadia Code\", monospace"
+  },
+  "presentation": {
+    "chromeStyle": "minimal",
+    "density": "compact",
+    "iconStyle": "vector",
+    "motionStyle": "instant",
+    "cornerRadius": 12,
+    "panelSpacing": 6
+  },
+  "theme": {
+    "palette": {
+      "appBackground": "#f3f6fa",
+      "appBackgroundAlt": "#e9edf3",
+      "shellBackground": "rgba(247, 249, 252, 0.96)",
+      "shellBackgroundSolid": "rgba(251, 252, 254, 0.99)",
+      "topBarBackground": "rgba(255, 255, 255, 0.92)",
+      "topBarMenuBackground": "rgba(255, 255, 255, 0.98)",
+      "sidebarBackground": "rgba(250, 251, 253, 0.96)",
+      "panelBackground": "rgba(255, 255, 255, 0.95)",
+      "panelAltBackground": "rgba(244, 247, 250, 0.98)",
+      "cardBackground": "rgba(255, 255, 255, 0.98)",
+      "cardHoverBackground": "rgba(248, 250, 252, 0.98)",
+      "contextMenuBackground": "rgba(255, 255, 255, 0.98)",
+      "inputBackground": "rgba(255, 255, 255, 0.96)",
+      "terminalBackground": "#0b1220",
+      "selectionBackground": "rgba(47, 111, 237, 0.12)",
+      "scrimBackground": "rgba(15, 23, 42, 0.18)",
+      "textPrimary": "#0f172a",
+      "textSecondary": "#334155",
+      "textMuted": "rgba(15, 23, 42, 0.62)",
+      "textDim": "rgba(15, 23, 42, 0.36)",
+      "textInverse": "#ffffff",
+      "border": "rgba(15, 23, 42, 0.08)",
+      "borderStrong": "rgba(47, 111, 237, 0.24)",
+      "accent": "#2f6fed",
+      "accentSoft": "rgba(47, 111, 237, 0.14)",
+      "accentContrast": "#ffffff",
+      "success": "#0f9d58",
+      "warning": "#b45309",
+      "danger": "#c2410c",
+      "info": "#2563eb",
+      "note": "#4f46e5",
+      "todo": "#0f766e",
+      "bug": "#c026d3",
+      "prompt": "#2f6fed"
+    },
+    "effects": {
+      "backgroundImage": "linear-gradient(180deg, rgba(255, 255, 255, 0.7) 0%, rgba(246, 249, 252, 0.42) 34%, rgba(240, 244, 248, 0.82) 100%), radial-gradient(circle at 18% 16%, rgba(47, 111, 237, 0.06), transparent 20%), radial-gradient(circle at 84% 12%, rgba(15, 23, 42, 0.04), transparent 18%)",
+      "shadow": "0 18px 42px rgba(15, 23, 42, 0.10)",
+      "overlayShadow": "0 -2px 0 0 rgba(47, 111, 237, 0.18), 0 -24px 64px rgba(15, 23, 42, 0.08)"
+    },
+    "workbench": {
+      "preset": "workbench",
+      "brandLabel": "Clarity",
+      "layoutPrimitiveId": "clarity-split",
+      "navigationPatternId": "clarity-palette",
+      "renderStyleId": "clarity-render",
+      "topBarStyle": "minimal",
+      "panelStyle": "solid",
+      "commandPaletteStyle": "floating",
+      "terminalStyle": "solid",
+      "settingsStyle": "solid",
+      "tabStyle": "underline",
+      "metrics": {
+        "chromeHeight": 30,
+        "controlRadius": 8,
+        "panelRadius": 12,
+        "shellInset": 6,
+        "commandPaletteWidth": 720,
+        "commandPaletteTopInset": 52,
+        "pagePadding": 10,
+        "panelGap": 8
+      },
+      "surfaces": {
+        "shellBackground": "rgba(247, 249, 252, 0.98)",
+        "chromeBackground": "rgba(255, 255, 255, 0.92)",
+        "chromeMenuBackground": "rgba(255, 255, 255, 0.98)",
+        "chromeBorder": "rgba(15, 23, 42, 0.08)",
+        "chromeButtonBackground": "rgba(255, 255, 255, 0.72)",
+        "chromeButtonHoverBackground": "rgba(255, 255, 255, 0.96)",
+        "chromeButtonActiveBackground": "rgba(47, 111, 237, 0.10)",
+        "chromeButtonActiveBorder": "rgba(47, 111, 237, 0.22)",
+        "chromeTabBackground": "rgba(255, 255, 255, 0.74)",
+        "chromeTabActiveBackground": "rgba(255, 255, 255, 0.98)",
+        "chromeTabBorder": "rgba(15, 23, 42, 0.08)",
+        "shellShadow": "0 22px 52px rgba(15, 23, 42, 0.08)",
+        "commandPaletteScrimBackground": "rgba(15, 23, 42, 0.18)",
+        "commandPaletteBackground": "rgba(255, 255, 255, 0.98)",
+        "commandPaletteBorder": "rgba(15, 23, 42, 0.08)",
+        "commandPaletteInputBackground": "rgba(248, 250, 252, 0.98)",
+        "commandPaletteItemBackground": "rgba(255, 255, 255, 0.94)",
+        "commandPaletteItemActiveBackground": "rgba(47, 111, 237, 0.08)",
+        "settingsBackground": "linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(245, 248, 252, 0.96) 100%)",
+        "settingsRailBackground": "rgba(248, 250, 252, 0.92)",
+        "settingsCardBackground": "rgba(255, 255, 255, 0.96)",
+        "settingsCardBorder": "rgba(15, 23, 42, 0.08)",
+        "settingsBadgeBackground": "rgba(248, 250, 252, 0.96)",
+        "settingsBadgeBorder": "rgba(15, 23, 42, 0.08)",
+        "terminalBackground": "#0b1220",
+        "terminalPanelBackground": "#111827",
+        "terminalPaneBackground": "#0f172a",
+        "terminalBorder": "rgba(148, 163, 184, 0.20)",
+        "terminalStatusBackground": "rgba(47, 111, 237, 0.16)"
+      },
+      "typography": {
+        "chromeLabelSize": 10,
+        "chromeMetaSize": 8,
+        "tabLabelSize": 10,
+        "pageTitleSize": 15,
+        "pageBodySize": 11,
+        "badgeSize": 9,
+        "labelLetterSpacing": "0.06em"
+      }
+    },
+    "explorer": {
+      "preset": "workbench",
+      "railPosition": "left",
+      "railBrandLabel": "Clarity",
+      "layoutPrimitiveId": "clarity-split",
+      "navigationPatternId": "clarity-palette",
+      "renderStyleId": "clarity-render",
+      "toolbarStyle": "minimal",
+      "breadcrumbStyle": "plain",
+      "selectionStyle": "outline",
+      "hoverStyle": "fill",
+      "previewStyle": "attached",
+      "statusBarStyle": "hidden",
+      "labelMode": "inline",
+      "preferredViewMode": "details",
+      "preferredExperimentalViewMode": "off",
+      "metrics": {
+        "railWidth": 228,
+        "previewWidth": 360,
+        "chromeInset": 0,
+        "toolbarPaddingX": 8,
+        "toolbarPaddingY": 5,
+        "toolbarGap": 5,
+        "controlRadius": 6,
+        "panelRadius": 12,
+        "spacingScale": 0.94,
+        "gridScale": 0.96,
+        "rowHeightScale": 0.92,
+        "iconScale": 0.93,
+        "hoverLiftPx": 0
+      },
+      "surfaces": {
+        "rootBackground": "linear-gradient(180deg, rgba(248, 250, 252, 0.96) 0%, rgba(242, 245, 249, 0.98) 100%)",
+        "contentBackground": "rgba(255, 255, 255, 0.86)",
+        "sidebarBackground": "rgba(250, 251, 253, 0.94)",
+        "sidebarBorder": "rgba(15, 23, 42, 0.08)",
+        "toolbarBackground": "rgba(255, 255, 255, 0.92)",
+        "toolbarBorder": "rgba(15, 23, 42, 0.08)",
+        "toolbarShadow": "none",
+        "omniboxBackground": "rgba(255, 255, 255, 0.98)",
+        "omniboxBorder": "rgba(15, 23, 42, 0.08)",
+        "previewBackground": "rgba(255, 255, 255, 0.94)",
+        "previewHeaderBackground": "rgba(248, 250, 252, 0.96)",
+        "previewBorder": "rgba(15, 23, 42, 0.08)",
+        "statusBarBackground": "rgba(248, 250, 252, 0.92)",
+        "statusBarBorder": "rgba(15, 23, 42, 0.08)",
+        "itemHoverBackground": "rgba(47, 111, 237, 0.05)",
+        "itemHoverBorder": "rgba(15, 23, 42, 0.06)",
+        "itemSelectedBackground": "rgba(47, 111, 237, 0.10)",
+        "itemSelectedBorder": "rgba(47, 111, 237, 0.22)",
+        "itemDropBackground": "rgba(47, 111, 237, 0.12)",
+        "itemDropBorder": "rgba(47, 111, 237, 0.30)",
+        "itemFocusShadow": "none",
+        "inputBackground": "rgba(255, 255, 255, 0.98)",
+        "inputBorder": "rgba(15, 23, 42, 0.08)",
+        "chipBackground": "rgba(255, 255, 255, 0.78)",
+        "chipBorder": "rgba(15, 23, 42, 0.08)",
+        "chipActiveBackground": "rgba(47, 111, 237, 0.08)",
+        "chipActiveBorder": "rgba(47, 111, 237, 0.20)",
+        "chipActiveText": "#2f6fed"
+      },
+      "typography": {
+        "railEyebrowSize": 10,
+        "railTitleSize": 13,
+        "toolbarFontSize": 11,
+        "breadcrumbFontSize": 10,
+        "entryTitleSize": 11,
+        "entryMetaSize": 10,
+        "statusFontSize": 10,
+        "entryTitleWeight": 500,
+        "labelLetterSpacing": "0.05em"
+      }
+    }
+  },
+  "layoutPrimitives": [
+    {
+      "id": "clarity-split",
+      "name": "Clarity Split",
+      "kind": "split",
+      "props": {
+        "primaryRatio": 0.64
+      }
+    }
+  ],
+  "navigationPatterns": [
+    {
+      "id": "clarity-palette",
+      "name": "Clarity Palette",
+      "kind": "palette",
+      "axis": "horizontal",
+      "props": {
+        "searchFirst": true
+      }
+    }
+  ],
+  "renderStyles": [
+    {
+      "id": "clarity-render",
+      "label": "Clarity Line Shell",
+      "description": "A clean workbench renderer with a calm navigation rail and thin chrome.",
+      "kind": "vs-code-workbench",
+      "entryModule": "renderers/clarity-line-shell.tsx",
+      "supportsLiveSwap": true
+    }
+  ],
+  "themeRenderer": {
+    "entryModule": "renderers/clarity-line-shell.tsx",
+    "apiVersion": 1,
+    "supportsLiveSwap": true,
+    "fallbackRuntime": "workbench-tabs",
+    "capabilities": {
+      "customScreens": true,
+      "wallpaperScene": true,
+      "surfaceAdapters": true
+    }
+  },
+  "defaultLayoutPrimitiveId": "clarity-split",
+  "defaultNavigationPatternId": "clarity-palette",
+  "defaultRenderStyleId": "clarity-render"
+}

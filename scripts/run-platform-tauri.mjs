@@ -8,6 +8,9 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, "..");
+const isDirectScriptRun = process.argv[1]
+  ? path.resolve(process.argv[1]) === __filename
+  : false;
 const sharedNodeModules = path.join(projectRoot, "node_modules");
 const sharedTauriCliDir = path.join(sharedNodeModules, "@tauri-apps", "cli");
 const sharedTauriCliEntry = path.join(sharedTauriCliDir, "tauri.js");
@@ -33,6 +36,53 @@ const tauriCargoTargetDir =
   process.env.CARGO_TARGET_DIR ??
   process.env.OVERLAYTERM_TAURI_CARGO_TARGET_DIR ??
   defaultCargoTargetDir;
+
+const devManagedContentDirectoryEnvKeys = {
+  plugins: "VITE_OVERLAYTERM_PLUGINS_DIR",
+  themes: "VITE_OVERLAYTERM_THEMES_DIR",
+  shaders: "VITE_OVERLAYTERM_SHADERS_DIR",
+  animations: "VITE_OVERLAYTERM_ANIMATIONS_DIR",
+  wallpapers: "VITE_OVERLAYTERM_WALLPAPERS_DIR",
+  notes: "VITE_OVERLAYTERM_NOTES_DIR",
+};
+
+const devManagedContentDirectoryNames = {
+  plugins: "plugins",
+  themes: "themes",
+  shaders: "shaders",
+  animations: "animations",
+  wallpapers: "wallpapers",
+  notes: "notes",
+};
+
+function hasExplicitEnvValue(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+export function buildManagedContentDirectoryEnvironment({
+  tauriCommand,
+  projectRootPath = projectRoot,
+  existingEnv = process.env,
+} = {}) {
+  if (tauriCommand !== "dev") {
+    return {};
+  }
+
+  const managedContentEnvironment = {};
+
+  for (const [directoryId, envKey] of Object.entries(devManagedContentDirectoryEnvKeys)) {
+    if (hasExplicitEnvValue(existingEnv[envKey])) {
+      continue;
+    }
+
+    managedContentEnvironment[envKey] = path.join(
+      projectRootPath,
+      devManagedContentDirectoryNames[directoryId],
+    );
+  }
+
+  return managedContentEnvironment;
+}
 
 function getLibcFlavor() {
   if (process.platform !== "linux") {
@@ -227,13 +277,16 @@ async function main() {
       npm_config_optional: "true",
       CARGO_TARGET_DIR: tauriCargoTargetDir,
       OVERLAYTERM_VITE_OUT_DIR: frontendDist,
+      ...buildManagedContentDirectoryEnvironment({ tauriCommand }),
     }
   );
 
   process.exit(exitCode);
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exit(1);
-});
+if (isDirectScriptRun) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
+  });
+}

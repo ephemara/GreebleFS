@@ -572,7 +572,8 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
 }
 
 function resolveExplorerDragIntent(event: Pick<React.DragEvent, 'shiftKey'>): ExplorerDragIntent {
-  return event.shiftKey ? 'internal' : 'native-out';
+  // Keep explorer drags pane-to-pane by default; Shift opts into a native file export.
+  return event.shiftKey ? 'native-out' : 'internal';
 }
 
 function resolveExplorerDropOperation(
@@ -1634,6 +1635,8 @@ function EditorFallback({ label }: { label: string }) {
 function PreviewPanel({
   preview,
   width,
+  minWidth,
+  maxWidth,
   onClose,
   onWidthChange,
   onTextChange,
@@ -1645,6 +1648,8 @@ function PreviewPanel({
 }: {
   preview: PreviewState;
   width: number;
+  minWidth: number;
+  maxWidth: number;
   onClose: () => void;
   onWidthChange: (width: number) => void;
   onTextChange: (path: string, content: string) => void;
@@ -1672,8 +1677,8 @@ function PreviewPanel({
       const delta = startX.current - e.clientX; // dragging left grows the panel
       onWidthChange(
         Math.max(
-          EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
-          Math.min(EXPLORER_PREVIEW_WIDTH_BOUNDS.max, startW.current + delta),
+          minWidth,
+          Math.min(maxWidth, startW.current + delta),
         ),
       );
     };
@@ -1681,7 +1686,7 @@ function PreviewPanel({
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
     return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
-  }, [onWidthChange]);
+  }, [maxWidth, minWidth, onWidthChange]);
 
   useEffect(() => {
     setCopiedPath(null);
@@ -2112,6 +2117,7 @@ interface FileExplorerProps {
   onAddBookmark: (name: string, path: string) => void;
   pluginActions?: OverlayPluginExplorerActionContribution[];
   layoutMode?: ExplorerLayoutMode;
+  workspacePaneMode?: 'standalone' | 'split';
   instanceId?: ExplorerInstanceId;
   chromeControlSurface?: 'toolbar' | 'topbar';
   focusAddressBarSignal?: number;
@@ -2132,6 +2138,7 @@ export function FileExplorer({
   onAddBookmark,
   pluginActions = [],
   layoutMode = 'full',
+  workspacePaneMode = 'standalone',
   instanceId = PRIMARY_EXPLORER_INSTANCE_ID,
   chromeControlSurface = 'toolbar',
   focusAddressBarSignal = 0,
@@ -2162,6 +2169,7 @@ export function FileExplorer({
     showPathProperties: showExplorerPathProperties,
     listSavedSearches: listExplorerSavedSearches,
     listTags: listExplorerTags,
+    pollDuplicateScan: pollExplorerDuplicateScan,
     searchEntriesWithDiagnostics: searchExplorerEntriesWithDiagnostics,
     saveSavedSearch: saveExplorerSavedSearch,
     setTagsForPaths: setExplorerTagsForPaths,
@@ -2169,6 +2177,7 @@ export function FileExplorer({
     supportsNativeIntegration,
     supportsSearch,
     startDuplicateScan: startExplorerDuplicateScan,
+    deleteSavedSearch: deleteExplorerSavedSearch,
     trashPaths: trashExplorerPaths,
     transferItems: transferExplorerItems,
     unwatchEntrySizeRoot: unwatchExplorerEntrySizeRoot,
@@ -2214,12 +2223,21 @@ export function FileExplorer({
     [explorerSearchScopeId],
   );
   const isCompactDock = layoutMode === 'compact-dock';
+  const isSplitPane = workspacePaneMode === 'split';
+  const usesConstrainedPaneLayout = isCompactDock || isSplitPane;
   const showsGlobalChromeControls = chromeControlSurface === 'topbar';
   const explorerTheme = useMemo(
     () => resolveExplorerThemeRecipe(appearance),
     [appearance],
   );
-  const sidebarBounds = getExplorerRailWidthBounds(isCompactDock);
+  const sidebarBounds = getExplorerRailWidthBounds(usesConstrainedPaneLayout);
+  const previewWidthBounds = useMemo(
+    () => ({
+      min: EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
+      max: isSplitPane ? 320 : EXPLORER_PREVIEW_WIDTH_BOUNDS.max,
+    }),
+    [isSplitPane],
+  );
   const uiFont = appearance?.fonts.ui ?? 'Inter,system-ui,sans-serif';
   const themeIconTheme = appearance?.theme.assets?.iconTheme ?? getBuiltInIconTheme();
   const useNativeOsIcons = appearanceSettings.useNativeOsIcons;
@@ -2249,13 +2267,13 @@ export function FileExplorer({
   const [previewWidth, setPreviewWidth] = useState(() => {
     if (typeof initialSession.previewWidth === 'number') {
       return Math.max(
-        EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
-        Math.min(EXPLORER_PREVIEW_WIDTH_BOUNDS.max, initialSession.previewWidth),
+        previewWidthBounds.min,
+        Math.min(previewWidthBounds.max, initialSession.previewWidth),
       );
     }
     return Math.max(
-      EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
-      Math.min(EXPLORER_PREVIEW_WIDTH_BOUNDS.max, Math.round(explorerTheme.metrics.previewWidth)),
+      previewWidthBounds.min,
+      Math.min(previewWidthBounds.max, Math.round(explorerTheme.metrics.previewWidth)),
     );
   });
   const [entries,      setEntries]      = useState<FileEntry[]>([]);
@@ -2346,7 +2364,7 @@ export function FileExplorer({
     clientWidth: 0,
   });
   const currentPathIsCloud = currentPath.length > 0 && isCloudExplorerPath(currentPath);
-  const isExperimentalViewEligible = !isCompactDock && search.trim().length === 0;
+  const isExperimentalViewEligible = !usesConstrainedPaneLayout && search.trim().length === 0;
 
   useEffect(() => {
     let disposed = false;
@@ -2406,8 +2424,8 @@ export function FileExplorer({
   }, [sidebarBounds.maxWidth, sidebarBounds.minWidth]);
 
   useEffect(() => {
-    setPreviewWidth(current => Math.max(EXPLORER_PREVIEW_WIDTH_BOUNDS.min, Math.min(EXPLORER_PREVIEW_WIDTH_BOUNDS.max, current)));
-  }, [explorerTheme.metrics.previewWidth]);
+    setPreviewWidth(current => Math.max(previewWidthBounds.min, Math.min(previewWidthBounds.max, current)));
+  }, [previewWidthBounds.max, previewWidthBounds.min]);
 
   const showExperimentalHud = useCallback(() => {
     setExperimentalHudVisible(true);
@@ -2529,11 +2547,10 @@ export function FileExplorer({
   }, [flushPendingExplorerMetrics]);
 
   useEffect(() => {
-    if (isCompactDock) {
+    if (usesConstrainedPaneLayout) {
       setSidebarWidth(current => Math.max(sidebarBounds.minWidth, Math.min(current, sidebarBounds.maxWidth)));
-      setPreview({ type: 'none', path: '' });
     }
-  }, [isCompactDock, sidebarBounds.maxWidth, sidebarBounds.minWidth]);
+  }, [sidebarBounds.maxWidth, sidebarBounds.minWidth, usesConstrainedPaneLayout]);
 
   useEffect(() => {
     if (!previewEnabled) {
@@ -2981,7 +2998,7 @@ export function FileExplorer({
     updateExplorerSettings,
   ]);
   const pathTagIdsByPath = useMemo(() => new Map(
-    tagMetadata.assignments.map((assignment) => [assignment.path, assignment.tag_ids] as const),
+    tagMetadata.assignments.map((assignment) => [assignment.path, assignment.tagIds] as const),
   ), [tagMetadata.assignments]);
   const filteredEntries = useMemo(
     () => (isSearchActive ? searchResults : entries).filter((entry) => {
@@ -3419,8 +3436,8 @@ export function FileExplorer({
       railMinWidth: sidebarBounds.minWidth,
       railMaxWidth: sidebarBounds.maxWidth,
       previewWidth: explorerTheme.metrics.previewWidth,
-      previewMinWidth: EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
-      previewMaxWidth: EXPLORER_PREVIEW_WIDTH_BOUNDS.max,
+      previewMinWidth: previewWidthBounds.min,
+      previewMaxWidth: previewWidthBounds.max,
     });
 
     setShellLayoutId(nextLayout.id);
@@ -3430,6 +3447,8 @@ export function FileExplorer({
   }, [
     explorerTheme.metrics.previewWidth,
     explorerTheme.metrics.railWidth,
+    previewWidthBounds.max,
+    previewWidthBounds.min,
     sidebarBounds.maxWidth,
     sidebarBounds.minWidth,
   ]);
@@ -3445,7 +3464,7 @@ export function FileExplorer({
   }, [closePreview, previewEnabled]);
 
   const previewEntry = useCallback(async (entry: FileEntry, focusTarget: EditorSearchFocusTarget | null = null) => {
-    if (!previewEnabled || isCompactDock) {
+    if (!previewEnabled) {
       setPreview({ type: 'none', path: '' });
       return;
     }
@@ -3512,7 +3531,7 @@ export function FileExplorer({
       return;
     }
     setPreview({ type: 'none', path: '' });
-  }, [flushPreviewTextSave, isCompactDock, previewEnabled]);
+  }, [flushPreviewTextSave, previewEnabled]);
 
   const openEntry = useCallback(async (entry: FileEntry) => {
     if (entry.is_dir) {
@@ -3521,7 +3540,7 @@ export function FileExplorer({
     }
     const ext = getEntryExtension(entry);
     const focusTarget = getSearchFocusTarget(entry);
-    const canInlinePreview = previewEnabled && !isCompactDock;
+    const canInlinePreview = previewEnabled;
 
     if (canInlinePreview && isEditableTextEntry(entry)) {
       await previewEntry(entry, focusTarget);
@@ -3539,7 +3558,7 @@ export function FileExplorer({
     }
 
     await openExplorerPath(entry.path).catch(e => setError(String(e)));
-  }, [getSearchFocusTarget, isCompactDock, navigate, openExplorerPath, previewEnabled, previewEntry]);
+  }, [getSearchFocusTarget, navigate, openExplorerPath, previewEnabled, previewEntry]);
 
   // ── Duplicate ──
   const duplicate = useCallback(async (entry: FileEntry) => {
@@ -3950,7 +3969,7 @@ export function FileExplorer({
       void openEntry(entry);
       return;
     }
-    if (previewEnabled && !isCompactDock && plainClick && !entry.is_dir) {
+    if (previewEnabled && plainClick && !entry.is_dir) {
       void previewEntry(entry, getSearchFocusTarget(entry));
     }
   };
@@ -4122,7 +4141,7 @@ export function FileExplorer({
       if (matchesKeybinding(e, keybindings.toggleExplorerLayout)) {
         e.preventDefault();
         if (
-          !isCompactDock
+          !usesConstrainedPaneLayout
           && !isSearchActive
           && (experimentalViewMode !== 'off' || explorerTheme.preferredExperimentalViewMode != null)
         ) {
@@ -4174,7 +4193,7 @@ export function FileExplorer({
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [addressEditing, beginAddressEdit, clearExplorerSelection, duplicate, experimentalDensity, experimentalViewMode, explorerTheme.preferredExperimentalViewMode, focusExplorerAddressBar, focusExplorerList, focusExplorerPreview, goBack, goForward, goHome, isCompactDock, isSearchActive, keybindings, newItem.visible, paste, queueClipboard, refresh, rename.active, selectAllVisibleEntries, selected, selectedEntries, showExperimentalHud, showHidden, updateExplorerSettings, viewMode, visibleEntries, toggleSearchScope, cycleSortKey, toggleSortOrder]);
+  }, [addressEditing, beginAddressEdit, clearExplorerSelection, duplicate, experimentalDensity, experimentalViewMode, explorerTheme.preferredExperimentalViewMode, focusExplorerAddressBar, focusExplorerList, focusExplorerPreview, goBack, goForward, goHome, isSearchActive, keybindings, newItem.visible, paste, queueClipboard, refresh, rename.active, selectAllVisibleEntries, selected, selectedEntries, showExperimentalHud, showHidden, updateExplorerSettings, usesConstrainedPaneLayout, viewMode, visibleEntries, toggleSearchScope, cycleSortKey, toggleSortOrder]);
 
   // ── Breadcrumbs ──
   const crumbs: { label:string; path:string }[] = locationBreadcrumbs;
@@ -4220,6 +4239,11 @@ export function FileExplorer({
       : requestedDragIntent;
     activeDragPathsRef.current = dragPaths;
     e.currentTarget.dataset.overlayDragIntent = dragIntent;
+    if (dragIntent === 'native-out') {
+      e.currentTarget.dataset.overlayDragHide = 'true';
+    } else {
+      delete e.currentTarget.dataset.overlayDragHide;
+    }
     e.dataTransfer.setData('text/plain', dragPaths[0] ?? entry.path);
     e.dataTransfer.setData('application/x-overlayterm-paths', JSON.stringify(dragPaths));
     e.dataTransfer.setData('application/x-overlayterm-drag-intent', dragIntent);
@@ -4258,6 +4282,7 @@ export function FileExplorer({
 
   const onDragEnd = (e: React.DragEvent<HTMLElement>) => {
     delete e.currentTarget.dataset.overlayDragIntent;
+    delete e.currentTarget.dataset.overlayDragHide;
     activeDragPathsRef.current = [];
     setDragOver(null);
   };
@@ -4325,18 +4350,18 @@ export function FileExplorer({
     [themedExperimentalViewMode],
   );
   const effectiveViewMode = resolveEffectiveExplorerViewMode(themedViewMode, {
-    isCompactDock,
+    isCompactDock: usesConstrainedPaneLayout,
     isSearchActive,
   });
   const effectiveExperimentalViewMode = useMemo(
     () => (
-      !isCompactDock
+      !usesConstrainedPaneLayout
       && !isSearchActive
       && themedExperimentalViewMode !== 'off'
         ? themedExperimentalViewMode
         : 'off'
     ),
-    [isCompactDock, isSearchActive, themedExperimentalViewMode],
+    [isSearchActive, themedExperimentalViewMode, usesConstrainedPaneLayout],
   );
   const adaptiveDensityStop = useMemo<AdaptiveSemanticDensityStopDefinition | null>(
     () => (themedExperimentalViewMode === 'adaptive-semantic-grid'
@@ -4372,7 +4397,7 @@ export function FileExplorer({
     ? activeGridMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT
     : activeRowMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT;
   const shouldRenderRail = sourcesVisible && (isCompactDock || shellLayout.showRail);
-  const hasPreview = !isCompactDock && previewEnabled && preview.type !== 'none';
+  const hasPreview = previewEnabled && preview.type !== 'none';
   const searchModeLabel = searchIncludeContent ? 'Recursive search + text' : 'Recursive search (names only)';
   const gridZoomPercent = useMemo(
     () => (isExplorerGridMode(themedViewMode) ? getExplorerGridZoomPercent(gridZoom) : null),
@@ -4439,6 +4464,10 @@ export function FileExplorer({
   const explorerRootStyle = useMemo<CSSProperties>(() => ({
     ...(explorerTheme.cssVars as CSSProperties),
     flex: 1,
+    width: '100%',
+    height: '100%',
+    minWidth: 0,
+    minHeight: 0,
     display: 'flex',
     overflow: 'hidden',
     background: 'var(--overlay-explorer-root-bg)',
@@ -4588,7 +4617,7 @@ export function FileExplorer({
 
   useEffect(() => {
     const viewport = explorerViewportRef.current;
-    if (!viewport || isCompactDock) {
+    if (!viewport || usesConstrainedPaneLayout) {
       return undefined;
     }
 
@@ -4680,11 +4709,11 @@ export function FileExplorer({
     effectiveExperimentalViewMode,
     experimentalDensity,
     gridZoom,
-    isCompactDock,
     showExperimentalHud,
     showZoomHud,
     themedViewMode,
     updateExplorerSettings,
+    usesConstrainedPaneLayout,
   ]);
 
   useEffect(() => {
@@ -7350,11 +7379,9 @@ export function FileExplorer({
               Shell: <span style={{ color: EXP.text }}>{shellLayout.label}</span>
             </span>
           )}
-          {!isCompactDock && (
-            <span>
-              Preview: <span style={{ color: previewEnabled ? accent : EXP.text }}>{previewEnabled ? 'On' : 'Off'}</span>
-            </span>
-          )}
+          <span>
+            Preview: <span style={{ color: previewEnabled ? accent : EXP.text }}>{previewEnabled ? 'On' : 'Off'}</span>
+          </span>
           {selectedExperimentalModeDefinition && (
             <span>
               Labs: <span style={{ color: EXP.text }}>{selectedExperimentalModeDefinition.label}</span>

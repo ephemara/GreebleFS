@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
-use image::{DynamicImage, ImageFormat, RgbaImage};
+use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Cursor;
@@ -8,8 +8,9 @@ use std::sync::{mpsc, Mutex, OnceLock};
 use tauri::WebviewWindow;
 
 const DEFAULT_NATIVE_ICON_SIZE: u32 = 32;
+const DRAG_PREVIEW_ICON_SIZE: u32 = 64;
 const MAX_NATIVE_ICON_SIZE: u32 = 128;
-const DRAG_PREVIEW_PNG: &[u8] = include_bytes!("../icons/icon.png");
+const FALLBACK_APP_ICON_PNG: &[u8] = include_bytes!("../icons/icon.png");
 
 #[derive(Debug, Deserialize, Clone, specta::Type)]
 pub struct NativeIconRequest {
@@ -29,6 +30,7 @@ struct CachedNativeIcon {
 }
 
 static NATIVE_ICON_CACHE: OnceLock<Mutex<HashMap<String, CachedNativeIcon>>> = OnceLock::new();
+static DEFAULT_DRAG_PREVIEW_PNG: OnceLock<Vec<u8>> = OnceLock::new();
 
 fn native_icon_cache() -> &'static Mutex<HashMap<String, CachedNativeIcon>> {
     NATIVE_ICON_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
@@ -47,7 +49,7 @@ fn encode_png_data_url(bytes: Vec<u8>) -> String {
     format!("data:image/png;base64,{}", BASE64_STANDARD.encode(bytes))
 }
 
-fn icon_pixels_to_png_data_url(width: u32, height: u32, pixels: Vec<u8>) -> Result<String, String> {
+fn icon_pixels_to_png_bytes(width: u32, height: u32, pixels: Vec<u8>) -> Result<Vec<u8>, String> {
     let image = RgbaImage::from_raw(width, height, pixels)
         .map(DynamicImage::ImageRgba8)
         .ok_or_else(|| "native icon provider returned invalid RGBA pixel data".to_string())?;
@@ -55,7 +57,22 @@ fn icon_pixels_to_png_data_url(width: u32, height: u32, pixels: Vec<u8>) -> Resu
     image
         .write_to(&mut cursor, ImageFormat::Png)
         .map_err(|error| format!("failed to encode native icon as PNG: {error}"))?;
-    Ok(encode_png_data_url(cursor.into_inner()))
+    Ok(cursor.into_inner())
+}
+
+fn icon_pixels_to_png_data_url(width: u32, height: u32, pixels: Vec<u8>) -> Result<String, String> {
+    Ok(encode_png_data_url(icon_pixels_to_png_bytes(width, height, pixels)?))
+}
+
+fn resolve_native_icon_png_bytes(path: &Path, size: u32) -> Result<Option<Vec<u8>>, String> {
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let icon = file_icon_provider::get_file_icon(path.to_path_buf(), size as u16)
+        .map_err(|error| error.to_string())?;
+    let png = icon_pixels_to_png_bytes(icon.width, icon.height, icon.pixels)?;
+    Ok(Some(png))
 }
 
 fn resolve_native_icon_for_path(path: &Path, size: u32) -> Result<Option<String>, String> {
@@ -67,6 +84,86 @@ fn resolve_native_icon_for_path(path: &Path, size: u32) -> Result<Option<String>
         .map_err(|error| error.to_string())?;
     let src = icon_pixels_to_png_data_url(icon.width, icon.height, icon.pixels)?;
     Ok(Some(src))
+}
+
+fn put_pixel_if_in_bounds(image: &mut RgbaImage, x: i32, y: i32, color: Rgba<u8>) {
+    if x < 0 || y < 0 {
+        return;
+    }
+
+    let x = x as u32;
+    let y = y as u32;
+    if x < image.width() && y < image.height() {
+        image.put_pixel(x, y, color);
+    }
+}
+
+fn fill_rect(image: &mut RgbaImage, left: u32, top: u32, right: u32, bottom: u32, color: Rgba<u8>) {
+    let clamped_right = right.min(image.width());
+    let clamped_bottom = bottom.min(image.height());
+    for y in top.min(clamped_bottom)..clamped_bottom {
+        for x in left.min(clamped_right)..clamped_right {
+            image.put_pixel(x, y, color);
+        }
+    }
+}
+
+fn build_default_drag_preview_png() -> Result<Vec<u8>, String> {
+    // Render a neutral file glyph so fallback drag ghosts do not reuse the app icon.
+    let mut image = RgbaImage::from_pixel(64, 64, Rgba([0, 0, 0, 0]));
+    let shadow = Rgba([0, 0, 0, 48]);
+    let body = Rgba([243, 246, 252, 255]);
+    let body_outline = Rgba([104, 114, 132, 255]);
+    let fold = Rgba([221, 228, 240, 255]);
+    let accent = Rgba([73, 151, 255, 255]);
+    let text = Rgba([141, 152, 171, 255]);
+
+    fill_rect(&mut image, 17, 15, 51, 55, shadow);
+    fill_rect(&mut image, 15, 11, 49, 51, body);
+
+    for x in 15..49 {
+        put_pixel_if_in_bounds(&mut image, x as i32, 11, body_outline);
+        put_pixel_if_in_bounds(&mut image, x as i32, 50, body_outline);
+    }
+    for y in 11..51 {
+        put_pixel_if_in_bounds(&mut image, 15, y as i32, body_outline);
+        put_pixel_if_in_bounds(&mut image, 48, y as i32, body_outline);
+    }
+
+    for y in 11..24 {
+        for x in 35..49 {
+            if (x - 35) + (y - 11) >= 13 {
+                put_pixel_if_in_bounds(&mut image, x as i32, y as i32, fold);
+            }
+        }
+    }
+
+    for x in 36..49 {
+        put_pixel_if_in_bounds(&mut image, x as i32, 11, body_outline);
+    }
+    for y in 11..24 {
+        put_pixel_if_in_bounds(&mut image, 48, y as i32, body_outline);
+    }
+    for offset in 0..13 {
+        put_pixel_if_in_bounds(&mut image, (35 + offset) as i32, (11 + offset) as i32, body_outline);
+    }
+
+    fill_rect(&mut image, 19, 18, 41, 23, accent);
+    fill_rect(&mut image, 19, 29, 40, 31, text);
+    fill_rect(&mut image, 19, 36, 35, 38, text);
+    fill_rect(&mut image, 19, 43, 31, 45, text);
+
+    let mut cursor = Cursor::new(Vec::new());
+    DynamicImage::ImageRgba8(image)
+        .write_to(&mut cursor, ImageFormat::Png)
+        .map_err(|error| format!("failed to encode default drag preview PNG: {error}"))?;
+    Ok(cursor.into_inner())
+}
+
+fn default_drag_preview_png() -> &'static [u8] {
+    DEFAULT_DRAG_PREVIEW_PNG
+        .get_or_init(|| build_default_drag_preview_png().unwrap_or_else(|_| FALLBACK_APP_ICON_PNG.to_vec()))
+        .as_slice()
 }
 
 fn resolve_native_icons_batch(requests: Vec<NativeIconRequest>) -> Vec<NativeIconResponse> {
@@ -143,8 +240,16 @@ fn start_native_drag_impl(window: WebviewWindow, drag_paths: Vec<PathBuf>) -> Re
         return Ok(());
     }
 
+    let preview_icon = drag_paths
+        .first()
+        .and_then(|path| {
+            resolve_native_icon_png_bytes(path, DRAG_PREVIEW_ICON_SIZE)
+                .ok()
+                .flatten()
+        })
+        .map(drag::Image::Raw)
+        .unwrap_or_else(|| drag::Image::Raw(default_drag_preview_png().to_vec()));
     let drag_item = drag::DragItem::Files(drag_paths);
-    let preview_icon = drag::Image::Raw(DRAG_PREVIEW_PNG.to_vec());
 
     #[cfg(target_os = "linux")]
     {
@@ -233,6 +338,12 @@ mod tests {
     fn icon_pixels_to_png_data_url_encodes_valid_png_data_urls() {
         let data_url = icon_pixels_to_png_data_url(1, 1, vec![255, 0, 0, 255]).unwrap();
         assert!(data_url.starts_with("data:image/png;base64,"));
+    }
+
+    #[test]
+    fn build_default_drag_preview_png_returns_png_bytes() {
+        let png = build_default_drag_preview_png().unwrap();
+        assert!(png.starts_with(&[0x89, b'P', b'N', b'G']));
     }
 
     #[test]

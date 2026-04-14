@@ -1,0 +1,166 @@
+{
+  "version": 1,
+  "id": "gamecube-helix",
+  "name": "GameCube Helix",
+  "description": "A coiling GameCube-inspired ribbon shell with a vertical spiral of panel capsules and a luminous core.",
+  "author": "Codex",
+  "tags": ["console", "gamecube", "helix", "ribbon", "launcher"],
+  "extends": "plasma-flow",
+  "assets": {
+    "background": "assets/wallpaper.svg"
+  },
+  "fonts": {
+    "ui": "\"Sora\", \"Space Grotesk\", Inter, sans-serif",
+    "mono": "\"JetBrains Mono\", \"Cascadia Code\", monospace"
+  },
+  "presentation": {
+    "chromeStyle": "floating",
+    "density": "comfortable",
+    "iconStyle": "vector",
+    "motionStyle": "dramatic",
+    "cornerRadius": 22,
+    "panelSpacing": 10
+  },
+  "theme": {
+    "palette": {
+      "appBackground": "#050711",
+      "appBackgroundAlt": "#0a1020",
+      "shellBackground": "rgba(9, 12, 22, 0.92)",
+      "shellBackgroundSolid": "#0d1222",
+      "topBarBackground": "rgba(18, 22, 40, 0.84)",
+      "topBarMenuBackground": "rgba(16, 20, 34, 0.96)",
+      "sidebarBackground": "rgba(14, 17, 31, 0.9)",
+      "panelBackground": "rgba(18, 22, 39, 0.92)",
+      "panelAltBackground": "rgba(12, 15, 27, 0.96)",
+      "cardBackground": "rgba(33, 39, 64, 0.84)",
+      "cardHoverBackground": "rgba(50, 60, 94, 0.92)",
+      "contextMenuBackground": "rgba(12, 16, 28, 0.98)",
+      "inputBackground": "rgba(9, 12, 22, 0.9)",
+      "terminalBackground": "#070b16",
+      "selectionBackground": "rgba(77, 216, 255, 0.26)",
+      "scrimBackground": "rgba(3, 5, 12, 0.68)",
+      "textPrimary": "#f4f8ff",
+      "textSecondary": "#c3d0ea",
+      "textMuted": "#90a0c5",
+      "textDim": "#667496",
+      "textInverse": "#0d1222",
+      "border": "rgba(126, 142, 194, 0.18)",
+      "borderStrong": "rgba(77, 216, 255, 0.36)",
+      "accent": "#4dd8ff",
+      "accentSoft": "rgba(77, 216, 255, 0.18)",
+      "accentContrast": "#f8fbff",
+      "success": "#7bf08f",
+      "warning": "#ffbb64",
+      "danger": "#ff6f8e",
+      "info": "#4dd8ff",
+      "note": "#d9e5f6",
+      "todo": "#7bf08f",
+      "bug": "#ff6f8e",
+      "prompt": "#ffbb64"
+    },
+    "effects": {
+      "backgroundImage": "radial-gradient(circle at 20% 16%, rgba(77,216,255,0.14), transparent 22%), radial-gradient(circle at 82% 18%, rgba(255,111,142,0.12), transparent 18%), linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0) 28%)",
+      "shadow": "0 24px 68px rgba(0, 0, 0, 0.62)",
+      "overlayShadow": "0 -4px 0 0 #4dd8ff, 0 -28px 68px rgba(3, 4, 12, 0.92)"
+    },
+    "workbench": {
+      "brandLabel": "Helix",
+      "topBarStyle": "floating",
+      "commandPaletteStyle": "glass",
+      "terminalStyle": "glass",
+      "settingsStyle": "glass",
+      "tabStyle": "capsule",
+      "metrics": {
+        "chromeHeight": 40,
+        "controlRadius": 18,
+        "panelRadius": 22,
+        "shellInset": 12,
+        "pagePadding": 12,
+        "panelGap": 10
+      },
+      "cssVars": {
+        "--overlay-workbench-helix-stage-width": "min(72%, 980px)",
+        "--overlay-workbench-helix-stage-height": "min(76%, 676px)",
+        "--overlay-workbench-helix-track-width": "min(100%, 366px)",
+        "--overlay-workbench-helix-track-amplitude": "118",
+        "--overlay-workbench-helix-track-pitch": "520"
+      }
+    },
+    "explorer": {
+      "railBrandLabel": "Helix",
+      "toolbarStyle": "floating",
+      "breadcrumbStyle": "capsule",
+      "selectionStyle": "glow",
+      "hoverStyle": "glow",
+      "previewStyle": "glass",
+      "statusBarStyle": "floating",
+      "preferredViewMode": "icons-xl",
+      "preferredExperimentalViewMode": "timeline-surface",
+      "metrics": {
+        "railWidth": 252,
+        "previewWidth": 456,
+        "panelRadius": 22,
+        "gridScale": 1.14,
+        "iconScale": 1.18,
+        "hoverLiftPx": 5
+      },
+      "cssVars": {
+        "--overlay-explorer-brand": "helix-ribbon"
+      }
+    }
+  },
+  "layoutPrimitives": [
+    {
+      "id": "helix-spine",
+      "name": "Helix Spine",
+      "kind": "grid",
+      "props": {
+        "cellSize": 148
+      }
+    }
+  ],
+  "navigationPatterns": [
+    {
+      "id": "helix-ribbon",
+      "name": "Helix Ribbon",
+      "kind": "xmb",
+      "axis": "horizontal",
+      "props": {
+        "breadcrumb": false,
+        "categoryDepth": 3
+      }
+    }
+  ],
+  "renderStyles": [
+    {
+      "id": "helix-render",
+      "label": "Helix Spiral",
+      "description": "Cross-axis launcher styling with a coiling ribbon of capsule panels.",
+      "kind": "ps-3-xmb",
+      "entryModule": "renderers/gamecube-helix.tsx",
+      "supportsLiveSwap": true
+    }
+  ],
+  "themeRenderer": {
+    "entryModule": "renderers/gamecube-helix.tsx",
+    "apiVersion": 1,
+    "supportsLiveSwap": true,
+    "fallbackRuntime": "cross-axis-media",
+    "capabilities": {
+      "customScreens": true,
+      "wallpaperScene": true,
+      "surfaceAdapters": true
+    }
+  },
+  "defaultLayoutPrimitiveId": "helix-spine",
+  "defaultNavigationPatternId": "helix-ribbon",
+  "defaultRenderStyleId": "helix-render",
+  "visuals": [
+    {
+      "id": "helix-sheen",
+      "backgroundImage": "radial-gradient(circle at 18% 18%, rgba(77,216,255,0.16), transparent 24%), radial-gradient(circle at 78% 16%, rgba(255,111,142,0.12), transparent 18%), linear-gradient(180deg, rgba(255,255,255,0.03), transparent 34%)",
+      "opacity": 0.9,
+      "blendMode": "screen"
+    }
+  ]
+}
