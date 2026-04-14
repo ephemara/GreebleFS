@@ -3668,6 +3668,18 @@ export function FileExplorer({
       .map((node) => ({ path: node.path, label: node.name || getPathLeaf(node.path) }))
       .slice(0, 3);
   }, [explorerRail.nodes]);
+  const currentFolderSizeSummary = useMemo(() => {
+    const visibleSizes = visibleEntries
+      .map((entry) => entrySizes[entry.path])
+      .filter((value): value is EntryStorageInfo => Boolean(value));
+    if (visibleSizes.length === 0) {
+      return null;
+    }
+    const totalBytes = visibleSizes.reduce((sum, value) => sum + value.bytes, 0);
+    const fileCount = visibleSizes.filter((value) => !value.is_dir).length;
+    const folderCount = visibleSizes.length - fileCount;
+    return { totalBytes, fileCount, folderCount };
+  }, [entrySizes, visibleEntries]);
 
   const batchRenamePreview = useMemo(() => {
     const renameTargets = (selectedEntries.length > 0 ? selectedEntries : visibleEntries)
@@ -6046,6 +6058,17 @@ export function FileExplorer({
                   {item.label}
                 </button>
               ))}
+            </div>
+          )}
+          {currentFolderSizeSummary && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, minWidth: 0, maxWidth: isCompactDock ? 210 : 280, overflow: 'hidden' }} title="Visible folder size summary">
+              <span style={{ fontSize: 10, color: EXP.muted2, fontWeight: 700, flexShrink: 0 }}>Size</span>
+              <span style={{ fontSize: 10, color: EXP.text, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                {formatSize(currentFolderSizeSummary.totalBytes)}
+              </span>
+              <span style={{ fontSize: 10, color: EXP.muted2, whiteSpace: 'nowrap' }}>
+                {currentFolderSizeSummary.fileCount} files · {currentFolderSizeSummary.folderCount} folders
+              </span>
             </div>
           )}
           {currentPath && !currentPathIsCloud && (
