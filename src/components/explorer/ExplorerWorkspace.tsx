@@ -211,7 +211,7 @@ export function ExplorerWorkspace({
               cursor: 'pointer',
             }}
           >
-            Open Pane
+            Open Explorer Here
           </button>
           </div>
         </div>

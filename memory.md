@@ -6,6 +6,12 @@
 - The clipboard payload is now normalized into a small shared snapshot (`path`, `name`, `is_dir`) instead of holding raw React entry objects.
 - Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
 
+## 2026-04-14 — Explorer Workspace Empty Pane Copy Pass
+
+- The empty dual-pane placeholder now says `Open Explorer Here`, which makes the first action a little more obvious.
+- This is a tiny clarity win, but it helps the split view feel less vague when one side is empty.
+- Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
+
 ## 2026-04-14 — Explorer Workspace Focus Wash Pass
 
 - The focused pane header now gets a slightly stronger accent-tinted background, which makes the active side pop faster in dual-pane mode.
