@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-04-14T07:09:19.021Z",
+  "updatedAt": "2026-04-14T09:05:19.578Z",
   "entries": {
     "memory:memory/2026-04-14.md:1:7": {
       "key": "memory:memory/2026-04-14.md:1:7",
@@ -9,16 +9,17 @@
       "endLine": 7,
       "source": "memory",
       "snippet": "# Session notes for 2026-04-14 - Workspace initialized for OT Terminal. - Lane: Terminal and command-shell lead. - Repo target: F:\\apps-2d\\overlayterm. - Current push: aggressive shipping toward premium OverlayTerm quality.",
-      "recallCount": 2,
+      "recallCount": 3,
       "dailyCount": 0,
       "groundedCount": 0,
-      "totalScore": 0.0000030161946876118724,
-      "maxScore": 0.0000016062061007531786,
+      "totalScore": 0.000004670327289798546,
+      "maxScore": 0.0000016541326021866734,
       "firstRecalledAt": "2026-04-14T06:00:52.820Z",
-      "lastRecalledAt": "2026-04-14T07:09:19.021Z",
+      "lastRecalledAt": "2026-04-14T09:05:19.578Z",
       "queryHashes": [
         "706a37e4419b",
-        "31aa38119341"
+        "31aa38119341",
+        "98acc913d5ce"
       ],
       "recallDays": [
         "2026-04-14"

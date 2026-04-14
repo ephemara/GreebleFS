@@ -36,3 +36,4 @@ These remain on disk for possible reuse, but are not part of the active OT strik
 - Put repo-wide guidance in `.specs/steering/` and active feature plans in `.specs/<slug>/`.
 - Use `micro` or `quick` specs for small work, `standard` for most multi-day OverlayTerm features, and `full` for major redesigns or risky migrations.
 - OT Cleo owns spec selection and orchestration, OT Aristotle pressure-tests design, and implementation agents execute from tasks instead of freestyle replanning.
+- The active strike pattern is the serialized hourly wave documented in `.openclaw/OT_HOURLY_WAVE.md`, with shared handoff state in `.openclaw/OT_WAVE_HANDOFF.md`.

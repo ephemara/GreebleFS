@@ -248,6 +248,7 @@ export function useFolderPluginRuntime(
     let fallbackInterval: number | null = null;
     let fallbackIntervalMs: number = pluginSystemConfig.fallbackScanIntervalMs;
     let unlistenPlugins: (() => void) | null = null;
+    let pluginWatchCleanupRequired = false;
     let disposed = false;
 
     const clearFallbackPolling = () => {
@@ -287,6 +288,19 @@ export function useFolderPluginRuntime(
       queueFallbackPollingTick();
     };
 
+    const cleanupPluginWatcher = async () => {
+      if (!pluginWatchCleanupRequired) {
+        return;
+      }
+
+      pluginWatchCleanupRequired = false;
+      try {
+        unwrapTauriResult(await commands.pluginUnwatchDirectory());
+      } catch (error) {
+        console.warn('Plugin watcher cleanup failed before fallback:', error);
+      }
+    };
+
     const startPluginWatcher = async () => {
       try {
         await ensureDir(pluginSystemConfig.pluginsDirectory);
@@ -297,6 +311,7 @@ export function useFolderPluginRuntime(
           schedulePluginRefresh(true);
         });
 
+        pluginWatchCleanupRequired = true;
         unwrapTauriResult(await commands.pluginWatchDirectory(
           pluginSystemConfig.pluginsDirectory,
           [...pluginSystemConfig.ignoredWatchDirectoryNames],
@@ -305,11 +320,12 @@ export function useFolderPluginRuntime(
         if (disposed) {
           unlistenPlugins?.();
           unlistenPlugins = null;
-          unwrapTauriResult(await commands.pluginUnwatchDirectory());
+          await cleanupPluginWatcher();
         }
       } catch (error) {
         unlistenPlugins?.();
         unlistenPlugins = null;
+        await cleanupPluginWatcher();
         if (disposed) {
           return;
         }
@@ -328,7 +344,7 @@ export function useFolderPluginRuntime(
       }
       clearFallbackPolling();
       unlistenPlugins?.();
-      void commands.pluginUnwatchDirectory().then(unwrapTauriResult).catch(() => undefined);
+      void cleanupPluginWatcher().catch(() => undefined);
     };
   }, [liveReloadEnabled, schedulePluginRefresh]);
 

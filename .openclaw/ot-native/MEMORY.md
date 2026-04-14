@@ -23,3 +23,8 @@ Push OverlayTerm toward premium, monetizable, final-boss quality.
 - `TerminalManager::get_shell` now does the same token-first parsing on the Rust side, so shell overrides with wrapper args stay on the intended executable path.
 - Targeted Bun validation passed for `src/test/terminalCommandUtils.test.ts`.
 - Rust validation is still blocked by the mingw linker missing `-lgcc_eh` / `-lgcc`.
+- The next native pass should revisit terminal backend validation once the toolchain is repaired.
+- Repeat check on 2026-04-14: Bun terminal command utility tests still pass, and the Rust shell-resolution target remains blocked by missing `-lgcc_eh` / `-lgcc`.
+- Preview sanity check on 2026-04-14: the Rust `fs_read_file_base64` size cap already has direct tests, but direct explorer UI validation is still blocked locally by unresolved `react/jsx-dev-runtime`.
+- Hourly wave handoff on 2026-04-14: the plugin watcher fallback path uses a self-scheduling polling loop with exponential backoff capped by `fallbackScanMaxIntervalMs`, and the unmount cleanup branch is covered by the fallback test; direct Vitest execution still fails because `vitest.config.ts` cannot resolve `vitest/config` and `@vitejs/plugin-react` here.
+- 2026-04-14, 16:35 UTC pass: rechecked `src/runtime/useFolderPluginRuntime.ts` and `src/test/useFolderPluginRuntime.fallback.test.tsx`; the same Vitest config blocker remains, so the runtime handoff stays validation-only until the toolchain is repaired.

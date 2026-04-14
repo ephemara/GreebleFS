@@ -135,6 +135,12 @@ small, validated wins over giant speculative rewrites.
 ### 2026-04-14 terminal lock-scope closeout
 - Rechecked the PTY backend and confirmed the remaining shared-map mutex exposure is now limited to lookup and clone points, with write and read paths already avoiding broad global lock pressure.
 - Next follow-up only if needed: inspect resize/spawn regressions, not the general lock path.
+
+### 2026-04-14 plugin reload backoff coverage
+- Tightened the fallback polling regression so it now proves the retry cadence backs off after the first watcher failure, instead of just proving one fallback tick.
+
+### 2026-04-14 performance spec closeout
+- The `overlayterm-performance-60fps` task set is now complete and the remaining record is in validation notes, so future work here should come from new hot-path regressions rather than spec churn.
 ### 2026-04-14 terminal validation closeout
 - Confirmed the terminal backend hot path is already flush-free and the remaining lock scope is reduced to per-terminal lookup and PTY work.
 - Validation remains blocked by local Rust/Vitest toolchain issues, so the pass ended on code inspection plus spec note updates.

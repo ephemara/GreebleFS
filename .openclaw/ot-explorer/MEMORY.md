@@ -17,6 +17,16 @@ Push OverlayTerm toward premium, monetizable, final-boss quality.
 
 - 2026-04-14: GitManager refresh policy got a visibility-aware pass, hidden repo-state refreshes now queue until restore, and visibility regain performs one bounded repo-state resync instead of letting refresh churn stack.
 
-- 2026-04-14: GitManager Scenario A validation remains representative because the repo is still a heavily modified git-heavy tree, but local Vitest execution is blocked by unresolved itest / @vitejs/plugin-react config imports.
+- 2026-04-14: GitManager Scenario A validation remains representative because the repo is still a heavily modified git-heavy tree, but local Vitest execution is blocked by unresolved  vitest / @vitejs/plugin-react config imports.
 
 - 2026-04-14: GitManager Scenario A validation remains representative because the repo is still a heavily modified git-heavy tree, but local Vitest execution is blocked by unresolved `vitest` / `@vitejs/plugin-react` config imports.
+
+- 2026-04-14: preview/diff explorer lane is fully checked off in the active performance spec after the parent task bookkeeping was cleaned up.
+
+- 2026-04-14: no unchecked implementation tasks remain in the active performance spec, so the remaining work is spec-gate cleanup only.
+
+- 2026-04-14: Verified the explorer-to-terminal handoff path stays intact, with FileExplorer still exposing `Open in Terminal` for directory entries and `bun test src/test/terminalCommandUtils.test.ts` passing.
+- 2026-04-14: Revalidated the explorer-to-terminal handoff path this wave-closeout pass, with the same `Open in Terminal` directory entry label still present and `bun test src/test/terminalCommandUtils.test.ts` passing again.
+- 2026-04-14: Revalidated the explorer-to-terminal handoff path again at 13:51 UTC, with the same `Open in Terminal` directory entry label still present and `bun test src/test/terminalCommandUtils.test.ts` passing again.
+- 2026-04-14: Revalidated the explorer-to-terminal handoff path again at 14:51 UTC, with the same `Open in Terminal` directory entry label still present and `bun test src/test/terminalCommandUtils.test.ts` passing again.
+- 2026-04-14: Revalidated the explorer-to-terminal handoff path again at 15:51 UTC, with the same `Open in Terminal` directory entry label still present and `bun test src/test/terminalCommandUtils.test.ts` passing again.

@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "updatedAt": "2026-04-14T09:07:05.021Z",
+  "entries": {
+    "memory:memory/2026-04-14.md:1:7": {
+      "key": "memory:memory/2026-04-14.md:1:7",
+      "path": "memory/2026-04-14.md",
+      "startLine": 1,
+      "endLine": 7,
+      "source": "memory",
+      "snippet": "# Session notes for 2026-04-14 - Workspace initialized for OT Explorer. - Lane: File explorer parity and UX lead. - Repo target: F:\\apps-2d\\overlayterm. - Current push: aggressive shipping toward premium OverlayTerm quality.",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.0000017449633980504465,
+      "maxScore": 0.0000017449633980504465,
+      "firstRecalledAt": "2026-04-14T09:07:05.021Z",
+      "lastRecalledAt": "2026-04-14T09:07:05.021Z",
+      "queryHashes": [
+        "6f9129dc947c"
+      ],
+      "recallDays": [
+        "2026-04-14"
+      ],
+      "conceptTags": [
+        "apps-2d",
+        "initialized",
+        "explorer",
+        "lane",
+        "parity",
+        "lead",
+        "repo",
+        "target"
+      ]
+    }
+  }
+}

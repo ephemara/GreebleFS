@@ -51,7 +51,7 @@ Execute a hybrid risk-first plan: establish baseline instrumentation and validat
   - Validation: targeted behavior test and manual panel hide/show scenario.
   - _Requirements: REQ-1, REQ-6, NFR-2_
 
-- [ ] 3. Bound preview and diff cost in explorer-facing flows
+- [x] 3. Bound preview and diff cost in explorer-facing flows
 - [x] 3.1 Tighten preview fallback behavior around large or unsupported files
   - Objective: Keep preview loading bounded and clearly degradable for oversized, unsupported, or erroring content.
   - Files/Surfaces: `src-tauri/src/fs_commands.rs`, `src/components/FileExplorer.tsx`.
@@ -101,11 +101,11 @@ Execute a hybrid risk-first plan: establish baseline instrumentation and validat
 
 ## Validation Gates
 
-- [ ] All requirement IDs are covered
-- [ ] Dependencies are respected
-- [ ] Tests or manual checks are included in the relevant tasks
-- [ ] Rollout or rollback notes exist for risky changes
-- [ ] The primary 60 FPS baseline scenario is chosen and documented
+- [x] All requirement IDs are covered
+- [x] Dependencies are respected
+- [x] Tests or manual checks are included in the relevant tasks
+- [x] Rollout or rollback notes exist for risky changes
+- [x] The primary 60 FPS baseline scenario is chosen and documented
 
 ## Notes and Risks
 

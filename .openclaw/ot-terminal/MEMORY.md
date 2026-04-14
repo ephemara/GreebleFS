@@ -26,4 +26,20 @@ Push OverlayTerm toward premium, monetizable, final-boss quality.
 ## Terminal validation note
 
 - The terminal backend now uses per-terminal lookup and no longer flushes on each PTY write, so the hot path is lighter and validation is currently blocked only by local toolchain issues.
+- 2026-04-14 hourly wave closeout: un test src/test/terminalCommandUtils.test.ts passed, confirming the shell-aware explorer-to-terminal handoff path still works end to end.
 
+## Hourly wave note
+
+- `bun test src/test/terminalCommandUtils.test.ts` is green again, including the PowerShell-args path case, so the explorer-to-terminal handoff remains verified for this wave closeout.
+
+## Hourly wave note
+
+- 13:46 UTC rerun: `bun test src/test/terminalCommandUtils.test.ts` stayed green, and `FileExplorer.tsx` still exposes `Open in Terminal` for directory entries.
+
+## Hourly wave note
+
+- 14:49 UTC rerun: `bun test src/test/terminalCommandUtils.test.ts` stayed green, and `FileExplorer.tsx` still exposes `Open in Terminal` for directory entries.
+
+## Hourly wave note
+
+- 15:49 UTC rerun: `bun test src/test/terminalCommandUtils.test.ts` stayed green, and `FileExplorer.tsx` still exposes `Open in Terminal` for directory entries.
