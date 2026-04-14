@@ -20,4 +20,5 @@ Push OverlayTerm toward premium, monetizable, final-boss quality.
 - 2026-04-14 — 12:44 UTC wave refresh: the handoff now targets the verified explorer-to-terminal path explicitly, with `terminalCommandUtils.test.ts` as the last passing proof point and the same local Vitest, mingw, and Python blockers if anything reopens.
 - 2026-04-14 — 13:44 UTC wave refresh: the current wave header was corrected to match the explorer-to-terminal closeout objective, and the handoff stays no-code unless Aristotle finds a real regression gap.
 - 2026-04-14 — 14:45 UTC wave refresh: the closeout objective now covers both the verified explorer-to-terminal path and the plugin watcher fallback unwind, with no-code lane boundaries still intact unless a concrete regression gap appears.
+- 2026-04-14 — 15:45 UTC wave refresh: the closeout lane is still held on the same verified checks, and only a real regression gap should reopen code.
 
