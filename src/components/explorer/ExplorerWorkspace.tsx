@@ -286,6 +286,11 @@ export function ExplorerWorkspace({
           <span style={workspaceMetaStyle}>
             {workspace.layoutMode === 'dual' ? 'Dual pane' : 'Single pane'} · {activePane === 'left' ? 'Left active' : 'Right active'}
           </span>
+          {workspace.layoutMode === 'dual' && (
+            <span style={{ ...workspaceMetaStyle, color: theme.accent }}>
+              Move tabs with the chip arrow or the Move button
+            </span>
+          )}
           <div
             style={{
               display: 'flex',

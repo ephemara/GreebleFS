@@ -6,6 +6,12 @@
 - The clipboard payload is now normalized into a small shared snapshot (`path`, `name`, `is_dir`) instead of holding raw React entry objects.
 - Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
 
+## 2026-04-14 — Explorer Workspace Move Hint Pass
+
+- The dual-pane chrome now reminds users they can move tabs with either the chip arrow or the dedicated Move button.
+- This is a small guidance cue, but it helps the new dual-pane controls feel discoverable instead of hidden.
+- Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
+
 ## 2026-04-14 — Explorer Workspace Active Tab Pass
 
 - Active tabs in `ExplorerWorkspace` now show an explicit `Active` badge inside the chip, so the current tab is easier to spot in dense tab strips.
