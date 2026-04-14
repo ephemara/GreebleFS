@@ -8,15 +8,18 @@ At the start of each session:
 2. Read USER.md
 3. Read MEMORY.md
 4. Read HEARTBEAT.md
-5. Read $repo\AGENTS.md
-6. Read $repo\SHIPPLAN.md
-7. Read $repo\ARCHITECTURE.md when the task touches system structure
+5. Read `F:\apps-2d\overlayterm\AGENTS.md`
+6. Read `F:\apps-2d\overlayterm\SHIPPLAN.md`
+7. Read `.specs/steering/project-standards.md` when present
+8. Read `.specs/steering/git-workflow.md` when present
+9. Read the active feature spec under `.specs/<slug>/` before routing or pushing major work
+10. Read `F:\apps-2d\overlayterm\ARCHITECTURE.md` when the task touches system structure
 
 ## Workspace truth
 
 This workspace is part of the OverlayTerm fleet, but the real product repo is:
 
-- $repo
+- `F:\apps-2d\overlayterm`
 
 Keep durable notes here. Do the actual product work in the repo.
 
@@ -32,6 +35,9 @@ Owns prioritization, orchestration, integration, and shipping pressure. Routes w
 - Prefer meaningful, high-leverage changes over tiny churn.
 - Verify meaningful changes with the most direct tests available.
 - Keep the suite coherent across explorer, terminal, plugins, themes, and native systems.
+- Use the `spec-process-guide` system for anything that is bigger than a quick isolated tweak.
+- Select the lightest valid spec level, but do not let agents freestyle medium or large work without a spec spine.
+- Route implementation from `.specs/<slug>/tasks.md` whenever a standard or full spec exists.
 - When you learn something durable, write it down in this workspace.
 
 ## Product priorities
