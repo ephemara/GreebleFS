@@ -84,7 +84,6 @@ pub fn window_get_linux_display_server() -> Option<String> {
     detect_linux_display_server().map(str::to_string)
 }
 
-
 #[cfg(target_os = "windows")]
 fn set_native_blur(
     window: &WebviewWindow,

@@ -70,6 +70,7 @@ import {
 } from '../config/python';
 import { detectClientPlatform, type RuntimePlatform } from '../config/platform';
 import { useTerminalStore, type Bookmark } from '../store/terminalStore';
+import { buildTerminalCdCommand } from './terminalCommandUtils';
 import {
   dispatchTerminalCommand,
   type OverlayPluginCommandContribution,
@@ -1255,7 +1256,13 @@ export function TerminalOverlay({
     }
   }, [resolveCommandTargets, writeToPaneIds]);
 
-  const injectCd = useCallback(async (path: string) => injectCmd(`cd '${path}'`, true), [injectCmd]);
+  const injectCd = useCallback(async (path: string, shell?: string) => {
+    const command = buildTerminalCdCommand(path, shell ?? settings.shell);
+    if (!command) {
+      return;
+    }
+    await injectCmd(command, true);
+  }, [injectCmd, settings.shell]);
 
   const launchManagedRepl = useCallback(async (command: string) => {
     await injectCmd(command, true);
@@ -1412,8 +1419,8 @@ export function TerminalOverlay({
   }, [clearTerminalReady, markTerminalReady, paneSessions, setTransientActionMessage, settings.shell]);
   useEffect(() => {
     const handler = (e: Event) => {
-      const path = (e as CustomEvent<string>).detail;
-      if (path) void injectCd(path);
+      const detail = (e as CustomEvent<{ path: string; shell?: string }>).detail;
+      if (detail?.path) void injectCd(detail.path, detail.shell);
     };
     window.addEventListener('overlayterm:cdinject', handler);
     return () => window.removeEventListener('overlayterm:cdinject', handler);

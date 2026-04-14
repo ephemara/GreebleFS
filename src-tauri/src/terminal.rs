@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 
 #[cfg(target_os = "windows")]
@@ -22,7 +22,7 @@ pub struct TerminalInstance {
 }
 
 pub struct TerminalManager {
-    terminals: Mutex<HashMap<String, TerminalInstance>>,
+    terminals: Mutex<HashMap<String, Arc<Mutex<TerminalInstance>>>>,
 }
 
 #[derive(Debug, serde::Deserialize, specta::Type)]
@@ -191,11 +191,11 @@ impl TerminalManager {
             .take_writer()
             .map_err(|e| format!("Failed to get writer: {}", e))?;
 
-        let instance = TerminalInstance {
+        let instance = Arc::new(Mutex::new(TerminalInstance {
             master: pair.master,
             writer,
             _child: child,
-        };
+        }));
 
         let mut terminals = self.terminals.lock().unwrap();
         terminals.insert(id.to_string(), instance);
@@ -208,69 +208,44 @@ impl TerminalManager {
             return Ok(());
         }
 
-        let mut terminals = self.terminals.lock().unwrap();
-        let instance = terminals
-            .get_mut(id)
-            .ok_or_else(|| format!("Terminal {} not found", id))?;
+        let instance = self.terminal_instance(id)?;
+        let mut instance = instance.lock().unwrap();
 
         instance
             .writer
             .write_all(data)
             .map_err(|e| format!("Write failed: {}", e))?;
-        instance
-            .writer
-            .flush()
-            .map_err(|e| format!("Flush failed: {}", e))?;
 
         Ok(())
     }
 
     pub fn write_many(&self, writes: &[TerminalWriteRequest]) -> Result<(), String> {
-        let mut terminals = self.terminals.lock().unwrap();
-        let mut touched_terminal_ids: Vec<&str> = Vec::new();
-
         for request in writes {
             if request.data.is_empty() {
                 continue;
             }
 
-            let instance = terminals
-                .get_mut(&request.id)
-                .ok_or_else(|| format!("Terminal {} not found", request.id))?;
+            let instance = self.terminal_instance(&request.id)?;
+            let mut instance = instance.lock().unwrap();
 
             instance
                 .writer
                 .write_all(request.data.as_bytes())
                 .map_err(|e| format!("Write failed for {}: {}", request.id, e))?;
-
-            if !touched_terminal_ids.iter().any(|id| *id == request.id.as_str()) {
-                touched_terminal_ids.push(request.id.as_str());
-            }
-        }
-
-        for terminal_id in touched_terminal_ids {
-            let instance = terminals
-                .get_mut(terminal_id)
-                .ok_or_else(|| format!("Terminal {} not found", terminal_id))?;
-            instance
-                .writer
-                .flush()
-                .map_err(|e| format!("Flush failed for {}: {}", terminal_id, e))?;
         }
 
         Ok(())
     }
 
     pub fn read(&self, id: &str) -> Result<Vec<u8>, String> {
-        let mut terminals = self.terminals.lock().unwrap();
-        let instance = terminals
-            .get_mut(id)
-            .ok_or_else(|| format!("Terminal {} not found", id))?;
-
-        let mut reader = instance
-            .master
-            .try_clone_reader()
-            .map_err(|e| format!("Failed to clone reader: {}", e))?;
+        let instance = self.terminal_instance(id)?;
+        let mut reader = {
+            let mut instance = instance.lock().unwrap();
+            instance
+                .master
+                .try_clone_reader()
+                .map_err(|e| format!("Failed to clone reader: {}", e))?
+        };
 
         let mut buffer = vec![0u8; 4096];
 
@@ -287,10 +262,8 @@ impl TerminalManager {
     }
 
     pub fn resize(&self, id: &str, rows: u16, cols: u16) -> Result<(), String> {
-        let terminals = self.terminals.lock().unwrap();
-        let instance = terminals
-            .get(id)
-            .ok_or_else(|| format!("Terminal {} not found", id))?;
+        let instance = self.terminal_instance(id)?;
+        let instance = instance.lock().unwrap();
 
         instance
             .master
@@ -305,6 +278,14 @@ impl TerminalManager {
         Ok(())
     }
 
+    fn terminal_instance(&self, id: &str) -> Result<Arc<Mutex<TerminalInstance>>, String> {
+        let terminals = self.terminals.lock().unwrap();
+        terminals
+            .get(id)
+            .cloned()
+            .ok_or_else(|| format!("Terminal {} not found", id))
+    }
+
     pub fn kill(&self, id: &str) -> Result<(), String> {
         let mut terminals = self.terminals.lock().unwrap();
         terminals
@@ -314,28 +295,30 @@ impl TerminalManager {
     }
 
     pub fn start_reader_thread(&self, id: String, app: AppHandle) {
-        let terminals = self.terminals.lock().unwrap();
-        if let Some(instance) = terminals.get(&id) {
-            if let Ok(mut reader) = instance.master.try_clone_reader() {
-                let event_name = format!("terminal-output-{}", id);
+        let reader = self.terminal_instance(&id).ok().and_then(|instance| {
+            let mut instance = instance.lock().unwrap();
+            instance.master.try_clone_reader().ok()
+        });
 
-                std::thread::spawn(move || {
-                    let mut buffer = [0u8; 4096];
-                    loop {
-                        match reader.read(&mut buffer) {
-                            Ok(0) => break, // EOF
-                            Ok(n) => {
-                                let data = String::from_utf8_lossy(&buffer[..n]).to_string();
-                                let _ = app.emit(&event_name, data);
-                            }
-                            Err(e) => {
-                                log::error!("Terminal read error: {}", e);
-                                break;
-                            }
+        if let Some(mut reader) = reader {
+            let event_name = format!("terminal-output-{}", id);
+
+            std::thread::spawn(move || {
+                let mut buffer = [0u8; 4096];
+                loop {
+                    match reader.read(&mut buffer) {
+                        Ok(0) => break, // EOF
+                        Ok(n) => {
+                            let data = String::from_utf8_lossy(&buffer[..n]).to_string();
+                            let _ = app.emit(&event_name, data);
+                        }
+                        Err(e) => {
+                            log::error!("Terminal read error: {}", e);
+                            break;
                         }
                     }
-                });
-            }
+                }
+            });
         }
     }
 }

@@ -67,6 +67,18 @@ describe('performanceTelemetry', () => {
     expect(summary.explorer_search.latestMetadata).toEqual({});
   });
 
+
+  it('tracks git manager telemetry budgets', () => {
+    recordExplorerPerformanceSample({ metricId: 'git_repo_state_load', durationMs: 180, metadata: { repoCount: 1 } }, memoryStorage);
+    recordExplorerPerformanceSample({ metricId: 'git_repo_badge_sync', durationMs: 75, metadata: { repoCount: 4 } }, memoryStorage);
+
+    const summary = summarizeExplorerPerformance(loadExplorerPerformanceSnapshot(memoryStorage));
+    expect(summary.git_repo_state_load.count).toBe(1);
+    expect(summary.git_repo_state_load.latestMetadata.repoCount).toBe(1);
+    expect(summary.git_repo_badge_sync.count).toBe(1);
+    expect(summary.git_repo_badge_sync.latestMetadata.repoCount).toBe(4);
+  });
+
   it('keeps latest metadata for overlay frame telemetry samples', () => {
     recordExplorerPerformanceSample({
       metricId: 'overlay_frame_time',

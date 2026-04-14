@@ -35,6 +35,26 @@ const ENTRIES = [
     is_hidden: false,
     is_symlink: false,
   },
+  {
+    name: 'large.txt',
+    path: `${REPO_ROOT}\\large.txt`,
+    is_dir: false,
+    size: 24 * 1024 * 1024,
+    modified: 0,
+    extension: 'txt',
+    is_hidden: false,
+    is_symlink: false,
+  },
+  {
+    name: 'broken.png',
+    path: `${REPO_ROOT}\\broken.png`,
+    is_dir: false,
+    size: 2048,
+    modified: 0,
+    extension: 'png',
+    is_hidden: false,
+    is_symlink: false,
+  },
 ] as const;
 
 function createDataTransfer() {
@@ -139,8 +159,14 @@ describe('FileExplorer view modes', () => {
         case 'fs_list_dir_uncached':
           return ENTRIES;
         case 'fs_read_text_file':
+          if (payload?.path === `${REPO_ROOT}\\large.txt`) {
+            throw new Error('File is too large to preview (> 10 MB)');
+          }
           return 'hello from preview';
         case 'fs_read_file_base64':
+          if (payload?.path === `${REPO_ROOT}\\broken.png`) {
+            throw new Error('File is too large to preview (> 12 MB)');
+          }
           return 'data:text/plain;base64,aGVsbG8=';
         case 'fs_measure_entry_sizes':
           return (payload?.paths ?? []).map(path => ({
@@ -228,6 +254,19 @@ describe('FileExplorer view modes', () => {
       expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_read_text_file')).toBe(true);
       expect(screen.getByRole('button', { name: /copy path/i })).toBeTruthy();
     });
+  });
+
+  it('shows fallback preview states for oversized text and broken image previews', async () => {
+    renderExplorer();
+    await screen.findByText('large.txt');
+
+    fireEvent.click(screen.getByText('large.txt'));
+    await screen.findByText(/text preview unavailable/i);
+    expect(screen.getByText(/file is too large to preview/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByText('broken.png'));
+    await screen.findByText(/image preview unavailable/i);
+    expect(screen.getByText(/file is too large to preview/i)).toBeTruthy();
   });
 
   it('renders a dedicated experimental modes button and menu next to the standard layout control', async () => {

@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "updatedAt": "2026-04-14T07:11:15.894Z",
+  "entries": {
+    "memory:memory/2026-04-14.md:1:7": {
+      "key": "memory:memory/2026-04-14.md:1:7",
+      "path": "memory/2026-04-14.md",
+      "startLine": 1,
+      "endLine": 7,
+      "source": "memory",
+      "snippet": "# Session notes for 2026-04-14 - Workspace initialized for OT Plugins. - Lane: Plugin platform lead. - Repo target: F:\\apps-2d\\overlayterm. - Current push: aggressive shipping toward premium OverlayTerm quality.",
+      "recallCount": 1,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.000001655667361853832,
+      "maxScore": 0.000001655667361853832,
+      "firstRecalledAt": "2026-04-14T07:11:15.894Z",
+      "lastRecalledAt": "2026-04-14T07:11:15.894Z",
+      "queryHashes": [
+        "ebff2a2cf139"
+      ],
+      "recallDays": [
+        "2026-04-14"
+      ],
+      "conceptTags": [
+        "apps-2d",
+        "initialized",
+        "plugins",
+        "lane",
+        "plugin",
+        "platform",
+        "lead",
+        "repo"
+      ]
+    }
+  }
+}

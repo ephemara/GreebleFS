@@ -39,6 +39,15 @@ describe('explorer theme recipe', () => {
     expect(recipe.cssVars['--overlay-explorer-brand']).toBe('cross-media');
   });
 
+  it('keeps the default workbench explorer surfaces layered and premium', () => {
+    const recipe = resolveExplorerThemeRecipe(undefined);
+
+    expect(recipe.toolbarStyle).toBe('solid');
+    expect(recipe.surfaces.toolbarShadow).not.toBe('none');
+    expect(recipe.surfaces.previewBackground).toContain('color-mix');
+    expect(recipe.surfaces.itemFocusShadow).not.toBe('none');
+  });
+
   it('scales grid, row, and adaptive metrics through the recipe multipliers', () => {
     const appearance = resolveOverlayAppearance({
       customThemes: [

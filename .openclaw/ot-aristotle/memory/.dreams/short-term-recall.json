@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "updatedAt": "2026-04-14T06:39:33.640Z",
+  "entries": {
+    "memory:memory/2026-04-14.md:1:7": {
+      "key": "memory:memory/2026-04-14.md:1:7",
+      "path": "memory/2026-04-14.md",
+      "startLine": 1,
+      "endLine": 7,
+      "source": "memory",
+      "snippet": "# Session notes for 2026-04-14 - Workspace initialized for OT Aristotle. - Lane: Architecture and systems lead. - Repo target: F:\\apps-2d\\overlayterm. - Current push: aggressive shipping toward premium OverlayTerm quality.",
+      "recallCount": 2,
+      "dailyCount": 0,
+      "groundedCount": 0,
+      "totalScore": 0.000003344358748276118,
+      "maxScore": 0.0000017129546485820429,
+      "firstRecalledAt": "2026-04-14T06:20:02.950Z",
+      "lastRecalledAt": "2026-04-14T06:39:33.640Z",
+      "queryHashes": [
+        "f71a8ef8a5de",
+        "9b55281912dc"
+      ],
+      "recallDays": [
+        "2026-04-14"
+      ],
+      "conceptTags": [
+        "apps-2d",
+        "initialized",
+        "aristotle",
+        "lane",
+        "architecture",
+        "systems",
+        "lead",
+        "repo"
+      ]
+    }
+  }
+}

@@ -70,7 +70,8 @@ describe('useFolderPluginRuntime fallback polling', () => {
     });
 
     await waitFor(() => {
-      expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(2);
+      expect(explorerBackend.listExplorerDir).toHaveBeenCalledTimes(2);
+      expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(1);
     });
 
     unmount();

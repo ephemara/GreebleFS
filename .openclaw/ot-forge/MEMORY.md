@@ -10,3 +10,7 @@
 ## Working rule
 
 Push OverlayTerm toward premium, monetizable, final-boss quality.
+
+## 2026-04-14
+
+- Added `scripts/run-heartbeat-pass.mjs` and `bun run heartbeat:pass` to make short repo triage passes faster and more consistent.

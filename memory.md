@@ -1,5 +1,11 @@
 # GreebleFS Memory
 
+## 2026-04-14 — Terminal Handoff Validation Pass
+
+- Explorer-to-terminal now uses the shared shell-aware `buildTerminalCdCommand` helper, which keeps PowerShell, cmd, and POSIX-style shells on the right `cd` syntax path.
+- Focused test coverage passed for the helper itself, but the broader terminal overlay test is currently blocked here by a local `react/jsx-dev-runtime` module resolution issue.
+- Next pass should either repair the local test environment or extend the terminal handoff coverage deeper once the UI runtime can start cleanly.
+
 ## 2026-04-14 — Explorer Workspace Split Controls Pass
 
 - `ExplorerWorkspace` now shows a compact split indicator plus nudge/reset controls in dual-pane mode, so pane sizing is no longer dependent on the drag handle alone.
@@ -574,3 +580,19 @@
 - Validation completed for this pass:
   - all `themes/*/theme.json` files parse as valid JSON
   - theme ids are unique across the current package set
+
+- GitManager badge polling now skips hidden documents during steady-state refresh, and visibility restoration triggers an immediate resync instead of waiting for the next 30s tick.
+
+
+## 2026-04-14 — GitManager Visibility Restore Bound Pass
+
+- Added an explicit one-shot visibility-restore guard in `src/components/GitManager.tsx` so a hidden panel only resyncs once per restore cycle.
+- Added regression coverage for a second hide/show cycle to confirm the restore guard resets after the document hides again.
+- Validation attempt: `bunx vitest run src/test/gitManager.behavior.test.tsx` is still blocked here because the repo environment cannot resolve `vitest` from `vitest.config.ts`.
+- Next pass should keep pushing toward terminal throughput and shell handoff responsiveness, unless a GitManager regression shows up again.
+
+## 2026-04-14 — Terminal Backend Reality Check
+
+- The terminal backend no longer flushes on each write, so the remaining throughput hotspot is the shared terminal map mutex across write/read/resize paths.
+- `cargo test --manifest-path src-tauri/Cargo.toml terminal -- --nocapture` is still blocked here by the mingw linker missing `-lgcc_eh` / `-lgcc`.
+- Next terminal pass should address lock scope or instance ownership, not flush calls.

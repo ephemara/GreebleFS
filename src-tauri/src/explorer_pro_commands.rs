@@ -280,7 +280,10 @@ fn normalize_tag_label(label: &str) -> String {
     label.trim().to_lowercase()
 }
 
-fn build_tag_snapshot(document: &ExplorerMetadataDocument, paths: Option<Vec<String>>) -> ExplorerTagSnapshot {
+fn build_tag_snapshot(
+    document: &ExplorerMetadataDocument,
+    paths: Option<Vec<String>>,
+) -> ExplorerTagSnapshot {
     let mut path_counts = HashMap::<String, u64>::new();
     for tag_ids in document.path_tag_ids.values() {
         let mut seen = HashSet::new();
@@ -328,10 +331,7 @@ fn build_tag_snapshot(document: &ExplorerMetadataDocument, paths: Option<Vec<Str
     ExplorerTagSnapshot { tags, assignments }
 }
 
-fn ensure_tag_id(
-    document: &mut ExplorerMetadataDocument,
-    raw_label: &str,
-) -> Option<String> {
+fn ensure_tag_id(document: &mut ExplorerMetadataDocument, raw_label: &str) -> Option<String> {
     let label = raw_label.trim();
     if label.is_empty() {
         return None;
@@ -387,9 +387,8 @@ fn unique_path_in_directory(directory: &Path, preferred_name: &str) -> PathBuf {
 }
 
 fn copy_path_recursive(source: &Path, destination: &Path) -> Result<(), String> {
-    let metadata = fs::symlink_metadata(source).map_err(|error| {
-        format!("Failed to inspect path {}: {error}", source.display())
-    })?;
+    let metadata = fs::symlink_metadata(source)
+        .map_err(|error| format!("Failed to inspect path {}: {error}", source.display()))?;
 
     if metadata.is_dir() {
         fs::create_dir_all(destination).map_err(|error| {
@@ -402,8 +401,12 @@ fn copy_path_recursive(source: &Path, destination: &Path) -> Result<(), String> 
         for entry in fs::read_dir(source)
             .map_err(|error| format!("Failed to read directory {}: {error}", source.display()))?
         {
-            let entry = entry
-                .map_err(|error| format!("Failed to read directory entry {}: {error}", source.display()))?;
+            let entry = entry.map_err(|error| {
+                format!(
+                    "Failed to read directory entry {}: {error}",
+                    source.display()
+                )
+            })?;
             let child_source = entry.path();
             let child_destination = destination.join(entry.file_name());
             copy_path_recursive(&child_source, &child_destination)?;
@@ -420,15 +423,13 @@ fn copy_path_recursive(source: &Path, destination: &Path) -> Result<(), String> 
         })?;
     }
 
-    fs::copy(source, destination)
-        .map(|_| ())
-        .map_err(|error| {
-            format!(
-                "Failed to copy {} to {}: {error}",
-                source.display(),
-                destination.display()
-            )
-        })
+    fs::copy(source, destination).map(|_| ()).map_err(|error| {
+        format!(
+            "Failed to copy {} to {}: {error}",
+            source.display(),
+            destination.display()
+        )
+    })
 }
 
 fn remove_path_recursive(path: &Path) -> Result<(), String> {
@@ -488,7 +489,10 @@ fn ensure_batch_rename_is_valid(items: &[FsBatchRenameItem]) -> Result<(), Strin
             ));
         }
         if !seen_sources.insert(item.source_path.clone()) {
-            return Err(format!("Duplicate source path in batch rename: {}", item.source_path));
+            return Err(format!(
+                "Duplicate source path in batch rename: {}",
+                item.source_path
+            ));
         }
         if !seen_destinations.insert(item.destination_path.clone()) {
             return Err(format!(
@@ -522,9 +526,9 @@ fn compute_file_hash(path: &Path) -> Result<String, String> {
     let mut buffer = [0_u8; 64 * 1024];
     let mut hasher = Sha256::new();
     loop {
-        let read_count = file
-            .read(&mut buffer)
-            .map_err(|error| format!("Failed to read {} during hashing: {error}", path.display()))?;
+        let read_count = file.read(&mut buffer).map_err(|error| {
+            format!("Failed to read {} during hashing: {error}", path.display())
+        })?;
         if read_count == 0 {
             break;
         }
@@ -534,8 +538,12 @@ fn compute_file_hash(path: &Path) -> Result<String, String> {
 }
 
 fn to_file_entry(path: &Path) -> Result<FileEntry, String> {
-    let metadata = fs::symlink_metadata(path)
-        .map_err(|error| format!("Failed to inspect duplicate candidate {}: {error}", path.display()))?;
+    let metadata = fs::symlink_metadata(path).map_err(|error| {
+        format!(
+            "Failed to inspect duplicate candidate {}: {error}",
+            path.display()
+        )
+    })?;
     let name = path
         .file_name()
         .map(|value| value.to_string_lossy().to_string())
@@ -579,14 +587,25 @@ fn collect_duplicate_candidates(
         return Ok(());
     }
 
-    for entry in fs::read_dir(root)
-        .map_err(|error| format!("Failed to read duplicate scan directory {}: {error}", root.display()))?
-    {
-        let entry = entry
-            .map_err(|error| format!("Failed to read duplicate scan entry {}: {error}", root.display()))?;
+    for entry in fs::read_dir(root).map_err(|error| {
+        format!(
+            "Failed to read duplicate scan directory {}: {error}",
+            root.display()
+        )
+    })? {
+        let entry = entry.map_err(|error| {
+            format!(
+                "Failed to read duplicate scan entry {}: {error}",
+                root.display()
+            )
+        })?;
         let path = entry.path();
-        let metadata = fs::symlink_metadata(&path)
-            .map_err(|error| format!("Failed to inspect duplicate scan path {}: {error}", path.display()))?;
+        let metadata = fs::symlink_metadata(&path).map_err(|error| {
+            format!(
+                "Failed to inspect duplicate scan path {}: {error}",
+                path.display()
+            )
+        })?;
 
         if metadata.is_dir() {
             collect_duplicate_candidates(&path, progress, groups_by_size)?;
@@ -611,20 +630,33 @@ fn collect_duplicate_candidates(
     Ok(())
 }
 
-fn run_duplicate_scan(_scan_id: String, root_path: String, progress: Arc<Mutex<ExplorerDuplicateScanProgress>>) {
+fn run_duplicate_scan(
+    _scan_id: String,
+    root_path: String,
+    progress: Arc<Mutex<ExplorerDuplicateScanProgress>>,
+) {
     let root = PathBuf::from(&root_path);
     let result = (|| -> Result<(), String> {
         if !root.exists() {
-            return Err(format!("Duplicate scan root does not exist: {}", root.display()));
+            return Err(format!(
+                "Duplicate scan root does not exist: {}",
+                root.display()
+            ));
         }
         if !root.is_dir() {
-            return Err(format!("Duplicate scan root is not a directory: {}", root.display()));
+            return Err(format!(
+                "Duplicate scan root is not a directory: {}",
+                root.display()
+            ));
         }
 
         let mut groups_by_size = HashMap::<u64, Vec<PathBuf>>::new();
         collect_duplicate_candidates(&root, &progress, &mut groups_by_size)?;
 
-        for (size, paths) in groups_by_size.into_iter().filter(|(_, paths)| paths.len() > 1) {
+        for (size, paths) in groups_by_size
+            .into_iter()
+            .filter(|(_, paths)| paths.len() > 1)
+        {
             {
                 let mut state = progress
                     .lock()
@@ -733,7 +765,9 @@ pub async fn explorer_tags_set_for_paths(
         }
         if existing.is_empty() {
             let normalized_path = normalize_path_key(raw_path);
-            document.path_tag_ids.retain(|key, _| key != &normalized_path);
+            document
+                .path_tag_ids
+                .retain(|key, _| key != &normalized_path);
         }
     }
 
@@ -816,7 +850,10 @@ pub async fn explorer_saved_searches_delete(app: AppHandle, id: String) -> Resul
 
 #[tauri::command]
 #[specta::specta]
-pub async fn fs_trash(app: AppHandle, paths: Vec<String>) -> Result<ExplorerTrashActionRecord, String> {
+pub async fn fs_trash(
+    app: AppHandle,
+    paths: Vec<String>,
+) -> Result<ExplorerTrashActionRecord, String> {
     if paths.is_empty() {
         return Err("Trash request was empty.".to_string());
     }
@@ -911,18 +948,16 @@ pub async fn fs_restore_recent_trash_action(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn fs_batch_rename(items: Vec<FsBatchRenameItem>) -> Result<Vec<FsBatchRenameResult>, String> {
+pub async fn fs_batch_rename(
+    items: Vec<FsBatchRenameItem>,
+) -> Result<Vec<FsBatchRenameResult>, String> {
     ensure_batch_rename_is_valid(&items)?;
 
     let temporary_renames = items
         .iter()
         .map(|item| {
             let source = PathBuf::from(&item.source_path);
-            let temporary_name = format!(
-                ".greeble-rename-{}-{}",
-                now_epoch_ms(),
-                Uuid::new_v4()
-            );
+            let temporary_name = format!(".greeble-rename-{}-{}", now_epoch_ms(), Uuid::new_v4());
             let temporary_path = source
                 .parent()
                 .map(|parent| parent.join(temporary_name))

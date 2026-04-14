@@ -362,7 +362,9 @@ pub async fn cloud_begin_auth(
                     let result = read_callback_payload(&mut stream, &state_token);
                     let _ = write_callback_response(&mut stream, result.is_ok());
                     match result {
-                        Ok(payload) => update_auth_callback(&sessions, &request_id_for_thread, payload),
+                        Ok(payload) => {
+                            update_auth_callback(&sessions, &request_id_for_thread, payload)
+                        }
                         Err(error) => update_auth_callback(
                             &sessions,
                             &request_id_for_thread,
@@ -563,23 +565,28 @@ pub async fn cloud_list_dir(
     let account = load_account(&app, parsed.account_id())?;
     let client = cloud_http_client()?;
     match parsed {
-        CloudPathRef::Root { provider, account_id } => {
+        CloudPathRef::Root {
+            provider,
+            account_id,
+        } => {
             list_cloud_root_directory(&app, &state, &client, provider, &account_id, &account).await
         }
         CloudPathRef::Item {
             provider,
             account_id,
             item_id,
-        } => list_cloud_item_directory(
-            &app,
-            &state,
-            &client,
-            provider,
-            &account_id,
-            &item_id,
-            &account,
-        )
-        .await,
+        } => {
+            list_cloud_item_directory(
+                &app,
+                &state,
+                &client,
+                provider,
+                &account_id,
+                &item_id,
+                &account,
+            )
+            .await
+        }
     }
 }
 
@@ -605,7 +612,8 @@ pub async fn cloud_read_text_file(
     if payload.bytes.len() > CLOUD_TEXT_PREVIEW_MAX_BYTES {
         return Err("Cloud file is too large to preview as text (> 10 MB).".to_string());
     }
-    String::from_utf8(payload.bytes).map_err(|error| format!("Cloud file is not valid UTF-8: {error}"))
+    String::from_utf8(payload.bytes)
+        .map_err(|error| format!("Cloud file is not valid UTF-8: {error}"))
 }
 
 #[tauri::command]
@@ -649,9 +657,9 @@ pub async fn cloud_write_file(
     };
     match parsed {
         CloudPathRef::Root { .. } => Err("Cannot write to a cloud drive root.".to_string()),
-        CloudPathRef::Item { provider, item_id, .. } => {
-            overwrite_cloud_file(&client, provider, &access_token, &item_id, bytes).await
-        }
+        CloudPathRef::Item {
+            provider, item_id, ..
+        } => overwrite_cloud_file(&client, provider, &access_token, &item_id, bytes).await,
     }
 }
 
@@ -735,8 +743,15 @@ pub async fn cloud_transfer_items(
     let mut results = Vec::new();
     for source in sources {
         if source.starts_with("cloud://") || target_dir.starts_with("cloud://") {
-            transfer_between_local_and_cloud(&app, &state, &client, &target_dir, &source, operation)
-                .await?;
+            transfer_between_local_and_cloud(
+                &app,
+                &state,
+                &client,
+                &target_dir,
+                &source,
+                operation,
+            )
+            .await?;
             results.push(FileTransferResult {
                 source_path: source.clone(),
                 destination_path: target_dir.clone(),
@@ -939,14 +954,17 @@ fn temp_root_path(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| format!("Failed to resolve app local data directory: {error}"))?
         .join(CLOUD_ROOT_DIRECTORY)
         .join(CLOUD_TEMP_DIRECTORY);
-    fs::create_dir_all(&root).map_err(|error| format!("Failed to create cloud temp directory: {error}"))?;
+    fs::create_dir_all(&root)
+        .map_err(|error| format!("Failed to create cloud temp directory: {error}"))?;
     Ok(root)
 }
 
 fn read_accounts(app: &AppHandle) -> Result<PersistedCloudAccounts, String> {
     let path = accounts_file_path(app)?;
     if !path.exists() {
-        return Ok(PersistedCloudAccounts { accounts: Vec::new() });
+        return Ok(PersistedCloudAccounts {
+            accounts: Vec::new(),
+        });
     }
     let content = fs::read_to_string(&path)
         .map_err(|error| format!("Failed to read persisted cloud accounts: {error}"))?;
@@ -958,8 +976,7 @@ fn write_accounts(app: &AppHandle, accounts: &PersistedCloudAccounts) -> Result<
     let path = accounts_file_path(app)?;
     let content = serde_json::to_string_pretty(accounts)
         .map_err(|error| format!("Failed to serialize persisted cloud accounts: {error}"))?;
-    fs::write(&path, content)
-        .map_err(|error| format!("Failed to persist cloud accounts: {error}"))
+    fs::write(&path, content).map_err(|error| format!("Failed to persist cloud accounts: {error}"))
 }
 
 fn upsert_account(app: &AppHandle, next: PersistedCloudAccount) -> Result<(), String> {
@@ -995,7 +1012,11 @@ fn keyring_entry(provider: CloudProviderId, account_id: &str) -> Result<Entry, S
     .map_err(|error| format!("Failed to open keychain entry: {error}"))
 }
 
-fn write_refresh_token(provider: CloudProviderId, account_id: &str, refresh_token: &str) -> Result<(), String> {
+fn write_refresh_token(
+    provider: CloudProviderId,
+    account_id: &str,
+    refresh_token: &str,
+) -> Result<(), String> {
     keyring_entry(provider, account_id)?
         .set_password(refresh_token)
         .map_err(|error| format!("Failed to store refresh token in the OS keychain: {error}"))
@@ -1011,7 +1032,9 @@ fn delete_refresh_token(provider: CloudProviderId, account_id: &str) -> Result<(
     let entry = keyring_entry(provider, account_id)?;
     match entry.delete_credential() {
         Ok(()) => Ok(()),
-        Err(error) => Err(format!("Failed to remove refresh token from the OS keychain: {error}")),
+        Err(error) => Err(format!(
+            "Failed to remove refresh token from the OS keychain: {error}"
+        )),
     }
 }
 
@@ -1070,9 +1093,19 @@ async fn access_token_for_account(
     let refresh_token = read_refresh_token(account.provider, &account.id)?;
     let config = provider_config(account.provider)?;
     let token = refresh_access_token(client, &config, &refresh_token).await?;
-    store_access_token(state, account.provider, &account.id, &token.access_token, token.expires_in)?;
+    store_access_token(
+        state,
+        account.provider,
+        &account.id,
+        &token.access_token,
+        token.expires_in,
+    )?;
     if token.refresh_token.is_some() {
-        let _ = write_refresh_token(account.provider, &account.id, token.refresh_token.as_deref().unwrap_or_default());
+        let _ = write_refresh_token(
+            account.provider,
+            &account.id,
+            token.refresh_token.as_deref().unwrap_or_default(),
+        );
     }
     let _ = app;
     Ok(token.access_token)
@@ -1152,7 +1185,10 @@ fn build_authorization_url(
                 ("client_id", config.client_id.as_str()),
                 ("redirect_uri", redirect_uri),
                 ("response_type", "code"),
-                ("scope", "openid email profile https://www.googleapis.com/auth/drive"),
+                (
+                    "scope",
+                    "openid email profile https://www.googleapis.com/auth/drive",
+                ),
                 ("access_type", "offline"),
                 ("prompt", "consent"),
                 ("code_challenge", code_challenge),
@@ -1167,7 +1203,10 @@ fn build_authorization_url(
                 ("redirect_uri", redirect_uri),
                 ("response_type", "code"),
                 ("token_access_type", "offline"),
-                ("scope", "account_info.read files.metadata.read files.content.read files.content.write"),
+                (
+                    "scope",
+                    "account_info.read files.metadata.read files.content.read files.content.write",
+                ),
                 ("code_challenge", code_challenge),
                 ("code_challenge_method", "S256"),
                 ("state", state),
@@ -1190,7 +1229,10 @@ async fn exchange_authorization_code(
             .post("https://oauth2.googleapis.com/token")
             .form(&[
                 ("client_id", config.client_id.as_str()),
-                ("client_secret", config.client_secret.as_deref().unwrap_or("")),
+                (
+                    "client_secret",
+                    config.client_secret.as_deref().unwrap_or(""),
+                ),
                 ("code", code),
                 ("code_verifier", code_verifier),
                 ("grant_type", "authorization_code"),
@@ -1209,7 +1251,10 @@ async fn exchange_authorization_code(
                 .post("https://api.dropboxapi.com/oauth2/token")
                 .form(&[
                     ("client_id", config.client_id.as_str()),
-                    ("client_secret", config.client_secret.as_deref().unwrap_or("")),
+                    (
+                        "client_secret",
+                        config.client_secret.as_deref().unwrap_or(""),
+                    ),
                     ("code", code),
                     ("code_verifier", code_verifier),
                     ("grant_type", "authorization_code"),
@@ -1242,7 +1287,10 @@ async fn refresh_access_token(
             .post("https://oauth2.googleapis.com/token")
             .form(&[
                 ("client_id", config.client_id.as_str()),
-                ("client_secret", config.client_secret.as_deref().unwrap_or("")),
+                (
+                    "client_secret",
+                    config.client_secret.as_deref().unwrap_or(""),
+                ),
                 ("refresh_token", refresh_token),
                 ("grant_type", "refresh_token"),
             ])
@@ -1259,7 +1307,10 @@ async fn refresh_access_token(
                 .post("https://api.dropboxapi.com/oauth2/token")
                 .form(&[
                     ("client_id", config.client_id.as_str()),
-                    ("client_secret", config.client_secret.as_deref().unwrap_or("")),
+                    (
+                        "client_secret",
+                        config.client_secret.as_deref().unwrap_or(""),
+                    ),
                     ("refresh_token", refresh_token),
                     ("grant_type", "refresh_token"),
                 ])
@@ -1307,12 +1358,16 @@ async fn fetch_account_profile(
                 .map_err(|error| format!("Google Drive account lookup failed: {error}"))?
                 .json::<GoogleUserInfoResponse>()
                 .await
-                .map_err(|error| format!("Failed to parse Google Drive account response: {error}"))?;
+                .map_err(|error| {
+                    format!("Failed to parse Google Drive account response: {error}")
+                })?;
             let email = user
                 .email
                 .clone()
                 .filter(|value| !value.trim().is_empty())
-                .ok_or_else(|| "Google Drive account response did not include an email.".to_string())?;
+                .ok_or_else(|| {
+                    "Google Drive account response did not include an email.".to_string()
+                })?;
             Ok(CloudProfile {
                 provider,
                 id: format!("google-drive:{}", slugify(&email)),
@@ -1438,7 +1493,8 @@ async fn list_cloud_item_directory(
                         build_cloud_item_path(provider, account_id, parent_id)
                     }
                 });
-            let breadcrumbs = google_breadcrumbs(client, &access_token, account, account_id, item_id).await?;
+            let breadcrumbs =
+                google_breadcrumbs(client, &access_token, account, account_id, item_id).await?;
             let entries = google_list_children(client, &access_token, item_id, account_id).await?;
             Ok(CloudDirectoryListing {
                 path: build_cloud_item_path(provider, account_id, item_id),
@@ -1457,7 +1513,8 @@ async fn list_cloud_item_directory(
                 }
             });
             let breadcrumbs = dropbox_breadcrumbs(account, account_id, current_path);
-            let entries = dropbox_list_children(client, &access_token, current_path, account_id).await?;
+            let entries =
+                dropbox_list_children(client, &access_token, current_path, account_id).await?;
             Ok(CloudDirectoryListing {
                 path: build_cloud_item_path(provider, account_id, item_id),
                 parent_path,
@@ -1480,8 +1537,14 @@ async fn google_list_children(
         let mut url = Url::parse("https://www.googleapis.com/drive/v3/files")
             .map_err(|error| format!("Failed to build Google Drive list URL: {error}"))?;
         url.query_pairs_mut()
-            .append_pair("q", &format!("trashed = false and '{parent_id}' in parents"))
-            .append_pair("fields", "nextPageToken,files(id,name,mimeType,size,modifiedTime,parents)")
+            .append_pair(
+                "q",
+                &format!("trashed = false and '{parent_id}' in parents"),
+            )
+            .append_pair(
+                "fields",
+                "nextPageToken,files(id,name,mimeType,size,modifiedTime,parents)",
+            )
             .append_pair("pageSize", "500");
         if let Some(token) = page_token.as_deref() {
             url.query_pairs_mut().append_pair("pageToken", token);
@@ -1517,7 +1580,9 @@ async fn google_get_file_metadata(
     item_id: &str,
 ) -> Result<GoogleDriveFile, String> {
     client
-        .get(format!("https://www.googleapis.com/drive/v3/files/{item_id}"))
+        .get(format!(
+            "https://www.googleapis.com/drive/v3/files/{item_id}"
+        ))
         .bearer_auth(access_token)
         .query(&[("fields", "id,name,mimeType,size,modifiedTime,parents")])
         .send()
@@ -1577,7 +1642,11 @@ async fn google_breadcrumbs(
             label: metadata.name.clone(),
             path,
         });
-        let Some(parent) = metadata.parents.as_ref().and_then(|parents| parents.first()) else {
+        let Some(parent) = metadata
+            .parents
+            .as_ref()
+            .and_then(|parents| parents.first())
+        else {
             break;
         };
         cursor = parent.clone();
@@ -1697,8 +1766,13 @@ async fn download_cloud_file(
             if metadata.mime_type == "application/vnd.google-apps.folder" {
                 return Err("Folders cannot be downloaded as files.".to_string());
             }
-            if metadata.mime_type.starts_with("application/vnd.google-apps.") {
-                return Err("Google-native Docs/Sheets/Slides export is not implemented yet.".to_string());
+            if metadata
+                .mime_type
+                .starts_with("application/vnd.google-apps.")
+            {
+                return Err(
+                    "Google-native Docs/Sheets/Slides export is not implemented yet.".to_string(),
+                );
             }
             let bytes = client
                 .get(format!(
@@ -1823,13 +1897,20 @@ async fn create_cloud_file(
                 "name": name,
                 "parents": [parent_id],
             });
-            let metadata_part = Part::text(metadata.to_string()).mime_str("application/json")
-                .map_err(|error| format!("Failed to build Google Drive upload metadata: {error}"))?;
+            let metadata_part = Part::text(metadata.to_string())
+                .mime_str("application/json")
+                .map_err(|error| {
+                    format!("Failed to build Google Drive upload metadata: {error}")
+                })?;
             let media_part = Part::bytes(bytes).file_name(name.to_string());
             client
                 .post("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart")
                 .bearer_auth(access_token)
-                .multipart(Form::new().part("metadata", metadata_part).part("file", media_part))
+                .multipart(
+                    Form::new()
+                        .part("metadata", metadata_part)
+                        .part("file", media_part),
+                )
                 .send()
                 .await
                 .map_err(|error| format!("Google Drive file creation failed: {error}"))?
@@ -1928,7 +2009,9 @@ async fn rename_cloud_path_impl(
                 .item_id()
                 .ok_or_else(|| "Cloud drive roots cannot be renamed.".to_string())?;
             client
-                .patch(format!("https://www.googleapis.com/drive/v3/files/{item_id}"))
+                .patch(format!(
+                    "https://www.googleapis.com/drive/v3/files/{item_id}"
+                ))
                 .bearer_auth(access_token)
                 .json(&serde_json::json!({ "name": new_name }))
                 .send()
@@ -1978,7 +2061,9 @@ async fn delete_cloud_path_impl(
                 .item_id()
                 .ok_or_else(|| "Cloud drive roots cannot be deleted.".to_string())?;
             client
-                .delete(format!("https://www.googleapis.com/drive/v3/files/{item_id}"))
+                .delete(format!(
+                    "https://www.googleapis.com/drive/v3/files/{item_id}"
+                ))
                 .bearer_auth(access_token)
                 .send()
                 .await
@@ -2016,9 +2101,15 @@ async fn transfer_between_local_and_cloud(
     let source_is_cloud = source.starts_with("cloud://");
     let target_is_cloud = target_dir.starts_with("cloud://");
     match (source_is_cloud, target_is_cloud) {
-        (true, true) => transfer_cloud_to_cloud(app, state, client, source, target_dir, operation).await,
-        (true, false) => transfer_cloud_to_local(app, state, client, source, target_dir, operation).await,
-        (false, true) => transfer_local_to_cloud(app, state, client, source, target_dir, operation).await,
+        (true, true) => {
+            transfer_cloud_to_cloud(app, state, client, source, target_dir, operation).await
+        }
+        (true, false) => {
+            transfer_cloud_to_local(app, state, client, source, target_dir, operation).await
+        }
+        (false, true) => {
+            transfer_local_to_cloud(app, state, client, source, target_dir, operation).await
+        }
         (false, false) => Ok(()),
     }
 }
@@ -2059,7 +2150,14 @@ async fn transfer_cloud_to_local(
     let target_root = PathBuf::from(target_dir);
     if source_ref.provider() == CloudProviderId::GoogleDrive {
         let metadata = google_get_file_metadata(client, &access_token, item_id).await?;
-        download_google_item_to_local(client, &access_token, &metadata, source_ref.account_id(), &target_root).await?;
+        download_google_item_to_local(
+            client,
+            &access_token,
+            &metadata,
+            source_ref.account_id(),
+            &target_root,
+        )
+        .await?;
     } else {
         download_dropbox_item_to_local(client, &access_token, item_id, &target_root).await?;
     }
@@ -2079,10 +2177,21 @@ async fn transfer_cloud_to_cloud(
 ) -> Result<(), String> {
     let source_ref = parse_cloud_path(source)?;
     let target_ref = parse_cloud_path(target_dir)?;
-    if source_ref.provider() != target_ref.provider() || source_ref.account_id() != target_ref.account_id() {
+    if source_ref.provider() != target_ref.provider()
+        || source_ref.account_id() != target_ref.account_id()
+    {
         let temp_dir = temp_root_path(app)?.join(Uuid::new_v4().to_string());
-        fs::create_dir_all(&temp_dir).map_err(|error| format!("Failed to create temp cloud transfer directory: {error}"))?;
-        transfer_cloud_to_local(app, state, client, source, temp_dir.to_string_lossy().as_ref(), FileTransferOperation::Copy).await?;
+        fs::create_dir_all(&temp_dir)
+            .map_err(|error| format!("Failed to create temp cloud transfer directory: {error}"))?;
+        transfer_cloud_to_local(
+            app,
+            state,
+            client,
+            source,
+            temp_dir.to_string_lossy().as_ref(),
+            FileTransferOperation::Copy,
+        )
+        .await?;
         let source_name = Path::new(source)
             .file_name()
             .and_then(|value| value.to_str())
@@ -2150,10 +2259,14 @@ async fn transfer_cloud_to_cloud(
             let metadata = google_get_file_metadata(client, &access_token, source_item_id).await?;
             if operation == FileTransferOperation::Copy {
                 if metadata.mime_type == "application/vnd.google-apps.folder" {
-                    return Err("Google Drive folder duplication is not implemented yet.".to_string());
+                    return Err(
+                        "Google Drive folder duplication is not implemented yet.".to_string()
+                    );
                 }
                 client
-                    .post(format!("https://www.googleapis.com/drive/v3/files/{source_item_id}/copy"))
+                    .post(format!(
+                        "https://www.googleapis.com/drive/v3/files/{source_item_id}/copy"
+                    ))
                     .bearer_auth(access_token)
                     .json(&serde_json::json!({
                         "name": metadata.name,
@@ -2167,7 +2280,9 @@ async fn transfer_cloud_to_cloud(
             } else {
                 let remove_parents = metadata.parents.unwrap_or_default().join(",");
                 client
-                    .patch(format!("https://www.googleapis.com/drive/v3/files/{source_item_id}"))
+                    .patch(format!(
+                        "https://www.googleapis.com/drive/v3/files/{source_item_id}"
+                    ))
                     .bearer_auth(access_token)
                     .query(&[
                         ("addParents", target_parent_id),
@@ -2224,7 +2339,8 @@ async fn upload_local_path(
         for child in fs::read_dir(source_path)
             .map_err(|error| format!("Failed to enumerate local folder for upload: {error}"))?
         {
-            let child = child.map_err(|error| format!("Failed to read local folder entry: {error}"))?;
+            let child =
+                child.map_err(|error| format!("Failed to read local folder entry: {error}"))?;
             upload_local_path(client, &next_target, access_token, &child.path()).await?;
         }
         Ok(())
@@ -2251,16 +2367,17 @@ async fn find_child_by_name(
             let query = vec![
                 (
                     "q",
-                    format!("trashed = false and '{parent_id}' in parents and name = '{child_name}'"),
+                    format!(
+                        "trashed = false and '{parent_id}' in parents and name = '{child_name}'"
+                    ),
                 ),
                 ("fields", "files(id,name)".to_string()),
                 ("pageSize", "100".to_string()),
             ];
-            let url = Url::parse_with_params(
-                "https://www.googleapis.com/drive/v3/files",
-                &query,
-            )
-            .map_err(|error| format!("Failed to build Google Drive child lookup URL: {error}"))?;
+            let url = Url::parse_with_params("https://www.googleapis.com/drive/v3/files", &query)
+                .map_err(|error| {
+                format!("Failed to build Google Drive child lookup URL: {error}")
+            })?;
             let response = client
                 .get(url)
                 .bearer_auth(access_token)
@@ -2277,7 +2394,9 @@ async fn find_child_by_name(
                 .into_iter()
                 .find(|file| file.name == child_name)
                 .map(|file| file.id)
-                .ok_or_else(|| "Created Google Drive child folder could not be reloaded.".to_string())
+                .ok_or_else(|| {
+                    "Created Google Drive child folder could not be reloaded.".to_string()
+                })
         }
         CloudProviderId::Dropbox => Err("Dropbox child lookup is not required.".to_string()),
     }
@@ -2293,17 +2412,26 @@ async fn download_google_item_to_local(
 ) -> Result<(), String> {
     let destination = destination_root.join(&metadata.name);
     if metadata.mime_type == "application/vnd.google-apps.folder" {
-        fs::create_dir_all(&destination)
-            .map_err(|error| format!("Failed to create local folder from Google Drive item: {error}"))?;
+        fs::create_dir_all(&destination).map_err(|error| {
+            format!("Failed to create local folder from Google Drive item: {error}")
+        })?;
         let children = google_list_children(client, access_token, &metadata.id, account_id).await?;
         for child in children {
             let child_ref = parse_cloud_path(&child.path)?;
             let child_item_id = child_ref
                 .item_id()
                 .ok_or_else(|| "Google Drive child item is missing an identifier.".to_string())?;
-            let child_metadata = google_get_file_metadata(client, access_token, child_item_id).await;
+            let child_metadata =
+                google_get_file_metadata(client, access_token, child_item_id).await;
             if let Ok(child_metadata) = child_metadata {
-                download_google_item_to_local(client, access_token, &child_metadata, account_id, &destination).await?;
+                download_google_item_to_local(
+                    client,
+                    access_token,
+                    &child_metadata,
+                    account_id,
+                    &destination,
+                )
+                .await?;
             }
         }
         Ok(())
@@ -2354,7 +2482,8 @@ async fn download_dropbox_item_to_local(
         for child in children {
             let parsed = parse_cloud_path(&child.path)?;
             if let Some(child_item_id) = parsed.item_id() {
-                download_dropbox_item_to_local(client, access_token, child_item_id, &destination).await?;
+                download_dropbox_item_to_local(client, access_token, child_item_id, &destination)
+                    .await?;
             }
         }
         Ok(())
@@ -2380,11 +2509,14 @@ async fn download_dropbox_item_to_local(
 }
 
 fn remove_local_path(path: &Path) -> Result<(), String> {
-    let metadata = fs::metadata(path).map_err(|error| format!("Failed to inspect local path for removal: {error}"))?;
+    let metadata = fs::metadata(path)
+        .map_err(|error| format!("Failed to inspect local path for removal: {error}"))?;
     if metadata.is_dir() {
-        fs::remove_dir_all(path).map_err(|error| format!("Failed to remove local directory after transfer: {error}"))
+        fs::remove_dir_all(path)
+            .map_err(|error| format!("Failed to remove local directory after transfer: {error}"))
     } else {
-        fs::remove_file(path).map_err(|error| format!("Failed to remove local file after transfer: {error}"))
+        fs::remove_file(path)
+            .map_err(|error| format!("Failed to remove local file after transfer: {error}"))
     }
 }
 

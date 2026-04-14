@@ -322,7 +322,8 @@ type PreviewState =
       lastSavedAt: number | null;
       error: string | null;
     }
-  | { type: 'model3d'; path: string; format: ModelPreviewFormat; name: string; size: number };
+  | { type: 'model3d'; path: string; format: ModelPreviewFormat; name: string; size: number }
+  | { type: 'fallback'; path: string; name: string; label: string; detail?: string };
 interface NewItemState   { visible: boolean; kind: 'file'|'folder'; }
 type ExplorerClipboard = ExplorerClipboardSnapshot;
 type ExplorerDragIntent = 'internal' | 'native-out';
@@ -1690,8 +1691,10 @@ function PreviewPanel({
 
   const previewTitle = preview.type === 'none' ? 'Preview' : preview.name;
   const previewStateLabel = preview.type === 'text'
-    ? (preview.isSaving ? 'Saving…' : preview.isDirty ? 'Unsaved' : 'Saved')
-    : null;
+    ? (preview.isSaving ? 'Saving?' : preview.isDirty ? 'Unsaved' : 'Saved')
+    : preview.type === 'fallback'
+      ? 'Unavailable'
+      : null;
   const copyPathLabel = copiedPath === preview.path ? 'Copied' : 'Copy Path';
   const supportsRenderedPreview = preview.type === 'text' && preview.renderKind !== 'none';
   const previewShellStyle: CSSProperties = explorerTheme.previewStyle === 'attached'
@@ -1837,6 +1840,14 @@ function PreviewPanel({
               sourceBytes={preview.size}
             />
           </Suspense>
+        )}
+        {preview.type === 'fallback' && (
+          <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', padding: 24, textAlign: 'center', color: EXP.muted, background: 'var(--overlay-explorer-preview-bg)' }}>
+            <div style={{ display: 'grid', gap: 8, maxWidth: 360 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: EXP.text }}>{preview.label}</div>
+              <div style={{ fontSize: 11, lineHeight: 1.5 }}>{preview.detail}</div>
+            </div>
+          </div>
         )}
       </div>
       {preview.type === 'text' && (
@@ -2545,13 +2556,25 @@ export function FileExplorer({
   useEffect(() => {
     if (isCompactDock) {
       setSidebarWidth(current => Math.max(sidebarBounds.minWidth, Math.min(current, sidebarBounds.maxWidth)));
-      setPreview({ type: 'none', path: '' });
+      setPreview({
+      type: 'fallback',
+      path: entry.path,
+      name: entry.name,
+      label: 'Preview unavailable',
+      detail: 'No inline preview is available for this file type.',
+    });
     }
   }, [isCompactDock, sidebarBounds.maxWidth, sidebarBounds.minWidth]);
 
   useEffect(() => {
     if (!previewEnabled) {
-      setPreview({ type: 'none', path: '' });
+      setPreview({
+      type: 'fallback',
+      path: entry.path,
+      name: entry.name,
+      label: 'Preview unavailable',
+      detail: 'No inline preview is available for this file type.',
+    });
       setPreviewLoading(false);
     }
   }, [previewEnabled]);
@@ -3441,7 +3464,13 @@ export function FileExplorer({
 
   const closePreview = useCallback(async () => {
     await flushPreviewTextSave();
-    setPreview({ type: 'none', path: '' });
+    setPreview({
+      type: 'fallback',
+      path: entry.path,
+      name: entry.name,
+      label: 'Preview unavailable',
+      detail: 'No inline preview is available for this file type.',
+    });
   }, [flushPreviewTextSave]);
 
   const applyShellLayoutPreset = useCallback((nextLayoutId: ExplorerShellLayoutId) => {
@@ -3507,7 +3536,15 @@ export function FileExplorer({
       try {
         const dataUri = await readExplorerFileBase64(entry.path);
         setPreview({ type:'image', path:entry.path, name:entry.name, content:dataUri });
-      } catch(e) { setError(`Image load failed: ${e}`); }
+      } catch (error) {
+        setPreview({
+          type: 'fallback',
+          path: entry.path,
+          name: entry.name,
+          label: 'Image preview unavailable',
+          detail: String(error),
+        });
+      }
       finally { setPreviewLoading(false); }
       return;
     }
@@ -3538,13 +3575,25 @@ export function FileExplorer({
           lastSavedAt: Date.now(),
           error: null,
         });
-      } catch {
-        setPreview({ type: 'none', path: '' });
+      } catch (error) {
+        setPreview({
+          type: 'fallback',
+          path: entry.path,
+          name: entry.name,
+          label: 'Text preview unavailable',
+          detail: String(error),
+        });
       }
       finally { setPreviewLoading(false); }
       return;
     }
-    setPreview({ type: 'none', path: '' });
+    setPreview({
+      type: 'fallback',
+      path: entry.path,
+      name: entry.name,
+      label: 'Preview unavailable',
+      detail: 'No inline preview is available for this file type.',
+    });
   }, [flushPreviewTextSave, isCompactDock, previewEnabled]);
 
   const openEntry = useCallback(async (entry: FileEntry) => {
@@ -3820,7 +3869,13 @@ export function FileExplorer({
       await trashExplorerPaths(deleteTargets.map((entry) => entry.path));
       invalidateExplorerResultCaches();
       if (deleteTargets.some((entry) => preview.path === entry.path)) {
-        setPreview({ type: 'none', path: '' });
+        setPreview({
+      type: 'fallback',
+      path: entry.path,
+      name: entry.name,
+      label: 'Preview unavailable',
+      detail: 'No inline preview is available for this file type.',
+    });
       }
       if (previewSaveTimer.current) {
         window.clearTimeout(previewSaveTimer.current);

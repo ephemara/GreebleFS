@@ -239,4 +239,62 @@ describe('plugin package discovery', () => {
     expect(result.commands.map(command => command.name)).toEqual(['Build Project']);
     expect(result.explorerActions.map(action => action.label)).toEqual(['Echo Path']);
   });
+
+  it('rejects unsafe package-relative paths before loading bundled assets', async () => {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      const params = args as { path?: string; showHidden?: boolean } | undefined;
+      const normalizedPath = String(params?.path ?? '').replace(/\\/g, '/');
+
+      if (command === 'fs_list_dir' && normalizedPath === pluginSystemConfig.pluginsDirectory) {
+        return [
+          {
+            name: 'unsafe-plugin',
+            path: 'plugins/unsafe-plugin',
+            is_dir: true,
+            extension: '',
+            modified: 1,
+          },
+        ];
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'plugins/unsafe-plugin/plugin.json') {
+        return JSON.stringify({
+          id: 'unsafe-plugin',
+          name: 'Unsafe Plugin',
+          entry: '../escape.js',
+          contributions: {
+            fonts: [
+              {
+                name: 'Broken Font',
+                src: '../../escape.ttf',
+              },
+            ],
+            themes: ['../themes/escape'],
+          },
+        });
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'plugins/unsafe-plugin/escape.js') {
+        throw new Error('unsafe entry should not be loaded');
+      }
+
+      throw new Error(`Unexpected invoke call: ${command} ${JSON.stringify(args)}`);
+    });
+
+    const result = await discoverOverlayPlugins(() => ({
+      invoke: async <T,>() => null as T,
+      event: {} as never,
+      window: {} as never,
+      fs: {} as never,
+      notification: {} as never,
+      refreshPlugins: async () => undefined,
+      openPluginsFolder: async () => undefined,
+      runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),
+    }));
+
+    expect(result.plugins).toHaveLength(0);
+    expect(result.themePackages).toHaveLength(0);
+    expect(result.fonts).toHaveLength(0);
+    expect(result.warnings).toEqual([]);
+  });
 });

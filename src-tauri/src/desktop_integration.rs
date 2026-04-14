@@ -61,7 +61,9 @@ fn icon_pixels_to_png_bytes(width: u32, height: u32, pixels: Vec<u8>) -> Result<
 }
 
 fn icon_pixels_to_png_data_url(width: u32, height: u32, pixels: Vec<u8>) -> Result<String, String> {
-    Ok(encode_png_data_url(icon_pixels_to_png_bytes(width, height, pixels)?))
+    Ok(encode_png_data_url(icon_pixels_to_png_bytes(
+        width, height, pixels,
+    )?))
 }
 
 fn resolve_native_icon_png_bytes(path: &Path, size: u32) -> Result<Option<Vec<u8>>, String> {
@@ -145,7 +147,12 @@ fn build_default_drag_preview_png() -> Result<Vec<u8>, String> {
         put_pixel_if_in_bounds(&mut image, 48, y as i32, body_outline);
     }
     for offset in 0..13 {
-        put_pixel_if_in_bounds(&mut image, (35 + offset) as i32, (11 + offset) as i32, body_outline);
+        put_pixel_if_in_bounds(
+            &mut image,
+            (35 + offset) as i32,
+            (11 + offset) as i32,
+            body_outline,
+        );
     }
 
     fill_rect(&mut image, 19, 18, 41, 23, accent);
@@ -162,7 +169,9 @@ fn build_default_drag_preview_png() -> Result<Vec<u8>, String> {
 
 fn default_drag_preview_png() -> &'static [u8] {
     DEFAULT_DRAG_PREVIEW_PNG
-        .get_or_init(|| build_default_drag_preview_png().unwrap_or_else(|_| FALLBACK_APP_ICON_PNG.to_vec()))
+        .get_or_init(|| {
+            build_default_drag_preview_png().unwrap_or_else(|_| FALLBACK_APP_ICON_PNG.to_vec())
+        })
         .as_slice()
 }
 

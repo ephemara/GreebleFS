@@ -163,6 +163,8 @@ export const themeSystemConfig = {
   manifestNames: ['theme.json', 'theme.toml', 'manifest.json', 'manifest.toml'] as const,
   packageShadersDirectoryName: 'shaders',
   packageAnimationsDirectoryName: 'animations',
+  runtimeAssetPollingEnabled: resolveRuntimeAssetPollingEnabled(),
+  scanIntervalMs: 5000,
 };
 
 function resolveThemesDirectory(): string {

@@ -247,6 +247,20 @@ function normalizeRelativePath(relativePath: string): string {
   return relativePath.trim().replace(/^\.([/\\])+/, '');
 }
 
+function isSafeRelativePath(relativePath: string): boolean {
+  const normalized = normalizeRelativePath(relativePath);
+  if (!normalized) {
+    return false;
+  }
+
+  if (/^[a-zA-Z]:[\\/]/.test(normalized) || normalized.startsWith('\\\\') || normalized.startsWith('/')) {
+    return false;
+  }
+
+  const segments = normalized.split(/[\\/]/).filter(Boolean);
+  return segments.length > 0 && !segments.some(segment => segment === '..' || segment === '.');
+}
+
 function getBaseName(filePath: string): string {
   const normalized = filePath.replace(/\\/g, '/');
   return normalized.slice(normalized.lastIndexOf('/') + 1);
@@ -334,11 +348,11 @@ async function listDirectory(path: string): Promise<FileEntry[]> {
 }
 
 async function resolveRelativeFileEntry(baseDirectory: string, relativePath: string): Promise<FileEntry | null> {
-  const normalizedRelativePath = normalizeRelativePath(relativePath);
-  if (!normalizedRelativePath) {
+  if (!isSafeRelativePath(relativePath)) {
     return null;
   }
 
+  const normalizedRelativePath = normalizeRelativePath(relativePath);
   const absolutePath = joinPlatformPath(baseDirectory, normalizedRelativePath);
   const parentDirectory = getParentDirectory(absolutePath);
   const fileName = getBaseName(absolutePath);
@@ -369,12 +383,16 @@ async function resolvePackagePanelEntry(record: PluginPackageRecord): Promise<Fi
 async function resolveThemeDirectories(record: PluginPackageRecord): Promise<Array<{ name: string; path: string }>> {
   const explicitThemeDirectories = record.manifest.contributions?.themes ?? [];
   if (explicitThemeDirectories.length > 0) {
-    return explicitThemeDirectories.map(directory => {
+    return explicitThemeDirectories.flatMap(directory => {
+      if (!isSafeRelativePath(directory)) {
+        return [];
+      }
+
       const normalized = normalizeRelativePath(directory);
-      return {
+      return [{
         name: getBaseName(normalized),
         path: joinPlatformPath(record.directoryPath, normalized),
-      };
+      }];
     });
   }
 
@@ -487,16 +505,24 @@ async function loadPluginPackage(
   }
 
   result.fonts.push(
-    ...(record.manifest.contributions?.fonts ?? []).map(font => ({
-      id: font.id || deriveIdFromName(font.name || font.src, 'font'),
-      name: font.name || deriveDisplayNameFromFilePath(font.src),
-      family: font.family || `"${font.name || deriveDisplayNameFromFilePath(font.src)}", sans-serif`,
-      faceName: asString(font.faceName),
-      sourceUrl: toAssetUrl(joinPlatformPath(record.directoryPath, normalizeRelativePath(font.src))),
-      format: font.format || inferFontFormat(font.src),
-      style: asString(font.style),
-      weight: asString(font.weight),
-    })),
+    ...(record.manifest.contributions?.fonts ?? []).flatMap(font => {
+      if (!isSafeRelativePath(font.src)) {
+        packageWarnings.push(`font ${font.name || font.src}: invalid relative path`);
+        return [];
+      }
+
+      const normalizedSrc = normalizeRelativePath(font.src);
+      return [{
+        id: font.id || deriveIdFromName(font.name || font.src, 'font'),
+        name: font.name || deriveDisplayNameFromFilePath(font.src),
+        family: font.family || `"${font.name || deriveDisplayNameFromFilePath(font.src)}", sans-serif`,
+        faceName: asString(font.faceName),
+        sourceUrl: toAssetUrl(joinPlatformPath(record.directoryPath, normalizedSrc)),
+        format: font.format || inferFontFormat(font.src),
+        style: asString(font.style),
+        weight: asString(font.weight),
+      }];
+    }),
   );
 
   result.commands.push(

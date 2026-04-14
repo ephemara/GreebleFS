@@ -1,7 +1,10 @@
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
+use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, State};
 
 pub const PLUGIN_WATCH_EVENT: &str = "overlay://plugins-changed";
@@ -39,7 +42,9 @@ pub async fn plugin_run_backend(
     args: Vec<String>,
 ) -> Result<PluginBackendResult, String> {
     let backend_entry = resolve_backend_entry(&plugins_root, &plugin_id, &entry)?;
-    run_backend_command(&backend_entry, &args)
+    tokio::task::spawn_blocking(move || run_backend_command(&backend_entry, &args))
+        .await
+        .map_err(|e| format!("Plugin backend task failed to join: {e}"))?
 }
 
 #[tauri::command]
@@ -164,9 +169,9 @@ fn resolve_backend_entry(
     Ok(canonical)
 }
 
-fn run_backend_command(executable: &Path, args: &[String]) -> Result<PluginBackendResult, String> {
-    use std::process::Command;
+const PLUGIN_BACKEND_TIMEOUT: Duration = Duration::from_secs(30);
 
+fn run_backend_command(executable: &Path, args: &[String]) -> Result<PluginBackendResult, String> {
     let extension = executable
         .extension()
         .map(|ext| ext.to_string_lossy().to_lowercase())
@@ -210,7 +215,18 @@ fn run_backend_command(executable: &Path, args: &[String]) -> Result<PluginBacke
         command.creation_flags(CREATE_NO_WINDOW);
     }
 
-    let output = command.output().map_err(|e| {
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+
+    run_command_with_timeout(command, executable, PLUGIN_BACKEND_TIMEOUT)
+}
+
+fn run_command_with_timeout(
+    mut command: Command,
+    executable: &Path,
+    timeout: Duration,
+) -> Result<PluginBackendResult, String> {
+    let mut child = command.spawn().map_err(|e| {
         format!(
             "Failed to run plugin backend '{}': {}",
             executable.display(),
@@ -218,11 +234,48 @@ fn run_backend_command(executable: &Path, args: &[String]) -> Result<PluginBacke
         )
     })?;
 
-    Ok(PluginBackendResult {
-        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-        status: output.status.code().unwrap_or(-1),
-    })
+    let start = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let mut stdout = Vec::new();
+                let mut stderr = Vec::new();
+                if let Some(mut handle) = child.stdout.take() {
+                    let _ = handle.read_to_end(&mut stdout);
+                }
+                if let Some(mut handle) = child.stderr.take() {
+                    let _ = handle.read_to_end(&mut stderr);
+                }
+
+                return Ok(PluginBackendResult {
+                    stdout: String::from_utf8_lossy(&stdout).to_string(),
+                    stderr: String::from_utf8_lossy(&stderr).to_string(),
+                    status: status.code().unwrap_or(-1),
+                });
+            }
+            Ok(None) => {
+                if start.elapsed() >= timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!(
+                        "Plugin backend '{}' timed out after {} seconds",
+                        executable.display(),
+                        timeout.as_secs()
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "Failed while waiting for plugin backend '{}': {}",
+                    executable.display(),
+                    e
+                ));
+            }
+        }
+    }
 }
 
 fn map_watch_event_kind(kind: &EventKind) -> Option<&'static str> {

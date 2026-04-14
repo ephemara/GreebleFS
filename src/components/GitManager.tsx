@@ -134,6 +134,7 @@ export function GitManager({
   const repoStateLoadQueuedPathRef = useRef<string | null>(null);
   const repoStateLoadQueuedForceRef = useRef(false);
   const repoStateLoadQueuedWhenVisibleRef = useRef(false);
+  const visibilityRestoreResyncedRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -385,13 +386,25 @@ export function GitManager({
     }, ACTIVE_REPO_BADGE_POLL_MS);
 
     const handleVisibilityChange = () => {
-      if (!disposed && isDocumentVisible()) {
-        const queuedPath = repoStateLoadQueuedPathRef.current ?? selectedRepo ?? repos[0] ?? null;
-        if (queuedPath) {
-          void loadRepoState(queuedPath, { force: true, whenVisible: true });
-        }
-        void scheduleBadgeSync(false);
+      if (disposed) {
+        return;
       }
+
+      if (!isDocumentVisible()) {
+        visibilityRestoreResyncedRef.current = false;
+        return;
+      }
+
+      if (visibilityRestoreResyncedRef.current) {
+        return;
+      }
+
+      visibilityRestoreResyncedRef.current = true;
+      const queuedPath = repoStateLoadQueuedPathRef.current ?? selectedRepo ?? repos[0] ?? null;
+      if (queuedPath) {
+        void loadRepoState(queuedPath, { force: true, whenVisible: true });
+      }
+      void scheduleBadgeSync(false);
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);

@@ -265,7 +265,7 @@ export function useFolderPluginRuntime(
 
       fallbackInterval = window.setTimeout(async () => {
         fallbackInterval = null;
-        await refreshFolderPluginsRef.current(true);
+        await refreshFolderPluginsRef.current(false);
         fallbackIntervalMs = Math.min(
           fallbackIntervalMs * 2,
           pluginSystemConfig.fallbackScanMaxIntervalMs,

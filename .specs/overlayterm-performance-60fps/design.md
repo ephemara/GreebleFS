@@ -196,3 +196,10 @@ The optimization work spans five existing boundaries:
 - Decision: Keep flagship surfaces intact and use bounded fallbacks, targeted invalidation, and execution hardening.
 - Rationale: This aligns with the product goal while still attacking real performance cost.
 - Tradeoffs: Some fixes require deeper coordination across Rust, TS runtime, and UI layers instead of simply disabling behavior.
+
+### Decision: Treat plugin live-reload as an orchestration boundary, not a discovery boundary
+- Context: `src/runtime/useFolderPluginRuntime.ts` already combines watcher setup, debounce, signature checks, and fallback polling.
+- Options: leave the hook monolithic, split discovery from orchestration, or harden the current boundary while preserving behavior.
+- Decision: Keep the current hook as the live-reload orchestration surface for now, but make the spec explicitly target clearer separation between discovery and watcher/poll policy.
+- Rationale: The current code already has the right high-level shape, so the next win is to make its responsibilities more explicit rather than inventing a new subsystem.
+- Tradeoffs: This is a tightening pass, not a redesign, so implementation should avoid changing reload semantics unless a real bug appears.

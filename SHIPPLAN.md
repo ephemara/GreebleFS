@@ -124,3 +124,10 @@ Push OverlayTerm toward shippable quality through repeated heartbeat passes. **P
 - Keep this file updated after each meaningful pass.
 small, validated wins over giant speculative rewrites.
 - Keep this file updated after each meaningful pass.
+### 2026-04-14 terminal handoff
+- Explorer-to-terminal handoff now routes through the shared shell-aware cd builder, which should keep PowerShell, cmd, and POSIX-safe path handling aligned.
+- Validation attempt: `bunx vitest run src/test/terminalCommandUtils.test.ts` was blocked by local missing toolchain packages (`vitest`, `@vitejs/plugin-react`).
+
+### 2026-04-14 GitManager untracked diff guard
+- Added a targeted regression test covering oversized untracked files so GitManager stops before reading file contents and emits the bounded inline omission path instead.
+- Next check: targeted Vitest on `src/test/gitManager.behavior.test.tsx` once the local toolchain is available.

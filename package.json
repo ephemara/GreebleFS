@@ -30,7 +30,8 @@
     "test:browser:watch": "vitest --config vitest.browser.config.ts",
     "test:rust": "node scripts/run-cargo-tests.mjs",
     "test:rust:vps": "bash scripts/with-vps-artifacts.sh bun run test:rust",
-    "test:all": "vitest run && vitest run --config vitest.browser.config.ts && node scripts/run-cargo-tests.mjs && vitest run --coverage"
+    "test:all": "vitest run && vitest run --config vitest.browser.config.ts && node scripts/run-cargo-tests.mjs && vitest run --coverage",
+    "heartbeat:pass": "node scripts/run-heartbeat-pass.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

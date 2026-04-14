@@ -39,6 +39,16 @@ export const explorerPerformanceBudgets = {
     targetMs: 8.3,
     description: 'p95 requestAnimationFrame delta collected while the overlay is visible.',
   },
+  git_repo_state_load: {
+    label: 'Git Repo State Load',
+    targetMs: 250,
+    description: 'GitManager repo-state refresh from trigger to status payload acceptance.',
+  },
+  git_repo_badge_sync: {
+    label: 'Git Repo Badge Sync',
+    targetMs: 120,
+    description: 'GitManager badge refresh pass for the active or background repo set.',
+  },
 } as const;
 
 export type ExplorerPerformanceMetricId = keyof typeof explorerPerformanceBudgets;

@@ -1,6 +1,6 @@
 use overlay_contracts::{
-    built_in_shell_blueprints, built_in_theme_manifests, built_in_workbench_presets, ShellBlueprint,
-    ThemeManifest, WorkbenchPreset,
+    built_in_shell_blueprints, built_in_theme_manifests, built_in_workbench_presets,
+    ShellBlueprint, ThemeManifest, WorkbenchPreset,
 };
 
 #[tauri::command]

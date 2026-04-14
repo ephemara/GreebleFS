@@ -438,12 +438,15 @@ function App() {
   const animationSignatureRef = useRef('');
   const shaderSignatureRef = useRef('');
   const wallpaperSignatureRef = useRef('');
+  const themePackagesSignatureRef = useRef('');
   const authoredAnimationsRefreshInFlightRef = useRef(false);
   const authoredAnimationsRefreshQueuedRef = useRef(false);
   const authoredShadersRefreshInFlightRef = useRef(false);
   const authoredShadersRefreshQueuedRef = useRef(false);
   const authoredWallpapersRefreshInFlightRef = useRef(false);
   const authoredWallpapersRefreshQueuedRef = useRef(false);
+  const themePackagesRefreshInFlightRef = useRef(false);
+  const themePackagesRefreshQueuedRef = useRef(false);
   const frameTelemetryContextRef = useRef<{
     activePanelId: string | null;
     openPanelCount: number;
@@ -1866,7 +1869,12 @@ function App() {
     });
     // Small delay so the terminal tab renders before we inject the cd
     setTimeout(() => {
-      window.dispatchEvent(new CustomEvent('overlayterm:cdinject', { detail: path }));
+      window.dispatchEvent(new CustomEvent('overlayterm:cdinject', {
+        detail: {
+          path,
+          shell: settings.shell,
+        },
+      }));
     }, 80);
   }, [
     hideOverlay,
@@ -1882,7 +1890,7 @@ function App() {
     await addDirectoryBookmark({ id: crypto.randomUUID(), name, value: path });
   }, [addDirectoryBookmark]);
 
-  const refreshThemePackages = useCallback(async () => {
+  const refreshThemePackages = useCallback(async (force = false) => {
     if (!isTauri()) {
       setThemePackages([]);
       setThemeContributedShaders([]);
@@ -1893,23 +1901,58 @@ function App() {
       return;
     }
 
-    setThemePackagesLoading(true);
+    if (force) {
+      themePackagesRefreshQueuedRef.current = true;
+    }
+    if (themePackagesRefreshInFlightRef.current) {
+      themePackagesRefreshQueuedRef.current = true;
+      return;
+    }
+
+    themePackagesRefreshInFlightRef.current = true;
     try {
-      await ensureDir(themeSystemConfig.themesDirectory);
-      const result = await discoverThemePackages();
-      setThemePackages(result.packages);
-      setThemeContributedShaders(result.shaders);
-      setThemeContributedAnimations(result.animations);
-      setThemePackagesError(result.sourceError);
-      setThemePackagesWarnings(result.warnings);
-    } catch (error) {
-      setThemePackages([]);
-      setThemeContributedShaders([]);
-      setThemeContributedAnimations([]);
-      setThemePackagesError(String(error));
-      setThemePackagesWarnings([]);
+      do {
+        const nextForce = force || themePackagesRefreshQueuedRef.current;
+        themePackagesRefreshQueuedRef.current = false;
+        force = false;
+
+        if (nextForce) {
+          themePackagesSignatureRef.current = '';
+        }
+
+        setThemePackagesLoading(prev => prev && !nextForce);
+        try {
+          await ensureDir(themeSystemConfig.themesDirectory);
+          const listed = await listExplorerDir(themeSystemConfig.themesDirectory, false);
+          const nextSignature = listed
+            .map(entry => `${entry.path}:${entry.modified}`)
+            .sort()
+            .join('|');
+
+          if (!nextForce && nextSignature === themePackagesSignatureRef.current) {
+            setThemePackagesLoading(false);
+            continue;
+          }
+
+          themePackagesSignatureRef.current = nextSignature;
+          const result = await discoverThemePackages();
+          setThemePackages(result.packages);
+          setThemeContributedShaders(result.shaders);
+          setThemeContributedAnimations(result.animations);
+          setThemePackagesError(result.sourceError);
+          setThemePackagesWarnings(result.warnings);
+        } catch (error) {
+          setThemePackages([]);
+          setThemeContributedShaders([]);
+          setThemeContributedAnimations([]);
+          setThemePackagesError(String(error));
+          setThemePackagesWarnings([]);
+        } finally {
+          setThemePackagesLoading(false);
+        }
+      } while (themePackagesRefreshQueuedRef.current);
     } finally {
-      setThemePackagesLoading(false);
+      themePackagesRefreshInFlightRef.current = false;
     }
   }, []);
 
@@ -2211,8 +2254,19 @@ function App() {
   }, [isOverlayVisible, liveReloadEnabled, refreshAuthoredWallpapers]);
 
   useEffect(() => {
-    void refreshThemePackages();
+    void refreshThemePackages(true);
   }, [refreshThemePackages]);
+
+  useEffect(() => {
+    if (!isOverlayVisible || !liveReloadEnabled || !themeSystemConfig.runtimeAssetPollingEnabled) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void refreshThemePackages();
+    }, themeSystemConfig.scanIntervalMs);
+
+    return () => window.clearInterval(interval);
+  }, [isOverlayVisible, liveReloadEnabled, refreshThemePackages]);
 
   const panelDefinitions = useMemo<OverlayPanelDefinition[]>(
     () => [

@@ -3247,13 +3247,22 @@ fn run_git_command(repo_path: &str, args: &[String], timeout: Duration) -> Resul
                 } else {
                     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
                     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    Err(if !stderr.is_empty() {
+                    let exit_code = output
+                        .status
+                        .code()
+                        .map(|code| code.to_string())
+                        .unwrap_or_else(|| "signal".to_string());
+                    let output_detail = if !stderr.is_empty() {
                         stderr
                     } else if !stdout.is_empty() {
                         stdout
                     } else {
-                        format!("Git exited with status {}", output.status)
-                    })
+                        "no output".to_string()
+                    };
+                    Err(format!(
+                        "Git command failed (exit {}): {}",
+                        exit_code, output_detail
+                    ))
                 };
             }
             Ok(None) => {
@@ -3277,9 +3286,11 @@ fn run_git_command(repo_path: &str, args: &[String], timeout: Duration) -> Resul
 #[tauri::command]
 #[specta::specta]
 pub async fn git_exec(repo_path: String, args: Vec<String>) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || run_git_command(&repo_path, &args, GIT_EXEC_TIMEOUT))
-        .await
-        .map_err(|join_error| format!("Git task join failure: {}", join_error))?
+    tauri::async_runtime::spawn_blocking(move || {
+        run_git_command(&repo_path, &args, GIT_EXEC_TIMEOUT)
+    })
+    .await
+    .map_err(|join_error| format!("Git task join failure: {}", join_error))?
 }
 
 // ─── fs_read_file_base64 ─────────────────────────────────────────────────────
@@ -5528,7 +5539,10 @@ mod tests {
         .await
         .expect("initial content fs_search_entries failed");
         assert_eq!(initial_content_results.len(), 1);
-        assert_eq!(initial_content_results[0].path, source_file.to_string_lossy());
+        assert_eq!(
+            initial_content_results[0].path,
+            source_file.to_string_lossy()
+        );
 
         {
             let name_cache = search_name_index_cache()
@@ -5611,7 +5625,10 @@ mod tests {
         .await
         .expect("refreshed content fs_search_entries failed");
         assert_eq!(refreshed_content_results.len(), 1);
-        assert_eq!(refreshed_content_results[0].path, moved_file.to_string_lossy());
+        assert_eq!(
+            refreshed_content_results[0].path,
+            moved_file.to_string_lossy()
+        );
     }
 
     #[tokio::test]
@@ -5656,7 +5673,10 @@ mod tests {
         .await
         .expect("initial content fs_search_entries failed");
         assert_eq!(initial_content_results.len(), 1);
-        assert_eq!(initial_content_results[0].path, source_file.to_string_lossy());
+        assert_eq!(
+            initial_content_results[0].path,
+            source_file.to_string_lossy()
+        );
 
         {
             let name_cache = search_name_index_cache()
@@ -5852,7 +5872,10 @@ mod tests {
 
         let result = fs_read_file_base64(file_path.to_string_lossy().into()).await;
         let data_url = result.expect("small preview should succeed");
-        assert!(data_url.starts_with("data:image/png;base64,"), "unexpected data url: {data_url}");
+        assert!(
+            data_url.starts_with("data:image/png;base64,"),
+            "unexpected data url: {data_url}"
+        );
     }
 
     #[tokio::test]
@@ -5889,6 +5912,54 @@ mod tests {
         assert!(output.to_lowercase().contains("git version"));
     }
 
+    #[tokio::test]
+    async fn git_exec_reports_exit_code_for_failed_command() {
+        let _env_guard = GIT_EXEC_TEST_ENV_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("git env lock");
+
+        let dir = TempDir::new().expect("temp dir");
+        let script_path = dir.path().join(if cfg!(target_os = "windows") {
+            "fake-git-failure.cmd"
+        } else {
+            "fake-git-failure.sh"
+        });
+
+        #[cfg(target_os = "windows")]
+        let script_body = "@echo off\r\necho boom 1>&2\r\nexit /b 7\r\n";
+
+        #[cfg(not(target_os = "windows"))]
+        let script_body = "#!/bin/sh\necho boom >&2\nexit 7\n";
+
+        fs::write(&script_path, script_body).expect("write fake git script");
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = fs::metadata(&script_path).expect("metadata").permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&script_path, permissions).expect("chmod fake git script");
+        }
+
+        unsafe {
+            std::env::set_var("OVERLAYTERM_GIT_EXECUTABLE", &script_path);
+        }
+
+        let result = run_git_command(
+            dir.path().to_string_lossy().as_ref(),
+            &["status".to_string()],
+            Duration::from_secs(1),
+        );
+
+        unsafe {
+            std::env::remove_var("OVERLAYTERM_GIT_EXECUTABLE");
+        }
+
+        let error = result.expect_err("failing fake git should return an error");
+        assert!(error.contains("exit 7"), "unexpected error: {error}");
+        assert!(error.contains("boom"), "unexpected error: {error}");
+    }
     #[tokio::test]
     async fn git_exec_times_out_and_kills_slow_process() {
         let _env_guard = GIT_EXEC_TEST_ENV_LOCK

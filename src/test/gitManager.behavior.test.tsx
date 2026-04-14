@@ -4,7 +4,33 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { GitManager } from '../components/GitManager';
 import { resolveOverlayAppearance } from '../config/appearance';
+import { recordExplorerPerformanceSample } from '../config/performanceTelemetry';
 import { useSettingsStore } from '../store/settingsStore';
+
+const { fsReadTextFileMock, fsListDirMock } = vi.hoisted(() => ({
+  fsReadTextFileMock: vi.fn(),
+  fsListDirMock: vi.fn(),
+}));
+
+vi.mock('../runtime/tauriClient', async () => {
+  const actual = await vi.importActual<typeof import('../runtime/tauriClient')>('../runtime/tauriClient');
+  return {
+    ...actual,
+    commands: {
+      ...actual.commands,
+      fsReadTextFile: fsReadTextFileMock,
+      fsListDir: fsListDirMock,
+    },
+  };
+});
+
+vi.mock('../config/performanceTelemetry', async () => {
+  const actual = await vi.importActual<typeof import('../config/performanceTelemetry')>('../config/performanceTelemetry');
+  return {
+    ...actual,
+    recordExplorerPerformanceSample: vi.fn(actual.recordExplorerPerformanceSample),
+  };
+});
 
 function renderGitManager(options?: {
   pendingRepositoryImports?: string[];
@@ -26,6 +52,9 @@ describe('GitManager onboarding behavior', () => {
     window.localStorage.clear();
     useSettingsStore.getState().resetToDefaults();
     vi.mocked(invoke).mockReset();
+    vi.mocked(recordExplorerPerformanceSample).mockClear();
+    fsReadTextFileMock.mockReset();
+    fsListDirMock.mockReset();
 
     Object.defineProperty(window, 'ResizeObserver', {
       configurable: true,
@@ -470,6 +499,67 @@ describe('GitManager onboarding behavior', () => {
 
     expect(requestImportSpy).toHaveBeenCalledTimes(1);
     expect(promptSpy).not.toHaveBeenCalled();
+  });
+
+  it('omits large untracked files from inline diffs without reading file contents', async () => {
+    const user = userEvent.setup();
+    const invokeMock = vi.mocked(invoke);
+
+    invokeMock.mockImplementation(async (command: string, args: unknown) => {
+      if (command !== 'git_exec') {
+        return null;
+      }
+
+      const payload = args as { repoPath?: string; args?: string[] } | undefined;
+      const repoPath = payload?.repoPath ?? '';
+      const gitArgs = payload?.args ?? [];
+      const signature = gitArgs.join(' ');
+
+      if (signature === 'rev-parse --show-toplevel') {
+        return 'C:\\repo\n';
+      }
+
+      if (signature === 'rev-parse --is-inside-work-tree') {
+        return 'true\n';
+      }
+
+      if (signature === 'rev-parse --abbrev-ref HEAD') {
+        return 'main\n';
+      }
+
+      if (gitArgs[0] === 'log') {
+        return 'abc123 - Initial commit (just now)\n';
+      }
+
+      if (signature === 'status --porcelain') {
+        return '?? assets/huge.bin\n';
+      }
+
+      if (signature === 'diff --numstat --no-ext-diff' || signature === 'diff --cached --numstat --no-ext-diff') {
+        return '';
+      }
+
+      throw new Error(`Unexpected git_exec call for ${repoPath}: ${signature}`);
+    });
+
+    fsListDirMock.mockResolvedValue([
+      { name: 'huge.bin', is_dir: false, size: 256 * 1024 },
+    ]);
+    fsReadTextFileMock.mockRejectedValue(new Error('should not read large untracked files'));
+
+    renderGitManager({
+      pendingRepositoryImports: ['C:\\repo'],
+    });
+
+    await screen.findByText('assets/huge.bin');
+    await user.click(screen.getByText('assets/huge.bin'));
+
+    await waitFor(() => {
+      expect(fsListDirMock).toHaveBeenCalledWith('C:\\repo\\assets', true);
+      expect(fsReadTextFileMock).not.toHaveBeenCalled();
+    });
+
+    expect(vi.mocked(invoke)).not.toHaveBeenCalledWith('git_exec', expect.objectContaining({ args: ['diff', 'HEAD', '--find-renames', '--no-ext-diff', '--', 'assets/huge.bin', 'assets/huge.bin'] }));
   });
 
   it('discards an untracked file from the selected-file controls after confirmation', async () => {
@@ -949,4 +1039,168 @@ describe('GitManager onboarding behavior', () => {
     expect(await screen.findByRole('button', { name: 'Unstage' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Discard Working' })).not.toBeInTheDocument();
   });
+
+  it('pauses badge polling while the document is hidden and performs one bounded repo refresh when visible again', async () => {
+    const invokeMock = vi.mocked(invoke);
+    let visibilityState: DocumentVisibilityState = 'visible';
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => visibilityState,
+    });
+
+    invokeMock.mockImplementation(async (command: string, args: unknown) => {
+      if (command !== 'git_exec') {
+        return null;
+      }
+
+      const payload = args as { repoPath?: string; args?: string[] } | undefined;
+      const repoPath = payload?.repoPath ?? '';
+      const gitArgs = payload?.args ?? [];
+      const signature = gitArgs.join(' ');
+
+      if (signature === 'rev-parse --show-toplevel') {
+        return 'C:\\repo\\n';
+      }
+
+      if (signature === 'rev-parse --is-inside-work-tree') {
+        return 'true\\n';
+      }
+
+      if (signature === 'rev-parse --abbrev-ref HEAD') {
+        return 'main\\n';
+      }
+
+      if (gitArgs[0] === 'log') {
+        return 'abc123 - Initial commit (just now)\\n';
+      }
+
+      if (signature === 'status --porcelain') {
+        return '';
+      }
+
+      if (signature === 'diff --numstat --no-ext-diff' || signature === 'diff --cached --numstat --no-ext-diff') {
+        return '';
+      }
+
+      throw new Error(`Unexpected git_exec call for ${repoPath}: ${signature}`);
+    });
+
+    renderGitManager({
+      pendingRepositoryImports: ['C:\\repo'],
+    });
+
+    await screen.findByText('abc123 - Initial commit (just now)');
+    const statusCalls = () => invokeMock.mock.calls.filter(([command, args]) => command === 'git_exec' && (args as { args?: string[] } | undefined)?.args?.[0] === 'status').length;
+    const initialStatusCalls = statusCalls();
+
+    visibilityState = 'hidden';
+    document.dispatchEvent(new Event('visibilitychange'));
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    expect(statusCalls()).toBe(initialStatusCalls);
+
+    visibilityState = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    await waitFor(() => {
+      expect(statusCalls()).toBe(initialStatusCalls + 1);
+    });
+
+    document.dispatchEvent(new Event('visibilitychange'));
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    expect(statusCalls()).toBe(initialStatusCalls + 1);
+  });
+
+  it('re-synchronizes once per visibility restore cycle without replaying extra refreshes', async () => {
+    const invokeMock = vi.mocked(invoke);
+    let visibilityState: DocumentVisibilityState = 'visible';
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => visibilityState,
+    });
+
+    invokeMock.mockImplementation(async (command: string, args: unknown) => {
+      if (command !== 'git_exec') {
+        return null;
+      }
+
+      const payload = args as { repoPath?: string; args?: string[] } | undefined;
+      const gitArgs = payload?.args ?? [];
+      const signature = gitArgs.join(' ');
+
+      if (signature === 'rev-parse --show-toplevel') return 'C:\repo\n';
+      if (signature === 'rev-parse --is-inside-work-tree') return 'true\n';
+      if (signature === 'rev-parse --abbrev-ref HEAD') return 'main\n';
+      if (gitArgs[0] === 'log') return 'abc123 - Initial commit (just now)\n';
+      if (signature === 'status --porcelain' || signature === 'diff --numstat --no-ext-diff' || signature === 'diff --cached --numstat --no-ext-diff') return '';
+
+      throw new Error(`Unexpected git_exec call: ${signature}`);
+    });
+
+    renderGitManager({ pendingRepositoryImports: ['C:\repo'] });
+
+    await screen.findByText('abc123 - Initial commit (just now)');
+    const statusCalls = () => invokeMock.mock.calls.filter(([command, args]) => command === 'git_exec' && (args as { args?: string[] } | undefined)?.args?.[0] === 'status').length;
+    const initialStatusCalls = statusCalls();
+
+    visibilityState = 'hidden';
+    document.dispatchEvent(new Event('visibilitychange'));
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+
+    visibilityState = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+    await waitFor(() => {
+      expect(statusCalls()).toBe(initialStatusCalls + 1);
+    });
+
+    document.dispatchEvent(new Event('visibilitychange'));
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    expect(statusCalls()).toBe(initialStatusCalls + 1);
+
+    visibilityState = 'hidden';
+    document.dispatchEvent(new Event('visibilitychange'));
+    visibilityState = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    await waitFor(() => {
+      expect(statusCalls()).toBe(initialStatusCalls + 2);
+    });
+  });
+
+  it('records performance samples for repo-state loads and badge syncs', async () => {
+    const invokeMock = vi.mocked(invoke);
+
+    invokeMock.mockImplementation(async (command: string, args: unknown) => {
+      if (command !== 'git_exec') {
+        return null;
+      }
+
+      const payload = args as { repoPath?: string; args?: string[] } | undefined;
+      const gitArgs = payload?.args ?? [];
+      const signature = gitArgs.join(' ');
+
+      if (signature === 'rev-parse --show-toplevel') return 'C:\\repo\n';
+      if (signature === 'rev-parse --is-inside-work-tree') return 'true\n';
+      if (signature === 'rev-parse --abbrev-ref HEAD') return 'main\n';
+      if (gitArgs[0] === 'log') return 'abc123 - Initial commit (just now)\n';
+      if (signature === 'status --porcelain' || signature === 'diff --numstat --no-ext-diff' || signature === 'diff --cached --numstat --no-ext-diff') return '';
+
+      throw new Error(`Unexpected git_exec call: ${signature}`);
+    });
+
+    renderGitManager({ pendingRepositoryImports: ['C:\\repo'] });
+
+    await screen.findByText('abc123 - Initial commit (just now)');
+
+    expect(vi.mocked(recordExplorerPerformanceSample)).toHaveBeenCalledWith(
+      expect.objectContaining({ metricId: 'git_repo_state_load' }),
+      expect.anything(),
+    );
+    expect(vi.mocked(recordExplorerPerformanceSample)).toHaveBeenCalledWith(
+      expect.objectContaining({ metricId: 'git_repo_badge_sync' }),
+      expect.anything(),
+    );
+  });
 });
+

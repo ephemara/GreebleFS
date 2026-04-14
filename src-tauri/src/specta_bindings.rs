@@ -1,16 +1,16 @@
 use std::{fs, path::PathBuf};
 
-use crate::desktop_integration::{NativeIconRequest, NativeIconResponse};
 use crate::cloud_commands::{
-    CloudAccountSummary, CloudAccountsSnapshot, CloudAuthSession, CloudAuthStatus,
-    CloudBreadcrumb, CloudDirectoryListing, CloudProviderConfigurationStatus,
+    CloudAccountSummary, CloudAccountsSnapshot, CloudAuthSession, CloudAuthStatus, CloudBreadcrumb,
+    CloudDirectoryListing, CloudProviderConfigurationStatus,
 };
+use crate::desktop_integration::{NativeIconRequest, NativeIconResponse};
 use crate::explorer_pro_commands::{
     ExplorerDuplicateGroup, ExplorerDuplicateScanStartResponse, ExplorerDuplicateScanStatus,
     ExplorerPathTagAssignment, ExplorerSavedSearchRecord, ExplorerSavedSearchSaveRequest,
-    ExplorerTagMutationMode, ExplorerTagMutationRequest, ExplorerTagRecord,
-    ExplorerTagSnapshot, ExplorerTrashActionRecord, ExplorerTrashRestoreResult,
-    ExplorerTrashedEntryRecord, FsBatchRenameItem, FsBatchRenameResult,
+    ExplorerTagMutationMode, ExplorerTagMutationRequest, ExplorerTagRecord, ExplorerTagSnapshot,
+    ExplorerTrashActionRecord, ExplorerTrashRestoreResult, ExplorerTrashedEntryRecord,
+    FsBatchRenameItem, FsBatchRenameResult,
 };
 use crate::fs_commands::{
     DriveInfo, EntryStorageInfo, ExplorerTaskProgressEvent, FileEntry,

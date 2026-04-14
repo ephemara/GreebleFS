@@ -78,12 +78,42 @@
 - 2026-04-14, GitManager instrumentation pass: added telemetry budgets for `git_repo_state_load` and `git_repo_badge_sync`, and wired GitManager to record timings for repo-state refresh and badge sync.
 - Validation attempt: `cargo test --manifest-path src-tauri/Cargo.toml terminal::tests:: -- --nocapture` failed in the local environment because `x86_64-w64-mingw32-gcc` could not link `-lgcc_eh` / `-lgcc`.
 - Validation attempt: `bunx vitest run src/test/gitManager.behavior.test.tsx` failed locally because the repo environment could not resolve `vitest` from `vitest.config.ts`.
+- 2026-04-14, performance pass: added a regression test to assert GitManager records `git_repo_state_load` and `git_repo_badge_sync` telemetry samples during the repo refresh path.
+- Validation attempt: `bunx vitest run src/test/gitManager.behavior.test.tsx` still fails locally with unresolved `vitest` / `@vitejs/plugin-react` config imports, so the new regression coverage could not be executed in this environment.
 - Validation attempt: `bunx vitest run src/test/performanceTelemetry.test.ts` failed locally because the repo environment could not resolve `vitest` from `vitest.config.ts`.
+- 2026-04-14, GitManager visibility-restore QA pass: confirmed the existing `pauses badge polling while the document is hidden and performs one bounded repo refresh when visible again` regression already covers the current 2.3 task goal, so no new code change was required in this pass.
 - 2026-04-14, git_exec hardening verification pass: confirmed the backend already enforces a 20s timeout, returns exit code plus stderr/stdout context on failure, and runs in `spawn_blocking` so the UI thread stays clear.
+- 2026-04-14, terminal lock-pressure pass: confirmed the terminal manager already releases the map mutex before PTY reads and keeps lookup/resize paths scoped to the smallest possible critical section.
+- 2026-04-14, explorer-to-terminal handoff verification pass: confirmed the handoff command builder already emits PowerShell literal-path, cmd /d, and POSIX-safe cd forms, with quote escaping covered by unit tests.
+- Validation attempt: `cargo test --manifest-path src-tauri/Cargo.toml terminal::tests::command_exists_uses_path_and_pathext_lookup -- --nocapture` failed in the local environment because `x86_64-w64-mingw32-gcc` could not link `-lgcc_eh` / `-lgcc`.
 - Validation attempt: `cargo test --manifest-path src-tauri/Cargo.toml git_exec -- --nocapture` failed in the local environment because `x86_64-w64-mingw32-gcc` could not link `-lgcc_eh` / `-lgcc`.
 - 2026-04-14, workflow-tools pass: refined `scripts/run-heartbeat-pass.mjs` so future heartbeat passes surface the active performance spec, the baseline scenario, and spec-aware validation hints for the current changed-file set.
 - 2026-04-14, runtime-content reload pass: added developer-mode polling for theme package discovery so theme changes now auto-refresh the theme, shader, and animation inventories from the shared runtime content surface.
+- 2026-04-14, runtime-content reload refinement: increased the theme-package polling interval to 5s so the live-reload path stays visible-only while cutting steady-state background scan pressure.
 - 2026-04-14, GitManager visibility-aware refresh pass: queued hidden repo-state refreshes now defer until visibility restores, and the restore path performs one bounded repo-state resync instead of replaying refresh churn.
+- 2026-04-14, GitManager visibility-restore refinement: added an explicit one-shot visibility-restore guard and regression coverage for a second hide/show cycle.
 - Validation attempt: `bunx vitest run src/test/gitManager.behavior.test.tsx` failed locally because the repo environment could not resolve `vitest` from `vitest.config.ts`.
+- 2026-04-14, git UX pass: reviewed the active spec tasks against the real OverlayTerm repo state, confirmed the current git-heavy surface is `F:\apps-2d\overlayterm`, and refined Task 3.2 so the next pass explicitly covers large/binary untracked diffs plus telemetry on intentional preview omission.
+- 2026-04-14, GitManager oversized-untracked guard pass: added a regression test that asserts large untracked files stop at the size-hint omission path and do not call `fsReadTextFile` before building the inline diff fallback.
+- Validation attempt: `bun vitest run src/test/gitManager.behavior.test.tsx` is still blocked here because `vitest` is not installed in the local toolchain.
+- Validation attempt: `git status --short --branch` in `F:\apps-2d\overlayterm` confirmed a git-heavy working tree with many local modifications, making it a valid direct scenario for the next GitManager refresh/diff pass.
 - Validation target: `python3 scripts/validate_spec.py ./.specs/overlayterm-performance-60fps`
 - Validation note: this environment still lacks `python3` on PATH, so the spec validator could not be executed here.
+- 2026-04-14, terminal backend reality check: `src-tauri/src/terminal.rs` no longer flushes on each write, and the read path now releases the shared terminal map mutex before the non-blocking PTY read, so the remaining throughput risk is mainly the shared map lock around lookup/clone and the resize path.
+- Validation attempt: `cargo test --manifest-path src-tauri/Cargo.toml terminal -- --nocapture` is still blocked in this environment by the mingw linker missing `-lgcc_eh` / `-lgcc`.
+- 2026-04-14, terminal handoff pass: explorer-to-terminal now uses the shared shell-aware cd command builder instead of hardcoded `cd '<path>'`.
+- Validation attempt: `bun test src/test/terminalCommandUtils.test.ts src/test/terminalOverlay.test.tsx` passed the shell-command utility checks, but the overlay test hit a local `react/jsx-dev-runtime` module resolution failure before full UI validation could complete.
+- 2026-04-14, terminal read-path pass: `TerminalManager::read` and the reader-thread bootstrap now clone the PTY reader under lock and drop the shared terminal map mutex before the blocking read loop, which should cut contention on bursty shell output.
+- 2026-04-14, terminal map-lock refinement: terminal lookup now clones an `Arc<Mutex<TerminalInstance>>` out of the shared map so write, read, and resize paths hold the global map lock only for lookup, then do PTY work behind the per-terminal mutex.
+- Validation attempt: direct Rust test execution is still blocked in this environment by the mingw linker missing `-lgcc_eh` / `-lgcc`, so the change was validated by code inspection only for this pass.
+- 2026-04-14, plugin runtime reload pass: fallback polling now reuses signature-based refreshes instead of forcing full rediscovery on every poll tick, so steady-state watcher failures stay bounded.
+- Validation attempt: `bunx vitest run src/test/useFolderPluginRuntime.test.tsx src/test/useFolderPluginRuntime.fallback.test.tsx src/test/useFolderPluginRuntime.queue.test.tsx` could not start because the local environment is missing `vitest` from `vitest.config.ts`.
+- 2026-04-14, workflow-tools pass: refined `scripts/run-heartbeat-pass.mjs` again so it now reports the active spec slug, open task count, and an explicit spec-validation command for `.specs/overlayterm-performance-60fps`.
+- Validation attempt: `python3 scripts/validate_spec.py ./.specs/overlayterm-performance-60fps` could not run in this environment because `python3` is unavailable on PATH.
+
+- 2026-04-14, GitManager visibility-aware refresh pass: queued hidden repo-state refreshes now defer until visibility restores, and the restore path performs one bounded repo-state resync instead of replaying refresh churn.
+- 2026-04-14, GitManager visibility-restore refinement: added an explicit one-shot visibility-restore guard and regression coverage for a second hide/show cycle.
+- Validation attempt: `bunx vitest run src/test/gitManager.behavior.test.tsx` failed locally because the repo environment could not resolve `vitest` from `vitest.config.ts`.
+
+- 2026-04-14, preview fallback pass: FileExplorer now keeps a visible fallback state for oversized, unsupported, and preview-load-failed files instead of collapsing straight to a blank preview.
+- Validation attempt: direct mixed-file UI validation was added in `src/test/fileExplorer.viewModes.test.tsx`, but the local vitest toolchain is still blocked by the repo's unresolved config/runtime dependencies.
