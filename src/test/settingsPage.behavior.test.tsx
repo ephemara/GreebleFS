@@ -10,7 +10,7 @@ import { createDefaultFolderIconRules } from '../config/folderIcons';
 import { pluginSystemConfig } from '../config/plugins';
 import { screenshotFeatureConfig } from '../config/screenshots';
 import { compileThemeEngineManifest, normalizeThemeManifestDraft } from '../runtime/themeEngineBackend';
-import { useSettingsStore } from '../store/settingsStore';
+import { defaultSettings, useSettingsStore } from '../store/settingsStore';
 import { useTerminalStore } from '../store/terminalStore';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
 
@@ -261,6 +261,31 @@ describe('SettingsPage behavior', () => {
 
     await user.click(screen.getAllByRole('button', { name: 'Reset' })[0]);
     expect(useSettingsStore.getState().settings.keybindings.terminalToggle).toBe('Ctrl+Space');
+  }, 30000);
+
+  it('restores the safe system defaults from the settings page reset action', async () => {
+    const user = userEvent.setup();
+
+    useSettingsStore.setState(state => ({
+      settings: {
+        ...state.settings,
+        system: {
+          ...state.settings.system,
+          launchAtStartup: true,
+          hideAppInTray: false,
+          showInTaskbar: false,
+        },
+      },
+    }));
+
+    renderSettingsPage();
+
+    await user.click(findSectionButton('System'));
+    await user.click(screen.getByRole('button', { name: 'Reset Defaults' }));
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.system).toEqual(defaultSettings.system);
+    });
   }, 30000);
 
   it('switches the terminal between application and dock presentation and persists the windowed size', async () => {

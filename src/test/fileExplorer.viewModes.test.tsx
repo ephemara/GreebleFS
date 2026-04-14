@@ -89,22 +89,25 @@ function resetOverlayTermStorage(storage: Storage) {
 
 function renderExplorer(options: { layoutMode?: 'full' | 'compact-dock' } = {}) {
   const appearance = resolveOverlayAppearance({ activeThemeId: 'operator' });
-  return render(
-    <FileExplorer
-      theme={{
-        accent: appearance.theme.palette.accent,
-        bg: appearance.theme.palette.appBackground,
-        bgPanel: appearance.theme.palette.panelBackground,
-        text: appearance.theme.palette.textPrimary,
-        border: appearance.theme.palette.border,
-        textMuted: appearance.theme.palette.textMuted,
-      }}
-      appearance={appearance}
-      layoutMode={options.layoutMode}
-      onOpenInTerminal={() => {}}
-      onAddBookmark={async () => {}}
-    />,
-  );
+  return {
+    appearance,
+    ...render(
+      <FileExplorer
+        theme={{
+          accent: appearance.theme.palette.accent,
+          bg: appearance.theme.palette.appBackground,
+          bgPanel: appearance.theme.palette.panelBackground,
+          text: appearance.theme.palette.textPrimary,
+          border: appearance.theme.palette.border,
+          textMuted: appearance.theme.palette.textMuted,
+        }}
+        appearance={appearance}
+        layoutMode={options.layoutMode}
+        onOpenInTerminal={() => {}}
+        onAddBookmark={async () => {}}
+      />,
+    ),
+  };
 }
 
 function getExplorerViewport(anchorText: string) {
@@ -244,15 +247,44 @@ describe('FileExplorer view modes', () => {
     expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_read_text_file')).toBe(false);
   });
 
-  it('keeps the preview pane available in compact dock mode', async () => {
+  it('keeps inline previews closed in compact dock mode', async () => {
     renderExplorer({ layoutMode: 'compact-dock' });
     await screen.findByText('notes.txt');
 
     fireEvent.click(screen.getByText('notes.txt'));
 
     await waitFor(() => {
-      expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_read_text_file')).toBe(true);
-      expect(screen.getByRole('button', { name: /copy path/i })).toBeTruthy();
+      expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_read_text_file')).toBe(false);
+    });
+    expect(screen.queryByRole('button', { name: /copy path/i })).toBeNull();
+  });
+
+  it('closes an open inline preview when switching into compact dock mode', async () => {
+    const { appearance, rerender } = renderExplorer();
+    await screen.findByText('notes.txt');
+
+    fireEvent.click(screen.getByText('notes.txt'));
+    await screen.findByRole('button', { name: /copy path/i });
+
+    rerender(
+      <FileExplorer
+        theme={{
+          accent: appearance.theme.palette.accent,
+          bg: appearance.theme.palette.appBackground,
+          bgPanel: appearance.theme.palette.panelBackground,
+          text: appearance.theme.palette.textPrimary,
+          border: appearance.theme.palette.border,
+          textMuted: appearance.theme.palette.textMuted,
+        }}
+        appearance={appearance}
+        layoutMode="compact-dock"
+        onOpenInTerminal={() => {}}
+        onAddBookmark={async () => {}}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /copy path/i })).toBeNull();
     });
   });
 

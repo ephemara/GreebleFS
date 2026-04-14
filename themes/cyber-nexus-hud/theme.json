@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "id": "cyber-nexus-hud",
+  "name": "Cyber Nexus HUD",
+  "description": "A stereoscopic 3D orbital interface. Panels float in a cybernetic hyperspace matrix with dynamic perspective shifting and CRT grid floors.",
+  "author": "Antigravity",
+  "tags": ["cyberpunk", "3d", "orbital", "neon", "hud", "hologram"],
+  "fonts": {
+    "ui": "Inter, sans-serif",
+    "mono": "\"JetBrains Mono\", monospace"
+  },
+  "presentation": {
+    "chromeStyle": "floating",
+    "density": "compact",
+    "iconStyle": "vector",
+    "motionStyle": "dramatic",
+    "cornerRadius": 16,
+    "panelSpacing": 12
+  },
+  "theme": {
+    "palette": {
+      "appBackground": "#020406",
+      "appBackgroundAlt": "#04080a",
+      "shellBackground": "rgba(4, 9, 14, 0.94)",
+      "shellBackgroundSolid": "#060A10",
+      "topBarBackground": "rgba(2, 6, 10, 0.8)",
+      "topBarMenuBackground": "rgba(4, 8, 12, 0.95)",
+      "sidebarBackground": "rgba(4, 9, 14, 0.9)",
+      "panelBackground": "rgba(8, 14, 20, 0.85)",
+      "panelAltBackground": "rgba(4, 8, 12, 0.95)",
+      "cardBackground": "rgba(10, 22, 30, 0.8)",
+      "cardHoverBackground": "rgba(15, 34, 45, 0.9)",
+      "contextMenuBackground": "rgba(6, 12, 18, 0.98)",
+      "inputBackground": "rgba(2, 4, 6, 0.9)",
+      "terminalBackground": "#020406",
+      "selectionBackground": "rgba(0, 255, 170, 0.2)",
+      "scrimBackground": "rgba(0, 2, 4, 0.85)",
+      "textPrimary": "#e0fcf0",
+      "textSecondary": "#8ae6c1",
+      "textMuted": "#4c8c73",
+      "textDim": "#2d5948",
+      "textInverse": "#020406",
+      "border": "rgba(0, 255, 170, 0.15)",
+      "borderStrong": "rgba(0, 255, 170, 0.4)",
+      "accent": "#00ffaa",
+      "accentSoft": "rgba(0, 255, 170, 0.2)",
+      "accentContrast": "#020406",
+      "success": "#00ffaa",
+      "warning": "#ffcc00",
+      "danger": "#ff0055",
+      "info": "#00aaff",
+      "note": "#8ae6c1",
+      "todo": "#00ffaa",
+      "bug": "#ff0055",
+      "prompt": "#ffcc00"
+    },
+    "effects": {
+      "backgroundImage": "radial-gradient(ellipse at 50% -20%, rgba(0, 255, 170, 0.08), transparent 60%)",
+      "shadow": "0 20px 60px rgba(0, 255, 170, 0.14)",
+      "overlayShadow": "0 0 0 1px rgba(0, 255, 170, 0.2), 0 30px 80px rgba(0, 0, 0, 0.85)"
+    },
+    "workbench": {
+      "brandLabel": "NEXUS",
+      "topBarStyle": "floating",
+      "commandPaletteStyle": "glass",
+      "terminalStyle": "glass",
+      "settingsStyle": "glass",
+      "tabStyle": "capsule",
+      "metrics": {
+        "chromeHeight": 44,
+        "controlRadius": 8,
+        "panelRadius": 16,
+        "shellInset": 16,
+        "pagePadding": 16,
+        "panelGap": 12
+      }
+    },
+    "explorer": {
+      "railBrandLabel": "NEXUS",
+      "toolbarStyle": "floating",
+      "breadcrumbStyle": "capsule",
+      "selectionStyle": "glow",
+      "hoverStyle": "glow",
+      "previewStyle": "glass",
+      "statusBarStyle": "floating",
+      "preferredViewMode": "icons-md",
+      "preferredExperimentalViewMode": "adaptive-semantic-grid",
+      "metrics": {
+        "railWidth": 260,
+        "previewWidth": 420,
+        "panelRadius": 16,
+        "gridScale": 1.0,
+        "iconScale": 1.0,
+        "hoverLiftPx": 0
+      }
+    }
+  },
+  "themeRenderer": {
+    "entryModule": "renderers/cyber-nexus.tsx",
+    "apiVersion": 1,
+    "supportsLiveSwap": true,
+    "fallbackRuntime": "channel-launcher",
+    "capabilities": {
+      "customScreens": true,
+      "wallpaperScene": true,
+      "surfaceAdapters": true
+    }
+  }
+}

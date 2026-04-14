@@ -29,7 +29,10 @@ pub fn window_apply_mode(
     log_optional_window_error(window.set_decorations(decorations), "set_decorations");
     log_optional_window_error(window.set_always_on_top(always_on_top), "set_always_on_top");
     log_optional_window_error(window.set_shadow(shadow), "set_shadow");
-    log_optional_window_error(window.set_skip_taskbar(skip_taskbar), "set_skip_taskbar");
+    log_optional_window_error(
+        set_native_taskbar_visibility(&app, &window, !skip_taskbar),
+        "set_taskbar_visibility",
+    );
 
     if should_preserve_hidden_wayland_overlay_geometry(&window, decorations, always_on_top) {
         return Ok(());

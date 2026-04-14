@@ -2556,28 +2556,15 @@ export function FileExplorer({
   useEffect(() => {
     if (isCompactDock) {
       setSidebarWidth(current => Math.max(sidebarBounds.minWidth, Math.min(current, sidebarBounds.maxWidth)));
-      setPreview({
-      type: 'fallback',
-      path: entry.path,
-      name: entry.name,
-      label: 'Preview unavailable',
-      detail: 'No inline preview is available for this file type.',
-    });
+      void closePreview();
     }
-  }, [isCompactDock, sidebarBounds.maxWidth, sidebarBounds.minWidth]);
+  }, [closePreview, isCompactDock, sidebarBounds.maxWidth, sidebarBounds.minWidth]);
 
   useEffect(() => {
     if (!previewEnabled) {
-      setPreview({
-      type: 'fallback',
-      path: entry.path,
-      name: entry.name,
-      label: 'Preview unavailable',
-      detail: 'No inline preview is available for this file type.',
-    });
-      setPreviewLoading(false);
+      void closePreview();
     }
-  }, [previewEnabled]);
+  }, [closePreview, previewEnabled]);
 
   useEffect(() => {
     updateExplorerSessionForInstance(instanceId, {
@@ -3464,13 +3451,8 @@ export function FileExplorer({
 
   const closePreview = useCallback(async () => {
     await flushPreviewTextSave();
-    setPreview({
-      type: 'fallback',
-      path: entry.path,
-      name: entry.name,
-      label: 'Preview unavailable',
-      detail: 'No inline preview is available for this file type.',
-    });
+    setPreview({ type: 'none', path: '' });
+    setPreviewLoading(false);
   }, [flushPreviewTextSave]);
 
   const applyShellLayoutPreset = useCallback((nextLayoutId: ExplorerShellLayoutId) => {
@@ -3869,13 +3851,8 @@ export function FileExplorer({
       await trashExplorerPaths(deleteTargets.map((entry) => entry.path));
       invalidateExplorerResultCaches();
       if (deleteTargets.some((entry) => preview.path === entry.path)) {
-        setPreview({
-      type: 'fallback',
-      path: entry.path,
-      name: entry.name,
-      label: 'Preview unavailable',
-      detail: 'No inline preview is available for this file type.',
-    });
+        setPreview({ type: 'none', path: '' });
+        setPreviewLoading(false);
       }
       if (previewSaveTimer.current) {
         window.clearTimeout(previewSaveTimer.current);

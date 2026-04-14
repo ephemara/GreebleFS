@@ -286,6 +286,27 @@ describe('useSettingsStore.resetToDefaults()', () => {
     expect(settings.appearance.activeThemeId).toBe(defaultSettings.appearance.activeThemeId);
     expect(settings.explorer.showHiddenFiles).toBe(defaultSettings.explorer.showHiddenFiles);
   });
+
+  it('restores the system entry points to the safe defaults when recovering from corrupted state', () => {
+    const store = useSettingsStore.getState();
+
+    useSettingsStore.setState(state => ({
+      settings: {
+        ...state.settings,
+        system: {
+          ...state.settings.system,
+          launchAtStartup: true,
+          hideAppInTray: false,
+          showInTaskbar: false,
+        },
+      },
+    }));
+
+    store.resetToDefaults();
+
+    const { settings } = useSettingsStore.getState();
+    expect(settings.system).toEqual(defaultSettings.system);
+  });
 });
 
 describe('useSettingsStore.updateSystem()', () => {

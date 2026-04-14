@@ -352,7 +352,7 @@ function getSettingsStorage(): Storage {
   return createMemoryStorage();
 }
 
-function normalizeSystemSettings(
+export function normalizeSystemSettings(
   base: SystemSettings,
   updates?: Partial<SystemSettings>,
 ): SystemSettings {
@@ -364,9 +364,18 @@ function normalizeSystemSettings(
     developerMode: Boolean(merged.developerMode),
   };
 
+  const hideAppInTrayUpdated = updates != null && Object.prototype.hasOwnProperty.call(updates, 'hideAppInTray');
+  const showInTaskbarUpdated = updates != null && Object.prototype.hasOwnProperty.call(updates, 'showInTaskbar');
+
   // Keep at least one desktop entry point visible so the overlay is always recoverable.
   if (!normalized.hideAppInTray && !normalized.showInTaskbar) {
-    normalized.hideAppInTray = true;
+    if (showInTaskbarUpdated && !hideAppInTrayUpdated) {
+      normalized.hideAppInTray = true;
+    } else if (hideAppInTrayUpdated && !showInTaskbarUpdated) {
+      normalized.showInTaskbar = true;
+    } else {
+      normalized.hideAppInTray = true;
+    }
   }
 
   return normalized;
@@ -780,10 +789,10 @@ export const useSettingsStore = create<SettingsState>()(
         },
       })),
       
-      resetToDefaults: () => set((state) => ({
+      resetToDefaults: () => set(() => ({
         settings: {
           ...defaultSettings,
-          system: normalizeSystemSettings(defaultSettings.system, state.settings.system),
+          system: normalizeSystemSettings(defaultSettings.system),
         },
       })),
       

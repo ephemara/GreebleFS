@@ -6,6 +6,12 @@
 - Focused test coverage passed for the helper itself, but the broader terminal overlay test is currently blocked here by a local `react/jsx-dev-runtime` module resolution issue.
 - Next pass should either repair the local test environment or extend the terminal handoff coverage deeper once the UI runtime can start cleanly.
 
+## 2026-04-14 — Taskbar Sync Native Pass
+
+- `windowApplyMode` now drives taskbar visibility through the native platform helper, so macOS Dock state follows the same presentation policy as Linux/Windows skip-taskbar handling.
+- `App.tsx` now syncs `windowSetTaskbarVisibility()` when the persisted `showInTaskbar` setting changes, so taskbar state updates immediately instead of waiting for the next mode transition.
+- Validation here is still blocked by the mingw linker missing `-lgcc_eh` / `-lgcc`, and Vitest still fails to resolve `vitest/config` plus `@vitejs/plugin-react` in this workspace.
+
 ## 2026-04-14 — Explorer Workspace Split Controls Pass
 
 - `ExplorerWorkspace` now shows a compact split indicator plus nudge/reset controls in dual-pane mode, so pane sizing is no longer dependent on the drag handle alone.

@@ -545,7 +545,8 @@ function App() {
   windowModeRef.current = windowMode;
   const isWindowedMode = windowMode === 'windowed';
   const isWaylandOverlaySession = runtimePlatform === 'linux' && linuxDisplayServer === 'wayland' && !isWindowedMode;
-  const shouldShowInTaskbar = systemSettings.showInTaskbar || isWindowedMode;
+  const shouldShowInTaskbar = systemSettings.showInTaskbar;
+  const shouldSkipTaskbar = !shouldShowInTaskbar;
   const appOpacity = appearance.appOpacity ?? 1.0;
   const panelTransparency = appearance.panelTransparency ?? overlayVisualControls.panelTransparency.defaultValue;
   const appZoom = appearance.appZoom ?? 1.0;
@@ -873,6 +874,16 @@ function App() {
   }, [systemSettings.hideAppInTray]);
 
   useEffect(() => {
+    if (!isTauri()) {
+      return;
+    }
+
+    commands.windowSetTaskbarVisibility(systemSettings.showInTaskbar).then(unwrapTauriResult).catch(error => {
+      console.warn('OverlayTerm: failed to sync taskbar visibility', error);
+    });
+  }, [systemSettings.showInTaskbar]);
+
+  useEffect(() => {
     setOverlayPluginFonts(pluginFonts);
   }, [pluginFonts]);
 
@@ -1151,7 +1162,7 @@ function App() {
         false,
         true,
         false,
-        !shouldShowInTaskbar,
+        shouldSkipTaskbar,
         layout.x,
         layout.y,
         layout.width,
@@ -1328,7 +1339,7 @@ function App() {
           false,
           false,
           false,
-          false,
+          shouldSkipTaskbar,
           layout.x,
           layout.y,
           layout.width,
@@ -1340,7 +1351,7 @@ function App() {
           false,
           false,
           false,
-          false,
+          shouldSkipTaskbar,
           0, 0, 0, 0,
         ));
       }
@@ -1566,7 +1577,7 @@ function App() {
               false,
               false,
               false,
-              false,
+              shouldSkipTaskbar,
               layout.x,
               layout.y,
               layout.width,
@@ -1596,7 +1607,7 @@ function App() {
     } catch (error) {
       console.warn('OverlayTerm: failed to transition window presentation', error);
     }
-  }, [applyDockOverlayLayout]);
+  }, [applyDockOverlayLayout, shouldShowInTaskbar]);
 
   const handleToggleWindowMode = useCallback(() => {
     const nextWindowMode = windowMode === 'windowed' ? 'overlay' : 'windowed';

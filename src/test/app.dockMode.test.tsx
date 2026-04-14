@@ -129,12 +129,14 @@ vi.mock('../runtime/tauriClient', () => ({
     traySetVisible: vi.fn(async () => undefined),
     terminalOpenExternal: vi.fn(async () => undefined),
     windowApplyMode: vi.fn(async () => undefined),
+    windowSetTaskbarVisibility: vi.fn(async () => undefined),
     windowGetLinuxDisplayServer: vi.fn(async () => 'x11'),
     windowSetBlur: vi.fn(async () => undefined),
   },
 }));
 
 import App from '../App';
+import { commands } from '../runtime/tauriClient';
 import { defaultSettings, useSettingsStore } from '../store/settingsStore';
 
 function setWindowMode(mode: 'overlay' | 'windowed') {
@@ -159,6 +161,9 @@ describe('App dock mode behavior', () => {
   beforeEach(() => {
     window.localStorage.clear();
     useSettingsStore.getState().resetToDefaults();
+    vi.mocked(commands.traySetVisible).mockClear();
+    vi.mocked(commands.windowApplyMode).mockClear();
+    vi.mocked(commands.windowSetTaskbarVisibility).mockClear();
     setWindowMode('windowed');
   });
 
@@ -182,6 +187,89 @@ describe('App dock mode behavior', () => {
       expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('windowed');
     });
     expect(screen.getByTestId('explorer-layout-mode')).toHaveTextContent('full');
+  });
+
+  it('keeps application mode out of the taskbar when that setting is disabled', async () => {
+    useSettingsStore.setState(state => ({
+      settings: {
+        ...state.settings,
+        system: {
+          ...state.settings.system,
+          showInTaskbar: false,
+        },
+      },
+    }));
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(vi.mocked(commands.windowApplyMode)).toHaveBeenCalledWith(
+        false,
+        false,
+        false,
+        true,
+        expect.any(Number),
+        expect.any(Number),
+        expect.any(Number),
+        expect.any(Number),
+      );
+    });
+    expect(vi.mocked(commands.windowSetTaskbarVisibility)).toHaveBeenCalledWith(false);
+    expect(vi.mocked(commands.traySetVisible)).toHaveBeenCalledWith(true);
+  });
+
+  it('preserves the taskbar preference when switching back from dock mode', async () => {
+    const user = userEvent.setup();
+
+    setWindowMode('overlay');
+    useSettingsStore.setState(state => ({
+      settings: {
+        ...state.settings,
+        system: {
+          ...state.settings.system,
+          showInTaskbar: true,
+        },
+      },
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByTestId('explorer-layout-mode')).toHaveTextContent('compact-dock');
+
+    await user.click(screen.getByTitle('Switch to Application Mode'));
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('windowed');
+    });
+    expect(vi.mocked(commands.windowApplyMode)).toHaveBeenLastCalledWith(
+      false,
+      false,
+      false,
+      false,
+      expect.any(Number),
+      expect.any(Number),
+      expect.any(Number),
+      expect.any(Number),
+    );
+  });
+
+  it('hides the tray icon when the persisted system setting disables it', async () => {
+    useSettingsStore.setState(state => ({
+      settings: {
+        ...state.settings,
+        system: {
+          ...state.settings.system,
+          hideAppInTray: false,
+          showInTaskbar: true,
+        },
+      },
+    }));
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(vi.mocked(commands.traySetVisible)).toHaveBeenCalledWith(false);
+    });
   });
 
   it('foregrounds the explorer when switching from application mode into dock mode', async () => {

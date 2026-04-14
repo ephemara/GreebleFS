@@ -1,0 +1,109 @@
+{
+  "version": 1,
+  "id": "celestial-astrolabe",
+  "name": "Celestial Astrolabe",
+  "description": "An elegant clockwork UI of orbiting golden spheres, Da Vinci inspired mechanisms, and deep space navy.",
+  "author": "Antigravity",
+  "tags": ["steampunk", "celestial", "gold", "astrolabe", "elegant"],
+  "fonts": {
+    "ui": "\"Cormorant Garamond\", \"Times New Roman\", serif",
+    "mono": "\"Fira Code\", monospace"
+  },
+  "presentation": {
+    "chromeStyle": "glass",
+    "density": "comfortable",
+    "iconStyle": "vector",
+    "motionStyle": "fluid",
+    "cornerRadius": 100,
+    "panelSpacing": 16
+  },
+  "theme": {
+    "palette": {
+      "appBackground": "#050B14",
+      "appBackgroundAlt": "#08101E",
+      "shellBackground": "rgba(5, 11, 20, 0.85)",
+      "shellBackgroundSolid": "#070E1A",
+      "topBarBackground": "rgba(5, 11, 20, 0.7)",
+      "topBarMenuBackground": "rgba(8, 16, 30, 0.95)",
+      "sidebarBackground": "rgba(5, 11, 20, 0.8)",
+      "panelBackground": "rgba(8, 16, 30, 0.8)",
+      "panelAltBackground": "rgba(5, 11, 20, 0.9)",
+      "cardBackground": "rgba(15, 25, 45, 0.8)",
+      "cardHoverBackground": "rgba(25, 38, 65, 0.9)",
+      "contextMenuBackground": "rgba(8, 16, 30, 0.95)",
+      "inputBackground": "rgba(5, 11, 20, 0.8)",
+      "terminalBackground": "#050B14",
+      "selectionBackground": "rgba(235, 192, 100, 0.2)",
+      "scrimBackground": "rgba(2, 4, 8, 0.8)",
+      "textPrimary": "#FAEDCD",
+      "textSecondary": "#D4AF37",
+      "textMuted": "#968352",
+      "textDim": "#5C5237",
+      "textInverse": "#050B14",
+      "border": "rgba(212, 175, 55, 0.2)",
+      "borderStrong": "rgba(212, 175, 55, 0.5)",
+      "accent": "#D4AF37",
+      "accentSoft": "rgba(212, 175, 55, 0.2)",
+      "accentContrast": "#050B14",
+      "success": "#50C878",
+      "warning": "#FFD700",
+      "danger": "#DC143C",
+      "info": "#4169E1",
+      "note": "#D4AF37",
+      "todo": "#50C878",
+      "bug": "#DC143C",
+      "prompt": "#FFD700"
+    },
+    "effects": {
+      "backgroundImage": "radial-gradient(circle at 50% 50%, rgba(212,175,55,0.05), transparent 70%)",
+      "shadow": "0 10px 40px rgba(0, 0, 0, 0.8)",
+      "overlayShadow": "0 0 0 1px rgba(212,175,55,0.3), 0 20px 60px rgba(0, 0, 0, 0.9)"
+    },
+    "workbench": {
+      "brandLabel": "ASTROLABE",
+      "topBarStyle": "glass",
+      "commandPaletteStyle": "glass",
+      "terminalStyle": "glass",
+      "settingsStyle": "glass",
+      "tabStyle": "pill",
+      "metrics": {
+        "chromeHeight": 48,
+        "controlRadius": 24,
+        "panelRadius": 32,
+        "shellInset": 20,
+        "pagePadding": 20,
+        "panelGap": 16
+      }
+    },
+    "explorer": {
+      "railBrandLabel": "ASTROLABE",
+      "toolbarStyle": "glass",
+      "breadcrumbStyle": "pill",
+      "selectionStyle": "outline",
+      "hoverStyle": "lift",
+      "previewStyle": "glass",
+      "statusBarStyle": "floating",
+      "preferredViewMode": "list",
+      "preferredExperimentalViewMode": "constellation",
+      "metrics": {
+        "railWidth": 280,
+        "previewWidth": 460,
+        "panelRadius": 24,
+        "gridScale": 1.0,
+        "iconScale": 1.0,
+        "hoverLiftPx": 3
+      }
+    }
+  },
+  "themeRenderer": {
+    "entryModule": "renderers/astrolabe.tsx",
+    "apiVersion": 1,
+    "supportsLiveSwap": true,
+    "fallbackRuntime": "cross-axis-media",
+    "capabilities": {
+      "customScreens": true,
+      "wallpaperScene": true,
+      "surfaceAdapters": true
+    }
+  }
+}
