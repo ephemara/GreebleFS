@@ -3662,6 +3662,12 @@ export function FileExplorer({
     const unique = candidatePaths.filter((path, index, collection) => path && collection.indexOf(path) === index);
     return unique.slice(0, 3);
   }, [history, historyIdx]);
+  const pinnedLocations = useMemo(() => {
+    return explorerRail.nodes
+      .filter((node): node is typeof explorerRail.nodes[number] & { kind: 'bookmark'; path: string; name: string } => node.kind === 'bookmark')
+      .map((node) => ({ path: node.path, label: node.name || getPathLeaf(node.path) }))
+      .slice(0, 3);
+  }, [explorerRail.nodes]);
 
   const batchRenamePreview = useMemo(() => {
     const renameTargets = (selectedEntries.length > 0 ? selectedEntries : visibleEntries)
@@ -6010,6 +6016,34 @@ export function FileExplorer({
                   }}
                 >
                   {getPathLeaf(path)}
+                </button>
+              ))}
+            </div>
+          )}
+          {pinnedLocations.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, minWidth: 0, maxWidth: isCompactDock ? 220 : 320, overflow: 'hidden' }} title="Pinned locations">
+              <span style={{ fontSize: 10, color: EXP.muted2, fontWeight: 700, flexShrink: 0 }}>Pinned</span>
+              {pinnedLocations.map((item) => (
+                <button
+                  key={item.path}
+                  type="button"
+                  onClick={() => navigate(item.path)}
+                  style={{
+                    border: '1px solid var(--overlay-explorer-chip-border)',
+                    background: 'var(--overlay-explorer-chip-active-bg)',
+                    color: EXP.text,
+                    borderRadius: 999,
+                    padding: '3px 8px',
+                    fontSize: 10,
+                    cursor: 'pointer',
+                    maxWidth: 96,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                  }}
+                >
+                  {item.label}
                 </button>
               ))}
             </div>
