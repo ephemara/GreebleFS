@@ -6014,6 +6014,17 @@ export function FileExplorer({
               ))}
             </div>
           )}
+          {currentPath && !currentPathIsCloud && (
+            <button
+              type="button"
+              onClick={() => handleBookmarkCreated(getPathLeaf(currentPath), currentPath)}
+              title="Pin this location to bookmarks"
+              style={toolbarChipButtonStyle(false)}
+            >
+              <Star size={11} />
+              <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Pin</span>
+            </button>
+          )}
 
           {/* Include text */}
           <button

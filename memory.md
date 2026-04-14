@@ -6,6 +6,12 @@
 - The clipboard payload is now normalized into a small shared snapshot (`path`, `name`, `is_dir`) instead of holding raw React entry objects.
 - Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
 
+## 2026-04-14 — Explorer Quick Pin Pass
+
+- The explorer toolbar now exposes a quick `Pin` action for the current location.
+- This turns the recent-locations strip into a stronger premium navigation pattern, because users can now keep important places at hand instead of rediscovering them.
+- Next passes should keep pushing toward premium capability depth, especially queueing, network mounts, archive handling, compare/analyzer tools, and advanced automation.
+
 ## 2026-04-14 — Explorer Recent Locations Pass
 
 - The explorer toolbar now surfaces a small `Recent` strip built from navigation history.
