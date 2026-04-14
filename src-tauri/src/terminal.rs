@@ -51,9 +51,13 @@ impl TerminalManager {
 
     /// Get the appropriate shell for the current platform
     fn get_shell(shell_override: Option<&str>) -> (String, Vec<String>) {
+        let requested = shell_override
+            .map(shell_executable_name)
+            .unwrap_or_default();
+
         #[cfg(target_os = "windows")]
         {
-            let requested = shell_override.unwrap_or("").trim();
+            let requested = requested.as_str();
             let system_root =
                 std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string());
             let powershell_path = format!(
@@ -110,9 +114,8 @@ impl TerminalManager {
 
         #[cfg(target_os = "macos")]
         {
-            let requested = shell_override.unwrap_or("").trim();
             if !requested.is_empty() {
-                return (requested.to_string(), vec!["-l".to_string()]);
+                return (requested.clone(), vec!["-l".to_string()]);
             }
             // Use zsh on macOS (default since Catalina)
             if std::path::Path::new("/bin/zsh").exists() {
@@ -123,9 +126,8 @@ impl TerminalManager {
 
         #[cfg(target_os = "linux")]
         {
-            let requested = shell_override.unwrap_or("").trim();
             if !requested.is_empty() {
-                return (requested.to_string(), vec!["-l".to_string()]);
+                return (requested.clone(), vec!["-l".to_string()]);
             }
             // Check for user's preferred shell
             if let Ok(shell) = std::env::var("SHELL") {
@@ -136,9 +138,8 @@ impl TerminalManager {
 
         #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
         {
-            let requested = shell_override.unwrap_or("").trim();
             if !requested.is_empty() {
-                return (requested.to_string(), Vec::new());
+                return (requested.clone(), Vec::new());
             }
             ("/bin/sh".to_string(), vec![])
         }
@@ -321,6 +322,23 @@ impl TerminalManager {
             });
         }
     }
+}
+
+fn shell_executable_name(shell: &str) -> String {
+    let trimmed = shell.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    let without_quotes = if let Some(rest) = trimmed.strip_prefix('"') {
+        rest.split_once('"').map(|(head, _)| head).unwrap_or(rest)
+    } else if let Some(rest) = trimmed.strip_prefix('\'') {
+        rest.split_once('\'').map(|(head, _)| head).unwrap_or(rest)
+    } else {
+        trimmed.split_whitespace().next().unwrap_or(trimmed)
+    };
+
+    without_quotes.to_string()
 }
 
 fn command_exists(command: &str) -> bool {
@@ -894,6 +912,13 @@ mod tests {
     #[test]
     fn optional_args_defaults_to_empty_vec() {
         assert!(optional_args(&None).is_empty());
+    }
+
+    #[test]
+    fn shell_executable_name_strips_arguments_and_quotes() {
+        assert_eq!(shell_executable_name("pwsh.exe -NoLogo"), "pwsh.exe");
+        assert_eq!(shell_executable_name("\"C:\\Tools\\PowerShell\\pwsh.exe\" -NoLogo"), "C:\\Tools\\PowerShell\\pwsh.exe");
+        assert_eq!(shell_executable_name("'C:\\Tools\\cmd.exe' /c"), "C:\\Tools\\cmd.exe");
     }
 
     #[test]

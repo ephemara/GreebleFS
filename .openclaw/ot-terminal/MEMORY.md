@@ -22,3 +22,8 @@ Push OverlayTerm toward premium, monetizable, final-boss quality.
 ## Terminal handoff note
 
 - Explorer-to-terminal injection now reuses `buildTerminalCdCommand`, so the active shell gets a shell-aware `cd`/`Set-Location` command instead of a raw quoted path.
+
+## Terminal validation note
+
+- The terminal backend now uses per-terminal lookup and no longer flushes on each PTY write, so the hot path is lighter and validation is currently blocked only by local toolchain issues.
+

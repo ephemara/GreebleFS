@@ -18,3 +18,5 @@ Push OverlayTerm toward premium, monetizable, final-boss quality.
 - 2026-04-14: GitManager refresh policy got a visibility-aware pass, hidden repo-state refreshes now queue until restore, and visibility regain performs one bounded repo-state resync instead of letting refresh churn stack.
 
 - 2026-04-14: GitManager Scenario A validation remains representative because the repo is still a heavily modified git-heavy tree, but local Vitest execution is blocked by unresolved itest / @vitejs/plugin-react config imports.
+
+- 2026-04-14: GitManager Scenario A validation remains representative because the repo is still a heavily modified git-heavy tree, but local Vitest execution is blocked by unresolved `vitest` / `@vitejs/plugin-react` config imports.

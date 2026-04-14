@@ -87,6 +87,11 @@
 - 2026-04-14, explorer-to-terminal handoff verification pass: confirmed the handoff command builder already emits PowerShell literal-path, cmd /d, and POSIX-safe cd forms, with quote escaping covered by unit tests.
 - Validation attempt: `cargo test --manifest-path src-tauri/Cargo.toml terminal::tests::command_exists_uses_path_and_pathext_lookup -- --nocapture` failed in the local environment because `x86_64-w64-mingw32-gcc` could not link `-lgcc_eh` / `-lgcc`.
 - Validation attempt: `cargo test --manifest-path src-tauri/Cargo.toml git_exec -- --nocapture` failed in the local environment because `x86_64-w64-mingw32-gcc` could not link `-lgcc_eh` / `-lgcc`.
+- 2026-04-14, 6.1 validation pass: re-ran the git_exec and terminal targeted Rust validation for the hot paths, and both are still blocked at link time by the local Windows GNU toolchain missing `-lgcc_eh` / `-lgcc`.
+- 2026-04-14, 6.1 validation pass: `python F:\ai\openclaw-fork\skills\spec-process-guide\scripts\validate_spec.py overlayterm-performance-60fps` still passes, so the spec package remains internally consistent even though native test execution is blocked here.
+- 2026-04-14, 6.1 validation pass: attempted direct validation of the modified hot paths, but the local Rust toolchain is still blocked by `x86_64-w64-mingw32-gcc` missing `-lgcc_eh` / `-lgcc` before the tests can execute.
+- Validation attempt: `cargo test --manifest-path src-tauri/Cargo.toml git_exec -- --nocapture` failed for the linker reason above.
+- Validation attempt: `cargo test --manifest-path src-tauri/Cargo.toml terminal::tests::command_exists_uses_path_and_pathext_lookup -- --nocapture` failed for the linker reason above.
 - 2026-04-14, workflow-tools pass: refined `scripts/run-heartbeat-pass.mjs` so future heartbeat passes surface the active performance spec, the baseline scenario, and spec-aware validation hints for the current changed-file set.
 - 2026-04-14, runtime-content reload pass: added developer-mode polling for theme package discovery so theme changes now auto-refresh the theme, shader, and animation inventories from the shared runtime content surface.
 - 2026-04-14, runtime-content reload refinement: increased the theme-package polling interval to 5s so the live-reload path stays visible-only while cutting steady-state background scan pressure.
@@ -97,6 +102,7 @@
 - 2026-04-14, GitManager oversized-untracked guard pass: added a regression test that asserts large untracked files stop at the size-hint omission path and do not call `fsReadTextFile` before building the inline diff fallback.
 - Validation attempt: `bun vitest run src/test/gitManager.behavior.test.tsx` is still blocked here because `vitest` is not installed in the local toolchain.
 - Validation attempt: `git status --short --branch` in `F:\apps-2d\overlayterm` confirmed a git-heavy working tree with many local modifications, making it a valid direct scenario for the next GitManager refresh/diff pass.
+- 2026-04-14, 08:15 UTC pass: re-checked the modified GitManager hot path and repo state; validation remains blocked locally because Vitest cannot resolve `vitest` / `@vitejs/plugin-react` from `vitest.config.ts`, while the git-heavy working tree still makes Scenario A representative.
 - Validation target: `python3 scripts/validate_spec.py ./.specs/overlayterm-performance-60fps`
 - Validation note: this environment still lacks `python3` on PATH, so the spec validator could not be executed here.
 - 2026-04-14, terminal backend reality check: `src-tauri/src/terminal.rs` no longer flushes on each write, and the read path now releases the shared terminal map mutex before the non-blocking PTY read, so the remaining throughput risk is mainly the shared map lock around lookup/clone and the resize path.
@@ -105,7 +111,9 @@
 - Validation attempt: `bun test src/test/terminalCommandUtils.test.ts src/test/terminalOverlay.test.tsx` passed the shell-command utility checks, but the overlay test hit a local `react/jsx-dev-runtime` module resolution failure before full UI validation could complete.
 - 2026-04-14, terminal read-path pass: `TerminalManager::read` and the reader-thread bootstrap now clone the PTY reader under lock and drop the shared terminal map mutex before the blocking read loop, which should cut contention on bursty shell output.
 - 2026-04-14, terminal map-lock refinement: terminal lookup now clones an `Arc<Mutex<TerminalInstance>>` out of the shared map so write, read, and resize paths hold the global map lock only for lookup, then do PTY work behind the per-terminal mutex.
-- Validation attempt: direct Rust test execution is still blocked in this environment by the mingw linker missing `-lgcc_eh` / `-lgcc`, so the change was validated by code inspection only for this pass.
+- 2026-04-14, shell-handoff refinement: `buildTerminalCdCommand` now parses the shell executable token before matching, so PowerShell shells stay PowerShell-safe even when the shell string carries arguments like `-NoLogo`.
+- 2026-04-14, native shell-resolution refinement: `TerminalManager::get_shell` now strips wrapper arguments before matching shell type, so quoted or argument-bearing shell overrides stay on the intended PowerShell/cmd path.
+- Validation attempt: `bun test src/test/terminalCommandUtils.test.ts` passed locally. `cargo test --manifest-path src-tauri/Cargo.toml shell_executable_name -- --nocapture` is still blocked in this environment by the mingw linker missing `-lgcc_eh` / `-lgcc`, so the Rust terminal change remains validated by code inspection only for this pass.
 - 2026-04-14, plugin runtime reload pass: fallback polling now reuses signature-based refreshes instead of forcing full rediscovery on every poll tick, so steady-state watcher failures stay bounded.
 - Validation attempt: `bunx vitest run src/test/useFolderPluginRuntime.test.tsx src/test/useFolderPluginRuntime.fallback.test.tsx src/test/useFolderPluginRuntime.queue.test.tsx` could not start because the local environment is missing `vitest` from `vitest.config.ts`.
 - 2026-04-14, workflow-tools pass: refined `scripts/run-heartbeat-pass.mjs` again so it now reports the active spec slug, open task count, and an explicit spec-validation command for `.specs/overlayterm-performance-60fps`.
@@ -117,3 +125,7 @@
 
 - 2026-04-14, preview fallback pass: FileExplorer now keeps a visible fallback state for oversized, unsupported, and preview-load-failed files instead of collapsing straight to a blank preview.
 - Validation attempt: direct mixed-file UI validation was added in `src/test/fileExplorer.viewModes.test.tsx`, but the local vitest toolchain is still blocked by the repo's unresolved config/runtime dependencies.
+- 2026-04-14, terminal validation closeout: confirmed the terminal path is now flush-free on writes, uses per-terminal lookup instead of holding the global terminal map lock during PTY operations, and keeps shell-aware explorer handoff intact through the shared cd builder.
+- 2026-04-14, terminal lock-scope refinement: verified the remaining shared mutex exposure is limited to lookup and clone points, so the next terminal pass should only chase a real resize or spawn regression if one appears, not general lock churn.
+- Validation attempt: Rust and Vitest executions are still blocked in this environment, respectively by the mingw linker missing `-lgcc_eh` / `-lgcc` and by missing `vitest` / `@vitejs/plugin-react` toolchain packages, so the closeout remains code-inspection based here.
+

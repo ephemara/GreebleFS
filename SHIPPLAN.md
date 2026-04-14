@@ -131,3 +131,11 @@ small, validated wins over giant speculative rewrites.
 ### 2026-04-14 GitManager untracked diff guard
 - Added a targeted regression test covering oversized untracked files so GitManager stops before reading file contents and emits the bounded inline omission path instead.
 - Next check: targeted Vitest on `src/test/gitManager.behavior.test.tsx` once the local toolchain is available.
+
+### 2026-04-14 terminal lock-scope closeout
+- Rechecked the PTY backend and confirmed the remaining shared-map mutex exposure is now limited to lookup and clone points, with write and read paths already avoiding broad global lock pressure.
+- Next follow-up only if needed: inspect resize/spawn regressions, not the general lock path.
+### 2026-04-14 terminal validation closeout
+- Confirmed the terminal backend hot path is already flush-free and the remaining lock scope is reduced to per-terminal lookup and PTY work.
+- Validation remains blocked by local Rust/Vitest toolchain issues, so the pass ended on code inspection plus spec note updates.
+

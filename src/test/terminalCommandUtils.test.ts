@@ -8,6 +8,12 @@ describe('buildTerminalCdCommand', () => {
     );
   });
 
+  it('detects PowerShell shells even when the shell string includes arguments', () => {
+    expect(buildTerminalCdCommand("C:\\Dev\\OverlayTerm", 'pwsh.exe -NoLogo')).toBe(
+      "Set-Location -LiteralPath 'C:\\Dev\\OverlayTerm'",
+    );
+  });
+
   it('uses cmd /d for cmd shells', () => {
     expect(buildTerminalCdCommand('C:\\Work\\OverlayTerm', 'cmd.exe')).toBe(
       'cd /d "C:\\Work\\OverlayTerm"',

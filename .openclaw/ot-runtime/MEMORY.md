@@ -14,3 +14,4 @@ Push OverlayTerm toward premium, monetizable, final-boss quality.
 ## Recent durable note
 
 - GitManager now omits large untracked files from inline diffs before reading file contents, using a cached size hint and text/binary fallback instead of forcing a large preview read.
+- Terminal throughput follow-up is now down to a narrow shared-map lookup/clone lock scope, with writes flush-free and read paths already off the global mutex before PTY I/O.

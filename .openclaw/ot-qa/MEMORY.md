@@ -19,3 +19,4 @@ Push OverlayTerm toward premium, monetizable, final-boss quality.
 - Added regression coverage for GitManager telemetry sampling (`git_repo_state_load`, `git_repo_badge_sync`) so the performance lane has a direct assertion on measurable hot-path instrumentation.
 - Local Vitest execution for that regression is still blocked by unresolved `vitest` / `@vitejs/plugin-react` config imports in this workspace.
 - Confirmed the visibility-restore lane already has coverage via the `pauses badge polling while the document is hidden and performs one bounded repo refresh when visible again` test, so task 2.3 is effectively closed for the current spec state.
+- Re-ran targeted Rust validation for task 6.1 (`git_exec` and terminal paths); both are still blocked in this environment by the Windows GNU linker missing `-lgcc_eh` / `-lgcc`, while spec validation continues to pass.

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-04-14T06:41:48.774Z",
+  "updatedAt": "2026-04-14T08:14:07.290Z",
   "entries": {
     "memory:memory/2026-04-14.md:1:7": {
       "key": "memory:memory/2026-04-14.md:1:7",
@@ -9,16 +9,17 @@
       "endLine": 7,
       "source": "memory",
       "snippet": "# Session notes for 2026-04-14 - Workspace initialized for OT Cleo. - Lane: OverlayTerm fleet boss and shipping coordinator. - Repo target: F:\\apps-2d\\overlayterm. - Current push: aggressive shipping toward premium OverlayTerm quality.",
-      "recallCount": 2,
+      "recallCount": 3,
       "dailyCount": 0,
       "groundedCount": 0,
-      "totalScore": 0.0000034390006607687687,
-      "maxScore": 0.0000017195003303843843,
+      "totalScore": 0.0000052186876828059795,
+      "maxScore": 0.0000017796870220372106,
       "firstRecalledAt": "2026-04-14T06:30:57.521Z",
-      "lastRecalledAt": "2026-04-14T06:41:48.774Z",
+      "lastRecalledAt": "2026-04-14T08:14:07.290Z",
       "queryHashes": [
         "357dbaf48d72",
-        "db5f5f566f52"
+        "db5f5f566f52",
+        "63823199ada7"
       ],
       "recallDays": [
         "2026-04-14"

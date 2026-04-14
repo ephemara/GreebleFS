@@ -2,9 +2,19 @@ function escapeSingleQuotedPath(path: string): string {
   return path.replace(/'/g, `'"'"'`);
 }
 
+function shellExecutableName(shell: string): string {
+  const trimmed = shell.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const match = trimmed.match(/^(?:"([^"]+)"|'([^']+)'|(\S+))/);
+  return (match?.[1] ?? match?.[2] ?? match?.[3] ?? trimmed).toLowerCase();
+}
+
 export function buildTerminalCdCommand(path: string, shell: string): string {
   const normalizedPath = path.trim();
-  const normalizedShell = shell.trim().toLowerCase();
+  const normalizedShell = shellExecutableName(shell);
 
   if (!normalizedPath) {
     return '';

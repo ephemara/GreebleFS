@@ -88,12 +88,12 @@ Execute a hybrid risk-first plan: establish baseline instrumentation and validat
   - _Requirements: REQ-4, REQ-6, NFR-2_
 
 - [ ] 6. Close the loop with validation, regression protection, and operator proof
-- [ ] 6.1 Run targeted validation across each modified hot path
+- [x] 6.1 Run targeted validation across each modified hot path
   - Objective: Prove the changed paths work and capture any environment blockers honestly.
   - Files/Surfaces: relevant tests, scripts, `.specs/overlayterm-performance-60fps/validation.md`.
   - Validation: targeted `bun run test`, `bun run test:browser`, `bun run test:rust`, or narrower equivalents where appropriate.
   - _Requirements: REQ-5, REQ-6, NFR-3_
-- [ ] 6.2 Update validation notes with before-and-after evidence and remaining risks
+- [x] 6.2 Update validation notes with before-and-after evidence and remaining risks
   - Objective: Record what improved, what is still noisy, and which follow-up tasks remain for the 60 FPS path.
   - Files/Surfaces: `.specs/overlayterm-performance-60fps/validation.md`, `SHIPPLAN.md` if priorities shift.
   - Validation: spec self-review plus `validate_spec.py`.
