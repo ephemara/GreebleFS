@@ -6,6 +6,12 @@
 - The clipboard payload is now normalized into a small shared snapshot (`path`, `name`, `is_dir`) instead of holding raw React entry objects.
 - Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
 
+## 2026-04-14 — Explorer Selected Size Pass
+
+- The explorer toolbar now shows a compact size summary for selected items when size data is available.
+- This gives the analyzer surface a more premium, action-oriented feel by answering the obvious follow-up question, "how much space is this selection taking?"
+- Next passes should keep pushing toward premium capability depth, especially queueing, network mounts, archive handling, compare/analyzer tools, and advanced automation.
+
 ## 2026-04-14 — Explorer Size Summary Pass
 
 - The explorer toolbar now shows a compact size summary for the currently visible entries, using the already-cached entry size data.

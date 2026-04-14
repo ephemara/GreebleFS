@@ -3061,6 +3061,16 @@ export function FileExplorer({
       .filter((node): node is typeof explorerRail.nodes[number] & { kind: 'bookmark'; path: string } => node.kind === 'bookmark')
       .map((node) => node.path),
   ), [explorerRail.nodes]);
+  const selectedSizeSummary = useMemo(() => {
+    const selectedSizeEntries = selectedEntries
+      .map((entry) => entrySizes[entry.path])
+      .filter((value): value is EntryStorageInfo => Boolean(value));
+    if (selectedSizeEntries.length === 0) {
+      return null;
+    }
+    const totalBytes = selectedSizeEntries.reduce((sum, value) => sum + value.bytes, 0);
+    return { totalBytes, count: selectedSizeEntries.length };
+  }, [entrySizes, selectedEntries]);
   const droppedSourceLookup = useMemo(() => {
     const lookup = new Map<string, { path: string; name: string; isDirectory: boolean }>();
     for (const entry of [...entries, ...searchResults]) {
@@ -6068,6 +6078,17 @@ export function FileExplorer({
               </span>
               <span style={{ fontSize: 10, color: EXP.muted2, whiteSpace: 'nowrap' }}>
                 {currentFolderSizeSummary.fileCount} files · {currentFolderSizeSummary.folderCount} folders
+              </span>
+            </div>
+          )}
+          {selectedSizeSummary && selected.size > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, minWidth: 0, maxWidth: isCompactDock ? 180 : 240, overflow: 'hidden' }} title="Selected item size summary">
+              <span style={{ fontSize: 10, color: EXP.muted2, fontWeight: 700, flexShrink: 0 }}>Selected</span>
+              <span style={{ fontSize: 10, color: EXP.text, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                {formatSize(selectedSizeSummary.totalBytes)}
+              </span>
+              <span style={{ fontSize: 10, color: EXP.muted2, whiteSpace: 'nowrap' }}>
+                {selectedSizeSummary.count} measured
               </span>
             </div>
           )}
