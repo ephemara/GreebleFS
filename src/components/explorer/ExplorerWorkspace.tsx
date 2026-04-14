@@ -343,6 +343,11 @@ export function ExplorerWorkspace({
                   <span style={{ fontSize: 9.5, fontWeight: 700, color: isActive ? 'var(--overlay-text-primary)' : 'var(--overlay-text-dim)', opacity: 0.8 }}>
                     {tab.pane === 'left' ? 'L' : 'R'}
                   </span>
+                  {isActive && (
+                    <span style={{ fontSize: 9, fontWeight: 800, color: theme.accent, padding: '2px 5px', borderRadius: 999, border: `1px solid ${theme.accent}55`, background: `${theme.accent}14` }}>
+                      Active
+                    </span>
+                  )}
                 </button>
                 {workspace.layoutMode === 'dual' && (
                   <button
