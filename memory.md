@@ -6,6 +6,12 @@
 - The clipboard payload is now normalized into a small shared snapshot (`path`, `name`, `is_dir`) instead of holding raw React entry objects.
 - Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
 
+## 2026-04-14 — Explorer Workspace Focus Wash Pass
+
+- The focused pane header now gets a slightly stronger accent-tinted background, which makes the active side pop faster in dual-pane mode.
+- This is a small but constant readability win when both panes are busy.
+- Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
+
 ## 2026-04-14 — Explorer Workspace Move Hint Pass
 
 - The dual-pane chrome now reminds users they can move tabs with either the chip arrow or the dedicated Move button.
