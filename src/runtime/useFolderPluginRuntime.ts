@@ -249,6 +249,8 @@ export function useFolderPluginRuntime(
     let fallbackIntervalMs: number = pluginSystemConfig.fallbackScanIntervalMs;
     let unlistenPlugins: (() => void) | null = null;
     let pluginWatchCleanupRequired = false;
+    let pluginWatchCleanupInFlight = false;
+    let pluginWatchCleanupRetryRequested = false;
     let disposed = false;
 
     const clearFallbackPolling = () => {
@@ -293,11 +295,24 @@ export function useFolderPluginRuntime(
         return;
       }
 
-      pluginWatchCleanupRequired = false;
+      if (pluginWatchCleanupInFlight) {
+        pluginWatchCleanupRetryRequested = true;
+        return;
+      }
+
+      pluginWatchCleanupInFlight = true;
       try {
-        unwrapTauriResult(await commands.pluginUnwatchDirectory());
-      } catch (error) {
-        console.warn('Plugin watcher cleanup failed before fallback:', error);
+        do {
+          pluginWatchCleanupRetryRequested = false;
+          try {
+            unwrapTauriResult(await commands.pluginUnwatchDirectory());
+            pluginWatchCleanupRequired = false;
+          } catch (error) {
+            console.warn('Plugin watcher cleanup failed before fallback:', error);
+          }
+        } while (pluginWatchCleanupRequired && pluginWatchCleanupRetryRequested);
+      } finally {
+        pluginWatchCleanupInFlight = false;
       }
     };
 
@@ -320,12 +335,12 @@ export function useFolderPluginRuntime(
         if (disposed) {
           unlistenPlugins?.();
           unlistenPlugins = null;
-          await cleanupPluginWatcher();
+          void cleanupPluginWatcher();
         }
       } catch (error) {
         unlistenPlugins?.();
         unlistenPlugins = null;
-        await cleanupPluginWatcher();
+        void cleanupPluginWatcher();
         if (disposed) {
           return;
         }
@@ -344,7 +359,7 @@ export function useFolderPluginRuntime(
       }
       clearFallbackPolling();
       unlistenPlugins?.();
-      void cleanupPluginWatcher().catch(() => undefined);
+      void cleanupPluginWatcher();
     };
   }, [liveReloadEnabled, schedulePluginRefresh]);
 

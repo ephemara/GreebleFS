@@ -94,3 +94,33 @@ Push OverlayTerm toward premium, monetizable, final-boss quality.
 - Re-checked the plugin watcher cleanup ordering against repo reality, and the code clears the attempted watch before entering fallback polling, but the unwatch cleanup remains best-effort background cleanup rather than a freshly proven serial await.
 - `bun test src/test/terminalCommandUtils.test.ts` passed again, `bunx vitest run src/test/useFolderPluginRuntime.fallback.test.tsx` is still blocked by the same unresolved `vitest/config` and `@vitejs/plugin-react` imports, and the handoff wording was corrected to match that behavior.
 - No code change was needed, just a tighter description of the actual unwind behavior.
+
+## 2026-04-14 16:53 UTC wave closeout
+
+- Rechecked the plugin fallback path again, and the cleanup-failure case is explicitly covered in `src/test/useFolderPluginRuntime.fallback.test.tsx` while `useFolderPluginRuntime.ts` logs cleanup failures and still falls back to polling.
+- `bun test src/test/terminalCommandUtils.test.ts` passed again, and the fallback Vitest run is still blocked by unresolved `vitest/config` and `@vitejs/plugin-react` imports before execution can start.
+- Tightened the handoff wording to name the cleanup-failure path instead of flattening it into a generic cleanup note.
+
+## 2026-04-14 17:53 UTC wave closeout
+
+- Rechecked the plugin fallback path one more time, and the current shape is now: failed watch setup clears the watcher, cleanup failures are logged, and fallback polling starts immediately.
+- `bun test src/test/terminalCommandUtils.test.ts` passed again, and `bunx vitest run src/test/useFolderPluginRuntime.fallback.test.tsx` is still blocked before execution by unresolved `vitest/config` and `@vitejs/plugin-react` imports.
+- Tightened the handoff wording again so it says exactly that, no stronger unwind claim.
+
+## 2026-04-14 18:53 UTC wave closeout
+
+- Rechecked the plugin fallback path again, and the cleanup-failure case is explicitly covered while unmount cleanup is retryable after a failure.
+- `bun test src/test/terminalCommandUtils.test.ts` passed again, and the fallback Vitest run is still blocked before execution by unresolved `vitest/config` and `@vitejs/plugin-react` imports.
+- Tightened the handoff wording again so it names retryable unmount cleanup after cleanup failure.
+
+## 2026-04-14 19:54 UTC wave closeout
+
+- Rechecked the plugin fallback path again, and the code now also retries cleanup if unmount lands mid-cleanup, so the handoff needs to name that race explicitly.
+- `bun test src/test/terminalCommandUtils.test.ts` passed again, and `bunx vitest run src/test/useFolderPluginRuntime.fallback.test.tsx` is still blocked before execution by unresolved `vitest/config` and `@vitejs/plugin-react` imports.
+- Tightened the handoff wording once more so it says retry cleanup on mid-cleanup unmount races.
+
+## 2026-04-14 20:54 UTC wave closeout
+
+- Rechecked the same plugin fallback edge one more time, and there is still no new regression gap beyond the already documented Vitest/config blocker.
+- `bun test src/test/terminalCommandUtils.test.ts` passed again, and `bunx vitest run src/test/useFolderPluginRuntime.fallback.test.tsx` still fails at config load for missing `vitest/config`, `@vitejs/plugin-react`, and `vitest`.
+- No code change was needed, just a fresh handoff refresh with the same verified blocker state.

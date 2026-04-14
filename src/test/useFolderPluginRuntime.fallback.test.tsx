@@ -30,10 +30,12 @@ const emptyDiscoveryResult: pluginPackages.OverlayPluginDiscoveryResult = {
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>(innerResolve => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((innerResolve, innerReject) => {
     resolve = innerResolve;
+    reject = innerReject;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 describe('useFolderPluginRuntime fallback polling', () => {
@@ -49,7 +51,7 @@ describe('useFolderPluginRuntime fallback polling', () => {
     vi.useRealTimers();
   });
 
-  it('falls back to polling only after failed watcher cleanup finishes', async () => {
+  it('falls back to polling without waiting for watcher cleanup to settle', async () => {
     const unlisten = vi.fn();
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const unwatchDeferred = createDeferred<{ status: 'ok'; data: null }>();
@@ -57,7 +59,7 @@ describe('useFolderPluginRuntime fallback polling', () => {
     vi.spyOn(commands, 'pluginWatchDirectory').mockRejectedValue(new Error('watch unavailable'));
     vi.spyOn(commands, 'pluginUnwatchDirectory').mockReturnValue(unwatchDeferred.promise);
 
-    const { unmount } = renderHook(() => useFolderPluginRuntime('windows', { liveReloadEnabled: true }));
+    renderHook(() => useFolderPluginRuntime('windows', { liveReloadEnabled: true }));
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
@@ -67,21 +69,6 @@ describe('useFolderPluginRuntime fallback polling', () => {
       expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(1);
       expect(unlisten).toHaveBeenCalled();
       expect(commands.pluginUnwatchDirectory).toHaveBeenCalledTimes(1);
-    });
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(pluginSystemConfig.fallbackScanIntervalMs + 10);
-    });
-
-    expect(explorerBackend.listExplorerDir).toHaveBeenCalledTimes(1);
-    expect(warnSpy).not.toHaveBeenCalledWith(
-      'Plugin watcher unavailable, falling back to polling:',
-      expect.any(Error),
-    );
-
-    unwatchDeferred.resolve({ status: 'ok', data: null });
-
-    await waitFor(() => {
       expect(warnSpy).toHaveBeenCalledWith(
         'Plugin watcher unavailable, falling back to polling:',
         expect.any(Error),
@@ -97,7 +84,7 @@ describe('useFolderPluginRuntime fallback polling', () => {
       expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(1);
     });
 
-    unmount();
+    unwatchDeferred.resolve({ status: 'ok', data: null });
   });
 
   it('falls back to polling even if watcher cleanup fails', async () => {
@@ -133,6 +120,80 @@ describe('useFolderPluginRuntime fallback polling', () => {
     await waitFor(() => {
       expect(explorerBackend.listExplorerDir).toHaveBeenCalledTimes(2);
       expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('retries watcher cleanup on unmount after a cleanup failure', async () => {
+    const unlisten = vi.fn();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.mocked(listen).mockResolvedValue(unlisten);
+    vi.spyOn(commands, 'pluginWatchDirectory').mockRejectedValue(new Error('watch unavailable'));
+    vi.spyOn(commands, 'pluginUnwatchDirectory')
+      .mockRejectedValueOnce(new Error('cleanup failed'))
+      .mockResolvedValueOnce({ status: 'ok', data: null });
+
+    const { unmount } = renderHook(() => useFolderPluginRuntime('windows', { liveReloadEnabled: true }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    await waitFor(() => {
+      expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(1);
+      expect(unlisten).toHaveBeenCalled();
+      expect(commands.pluginUnwatchDirectory).toHaveBeenCalledTimes(1);
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Plugin watcher cleanup failed before fallback:',
+        expect.any(Error),
+      );
+    });
+
+    unmount();
+
+    await waitFor(() => {
+      expect(commands.pluginUnwatchDirectory).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('retries watcher cleanup when unmount races an in-flight cleanup failure', async () => {
+    const unlisten = vi.fn();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const firstCleanup = createDeferred<{ status: 'ok'; data: null }>();
+    vi.mocked(listen).mockResolvedValue(unlisten);
+    vi.spyOn(commands, 'pluginWatchDirectory').mockRejectedValue(new Error('watch unavailable'));
+    vi.spyOn(commands, 'pluginUnwatchDirectory')
+      .mockReturnValueOnce(firstCleanup.promise)
+      .mockResolvedValueOnce({ status: 'ok', data: null });
+
+    const { unmount } = renderHook(() => useFolderPluginRuntime('windows', { liveReloadEnabled: true }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    await waitFor(() => {
+      expect(pluginPackages.discoverOverlayPlugins).toHaveBeenCalledTimes(1);
+      expect(unlisten).toHaveBeenCalled();
+      expect(commands.pluginUnwatchDirectory).toHaveBeenCalledTimes(1);
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Plugin watcher unavailable, falling back to polling:',
+        expect.any(Error),
+      );
+    });
+
+    unmount();
+
+    await act(async () => {
+      firstCleanup.reject(new Error('cleanup failed'));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Plugin watcher cleanup failed before fallback:',
+        expect.any(Error),
+      );
+      expect(commands.pluginUnwatchDirectory).toHaveBeenCalledTimes(2);
     });
   });
 

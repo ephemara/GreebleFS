@@ -25,7 +25,7 @@ This is the active serialized OT strike-wave.
 ## Lane intent
 
 - `ot-cleo`: choose the concrete strike objective for this wave and prevent lane collisions.
-- `ot-aristotle`: pressure-test the chosen path and tighten the implementation edge.
+- `ot-aristotle`: pressure-test the chosen path and tighten the implementation edge, but do not reopen closed work unless the repo shows a concrete regression gap.
 - `ot-dalmascus`: drive the main implementation move.
 - `ot-native`: handle native, Rust, PTY, watcher, or subprocess fallout opened by the implementation.
 - `ot-runtime`: handle frontend runtime, settings, stores, and orchestration fallout.

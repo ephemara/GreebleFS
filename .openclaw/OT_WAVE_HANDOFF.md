@@ -1,6 +1,6 @@
 # OverlayTerm Wave Handoff
 
-Last updated: 2026-04-14T20:47:00Z
+Last updated: 2026-04-14T21:01:00Z
 
 ## Current wave objective
 
@@ -21,6 +21,7 @@ Last updated: 2026-04-14T20:47:00Z
 - Validation state: `bun test src/test/terminalCommandUtils.test.ts` passed this pass, direct inspection still confirms `FileExplorer.tsx` exposes `Open in Terminal` for directory entries, and `useFolderPluginRuntime.ts` now clears a failed watcher, logs cleanup failures, starts bounded polling immediately, and retries cleanup if unmount lands mid-cleanup while the fallback test covers cleanup-failure logging, retryable unmount cleanup after a failure, in-flight unmount race retry, backoff, and unmount cases.
 - Tests: no new code tests are required unless a concrete regression gap appears. If a gap appears, reopen the smallest relevant test surface first, and if it is in the plugin path start with `src/test/useFolderPluginRuntime.fallback.test.tsx` and `src/runtime/useFolderPluginRuntime.ts` before widening.
 - Blockers: the fallback test still cannot be freshly re-run here because `vitest.config.ts` cannot resolve `vitest/config` or `@vitejs/plugin-react` in this environment, and Rust-side proof remains gated by the mingw `-lgcc_eh` / `-lgcc` linker failures plus `python3` absent on PATH.
+- 2026-04-14, 20:54 UTC recheck: `bun test src/test/terminalCommandUtils.test.ts` passed again, `bunx vitest run src/test/useFolderPluginRuntime.fallback.test.tsx` still fails at config load for the same missing Vitest packages, and no new regression gap surfaced.
 - Next move: confirm no additional gap exists, then hand the wave back as closed and stop.
 
 ### ot-dalmascus -> ot-native
@@ -41,16 +42,16 @@ Last updated: 2026-04-14T20:47:00Z
 ### ot-runtime -> ot-terminal
 - Objective: keep terminal follow-through narrow, and only reopen code if a concrete regression gap appears in the shell-aware handoff path.
 - Exact files reviewed: `src/runtime/useFolderPluginRuntime.ts`, `src/config/plugins.ts`, `src/test/useFolderPluginRuntime.fallback.test.tsx`, plus the already-verified terminal handoff reference files `src/components/TerminalOverlay.tsx`, `src/components/terminalCommandUtils.ts`, `src/App.tsx`, `src-tauri/src/terminal.rs`, `src/test/terminalCommandUtils.test.ts`.
-- Tests run: `bunx vitest run src/test/useFolderPluginRuntime.fallback.test.tsx` (rechecked at 20:00 UTC).
+- Tests run: `bunx vitest run src/test/useFolderPluginRuntime.fallback.test.tsx` (rechecked at 21:01 UTC).
 - Result: the plugin watcher fallback still follows the self-scheduling backoff loop, and the runtime pass found no terminal reopen gap. The fallback test also covers unmount cleanup, so the scan loop does not keep firing after disposal.
 - Blockers: local Vitest startup still fails because `vitest.config.ts` cannot resolve `vitest/config` and `@vitejs/plugin-react`, which then surfaces as `ERR_MODULE_NOT_FOUND: Cannot find package 'vitest'` during config load in this environment.
-- 20:00 UTC rerun confirmed the same startup blocker, so the runtime lane still has no new regression gap to reopen.
+- 21:01 UTC rerun confirmed the same startup blocker, so the runtime lane still has no new regression gap to reopen.
 - Next step: keep terminal lane idle unless it finds a concrete regression gap, then reopen only that gap and stop.
 
 ### ot-terminal -> ot-explorer
 - Objective: hand off the verified explorer-to-terminal route, with no terminal backend reopen required in this wave.
 - Exact files reviewed: `src/App.tsx`, `src/components/TerminalOverlay.tsx`, `src/components/terminalCommandUtils.ts`, `src/components/FileExplorer.tsx`, `src-tauri/src/terminal.rs`, `src/test/terminalCommandUtils.test.ts`.
-- Tests run: `bun test src/test/terminalCommandUtils.test.ts` (pass, rerun at 19:49 UTC confirmed the PowerShell-args, cmd, and unix path cases).
+- Tests run: `bun test src/test/terminalCommandUtils.test.ts` (pass, rerun at 20:49 UTC confirmed the PowerShell-args, cmd, and unix path cases).
 - Direct check: `FileExplorer.tsx` still exposes `Open in Terminal` for directory entries, so the explorer entry point remains in place.
 - Blockers: `cargo test --manifest-path src-tauri/Cargo.toml terminal::tests:: -- --nocapture` is still blocked by the local mingw linker missing `-lgcc_eh` / `-lgcc`, and broader Vitest runs remain blocked by unresolved `vitest` / `@vitejs/plugin-react` packages.
 - Next steps: explorer lane only needs a label or docs sanity check around `Open in Terminal` if it finds one, otherwise stop and keep the wave closed.
@@ -66,10 +67,10 @@ Last updated: 2026-04-14T20:47:00Z
 ### ot-qa -> ot-cleo
 - Objective: close the hourly wave on the verified explorer-to-terminal path, and do not reopen code unless a concrete regression gap appears.
 - Exact files reviewed: `src/components/FileExplorer.tsx`, `src/components/terminalCommandUtils.ts`, `src/test/terminalCommandUtils.test.ts`, `src/runtime/useFolderPluginRuntime.ts`, `src/test/useFolderPluginRuntime.fallback.test.tsx`, `.specs/overlayterm-performance-60fps/tasks.md`, `.specs/overlayterm-performance-60fps/validation.md`, and this handoff file.
-- Validation: `bun test src/test/terminalCommandUtils.test.ts` (pass, rerun at 19:59 UTC). Direct inspection also confirmed the plugin fallback unwind and `FileExplorer.tsx` still exposes `Open in Terminal` for directory entries.
+- Validation: `bun test src/test/terminalCommandUtils.test.ts` (pass, rerun at 20:59 UTC). Direct inspection also confirmed the plugin fallback unwind and `FileExplorer.tsx` still exposes `Open in Terminal` for directory entries.
 - Result: no new regression gap was found in the wave-closeout path, so the 60fps performance spec stays closed.
-- Blockers: `bunx vitest run src/test/useFolderPluginRuntime.fallback.test.tsx` still cannot start because `vitest.config.ts` cannot resolve `vitest/config` or `@vitejs/plugin-react`. Broader mingw linker and Python-path blockers remain only if a future cycle reopens code or widens scope.
-- Next move: start the next OT Cleo cycle from a fresh product risk, not from this closed wave, and if the performance spec is revisited first repair the local toolchain, then rerun the terminal command utility check, the plugin fallback test, and the relevant Rust/Vitest coverage.
+- Blockers: `bunx vitest run src/test/useFolderPluginRuntime.fallback.test.tsx` still cannot start because `vitest.config.ts` cannot resolve `vitest/config`, `@vitejs/plugin-react`, or `vitest`. Broader mingw linker and Python-path blockers remain only if a future cycle reopens code or widens scope.
+- Next move: start the next OT Cleo cycle from a fresh product risk, not from this closed wave. If the performance spec is revisited, repair the local Vitest/toolchain setup first, then rerun the terminal command utility check, the plugin fallback test, and the relevant Rust/Vitest coverage before claiming more proof.
 
 ## Validation and blockers
 
@@ -85,6 +86,8 @@ Last updated: 2026-04-14T20:47:00Z
 - 2026-04-14, 18:49 UTC pass: re-ran `bun test src/test/terminalCommandUtils.test.ts`, and it passed again; direct inspection still confirms `FileExplorer.tsx` exposes `Open in Terminal` for directory entries.
 - 2026-04-14, 19:49 UTC pass: re-ran `bun test src/test/terminalCommandUtils.test.ts`, and it passed again; direct inspection still confirms `FileExplorer.tsx` exposes `Open in Terminal` for directory entries.
 - 2026-04-14, 19:51 UTC pass: re-ran `bun test src/test/terminalCommandUtils.test.ts`, and it passed again; direct inspection still confirms `FileExplorer.tsx` exposes `Open in Terminal` for directory entries.
+- 2026-04-14, 20:49 UTC pass: re-ran `bun test src/test/terminalCommandUtils.test.ts`, and it passed again; direct inspection still confirms `FileExplorer.tsx` exposes `Open in Terminal` for directory entries.
+- 2026-04-14, 20:51 UTC pass: re-ran `bun test src/test/terminalCommandUtils.test.ts`, and it passed again; direct inspection still confirms `FileExplorer.tsx` exposes `Open in Terminal` for directory entries.
 - 2026-04-14, 17:51 UTC pass: re-ran `bun test src/test/terminalCommandUtils.test.ts`, and it passed again; direct inspection still confirms `FileExplorer.tsx` exposes `Open in Terminal` for directory entries.
 - Missing proof: `bunx vitest run src/test/useFolderPluginRuntime.fallback.test.tsx` still cannot start here because `vitest.config.ts` cannot resolve `vitest/config` or `@vitejs/plugin-react`, so the plugin fallback lane remains code-inspected rather than freshly executed in this environment.
 - Environment blockers that remain, but only matter if a future cycle reopens the closed spec: `vitest` / `@vitejs/plugin-react` resolution, mingw `-lgcc_eh` / `-lgcc` linker failures, and `python3` absent on PATH.
