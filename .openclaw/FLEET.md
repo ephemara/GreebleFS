@@ -14,6 +14,11 @@ This folder holds the dedicated OverlayTerm OpenClaw fleet.
 - `ot-forge` - workflow tooling and fleet acceleration
 - `ot-qa` - quality, perf, regressions, crash hardening
 - `ot-labs` - next-gen feature R&D
+- `ot-native` - Rust, Tauri, PTY, watcher, and native systems strike lead
+- `ot-runtime` - frontend runtime, settings, stores, and orchestration lead
+- `ot-git` - source-control UX, GitManager behavior, and repo telemetry lead
+- `ot-preview` - preview, diff, large-file, and content-inspection lead
+- `ot-release` - build, packaging, startup, integration, and shipping-readiness lead
 
 ## Shared operating model
 
