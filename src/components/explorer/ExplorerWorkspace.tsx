@@ -1,5 +1,5 @@
 import React, { useMemo, useRef } from 'react';
-import { Columns2, CopyPlus, Plus, SquareSplitHorizontal, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Clipboard, Columns2, CopyPlus, Plus, SquareSplitHorizontal, X } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import type { ResolvedOverlayAppearance } from '../../config/appearance';
 import type { OverlayPluginExplorerActionContribution } from '../../config/pluginContributions';
@@ -106,6 +106,7 @@ export function ExplorerWorkspace({
     ?? activeLeftTab
     ?? activeRightTab
     ?? null;
+  const splitPercent = Math.round(workspace.splitRatio * 100);
 
   const ensureDualPane = () => {
     if (!activeRightTab) {
@@ -166,6 +167,13 @@ export function ExplorerWorkspace({
     setFocusedPane(activePane === 'left' ? 'right' : 'left');
   };
 
+  const copyPanePath = async (path: string) => {
+    if (!path.trim() || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+      return;
+    }
+    await navigator.clipboard.writeText(path);
+  };
+
   const renderPane = (pane: ExplorerPaneId, tab: ExplorerTabSnapshot | null) => {
     const isActivePane = workspace.focusedPane === pane;
     const paneLabel = pane === 'left' ? 'Left pane' : 'Right pane';
@@ -211,7 +219,7 @@ export function ExplorerWorkspace({
               cursor: 'pointer',
             }}
           >
-            Open Explorer Here
+            Open {pane === 'left' ? 'Left' : 'Right'} Pane
           </button>
           </div>
         </div>
@@ -243,10 +251,39 @@ export function ExplorerWorkspace({
                 Focused
               </span>
             )}
+            <span
+              title={tab?.title ?? panePath}
+              style={{
+                maxWidth: 170,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontSize: 10,
+                color: 'var(--overlay-text-dim)',
+                fontWeight: 600,
+              }}
+            >
+              {tab ? getTabDisplayLabel(tab, panePath) : 'Empty'}
+            </span>
           </div>
           <span title={panePath} style={{ fontSize: 10, color: 'var(--overlay-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1, textAlign: 'right' }}>
             {panePath || 'No path'}
           </span>
+          {panePath && (
+            <button
+              type="button"
+              onClick={() => copyPanePath(panePath)}
+              title="Copy pane path"
+              style={{
+                ...toolbarButtonStyle,
+                width: 24,
+                height: 24,
+                flexShrink: 0,
+              }}
+            >
+              <Clipboard size={12} />
+            </button>
+          )}
         </div>
         <FileExplorer
           appearance={appearance}
@@ -333,9 +370,10 @@ export function ExplorerWorkspace({
                   background: isActive ? `${theme.accent}1b` : 'var(--overlay-explorer-chip-bg)',
                 }}
               >
-                <button
+              <button
                   type="button"
                   onClick={() => focusWorkspaceTab(tab.id)}
+                  title={currentPath || tab.title || 'Explorer'}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -451,6 +489,37 @@ export function ExplorerWorkspace({
           <button type="button" onClick={closeActiveTab} title="Close active tab" style={toolbarButtonStyle}>
             <X size={13} />
           </button>
+          {workspace.layoutMode === 'dual' && (
+            <>
+              <span style={{ ...workspaceMetaStyle, paddingLeft: 4, paddingRight: 2 }} title={`Left pane ${splitPercent}% wide`}>
+                Split {splitPercent}%
+              </span>
+              <button
+                type="button"
+                onClick={() => setWorkspaceSplitRatio(workspace.splitRatio - 0.05)}
+                title="Narrow left pane"
+                style={toolbarButtonStyle}
+              >
+                <ChevronLeft size={13} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setWorkspaceSplitRatio(0.5)}
+                title="Reset split to 50/50"
+                style={toolbarButtonStyle}
+              >
+                <SquareSplitHorizontal size={13} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setWorkspaceSplitRatio(workspace.splitRatio + 0.05)}
+                title="Widen left pane"
+                style={toolbarButtonStyle}
+              >
+                <ChevronRight size={13} />
+              </button>
+            </>
+          )}
         </div>
       </div>
 

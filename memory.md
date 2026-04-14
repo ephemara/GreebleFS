@@ -1,5 +1,11 @@
 # GreebleFS Memory
 
+## 2026-04-14 — Explorer Workspace Split Controls Pass
+
+- `ExplorerWorkspace` now shows a compact split indicator plus nudge/reset controls in dual-pane mode, so pane sizing is no longer dependent on the drag handle alone.
+- This makes the two-pane layout faster to rebalance after opening a temporary tab or preview-heavy pane, which is a small but real dual-pane ergonomics win.
+- Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
+
 ## 2026-04-13 — File Explorer Clipboard Shared Across Panes
 
 - Moved the explorer clipboard from `FileExplorer` local state into `src/store/explorerStore.ts`, so copy/cut/paste now survives switching panes and multiple explorer instances inside the same workspace.
