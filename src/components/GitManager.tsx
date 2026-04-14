@@ -2,6 +2,7 @@ import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useSt
 import type { EditorProps } from '@monaco-editor/react';
 import { ChevronDown, ChevronUp, Download, FolderGit2, GitBranch, GitCommit, Plus, RefreshCw, Rocket, Search, Upload, X } from 'lucide-react';
 import { multiplyColorAlpha, type ResolvedOverlayAppearance } from '../config/appearance';
+import { recordExplorerPerformanceSample } from '../config/performanceTelemetry';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 import { useSettingsStore } from '../store/settingsStore';
@@ -131,6 +132,8 @@ export function GitManager({
   const untrackedSizeHintCacheRef = useRef(new Map<string, number | null>());
   const repoStateLoadInFlightRef = useRef<Promise<void> | null>(null);
   const repoStateLoadQueuedPathRef = useRef<string | null>(null);
+  const repoStateLoadQueuedForceRef = useRef(false);
+  const repoStateLoadQueuedWhenVisibleRef = useRef(false);
 
   useEffect(() => {
     try {
@@ -162,6 +165,10 @@ export function GitManager({
     return commands.gitExec(repo, args).then(unwrapTauriResult);
   }, []);
 
+  const recordGitMetric = useCallback((metricId: 'git_repo_state_load' | 'git_repo_badge_sync', durationMs: number, metadata: Record<string, string | number | boolean | null> = {}) => {
+    recordExplorerPerformanceSample({ metricId, durationMs, metadata });
+  }, []);
+
   const safeGit = useCallback(async (repo: string, args: string[], fallback = '') => {
     try {
       return await runGit(repo, args);
@@ -180,10 +187,14 @@ export function GitManager({
   }, [runGit]);
 
   const loadRepoBadge = useCallback(async (path: string): Promise<RepoBadgeState> => {
+    const startedAt = performance.now();
     try {
       const statusText = await runGit(path, ['status', '--porcelain']);
-      return buildRepoBadgeState(parseGitStatus(statusText));
+      const badgeState = buildRepoBadgeState(parseGitStatus(statusText));
+      recordGitMetric('git_repo_badge_sync', performance.now() - startedAt, { repoCount: 1 });
+      return badgeState;
     } catch (loadError) {
+      recordGitMetric('git_repo_badge_sync', performance.now() - startedAt, { repoCount: 1, error: true });
       return {
         changeCount: 0,
         conflictedCount: 0,
@@ -193,10 +204,23 @@ export function GitManager({
     }
   }, [runGit]);
 
-  const loadRepoState = useCallback(async (path: string) => {
+  const loadRepoState = useCallback(async (path: string, options?: { force?: boolean; whenVisible?: boolean }) => {
+    const startedAt = performance.now();
+    const force = options?.force ?? false;
+    const whenVisible = options?.whenVisible ?? false;
+    const isDocumentVisible = () => document.visibilityState === 'visible';
+
+    if (!force && !isDocumentVisible()) {
+      repoStateLoadQueuedPathRef.current = path;
+      repoStateLoadQueuedWhenVisibleRef.current = true;
+      return;
+    }
+
     const currentLoad = repoStateLoadInFlightRef.current;
     if (currentLoad) {
       repoStateLoadQueuedPathRef.current = path;
+      repoStateLoadQueuedForceRef.current = repoStateLoadQueuedForceRef.current || force;
+      repoStateLoadQueuedWhenVisibleRef.current = repoStateLoadQueuedWhenVisibleRef.current || whenVisible;
       await currentLoad;
       return;
     }
@@ -223,9 +247,18 @@ export function GitManager({
           loadedAt: Date.now(),
         });
         setRepoBadges(current => ({ ...current, [path]: buildRepoBadgeState(status) }));
+        recordGitMetric('git_repo_state_load', performance.now() - startedAt, {
+          repoPathLength: path.length,
+          statusCount: status.length,
+          hadBranch: branch.trim() ? true : false,
+        });
       } catch (loadError) {
         setError(String(loadError));
         setRepoState(null);
+        recordGitMetric('git_repo_state_load', performance.now() - startedAt, {
+          repoPathLength: path.length,
+          error: true,
+        });
         setRepoBadges(current => ({
           ...current,
           [path]: {
@@ -247,12 +280,22 @@ export function GitManager({
     } finally {
       repoStateLoadInFlightRef.current = null;
       const queuedPath = repoStateLoadQueuedPathRef.current;
+      const queuedForce = repoStateLoadQueuedForceRef.current;
+      const queuedWhenVisible = repoStateLoadQueuedWhenVisibleRef.current;
       repoStateLoadQueuedPathRef.current = null;
+      repoStateLoadQueuedForceRef.current = false;
+      repoStateLoadQueuedWhenVisibleRef.current = false;
       if (queuedPath) {
-        void loadRepoState(queuedPath);
+        if (!queuedForce && queuedWhenVisible && document.visibilityState !== 'visible') {
+          repoStateLoadQueuedPathRef.current = queuedPath;
+          repoStateLoadQueuedWhenVisibleRef.current = true;
+          return;
+        }
+
+        void loadRepoState(queuedPath, { force: queuedForce, whenVisible: queuedWhenVisible });
       }
     }
-  }, [runGit, safeGit, selectedRepo]);
+  }, [runGit, safeGit, recordGitMetric]);
 
   useEffect(() => {
     if (!selectedRepo) {
@@ -343,6 +386,10 @@ export function GitManager({
 
     const handleVisibilityChange = () => {
       if (!disposed && isDocumentVisible()) {
+        const queuedPath = repoStateLoadQueuedPathRef.current ?? selectedRepo ?? repos[0] ?? null;
+        if (queuedPath) {
+          void loadRepoState(queuedPath, { force: true, whenVisible: true });
+        }
         void scheduleBadgeSync(false);
       }
     };
