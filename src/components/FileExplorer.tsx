@@ -3657,6 +3657,12 @@ export function FileExplorer({
     }
   }, [setExplorerTagsForPaths]);
 
+  const recentLocations = useMemo(() => {
+    const candidatePaths = history.slice(0, Math.max(0, historyIdx)).reverse();
+    const unique = candidatePaths.filter((path, index, collection) => path && collection.indexOf(path) === index);
+    return unique.slice(0, 3);
+  }, [history, historyIdx]);
+
   const batchRenamePreview = useMemo(() => {
     const renameTargets = (selectedEntries.length > 0 ? selectedEntries : visibleEntries)
       .filter((entry) => !entry.is_dir);
@@ -5979,6 +5985,35 @@ export function FileExplorer({
               </>
             )}
           </div>
+
+          {recentLocations.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, minWidth: 0, maxWidth: isCompactDock ? 220 : 320, overflow: 'hidden' }} title="Recent locations">
+              <span style={{ fontSize: 10, color: EXP.muted2, fontWeight: 700, flexShrink: 0 }}>Recent</span>
+              {recentLocations.map((path) => (
+                <button
+                  key={path}
+                  type="button"
+                  onClick={() => navigate(path)}
+                  style={{
+                    border: '1px solid var(--overlay-explorer-chip-border)',
+                    background: 'var(--overlay-explorer-chip-bg)',
+                    color: EXP.muted,
+                    borderRadius: 999,
+                    padding: '3px 8px',
+                    fontSize: 10,
+                    cursor: 'pointer',
+                    maxWidth: 96,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                  }}
+                >
+                  {getPathLeaf(path)}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Include text */}
           <button

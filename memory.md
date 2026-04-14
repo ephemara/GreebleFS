@@ -6,6 +6,12 @@
 - The clipboard payload is now normalized into a small shared snapshot (`path`, `name`, `is_dir`) instead of holding raw React entry objects.
 - Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
 
+## 2026-04-14 — Explorer Recent Locations Pass
+
+- The explorer toolbar now surfaces a small `Recent` strip built from navigation history.
+- This gives users a one-click way back to the last few locations, which is a small but very premium-feeling navigation affordance.
+- Next passes should keep pushing toward premium capability depth, especially queueing, network mounts, archive handling, compare/analyzer tools, and advanced automation.
+
 ## 2026-04-14 — Premium Feature Parity Focus Shift
 
 - Explorer work is now explicitly aimed at premium feature parity, not just polish passes.
