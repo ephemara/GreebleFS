@@ -30,6 +30,7 @@ When working on the file explorer, prefer 20-minute passes that end with one con
 
 - Re-check `FileExplorer`, `ExplorerWorkspace`, `ExplorerSideRail`, and the explorer config before each pass.
 - Favor the highest-leverage UI, UX, performance, or workflow change available.
+- Current priority has shifted toward premium feature parity, so favor durable capability gaps like sync, network mounts, archive support, compare, analyzer, advanced batch ops, metadata tools, and power-user automation.
 - Keep `AGENTS.md` and `memory.md` updated when the explorer direction or lessons change.
 - Preserve the split: Rust owns truth, TS runtime/store orchestrates, components render.
 

@@ -6,6 +6,12 @@
 - The clipboard payload is now normalized into a small shared snapshot (`path`, `name`, `is_dir`) instead of holding raw React entry objects.
 - Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, and large-folder performance.
 
+## 2026-04-14 — Premium Feature Parity Focus Shift
+
+- Explorer work is now explicitly aimed at premium feature parity, not just polish passes.
+- Highest-value gaps to close next: cloud/network mounts, archive handling, file compare, storage analysis, sync/queue tools, metadata editing, and richer batch operations.
+- Next passes should keep pushing toward dual-pane ergonomics, search/filter polish, large-folder performance, and premium capability depth.
+
 ## 2026-04-14 — Explorer Workspace Empty Pane Copy Pass
 
 - The empty dual-pane placeholder now says `Open Explorer Here`, which makes the first action a little more obvious.
