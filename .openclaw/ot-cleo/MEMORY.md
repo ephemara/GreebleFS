@@ -10,3 +10,7 @@
 ## Working rule
 
 Push OverlayTerm toward premium, monetizable, final-boss quality.
+
+- 2026-04-14 — Boss pass focus: explorer workspace split ergonomics and GitManager refresh discipline are the highest-leverage near-term wins. Keep subsystem work scoped, avoid Telegram/unrelated-agent touchpoints, and prefer validated movement over broad churn.
+- 2026-04-14 — GitManager refresh path now coalesces overlapping repo-state loads, and the next highest-leverage follow-up remains visibility-restore resync discipline plus proof via the 60 FPS baseline scenario.
+
