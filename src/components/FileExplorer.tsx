@@ -96,6 +96,9 @@ import {
 } from '../config/platform';
 import { pluginSystemConfig } from '../config/plugins';
 import {
+  requestPluginPanelOpen,
+} from '../runtime/pluginPanelRequests';
+import {
   recordExplorerPerformanceSample,
   type ExplorerPerformanceMetadata,
   type ExplorerPerformanceMetricId,
@@ -4399,6 +4402,23 @@ export function FileExplorer({
       if (result.status !== 0) {
         throw new Error(result.stderr.trim() || `Plugin backend exited with status ${result.status}`);
       }
+      return;
+    }
+
+    if (contribution.execution.kind === 'panel-request') {
+      const resolvedPayload = Object.fromEntries(
+        Object.entries(contribution.execution.payload).map(([key, value]) => [
+          key,
+          resolvePluginCommandTemplate(value, {
+            ...context,
+            pluginId: contribution.pluginId,
+            pluginName: contribution.pluginName,
+          }),
+        ]),
+      );
+      requestPluginPanelOpen(contribution.execution.panelId, resolvedPayload, {
+        source: 'plugin-context-menu',
+      });
       return;
     }
 

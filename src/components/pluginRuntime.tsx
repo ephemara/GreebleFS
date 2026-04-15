@@ -14,12 +14,19 @@ import type { OverlayThemeDefinition } from '../config/appearance';
 import {
   deriveRuntimeModuleId,
   deriveRuntimeModuleName,
-  executeRuntimeModule,
+  executeRuntimeModuleGraph,
   isSupportedRuntimeFile,
-  transpileRuntimeModuleSource,
+  transpileRuntimeModuleGraph,
   type RuntimeFileEntry,
+  type RuntimeModuleGraph,
+  type RuntimeRelativeModuleSourceResolver,
   unwrapRuntimeModuleExport,
 } from '../runtime/moduleRuntime';
+import {
+  getPluginPanelOpenRequestEvent,
+  readPluginPanelOpenRequest,
+  requestPluginPanelOpen,
+} from '../runtime/pluginPanelRequests';
 
 export interface PluginFileEntry extends RuntimeFileEntry {}
 
@@ -131,6 +138,7 @@ export interface LoadPluginFromSourceOptions {
   context?: Partial<OverlayPluginContext>;
   defaults?: Partial<Pick<OverlayPluginDefinition, 'id' | 'name' | 'description' | 'defaultOpen' | 'keepMounted'>>;
   diagnostics?: Partial<OverlayPluginDiagnostics>;
+  resolveRelativeModuleSource?: RuntimeRelativeModuleSourceResolver;
 }
 
 export function definePlugin(definition: OverlayPluginDefinition): OverlayPluginDefinition {
@@ -181,8 +189,8 @@ export async function loadPluginFromSource(
   };
 
   try {
-    const transpiled = await transpilePluginSource(source);
-    const exported = executePluginModule(transpiled);
+    const transpiledGraph = await transpilePluginGraph(context.filePath, source, options?.resolveRelativeModuleSource);
+    const exported = executePluginModuleGraph(transpiledGraph);
     const normalized = normalizePluginExport(exported, context);
 
     const plugin: LoadedOverlayPlugin = {
@@ -217,11 +225,20 @@ export async function loadPluginFromSource(
   }
 }
 
-async function transpilePluginSource(source: string): Promise<string> {
-  return transpileRuntimeModuleSource(source, `const React = require('react');\n`);
+async function transpilePluginGraph(
+  entryModulePath: string,
+  source: string,
+  resolveRelativeModuleSource?: RuntimeRelativeModuleSourceResolver,
+): Promise<RuntimeModuleGraph> {
+  return transpileRuntimeModuleGraph({
+    entryModulePath,
+    entrySource: source,
+    prependCode: `const React = require('react');\n`,
+    resolveRelativeModuleSource,
+  });
 }
 
-function executePluginModule(code: string): unknown {
+function executePluginModuleGraph(graph: RuntimeModuleGraph): unknown {
   const allowedModules: Record<string, unknown> = {
     react: React,
     'lucide-react': LucideReact,
@@ -232,10 +249,13 @@ function executePluginModule(code: string): unknown {
     '@tauri-apps/plugin-notification': TauriNotification,
     [pluginSystemConfig.runtimeModuleName]: {
       definePlugin,
+      getPluginPanelOpenRequestEvent,
+      readPluginPanelOpenRequest,
+      requestPluginPanelOpen,
     },
   };
 
-  return executeRuntimeModule(code, allowedModules);
+  return executeRuntimeModuleGraph(graph, allowedModules);
 }
 
 function normalizePluginExport(

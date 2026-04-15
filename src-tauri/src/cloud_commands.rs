@@ -175,7 +175,6 @@ struct AccessTokenCacheEntry {
 struct PendingAuthSession {
     provider: CloudProviderId,
     redirect_uri: String,
-    state_token: String,
     code_verifier: String,
     callback: Option<AuthCallbackPayload>,
     completed: Option<CloudAccountSummary>,
@@ -401,7 +400,6 @@ pub async fn cloud_begin_auth(
             PendingAuthSession {
                 provider,
                 redirect_uri: redirect_uri.clone(),
-                state_token: state_token.clone(),
                 code_verifier: code_verifier.clone(),
                 callback: None,
                 completed: None,

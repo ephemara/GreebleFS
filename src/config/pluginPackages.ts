@@ -19,6 +19,7 @@ import {
   type PluginFileEntry,
   loadPluginFromSource,
 } from '../components/pluginRuntime';
+import type { RuntimeRelativeModuleSourceResolver } from '../runtime/moduleRuntime';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 
 interface FileEntry {
@@ -30,6 +31,7 @@ interface FileEntry {
 }
 
 type LooseRecord = Record<string, unknown>;
+const pluginRuntimeModuleExtensions = ['ts', 'tsx', 'js', 'jsx'] as const;
 
 interface PluginPackageFontManifest {
   id?: string;
@@ -74,6 +76,10 @@ interface PluginPackageContextMenuItemManifest {
   backend?: {
     entry?: string;
     args?: string[];
+  };
+  panelRequest?: {
+    panelId?: string;
+    payload?: Record<string, string>;
   };
 }
 
@@ -132,6 +138,19 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0).map(entry => entry.trim())
     : [];
+}
+
+function asStringRecord(value: unknown): Record<string, string> {
+  const record = asRecord(value);
+  if (!record) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(record)
+      .filter(([, entry]) => typeof entry === 'string' && entry.trim().length > 0)
+      .map(([key, entry]) => [key, String(entry).trim()]),
+  );
 }
 
 function asFontManifestArray(value: unknown): PluginPackageFontManifest[] {
@@ -243,9 +262,12 @@ function asContextMenuItemManifestArray(value: unknown): PluginPackageContextMen
     }
 
     const backendRecord = asRecord(record.backend);
+    const panelRequestRecord = asRecord(record.panelRequest);
     const command = asString(record.command);
     const backendEntry = asString(backendRecord?.entry);
-    if (!command && !backendEntry) {
+    const panelRequestPayload = asStringRecord(panelRequestRecord?.payload);
+    const panelRequestPanelId = asString(panelRequestRecord?.panelId);
+    if (!command && !backendEntry && !panelRequestRecord) {
       return [];
     }
 
@@ -274,6 +296,12 @@ function asContextMenuItemManifestArray(value: unknown): PluginPackageContextMen
         ? {
           entry: backendEntry,
           args: asStringArray(backendRecord?.args),
+        }
+        : undefined,
+      panelRequest: panelRequestRecord
+        ? {
+          panelId: panelRequestPanelId,
+          payload: panelRequestPayload,
         }
         : undefined,
     }];
@@ -316,6 +344,83 @@ function parsePluginManifestText(text: string, filePath: string): PluginPackageM
 
 function normalizeRelativePath(relativePath: string): string {
   return relativePath.trim().replace(/^\.([/\\])+/, '');
+}
+
+function normalizePackageComparisonPath(path: string): string {
+  return path
+    .replace(/\\/g, '/')
+    .replace(/\/+/g, '/')
+    .replace(/\/+$/g, '');
+}
+
+function normalizePackageRuntimeModulePath(path: string): string | null {
+  const normalizedPath = path.trim().replace(/\\/g, '/');
+  if (!normalizedPath || normalizedPath.startsWith('/') || /^[A-Za-z]:\//.test(normalizedPath)) {
+    return null;
+  }
+
+  const segments: string[] = [];
+  for (const segment of normalizedPath.split('/')) {
+    if (!segment || segment === '.') {
+      continue;
+    }
+    if (segment === '..') {
+      if (segments.length === 0) {
+        return null;
+      }
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+
+  return segments.join('/');
+}
+
+function getPackageRelativePath(directoryPath: string, filePath: string): string | null {
+  const normalizedDirectoryPath = normalizePackageComparisonPath(directoryPath);
+  const normalizedFilePath = normalizePackageComparisonPath(filePath);
+  if (!normalizedDirectoryPath || !normalizedFilePath) {
+    return null;
+  }
+  if (normalizedFilePath === normalizedDirectoryPath) {
+    return '';
+  }
+  if (!normalizedFilePath.startsWith(`${normalizedDirectoryPath}/`)) {
+    return null;
+  }
+  return normalizedFilePath.slice(normalizedDirectoryPath.length + 1);
+}
+
+function resolvePackageRuntimeModuleImportPath(
+  fromModuleRelativePath: string,
+  specifier: string,
+): string | null {
+  const importerSegments = fromModuleRelativePath.replace(/\\/g, '/').split('/').filter(Boolean);
+  importerSegments.pop();
+  const specifierSegments = specifier.replace(/\\/g, '/').split('/');
+  return normalizePackageRuntimeModulePath(
+    [...importerSegments, ...specifierSegments].join('/'),
+  );
+}
+
+function buildPackageRuntimeModuleCandidates(relativePath: string): string[] {
+  const normalizedRelativePath = normalizePackageRuntimeModulePath(relativePath);
+  if (!normalizedRelativePath) {
+    return [];
+  }
+
+  const candidates = new Set<string>();
+  if (/\.[^./]+$/.test(normalizedRelativePath)) {
+    candidates.add(normalizedRelativePath);
+  } else {
+    for (const extension of pluginRuntimeModuleExtensions) {
+      candidates.add(`${normalizedRelativePath}.${extension}`);
+      candidates.add(`${normalizedRelativePath}/index.${extension}`);
+    }
+  }
+
+  return [...candidates];
 }
 
 function isSafeRelativePath(relativePath: string): boolean {
@@ -451,6 +556,37 @@ async function resolvePackagePanelEntry(record: PluginPackageRecord): Promise<Fi
   return null;
 }
 
+function createPluginRelativeModuleSourceResolver(
+  packageDirectoryPath: string,
+): RuntimeRelativeModuleSourceResolver {
+  return async ({ fromModulePath, specifier }) => {
+    const importerRelativePath = getPackageRelativePath(packageDirectoryPath, fromModulePath);
+    if (importerRelativePath == null) {
+      return null;
+    }
+
+    const resolvedImportPath = resolvePackageRuntimeModuleImportPath(importerRelativePath, specifier);
+    if (!resolvedImportPath) {
+      return null;
+    }
+
+    for (const candidate of buildPackageRuntimeModuleCandidates(resolvedImportPath)) {
+      const entry = await resolveRelativeFileEntry(packageDirectoryPath, candidate);
+      if (!entry || !pluginSystemConfig.frontendExtensions.includes(entry.extension as never)) {
+        continue;
+      }
+
+      const source = await commands.fsReadTextFile(entry.path).then(unwrapTauriResult);
+      return {
+        modulePath: entry.path,
+        source,
+      };
+    }
+
+    return null;
+  };
+}
+
 async function resolveThemeDirectories(record: PluginPackageRecord): Promise<Array<{ name: string; path: string }>> {
   const explicitThemeDirectories = record.manifest.contributions?.themes ?? [];
   if (explicitThemeDirectories.length > 0) {
@@ -537,6 +673,7 @@ async function loadPluginPackage(
           sourceLabel: packageName,
           manifestPath: record.manifestPath,
         },
+        resolveRelativeModuleSource: createPluginRelativeModuleSourceResolver(record.directoryPath),
       });
     } catch (error) {
       packageWarnings.push(String(error));
@@ -648,6 +785,26 @@ async function loadPluginPackage(
             kind: 'plugin-backend' as const,
             entry: normalizeRelativePath(item.backend.entry),
             args: item.backend.args ?? [],
+          },
+        }];
+      }
+
+      if (item.panelRequest) {
+        return [{
+          id: `${packageId}.context-menu.${stableId}`,
+          pluginId: packageId,
+          pluginName: packageName,
+          title,
+          description: asString(item.description),
+          contexts: item.contexts && item.contexts.length > 0 ? item.contexts : ['entry'],
+          appliesTo: item.appliesTo ?? 'any',
+          group: asString(item.group) || 'plugin',
+          defaultOrder: item.order ?? (700 + index * 10),
+          iconName: asString(item.iconName) || 'Puzzle',
+          execution: {
+            kind: 'panel-request' as const,
+            panelId: asString(item.panelRequest.panelId) || packageId,
+            payload: item.panelRequest.payload ?? {},
           },
         }];
       }

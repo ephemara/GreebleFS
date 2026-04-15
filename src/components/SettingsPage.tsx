@@ -3571,6 +3571,8 @@ export function SettingsPage({
                       ? `Backend · ${item.execution.entry}`
                       : item.execution.kind === 'terminal-template'
                         ? 'Terminal Template'
+                        : item.execution.kind === 'panel-request'
+                          ? `Panel Request · ${item.execution.panelId}`
                         : 'Host Action';
 
                     return (

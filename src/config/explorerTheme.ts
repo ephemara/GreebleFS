@@ -263,43 +263,37 @@ export function normalizeExplorerThemeRecipe(
     return undefined;
   }
 
-  const mergedMetrics = {
-    ...(fallback?.metrics ?? {}),
-    ...(recipe?.metrics ?? {}),
-  };
-  const mergedSurfaces = {
-    ...(fallback?.surfaces ?? {}),
-    ...(recipe?.surfaces ?? {}),
-  };
-  const mergedTypography = {
-    ...(fallback?.typography ?? {}),
-    ...(recipe?.typography ?? {}),
-  };
+  const source = recipe ?? fallback;
+  const mergedMetrics = source?.metrics ?? {};
+  const mergedSurfaces = source?.surfaces ?? {};
+  const mergedTypography = source?.typography ?? {};
 
   const next: OverlayExplorerThemeRecipe = {
-    preset: recipe?.preset ?? fallback?.preset,
-    chromeLayoutId: normalizeExplorerChromeLayoutId(recipe?.chromeLayoutId ?? fallback?.chromeLayoutId),
-    defaultModeProfileId: normalizeExplorerModeProfileId(
-      recipe?.defaultModeProfileId ?? fallback?.defaultModeProfileId ?? defaultExplorerModeProfileId,
-    ),
-    layoutPrimitiveId: asTrimmedString(recipe?.layoutPrimitiveId) ?? asTrimmedString(fallback?.layoutPrimitiveId),
-    navigationPatternId: asTrimmedString(recipe?.navigationPatternId) ?? asTrimmedString(fallback?.navigationPatternId),
-    renderStyleId: asTrimmedString(recipe?.renderStyleId) ?? asTrimmedString(fallback?.renderStyleId),
-    railPosition: recipe?.railPosition ?? fallback?.railPosition,
-    railBrandLabel: asTrimmedString(recipe?.railBrandLabel) ?? asTrimmedString(fallback?.railBrandLabel),
-    toolbarStyle: recipe?.toolbarStyle ?? fallback?.toolbarStyle,
-    breadcrumbStyle: recipe?.breadcrumbStyle ?? fallback?.breadcrumbStyle,
-    selectionStyle: recipe?.selectionStyle ?? fallback?.selectionStyle,
-    hoverStyle: recipe?.hoverStyle ?? fallback?.hoverStyle,
-    previewStyle: recipe?.previewStyle ?? fallback?.previewStyle,
-    statusBarStyle: recipe?.statusBarStyle ?? fallback?.statusBarStyle,
-    labelMode: recipe?.labelMode ?? fallback?.labelMode,
-    preferredViewMode: isExplorerViewMode(recipe?.preferredViewMode)
-      ? recipe?.preferredViewMode
-      : (isExplorerViewMode(fallback?.preferredViewMode) ? fallback?.preferredViewMode : undefined),
-    preferredExperimentalViewMode: isExplorerExperimentalViewMode(recipe?.preferredExperimentalViewMode)
-      ? recipe?.preferredExperimentalViewMode
-      : (isExplorerExperimentalViewMode(fallback?.preferredExperimentalViewMode) ? fallback?.preferredExperimentalViewMode : undefined),
+    preset: source?.preset,
+    chromeLayoutId: source?.chromeLayoutId
+      ? normalizeExplorerChromeLayoutId(source.chromeLayoutId)
+      : undefined,
+    defaultModeProfileId: source?.defaultModeProfileId
+      ? normalizeExplorerModeProfileId(source.defaultModeProfileId)
+      : undefined,
+    layoutPrimitiveId: asTrimmedString(source?.layoutPrimitiveId),
+    navigationPatternId: asTrimmedString(source?.navigationPatternId),
+    renderStyleId: asTrimmedString(source?.renderStyleId),
+    railPosition: source?.railPosition,
+    railBrandLabel: asTrimmedString(source?.railBrandLabel),
+    toolbarStyle: source?.toolbarStyle,
+    breadcrumbStyle: source?.breadcrumbStyle,
+    selectionStyle: source?.selectionStyle,
+    hoverStyle: source?.hoverStyle,
+    previewStyle: source?.previewStyle,
+    statusBarStyle: source?.statusBarStyle,
+    labelMode: source?.labelMode,
+    preferredViewMode: isExplorerViewMode(source?.preferredViewMode)
+      ? source.preferredViewMode
+      : undefined,
+    preferredExperimentalViewMode: isExplorerExperimentalViewMode(source?.preferredExperimentalViewMode)
+      ? source.preferredExperimentalViewMode
+      : undefined,
     metrics: {
       railWidth: asFiniteNumber(mergedMetrics.railWidth),
       previewWidth: asFiniteNumber(mergedMetrics.previewWidth),
@@ -357,8 +351,7 @@ export function normalizeExplorerThemeRecipe(
       labelLetterSpacing: asTrimmedString(mergedTypography.labelLetterSpacing),
     },
     cssVars: {
-      ...normalizeCssVarRecord(fallback?.cssVars),
-      ...normalizeCssVarRecord(recipe?.cssVars),
+      ...normalizeCssVarRecord(source?.cssVars),
     },
   };
 

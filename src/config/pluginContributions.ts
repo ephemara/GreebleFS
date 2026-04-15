@@ -29,6 +29,11 @@ export type OverlayPluginContextMenuContributionExecution =
     kind: 'plugin-backend';
     entry: string;
     args: string[];
+  }
+  | {
+    kind: 'panel-request';
+    panelId: string;
+    payload: Record<string, string>;
   };
 
 export interface OverlayPluginContextMenuContribution {

@@ -256,7 +256,7 @@ describe('FileExplorer view modes', () => {
     });
   });
 
-  it('moves toolbar controls when the active theme changes chromeLayoutId', async () => {
+  it('moves toolbar controls when the active theme changes the default mode profile', async () => {
     const appearance = resolveOverlayAppearance({
       activeThemeId: 'focused-layout',
       customThemes: [
@@ -264,7 +264,7 @@ describe('FileExplorer view modes', () => {
           id: 'focused-layout',
           name: 'Focused Layout',
           explorer: {
-            chromeLayoutId: 'focused-search',
+            defaultModeProfileId: 'focus',
           },
         }),
       ],
