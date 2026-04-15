@@ -1,5 +1,14 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Overlay Render Ordering Crash Fix
+
+- Reproduced the first-render crash in headless Chromium against `localhost:1420` and traced it to hook-order and TDZ bugs in the monolithic overlay shell.
+- Fixed several render-time ordering failures:
+  - `src/App.tsx` now declares the overlay auto-open effect after the memoized `openPanelIds` state it reads.
+  - `src/components/FileExplorer.tsx` now declares `selectedEntries` before `selectedSizeSummary`, keeps the preview-close effects below `closePreview`, and wires `pollDuplicateScan` into the explorer backend destructure.
+- The fixed-port `localhost:1420` dev server can look cross-wired if an old tab or another repo is still pointed at the same port. Verify the active client/server pair before assuming one repo imported another repo.
+- Browser-only Tauri API errors are a separate issue from the Tauri webview runtime. They can appear when loading the Vite server directly in Chromium, so use the desktop runtime for real validation.
+
 ## 2026-04-15 — Dev HUD Always-On Pass
 
 - Added `src/components/DevPerformanceHud.tsx` and mounted it from `App.tsx` so local development now always shows a fixed telemetry HUD without needing a separate plugin or settings hop.

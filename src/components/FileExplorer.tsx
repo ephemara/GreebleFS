@@ -2189,6 +2189,7 @@ export function FileExplorer({
     supportsNativeIntegration,
     supportsSearch,
     startDuplicateScan: startExplorerDuplicateScan,
+    pollDuplicateScan: pollExplorerDuplicateScan,
     trashPaths: trashExplorerPaths,
     transferItems: transferExplorerItems,
     unwatchEntrySizeRoot: unwatchExplorerEntrySizeRoot,
@@ -2550,19 +2551,6 @@ export function FileExplorer({
       flushPendingExplorerMetrics(runtimeCachePolicyTelemetryMetadataRef.current);
     };
   }, [flushPendingExplorerMetrics]);
-
-  useEffect(() => {
-    if (isCompactDock) {
-      setSidebarWidth(current => Math.max(sidebarBounds.minWidth, Math.min(current, sidebarBounds.maxWidth)));
-      void closePreview();
-    }
-  }, [closePreview, isCompactDock, sidebarBounds.maxWidth, sidebarBounds.minWidth]);
-
-  useEffect(() => {
-    if (!previewEnabled) {
-      void closePreview();
-    }
-  }, [closePreview, previewEnabled]);
 
   useEffect(() => {
     updateExplorerSessionForInstance(instanceId, {
@@ -3069,6 +3057,10 @@ export function FileExplorer({
       .filter((node): node is typeof explorerRail.nodes[number] & { kind: 'bookmark'; path: string } => node.kind === 'bookmark')
       .map((node) => node.path),
   ), [explorerRail.nodes]);
+  const selectedEntries = useMemo(
+    () => visibleEntries.filter(entry => selected.has(entry.path)),
+    [visibleEntries, selected],
+  );
   const selectedSizeSummary = useMemo(() => {
     const selectedSizeEntries = selectedEntries
       .map((entry) => entrySizes[entry.path])
@@ -3173,11 +3165,6 @@ export function FileExplorer({
         isDirectory: inferredDirectory,
       };
     }), [droppedSourceLookup]);
-
-  const selectedEntries = useMemo(
-    () => visibleEntries.filter(entry => selected.has(entry.path)),
-    [visibleEntries, selected],
-  );
   const activeDragPathsRef = useRef<string[]>([]);
   const isProcessElevatedRef = useRef(false);
   const selectedDirectoryEntries = useMemo(
@@ -3452,6 +3439,19 @@ export function FileExplorer({
     setPreview({ type: 'none', path: '' });
     setPreviewLoading(false);
   }, [flushPreviewTextSave]);
+
+  useEffect(() => {
+    if (isCompactDock) {
+      setSidebarWidth(current => Math.max(sidebarBounds.minWidth, Math.min(current, sidebarBounds.maxWidth)));
+      void closePreview();
+    }
+  }, [closePreview, isCompactDock, sidebarBounds.maxWidth, sidebarBounds.minWidth]);
+
+  useEffect(() => {
+    if (!previewEnabled) {
+      void closePreview();
+    }
+  }, [closePreview, previewEnabled]);
 
   const applyShellLayoutPreset = useCallback((nextLayoutId: ExplorerShellLayoutId) => {
     const nextLayout = getExplorerShellLayoutDefinition(nextLayoutId);
