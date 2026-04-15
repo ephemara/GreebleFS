@@ -3,12 +3,16 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{LazyLock, Mutex};
+use std::time::Duration;
 
+use ab_glyph::{FontArc, PxScale};
 use arboard::{Clipboard, ImageData};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use fontdb::{Database, Family, Query, Source};
 use image::codecs::png::PngEncoder;
 use image::imageops::{crop_imm, resize, FilterType};
-use image::{ColorType, ImageEncoder, ImageReader, RgbaImage};
+use image::{ColorType, ImageEncoder, ImageReader, Rgba, RgbaImage};
+use imageproc::drawing::{draw_filled_circle_mut, draw_line_segment_mut, draw_text_mut};
 use serde::{Deserialize, Serialize};
 use xcap::Monitor;
 
@@ -25,13 +29,30 @@ struct CachedCapture {
     created_at: u128,
 }
 
+struct OverlayCaptureGuard {
+    window: tauri::WebviewWindow,
+    restore_visibility: bool,
+}
+
+impl Drop for OverlayCaptureGuard {
+    fn drop(&mut self) {
+        restore_overlay_capture(&self.window, self.restore_visibility);
+    }
+}
+
 static SCREENSHOT_CAPTURE_CACHE: LazyLock<Mutex<HashMap<String, CachedCapture>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static SCREENSHOT_CAPTURE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+static SCREENSHOT_FONT_CACHE: LazyLock<Mutex<Option<FontArc>>> = LazyLock::new(|| Mutex::new(None));
 
 const MAX_CAPTURE_CACHE_ENTRIES: usize = 6;
 const MAX_PREVIEW_WIDTH: u32 = 1_280;
 const MAX_PREVIEW_HEIGHT: u32 = 800;
+const NON_WINDOWS_CAPTURE_HIDE_DELAY_MS: u64 = 120;
+const MIN_ANNOTATION_LINE_WIDTH: f32 = 1.0;
+const MIN_TEXT_SIZE: f32 = 8.0;
+const DEFAULT_TEXT_COLOR: Rgba<u8> = Rgba([241, 245, 249, 255]);
+const SHADOW_TEXT_COLOR: Rgba<u8> = Rgba([0, 0, 0, 180]);
 
 #[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct SavedScreenshot {
@@ -49,6 +70,50 @@ pub struct ScreenshotPreview {
     pub image_height: u32,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenshotRegion {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenshotAnnotatedExportResult {
+    pub saved: Option<SavedScreenshot>,
+    pub copied_to_clipboard: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ScreenshotAnnotation {
+    Rect {
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        color: String,
+        lw: f32,
+    },
+    Arrow {
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        color: String,
+        lw: f32,
+    },
+    Text {
+        x: f32,
+        y: f32,
+        text: String,
+        color: String,
+        size: f32,
+    },
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn screenshot_capture_preview(
@@ -60,17 +125,8 @@ pub async fn screenshot_capture_preview(
 ) -> Result<ScreenshotPreview, String> {
     validate_capture_region(width, height)?;
 
-    // Preview capture should grab the full monitor image, not a region slice.
-    // xcap's Linux region path validates against logical monitor bounds, which
-    // breaks HiDPI previews when the frontend is already working in physical px.
-    exclude_overlay_from_capture(&window);
-
-    let capture_result = capture_monitor_image(x, y);
-
-    // Always restore visibility, even on error.
-    restore_overlay_capture(&window);
-
-    let image = capture_result?;
+    let _guard = prepare_overlay_capture(&window);
+    let image = capture_monitor_image(x, y)?;
     let image_width = image.width();
     let image_height = image.height();
     let preview_image = build_preview_image(&image);
@@ -87,49 +143,6 @@ pub async fn screenshot_capture_preview(
         image_height,
     })
 }
-
-/// Returns the raw Win32 HWND for our overlay window.
-/// Returns None on non-Windows or if the handle cannot be retrieved.
-#[cfg(target_os = "windows")]
-fn get_overlay_hwnd(window: &tauri::WebviewWindow) -> Option<HWND> {
-    use raw_window_handle::HasWindowHandle;
-    use raw_window_handle::RawWindowHandle;
-
-    if let Ok(handle) = window.window_handle() {
-        if let RawWindowHandle::Win32(handle) = handle.as_raw() {
-            return Some(handle.hwnd.get() as HWND);
-        }
-    }
-
-    None
-}
-
-#[cfg(target_os = "windows")]
-fn exclude_overlay_from_capture(window: &tauri::WebviewWindow) {
-    if let Some(hwnd) = get_overlay_hwnd(window) {
-        unsafe {
-            let _ = SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
-        }
-        // Give the DWM one compositor frame to flush the exclusion flag
-        // before DXGI reads back the framebuffer.
-        std::thread::sleep(std::time::Duration::from_millis(33));
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn exclude_overlay_from_capture(_window: &tauri::WebviewWindow) {}
-
-#[cfg(target_os = "windows")]
-fn restore_overlay_capture(window: &tauri::WebviewWindow) {
-    if let Some(hwnd) = get_overlay_hwnd(window) {
-        unsafe {
-            let _ = SetWindowDisplayAffinity(hwnd, WDA_NONE);
-        }
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn restore_overlay_capture(_window: &tauri::WebviewWindow) {}
 
 #[tauri::command]
 #[specta::specta]
@@ -154,6 +167,61 @@ pub async fn screenshot_save_region(
     }
 
     Ok(saved)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn screenshot_export_annotated(
+    capture_id: String,
+    selection: Option<ScreenshotRegion>,
+    annotations: Vec<ScreenshotAnnotation>,
+    directory: Option<String>,
+    file_prefix: Option<String>,
+    copy_to_clipboard: Option<bool>,
+) -> Result<ScreenshotAnnotatedExportResult, String> {
+    if annotations.is_empty() {
+        return Err("Annotated export requires at least one annotation.".to_string());
+    }
+
+    let should_copy = copy_to_clipboard.unwrap_or(false);
+    let should_save = directory
+        .as_deref()
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false);
+
+    if !should_copy && !should_save {
+        return Err("Annotated export requires a save destination or clipboard copy.".to_string());
+    }
+
+    let mut image = load_capture_image(&capture_id)?;
+    render_annotations(&mut image, &annotations)?;
+
+    let final_image = if let Some(region) = selection {
+        validate_capture_region(region.width, region.height)?;
+        crop_capture_image(&image, region.x, region.y, region.width, region.height)?
+    } else {
+        image
+    };
+
+    let saved = if let Some(directory) = directory.as_deref().filter(|value| !value.trim().is_empty())
+    {
+        Some(save_rgba_image(
+            &final_image,
+            Path::new(directory),
+            file_prefix.as_deref(),
+        )?)
+    } else {
+        None
+    };
+
+    if should_copy {
+        copy_rgba_image_to_clipboard(final_image)?;
+    }
+
+    Ok(ScreenshotAnnotatedExportResult {
+        saved,
+        copied_to_clipboard: should_copy,
+    })
 }
 
 #[tauri::command]
@@ -215,6 +283,14 @@ fn validate_thumbnail_bounds(max_width: u32, max_height: u32) -> Result<(), Stri
         return Err("Thumbnail bounds are too large.".to_string());
     }
     Ok(())
+}
+
+fn prepare_overlay_capture(window: &tauri::WebviewWindow) -> OverlayCaptureGuard {
+    let restore_visibility = exclude_overlay_from_capture(window);
+    OverlayCaptureGuard {
+        window: window.clone(),
+        restore_visibility,
+    }
 }
 
 fn capture_monitor_image(x: i32, y: i32) -> Result<RgbaImage, String> {
@@ -413,6 +489,237 @@ fn copy_rgba_image_to_clipboard(image: RgbaImage) -> Result<(), String> {
     Ok(())
 }
 
+fn render_annotations(image: &mut RgbaImage, annotations: &[ScreenshotAnnotation]) -> Result<(), String> {
+    if annotations.is_empty() {
+        return Ok(());
+    }
+
+    let font = if annotations
+        .iter()
+        .any(|annotation| matches!(annotation, ScreenshotAnnotation::Text { .. }))
+    {
+        Some(load_annotation_font()?)
+    } else {
+        None
+    };
+
+    for annotation in annotations {
+        match annotation {
+            ScreenshotAnnotation::Rect {
+                x1,
+                y1,
+                x2,
+                y2,
+                color,
+                lw,
+            } => {
+                let color = parse_annotation_color(color).unwrap_or(DEFAULT_TEXT_COLOR);
+                draw_rectangle_outline(
+                    image,
+                    clamp_point(*x1, *y1, image.width(), image.height()),
+                    clamp_point(*x2, *y2, image.width(), image.height()),
+                    (*lw).max(MIN_ANNOTATION_LINE_WIDTH),
+                    color,
+                );
+            }
+            ScreenshotAnnotation::Arrow {
+                x1,
+                y1,
+                x2,
+                y2,
+                color,
+                lw,
+            } => {
+                let color = parse_annotation_color(color).unwrap_or(DEFAULT_TEXT_COLOR);
+                draw_arrow(
+                    image,
+                    clamp_point(*x1, *y1, image.width(), image.height()),
+                    clamp_point(*x2, *y2, image.width(), image.height()),
+                    (*lw).max(MIN_ANNOTATION_LINE_WIDTH),
+                    color,
+                );
+            }
+            ScreenshotAnnotation::Text {
+                x,
+                y,
+                text,
+                color,
+                size,
+            } => {
+                if text.trim().is_empty() {
+                    continue;
+                }
+
+                let font = font
+                    .as_ref()
+                    .ok_or_else(|| "Failed to load an annotation font.".to_string())?;
+                let text_color = parse_annotation_color(color).unwrap_or(DEFAULT_TEXT_COLOR);
+                let scale = PxScale::from((*size).max(MIN_TEXT_SIZE));
+                let origin = clamp_point(*x, *y, image.width(), image.height());
+                draw_text_with_shadow(image, font, scale, origin, text.trim(), text_color);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn load_annotation_font() -> Result<FontArc, String> {
+    let mut cache = SCREENSHOT_FONT_CACHE
+        .lock()
+        .map_err(|_| "Failed to lock screenshot font cache.".to_string())?;
+    if let Some(font) = cache.as_ref() {
+        return Ok(font.clone());
+    }
+
+    let mut database = Database::new();
+    database.load_system_fonts();
+    let query = Query {
+        families: &[Family::SansSerif],
+        ..Query::default()
+    };
+    let face_id = database
+        .query(&query)
+        .ok_or_else(|| "Failed to locate a system sans-serif font for screenshot annotations.".to_string())?;
+    let face = database
+        .face(face_id)
+        .ok_or_else(|| "Resolved screenshot annotation font face is unavailable.".to_string())?;
+
+    let bytes = match &face.source {
+        Source::Binary(data) => data.as_ref().as_ref().to_vec(),
+        Source::File(path) => std::fs::read(path)
+            .map_err(|error| format!("Failed to read screenshot annotation font '{}': {error}", path.display()))?,
+        Source::SharedFile(path, _) => std::fs::read(path)
+            .map_err(|error| format!("Failed to read screenshot annotation font '{}': {error}", path.display()))?,
+    };
+
+    let font = FontArc::try_from_vec(bytes)
+        .map_err(|_| "Failed to decode the system font used for screenshot annotations.".to_string())?;
+    *cache = Some(font.clone());
+    Ok(font)
+}
+
+fn draw_text_with_shadow(
+    image: &mut RgbaImage,
+    font: &FontArc,
+    scale: PxScale,
+    origin: (f32, f32),
+    text: &str,
+    color: Rgba<u8>,
+) {
+    let x = origin.0.round() as i32;
+    let y = origin.1.round() as i32;
+    for (offset_x, offset_y) in [(1, 1), (1, 2), (2, 1), (2, 2)] {
+        draw_text_mut(image, SHADOW_TEXT_COLOR, x + offset_x, y + offset_y, scale, font, text);
+    }
+    draw_text_mut(image, color, x, y, scale, font, text);
+}
+
+fn parse_annotation_color(value: &str) -> Option<Rgba<u8>> {
+    let trimmed = value.trim().trim_start_matches('#');
+    match trimmed.len() {
+        6 => {
+            let rgb = u32::from_str_radix(trimmed, 16).ok()?;
+            Some(Rgba([
+                ((rgb >> 16) & 0xFF) as u8,
+                ((rgb >> 8) & 0xFF) as u8,
+                (rgb & 0xFF) as u8,
+                255,
+            ]))
+        }
+        8 => {
+            let rgba = u32::from_str_radix(trimmed, 16).ok()?;
+            Some(Rgba([
+                ((rgba >> 24) & 0xFF) as u8,
+                ((rgba >> 16) & 0xFF) as u8,
+                ((rgba >> 8) & 0xFF) as u8,
+                (rgba & 0xFF) as u8,
+            ]))
+        }
+        _ => None,
+    }
+}
+
+fn draw_rectangle_outline(
+    image: &mut RgbaImage,
+    start: (f32, f32),
+    end: (f32, f32),
+    thickness: f32,
+    color: Rgba<u8>,
+) {
+    let left = start.0.min(end.0);
+    let top = start.1.min(end.1);
+    let right = start.0.max(end.0);
+    let bottom = start.1.max(end.1);
+
+    draw_thick_line(image, (left, top), (right, top), thickness, color);
+    draw_thick_line(image, (right, top), (right, bottom), thickness, color);
+    draw_thick_line(image, (right, bottom), (left, bottom), thickness, color);
+    draw_thick_line(image, (left, bottom), (left, top), thickness, color);
+}
+
+fn draw_arrow(
+    image: &mut RgbaImage,
+    start: (f32, f32),
+    end: (f32, f32),
+    thickness: f32,
+    color: Rgba<u8>,
+) {
+    let dx = end.0 - start.0;
+    let dy = end.1 - start.1;
+    let length = (dx * dx + dy * dy).sqrt();
+    if length < 2.0 {
+        return;
+    }
+
+    draw_thick_line(image, start, end, thickness, color);
+
+    let angle = dy.atan2(dx);
+    let head_length = thickness.max(3.0) * 4.0;
+    let left = (
+        end.0 - head_length * (angle - std::f32::consts::FRAC_PI_6).cos(),
+        end.1 - head_length * (angle - std::f32::consts::FRAC_PI_6).sin(),
+    );
+    let right = (
+        end.0 - head_length * (angle + std::f32::consts::FRAC_PI_6).cos(),
+        end.1 - head_length * (angle + std::f32::consts::FRAC_PI_6).sin(),
+    );
+
+    draw_thick_line(image, end, left, thickness, color);
+    draw_thick_line(image, end, right, thickness, color);
+}
+
+fn draw_thick_line(
+    image: &mut RgbaImage,
+    start: (f32, f32),
+    end: (f32, f32),
+    thickness: f32,
+    color: Rgba<u8>,
+) {
+    let radius = ((thickness.max(MIN_ANNOTATION_LINE_WIDTH)) / 2.0).ceil() as i32;
+    let dx = end.0 - start.0;
+    let dy = end.1 - start.1;
+    let length = dx.abs().max(dy.abs()).ceil() as i32;
+    if length <= 0 {
+        draw_filled_circle_mut(image, (start.0.round() as i32, start.1.round() as i32), radius, color);
+        return;
+    }
+
+    draw_line_segment_mut(image, start, end, color);
+    for step in 0..=length {
+        let factor = step as f32 / length as f32;
+        let x = start.0 + dx * factor;
+        let y = start.1 + dy * factor;
+        draw_filled_circle_mut(image, (x.round() as i32, y.round() as i32), radius, color);
+    }
+}
+
+fn clamp_point(x: f32, y: f32, width: u32, height: u32) -> (f32, f32) {
+    let max_x = width.saturating_sub(1) as f32;
+    let max_y = height.saturating_sub(1) as f32;
+    (x.clamp(0.0, max_x), y.clamp(0.0, max_y))
+}
+
 fn create_capture_id() -> String {
     let created_at = current_timestamp_millis().unwrap_or_default();
     let sequence = SCREENSHOT_CAPTURE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
@@ -433,13 +740,68 @@ fn encode_png(image: &RgbaImage) -> Result<Vec<u8>, String> {
     Ok(png_bytes)
 }
 
+/// Returns the raw Win32 HWND for our overlay window.
+/// Returns None on non-Windows or if the handle cannot be retrieved.
+#[cfg(target_os = "windows")]
+fn get_overlay_hwnd(window: &tauri::WebviewWindow) -> Option<HWND> {
+    use raw_window_handle::HasWindowHandle;
+    use raw_window_handle::RawWindowHandle;
+
+    if let Ok(handle) = window.window_handle() {
+        if let RawWindowHandle::Win32(handle) = handle.as_raw() {
+            return Some(handle.hwnd.get() as HWND);
+        }
+    }
+
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn exclude_overlay_from_capture(window: &tauri::WebviewWindow) -> bool {
+    if let Some(hwnd) = get_overlay_hwnd(window) {
+        unsafe {
+            let _ = SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
+        }
+        std::thread::sleep(Duration::from_millis(33));
+    }
+
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn restore_overlay_capture(window: &tauri::WebviewWindow, _restore_visibility: bool) {
+    if let Some(hwnd) = get_overlay_hwnd(window) {
+        unsafe {
+            let _ = SetWindowDisplayAffinity(hwnd, WDA_NONE);
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn exclude_overlay_from_capture(window: &tauri::WebviewWindow) -> bool {
+    let should_restore = window.is_visible().unwrap_or(false);
+    if should_restore {
+        let _ = window.hide();
+        std::thread::sleep(Duration::from_millis(NON_WINDOWS_CAPTURE_HIDE_DELAY_MS));
+    }
+    should_restore
+}
+
+#[cfg(not(target_os = "windows"))]
+fn restore_overlay_capture(window: &tauri::WebviewWindow, restore_visibility: bool) {
+    if restore_visibility {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        build_preview_image, create_capture_id, encode_png, load_capture_image,
+        build_preview_image, create_capture_id, crop_capture_image, encode_png, load_capture_image,
         resize_image_to_fit, sanitize_file_prefix, save_rgba_image, store_capture_image,
-        validate_capture_region, validate_crop_region, validate_thumbnail_bounds,
-        MAX_CAPTURE_CACHE_ENTRIES, MAX_PREVIEW_HEIGHT, MAX_PREVIEW_WIDTH,
+        validate_capture_region, validate_crop_region, validate_thumbnail_bounds, ScreenshotAnnotation,
+        ScreenshotRegion, MAX_CAPTURE_CACHE_ENTRIES, MAX_PREVIEW_HEIGHT, MAX_PREVIEW_WIDTH,
     };
     use image::{load_from_memory, Rgba, RgbaImage};
     use std::sync::{LazyLock, Mutex};
@@ -562,5 +924,42 @@ mod tests {
 
         assert!(saved.file_name.starts_with("bad-prefix-"));
         assert!(saved.path.ends_with(".png"));
+    }
+
+    #[test]
+    fn crop_capture_image_uses_selection_region() {
+        let mut image = RgbaImage::from_pixel(20, 20, Rgba([0, 0, 0, 255]));
+        image.put_pixel(10, 10, Rgba([255, 0, 0, 255]));
+
+        let region = ScreenshotRegion {
+            x: 8,
+            y: 8,
+            width: 4,
+            height: 4,
+        };
+        let cropped = crop_capture_image(&image, region.x, region.y, region.width, region.height)
+            .expect("crop selection");
+
+        assert_eq!(cropped.width(), 4);
+        assert_eq!(cropped.height(), 4);
+        assert_eq!(cropped.get_pixel(2, 2), &Rgba([255, 0, 0, 255]));
+    }
+
+    #[test]
+    fn rectangle_annotations_mark_the_expected_pixels() {
+        let mut image = RgbaImage::from_pixel(40, 40, Rgba([0, 0, 0, 255]));
+        let annotations = vec![ScreenshotAnnotation::Rect {
+            x1: 10.0,
+            y1: 12.0,
+            x2: 30.0,
+            y2: 24.0,
+            color: "#ff0000".to_string(),
+            lw: 3.0,
+        }];
+
+        super::render_annotations(&mut image, &annotations).expect("render annotations");
+
+        assert_eq!(image.get_pixel(10, 12), &Rgba([255, 0, 0, 255]));
+        assert_eq!(image.get_pixel(20, 12), &Rgba([255, 0, 0, 255]));
     }
 }

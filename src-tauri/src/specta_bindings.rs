@@ -24,7 +24,10 @@ use crate::python_commands::{
     PythonExecutionRequest, PythonInterpreterDescriptor, PythonPackageInstallRequest,
     PythonRuntimeConfig, PythonRuntimeStatus,
 };
-use crate::screenshot_commands::{SavedScreenshot, ScreenshotPreview};
+use crate::screenshot_commands::{
+    SavedScreenshot, ScreenshotAnnotatedExportResult, ScreenshotAnnotation, ScreenshotPreview,
+    ScreenshotRegion,
+};
 use crate::terminal::{ExternalTerminalRequest, TerminalWriteRequest};
 use overlay_contracts::{
     ExplorerLayoutMode, LayoutBackBehavior, LayoutBarPosition, LayoutBehaviorConfig,
@@ -119,6 +122,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::desktop_integration::fs_start_native_file_drag,
             crate::screenshot_commands::screenshot_capture_preview,
             crate::screenshot_commands::screenshot_save_region,
+            crate::screenshot_commands::screenshot_export_annotated,
             crate::screenshot_commands::screenshot_copy_region_to_clipboard,
             crate::screenshot_commands::screenshot_copy_image_to_clipboard,
             crate::screenshot_commands::screenshot_read_gallery_thumbnail,
@@ -198,6 +202,9 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<PythonCommandResult>()
         .typ::<PythonActionResponse>()
         .typ::<SavedScreenshot>()
+        .typ::<ScreenshotRegion>()
+        .typ::<ScreenshotAnnotation>()
+        .typ::<ScreenshotAnnotatedExportResult>()
         .typ::<ScreenshotPreview>()
         .typ::<ExternalTerminalRequest>()
         .typ::<TerminalWriteRequest>()

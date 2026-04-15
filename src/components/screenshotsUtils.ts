@@ -166,6 +166,39 @@ export function isPointInSelection(point: Point2D, selection: RectSelection): bo
     && point.y <= normalized.y + normalized.height;
 }
 
+export function getSelectionHandleAtPoint(
+  point: Point2D,
+  selection: RectSelection,
+  handleRadius: number,
+): SelectionHandle | null {
+  const normalized = normalizeSelection(selection);
+  const left = normalized.x;
+  const right = normalized.x + normalized.width;
+  const top = normalized.y;
+  const bottom = normalized.y + normalized.height;
+  const centerX = left + normalized.width / 2;
+  const centerY = top + normalized.height / 2;
+
+  const handles: Array<{ handle: Exclude<SelectionHandle, 'move'>; x: number; y: number }> = [
+    { handle: 'north-west', x: left, y: top },
+    { handle: 'north', x: centerX, y: top },
+    { handle: 'north-east', x: right, y: top },
+    { handle: 'east', x: right, y: centerY },
+    { handle: 'south-east', x: right, y: bottom },
+    { handle: 'south', x: centerX, y: bottom },
+    { handle: 'south-west', x: left, y: bottom },
+    { handle: 'west', x: left, y: centerY },
+  ];
+
+  for (const handle of handles) {
+    if (Math.abs(point.x - handle.x) <= handleRadius && Math.abs(point.y - handle.y) <= handleRadius) {
+      return handle.handle;
+    }
+  }
+
+  return null;
+}
+
 export function areSelectionsEqual(left: RectSelection | null, right: RectSelection | null): boolean {
   if (!left && !right) return true;
   if (!left || !right) return false;

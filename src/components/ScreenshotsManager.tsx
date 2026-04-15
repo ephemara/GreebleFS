@@ -32,12 +32,18 @@ import { joinPlatformPath } from '../config/platform';
 import { screenshotFeatureConfig } from '../config/screenshots';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import {
+  clampSelectionToBounds,
+  getSelectionHandleAtPoint,
+  isPointInSelection,
+  moveSelection,
   isSupportedScreenshotEntry,
   normalizeSelection,
+  resizeSelection,
   selectionToPixelRect,
   sortScreenshotEntries,
   type Point2D,
   type RectSelection,
+  type SelectionHandle,
   type ScreenshotEntryLike,
 } from './screenshotsUtils';
 import { OverlayScrollArea } from './OverlayScrollArea';
@@ -47,7 +53,6 @@ import {
   listExplorerDir,
   openExplorerPath,
   revealExplorerPath,
-  writeExplorerFile,
 } from '../runtime/explorerBackend';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 
@@ -60,7 +65,20 @@ type ArrowAnnotation = { type: 'arrow'; x1: number; y1: number; x2: number; y2: 
 type TextAnnotation  = { type: 'text';  x:  number; y:  number; text: string; color: string; size: number; };
 type Annotation = RectAnnotation | ArrowAnnotation | TextAnnotation;
 
+type NativeScreenshotRegion = { x: number; y: number; width: number; height: number };
+type NativeScreenshotAnnotation =
+  | { type: 'rect'; x1: number; y1: number; x2: number; y2: number; color: string; lw: number }
+  | { type: 'arrow'; x1: number; y1: number; x2: number; y2: number; color: string; lw: number }
+  | { type: 'text'; x: number; y: number; text: string; color: string; size: number };
+
+type SelectionInteraction =
+  | { kind: 'draw'; origin: Point2D }
+  | { kind: 'move'; origin: Point2D; initialSelection: RectSelection }
+  | { kind: 'resize'; origin: Point2D; initialSelection: RectSelection; handle: Exclude<SelectionHandle, 'move'> };
+
 const ANNOTATION_COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#06b6d4','#6366f1','#ec4899','#f1f5f9'];
+const SELECTION_HANDLE_RADIUS = 8;
+const SELECTION_HANDLE_SIZE = 10;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
