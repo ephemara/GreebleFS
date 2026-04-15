@@ -2,8 +2,8 @@
 
 ## Blockers
 
-- [ ] Finish one clean Linux package run with `bun run release:linux:bundle` and record `deb` / `rpm` / `AppImage` paths.
-- [ ] Re-establish `bun run test:rust` as a release gate or explicitly waive it with evidence.
+- [ ] Install the missing Linux appindicator dependency and finish one clean `bun run release:linux:bundle` run.
+- [ ] Re-establish `bun run test:rust` as a release gate or explicitly waive the failing/slow Rust tests with evidence.
 - [ ] Complete Windows signing/distribution planning on a Windows-capable lane.
 - [ ] Complete macOS signing/notarization planning on a macOS-capable lane.
 

@@ -11,7 +11,9 @@
 ## Findings
 
 - Severity: `high`
-  - Linux package artifacts were not produced in this pass, so release smoke coverage is still blocked on a clean `bun run release:linux:bundle` completion.
+  - Linux package artifacts were not produced because Tauri bundling aborted with `Can't detect any appindicator library`.
+- Severity: `high`
+  - `bun run test:rust` is not green. The lane reached a real failing test, `fs_commands::tests::external_path_invalidation_refreshes_parent_directory_listing_cache`, and then stalled in a long-running search/transfer cluster.
 - Severity: `medium`
   - `bun run build` still emits four Rust warnings from `src-tauri/src/terminal.rs`. They do not block compilation but should not remain invisible in a release gate.
 - Severity: `medium`
@@ -29,11 +31,14 @@
   - `bunx vitest run --testTimeout 30000 src/test/gitManager.behavior.test.tsx`
 - Production build:
   - `bun run build`
+- Rust validation:
+  - `bun run test:rust`
 - Compatibility reference:
   - `/home/ephemara/Dev/Apps-2D/GreebleFS/docs/release-compatibility.md`
 
 ## Exit Condition
 
 - Current ship blockers:
-  - missing packaged Linux artifacts
+  - missing packaged Linux artifacts due appindicator dependency gap
+  - red / unstable Rust test lane
   - unsigned / unnotarized Windows and macOS release work

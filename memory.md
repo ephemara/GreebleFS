@@ -15,7 +15,9 @@
     - `src/test/appContentDirectories.test.ts`
     - `src/test/settingsPage.behavior.test.tsx`
     - `src/test/gitManager.behavior.test.tsx`
-  - `bun run build` passes, but release packaging and the Rust test lane still remain blockers for a full public ship decision.
+  - `bun run build` passes.
+  - `bun run release:linux:bundle` now reaches a concrete Linux host blocker: Tauri aborts with `Can't detect any appindicator library`.
+  - `bun run test:rust` is still not a green gate; one `fs_commands` test failed and the long-running recursive search/transfer cluster remained unstable.
 
 ## 2026-04-15 — Explorer Commander Bridge / Cross-Pane Power Controls
 

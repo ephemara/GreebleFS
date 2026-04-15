@@ -30,17 +30,17 @@
   - legacy migration coverage for layout probes and app-content directory env overrides
 - Pending:
   - Linux package artifacts under `src-tauri/target/release/bundle/`
-  - Rust release test lane
 - Release-facing changes landed:
   - package/app identity renamed to `GreebleFS`
   - Tauri identifier changed to `co.greeblefs.app`
   - Linux installer paths renamed to `~/.local/opt/greeblefs` and `~/.local/bin/greeblefs`
   - old `overlayterm` plugin/runtime/storage contracts intentionally preserved for one RC via compatibility notes and fallback env/path handling
+  - release binary built at `src-tauri/target/release/greeblefs`
 
 ## Blockers
 
-- Linux bundle command was started but no `src-tauri/target/release/bundle/` artifacts were captured before closeout.
-- `bun run test:rust` was not re-established as a green release gate in this pass.
+- Linux bundle command compiles the release binary but aborts during bundling with `Can't detect any appindicator library`.
+- `bun run test:rust` is red/unstable in this workspace: one `fs_commands` test failed before a long-running search/transfer block forced the lane to be cut short.
 - Windows signing, macOS signing/notarization, and native-host packaging proof remain external follow-up work.
 
 ## Decision Rationale
