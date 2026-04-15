@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow, WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -478,5 +479,39 @@ describe('App dock mode behavior', () => {
     await waitFor(() => {
       expect(vi.mocked(commands.windowApplyWaylandDockLayout)).toHaveBeenCalled();
     });
+  });
+
+  it('keeps the dock host on the layer-shell path during overlay handoff before mode rehydrate', async () => {
+    const listeners = new Map<string, (event: { payload: unknown }) => void>();
+
+    vi.mocked(commands.windowGetLinuxDisplayServer).mockResolvedValue('wayland');
+    vi.mocked(commands.windowGetWaylandDockHostStatus).mockResolvedValue({
+      enabled: true,
+      windowLabel: 'dock',
+    });
+    vi.mocked(getCurrentWebviewWindow).mockImplementation(() => dockHostWindow as never);
+    vi.mocked(listen).mockImplementation(async (eventName, handler) => {
+      listeners.set(String(eventName), handler as (event: { payload: unknown }) => void);
+      return () => {
+        listeners.delete(String(eventName));
+      };
+    });
+    setWindowMode('windowed');
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(vi.mocked(commands.windowGetWaylandDockHostStatus)).toHaveBeenCalled();
+      expect(vi.mocked(listen).mock.calls.length).toBeGreaterThanOrEqual(4);
+      expect(listeners.get(SHOW_WINDOW_MODE_REQUEST_EVENT)).toBeDefined();
+    });
+
+    const baselineApplyModeCalls = vi.mocked(commands.windowApplyMode).mock.calls.length;
+    listeners.get(SHOW_WINDOW_MODE_REQUEST_EVENT)?.({ payload: 'overlay' });
+
+    await waitFor(() => {
+      expect(vi.mocked(commands.windowApplyWaylandDockLayout)).toHaveBeenCalled();
+    });
+    expect(vi.mocked(commands.windowApplyMode).mock.calls.length).toBe(baselineApplyModeCalls);
   });
 });

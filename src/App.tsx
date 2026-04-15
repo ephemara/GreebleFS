@@ -622,16 +622,18 @@ function App() {
     windowMode,
     useSeparateWaylandDockHost: usesSeparateWaylandDockHost,
   });
-  const usesWaylandDockLayerShell = usesSeparateWaylandDockHost
-    && currentWindowHostRole === DOCK_WINDOW_HOST_LABEL
-    && windowMode === 'overlay';
+  // The dedicated Wayland dock host must stay on the layer-shell geometry path
+  // even during cross-window handoff, before its local persisted windowMode has
+  // rehydrated to `overlay`.
+  const currentHostUsesWaylandDockLayerShell = usesSeparateWaylandDockHost
+    && currentWindowHostRole === DOCK_WINDOW_HOST_LABEL;
   const isWaylandOverlaySession = runtimePlatform === 'linux'
     && linuxDisplayServer === 'wayland'
     && !isWindowedMode
     && !usesSeparateWaylandDockHost;
   const shouldWaitForWindowRouting = runtimePlatform === 'linux'
     && (!linuxDisplayServerResolved || (linuxDisplayServer === 'wayland' && !waylandDockHostStatusResolved));
-  const canResizeOverlayShell = !usesWaylandDockLayerShell;
+  const canResizeOverlayShell = !currentHostUsesWaylandDockLayerShell;
   const systemPresentationState = useMemo(
     () => resolveSystemPresentationState(systemSettings),
     [systemSettings],
@@ -1348,7 +1350,7 @@ function App() {
       await new Promise(resolve => window.setTimeout(resolve, args.deferMs));
     }
 
-    if (usesWaylandDockLayerShell) {
+    if (currentHostUsesWaylandDockLayerShell) {
       unwrapTauriResult(await commands.windowApplyWaylandDockLayout(
         store.overlayAnchor === 'top' ? 'top' : 'bottom',
         args.monitor.name ?? null,
@@ -1379,7 +1381,7 @@ function App() {
     }
 
     return layout;
-  }, [isWaylandOverlaySession, resolveDockOverlayLayout, shouldSkipTaskbar, usesWaylandDockLayerShell]);
+  }, [currentHostUsesWaylandDockLayerShell, isWaylandOverlaySession, resolveDockOverlayLayout, shouldSkipTaskbar]);
 
   // ── Position & show ──
   const positionAndShow = useCallback(async () => {
@@ -2180,7 +2182,7 @@ function App() {
   useEffect(() => {
     const unlistenResize = getCurrentWindow().onResized(async ev => {
       if (
-        usesWaylandDockLayerShell
+        currentHostUsesWaylandDockLayerShell
         || !isCurrentWindowPresentationHost
         || isProgrammaticResizeRef.current
         || !overlayVisibleRef.current
@@ -2233,12 +2235,12 @@ function App() {
       }
     });
     return () => { unlistenResize.then(fn => fn()); };
-  }, [applyDockOverlayLayout, isCurrentWindowPresentationHost, resolvePreferredMonitor, usesWaylandDockLayerShell]);
+  }, [applyDockOverlayLayout, currentHostUsesWaylandDockLayerShell, isCurrentWindowPresentationHost, resolvePreferredMonitor]);
 
   useEffect(() => {
     const unlistenMove = getCurrentWindow().onMoved(async ev => {
       if (
-        usesWaylandDockLayerShell
+        currentHostUsesWaylandDockLayerShell
         || !isCurrentWindowPresentationHost
         || isProgrammaticResizeRef.current
         || !overlayVisibleRef.current
@@ -2267,7 +2269,7 @@ function App() {
       }
     });
     return () => { unlistenMove.then(fn => fn()); };
-  }, [applyDockOverlayLayout, isCurrentWindowPresentationHost, resolvePreferredMonitor, usesWaylandDockLayerShell]);
+  }, [applyDockOverlayLayout, currentHostUsesWaylandDockLayerShell, isCurrentWindowPresentationHost, resolvePreferredMonitor]);
 
   // ── Explorer → Terminal bridge ──
   const handleOpenInTerminal = useCallback(async (path: string) => {
