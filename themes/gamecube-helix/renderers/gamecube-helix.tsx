@@ -43,7 +43,7 @@ export default defineThemeRenderer({
     wallpaper: true,
   },
   component({ host }) {
-    const panels = host.panels.filter(panel => !panel.isPinned);
+    const panels = host.shellModel.launcher.panels;
     const activePanel = panels.find(panel => panel.id === host.activePanelId) ?? panels[0] ?? null;
     const stageWidth = resolveCssLength(host, '--overlay-workbench-helix-stage-width', 'min(72%, 980px)');
     const stageHeight = resolveCssLength(host, '--overlay-workbench-helix-stage-height', 'min(76%, 676px)');
@@ -85,7 +85,7 @@ export default defineThemeRenderer({
             gap: 18,
           }}
         >
-          {host.renderChromeBar()}
+          {host.renderUtilityActionsSurface()}
 
           <div
             style={{

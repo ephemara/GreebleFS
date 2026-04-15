@@ -17,7 +17,7 @@ export default defineThemeRenderer({
     wallpaper: true,
   },
   component({ host }) {
-    const panels = host.panels.filter(panel => !panel.isPinned);
+    const panels = host.shellModel.launcher.panels;
     const activePanel = panels.find(panel => panel.id === host.activePanelId) ?? panels[0] ?? null;
     const featuredPanels = panels.slice(0, 6);
 
@@ -55,7 +55,7 @@ export default defineThemeRenderer({
             gap: 16,
           }}
         >
-          {host.renderChromeBar()}
+          {host.renderUtilityActionsSurface()}
 
           <div
             style={{

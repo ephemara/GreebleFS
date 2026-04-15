@@ -8,6 +8,8 @@
   - viewport metrics
   - clamped shell regions for chrome, launcher, content, and pinned panel sides
 - `src/components/themeRendererRuntime.tsx` now supports explicit renderer `surfaceOwnership`, and `App.tsx` now uses that contract to suppress duplicated host surfaces when a theme renderer owns launcher/chrome/content/wallpaper responsibilities.
+- `App.tsx` now also exposes `host.renderUtilityActionsSurface()`, and the bundled renderer catalog no longer relies on raw `host.panels` or `host.renderChromeBar()` for custom launcher shells.
+- Corrected an important host-contract bug: `surfaceOwnership` now only suppresses the host's automatic shell placement. It no longer makes `host.renderDefaultNavigationSurface()` or `host.renderPinnedPanels()` return `null`, so hybrid renderers and starter templates can embed default host surfaces inside custom layouts safely.
 - `TopBar` now removes launcher-facing chrome when the active renderer owns the launcher surface, which fixes the bundled “double top bar / duplicate launcher strip” failure mode without gutting the shared utility controls.
 - `src/config/workbenchRenderRuntime.ts` now carries `navigationRailWidth`, and `WorkbenchNavigationSurface.tsx` consumes that runtime-owned sizing instead of hardcoded width branches.
 - Migrated the starter renderer plus bundled custom shells to the new ownership model:

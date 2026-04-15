@@ -18,7 +18,7 @@ export default defineThemeRenderer({
     wallpaper: true,
   },
   component({ host }) {
-    const launcherPanels = host.panels.filter(panel => !panel.isPinned);
+    const launcherPanels = host.shellModel.launcher.panels;
     const activePanel = launcherPanels.find(panel => panel.id === host.activePanelId) ?? launcherPanels[0] ?? null;
 
     return (
@@ -195,7 +195,7 @@ export default defineThemeRenderer({
               gap: 12,
             }}
           >
-            {host.renderChromeBar()}
+            {host.renderUtilityActionsSurface()}
 
             <div style={{ display: 'flex', flex: 1, minHeight: 0, minWidth: 0, gap: 12 }}>
               {host.renderPinnedPanels('left')}

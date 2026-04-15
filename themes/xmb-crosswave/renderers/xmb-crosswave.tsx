@@ -1,26 +1,5 @@
 import { defineThemeRenderer } from 'overlayterm-theme-renderer';
 
-function groupPanels(panels) {
-  const grouped = [];
-  const lookup = new Map();
-
-  panels.forEach(panel => {
-    const groupId = panel.navigation?.groupId ?? 'other';
-    const groupLabel = panel.navigation?.groupLabel ?? 'Other';
-    const existing = lookup.get(groupId);
-    if (existing) {
-      existing.panels.push(panel);
-      return;
-    }
-
-    const nextGroup = { id: groupId, label: groupLabel, panels: [panel] };
-    lookup.set(groupId, nextGroup);
-    grouped.push(nextGroup);
-  });
-
-  return grouped;
-}
-
 export default defineThemeRenderer({
   name: 'XMB Crosswave Shell',
   apiVersion: 1,
@@ -38,8 +17,8 @@ export default defineThemeRenderer({
     wallpaper: true,
   },
   component({ host }) {
-    const panels = host.panels.filter(panel => !panel.isPinned);
-    const groups = groupPanels(panels);
+    const panels = host.shellModel.launcher.panels;
+    const groups = host.shellModel.launcher.groups;
     const activePanel = panels.find(panel => panel.id === host.activePanelId) ?? panels[0] ?? null;
     const activeGroup = groups.find(group => group.panels.some(panel => panel.id === activePanel?.id)) ?? groups[0] ?? null;
     const activeGroupPanels = activeGroup?.panels ?? panels;
@@ -78,7 +57,7 @@ export default defineThemeRenderer({
             gap: 18,
           }}
         >
-          {host.renderChromeBar()}
+          {host.renderUtilityActionsSurface()}
 
           <div
             style={{

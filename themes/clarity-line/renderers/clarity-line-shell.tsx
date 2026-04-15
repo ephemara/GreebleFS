@@ -125,7 +125,7 @@ export default defineThemeRenderer({
           </aside>
 
           <section style={mainStyle}>
-            {host.renderChromeBar()}
+            {host.renderUtilityActionsSurface()}
 
             <div style={contentRowStyle}>
               {host.renderPinnedPanels('left')}

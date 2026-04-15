@@ -557,24 +557,37 @@ function App() {
     () => combinedThemePackages.map(pkg => pkg.theme),
     [combinedThemePackages],
   );
+  const windowMode: TerminalWindowMode = settings.windowMode === 'windowed' ? 'windowed' : 'overlay';
+  windowModeRef.current = windowMode;
   const resolvedAppearance = useMemo(
     () => resolveOverlayAppearance({
       activeThemeId: appearance.activeThemeId,
+      activeDockThemeId: appearance.activeDockThemeId,
+      dockThemeMode: appearance.dockThemeMode,
       customThemes: appearance.customThemes,
       packageThemes: resolvedPackageThemes,
       uiFontFamily: appearance.uiFontFamily,
       monoFontFamily: settings.fontFamily,
       panelTransparency: appearance.panelTransparency,
+      windowMode,
     }),
-    [appearance.activeThemeId, appearance.customThemes, appearance.panelTransparency, appearance.uiFontFamily, resolvedPackageThemes, settings.fontFamily],
+    [
+      appearance.activeDockThemeId,
+      appearance.activeThemeId,
+      appearance.customThemes,
+      appearance.dockThemeMode,
+      appearance.panelTransparency,
+      appearance.uiFontFamily,
+      resolvedPackageThemes,
+      settings.fontFamily,
+      windowMode,
+    ],
   );
   const theme = resolvedAppearance.theme;
   const accent = theme.palette.accent;
   const workbench = resolvedAppearance.workbenchTheme;
   const isOverlayVisible = overlayPhase !== 'closed';
   overlayVisibleRef.current = isOverlayVisible;
-  const windowMode: TerminalWindowMode = settings.windowMode === 'windowed' ? 'windowed' : 'overlay';
-  windowModeRef.current = windowMode;
   const isWindowedMode = windowMode === 'windowed';
   const startupPresentationShownRef = useRef(false);
   const isWaylandOverlaySession = runtimePlatform === 'linux' && linuxDisplayServer === 'wayland' && !isWindowedMode;

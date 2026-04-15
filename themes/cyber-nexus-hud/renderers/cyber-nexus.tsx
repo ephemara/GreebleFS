@@ -19,7 +19,7 @@ export default defineThemeRenderer({
     wallpaper: true,
   },
   component({ host }) {
-    const panels = host.panels.filter(p => !p.isPinned);
+    const panels = host.shellModel.launcher.panels;
     const activePanel = panels.find(p => p.id === host.activePanelId) ?? panels[0] ?? null;
 
     return (
@@ -145,7 +145,7 @@ export default defineThemeRenderer({
           </div>
 
           <div style={{ marginTop: 16, display: 'flex', justifyContent: 'center' }}>
-            {host.renderChromeBar()}
+            {host.renderUtilityActionsSurface()}
           </div>
         </div>
       </div>

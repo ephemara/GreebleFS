@@ -64,6 +64,31 @@ const expectedSurfaceOwnershipByTheme = {
   'xmb-crosswave': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
 } satisfies Record<string, Partial<Awaited<ReturnType<typeof loadThemeRendererFromSource>>['surfaceOwnership']>>;
 
+const utilitySurfaceContractRendererNames = new Set([
+  'arcade-arcology',
+  'arcade-atrium',
+  'clarity-line',
+  'cyber-nexus-hud',
+  'dreamcast-skyline',
+  'gamecube-helix',
+  'gamecube-orbital',
+  'gamecube-prism',
+  'wii-channel-home',
+  'xmb-crosswave',
+]);
+
+const launcherShellModelRendererNames = new Set([
+  'arcade-arcology',
+  'arcade-atrium',
+  'cyber-nexus-hud',
+  'dreamcast-skyline',
+  'gamecube-helix',
+  'gamecube-orbital',
+  'gamecube-prism',
+  'wii-channel-home',
+  'xmb-crosswave',
+]);
+
 describe('theme renderer package fixtures', () => {
   it.each(rendererFixtures)('loads %s without runtime errors', async fixture => {
     const source = readFileSync(fixture.filePath, 'utf8');
@@ -89,6 +114,16 @@ describe('theme renderer package fixtures', () => {
     const expectedSurfaceOwnership = expectedSurfaceOwnershipByTheme[fixture.name];
     if (expectedSurfaceOwnership) {
       expect(renderer.surfaceOwnership).toMatchObject(expectedSurfaceOwnership);
+    }
+
+    if (utilitySurfaceContractRendererNames.has(fixture.name)) {
+      expect(source).not.toContain('host.panels');
+      expect(source).not.toContain('renderChromeBar(');
+      expect(source).toContain('host.renderUtilityActionsSurface()');
+    }
+
+    if (launcherShellModelRendererNames.has(fixture.name)) {
+      expect(source).toContain('host.shellModel.launcher');
     }
   });
 });

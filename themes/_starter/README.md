@@ -32,7 +32,7 @@ The starter renderer shows the host contract shape:
 - `surfaceOwnership`
 - `host.shellModel.layout`
 - `host.shellModel.launcher`
-- `host.shellModel.chrome.utilityActions`
+- `host.renderUtilityActionsSurface()`
 - `host.renderDefaultNavigationSurface()`
 - `host.renderDefaultContentSurface()`
 - `host.renderPanelSurface(panelId)`

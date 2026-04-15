@@ -19,7 +19,6 @@ export default defineThemeRenderer({
   },
   component({ host }) {
     const launcherWidth = host.shellModel.layout.regions.launcher.width || 280;
-    const utilityActions = host.shellModel.chrome.utilityActions;
 
     return (
       <div
@@ -76,34 +75,7 @@ export default defineThemeRenderer({
               gap: 12,
             }}
           >
-            {utilityActions.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 10 }}>
-                {utilityActions.map((action) => (
-                  <button
-                    key={action.id}
-                    type="button"
-                    title={action.title}
-                    onClick={action.onSelect}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '8px 12px',
-                      borderRadius: 999,
-                      border: '1px solid var(--overlay-workbench-chrome-border)',
-                      background: action.isActive
-                        ? 'var(--overlay-workbench-chrome-button-active-bg)'
-                        : 'var(--overlay-workbench-chrome-button-bg)',
-                      color: 'var(--overlay-text-primary)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {action.icon ? <span style={{ display: 'flex' }}>{action.icon}</span> : null}
-                    <span>{action.label}</span>
-                  </button>
-                ))}
-              </div>
-            )}
+            {host.renderUtilityActionsSurface()}
             <div style={{ flex: 1, minHeight: 0 }}>
               {host.renderDefaultContentSurface()}
             </div>

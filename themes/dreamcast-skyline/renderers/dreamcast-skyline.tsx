@@ -17,7 +17,7 @@ export default defineThemeRenderer({
     wallpaper: true,
   },
   component({ host }) {
-    const panels = host.panels.filter(panel => !panel.isPinned);
+    const panels = host.shellModel.launcher.panels;
     const activePanel = panels.find(panel => panel.id === host.activePanelId) ?? panels[0] ?? null;
     const spotlightPanels = panels.slice(0, 4);
 
@@ -63,7 +63,7 @@ export default defineThemeRenderer({
               minHeight: 0,
             }}
           >
-            {host.renderChromeBar()}
+            {host.renderUtilityActionsSurface()}
 
             <div
               style={{
