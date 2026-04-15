@@ -23,7 +23,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/FileExplorer.tsx`
   Main explorer shell, navigation, preview, standard layout modes, experimental explorer runtimes, and the dock-owned layout contract used when the app switches into overlay mode.
 - `src/components/explorer/ExplorerWorkspace.tsx`
-  Explorer-local workspace shell that wraps `FileExplorer` instances with explorer tabs, dual-pane layout, pane focus, and split sizing.
+  Explorer-local workspace shell that wraps `FileExplorer` instances with explorer tabs, slot-based `1-Up` / `2-Up` / `4-Up` pane layouts, pane focus, and adaptive split sizing.
 - `src/components/explorer/ExplorerSideRail.tsx`
   Explorer rail, drives, bookmarks, saved searches, and tag-filter browsing.
 - `src/config/appearance.ts`
@@ -65,7 +65,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/runtime/pluginPanelRequests.ts`
   Shared plugin-panel handoff bridge for explorer/plugin context flows. It persists the latest request payload and dispatches shell-level open-panel events plus panel-specific update events.
 - `src/store/explorerStore.ts`
-  Persisted explorer rail, named explorer session snapshots, and explorer-local workspace state for tabs/dual-pane layout.
+  Persisted explorer rail, named explorer session snapshots, and explorer-local workspace state for tabs plus slot-based workspace layouts.
 - `src/store/settingsStore.ts`
   Persisted layout/profile settings, wallpaper/shader/animation overrides, app-vs-dock theme selection, the native `windowMode` presentation toggle, and machine-level developer-mode behavior.
 
@@ -220,9 +220,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src/store/settingsStore.ts` and `src/store/explorerStore.ts` rehydrate persisted state on `storage` events so the hidden host stays in sync with the active host during mode handoff
 - `src/store/explorerStore.ts` supports named explorer sessions, and the dock now reuses those sessions through its own appearance/layout lane rather than through a separate drawer subsystem.
 - The explorer now has a local workspace shell separate from the global workbench tabs:
-  - `ExplorerWorkspace.tsx` owns explorer tabs and one-pane/two-pane rendering
+  - `ExplorerWorkspace.tsx` owns explorer tabs and slot-based `single` / `split` / `quad` rendering
   - each tab maps to a distinct `ExplorerInstanceId`, so the existing `FileExplorer` session model still owns path/history/search/preview state
-  - `explorerStore.ts` persists the workspace snapshot (`tabs`, pane activity, layout mode, focused pane, split ratio) alongside the underlying named sessions
+  - `explorerStore.ts` persists the workspace snapshot (`tabs`, pane activity, layout mode, focused pane, column split ratio, row split ratio) alongside the underlying named sessions
+  - workspace normalization is collapse-safe: when the UI drops from `quad` to `split` or `single`, tabs from hidden panes are reassigned into visible panes instead of being stranded in invisible left/right slots
 - `FileExplorer.tsx` shares directory/search result caches across explorer sessions so alternate surfaces do not duplicate backend reads unless a mutation invalidates the cache.
 - `FileExplorer.tsx` now settle-batches viewport enrichment work so visible-entry size measurement and native-icon resolution only launch after a short scroll idle window instead of hammering Tauri on every transient virtualized viewport shift.
 - `FileExplorer.tsx` owns both file-centric actions and explorer-local shell controls, so the shared top bar stays panel-agnostic while the explorer keeps its mode/source/preview controls adjacent to the path/search field.

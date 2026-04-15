@@ -1,5 +1,18 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Explorer Workspace Split System / Quad View
+
+- The explorer workspace no longer assumes a hardcoded left/right dual-pane model.
+- Durable implementation shape:
+  - `src/config/explorerWorkspaceLayouts.ts` is now the data-driven workspace layout contract for `single`, `split`, and `quad`, plus pane-slot ids `pane-1` through `pane-4`.
+  - `src/store/explorerStore.ts` now persists workspace activity against pane slots instead of `left` / `right`, and stores `columnSplitRatio` plus `rowSplitRatio` instead of one `splitRatio`.
+  - workspace normalization now migrates legacy `left` / `right`, `dual`, and `splitRatio` state forward while reassigning tabs from hidden panes back into visible panes when layouts collapse.
+  - `src/components/explorer/ExplorerWorkspace.tsx` now renders the workspace through the slot/layout contract, exposes `1-Up` / `2-Up` / `4-Up` mode controls, and treats pane focus/tab moves generically instead of hardcoding “other side”.
+- Durable product note:
+  - the explorer workspace should behave like a simple adaptive pane system, not a fragile left/right lock. `quad` is now the supported path for a denser workspace without introducing a custom docking runtime.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerChromeLayouts.test.ts src/test/explorerTheme.test.ts src/test/settingsStore.test.ts src/test/explorerStore.test.ts src/test/ExplorerWorkspace.test.tsx src/test/fileExplorer.viewModes.test.tsx`
+
 ## 2026-04-15 — Theme Catalog Pilot Suite Reset
 
 - Package themes are no longer treated as one flat catalog.

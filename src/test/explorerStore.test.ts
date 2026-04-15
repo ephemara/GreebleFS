@@ -144,33 +144,56 @@ describe('explorerStore persistence', () => {
 
   it('creates, focuses, and closes explorer workspace tabs across panes', () => {
     const store = useExplorerStore.getState();
+    store.setWorkspaceLayoutMode('split');
     const nextTab = store.createWorkspaceTab({
       sourceInstanceId: PRIMARY_EXPLORER_INSTANCE_ID,
-      pane: 'right',
+      pane: 'pane-2',
     });
 
     expect(useExplorerStore.getState().workspace.tabs).toHaveLength(2);
-    expect(useExplorerStore.getState().workspace.activeTabIdByPane.right).toBe(nextTab.id);
+    expect(useExplorerStore.getState().workspace.activeTabIdByPane['pane-2']).toBe(nextTab.id);
 
     store.focusWorkspaceTab(PRIMARY_EXPLORER_TAB_ID);
-    expect(useExplorerStore.getState().workspace.activeTabIdByPane.left).toBe(PRIMARY_EXPLORER_TAB_ID);
+    expect(useExplorerStore.getState().workspace.activeTabIdByPane['pane-1']).toBe(PRIMARY_EXPLORER_TAB_ID);
 
     store.closeWorkspaceTab(nextTab.id);
     expect(useExplorerStore.getState().workspace.tabs).toHaveLength(1);
-    expect(useExplorerStore.getState().workspace.activeTabIdByPane.right).toBeNull();
+    expect(useExplorerStore.getState().workspace.activeTabIdByPane['pane-2']).toBeNull();
   });
 
-  it('persists dual-pane workspace layout state', () => {
+  it('persists split workspace layout state', () => {
     const store = useExplorerStore.getState();
-    const rightTab = store.createWorkspaceTab({ pane: 'right' });
-    store.setWorkspaceLayoutMode('dual');
-    store.setFocusedPane('right');
-    store.setWorkspaceSplitRatio(0.61);
+    store.setWorkspaceLayoutMode('split');
+    const paneTwoTab = store.createWorkspaceTab({ pane: 'pane-2' });
+    store.setFocusedPane('pane-2');
+    store.setWorkspaceColumnSplitRatio(0.61);
 
     const hydrated = loadExplorerPersistedState(window.localStorage);
-    expect(hydrated.workspace.layoutMode).toBe('dual');
-    expect(hydrated.workspace.focusedPane).toBe('right');
-    expect(hydrated.workspace.activeTabIdByPane.right).toBe(rightTab.id);
-    expect(hydrated.workspace.splitRatio).toBe(0.61);
+    expect(hydrated.workspace.layoutMode).toBe('split');
+    expect(hydrated.workspace.focusedPane).toBe('pane-2');
+    expect(hydrated.workspace.activeTabIdByPane['pane-2']).toBe(paneTwoTab.id);
+    expect(hydrated.workspace.columnSplitRatio).toBe(0.61);
+  });
+
+  it('reassigns hidden pane tabs back into visible panes when layouts collapse', () => {
+    const store = useExplorerStore.getState();
+    store.setWorkspaceLayoutMode('quad');
+    store.createWorkspaceTab({ pane: 'pane-2' });
+    store.createWorkspaceTab({ pane: 'pane-3' });
+    store.createWorkspaceTab({ pane: 'pane-4' });
+
+    store.setWorkspaceLayoutMode('split');
+
+    const splitWorkspace = useExplorerStore.getState().workspace;
+    expect(splitWorkspace.layoutMode).toBe('split');
+    expect(splitWorkspace.tabs).toHaveLength(4);
+    expect(splitWorkspace.tabs.every((tab) => tab.pane === 'pane-1' || tab.pane === 'pane-2')).toBe(true);
+
+    store.setWorkspaceLayoutMode('single');
+
+    const singleWorkspace = useExplorerStore.getState().workspace;
+    expect(singleWorkspace.layoutMode).toBe('single');
+    expect(singleWorkspace.tabs).toHaveLength(4);
+    expect(singleWorkspace.tabs.every((tab) => tab.pane === 'pane-1')).toBe(true);
   });
 });

@@ -11,6 +11,18 @@ import {
   type ExplorerShellLayoutId,
 } from '../config/explorerShellLayouts';
 import {
+  clampExplorerWorkspaceAxisRatio,
+  createEmptyExplorerPaneRecord,
+  defaultExplorerWorkspaceAxisRatio,
+  defaultExplorerWorkspaceLayoutMode,
+  explorerPaneIds,
+  getExplorerWorkspaceVisiblePaneIds,
+  normalizeExplorerPaneId,
+  normalizeExplorerWorkspaceLayoutMode,
+  type ExplorerPaneId,
+  type ExplorerWorkspaceLayoutMode,
+} from '../config/explorerWorkspaceLayouts';
+import {
   normalizeExplorerChromeLayoutId,
   normalizeExplorerChromeOverrideSnapshot,
   type ExplorerChromeControlId,
@@ -36,8 +48,6 @@ const EXPLORER_PERSIST_DEBOUNCE_MS = (() => {
 
 export type ExplorerDocumentViewMode = 'edit' | 'preview';
 export type ExplorerInstanceId = string;
-export type ExplorerPaneId = 'left' | 'right';
-export type ExplorerWorkspaceLayoutMode = 'single' | 'dual';
 export type ExplorerClipboardAction = 'copy' | 'cut';
 
 export interface ExplorerClipboardEntry {
@@ -63,7 +73,8 @@ export interface ExplorerWorkspaceSnapshot {
   activeTabIdByPane: Record<ExplorerPaneId, string | null>;
   layoutMode: ExplorerWorkspaceLayoutMode;
   focusedPane: ExplorerPaneId;
-  splitRatio: number;
+  columnSplitRatio: number;
+  rowSplitRatio: number;
   nextTabOrdinal: number;
 }
 
@@ -99,16 +110,19 @@ export const defaultExplorerWorkspace: ExplorerWorkspaceSnapshot = {
   tabs: [{
     id: PRIMARY_EXPLORER_TAB_ID,
     instanceId: PRIMARY_EXPLORER_INSTANCE_ID,
-    pane: 'left',
+    pane: 'pane-1',
     title: 'Explorer',
   }],
   activeTabIdByPane: {
-    left: PRIMARY_EXPLORER_TAB_ID,
-    right: null,
+    'pane-1': PRIMARY_EXPLORER_TAB_ID,
+    'pane-2': null,
+    'pane-3': null,
+    'pane-4': null,
   },
-  layoutMode: 'single',
-  focusedPane: 'left',
-  splitRatio: 0.5,
+  layoutMode: defaultExplorerWorkspaceLayoutMode,
+  focusedPane: 'pane-1',
+  columnSplitRatio: defaultExplorerWorkspaceAxisRatio,
+  rowSplitRatio: defaultExplorerWorkspaceAxisRatio,
   nextTabOrdinal: 2,
 };
 
@@ -151,10 +165,7 @@ function cloneExplorerWorkspaceSnapshot(
   return {
     ...workspace,
     tabs: workspace.tabs.map(cloneExplorerTabSnapshot),
-    activeTabIdByPane: {
-      left: workspace.activeTabIdByPane.left,
-      right: workspace.activeTabIdByPane.right,
-    },
+    activeTabIdByPane: { ...workspace.activeTabIdByPane },
   };
 }
 
@@ -208,7 +219,9 @@ interface ExplorerStoreState {
   updateWorkspaceTabTitle: (tabId: string, title: string) => void;
   setWorkspaceLayoutMode: (layoutMode: ExplorerWorkspaceLayoutMode) => void;
   setFocusedPane: (pane: ExplorerPaneId) => void;
-  setWorkspaceSplitRatio: (splitRatio: number) => void;
+  setWorkspaceColumnSplitRatio: (splitRatio: number) => void;
+  setWorkspaceRowSplitRatio: (splitRatio: number) => void;
+  setClipboard: (clipboard: ExplorerClipboardSnapshot | null) => void;
   updateRail: (updates: Partial<ExplorerRailSnapshot> | ((current: ExplorerRailSnapshot) => ExplorerRailSnapshot)) => void;
   replaceRail: (nextRail: ExplorerRailSnapshot) => void;
   restoreRailBackup: () => void;
@@ -287,15 +300,19 @@ function normalizeExplorerSessionsSnapshot(
   };
 }
 
-function normalizeExplorerPaneId(value: unknown): ExplorerPaneId {
-  return value === 'right' ? 'right' : 'left';
+function createActiveWorkspaceTabRecord(): Record<ExplorerPaneId, string | null> {
+  return createEmptyExplorerPaneRecord(() => null);
 }
 
-function clampExplorerWorkspaceSplitRatio(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return defaultExplorerWorkspace.splitRatio;
-  }
-  return Math.max(0.3, Math.min(0.7, value));
+function choosePaneForHiddenTab(
+  tabsByPane: Record<ExplorerPaneId, ExplorerTabSnapshot[]>,
+  visiblePaneIds: ExplorerPaneId[],
+): ExplorerPaneId {
+  return [...visiblePaneIds]
+    .sort((leftPaneId, rightPaneId) => (
+      tabsByPane[leftPaneId].length - tabsByPane[rightPaneId].length
+      || explorerPaneIds.indexOf(leftPaneId) - explorerPaneIds.indexOf(rightPaneId)
+    ))[0] ?? visiblePaneIds[0] ?? 'pane-1';
 }
 
 function normalizeExplorerWorkspaceSnapshot(
@@ -340,37 +357,79 @@ function normalizeExplorerWorkspaceSnapshot(
     tabs.unshift({
       id: PRIMARY_EXPLORER_TAB_ID,
       instanceId: PRIMARY_EXPLORER_INSTANCE_ID,
-      pane: 'left',
+      pane: 'pane-1',
       title: 'Explorer',
     });
   }
 
-  const leftTabs = tabs.filter((tab) => tab.pane === 'left');
-  const rightTabs = tabs.filter((tab) => tab.pane === 'right');
+  const layoutMode = normalizeExplorerWorkspaceLayoutMode(source?.layoutMode);
+  const visiblePaneIds = getExplorerWorkspaceVisiblePaneIds(layoutMode);
+  const reassignedTabs = tabs.map((tab) => ({ ...tab }));
+  const tabsByPane = createEmptyExplorerPaneRecord<ExplorerTabSnapshot[]>(() => []);
+  for (const tab of reassignedTabs) {
+    if (!visiblePaneIds.includes(tab.pane)) {
+      tab.pane = choosePaneForHiddenTab(tabsByPane, visiblePaneIds);
+    }
+    tabsByPane[tab.pane].push(tab);
+  }
+
   const activeSource = asRecord(source?.activeTabIdByPane);
-  const leftActiveCandidate = typeof activeSource?.left === 'string' ? activeSource.left : null;
-  const rightActiveCandidate = typeof activeSource?.right === 'string' ? activeSource.right : null;
-  const activeTabIdByPane = {
-    left: leftTabs.some((tab) => tab.id === leftActiveCandidate)
-      ? leftActiveCandidate
-      : leftTabs[0]?.id ?? null,
-    right: rightTabs.some((tab) => tab.id === rightActiveCandidate)
-      ? rightActiveCandidate
-      : rightTabs[0]?.id ?? null,
-  } satisfies Record<ExplorerPaneId, string | null>;
+  const activeTabIdByPane = createActiveWorkspaceTabRecord();
+  for (const paneId of explorerPaneIds) {
+    const activeCandidate = typeof activeSource?.[paneId] === 'string'
+      ? activeSource[paneId]
+      : (
+        paneId === 'pane-1'
+          ? (typeof activeSource?.left === 'string' ? activeSource.left : null)
+          : paneId === 'pane-2'
+            ? (typeof activeSource?.right === 'string' ? activeSource.right : null)
+            : null
+      );
+    activeTabIdByPane[paneId] = tabsByPane[paneId].some((tab) => tab.id === activeCandidate)
+      ? activeCandidate
+      : tabsByPane[paneId][0]?.id ?? null;
+  }
+
+  const focusedPaneCandidate = normalizeExplorerPaneId(source?.focusedPane);
+  const focusedPane = visiblePaneIds.includes(focusedPaneCandidate)
+    ? focusedPaneCandidate
+    : visiblePaneIds.find((paneId) => tabsByPane[paneId].length > 0)
+      ?? visiblePaneIds[0]
+      ?? 'pane-1';
 
   const nextTabOrdinalValue = typeof source?.nextTabOrdinal === 'number' && Number.isFinite(source.nextTabOrdinal)
     ? Math.max(1, Math.trunc(source.nextTabOrdinal))
-    : tabs.length + 1;
+    : reassignedTabs.length + 1;
 
   return {
-    tabs,
+    tabs: reassignedTabs,
     activeTabIdByPane,
-    layoutMode: source?.layoutMode === 'dual' ? 'dual' : 'single',
-    focusedPane: normalizeExplorerPaneId(source?.focusedPane),
-    splitRatio: clampExplorerWorkspaceSplitRatio(source?.splitRatio),
+    layoutMode,
+    focusedPane,
+    columnSplitRatio: clampExplorerWorkspaceAxisRatio(
+      source?.columnSplitRatio ?? source?.splitRatio,
+    ),
+    rowSplitRatio: clampExplorerWorkspaceAxisRatio(source?.rowSplitRatio),
     nextTabOrdinal: nextTabOrdinalValue,
   };
+}
+
+function chooseFocusedPaneAfterTabRemoval(args: {
+  workspace: ExplorerWorkspaceSnapshot;
+  nextTabs: ExplorerTabSnapshot[];
+  nextActiveTabIdByPane: Record<ExplorerPaneId, string | null>;
+  removedPane: ExplorerPaneId;
+}): ExplorerPaneId {
+  const { workspace, nextTabs, nextActiveTabIdByPane, removedPane } = args;
+  if (workspace.focusedPane !== removedPane || nextActiveTabIdByPane[removedPane]) {
+    return workspace.focusedPane;
+  }
+
+  const visiblePaneIds = getExplorerWorkspaceVisiblePaneIds(workspace.layoutMode);
+  return visiblePaneIds.find((paneId) => (
+    nextActiveTabIdByPane[paneId]
+    || nextTabs.some((tab) => tab.pane === paneId)
+  )) ?? visiblePaneIds[0] ?? 'pane-1';
 }
 
 export function loadExplorerPersistedState(storage: Storage | null = getStorage()): ExplorerHydrationResult {
@@ -682,7 +741,7 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
     },
     createWorkspaceTab: (args = {}) => {
       const workspace = get().workspace;
-      const pane = args.pane ?? workspace.focusedPane;
+      const pane = normalizeExplorerPaneId(args.pane ?? workspace.focusedPane);
       const sourceInstanceId = args.sourceInstanceId?.trim() || PRIMARY_EXPLORER_INSTANCE_ID;
       const nextInstanceId = `explorer-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const nextTab: ExplorerTabSnapshot = {
@@ -693,12 +752,12 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
       };
       const sourceSession = get().sessions[sourceInstanceId] ?? cloneExplorerSessionSnapshot(defaultExplorerSession);
       const nextSession = cloneExplorerSessionSnapshot(sourceSession);
-      set((state) => ({
-        sessions: {
+      set((state) => {
+        const nextSessions = {
           ...state.sessions,
           [nextInstanceId]: nextSession,
-        },
-        workspace: {
+        };
+        const nextWorkspace = normalizeExplorerWorkspaceSnapshot({
           ...state.workspace,
           tabs: [...state.workspace.tabs, nextTab],
           activeTabIdByPane: {
@@ -707,8 +766,12 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
           },
           focusedPane: pane,
           nextTabOrdinal: state.workspace.nextTabOrdinal + 1,
-        },
-      }));
+        }, nextSessions);
+        return {
+          sessions: nextSessions,
+          workspace: nextWorkspace,
+        };
+      });
       schedulePersistLatest();
       return nextTab;
     },
@@ -728,24 +791,28 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
         nextActiveTabIdByPane[tab.pane] = paneTabs[0]?.id ?? null;
       }
       const referencedInstanceIds = new Set(nextTabs.map((candidate) => candidate.instanceId));
-      const nextFocusedPane = workspace.focusedPane === tab.pane && !nextActiveTabIdByPane[tab.pane]
-        ? (tab.pane === 'left' ? 'right' : 'left')
-        : workspace.focusedPane;
+      const nextFocusedPane = chooseFocusedPaneAfterTabRemoval({
+        workspace,
+        nextTabs,
+        nextActiveTabIdByPane,
+        removedPane: tab.pane,
+      });
       set((state) => {
         const nextSessions = Object.fromEntries(
           Object.entries(state.sessions).filter(([instanceId]) => (
             instanceId === PRIMARY_EXPLORER_INSTANCE_ID || referencedInstanceIds.has(instanceId)
           )),
         );
+        const nextWorkspace = normalizeExplorerWorkspaceSnapshot({
+          ...state.workspace,
+          tabs: nextTabs,
+          activeTabIdByPane: nextActiveTabIdByPane,
+          focusedPane: nextFocusedPane,
+        }, nextSessions);
         return {
           sessions: nextSessions,
           session: getPrimaryExplorerSession(nextSessions),
-          workspace: {
-            ...state.workspace,
-            tabs: nextTabs,
-            activeTabIdByPane: nextActiveTabIdByPane,
-            focusedPane: nextFocusedPane,
-          },
+          workspace: nextWorkspace,
         };
       });
       schedulePersistLatest();
@@ -757,81 +824,91 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
         return;
       }
       set((state) => ({
-        workspace: {
+        workspace: normalizeExplorerWorkspaceSnapshot({
           ...state.workspace,
           activeTabIdByPane: {
             ...state.workspace.activeTabIdByPane,
             [tab.pane]: tab.id,
           },
           focusedPane: tab.pane,
-        },
+        }, state.sessions),
       }));
       schedulePersistLatest();
     },
     moveWorkspaceTabToPane: (tabId, pane) => {
       const workspace = get().workspace;
       const tab = workspace.tabs.find((candidate) => candidate.id === tabId);
-      if (!tab || tab.pane === pane) {
+      const targetPane = normalizeExplorerPaneId(pane);
+      if (!tab || tab.pane === targetPane) {
         return;
       }
       const originPane = tab.pane;
       const nextTabs = workspace.tabs.map((candidate) => (
         candidate.id === tabId
-          ? { ...candidate, pane }
+          ? { ...candidate, pane: targetPane }
           : candidate
       ));
       const nextActiveTabIdByPane = { ...workspace.activeTabIdByPane };
       if (nextActiveTabIdByPane[originPane] === tabId) {
         nextActiveTabIdByPane[originPane] = nextTabs.find((candidate) => candidate.pane === originPane)?.id ?? null;
       }
-      nextActiveTabIdByPane[pane] = tabId;
+      nextActiveTabIdByPane[targetPane] = tabId;
       set((state) => ({
-        workspace: {
+        workspace: normalizeExplorerWorkspaceSnapshot({
           ...state.workspace,
           tabs: nextTabs,
           activeTabIdByPane: nextActiveTabIdByPane,
-          focusedPane: pane,
-        },
+          focusedPane: targetPane,
+        }, state.sessions),
       }));
       schedulePersistLatest();
     },
     updateWorkspaceTabTitle: (tabId, title) => {
       set((state) => ({
-        workspace: {
+        workspace: normalizeExplorerWorkspaceSnapshot({
           ...state.workspace,
           tabs: state.workspace.tabs.map((tab) => (
             tab.id === tabId
               ? { ...tab, title: title.trim() || tab.title }
               : tab
           )),
-        },
+        }, state.sessions),
       }));
       schedulePersistLatest();
     },
     setWorkspaceLayoutMode: (layoutMode) => {
       set((state) => ({
-        workspace: {
+        workspace: normalizeExplorerWorkspaceSnapshot({
           ...state.workspace,
           layoutMode,
-        },
+        }, state.sessions),
       }));
       schedulePersistLatest();
     },
     setFocusedPane: (pane) => {
       set((state) => ({
-        workspace: {
+        workspace: normalizeExplorerWorkspaceSnapshot({
           ...state.workspace,
-          focusedPane: pane,
-        },
+          focusedPane: normalizeExplorerPaneId(pane),
+        }, state.sessions),
       }));
       schedulePersistLatest();
     },
-    setWorkspaceSplitRatio: (splitRatio) => {
+    setWorkspaceColumnSplitRatio: (splitRatio) => {
       set((state) => ({
-        workspace: {
+        workspace: normalizeExplorerWorkspaceSnapshot({
           ...state.workspace,
-          splitRatio: clampExplorerWorkspaceSplitRatio(splitRatio),
-        },
+          columnSplitRatio: clampExplorerWorkspaceAxisRatio(splitRatio),
+        }, state.sessions),
+      }));
+      schedulePersistLatest();
+    },
+    setWorkspaceRowSplitRatio: (splitRatio) => {
+      set((state) => ({
+        workspace: normalizeExplorerWorkspaceSnapshot({
+          ...state.workspace,
+          rowSplitRatio: clampExplorerWorkspaceAxisRatio(splitRatio),
+        }, state.sessions),
       }));
       schedulePersistLatest();
     },
@@ -996,6 +1073,7 @@ function loadExplorerBackup(storage: Storage | null = getStorage()): Omit<Explor
       session: getPrimaryExplorerSession(sessions),
       workspace,
       rail: normalizeExplorerRailSnapshot(parsed.rail),
+      clipboard: null,
     };
   } catch {
     return null;
