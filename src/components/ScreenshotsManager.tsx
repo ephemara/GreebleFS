@@ -166,6 +166,90 @@ function formatFileSize(size: number): string {
 
 function clamp(v: number, lo: number, hi: number) { return Math.min(Math.max(v, lo), hi); }
 
+function scalePreviewPointToImage(
+  point: Point2D,
+  rendered: { width: number; height: number },
+  image: { width: number; height: number },
+): Point2D {
+  return {
+    x: Math.round(point.x * (image.width / rendered.width)),
+    y: Math.round(point.y * (image.height / rendered.height)),
+  };
+}
+
+function annotationToImageSpace(
+  annotation: Annotation,
+  rendered: { width: number; height: number },
+  image: { width: number; height: number },
+): NativeScreenshotAnnotation {
+  if (annotation.type === 'text') {
+    const origin = scalePreviewPointToImage({ x: annotation.x, y: annotation.y }, rendered, image);
+    return {
+      type: 'text',
+      x: origin.x,
+      y: origin.y,
+      text: annotation.text,
+      color: annotation.color,
+      size: Math.max(8, Math.round(annotation.size * (image.height / rendered.height))),
+    };
+  }
+
+  const start = scalePreviewPointToImage({ x: annotation.x1, y: annotation.y1 }, rendered, image);
+  const end = scalePreviewPointToImage({ x: annotation.x2, y: annotation.y2 }, rendered, image);
+  const lineScale = Math.max(image.width / rendered.width, image.height / rendered.height);
+
+  return {
+    ...annotation,
+    x1: start.x,
+    y1: start.y,
+    x2: end.x,
+    y2: end.y,
+    lw: Math.max(1, Math.round(annotation.lw * lineScale)),
+  };
+}
+
+function getSelectionHandleLayout(selection: RectSelection) {
+  const normalized = normalizeSelection(selection);
+  const left = normalized.x;
+  const right = normalized.x + normalized.width;
+  const top = normalized.y;
+  const bottom = normalized.y + normalized.height;
+  const centerX = left + normalized.width / 2;
+  const centerY = top + normalized.height / 2;
+
+  return [
+    { handle: 'north-west', x: left, y: top },
+    { handle: 'north', x: centerX, y: top },
+    { handle: 'north-east', x: right, y: top },
+    { handle: 'east', x: right, y: centerY },
+    { handle: 'south-east', x: right, y: bottom },
+    { handle: 'south', x: centerX, y: bottom },
+    { handle: 'south-west', x: left, y: bottom },
+    { handle: 'west', x: left, y: centerY },
+  ] as const;
+}
+
+function mapSelectionHandleCursor(handle: SelectionHandle): React.CSSProperties['cursor'] {
+  switch (handle) {
+    case 'north':
+    case 'south':
+      return 'ns-resize';
+    case 'east':
+    case 'west':
+      return 'ew-resize';
+    case 'north-east':
+    case 'south-west':
+      return 'nesw-resize';
+    case 'north-west':
+    case 'south-east':
+      return 'nwse-resize';
+    case 'move':
+      return 'move';
+    default:
+      return 'crosshair';
+  }
+}
+
 function formatToolbarActionLabel(
   action: ScreenshotOutputActionId,
   scope: 'region' | 'monitor' | 'annotated',
@@ -282,10 +366,10 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
   const liveAnnotationRef = useRef<Annotation | null>(null);
   const galleryRequestIdRef = useRef(0);
   const captureRequestIdRef = useRef(0);
+  const selectionInteractionRef = useRef<SelectionInteraction | null>(null);
 
   // Cached at pointerDown — never re-read during a drag
   const dragRectRef   = useRef<DOMRect | null>(null);
-  const dragOriginRef = useRef<Point2D | null>(null);
   const isDraggingRef = useRef(false);
 
   // ── State ──
@@ -344,6 +428,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
 
   const resetEditorState = useCallback(() => {
     setSelection(null);
+    selectionInteractionRef.current = null;
     setAnnotations([]);
     setLiveAnnotation(null);
     liveAnnotationRef.current = null;
@@ -377,6 +462,81 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
   }, [selection, activeMonitor]);
 
   const selectionPx = getSelectionPx();
+
+  const handlePreviewKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (textDraft && event.key === 'Escape') {
+      event.preventDefault();
+      setTextDraft(null);
+      setTextValue('');
+      return;
+    }
+
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect || rect.width < 2 || rect.height < 2) {
+      return;
+    }
+
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+      event.preventDefault();
+      setSelection({
+        x: 0,
+        y: 0,
+        width: rect.width,
+        height: rect.height,
+      });
+      return;
+    }
+
+    if (!selection || activeTool !== 'select') {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setSelection(null);
+      }
+      return;
+    }
+
+    const rendered = { width: rect.width, height: rect.height };
+    const step = event.shiftKey
+      ? screenshotFeatureConfig.editor.keyboardLargeNudgeStep
+      : screenshotFeatureConfig.editor.keyboardNudgeStep;
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setSelection(null);
+      return;
+    }
+
+    if (event.altKey) {
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        setSelection(resizeSelection(selection, 'west', -step, 0, rendered));
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        setSelection(resizeSelection(selection, 'east', step, 0, rendered));
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setSelection(resizeSelection(selection, 'north', 0, -step, rendered));
+      } else if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setSelection(resizeSelection(selection, 'south', 0, step, rendered));
+      }
+      return;
+    }
+
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      setSelection(moveSelection(selection, -step, 0, rendered));
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      setSelection(moveSelection(selection, step, 0, rendered));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setSelection(moveSelection(selection, 0, -step, rendered));
+    } else if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setSelection(moveSelection(selection, 0, step, rendered));
+    }
+  }, [activeTool, selection, textDraft]);
 
   // ── Gallery ──
   const loadGallery = useCallback(async () => {
@@ -503,6 +663,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
     setLiveAnnotation(null);
     liveAnnotationRef.current = null;
     annotationsRef.current = [];
+    selectionInteractionRef.current = null;
     setTextDraft(null);
     setTextValue('');
   }, [activeMonitorId]);
@@ -598,49 +759,104 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
     isDraggingRef.current = true;
 
     const { x, y } = getContainerPos(e.clientX, e.clientY, rect);
-    dragOriginRef.current = { x, y };
+    e.currentTarget.focus();
     e.currentTarget.setPointerCapture(e.pointerId);
 
     if (activeTool === 'select') {
       e.preventDefault();
-      // Store raw (unnormalized) selection — negative width/height is valid during drag
+      const existingSelection = selection ? normalizeSelection(selection) : null;
+      const existingHandle = existingSelection
+        ? getSelectionHandleAtPoint({ x, y }, existingSelection, SELECTION_HANDLE_RADIUS)
+        : null;
+
+      if (existingSelection && existingHandle) {
+        selectionInteractionRef.current = {
+          kind: 'resize',
+          origin: { x, y },
+          initialSelection: existingSelection,
+          handle: existingHandle,
+        };
+        setSelection(existingSelection);
+        return;
+      }
+
+      if (existingSelection && isPointInSelection({ x, y }, existingSelection)) {
+        selectionInteractionRef.current = {
+          kind: 'move',
+          origin: { x, y },
+          initialSelection: existingSelection,
+        };
+        setSelection(existingSelection);
+        return;
+      }
+
+      selectionInteractionRef.current = { kind: 'draw', origin: { x, y } };
       setSelection({ x, y, width: 0, height: 0 });
     } else if (activeTool === 'text') {
+      selectionInteractionRef.current = null;
       setTextDraft({ x, y });
       setTextValue('');
       window.requestAnimationFrame(() => textInputRef.current?.focus());
     } else {
       e.preventDefault();
+      selectionInteractionRef.current = { kind: 'draw', origin: { x, y } };
       const live: Annotation = activeTool === 'rect'
         ? { type: 'rect',  x1: x, y1: y, x2: x, y2: y, color: annColor, lw: annLw }
         : { type: 'arrow', x1: x, y1: y, x2: x, y2: y, color: annColor, lw: annLw };
       liveAnnotationRef.current = live;
       setLiveAnnotation(live);
     }
-  }, [activeMonitor, isCapturing, activeTool, annColor, annLw, getContainerPos]);
+  }, [activeMonitor, isCapturing, activeTool, annColor, annLw, getContainerPos, selection]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const rect   = dragRectRef.current;
-    const origin = dragOriginRef.current;
-    if (!rect || !origin || !isDraggingRef.current) return;
+    if (!rect || !isDraggingRef.current) return;
     e.preventDefault();
 
     // Use the CACHED rect from pointerDown — never re-measure during drag
     const { x, y } = getContainerPos(e.clientX, e.clientY, rect);
 
     if (activeTool === 'select') {
-      // Store raw delta — do NOT clamp/normalize here.
-      // normalizedSel handles display; selectionPx handles pixel mapping.
-      // Clamping during drag causes the selection box to jump when dragging
-      // in a negative direction (right-to-left / bottom-to-top).
-      const raw: RectSelection = {
-        x: origin.x,
-        y: origin.y,
-        width:  clamp(x - origin.x, -origin.x, rect.width  - origin.x),
-        height: clamp(y - origin.y, -origin.y, rect.height - origin.y),
-      };
-      setSelection(raw);
+      const interaction = selectionInteractionRef.current;
+      if (!interaction) {
+        return;
+      }
+
+      if (interaction.kind === 'draw') {
+        const raw: RectSelection = {
+          x: interaction.origin.x,
+          y: interaction.origin.y,
+          width: clamp(x - interaction.origin.x, -interaction.origin.x, rect.width - interaction.origin.x),
+          height: clamp(y - interaction.origin.y, -interaction.origin.y, rect.height - interaction.origin.y),
+        };
+        setSelection(raw);
+        return;
+      }
+
+      const rendered = { width: rect.width, height: rect.height };
+      const deltaX = x - interaction.origin.x;
+      const deltaY = y - interaction.origin.y;
+
+      if (interaction.kind === 'move') {
+        setSelection(moveSelection(interaction.initialSelection, deltaX, deltaY, rendered));
+        return;
+      }
+
+      setSelection(
+        resizeSelection(
+          interaction.initialSelection,
+          interaction.handle,
+          deltaX,
+          deltaY,
+          rendered,
+        ),
+      );
     } else if (activeTool === 'rect' || activeTool === 'arrow') {
+      const interaction = selectionInteractionRef.current;
+      const origin = interaction?.kind === 'draw' ? interaction.origin : null;
+      if (!origin) {
+        return;
+      }
       const live: Annotation = activeTool === 'rect'
         ? { type: 'rect',  x1: origin.x, y1: origin.y, x2: x, y2: y, color: annColor, lw: annLw }
         : { type: 'arrow', x1: origin.x, y1: origin.y, x2: x, y2: y, color: annColor, lw: annLw };
@@ -656,7 +872,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
     }
     isDraggingRef.current = false;
     dragRectRef.current   = null;
-    dragOriginRef.current = null;
+    selectionInteractionRef.current = null;
 
     const committed = liveAnnotationRef.current;
     if (committed) {

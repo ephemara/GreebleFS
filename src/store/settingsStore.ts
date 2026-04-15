@@ -127,6 +127,8 @@ export interface ExplorerSettings {
 export interface AppearanceSettings {
   theme: 'dark' | 'light' | 'system';
   activeThemeId: string;
+  dockThemeMode: DockThemeMode;
+  activeDockThemeId: string | null;
   customThemes: OverlayThemeDefinition[];
   activeWallpaperId?: string | null;
   wallpaperFitMode: OverlayWallpaperFitMode;
@@ -168,6 +170,7 @@ export interface ScreenshotSettings {
 }
 
 export type KeybindingSettings = HotkeyBindingSettings;
+export type DockThemeMode = 'follow-app' | 'override';
 
 export interface PolyGeminiSettings {
   serverUrl: string;
@@ -236,6 +239,10 @@ export function normalizeOverlayWindowAnchor(value: unknown): OverlayWindowAncho
 
 export function normalizeTerminalWindowMode(value: unknown): TerminalWindowMode {
   return value === 'overlay' ? 'overlay' : 'windowed';
+}
+
+export function normalizeDockThemeMode(value: unknown): DockThemeMode {
+  return value === 'override' ? 'override' : 'follow-app';
 }
 
 export function normalizeExplorerFolderClickMode(value: unknown): ExplorerFolderClickMode {
@@ -408,6 +415,12 @@ function normalizeAppearanceSettings(
   return {
     ...merged,
     customThemes: (merged.customThemes ?? base.customThemes).map(theme => normalizeThemeDefinition(theme)),
+    dockThemeMode: normalizeDockThemeMode(merged.dockThemeMode ?? base.dockThemeMode),
+    activeDockThemeId: typeof merged.activeDockThemeId === 'string'
+      ? merged.activeDockThemeId.trim() || null
+      : merged.activeDockThemeId === null
+        ? null
+        : base.activeDockThemeId ?? null,
     activeWallpaperId: typeof merged.activeWallpaperId === 'string'
       ? merged.activeWallpaperId.trim() || null
       : merged.activeWallpaperId === null
@@ -554,6 +567,8 @@ export const defaultSettings: Settings = {
   appearance: {
     theme: 'dark',
     activeThemeId: 'operator',
+    dockThemeMode: 'follow-app',
+    activeDockThemeId: null,
     customThemes: [],
     activeWallpaperId: null,
     wallpaperFitMode: 'cover',

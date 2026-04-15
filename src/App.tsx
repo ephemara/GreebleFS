@@ -3446,6 +3446,76 @@ function App() {
     themeRendererViewport.height,
     themeRendererViewport.width,
   ]);
+  const themeRendererUtilityActionSurface = useMemo(() => {
+    const actions = themeRendererShellModel.chrome.utilityActions;
+    if (actions.length === 0) {
+      return null;
+    }
+
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          gap: 10,
+          flexWrap: 'wrap',
+        }}
+      >
+        {actions.map(action => (
+          <button
+            key={action.id}
+            type="button"
+            title={action.title}
+            onClick={action.onSelect}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              minHeight: 34,
+              padding: '8px 12px',
+              borderRadius: 999,
+              border: `1px solid ${action.isActive ? `${accent}66` : `${theme.palette.border}44`}`,
+              background: action.isActive
+                ? `linear-gradient(180deg, ${accent}26, ${accent}14)`
+                : 'rgba(12, 16, 28, 0.18)',
+              color: theme.palette.textPrimary,
+              fontFamily: resolvedAppearance.fonts.ui,
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              cursor: 'pointer',
+              backdropFilter: appBlur ? 'blur(12px)' : undefined,
+              WebkitBackdropFilter: appBlur ? 'blur(12px)' : undefined,
+              boxShadow: action.isActive ? `0 12px 28px ${accent}22` : 'none',
+            }}
+          >
+            {action.icon ? (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  color: action.isActive ? accent : theme.palette.textMuted,
+                }}
+              >
+                {action.icon}
+              </span>
+            ) : null}
+            <span>{action.label}</span>
+          </button>
+        ))}
+      </div>
+    );
+  }, [
+    accent,
+    appBlur,
+    resolvedAppearance.fonts.ui,
+    theme.palette.border,
+    theme.palette.textMuted,
+    theme.palette.textPrimary,
+    themeRendererShellModel.chrome.utilityActions,
+  ]);
   const themeRendererHost = useMemo<OverlayThemeRendererHost>(() => ({
     appearance: resolvedAppearance,
     theme,
@@ -3483,13 +3553,13 @@ function App() {
     openSettings: handleOpenSettings,
     renderDefaultChromeSurface: () => chromeBar,
     renderChromeBar: () => chromeBar,
-    renderDefaultNavigationSurface: () => activeThemeRendererSurfaceOwnership?.launcher ? null : defaultNavigationSurface,
+    renderUtilityActionsSurface: () => themeRendererUtilityActionSurface,
+    renderDefaultNavigationSurface: () => defaultNavigationSurface,
     renderPanelSurface: renderManagedPanelSurface,
-    renderPinnedPanels: (side) => activeThemeRendererSurfaceOwnership?.pinnedPanels ? null : renderPinnedPanelSurface(side),
+    renderPinnedPanels: renderPinnedPanelSurface,
     renderDefaultContentSurface: () => defaultContentSurface,
     renderDefaultShellBody: () => themeRendererDefaultShellBody,
   }), [
-    activeThemeRendererSurfaceOwnership,
     activeLayoutProfile,
     activePanelId,
     activeWallpaper,
@@ -3521,6 +3591,7 @@ function App() {
     theme,
     themeRendererPanels,
     themeRendererShellModel,
+    themeRendererUtilityActionSurface,
     themeWallpaper,
     usesInsetContentShell,
     usesNavigationSidebar,

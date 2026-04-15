@@ -7,7 +7,9 @@ import type {
 } from '../generated/tauri';
 import {
   normalizeExplorerThemeRecipe,
+  resolveExplorerThemeRecipe,
   type OverlayExplorerThemeRecipe,
+  type ResolvedExplorerThemeRecipe,
 } from './explorerTheme';
 import {
   normalizeWorkbenchThemeRecipe,
@@ -160,6 +162,10 @@ export interface OverlayThemeDefinition {
   compatibility?: OverlayThemeCompatibility;
   workbench?: OverlayWorkbenchThemeRecipe;
   explorer?: OverlayExplorerThemeRecipe;
+  dock?: {
+    workbench?: OverlayWorkbenchThemeRecipe;
+    explorer?: OverlayExplorerThemeRecipe;
+  };
   engineManifest?: ExplorerThemeManifest;
   compiledEngineManifest?: CompiledThemeEngineManifest;
   themeRenderer?: LoadedOverlayThemeRenderer;
@@ -167,14 +173,25 @@ export interface OverlayThemeDefinition {
 
 export interface OverlayAppearanceSelection {
   activeThemeId?: string;
+  activeDockThemeId?: string | null;
+  dockThemeMode?: 'follow-app' | 'override';
   customThemes?: OverlayThemeDefinition[];
   packageThemes?: OverlayThemeDefinition[];
   uiFontFamily?: string;
   monoFontFamily?: string;
   panelTransparency?: number;
+  windowMode?: 'overlay' | 'windowed';
+}
+
+export interface ResolvedOverlayAppearanceChannel {
+  theme: OverlayThemeDefinition;
+  baseTheme: OverlayThemeDefinition;
+  workbenchTheme: ResolvedWorkbenchThemeRecipe;
+  explorerTheme: ResolvedExplorerThemeRecipe;
 }
 
 export interface ResolvedOverlayAppearance {
+  mode: 'overlay' | 'windowed';
   theme: OverlayThemeDefinition;
   baseTheme: OverlayThemeDefinition;
   themes: OverlayThemeDefinition[];
@@ -183,8 +200,11 @@ export interface ResolvedOverlayAppearance {
     mono: string;
   };
   workbenchTheme: ResolvedWorkbenchThemeRecipe;
+  explorerTheme: ResolvedExplorerThemeRecipe;
   cssVars: Record<string, string>;
   panelTransparency: number;
+  app: ResolvedOverlayAppearanceChannel;
+  dock: ResolvedOverlayAppearanceChannel;
 }
 
 export interface OverlayFontOption {
@@ -917,6 +937,147 @@ function mergeThemeAssets(
   };
 }
 
+function normalizeDockThemeOverrides(
+  dock: OverlayThemeDefinition['dock'],
+  fallbackDock: OverlayThemeDefinition['dock'],
+): OverlayThemeDefinition['dock'] | undefined {
+  const workbench = normalizeWorkbenchThemeRecipe(dock?.workbench, fallbackDock?.workbench);
+  const explorer = normalizeExplorerThemeRecipe(dock?.explorer, fallbackDock?.explorer);
+  if (!workbench && !explorer) {
+    return undefined;
+  }
+
+  return {
+    ...(workbench ? { workbench } : {}),
+    ...(explorer ? { explorer } : {}),
+  };
+}
+
+function resolveThemeOrFallback(
+  themeLookup: Map<string, OverlayThemeDefinition>,
+  themeId: string | null | undefined,
+): OverlayThemeDefinition {
+  if (themeId) {
+    const resolved = themeLookup.get(themeId);
+    if (resolved) {
+      return resolved;
+    }
+  }
+
+  return overlayThemePresets[0];
+}
+
+function createDockResolvedThemeDefinition(theme: OverlayThemeDefinition): OverlayThemeDefinition {
+  if (!theme.dock?.workbench && !theme.dock?.explorer) {
+    return normalizeThemeDefinition(theme);
+  }
+
+  return normalizeThemeDefinition({
+    ...theme,
+    workbench: normalizeWorkbenchThemeRecipe(theme.dock?.workbench, theme.workbench),
+    explorer: normalizeExplorerThemeRecipe(theme.dock?.explorer, theme.explorer),
+  }, theme);
+}
+
+function createResolvedCssVars(args: {
+  theme: OverlayThemeDefinition;
+  fonts: {
+    ui: string;
+    mono: string;
+  };
+  panelTransparency: number;
+  workbenchTheme: ResolvedWorkbenchThemeRecipe;
+}): Record<string, string> {
+  const { theme, fonts, panelTransparency, workbenchTheme } = args;
+  return {
+    '--overlay-font-ui': fonts.ui,
+    '--overlay-font-mono': fonts.mono,
+    '--overlay-bg-app': theme.palette.appBackground,
+    '--overlay-bg-app-alt': theme.palette.appBackgroundAlt,
+    '--overlay-bg-shell': theme.palette.shellBackground,
+    '--overlay-bg-shell-solid': theme.palette.shellBackgroundSolid,
+    '--overlay-bg-topbar': theme.palette.topBarBackground,
+    '--overlay-bg-topbar-menu': theme.palette.topBarMenuBackground,
+    '--overlay-bg-sidebar': theme.palette.sidebarBackground,
+    '--overlay-bg-panel': theme.palette.panelBackground,
+    '--overlay-bg-panel-alt': theme.palette.panelAltBackground,
+    '--overlay-bg-card': theme.palette.cardBackground,
+    '--overlay-bg-card-hover': theme.palette.cardHoverBackground,
+    '--overlay-bg-context': theme.palette.contextMenuBackground,
+    '--overlay-bg-input': theme.palette.inputBackground,
+    '--overlay-bg-terminal': theme.palette.terminalBackground,
+    '--overlay-bg-selection': theme.palette.selectionBackground,
+    '--overlay-bg-scrim': theme.palette.scrimBackground,
+    '--overlay-text-primary': theme.palette.textPrimary,
+    '--overlay-text-secondary': theme.palette.textSecondary,
+    '--overlay-text-muted': theme.palette.textMuted,
+    '--overlay-text-dim': theme.palette.textDim,
+    '--overlay-text-inverse': theme.palette.textInverse,
+    '--overlay-border': theme.palette.border,
+    '--overlay-border-strong': theme.palette.borderStrong,
+    '--overlay-accent': theme.palette.accent,
+    '--overlay-accent-soft': theme.palette.accentSoft,
+    '--overlay-accent-contrast': theme.palette.accentContrast,
+    '--overlay-success': theme.palette.success,
+    '--overlay-warning': theme.palette.warning,
+    '--overlay-danger': theme.palette.danger,
+    '--overlay-info': theme.palette.info,
+    '--overlay-note': theme.palette.note,
+    '--overlay-todo': theme.palette.todo,
+    '--overlay-bug': theme.palette.bug,
+    '--overlay-prompt': theme.palette.prompt,
+    '--overlay-background-image': theme.effects.backgroundImage,
+    '--overlay-background-size': theme.effects.backgroundSize,
+    '--overlay-background-position': theme.effects.backgroundPosition,
+    '--overlay-shadow': theme.effects.shadow,
+    '--overlay-overlay-shadow': theme.effects.overlayShadow,
+    '--overlay-panel-transparency': String(panelTransparency),
+    '--overlay-panel-opacity': formatAlphaComponent(1 - panelTransparency),
+    '--overlay-density': theme.presentation?.density ?? 'comfortable',
+    '--overlay-chrome-style': theme.presentation?.chromeStyle ?? 'floating',
+    '--overlay-icon-style': theme.presentation?.iconStyle ?? 'vector',
+    '--overlay-motion-style': theme.presentation?.motionStyle ?? 'fluid',
+    '--overlay-corner-radius': String(theme.presentation?.cornerRadius ?? 18),
+    '--overlay-panel-spacing': String(theme.presentation?.panelSpacing ?? 12),
+    ...workbenchTheme.cssVars,
+    ...(theme.cssVars ?? {}),
+  };
+}
+
+function resolveAppearanceChannel(args: {
+  baseTheme: OverlayThemeDefinition;
+  themes: OverlayThemeDefinition[];
+  fonts: {
+    ui: string;
+    mono: string;
+  };
+  panelTransparency: number;
+}): ResolvedOverlayAppearanceChannel {
+  const { baseTheme, themes, fonts, panelTransparency } = args;
+  const theme = applyPanelTransparency(baseTheme, panelTransparency);
+  const workbenchTheme = resolveWorkbenchThemeRecipe(baseTheme);
+  const explorerTheme = resolveExplorerThemeRecipe({
+    mode: 'windowed',
+    theme,
+    baseTheme,
+    themes,
+    fonts,
+    workbenchTheme,
+    explorerTheme: undefined as unknown as ResolvedExplorerThemeRecipe,
+    cssVars: {},
+    panelTransparency,
+    app: undefined as unknown as ResolvedOverlayAppearanceChannel,
+    dock: undefined as unknown as ResolvedOverlayAppearanceChannel,
+  });
+
+  return {
+    theme,
+    baseTheme,
+    workbenchTheme,
+    explorerTheme,
+  };
+}
+
 export function normalizeThemeDefinition(
   theme: Partial<OverlayThemeDefinition>,
   fallbackTheme?: OverlayThemeDefinition,
@@ -984,6 +1145,7 @@ export function normalizeThemeDefinition(
     },
     workbench: normalizeWorkbenchThemeRecipe(theme.workbench, fallback.workbench),
     explorer: normalizeExplorerThemeRecipe(theme.explorer, fallback.explorer),
+    dock: normalizeDockThemeOverrides(theme.dock, fallback.dock),
     engineManifest,
     compiledEngineManifest,
   };
@@ -1019,81 +1181,60 @@ export function resolveOverlayAppearance(selection?: OverlayAppearanceSelection)
   const customThemes = (selection?.customThemes ?? []).map(theme => normalizeThemeDefinition(theme));
   const packageThemes = (selection?.packageThemes ?? []).map(theme => normalizeThemeDefinition(theme, presetMap.get(theme.extendsThemeId ?? '') ?? undefined));
   const activeThemeId = selection?.activeThemeId ?? 'operator';
+  const activeDockThemeId = typeof selection?.activeDockThemeId === 'string'
+    ? selection.activeDockThemeId.trim() || null
+    : selection?.activeDockThemeId === null
+      ? null
+      : null;
+  const dockThemeMode = selection?.dockThemeMode === 'override' ? 'override' : 'follow-app';
+  const windowMode = selection?.windowMode === 'overlay' ? 'overlay' : 'windowed';
   const panelTransparency = clampOverlayVisualControlValue('panelTransparency', selection?.panelTransparency ?? 0);
   const themeLookup = new Map<string, OverlayThemeDefinition>([
     ...overlayThemePresets.map(theme => [theme.id, theme] as const),
     ...packageThemes.map(theme => [theme.id, theme] as const),
     ...customThemes.map(theme => [theme.id, theme] as const),
   ]);
-
-  const baseTheme = themeLookup.get(activeThemeId) ?? overlayThemePresets[0];
-  const theme = applyPanelTransparency(baseTheme, panelTransparency);
-  const workbenchTheme = resolveWorkbenchThemeRecipe(theme);
+  const themes = [...overlayThemePresets, ...packageThemes, ...customThemes];
+  const appBaseTheme = resolveThemeOrFallback(themeLookup, activeThemeId);
+  const dockSourceTheme = dockThemeMode === 'override'
+    ? resolveThemeOrFallback(themeLookup, activeDockThemeId)
+    : appBaseTheme;
+  const dockBaseTheme = createDockResolvedThemeDefinition(dockSourceTheme);
   const fonts = {
-    ui: selection?.uiFontFamily?.trim() || baseTheme.fonts?.ui || defaultUiFont,
-    mono: selection?.monoFontFamily?.trim() || baseTheme.fonts?.mono || defaultMonoFont,
+    ui: selection?.uiFontFamily?.trim() || appBaseTheme.fonts?.ui || defaultUiFont,
+    mono: selection?.monoFontFamily?.trim() || appBaseTheme.fonts?.mono || defaultMonoFont,
   };
+  const app = resolveAppearanceChannel({
+    baseTheme: appBaseTheme,
+    themes,
+    fonts,
+    panelTransparency,
+  });
+  const dock = resolveAppearanceChannel({
+    baseTheme: dockBaseTheme,
+    themes,
+    fonts,
+    panelTransparency,
+  });
+  const activeChannel = windowMode === 'overlay' ? dock : app;
 
   return {
-    theme,
-    baseTheme,
-    themes: [...overlayThemePresets, ...packageThemes, ...customThemes],
+    mode: windowMode,
+    theme: activeChannel.theme,
+    baseTheme: activeChannel.baseTheme,
+    themes,
     fonts,
-    workbenchTheme,
+    workbenchTheme: activeChannel.workbenchTheme,
+    explorerTheme: activeChannel.explorerTheme,
     panelTransparency,
-    cssVars: {
-      '--overlay-font-ui': fonts.ui,
-      '--overlay-font-mono': fonts.mono,
-      '--overlay-bg-app': theme.palette.appBackground,
-      '--overlay-bg-app-alt': theme.palette.appBackgroundAlt,
-      '--overlay-bg-shell': theme.palette.shellBackground,
-      '--overlay-bg-shell-solid': theme.palette.shellBackgroundSolid,
-      '--overlay-bg-topbar': theme.palette.topBarBackground,
-      '--overlay-bg-topbar-menu': theme.palette.topBarMenuBackground,
-      '--overlay-bg-sidebar': theme.palette.sidebarBackground,
-      '--overlay-bg-panel': theme.palette.panelBackground,
-      '--overlay-bg-panel-alt': theme.palette.panelAltBackground,
-      '--overlay-bg-card': theme.palette.cardBackground,
-      '--overlay-bg-card-hover': theme.palette.cardHoverBackground,
-      '--overlay-bg-context': theme.palette.contextMenuBackground,
-      '--overlay-bg-input': theme.palette.inputBackground,
-      '--overlay-bg-terminal': theme.palette.terminalBackground,
-      '--overlay-bg-selection': theme.palette.selectionBackground,
-      '--overlay-bg-scrim': theme.palette.scrimBackground,
-      '--overlay-text-primary': theme.palette.textPrimary,
-      '--overlay-text-secondary': theme.palette.textSecondary,
-      '--overlay-text-muted': theme.palette.textMuted,
-      '--overlay-text-dim': theme.palette.textDim,
-      '--overlay-text-inverse': theme.palette.textInverse,
-      '--overlay-border': theme.palette.border,
-      '--overlay-border-strong': theme.palette.borderStrong,
-      '--overlay-accent': theme.palette.accent,
-      '--overlay-accent-soft': theme.palette.accentSoft,
-      '--overlay-accent-contrast': theme.palette.accentContrast,
-      '--overlay-success': theme.palette.success,
-      '--overlay-warning': theme.palette.warning,
-      '--overlay-danger': theme.palette.danger,
-      '--overlay-info': theme.palette.info,
-      '--overlay-note': theme.palette.note,
-      '--overlay-todo': theme.palette.todo,
-      '--overlay-bug': theme.palette.bug,
-      '--overlay-prompt': theme.palette.prompt,
-      '--overlay-background-image': theme.effects.backgroundImage,
-      '--overlay-background-size': theme.effects.backgroundSize,
-      '--overlay-background-position': theme.effects.backgroundPosition,
-      '--overlay-shadow': theme.effects.shadow,
-      '--overlay-overlay-shadow': theme.effects.overlayShadow,
-      '--overlay-panel-transparency': String(panelTransparency),
-      '--overlay-panel-opacity': formatAlphaComponent(1 - panelTransparency),
-      '--overlay-density': theme.presentation?.density ?? 'comfortable',
-      '--overlay-chrome-style': theme.presentation?.chromeStyle ?? 'floating',
-      '--overlay-icon-style': theme.presentation?.iconStyle ?? 'vector',
-      '--overlay-motion-style': theme.presentation?.motionStyle ?? 'fluid',
-      '--overlay-corner-radius': String(theme.presentation?.cornerRadius ?? 18),
-      '--overlay-panel-spacing': String(theme.presentation?.panelSpacing ?? 12),
-      ...workbenchTheme.cssVars,
-      ...(theme.cssVars ?? {}),
-    },
+    app,
+    dock,
+    cssVars: createResolvedCssVars({
+      theme: activeChannel.theme,
+      fonts,
+      panelTransparency,
+      workbenchTheme: activeChannel.workbenchTheme,
+    }),
   };
 }
 

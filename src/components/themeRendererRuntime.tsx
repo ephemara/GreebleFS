@@ -100,6 +100,7 @@ export interface OverlayThemeRendererHost {
   openSettings: () => void;
   renderDefaultChromeSurface: () => React.ReactNode;
   renderChromeBar: () => React.ReactNode;
+  renderUtilityActionsSurface: () => React.ReactNode;
   renderDefaultNavigationSurface: () => React.ReactNode;
   renderPanelSurface: (
     panelId: string,
