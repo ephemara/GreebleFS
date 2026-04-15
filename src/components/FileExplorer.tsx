@@ -115,6 +115,10 @@ import {
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ExplorerSideRail } from './explorer/ExplorerSideRail';
 import { ExplorerChromeSurface } from './explorer/ExplorerChromeSurface';
+import {
+  buildConstellationOrbitBands,
+  type ConstellationOrbitBand,
+} from './explorer/constellationLayout';
 import { ExplorerTaskStatusBadge } from './explorer/ExplorerTaskStatusBadge';
 import { removeExplorerBookmarksByPath, upsertExplorerBookmark } from './explorer/explorerRailState';
 import {
@@ -923,64 +927,6 @@ function buildAdaptiveSemanticBands(
   return bands;
 }
 
-function buildConstellationOrbitBands(
-  bands: AdaptiveSemanticBand[],
-  selectedPaths: Set<string>,
-  density: number,
-): ConstellationOrbitBand[] {
-  const normalizedDensity = Math.min(1, Math.max(0, density));
-  const maxVisibleNodes = Math.max(6, Math.min(24, Math.round(6 + normalizedDensity * 18)));
-
-  return bands
-    .filter((band) => band.entries.length > 0)
-    .map((band) => {
-      const visibleEntries = band.entries.slice(0, maxVisibleNodes);
-      const hubBaseSize = band.dominant ? 46 : 42;
-      const nodeBaseSize = band.dominant ? 34 : 30;
-      const nodes = visibleEntries.map((entry, index) => {
-        const entryHash = hashExplorerString(entry.path);
-        const jitterAngle = ((entryHash % 41) / 41) * 0.44 - 0.22;
-        
-        // Use hash-based stable visual distribution to prevent everything jumping when an item becomes selected/unselected
-        const ringIndex = (entryHash % 4);
-        const stableAngleMultiplier = (entryHash % 360) / 360;
-        const angle = stableAngleMultiplier * Math.PI * 2 + jitterAngle;
-        
-        const radiusX = 18 + ringIndex * 10 + normalizedDensity * 12 + ((entryHash >> 2) % 7);
-        const radiusY = 12 + ringIndex * 8 + normalizedDensity * 10 + ((entryHash >> 5) % 5);
-        const x = clampConstellationCoordinate(50 + Math.cos(angle) * radiusX, 11, 89);
-        const y = clampConstellationCoordinate(50 + Math.sin(angle) * radiusY, 12, 88);
-        const emphasis = selectedPaths.has(entry.path)
-          ? 'selected'
-          : entry.is_dir || (band.dominant && index < 3)
-            ? 'anchor'
-            : 'satellite';
-        const size = Math.max(
-          26,
-          Math.round(
-            (emphasis === 'anchor' ? hubBaseSize : emphasis === 'selected' ? hubBaseSize - 2 : nodeBaseSize)
-            - normalizedDensity * 8
-            - ringIndex * 2,
-          ),
-        );
-        return {
-          entry,
-          x,
-          y,
-          size,
-          labelVisible: normalizedDensity > 0.28 || emphasis !== 'satellite' || index < 3,
-          emphasis,
-        } satisfies ConstellationOrbitNode;
-      });
-
-      return {
-        ...band,
-        nodes,
-        hiddenEntryCount: Math.max(0, band.entries.length - visibleEntries.length),
-      };
-    });
-}
-
 function buildTimelineSurfaceBands(
   entries: FileEntry[],
   density: number,
@@ -1277,19 +1223,6 @@ function buildTimelineSurfaceBands(
   }
 
   return timelineBands;
-}
-
-function hashExplorerString(value: string): number {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = ((hash << 5) - hash) + value.charCodeAt(index);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
-
-function clampConstellationCoordinate(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
 }
 
 function isLikelyExplorerPathInput(value: string): boolean {
@@ -1646,20 +1579,6 @@ interface AdaptiveSemanticBand {
   description: string;
   dominant: boolean;
   entries: FileEntry[];
-}
-
-interface ConstellationOrbitNode {
-  entry: FileEntry;
-  x: number;
-  y: number;
-  size: number;
-  labelVisible: boolean;
-  emphasis: 'anchor' | 'selected' | 'satellite';
-}
-
-interface ConstellationOrbitBand extends AdaptiveSemanticBand {
-  nodes: ConstellationOrbitNode[];
-  hiddenEntryCount: number;
 }
 
 interface TimelineSurfaceBand {
@@ -8055,7 +7974,9 @@ export function FileExplorer({
   };
 
   const renderConstellationOrbitBand = (band: ConstellationOrbitBand) => {
-    const fieldHeight = band.dominant ? 280 : 236;
+    const fieldHeight = band.dominant
+      ? Math.round(258 + Math.min(92, band.nodes.length * 7) + experimentalDensity * 40)
+      : Math.round(220 + Math.min(74, band.nodes.length * 6) + experimentalDensity * 32);
     return (
       <section
         key={band.id}
@@ -8157,6 +8078,9 @@ export function FileExplorer({
               <div
                 key={node.entry.path}
                 draggable
+                data-overlay-constellation-band={band.id}
+                data-overlay-constellation-node={node.entry.path}
+                data-overlay-constellation-emphasis={node.emphasis}
                 data-overlay-drag-source="file"
                 onDragStart={e => onDragStart(e, node.entry)}
                 onDragEnd={onDragEnd}
