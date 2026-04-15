@@ -72,6 +72,7 @@ function RepositoryPickerProofPage() {
             textMuted: appearance.theme.palette.textMuted,
           }}
           appearance={appearance}
+          onOpenInFilesystemAquarium={() => {}}
           onOpenInTerminal={() => {}}
           onAddBookmark={async () => {}}
           repositoryPicker={{

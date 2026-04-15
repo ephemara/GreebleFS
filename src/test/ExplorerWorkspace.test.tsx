@@ -55,6 +55,7 @@ describe('ExplorerWorkspace', () => {
           border: '#2a2f3a',
           textMuted: '#9aa4b2',
         }}
+        onOpenInFilesystemAquarium={() => undefined}
         onOpenInTerminal={() => undefined}
         onAddBookmark={() => undefined}
       />,

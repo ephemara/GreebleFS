@@ -118,6 +118,7 @@ function renderExplorer(options: { layoutMode?: 'full' | 'compact-dock' } = {}) 
         }}
         appearance={appearance}
         layoutMode={options.layoutMode}
+        onOpenInFilesystemAquarium={() => {}}
         onOpenInTerminal={() => {}}
         onAddBookmark={async () => {}}
       />,
@@ -294,6 +295,7 @@ describe('FileExplorer view modes', () => {
         }}
         appearance={appearance}
         layoutMode="compact-dock"
+        onOpenInFilesystemAquarium={() => {}}
         onOpenInTerminal={() => {}}
         onAddBookmark={async () => {}}
       />,
@@ -315,6 +317,7 @@ describe('FileExplorer view modes', () => {
         }}
         appearance={appearance}
         layoutMode="full"
+        onOpenInFilesystemAquarium={() => {}}
         onOpenInTerminal={() => {}}
         onAddBookmark={async () => {}}
       />,

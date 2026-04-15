@@ -1,5 +1,56 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Explorer To Filesystem Aquarium Handoff
+
+- Explorer can now hand a folder or file context directly into the `filesystem-aquarium` plugin instead of making the user paste a path manually.
+- Durable implementation shape:
+  - `src/runtime/filesystemAquariumBridge.ts` is the shared handoff contract. It normalizes the requested path, persists the latest request in local storage, and broadcasts a window event so the plugin can react immediately if it is already mounted.
+  - `src/App.tsx` owns panel activation for the handoff. Opening Aquarium from Explorer now ensures the `filesystem-aquarium` panel is visible, active, and undismissed before showing the shell if needed.
+  - `src/panels/panelRegistry.tsx`, `src/components/explorer/ExplorerWorkspace.tsx`, and `src/components/FileExplorer.tsx` now route the `onOpenInFilesystemAquarium()` intent through the explorer surface.
+  - Explorer exposes the handoff from three user-facing entry points:
+    - file or folder context menu
+    - empty-space folder context menu
+    - current-location toolbar chip
+  - The shipped `plugins/filesystem-aquarium/dist/index.tsx` runtime reads the persisted request on mount and listens for the handoff event, so the panel can retarget to the requested habitat without a refresh.
+- Validation:
+  - passed: `bunx vitest run src/test/filesystemAquariumBridge.test.ts src/test/ExplorerWorkspace.test.tsx src/test/panelRegistry.test.tsx`
+  - passed: `bunx tsc --noEmit --skipLibCheck 2>&1 | rg "filesystemAquariumBridge|handleOpenInFilesystemAquarium|OpenInFilesystemAquarium|panelDefinitions|FILESYSTEM_AQUARIUM_PANEL_ID|src/test/fileExplorer.viewModes.test.tsx\\(287|src/test/fileExplorer.viewModes.test.tsx\\(308"`
+    - interpretation: no output means the new Aquarium-specific symbols are no longer surfacing targeted TS errors in the noisy workspace typecheck.
+  - passed: `cmp -s plugins/filesystem-aquarium/dist/index.tsx src-tauri/plugins/filesystem-aquarium/dist/index.tsx && echo mirrored`
+  - repo note: the broad `src/test/fileExplorer.viewModes.test.tsx` suite still has pre-existing failures unrelated to the Aquarium handoff and is not a reliable green gate yet.
+
+## 2026-04-15 — Screenshot Native Export / Capture Isolation / Editor Controls
+
+- Moved annotated screenshot export out of the browser canvas path and into `src-tauri/src/screenshot_commands.rs`.
+- Durable reason:
+  annotated save/copy had been compositing against the preview-sized data URL inside `ScreenshotsManager`, which meant any annotated output was silently capped to preview resolution instead of the full cached capture.
+- New native screenshot contract:
+  - `screenshot_export_annotated` now accepts typed annotation payloads plus an optional crop region
+  - Rust composites annotations directly onto the cached full-resolution `RgbaImage`
+  - annotated save/copy now uses the same native image/clipboard path as the plain capture workflow
+- Cross-platform capture isolation improved:
+  - Windows still uses `WDA_EXCLUDEFROMCAPTURE`
+  - non-Windows capture preview now temporarily hides/restores the app window around monitor capture instead of doing nothing
+- `src/components/ScreenshotsManager.tsx` no longer writes annotated files or clipboard images through browser APIs.
+- The screenshot editor now has a real selection interaction model:
+  - drag inside the selection moves it
+  - drag handles resize it
+  - arrow keys nudge it
+  - `Alt` + arrows resize it
+  - `Ctrl/Cmd + A` selects the full preview
+- Added focused proof:
+  - `src/test/screenshotsManager.test.tsx` now covers native annotated export, keyboard move/resize, and pointer-handle resize behavior
+  - `src/test/screenshotsUtils.test.ts` now covers resize-handle hit detection
+  - Rust tests now cover annotated rectangle rendering and crop-region behavior
+- Validation:
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml screenshot_commands`
+  - passed: `bunx vitest run src/test/screenshotsManager.test.tsx src/test/screenshotsUtils.test.ts`
+  - passed: `bun run build`
+  - live smoke: `timeout 75s bun run tauri dev` reached Vite-ready state and launched `target/debug/greeble`; verified the native process was running with `ps -eo pid,cmd | rg 'target/debug/greeble|greeble$'`
+- Remaining risk:
+  the live Tauri smoke proved the desktop runtime boots with the new screenshot path, but it did not yet click through a fully automated real capture session inside the desktop window. A future proof harness should drive the screenshot panel in the running Tauri app, not only the jsdom/browser-mocked tests.
+
 ## 2026-04-15 — Vibe Capsule Flagship Plugin Pass
 
 - Added a new built-in package plugin under `plugins/vibe-capsule/`:

@@ -2352,7 +2352,7 @@ function App() {
     return () => window.clearInterval(interval);
   }, [isOverlayVisible, liveReloadEnabled, refreshThemePackages]);
 
-  const panelDefinitions = useMemo<OverlayPanelDefinition[]>(
+  const panelDefinitions: OverlayPanelDefinition[] = useMemo(
     () => [
       ...createBuiltInPanelDefinitions({
         appearance: resolvedAppearance,
@@ -2674,6 +2674,23 @@ function App() {
     });
   }, [activeLayoutProfile.id, availablePanelIds, pinnedPanelIds]);
 
+  const handleOpenInFilesystemAquarium: (path: string) => void = useCallback((path: string) => {
+    const trimmedPath = path.trim();
+    if (!trimmedPath) {
+      return;
+    }
+
+    requestFilesystemAquariumOpen(trimmedPath);
+    updateActiveLayoutPanelState(current => ({
+      openPanelIds: uniquePanelIds([...current.openPanelIds, FILESYSTEM_AQUARIUM_PANEL_ID]),
+      activePanelId: FILESYSTEM_AQUARIUM_PANEL_ID,
+      dismissedPanelIds: current.dismissedPanelIds.filter(id => id !== FILESYSTEM_AQUARIUM_PANEL_ID),
+    }));
+    if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
+      void showCurrentPresentation();
+    }
+  }, [showCurrentPresentation, updateActiveLayoutPanelState]);
+
   const handleSelectPanel = useCallback((panelId: string | null) => {
     if (!panelId || pinnedPanelIds.includes(panelId) || !panelLookup.has(panelId)) {
       return;
@@ -2759,19 +2776,6 @@ function App() {
       dismissedPanelIds: current.dismissedPanelIds.filter(id => id !== panelId),
     }));
   }, [panelLookup, pinnedPanelIds, updateActiveLayoutPanelState]);
-
-  const handleOpenInFilesystemAquarium = useCallback((path: string) => {
-    const trimmedPath = path.trim();
-    if (!trimmedPath) {
-      return;
-    }
-
-    requestFilesystemAquariumOpen(trimmedPath);
-    handleActivatePanel(FILESYSTEM_AQUARIUM_PANEL_ID);
-    if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
-      void showCurrentPresentation();
-    }
-  }, [handleActivatePanel, showCurrentPresentation]);
 
   const handleOpenTerminalPanel = useCallback(() => {
     const now = Date.now();
