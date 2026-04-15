@@ -764,7 +764,7 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
             ...state.workspace.activeTabIdByPane,
             [pane]: args.activate === false ? state.workspace.activeTabIdByPane[pane] : nextTab.id,
           },
-          focusedPane: pane,
+          focusedPane: args.activate === false ? state.workspace.focusedPane : pane,
           nextTabOrdinal: state.workspace.nextTabOrdinal + 1,
         }, nextSessions);
         return {

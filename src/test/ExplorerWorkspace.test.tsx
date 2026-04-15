@@ -169,13 +169,6 @@ describe('ExplorerWorkspace', () => {
   });
 
   it('routes commander sync, copy, and target refresh through the workspace/file-explorer bridge', async () => {
-    const store = useExplorerStore.getState();
-    const targetTab = store.createWorkspaceTab({
-      pane: 'pane-2',
-    });
-    store.setWorkspaceLayoutMode('split');
-    store.setFocusedPane('pane-1');
-
     render(
       <ExplorerWorkspace
         theme={{
@@ -191,6 +184,15 @@ describe('ExplorerWorkspace', () => {
       />,
     );
 
+    fireEvent.click(getWorkspaceButton('workspaceSplitToggle') as HTMLButtonElement);
+    await waitFor(() => {
+      expect(renderedFileExplorerPropsByInstanceId.has(PRIMARY_EXPLORER_INSTANCE_ID)).toBe(true);
+      expect(renderedFileExplorerPropsByInstanceId.size).toBe(2);
+    });
+    const targetInstanceId = [...renderedFileExplorerPropsByInstanceId.keys()]
+      .find((instanceId) => instanceId !== PRIMARY_EXPLORER_INSTANCE_ID);
+    expect(targetInstanceId).toBeTruthy();
+
     emitRuntimeSnapshot(PRIMARY_EXPLORER_INSTANCE_ID, {
       currentPath: '/workspace/source',
       currentPathIsCloud: false,
@@ -202,10 +204,14 @@ describe('ExplorerWorkspace', () => {
         },
       ],
     });
-    emitRuntimeSnapshot(targetTab.instanceId, {
+    emitRuntimeSnapshot(targetInstanceId as string, {
       currentPath: '/workspace/destination',
       currentPathIsCloud: false,
       selectedEntries: [],
+    });
+
+    await waitFor(() => {
+      expect(getWorkspaceControl('workspaceCommanderSummary')?.textContent).toContain('1 selected -> P2 · destination');
     });
 
     const syncButton = getWorkspaceButton('workspaceSyncPath');
@@ -215,10 +221,12 @@ describe('ExplorerWorkspace', () => {
     expect(syncButton).not.toBeNull();
     expect(copyButton).not.toBeNull();
     expect(linkButton).not.toBeNull();
+    expect(syncButton?.disabled).toBe(false);
+    expect(copyButton?.disabled).toBe(false);
 
     fireEvent.click(syncButton as HTMLButtonElement);
     await waitFor(() => {
-      expect(getRenderedFileExplorerProps(targetTab.instanceId).externalNavigationRequest).toMatchObject({
+      expect(getRenderedFileExplorerProps(targetInstanceId as string).externalNavigationRequest).toMatchObject({
         path: '/workspace/source',
       });
     });
@@ -240,7 +248,7 @@ describe('ExplorerWorkspace', () => {
       success: true,
     });
     await waitFor(() => {
-      expect(getRenderedFileExplorerProps(targetTab.instanceId).externalRefreshRequest).toBeTruthy();
+      expect(getRenderedFileExplorerProps(targetInstanceId as string).externalRefreshRequest).toBeTruthy();
     });
 
     fireEvent.click(linkButton as HTMLButtonElement);
@@ -257,7 +265,7 @@ describe('ExplorerWorkspace', () => {
     });
 
     await waitFor(() => {
-      expect(getRenderedFileExplorerProps(targetTab.instanceId).externalNavigationRequest).toMatchObject({
+      expect(getRenderedFileExplorerProps(targetInstanceId as string).externalNavigationRequest).toMatchObject({
         path: '/workspace/source/materials',
       });
     });

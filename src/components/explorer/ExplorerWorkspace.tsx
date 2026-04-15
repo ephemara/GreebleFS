@@ -411,8 +411,15 @@ export function ExplorerWorkspace({
   const ensureWorkspaceLayout = useCallback((nextLayoutMode: ExplorerWorkspaceLayoutMode) => {
     const nextVisiblePaneIds = getExplorerWorkspaceVisiblePaneIds(nextLayoutMode);
     const sourceInstanceId = getPreferredSourceInstanceId();
+    setWorkspaceLayoutMode(nextLayoutMode);
+    setFocusedPane(nextVisiblePaneIds.includes(activePane) ? activePane : nextVisiblePaneIds[0] ?? 'pane-1');
+    const nextWorkspaceTabs = useExplorerStore.getState().workspace.tabs;
+    const nextTabsByPane = createEmptyExplorerPaneRecord<ExplorerTabSnapshot[]>(() => []);
+    for (const tab of nextWorkspaceTabs) {
+      nextTabsByPane[tab.pane].push(tab);
+    }
     for (const paneId of nextVisiblePaneIds) {
-      if (!activeTabByPane[paneId]) {
+      if (nextTabsByPane[paneId].length === 0) {
         createWorkspaceTab({
           sourceInstanceId,
           pane: paneId,
@@ -420,11 +427,8 @@ export function ExplorerWorkspace({
         });
       }
     }
-    setWorkspaceLayoutMode(nextLayoutMode);
-    setFocusedPane(nextVisiblePaneIds.includes(activePane) ? activePane : nextVisiblePaneIds[0] ?? 'pane-1');
   }, [
     activePane,
-    activeTabByPane,
     createWorkspaceTab,
     getPreferredSourceInstanceId,
     setFocusedPane,

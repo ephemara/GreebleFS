@@ -224,6 +224,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - each tab maps to a distinct `ExplorerInstanceId`, so the existing `FileExplorer` session model still owns path/history/search/preview state
   - `explorerStore.ts` persists the workspace snapshot (`tabs`, pane activity, layout mode, focused pane, column split ratio, row split ratio) alongside the underlying named sessions
   - workspace normalization is collapse-safe: when the UI drops from `quad` to `split` or `single`, tabs from hidden panes are reassigned into visible panes instead of being stranded in invisible left/right slots
+  - commander-style cross-pane actions are an explicit bridge, not header-owned filesystem logic: `FileExplorer.tsx` publishes live pane path/selection snapshots upward, and `ExplorerWorkspace.tsx` sends navigation / refresh / selection-transfer requests back down into the active explorer instance
 - `FileExplorer.tsx` shares directory/search result caches across explorer sessions so alternate surfaces do not duplicate backend reads unless a mutation invalidates the cache.
 - `FileExplorer.tsx` now settle-batches viewport enrichment work so visible-entry size measurement and native-icon resolution only launch after a short scroll idle window instead of hammering Tauri on every transient virtualized viewport shift.
 - `FileExplorer.tsx` owns both file-centric actions and explorer-local shell controls, so the shared top bar stays panel-agnostic while the explorer keeps its mode/source/preview controls adjacent to the path/search field.

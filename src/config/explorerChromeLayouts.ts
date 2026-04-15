@@ -48,6 +48,7 @@ export type BuiltInExplorerChromeControlId =
   | 'pasteClipboard'
   | 'workspacePaneCounts'
   | 'workspaceMode'
+  | 'workspaceCommanderSummary'
   | 'workspaceLayoutHint'
   | 'workspaceTabs'
   | 'workspaceNewTab'
@@ -55,6 +56,10 @@ export type BuiltInExplorerChromeControlId =
   | 'workspaceFocusLeft'
   | 'workspaceFocusRight'
   | 'workspaceMoveTab'
+  | 'workspaceSyncPath'
+  | 'workspaceLinkNavigation'
+  | 'workspaceCopyToPane'
+  | 'workspaceMoveToPane'
   | 'workspaceSwapPane'
   | 'workspaceSplitToggle'
   | 'workspaceCloseTab'
@@ -300,8 +305,11 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       workspaceMode: {
         workspaceHeader: { zone: 'start', order: 20 },
       },
+      workspaceCommanderSummary: {
+        workspaceHeader: { zone: 'start', order: 30, shrink: 1, collapsePriority: 20, overflowEligible: true },
+      },
       workspaceLayoutHint: {
-        workspaceHeader: { zone: 'start', order: 30, shrink: 1, collapsePriority: 40, overflowEligible: true },
+        workspaceHeader: { zone: 'start', order: 40, shrink: 1, collapsePriority: 40, overflowEligible: true },
       },
       workspaceTabs: {
         workspaceHeader: { zone: 'center', order: 10, grow: 1, shrink: 1 },
@@ -320,6 +328,18 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       },
       workspaceMoveTab: {
         workspaceHeader: { zone: 'end', order: 50 },
+      },
+      workspaceSyncPath: {
+        workspaceHeader: { zone: 'end', order: 55 },
+      },
+      workspaceLinkNavigation: {
+        workspaceHeader: { zone: 'end', order: 56 },
+      },
+      workspaceCopyToPane: {
+        workspaceHeader: { zone: 'end', order: 57 },
+      },
+      workspaceMoveToPane: {
+        workspaceHeader: { zone: 'end', order: 58 },
       },
       workspaceSwapPane: {
         workspaceHeader: { zone: 'end', order: 60 },
@@ -492,6 +512,9 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       workspaceMode: {
         workspaceHeader: { zone: 'end', order: 10 },
       },
+      workspaceCommanderSummary: {
+        workspaceHeader: { zone: 'end', order: 15, shrink: 1, collapsePriority: 20, overflowEligible: true },
+      },
       workspaceLayoutHint: {
         workspaceHeader: { zone: 'end', order: 20, shrink: 1, collapsePriority: 40, overflowEligible: true },
       },
@@ -512,6 +535,18 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       },
       workspaceMoveTab: {
         workspaceHeader: { zone: 'end', order: 50 },
+      },
+      workspaceSyncPath: {
+        workspaceHeader: { zone: 'end', order: 55 },
+      },
+      workspaceLinkNavigation: {
+        workspaceHeader: { zone: 'end', order: 56 },
+      },
+      workspaceCopyToPane: {
+        workspaceHeader: { zone: 'end', order: 57 },
+      },
+      workspaceMoveToPane: {
+        workspaceHeader: { zone: 'end', order: 58 },
       },
       workspaceSwapPane: {
         workspaceHeader: { zone: 'end', order: 60 },

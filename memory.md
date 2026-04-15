@@ -1,5 +1,19 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Explorer Commander Bridge / Cross-Pane Power Controls
+
+- The explorer workspace now has first-class commander-style pane actions instead of only passive split layouts.
+- Durable implementation shape:
+  - `src/components/explorer/ExplorerWorkspace.tsx` now exposes cross-pane controls for path sync, linked navigation, copy-to-pane, and move-to-pane on top of the slot-based `1-Up` / `2-Up` / `4-Up` workspace shell.
+  - `src/components/FileExplorer.tsx` now publishes a narrow runtime snapshot upward (`currentPath`, cloud/local state, and selected entries) and accepts explicit workspace commands for navigation, refresh, and selection transfer. This keeps transfer execution in the explorer/native layer instead of duplicating it in workspace chrome.
+  - `src/config/explorerChromeLayouts.ts` now knows about the commander controls, so the workspace header can place them through the existing chrome-layout system instead of hardcoded JSX order.
+  - `src/store/explorerStore.ts` now preserves focus when `createWorkspaceTab({ activate: false })` is used for hidden-pane creation, so cycling into split/quad layouts no longer steals the operator onto a newly spawned pane.
+- Durable product note:
+  - the power-user value here is the loop: split the workspace, keep pane focus stable, sync the target when needed, and copy/move the active selection across panes without bouncing through clipboard-only workflows.
+- Validation:
+  - passed: `bunx vitest run src/test/ExplorerWorkspace.test.tsx src/test/explorerStore.test.ts src/test/fileExplorer.viewModes.test.tsx`
+  - observed no matching TypeScript errors for `ExplorerWorkspace`, `FileExplorer`, `explorerChromeLayouts`, `explorerStore`, or `explorerWorkspaceLayouts` while running `bunx tsc --noEmit --skipLibCheck --pretty false 2>&1 | rg "ExplorerWorkspace|FileExplorer|explorerChromeLayouts|explorerStore|explorerWorkspaceLayouts"`
+
 ## 2026-04-15 — Explorer Workspace Split System / Quad View
 
 - The explorer workspace no longer assumes a hardcoded left/right dual-pane model.

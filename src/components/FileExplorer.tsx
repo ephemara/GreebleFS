@@ -126,7 +126,6 @@ import {
   PRIMARY_EXPLORER_INSTANCE_ID,
   defaultExplorerSession,
   useExplorerStore,
-  type ExplorerClipboardSnapshot,
   type ExplorerDocumentViewMode,
   type ExplorerInstanceId,
 } from '../store/explorerStore';
@@ -357,7 +356,6 @@ type PreviewState =
   | { type: 'model3d'; path: string; format: ModelPreviewFormat; name: string; size: number }
   | { type: 'fallback'; path: string; name: string; label: string; detail?: string };
 interface NewItemState   { visible: boolean; kind: 'file'|'folder'; }
-type ExplorerClipboard = ExplorerClipboardSnapshot;
 type ExplorerDragIntent = 'internal' | 'native-out';
 type ExplorerSortKey = 'name' | 'size' | 'date' | 'type';
 
@@ -2406,6 +2404,11 @@ interface FileExplorerProps {
   instanceId?: ExplorerInstanceId;
   chromeControlSurface?: 'toolbar' | 'topbar';
   focusAddressBarSignal?: number;
+  onWorkspaceRuntimeSnapshotChange?: (snapshot: ExplorerWorkspaceRuntimeSnapshot) => void;
+  onWorkspaceSelectionTransferComplete?: (result: ExplorerWorkspaceSelectionTransferResult) => void;
+  externalNavigationRequest?: ExplorerWorkspaceNavigationRequest | null;
+  externalSelectionTransferRequest?: ExplorerWorkspaceSelectionTransferRequest | null;
+  externalRefreshRequest?: ExplorerWorkspaceRefreshRequest | null;
   repositoryPicker?: {
     active: boolean;
     allowMultiple: boolean;
@@ -2413,6 +2416,44 @@ interface FileExplorerProps {
     onConfirm: (paths: string[]) => void;
     onCancel: () => void;
   } | null;
+}
+
+export interface ExplorerWorkspaceRuntimeSelectionEntry {
+  path: string;
+  name: string;
+  is_dir: boolean;
+}
+
+export interface ExplorerWorkspaceRuntimeSnapshot {
+  instanceId: ExplorerInstanceId;
+  currentPath: string;
+  currentPathIsCloud: boolean;
+  selectedEntries: ExplorerWorkspaceRuntimeSelectionEntry[];
+}
+
+export interface ExplorerWorkspaceNavigationRequest {
+  sequence: number;
+  path: string;
+  pushHistory?: boolean;
+}
+
+export interface ExplorerWorkspaceSelectionTransferRequest {
+  sequence: number;
+  targetDir: string;
+  operation: FileTransferOperation;
+}
+
+export interface ExplorerWorkspaceRefreshRequest {
+  sequence: number;
+}
+
+export interface ExplorerWorkspaceSelectionTransferResult {
+  sequence: number;
+  instanceId: ExplorerInstanceId;
+  targetDir: string;
+  operation: FileTransferOperation;
+  sourcePaths: string[];
+  success: boolean;
 }
 
 export function FileExplorer({
@@ -2428,6 +2469,11 @@ export function FileExplorer({
   instanceId = PRIMARY_EXPLORER_INSTANCE_ID,
   chromeControlSurface = 'toolbar',
   focusAddressBarSignal = 0,
+  onWorkspaceRuntimeSnapshotChange,
+  onWorkspaceSelectionTransferComplete,
+  externalNavigationRequest = null,
+  externalSelectionTransferRequest = null,
+  externalRefreshRequest = null,
   repositoryPicker = null,
 }: FileExplorerProps) {
   const {
@@ -2654,6 +2700,9 @@ export function FileExplorer({
   const [locationBreadcrumbs, setLocationBreadcrumbs] = useState<{ label: string; path: string }[]>([]);
   const [locationParentPath, setLocationParentPath] = useState<string | null>(null);
   const lastFocusAddressBarSignalRef = useRef(focusAddressBarSignal);
+  const lastWorkspaceNavigationSequenceRef = useRef(0);
+  const lastWorkspaceTransferSequenceRef = useRef(0);
+  const lastWorkspaceRefreshSequenceRef = useRef(0);
   useExplorerTaskProgressFeed();
   const explorerTaskProgress = useCurrentExplorerTaskProgress();
 
@@ -3264,6 +3313,31 @@ export function FileExplorer({
   useEffect(() => { refresh(); }, [showHidden]);
 
   useEffect(() => {
+    if (!externalNavigationRequest) {
+      return;
+    }
+    if (externalNavigationRequest.sequence === lastWorkspaceNavigationSequenceRef.current) {
+      return;
+    }
+    lastWorkspaceNavigationSequenceRef.current = externalNavigationRequest.sequence;
+    if (!externalNavigationRequest.path.trim() || externalNavigationRequest.path === currentPath) {
+      return;
+    }
+    void navigate(externalNavigationRequest.path, externalNavigationRequest.pushHistory ?? true);
+  }, [currentPath, externalNavigationRequest, navigate]);
+
+  useEffect(() => {
+    if (!externalRefreshRequest) {
+      return;
+    }
+    if (externalRefreshRequest.sequence === lastWorkspaceRefreshSequenceRef.current) {
+      return;
+    }
+    lastWorkspaceRefreshSequenceRef.current = externalRefreshRequest.sequence;
+    void refresh();
+  }, [externalRefreshRequest, refresh]);
+
+  useEffect(() => {
     if (!currentPath || currentPathIsCloud || !isTauri() || !systemSettings.developerMode) {
       return undefined;
     }
@@ -3433,7 +3507,7 @@ export function FileExplorer({
     updateExplorerSettings,
   ]);
   const pathTagIdsByPath = useMemo(() => new Map(
-    tagMetadata.assignments.map((assignment) => [assignment.path, assignment.tag_ids] as const),
+    tagMetadata.assignments.map((assignment) => [assignment.path, assignment.tagIds] as const),
   ), [tagMetadata.assignments]);
   const filteredEntries = useMemo(
     () => (isSearchActive ? searchResults : entries).filter((entry) => {
@@ -3503,6 +3577,27 @@ export function FileExplorer({
     () => visibleEntries.filter(entry => selected.has(entry.path)),
     [visibleEntries, selected],
   );
+  useEffect(() => {
+    if (!onWorkspaceRuntimeSnapshotChange) {
+      return;
+    }
+    onWorkspaceRuntimeSnapshotChange({
+      instanceId,
+      currentPath,
+      currentPathIsCloud,
+      selectedEntries: selectedEntries.map((entry) => ({
+        path: entry.path,
+        name: entry.name,
+        is_dir: entry.is_dir,
+      })),
+    });
+  }, [
+    currentPath,
+    currentPathIsCloud,
+    instanceId,
+    onWorkspaceRuntimeSnapshotChange,
+    selectedEntries,
+  ]);
   const selectedSizeSummary = useMemo(() => {
     const selectedSizeEntries = selectedEntries
       .map((entry) => entrySizes[entry.path])
@@ -4076,6 +4171,73 @@ export function FileExplorer({
       refresh();
     } catch(e) { setError(String(e)); }
   }, [clipboard, currentPath, refresh, transferIntoDirectory]);
+
+  useEffect(() => {
+    if (!externalSelectionTransferRequest) {
+      return;
+    }
+    if (externalSelectionTransferRequest.sequence === lastWorkspaceTransferSequenceRef.current) {
+      return;
+    }
+    lastWorkspaceTransferSequenceRef.current = externalSelectionTransferRequest.sequence;
+
+    const targetDir = externalSelectionTransferRequest.targetDir.trim();
+    const sourcePaths = selectedEntries.map((entry) => entry.path);
+    if (!targetDir || sourcePaths.length === 0) {
+      onWorkspaceSelectionTransferComplete?.({
+        sequence: externalSelectionTransferRequest.sequence,
+        instanceId,
+        targetDir,
+        operation: externalSelectionTransferRequest.operation,
+        sourcePaths,
+        success: false,
+      });
+      return;
+    }
+
+    void (async () => {
+      try {
+        await transferIntoDirectory(
+          targetDir,
+          sourcePaths,
+          externalSelectionTransferRequest.operation,
+        );
+        if (externalSelectionTransferRequest.operation === 'move') {
+          setSelected(new Set());
+          if (sourcePaths.includes(previewRef.current.path)) {
+            setPreview({ type: 'none', path: '' });
+            setPreviewLoading(false);
+          }
+        }
+        await refresh();
+        onWorkspaceSelectionTransferComplete?.({
+          sequence: externalSelectionTransferRequest.sequence,
+          instanceId,
+          targetDir,
+          operation: externalSelectionTransferRequest.operation,
+          sourcePaths,
+          success: true,
+        });
+      } catch (transferError) {
+        setError(String(transferError));
+        onWorkspaceSelectionTransferComplete?.({
+          sequence: externalSelectionTransferRequest.sequence,
+          instanceId,
+          targetDir,
+          operation: externalSelectionTransferRequest.operation,
+          sourcePaths,
+          success: false,
+        });
+      }
+    })();
+  }, [
+    externalSelectionTransferRequest,
+    instanceId,
+    onWorkspaceSelectionTransferComplete,
+    refresh,
+    selectedEntries,
+    transferIntoDirectory,
+  ]);
 
   // ── Rename ──
   const commitRename = async (newName: string) => {
@@ -4740,7 +4902,6 @@ export function FileExplorer({
 
       const isExplorerFocus = document.activeElement === mainRef.current;
       const selectedEntry = visibleEntries.find(en => selected.has(en.path)) ?? null;
-      const firstSelectedEntry = visibleEntries.find(en => selected.has(en.path)) ?? null;
       const currentFocusIndex = (() => {
         const selectedIndex = visibleEntries.findIndex(entry => selected.has(entry.path));
         if (selectedIndex >= 0) return selectedIndex;
@@ -4939,7 +5100,13 @@ export function FileExplorer({
     ? crumbs.map((crumb) => crumb.label).join(' / ')
     : (currentPath || 'Home');
   const locationLabel = crumbs[crumbs.length - 1]?.label
-    ?? (currentPathIsCloud ? currentPath.split('/').filter(Boolean).at(-1) ?? 'Cloud' : currentPath || 'Home');
+    ?? (() => {
+      if (!currentPathIsCloud) {
+        return currentPath || 'Home';
+      }
+      const cloudSegments = currentPath.split('/').filter(Boolean);
+      return cloudSegments[cloudSegments.length - 1] ?? 'Cloud';
+    })();
 
   // ── Inline new item creation ──
   const openNew = (kind: 'file' | 'folder') => {
