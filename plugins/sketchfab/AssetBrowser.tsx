@@ -1,576 +1,795 @@
-
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    HardDrive, X, UploadCloud, Loader2, Box, Palette, Stamp,
-    Trash2, Download, Combine, CheckSquare, Merge, Activity,
-    Filter, Key
+  definePlugin,
+  getPluginPanelOpenRequestEvent,
+  readPluginPanelOpenRequest,
+} from 'overlayterm-plugin';
+import {
+  Download,
+  ExternalLink,
+  FolderOpen,
+  KeyRound,
+  RefreshCw,
+  Search,
+  ShieldCheck,
 } from 'lucide-react';
-import { KernelArtifact, KernelMaterial, KernelAlpha } from '@/types/kernel';
-import { CATEGORY_CONFIG } from '@/config/appConfig';
-import { ChevronRight, ChevronDown, ChevronLeft, Shuffle } from 'lucide-react';
-import { searchSketchfab, getSketchfabDownloadUrl, SketchfabModel, SketchfabSearchResult } from '@/services/sketchfabService';
+import {
+  requestSketchfabDownloadAsset,
+  searchSketchfabModels,
+  type SketchfabDownloadAsset,
+  type SketchfabModelSummary,
+} from './sketchfabService';
 
-interface AssetBrowserProps {
-    isOpen: boolean;
-    browserTab: 'ARTIFACTS' | 'MATERIALS' | 'ALPHAS' | 'SKETCHFAB';
-    artifacts: KernelArtifact[];
-    materials: KernelMaterial[];
-    alphas: KernelAlpha[];
-    selectedArtifactIds: string[];
-    activeArtifactId: string | null;
-    previewArtifactId: string | null;
-    isImporting: boolean;
-    isMerging: boolean;
-    openFolders: Record<string, boolean>;
-    onClose: () => void;
-    onTabChange: (tab: 'ARTIFACTS' | 'MATERIALS' | 'ALPHAS' | 'SKETCHFAB') => void;
-    onToggleFolder: (category: string) => void;
-    onArtifactClick: (id: string) => void;
-    onArtifactSelect: (id: string, e: React.MouseEvent) => void;
-    onArtifactWeld: (id: string, e: React.MouseEvent) => void;
-    onArtifactDownload: (id: string, e: React.MouseEvent) => void;
-    onArtifactDelete: (id: string, e: React.MouseEvent) => void;
-    onMountArtifact: (id: string) => void;
-    onUnmountArtifact: () => void;
-    onDeselectAll: () => void;
-    onMerge: () => void;
-    onImport: (file: File) => void;
-    onAlphaImport: (e: React.ChangeEvent<HTMLInputElement>) => void;
-    onSketchfabImport: (url: string, name: string) => Promise<void>;
-    onMaterialDelete: (id: string) => void;
-    onAlphaDelete: (id: string) => void;
-    sketchfabToken: string | null;
-    onUpdateSketchfabToken: (token: string | null) => void;
-}
+type OverlayPluginStorageApi = {
+  rootDir: string;
+  ensureDir: (relativePath?: string) => Promise<string>;
+  readTextFile: (relativePath: string) => Promise<string>;
+  writeTextFile: (relativePath: string, data: string) => Promise<void>;
+};
 
-export default function AssetBrowser({
-    isOpen,
-    browserTab,
-    artifacts,
-    materials,
-    alphas,
-    selectedArtifactIds,
-    activeArtifactId,
-    previewArtifactId,
-    isImporting,
-    isMerging,
-    openFolders,
-    onClose,
-    onTabChange,
-    onToggleFolder,
-    onArtifactClick,
-    onArtifactSelect,
-    onArtifactWeld,
-    onArtifactDownload,
-    onArtifactDelete,
-    onMountArtifact,
-    onUnmountArtifact,
-    onDeselectAll,
-    onMerge,
-    onImport,
-    onAlphaImport,
-    onSketchfabImport,
-    onMaterialDelete,
-    onAlphaDelete,
-    sketchfabToken,
-    onUpdateSketchfabToken
-}: AssetBrowserProps) {
-    const [artifactFilter, setArtifactFilter] = useState<'ALL' | 'MESH' | 'RIG' | 'ANIM'>('ALL');
-    const [sketchfabQuery, setSketchfabQuery] = useState('');
-    const [sketchfabResults, setSketchfabResults] = useState<SketchfabModel[]>([]);
-    const [isSearchingSketchfab, setIsSearchingSketchfab] = useState(false);
-    const [sketchfabTotalCount, setSketchfabTotalCount] = useState(0);
-    const [sketchfabNextCursor, setSketchfabNextCursor] = useState<string | null>(null);
-    const [sketchfabPrevCursor, setSketchfabPrevCursor] = useState<string | null>(null);
-    const [sketchfabRandomize, setSketchfabRandomize] = useState(false);
-    const [sketchfabCompactMode, setSketchfabCompactMode] = useState(true);
+type OverlayPluginApi = {
+  invoke: <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
+  storage?: OverlayPluginStorageApi;
+};
 
-    const resultsPerPage = sketchfabCompactMode ? 48 : 24;
+type OverlayPluginProps = {
+  plugin: {
+    id: string;
+    name: string;
+  };
+  api: OverlayPluginApi;
+  appearance: {
+    theme: {
+      palette?: {
+        accent?: string;
+        shellBackground?: string;
+        panelBackground?: string;
+        textPrimary?: string;
+        textMuted?: string;
+        border?: string;
+      };
+    };
+  };
+  host?: {
+    compact: boolean;
+    density: 'compact' | 'regular';
+  };
+};
 
-    const handleSketchfabSearch = async (e?: React.FormEvent, cursor?: string) => {
-        if (e) e.preventDefault();
-        if (!sketchfabQuery.trim()) return;
+type FileEntry = {
+  name: string;
+};
 
-        setIsSearchingSketchfab(true);
-        try {
-            const result = await searchSketchfab(sketchfabQuery, {
-                token: sketchfabToken || undefined,
-                count: resultsPerPage,
-                cursor,
-                randomize: sketchfabRandomize
-            });
-            setSketchfabResults(result.models);
-            setSketchfabTotalCount(result.totalCount);
-            setSketchfabNextCursor(result.nextCursor);
-            setSketchfabPrevCursor(result.prevCursor);
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setIsSearchingSketchfab(false);
+type SketchfabPluginSettings = {
+  accessToken: string;
+  targetDirectory: string;
+  lastQuery: string;
+  autoReveal: boolean;
+};
+
+const SETTINGS_STORAGE_FILE = 'settings.json';
+const DESTINATION_PATH_PAYLOAD_KEY = 'destinationPath';
+const MAX_RESULTS_PER_PAGE = 24;
+
+function SketchfabBrowserPanel({ plugin, api, appearance, host }: OverlayPluginProps) {
+  const palette = appearance.theme.palette ?? {};
+  const accent = palette.accent ?? '#ff8b38';
+  const textPrimary = palette.textPrimary ?? '#f7f6f3';
+  const textMuted = palette.textMuted ?? 'rgba(247, 246, 243, 0.62)';
+  const shellBackground = palette.shellBackground ?? '#111113';
+  const panelBackground = palette.panelBackground ?? 'rgba(19, 19, 24, 0.92)';
+  const borderColor = palette.border ?? 'rgba(255, 255, 255, 0.12)';
+  const compact = host?.compact === true;
+
+  const [query, setQuery] = useState('');
+  const [targetDirectory, setTargetDirectory] = useState('');
+  const [accessToken, setAccessToken] = useState('');
+  const [autoReveal, setAutoReveal] = useState(true);
+  const [models, setModels] = useState<SketchfabModelSummary[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [prevCursor, setPrevCursor] = useState<string | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [downloadingUid, setDownloadingUid] = useState('');
+  const [statusMessage, setStatusMessage] = useState('Right-click any folder in Explorer and send it here, or type a target path manually.');
+  const [errorMessage, setErrorMessage] = useState('');
+  const lastHandledRequestNonceRef = useRef('');
+  const searchRequestIdRef = useRef(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const hydrate = async () => {
+      try {
+        const rawSettings = await api.storage?.readTextFile(SETTINGS_STORAGE_FILE);
+        if (!rawSettings || cancelled) {
+          return;
         }
-    };
-
-    if (!isOpen) return null;
-
-    const getFilterMatch = (source: string) => {
-        if (artifactFilter === 'ALL') return true;
-        if (artifactFilter === 'RIG') return source === 'K-RIG';
-        if (artifactFilter === 'ANIM') return source === 'K-CLONER' || source === 'K-RIG' || source === 'K-ANIM' || source === 'K-MOCAP';
-        if (artifactFilter === 'MESH') {
-            return source !== 'K-RIG'
-                && source !== 'K-CLONER'
-                && source !== 'K-ANIM'
-                && source !== 'K-MOCAP';
+        const parsed = JSON.parse(rawSettings) as Partial<SketchfabPluginSettings>;
+        if (cancelled) {
+          return;
         }
-        return true;
+        setAccessToken(typeof parsed.accessToken === 'string' ? parsed.accessToken : '');
+        setTargetDirectory(typeof parsed.targetDirectory === 'string' ? parsed.targetDirectory : '');
+        setQuery(typeof parsed.lastQuery === 'string' ? parsed.lastQuery : '');
+        setAutoReveal(parsed.autoReveal !== false);
+      } catch {
+        if (!cancelled) {
+          setAutoReveal(true);
+        }
+      }
     };
 
-    const categorizedArtifacts = () => {
-        const groups: Record<string, KernelArtifact[]> = {};
-        artifacts.forEach(art => {
-            if (!getFilterMatch(art.source)) return;
-            const cat = CATEGORY_CONFIG[art.source] ? art.source : 'IMPORT';
-            if (!groups[cat]) groups[cat] = [];
-            groups[cat].push(art);
-        });
-        return groups;
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
+  }, [api.storage]);
+
+  useEffect(() => {
+    if (!api.storage) {
+      return;
+    }
+
+    void api.storage.writeTextFile(SETTINGS_STORAGE_FILE, JSON.stringify({
+      accessToken,
+      targetDirectory,
+      lastQuery: query,
+      autoReveal,
+    }, null, 2));
+  }, [accessToken, api.storage, autoReveal, query, targetDirectory]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const applyIncomingOpenRequest = (request: { nonce?: string; payload?: Record<string, string> } | null | undefined) => {
+      const nextNonce = request?.nonce?.trim();
+      const nextDestinationPath = request?.payload?.[DESTINATION_PATH_PAYLOAD_KEY]?.trim();
+      if (!nextNonce || !nextDestinationPath || lastHandledRequestNonceRef.current === nextNonce) {
+        return;
+      }
+
+      lastHandledRequestNonceRef.current = nextNonce;
+      setTargetDirectory(nextDestinationPath);
+      setErrorMessage('');
+      setStatusMessage(`Target folder updated from Explorer: ${nextDestinationPath}`);
     };
 
-    const renderCategory = (category: string, items: KernelArtifact[]) => {
-        const config = CATEGORY_CONFIG[category] || CATEGORY_CONFIG['IMPORT'];
-        const isOpen = openFolders[category];
+    applyIncomingOpenRequest(readPluginPanelOpenRequest(plugin.id));
 
-        if (items.length === 0) return null;
+    const handleOpenRequest = (event: Event) => {
+      applyIncomingOpenRequest((event as CustomEvent<{ nonce?: string; payload?: Record<string, string> }>).detail);
+    };
 
-        return (
-            <div key={category} className="mb-4 animate-in fade-in slide-in-from-left-4 duration-300">
-                <div
-                    onClick={() => onToggleFolder(category)}
-                    className={`flex items-center gap-2 p-2 rounded cursor-pointer transition-all border border-transparent hover:border-[#333] ${isOpen ? 'bg-[#111]' : 'hover:bg-[#111]'}`}
-                >
-                    {isOpen ? <ChevronDown size={14} className="text-gray-500" /> : <ChevronRight size={14} className="text-gray-500" />}
-                    <div className={`p-1.5 rounded ${config.bg} ${config.border} border`}>
-                        <config.icon size={14} className={config.color} />
-                    </div>
-                    <span className={`text-[10px] font-bold tracking-widest flex-1 ${config.color}`}>{config.label}</span>
-                    <span className="text-[9px] text-gray-600 font-mono bg-[#050505] px-2 py-0.5 rounded-full">{items.length}</span>
-                </div>
+    const eventName = getPluginPanelOpenRequestEvent(plugin.id);
+    window.addEventListener(eventName, handleOpenRequest);
+    return () => {
+      window.removeEventListener(eventName, handleOpenRequest);
+    };
+  }, [plugin.id]);
 
-                {isOpen && (
-                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3 p-2 pl-4 border-l border-[#222] ml-2 mt-2">
-                        {items.map(art => {
-                            const isSelected = selectedArtifactIds.includes(art.id);
-                            const isMounted = activeArtifactId === art.id;
-                            const isPreview = previewArtifactId === art.id;
-                            const canMountArtifact = art.canMount !== false;
+  const canSearch = query.trim().length > 0;
+  const canDownload = targetDirectory.trim().length > 0 && accessToken.trim().length > 0;
+  const searchSummary = useMemo(() => {
+    if (searching) {
+      return 'Searching Sketchfab...';
+    }
+    if (models.length === 0) {
+      return canSearch
+        ? 'Search Sketchfab for downloadable models.'
+        : 'Enter a search phrase to browse downloadable models.';
+    }
+    return `${models.length} shown${totalCount > models.length ? ` of ${formatInteger(totalCount)}` : ''}`;
+  }, [canSearch, models.length, searching, totalCount]);
 
-                            return (
-                                <div
-                                    key={art.id}
-                                    onClick={() => onArtifactClick(art.id)}
-                                    className={`relative group p-2 rounded-lg border transition-all cursor-pointer
-                                        ${isPreview ? 'bg-white/10 border-white ring-1 ring-white' :
-                                            isMounted ? `bg-${config.color.split('-')[1]}-900/20 ${config.border} ring-1 ring-${config.color.split('-')[1]}-500` :
-                                                isSelected ? 'bg-orange-500/10 border-orange-500' : 'bg-[#0f0f0f] border-[#222] hover:border-gray-600'}
-                                    `}
-                                >
-                                    <div className="absolute top-2 left-2 z-20">
-                                        <button
-                                            onClick={(e) => onArtifactSelect(art.id, e)}
-                                            className={`p-1 rounded hover:bg-black/50 ${isSelected ? 'text-orange-500' : 'text-gray-500 hover:text-white'}`}
-                                        >
-                                            <CheckSquare size={12} />
-                                        </button>
-                                    </div>
+  const handleSearch = async (cursor?: string | null) => {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) {
+      return;
+    }
 
-                                    <div className="aspect-square bg-[#050505] rounded mb-2 flex items-center justify-center relative overflow-hidden group-hover:bg-black transition-colors">
-                                        {art.thumbnail ? (
-                                            <img src={art.thumbnail} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" alt={art.name} />
-                                        ) : (
-                                            <Box size={24} className="text-gray-700" />
-                                        )}
-                                        {isMounted && canMountArtifact && (
-                                            <div className={`absolute top-2 right-2 ${config.bg} ${config.color} text-[8px] font-bold px-1.5 py-0.5 rounded border ${config.border} shadow-lg z-10`}>MOUNTED</div>
-                                        )}
-                                        {art.isWelded && (
-                                            <div className="absolute bottom-2 right-2 bg-purple-900/80 text-purple-200 text-[8px] font-bold px-1.5 py-0.5 rounded border border-purple-500 shadow-lg">MONOLITH</div>
-                                        )}
-                                        {art.isProcessing && (
-                                            <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-30">
-                                                <Loader2 size={20} className="text-purple-500 animate-spin" />
-                                            </div>
-                                        )}
-                                    </div>
+    const requestId = searchRequestIdRef.current + 1;
+    searchRequestIdRef.current = requestId;
+    setSearching(true);
+    setErrorMessage('');
+    try {
+      const result = await searchSketchfabModels(trimmedQuery, {
+        accessToken,
+        cursor,
+        count: MAX_RESULTS_PER_PAGE,
+      });
+      if (searchRequestIdRef.current !== requestId) {
+        return;
+      }
 
-                                    <div className="flex justify-between items-start">
-                                        <div className="overflow-hidden">
-                                            <div className={`text-[9px] font-bold truncate ${isPreview ? 'text-white' : isMounted ? config.color : 'text-gray-300'}`}>{art.name}</div>
-                                            <div className="text-[8px] text-gray-600 font-mono mt-0.5">{(art.size / 1024).toFixed(0)} KB</div>
-                                        </div>
+      setModels(result.models);
+      setTotalCount(result.totalCount);
+      setNextCursor(result.nextCursor);
+      setPrevCursor(result.prevCursor);
+      setStatusMessage(result.models.length > 0
+        ? `Loaded ${result.models.length} Sketchfab models for "${trimmedQuery}".`
+        : `No downloadable Sketchfab models matched "${trimmedQuery}".`);
+    } catch (error) {
+      if (searchRequestIdRef.current === requestId) {
+        setModels([]);
+        setTotalCount(0);
+        setNextCursor(null);
+        setPrevCursor(null);
+        setErrorMessage(String(error));
+      }
+    } finally {
+      if (searchRequestIdRef.current === requestId) {
+        setSearching(false);
+      }
+    }
+  };
 
-                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button onClick={(e) => onArtifactWeld(art.id, e)} className="text-gray-500 hover:text-purple-400" title="Weld"><Combine size={10} /></button>
-                                            <button onClick={(e) => onArtifactDownload(art.id, e)} className="text-gray-500 hover:text-blue-400" title="Download"><Download size={10} /></button>
-                                            <button onClick={(e) => onArtifactDelete(art.id, e)} className="text-gray-500 hover:text-red-400" title="Delete"><Trash2 size={10} /></button>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
+  const handleRevealTargetDirectory = async () => {
+    const trimmedTargetDirectory = targetDirectory.trim();
+    if (!trimmedTargetDirectory) {
+      return;
+    }
+    await api.invoke('fs_reveal_in_explorer', { path: trimmedTargetDirectory });
+  };
+
+  const handleDownloadModel = async (model: SketchfabModelSummary) => {
+    const trimmedTargetDirectory = targetDirectory.trim();
+    if (!trimmedTargetDirectory) {
+      setErrorMessage('Choose a destination folder before downloading.');
+      return;
+    }
+    if (!accessToken.trim()) {
+      setErrorMessage('Downloads require a Sketchfab OAuth access token.');
+      return;
+    }
+
+    setDownloadingUid(model.uid);
+    setErrorMessage('');
+    setStatusMessage(`Preparing ${model.name}...`);
+
+    try {
+      const asset = await requestSketchfabDownloadAsset(model.uid, accessToken);
+      const assetBytes = await fetchAssetBytes(asset.url);
+      await api.invoke('fs_create_dir', { path: trimmedTargetDirectory });
+
+      const assetFileName = await createUniqueLeafName(
+        trimmedTargetDirectory,
+        createPreferredAssetLeafName(model.name, asset),
+        api,
+      );
+      const assetPath = joinPlatformPath(trimmedTargetDirectory, assetFileName);
+      await api.invoke('fs_write_file', {
+        path: assetPath,
+        content: { kind: 'bytes', value: Array.from(assetBytes) },
+      });
+
+      const attributionLeafName = await createUniqueLeafName(
+        trimmedTargetDirectory,
+        `${removeLeafExtension(assetFileName)}.sketchfab.json`,
+        api,
+      );
+      await api.invoke('fs_write_file', {
+        path: joinPlatformPath(trimmedTargetDirectory, attributionLeafName),
+        content: {
+          kind: 'text',
+          value: JSON.stringify(createAttributionPayload(model, asset, assetFileName), null, 2),
+        },
+      });
+
+      if (autoReveal) {
+        await api.invoke('fs_reveal_in_explorer', { path: assetPath });
+      }
+
+      setStatusMessage(`Saved ${assetFileName} into ${trimmedTargetDirectory}.`);
+    } catch (error) {
+      setErrorMessage(String(error));
+    } finally {
+      setDownloadingUid('');
+    }
+  };
+
+  return (
+    <div
+      style={{
+        height: '100%',
+        minHeight: 0,
+        display: 'grid',
+        gridTemplateColumns: compact ? '1fr' : 'minmax(0, 1.7fr) minmax(300px, 0.9fr)',
+        background: `radial-gradient(circle at 0% 0%, ${multiplyAlpha(accent, 0.18)} 0%, transparent 36%), linear-gradient(180deg, ${shellBackground} 0%, #09090d 100%)`,
+        color: textPrimary,
+      }}
+    >
+      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', borderRight: compact ? 'none' : `1px solid ${borderColor}` }}>
+        <header style={{ padding: compact ? 18 : 24, borderBottom: `1px solid ${borderColor}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 12, letterSpacing: '0.16em', textTransform: 'uppercase', color: multiplyAlpha(accent, 0.95), fontWeight: 700 }}>
+                Sketchfab Ingest
+              </div>
+              <div style={{ marginTop: 8, fontSize: compact ? 24 : 30, fontWeight: 800, lineHeight: 1.05 }}>
+                Search downloadable 3D assets and drop them straight into your filesystem.
+              </div>
+              <div style={{ marginTop: 10, maxWidth: 760, color: textMuted, fontSize: 13, lineHeight: 1.6 }}>
+                This panel keeps the destination folder explicit, accepts Explorer handoffs, and writes the downloaded asset plus a small Sketchfab attribution manifest beside it.
+              </div>
             </div>
-        );
-    };
 
-    return (
-        <div className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-2xl flex items-center justify-center p-12 animate-in fade-in duration-300">
-            <div className="w-full max-w-6xl h-[85vh] bg-[#0a0a0a]/90 border border-[#222] rounded-3xl shadow-2xl flex flex-col overflow-hidden relative backdrop-blur-xl">
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <InfoBadge label="Target" value={targetDirectory.trim() ? 'Bound' : 'Unset'} accent={accent} />
+              <InfoBadge label="Token" value={accessToken.trim() ? 'Loaded' : 'Required'} accent={accent} />
+              <InfoBadge label="Results" value={searching ? '...' : formatInteger(totalCount)} accent={accent} />
+            </div>
+          </div>
 
-                {/* HEADER SECTION */}
-                <div className="flex flex-col border-b border-[#222]">
+          <form
+            onSubmit={event => {
+              event.preventDefault();
+              void handleSearch(null);
+            }}
+            style={{ marginTop: 18, display: 'flex', gap: 10, flexWrap: 'wrap' }}
+          >
+            <label style={{ flex: 1, minWidth: 260 }}>
+              <span style={sectionLabelStyle(textMuted)}>Search Sketchfab</span>
+              <div style={fieldShellStyle(panelBackground, borderColor)}>
+                <Search size={16} color={textMuted} />
+                <input
+                  value={query}
+                  onChange={event => setQuery(event.target.value)}
+                  placeholder="stylized ruins, modular sci fi, photogrammetry rock..."
+                  style={fieldInputStyle(textPrimary)}
+                />
+              </div>
+            </label>
 
-                    {/* ROW 1: PRIMARY NAVIGATION */}
-                    <div className="flex items-center justify-between p-6 pb-2">
-                        <div className="flex items-center gap-6">
-                            <div className="flex items-center gap-3 text-white">
-                                <HardDrive size={24} className="text-[#00ffcc]" />
-                                <div>
-                                    <h2 className="text-lg font-black tracking-widest leading-none">STORAGE MATRIX</h2>
-                                    <div className="text-[10px] text-gray-500 font-mono tracking-wider">KERNEL DATA ACCESS</div>
-                                </div>
-                            </div>
+            <button type="submit" disabled={!canSearch || searching} style={primaryButtonStyle(accent, !canSearch || searching)}>
+              {searching ? <RefreshCw size={14} className="animate-spin" /> : <Search size={14} />}
+              <span>{searching ? 'Searching' : 'Search'}</span>
+            </button>
+          </form>
 
-                            {/* MAIN TABS */}
-                            <div className="flex bg-black/50 p-1.5 rounded-full border border-[#222]">
-                                <button
-                                    onClick={() => onTabChange('ARTIFACTS')}
-                                    className={`px-6 py-2 rounded-full text-[10px] font-bold transition-all ${browserTab === 'ARTIFACTS' ? 'bg-[#222] text-white shadow-[0_0_15px_rgba(255,255,255,0.05)] ring-1 ring-inset ring-white/10' : 'text-gray-500 hover:text-white'}`}
-                                >
-                                    DATA BANK {artifacts.length > 0 && <span className="ml-1 opacity-50">({artifacts.length})</span>}
-                                </button>
-                                <button
-                                    onClick={() => onTabChange('MATERIALS')}
-                                    className={`px-6 py-2 rounded-full text-[10px] font-bold transition-all ${browserTab === 'MATERIALS' ? 'bg-[#222] text-white shadow-[0_0_15px_rgba(255,255,255,0.05)] ring-1 ring-inset ring-white/10' : 'text-gray-500 hover:text-white'}`}
-                                >
-                                    MATERIALS {materials.length > 0 && <span className="ml-1 opacity-50">({materials.length})</span>}
-                                </button>
-                                <button
-                                    onClick={() => onTabChange('ALPHAS')}
-                                    className={`px-6 py-2 rounded-full text-[10px] font-bold transition-all ${browserTab === 'ALPHAS' ? 'bg-[#222] text-white shadow-[0_0_15px_rgba(255,255,255,0.05)] ring-1 ring-inset ring-white/10' : 'text-gray-500 hover:text-white'}`}
-                                >
-                                    ALPHAS {alphas.length > 0 && <span className="ml-1 opacity-50">({alphas.length})</span>}
-                                </button>
-                                <button
-                                    onClick={() => onTabChange('SKETCHFAB')}
-                                    className={`px-6 py-2 rounded-full text-[10px] font-bold transition-all ${browserTab === 'SKETCHFAB' ? 'bg-orange-500 text-white shadow-[0_0_15px_rgba(255,107,0,0.2)] ring-1 ring-inset ring-white/10' : 'text-gray-500 hover:text-white'}`}
-                                >
-                                    SKETCHFAB
-                                </button>
-                            </div>
+          <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', color: textMuted, fontSize: 12 }}>
+            <span>{searchSummary}</span>
+            <button type="button" disabled={!prevCursor || searching} onClick={() => void handleSearch(prevCursor)} style={secondaryButtonStyle(borderColor, textPrimary, !prevCursor || searching)}>
+              Previous
+            </button>
+            <button type="button" disabled={!nextCursor || searching} onClick={() => void handleSearch(nextCursor)} style={secondaryButtonStyle(borderColor, textPrimary, !nextCursor || searching)}>
+              Next
+            </button>
+          </div>
+        </header>
+
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: compact ? 16 : 20 }}>
+          {models.length === 0 ? (
+            <EmptyStateCard
+              accent={accent}
+              title="No models loaded yet"
+              body="Run a search to browse downloadable Sketchfab models. Search is public, but downloads require an OAuth access token."
+            />
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: compact ? '1fr' : 'repeat(auto-fill, minmax(250px, 1fr))', gap: 14 }}>
+              {models.map(model => {
+                const downloading = downloadingUid === model.uid;
+                return (
+                  <article key={model.uid} style={resultCardStyle(panelBackground, borderColor)}>
+                    <div style={thumbnailShellStyle(borderColor, model.thumbnailUrl)}>
+                      {model.thumbnailUrl ? (
+                        <img src={model.thumbnailUrl} alt={model.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <div style={{ color: textMuted, fontSize: 12 }}>No preview</div>
+                      )}
+                    </div>
+
+                    <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2 }}>{model.name}</div>
+                        <div style={{ marginTop: 6, color: textMuted, fontSize: 12 }}>
+                          {model.author.displayName}
                         </div>
+                      </div>
 
-                        {/* CLOSE */}
-                        <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 text-gray-500 hover:text-white transition-colors">
-                            <X size={24} />
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {model.license?.label ? <TagChip label={model.license.label} accent={accent} /> : null}
+                        {model.vertexCount ? <TagChip label={`${formatInteger(model.vertexCount)} verts`} accent={accent} /> : null}
+                        {model.animationCount ? <TagChip label={`${formatInteger(model.animationCount)} anim`} accent={accent} /> : null}
+                        {model.archivesAvailable.length > 0 ? (
+                          <TagChip label={model.archivesAvailable.join(' / ')} accent={accent} />
+                        ) : null}
+                      </div>
+
+                      {model.description ? (
+                        <div style={{ color: textMuted, fontSize: 12, lineHeight: 1.55 }}>
+                          {truncateText(model.description, 180)}
+                        </div>
+                      ) : null}
+
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          onClick={() => void handleDownloadModel(model)}
+                          disabled={!canDownload || downloading}
+                          style={primaryButtonStyle(accent, !canDownload || downloading)}
+                        >
+                          {downloading ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
+                          <span>{downloading ? 'Saving...' : 'Download Here'}</span>
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => window.open(model.viewerUrl, '_blank', 'noopener,noreferrer')}
+                          style={secondaryButtonStyle(borderColor, textPrimary, !model.viewerUrl)}
+                          disabled={!model.viewerUrl}
+                        >
+                          <ExternalLink size={14} />
+                          <span>Viewer</span>
+                        </button>
+                      </div>
                     </div>
-
-                    {/* ROW 2: SECONDARY TOOLBAR */}
-                    <div className="flex items-center justify-between px-6 pb-6 pt-2">
-                        {/* LEFT: FILTERS (Only active for DATA BANK) */}
-                        <div className="flex items-center gap-4 h-8">
-                            {browserTab === 'ARTIFACTS' && (
-                                <div className="flex gap-1 p-1 bg-black/30 rounded-full border border-[#222]/50">
-                                    {['ALL', 'MESH', 'RIG', 'ANIM'].map(f => (
-                                        <button
-                                            key={f}
-                                            onClick={() => setArtifactFilter(f as any)}
-                                            className={`px-4 py-1 rounded-full text-[9px] font-bold transition-all ${artifactFilter === f ? 'bg-[#222] text-[#00ffcc] shadow-[0_0_10px_rgba(0,255,204,0.1)]' : 'text-gray-600 hover:text-gray-300'}`}
-                                        >
-                                            {f}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                        {/* RIGHT: ACTIONS & IMPORTS */}
-                        <div className="flex items-center gap-3">
-
-                            {/* SELECTION ACTIONS */}
-                            {selectedArtifactIds.length > 0 && browserTab === 'ARTIFACTS' && (
-                                <div className="flex items-center gap-2 mr-4 animate-in fade-in slide-in-from-right-4">
-                                    <span className="text-[10px] font-bold text-orange-500 mr-2">
-                                        {selectedArtifactIds.length} SELECTED
-                                    </span>
-                                    {selectedArtifactIds.length >= 2 && (
-                                        <button onClick={onMerge} disabled={isMerging} className="px-4 py-1.5 bg-orange-500/10 hover:bg-orange-500 text-orange-500 hover:text-white border border-orange-500/50 rounded-full text-[10px] font-bold flex items-center gap-2 transition-all">
-                                            {isMerging ? <Activity size={12} className="animate-spin" /> : <Merge size={12} />}
-                                            MERGE
-                                        </button>
-                                    )}
-                                    <button onClick={onDeselectAll} className="px-3 py-1.5 hover:bg-white/10 text-gray-500 hover:text-white rounded-full text-[10px] font-bold transition-colors">
-                                        CLEAR
-                                    </button>
-                                </div>
-                            )}
-
-                            {/* MOUNT ACTION (Moved from footer) */}
-                            {previewArtifactId && previewArtifactId !== activeArtifactId && browserTab === 'ARTIFACTS' && artifacts.find((artifact) => artifact.id === previewArtifactId)?.canMount !== false && (
-                                <button onClick={() => onMountArtifact(previewArtifactId)} className="mr-4 px-5 py-2 bg-[#00ffcc] hover:bg-[#00eebb] text-black rounded-full text-[10px] font-bold flex items-center gap-2 shadow-[0_0_20px_rgba(0,255,204,0.3)] hover:shadow-[0_0_30px_rgba(0,255,204,0.5)] transition-all animate-in fade-in zoom-in">
-                                    <HardDrive size={14} /> LOAD TO KERNEL
-                                </button>
-                            )}
-
-                            {/* IMPORT BUTTONS */}
-                            {browserTab === 'ARTIFACTS' && (
-                                <label className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-full text-[10px] font-bold cursor-pointer transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)] hover:shadow-[0_0_30px_rgba(37,99,235,0.5)]">
-                                    {isImporting ? <Loader2 size={14} className="animate-spin" /> : <UploadCloud size={14} />}
-                                    <span>{isImporting ? 'IMPORTING...' : 'IMPORT FILE'}</span>
-                                    <input type="file" onChange={(e) => { if (e.target.files?.[0]) onImport(e.target.files[0]) }} className="hidden" />
-                                </label>
-                            )}
-
-                            {browserTab === 'ALPHAS' && (
-                                <label className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-full text-[10px] font-bold cursor-pointer transition-all">
-                                    <UploadCloud size={14} />
-                                    <span>UPLOAD ALPHAS</span>
-                                    <input type="file" multiple onChange={onAlphaImport} accept="image/*" className="hidden" />
-                                </label>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                {/* CONTENT AREA */}
-                <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-[#050505]/50">
-                    {browserTab === 'ARTIFACTS' ? (
-                        artifacts.length === 0 ? (
-                            <div className="h-full flex flex-col items-center justify-center text-gray-600 opacity-50">
-                                <Box size={64} className="mb-6 opacity-20" />
-                                <p className="text-sm font-mono tracking-widest">DATA BANK EMPTY</p>
-                            </div>
-                        ) : (
-                            <div className="space-y-8">
-                                {Object.entries(categorizedArtifacts()).map(([cat, items]) => renderCategory(cat, items))}
-                            </div>
-                        )
-                    ) : browserTab === 'MATERIALS' ? (
-                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                            {materials.length === 0 ? (
-                                <div className="col-span-full h-full flex flex-col items-center justify-center text-gray-600 opacity-50 mt-20">
-                                    <Palette size={64} className="mb-6 opacity-20" />
-                                    <p className="text-sm font-mono tracking-widest">NO MATERIALS</p>
-                                </div>
-                            ) : (
-                                materials.map(mat => (
-                                    <div key={mat.id} className="bg-[#111] border border-[#222] rounded-xl overflow-hidden group hover:border-[#00ffcc] hover:shadow-[0_0_20px_rgba(0,255,204,0.1)] transition-all relative">
-                                        <div className="aspect-square relative">
-                                            <img src={mat.preview} className="w-full h-full object-cover" alt={mat.name} />
-                                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                                                <button onClick={() => onMaterialDelete(mat.id)} className="p-3 bg-red-500/20 text-red-400 rounded-full hover:bg-red-500 hover:text-white transition-colors backdrop-blur-md"><Trash2 size={16} /></button>
-                                            </div>
-                                        </div>
-                                        <div className="p-3">
-                                            <div className="text-xs font-bold text-gray-200 truncate">{mat.name}</div>
-                                            <div className="text-[9px] text-gray-500 font-mono mt-1">PBR MATERIAL</div>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    ) : browserTab === 'ALPHAS' ? (
-                        <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4">
-                            {alphas.length === 0 ? (
-                                <div className="col-span-full h-full flex flex-col items-center justify-center text-gray-600 opacity-50 mt-20">
-                                    <Stamp size={64} className="mb-6 opacity-20" />
-                                    <p className="text-sm font-mono tracking-widest">NO ALPHAS</p>
-                                </div>
-                            ) : (
-                                alphas.map(alpha => (
-                                    <div key={alpha.id} className="bg-[#111] border border-[#222] rounded-xl overflow-hidden group hover:border-[#00ffcc] hover:shadow-[0_0_20px_rgba(0,255,204,0.1)] transition-all relative">
-                                        <div className="aspect-square relative p-4 flex items-center justify-center bg-black">
-                                            <img src={alpha.preview} className="w-full h-full object-contain filter invert" alt={alpha.name} />
-                                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                                                <button onClick={() => onAlphaDelete(alpha.id)} className="p-2 bg-red-500/20 text-red-400 rounded-full hover:bg-red-500 hover:text-white transition-colors backdrop-blur-md"><Trash2 size={14} /></button>
-                                            </div>
-                                        </div>
-                                        <div className="p-2 bg-[#0a0a0a] border-t border-[#222]">
-                                            <div className="text-[9px] font-bold text-gray-400 truncate text-center">{alpha.name}</div>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    ) : browserTab === 'SKETCHFAB' ? (
-                        <div className="flex flex-col h-full gap-6">
-                            {/* TOKEN INPUT SECTION */}
-                            <div className="flex items-center gap-4 bg-[#111] p-4 rounded-2xl border border-orange-500/20 shadow-[0_0_20px_rgba(249,115,22,0.05)]">
-                                <div className="p-2 bg-orange-500/10 rounded-lg text-orange-500">
-                                    <Key size={16} />
-                                </div>
-                                <div className="flex-1">
-                                    <div className="text-[10px] font-black text-orange-500/80 tracking-widest uppercase mb-1">SKETCHFAB API TOKEN</div>
-                                    <input
-                                        type="password"
-                                        value={sketchfabToken || ''}
-                                        onChange={(e) => onUpdateSketchfabToken(e.target.value)}
-                                        placeholder="ENTER TOKEN FOR HIGH-SPEED UPLINK..."
-                                        className="w-full bg-transparent text-xs font-mono text-gray-400 outline-none placeholder:text-gray-700"
-                                    />
-                                </div>
-                                {sketchfabToken ? (
-                                    <div className="px-3 py-1 bg-green-500/10 border border-green-500/20 text-green-500 text-[9px] font-black rounded-full shadow-[0_0_10px_rgba(34,197,94,0.1)]">
-                                        SECURE ACCESS ENABLED
-                                    </div>
-                                ) : (
-                                    <div className="px-3 py-1 bg-orange-500/10 border border-orange-500/20 text-orange-400 text-[9px] font-black rounded-full">
-                                        ANONYMOUS MODE
-                                    </div>
-                                )}
-                            </div>
-
-                            <form onSubmit={handleSketchfabSearch} className="flex gap-4">
-                                <input
-                                    type="text"
-                                    value={sketchfabQuery}
-                                    onChange={(e) => setSketchfabQuery(e.target.value)}
-                                    placeholder="SEARCH SKETCHFAB MODELS..."
-                                    className="flex-1 bg-black/40 border border-[#222] rounded-full px-6 py-3 text-[10px] font-bold tracking-widest text-[#00ffcc] focus:border-[#00ffcc] transition-all outline-none"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => setSketchfabRandomize(!sketchfabRandomize)}
-                                    className={`px-4 py-3 rounded-full text-[10px] font-black tracking-widest transition-all flex items-center gap-2 ${sketchfabRandomize
-                                        ? 'bg-purple-500 text-white'
-                                        : 'bg-[#1a1a1a] text-gray-500 hover:text-white border border-[#333]'
-                                        }`}
-                                    title="Toggle randomize - shuffles sort order for variety"
-                                >
-                                    <Shuffle size={14} />
-                                    {sketchfabRandomize ? 'SHUFFLE ON' : 'SHUFFLE'}
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={isSearchingSketchfab}
-                                    className="px-8 py-3 bg-orange-500 hover:bg-orange-400 text-white rounded-full text-[10px] font-black tracking-[0.2em] transition-all disabled:opacity-50"
-                                >
-                                    {isSearchingSketchfab ? 'SEARCHING...' : 'INITIALIZE SEARCH'}
-                                </button>
-                            </form>
-
-                            {sketchfabResults.length === 0 ? (
-                                <div className="flex-1 flex flex-col items-center justify-center text-gray-700 opacity-50 mt-12">
-                                    <Box size={80} className="mb-6 opacity-10" />
-                                    <p className="text-xs font-mono tracking-[0.3em]">READY FOR UPLINK</p>
-                                    <p className="text-[9px] mt-2 opacity-50">SEARCH FOR FREE DOWNLOADABLE MODELS</p>
-                                </div>
-                            ) : (
-                                <>
-                                    {/* PAGINATION CONTROLS - TOP */}
-                                    <div className="flex items-center justify-between mb-4 pb-4 border-b border-[#222]">
-                                        <div className="flex items-center gap-4">
-                                            <button
-                                                onClick={() => {
-                                                    setSketchfabCompactMode(!sketchfabCompactMode);
-                                                    if (sketchfabResults.length > 0) {
-                                                        handleSketchfabSearch();
-                                                    }
-                                                }}
-                                                className={`px-3 py-1.5 rounded-lg text-[9px] font-black transition-all flex items-center gap-2 ${sketchfabCompactMode
-                                                    ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                                                    : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
-                                                    }`}
-                                            >
-                                                {sketchfabCompactMode ? 'COMPACT' : 'GALLERY'}
-                                            </button>
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <button
-                                                onClick={() => handleSketchfabSearch(undefined, sketchfabPrevCursor || undefined)}
-                                                disabled={!sketchfabPrevCursor || isSearchingSketchfab}
-                                                className="px-4 py-2 bg-[#1a1a1a] border border-[#333] rounded-lg text-[10px] font-black text-gray-400 hover:text-white hover:border-[#00ffcc] transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
-                                            >
-                                                <ChevronLeft size={14} />
-                                                PREV PAGE
-                                            </button>
-                                            <button
-                                                onClick={() => handleSketchfabSearch(undefined, sketchfabNextCursor || undefined)}
-                                                disabled={!sketchfabNextCursor || isSearchingSketchfab}
-                                                className="px-4 py-2 bg-[#1a1a1a] border border-[#333] rounded-lg text-[10px] font-black text-gray-400 hover:text-white hover:border-[#00ffcc] transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
-                                            >
-                                                NEXT PAGE
-                                                <ChevronRight size={14} />
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <div className={`grid gap-4 ${sketchfabCompactMode ? 'grid-cols-4 md:grid-cols-6 lg:grid-cols-8' : 'grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6'}`}>
-                                        {sketchfabResults.map((model) => (
-                                            <div key={model.uid} className="group relative bg-[#0d0d0d] border border-[#222] rounded-2xl overflow-hidden hover:border-[#00ffcc] hover:shadow-[0_0_30px_rgba(0,255,204,0.1)] transition-all">
-                                                <div className="aspect-square relative flex items-center justify-center bg-black">
-                                                    <img
-                                                        src={model.thumbnails.images[Math.min(2, model.thumbnails.images.length - 1)].url}
-                                                        className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity"
-                                                        alt={model.name}
-                                                    />
-                                                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-all flex flex-col items-center justify-center gap-3 p-4">
-                                                        <button
-                                                            onClick={async () => {
-                                                                try {
-                                                                    const downloadUrl = await getSketchfabDownloadUrl(model.uid, sketchfabToken || undefined);
-                                                                    if (downloadUrl) {
-                                                                        await onSketchfabImport(downloadUrl, model.name);
-                                                                    } else {
-                                                                        alert("DOWNLOAD FAILED: This model might require an API Token or is not available as a GLB. Double check your Sketchfab Key.");
-                                                                    }
-                                                                } catch (err: any) {
-                                                                    alert(err.message);
-                                                                }
-                                                            }}
-                                                            className="w-full py-2 bg-[#00ffcc] text-black text-[9px] font-black rounded-lg hover:bg-white transition-colors"
-                                                        >
-                                                            DOWNLOAD & IMPORT
-                                                        </button>
-                                                        <a
-                                                            href={model.viewerUrl}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="text-[8px] text-gray-400 hover:text-white underline font-mono"
-                                                        >
-                                                            VIEW ON SKETCHFAB
-                                                        </a>
-                                                    </div>
-                                                </div>
-                                                <div className="p-4 bg-[#0a0a0a]">
-                                                    <div className="text-[10px] font-black text-gray-200 truncate tracking-tight">{model.name}</div>
-                                                    <div className="text-[8px] text-gray-500 font-mono mt-1 flex items-center gap-1">
-                                                        BY <span className="text-[#00ffcc]/60 truncate">{model.user.displayName}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    ) : null}
-                </div>
-
-                {/* FOOTER - ONLY FOR STATUS IF NEEDED OR REMOVED */}
-                <div className="border-t border-[#222] bg-[#080808] px-8 py-3 flex justify-between items-center text-[10px] text-gray-600 font-mono">
-                    <div>STORAGE: {(artifacts.length + materials.length + alphas.length)} ITEMS</div>
-                    {activeArtifactId && artifacts.find((artifact) => artifact.id === activeArtifactId)?.canMount !== false && (
-                        <div className="flex items-center gap-2 text-green-500">
-                            <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                            SYSTEM ENGAGED
-                            <span className="text-gray-500 mx-2">|</span>
-                            <button onClick={onUnmountArtifact} className="hover:text-white">UNMOUNT</button>
-                        </div>
-                    )}
-                </div>
+                  </article>
+                );
+              })}
             </div>
+          )}
         </div>
-    );
+      </div>
+
+      <aside style={{ minWidth: 0, padding: compact ? 16 : 20, display: 'flex', flexDirection: 'column', gap: 14, background: multiplyAlpha(panelBackground, 0.92) }}>
+        <SidebarCard title="Destination Folder" icon={<FolderOpen size={16} color={accent} />} borderColor={borderColor}>
+          <label style={{ display: 'block' }}>
+            <span style={sectionLabelStyle(textMuted)}>Target path</span>
+            <div style={fieldShellStyle(panelBackground, borderColor)}>
+              <input
+                value={targetDirectory}
+                onChange={event => setTargetDirectory(event.target.value)}
+                placeholder="/path/to/assets or D:\\Assets\\Characters"
+                style={fieldInputStyle(textPrimary)}
+              />
+            </div>
+          </label>
+          <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => void handleRevealTargetDirectory()} disabled={!targetDirectory.trim()} style={secondaryButtonStyle(borderColor, textPrimary, !targetDirectory.trim())}>
+              Reveal Target
+            </button>
+          </div>
+          <div style={{ marginTop: 10, fontSize: 12, color: textMuted, lineHeight: 1.55 }}>
+            Explorer background and folder context menus can push a directory straight into this field.
+          </div>
+        </SidebarCard>
+
+        <SidebarCard title="Download Auth" icon={<KeyRound size={16} color={accent} />} borderColor={borderColor}>
+          <label style={{ display: 'block' }}>
+            <span style={sectionLabelStyle(textMuted)}>Sketchfab OAuth access token</span>
+            <div style={fieldShellStyle(panelBackground, borderColor)}>
+              <input
+                value={accessToken}
+                onChange={event => setAccessToken(event.target.value)}
+                placeholder="Paste your Sketchfab OAuth access token"
+                style={fieldInputStyle(textPrimary)}
+              />
+            </div>
+          </label>
+          <label style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', fontSize: 12, color: textMuted }}>
+            <input
+              type="checkbox"
+              checked={autoReveal}
+              onChange={event => setAutoReveal(event.target.checked)}
+            />
+            Reveal the downloaded file in Explorer after saving it
+          </label>
+        </SidebarCard>
+
+        <SidebarCard title="Notes" icon={<ShieldCheck size={16} color={accent} />} borderColor={borderColor}>
+          <ul style={{ margin: 0, paddingLeft: 18, color: textMuted, fontSize: 12, lineHeight: 1.7 }}>
+            <li>Search is public. Downloads require a valid Sketchfab OAuth access token.</li>
+            <li>The plugin writes the downloaded asset and a sibling `.sketchfab.json` attribution file.</li>
+            <li>When Sketchfab only exposes a glTF archive, this plugin saves the archive directly instead of unpacking it.</li>
+          </ul>
+        </SidebarCard>
+
+        <div
+          style={{
+            marginTop: 'auto',
+            padding: 14,
+            borderRadius: 16,
+            border: `1px solid ${errorMessage ? 'rgba(255, 106, 106, 0.35)' : borderColor}`,
+            background: errorMessage ? 'rgba(96, 24, 24, 0.28)' : 'rgba(255,255,255,0.03)',
+            color: errorMessage ? '#ffb6b6' : textMuted,
+            fontSize: 12,
+            lineHeight: 1.6,
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          {errorMessage || statusMessage}
+        </div>
+      </aside>
+    </div>
+  );
 }
+
+function InfoBadge({ label, value, accent }: { label: string; value: string; accent: string }) {
+  return (
+    <div style={{
+      borderRadius: 999,
+      border: `1px solid ${multiplyAlpha(accent, 0.28)}`,
+      background: multiplyAlpha(accent, 0.12),
+      padding: '8px 12px',
+      minWidth: 90,
+    }}
+    >
+      <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.12em', opacity: 0.62 }}>{label}</div>
+      <div style={{ marginTop: 3, fontSize: 12, fontWeight: 700 }}>{value}</div>
+    </div>
+  );
+}
+
+function SidebarCard(args: {
+  title: string;
+  icon: React.ReactNode;
+  borderColor: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section style={{ borderRadius: 18, border: `1px solid ${args.borderColor}`, padding: 16, background: 'rgba(255,255,255,0.03)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        {args.icon}
+        <div style={{ fontSize: 13, fontWeight: 700 }}>{args.title}</div>
+      </div>
+      {args.children}
+    </section>
+  );
+}
+
+function EmptyStateCard({ accent, title, body }: { accent: string; title: string; body: string }) {
+  return (
+    <div style={{
+      borderRadius: 22,
+      border: `1px dashed ${multiplyAlpha(accent, 0.38)}`,
+      padding: 22,
+      background: multiplyAlpha(accent, 0.08),
+    }}
+    >
+      <div style={{ fontSize: 18, fontWeight: 700 }}>{title}</div>
+      <div style={{ marginTop: 8, fontSize: 13, lineHeight: 1.65, opacity: 0.76 }}>{body}</div>
+    </div>
+  );
+}
+
+function TagChip({ label, accent }: { label: string; accent: string }) {
+  return (
+    <div style={{
+      borderRadius: 999,
+      border: `1px solid ${multiplyAlpha(accent, 0.26)}`,
+      padding: '4px 8px',
+      fontSize: 10,
+      fontWeight: 700,
+      letterSpacing: '0.05em',
+      textTransform: 'uppercase',
+      background: multiplyAlpha(accent, 0.1),
+    }}
+    >
+      {label}
+    </div>
+  );
+}
+
+async function fetchAssetBytes(url: string): Promise<Uint8Array> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error('Sketchfab asset download failed.');
+  }
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+async function createUniqueLeafName(
+  directoryPath: string,
+  preferredLeafName: string,
+  api: OverlayPluginApi,
+): Promise<string> {
+  const trimmedPreferredLeafName = preferredLeafName.trim();
+  if (!trimmedPreferredLeafName) {
+    return 'download.bin';
+  }
+
+  let entries: FileEntry[] = [];
+  try {
+    entries = await api.invoke<FileEntry[]>('fs_list_dir', { path: directoryPath, showHidden: false });
+  } catch {
+    return trimmedPreferredLeafName;
+  }
+
+  const existingNames = new Set(entries.map(entry => entry.name));
+  if (!existingNames.has(trimmedPreferredLeafName)) {
+    return trimmedPreferredLeafName;
+  }
+
+  const baseName = removeLeafExtension(trimmedPreferredLeafName);
+  const extension = getLeafExtension(trimmedPreferredLeafName);
+  for (let index = 2; index < 1000; index += 1) {
+    const candidate = extension
+      ? `${baseName}-${index}.${extension}`
+      : `${baseName}-${index}`;
+    if (!existingNames.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  return `${baseName}-${Date.now()}.${extension || 'bin'}`;
+}
+
+function createPreferredAssetLeafName(modelName: string, asset: SketchfabDownloadAsset): string {
+  const safeBaseName = sanitizeLeafName(modelName) || 'sketchfab-model';
+  const safeExtension = sanitizeLeafName(asset.fileExtension).replace(/[^a-z0-9]/g, '') || 'bin';
+  return `${safeBaseName}.${safeExtension}`;
+}
+
+function createAttributionPayload(
+  model: SketchfabModelSummary,
+  asset: SketchfabDownloadAsset,
+  savedFileName: string,
+): Record<string, unknown> {
+  return {
+    source: 'Sketchfab',
+    modelUid: model.uid,
+    modelName: model.name,
+    viewerUrl: model.viewerUrl,
+    savedFileName,
+    savedFormat: asset.format,
+    savedArchive: asset.archive,
+    downloadedAt: new Date().toISOString(),
+    author: {
+      displayName: model.author.displayName,
+      username: model.author.username,
+      profileUrl: model.author.profileUrl,
+    },
+    license: model.license,
+  };
+}
+
+function joinPlatformPath(basePath: string, leafName: string): string {
+  const separator = basePath.includes('\\') && !basePath.includes('/') ? '\\' : '/';
+  return basePath.endsWith(separator)
+    ? `${basePath}${leafName}`
+    : `${basePath}${separator}${leafName}`;
+}
+
+function sanitizeLeafName(value: string): string {
+  return value
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001F]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/\.+$/g, '')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 96);
+}
+
+function removeLeafExtension(value: string): string {
+  return value.replace(/\.[^.]+$/, '');
+}
+
+function getLeafExtension(value: string): string {
+  const extension = value.split('.').pop();
+  return extension && extension !== value ? extension : '';
+}
+
+function truncateText(value: string, limit: number): string {
+  if (value.length <= limit) {
+    return value;
+  }
+  return `${value.slice(0, limit - 1).trimEnd()}…`;
+}
+
+function formatInteger(value: number): string {
+  return new Intl.NumberFormat('en-US').format(value);
+}
+
+function multiplyAlpha(color: string, alpha: number): string {
+  if (color.startsWith('#')) {
+    const normalized = color.slice(1);
+    const hex = normalized.length === 3
+      ? normalized.split('').map(part => part + part).join('')
+      : normalized.slice(0, 6);
+    const red = Number.parseInt(hex.slice(0, 2), 16);
+    const green = Number.parseInt(hex.slice(2, 4), 16);
+    const blue = Number.parseInt(hex.slice(4, 6), 16);
+    return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+  }
+  return color;
+}
+
+function sectionLabelStyle(textMuted: string): React.CSSProperties {
+  return {
+    display: 'block',
+    marginBottom: 7,
+    fontSize: 11,
+    fontWeight: 700,
+    letterSpacing: '0.12em',
+    textTransform: 'uppercase',
+    color: textMuted,
+  };
+}
+
+function fieldShellStyle(background: string, borderColor: string): React.CSSProperties {
+  return {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 14,
+    border: `1px solid ${borderColor}`,
+    background,
+    padding: '0 12px',
+    minHeight: 44,
+  };
+}
+
+function fieldInputStyle(textPrimary: string): React.CSSProperties {
+  return {
+    flex: 1,
+    minWidth: 0,
+    border: 'none',
+    outline: 'none',
+    background: 'transparent',
+    color: textPrimary,
+    fontSize: 13,
+  };
+}
+
+function primaryButtonStyle(accent: string, disabled: boolean): React.CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
+    border: 'none',
+    borderRadius: 14,
+    padding: '0 16px',
+    minHeight: 44,
+    background: disabled ? 'rgba(255,255,255,0.12)' : accent,
+    color: disabled ? 'rgba(255,255,255,0.45)' : '#111113',
+    fontWeight: 800,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
+
+function secondaryButtonStyle(borderColor: string, textPrimary: string, disabled: boolean): React.CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
+    borderRadius: 12,
+    border: `1px solid ${borderColor}`,
+    padding: '9px 12px',
+    background: disabled ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.05)',
+    color: disabled ? 'rgba(255,255,255,0.4)' : textPrimary,
+    fontWeight: 700,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  };
+}
+
+function resultCardStyle(background: string, borderColor: string): React.CSSProperties {
+  return {
+    borderRadius: 22,
+    border: `1px solid ${borderColor}`,
+    background,
+    padding: 14,
+  };
+}
+
+function thumbnailShellStyle(borderColor: string, thumbnailUrl: string | null): React.CSSProperties {
+  return {
+    borderRadius: 18,
+    border: `1px solid ${borderColor}`,
+    aspectRatio: '16 / 10',
+    overflow: 'hidden',
+    background: thumbnailUrl
+      ? 'rgba(255,255,255,0.03)'
+      : 'linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02))',
+    display: 'grid',
+    placeItems: 'center',
+  };
+}
+
+export default definePlugin({
+  name: 'Sketchfab Browser',
+  description: 'Search Sketchfab and download downloadable 3D assets into the active Explorer folder.',
+  keepMounted: true,
+  component: SketchfabBrowserPanel,
+});

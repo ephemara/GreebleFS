@@ -760,7 +760,7 @@ async function loadPluginPackage(
   );
 
   result.contextMenuItems.push(
-    ...((record.manifest.contributions?.contextMenuItems ?? []).flatMap((item, index) => {
+    ...((record.manifest.contributions?.contextMenuItems ?? []).flatMap<OverlayPluginContextMenuContribution>((item, index) => {
       const title = item.title || item.label || deriveDisplayNameFromFilePath(item.command || item.backend?.entry || 'context-menu-item');
       const stableId = item.id || deriveIdFromName(title, 'context-menu-item');
 

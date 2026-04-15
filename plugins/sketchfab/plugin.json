@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "id": "sketchfab",
+  "name": "Sketchfab Browser",
+  "description": "Search downloadable Sketchfab models and save them directly into any Explorer folder.",
+  "entry": "AssetBrowser.tsx",
+  "defaultOpen": false,
+  "keepMounted": true,
+  "contributions": {
+    "contextMenuItems": [
+      {
+        "id": "download-models-here",
+        "title": "Download Sketchfab Models Here",
+        "description": "Open the Sketchfab panel with this folder pre-selected as the download target.",
+        "contexts": ["entry", "background"],
+        "appliesTo": "directory",
+        "group": "plugin",
+        "order": 660,
+        "iconName": "Download",
+        "panelRequest": {
+          "payload": {
+            "destinationPath": "{path}"
+          }
+        }
+      }
+    ]
+  }
+}

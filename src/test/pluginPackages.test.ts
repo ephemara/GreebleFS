@@ -138,6 +138,18 @@ describe('plugin package discovery', () => {
             ],
             contextMenuItems: [
               {
+                id: 'download-models-here',
+                title: 'Download Models Here',
+                contexts: ['background'],
+                appliesTo: 'directory',
+                panelRequest: {
+                  panelId: 'sketchfab',
+                  payload: {
+                    destinationPath: '{path}',
+                  },
+                },
+              },
+              {
                 id: 'send-to-aquarium',
                 title: 'Send To Aquarium',
                 contexts: ['entry', 'background'],
@@ -170,6 +182,13 @@ describe('plugin package discovery', () => {
             extension: 'js',
             modified: 42,
           },
+          {
+            name: 'panel-message.js',
+            path: 'plugins/mega-plugin/dist/panel-message.js',
+            is_dir: false,
+            extension: 'js',
+            modified: 43,
+          },
         ];
       }
 
@@ -177,13 +196,18 @@ describe('plugin package discovery', () => {
         return `
           import React from 'react';
           import { definePlugin } from 'overlayterm-plugin';
+          import { panelMessage } from './panel-message';
 
           export default definePlugin({
             component: function MegaPluginPanel() {
-              return React.createElement('div', null, 'mega');
+              return React.createElement('div', null, panelMessage);
             },
           });
         `;
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'plugins/mega-plugin/dist/panel-message.js') {
+        return `export const panelMessage = 'mega';`;
       }
 
       if (command === 'fs_read_text_file' && normalizedPath === 'plugins/mega-plugin/themes/cobalt/theme.json') {
@@ -249,7 +273,7 @@ describe('plugin package discovery', () => {
     expect(result.plugins[1]?.diagnostics.capabilities.themes).toBe(1);
     expect(result.plugins[1]?.diagnostics.capabilities.shaders).toBe(1);
     expect(result.plugins[1]?.diagnostics.capabilities.commands).toBe(1);
-    expect(result.plugins[1]?.diagnostics.capabilities.contextMenuItems).toBe(2);
+    expect(result.plugins[1]?.diagnostics.capabilities.contextMenuItems).toBe(3);
     expect(result.themePackages).toHaveLength(1);
     expect(result.themePackages[0]?.theme.id).toBe('cobalt-plugin-theme');
     expect(result.themePackages[0]?.sourceKind).toBe('plugin-package');
@@ -261,15 +285,23 @@ describe('plugin package discovery', () => {
     expect(result.commands.map(command => command.name)).toEqual(['Build Project']);
     expect(result.explorerActions.map(action => action.label)).toEqual(['Echo Path']);
     expect(result.contextMenuItems.map(item => item.title)).toEqual([
+      'Download Models Here',
       'Run Compiled Indexer',
       'Send To Aquarium',
     ]);
     expect(result.contextMenuItems[0]?.execution).toEqual({
+      kind: 'panel-request',
+      panelId: 'sketchfab',
+      payload: {
+        destinationPath: '{path}',
+      },
+    });
+    expect(result.contextMenuItems[1]?.execution).toEqual({
       kind: 'plugin-backend',
       entry: 'backend/indexer',
       args: ['--path', '{path}'],
     });
-    expect(result.contextMenuItems[1]?.execution).toEqual({
+    expect(result.contextMenuItems[2]?.execution).toEqual({
       kind: 'terminal-template',
       command: 'aquarium {path}',
       runOnSelect: true,

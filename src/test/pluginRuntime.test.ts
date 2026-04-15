@@ -86,6 +86,55 @@ describe('pluginRuntime helpers', () => {
     expect(typeof loaded.component).toBe('function');
   });
 
+  it('loads multi-file package plugin modules through relative imports', async () => {
+    const loaded = await loadPluginFromSource(
+      `
+        import React from 'react';
+        import { definePlugin } from 'overlayterm-plugin';
+        import { panelMessage } from './panelMessage';
+
+        export default definePlugin({
+          name: 'Multi File Plugin',
+          component: function MultiFilePlugin() {
+            return React.createElement('div', null, panelMessage);
+          },
+        });
+      `,
+      {
+        name: 'index.tsx',
+        path: 'plugins/multi-file-plugin/index.tsx',
+        is_dir: false,
+        modified: 12,
+        extension: 'tsx',
+      },
+      () => ({
+        invoke: async <T,>() => null as T,
+        event: {} as never,
+        window: {} as never,
+        fs: {} as never,
+        notification: {} as never,
+        refreshPlugins: async () => undefined,
+        openPluginsFolder: async () => undefined,
+        runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),
+      }),
+      {
+        resolveRelativeModuleSource: async ({ specifier }) => {
+          if (specifier !== './panelMessage') {
+            return null;
+          }
+          return {
+            modulePath: 'plugins/multi-file-plugin/panelMessage.ts',
+            source: `export const panelMessage = 'module-graph-ready';`,
+          };
+        },
+      },
+    );
+
+    expect(loaded.error).toBeNull();
+    expect(loaded.name).toBe('Multi File Plugin');
+    expect(typeof loaded.component).toBe('function');
+  });
+
   it('allows plugins to import the notification runtime', async () => {
     const loaded = await loadPluginFromSource(
       `
