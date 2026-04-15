@@ -29,7 +29,10 @@ If you want a custom shell renderer, also copy `renderers/custom-shell.tsx` and 
 
 The starter renderer shows the host contract shape:
 
-- `host.renderChromeBar()`
+- `surfaceOwnership`
+- `host.shellModel.layout`
+- `host.shellModel.launcher`
+- `host.shellModel.chrome.utilityActions`
 - `host.renderDefaultNavigationSurface()`
 - `host.renderDefaultContentSurface()`
 - `host.renderPanelSurface(panelId)`

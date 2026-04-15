@@ -22,6 +22,12 @@ import {
   type RuntimeFileEntry,
   unwrapRuntimeModuleExport,
 } from '../runtime/moduleRuntime';
+import {
+  defaultOverlayThemeRendererSurfaceOwnership,
+  normalizeOverlayThemeRendererSurfaceOwnership,
+  type OverlayThemeRendererShellModel,
+  type OverlayThemeRendererSurfaceOwnership,
+} from './themeRendererShellModel';
 
 export interface ThemeRendererFileEntry extends RuntimeFileEntry {}
 
@@ -81,6 +87,7 @@ export interface OverlayThemeRendererHost {
   layoutProfile: LayoutProfile;
   renderRuntime: ResolvedWorkbenchRenderRuntime;
   layout: OverlayThemeRendererLayoutContext;
+  shellModel: OverlayThemeRendererShellModel;
   panels: OverlayThemeRendererPanel[];
   activePanelId: string | null;
   openPanelIds: string[];
@@ -91,6 +98,7 @@ export interface OverlayThemeRendererHost {
   closePanel: (panelId: string) => void;
   togglePanel: (panelId: string) => void;
   openSettings: () => void;
+  renderDefaultChromeSurface: () => React.ReactNode;
   renderChromeBar: () => React.ReactNode;
   renderDefaultNavigationSurface: () => React.ReactNode;
   renderPanelSurface: (
@@ -119,6 +127,7 @@ export interface OverlayThemeRendererDefinition {
   supportsLiveSwap?: boolean;
   fallbackRuntime?: WorkbenchRenderRuntimeKind;
   capabilities?: Partial<OverlayThemeRendererCapabilities>;
+  surfaceOwnership?: Partial<OverlayThemeRendererSurfaceOwnership>;
   component: React.ComponentType<OverlayThemeRendererProps>;
 }
 
@@ -128,6 +137,7 @@ export interface LoadedOverlayThemeRenderer extends OverlayThemeRendererContext 
   supportsLiveSwap: boolean;
   fallbackRuntime: WorkbenchRenderRuntimeKind | null;
   capabilities: OverlayThemeRendererCapabilities;
+  surfaceOwnership: OverlayThemeRendererSurfaceOwnership;
   component: React.ComponentType<OverlayThemeRendererProps> | null;
   error: string | null;
 }
@@ -194,6 +204,7 @@ export async function loadThemeRendererFromSource(
         ...(options?.defaults?.capabilities ?? {}),
         ...(normalized.capabilities ?? {}),
       },
+      surfaceOwnership: normalizeOverlayThemeRendererSurfaceOwnership(normalized.surfaceOwnership),
       component: normalized.component,
       error: null,
     };
@@ -208,6 +219,7 @@ export async function loadThemeRendererFromSource(
         ...defaultThemeRendererCapabilities,
         ...(options?.defaults?.capabilities ?? {}),
       },
+      surfaceOwnership: defaultOverlayThemeRendererSurfaceOwnership,
       component: null,
       error: String(error),
     };

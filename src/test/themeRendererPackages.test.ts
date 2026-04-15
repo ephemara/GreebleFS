@@ -51,6 +51,19 @@ const rendererFixtures = [
   },
 ];
 
+const expectedSurfaceOwnershipByTheme = {
+  'arcade-arcology': { chrome: true, contentFrame: true, wallpaper: true },
+  'arcade-atrium': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
+  'celestial-astrolabe': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
+  'cyber-nexus-hud': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
+  'dreamcast-skyline': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
+  'gamecube-helix': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
+  'gamecube-orbital': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
+  'gamecube-prism': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
+  'wii-channel-home': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
+  'xmb-crosswave': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
+} satisfies Record<string, Partial<Awaited<ReturnType<typeof loadThemeRendererFromSource>>['surfaceOwnership']>>;
+
 describe('theme renderer package fixtures', () => {
   it.each(rendererFixtures)('loads %s without runtime errors', async fixture => {
     const source = readFileSync(fixture.filePath, 'utf8');
@@ -72,5 +85,10 @@ describe('theme renderer package fixtures', () => {
 
     expect(renderer.error).toBeNull();
     expect(typeof renderer.component).toBe('function');
+
+    const expectedSurfaceOwnership = expectedSurfaceOwnershipByTheme[fixture.name];
+    if (expectedSurfaceOwnership) {
+      expect(renderer.surfaceOwnership).toMatchObject(expectedSurfaceOwnership);
+    }
   });
 });

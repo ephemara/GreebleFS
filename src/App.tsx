@@ -18,6 +18,7 @@ import { CommandPalette, type OverlayCommandPaletteAction } from './components/C
 import { animationSystemConfig, resolvePreferredAnimationId } from './config/animations';
 import { wallpaperSystemConfig } from './config/wallpapers';
 import {
+  groupPanelsForWorkbenchNavigation,
   resolveWorkbenchRenderRuntime,
   type ResolvedWorkbenchRenderRuntime,
 } from './config/workbenchRenderRuntime';
@@ -69,6 +70,11 @@ import {
   type OverlayThemeRendererHost,
   type OverlayThemeRendererPanel,
 } from './components/themeRendererRuntime';
+import {
+  normalizeThemeRendererShellLayout,
+  type OverlayThemeRendererShellModel,
+  type OverlayThemeRendererSurfaceOwnership,
+} from './components/themeRendererShellModel';
 import {
   Check,
   ChevronDown,
@@ -421,6 +427,10 @@ function App() {
   const [themeContributedShaders, setThemeContributedShaders] = useState<LoadedOverlayShader[]>([]);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [latestOverlayFrameStats, setLatestOverlayFrameStats] = useState<OverlayFrameTelemetryStats | null>(null);
+  const [themeRendererViewport, setThemeRendererViewport] = useState(() => ({
+    width: typeof window === 'undefined' ? 1280 : window.innerWidth,
+    height: typeof window === 'undefined' ? 720 : window.innerHeight,
+  }));
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
   const [linuxDisplayServer, setLinuxDisplayServer] = useState<'unknown' | 'wayland' | 'x11'>('unknown');
   const builtInAnimations = useMemo(() => createBuiltInOverlayAnimations(), []);
@@ -475,6 +485,23 @@ function App() {
   const [repositoryPickerRequestId, setRepositoryPickerRequestId] = useState(0);
   const [isRepositoryPickerActive, setIsRepositoryPickerActive] = useState(false);
   const [pendingRepositoryImports, setPendingRepositoryImports] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const syncViewport = () => {
+      setThemeRendererViewport({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+    };
+
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+    return () => window.removeEventListener('resize', syncViewport);
+  }, []);
 
   const {
     settings,
@@ -778,6 +805,7 @@ function App() {
   );
   const explorerPanelLayoutMode = windowMode === 'overlay' ? 'compact-dock' : 'full';
   const activeThemeRenderer = resolvedAppearance.baseTheme.themeRenderer ?? null;
+  const activeThemeRendererSurfaceOwnership = activeThemeRenderer?.surfaceOwnership;
   const renderRuntime = useMemo(
     () => resolveWorkbenchRenderRuntime(
       resolvedAppearance,
@@ -3162,6 +3190,18 @@ function App() {
       {renderPinnedPanelSurface('right')}
     </div>
   );
+  const themeRendererDefaultWorkbenchContent = (
+    <div style={{ position: 'relative', display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      {!activeThemeRendererSurfaceOwnership?.pinnedPanels && renderPinnedPanelSurface('left')}
+
+      <div style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0, overflow: 'hidden' }}>
+        {!activeThemeRendererSurfaceOwnership?.launcher && defaultNavigationSurface}
+        {defaultContentSurface}
+      </div>
+
+      {!activeThemeRendererSurfaceOwnership?.pinnedPanels && renderPinnedPanelSurface('right')}
+    </div>
+  );
   const chromeBar = (
     <TopBar
       appearance={resolvedAppearance}
@@ -3199,6 +3239,7 @@ function App() {
       blurPlatform={runtimePlatform}
       windowMode={windowMode}
       overlayAnchor={overlayAnchor}
+      surfaceOwnership={activeThemeRendererSurfaceOwnership}
       commandPaletteShortcutLabel={formatHotkeyLabel(keybindings.commandPalette)}
       toggleShortcutLabel={formatHotkeyLabel(keybindings.terminalToggle)}
       topBarShaderLayer={(
@@ -3239,6 +3280,35 @@ function App() {
       )}
     </>
   );
+  const themeRendererDefaultShellBody = (
+    <>
+      {!isWindowedMode && !isTopAnchored && (
+        <div
+          className="h-[4px] shrink-0 cursor-ns-resize select-none"
+          style={{ background: `linear-gradient(90deg, transparent 0%, ${accent}99 30%, ${accent} 50%, ${accent}99 70%, transparent 100%)` }}
+          onPointerDown={e => {
+            if (e.buttons === 1) { e.preventDefault(); getCurrentWindow().startResizeDragging('North').catch(() => {}); }
+          }}
+        />
+      )}
+
+      {!activeThemeRendererSurfaceOwnership?.chrome && (isWindowedMode || activeLayoutProfile.chrome.barPosition === 'top') && chromeBar}
+
+      {themeRendererDefaultWorkbenchContent}
+
+      {!activeThemeRendererSurfaceOwnership?.chrome && !isWindowedMode && activeLayoutProfile.chrome.barPosition === 'bottom' && chromeBar}
+
+      {!isWindowedMode && isTopAnchored && (
+        <div
+          className="h-[4px] shrink-0 cursor-ns-resize select-none"
+          style={{ background: `linear-gradient(90deg, transparent 0%, ${accent}99 30%, ${accent} 50%, ${accent}99 70%, transparent 100%)` }}
+          onPointerDown={e => {
+            if (e.buttons === 1) { e.preventDefault(); getCurrentWindow().startResizeDragging('South').catch(() => {}); }
+          }}
+        />
+      )}
+    </>
+  );
   const themeRendererPanels = useMemo<OverlayThemeRendererPanel[]>(
     () => panelDefinitions.map(panel => ({
       id: panel.id,
@@ -3255,6 +3325,127 @@ function App() {
     })),
     [activePanelId, openPanelIds, panelDefinitions, pinnedPanelIds],
   );
+  const themeRendererLauncherPanels = useMemo(
+    () => themeRendererPanels
+      .filter(panel => !panel.isPinned)
+      .map(panel => ({
+        ...panel,
+        activate: () => handleActivatePanel(panel.id),
+      })),
+    [handleActivatePanel, themeRendererPanels],
+  );
+  const themeRendererLauncherGroups = useMemo(() => {
+    const panelById = new Map(themeRendererLauncherPanels.map(panel => [panel.id, panel] as const));
+    return groupPanelsForWorkbenchNavigation(themeRendererPanels.filter(panel => !panel.isPinned))
+      .map(group => ({
+        ...group,
+        panels: group.panels
+          .map(panel => panelById.get(panel.id))
+          .filter((panel): panel is typeof themeRendererLauncherPanels[number] => Boolean(panel)),
+      }));
+  }, [themeRendererLauncherPanels, themeRendererPanels]);
+  const themeRendererUtilityActions = useMemo(
+    () => [
+      {
+        id: 'cycle-layout',
+        label: activeLayoutProfile.label,
+        title: `Cycle layout (${activeLayoutProfile.label})`,
+        icon: <LayoutGrid size={12} />,
+        isVisible: true,
+        onSelect: handleCycleLayout,
+      },
+      {
+        id: 'command-palette',
+        label: 'Commands',
+        title: `Open command palette (${formatHotkeyLabel(keybindings.commandPalette)})`,
+        icon: <Search size={12} />,
+        isVisible: true,
+        onSelect: handleOpenCommandPalette,
+      },
+      {
+        id: 'open-settings',
+        label: 'Settings',
+        title: 'Open Settings',
+        icon: <Settings2 size={12} />,
+        isVisible: true,
+        onSelect: handleOpenSettings,
+      },
+      {
+        id: 'toggle-window-mode',
+        label: windowMode === 'overlay' ? 'Dock' : 'App',
+        title: windowMode === 'overlay' ? 'Switch to application mode' : 'Switch to dock mode',
+        icon: <TerminalIcon size={12} />,
+        isActive: windowMode === 'overlay',
+        isVisible: true,
+        onSelect: () => updateTerminal({ windowMode: windowMode === 'overlay' ? 'windowed' : 'overlay' }),
+      },
+      {
+        id: 'toggle-overlay-anchor',
+        label: overlayAnchor === 'top' ? 'Top Edge' : 'Bottom Edge',
+        title: `Dock overlay to the ${overlayAnchor === 'top' ? 'bottom' : 'top'} edge`,
+        icon: <ChevronDown size={12} />,
+        isVisible: windowMode === 'overlay',
+        onSelect: handleToggleOverlayAnchor,
+      },
+    ],
+    [
+      activeLayoutProfile.label,
+      handleCycleLayout,
+      handleOpenCommandPalette,
+      handleOpenSettings,
+      handleToggleOverlayAnchor,
+      keybindings.commandPalette,
+      overlayAnchor,
+      updateTerminal,
+      windowMode,
+    ],
+  );
+  const themeRendererShellModel = useMemo<OverlayThemeRendererShellModel>(() => {
+    const leftPinnedWidth = leftPinnedPanels.length > 0
+      ? Math.max(...leftPinnedPanels.map(entry => entry.panel.size))
+      : 0;
+    const rightPinnedWidth = rightPinnedPanels.length > 0
+      ? Math.max(...rightPinnedPanels.map(entry => entry.panel.size))
+      : 0;
+    const normalizedLayout = normalizeThemeRendererShellLayout({
+      viewportWidth: themeRendererViewport.width,
+      viewportHeight: themeRendererViewport.height,
+      shellInset: resolvedAppearance.workbenchTheme.metrics.shellInset,
+      panelGap: resolvedAppearance.workbenchTheme.metrics.panelGap,
+      contentInnerPadding: contentStagePadding,
+      chromeHeight: resolvedAppearance.workbenchTheme.metrics.chromeHeight,
+      launcherVisible: renderRuntime.launcherPlacement === 'sidebar' && themeRendererLauncherGroups.length > 0,
+      launcherWidth: renderRuntime.navigationRailWidth,
+      leftPinnedWidth,
+      rightPinnedWidth,
+    });
+
+    return {
+      layout: normalizedLayout,
+      launcher: {
+        railWidth: normalizedLayout.regions.launcher.width,
+        groups: themeRendererLauncherGroups,
+        panels: themeRendererLauncherPanels,
+      },
+      chrome: {
+        utilityActions: themeRendererUtilityActions.filter(action => action.isVisible),
+      },
+    };
+  }, [
+    contentStagePadding,
+    leftPinnedPanels,
+    renderRuntime.launcherPlacement,
+    renderRuntime.navigationRailWidth,
+    resolvedAppearance.workbenchTheme.metrics.chromeHeight,
+    resolvedAppearance.workbenchTheme.metrics.panelGap,
+    resolvedAppearance.workbenchTheme.metrics.shellInset,
+    rightPinnedPanels,
+    themeRendererLauncherGroups,
+    themeRendererLauncherPanels,
+    themeRendererUtilityActions,
+    themeRendererViewport.height,
+    themeRendererViewport.width,
+  ]);
   const themeRendererHost = useMemo<OverlayThemeRendererHost>(() => ({
     appearance: resolvedAppearance,
     theme,
@@ -3272,6 +3463,7 @@ function App() {
       scaledWidth,
       scaledHeight,
     },
+    shellModel: themeRendererShellModel,
     panels: themeRendererPanels,
     activePanelId,
     openPanelIds,
@@ -3289,13 +3481,15 @@ function App() {
     closePanel: handleClosePanel,
     togglePanel: handleTogglePanel,
     openSettings: handleOpenSettings,
+    renderDefaultChromeSurface: () => chromeBar,
     renderChromeBar: () => chromeBar,
-    renderDefaultNavigationSurface: () => defaultNavigationSurface,
+    renderDefaultNavigationSurface: () => activeThemeRendererSurfaceOwnership?.launcher ? null : defaultNavigationSurface,
     renderPanelSurface: renderManagedPanelSurface,
-    renderPinnedPanels: renderPinnedPanelSurface,
+    renderPinnedPanels: (side) => activeThemeRendererSurfaceOwnership?.pinnedPanels ? null : renderPinnedPanelSurface(side),
     renderDefaultContentSurface: () => defaultContentSurface,
-    renderDefaultShellBody: () => defaultShellBody,
+    renderDefaultShellBody: () => themeRendererDefaultShellBody,
   }), [
+    activeThemeRendererSurfaceOwnership,
     activeLayoutProfile,
     activePanelId,
     activeWallpaper,
@@ -3304,6 +3498,7 @@ function App() {
     defaultNavigationSurface,
     defaultShellBody,
     defaultContentSurface,
+    themeRendererDefaultShellBody,
     handleActivatePanel,
     handleClosePanel,
     handleOpenSettings,
@@ -3325,6 +3520,7 @@ function App() {
     shellWallpaperContext,
     theme,
     themeRendererPanels,
+    themeRendererShellModel,
     themeWallpaper,
     usesInsetContentShell,
     usesNavigationSidebar,
@@ -3339,7 +3535,7 @@ function App() {
     && themeRendererApiSupported;
   const themeRendererControlsWallpaper = Boolean(
     canRenderThemeRenderer
-      && activeThemeRenderer.capabilities.wallpaperScene,
+      && (activeThemeRenderer.capabilities.wallpaperScene || activeThemeRenderer.surfaceOwnership.wallpaper),
   );
   const shellBody = canRenderThemeRenderer
     ? (
@@ -3872,6 +4068,7 @@ function TopBar({
   blurPlatform,
   windowMode,
   overlayAnchor,
+  surfaceOwnership,
   commandPaletteShortcutLabel,
   toggleShortcutLabel,
   topBarShaderLayer,
@@ -3911,6 +4108,7 @@ function TopBar({
   blurPlatform: RuntimePlatform;
   windowMode: TerminalWindowMode;
   overlayAnchor: OverlayWindowAnchor;
+  surfaceOwnership?: OverlayThemeRendererSurfaceOwnership | null;
   commandPaletteShortcutLabel: string;
   toggleShortcutLabel: string;
   topBarShaderLayer?: React.ReactNode;
@@ -3937,7 +4135,9 @@ function TopBar({
   const activePanelDefinition = activePanelId ? panels.find(panel => panel.id === activePanelId) ?? null : null;
   const isExplorerActive = activePanelId === 'explorer';
   const isSettingsActive = activePanelId === 'settings';
-  const runtimeUsesTabbedNavigation = renderRuntime.showTabStrip;
+  const rendererOwnsLauncher = Boolean(surfaceOwnership?.launcher);
+  const runtimeUsesTabbedNavigation = !rendererOwnsLauncher && renderRuntime.showTabStrip;
+  const showPrimaryLauncherChrome = !rendererOwnsLauncher;
   const supportsNativeBlur = blurPlatform === 'macos' || blurPlatform === 'windows';
   const isBottomBar = layoutProfile.chrome.barPosition === 'bottom';
   const isWindowedMode = windowMode === 'windowed';
@@ -4570,7 +4770,7 @@ function TopBar({
           </button>
         )}
 
-        {layoutProfile.chrome.showPanelMenu && (
+        {showPrimaryLauncherChrome && layoutProfile.chrome.showPanelMenu && (
           <div ref={menuRef} style={{ position: 'relative', flexShrink: 0, marginRight: 4 }}>
             <button
               onClick={() => {
@@ -4625,7 +4825,7 @@ function TopBar({
       </div>
 
       <div style={{ display: 'flex', alignItems: 'stretch', flex: 1, minWidth: 0 }}>
-        {layoutProfile.chrome.showSettingsShortcut && renderRuntime.showSettingsShortcut && (
+        {showPrimaryLauncherChrome && layoutProfile.chrome.showSettingsShortcut && renderRuntime.showSettingsShortcut && (
           <button
             onClick={onOpenSettings}
             title="Open Settings"
@@ -4653,7 +4853,7 @@ function TopBar({
           </button>
         )}
 
-        {renderRuntime.showExplorerShortcut && (
+        {showPrimaryLauncherChrome && renderRuntime.showExplorerShortcut && (
           <button
             onClick={() => onPanelSelect('explorer')}
             title="Open Explorer"

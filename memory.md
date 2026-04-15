@@ -1,5 +1,27 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Renderer-Owned Shell Contract Pass
+
+- Added `src/components/themeRendererShellModel.ts`, which builds a normalized theme-renderer shell model with:
+  - grouped launcher metadata
+  - utility action metadata
+  - viewport metrics
+  - clamped shell regions for chrome, launcher, content, and pinned panel sides
+- `src/components/themeRendererRuntime.tsx` now supports explicit renderer `surfaceOwnership`, and `App.tsx` now uses that contract to suppress duplicated host surfaces when a theme renderer owns launcher/chrome/content/wallpaper responsibilities.
+- `TopBar` now removes launcher-facing chrome when the active renderer owns the launcher surface, which fixes the bundled “double top bar / duplicate launcher strip” failure mode without gutting the shared utility controls.
+- `src/config/workbenchRenderRuntime.ts` now carries `navigationRailWidth`, and `WorkbenchNavigationSurface.tsx` consumes that runtime-owned sizing instead of hardcoded width branches.
+- Migrated the starter renderer plus bundled custom shells to the new ownership model:
+  - fully custom launcher shells now declare `launcher`, `chrome`, `contentFrame`, and `wallpaper`
+  - hybrid shells like `arcade-arcology` keep the default launcher surface but still declare custom chrome/content ownership
+- Durable reason:
+  the old renderer contract let themes render their own launcher while still inheriting launcher/menu/tab chrome from `host.renderChromeBar()`, which caused duplicate bars, duplicate launcher affordances, and layout drift across the theme catalog.
+- Validation:
+  - passed: `npx vitest run --environment node src/test/themeRendererRuntime.test.tsx src/test/themeRendererShellModel.test.ts src/test/workbenchRenderRuntime.test.ts src/test/themeRendererPackages.test.ts`
+  - passed: targeted TS transpile syntax check for `App.tsx`, the renderer runtime/shell model files, and the touched bundled renderers
+  - blocked by pre-existing workspace type errors in `FileExplorer.tsx`, `GitManager.tsx`, `performanceTelemetry.ts`, and `explorerStore.ts`
+- Recommended next step:
+  migrate the remaining bundled renderers from raw `host.panels` iteration toward `host.shellModel.launcher` / normalized regions, then push the same structural-contract treatment deeper into explorer-local chrome and dialogs.
+
 ## 2026-04-15 — Theme Catalog / Renderer Stability Pass
 
 - `src/components/SettingsPage.tsx` now keys theme catalog cards with source-aware composite keys instead of raw `theme.id`, so package/custom themes that intentionally share an id no longer spam React duplicate-key warnings in Settings.

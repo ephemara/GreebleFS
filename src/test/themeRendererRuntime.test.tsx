@@ -19,6 +19,13 @@ describe('themeRendererRuntime', () => {
           capabilities: {
             wallpaperScene: true,
           },
+          surfaceOwnership: {
+            chrome: true,
+            launcher: false,
+            contentFrame: true,
+            pinnedPanels: true,
+            wallpaper: true,
+          },
           component() {
             return <div>orbital</div>;
           },
@@ -45,6 +52,9 @@ describe('themeRendererRuntime', () => {
     expect(renderer.fallbackRuntime).toBe('desktop-stack');
     expect(renderer.capabilities.wallpaperScene).toBe(true);
     expect(renderer.capabilities.surfaceAdapters).toBe(true);
+    expect(renderer.surfaceOwnership.chrome).toBe(true);
+    expect(renderer.surfaceOwnership.launcher).toBe(false);
+    expect(renderer.surfaceOwnership.pinnedPanels).toBe(true);
     expect(typeof renderer.component).toBe('function');
   });
 
@@ -82,5 +92,7 @@ describe('themeRendererRuntime', () => {
     expect(renderer.error).toContain('Theme renderer must export either a React component');
     expect(renderer.fallbackRuntime).toBe('workbench-tabs');
     expect(renderer.capabilities.wallpaperScene).toBe(true);
+    expect(renderer.surfaceOwnership.launcher).toBe(true);
+    expect(renderer.surfaceOwnership.wallpaper).toBe(false);
   });
 });

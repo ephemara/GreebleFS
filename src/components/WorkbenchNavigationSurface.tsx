@@ -48,11 +48,7 @@ export function WorkbenchNavigationSurface({
     ?? groupedPanels[0]?.id
     ?? null;
   const activeGroup = groupedPanels.find(group => group.id === activeGroupId) ?? groupedPanels[0] ?? null;
-  const railWidth = runtime.kind === 'channel-launcher'
-    ? 296
-    : runtime.kind === 'desktop-stack'
-      ? 244
-      : 236;
+  const railWidth = runtime.navigationRailWidth;
 
   const renderButton = (
     panel: OverlayPanelDefinition,

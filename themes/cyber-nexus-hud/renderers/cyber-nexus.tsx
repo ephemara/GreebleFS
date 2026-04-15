@@ -12,6 +12,12 @@ export default defineThemeRenderer({
     wallpaperScene: true,
     surfaceAdapters: true,
   },
+  surfaceOwnership: {
+    launcher: true,
+    chrome: true,
+    contentFrame: true,
+    wallpaper: true,
+  },
   component({ host }) {
     const panels = host.panels.filter(p => !p.isPinned);
     const activePanel = panels.find(p => p.id === host.activePanelId) ?? panels[0] ?? null;

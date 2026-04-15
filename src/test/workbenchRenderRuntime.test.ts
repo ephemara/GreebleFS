@@ -59,6 +59,7 @@ describe('workbench render runtime', () => {
     expect(runtime.kind).toBe('channel-launcher');
     expect(runtime.navigationSurface).toBe('launcher-grid');
     expect(runtime.contentLayout).toBe('spotlight');
+    expect(runtime.navigationRailWidth).toBe(296);
     expect(runtime.showTabStrip).toBe(false);
   });
 
@@ -75,6 +76,7 @@ describe('workbench render runtime', () => {
     expect(runtime.kind).toBe('desktop-stack');
     expect(runtime.navigationSurface).toBe('launcher-list');
     expect(runtime.contentLayout).toBe('desktop-card');
+    expect(runtime.navigationRailWidth).toBe(244);
     expect(runtime.showExplorerShortcut).toBe(false);
   });
 

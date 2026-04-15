@@ -33,6 +33,7 @@ export interface ResolvedWorkbenchRenderRuntime {
   navigationSurface: WorkbenchNavigationSurfaceKind;
   contentLayout: WorkbenchContentLayoutKind;
   launcherPlacement: 'hidden' | 'sidebar';
+  navigationRailWidth: number;
   showTabStrip: boolean;
   showExplorerShortcut: boolean;
   showSettingsShortcut: boolean;
@@ -59,6 +60,19 @@ export interface WorkbenchNavigationGroup<TPanel extends WorkbenchNavigationPane
   label: string;
   order: number;
   panels: TPanel[];
+}
+
+export function getWorkbenchNavigationRailWidth(runtime: Pick<ResolvedWorkbenchRenderRuntime, 'kind'>): number {
+  switch (runtime.kind) {
+    case 'channel-launcher':
+      return 296;
+    case 'desktop-stack':
+      return 244;
+    case 'cross-axis-media':
+      return 236;
+    default:
+      return 0;
+  }
 }
 
 function compareGroupOrder(
@@ -179,6 +193,7 @@ function buildResolvedWorkbenchRuntime(
         navigationSurface: 'cross-axis',
         contentLayout: 'spotlight',
         launcherPlacement: 'sidebar',
+        navigationRailWidth: getWorkbenchNavigationRailWidth({ kind: runtimeKind }),
         showTabStrip: false,
         showExplorerShortcut: false,
         showSettingsShortcut: false,
@@ -198,6 +213,7 @@ function buildResolvedWorkbenchRuntime(
         navigationSurface: 'launcher-grid',
         contentLayout: 'spotlight',
         launcherPlacement: 'sidebar',
+        navigationRailWidth: getWorkbenchNavigationRailWidth({ kind: runtimeKind }),
         showTabStrip: false,
         showExplorerShortcut: false,
         showSettingsShortcut: false,
@@ -217,6 +233,7 @@ function buildResolvedWorkbenchRuntime(
         navigationSurface: 'launcher-list',
         contentLayout: 'desktop-card',
         launcherPlacement: 'sidebar',
+        navigationRailWidth: getWorkbenchNavigationRailWidth({ kind: runtimeKind }),
         showTabStrip: false,
         showExplorerShortcut: false,
         showSettingsShortcut: false,
@@ -236,6 +253,7 @@ function buildResolvedWorkbenchRuntime(
         navigationSurface: 'tabs',
         contentLayout: 'tabbed',
         launcherPlacement: 'hidden',
+        navigationRailWidth: getWorkbenchNavigationRailWidth({ kind: 'workbench-tabs' }),
         showTabStrip: true,
         showExplorerShortcut: true,
         showSettingsShortcut: true,
