@@ -368,7 +368,7 @@ export function normalizeSystemSettings(
   const showInTaskbarUpdated = updates != null && Object.prototype.hasOwnProperty.call(updates, 'showInTaskbar');
 
   // Keep at least one desktop entry point visible so the overlay is always recoverable.
-  if (!normalized.hideAppInTray && !normalized.showInTaskbar) {
+  if (!resolveSystemPresentationState(normalized).hasVisibleEntryPoint) {
     if (showInTaskbarUpdated && !hideAppInTrayUpdated) {
       normalized.hideAppInTray = true;
     } else if (hideAppInTrayUpdated && !showInTaskbarUpdated) {
@@ -379,6 +379,25 @@ export function normalizeSystemSettings(
   }
 
   return normalized;
+}
+
+export interface SystemPresentationState {
+  trayVisible: boolean;
+  taskbarVisible: boolean;
+  hasVisibleEntryPoint: boolean;
+  recoveryPath: 'tray' | 'taskbar';
+}
+
+export function resolveSystemPresentationState(system: SystemSettings): SystemPresentationState {
+  const trayVisible = system.hideAppInTray !== false;
+  const taskbarVisible = system.showInTaskbar !== false;
+
+  return {
+    trayVisible,
+    taskbarVisible,
+    hasVisibleEntryPoint: trayVisible || taskbarVisible,
+    recoveryPath: trayVisible ? 'tray' : 'taskbar',
+  };
 }
 
 function normalizeAppearanceSettings(

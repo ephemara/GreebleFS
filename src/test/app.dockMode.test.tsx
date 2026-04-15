@@ -272,7 +272,7 @@ describe('App dock mode behavior', () => {
     });
   });
 
-  it('foregrounds the explorer when switching from application mode into dock mode', async () => {
+  it('keeps the explorer foregrounded when switching between application and dock mode', async () => {
     const user = userEvent.setup();
 
     useSettingsStore.setState(state => ({
@@ -304,5 +304,58 @@ describe('App dock mode behavior', () => {
     });
     expect(screen.getByTestId('explorer-layout-mode')).toHaveTextContent('compact-dock');
     expect(screen.queryByTestId('terminal-panel')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTitle('Switch to Application Mode'));
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('windowed');
+    });
+    expect(screen.getByTestId('explorer-layout-mode')).toHaveTextContent('full');
+    expect(screen.queryByTestId('terminal-panel')).not.toBeInTheDocument();
+  });
+
+  it('foregrounds the explorer when dock mode is enabled through a direct settings update', async () => {
+    render(<App />);
+
+    expect(await screen.findByTestId('terminal-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('explorer-layout-mode')).toBeNull();
+
+    useSettingsStore.getState().updateTerminal({ windowMode: 'overlay' });
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('overlay');
+    });
+    expect(screen.getByTestId('explorer-layout-mode')).toHaveTextContent('compact-dock');
+    expect(screen.queryByTestId('terminal-panel')).not.toBeInTheDocument();
+
+    useSettingsStore.getState().updateTerminal({ windowMode: 'windowed' });
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('windowed');
+    });
+    expect(screen.getByTestId('explorer-layout-mode')).toHaveTextContent('full');
+    expect(screen.queryByTestId('terminal-panel')).not.toBeInTheDocument();
+  });
+
+  it('syncs tray and taskbar changes without replaying the startup presentation', async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(vi.mocked(commands.windowApplyMode)).toHaveBeenCalled();
+    });
+
+    await new Promise(resolve => window.setTimeout(resolve, 120));
+    const baselineApplyModeCalls = vi.mocked(commands.windowApplyMode).mock.calls.length;
+
+    useSettingsStore.getState().updateSystem({
+      showInTaskbar: false,
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(commands.windowSetTaskbarVisibility)).toHaveBeenLastCalledWith(false);
+    });
+
+    await new Promise(resolve => window.setTimeout(resolve, 120));
+    expect(vi.mocked(commands.windowApplyMode).mock.calls.length).toBe(baselineApplyModeCalls);
   });
 });

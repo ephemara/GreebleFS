@@ -240,6 +240,12 @@ describe('SettingsPage behavior', () => {
       expect(useSettingsStore.getState().settings.system.hideAppInTray).toBe(false);
     });
 
+    await user.click(screen.getByRole('checkbox', { name: /show in taskbar/i }));
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.system.showInTaskbar).toBe(false);
+      expect(useSettingsStore.getState().settings.system.hideAppInTray).toBe(true);
+    });
+
     await user.click(findSectionButton('Hotkeys'));
     const toggleInput = screen.getByDisplayValue('Ctrl+Space');
     await user.clear(toggleInput);
@@ -262,6 +268,31 @@ describe('SettingsPage behavior', () => {
     await user.click(screen.getAllByRole('button', { name: 'Reset' })[0]);
     expect(useSettingsStore.getState().settings.keybindings.terminalToggle).toBe('Ctrl+Space');
   }, 30000);
+
+  it('can hand off the tray recovery path to taskbar visibility', async () => {
+    const user = userEvent.setup();
+
+    useSettingsStore.setState(state => ({
+      settings: {
+        ...state.settings,
+        system: {
+          ...state.settings.system,
+          hideAppInTray: true,
+          showInTaskbar: false,
+        },
+      },
+    }));
+
+    renderSettingsPage();
+
+    await user.click(findSectionButton('System'));
+    await user.click(screen.getByRole('checkbox', { name: /hide app in tray/i }));
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.system.hideAppInTray).toBe(false);
+      expect(useSettingsStore.getState().settings.system.showInTaskbar).toBe(true);
+    });
+  });
 
   it('restores the safe system defaults from the settings page reset action', async () => {
     const user = userEvent.setup();

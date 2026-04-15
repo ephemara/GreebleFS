@@ -96,7 +96,7 @@ import {
   type HotkeyBindingKey,
 } from '../config/hotkeys';
 import { screenshotFeatureConfig, type ScreenshotOutputActionId } from '../config/screenshots';
-import { useSettingsStore, type TerminalWindowMode } from '../store/settingsStore';
+import { useSettingsStore, resolveSystemPresentationState, type TerminalWindowMode } from '../store/settingsStore';
 import { useTerminalStore } from '../store/terminalStore';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 
@@ -534,6 +534,10 @@ export function SettingsPage({
     updateSystem: state.updateSystem,
     resetToDefaults: state.resetToDefaults,
   })));
+  const systemPresentationState = useMemo(
+    () => resolveSystemPresentationState(settings.system),
+    [settings.system],
+  );
   const { directoryBookmarks, addDirectoryBookmark } = useTerminalStore(useShallow(state => ({
     directoryBookmarks: state.directoryBookmarks,
     addDirectoryBookmark: state.addDirectoryBookmark,
@@ -1161,11 +1165,17 @@ export function SettingsPage({
   }, [updateSystem]);
 
   const setHideAppInTray = useCallback((enabled: boolean) => {
-    updateSystem({ hideAppInTray: enabled });
+    updateSystem({
+      hideAppInTray: enabled,
+      ...(enabled ? {} : { showInTaskbar: true }),
+    });
   }, [updateSystem]);
 
   const setShowInTaskbar = useCallback((enabled: boolean) => {
-    updateSystem({ showInTaskbar: enabled });
+    updateSystem({
+      showInTaskbar: enabled,
+      ...(enabled ? {} : { hideAppInTray: true }),
+    });
   }, [updateSystem]);
 
   const setShaderControlValue = useCallback((
@@ -1305,10 +1315,10 @@ export function SettingsPage({
       subtitle: 'Startup and OS integration status.',
       summary: [
         settings.system.launchAtStartup ? 'Startup on' : 'Startup off',
-        settings.system.hideAppInTray ? 'Tray on' : 'Tray off',
-        settings.system.showInTaskbar ? 'Taskbar on' : 'Taskbar off',
+        systemPresentationState.trayVisible ? 'Tray on' : 'Tray off',
+        systemPresentationState.taskbarVisible ? 'Taskbar on' : 'Taskbar off',
       ].join(' · '),
-      detail: 'Handle machine-level behavior like login launch and other desktop integration concerns in one place.',
+      detail: `Handle machine-level behavior like login launch and the ${systemPresentationState.recoveryPath === 'tray' ? 'tray' : platform === 'macos' ? 'Dock' : 'taskbar'} recovery path in one place.`,
       icon: <Settings2 size={14} />,
     },
     {
@@ -3056,7 +3066,6 @@ export function SettingsPage({
                 <input
                   type="checkbox"
                   checked={settings.system.hideAppInTray}
-                  disabled={!settings.system.showInTaskbar && settings.system.hideAppInTray}
                   onChange={event => setHideAppInTray(event.target.checked)}
                 />
               </label>
@@ -3070,7 +3079,6 @@ export function SettingsPage({
                 <input
                   type="checkbox"
                   checked={settings.system.showInTaskbar}
-                  disabled={!settings.system.hideAppInTray && settings.system.showInTaskbar}
                   onChange={event => setShowInTaskbar(event.target.checked)}
                 />
               </label>
@@ -3092,7 +3100,7 @@ export function SettingsPage({
                   ? 'Updating OS startup registration...'
                   : startupSyncError
                     ? `Startup registration failed: ${startupSyncError}`
-                  : `Current status: startup ${settings.system.launchAtStartup ? 'enabled' : 'disabled'} · tray ${settings.system.hideAppInTray ? 'enabled' : 'disabled'} · ${platform === 'macos' ? 'Dock' : 'taskbar'} ${settings.system.showInTaskbar ? 'enabled' : 'disabled'} · developer mode ${settings.system.developerMode ? 'enabled' : 'disabled'}`}
+                  : `Current status: startup ${settings.system.launchAtStartup ? 'enabled' : 'disabled'} · tray ${systemPresentationState.trayVisible ? 'enabled' : 'disabled'} · ${platform === 'macos' ? 'Dock' : 'taskbar'} ${systemPresentationState.taskbarVisible ? 'enabled' : 'disabled'} · recovery path ${systemPresentationState.recoveryPath === 'tray' ? (platform === 'macos' ? 'Dock' : 'tray') : platform === 'macos' ? 'Dock' : 'taskbar'} · developer mode ${settings.system.developerMode ? 'enabled' : 'disabled'}`}
               </div>
             </div>
           </section>

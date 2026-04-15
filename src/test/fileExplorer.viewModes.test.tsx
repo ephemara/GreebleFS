@@ -259,7 +259,7 @@ describe('FileExplorer view modes', () => {
     expect(screen.queryByRole('button', { name: /copy path/i })).toBeNull();
   });
 
-  it('closes an open inline preview when switching into compact dock mode', async () => {
+  it('closes an open inline preview when switching into compact dock mode and keeps it closed on return', async () => {
     const { appearance, rerender } = renderExplorer();
     await screen.findByText('notes.txt');
 
@@ -278,6 +278,27 @@ describe('FileExplorer view modes', () => {
         }}
         appearance={appearance}
         layoutMode="compact-dock"
+        onOpenInTerminal={() => {}}
+        onAddBookmark={async () => {}}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /copy path/i })).toBeNull();
+    });
+
+    rerender(
+      <FileExplorer
+        theme={{
+          accent: appearance.theme.palette.accent,
+          bg: appearance.theme.palette.appBackground,
+          bgPanel: appearance.theme.palette.panelBackground,
+          text: appearance.theme.palette.textPrimary,
+          border: appearance.theme.palette.border,
+          textMuted: appearance.theme.palette.textMuted,
+        }}
+        appearance={appearance}
+        layoutMode="full"
         onOpenInTerminal={() => {}}
         onAddBookmark={async () => {}}
       />,

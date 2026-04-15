@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-04-14T04:36:50.926Z",
+  "updatedAt": "2026-04-15T03:54:39.310Z",
   "entries": {
     "memory:memory/.dreams/session-corpus/2026-04-13.txt:1:1": {
       "key": "memory:memory/.dreams/session-corpus/2026-04-13.txt:1:1",
@@ -10251,19 +10251,20 @@
       "startLine": 393,
       "endLine": 396,
       "source": "memory",
-      "snippet": "Reflections: Theme: `assistant` kept surfacing across 243 memories.; confidence: 1.00; evidence: memory/.dreams/session-corpus/2026-04-13.txt:2-2, memory/.dreams/session-corpus/2026-04-13.txt:4-4, memory/.dreams/session-corpus/2026-04-13.txt:6-6; note: reflection",
+      "snippet": "Reflections: Theme: `assistant` kept surfacing across 248 memories.; confidence: 1.00; evidence: memory/.dreams/session-corpus/2026-04-13.txt:2-2, memory/.dreams/session-corpus/2026-04-13.txt:4-4, memory/.dreams/session-corpus/2026-04-13.txt:6-6; note: reflection",
       "recallCount": 0,
       "dailyCount": 1,
       "groundedCount": 0,
       "totalScore": 0.62,
       "maxScore": 0.62,
       "firstRecalledAt": "2026-04-14T04:36:50.926Z",
-      "lastRecalledAt": "2026-04-14T04:36:50.926Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
       "queryHashes": [
         "11d1361acb2d"
       ],
       "recallDays": [
-        "2026-04-14"
+        "2026-04-14",
+        "2026-04-15"
       ],
       "conceptTags": [
         "1.00",
@@ -10282,19 +10283,20 @@
       "startLine": 397,
       "endLine": 400,
       "source": "memory",
-      "snippet": "Reflections: Theme: `the` kept surfacing across 165 memories.; confidence: 1.00; evidence: memory/.dreams/session-corpus/2026-04-13.txt:8-8, memory/.dreams/session-corpus/2026-04-13.txt:9-9, memory/.dreams/session-corpus/2026-04-13.txt:12-12; note: reflection",
+      "snippet": "Reflections: Theme: `the` kept surfacing across 167 memories.; confidence: 1.00; evidence: memory/.dreams/session-corpus/2026-04-13.txt:8-8, memory/.dreams/session-corpus/2026-04-13.txt:9-9, memory/.dreams/session-corpus/2026-04-13.txt:12-12; note: reflection",
       "recallCount": 0,
       "dailyCount": 1,
       "groundedCount": 0,
       "totalScore": 0.62,
       "maxScore": 0.62,
       "firstRecalledAt": "2026-04-14T04:36:50.926Z",
-      "lastRecalledAt": "2026-04-14T04:36:50.926Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
       "queryHashes": [
         "11d1361acb2d"
       ],
       "recallDays": [
-        "2026-04-14"
+        "2026-04-14",
+        "2026-04-15"
       ],
       "conceptTags": [
         "1.00",
@@ -10313,22 +10315,23 @@
       "startLine": 401,
       "endLine": 404,
       "source": "memory",
-      "snippet": "Reflections: Theme: `i’m` kept surfacing across 132 memories.; confidence: 0.83; evidence: memory/.dreams/session-corpus/2026-04-13.txt:9-9, memory/.dreams/session-corpus/2026-04-13.txt:12-12, memory/.dreams/session-corpus/2026-04-13.txt:13-13; note: reflection",
+      "snippet": "Reflections: Theme: `i’m` kept surfacing across 134 memories.; confidence: 0.81; evidence: memory/.dreams/session-corpus/2026-04-13.txt:9-9, memory/.dreams/session-corpus/2026-04-13.txt:12-12, memory/.dreams/session-corpus/2026-04-13.txt:13-13; note: reflection",
       "recallCount": 0,
       "dailyCount": 1,
       "groundedCount": 0,
       "totalScore": 0.62,
       "maxScore": 0.62,
       "firstRecalledAt": "2026-04-14T04:36:50.926Z",
-      "lastRecalledAt": "2026-04-14T04:36:50.926Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
       "queryHashes": [
         "11d1361acb2d"
       ],
       "recallDays": [
-        "2026-04-14"
+        "2026-04-14",
+        "2026-04-15"
       ],
       "conceptTags": [
-        "0.83",
+        "0.81",
         "9-9",
         "12-12",
         "13-13",
@@ -10351,12 +10354,1125 @@
       "totalScore": 0.62,
       "maxScore": 0.62,
       "firstRecalledAt": "2026-04-14T04:36:50.926Z",
-      "lastRecalledAt": "2026-04-14T04:36:50.926Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
       "queryHashes": [
         "11d1361acb2d"
       ],
       "recallDays": [
-        "2026-04-14"
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "0.00",
+        "31-31",
+        "dreams/session-cor",
+        "possible",
+        "lasting",
+        "truths",
+        "confidence",
+        "evidence"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:109:109": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:109:109",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 109,
+      "endLine": 109,
+      "source": "memory",
+      "snippet": "User: [cron:69459f90-5f02-4121-bc03-6f2fc024b836 OverlayTerm file explorer heartbeat] File explorer heartbeat: review the current state of F:\\apps-2d\\overlayterm, pick one high-leverage FileExplorer or ExplorerWorkspace improvement, continue the shipping pass, and keep F:\\apps-2d",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "apps-2d",
+        "high-leverage",
+        "user",
+        "cron",
+        "69459f90",
+        "5f02",
+        "bc03",
+        "6f2fc024b836"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:110:110": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:110:110",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 110,
+      "endLine": 110,
+      "source": "memory",
+      "snippet": "Assistant: I’m making the active pane header more informative, so you can tell at a glance which tab each side is actually showing.",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "assistant",
+        "i’m",
+        "making",
+        "the",
+        "active",
+        "pane",
+        "header",
+        "informative"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:111:111": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:111:111",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 111,
+      "endLine": 111,
+      "source": "memory",
+      "snippet": "Assistant: Done, I tightened the dual-pane header so each side now shows the active tab label too, not just the pane name and path. Updated: - `src/components/explorer/ExplorerWorkspace.tsx` This makes same-folder / same-title setups much easier to read quickly.",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "dual-pane",
+        "same-folder",
+        "same-title",
+        "assistant",
+        "done",
+        "tightened",
+        "the",
+        "dual"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:112:112": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:112:112",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 112,
+      "endLine": 112,
+      "source": "memory",
+      "snippet": "User: [cron:69459f90-5f02-4121-bc03-6f2fc024b836 OverlayTerm file explorer heartbeat] File explorer heartbeat: review the current state of F:\\apps-2d\\overlayterm, pick one high-leverage FileExplorer or ExplorerWorkspace improvement, continue the shipping pass, and keep F:\\apps-2d",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "apps-2d",
+        "high-leverage",
+        "user",
+        "cron",
+        "69459f90",
+        "5f02",
+        "bc03",
+        "6f2fc024b836"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:113:113": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:113:113",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 113,
+      "endLine": 113,
+      "source": "memory",
+      "snippet": "Assistant: I’m checking the current workspace header so I can make the next tweak fit cleanly instead of piling on noise.",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "assistant",
+        "i’m",
+        "checking",
+        "the",
+        "current",
+        "header",
+        "can",
+        "tweak"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:114:114": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:114:114",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 114,
+      "endLine": 114,
+      "source": "memory",
+      "snippet": "Assistant: This one’s good leverage, a per-pane copy-path button saves a lot of tiny context-switches when juggling tabs.",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "per-pane",
+        "copy-path",
+        "context-switches",
+        "assistant",
+        "one’s",
+        "good",
+        "leverage",
+        "per"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:115:115": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:115:115",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 115,
+      "endLine": 115,
+      "source": "memory",
+      "snippet": "Assistant: Added a per-pane path copy button in `ExplorerWorkspace`. Why this one: - it’s a fast power-user win, - it reduces little copy/paste friction when hopping between panes, - it fits the current dual-pane focus without broad UI churn. Updated: - `src/components/explorer/E",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "per-pane",
+        "power-user",
+        "copy/paste",
+        "dual-pane",
+        "src/components/explorer/e",
+        "assistant",
+        "added",
+        "per"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:116:116": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:116:116",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 116,
+      "endLine": 116,
+      "source": "memory",
+      "snippet": "User: [cron:69459f90-5f02-4121-bc03-6f2fc024b836 OverlayTerm file explorer heartbeat] File explorer heartbeat: review the current state of F:\\apps-2d\\overlayterm, pick one high-leverage FileExplorer or ExplorerWorkspace improvement, continue the shipping pass, and keep F:\\apps-2d",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "apps-2d",
+        "high-leverage",
+        "user",
+        "cron",
+        "69459f90",
+        "5f02",
+        "bc03",
+        "6f2fc024b836"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:117:117": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:117:117",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 117,
+      "endLine": 117,
+      "source": "memory",
+      "snippet": "Assistant: I’m making the empty-pane prompt a little more specific, so the split view is clearer the first time you open it.",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "empty-pane",
+        "assistant",
+        "i’m",
+        "making",
+        "the",
+        "empty",
+        "pane",
+        "prompt"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:118:118": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:118:118",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 118,
+      "endLine": 118,
+      "source": "memory",
+      "snippet": "Assistant: Done, I tightened the empty-pane call to action so it now says `Open Left Pane` or `Open Right Pane` instead of the generic version. Updated: - `src/components/explorer/ExplorerWorkspace.tsx` Still no AGENTS.md or memory.md priority change needed this pass.",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "empty-pane",
+        "agents.md",
+        "memory.md",
+        "assistant",
+        "done",
+        "tightened",
+        "the",
+        "empty"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:119:119": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:119:119",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 119,
+      "endLine": 119,
+      "source": "memory",
+      "snippet": "User: [cron:69459f90-5f02-4121-bc03-6f2fc024b836 OverlayTerm file explorer heartbeat] File explorer heartbeat: review the current state of F:\\apps-2d\\overlayterm, pick one high-leverage FileExplorer or ExplorerWorkspace improvement, continue the shipping pass, and keep F:\\apps-2d",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "apps-2d",
+        "high-leverage",
+        "user",
+        "cron",
+        "69459f90",
+        "5f02",
+        "bc03",
+        "6f2fc024b836"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:120:120": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:120:120",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 120,
+      "endLine": 120,
+      "source": "memory",
+      "snippet": "Assistant: Added a small dual-pane polish pass in `ExplorerWorkspace`: the empty-pane button now names the target side, so it’s clearer which pane you’re opening. Updated: - `src/components/explorer/ExplorerWorkspace.tsx` No AGENTS.md or memory.md update needed this pass.",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "dual-pane",
+        "empty-pane",
+        "agents.md",
+        "memory.md",
+        "assistant",
+        "added",
+        "small",
+        "dual"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:121:121": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:121:121",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 121,
+      "endLine": 121,
+      "source": "memory",
+      "snippet": "User: [cron:69459f90-5f02-4121-bc03-6f2fc024b836 OverlayTerm file explorer heartbeat] File explorer heartbeat: review the current state of F:\\apps-2d\\overlayterm, pick one high-leverage FileExplorer or ExplorerWorkspace improvement, continue the shipping pass, and keep F:\\apps-2d",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "apps-2d",
+        "high-leverage",
+        "user",
+        "cron",
+        "69459f90",
+        "5f02",
+        "bc03",
+        "6f2fc024b836"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:122:122": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:122:122",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 122,
+      "endLine": 122,
+      "source": "memory",
+      "snippet": "Assistant: I’m looking for one more low-friction improvement that fits the current dual-pane flow instead of widening scope.",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "low-friction",
+        "dual-pane",
+        "assistant",
+        "i’m",
+        "looking",
+        "one",
+        "low",
+        "friction"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:123:123": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:123:123",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 123,
+      "endLine": 123,
+      "source": "memory",
+      "snippet": "Assistant: I found a tiny but genuinely useful polish, making the pane path itself copyable so you don’t need to aim for the icon.",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "assistant",
+        "found",
+        "tiny",
+        "but",
+        "genuinely",
+        "useful",
+        "polish",
+        "making"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:124:124": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:124:124",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 124,
+      "endLine": 124,
+      "source": "memory",
+      "snippet": "Assistant: Added a small dual-pane polish pass in `ExplorerWorkspace`: the pane path text is now clickable to copy, so grabbing a location is easier and faster. Updated: - `src/components/explorer/ExplorerWorkspace.tsx` No AGENTS.md or memory.md update needed this pass.",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "dual-pane",
+        "agents.md",
+        "memory.md",
+        "assistant",
+        "added",
+        "small",
+        "dual",
+        "pane"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:125:125": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:125:125",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 125,
+      "endLine": 125,
+      "source": "memory",
+      "snippet": "User: [cron:69459f90-5f02-4121-bc03-6f2fc024b836 OverlayTerm file explorer heartbeat] File explorer heartbeat: review the current state of F:\\apps-2d\\overlayterm, pick one high-leverage FileExplorer or ExplorerWorkspace improvement, continue the shipping pass, and keep F:\\apps-2d",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "apps-2d",
+        "high-leverage",
+        "user",
+        "cron",
+        "69459f90",
+        "5f02",
+        "bc03",
+        "6f2fc024b836"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:126:126": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:126:126",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 126,
+      "endLine": 126,
+      "source": "memory",
+      "snippet": "Assistant: I’m making one last ergonomic tweak in the header, so the active pane shows its own tab count without forcing you to scan the strip.",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "assistant",
+        "i’m",
+        "making",
+        "one",
+        "last",
+        "ergonomic",
+        "tweak",
+        "the"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:127:127": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:127:127",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 127,
+      "endLine": 127,
+      "source": "memory",
+      "snippet": "Assistant: Added one more workspace header cue: the active pane now shows its tab count inline. Updated: - `src/components/explorer/ExplorerWorkspace.tsx` Still no AGENTS.md or memory.md changes needed.",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "agents.md",
+        "memory.md",
+        "assistant",
+        "added",
+        "one",
+        "header",
+        "cue",
+        "the"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:128:128": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:128:128",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 128,
+      "endLine": 128,
+      "source": "memory",
+      "snippet": "User: [cron:69459f90-5f02-4121-bc03-6f2fc024b836 OverlayTerm file explorer heartbeat] File explorer heartbeat: review the current state of F:\\apps-2d\\overlayterm, pick one high-leverage FileExplorer or ExplorerWorkspace improvement, continue the shipping pass, and keep F:\\apps-2d",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "apps-2d",
+        "high-leverage",
+        "user",
+        "cron",
+        "69459f90",
+        "5f02",
+        "bc03",
+        "6f2fc024b836"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:129:129": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:129:129",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 129,
+      "endLine": 129,
+      "source": "memory",
+      "snippet": "Assistant: Added another small dual-pane ergonomics polish in `ExplorerWorkspace`: the active pane header now shows its tab count inline. Updated: - `src/components/explorer/ExplorerWorkspace.tsx` No AGENTS.md or memory.md update needed this pass.",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "dual-pane",
+        "agents.md",
+        "memory.md",
+        "assistant",
+        "added",
+        "another",
+        "small",
+        "dual"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:130:130": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:130:130",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 130,
+      "endLine": 130,
+      "source": "memory",
+      "snippet": "User: Conversation info (untrusted metadata): ```json { \"message_id\": \"628\", \"sender_id\": \"8367023888\", \"sender\": \"Taloor\", \"timestamp\": \"Tue 2026-04-14 05:40 UTC\" } ``` Sender (untrusted metadata): ```json { \"label\": \"Taloor (8367023888)\", \"id\": \"8367023888\", \"name\": \"Taloor\" }",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "message-id",
+        "sender-id",
+        "user",
+        "conversation",
+        "info",
+        "untrusted",
+        "metadata",
+        "sender"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:131:131": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:131:131",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 131,
+      "endLine": 131,
+      "source": "memory",
+      "snippet": "Assistant: I’ll check the repo state, commit what’s here, and push it to `master`.",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "assistant",
+        "i’ll",
+        "check",
+        "the",
+        "repo",
+        "state",
+        "commit",
+        "what’s"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:132:132": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:132:132",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 132,
+      "endLine": 132,
+      "source": "memory",
+      "snippet": "Assistant: I found a mix of code and workspace files. I’m checking the diff so I don’t accidentally commit junk.",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "assistant",
+        "found",
+        "mix",
+        "code",
+        "i’m",
+        "checking",
+        "the",
+        "diff"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:133:133": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:133:133",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 133,
+      "endLine": 133,
+      "source": "memory",
+      "snippet": "Assistant: Looks like the important changes are the explorer UI pass plus the new memory notes, and I’m skipping the local `.openclaw` workspace blob.",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "assistant",
+        "looks",
+        "like",
+        "the",
+        "important",
+        "changes",
+        "explorer",
+        "pass"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:134:134": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:134:134",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 134,
+      "endLine": 134,
+      "source": "memory",
+      "snippet": "Assistant: I’ve staged everything except the local workspace-state file. Committing now.",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "workspace-state",
+        "assistant",
+        "i’ve",
+        "staged",
+        "everything",
+        "except",
+        "the",
+        "local"
+      ]
+    },
+    "memory:memory/.dreams/session-corpus/2026-04-14.txt:135:135": {
+      "key": "memory:memory/.dreams/session-corpus/2026-04-14.txt:135:135",
+      "path": "memory/.dreams/session-corpus/2026-04-14.txt",
+      "startLine": 135,
+      "endLine": 135,
+      "source": "memory",
+      "snippet": "Assistant: Done, committed and pushed to `master`. Commit: `2abbd0c` (`Add explorer split controls pass`)",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.58,
+      "maxScore": 0.58,
+      "firstRecalledAt": "2026-04-15T03:00:21.311Z",
+      "lastRecalledAt": "2026-04-15T03:00:21.311Z",
+      "queryHashes": [
+        "91b74f012fab"
+      ],
+      "recallDays": [
+        "2026-04-14",
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "assistant",
+        "done",
+        "committed",
+        "pushed",
+        "master",
+        "commit",
+        "2abbd0c",
+        "add"
+      ]
+    },
+    "memory:memory/2026-04-15.md:358:361": {
+      "key": "memory:memory/2026-04-15.md:358:361",
+      "path": "memory/2026-04-15.md",
+      "startLine": 358,
+      "endLine": 361,
+      "source": "memory",
+      "snippet": "Reflections: Theme: `assistant` kept surfacing across 269 memories.; confidence: 1.00; evidence: memory/.dreams/session-corpus/2026-04-13.txt:2-2, memory/.dreams/session-corpus/2026-04-13.txt:4-4, memory/.dreams/session-corpus/2026-04-13.txt:6-6; note: reflection",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.62,
+      "maxScore": 0.62,
+      "firstRecalledAt": "2026-04-15T03:31:48.587Z",
+      "lastRecalledAt": "2026-04-15T03:54:39.310Z",
+      "queryHashes": [
+        "4c4c0cb04efa"
+      ],
+      "recallDays": [
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "1.00",
+        "2-2",
+        "4-4",
+        "6-6",
+        "reflections",
+        "theme",
+        "assistant",
+        "kept"
+      ]
+    },
+    "memory:memory/2026-04-15.md:362:365": {
+      "key": "memory:memory/2026-04-15.md:362:365",
+      "path": "memory/2026-04-15.md",
+      "startLine": 362,
+      "endLine": 365,
+      "source": "memory",
+      "snippet": "Reflections: Theme: `the` kept surfacing across 180 memories.; confidence: 0.99; evidence: memory/.dreams/session-corpus/2026-04-13.txt:8-8, memory/.dreams/session-corpus/2026-04-13.txt:9-9, memory/.dreams/session-corpus/2026-04-13.txt:12-12; note: reflection",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.62,
+      "maxScore": 0.62,
+      "firstRecalledAt": "2026-04-15T03:31:48.587Z",
+      "lastRecalledAt": "2026-04-15T03:54:39.310Z",
+      "queryHashes": [
+        "4c4c0cb04efa"
+      ],
+      "recallDays": [
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "0.99",
+        "8-8",
+        "9-9",
+        "12-12",
+        "reflections",
+        "theme",
+        "the",
+        "kept"
+      ]
+    },
+    "memory:memory/2026-04-15.md:366:369": {
+      "key": "memory:memory/2026-04-15.md:366:369",
+      "path": "memory/2026-04-15.md",
+      "startLine": 366,
+      "endLine": 369,
+      "source": "memory",
+      "snippet": "Reflections: Theme: `i’m` kept surfacing across 142 memories.; confidence: 0.78; evidence: memory/.dreams/session-corpus/2026-04-13.txt:9-9, memory/.dreams/session-corpus/2026-04-13.txt:12-12, memory/.dreams/session-corpus/2026-04-13.txt:13-13; note: reflection",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.62,
+      "maxScore": 0.62,
+      "firstRecalledAt": "2026-04-15T03:31:48.587Z",
+      "lastRecalledAt": "2026-04-15T03:54:39.310Z",
+      "queryHashes": [
+        "4c4c0cb04efa"
+      ],
+      "recallDays": [
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "0.78",
+        "9-9",
+        "12-12",
+        "13-13",
+        "reflections",
+        "theme",
+        "i’m",
+        "kept"
+      ]
+    },
+    "memory:memory/2026-04-15.md:372:374": {
+      "key": "memory:memory/2026-04-15.md:372:374",
+      "path": "memory/2026-04-15.md",
+      "startLine": 372,
+      "endLine": 374,
+      "source": "memory",
+      "snippet": "Possible Lasting Truths: - confidence: 0.00 - evidence: memory/.dreams/session-corpus/2026-04-13.txt:31-31 - recalls: 0 - status: staged - Candidate: Assistant: PowerShell flubbed the chain, I’m rerunning it the right way. - confidence: 0.00 - evidence: memory/.dreams/session-cor",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.62,
+      "maxScore": 0.62,
+      "firstRecalledAt": "2026-04-15T03:31:48.587Z",
+      "lastRecalledAt": "2026-04-15T03:54:39.310Z",
+      "queryHashes": [
+        "4c4c0cb04efa"
+      ],
+      "recallDays": [
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "0.00",
+        "31-31",
+        "dreams/session-cor",
+        "possible",
+        "lasting",
+        "truths",
+        "confidence",
+        "evidence"
+      ]
+    },
+    "memory:memory/2026-04-15.md:363:366": {
+      "key": "memory:memory/2026-04-15.md:363:366",
+      "path": "memory/2026-04-15.md",
+      "startLine": 363,
+      "endLine": 366,
+      "source": "memory",
+      "snippet": "Reflections: Theme: `assistant` kept surfacing across 269 memories.; confidence: 1.00; evidence: memory/.dreams/session-corpus/2026-04-13.txt:2-2, memory/.dreams/session-corpus/2026-04-13.txt:4-4, memory/.dreams/session-corpus/2026-04-13.txt:6-6; note: reflection",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.62,
+      "maxScore": 0.62,
+      "firstRecalledAt": "2026-04-15T03:31:48.587Z",
+      "lastRecalledAt": "2026-04-15T03:54:39.310Z",
+      "queryHashes": [
+        "4c4c0cb04efa"
+      ],
+      "recallDays": [
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "1.00",
+        "2-2",
+        "4-4",
+        "6-6",
+        "reflections",
+        "theme",
+        "assistant",
+        "kept"
+      ]
+    },
+    "memory:memory/2026-04-15.md:367:370": {
+      "key": "memory:memory/2026-04-15.md:367:370",
+      "path": "memory/2026-04-15.md",
+      "startLine": 367,
+      "endLine": 370,
+      "source": "memory",
+      "snippet": "Reflections: Theme: `the` kept surfacing across 180 memories.; confidence: 0.99; evidence: memory/.dreams/session-corpus/2026-04-13.txt:8-8, memory/.dreams/session-corpus/2026-04-13.txt:9-9, memory/.dreams/session-corpus/2026-04-13.txt:12-12; note: reflection",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.62,
+      "maxScore": 0.62,
+      "firstRecalledAt": "2026-04-15T03:31:48.587Z",
+      "lastRecalledAt": "2026-04-15T03:54:39.310Z",
+      "queryHashes": [
+        "4c4c0cb04efa"
+      ],
+      "recallDays": [
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "0.99",
+        "8-8",
+        "9-9",
+        "12-12",
+        "reflections",
+        "theme",
+        "the",
+        "kept"
+      ]
+    },
+    "memory:memory/2026-04-15.md:371:374": {
+      "key": "memory:memory/2026-04-15.md:371:374",
+      "path": "memory/2026-04-15.md",
+      "startLine": 371,
+      "endLine": 374,
+      "source": "memory",
+      "snippet": "Reflections: Theme: `i’m` kept surfacing across 142 memories.; confidence: 0.78; evidence: memory/.dreams/session-corpus/2026-04-13.txt:9-9, memory/.dreams/session-corpus/2026-04-13.txt:12-12, memory/.dreams/session-corpus/2026-04-13.txt:13-13; note: reflection",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.62,
+      "maxScore": 0.62,
+      "firstRecalledAt": "2026-04-15T03:31:48.587Z",
+      "lastRecalledAt": "2026-04-15T03:54:39.310Z",
+      "queryHashes": [
+        "4c4c0cb04efa"
+      ],
+      "recallDays": [
+        "2026-04-15"
+      ],
+      "conceptTags": [
+        "0.78",
+        "9-9",
+        "12-12",
+        "13-13",
+        "reflections",
+        "theme",
+        "i’m",
+        "kept"
+      ]
+    },
+    "memory:memory/2026-04-15.md:377:379": {
+      "key": "memory:memory/2026-04-15.md:377:379",
+      "path": "memory/2026-04-15.md",
+      "startLine": 377,
+      "endLine": 379,
+      "source": "memory",
+      "snippet": "Possible Lasting Truths: - confidence: 0.00 - evidence: memory/.dreams/session-corpus/2026-04-13.txt:31-31 - recalls: 0 - status: staged - Candidate: Assistant: PowerShell flubbed the chain, I’m rerunning it the right way. - confidence: 0.00 - evidence: memory/.dreams/session-cor",
+      "recallCount": 0,
+      "dailyCount": 1,
+      "groundedCount": 0,
+      "totalScore": 0.62,
+      "maxScore": 0.62,
+      "firstRecalledAt": "2026-04-15T03:31:48.587Z",
+      "lastRecalledAt": "2026-04-15T03:54:39.310Z",
+      "queryHashes": [
+        "4c4c0cb04efa"
+      ],
+      "recallDays": [
+        "2026-04-15"
       ],
       "conceptTags": [
         "0.00",

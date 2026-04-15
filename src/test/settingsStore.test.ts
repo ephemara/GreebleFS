@@ -4,13 +4,35 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useSettingsStore, defaultSettings, mergeSettingsWithDefaults } from '../store/settingsStore';
+import { useSettingsStore, defaultSettings, mergeSettingsWithDefaults, resolveSystemPresentationState } from '../store/settingsStore';
 import { useExplorerStore } from '../store/explorerStore';
 import { overlayWindowGeometry } from '../config/overlayWindow';
 
 beforeEach(() => {
   useSettingsStore.getState().resetToDefaults();
   useExplorerStore.getState().resetSession();
+});
+
+describe('resolveSystemPresentationState()', () => {
+  it('tracks tray/taskbar visibility and the recovery path', () => {
+    expect(resolveSystemPresentationState(defaultSettings.system)).toEqual({
+      trayVisible: true,
+      taskbarVisible: true,
+      hasVisibleEntryPoint: true,
+      recoveryPath: 'tray',
+    });
+
+    expect(resolveSystemPresentationState({
+      ...defaultSettings.system,
+      hideAppInTray: false,
+      showInTaskbar: true,
+    })).toEqual({
+      trayVisible: false,
+      taskbarVisible: true,
+      hasVisibleEntryPoint: true,
+      recoveryPath: 'taskbar',
+    });
+  });
 });
 
 describe('useSettingsStore — initial state', () => {

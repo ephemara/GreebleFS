@@ -130,6 +130,7 @@ import { commands, unwrapTauriResult } from './runtime/tauriClient';
 import { useFolderPluginRuntime } from './runtime/useFolderPluginRuntime';
 import {
   useSettingsStore,
+  resolveSystemPresentationState,
   type LayoutPanelState,
   type OverlayWindowAnchor,
   type TerminalWindowMode,
@@ -435,6 +436,7 @@ function App() {
   const interactionLockUntilRef = useRef(0);
   const windowModeRef = useRef<TerminalWindowMode>('overlay');
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
+  const [desktopPresentationSynced, setDesktopPresentationSynced] = useState(false);
   const animationSignatureRef = useRef('');
   const shaderSignatureRef = useRef('');
   const wallpaperSignatureRef = useRef('');
@@ -544,9 +546,13 @@ function App() {
   const windowMode: TerminalWindowMode = settings.windowMode === 'windowed' ? 'windowed' : 'overlay';
   windowModeRef.current = windowMode;
   const isWindowedMode = windowMode === 'windowed';
+  const startupPresentationShownRef = useRef(false);
   const isWaylandOverlaySession = runtimePlatform === 'linux' && linuxDisplayServer === 'wayland' && !isWindowedMode;
-  const shouldShowInTaskbar = systemSettings.showInTaskbar;
-  const shouldSkipTaskbar = !shouldShowInTaskbar;
+  const systemPresentationState = useMemo(
+    () => resolveSystemPresentationState(systemSettings),
+    [systemSettings],
+  );
+  const shouldSkipTaskbar = !systemPresentationState.taskbarVisible;
   const appOpacity = appearance.appOpacity ?? 1.0;
   const panelTransparency = appearance.panelTransparency ?? overlayVisualControls.panelTransparency.defaultValue;
   const appZoom = appearance.appZoom ?? 1.0;
@@ -865,23 +871,40 @@ function App() {
 
   useEffect(() => {
     if (!isTauri()) {
+      setDesktopPresentationSynced(true);
       return;
     }
 
-    commands.traySetVisible(systemSettings.hideAppInTray).then(unwrapTauriResult).catch(error => {
-      console.warn('OverlayTerm: failed to sync tray visibility', error);
-    });
-  }, [systemSettings.hideAppInTray]);
+    let cancelled = false;
+    setDesktopPresentationSynced(false);
 
-  useEffect(() => {
-    if (!isTauri()) {
-      return;
-    }
+    const syncDesktopPresentation = async () => {
+      try {
+        const results = await Promise.allSettled([
+          commands.traySetVisible(systemPresentationState.trayVisible).then(unwrapTauriResult),
+          commands.windowSetTaskbarVisibility(systemPresentationState.taskbarVisible).then(unwrapTauriResult),
+        ]);
+        const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+        if (failures.length > 0) {
+          throw failures[0].reason;
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('OverlayTerm: failed to sync desktop presentation', error);
+        }
+      } finally {
+        if (!cancelled) {
+          setDesktopPresentationSynced(true);
+        }
+      }
+    };
 
-    commands.windowSetTaskbarVisibility(systemSettings.showInTaskbar).then(unwrapTauriResult).catch(error => {
-      console.warn('OverlayTerm: failed to sync taskbar visibility', error);
-    });
-  }, [systemSettings.showInTaskbar]);
+    void syncDesktopPresentation();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [systemPresentationState.taskbarVisible, systemPresentationState.trayVisible]);
 
   useEffect(() => {
     setOverlayPluginFonts(pluginFonts);
@@ -1173,7 +1196,7 @@ function App() {
     }
 
     return layout;
-  }, [isWaylandOverlaySession, resolveDockOverlayLayout, shouldShowInTaskbar]);
+  }, [isWaylandOverlaySession, resolveDockOverlayLayout, shouldSkipTaskbar]);
 
   // ── Position & show ──
   const positionAndShow = useCallback(async () => {
@@ -1406,13 +1429,13 @@ function App() {
     startAnimationProgress,
   ]);
 
-  const showCurrentPresentation = useCallback(() => {
+  const showCurrentPresentation = useCallback(async () => {
     if (windowModeRef.current === 'windowed') {
-      void showWindowedPanel();
+      await showWindowedPanel();
       return;
     }
 
-    void positionAndShow();
+    await positionAndShow();
   }, [positionAndShow, showWindowedPanel]);
 
 
@@ -1466,13 +1489,13 @@ function App() {
       return;
     }
 
-    showCurrentPresentation();
+    void showCurrentPresentation();
   }, [hideOverlay, showCurrentPresentation]);
 
   useGlobalShortcut(keybindings.terminalToggle, handleToggleOverlayRequest, isTauri());
 
   useEffect(() => {
-    if (!isTauri()) {
+    if (!isTauri() || !desktopPresentationSynced || startupPresentationShownRef.current) {
       return;
     }
 
@@ -1483,15 +1506,17 @@ function App() {
         const visible = (await getCurrentWindow().isVisible?.().catch(() => false)) ?? false;
         if (
           cancelled
-          || !visible
           || overlayVisibleRef.current
           || overlayPhaseRef.current !== 'closed'
         ) {
           return;
         }
 
-        await win.hide().catch(() => {});
-        handleToggleOverlayRequest();
+        startupPresentationShownRef.current = true;
+        if (visible) {
+          await win.hide().catch(() => {});
+        }
+        await showCurrentPresentation();
       };
 
       void syncInitialPresentation();
@@ -1501,7 +1526,7 @@ function App() {
       cancelled = true;
       window.clearTimeout(startupTimer);
     };
-  }, [handleToggleOverlayRequest]);
+  }, [desktopPresentationSynced, showCurrentPresentation]);
 
   useEffect(() => {
     if (!isTauri()) {
@@ -1607,7 +1632,7 @@ function App() {
     } catch (error) {
       console.warn('OverlayTerm: failed to transition window presentation', error);
     }
-  }, [applyDockOverlayLayout, shouldShowInTaskbar]);
+  }, [applyDockOverlayLayout, shouldSkipTaskbar]);
 
   const handleToggleWindowMode = useCallback(() => {
     const nextWindowMode = windowMode === 'windowed' ? 'overlay' : 'windowed';
@@ -1619,9 +1644,17 @@ function App() {
     }
   }, [setPanelOpenStateDirectly, updateTerminal, windowMode]);
 
+  useEffect(() => {
+    if (windowMode !== 'overlay' || openPanelIds.includes('explorer')) {
+      return;
+    }
+
+    setPanelOpenStateDirectly('explorer');
+  }, [openPanelIds, setPanelOpenStateDirectly, windowMode]);
+
   const handleOpenCommandPalette = useCallback(() => {
     if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
-      showCurrentPresentation();
+      void showCurrentPresentation();
     }
     setIsCommandPaletteOpen(true);
   }, [showCurrentPresentation]);
@@ -2687,7 +2720,7 @@ function App() {
     setIsCommandPaletteOpen(false);
     handleActivatePanel('terminal');
     if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
-      showCurrentPresentation();
+      void showCurrentPresentation();
     }
   }, [handleActivatePanel, showCurrentPresentation]);
 
