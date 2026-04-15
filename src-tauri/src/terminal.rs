@@ -917,8 +917,14 @@ mod tests {
     #[test]
     fn shell_executable_name_strips_arguments_and_quotes() {
         assert_eq!(shell_executable_name("pwsh.exe -NoLogo"), "pwsh.exe");
-        assert_eq!(shell_executable_name("\"C:\\Tools\\PowerShell\\pwsh.exe\" -NoLogo"), "C:\\Tools\\PowerShell\\pwsh.exe");
-        assert_eq!(shell_executable_name("'C:\\Tools\\cmd.exe' /c"), "C:\\Tools\\cmd.exe");
+        assert_eq!(
+            shell_executable_name("\"C:\\Tools\\PowerShell\\pwsh.exe\" -NoLogo"),
+            "C:\\Tools\\PowerShell\\pwsh.exe"
+        );
+        assert_eq!(
+            shell_executable_name("'C:\\Tools\\cmd.exe' /c"),
+            "C:\\Tools\\cmd.exe"
+        );
     }
 
     #[test]

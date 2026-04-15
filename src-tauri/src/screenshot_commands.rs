@@ -203,7 +203,9 @@ pub async fn screenshot_export_annotated(
         image
     };
 
-    let saved = if let Some(directory) = directory.as_deref().filter(|value| !value.trim().is_empty())
+    let saved = if let Some(directory) = directory
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
     {
         Some(save_rgba_image(
             &final_image,
@@ -489,7 +491,10 @@ fn copy_rgba_image_to_clipboard(image: RgbaImage) -> Result<(), String> {
     Ok(())
 }
 
-fn render_annotations(image: &mut RgbaImage, annotations: &[ScreenshotAnnotation]) -> Result<(), String> {
+fn render_annotations(
+    image: &mut RgbaImage,
+    annotations: &[ScreenshotAnnotation],
+) -> Result<(), String> {
     if annotations.is_empty() {
         return Ok(());
     }
@@ -578,23 +583,32 @@ fn load_annotation_font() -> Result<FontArc, String> {
         families: &[Family::SansSerif],
         ..Query::default()
     };
-    let face_id = database
-        .query(&query)
-        .ok_or_else(|| "Failed to locate a system sans-serif font for screenshot annotations.".to_string())?;
+    let face_id = database.query(&query).ok_or_else(|| {
+        "Failed to locate a system sans-serif font for screenshot annotations.".to_string()
+    })?;
     let face = database
         .face(face_id)
         .ok_or_else(|| "Resolved screenshot annotation font face is unavailable.".to_string())?;
 
     let bytes = match &face.source {
         Source::Binary(data) => data.as_ref().as_ref().to_vec(),
-        Source::File(path) => std::fs::read(path)
-            .map_err(|error| format!("Failed to read screenshot annotation font '{}': {error}", path.display()))?,
-        Source::SharedFile(path, _) => std::fs::read(path)
-            .map_err(|error| format!("Failed to read screenshot annotation font '{}': {error}", path.display()))?,
+        Source::File(path) => std::fs::read(path).map_err(|error| {
+            format!(
+                "Failed to read screenshot annotation font '{}': {error}",
+                path.display()
+            )
+        })?,
+        Source::SharedFile(path, _) => std::fs::read(path).map_err(|error| {
+            format!(
+                "Failed to read screenshot annotation font '{}': {error}",
+                path.display()
+            )
+        })?,
     };
 
-    let font = FontArc::try_from_vec(bytes)
-        .map_err(|_| "Failed to decode the system font used for screenshot annotations.".to_string())?;
+    let font = FontArc::try_from_vec(bytes).map_err(|_| {
+        "Failed to decode the system font used for screenshot annotations.".to_string()
+    })?;
     *cache = Some(font.clone());
     Ok(font)
 }
@@ -610,7 +624,15 @@ fn draw_text_with_shadow(
     let x = origin.0.round() as i32;
     let y = origin.1.round() as i32;
     for (offset_x, offset_y) in [(1, 1), (1, 2), (2, 1), (2, 2)] {
-        draw_text_mut(image, SHADOW_TEXT_COLOR, x + offset_x, y + offset_y, scale, font, text);
+        draw_text_mut(
+            image,
+            SHADOW_TEXT_COLOR,
+            x + offset_x,
+            y + offset_y,
+            scale,
+            font,
+            text,
+        );
     }
     draw_text_mut(image, color, x, y, scale, font, text);
 }
@@ -701,7 +723,12 @@ fn draw_thick_line(
     let dy = end.1 - start.1;
     let length = dx.abs().max(dy.abs()).ceil() as i32;
     if length <= 0 {
-        draw_filled_circle_mut(image, (start.0.round() as i32, start.1.round() as i32), radius, color);
+        draw_filled_circle_mut(
+            image,
+            (start.0.round() as i32, start.1.round() as i32),
+            radius,
+            color,
+        );
         return;
     }
 
@@ -800,8 +827,9 @@ mod tests {
     use super::{
         build_preview_image, create_capture_id, crop_capture_image, encode_png, load_capture_image,
         resize_image_to_fit, sanitize_file_prefix, save_rgba_image, store_capture_image,
-        validate_capture_region, validate_crop_region, validate_thumbnail_bounds, ScreenshotAnnotation,
-        ScreenshotRegion, MAX_CAPTURE_CACHE_ENTRIES, MAX_PREVIEW_HEIGHT, MAX_PREVIEW_WIDTH,
+        validate_capture_region, validate_crop_region, validate_thumbnail_bounds,
+        ScreenshotAnnotation, ScreenshotRegion, MAX_CAPTURE_CACHE_ENTRIES, MAX_PREVIEW_HEIGHT,
+        MAX_PREVIEW_WIDTH,
     };
     use image::{load_from_memory, Rgba, RgbaImage};
     use std::sync::{LazyLock, Mutex};
