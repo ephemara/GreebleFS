@@ -1,7 +1,7 @@
 import { createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
-import { FileExplorer } from '../components/FileExplorer';
+import { FileExplorer, invalidateExplorerResultCaches } from '../components/FileExplorer';
 import { resolveOverlayAppearance } from '../config/appearance';
 import { createDefaultExplorerRailSnapshot } from '../components/explorer/explorerRailState';
 import {
@@ -80,6 +80,21 @@ function createDataTransfer() {
   };
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+
+  return {
+    promise,
+    resolve,
+    reject,
+  };
+}
+
 function resetOverlayTermStorage(storage: Storage) {
   storage.removeItem(SETTINGS_STORAGE_KEY);
   storage.removeItem(EXPLORER_STATE_STORAGE_KEY);
@@ -136,10 +151,11 @@ describe('FileExplorer view modes', () => {
     useExplorerStore.getState().resetSession();
     useExplorerStore.getState().replaceRail(createDefaultExplorerRailSnapshot());
     useExplorerStore.getState().clearPersistenceNotice();
+    invalidateExplorerResultCaches();
 
     vi.mocked(invoke).mockReset();
     vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
-      const payload = args as { paths?: string[] } | undefined;
+      const payload = args as { path?: string; paths?: string[] } | undefined;
       switch (command) {
         case 'fs_get_drives':
           return [];
@@ -306,6 +322,97 @@ describe('FileExplorer view modes', () => {
 
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: /copy path/i })).toBeNull();
+    });
+  });
+
+  it('ignores stale directory responses after a newer refresh updates the explorer state', async () => {
+    const lateDirectoryResponse = createDeferred<typeof ENTRIES[number][]>();
+    const hiddenEntry = {
+      name: 'secret.txt',
+      path: `${REPO_ROOT}\\secret.txt`,
+      is_dir: false,
+      size: 96,
+      modified: 0,
+      extension: 'txt',
+      is_hidden: true,
+      is_symlink: false,
+    } as const;
+
+    vi.mocked(invoke).mockReset();
+    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
+      const payload = args as { path?: string; paths?: string[]; showHidden?: boolean } | undefined;
+      switch (command) {
+        case 'fs_get_drives':
+          return [];
+        case 'fs_get_home_dir':
+          return REPO_ROOT;
+        case 'fs_is_process_elevated':
+          return false;
+        case 'fs_get_runtime_cache_policy':
+          return {
+            dirListCacheTtlMs: 2000,
+            searchNameIndexCacheTtlMs: 1500,
+            searchContentIndexCacheTtlMs: 1000,
+            entrySizeCacheTtlMs: 10000,
+            entrySizeScanBudgetMs: 900,
+            searchContentIndexTotalBytesBudget: 12 * 1024 * 1024,
+            maxSearchContentFileBytes: 8 * 1024 * 1024,
+            searchMaxIndexedEntries: 25000,
+          };
+        case 'fs_list_dir':
+          return lateDirectoryResponse.promise;
+        case 'fs_list_dir_uncached':
+          return payload?.showHidden ? [...ENTRIES, hiddenEntry] : ENTRIES;
+        case 'fs_read_text_file':
+          return 'hello from preview';
+        case 'fs_read_file_base64':
+          return 'data:text/plain;base64,aGVsbG8=';
+        case 'fs_measure_entry_sizes':
+          return (payload?.paths ?? []).map(path => ({
+            path,
+            bytes: [...ENTRIES, hiddenEntry].find(entry => entry.path === path)?.size ?? 0,
+            is_dir: [...ENTRIES, hiddenEntry].find(entry => entry.path === path)?.is_dir ?? false,
+            is_complete: true,
+          }));
+        case 'fs_resolve_native_icons':
+          return [];
+        case 'fs_search_entries_with_diagnostics':
+          return {
+            results: [],
+            diagnostics: {
+              executionStrategy: 'live_scan',
+              contentCacheStatus: 'not_requested',
+              scannedEntryCount: 0,
+              indexedEntryCount: 0,
+              contentCacheStoredFileCount: 0,
+              contentCacheStoredByteCount: 0,
+              truncatedByScanBudget: false,
+            },
+          };
+        case 'fs_watch_entry_size_root':
+        case 'fs_unwatch_entry_size_root':
+        case 'fs_cancel_search_entries':
+        case 'fs_start_native_file_drag':
+          return null;
+        default:
+          throw new Error(`Unexpected invoke command: ${command}`);
+      }
+    });
+
+    renderExplorer();
+
+    await waitFor(() => {
+      expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_list_dir')).toBe(true);
+    });
+
+    useSettingsStore.getState().updateExplorer({ showHiddenFiles: true });
+
+    await screen.findByText('secret.txt');
+
+    lateDirectoryResponse.resolve([...ENTRIES]);
+
+    await waitFor(() => {
+      expect(screen.getByText('secret.txt')).toBeTruthy();
     });
   });
 

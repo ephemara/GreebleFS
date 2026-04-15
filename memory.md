@@ -1,5 +1,16 @@
 # GreebleFS Memory
 
+## 2026-04-15 — File Explorer Async Navigation Guard
+
+- `src/components/FileExplorer.tsx` now invalidates in-flight directory/search work on unmount and on newer directory-load requests.
+- Durable reason:
+  overlay-mode panel swaps and `React.StrictMode` remounts were letting stale boot/navigation completions call back into an explorer instance that had already been replaced, which could surface the `getRootForUpdatedFiber` runtime error and briefly repaint the wrong listing.
+- `navigate()`, `refresh()`, the boot drive/path effect, and `runSearch()` now all check mount/request ownership before applying async results.
+- Added focused regression coverage in `src/test/fileExplorer.viewModes.test.tsx` for a stale directory response arriving after a newer `showHiddenFiles` refresh.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "ignores stale directory responses after a newer refresh updates the explorer state"`
+  - blocked by pre-existing workspace errors: narrowed `bunx tsc --noEmit --skipLibCheck ... src/components/FileExplorer.tsx src/test/fileExplorer.viewModes.test.tsx`
+
 ## 2026-04-15 — Overlay Render Ordering Crash Fix
 
 - Reproduced the first-render crash in headless Chromium against `localhost:1420` and traced it to hook-order and TDZ bugs in the monolithic overlay shell.

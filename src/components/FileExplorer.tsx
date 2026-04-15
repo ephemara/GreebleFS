@@ -2337,6 +2337,8 @@ export function FileExplorer({
   const previewSaveTimer = useRef<number | null>(null);
   const searchRequestIdRef = useRef(0);
   const searchFocusRequestIdRef = useRef(0);
+  const isExplorerMountedRef = useRef(false);
+  const directoryLoadRequestIdRef = useRef(0);
   const initialInteractiveRecordedRef = useRef(false);
   const explorerMountStartedAtRef = useRef(getExplorerPerformanceNow());
   const runtimeCachePolicyTelemetryMetadataRef = useRef<RuntimeCachePolicyTelemetryMetadata>(
@@ -2523,6 +2525,16 @@ export function FileExplorer({
   }, []);
 
   useEffect(() => {
+    isExplorerMountedRef.current = true;
+
+    return () => {
+      isExplorerMountedRef.current = false;
+      searchRequestIdRef.current += 1;
+      directoryLoadRequestIdRef.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!isTauri()) {
       runtimeCachePolicyTelemetryMetadataRef.current = getRuntimeCachePolicyTelemetryMetadata(null, 'unavailable');
       flushPendingExplorerMetrics(runtimeCachePolicyTelemetryMetadataRef.current);
@@ -2584,15 +2596,57 @@ export function FileExplorer({
 
   // ── Boot ──
   useEffect(() => {
+    let disposed = false;
     setDrivesLoading(true);
     getExplorerDrives()
-      .then(ds => setDrives(ds))
-      .catch(() => setDrives([]))
-      .finally(() => setDrivesLoading(false));
+      .then((nextDrives) => {
+        if (!disposed) {
+          setDrives(nextDrives);
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          setDrives([]);
+        }
+      })
+      .finally(() => {
+        if (!disposed) {
+          setDrivesLoading(false);
+        }
+      });
+
+    const navigateToResolvedHome = () => {
+      void getExplorerHomeDir()
+        .then((home) => {
+          if (disposed) {
+            return;
+          }
+          return navigate(home);
+        })
+        .catch(() => {
+          if (disposed) {
+            return;
+          }
+          return navigate(getFallbackExplorerPath(runtimePlatform));
+        });
+    };
+
+    const navigateToBootstrapPath = (bootstrapPath: string) => {
+      void navigate(bootstrapPath).catch(() => {
+        if (disposed) {
+          return;
+        }
+        navigateToResolvedHome();
+      });
+    };
+
     const restoredPath = initialSessionPathRef.current;
 
     if (restoredPath) {
       navigate(restoredPath, false).catch(() => {
+        if (disposed) {
+          return;
+        }
         initialSessionPathRef.current = '';
         setCurrentPath('');
         setHistory([]);
@@ -2607,43 +2661,44 @@ export function FileExplorer({
         const bootstrapPath = preferredPath && preferredPath !== '.' ? preferredPath : null;
 
         if (bootstrapPath) {
-          navigate(bootstrapPath).catch(() => {
-            getExplorerHomeDir()
-              .then(home => navigate(home))
-              .catch(() => navigate(getFallbackExplorerPath(runtimePlatform)));
-          });
+          navigateToBootstrapPath(bootstrapPath);
         } else {
-          getExplorerHomeDir()
-            .then(home => navigate(home))
-            .catch(() => navigate(getFallbackExplorerPath(runtimePlatform)));
+          navigateToResolvedHome();
         }
       });
 
-      return;
+      return () => {
+        disposed = true;
+      };
     }
 
     const preferredPath = explorerSettings.defaultPath.trim();
     const bootstrapPath = preferredPath && preferredPath !== '.' ? preferredPath : null;
 
     if (bootstrapPath) {
-      navigate(bootstrapPath).catch(() => {
-        getExplorerHomeDir()
-          .then(home => navigate(home))
-          .catch(() => navigate(getFallbackExplorerPath(runtimePlatform)));
-      });
+      navigateToBootstrapPath(bootstrapPath);
     } else {
-      getExplorerHomeDir()
-        .then(home => navigate(home))
-        .catch(() => navigate(getFallbackExplorerPath(runtimePlatform)));
+      navigateToResolvedHome();
     }
 
+    return () => {
+      disposed = true;
+    };
   }, [explorerSettings.defaultPath, instanceId, runtimePlatform, updateExplorerSessionForInstance]);
 
   // ── Navigate ──
   const navigate = useCallback(async (path: string, push = true) => {
+    if (!isExplorerMountedRef.current) {
+      return;
+    }
     const startedAt = getExplorerPerformanceNow();
     const normalizedPath = normalizeExplorerPath(path);
     const directoryCacheKey = getExplorerDirectoryCacheKey(normalizedPath, showHidden);
+    const requestId = directoryLoadRequestIdRef.current + 1;
+    directoryLoadRequestIdRef.current = requestId;
+    const isActiveDirectoryLoadRequest = () => (
+      isExplorerMountedRef.current && directoryLoadRequestIdRef.current === requestId
+    );
     setCurrentPath(normalizedPath); setSelected(new Set()); setSearch(''); setSearchResults([]); setSearchLoading(false); setError(null);
     setEntrySizeLoadingPaths(new Set());
     setAddressEditing(false);
@@ -2655,9 +2710,17 @@ export function FileExplorer({
         directoryCacheKey,
         () => listExplorerLocation(normalizedPath, showHidden),
       );
+      if (!isActiveDirectoryLoadRequest()) {
+        return;
+      }
       startTransition(() => {
-        setEntries(nextListing.entries);
+        if (isActiveDirectoryLoadRequest()) {
+          setEntries(nextListing.entries);
+        }
       });
+      if (!isActiveDirectoryLoadRequest()) {
+        return;
+      }
       setLocationBreadcrumbs(nextListing.breadcrumbs);
       setLocationParentPath(nextListing.parentPath);
       recordExplorerMetric({
@@ -2672,9 +2735,14 @@ export function FileExplorer({
       });
     }
     catch (e) {
+      if (!isActiveDirectoryLoadRequest()) {
+        return;
+      }
       setError(String(e));
       startTransition(() => {
-        setEntries([]);
+        if (isActiveDirectoryLoadRequest()) {
+          setEntries([]);
+        }
       });
       setLocationBreadcrumbs([]);
       setLocationParentPath(null);
@@ -2689,12 +2757,22 @@ export function FileExplorer({
         },
       });
     }
-    finally { setLoading(false); }
+    finally {
+      if (isActiveDirectoryLoadRequest()) {
+        setLoading(false);
+      }
+    }
   }, [historyIdx, isCloudExplorerPath, listExplorerLocation, recordExplorerMetric, showHidden]);
 
   const runSearch = useCallback(async (query: string, requestId: number) => {
+    const isActiveSearchRequest = () => (
+      isExplorerMountedRef.current && searchRequestIdRef.current === requestId
+    );
     const trimmed = query.trim();
     if (!trimmed || !currentPath) {
+      if (!isExplorerMountedRef.current) {
+        return;
+      }
       startTransition(() => {
         setSearchResults([]);
       });
@@ -2703,6 +2781,9 @@ export function FileExplorer({
     }
 
     if (!supportsSearch(currentPath)) {
+      if (!isExplorerMountedRef.current) {
+        return;
+      }
       startTransition(() => {
         setSearchResults([]);
       });
@@ -2711,6 +2792,9 @@ export function FileExplorer({
       return;
     }
 
+    if (!isExplorerMountedRef.current) {
+      return;
+    }
     setSearchLoading(true);
     const startedAt = getExplorerPerformanceNow();
     const searchCacheKey = getExplorerSearchCacheKey({
@@ -2739,9 +2823,11 @@ export function FileExplorer({
         },
       );
       const results = response.results;
-      if (searchRequestIdRef.current === requestId) {
+      if (isActiveSearchRequest()) {
         startTransition(() => {
-          setSearchResults(results);
+          if (isActiveSearchRequest()) {
+            setSearchResults(results);
+          }
         });
         recordExplorerMetric({
           metricId: 'explorer_search',
@@ -2756,9 +2842,11 @@ export function FileExplorer({
         });
       }
     } catch (searchError) {
-      if (searchRequestIdRef.current === requestId) {
+      if (isActiveSearchRequest()) {
         startTransition(() => {
-          setSearchResults([]);
+          if (isActiveSearchRequest()) {
+            setSearchResults([]);
+          }
         });
         setError(`Search failed: ${searchError}`);
         recordExplorerMetric({
@@ -2773,14 +2861,19 @@ export function FileExplorer({
         });
       }
     } finally {
-      if (searchRequestIdRef.current === requestId) {
+      if (isActiveSearchRequest()) {
         setSearchLoading(false);
       }
     }
   }, [currentPath, explorerSearchScope, recordExplorerMetric, searchIncludeContent, showHidden, supportsSearch]);
 
   const refresh = useCallback(async () => {
-    if (!currentPath) return;
+    if (!currentPath || !isExplorerMountedRef.current) return;
+    const requestId = directoryLoadRequestIdRef.current + 1;
+    directoryLoadRequestIdRef.current = requestId;
+    const isActiveDirectoryLoadRequest = () => (
+      isExplorerMountedRef.current && directoryLoadRequestIdRef.current === requestId
+    );
     const entriesToInvalidate = search.trim() ? searchResults : entries;
     invalidateExplorerResultCaches(currentPath);
     setLoading(true);
@@ -2801,19 +2894,35 @@ export function FileExplorer({
     setEntrySizeLoadingPaths(new Set());
     try {
       const nextListing = await listExplorerLocationUncached(currentPath, showHidden);
+      if (!isActiveDirectoryLoadRequest()) {
+        return;
+      }
       explorerDirectoryResultCache.set(
         getExplorerDirectoryCacheKey(currentPath, showHidden),
         nextListing,
       );
       startTransition(() => {
-        setEntries(nextListing.entries);
+        if (isActiveDirectoryLoadRequest()) {
+          setEntries(nextListing.entries);
+        }
       });
+      if (!isActiveDirectoryLoadRequest()) {
+        return;
+      }
       setLocationBreadcrumbs(nextListing.breadcrumbs);
       setLocationParentPath(nextListing.parentPath);
     }
-    catch (e) { setError(String(e)); }
-    finally { setLoading(false); }
-    if (search.trim() && supportsSearch(currentPath)) {
+    catch (e) {
+      if (isActiveDirectoryLoadRequest()) {
+        setError(String(e));
+      }
+    }
+    finally {
+      if (isActiveDirectoryLoadRequest()) {
+        setLoading(false);
+      }
+    }
+    if (isActiveDirectoryLoadRequest() && search.trim() && supportsSearch(currentPath)) {
       const requestId = ++searchRequestIdRef.current;
       void runSearch(search, requestId);
     }
