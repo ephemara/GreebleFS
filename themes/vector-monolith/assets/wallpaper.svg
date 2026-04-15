@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" fill="none">
+  <rect width="1600" height="900" fill="#04090D"/>
+  <rect width="1600" height="900" fill="url(#baseGlow)"/>
+  <rect width="1600" height="900" fill="url(#scanFade)" opacity="0.72"/>
+  <g opacity="0.38" stroke="url(#gridLine)" stroke-width="1">
+    <path d="M0 680H1600"/>
+    <path d="M0 740H1600"/>
+    <path d="M0 800H1600"/>
+    <path d="M0 860H1600"/>
+    <path d="M160 560V900"/>
+    <path d="M320 520V900"/>
+    <path d="M480 500V900"/>
+    <path d="M640 470V900"/>
+    <path d="M800 450V900"/>
+    <path d="M960 470V900"/>
+    <path d="M1120 500V900"/>
+    <path d="M1280 520V900"/>
+    <path d="M1440 560V900"/>
+  </g>
+  <ellipse cx="800" cy="700" rx="420" ry="96" fill="url(#runwayGlow)" opacity="0.7"/>
+  <ellipse cx="800" cy="700" rx="278" ry="50" fill="#64F4D7" opacity="0.2"/>
+  <g opacity="0.92">
+    <path d="M800 176L980 316V604L800 744L620 604V316L800 176Z" fill="url(#monolithFill)" stroke="url(#monolithStroke)" stroke-width="2"/>
+    <path d="M800 224L924 320V588L800 682L676 588V320L800 224Z" stroke="#CFFEF3" stroke-opacity="0.34" stroke-width="2"/>
+    <path d="M800 176V744" stroke="url(#coreLine)" stroke-width="2"/>
+    <path d="M620 316L980 604" stroke="#64F4D7" stroke-opacity="0.16"/>
+    <path d="M980 316L620 604" stroke="#FF9C58" stroke-opacity="0.18"/>
+  </g>
+  <circle cx="800" cy="458" r="214" stroke="#64F4D7" stroke-opacity="0.24" stroke-width="2"/>
+  <circle cx="800" cy="458" r="276" stroke="#FF9C58" stroke-opacity="0.14" stroke-width="2" stroke-dasharray="10 14"/>
+  <g fill="#ECFBFF">
+    <circle cx="482" cy="254" r="4" opacity="0.7"/>
+    <circle cx="1216" cy="202" r="3" opacity="0.58"/>
+    <circle cx="1110" cy="322" r="2.5" opacity="0.54"/>
+    <circle cx="356" cy="368" r="2.5" opacity="0.52"/>
+    <circle cx="1324" cy="452" r="2" opacity="0.42"/>
+    <circle cx="282" cy="190" r="2" opacity="0.38"/>
+  </g>
+  <defs>
+    <linearGradient id="monolithFill" x1="800" y1="176" x2="800" y2="744" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0C2028"/>
+      <stop offset="0.5" stop-color="#07131A"/>
+      <stop offset="1" stop-color="#04080C"/>
+    </linearGradient>
+    <linearGradient id="monolithStroke" x1="620" y1="248" x2="980" y2="668" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#64F4D7"/>
+      <stop offset="1" stop-color="#FF9C58"/>
+    </linearGradient>
+    <linearGradient id="coreLine" x1="800" y1="176" x2="800" y2="744" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ECFBFF" stop-opacity="0.92"/>
+      <stop offset="1" stop-color="#64F4D7" stop-opacity="0.28"/>
+    </linearGradient>
+    <linearGradient id="gridLine" x1="800" y1="460" x2="800" y2="900" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#64F4D7" stop-opacity="0"/>
+      <stop offset="1" stop-color="#64F4D7" stop-opacity="1"/>
+    </linearGradient>
+    <radialGradient id="baseGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(800 180) rotate(90) scale(520 820)">
+      <stop stop-color="#11303A"/>
+      <stop offset="0.4" stop-color="#081219"/>
+      <stop offset="1" stop-color="#02060B"/>
+    </radialGradient>
+    <radialGradient id="runwayGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(800 700) rotate(90) scale(110 420)">
+      <stop stop-color="#64F4D7"/>
+      <stop offset="0.62" stop-color="#127A6A" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#127A6A" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="scanFade" x1="800" y1="0" x2="800" y2="900" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.06"/>
+      <stop offset="0.28" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+</svg>

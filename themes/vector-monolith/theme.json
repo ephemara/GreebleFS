@@ -1,0 +1,230 @@
+{
+  "version": 1,
+  "id": "vector-monolith",
+  "name": "Vector Monolith",
+  "description": "A Three.js-authored workstation shell with a floating monolith stage in app mode and a compact runway dock in overlay mode.",
+  "author": "Codex",
+  "homepage": "https://overlayterm.local/themes/vector-monolith",
+  "tags": ["3d", "threejs", "dock-aware", "workstation", "custom-renderer"],
+  "extends": "operator",
+  "assets": {
+    "background": "assets/wallpaper.svg",
+    "preview": "assets/wallpaper.svg"
+  },
+  "fonts": {
+    "ui": "\"Sora\", \"Space Grotesk\", Inter, sans-serif",
+    "mono": "\"IBM Plex Mono\", \"JetBrains Mono\", monospace"
+  },
+  "presentation": {
+    "chromeStyle": "glass",
+    "density": "comfortable",
+    "iconStyle": "vector",
+    "motionStyle": "dramatic",
+    "cornerRadius": 28,
+    "panelSpacing": 12
+  },
+  "theme": {
+    "palette": {
+      "appBackground": "#02060b",
+      "appBackgroundAlt": "#08131b",
+      "shellBackground": "rgba(6, 12, 16, 0.94)",
+      "shellBackgroundSolid": "#081018",
+      "topBarBackground": "rgba(8, 18, 24, 0.92)",
+      "topBarMenuBackground": "rgba(7, 15, 21, 0.98)",
+      "sidebarBackground": "rgba(7, 16, 22, 0.94)",
+      "panelBackground": "rgba(8, 18, 24, 0.86)",
+      "panelAltBackground": "rgba(5, 11, 16, 0.94)",
+      "cardBackground": "rgba(10, 23, 28, 0.88)",
+      "cardHoverBackground": "rgba(15, 31, 38, 0.94)",
+      "contextMenuBackground": "rgba(8, 16, 21, 0.98)",
+      "inputBackground": "rgba(5, 14, 19, 0.92)",
+      "terminalBackground": "#050b10",
+      "selectionBackground": "rgba(100, 244, 215, 0.24)",
+      "scrimBackground": "rgba(2, 5, 8, 0.72)",
+      "textPrimary": "#ecfbff",
+      "textSecondary": "#c5e4ea",
+      "textMuted": "rgba(197, 228, 234, 0.74)",
+      "textDim": "rgba(146, 185, 191, 0.56)",
+      "textInverse": "#051016",
+      "border": "rgba(118, 212, 196, 0.18)",
+      "borderStrong": "rgba(100, 244, 215, 0.34)",
+      "accent": "#64f4d7",
+      "accentSoft": "rgba(100, 244, 215, 0.16)",
+      "accentContrast": "#051016",
+      "success": "#52d4a2",
+      "warning": "#ffb45e",
+      "danger": "#ff7d72",
+      "info": "#7dd9ff",
+      "note": "#f7ba63",
+      "todo": "#52d4a2",
+      "bug": "#ff7d72",
+      "prompt": "#ff9c58"
+    },
+    "effects": {
+      "backgroundImage": "radial-gradient(circle at 18% 14%, rgba(255,156,88,0.12), transparent 18%), radial-gradient(circle at 72% 18%, rgba(100,244,215,0.18), transparent 22%), linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0) 24%)",
+      "shadow": "0 28px 84px rgba(0, 0, 0, 0.58)",
+      "overlayShadow": "0 -4px 0 0 rgba(100, 244, 215, 0.42), 0 -30px 78px rgba(1, 3, 6, 0.92)"
+    },
+    "workbench": {
+      "preset": "workbench",
+      "brandLabel": "Monolith",
+      "layoutPrimitiveId": "monolith-volume",
+      "navigationPatternId": "monolith-spatial",
+      "renderStyleId": "monolith-render",
+      "topBarStyle": "glass",
+      "commandPaletteStyle": "glass",
+      "terminalStyle": "glass",
+      "settingsStyle": "glass",
+      "tabStyle": "capsule",
+      "metrics": {
+        "chromeHeight": 40,
+        "controlRadius": 18,
+        "panelRadius": 28,
+        "shellInset": 12,
+        "pagePadding": 12,
+        "panelGap": 12,
+        "commandPaletteWidth": 920
+      },
+      "cssVars": {
+        "--overlay-workbench-monolith-stage-width": "min(calc(100% - 96px), 1320px)",
+        "--overlay-workbench-monolith-stage-height": "min(calc(100% - 136px), 760px)",
+        "--overlay-workbench-monolith-rail-width": "296px",
+        "--overlay-workbench-monolith-side-width": "312px"
+      }
+    },
+    "explorer": {
+      "preset": "workbench",
+      "railBrandLabel": "Volume Deck",
+      "layoutPrimitiveId": "monolith-volume",
+      "navigationPatternId": "monolith-spatial",
+      "renderStyleId": "monolith-render",
+      "toolbarStyle": "floating",
+      "breadcrumbStyle": "capsule",
+      "selectionStyle": "glow",
+      "hoverStyle": "lift",
+      "previewStyle": "glass",
+      "statusBarStyle": "floating",
+      "preferredViewMode": "icons-xl",
+      "preferredExperimentalViewMode": "constellation",
+      "metrics": {
+        "railWidth": 256,
+        "previewWidth": 432,
+        "panelRadius": 28,
+        "gridScale": 1.18,
+        "iconScale": 1.14,
+        "hoverLiftPx": 5
+      },
+      "cssVars": {
+        "--overlay-explorer-brand": "volume-deck"
+      }
+    },
+    "dock": {
+      "workbench": {
+        "preset": "xmb",
+        "brandLabel": "Runway",
+        "topBarStyle": "floating",
+        "commandPaletteStyle": "glass",
+        "terminalStyle": "glass",
+        "settingsStyle": "glass",
+        "tabStyle": "capsule",
+        "metrics": {
+          "chromeHeight": 34,
+          "controlRadius": 16,
+          "panelRadius": 24,
+          "shellInset": 8,
+          "pagePadding": 8,
+          "panelGap": 10,
+          "commandPaletteWidth": 820
+        },
+        "cssVars": {
+          "--overlay-workbench-monolith-stage-width": "min(calc(100% - 28px), 1120px)",
+          "--overlay-workbench-monolith-stage-height": "min(56vh, 480px)",
+          "--overlay-workbench-monolith-rail-width": "100%",
+          "--overlay-workbench-monolith-side-width": "272px"
+        }
+      },
+      "explorer": {
+        "preset": "xmb",
+        "railBrandLabel": "Runway Deck",
+        "toolbarStyle": "glass",
+        "breadcrumbStyle": "capsule",
+        "selectionStyle": "glow",
+        "hoverStyle": "lift",
+        "previewStyle": "floating",
+        "statusBarStyle": "floating",
+        "preferredViewMode": "icons",
+        "preferredExperimentalViewMode": "constellation",
+        "metrics": {
+          "railWidth": 228,
+          "previewWidth": 360,
+          "panelRadius": 24,
+          "gridScale": 1.08,
+          "iconScale": 1.06,
+          "hoverLiftPx": 4
+        },
+        "cssVars": {
+          "--overlay-explorer-brand": "runway-deck"
+        }
+      }
+    }
+  },
+  "compatibility": {
+    "shellBlueprints": ["classic-dock", "retro-desktop", "xmb-cross-media"],
+    "tags": ["3d", "runway", "spatial"]
+  },
+  "layoutPrimitives": [
+    {
+      "id": "monolith-volume",
+      "name": "Monolith Volume",
+      "kind": "grid",
+      "props": {
+        "cellSize": 160
+      }
+    }
+  ],
+  "navigationPatterns": [
+    {
+      "id": "monolith-spatial",
+      "name": "Monolith Spatial",
+      "kind": "spatial",
+      "axis": "both",
+      "props": {
+        "breadcrumb": false,
+        "wrap": true,
+        "focusRing": "accent"
+      }
+    }
+  ],
+  "renderStyles": [
+    {
+      "id": "monolith-render",
+      "label": "Monolith Volume",
+      "description": "A volumetric workspace shell with a floating stage in app mode and a runway dock fallback.",
+      "kind": "desktop-window-manager",
+      "entryModule": "renderers/vector-monolith.tsx",
+      "supportsLiveSwap": true
+    }
+  ],
+  "themeRenderer": {
+    "entryModule": "renderers/vector-monolith.tsx",
+    "apiVersion": 1,
+    "supportsLiveSwap": true,
+    "fallbackRuntime": "desktop-stack",
+    "capabilities": {
+      "customScreens": true,
+      "wallpaperScene": true,
+      "surfaceAdapters": true
+    }
+  },
+  "defaultLayoutPrimitiveId": "monolith-volume",
+  "defaultNavigationPatternId": "monolith-spatial",
+  "defaultRenderStyleId": "monolith-render",
+  "visuals": [
+    {
+      "id": "monolith-scanfield",
+      "backgroundImage": "linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0) 26%), repeating-linear-gradient(90deg, rgba(100,244,215,0.05) 0 1px, transparent 1px 140px), repeating-linear-gradient(180deg, rgba(255,156,88,0.04) 0 1px, transparent 1px 120px)",
+      "opacity": 0.88,
+      "blendMode": "screen"
+    }
+  ]
+}

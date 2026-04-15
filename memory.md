@@ -1,5 +1,18 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Vector Monolith Three.js Theme Package
+
+- Added `themes/vector-monolith/` as the first packaged Three.js theme built on top of the new multi-file renderer module graph.
+- Durable shape:
+  - the package ships one renderer entrypoint but splits behavior into separate app and dock shells under `renderers/monolith/modes/`
+  - the dock lane is authored in-package through `theme.dock.workbench` and `theme.dock.explorer`, so overlay mode gets tighter chrome and explorer defaults without needing a separate manifest contract
+  - shared Three.js scene plumbing lives in `renderers/monolith/components/three-backdrop.tsx`, while the 3D shell framing stays in host-owned React surfaces via `host.renderPanelSurface(...)`
+  - `src/test/themeRendererPackages.test.ts` now resolves real filesystem-relative imports, so packaged multi-file renderer fixtures are exercised directly instead of assuming single-file entrypoints
+- Validation target:
+  - `bunx vitest run src/test/themeRendererPackages.test.ts src/test/themeRendererRuntime.test.tsx src/test/themePackages.test.ts`
+- Current limitation:
+  - this is a shell-level 3D treatment around host panels; the explorer contents themselves are still DOM surfaces, not yet a native in-scene 3D object graph of individual files/folders
+
 ## 2026-04-15 — Explorer Context Menu Catalog / Plugin Composer
 
 - Explorer context menus now resolve through a shared typed catalog instead of ad hoc hardcoded JSX-only item lists.

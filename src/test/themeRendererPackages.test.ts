@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -49,6 +50,11 @@ const rendererFixtures = [
     name: 'dreamcast-skyline',
     filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/dreamcast-skyline/renderers/dreamcast-skyline.tsx',
   },
+  {
+    name: 'vector-monolith',
+    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/vector-monolith/renderers/vector-monolith.tsx',
+    sourceAssertionPath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/vector-monolith/renderers/monolith/modes/app-shell.tsx',
+  },
 ];
 
 const expectedSurfaceOwnershipByTheme = {
@@ -60,6 +66,7 @@ const expectedSurfaceOwnershipByTheme = {
   'gamecube-helix': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
   'gamecube-orbital': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
   'gamecube-prism': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
+  'vector-monolith': { launcher: true, chrome: true, contentFrame: true, pinnedPanels: true, wallpaper: true },
   'wii-channel-home': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
   'xmb-crosswave': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
 } satisfies Record<string, Partial<Awaited<ReturnType<typeof loadThemeRendererFromSource>>['surfaceOwnership']>>;
@@ -73,6 +80,7 @@ const utilitySurfaceContractRendererNames = new Set([
   'gamecube-helix',
   'gamecube-orbital',
   'gamecube-prism',
+  'vector-monolith',
   'wii-channel-home',
   'xmb-crosswave',
 ]);
@@ -85,14 +93,42 @@ const launcherShellModelRendererNames = new Set([
   'gamecube-helix',
   'gamecube-orbital',
   'gamecube-prism',
+  'vector-monolith',
   'wii-channel-home',
   'xmb-crosswave',
 ]);
 
+const relativeModuleExtensions = ['.tsx', '.ts', '.jsx', '.js'];
+
+function createFilesystemRelativeModuleSourceResolver() {
+  return async ({ fromModulePath, specifier }: { fromModulePath: string; specifier: string }) => {
+    const resolvedBasePath = resolve(dirname(fromModulePath), specifier);
+    const candidatePaths = /[.][^./]+$/.test(resolvedBasePath)
+      ? [resolvedBasePath]
+      : [
+          ...relativeModuleExtensions.map(extension => `${resolvedBasePath}${extension}`),
+          ...relativeModuleExtensions.map(extension => resolve(resolvedBasePath, `index${extension}`)),
+        ];
+
+    for (const candidatePath of candidatePaths) {
+      if (existsSync(candidatePath)) {
+        return {
+          modulePath: candidatePath,
+          source: readFileSync(candidatePath, 'utf8'),
+        };
+      }
+    }
+
+    return null;
+  };
+}
+
+const filesystemRelativeModuleSourceResolver = createFilesystemRelativeModuleSourceResolver();
+
 describe('theme renderer package fixtures', () => {
   it.each(rendererFixtures)('loads %s without runtime errors', async fixture => {
-    const source = readFileSync(fixture.filePath, 'utf8');
-    const renderer = await loadThemeRendererFromSource(source, {
+    const entrySource = readFileSync(fixture.filePath, 'utf8');
+    const renderer = await loadThemeRendererFromSource(entrySource, {
       name: fixture.filePath.split('/').pop() ?? `${fixture.name}.tsx`,
       path: fixture.filePath,
       is_dir: false,
@@ -106,6 +142,7 @@ describe('theme renderer package fixtures', () => {
         rendererRoot: fixture.filePath.replace(/\/renderers\/[^/]+$/, ''),
         entryModule: fixture.filePath.split('/renderers/')[1] ?? '',
       },
+      resolveRelativeModuleSource: filesystemRelativeModuleSourceResolver,
     });
 
     expect(renderer.error).toBeNull();
@@ -116,14 +153,17 @@ describe('theme renderer package fixtures', () => {
       expect(renderer.surfaceOwnership).toMatchObject(expectedSurfaceOwnership);
     }
 
+    const sourceAssertionFilePath = fixture.sourceAssertionPath ?? fixture.filePath;
+    const assertionSource = readFileSync(sourceAssertionFilePath, 'utf8');
+
     if (utilitySurfaceContractRendererNames.has(fixture.name)) {
-      expect(source).not.toContain('host.panels');
-      expect(source).not.toContain('renderChromeBar(');
-      expect(source).toContain('host.renderUtilityActionsSurface()');
+      expect(assertionSource).not.toContain('host.panels');
+      expect(assertionSource).not.toContain('renderChromeBar(');
+      expect(assertionSource).toContain('host.renderUtilityActionsSurface()');
     }
 
     if (launcherShellModelRendererNames.has(fixture.name)) {
-      expect(source).toContain('host.shellModel.launcher');
+      expect(assertionSource).toContain('host.shellModel.launcher');
     }
   });
 });
