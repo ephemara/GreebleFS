@@ -95,4 +95,40 @@ describe('themeRendererRuntime', () => {
     expect(renderer.surfaceOwnership.launcher).toBe(true);
     expect(renderer.surfaceOwnership.wallpaper).toBe(false);
   });
+
+  it('allows theme renderers to import three from the host runtime allowlist', async () => {
+    const renderer = await loadThemeRendererFromSource(
+      `
+        import * as THREE from 'three';
+        import { defineThemeRenderer } from 'overlayterm-theme-renderer';
+
+        const scene = new THREE.Scene();
+        scene.name = 'Theme Space';
+
+        export default defineThemeRenderer({
+          name: 'Three Shell',
+          component() {
+            return <div>{scene.name}</div>;
+          },
+        });
+      `,
+      {
+        name: 'three-shell.tsx',
+        path: '/themes/three-shell/renderers/three-shell.tsx',
+        is_dir: false,
+        extension: 'tsx',
+        modified: 1,
+      },
+      {
+        context: {
+          rendererRoot: '/themes/three-shell',
+          entryModule: 'renderers/three-shell.tsx',
+        },
+      },
+    );
+
+    expect(renderer.error).toBeNull();
+    expect(renderer.name).toBe('Three Shell');
+    expect(typeof renderer.component).toBe('function');
+  });
 });

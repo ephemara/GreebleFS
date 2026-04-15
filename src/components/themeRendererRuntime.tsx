@@ -1,5 +1,6 @@
 import React from 'react';
 import * as LucideReact from 'lucide-react';
+import * as THREE from 'three';
 
 import type { OverlayThemeDefinition, ResolvedOverlayAppearance } from '../config/appearance';
 import type { LayoutProfile } from '../config/layoutProfiles';
@@ -253,6 +254,7 @@ function executeThemeRendererModule(code: string): unknown {
   return executeRuntimeModule(code, {
     react: React,
     'lucide-react': LucideReact,
+    three: THREE,
     [overlayThemeRendererRuntimeModuleName]: {
       defineThemeRenderer,
     },
