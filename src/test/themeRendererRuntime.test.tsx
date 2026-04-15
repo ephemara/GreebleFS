@@ -131,4 +131,73 @@ describe('themeRendererRuntime', () => {
     expect(renderer.name).toBe('Three Shell');
     expect(typeof renderer.component).toBe('function');
   });
+
+  it('loads multi-file theme renderer modules through relative imports', async () => {
+    const moduleSources: Record<string, string> = {
+      '/themes/multi/renderers/helpers/orbit.tsx': `
+        import { buildOrbitTitle } from './title';
+
+        export function buildOrbitLabel() {
+          return <span>{buildOrbitTitle()}</span>;
+        }
+      `,
+      '/themes/multi/renderers/helpers/title.ts': `
+        export function buildOrbitTitle() {
+          return 'Orbit Cluster';
+        }
+      `,
+    };
+
+    const renderer = await loadThemeRendererFromSource(
+      `
+        import { defineThemeRenderer } from 'overlayterm-theme-renderer';
+        import { buildOrbitLabel } from './helpers/orbit';
+
+        const orbitLabel = buildOrbitLabel();
+
+        export default defineThemeRenderer({
+          name: 'Multi Shell',
+          component() {
+            return <div>{orbitLabel}</div>;
+          },
+        });
+      `,
+      {
+        name: 'multi-shell.tsx',
+        path: '/themes/multi/renderers/multi-shell.tsx',
+        is_dir: false,
+        extension: 'tsx',
+        modified: 1,
+      },
+      {
+        context: {
+          rendererRoot: '/themes/multi',
+          entryModule: 'renderers/multi-shell.tsx',
+        },
+        resolveRelativeModuleSource: async ({ fromModulePath, specifier }) => {
+          const fromDirectory = fromModulePath.slice(0, fromModulePath.lastIndexOf('/'));
+          const resolvedBasePath = new URL(specifier, `file://${fromDirectory}/`).pathname;
+          const candidatePaths = /\.[^./]+$/.test(resolvedBasePath)
+            ? [resolvedBasePath]
+            : [`${resolvedBasePath}.tsx`, `${resolvedBasePath}.ts`];
+
+          for (const candidatePath of candidatePaths) {
+            const source = moduleSources[candidatePath];
+            if (source) {
+              return {
+                modulePath: candidatePath,
+                source,
+              };
+            }
+          }
+
+          return null;
+        },
+      },
+    );
+
+    expect(renderer.error).toBeNull();
+    expect(renderer.name).toBe('Multi Shell');
+    expect(typeof renderer.component).toBe('function');
+  });
 });

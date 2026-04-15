@@ -49,6 +49,9 @@ Top-level fields:
   - Optional V2 shell renderer module. This is the opt-in path for themes that want to replace the built-in workbench presentation with a theme-authored React shell while still using host-owned panels, navigation state, wallpaper APIs, and native capabilities.
   - `entryModule`
     - Relative path to a `TSX` renderer module, for example `renderers/custom-shell.tsx`.
+  - Theme renderer modules can now import sibling files inside the same theme package with relative paths like `./shell/body` or `../shared/chrome`.
+    - Relative imports stay sandboxed to the current theme package root.
+    - External imports are still host allowlisted. Current built-ins are `react`, `lucide-react`, `three`, and `overlayterm-theme-renderer`.
   - `apiVersion`
     - Renderer host contract version. Current value: `1`.
   - `supportsLiveSwap`

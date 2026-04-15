@@ -37,6 +37,7 @@ import { OVERLAY_SHELL_BLUEPRINTS } from './shellBlueprints';
 import { resolveRuntimeAssetPollingEnabled } from './runtimeAssetPolling';
 import type { WorkbenchRenderRuntimeKind } from './workbenchRenderRuntime';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
+import type { RuntimeRelativeModuleSourceResolver } from '../runtime/moduleRuntime';
 
 interface FileEntry {
   name: string;
@@ -48,6 +49,7 @@ interface FileEntry {
 
 type LooseRecord = Record<string, unknown>;
 const validShellBlueprintIds = new Set(OVERLAY_SHELL_BLUEPRINTS.map(blueprint => blueprint.id));
+const themeRendererRuntimeModuleExtensions = ['ts', 'tsx', 'js', 'jsx'] as const;
 
 export interface OverlayThemePackageManifest {
   version?: number;
@@ -290,6 +292,88 @@ function normalizePackageAssetPath(assetPath: string): string {
   return assetPath.trim().replace(/^\.(?:\/|\\)/, '');
 }
 
+function normalizePackageComparisonPath(path: string): string {
+  return path
+    .replace(/\\/g, '/')
+    .replace(/\/+/g, '/')
+    .replace(/\/+$/g, '');
+}
+
+function normalizePackageRuntimeModulePath(path: string): string | null {
+  const normalizedPath = path.trim().replace(/\\/g, '/');
+  if (!normalizedPath || normalizedPath.startsWith('/') || /^[A-Za-z]:\//.test(normalizedPath)) {
+    return null;
+  }
+
+  const segments: string[] = [];
+  for (const segment of normalizedPath.split('/')) {
+    if (!segment || segment === '.') {
+      continue;
+    }
+
+    if (segment === '..') {
+      if (segments.length === 0) {
+        return null;
+      }
+      segments.pop();
+      continue;
+    }
+
+    segments.push(segment);
+  }
+
+  return segments.join('/');
+}
+
+function getPackageRelativePath(directoryPath: string, filePath: string): string | null {
+  const normalizedDirectoryPath = normalizePackageComparisonPath(directoryPath);
+  const normalizedFilePath = normalizePackageComparisonPath(filePath);
+  if (!normalizedDirectoryPath || !normalizedFilePath) {
+    return null;
+  }
+
+  if (normalizedFilePath === normalizedDirectoryPath) {
+    return '';
+  }
+
+  if (!normalizedFilePath.startsWith(`${normalizedDirectoryPath}/`)) {
+    return null;
+  }
+
+  return normalizedFilePath.slice(normalizedDirectoryPath.length + 1);
+}
+
+function resolvePackageRuntimeModuleImportPath(
+  fromModuleRelativePath: string,
+  specifier: string,
+): string | null {
+  const importerSegments = fromModuleRelativePath.replace(/\\/g, '/').split('/').filter(Boolean);
+  importerSegments.pop();
+  const specifierSegments = specifier.replace(/\\/g, '/').split('/');
+  return normalizePackageRuntimeModulePath(
+    [...importerSegments, ...specifierSegments].join('/'),
+  );
+}
+
+function buildPackageRuntimeModuleCandidates(relativePath: string): string[] {
+  const normalizedRelativePath = normalizePackageRuntimeModulePath(relativePath);
+  if (!normalizedRelativePath) {
+    return [];
+  }
+
+  const candidates = new Set<string>();
+  if (/\.[^./]+$/.test(normalizedRelativePath)) {
+    candidates.add(normalizedRelativePath);
+  } else {
+    for (const extension of themeRendererRuntimeModuleExtensions) {
+      candidates.add(`${normalizedRelativePath}.${extension}`);
+      candidates.add(`${normalizedRelativePath}/index.${extension}`);
+    }
+  }
+
+  return [...candidates];
+}
+
 function parseThemeManifestText(text: string, filePath: string): OverlayThemePackageManifest {
   const trimmed = text.trim();
   if (!trimmed) {
@@ -495,6 +579,37 @@ function createRelativeFileEntry(directoryPath: string, relativePath: string): F
     is_dir: false,
     extension: extensionMatch?.[1]?.toLowerCase() ?? '',
     modified: 0,
+  };
+}
+
+function createThemeRendererRelativeModuleSourceResolver(
+  directoryPath: string,
+): RuntimeRelativeModuleSourceResolver {
+  return async ({ fromModulePath, specifier }) => {
+    const fromModuleRelativePath = getPackageRelativePath(directoryPath, fromModulePath);
+    if (fromModuleRelativePath == null) {
+      return null;
+    }
+
+    const resolvedImportPath = resolvePackageRuntimeModuleImportPath(fromModuleRelativePath, specifier);
+    if (!resolvedImportPath) {
+      return null;
+    }
+
+    for (const candidateRelativePath of buildPackageRuntimeModuleCandidates(resolvedImportPath)) {
+      const candidateAbsolutePath = joinPlatformPath(directoryPath, candidateRelativePath);
+      try {
+        const source = await commands.fsReadTextFile(candidateAbsolutePath).then(unwrapTauriResult);
+        return {
+          modulePath: candidateAbsolutePath,
+          source,
+        };
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
   };
 }
 
@@ -830,6 +945,7 @@ export async function loadThemePackagesFromDirectoryEntries(
                 fallbackRuntime: rendererManifest.fallbackRuntime,
                 capabilities: rendererManifest.capabilities,
               },
+              resolveRelativeModuleSource: createThemeRendererRelativeModuleSourceResolver(record.directoryPath),
             });
             if (packageThemeRenderer.error) {
               packageWarnings.push(`Theme renderer ${rendererManifest.entryModule}: ${packageThemeRenderer.error}`);

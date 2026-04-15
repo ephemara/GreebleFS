@@ -184,6 +184,7 @@ describe('theme package loader', () => {
       if (command === 'fs_read_text_file' && normalizedPath === 'themes/vista-glass/renderers/vista-shell.tsx') {
         return `
           import { defineThemeRenderer } from 'overlayterm-theme-renderer';
+          import { renderVistaShellBody } from './shell/body';
 
           export default defineThemeRenderer({
             name: 'Vista Shell',
@@ -196,16 +197,34 @@ describe('theme package loader', () => {
               surfaceAdapters: true,
             },
             component({ host }) {
-              return (
-                <div style={{ position: 'relative', display: 'flex', flex: 1, minHeight: 0 }}>
-                  {host.wallpaper.renderBackdropStack()}
-                  <div style={{ position: 'relative', zIndex: 1, display: 'flex', flex: 1, minHeight: 0 }}>
-                    {host.renderDefaultShellBody()}
-                  </div>
-                </div>
-              );
+              return renderVistaShellBody(host);
             },
           });
+        `;
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'themes/vista-glass/renderers/shell/body.tsx') {
+        return `
+          import { getVistaBodySurfaceStyle } from './frame';
+
+          export function renderVistaShellBody(host) {
+            return (
+              <div style={{ position: 'relative', display: 'flex', flex: 1, minHeight: 0 }}>
+                {host.wallpaper.renderBackdropStack()}
+                <div style={getVistaBodySurfaceStyle()}>
+                  {host.renderDefaultShellBody()}
+                </div>
+              </div>
+            );
+          }
+        `;
+      }
+
+      if (command === 'fs_read_text_file' && normalizedPath === 'themes/vista-glass/renderers/shell/frame.ts') {
+        return `
+          export function getVistaBodySurfaceStyle() {
+            return { position: 'relative', zIndex: 1, display: 'flex', flex: 1, minHeight: 0 };
+          }
         `;
       }
 
@@ -296,6 +315,7 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.theme.themeRenderer?.fallbackRuntime).toBe('workbench-tabs');
     expect(result.packages[0]?.theme.themeRenderer?.capabilities.wallpaperScene).toBe(true);
     expect(result.packages[0]?.theme.themeRenderer?.error).toBeNull();
+    expect(result.packages[0]?.theme.themeRenderer?.component).not.toBeNull();
     expect(result.packages[0]?.themeRenderer?.entryModule).toBe('renderers/vista-shell.tsx');
     expect(result.packages[0]?.author).toBe('OverlayTerm Labs');
     expect(result.packages[0]?.homepage).toBe('https://overlayterm.local/themes/vista-glass');

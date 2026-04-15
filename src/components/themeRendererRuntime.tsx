@@ -18,9 +18,11 @@ import type { OverlayPanelDefinition } from '../panels/panelRegistry';
 import {
   deriveRuntimeModuleId,
   deriveRuntimeModuleName,
-  executeRuntimeModule,
-  transpileRuntimeModuleSource,
+  executeRuntimeModuleGraph,
+  transpileRuntimeModuleGraph,
   type RuntimeFileEntry,
+  type RuntimeModuleGraph,
+  type RuntimeRelativeModuleSourceResolver,
   unwrapRuntimeModuleExport,
 } from '../runtime/moduleRuntime';
 import {
@@ -147,6 +149,7 @@ export interface LoadedOverlayThemeRenderer extends OverlayThemeRendererContext 
 export interface LoadThemeRendererFromSourceOptions {
   context?: Partial<OverlayThemeRendererContext>;
   defaults?: Partial<Omit<OverlayThemeRendererDefinition, 'component'>>;
+  resolveRelativeModuleSource?: RuntimeRelativeModuleSourceResolver;
 }
 
 export const overlayThemeRendererRuntimeModuleName = 'overlayterm-theme-renderer';
@@ -187,8 +190,13 @@ export async function loadThemeRendererFromSource(
   };
 
   try {
-    const transpiled = await transpileRuntimeModuleSource(source, 'const React = require(\'react\');\n');
-    const exported = executeThemeRendererModule(transpiled);
+    const transpiledGraph = await transpileRuntimeModuleGraph({
+      entryModulePath: context.filePath,
+      entrySource: source,
+      prependCode: 'const React = require(\'react\');\n',
+      resolveRelativeModuleSource: options?.resolveRelativeModuleSource,
+    });
+    const exported = executeThemeRendererModuleGraph(transpiledGraph);
     const normalized = normalizeThemeRendererExport(exported, context);
 
     return {
@@ -250,8 +258,8 @@ export function ThemeRendererBoundary({
   );
 }
 
-function executeThemeRendererModule(code: string): unknown {
-  return executeRuntimeModule(code, {
+function executeThemeRendererModuleGraph(graph: RuntimeModuleGraph): unknown {
+  return executeRuntimeModuleGraph(graph, {
     react: React,
     'lucide-react': LucideReact,
     three: THREE,

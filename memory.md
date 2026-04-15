@@ -1,5 +1,21 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Theme Renderer Multi-File Module Graph
+
+- Theme renderers are no longer single-file only.
+- Durable implementation shape:
+  - `src/runtime/moduleRuntime.ts` now supports compiling and executing a small runtime module graph, not just a single transpiled module blob.
+  - `src/components/themeRendererRuntime.tsx` now uses that graph path, so a renderer entry file can import sibling helpers with relative paths while still using the host-owned allowlist for external libraries.
+  - `src/config/themePackages.ts` now resolves relative theme-renderer imports against the current theme package root, tries `.ts` / `.tsx` / `.js` / `.jsx` plus `index.*`, and blocks path traversal outside the package by returning no resolution when `..` would escape the root.
+  - `three` remains a host allowlisted external import for theme renderers, but theme packages still do not get arbitrary package-manager access; external imports must be explicitly injected by the host runtime.
+- Durable authoring note:
+  - Theme renderer entries can now be split into small local files such as `renderers/shell/body.tsx` and `renderers/shell/frame.ts`.
+  - Use relative imports for local helpers. Do not assume arbitrary npm dependencies are available inside theme packages.
+- Validation:
+  - passed: `bunx vitest run src/test/themeRendererRuntime.test.tsx src/test/themePackages.test.ts`
+  - passed: `bunx vitest run src/test/themeRendererPackages.test.ts src/test/themePackageExplorerRecipe.test.ts`
+  - blocked by pre-existing unrelated workspace TypeScript errors in `FileExplorer.tsx`, `GitManager.tsx`, `ScreenshotsManager.tsx`, `ExplorerWorkspace.tsx`, `explorerContextMenu.ts`, `performanceTelemetry.ts`, and `explorerStore.ts` during narrowed `bunx tsc --noEmit ...`
+
 ## 2026-04-15 — Pilot Default Theme Baseline
 
 - Added `src/config/pilotThemeContract.ts` as the data-driven source of truth for the boring/default shell baseline.
