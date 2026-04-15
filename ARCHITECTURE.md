@@ -4,6 +4,20 @@
 
 GreebleFS is a Tauri desktop workbench centered on a highly themeable file explorer, terminal overlay, plugins, shaders, animations, screenshots, and settings-driven shell customization.
 
+## Release Identity
+
+- The canonical shipped product name is now `GreebleFS`.
+- Release/package surfaces use:
+  - npm package name `greeblefs`
+  - Rust package/binary `greeblefs`
+  - Tauri product name `GreebleFS`
+  - Tauri identifier `co.greeblefs.app`
+- The repository still intentionally preserves several legacy `OverlayTerm` runtime contracts for compatibility during `v0.1.0-rc1`:
+  - plugin/runtime module ids such as `overlayterm-plugin`
+  - event namespaces and drag payload keys prefixed with `overlayterm`
+  - older `OVERLAYTERM_*` and `VITE_OVERLAYTERM_*` environment overrides as fallbacks
+  - legacy layout/config discovery paths where migration is safe
+
 ## Stack
 
 - Frontend: React 19 + TypeScript + Vite
@@ -186,6 +200,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `tauri dev` keeps repo-relative `plugins/`, `themes/`, `shaders/`, `animations/`, `wallpapers/`, and `notes/` so authoring stays in the workspace
   - installed/release builds resolve those directories under Tauri `AppLocalData` instead of creating top-level `$HOME/plugins`, `$HOME/themes`, `$HOME/shaders`, `$HOME/animations`, `$HOME/wallpapers`, `$HOME/notes`, or `$HOME/Screenshots`
   - `src/config/appContentDirectories.ts` owns that bootstrap and the legacy-home-path detection/migration rules
+  - release migrations now also carry old `co.overlayterm.app` app-local directories forward into `co.greeblefs.app`
+  - layout auto-probe now prefers `~/.greeblefs/greeblefs.layouts.{json,toml}` before older `.greeble` / `.overlayterm` fallbacks
 - Production/default behavior is manual refresh:
   - Plugins panel `Refresh`
   - Settings `Refresh Shaders`

@@ -1,5 +1,22 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Release Candidate Rename / Compatibility Release Prep
+
+- Release-critical naming is now aligned on `GreebleFS` without breaking the legacy runtime surface in one pass.
+- Durable implementation shape:
+  - release/package surfaces now ship as `GreebleFS` / `greeblefs`, including `package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`, installer metadata, and visible shell copy.
+  - `scripts/build-and-install-linux-local-release.sh` now installs under `~/.local/opt/greeblefs`, creates `~/.local/bin/greeblefs`, and keeps a legacy `overlayterm` CLI alias for one RC.
+  - `scripts/run-platform-tauri.mjs` and `src/config/appContentDirectories.ts` now support new `GREEBLEFS_*` / `VITE_GREEBLEFS_*` env names while preserving old `OVERLAYTERM_*` fallbacks.
+  - `src/config/appContentDirectories.ts` now migrates release app-local content from the old Tauri identifier root `co.overlayterm.app` into `co.greeblefs.app`, not just the older home-root layout.
+  - `docs/release-compatibility.md` is the explicit compatibility contract for the RC and documents which old plugin/runtime/event/storage identifiers remain intentionally unchanged.
+- Durable validation note:
+  - passed targeted release-surface tests:
+    - `src/test/layoutProfiles.edge.test.ts`
+    - `src/test/appContentDirectories.test.ts`
+    - `src/test/settingsPage.behavior.test.tsx`
+    - `src/test/gitManager.behavior.test.tsx`
+  - `bun run build` passes, but release packaging and the Rust test lane still remain blockers for a full public ship decision.
+
 ## 2026-04-15 — Explorer Commander Bridge / Cross-Pane Power Controls
 
 - The explorer workspace now has first-class commander-style pane actions instead of only passive split layouts.

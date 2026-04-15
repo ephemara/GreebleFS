@@ -3,30 +3,46 @@
 - Release ID: `v0.1.0-rc1`
 - Generated At (UTC): `2026-04-15T21:56:14Z`
 - Release Folder: `/home/ephemara/Dev/Apps-2D/GreebleFS/release/v0.1.0-rc1`
-- Status: `pending`
-- Decision: `pending`
+- Status: `blocked`
+- Decision: `blocked`
 
 ## Artifact Targets
 
-- [ ] Binary or application bundle
-- [ ] Installer or package
+- [x] Canonical package and app identity updated to `GreebleFS`
+- [ ] Linux `deb` / `rpm` / `AppImage` bundles produced
 - [ ] Checksums, signatures, or symbols if required
-- [ ] Release notes or changelog updates
-- [ ] Docs or metadata updates
+- [x] Release notes and compatibility notes updated
+- [x] Release docs and metadata updated
 
 ## Command Highlights
 
-- [ ] Record the canonical release and validation commands here
+- `bun run build`
+- `bunx vitest run src/test/layoutProfiles.edge.test.ts src/test/appContentDirectories.test.ts`
+- `bunx vitest run --testTimeout 30000 src/test/settingsPage.behavior.test.tsx`
+- `bunx vitest run --testTimeout 30000 src/test/gitManager.behavior.test.tsx`
+- `bun run release:linux:bundle`
 
 ## Results
 
-- [ ] Record exact artifact paths here
-- [ ] Record pass or fail outcomes here
+- Passed:
+  - production frontend/native build
+  - targeted rename and release-surface tests
+  - legacy migration coverage for layout probes and app-content directory env overrides
+- Pending:
+  - Linux package artifacts under `src-tauri/target/release/bundle/`
+  - Rust release test lane
+- Release-facing changes landed:
+  - package/app identity renamed to `GreebleFS`
+  - Tauri identifier changed to `co.greeblefs.app`
+  - Linux installer paths renamed to `~/.local/opt/greeblefs` and `~/.local/bin/greeblefs`
+  - old `overlayterm` plugin/runtime/storage contracts intentionally preserved for one RC via compatibility notes and fallback env/path handling
 
 ## Blockers
 
-- [ ] None recorded yet
+- Linux bundle command was started but no `src-tauri/target/release/bundle/` artifacts were captured before closeout.
+- `bun run test:rust` was not re-established as a green release gate in this pass.
+- Windows signing, macOS signing/notarization, and native-host packaging proof remain external follow-up work.
 
 ## Decision Rationale
 
-- [ ] Explain `go`, `go with caveats`, or `blocked`
+- The rename and migration slice is in place and the targeted release-surface tests now pass, but the release candidate stays blocked until at least one clean Linux bundle run finishes and the remaining cross-platform/signing tasks are explicitly handed off.

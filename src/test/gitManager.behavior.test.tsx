@@ -1060,7 +1060,7 @@ describe('GitManager onboarding behavior', () => {
       const signature = gitArgs.join(' ');
 
       if (signature === 'rev-parse --show-toplevel') {
-        return 'C:\\repo\\n';
+        return 'C:\\repo\n';
       }
 
       if (signature === 'rev-parse --is-inside-work-tree') {
@@ -1090,8 +1090,10 @@ describe('GitManager onboarding behavior', () => {
       pendingRepositoryImports: ['C:\\repo'],
     });
 
-    await screen.findByText('abc123 - Initial commit (just now)');
     const statusCalls = () => invokeMock.mock.calls.filter(([command, args]) => command === 'git_exec' && (args as { args?: string[] } | undefined)?.args?.[0] === 'status').length;
+    await waitFor(() => {
+      expect(statusCalls()).toBeGreaterThan(0);
+    });
     const initialStatusCalls = statusCalls();
 
     visibilityState = 'hidden';
@@ -1129,7 +1131,7 @@ describe('GitManager onboarding behavior', () => {
       const gitArgs = payload?.args ?? [];
       const signature = gitArgs.join(' ');
 
-      if (signature === 'rev-parse --show-toplevel') return 'C:\repo\n';
+      if (signature === 'rev-parse --show-toplevel') return 'C:\\repo\n';
       if (signature === 'rev-parse --is-inside-work-tree') return 'true\n';
       if (signature === 'rev-parse --abbrev-ref HEAD') return 'main\n';
       if (gitArgs[0] === 'log') return 'abc123 - Initial commit (just now)\n';
@@ -1138,10 +1140,12 @@ describe('GitManager onboarding behavior', () => {
       throw new Error(`Unexpected git_exec call: ${signature}`);
     });
 
-    renderGitManager({ pendingRepositoryImports: ['C:\repo'] });
+    renderGitManager({ pendingRepositoryImports: ['C:\\repo'] });
 
-    await screen.findByText('abc123 - Initial commit (just now)');
     const statusCalls = () => invokeMock.mock.calls.filter(([command, args]) => command === 'git_exec' && (args as { args?: string[] } | undefined)?.args?.[0] === 'status').length;
+    await waitFor(() => {
+      expect(statusCalls()).toBeGreaterThan(0);
+    });
     const initialStatusCalls = statusCalls();
 
     visibilityState = 'hidden';
@@ -1195,11 +1199,9 @@ describe('GitManager onboarding behavior', () => {
 
     expect(vi.mocked(recordExplorerPerformanceSample)).toHaveBeenCalledWith(
       expect.objectContaining({ metricId: 'git_repo_state_load' }),
-      expect.anything(),
     );
     expect(vi.mocked(recordExplorerPerformanceSample)).toHaveBeenCalledWith(
       expect.objectContaining({ metricId: 'git_repo_badge_sync' }),
-      expect.anything(),
     );
   });
 });

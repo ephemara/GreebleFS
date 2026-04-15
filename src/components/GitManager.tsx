@@ -403,7 +403,9 @@ export function GitManager({
       const queuedPath = repoStateLoadQueuedPathRef.current ?? selectedRepo ?? repos[0] ?? null;
       if (queuedPath) {
         void loadRepoState(queuedPath, { force: true, whenVisible: true });
+        return;
       }
+
       void scheduleBadgeSync(false);
     };
 
@@ -1376,7 +1378,13 @@ export function GitManager({
 }
 
 function joinRepoPath(repoPath: string, filePath: string): string {
-  return `${repoPath.replace(/[\\/]+$/, '')}/${filePath.replace(/\\/g, '/')}`;
+  const normalizedRepoPath = repoPath.replace(/[\\/]+$/, '');
+  const prefersWindowsSeparators = normalizedRepoPath.includes('\\') && !normalizedRepoPath.includes('/');
+  const normalizedFilePath = prefersWindowsSeparators
+    ? filePath.replace(/\//g, '\\')
+    : filePath.replace(/\\/g, '/');
+  const separator = prefersWindowsSeparators ? '\\' : '/';
+  return `${normalizedRepoPath}${separator}${normalizedFilePath.replace(/^[\\/]+/, '')}`;
 }
 
 function getParentPath(path: string): string {
@@ -1395,6 +1403,19 @@ function looksBinaryContent(content: string): boolean {
   return /\u0000/.test(content);
 }
 
+function unwrapGitManagerCommandResult<T>(result: T | { status: 'ok'; data: T } | { status: 'error'; error: string }): T {
+  if (
+    result
+    && typeof result === 'object'
+    && 'status' in result
+    && (result.status === 'ok' || result.status === 'error')
+  ) {
+    return unwrapTauriResult(result);
+  }
+
+  return result as T;
+}
+
 async function getFileSizeHint(
   path: string,
   cache?: Map<string, number | null>,
@@ -1411,7 +1432,7 @@ async function getFileSizeHint(
   }
 
   try {
-    const entries = await commands.fsListDir(parentPath, true).then(unwrapTauriResult);
+    const entries = await Promise.resolve(commands.fsListDir(parentPath, true)).then(unwrapGitManagerCommandResult);
     const matchingEntry = entries.find(entry => entry.name === baseName && !entry.is_dir);
     const sizeHint = typeof matchingEntry?.size === 'number' ? matchingEntry.size : null;
     cache?.set(path, sizeHint);
@@ -1448,9 +1469,8 @@ async function buildUnifiedDiff(
       );
     }
 
-    const content = await commands
-      .fsReadTextFile(absolutePath)
-      .then(unwrapTauriResult)
+    const content = await Promise.resolve(commands.fsReadTextFile(absolutePath))
+      .then(unwrapGitManagerCommandResult)
       .catch(() => '');
 
     if (!content) {

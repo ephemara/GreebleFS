@@ -2,16 +2,25 @@
 
 ## Blockers
 
-- [ ] None recorded yet
+- [ ] Finish one clean Linux package run with `bun run release:linux:bundle` and record `deb` / `rpm` / `AppImage` paths.
+- [ ] Re-establish `bun run test:rust` as a release gate or explicitly waive it with evidence.
+- [ ] Complete Windows signing/distribution planning on a Windows-capable lane.
+- [ ] Complete macOS signing/notarization planning on a macOS-capable lane.
 
 ## Caveats
 
-- [ ] None recorded yet
+- [ ] Legacy `OverlayTerm` plugin/runtime/event identifiers remain for one RC to preserve compatibility.
+- [ ] `co.greeblefs.app` currently triggers a Tauri bundle-identifier warning because it ends with `.app`.
+- [ ] Production build still emits Rust warnings and large-chunk warnings.
 
 ## Next Actions
 
-- [ ] Record the next exact command or operator action here
+- [ ] Ensure only one Tauri build process is active, then rerun `bun run release:linux:bundle`.
+- [ ] After artifacts exist, capture paths into `02-build-and-validation.md` and smoke-test one installed Linux build.
+- [ ] Decide whether to rename the bundle identifier away from the `.app` suffix before public release.
 
 ## External Dependencies
 
-- [ ] Record missing credentials, SDKs, store access, or infra needs here
+- [ ] Windows code-signing credentials and installer lane
+- [ ] macOS signing and notarization credentials plus native build host
+- [ ] Public release checksum/signing policy
