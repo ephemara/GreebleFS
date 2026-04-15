@@ -48,11 +48,9 @@ import {
 } from '../config/explorerExperimentalModes';
 import {
   EXPLORER_PREVIEW_WIDTH_BOUNDS,
-  explorerShellLayouts,
   getExplorerShellLayoutDefinition,
   getExplorerShellLayoutWidthSuggestion,
   type ExplorerShellLayoutDefinition,
-  type ExplorerShellLayoutId,
 } from '../config/explorerShellLayouts';
 import {
   applyExplorerThemeToAdaptiveDensityStop,
@@ -61,6 +59,13 @@ import {
   resolveExplorerThemeRecipe,
   type ResolvedExplorerThemeRecipe,
 } from '../config/explorerTheme';
+import {
+  explorerModeProfiles,
+  resolveEffectiveExplorerModeProfile,
+  resolveExplorerModeProfileChromeLayoutId,
+  type ExplorerModeProfileDefinition,
+  type ExplorerModeProfileId,
+} from '../config/explorerModeProfiles';
 import { getFolderIconSrc } from '../config/folderIcons';
 import { getBuiltInIconTheme, resolveFileIconSrc, resolveIconSrc } from '../config/iconTheme';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
@@ -163,9 +168,14 @@ import {
 } from '../runtime/explorerBackend';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 import {
+  moveExplorerChromeControlInResolvedSurfaces,
   resolveExplorerChromeSurfaceLayout,
+  type ExplorerChromeControlId,
   type ExplorerChromeControlDefinition,
+  type ExplorerChromeLayoutId,
+  type ExplorerChromeOverrideSnapshot,
   type ExplorerChromeResolvedControlPlacement,
+  type ExplorerChromeResolvedSurface,
   type ExplorerChromeSurfaceId,
   type ExplorerChromeZoneId,
 } from '../config/explorerChromeLayouts';
@@ -348,6 +358,21 @@ interface NewItemState   { visible: boolean; kind: 'file'|'folder'; }
 type ExplorerClipboard = ExplorerClipboardSnapshot;
 type ExplorerDragIntent = 'internal' | 'native-out';
 type ExplorerSortKey = 'name' | 'size' | 'date' | 'type';
+
+interface ExplorerChromeEditModeState {
+  active: boolean;
+  draggingControlId: ExplorerChromeControlId | null;
+  onRegisterSurface?: (surface: ExplorerChromeResolvedSurface) => void;
+  onUnregisterSurface?: (surfaceId: ExplorerChromeSurfaceId) => void;
+  onDragStart: (controlId: ExplorerChromeControlId) => void;
+  onDragEnd: () => void;
+  onMoveControl: (args: {
+    controlId: ExplorerChromeControlId;
+    targetSurfaceId: ExplorerChromeSurfaceId;
+    targetZoneId: ExplorerChromeZoneId;
+    targetIndex: number;
+  }) => void;
+}
 
 // ─── Palette ─────────────────────────────────────────────────────────────────
 
@@ -1765,6 +1790,9 @@ function PreviewPanel({
   onViewModeChange,
   explorerTheme,
   blurEnabled,
+  chromeLayoutId,
+  chromeOverride,
+  chromeEditMode,
 }: {
   preview: PreviewState;
   width: number;
@@ -1776,6 +1804,9 @@ function PreviewPanel({
   onViewModeChange: (mode: ExplorerDocumentViewMode) => void;
   explorerTheme: ResolvedExplorerThemeRecipe;
   blurEnabled: boolean;
+  chromeLayoutId: ExplorerChromeLayoutId;
+  chromeOverride?: ExplorerChromeOverrideSnapshot | null;
+  chromeEditMode?: ExplorerChromeEditModeState;
 }) {
   const dragging = useRef(false);
   const startX   = useRef(0);
@@ -1818,6 +1849,176 @@ function PreviewPanel({
       : null;
   const copyPathLabel = copiedPath === preview.path ? 'Copied' : 'Copy Path';
   const supportsRenderedPreview = preview.type === 'text' && preview.renderKind !== 'none';
+  const previewHeaderRowStyle = useMemo<CSSProperties>(() => ({
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    minWidth: 0,
+    flexWrap: 'wrap',
+  }), []);
+  const getPreviewHeaderZoneStyle = useCallback((zoneId: ExplorerChromeZoneId): CSSProperties => {
+    switch (zoneId) {
+      case 'center':
+        return {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          minWidth: 0,
+          flexWrap: 'wrap',
+        };
+      case 'end':
+        return {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          flexShrink: 0,
+          minWidth: 0,
+          flexWrap: 'wrap',
+          justifyContent: 'flex-end',
+        };
+      case 'start':
+      default:
+        return {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          minWidth: 0,
+          flex: 1,
+        };
+    }
+  }, []);
+  const previewChromeControlRegistry = useMemo<Array<ExplorerChromeControlDefinition & {
+    isVisible: (surfaceId: ExplorerChromeSurfaceId) => boolean;
+    render: (placement: ExplorerChromeResolvedControlPlacement) => React.ReactNode;
+  }>>(() => [
+    {
+      id: 'previewIdentity',
+      label: 'Preview Identity',
+      surfaces: ['previewHeader'],
+      isVisible: () => true,
+      render: () => (
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 'var(--overlay-explorer-toolbar-font-size)', color: EXP.text, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {previewTitle}
+          </div>
+          {preview.type !== 'none' && (
+            <div
+              title={preview.path}
+              style={{ marginTop: 2, fontSize: 9, color: EXP.muted2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace' }}
+            >
+              {preview.path}
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 'previewState',
+      label: 'Preview State',
+      surfaces: ['previewHeader'],
+      isVisible: () => Boolean(previewStateLabel),
+      render: () => (
+        previewStateLabel ? (
+          <span style={{ fontSize: 9, fontWeight: 700, color: preview.type === 'text' && preview.isSaving ? EXP.yellow : (preview.type === 'text' && preview.isDirty ? EXP.red : EXP.green), padding: '3px 7px', borderRadius: 999, border: '1px solid var(--overlay-explorer-chip-border)', background: 'var(--overlay-explorer-chip-bg)' }}>
+            {previewStateLabel}
+          </span>
+        ) : null
+      ),
+    },
+    {
+      id: 'previewModeToggle',
+      label: 'Preview Mode Toggle',
+      surfaces: ['previewHeader'],
+      isVisible: () => supportsRenderedPreview,
+      render: () => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: 2, borderRadius: 'var(--overlay-explorer-control-radius)', border: '1px solid var(--overlay-explorer-chip-border)', background: 'var(--overlay-explorer-chip-bg)' }}>
+          {([
+            { id: 'edit', label: 'Edit' },
+            { id: 'preview', label: 'Preview' },
+          ] as const).map(option => {
+            const active = viewMode === option.id;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => onViewModeChange(option.id)}
+                style={{
+                  border: 'none',
+                  borderRadius: 'var(--overlay-explorer-control-radius)',
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: active ? EXP.text : EXP.muted,
+                  background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'transparent',
+                }}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      ),
+    },
+    {
+      id: 'previewCopyPath',
+      label: 'Preview Copy Path',
+      surfaces: ['previewHeader'],
+      isVisible: () => preview.type !== 'none',
+      render: () => (
+        <button
+          type="button"
+          onClick={() => {
+            onCopyPath(preview.path);
+            setCopiedPath(preview.path);
+          }}
+          style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--overlay-explorer-chip-bg)', border: '1px solid var(--overlay-explorer-chip-border)', borderRadius: 'var(--overlay-explorer-control-radius)', cursor: 'pointer', color: EXP.muted, padding: '4px 8px', fontSize: 10 }}
+        >
+          <Copy size={11} />
+          {copyPathLabel}
+        </button>
+      ),
+    },
+    {
+      id: 'previewClose',
+      label: 'Preview Close',
+      surfaces: ['previewHeader'],
+      isVisible: () => true,
+      render: () => (
+        <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: EXP.muted, padding: 2 }}>
+          <X size={13} />
+        </button>
+      ),
+    },
+  ], [
+    copyPathLabel,
+    onClose,
+    onCopyPath,
+    onViewModeChange,
+    preview,
+    previewStateLabel,
+    previewTitle,
+    supportsRenderedPreview,
+    viewMode,
+  ]);
+  const previewChromeControlRegistryById = useMemo(
+    () => new Map(previewChromeControlRegistry.map((entry) => [entry.id, entry])),
+    [previewChromeControlRegistry],
+  );
+  const previewHeaderSurface = useMemo(
+    () => resolveExplorerChromeSurfaceLayout({
+      layoutId: chromeLayoutId,
+      surfaceId: 'previewHeader',
+      controlDefinitions: previewChromeControlRegistry,
+      override: chromeOverride,
+      isControlVisible: (controlId, surfaceId) => previewChromeControlRegistryById.get(controlId)?.isVisible(surfaceId) ?? false,
+    }),
+    [chromeLayoutId, chromeOverride, previewChromeControlRegistry, previewChromeControlRegistryById],
+  );
+  const renderPreviewChromeControl = useCallback((placement: ExplorerChromeResolvedControlPlacement) => (
+    previewChromeControlRegistryById.get(placement.controlId)?.render(placement) ?? null
+  ), [previewChromeControlRegistryById]);
   const previewShellStyle: CSSProperties = explorerTheme.previewStyle === 'attached'
     ? {
         width,
@@ -1860,69 +2061,14 @@ function PreviewPanel({
         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
       />
       {/* Header */}
-      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:10, padding:'8px 12px 8px 16px', borderBottom:'1px solid var(--overlay-explorer-preview-border)', background:'var(--overlay-explorer-preview-header-bg)', flexShrink:0 }}>
-        <div style={{ minWidth:0, flex:1 }}>
-          <div style={{ fontSize:'var(--overlay-explorer-toolbar-font-size)', color:EXP.text, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-            {previewTitle}
-          </div>
-          {preview.type !== 'none' && (
-            <div
-              title={preview.path}
-              style={{ marginTop:2, fontSize:9, color:EXP.muted2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontFamily:'monospace' }}
-            >
-              {preview.path}
-            </div>
-          )}
-        </div>
-        <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
-          {previewStateLabel && (
-            <span style={{ fontSize: 9, fontWeight: 700, color: preview.isSaving ? EXP.yellow : (preview.isDirty ? EXP.red : EXP.green), padding: '3px 7px', borderRadius: 999, border: '1px solid var(--overlay-explorer-chip-border)', background: 'var(--overlay-explorer-chip-bg)' }}>
-              {previewStateLabel}
-            </span>
-          )}
-          {supportsRenderedPreview && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: 2, borderRadius: 'var(--overlay-explorer-control-radius)', border: '1px solid var(--overlay-explorer-chip-border)', background: 'var(--overlay-explorer-chip-bg)' }}>
-              {([
-                { id: 'edit', label: 'Edit' },
-                { id: 'preview', label: 'Preview' },
-              ] as const).map(option => {
-                const active = viewMode === option.id;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => onViewModeChange(option.id)}
-                    style={{
-                      border: 'none',
-                      borderRadius: 'var(--overlay-explorer-control-radius)',
-                      cursor: 'pointer',
-                      padding: '4px 8px',
-                      fontSize: 10,
-                      fontWeight: 700,
-                      color: active ? EXP.text : EXP.muted,
-                      background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'transparent',
-                    }}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          {preview.type !== 'none' && (
-            <button
-              onClick={() => {
-                onCopyPath(preview.path);
-                setCopiedPath(preview.path);
-              }}
-              style={{ display:'flex', alignItems:'center', gap:4, background:'var(--overlay-explorer-chip-bg)', border:'1px solid var(--overlay-explorer-chip-border)', borderRadius:'var(--overlay-explorer-control-radius)', cursor:'pointer', color:EXP.muted, padding:'4px 8px', fontSize:10 }}
-            >
-              <Copy size={11} />
-              {copyPathLabel}
-            </button>
-          )}
-          <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:EXP.muted, padding:2 }}><X size={13} /></button>
-        </div>
+      <div style={{ padding: '8px 12px 8px 16px', borderBottom: '1px solid var(--overlay-explorer-preview-border)', background: 'var(--overlay-explorer-preview-header-bg)', flexShrink: 0 }}>
+        <ExplorerChromeSurface
+          surface={previewHeaderSurface}
+          getRowStyle={() => previewHeaderRowStyle}
+          getZoneStyle={getPreviewHeaderZoneStyle}
+          renderControl={renderPreviewChromeControl}
+          editMode={chromeEditMode}
+        />
       </div>
       {/* Content */}
       <div style={{ flex:1, overflow:'hidden', position:'relative' }}>
@@ -2327,26 +2473,48 @@ export function FileExplorer({
     appearanceSettings,
     systemSettings,
     keybindings,
+    clearExplorerChromeLayoutOverride,
+    clearExplorerModeProfileOverride,
+    setExplorerChromeLayoutOverride,
+    setExplorerModeProfileOverride,
     updateExplorerSettings,
   } = useSettingsStore(useShallow(state => ({
     explorerSettings: state.settings.explorer,
     appearanceSettings: state.settings.appearance,
     systemSettings: state.settings.system,
     keybindings: state.settings.keybindings,
+    clearExplorerChromeLayoutOverride: state.clearExplorerChromeLayoutOverride,
+    clearExplorerModeProfileOverride: state.clearExplorerModeProfileOverride,
+    setExplorerChromeLayoutOverride: state.setExplorerChromeLayoutOverride,
+    setExplorerModeProfileOverride: state.setExplorerModeProfileOverride,
     updateExplorerSettings: state.updateExplorer,
   })));
   const {
+    chromeEditSession,
     explorerRail,
+    closeChromeEditSession,
     updateExplorerSessionForInstance,
     updateExplorerRail,
     clipboard,
+    openChromeEditSession,
+    registerChromeEditSurface,
     setClipboard,
+    setChromeEditDraggingControl,
+    unregisterChromeEditSurface,
+    updateChromeEditDraft,
   } = useExplorerStore(useShallow(state => ({
+    chromeEditSession: state.chromeEditSession,
     explorerRail: state.rail,
+    closeChromeEditSession: state.closeChromeEditSession,
     updateExplorerSessionForInstance: state.updateSessionForInstance,
     updateExplorerRail: state.updateRail,
     clipboard: state.clipboard,
+    openChromeEditSession: state.openChromeEditSession,
+    registerChromeEditSurface: state.registerChromeEditSurface,
     setClipboard: state.setClipboard,
+    setChromeEditDraggingControl: state.setChromeEditDraggingControl,
+    unregisterChromeEditSurface: state.unregisterChromeEditSurface,
+    updateChromeEditDraft: state.updateChromeEditDraft,
   })));
   const storedSourcesVisible = useExplorerStore(
     state => state.sessions[instanceId]?.sourcesVisible ?? defaultExplorerSession.sourcesVisible,
@@ -2378,14 +2546,6 @@ export function FileExplorer({
     const activeThemeId = appearanceSettings.activeThemeId.trim();
     return activeThemeId || 'operator';
   }, [appearance?.baseTheme.id, appearanceSettings.activeThemeId]);
-  const explorerChromeOverride = useMemo(
-    () => explorerSettings.chromeLayoutOverridesByThemeId[explorerChromeThemeId]?.[explorerTheme.chromeLayoutId] ?? null,
-    [
-      explorerChromeThemeId,
-      explorerSettings.chromeLayoutOverridesByThemeId,
-      explorerTheme.chromeLayoutId,
-    ],
-  );
   const sidebarBounds = getExplorerRailWidthBounds(isCompactDock);
   const uiFont = appearance?.fonts.ui ?? 'Inter,system-ui,sans-serif';
   const themeIconTheme = appearance?.theme.assets?.iconTheme ?? getBuiltInIconTheme();
@@ -2402,8 +2562,6 @@ export function FileExplorer({
   const initialSessionRef = useRef(useExplorerStore.getState().getSession(instanceId));
   const initialSession = initialSessionRef.current;
   const initialSessionPathRef = useRef(initialSession.currentPath.trim());
-  const initialShellLayout = getExplorerShellLayoutDefinition(initialSession.shellLayoutId);
-
   const [currentPath,  setCurrentPath]  = useState(() => initialSession.currentPath);
   const [history,      setHistory]      = useState<string[]>(() => initialSession.history);
   const [historyIdx,   setHistoryIdx]   = useState(() => initialSession.historyIdx);
@@ -2443,11 +2601,10 @@ export function FileExplorer({
   const [searchIncludeContent, setSearchIncludeContent] = useState(() => initialSession.searchIncludeContent);
   const [documentViewMode, setDocumentViewMode] = useState<ExplorerDocumentViewMode>(() => initialSession.documentViewMode);
   const [previewEnabled, setPreviewEnabled] = useState(() => initialSession.previewEnabled);
-  const [shellLayoutId, setShellLayoutId] = useState<ExplorerShellLayoutId>(() => initialShellLayout.id);
   const [sourcesVisible, setSourcesVisible] = useState(() => initialSession.sourcesVisible);
   const [preview,      setPreview]      = useState<PreviewState>({ type:'none', path:'' });
   const [ctxMenu,      setCtxMenu]      = useState<ContextMenuState>({ visible:false, x:0, y:0, entry:null });
-  const [showShellLayoutMenu, setShowShellLayoutMenu] = useState(false);
+  const [showModeProfileMenu, setShowModeProfileMenu] = useState(false);
   const [showLayoutMenu, setShowLayoutMenu] = useState(false);
   const [showExperimentalMenu, setShowExperimentalMenu] = useState(false);
   const [rename,       setRename]       = useState<RenameState>({ active:false, path:'', name:'' });
@@ -2501,7 +2658,7 @@ export function FileExplorer({
 
   const mainRef = useRef<HTMLDivElement>(null);
   const explorerViewportRef = useRef<HTMLDivElement>(null);
-  const shellLayoutMenuAnchorRef = useRef<HTMLDivElement>(null);
+  const modeProfileMenuAnchorRef = useRef<HTMLDivElement>(null);
   const layoutMenuAnchorRef = useRef<HTMLDivElement>(null);
   const experimentalMenuAnchorRef = useRef<HTMLDivElement>(null);
   const layoutWheelDeltaAccumulatorRef = useRef(0);
@@ -2569,10 +2726,6 @@ export function FileExplorer({
   }, [storedPreviewEnabled]);
 
   useEffect(() => {
-    setShellLayoutId(storedShellLayoutId);
-  }, [storedShellLayoutId]);
-
-  useEffect(() => {
     setSidebarWidth(current => Math.max(sidebarBounds.minWidth, Math.min(sidebarBounds.maxWidth, current)));
   }, [sidebarBounds.maxWidth, sidebarBounds.minWidth]);
 
@@ -2596,12 +2749,12 @@ export function FileExplorer({
   }, [preview]);
 
   useEffect(() => {
-    if (!showShellLayoutMenu && !showLayoutMenu && !showExperimentalMenu) {
+    if (!showModeProfileMenu && !showLayoutMenu && !showExperimentalMenu) {
       return undefined;
     }
 
     const handlePointerDown = (event: MouseEvent) => {
-      if (shellLayoutMenuAnchorRef.current?.contains(event.target as Node)) {
+      if (modeProfileMenuAnchorRef.current?.contains(event.target as Node)) {
         return;
       }
       if (layoutMenuAnchorRef.current?.contains(event.target as Node)) {
@@ -2610,14 +2763,14 @@ export function FileExplorer({
       if (experimentalMenuAnchorRef.current?.contains(event.target as Node)) {
         return;
       }
-      setShowShellLayoutMenu(false);
+      setShowModeProfileMenu(false);
       setShowLayoutMenu(false);
       setShowExperimentalMenu(false);
     };
 
     window.addEventListener('mousedown', handlePointerDown);
     return () => window.removeEventListener('mousedown', handlePointerDown);
-  }, [showExperimentalMenu, showLayoutMenu, showShellLayoutMenu]);
+  }, [showExperimentalMenu, showLayoutMenu, showModeProfileMenu]);
 
   const flushPendingExplorerMetrics = useCallback((
     runtimePolicyMetadata: RuntimeCachePolicyTelemetryMetadata,
@@ -2717,7 +2870,6 @@ export function FileExplorer({
       sidebarWidth,
       previewWidth,
       previewEnabled,
-      shellLayoutId,
       search,
       searchIncludeContent,
       documentViewMode,
@@ -2732,7 +2884,6 @@ export function FileExplorer({
     previewWidth,
     search,
     searchIncludeContent,
-    shellLayoutId,
     sidebarWidth,
     sourcesVisible,
     instanceId,
@@ -3743,8 +3894,8 @@ export function FileExplorer({
     }
   }, [closePreview, previewEnabled]);
 
-  const applyShellLayoutPreset = useCallback((nextLayoutId: ExplorerShellLayoutId) => {
-    const nextLayout = getExplorerShellLayoutDefinition(nextLayoutId);
+  const applyModeProfilePreset = useCallback((nextModeProfile: ExplorerModeProfileDefinition) => {
+    const nextLayout = getExplorerShellLayoutDefinition(nextModeProfile.paneLayoutId);
     const suggestedWidths = getExplorerShellLayoutWidthSuggestion({
       layoutId: nextLayout.id,
       railWidth: explorerTheme.metrics.railWidth,
@@ -3755,15 +3906,17 @@ export function FileExplorer({
       previewMaxWidth: EXPLORER_PREVIEW_WIDTH_BOUNDS.max,
     });
 
-    setShellLayoutId(nextLayout.id);
+    setExplorerModeProfileOverride(explorerChromeThemeId, nextModeProfile.id);
     setSidebarWidth(suggestedWidths.sidebarWidth);
     setPreviewWidth(suggestedWidths.previewWidth);
-    setShowShellLayoutMenu(false);
+    setShowModeProfileMenu(false);
   }, [
+    explorerChromeThemeId,
     explorerTheme.metrics.previewWidth,
     explorerTheme.metrics.railWidth,
     sidebarBounds.maxWidth,
     sidebarBounds.minWidth,
+    setExplorerModeProfileOverride,
   ]);
 
   const togglePreviewEnabled = useCallback(() => {
@@ -4880,29 +5033,75 @@ export function FileExplorer({
     } catch(e) { setError(String(e)); }
   };
 
+  const effectiveModeProfile = useMemo(
+    () => resolveEffectiveExplorerModeProfile({
+      themeOverrideModeProfileId: explorerSettings.modeProfileOverridesByThemeId[explorerChromeThemeId] ?? null,
+      themeDefaultModeProfileId: explorerTheme.defaultModeProfileId,
+      legacyShellLayoutId: storedShellLayoutId,
+    }),
+    [
+      explorerChromeThemeId,
+      explorerSettings.modeProfileOverridesByThemeId,
+      explorerTheme.defaultModeProfileId,
+      storedShellLayoutId,
+    ],
+  );
+  const effectiveChromeLayoutId = useMemo(
+    () => resolveExplorerModeProfileChromeLayoutId({
+      modeProfile: effectiveModeProfile,
+      themeChromeLayoutId: explorerTheme.chromeLayoutId,
+    }),
+    [effectiveModeProfile, explorerTheme.chromeLayoutId],
+  );
+  const persistedExplorerChromeOverride = useMemo(
+    () => explorerSettings.chromeLayoutOverridesByThemeId[explorerChromeThemeId]?.[effectiveChromeLayoutId] ?? null,
+    [
+      effectiveChromeLayoutId,
+      explorerChromeThemeId,
+      explorerSettings.chromeLayoutOverridesByThemeId,
+    ],
+  );
+  const explorerChromeOverride = useMemo(
+    () => (
+      chromeEditSession
+      && chromeEditSession.themeId === explorerChromeThemeId
+      && chromeEditSession.layoutId === effectiveChromeLayoutId
+        ? chromeEditSession.draftOverride
+        : persistedExplorerChromeOverride
+    ),
+    [
+      chromeEditSession,
+      effectiveChromeLayoutId,
+      explorerChromeThemeId,
+      persistedExplorerChromeOverride,
+    ],
+  );
+  const effectiveShellLayout = useMemo(
+    () => getExplorerShellLayoutDefinition(effectiveModeProfile.paneLayoutId),
+    [effectiveModeProfile.paneLayoutId],
+  );
+  const preferredViewMode = effectiveModeProfile.preferredViewMode ?? explorerTheme.preferredViewMode;
+  const preferredExperimentalViewMode = effectiveModeProfile.preferredExperimentalViewMode
+    ?? explorerTheme.preferredExperimentalViewMode;
   const themedViewMode = useMemo(
     () => (
-      viewMode === 'details' && explorerTheme.preferredViewMode
-        ? explorerTheme.preferredViewMode
+      viewMode === 'details' && preferredViewMode
+        ? preferredViewMode
         : viewMode
     ),
-    [explorerTheme.preferredViewMode, viewMode],
+    [preferredViewMode, viewMode],
   );
   const themedExperimentalViewMode = useMemo(
     () => (
-      experimentalViewMode === 'off' && explorerTheme.preferredExperimentalViewMode
-        ? explorerTheme.preferredExperimentalViewMode
+      experimentalViewMode === 'off' && preferredExperimentalViewMode
+        ? preferredExperimentalViewMode
         : experimentalViewMode
     ),
-    [experimentalViewMode, explorerTheme.preferredExperimentalViewMode],
+    [experimentalViewMode, preferredExperimentalViewMode],
   );
   const selectedViewModeDefinition = useMemo(
     () => getExplorerViewModeDefinition(themedViewMode),
     [themedViewMode],
-  );
-  const shellLayout = useMemo(
-    () => getExplorerShellLayoutDefinition(shellLayoutId),
-    [shellLayoutId],
   );
   const selectedExperimentalModeDefinition = useMemo(
     () => (themedExperimentalViewMode === 'off'
@@ -4957,7 +5156,7 @@ export function FileExplorer({
   const activeNewItemHeight = effectiveViewModeDefinition.presentation === 'grid'
     ? activeGridMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT
     : activeRowMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT;
-  const shouldRenderRail = sourcesVisible && (isCompactDock || shellLayout.showRail);
+  const shouldRenderRail = sourcesVisible && (isCompactDock || effectiveShellLayout.showRail);
   const hasPreview = !isCompactDock && previewEnabled && preview.type !== 'none';
   const previewModeLabel = preview.type === 'text'
     ? (preview.renderKind === 'markdown' ? 'Text preview (markdown)' : 'Text preview')
@@ -5131,10 +5330,10 @@ export function FileExplorer({
   const fileAreaStyle = useMemo<CSSProperties>(() => ({
     flex: 1,
     display: 'flex',
-    flexDirection: shellLayout.previewPlacement === 'leading' ? 'row-reverse' : 'row',
+    flexDirection: effectiveShellLayout.previewPlacement === 'leading' ? 'row-reverse' : 'row',
     overflow: 'hidden',
     background: 'var(--overlay-explorer-content-bg)',
-  }), [shellLayout.previewPlacement]);
+  }), [effectiveShellLayout.previewPlacement]);
   const batchRenameTargetCount = useMemo(
     () => (selectedEntries.length > 0 ? selectedEntries : visibleEntries).filter((entry) => !entry.is_dir).length,
     [selectedEntries, visibleEntries],

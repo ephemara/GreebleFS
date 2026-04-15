@@ -87,3 +87,8 @@ windows-sys = { version = "0.59", features = [
 [target.'cfg(target_os = "macos")'.dependencies]
 file-opening = { path = "../crates/file-opening" }
 file-opening-macos = { path = "../crates/file-opening-macos" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gdk = "0.18"
+gtk = "0.18"
+gtk-layer-shell = "0.8.2"

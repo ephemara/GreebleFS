@@ -1,4 +1,4 @@
-import React, { startTransition, useDeferredValue, useMemo, useState } from 'react';
+import React, { startTransition, useCallback, useDeferredValue, useMemo, useState } from 'react';
 import {
   ChevronDown,
   ChevronRight,
@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { OverlayScrollArea } from '../OverlayScrollArea';
 import { useExplorerStore } from '../../store/explorerStore';
+import { ExplorerChromeSurface } from './ExplorerChromeSurface';
 import {
   applyExplorerBookmarkImportPlan,
   buildExplorerBookmarkTree,
@@ -37,6 +38,17 @@ import {
   type ExplorerBookmarkTreeNode,
 } from './explorerRailState';
 import type { ExplorerDriveInfo, ExplorerSavedSearch, ExplorerTagMetadataSnapshot } from '../../runtime/explorerBackend';
+import type {
+  ExplorerChromeControlDefinition,
+  ExplorerChromeControlId,
+  ExplorerChromeLayoutId,
+  ExplorerChromeOverrideSnapshot,
+  ExplorerChromeResolvedControlPlacement,
+  ExplorerChromeResolvedSurface,
+  ExplorerChromeSurfaceId,
+  ExplorerChromeZoneId,
+} from '../../config/explorerChromeLayouts';
+import { resolveExplorerChromeSurfaceLayout } from '../../config/explorerChromeLayouts';
 
 interface ExplorerSideRailProps {
   accent: string;
@@ -59,6 +71,22 @@ interface ExplorerSideRailProps {
   onClearTagFilters?: () => void;
   onBookmarkCreated: (name: string, path: string) => void;
   resolveDroppedSources: (paths: string[]) => ExplorerBookmarkImportSource[];
+  chromeLayoutId: ExplorerChromeLayoutId;
+  chromeOverride?: ExplorerChromeOverrideSnapshot | null;
+  chromeEditMode?: {
+    active: boolean;
+    draggingControlId: ExplorerChromeControlId | null;
+    onRegisterSurface?: (surface: ExplorerChromeResolvedSurface) => void;
+    onUnregisterSurface?: (surfaceId: ExplorerChromeSurfaceId) => void;
+    onDragStart: (controlId: ExplorerChromeControlId) => void;
+    onDragEnd: () => void;
+    onMoveControl: (args: {
+      controlId: ExplorerChromeControlId;
+      targetSurfaceId: ExplorerChromeSurfaceId;
+      targetZoneId: ExplorerChromeZoneId;
+      targetIndex: number;
+    }) => void;
+  };
 }
 
 interface TreeRowProps {
@@ -97,6 +125,9 @@ export function ExplorerSideRail({
   onClearTagFilters,
   onBookmarkCreated,
   resolveDroppedSources,
+  chromeLayoutId,
+  chromeOverride,
+  chromeEditMode,
 }: ExplorerSideRailProps) {
   const rail = useExplorerStore((state) => state.rail);
   const persistence = useExplorerStore((state) => state.persistence);
@@ -206,6 +237,131 @@ export function ExplorerSideRail({
     setEditingNodeName('');
   };
 
+  const railHeaderRowStyle = useMemo<React.CSSProperties>(() => ({
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+    minWidth: 0,
+    flexWrap: 'wrap',
+  }), []);
+  const getRailHeaderZoneStyle = useCallback((zoneId: ExplorerChromeZoneId): React.CSSProperties => {
+    switch (zoneId) {
+      case 'center':
+        return {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          flex: 1,
+          minWidth: 0,
+          flexWrap: 'wrap',
+        };
+      case 'end':
+        return {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          flexShrink: 0,
+          minWidth: 0,
+          flexWrap: 'wrap',
+          justifyContent: 'flex-end',
+        };
+      case 'start':
+      default:
+        return {
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 8,
+          minWidth: 0,
+          flex: 1,
+        };
+    }
+  }, []);
+  const railChromeControlRegistry = useMemo<Array<ExplorerChromeControlDefinition & {
+    isVisible: (surfaceId: ExplorerChromeSurfaceId) => boolean;
+    render: (placement: ExplorerChromeResolvedControlPlacement) => React.ReactNode;
+  }>>(() => [
+    {
+      id: 'railIdentity',
+      label: 'Rail Identity',
+      surfaces: ['railHeader'],
+      isVisible: () => true,
+      render: () => (
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--overlay-text-dim)', fontWeight: 700 }}>
+            {brandLabel}
+          </div>
+          <div style={{ marginTop: 2, fontSize: 'var(--overlay-explorer-rail-title-size)', color: 'var(--overlay-text-primary)', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {locationLabel}
+          </div>
+          <div title={locationTitle} style={{ marginTop: 3, fontSize: 9.5, color: 'var(--overlay-text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {locationTitle}
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'railBookmarkSummary',
+      label: 'Rail Bookmark Summary',
+      surfaces: ['railHeader'],
+      isVisible: () => true,
+      render: () => (
+        <>
+          <span style={railMetaPillStyle}>
+            {bookmarkCount} pinned
+          </span>
+          {!dense && (
+            <span style={railMetaPillStyle}>
+              Plain drag exports files. Shift keeps drag inside the explorer.
+            </span>
+          )}
+        </>
+      ),
+    },
+    {
+      id: 'railManageToggle',
+      label: 'Rail Manage Toggle',
+      surfaces: ['railHeader'],
+      isVisible: () => true,
+      render: () => (
+        <button
+          type="button"
+          aria-pressed={isManageMode}
+          onClick={() => {
+            setIsManageMode((current) => {
+              const next = !current;
+              if (!next) {
+                setDraftFolderParentId(false);
+                setDraftCategoryName('');
+              }
+              return next;
+            });
+          }}
+          style={manageToggleButtonStyle(accent, isManageMode)}
+        >
+          {isManageMode ? 'Done' : 'Manage'}
+        </button>
+      ),
+    },
+  ], [accent, bookmarkCount, brandLabel, dense, isManageMode, locationLabel, locationTitle]);
+  const railChromeControlRegistryById = useMemo(
+    () => new Map(railChromeControlRegistry.map((entry) => [entry.id, entry])),
+    [railChromeControlRegistry],
+  );
+  const railHeaderSurface = useMemo(
+    () => resolveExplorerChromeSurfaceLayout({
+      layoutId: chromeLayoutId,
+      surfaceId: 'railHeader',
+      controlDefinitions: railChromeControlRegistry,
+      override: chromeOverride,
+      isControlVisible: (controlId, surfaceId) => railChromeControlRegistryById.get(controlId)?.isVisible(surfaceId) ?? false,
+    }),
+    [chromeLayoutId, chromeOverride, railChromeControlRegistry, railChromeControlRegistryById],
+  );
+  const renderRailChromeControl = useCallback((placement: ExplorerChromeResolvedControlPlacement) => (
+    railChromeControlRegistryById.get(placement.controlId)?.render(placement) ?? null
+  ), [railChromeControlRegistryById]);
+
   return (
     <div
       style={{
@@ -222,46 +378,13 @@ export function ExplorerSideRail({
       onDrop={(event) => handleBookmarkDrop(event, null)}
     >
       <div style={{ padding: dense ? '8px 8px 6px' : '12px 12px 10px', borderBottom: '1px solid var(--overlay-border)' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--overlay-text-dim)', fontWeight: 700 }}>
-              {brandLabel}
-            </div>
-            <div style={{ marginTop: 2, fontSize: 'var(--overlay-explorer-rail-title-size)', color: 'var(--overlay-text-primary)', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {locationLabel}
-            </div>
-            <div title={locationTitle} style={{ marginTop: 3, fontSize: 9.5, color: 'var(--overlay-text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {locationTitle}
-            </div>
-          </div>
-          <button
-            type="button"
-            aria-pressed={isManageMode}
-            onClick={() => {
-              setIsManageMode((current) => {
-                const next = !current;
-                if (!next) {
-                  setDraftFolderParentId(false);
-                  setDraftCategoryName('');
-                }
-                return next;
-              });
-            }}
-            style={manageToggleButtonStyle(accent, isManageMode)}
-          >
-            {isManageMode ? 'Done' : 'Manage'}
-          </button>
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-          <span style={railMetaPillStyle}>
-            {bookmarkCount} pinned
-          </span>
-          {!dense && (
-            <span style={railMetaPillStyle}>
-              Plain drag exports files. Shift keeps drag inside the explorer.
-            </span>
-          )}
-        </div>
+        <ExplorerChromeSurface
+          surface={railHeaderSurface}
+          getRowStyle={() => railHeaderRowStyle}
+          getZoneStyle={getRailHeaderZoneStyle}
+          renderControl={renderRailChromeControl}
+          editMode={chromeEditMode}
+        />
         {persistence.message && (
           <div
             style={{

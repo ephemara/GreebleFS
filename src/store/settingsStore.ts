@@ -230,6 +230,8 @@ export interface Settings {
   layout: LayoutSettings;
 }
 
+export const SETTINGS_STORAGE_KEY = 'ultacode-settings';
+
 type LegacyImportedTerminalSettings = Partial<TerminalSettings> & {
   colorTheme?: string;
   uiFont?: string;
@@ -1072,7 +1074,7 @@ export const useSettingsStore = create<SettingsState>()(
       exportSettings: () => get().settings,
     }),
     {
-      name: 'ultacode-settings',
+      name: SETTINGS_STORAGE_KEY,
       storage: createJSONStorage(() => getSettingsStorage()),
       merge: (persistedState, currentState) => {
         const persisted = persistedState as Partial<SettingsState> | undefined;
@@ -1085,3 +1087,29 @@ export const useSettingsStore = create<SettingsState>()(
     }
   )
 );
+
+installSettingsStorageSync();
+
+function installSettingsStorageSync(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const marker = '__greeblefs_settings_storage_sync_installed__';
+  const globalState = globalThis as typeof globalThis & Record<string, unknown>;
+  if (globalState[marker]) {
+    return;
+  }
+  globalState[marker] = true;
+
+  window.addEventListener('storage', event => {
+    if (event.key !== SETTINGS_STORAGE_KEY || event.newValue === event.oldValue) {
+      return;
+    }
+
+    const persistApi = (useSettingsStore as typeof useSettingsStore & {
+      persist?: { rehydrate?: () => Promise<void> | void };
+    }).persist;
+    void persistApi?.rehydrate?.();
+  });
+}

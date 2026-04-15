@@ -1,21 +1,29 @@
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ChevronLeft, ChevronRight, Clipboard, Columns2, CopyPlus, Plus, SquareSplitHorizontal, X } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import type { ResolvedOverlayAppearance } from '../../config/appearance';
+import {
+  moveExplorerChromeControlInResolvedSurfaces,
+  resolveExplorerChromeSurfaceLayout,
+  type ExplorerChromeControlId,
+  type ExplorerChromeControlDefinition,
+  type ExplorerChromeResolvedControlPlacement,
+  type ExplorerChromeSurfaceId,
+  type ExplorerChromeZoneId,
+} from '../../config/explorerChromeLayouts';
 import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
 } from '../../config/pluginContributions';
 import type { ExplorerLayoutMode } from '../../config/layoutProfiles';
 import {
-  resolveExplorerChromeSurfaceLayout,
-  type ExplorerChromeControlDefinition,
-  type ExplorerChromeResolvedControlPlacement,
-  type ExplorerChromeSurfaceId,
-  type ExplorerChromeZoneId,
-} from '../../config/explorerChromeLayouts';
+  resolveEffectiveExplorerModeProfile,
+  resolveExplorerModeProfileChromeLayoutId,
+} from '../../config/explorerModeProfiles';
+import { resolveExplorerThemeRecipe } from '../../config/explorerTheme';
 import {
   PRIMARY_EXPLORER_INSTANCE_ID,
+  defaultExplorerSession,
   useExplorerStore,
   type ExplorerPaneId,
   type ExplorerTabSnapshot,
@@ -86,34 +94,51 @@ export function ExplorerWorkspace({
   const {
     sessions,
     workspace,
+    chromeEditSession,
+    closeChromeEditSession,
     createWorkspaceTab,
     closeWorkspaceTab,
     focusWorkspaceTab,
     moveWorkspaceTabToPane,
+    registerChromeEditSurface,
+    setChromeEditDraggingControl,
     setWorkspaceLayoutMode,
     setFocusedPane,
     setWorkspaceSplitRatio,
+    unregisterChromeEditSurface,
+    updateChromeEditDraft,
   } = useExplorerStore(useShallow((state) => ({
     sessions: state.sessions,
     workspace: state.workspace,
+    chromeEditSession: state.chromeEditSession,
+    closeChromeEditSession: state.closeChromeEditSession,
     createWorkspaceTab: state.createWorkspaceTab,
     closeWorkspaceTab: state.closeWorkspaceTab,
     focusWorkspaceTab: state.focusWorkspaceTab,
     moveWorkspaceTabToPane: state.moveWorkspaceTabToPane,
+    registerChromeEditSurface: state.registerChromeEditSurface,
+    setChromeEditDraggingControl: state.setChromeEditDraggingControl,
     setWorkspaceLayoutMode: state.setWorkspaceLayoutMode,
     setFocusedPane: state.setFocusedPane,
     setWorkspaceSplitRatio: state.setWorkspaceSplitRatio,
+    unregisterChromeEditSurface: state.unregisterChromeEditSurface,
+    updateChromeEditDraft: state.updateChromeEditDraft,
   })));
   const {
     activeThemeId,
+    modeProfileOverridesByThemeId,
     chromeLayoutOverridesByThemeId,
   } = useSettingsStore(useShallow((state) => ({
     activeThemeId: state.settings.appearance.activeThemeId,
+    modeProfileOverridesByThemeId: state.settings.explorer.modeProfileOverridesByThemeId,
     chromeLayoutOverridesByThemeId: state.settings.explorer.chromeLayoutOverridesByThemeId,
   })));
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const explorerTheme = appearance?.explorerTheme ?? null;
+  const explorerTheme = useMemo(
+    () => appearance?.explorerTheme ?? resolveExplorerThemeRecipe(appearance),
+    [appearance],
+  );
   const explorerChromeThemeId = useMemo(() => {
     const resolvedAppearanceThemeId = appearance?.baseTheme.id?.trim();
     if (resolvedAppearanceThemeId) {
@@ -123,11 +148,6 @@ export function ExplorerWorkspace({
     const trimmedActiveThemeId = activeThemeId.trim();
     return trimmedActiveThemeId || 'operator';
   }, [appearance?.baseTheme.id, activeThemeId]);
-  const explorerChromeLayoutId = explorerTheme?.chromeLayoutId ?? 'default';
-  const explorerChromeOverride = useMemo(
-    () => chromeLayoutOverridesByThemeId[explorerChromeThemeId]?.[explorerChromeLayoutId] ?? null,
-    [chromeLayoutOverridesByThemeId, explorerChromeLayoutId, explorerChromeThemeId],
-  );
   const tabs = workspace.tabs;
   const leftTabs = useMemo(
     () => tabs.filter((tab) => tab.pane === 'left'),
@@ -144,6 +164,99 @@ export function ExplorerWorkspace({
     ?? activeLeftTab
     ?? activeRightTab
     ?? null;
+  const legacyShellLayoutId = sessions[activeTab?.instanceId ?? PRIMARY_EXPLORER_INSTANCE_ID]?.shellLayoutId
+    ?? defaultExplorerSession.shellLayoutId;
+  const effectiveModeProfile = useMemo(
+    () => resolveEffectiveExplorerModeProfile({
+      themeOverrideModeProfileId: modeProfileOverridesByThemeId[explorerChromeThemeId] ?? null,
+      themeDefaultModeProfileId: explorerTheme.defaultModeProfileId,
+      legacyShellLayoutId,
+    }),
+    [
+      explorerChromeThemeId,
+      explorerTheme.defaultModeProfileId,
+      legacyShellLayoutId,
+      modeProfileOverridesByThemeId,
+    ],
+  );
+  const explorerChromeLayoutId = useMemo(
+    () => resolveExplorerModeProfileChromeLayoutId({
+      modeProfile: effectiveModeProfile,
+      themeChromeLayoutId: explorerTheme.chromeLayoutId,
+    }),
+    [effectiveModeProfile, explorerTheme.chromeLayoutId],
+  );
+  const persistedExplorerChromeOverride = useMemo(
+    () => chromeLayoutOverridesByThemeId[explorerChromeThemeId]?.[explorerChromeLayoutId] ?? null,
+    [chromeLayoutOverridesByThemeId, explorerChromeLayoutId, explorerChromeThemeId],
+  );
+  const explorerChromeOverride = useMemo(
+    () => (
+      chromeEditSession
+      && chromeEditSession.themeId === explorerChromeThemeId
+      && chromeEditSession.layoutId === explorerChromeLayoutId
+        ? chromeEditSession.draftOverride
+        : persistedExplorerChromeOverride
+    ),
+    [chromeEditSession, explorerChromeLayoutId, explorerChromeThemeId, persistedExplorerChromeOverride],
+  );
+  const handleWorkspaceChromeControlMove = useCallback((args: {
+    controlId: ExplorerChromeControlId;
+    targetSurfaceId: ExplorerChromeSurfaceId;
+    targetZoneId: ExplorerChromeZoneId;
+    targetIndex: number;
+  }) => {
+    if (!chromeEditSession) {
+      return;
+    }
+
+    const registeredSurfaces = Object.values(chromeEditSession.registeredSurfaces)
+      .filter((surface): surface is NonNullable<typeof surface> => surface != null);
+    updateChromeEditDraft(moveExplorerChromeControlInResolvedSurfaces({
+      surfaces: registeredSurfaces,
+      controlId: args.controlId,
+      targetSurfaceId: args.targetSurfaceId,
+      targetZoneId: args.targetZoneId,
+      targetIndex: args.targetIndex,
+    }));
+  }, [chromeEditSession, updateChromeEditDraft]);
+  const workspaceChromeEditMode = useMemo(
+    () => (
+      chromeEditSession
+      && chromeEditSession.themeId === explorerChromeThemeId
+      && chromeEditSession.layoutId === explorerChromeLayoutId
+        ? {
+          active: true,
+          draggingControlId: chromeEditSession.draggingControlId,
+          onRegisterSurface: registerChromeEditSurface,
+          onUnregisterSurface: unregisterChromeEditSurface,
+          onDragStart: setChromeEditDraggingControl,
+          onDragEnd: () => setChromeEditDraggingControl(null),
+          onMoveControl: handleWorkspaceChromeControlMove,
+        }
+        : undefined
+    ),
+    [
+      chromeEditSession,
+      explorerChromeLayoutId,
+      explorerChromeThemeId,
+      handleWorkspaceChromeControlMove,
+      registerChromeEditSurface,
+      setChromeEditDraggingControl,
+      unregisterChromeEditSurface,
+    ],
+  );
+  useEffect(() => {
+    if (
+      chromeEditSession
+      && (
+        chromeEditSession.themeId !== explorerChromeThemeId
+        || chromeEditSession.layoutId !== explorerChromeLayoutId
+      )
+    ) {
+      closeChromeEditSession();
+    }
+  }, [chromeEditSession, closeChromeEditSession, explorerChromeLayoutId, explorerChromeThemeId]);
   const splitPercent = Math.round(workspace.splitRatio * 100);
   const activePaneTabs = activePane === 'left' ? leftTabs : rightTabs;
 
@@ -767,6 +880,7 @@ export function ExplorerWorkspace({
           getRowStyle={() => workspaceHeaderRowStyle}
           getZoneStyle={getWorkspaceHeaderZoneStyle}
           renderControl={renderWorkspaceChromeControl}
+          editMode={workspaceChromeEditMode}
         />
       </div>
       {workspace.layoutMode === 'single' ? (

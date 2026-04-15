@@ -10,6 +10,15 @@ import {
   getExplorerShellLayoutDefinition,
   type ExplorerShellLayoutId,
 } from '../config/explorerShellLayouts';
+import {
+  normalizeExplorerChromeLayoutId,
+  normalizeExplorerChromeOverrideSnapshot,
+  type ExplorerChromeControlId,
+  type ExplorerChromeLayoutId,
+  type ExplorerChromeOverrideSnapshot,
+  type ExplorerChromeResolvedSurface,
+  type ExplorerChromeSurfaceId,
+} from '../config/explorerChromeLayouts';
 
 export const EXPLORER_STATE_STORAGE_KEY = 'overlayterm-explorer-state-v3';
 export const EXPLORER_STATE_BACKUP_KEY = 'overlayterm-explorer-state-v3.backup';
@@ -76,6 +85,14 @@ export interface ExplorerPersistenceNotice {
   status: 'ready' | 'legacy-imported' | 'backup-restored' | 'corrupted-reset' | 'restored-backup' | 'save-error';
   message: string | null;
   hasBackup: boolean;
+}
+
+export interface ExplorerChromeEditSession {
+  themeId: string;
+  layoutId: ExplorerChromeLayoutId;
+  draftOverride: ExplorerChromeOverrideSnapshot;
+  draggingControlId: ExplorerChromeControlId | null;
+  registeredSurfaces: Partial<Record<ExplorerChromeSurfaceId, ExplorerChromeResolvedSurface>>;
 }
 
 export const defaultExplorerWorkspace: ExplorerWorkspaceSnapshot = {
@@ -172,6 +189,7 @@ interface ExplorerStoreState {
   rail: ExplorerRailSnapshot;
   clipboard: ExplorerClipboardSnapshot | null;
   persistence: ExplorerPersistenceNotice;
+  chromeEditSession: ExplorerChromeEditSession | null;
   getSession: (instanceId?: ExplorerInstanceId) => ExplorerSessionSnapshot;
   updateSession: (updates: Partial<ExplorerSessionSnapshot>) => void;
   updateSessionForInstance: (instanceId: ExplorerInstanceId, updates: Partial<ExplorerSessionSnapshot>) => void;
@@ -195,6 +213,16 @@ interface ExplorerStoreState {
   replaceRail: (nextRail: ExplorerRailSnapshot) => void;
   restoreRailBackup: () => void;
   clearPersistenceNotice: () => void;
+  openChromeEditSession: (args: {
+    themeId: string;
+    layoutId: ExplorerChromeLayoutId;
+    initialOverride?: ExplorerChromeOverrideSnapshot | null;
+  }) => void;
+  updateChromeEditDraft: (draftOverride: ExplorerChromeOverrideSnapshot) => void;
+  setChromeEditDraggingControl: (controlId: ExplorerChromeControlId | null) => void;
+  registerChromeEditSurface: (surface: ExplorerChromeResolvedSurface) => void;
+  unregisterChromeEditSurface: (surfaceId: ExplorerChromeSurfaceId) => void;
+  closeChromeEditSession: () => void;
 }
 
 interface ExplorerHydrationResult {
@@ -576,6 +604,7 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
     rail: hydratedState.rail,
     clipboard: hydratedState.clipboard,
     persistence: hydratedState.persistence,
+    chromeEditSession: null,
     getSession: (instanceId = PRIMARY_EXPLORER_INSTANCE_ID) => (
       get().sessions[instanceId] ?? cloneExplorerSessionSnapshot(defaultExplorerSession)
     ),
@@ -861,6 +890,87 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
           message: null,
         },
       }));
+    },
+    openChromeEditSession: ({ themeId, layoutId, initialOverride }) => {
+      const trimmedThemeId = themeId.trim();
+      if (!trimmedThemeId) {
+        return;
+      }
+
+      set({
+        chromeEditSession: {
+          themeId: trimmedThemeId,
+          layoutId: normalizeExplorerChromeLayoutId(layoutId),
+          draftOverride: normalizeExplorerChromeOverrideSnapshot(initialOverride),
+          draggingControlId: null,
+          registeredSurfaces: {},
+        },
+      });
+    },
+    updateChromeEditDraft: (draftOverride) => {
+      set((state) => {
+        if (!state.chromeEditSession) {
+          return state;
+        }
+
+        return {
+          chromeEditSession: {
+            ...state.chromeEditSession,
+            draftOverride: normalizeExplorerChromeOverrideSnapshot(draftOverride),
+            draggingControlId: null,
+          },
+        };
+      });
+    },
+    setChromeEditDraggingControl: (controlId) => {
+      set((state) => {
+        if (!state.chromeEditSession) {
+          return state;
+        }
+
+        return {
+          chromeEditSession: {
+            ...state.chromeEditSession,
+            draggingControlId: controlId,
+          },
+        };
+      });
+    },
+    registerChromeEditSurface: (surface) => {
+      set((state) => {
+        if (!state.chromeEditSession) {
+          return state;
+        }
+
+        return {
+          chromeEditSession: {
+            ...state.chromeEditSession,
+            registeredSurfaces: {
+              ...state.chromeEditSession.registeredSurfaces,
+              [surface.surfaceId]: surface,
+            },
+          },
+        };
+      });
+    },
+    unregisterChromeEditSurface: (surfaceId) => {
+      set((state) => {
+        if (!state.chromeEditSession) {
+          return state;
+        }
+
+        const nextRegisteredSurfaces = { ...state.chromeEditSession.registeredSurfaces };
+        delete nextRegisteredSurfaces[surfaceId];
+        return {
+          chromeEditSession: {
+            ...state.chromeEditSession,
+            registeredSurfaces: nextRegisteredSurfaces,
+          },
+        };
+      });
+    },
+    closeChromeEditSession: () => {
+      set({ chromeEditSession: null });
     },
   };
 });

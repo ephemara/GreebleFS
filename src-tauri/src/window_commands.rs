@@ -1,6 +1,12 @@
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
 
+use crate::wayland_dock::{
+    apply_wayland_dock_layout, wayland_dock_host_status, WaylandDockAnchor,
+    WaylandDockHostStatus,
+};
+
 pub const MAIN_TRAY_ICON_ID: &str = "main-tray";
+pub const MAIN_WINDOW_LABEL: &str = "main";
 
 /// Atomically apply all window presentation properties in one IPC call.
 /// This prevents the race condition where decorations/alwaysOnTop are set
@@ -10,6 +16,7 @@ pub const MAIN_TRAY_ICON_ID: &str = "main-tray";
 #[allow(clippy::too_many_arguments)]
 pub fn window_apply_mode(
     app: AppHandle,
+    window: WebviewWindow,
     decorations: bool,
     always_on_top: bool,
     shadow: bool,
@@ -19,10 +26,6 @@ pub fn window_apply_mode(
     width: u32,
     height: u32,
 ) -> Result<(), String> {
-    let window = app
-        .get_webview_window("main")
-        .ok_or_else(|| "Main window not found".to_string())?;
-
     // Some Linux WMs reject presentation-only flags during startup or for
     // transparent undecorated windows. Geometry must still apply so the dock
     // cannot get stranded in the center of the screen.
@@ -53,21 +56,17 @@ pub fn window_apply_mode(
 
 #[tauri::command]
 #[specta::specta]
-pub fn window_set_blur(app: AppHandle, enabled: bool, strength: Option<f64>) -> Result<(), String> {
-    let window = app
-        .get_webview_window("main")
-        .ok_or_else(|| "Main window not found".to_string())?;
-
+pub fn window_set_blur(window: WebviewWindow, enabled: bool, strength: Option<f64>) -> Result<(), String> {
     set_native_blur(&window, enabled, strength)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn window_set_taskbar_visibility(app: AppHandle, visible: bool) -> Result<(), String> {
-    let window = app
-        .get_webview_window("main")
-        .ok_or_else(|| "Main window not found".to_string())?;
-
+pub fn window_set_taskbar_visibility(
+    app: AppHandle,
+    window: WebviewWindow,
+    visible: bool,
+) -> Result<(), String> {
     set_native_taskbar_visibility(&app, &window, visible)
 }
 
@@ -85,6 +84,24 @@ pub fn tray_set_visible(app: AppHandle, visible: bool) -> Result<(), String> {
 #[specta::specta]
 pub fn window_get_linux_display_server() -> Option<String> {
     detect_linux_display_server().map(str::to_string)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn window_get_wayland_dock_host_status(app: AppHandle) -> WaylandDockHostStatus {
+    wayland_dock_host_status(&app)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn window_apply_wayland_dock_layout(
+    window: WebviewWindow,
+    anchor: WaylandDockAnchor,
+    monitor_name: Option<String>,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    apply_wayland_dock_layout(&window, anchor, monitor_name, width, height)
 }
 
 #[cfg(target_os = "windows")]
@@ -188,7 +205,7 @@ fn log_optional_window_error<T, E: std::fmt::Display>(result: Result<T, E>, oper
 }
 
 #[cfg(target_os = "linux")]
-fn detect_linux_display_server() -> Option<&'static str> {
+pub fn detect_linux_display_server() -> Option<&'static str> {
     if std::env::var_os("WAYLAND_DISPLAY").is_some()
         || std::env::var("XDG_SESSION_TYPE")
             .map(|value| value.eq_ignore_ascii_case("wayland"))
@@ -209,7 +226,7 @@ fn detect_linux_display_server() -> Option<&'static str> {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn detect_linux_display_server() -> Option<&'static str> {
+pub fn detect_linux_display_server() -> Option<&'static str> {
     None
 }
 
@@ -244,6 +261,11 @@ mod tests {
     #[test]
     fn main_tray_icon_id_is_stable() {
         assert_eq!(MAIN_TRAY_ICON_ID, "main-tray");
+    }
+
+    #[test]
+    fn main_window_label_is_stable() {
+        assert_eq!(MAIN_WINDOW_LABEL, "main");
     }
 
     #[cfg(any(target_os = "windows", target_os = "macos"))]

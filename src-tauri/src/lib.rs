@@ -10,6 +10,7 @@ pub mod screenshot_commands;
 pub mod specta_bindings;
 pub mod startup_commands;
 pub mod terminal;
+pub mod wayland_dock;
 pub mod window_commands;
 
 use cloud_commands::CloudRuntimeState;
@@ -22,10 +23,10 @@ use tauri::{
     Emitter, Manager,
 };
 use terminal::TerminalManager;
-use window_commands::MAIN_TRAY_ICON_ID;
+use window_commands::{MAIN_TRAY_ICON_ID, MAIN_WINDOW_LABEL};
 
 fn toggle_overlay(app: &tauri::AppHandle) {
-    if let Some(win) = app.get_webview_window("main") {
+    if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         let _ = win.emit("overlay://toggle-request", ());
     }
 }
@@ -54,8 +55,11 @@ pub fn run() {
             initialize_entry_size_cache(app.handle())?;
             app.manage(EntrySizeWatcherState::default());
             app.manage(PluginWatcherState::default());
+            if let Err(error) = wayland_dock::initialize_wayland_dock_host(&app.handle()) {
+                eprintln!("OverlayTerm: failed to initialize Wayland dock host: {error}");
+            }
 
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
                 if cfg!(debug_assertions) {
                     // Dev mode: show the window immediately so you don't need
                     // to press the hotkey every time you restart. This block is

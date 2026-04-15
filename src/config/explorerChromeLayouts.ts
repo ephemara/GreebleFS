@@ -1,4 +1,10 @@
-export type ExplorerChromeSurfaceId = 'explorerTopbar' | 'explorerToolbar' | 'workspaceHeader';
+export type ExplorerChromeSurfaceId =
+  | 'explorerTopbar'
+  | 'explorerToolbar'
+  | 'workspaceHeader'
+  | 'railHeader'
+  | 'previewHeader'
+  | 'explorerStatusBar';
 
 export type ExplorerChromeZoneId =
   | 'start'
@@ -55,7 +61,25 @@ export type BuiltInExplorerChromeControlId =
   | 'workspaceSplitSummary'
   | 'workspaceSplitNudgeLeft'
   | 'workspaceSplitReset'
-  | 'workspaceSplitNudgeRight';
+  | 'workspaceSplitNudgeRight'
+  | 'railIdentity'
+  | 'railBookmarkSummary'
+  | 'railManageToggle'
+  | 'previewIdentity'
+  | 'previewState'
+  | 'previewModeToggle'
+  | 'previewCopyPath'
+  | 'previewClose'
+  | 'statusItemCount'
+  | 'statusSelectionSummary'
+  | 'statusModeProfile'
+  | 'statusViewSummary'
+  | 'statusPreviewSummary'
+  | 'statusLabsSummary'
+  | 'statusSearchSummary'
+  | 'statusTaskBadge'
+  | 'statusClipboardQueue'
+  | 'statusPreviewLoading';
 
 export type ExplorerChromeControlId = BuiltInExplorerChromeControlId | `plugin:${string}`;
 
@@ -145,6 +169,33 @@ const explorerChromeSurfaceDefinitions: Record<ExplorerChromeSurfaceId, Explorer
   },
   workspaceHeader: {
     id: 'workspaceHeader',
+    rows: [
+      {
+        id: 'primary',
+        zones: ['start', 'center', 'end'],
+      },
+    ],
+  },
+  railHeader: {
+    id: 'railHeader',
+    rows: [
+      {
+        id: 'primary',
+        zones: ['start', 'center', 'end'],
+      },
+    ],
+  },
+  previewHeader: {
+    id: 'previewHeader',
+    rows: [
+      {
+        id: 'primary',
+        zones: ['start', 'center', 'end'],
+      },
+    ],
+  },
+  explorerStatusBar: {
+    id: 'explorerStatusBar',
     rows: [
       {
         id: 'primary',
@@ -291,6 +342,60 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       workspaceSplitNudgeRight: {
         workspaceHeader: { zone: 'end', order: 120 },
       },
+      railIdentity: {
+        railHeader: { zone: 'start', order: 10, grow: 1, shrink: 1 },
+      },
+      railBookmarkSummary: {
+        railHeader: { zone: 'center', order: 10, shrink: 1, collapsePriority: 30, overflowEligible: true },
+      },
+      railManageToggle: {
+        railHeader: { zone: 'end', order: 10 },
+      },
+      previewIdentity: {
+        previewHeader: { zone: 'start', order: 10, grow: 1, shrink: 1 },
+      },
+      previewState: {
+        previewHeader: { zone: 'center', order: 10, shrink: 1, collapsePriority: 20, overflowEligible: true },
+      },
+      previewModeToggle: {
+        previewHeader: { zone: 'end', order: 10 },
+      },
+      previewCopyPath: {
+        previewHeader: { zone: 'end', order: 20 },
+      },
+      previewClose: {
+        previewHeader: { zone: 'end', order: 30 },
+      },
+      statusItemCount: {
+        explorerStatusBar: { zone: 'start', order: 10 },
+      },
+      statusSelectionSummary: {
+        explorerStatusBar: { zone: 'start', order: 20 },
+      },
+      statusModeProfile: {
+        explorerStatusBar: { zone: 'start', order: 30 },
+      },
+      statusViewSummary: {
+        explorerStatusBar: { zone: 'start', order: 40, shrink: 1, collapsePriority: 20, overflowEligible: true },
+      },
+      statusPreviewSummary: {
+        explorerStatusBar: { zone: 'center', order: 10, shrink: 1, collapsePriority: 30, overflowEligible: true },
+      },
+      statusLabsSummary: {
+        explorerStatusBar: { zone: 'center', order: 20, shrink: 1, collapsePriority: 40, overflowEligible: true },
+      },
+      statusSearchSummary: {
+        explorerStatusBar: { zone: 'center', order: 30, grow: 1, shrink: 1, collapsePriority: 10, overflowEligible: true },
+      },
+      statusTaskBadge: {
+        explorerStatusBar: { zone: 'end', order: 10 },
+      },
+      statusClipboardQueue: {
+        explorerStatusBar: { zone: 'end', order: 20, shrink: 1, collapsePriority: 10, overflowEligible: true },
+      },
+      statusPreviewLoading: {
+        explorerStatusBar: { zone: 'end', order: 30 },
+      },
     },
   },
   'focused-search': {
@@ -429,6 +534,60 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       workspaceSplitNudgeRight: {
         workspaceHeader: { zone: 'end', order: 110 },
       },
+      railIdentity: {
+        railHeader: { zone: 'start', order: 10, grow: 1, shrink: 1 },
+      },
+      railBookmarkSummary: {
+        railHeader: { zone: 'end', order: 10, shrink: 1, collapsePriority: 20, overflowEligible: true },
+      },
+      railManageToggle: {
+        railHeader: { zone: 'end', order: 20 },
+      },
+      previewIdentity: {
+        previewHeader: { zone: 'start', order: 10, grow: 1, shrink: 1 },
+      },
+      previewState: {
+        previewHeader: { zone: 'end', order: 10, shrink: 1, collapsePriority: 20, overflowEligible: true },
+      },
+      previewModeToggle: {
+        previewHeader: { zone: 'end', order: 20 },
+      },
+      previewCopyPath: {
+        previewHeader: { zone: 'end', order: 30 },
+      },
+      previewClose: {
+        previewHeader: { zone: 'end', order: 40 },
+      },
+      statusItemCount: {
+        explorerStatusBar: { zone: 'start', order: 10 },
+      },
+      statusSelectionSummary: {
+        explorerStatusBar: { zone: 'start', order: 20 },
+      },
+      statusModeProfile: {
+        explorerStatusBar: { zone: 'start', order: 30 },
+      },
+      statusViewSummary: {
+        explorerStatusBar: { zone: 'center', order: 10, shrink: 1, collapsePriority: 20, overflowEligible: true },
+      },
+      statusPreviewSummary: {
+        explorerStatusBar: { zone: 'center', order: 20, shrink: 1, collapsePriority: 30, overflowEligible: true },
+      },
+      statusLabsSummary: {
+        explorerStatusBar: { zone: 'center', order: 30, shrink: 1, collapsePriority: 40, overflowEligible: true },
+      },
+      statusSearchSummary: {
+        explorerStatusBar: { zone: 'center', order: 40, grow: 1, shrink: 1, collapsePriority: 10, overflowEligible: true },
+      },
+      statusTaskBadge: {
+        explorerStatusBar: { zone: 'end', order: 10 },
+      },
+      statusClipboardQueue: {
+        explorerStatusBar: { zone: 'end', order: 20, shrink: 1, collapsePriority: 10, overflowEligible: true },
+      },
+      statusPreviewLoading: {
+        explorerStatusBar: { zone: 'end', order: 30 },
+      },
     },
   },
 };
@@ -452,7 +611,12 @@ const explorerChromeZoneSurfaceMap = Object.values(explorerChromeSurfaceDefiniti
 export const defaultExplorerChromeLayoutId: BuiltInExplorerChromeLayoutId = 'default';
 
 function isExplorerChromeSurfaceId(value: unknown): value is ExplorerChromeSurfaceId {
-  return value === 'explorerTopbar' || value === 'explorerToolbar' || value === 'workspaceHeader';
+  return value === 'explorerTopbar'
+    || value === 'explorerToolbar'
+    || value === 'workspaceHeader'
+    || value === 'railHeader'
+    || value === 'previewHeader'
+    || value === 'explorerStatusBar';
 }
 
 function isExplorerChromeZoneId(value: unknown): value is ExplorerChromeZoneId {
@@ -617,6 +781,89 @@ function getOverridePlacement(
     collapsePriority: basePlacement?.collapsePriority,
     overflowEligible: basePlacement?.overflowEligible,
   };
+}
+
+function collectResolvedSurfacePlacements(
+  surface: ExplorerChromeResolvedSurface,
+): ExplorerChromeResolvedControlPlacement[] {
+  return surface.rows.flatMap((row) => row.zones.flatMap((zone) => zone.controls));
+}
+
+export function createExplorerChromeOverrideSnapshotFromResolvedSurfaces(
+  surfaces: ExplorerChromeResolvedSurface[],
+): ExplorerChromeOverrideSnapshot {
+  return normalizeExplorerChromeOverrideSnapshot({
+    entries: surfaces
+      .flatMap((surface) => collectResolvedSurfacePlacements(surface))
+      .map((placement) => ({
+        controlId: placement.controlId,
+        surfaceId: placement.surfaceId,
+        zone: placement.zone,
+        order: placement.order,
+      })),
+  });
+}
+
+export function moveExplorerChromeControlInResolvedSurfaces(input: {
+  surfaces: ExplorerChromeResolvedSurface[];
+  controlId: ExplorerChromeControlId;
+  targetSurfaceId: ExplorerChromeSurfaceId;
+  targetZoneId: ExplorerChromeZoneId;
+  targetIndex: number;
+}): ExplorerChromeOverrideSnapshot {
+  const normalizedTargetIndex = Math.max(0, Math.trunc(input.targetIndex));
+  const placementsBySurfaceAndZone = new Map<string, ExplorerChromeResolvedControlPlacement[]>();
+  let movingPlacement: ExplorerChromeResolvedControlPlacement | null = null;
+
+  for (const surface of input.surfaces) {
+    for (const row of surface.rows) {
+      for (const zone of row.zones) {
+        const nextControls = zone.controls
+          .filter((placement) => {
+            if (placement.controlId !== input.controlId) {
+              return true;
+            }
+            movingPlacement = placement;
+            return false;
+          })
+          .map((placement) => ({ ...placement }));
+        placementsBySurfaceAndZone.set(`${surface.surfaceId}:${zone.id}`, nextControls);
+      }
+    }
+  }
+
+  const targetKey = `${input.targetSurfaceId}:${input.targetZoneId}`;
+  const targetControls = placementsBySurfaceAndZone.get(targetKey);
+  if (!targetControls || !isValidZoneForSurface(input.targetSurfaceId, input.targetZoneId)) {
+    return createExplorerChromeOverrideSnapshotFromResolvedSurfaces(input.surfaces);
+  }
+
+  const fallbackPlacement = movingPlacement ?? {
+    controlId: input.controlId,
+    surfaceId: input.targetSurfaceId,
+    zone: input.targetZoneId,
+    order: 10,
+  };
+  const nextPlacement: ExplorerChromeResolvedControlPlacement = {
+    ...fallbackPlacement,
+    surfaceId: input.targetSurfaceId,
+    zone: input.targetZoneId,
+  };
+  const insertionIndex = Math.min(normalizedTargetIndex, targetControls.length);
+  targetControls.splice(insertionIndex, 0, nextPlacement);
+  placementsBySurfaceAndZone.set(targetKey, targetControls);
+
+  return normalizeExplorerChromeOverrideSnapshot({
+    entries: input.surfaces.flatMap((surface) => surface.rows.flatMap((row) => row.zones.flatMap((zone) => {
+      const controls = placementsBySurfaceAndZone.get(`${surface.surfaceId}:${zone.id}`) ?? [];
+      return controls.map((placement, index) => ({
+        controlId: placement.controlId,
+        surfaceId: surface.surfaceId,
+        zone: zone.id,
+        order: (index + 1) * 10,
+      }));
+    }))),
+  });
 }
 
 export function resolveExplorerChromeSurfaceLayout(input: {
