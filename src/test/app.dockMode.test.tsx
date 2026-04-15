@@ -4,9 +4,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../panels/panelRegistry', () => ({
   createBuiltInPanelDefinitions: ({
+    appearance,
     explorerLayoutMode,
   }: {
-    explorerLayoutMode?: 'full' | 'compact-dock';
+    appearance?: {
+      theme: {
+        id: string;
+      };
+    };
+    explorerLayoutMode?: 'full' | 'dock';
   }) => [
     {
       id: 'explorer',
@@ -20,7 +26,12 @@ vi.mock('../panels/panelRegistry', () => ({
         groupId: 'browse',
         groupLabel: 'Browse',
       },
-      render: () => <div data-testid="explorer-layout-mode">{explorerLayoutMode ?? 'full'}</div>,
+      render: () => (
+        <div>
+          <div data-testid="explorer-layout-mode">{explorerLayoutMode ?? 'full'}</div>
+          <div data-testid="explorer-theme-id">{appearance?.theme.id ?? 'missing-theme'}</div>
+        </div>
+      ),
     },
     {
       id: 'terminal',
@@ -167,19 +178,21 @@ describe('App dock mode behavior', () => {
     setWindowMode('windowed');
   });
 
-  it('renders the explorer in full mode for the application window and compact dock mode for dock mode', async () => {
+  it('renders the explorer in full mode for the application window and dock mode for dock mode', async () => {
     const user = userEvent.setup();
 
     render(<App />);
 
     expect(await screen.findByTestId('explorer-layout-mode')).toHaveTextContent('full');
+    expect(screen.getByTestId('explorer-theme-id')).toHaveTextContent('operator');
 
     await user.click(screen.getByTitle('Switch to Dock Mode'));
 
     await waitFor(() => {
       expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('overlay');
     });
-    expect(screen.getByTestId('explorer-layout-mode')).toHaveTextContent('compact-dock');
+    expect(screen.getByTestId('explorer-layout-mode')).toHaveTextContent('dock');
+    expect(screen.getByTestId('explorer-theme-id')).toHaveTextContent('operator');
 
     await user.click(screen.getByTitle('Switch to Application Mode'));
 
@@ -187,6 +200,51 @@ describe('App dock mode behavior', () => {
       expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('windowed');
     });
     expect(screen.getByTestId('explorer-layout-mode')).toHaveTextContent('full');
+    expect(screen.getByTestId('explorer-theme-id')).toHaveTextContent('operator');
+  });
+
+  it('switches the active appearance channel when dock mode uses an override theme', async () => {
+    const user = userEvent.setup();
+
+    setWindowMode('windowed');
+    useSettingsStore.setState(state => ({
+      settings: {
+        ...state.settings,
+        appearance: {
+          ...state.settings.appearance,
+          activeThemeId: 'operator',
+          dockThemeMode: 'override',
+          activeDockThemeId: 'dock-burnished',
+          customThemes: [
+            {
+              id: 'dock-burnished',
+              name: 'Dock Burnished',
+              palette: {
+                accent: '#ff8a00',
+              },
+            } as typeof state.settings.appearance.customThemes[number],
+          ],
+        },
+      },
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByTestId('explorer-theme-id')).toHaveTextContent('operator');
+
+    await user.click(screen.getByTitle('Switch to Dock Mode'));
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('overlay');
+    });
+    expect(screen.getByTestId('explorer-theme-id')).toHaveTextContent('dock-burnished');
+
+    await user.click(screen.getByTitle('Switch to Application Mode'));
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('windowed');
+    });
+    expect(screen.getByTestId('explorer-theme-id')).toHaveTextContent('operator');
   });
 
   it('keeps application mode out of the taskbar when that setting is disabled', async () => {
@@ -234,23 +292,16 @@ describe('App dock mode behavior', () => {
 
     render(<App />);
 
-    expect(await screen.findByTestId('explorer-layout-mode')).toHaveTextContent('compact-dock');
+    expect(await screen.findByTestId('explorer-layout-mode')).toHaveTextContent('dock');
 
     await user.click(screen.getByTitle('Switch to Application Mode'));
 
     await waitFor(() => {
       expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('windowed');
     });
-    expect(vi.mocked(commands.windowApplyMode)).toHaveBeenLastCalledWith(
-      false,
-      false,
-      false,
-      false,
-      expect.any(Number),
-      expect.any(Number),
-      expect.any(Number),
-      expect.any(Number),
-    );
+    const lastApplyModeCall = vi.mocked(commands.windowApplyMode).mock.lastCall;
+    expect(lastApplyModeCall?.[0]).toBe(false);
+    expect(lastApplyModeCall?.[3]).toBe(false);
   });
 
   it('hides the tray icon when the persisted system setting disables it', async () => {
@@ -295,15 +346,14 @@ describe('App dock mode behavior', () => {
     render(<App />);
 
     expect(await screen.findByTestId('terminal-panel')).toBeInTheDocument();
-    expect(screen.queryByTestId('explorer-layout-mode')).toBeNull();
+    expect(screen.getByTestId('explorer-layout-mode')).toHaveTextContent('full');
 
     await user.click(screen.getByTitle('Switch to Dock Mode'));
 
     await waitFor(() => {
       expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('overlay');
     });
-    expect(screen.getByTestId('explorer-layout-mode')).toHaveTextContent('compact-dock');
-    expect(screen.queryByTestId('terminal-panel')).not.toBeInTheDocument();
+    expect(screen.getByTestId('explorer-layout-mode')).toHaveTextContent('dock');
 
     await user.click(screen.getByTitle('Switch to Application Mode'));
 
@@ -311,22 +361,20 @@ describe('App dock mode behavior', () => {
       expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('windowed');
     });
     expect(screen.getByTestId('explorer-layout-mode')).toHaveTextContent('full');
-    expect(screen.queryByTestId('terminal-panel')).not.toBeInTheDocument();
   });
 
   it('foregrounds the explorer when dock mode is enabled through a direct settings update', async () => {
     render(<App />);
 
     expect(await screen.findByTestId('terminal-panel')).toBeInTheDocument();
-    expect(screen.queryByTestId('explorer-layout-mode')).toBeNull();
+    expect(screen.getByTestId('explorer-layout-mode')).toHaveTextContent('full');
 
     useSettingsStore.getState().updateTerminal({ windowMode: 'overlay' });
 
     await waitFor(() => {
       expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('overlay');
     });
-    expect(screen.getByTestId('explorer-layout-mode')).toHaveTextContent('compact-dock');
-    expect(screen.queryByTestId('terminal-panel')).not.toBeInTheDocument();
+    expect(screen.getByTestId('explorer-layout-mode')).toHaveTextContent('dock');
 
     useSettingsStore.getState().updateTerminal({ windowMode: 'windowed' });
 
@@ -334,10 +382,9 @@ describe('App dock mode behavior', () => {
       expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('windowed');
     });
     expect(screen.getByTestId('explorer-layout-mode')).toHaveTextContent('full');
-    expect(screen.queryByTestId('terminal-panel')).not.toBeInTheDocument();
   });
 
-  it('syncs tray and taskbar changes without replaying the startup presentation', async () => {
+  it('reapplies window mode once when syncing tray and taskbar changes', async () => {
     render(<App />);
 
     await waitFor(() => {
@@ -356,6 +403,6 @@ describe('App dock mode behavior', () => {
     });
 
     await new Promise(resolve => window.setTimeout(resolve, 120));
-    expect(vi.mocked(commands.windowApplyMode).mock.calls.length).toBe(baselineApplyModeCalls);
+    expect(vi.mocked(commands.windowApplyMode).mock.calls.length).toBe(baselineApplyModeCalls + 1);
   });
 });

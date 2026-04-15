@@ -186,6 +186,10 @@ export interface OverlayAppearanceSelection {
 export interface ResolvedOverlayAppearanceChannel {
   theme: OverlayThemeDefinition;
   baseTheme: OverlayThemeDefinition;
+  fonts: {
+    ui: string;
+    mono: string;
+  };
   workbenchTheme: ResolvedWorkbenchThemeRecipe;
   explorerTheme: ResolvedExplorerThemeRecipe;
 }
@@ -1047,13 +1051,15 @@ function createResolvedCssVars(args: {
 function resolveAppearanceChannel(args: {
   baseTheme: OverlayThemeDefinition;
   themes: OverlayThemeDefinition[];
-  fonts: {
-    ui: string;
-    mono: string;
-  };
+  uiFontFamily?: string;
+  monoFontFamily?: string;
   panelTransparency: number;
 }): ResolvedOverlayAppearanceChannel {
-  const { baseTheme, themes, fonts, panelTransparency } = args;
+  const { baseTheme, themes, uiFontFamily, monoFontFamily, panelTransparency } = args;
+  const fonts = {
+    ui: uiFontFamily?.trim() || baseTheme.fonts?.ui || defaultUiFont,
+    mono: monoFontFamily?.trim() || baseTheme.fonts?.mono || defaultMonoFont,
+  };
   const theme = applyPanelTransparency(baseTheme, panelTransparency);
   const workbenchTheme = resolveWorkbenchThemeRecipe(baseTheme);
   const explorerTheme = resolveExplorerThemeRecipe({
@@ -1073,6 +1079,7 @@ function resolveAppearanceChannel(args: {
   return {
     theme,
     baseTheme,
+    fonts,
     workbenchTheme,
     explorerTheme,
   };
@@ -1197,23 +1204,21 @@ export function resolveOverlayAppearance(selection?: OverlayAppearanceSelection)
   const themes = [...overlayThemePresets, ...packageThemes, ...customThemes];
   const appBaseTheme = resolveThemeOrFallback(themeLookup, activeThemeId);
   const dockSourceTheme = dockThemeMode === 'override'
-    ? resolveThemeOrFallback(themeLookup, activeDockThemeId)
+    ? (activeDockThemeId ? themeLookup.get(activeDockThemeId) ?? appBaseTheme : appBaseTheme)
     : appBaseTheme;
   const dockBaseTheme = createDockResolvedThemeDefinition(dockSourceTheme);
-  const fonts = {
-    ui: selection?.uiFontFamily?.trim() || appBaseTheme.fonts?.ui || defaultUiFont,
-    mono: selection?.monoFontFamily?.trim() || appBaseTheme.fonts?.mono || defaultMonoFont,
-  };
   const app = resolveAppearanceChannel({
     baseTheme: appBaseTheme,
     themes,
-    fonts,
+    uiFontFamily: selection?.uiFontFamily,
+    monoFontFamily: selection?.monoFontFamily,
     panelTransparency,
   });
   const dock = resolveAppearanceChannel({
     baseTheme: dockBaseTheme,
     themes,
-    fonts,
+    uiFontFamily: selection?.uiFontFamily,
+    monoFontFamily: selection?.monoFontFamily,
     panelTransparency,
   });
   const activeChannel = windowMode === 'overlay' ? dock : app;
@@ -1223,7 +1228,7 @@ export function resolveOverlayAppearance(selection?: OverlayAppearanceSelection)
     theme: activeChannel.theme,
     baseTheme: activeChannel.baseTheme,
     themes,
-    fonts,
+    fonts: activeChannel.fonts,
     workbenchTheme: activeChannel.workbenchTheme,
     explorerTheme: activeChannel.explorerTheme,
     panelTransparency,
@@ -1231,7 +1236,7 @@ export function resolveOverlayAppearance(selection?: OverlayAppearanceSelection)
     dock,
     cssVars: createResolvedCssVars({
       theme: activeChannel.theme,
-      fonts,
+      fonts: activeChannel.fonts,
       panelTransparency,
       workbenchTheme: activeChannel.workbenchTheme,
     }),

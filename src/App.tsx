@@ -820,7 +820,7 @@ function App() {
     () => getPinnedPanelIds(activeLayoutProfile),
     [activeLayoutProfile],
   );
-  const explorerPanelLayoutMode = windowMode === 'overlay' ? 'compact-dock' : 'full';
+  const explorerPanelLayoutMode = windowMode === 'overlay' ? 'dock' : 'full';
   const activeThemeRenderer = resolvedAppearance.baseTheme.themeRenderer ?? null;
   const activeThemeRendererSurfaceOwnership = activeThemeRenderer?.surfaceOwnership;
   const renderRuntime = useMemo(
@@ -1485,6 +1485,19 @@ function App() {
 
     await positionAndShow();
   }, [positionAndShow, showWindowedPanel]);
+
+  const handleOpenInFilesystemAquarium: (path: string) => void = useCallback((path: string) => {
+    const trimmedPath = path.trim();
+    if (!trimmedPath) {
+      return;
+    }
+
+    requestFilesystemAquariumOpen(trimmedPath);
+    setPanelOpenStateDirectly(FILESYSTEM_AQUARIUM_PANEL_ID);
+    if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
+      void showCurrentPresentation();
+    }
+  }, [setPanelOpenStateDirectly, showCurrentPresentation]);
 
 
   const handleToggleOverlayAnchor = useCallback(() => {
@@ -2673,23 +2686,6 @@ function App() {
       },
     });
   }, [activeLayoutProfile.id, availablePanelIds, pinnedPanelIds]);
-
-  const handleOpenInFilesystemAquarium: (path: string) => void = useCallback((path: string) => {
-    const trimmedPath = path.trim();
-    if (!trimmedPath) {
-      return;
-    }
-
-    requestFilesystemAquariumOpen(trimmedPath);
-    updateActiveLayoutPanelState(current => ({
-      openPanelIds: uniquePanelIds([...current.openPanelIds, FILESYSTEM_AQUARIUM_PANEL_ID]),
-      activePanelId: FILESYSTEM_AQUARIUM_PANEL_ID,
-      dismissedPanelIds: current.dismissedPanelIds.filter(id => id !== FILESYSTEM_AQUARIUM_PANEL_ID),
-    }));
-    if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
-      void showCurrentPresentation();
-    }
-  }, [showCurrentPresentation, updateActiveLayoutPanelState]);
 
   const handleSelectPanel = useCallback((panelId: string | null) => {
     if (!panelId || pinnedPanelIds.includes(panelId) || !panelLookup.has(panelId)) {

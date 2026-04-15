@@ -73,6 +73,12 @@ describe('theme package loader', () => {
                 '--overlay-explorer-brand': 'cross-media',
               },
             },
+            dock: {
+              explorer: {
+                preset: 'workbench',
+                toolbarStyle: 'floating',
+              },
+            },
             palette: {
               accent: '#7dd3ff',
             },
@@ -296,6 +302,7 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.tags).toEqual(['glass', 'blue']);
     expect(result.packages[0]?.capabilitySummary.icons).toBe(true);
     expect(result.packages[0]?.capabilitySummary.wallpaper).toBe(true);
+    expect(result.packages[0]?.capabilitySummary.dock).toBe(true);
     expect(result.packages[0]?.capabilitySummary.shaders).toBe(1);
     expect(result.packages[0]?.capabilitySummary.animations).toBe(1);
     expect(result.packages[0]?.capabilitySummary.themeRenderer).toBe(true);

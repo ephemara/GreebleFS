@@ -106,7 +106,7 @@ function resetOverlayTermStorage(storage: Storage) {
 function renderExplorer(options: {
   appearance?: ReturnType<typeof resolveOverlayAppearance>;
   chromeControlSurface?: 'toolbar' | 'topbar';
-  layoutMode?: 'full' | 'compact-dock';
+  layoutMode?: 'full' | 'dock';
 } = {}) {
   const appearance = options.appearance ?? resolveOverlayAppearance({ activeThemeId: 'operator' });
   return {
@@ -326,19 +326,19 @@ describe('FileExplorer view modes', () => {
     expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_read_text_file')).toBe(false);
   });
 
-  it('keeps inline previews available in compact dock mode', async () => {
-    renderExplorer({ layoutMode: 'compact-dock' });
+  it('keeps inline previews closed in dock mode', async () => {
+    renderExplorer({ layoutMode: 'dock' });
     await screen.findByText('notes.txt');
 
     fireEvent.click(screen.getByText('notes.txt'));
 
     await waitFor(() => {
-      expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_read_text_file')).toBe(true);
+      expect(screen.queryByRole('button', { name: /copy path/i })).toBeNull();
     });
-    expect(screen.getByRole('button', { name: /copy path/i })).toBeTruthy();
+    expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_read_text_file')).toBe(false);
   });
 
-  it('keeps an open inline preview available when switching into compact dock mode', async () => {
+  it('closes an open inline preview when switching into dock mode and keeps it closed on return', async () => {
     const { appearance, rerender } = renderExplorer();
     await screen.findByText('notes.txt');
 
@@ -356,14 +356,14 @@ describe('FileExplorer view modes', () => {
           textMuted: appearance.theme.palette.textMuted,
         }}
         appearance={appearance}
-        layoutMode="compact-dock"
+        layoutMode="dock"
         onOpenInTerminal={() => {}}
         onAddBookmark={async () => {}}
       />,
     );
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /copy path/i })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /copy path/i })).toBeNull();
     });
 
     rerender(
@@ -384,7 +384,7 @@ describe('FileExplorer view modes', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /copy path/i })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /copy path/i })).toBeNull();
     });
   });
 
@@ -637,7 +637,7 @@ describe('FileExplorer view modes', () => {
     });
   });
 
-  it('uses the default drag intent when no modifier is held', async () => {
+  it('starts the native drag bridge when no modifier is held for supported local entries', async () => {
     renderExplorer();
     const entry = await screen.findByText('notes.txt');
     const dataTransfer = createDataTransfer();

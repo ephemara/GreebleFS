@@ -259,7 +259,7 @@ pub enum LayoutDockSide {
 #[serde(rename_all = "kebab-case")]
 pub enum ExplorerLayoutMode {
     Full,
-    CompactDock,
+    Dock,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]

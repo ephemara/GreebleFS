@@ -7989,13 +7989,14 @@ export function FileExplorer({
                         gap: 12,
                         minHeight: virtualWindow.rowHeight,
                         padding: '0 12px',
-                        borderBottom: '1px solid var(--overlay-explorer-toolbar-border)',
+                        borderBottomWidth: 1,
+                        borderBottomStyle: 'solid',
+                        borderBottomColor: isDrop ? dropEntrySurface.borderColor : isSel ? selectedEntrySurface.borderColor : 'var(--overlay-explorer-toolbar-border)',
                         background: isDrop ? dropEntrySurface.background : isSel ? selectedEntrySurface.background : idleEntrySurface.background,
                         cursor: 'pointer',
                         opacity: entry.is_hidden ? 0.5 : 1,
                         userSelect: 'none',
                         boxShadow: isDrop ? dropEntrySurface.boxShadow : isSel ? selectedEntrySurface.boxShadow : idleEntrySurface.boxShadow,
-                        borderColor: isDrop ? dropEntrySurface.borderColor : isSel ? selectedEntrySurface.borderColor : idleEntrySurface.borderColor,
                         transform: isDrop ? dropEntrySurface.transform : isSel ? selectedEntrySurface.transform : idleEntrySurface.transform,
                       }}
                       onMouseEnter={e => { if (!isSel && !isDrop) applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, hoverEntrySurface); }}

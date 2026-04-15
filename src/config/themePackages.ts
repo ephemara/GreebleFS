@@ -131,6 +131,7 @@ export interface LoadedOverlayThemePackage {
   capabilitySummary: {
     icons: boolean;
     wallpaper: boolean;
+    dock: boolean;
     visuals: number;
     shaders: number;
     animations: number;
@@ -864,6 +865,7 @@ export async function loadThemePackagesFromDirectoryEntries(
           capabilitySummary: {
             icons: Boolean(theme.assets?.iconTheme || theme.assets?.iconEntries),
             wallpaper: Boolean(theme.assets?.backgroundUrl),
+            dock: Boolean(theme.dock?.workbench || theme.dock?.explorer),
             visuals: theme.visuals?.length ?? 0,
             shaders: packageShaders.length,
             animations: packageAnimations.length,

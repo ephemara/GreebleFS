@@ -984,7 +984,13 @@ export function SettingsPage({
     setCloudLoading(true);
     try {
       const snapshot = await listCloudAccounts();
-      setCloudSnapshot(snapshot);
+      setCloudSnapshot(
+        snapshot
+        && Array.isArray(snapshot.accounts)
+        && Array.isArray(snapshot.providers)
+          ? snapshot
+          : EMPTY_CLOUD_ACCOUNTS_SNAPSHOT,
+      );
       setCloudError(null);
     } catch (error) {
       setCloudError(`Failed to load cloud accounts: ${String(error)}`);
@@ -996,6 +1002,12 @@ export function SettingsPage({
   useEffect(() => {
     void refreshCloudAccounts();
   }, [refreshCloudAccounts]);
+
+  const safeCloudSnapshot = cloudSnapshot
+    && Array.isArray(cloudSnapshot.accounts)
+    && Array.isArray(cloudSnapshot.providers)
+      ? cloudSnapshot
+      : EMPTY_CLOUD_ACCOUNTS_SNAPSHOT;
 
   const connectCloudProvider = useCallback(async (provider: ExplorerCloudProviderId) => {
     setCloudError(null);
@@ -1274,8 +1286,8 @@ export function SettingsPage({
       action: () => setActiveSection('theme-json'),
     },
   ], []);
-  const connectedCloudAccountCount = cloudSnapshot.accounts.filter(account => account.status === 'connected').length;
-  const configuredCloudProviderCount = cloudSnapshot.providers.filter(provider => provider.configured).length;
+  const connectedCloudAccountCount = safeCloudSnapshot.accounts.filter(account => account.status === 'connected').length;
+  const configuredCloudProviderCount = safeCloudSnapshot.providers.filter(provider => provider.configured).length;
 
   const patchFolderRules = useCallback((rules: FolderIconRule[]) => {
     updateExplorer({ folderIconRules: rules });
@@ -3533,12 +3545,12 @@ export function SettingsPage({
 
                   <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                     {(['google-drive', 'dropbox'] as const).map(providerId => {
-                      const provider = cloudSnapshot.providers.find(item => item.provider === providerId) ?? {
+                      const provider = safeCloudSnapshot.providers.find(item => item.provider === providerId) ?? {
                         provider: providerId,
                         configured: false,
                         missing_configuration: ['provider configuration unavailable'],
                       };
-                      const providerAccounts = cloudSnapshot.accounts.filter(account => account.provider === providerId);
+                      const providerAccounts = safeCloudSnapshot.accounts.filter(account => account.provider === providerId);
                       const providerLabel = getCloudProviderLabel(providerId);
                       const providerBusy = cloudAuthProvider === providerId;
 

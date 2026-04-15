@@ -470,6 +470,7 @@ describe('SettingsPage behavior', () => {
         capabilitySummary: {
           icons: true,
           wallpaper: true,
+          dock: true,
           visuals: 2,
           shaders: 1,
           animations: 1,
@@ -485,7 +486,7 @@ describe('SettingsPage behavior', () => {
 
     await userEvent.setup().click(findSectionButton('Appearance'));
 
-    expect(await screen.findByText('Vista Glass')).toBeInTheDocument();
+    expect((await screen.findAllByText('Vista Glass')).length).toBeGreaterThan(0);
     expect(screen.getAllByText('OverlayTerm Labs')[0]).toBeInTheDocument();
     expect(screen.getByText('v2')).toBeInTheDocument();
     expect(screen.getByText('Shaders 1')).toBeInTheDocument();
@@ -546,6 +547,7 @@ describe('SettingsPage behavior', () => {
         capabilitySummary: {
           icons: true,
           wallpaper: true,
+          dock: false,
           visuals: 2,
           shaders: 1,
           animations: 1,
@@ -566,5 +568,62 @@ describe('SettingsPage behavior', () => {
     expect(appearanceSettings.appOpenAnimation).toBeNull();
     expect(appearanceSettings.appCloseAnimation).toBeNull();
     expect(appearanceSettings.useNativeOsIcons).toBe(false);
+  });
+
+  it('stores a separate dock theme override from the appearance catalog', async () => {
+    const user = userEvent.setup();
+    const packageTheme = normalizeThemeDefinition({
+      id: 'vista-glass',
+      name: 'Vista Glass',
+      source: 'package',
+      description: 'Glossy Aero shell.',
+      dock: {
+        workbench: {
+          preset: 'xmb',
+        },
+      },
+      palette: {
+        accent: '#7dd3ff',
+      },
+    } as never);
+
+    renderSettingsPage({
+      themePackages: [{
+        id: 'vista-glass',
+        name: 'Vista Glass',
+        version: 2,
+        directoryPath: 'themes/vista-glass',
+        manifestPath: 'themes/vista-glass/theme.json',
+        sourceKind: 'theme-directory',
+        sourceLabel: 'themes/vista-glass',
+        tags: ['glass'],
+        previewUrl: 'asset://localhost/themes/vista-glass/assets/preview.svg',
+        capabilitySummary: {
+          icons: true,
+          wallpaper: true,
+          dock: true,
+          visuals: 2,
+          shaders: 1,
+          animations: 1,
+          fonts: 2,
+          themeRenderer: false,
+        },
+        warnings: [],
+        theme: packageTheme,
+      }],
+    });
+
+    await user.click(findSectionButton('Appearance'));
+    await user.click(screen.getByRole('button', { name: 'Override Theme' }));
+
+    const dockThemeButtons = screen.getAllByRole('button').filter(button =>
+      button.textContent?.includes('Vista Glass'),
+    );
+    await user.click(dockThemeButtons[dockThemeButtons.length - 1] as HTMLButtonElement);
+
+    const appearanceSettings = useSettingsStore.getState().settings.appearance;
+    expect(appearanceSettings.activeThemeId).toBe('operator');
+    expect(appearanceSettings.dockThemeMode).toBe('override');
+    expect(appearanceSettings.activeDockThemeId).toBe('vista-glass');
   });
 });

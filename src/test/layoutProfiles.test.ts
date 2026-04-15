@@ -42,7 +42,7 @@ describe('layoutProfiles', () => {
       panelId: 'explorer',
       side: 'left',
       size: 420,
-      mode: 'compact-dock',
+      mode: 'dock',
     }]);
     expect(profile.interaction.primaryAxisOwner).toBe('pinned-rail');
     expect(profile.interaction.commandOwner).toBe('chrome');
@@ -71,6 +71,28 @@ describe('layoutProfiles', () => {
     expect(manifest.profiles).toHaveLength(1);
     expect(manifest.profiles[0]?.id).toBe('custom-shell');
     expect(manifest.profiles[0]?.chrome.barPosition).toBe('bottom');
+  });
+
+  it('normalizes the legacy compact-dock pinned panel mode to dock', () => {
+    const manifest = normalizeLayoutManifest({
+      extendsBuiltIns: false,
+      profiles: [
+        {
+          id: 'legacy-dock-mode',
+          label: 'Legacy Dock Mode',
+          pinnedPanels: [
+            {
+              panelId: 'explorer',
+              side: 'right',
+              size: 360,
+              mode: 'compact-dock',
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(manifest.profiles[0]?.pinnedPanels[0]?.mode).toBe('dock');
   });
 
   it('cycles layout ids in manifest order', () => {

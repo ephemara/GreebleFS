@@ -1,5 +1,24 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Dock Theme Lane / Dock Presentation Split
+
+- Dock mode is now a first-class presentation lane instead of a thin alias of the app shell.
+- Durable implementation shape:
+  - `src/store/settingsStore.ts` now persists `settings.appearance.dockThemeMode` (`follow-app` or `override`) plus `settings.appearance.activeDockThemeId`.
+  - `src/config/appearance.ts` now resolves both `app` and `dock` appearance channels at once and then selects the active lane from `settings.terminal.windowMode`.
+  - Theme manifests can now declare `theme.dock.workbench` and `theme.dock.explorer`. Those dock overrides merge on top of the selected dock base theme rather than replacing the entire theme pipeline.
+  - When dock follows the app theme, the dock base theme is the active app theme. When dock overrides the app theme, the dock base theme comes from `activeDockThemeId`, with safe fallback back to the app theme if the override id is missing or invalid.
+  - `src/config/themePackages.ts` now preserves `theme.dock.*` and exposes dock capability metadata so the theme catalog can label dock-aware themes.
+  - `src/App.tsx` and `src/components/TerminalOverlay.tsx` now consume the mode-aware appearance result, and the explorer panel wiring now uses `explorerLayoutMode: 'dock'`.
+  - `src/config/layoutProfiles.ts` normalizes legacy persisted `compact-dock` values to `dock`, so old layout/profile state keeps loading cleanly.
+  - `src/components/SettingsPage.tsx` now exposes dock-theme controls: follow the application theme or pick a separate dock theme, plus theme-card badges for dock-capable packages.
+- Durable behavior note:
+  - dock still reuses the same explorer/workspace sessions and filesystem truth as app mode, but its layout and appearance are now intentionally separable so the UE-style dock surface can be tuned harder without destabilizing the main shell
+  - the dock layout contract keeps inline preview closed, and `FileExplorer.tsx` now mounts cleanly in dock mode after removing a real `borderBottom`/`borderColor` style conflict from list rows
+- Validation:
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `bunx vitest run src/test/appearance.test.ts src/test/settingsStore.test.ts src/test/themePackageExplorerRecipe.test.ts src/test/settingsPage.behavior.test.tsx src/test/app.dockMode.test.tsx src/test/layoutProfiles.test.ts src/test/fileExplorer.viewModes.test.tsx src/test/themePackages.test.ts`
+
 ## 2026-04-15 — Adaptive Explorer Chrome Phase 1
 
 - Explorer chrome composition is now a first-class config/runtime layer, separate from explorer pane composition.
@@ -521,7 +540,7 @@
   - dock mode is not a separate in-app content drawer
 - `src/App.tsx` now drives the explorer directly from `settings.terminal.windowMode` again:
   - `windowed` passes `explorerLayoutMode: 'full'`
-  - `overlay` passes `explorerLayoutMode: 'compact-dock'`
+  - `overlay` passes `explorerLayoutMode: 'dock'`
   - entering dock mode forces the explorer panel forward so the compact shell behaves like the portable UE-style browser
 - Explorer shell controls were lifted back into the command-center top bar:
   - sources visibility
@@ -530,7 +549,7 @@
   - shell layout cycling
   - view mode cycling
   - preview toggle
-- `src/components/FileExplorer.tsx` no longer exposes drawer/dock surface semantics. It now renders as the same explorer surface in either `full` or `compact-dock` mode, and embedded shell-layout/view/preview controls are suppressed when the command center owns them in the top bar.
+- `src/components/FileExplorer.tsx` no longer exposes drawer/dock surface semantics. It now renders as the same explorer surface in either `full` or `dock` mode, and embedded shell-layout/view/preview controls are suppressed when the command center owns them in the top bar.
 - Added `settings.system.developerMode` and flipped live watcher behavior to opt-in:
   - plugin directory watching and fallback polling only run when developer mode is enabled
   - authored shader polling only runs when developer mode is enabled
@@ -551,7 +570,7 @@
   - `Application Mode` / `Dock Mode` in settings
 - Added focused app coverage in `src/test/app.dockMode.test.tsx` for:
   - full explorer rendering in application mode
-  - compact explorer rendering in dock mode
+  - dock explorer rendering in dock mode
   - foregrounding explorer when switching into dock mode
 - Updated supporting tests to match the corrected model:
   - `src/test/layoutProfiles.test.ts`

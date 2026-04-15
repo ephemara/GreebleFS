@@ -110,6 +110,91 @@ describe('appearance config helpers', () => {
     expect(resolved.cssVars['--overlay-accent']).toBe('#00ffaa');
     expect(resolved.cssVars['--overlay-bg-app']).toBe('#010203');
     expect(resolved.themes).toHaveLength(overlayThemePresets.length + 1);
+    expect(resolved.app.baseTheme.id).toBe('custom-active');
+    expect(resolved.dock.baseTheme.id).toBe('custom-active');
+  });
+
+  it('applies dock-specific recipes while following the active application theme', () => {
+    const hybridTheme = normalizeThemeDefinition({
+      id: 'hybrid-dock',
+      name: 'Hybrid Dock',
+      workbench: {
+        preset: 'workbench',
+      },
+      explorer: {
+        toolbarStyle: 'solid',
+      },
+      dock: {
+        workbench: {
+          preset: 'xmb',
+          brandLabel: 'Dock Cross Media',
+        },
+        explorer: {
+          preset: 'xmb',
+          toolbarStyle: 'floating',
+        },
+      },
+    } as Partial<OverlayThemeDefinition>);
+
+    const resolved = resolveOverlayAppearance({
+      activeThemeId: 'hybrid-dock',
+      customThemes: [hybridTheme],
+      dockThemeMode: 'follow-app',
+      windowMode: 'overlay',
+    });
+
+    expect(resolved.mode).toBe('overlay');
+    expect(resolved.app.baseTheme.id).toBe('hybrid-dock');
+    expect(resolved.dock.baseTheme.id).toBe('hybrid-dock');
+    expect(resolved.app.workbenchTheme.preset).toBe('workbench');
+    expect(resolved.dock.workbenchTheme.preset).toBe('xmb');
+    expect(resolved.workbenchTheme.brandLabel).toBe('Dock Cross Media');
+    expect(resolved.dock.explorerTheme.toolbarStyle).toBe('floating');
+    expect(resolved.app.explorerTheme.toolbarStyle).toBe('solid');
+  });
+
+  it('uses the dock override theme in overlay mode and falls back to the app theme when the override is missing', () => {
+    const appTheme = normalizeThemeDefinition({
+      id: 'app-theme',
+      name: 'App Theme',
+      palette: {
+        accent: '#22cc88',
+      },
+    } as Partial<OverlayThemeDefinition>);
+    const dockTheme = normalizeThemeDefinition({
+      id: 'dock-theme',
+      name: 'Dock Theme',
+      palette: {
+        accent: '#ff8800',
+      },
+      fonts: {
+        ui: '"Space Grotesk", sans-serif',
+      },
+    } as Partial<OverlayThemeDefinition>);
+
+    const overrideResolved = resolveOverlayAppearance({
+      activeThemeId: 'app-theme',
+      activeDockThemeId: 'dock-theme',
+      dockThemeMode: 'override',
+      customThemes: [appTheme, dockTheme],
+      windowMode: 'overlay',
+    });
+    const fallbackResolved = resolveOverlayAppearance({
+      activeThemeId: 'app-theme',
+      activeDockThemeId: 'missing-dock-theme',
+      dockThemeMode: 'override',
+      customThemes: [appTheme, dockTheme],
+      windowMode: 'overlay',
+    });
+
+    expect(overrideResolved.theme.id).toBe('dock-theme');
+    expect(overrideResolved.app.baseTheme.id).toBe('app-theme');
+    expect(overrideResolved.dock.baseTheme.id).toBe('dock-theme');
+    expect(overrideResolved.cssVars['--overlay-accent']).toBe('#ff8800');
+    expect(overrideResolved.fonts.ui).toContain('Space Grotesk');
+
+    expect(fallbackResolved.theme.id).toBe('app-theme');
+    expect(fallbackResolved.dock.baseTheme.id).toBe('app-theme');
   });
 
   it('applies panel transparency to the resolved runtime theme without mutating the base theme', () => {

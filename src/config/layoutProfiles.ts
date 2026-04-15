@@ -172,7 +172,7 @@ function normalizePinnedPanel(input: unknown): LayoutPinnedPanel | null {
   }
 
   const side = source.side === 'right' ? 'right' : 'left';
-  const mode = source.mode === 'compact-dock' ? 'compact-dock' : 'full';
+  const mode = source.mode === 'compact-dock' || source.mode === 'dock' ? 'dock' : 'full';
 
   return {
     panelId,

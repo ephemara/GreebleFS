@@ -34,3 +34,5 @@ The starter renderer shows the host contract shape:
 - `host.renderDefaultContentSurface()`
 - `host.renderPanelSurface(panelId)`
 - `host.wallpaper.renderBackdropStack()`
+
+If you want dock-specific tuning without a separate renderer, add `theme.dock.workbench` and/or `theme.dock.explorer` to your `theme.json`. The app theme and dock theme can now diverge in Settings, so those dock recipe overrides are the right place for tighter dock-only chrome and metric changes.

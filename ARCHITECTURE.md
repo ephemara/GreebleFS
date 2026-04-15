@@ -21,7 +21,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/panels/panelRegistry.tsx`
   Built-in panel registration and prop wiring.
 - `src/components/FileExplorer.tsx`
-  Main explorer shell, navigation, preview, standard layout modes, experimental explorer runtimes, and the compact dock presentation used when the app switches into overlay mode.
+  Main explorer shell, navigation, preview, standard layout modes, experimental explorer runtimes, and the dock-owned layout contract used when the app switches into overlay mode.
 - `src/components/explorer/ExplorerWorkspace.tsx`
   Explorer-local workspace shell that wraps `FileExplorer` instances with explorer tabs, dual-pane layout, pane focus, and split sizing.
 - `src/components/explorer/ExplorerSideRail.tsx`
@@ -57,7 +57,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/store/explorerStore.ts`
   Persisted explorer rail, named explorer session snapshots, and explorer-local workspace state for tabs/dual-pane layout.
 - `src/store/settingsStore.ts`
-  Persisted layout/profile settings, wallpaper/shader/animation overrides, the native `windowMode` presentation toggle, and machine-level developer-mode behavior.
+  Persisted layout/profile settings, wallpaper/shader/animation overrides, app-vs-dock theme selection, the native `windowMode` presentation toggle, and machine-level developer-mode behavior.
 
 ## Theme / Workbench Architecture
 
@@ -116,10 +116,16 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - theme asset wallpapers from `theme.assets.backgroundUrl`
   - imported media wallpapers in `wallpapers/` (`png`, `jpg`, `gif`, `webp`, `svg`, `mp4`, `webm`, etc.)
   - authored live wallpaper runtime modules in `wallpapers/` (`ts`, `tsx`, `js`, `jsx`)
-- The shell is a hybrid presentation system again:
-  - `settings.terminal.windowMode === 'windowed'` is the larger application shell
-  - `settings.terminal.windowMode === 'overlay'` is the compact dock shell
-  - `App.tsx` forces the explorer forward when entering overlay mode and passes `explorerLayoutMode: 'compact-dock'` into the explorer panel wiring
+- The shell now resolves two appearance lanes from the same theme catalog:
+  - `settings.terminal.windowMode === 'windowed'` selects the app lane
+  - `settings.terminal.windowMode === 'overlay'` selects the dock lane
+  - `settings.appearance.dockThemeMode === 'follow-app'` reuses the active app theme as the dock base theme, then merges any optional `theme.dock.workbench` / `theme.dock.explorer` recipe overrides
+  - `settings.appearance.dockThemeMode === 'override'` resolves the dock lane from `settings.appearance.activeDockThemeId`, with safe fallback to the active app theme when the dock override id is missing or invalid
+  - `src/config/appearance.ts` returns both `app` and `dock` channels and exposes the currently active channel based on `windowMode`
+- Theme packages can now declare dock-specific recipe overlays under `theme.dock`:
+  - `theme.dock.workbench` tunes dock-shell chrome without changing the application shell recipe
+  - `theme.dock.explorer` tunes dock explorer chrome, metrics, and layout defaults without forking explorer domain behavior
+  - `src/config/themePackages.ts` exposes dock capability metadata so Settings can label dock-aware themes
 - Active explorer shell controls now belong to the explorer toolbar / omnibox row instead of the shared command-center top bar:
   - sources visibility
   - focus search
@@ -161,8 +167,13 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - persisted shell layout presets (`balanced`, `navigator`, `focus`, `inspector`)
   - persisted path/history/search/layout/preview/source-panel state
   - shell presets can hide the rail or move the preview pane without requiring a theme swap
-- Compact dock mode still uses the same explorer surface, but preview is no longer force-cleared just because the shell is compact. The dock can keep an inline preview pane active when the user wants file inspection/editing inside the overlay shell.
-- `src/store/explorerStore.ts` supports named explorer sessions, but the shipping dock behavior is the same explorer surface rendered in compact mode rather than a separate drawer/dock subsystem.
+- Dock mode is now a distinct presentation subsystem over the same explorer/runtime truth layer:
+  - `App.tsx` still forces the explorer forward when entering overlay mode, but now passes `explorerLayoutMode: 'dock'`
+  - dock mode keeps the same explorer sessions, filesystem data plane, tabs, and workspace state as app mode
+  - dock mode can diverge in workbench recipe, explorer recipe, metrics, and chrome layout without becoming a separate filesystem subsystem
+  - the dock layout contract keeps inline preview closed so the overlay reads like a focused content browser instead of a zoomed-out app shell
+  - `src/config/layoutProfiles.ts` still normalizes legacy persisted `compact-dock` layout values to `dock` for compatibility
+- `src/store/explorerStore.ts` supports named explorer sessions, and the dock now reuses those sessions through its own appearance/layout lane rather than through a separate drawer subsystem.
 - The explorer now has a local workspace shell separate from the global workbench tabs:
   - `ExplorerWorkspace.tsx` owns explorer tabs and one-pane/two-pane rendering
   - each tab maps to a distinct `ExplorerInstanceId`, so the existing `FileExplorer` session model still owns path/history/search/preview state
@@ -183,7 +194,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - the rail header foregrounds the current location and pinned-count summary
   - bookmark search is always available
   - bookmark structure editing, category authoring, recolor, rename, and delete controls only appear in `Manage` mode
-  - this keeps the default rail lighter in compact dock mode without removing the deeper bookmark tooling
+  - this keeps the default rail lighter in dock mode without removing the deeper bookmark tooling
 - Overlay monitor placement is now resolved from the current or last-active monitor instead of always using the primary monitor, and `computeOverlayWindowLayout()` now left-anchors the overlay on X instead of centering it.
 - Overlay/dock mode now treats position as edge-owned state:
   - `src/config/overlayWindow.ts` exposes `computeAnchoredOverlayWindowLayout()` so current overlay bounds can preserve size without preserving stale X/Y drift
@@ -255,6 +266,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - The local Linux installer now also seeds the managed content directories into `~/.local/share/co.overlayterm.app/{plugins,themes,shaders,animations}` so the installed release has writable runtime content without polluting the top level of `$HOME`.
 - Vite still prints a Node 18 warning during builds, but `bunx vite build` succeeds in this workspace and the installer completes successfully on that host setup.
 - The explorer component is large and performance-sensitive. Route new chrome/metric changes through `src/config/explorerTheme.ts` instead of scattering new magic numbers through `FileExplorer.tsx`.
+- Avoid mixing CSS border shorthands with border longhands in the same React style object on explorer rows and chrome surfaces. The dock/layout tests hit real `cssstyle` failures when `borderBottom` and `borderColor` were mounted together, and the longhand form is safer for theme-driven overrides anyway.
 - Explorer directory/search caches are intentionally shared at the module level across explorer mounts. Tests or one-off diagnostics harnesses that need isolated backend behavior should call the exported `invalidateExplorerResultCaches()` helper before rendering.
 - Explorer async directory/search work needs both mount cleanup and request invalidation. Overlay-mode panel swaps and `React.StrictMode` remounts can otherwise let stale `navigate()` / `refresh()` completions write into a dead or superseded explorer instance, which shows up as `getRootForUpdatedFiber` runtime errors or visible listing flicker.
 - If the Linux/native overlay appears on the wrong display, inspect the monitor-resolution path in `App.tsx` before touching Rust window flags. The frontend now owns monitor selection and overlay geometry; `windowApplyMode` should only apply the chosen presentation atomically.
