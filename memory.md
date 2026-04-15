@@ -1,5 +1,42 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Retro Console Renderer Rewrite Lane B
+
+- Rebuilt the owned retro-console renderers to use the normalized renderer shell contract instead of the old hardcoded launcher/chrome compositions:
+  - `themes/dreamcast-skyline/renderers/dreamcast-skyline.tsx`
+  - `themes/gamecube-helix/renderers/gamecube-helix.tsx`
+  - `themes/gamecube-orbital/renderers/gamecube-orbital.tsx`
+  - `themes/gamecube-prism/renderers/gamecube-prism.tsx`
+- Durable implementation shape:
+  - all four renderers now anchor geometry to `host.shellModel.layout.regions` and use `host.shellModel.launcher` for groups/panels
+  - all four claim `surfaceOwnership` for launcher, chrome, contentFrame, pinnedPanels, and wallpaper so the host does not inject duplicate launcher chrome or pinned surfaces
+  - all four use `host.renderUtilityActionsSurface()` for utility chrome and avoid `host.panels` / `host.renderChromeBar()`
+  - Dreamcast is now a bright dashboard shell, while the GameCube trio split into helix, orbital, and prism geometry languages instead of sharing one generic shell
+- Validation:
+  - passed: `npx vitest run --environment node src/test/themeRendererPackages.test.ts src/test/themeRendererRuntime.test.ts src/test/themeRendererShellModel.test.ts src/test/workbenchRenderRuntime.test.ts`
+  - passed: `node - <<'NODE' ... transpileModule ... NODE` over the four rewritten renderer files
+  - passed: `rg -n "host\\.panels|renderChromeBar" themes/dreamcast-skyline/renderers/dreamcast-skyline.tsx themes/gamecube-helix/renderers/gamecube-helix.tsx themes/gamecube-orbital/renderers/gamecube-orbital.tsx themes/gamecube-prism/renderers/gamecube-prism.tsx`
+
+## 2026-04-15 — Custom Theme Renderer Overhaul Lane C
+
+- Rewrote the owned spectacle themes to use the newer renderer contract instead of raw shell chrome:
+  - `themes/celestial-astrolabe/renderers/astrolabe.tsx`
+  - `themes/arcade-atrium/renderers/arcade-atrium-shell.tsx`
+  - `themes/arcade-arcology/renderers/arcade-arcology.tsx`
+- Durable implementation shape:
+  - all three themes now build launcher/content geometry from `host.shellModel`, especially `launcher.groups`, `launcher.panels`, and normalized `layout.regions`
+  - no owned file uses `host.panels` or `host.renderChromeBar()`
+  - utility controls now come from `host.renderUtilityActionsSurface()` instead of duplicated chrome bars
+  - the launcher is rendered as a theme-native structural surface in each file, with viewport-safe sizing derived from the normalized shell layout
+  - `arcade-arcology` was upgraded from a default-navigation hybrid into a fully owned launcher/chrome shell so the right rail can stay independent of host chrome
+- Design note:
+  - these shells are now distinct layout languages rather than palette swaps
+  - the goal was to keep them spectacle-heavy while still obeying the viewport clamps and ownership contract so they do not float off-screen or render duplicate launcher controls
+- Validation:
+  - passed: `rg -n "host\\.panels|renderChromeBar\\(" themes/celestial-astrolabe/renderers/astrolabe.tsx themes/arcade-atrium/renderers/arcade-atrium-shell.tsx themes/arcade-arcology/renderers/arcade-arcology.tsx`
+  - passed: `node - <<'NODE' ... transpileModule ... NODE`
+  - passed: `bash -lc 'if rg -n "host\\.panels|renderChromeBar\\(" themes/celestial-astrolabe/renderers/astrolabe.tsx themes/arcade-atrium/renderers/arcade-atrium-shell.tsx themes/arcade-arcology/renderers/arcade-arcology.tsx; then exit 1; else echo "forbidden patterns absent"; fi'`
+
 ## 2026-04-15 — Wayland Dock Host Split
 
 - Linux Wayland dock mode now routes through a dedicated host instead of trying to make the normal `main` Tauri window behave like a panel.

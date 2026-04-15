@@ -109,6 +109,12 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `App.tsx` uses `surfaceOwnership` to suppress default launcher chrome, pinned shells, and duplicate wallpaper/content framing when the renderer claims those surfaces
   - ownership only suppresses the host's automatic placement; a renderer can still deliberately pull host surfaces into its own layout through `host.renderDefaultNavigationSurface()`, `host.renderPinnedPanels()`, and `host.renderDefaultContentSurface()`
   - bundled renderers should prefer `host.shellModel` and `host.renderUtilityActionsSurface()` over raw `host.panels` + `host.renderChromeBar()` composition where possible
+- The retro-console custom renderers are now being rewritten as distinct shell languages instead of palette-only variants:
+  - `themes/dreamcast-skyline/renderers/dreamcast-skyline.tsx`
+  - `themes/gamecube-helix/renderers/gamecube-helix.tsx`
+  - `themes/gamecube-orbital/renderers/gamecube-orbital.tsx`
+  - `themes/gamecube-prism/renderers/gamecube-prism.tsx`
+  - they now anchor all geometry to normalized shell regions and renderer-owned launcher/content surfaces so layout cannot drift off-screen
 - The shared top bar is now renderer-aware instead of universally assuming launcher ownership:
   - `TopBar` strips launcher/menu/tab-strip chrome when the active renderer claims `launcher`, so themes with custom radial/channel/XMB launchers no longer render a second launcher system through `host.renderChromeBar()`
 - `src/components/WorkbenchNavigationSurface.tsx` now takes its rail width from `src/config/workbenchRenderRuntime.ts` instead of hardcoded per-runtime widths inside the component, so launcher sizing stays in the runtime contract.
