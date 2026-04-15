@@ -38,6 +38,8 @@ export function renderAppMonolithShell(host) {
 
   return (
     <div
+      data-vector-monolith-shell="true"
+      data-vector-monolith-mode="app"
       style={{
         position: 'relative',
         display: 'flex',
@@ -67,6 +69,7 @@ export function renderAppMonolithShell(host) {
           position: 'relative',
           zIndex: 1,
           display: 'grid',
+          transformStyle: 'preserve-3d',
           gridTemplateRows: 'auto minmax(0, 1fr) auto',
           width: '100%',
           minHeight: 0,

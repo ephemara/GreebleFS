@@ -2050,7 +2050,7 @@ function PreviewPanel({
       };
 
   return (
-    <div style={previewShellStyle}>
+    <div data-overlay-explorer-plane="preview" style={previewShellStyle}>
       {/* Drag handle */}
       <div
         onMouseDown={onMouseDown}
@@ -2454,6 +2454,7 @@ export function FileExplorer({
     restoreRecentTrashAction: restoreExplorerTrashAction,
     showPathProperties: showExplorerPathProperties,
     listSavedSearches: listExplorerSavedSearches,
+    deleteSavedSearch: deleteExplorerSavedSearch,
     listTags: listExplorerTags,
     searchEntriesWithDiagnostics: searchExplorerEntriesWithDiagnostics,
     saveSavedSearch: saveExplorerSavedSearch,
@@ -8223,6 +8224,8 @@ export function FileExplorer({
   return (
     <div
       data-overlay-explorer
+      data-overlay-explorer-view-mode={effectiveViewMode}
+      data-overlay-explorer-experimental-mode={effectiveExperimentalViewMode}
       style={explorerRootStyle}
       onClick={() => { setSelected(new Set()); setCtxMenu(c => ({...c, visible:false})); }}
       onContextMenu={e => {
@@ -8237,56 +8240,58 @@ export function FileExplorer({
     >
       {/* ══ SIDEBAR ══ */}
       {shouldRenderRail && (
-        <ResizablePane
-          size={sidebarWidth}
-          minSize={sidebarBounds.minWidth}
-          maxSize={sidebarBounds.maxWidth}
-          onSizeChange={setSidebarWidth}
-          borderColor={`${accent}55`}
-          handleSide={effectiveRailPosition === 'right' ? 'left' : 'right'}
-          style={sidebarPaneStyle}
-        >
-          <ExplorerSideRail
-            accent={accent}
-            brandLabel={explorerTheme.railBrandLabel}
-            sidebarWidth={sidebarWidth}
-            currentPath={currentPath}
-            locationTitle={locationTitle}
-            locationLabel={locationLabel}
-            drives={drives}
-            drivesLoading={drivesLoading}
-            isCompactDock={isCompactDock}
-            savedSearches={savedSearches}
-            availableTags={tagMetadata.tags}
-            activeTagFilterIds={activeTagFilterIds}
-            onNavigate={navigate}
-            onGoHome={goHome}
-            onOpenSavedSearch={(savedSearch) => { void applySavedSearch(savedSearch); }}
-            onDeleteSavedSearch={(savedSearchId) => {
-              void deleteExplorerSavedSearch(savedSearchId)
-                .then(() => setSavedSearches((current) => current.filter((savedSearch) => savedSearch.id !== savedSearchId)))
-                .catch((deleteError) => setError(String(deleteError)));
-            }}
-            onToggleTagFilter={(tagId) => setActiveTagFilterIds((current) => (
-              current.includes(tagId)
-                ? current.filter((candidate) => candidate !== tagId)
-                : [...current, tagId]
-            ))}
-            onClearTagFilters={() => setActiveTagFilterIds([])}
-            onBookmarkCreated={handleBookmarkCreated}
-            resolveDroppedSources={resolveDroppedBookmarkSources}
-            chromeLayoutId={effectiveChromeLayoutId}
-            chromeOverride={explorerChromeOverride}
-            chromeEditMode={explorerChromeEditMode}
-          />
-        </ResizablePane>
+        <div data-overlay-explorer-plane="rail" style={{ display: 'flex', minHeight: 0, minWidth: 0 }}>
+          <ResizablePane
+            size={sidebarWidth}
+            minSize={sidebarBounds.minWidth}
+            maxSize={sidebarBounds.maxWidth}
+            onSizeChange={setSidebarWidth}
+            borderColor={`${accent}55`}
+            handleSide={effectiveRailPosition === 'right' ? 'left' : 'right'}
+            style={sidebarPaneStyle}
+          >
+            <ExplorerSideRail
+              accent={accent}
+              brandLabel={explorerTheme.railBrandLabel}
+              sidebarWidth={sidebarWidth}
+              currentPath={currentPath}
+              locationTitle={locationTitle}
+              locationLabel={locationLabel}
+              drives={drives}
+              drivesLoading={drivesLoading}
+              isCompactDock={isCompactDock}
+              savedSearches={savedSearches}
+              availableTags={tagMetadata.tags}
+              activeTagFilterIds={activeTagFilterIds}
+              onNavigate={navigate}
+              onGoHome={goHome}
+              onOpenSavedSearch={(savedSearch) => { void applySavedSearch(savedSearch); }}
+              onDeleteSavedSearch={(savedSearchId) => {
+                void deleteExplorerSavedSearch(savedSearchId)
+                  .then(() => setSavedSearches((current) => current.filter((savedSearch) => savedSearch.id !== savedSearchId)))
+                  .catch((deleteError) => setError(String(deleteError)));
+              }}
+              onToggleTagFilter={(tagId) => setActiveTagFilterIds((current) => (
+                current.includes(tagId)
+                  ? current.filter((candidate) => candidate !== tagId)
+                  : [...current, tagId]
+              ))}
+              onClearTagFilters={() => setActiveTagFilterIds([])}
+              onBookmarkCreated={handleBookmarkCreated}
+              resolveDroppedSources={resolveDroppedBookmarkSources}
+              chromeLayoutId={effectiveChromeLayoutId}
+              chromeOverride={explorerChromeOverride}
+              chromeEditMode={explorerChromeEditMode}
+            />
+          </ResizablePane>
+        </div>
       )}
 
       {/* ══ MAIN ══ */}
-      <div style={mainColumnStyle}>
+      <div data-overlay-explorer-plane="main" style={mainColumnStyle}>
 
         {/* Toolbar */}
-        <div style={toolbarContainerStyle}>
+        <div data-overlay-explorer-plane="toolbar" style={toolbarContainerStyle}>
           {showsGlobalChromeControls && (
             <ExplorerChromeSurface
               surface={explorerTopbarSurface}
@@ -8392,13 +8397,16 @@ export function FileExplorer({
         )}
 
         {/* File area + preview */}
-        <div style={fileAreaStyle}>
+        <div data-overlay-explorer-plane="file-area" style={fileAreaStyle}>
           <OverlayScrollArea
             style={{ flex: 1, minHeight: 0 }}
             viewportStyle={{ padding: 0 }}
             viewportRef={explorerViewportRef}
           >
-          <div ref={mainRef} tabIndex={0}
+          <div
+            ref={mainRef}
+            data-overlay-explorer-plane="content-viewport"
+            tabIndex={0}
             style={{ minHeight: '100%', outline:'none', background:'var(--overlay-explorer-content-bg)' }}
             onClick={() => mainRef.current?.focus()}
             onDragOver={e => {
@@ -9006,7 +9014,7 @@ export function FileExplorer({
 
         {/* Status bar */}
         {shouldRenderStatusBar && (
-          <div style={statusBarStyle}>
+          <div data-overlay-explorer-plane="status" style={statusBarStyle}>
             <ExplorerChromeSurface
               surface={explorerStatusBarSurface}
               getRowStyle={getExplorerChromeRowStyle}

@@ -1,5 +1,25 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Sketchfab Package Plugin / Generic Plugin Panel Requests
+
+- Explorer plugin context menus can now open plugin panels through a shared generic handoff path instead of one-off panel bridges.
+- Durable implementation shape:
+  - `src/runtime/pluginPanelRequests.ts` is now the shared panel-request contract. It persists the latest request in local storage and broadcasts both a global open-panel event and a panel-specific event so plugins can react immediately when already mounted.
+  - `src/config/pluginContributions.ts` and `src/config/pluginPackages.ts` now support a third explorer context-menu execution mode: `panel-request`. Use this when a context-menu action should open a plugin panel with structured payload such as a destination folder path.
+  - `src/components/FileExplorer.tsx` resolves panel-request payload templates from the active explorer selection/background path and dispatches them through the shared request bridge, while `src/App.tsx` owns opening the requested plugin panel and surfacing the shell if it is hidden.
+  - `src/components/pluginRuntime.tsx` now loads packaged frontend plugins through a module graph instead of a single transpiled file, so package plugins can import sibling helpers with package-local relative imports.
+  - The `overlayterm-plugin` runtime module now exposes `getPluginPanelOpenRequestEvent()`, `readPluginPanelOpenRequest()`, and `requestPluginPanelOpen()` for packaged plugins that need to receive or emit shell-level panel handoffs.
+  - `plugins/sketchfab/` is now a real package plugin with `plugin.json`, a rewritten `AssetBrowser.tsx`, and `sketchfabService.ts`. Explorer can hand the selected folder into the Sketchfab panel, search downloadable models, and save them into any chosen folder while writing a sibling `.sketchfab.json` attribution file.
+- Durable authoring notes:
+  - Package plugin relative imports must stay inside the package root. The runtime resolver intentionally blocks traversal outside the plugin directory.
+  - `panelRequest.payload` values are string-template tokens resolved against explorer context before the panel opens. Use them for folder/file handoff, not for arbitrary code execution.
+  - The Sketchfab plugin currently saves a direct `.glb` when available and otherwise saves the downloadable archive as provided by the API; archive extraction is not implemented yet.
+- Validation:
+  - passed: `bunx vitest run src/test/pluginRuntime.test.ts src/test/pluginRuntime.edge.test.ts src/test/pluginPackages.test.ts src/test/pluginPanelRequests.test.ts`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "context menu"`
+  - passed: `timeout 20s bunx tsc --noEmit --skipLibCheck 2>&1 | rg "pluginPanelRequests|panel-request|Sketchfab|sketchfab|AssetBrowser|sketchfabService|resolveRelativeModuleSource|pluginRuntime|pluginPackages" || true`
+  - passed: runtime smoke loading `plugins/sketchfab/AssetBrowser.tsx` through `loadPluginFromSource`
+
 ## 2026-04-15 — Custom Theme Renderer Overhaul Lane A
 
 - Rewrote the owned custom themes to use the newer renderer contract and to feel materially more premium:
@@ -117,6 +137,7 @@
   - `src/store/settingsStore.ts` now persists `settings.explorer.contextMenuItemOverrides`, and `src/components/SettingsPage.tsx` exposes a `Context Menu Composer` for enabling/disabling items and reordering built-ins plus plugin items together.
 - Durable authoring note:
   - plugin manifest `contributions.contextMenuItems` supports `contexts`, `appliesTo`, `group`, `order`, `iconName`, `command`, `runOnSelect`, and `backend.{ entry, args }`
+  - plugin manifest `contributions.contextMenuItems` also supports `panelRequest.{ panelId?, payload }` for opening a plugin panel with explorer-derived context
   - backend entries must stay package-relative and pass the same safe-relative-path validation as other plugin assets
 - Validation:
   - passed: `bunx vitest run src/test/pluginPackages.test.ts src/test/panelRegistry.test.tsx src/test/pluginsManager.test.tsx src/test/useFolderPluginRuntime.test.tsx src/test/useFolderPluginRuntime.queue.test.tsx src/test/ExplorerWorkspace.test.tsx`
@@ -282,7 +303,8 @@
   - `themes/vibe-capsule-shell/theme.json` packaged theme contribution
 - `Vibe Capsule` is meant to be a high-signal consumer/creative reference plugin, not a narrow utility panel. It ingests dropped explorer paths or browser-picked files, derives a mood profile from the source material, renders a playable ambient shrine scene, persists archived capsules in plugin storage, and exports a generated shell-skin theme manifest.
 - Durable implementation constraints:
-  - the current plugin runtime still only exposes the allowlisted frontend modules (`react`, `lucide-react`, selected Tauri modules, `overlayterm-plugin`), so this plugin stays single-file and avoids relative imports/bundled `three`
+  - the plugin runtime now supports package-local relative imports through the shared module-graph loader, but external imports are still limited to the allowlisted host modules (`react`, `lucide-react`, selected Tauri modules, `overlayterm-plugin`)
+  - this plugin still stays intentionally lightweight and does not assume bundled `three` or arbitrary npm dependencies
   - explorer-origin drops flow through `application/x-overlayterm-paths`
   - native file access inside plugins currently routes through `api.invoke('fs_list_dir' | 'fs_read_text_file' | 'fs_read_file_base64' | 'fs_open_file' | 'fs_reveal_in_explorer')`
 - Added regression coverage:
@@ -319,6 +341,18 @@
   - blocked by pre-existing workspace type errors in `FileExplorer.tsx`, `GitManager.tsx`, `performanceTelemetry.ts`, and `explorerStore.ts`
 - Recommended next step:
   migrate the remaining bundled renderers from raw `host.panels` iteration toward `host.shellModel.launcher` / normalized regions, then push the same structural-contract treatment deeper into explorer-local chrome and dialogs.
+
+## 2026-04-15 — Vector Monolith Explorer Depth Pass
+
+- `themes/vector-monolith/renderers/monolith/components/surface-stage.tsx` no longer places the live host panel DOM inside the rotated decorative stage mesh. Durable reason:
+  explorer chrome menus and the explorer context menu depend on normal absolute/fixed positioning, and a transformed or overflow-clipped ancestor was making those surfaces appear empty or misplaced.
+- The stage now splits into:
+  - a transformed decorative Three.js-style chassis and holographic frame
+  - a flat interactive plane above it that keeps `host.renderPanelSurface()` alive with `overflow: visible`
+- `src/components/FileExplorer.tsx` now exposes stable `data-overlay-explorer-*` hooks for root mode and major planes like `rail`, `toolbar`, `file-area`, `content-viewport`, `preview`, and `status`.
+- `themes/vector-monolith/renderers/monolith/components/scoped-styles.tsx` uses those hooks to push the live explorer DOM into a layered 3D cockpit treatment without taking ownership of explorer truth or breaking its menus.
+- Durable lesson:
+  renderer-owned 3D shells should not rotate or clip the actual interactive host surface if that surface contains fixed or absolute menus, drag affordances, or other UI that depends on normal DOM positioning. Keep the depth in sibling chrome and scoped descendant styling instead.
 
 ## 2026-04-15 — Theme Catalog / Renderer Stability Pass
 
