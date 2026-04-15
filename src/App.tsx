@@ -137,6 +137,10 @@ import {
   FILESYSTEM_AQUARIUM_PANEL_ID,
   requestFilesystemAquariumOpen,
 } from './runtime/filesystemAquariumBridge';
+import {
+  PLUGIN_PANEL_OPEN_REQUEST_EVENT,
+  type PluginPanelOpenRequest,
+} from './runtime/pluginPanelRequests';
 import { listExplorerDir, openExplorerPath, writeExplorerFile } from './runtime/explorerBackend';
 import { commands, unwrapTauriResult } from './runtime/tauriClient';
 import { useFolderPluginRuntime } from './runtime/useFolderPluginRuntime';
@@ -159,9 +163,6 @@ import {
   type OverlayWindowAnchor,
   type TerminalWindowMode,
 } from './store/settingsStore';
-import {
-  useExplorerStore,
-} from './store/explorerStore';
 import { useTerminalStore } from './store/terminalStore';
 
 const FRAME_PROBE_OUTPUT_PATH = (() => {
@@ -526,25 +527,21 @@ function App() {
   const {
     settings,
     appearance,
-    explorerSettings,
     keybindings,
     layoutSettings,
     systemSettings,
     updateTerminal,
     updateAppearance,
-    updateExplorer,
     updateLayout,
     updateSystem,
   } = useSettingsStore(useShallow(state => ({
     settings: state.settings.terminal,
     appearance: state.settings.appearance,
-    explorerSettings: state.settings.explorer,
     keybindings: state.settings.keybindings,
     layoutSettings: state.settings.layout,
     systemSettings: state.settings.system,
     updateTerminal: state.updateTerminal,
     updateAppearance: state.updateAppearance,
-    updateExplorer: state.updateExplorer,
     updateLayout: state.updateLayout,
     updateSystem: state.updateSystem,
   })));
@@ -1303,7 +1300,7 @@ function App() {
   }, [linuxDisplayServer, linuxDisplayServerResolved, runtimePlatform]);
 
   const resolveDockOverlayLayout = useCallback((args: {
-    monitor: Awaited<ReturnType<typeof currentMonitor>>;
+    monitor: NonNullable<Awaited<ReturnType<typeof currentMonitor>>>;
     scaleFactor: number;
     currentBounds?: OverlayWindowBounds | null;
   }) => {
@@ -1320,7 +1317,7 @@ function App() {
   }, []);
 
   const applyDockOverlayLayout = useCallback(async (args: {
-    monitor: Awaited<ReturnType<typeof currentMonitor>>;
+    monitor: NonNullable<Awaited<ReturnType<typeof currentMonitor>>>;
     scaleFactor: number;
     currentBounds?: OverlayWindowBounds | null;
     deferMs?: number;
@@ -1659,6 +1656,30 @@ function App() {
     if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
       void showCurrentPresentation();
     }
+  }, [setPanelOpenStateDirectly, showCurrentPresentation]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const handlePluginPanelOpenRequest = (event: Event) => {
+      const request = (event as CustomEvent<PluginPanelOpenRequest>).detail;
+      const panelId = request?.panelId?.trim();
+      if (!panelId) {
+        return;
+      }
+
+      setPanelOpenStateDirectly(panelId);
+      if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
+        void showCurrentPresentation();
+      }
+    };
+
+    window.addEventListener(PLUGIN_PANEL_OPEN_REQUEST_EVENT, handlePluginPanelOpenRequest);
+    return () => {
+      window.removeEventListener(PLUGIN_PANEL_OPEN_REQUEST_EVENT, handlePluginPanelOpenRequest);
+    };
   }, [setPanelOpenStateDirectly, showCurrentPresentation]);
 
 

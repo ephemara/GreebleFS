@@ -34,10 +34,12 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   App-wide workbench recipe resolution and workbench-scoped CSS variable contract.
 - `src/config/explorerTheme.ts`
   Explorer-specific theme recipe resolution, metrics scaling, and explorer-scoped CSS variable contract.
+- `src/config/explorerModeProfiles.ts`
+  Explorer mode-profile registry that maps user-facing explorer modes onto pane-layout ids, chrome-layout ids, and view-bias defaults.
 - `src/config/explorerShellLayouts.ts`
-  User-selectable explorer pane-layout presets that rebalance the rail and preview pane independently from theme recipes.
+  Pane-layout presets that still own rail visibility, preview placement, and live pane sizing behavior. These remain the pane-composition layer even after mode profiles and chrome layouts were split out.
 - `src/config/explorerChromeLayouts.ts`
-  Explorer chrome layout registry/resolver for adaptive toolbar, topbar, and workspace-header control placement.
+  Explorer chrome layout registry/resolver for adaptive topbar, toolbar, workspace header, rail header, preview header, and status-strip control placement plus zone-based layout override snapshots.
 - `src/config/themeEngineBindings.ts`
   Shared engine-manifest binding helpers for layout/navigation/render-driven recipe defaults.
 - `src/config/workbenchRenderRuntime.ts`
@@ -84,6 +86,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `theme.explorer` supports optional recipe seeds like `workbench`, `xmb`, and `channel-grid`, plus explicit `layoutPrimitiveId` / `navigationPatternId` / `renderStyleId` bindings and local overrides for:
   - chrome style
   - `chromeLayoutId` for explorer control composition
+  - `defaultModeProfileId` for theme-driven explorer mode defaults
   - breadcrumb style
   - preview style
   - status bar style
@@ -141,14 +144,17 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - sources visibility
   - focus search
   - experimental mode
-  - shell layout preset
+  - explorer mode picker
   - explorer view mode
   - preview toggle
 - Explorer chrome composition is now a distinct layer from explorer pane composition:
   - `src/config/explorerShellLayouts.ts` still owns pane structure like rail visibility, preview side, and live session sizing behavior
-  - `src/config/explorerChromeLayouts.ts` owns toolbar/topbar/workspace-header control zones, order, and per-layout adaptive placement
+  - `src/config/explorerModeProfiles.ts` owns the curated user-facing explorer modes (`balanced`, `navigator`, `focus`, `inspector`) and maps them onto pane-layout ids plus chrome-layout ids
+  - `src/config/explorerChromeLayouts.ts` owns topbar/toolbar/workspace-header/rail-header/preview-header/status-strip control zones, order, and per-layout adaptive placement
+  - `settingsStore.ts` persists per-theme `modeProfileOverridesByThemeId`, keyed by theme id, so users can retune a theme's default explorer mode without mutating live explorer session state
   - `settingsStore.ts` persists per-theme `chromeLayoutOverridesByThemeId`, keyed by theme id and `chromeLayoutId`
-  - `FileExplorer.tsx` and `ExplorerWorkspace.tsx` should render resolved chrome surfaces instead of hardcoded button sequences
+  - `FileExplorer.tsx`, `ExplorerWorkspace.tsx`, `ExplorerSideRail.tsx`, and the preview panel should render resolved chrome surfaces instead of hardcoded button sequences
+  - zone-based chrome edit mode moves controls across those surfaces by rewriting override snapshots; it is not a free-pixel docking system
 - `settings.system.developerMode` is now the live-reload gate for expensive development-only watchers:
   - plugin directory watch / fallback polling in `useFolderPluginRuntime.ts`
   - authored shader polling in `App.tsx`
@@ -175,15 +181,22 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - status bar visibility/treatment
 - `FileExplorer.tsx` also layers user-controlled explorer session state on top of the theme recipe:
   - persisted inline preview enable/disable
-  - persisted shell layout presets (`balanced`, `navigator`, `focus`, `inspector`)
   - persisted path/history/search/layout/preview/source-panel state
-  - shell presets can hide the rail or move the preview pane without requiring a theme swap
+  - legacy `session.shellLayoutId` remains the pane-layout compatibility fallback for older sessions
+  - active explorer mode now resolves through theme default -> per-theme mode override -> legacy `session.shellLayoutId` -> built-in `balanced`
+  - mode profiles can hide the rail or move the preview pane without requiring a theme swap, while live widths and source visibility remain session-owned
 - Dock mode is now a distinct presentation subsystem over the same explorer/runtime truth layer:
   - `App.tsx` still forces the explorer forward when entering overlay mode, but now passes `explorerLayoutMode: 'dock'`
   - dock mode keeps the same explorer sessions, filesystem data plane, tabs, and workspace state as app mode
   - dock mode can diverge in workbench recipe, explorer recipe, metrics, and chrome layout without becoming a separate filesystem subsystem
   - the dock layout contract keeps inline preview closed so the overlay reads like a focused content browser instead of a zoomed-out app shell
   - `src/config/layoutProfiles.ts` still normalizes legacy persisted `compact-dock` layout values to `dock` for compatibility
+- Linux Wayland dock mode now has a dedicated native host path instead of pretending a normal top-level window can behave like a panel:
+  - `src-tauri/src/wayland_dock.rs` owns the separate `dock` webview host and applies `gtk-layer-shell` configuration for anchored panel behavior
+  - `src-tauri/src/window_commands.rs` exposes the Wayland dock host status plus a dock-layout command so the frontend can switch between the normal app window path and the layer-shell dock path
+  - `src/runtime/windowHost.ts` is the frontend routing contract for `main` vs `dock`, host-targeted events, and the global-shortcut ownership rule
+  - `App.tsx` now decides which host owns the active presentation and forwards `Ctrl+Space` / mode-switch requests across windows instead of trying to show both modes from the same native window on Wayland
+  - `src/store/settingsStore.ts` and `src/store/explorerStore.ts` rehydrate persisted state on `storage` events so the hidden host stays in sync with the active host during mode handoff
 - `src/store/explorerStore.ts` supports named explorer sessions, and the dock now reuses those sessions through its own appearance/layout lane rather than through a separate drawer subsystem.
 - The explorer now has a local workspace shell separate from the global workbench tabs:
   - `ExplorerWorkspace.tsx` owns explorer tabs and one-pane/two-pane rendering
@@ -244,6 +257,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Authored shader modules.
 - `src-tauri/`
   Native host and Rust-side integration.
+  `src-tauri/src/cloud_commands.rs` is the cloud-drive truth layer for provider credential resolution, OAuth callback handling, account metadata persistence, keychain refresh-token storage, and cloud-backed explorer file operations.
   `src-tauri/src/explorer_pro_commands.rs` is the explorer-pro feature backend for trash/undo, batch rename, duplicate scans, tags, and saved searches.
   `src-tauri/src/screenshot_commands.rs` is the screenshot truth layer for monitor capture, cached full-resolution images, native clipboard work, gallery thumbnails, and annotated export compositing.
 
@@ -260,6 +274,11 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 
 ## Common Errors / Lessons Learned
 
+- Cloud provider credentials now have two sources:
+  - saved from `Settings > Cloud Accounts`, which stores the provider client ID in app-local data and the optional client secret in the OS keychain
+  - runtime environment variables (`GREEBLE_GOOGLE_DRIVE_CLIENT_ID`, `GREEBLE_GOOGLE_DRIVE_CLIENT_SECRET`, `GREEBLE_DROPBOX_CLIENT_ID`, `GREEBLE_DROPBOX_CLIENT_SECRET`)
+  Saved Settings credentials take precedence over env vars until they are cleared.
+- Dropbox OAuth no longer uses a random localhost callback. The app now expects the Dropbox app console to allow the fixed redirect URI `http://localhost:53682/callback`; if Dropbox sign-in times out, check that exact callback registration before touching the browser-launch code.
 - Repo-wide `npx tsc --noEmit` is currently red on several pre-existing generated-contract and test typing issues unrelated to the workbench/explorer theme system. The narrowed command above now only leaves `src/runtime/useFolderPluginRuntime.ts` as an unrelated pre-existing failure.
 - Built-in theme switches should go through `settingsStore.applyThemeSelection()` or the Settings theme catalog flow, not a direct `updateAppearance({ activeThemeId })` call. The direct path now skips pilot baseline resets for dock mode, layout profile, explorer presentation, wallpaper/shader overrides, and related default-shell behavior.
 - JSDOM-backed Vitest runs currently fail in this workspace because `html-encoding-sniffer` requires an ESM dependency through a CommonJS path. Node-environment tests still work, so keep pure logic/package-loader tests runnable there until the dependency issue is fixed.
@@ -291,6 +310,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `window_get_linux_display_server()` exposes whether the Linux session is running on Wayland or X11
   - overlay `Ctrl+Space` reopen on Wayland now avoids reapplying dock geometry during the hidden-to-visible transition so manual compositor snaps can survive hide/show
   - `isFreefloatingRef` is now set on real overlay move/resize events so reopened overlay sessions can reuse the last compositor-managed bounds instead of recomputing from a fresh dock anchor every time
+- Do not try to fix Wayland dock centering by adding more `set_position` / `set_outer_position` retries to the normal app window path. The durable fix is the separate layer-shell dock host in `src-tauri/src/wayland_dock.rs`; if dock mode recenters again, inspect host routing in `src/runtime/windowHost.ts` and `App.tsx` before touching generic window geometry.
+- `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings` is currently blocked by unrelated compile errors in `src-tauri/src/cloud_commands.rs`. Dock-host/frontend work should not hand-edit `src/generated/tauri.ts`; either clear that native compile debt first or keep new window commands behind a centralized runtime wrapper until bindings can be regenerated cleanly.
 - Built-in shader performance is now split by runtime type:
   - the CSS-heavy built-ins no longer use a React RAF clock; they animate through injected keyframes so shader motion does not force React rerenders every frame
   - canvas-backed shader surfaces are throttled to about 24 FPS and capped to `devicePixelRatio <= 1.25`

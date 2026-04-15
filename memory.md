@@ -1,5 +1,42 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Wayland Dock Host Split
+
+- Linux Wayland dock mode now routes through a dedicated host instead of trying to make the normal `main` Tauri window behave like a panel.
+- Durable implementation shape:
+  - `src-tauri/src/wayland_dock.rs` owns the separate `dock` webview host and applies `gtk-layer-shell` anchoring/layout for Wayland panel behavior.
+  - `src-tauri/src/window_commands.rs` exposes dock-host status and a native dock-layout command, while `src/runtime/windowHost.ts` owns the frontend `main` vs `dock` routing contract and host-targeted event names.
+  - `src/App.tsx` now treats presentation as host-owned state on Wayland: `main` keeps the global shortcut and forwards toggle/show requests to `dock` when overlay mode is active, while inactive hosts stay hidden instead of trying to manage geometry.
+  - `src/store/settingsStore.ts` and `src/store/explorerStore.ts` listen for `storage` updates so the hidden host can rehydrate persisted settings/explorer session state during cross-window handoff.
+  - `src/components/SettingsPage.tsx` and `src/panels/panelRegistry.tsx` route window-mode changes through the host-aware mode-switch callback instead of directly mutating `settings.terminal.windowMode`.
+- Validation:
+  - passed: `bun run test:unit src/test/app.dockMode.test.tsx`
+  - passed: `bun run test:unit src/test/app.dockMode.test.tsx src/test/panelRegistry.test.tsx src/test/settingsPage.behavior.test.tsx src/test/settingsStore.test.ts`
+  - passed: `bun run test:unit src/test/app.dockMode.test.tsx src/test/panelRegistry.test.tsx src/test/settingsPage.behavior.test.tsx src/test/settingsStore.test.ts src/test/explorerStore.test.ts src/test/globalShortcuts.test.tsx`
+  - passed: `bun run test:browser src/test/browser/animationRuntime.browser.test.tsx`
+- Current blocker:
+  - `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings` is still red on unrelated pre-existing errors in `src-tauri/src/cloud_commands.rs`, so the Wayland dock commands currently need a centralized runtime wrapper instead of relying on freshly regenerated TS bindings.
+
+## 2026-04-15 — Cloud Provider Credentials / Settings-Managed OAuth
+
+- Cloud login no longer depends on external env vars alone.
+- Durable implementation shape:
+  - `src-tauri/src/cloud_commands.rs` now resolves provider credentials from two lanes:
+    - Settings-managed provider config stored under app-local `cloud/providers.json` for the client ID plus OS keychain storage for the optional client secret
+    - fallback runtime environment variables for Google Drive and Dropbox
+  - Saved Settings credentials take precedence over env vars until the user clears them.
+  - Refresh tokens still live in the OS keychain and account metadata still lives in app-local storage; this change only adds a first-class place to manage provider app credentials from inside the desktop shell.
+  - Dropbox OAuth no longer uses a random loopback redirect. The backend now uses the fixed callback URI `http://localhost:53682/callback` so the Dropbox app console can whitelist one stable redirect target.
+  - `src/runtime/explorerBackend.ts` exposes the new typed provider-config commands, and `src/components/SettingsPage.tsx` now renders per-provider client ID / client secret controls, save/clear actions, source/status badges, and provider-specific setup guidance inline with the Connect button.
+- Durable operator note:
+  - Google Drive should be set up as a desktop OAuth client.
+  - Dropbox must allow `http://localhost:53682/callback`; if sign-in times out, verify that callback first.
+- Validation:
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx`
+  - passed: filtered targeted TS check showing no errors from `src/runtime/explorerBackend.ts`, `src/components/SettingsPage.tsx`, `src/test/settingsPage.behavior.test.tsx`, or `src/generated/tauri.ts`
+  - repo note: the narrowed `bunx tsc --noEmit ...` path is still red on unrelated existing failures in `FileExplorer.tsx`, `GitManager.tsx`, `ScreenshotsManager.tsx`, `performanceTelemetry.ts`, and `explorerStore.ts`
+
 ## 2026-04-15 — Vector Monolith Three.js Theme Package
 
 - Added `themes/vector-monolith/` as the first packaged Three.js theme built on top of the new multi-file renderer module graph.
@@ -57,7 +94,7 @@
   - `src/config/appearance.ts` now gives all built-in themes the same pilot workbench, explorer, and dock recipe baseline, so built-in theme changes keep the shell layout contract stable even when the palette changes.
   - `src/store/settingsStore.ts` now owns `applyThemeSelection()` and `applyDockThemeSelection()`; Settings should use those actions instead of directly flipping `activeThemeId`.
   - built-in theme selection now resets theme-managed shell state in one place: dock follow/override defaults, wallpaper/shader/open-close motion overrides, clean app visual controls, explorer presentation defaults, primary layout profile, and dock theme normalization.
-  - explorer session normalization only resets presentation state (`shellLayoutId`, preview/source visibility, sidebar/preview widths). It deliberately preserves navigation truth like `currentPath`, `history`, and `search`.
+  - built-in theme selection deliberately does not mutate live explorer session state anymore. It resets explorer settings/layout defaults, but `currentPath`, `history`, `shellLayoutId`, preview/source visibility, and live sidebar/preview widths stay session-owned.
   - package theme selection still clears theme-managed shader/motion overrides and can force managed icons on, but it does not force the pilot layout reset path unless the selected theme id is in the built-in pilot-default contract.
 - Durable UI note:
   - `src/components/SettingsPage.tsx` theme cards can now show both pilot recipe badges and package capability badges, so the capability badge limit was widened to keep package metadata visible after the pilot baseline landed.
@@ -101,6 +138,36 @@
   - `src/test/explorerTheme.test.ts`, `src/test/themePackageExplorerRecipe.test.ts`, `src/test/settingsStore.test.ts`, `src/test/fileExplorer.viewModes.test.tsx`, and `src/test/ExplorerWorkspace.test.tsx` now cover `chromeLayoutId`, per-theme overrides, workspace-header chrome composition, topbar rendering, and the strict-mode boot regression.
 - Related durable note:
   - explorer drag intent still defaults to native drag-out on plain drag and internal-only drag on `Shift`. Keep docs/tests aligned with that runtime contract unless the drag model is deliberately redesigned.
+
+## 2026-04-15 — Adaptive Explorer Chrome Phase 2
+
+- Explorer modes are now a first-class config/runtime layer instead of being implied by `session.shellLayoutId`.
+- Durable implementation shape:
+  - `src/config/explorerModeProfiles.ts` is the new source of truth for explorer mode identities. Built-ins currently map:
+    - `balanced` -> `paneLayoutId: balanced`, `chromeLayoutId: default`
+    - `navigator` -> `paneLayoutId: navigator`, `chromeLayoutId: default`
+    - `focus` -> `paneLayoutId: focus`, `chromeLayoutId: focused-search`
+    - `inspector` -> `paneLayoutId: inspector`, `chromeLayoutId: default`
+  - `src/config/explorerTheme.ts` now resolves `defaultModeProfileId` on the explorer recipe. Theme/user mode resolution precedence is:
+    - per-theme `settings.explorer.modeProfileOverridesByThemeId`
+    - theme `defaultModeProfileId`
+    - legacy `session.shellLayoutId`
+    - built-in `balanced`
+  - `src/store/settingsStore.ts` now persists `modeProfileOverridesByThemeId` separately from `chromeLayoutOverridesByThemeId`. Theme selection no longer rewrites explorer session pane state.
+  - `src/config/explorerChromeLayouts.ts` now covers six surfaces instead of three:
+    - `explorerTopbar`
+    - `explorerToolbar`
+    - `workspaceHeader`
+    - `railHeader`
+    - `previewHeader`
+    - `explorerStatusBar`
+  - `FileExplorer.tsx`, `ExplorerWorkspace.tsx`, `ExplorerSideRail.tsx`, and the preview panel now all resolve chrome through shared surface layouts. The status strip is no longer hardcoded JSX.
+  - Zone-based chrome edit mode now exists for explorer chrome. It persists per-theme/per-layout override snapshots and only supports surface/zone/order changes; it is not a free-pixel docking system.
+  - `session.shellLayoutId` still remains in `src/store/explorerStore.ts` as the pane-layout compatibility fallback for existing sessions, and live `sidebarWidth`, `previewWidth`, and `sourcesVisible` stay session-owned.
+- Durable testing posture:
+  - passed: `bunx vitest run src/test/explorerChromeLayouts.test.ts src/test/explorerTheme.test.ts src/test/settingsStore.test.ts src/test/fileExplorer.viewModes.test.tsx src/test/ExplorerWorkspace.test.tsx`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "pilot light baseline|separate dock theme override"`
+  - repo note: the full `src/test/settingsPage.behavior.test.tsx` file still contains an unrelated cloud-provider timeout outside the explorer/theme-selection path and was not treated as a regression from this pass.
 
 ## 2026-04-15 — Explorer To Filesystem Aquarium Handoff
 
