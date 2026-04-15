@@ -26,6 +26,16 @@ import type { LoadedOverlayThemeRenderer } from '../components/themeRendererRunt
 import type { OverlayShellBlueprintId } from './shellBlueprints';
 import { mergeResolvedIconThemes, type OverlayResolvedIconTheme } from './iconTheme';
 import { clampOverlayVisualControlValue } from './overlayWindow';
+import {
+  DEFAULT_PILOT_DARK_THEME_ID,
+  DEFAULT_PILOT_LIGHT_THEME_ID,
+  DEFAULT_PILOT_MONO_FONT_FAMILY,
+  DEFAULT_PILOT_UI_FONT_FAMILY,
+  pilotDockExplorerThemeRecipe,
+  pilotDockWorkbenchThemeRecipe,
+  pilotExplorerThemeRecipe,
+  pilotWorkbenchThemeRecipe,
+} from './pilotThemeContract';
 
 export interface OverlayXTermTheme {
   background: string;
@@ -414,6 +424,14 @@ function createTheme(
   palette: Partial<OverlayThemePalette>,
   effects: Partial<OverlayThemeEffects>,
   xterm: Partial<OverlayXTermTheme>,
+  options?: {
+    fonts?: OverlayThemeFonts;
+    compatibility?: OverlayThemeCompatibility;
+    presentation?: OverlayThemePresentation;
+    workbench?: OverlayWorkbenchThemeRecipe;
+    explorer?: OverlayExplorerThemeRecipe;
+    dock?: OverlayThemeDefinition['dock'];
+  },
 ): OverlayThemeDefinition {
   return {
     id,
@@ -487,18 +505,165 @@ function createTheme(
       brightWhite: '#f0f6fc',
       ...xterm,
     },
+    fonts: {
+      ui: DEFAULT_PILOT_UI_FONT_FAMILY,
+      mono: DEFAULT_PILOT_MONO_FONT_FAMILY,
+      ...(options?.fonts ?? {}),
+    },
     presentation: {
       density: 'comfortable',
-      chromeStyle: 'floating',
+      chromeStyle: 'minimal',
       iconStyle: 'vector',
-      motionStyle: 'fluid',
-      cornerRadius: 18,
-      panelSpacing: 12,
+      motionStyle: 'snappy',
+      cornerRadius: 12,
+      panelSpacing: 8,
+      ...(options?.presentation ?? {}),
+    },
+    compatibility: options?.compatibility,
+    workbench: options?.workbench ?? pilotWorkbenchThemeRecipe,
+    explorer: options?.explorer ?? pilotExplorerThemeRecipe,
+    dock: options?.dock ?? {
+      workbench: pilotDockWorkbenchThemeRecipe,
+      explorer: pilotDockExplorerThemeRecipe,
     },
   };
 }
 
 const builtInThemePresets: OverlayThemeDefinition[] = [
+  createTheme(
+    DEFAULT_PILOT_DARK_THEME_ID,
+    'Pilot Dark',
+    'Neutral graphite pilot theme with a focused default explorer layout.',
+    {
+      appBackground: '#080808',
+      appBackgroundAlt: '#0d0d0d',
+      shellBackground: 'rgba(10, 10, 10, 0.94)',
+      shellBackgroundSolid: '#0a0a0a',
+      topBarBackground: '#101010',
+      topBarMenuBackground: '#141414',
+      sidebarBackground: '#0f0f0f',
+      panelBackground: '#151515',
+      panelAltBackground: '#1a1a1a',
+      cardBackground: '#1a1a1a',
+      cardHoverBackground: '#202020',
+      contextMenuBackground: '#161616',
+      inputBackground: '#111111',
+      terminalBackground: '#0c0c0c',
+      selectionBackground: 'rgba(255,255,255,0.08)',
+      scrimBackground: 'rgba(0,0,0,0.56)',
+      textPrimary: '#f5f5f5',
+      textSecondary: '#dfdfdf',
+      textMuted: 'rgba(245,245,245,0.62)',
+      textDim: 'rgba(245,245,245,0.34)',
+      textInverse: '#090909',
+      border: 'rgba(255,255,255,0.1)',
+      borderStrong: 'rgba(255,255,255,0.18)',
+      accent: '#f5f5f5',
+      accentSoft: 'rgba(255,255,255,0.12)',
+      accentContrast: '#090909',
+      success: '#9dd9b0',
+      warning: '#e8c98b',
+      danger: '#e8aaaa',
+      info: '#a8c8ef',
+      note: '#a8c8ef',
+      todo: '#9dd9b0',
+      bug: '#e8aaaa',
+      prompt: '#d4d4d4',
+    },
+    {
+      backgroundImage: 'linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0))',
+      shadow: '0 16px 40px rgba(0,0,0,0.32)',
+      overlayShadow: '0 -1px 0 0 rgba(255,255,255,0.08), 0 -18px 42px rgba(0,0,0,0.52)',
+    },
+    {
+      background: '#0c0c0c',
+      foreground: '#f5f5f5',
+      cursor: '#f5f5f5',
+      black: '#121212',
+      red: '#dba4a4',
+      green: '#9dd9b0',
+      yellow: '#e8c98b',
+      blue: '#a8c8ef',
+      magenta: '#d2c2e8',
+      cyan: '#a5d8d8',
+      white: '#dfdfdf',
+      brightBlack: '#666666',
+      brightRed: '#efb7b7',
+      brightGreen: '#b5e8c5',
+      brightYellow: '#f0d9a7',
+      brightBlue: '#bdd5f3',
+      brightMagenta: '#dfd0f0',
+      brightCyan: '#bbe2e2',
+      brightWhite: '#ffffff',
+    },
+  ),
+  createTheme(
+    DEFAULT_PILOT_LIGHT_THEME_ID,
+    'Pilot Light',
+    'Neutral paper pilot theme with a restrained light-mode explorer baseline.',
+    {
+      appBackground: '#f2f2f2',
+      appBackgroundAlt: '#ffffff',
+      shellBackground: 'rgba(250, 250, 250, 0.94)',
+      shellBackgroundSolid: '#fbfbfb',
+      topBarBackground: '#ffffff',
+      topBarMenuBackground: '#f4f4f4',
+      sidebarBackground: '#f6f6f6',
+      panelBackground: '#ffffff',
+      panelAltBackground: '#f1f1f1',
+      cardBackground: '#ffffff',
+      cardHoverBackground: '#f3f3f3',
+      contextMenuBackground: '#ffffff',
+      inputBackground: '#f3f3f3',
+      terminalBackground: '#fafafa',
+      selectionBackground: 'rgba(17,17,17,0.08)',
+      scrimBackground: 'rgba(17,17,17,0.16)',
+      textPrimary: '#111111',
+      textSecondary: '#2b2b2b',
+      textMuted: 'rgba(17,17,17,0.62)',
+      textDim: 'rgba(17,17,17,0.38)',
+      textInverse: '#ffffff',
+      border: 'rgba(17,17,17,0.12)',
+      borderStrong: 'rgba(17,17,17,0.22)',
+      accent: '#111111',
+      accentSoft: 'rgba(17,17,17,0.08)',
+      accentContrast: '#ffffff',
+      success: '#1c7d43',
+      warning: '#8a6000',
+      danger: '#9a3535',
+      info: '#245fa6',
+      note: '#245fa6',
+      todo: '#1c7d43',
+      bug: '#9a3535',
+      prompt: '#444444',
+    },
+    {
+      backgroundImage: 'linear-gradient(180deg, rgba(17,17,17,0.02), rgba(17,17,17,0))',
+      shadow: '0 14px 30px rgba(0,0,0,0.08)',
+      overlayShadow: '0 -1px 0 0 rgba(17,17,17,0.08), 0 -16px 32px rgba(0,0,0,0.08)',
+    },
+    {
+      background: '#fafafa',
+      foreground: '#1f1f1f',
+      cursor: '#111111',
+      black: '#1f1f1f',
+      red: '#a34747',
+      green: '#2d7b4a',
+      yellow: '#8a6000',
+      blue: '#245fa6',
+      magenta: '#6c4fa3',
+      cyan: '#1f7a7a',
+      white: '#d8d8d8',
+      brightBlack: '#6d6d6d',
+      brightRed: '#bb5d5d',
+      brightGreen: '#41915f',
+      brightYellow: '#a97a12',
+      brightBlue: '#3d77bc',
+      brightMagenta: '#8466bb',
+      brightCyan: '#359292',
+      brightWhite: '#ffffff',
+    },
+  ),
   createTheme(
     'operator',
     'Operator',
@@ -1089,7 +1254,7 @@ export function normalizeThemeDefinition(
   theme: Partial<OverlayThemeDefinition>,
   fallbackTheme?: OverlayThemeDefinition,
 ): OverlayThemeDefinition {
-  const fallback = fallbackTheme ?? presetMap.get('operator') ?? overlayThemePresets[0];
+  const fallback = fallbackTheme ?? presetMap.get(DEFAULT_PILOT_DARK_THEME_ID) ?? overlayThemePresets[0];
   const engineManifest = theme.engineManifest;
   const compiledEngineManifest = theme.compiledEngineManifest
     ?? (engineManifest ? compileThemeEngineManifest(engineManifest) : undefined);
@@ -1187,7 +1352,7 @@ export function serializeTheme(theme: OverlayThemeDefinition): string {
 export function resolveOverlayAppearance(selection?: OverlayAppearanceSelection): ResolvedOverlayAppearance {
   const customThemes = (selection?.customThemes ?? []).map(theme => normalizeThemeDefinition(theme));
   const packageThemes = (selection?.packageThemes ?? []).map(theme => normalizeThemeDefinition(theme, presetMap.get(theme.extendsThemeId ?? '') ?? undefined));
-  const activeThemeId = selection?.activeThemeId ?? 'operator';
+  const activeThemeId = selection?.activeThemeId ?? DEFAULT_PILOT_DARK_THEME_ID;
   const activeDockThemeId = typeof selection?.activeDockThemeId === 'string'
     ? selection.activeDockThemeId.trim() || null
     : selection?.activeDockThemeId === null

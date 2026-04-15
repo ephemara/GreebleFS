@@ -662,6 +662,8 @@ export function SettingsPage({
     updateTerminal,
     updateExplorer,
     updateAppearance,
+    applyThemeSelection: applyThemeSelectionWithDefaults,
+    applyDockThemeSelection: applyDockThemeSelectionWithDefaults,
     updateLayout,
     updateKeybindings,
     updateScreenshots,
@@ -672,6 +674,8 @@ export function SettingsPage({
     updateTerminal: state.updateTerminal,
     updateExplorer: state.updateExplorer,
     updateAppearance: state.updateAppearance,
+    applyThemeSelection: state.applyThemeSelection,
+    applyDockThemeSelection: state.applyDockThemeSelection,
     updateLayout: state.updateLayout,
     updateKeybindings: state.updateKeybindings,
     updateScreenshots: state.updateScreenshots,
@@ -906,20 +910,13 @@ export function SettingsPage({
 
   const applyThemeSelection = useCallback((themeId: string) => {
     const packageInfo = themePackageLookup.get(themeId);
-    updateAppearance({
-      activeThemeId: themeId,
-      activeShaderId: null,
-      appOpenAnimation: null,
-      appCloseAnimation: null,
-      ...(packageInfo?.capabilitySummary.icons ? { useNativeOsIcons: false } : {}),
+    applyThemeSelectionWithDefaults(themeId, {
+      forceManagedIcons: Boolean(packageInfo?.capabilitySummary.icons),
     });
-  }, [themePackageLookup, updateAppearance]);
+  }, [applyThemeSelectionWithDefaults, themePackageLookup]);
   const applyDockThemeSelection = useCallback((themeId: string) => {
-    updateAppearance({
-      dockThemeMode: 'override',
-      activeDockThemeId: themeId,
-    });
-  }, [updateAppearance]);
+    applyDockThemeSelectionWithDefaults(themeId);
+  }, [applyDockThemeSelectionWithDefaults]);
 
   const updateThemePalette = useCallback((patch: Partial<OverlayThemeDefinition['palette']>) => {
     persistTheme({

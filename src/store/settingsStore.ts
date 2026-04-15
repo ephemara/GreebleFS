@@ -65,8 +65,13 @@ import {
 } from '../config/screenshots';
 import { isLegacyScreenshotDirectory } from '../config/appContentDirectories';
 import {
-  getDefaultLayoutProfile,
-} from '../config/layoutProfiles';
+  DEFAULT_PILOT_ACCENT_COLOR,
+  DEFAULT_PILOT_DARK_THEME_ID,
+  DEFAULT_PILOT_LAYOUT_PROFILE_ID,
+  DEFAULT_PILOT_UI_FONT_FAMILY,
+  getThemeSelectionDefaults,
+} from '../config/pilotThemeContract';
+import { PRIMARY_EXPLORER_INSTANCE_ID, useExplorerStore } from './explorerStore';
 
 // ============================================================================
 // TYPES
@@ -580,7 +585,7 @@ export const defaultSettings: Settings = {
   },
   appearance: {
     theme: 'dark',
-    activeThemeId: 'operator',
+    activeThemeId: DEFAULT_PILOT_DARK_THEME_ID,
     dockThemeMode: 'follow-app',
     activeDockThemeId: null,
     customThemes: [],
@@ -590,9 +595,9 @@ export const defaultSettings: Settings = {
     wallpaperMuted: true,
     activeShaderId: null,
     shaderControlValues: {},
-    uiFontFamily: 'Inter, system-ui, sans-serif',
+    uiFontFamily: DEFAULT_PILOT_UI_FONT_FAMILY,
     useNativeOsIcons: false,
-    accentColor: '#6366f1',
+    accentColor: DEFAULT_PILOT_ACCENT_COLOR,
     sidebarPosition: 'left',
     activityBarPosition: 'side',
     compactMode: false,
@@ -600,7 +605,7 @@ export const defaultSettings: Settings = {
     appOpacity: overlayVisualControls.opacity.defaultValue,
     panelTransparency: overlayVisualControls.panelTransparency.defaultValue,
     appZoom: overlayVisualControls.zoom.defaultValue,
-    appBlur: true,
+    appBlur: false,
     appBlurStrength: overlayVisualControls.blurStrength.defaultValue,
     appOpenAnimation: null,
     appCloseAnimation: null,
@@ -630,7 +635,7 @@ export const defaultSettings: Settings = {
     maxTokens: 8192,
   },
   layout: {
-    activeProfileId: getDefaultLayoutProfile().id,
+    activeProfileId: DEFAULT_PILOT_LAYOUT_PROFILE_ID,
     configPath: '',
     panelStateByProfile: {},
   },
@@ -756,6 +761,13 @@ interface SettingsState {
     layoutId: ExplorerChromeLayoutId,
   ) => void;
   updateAppearance: (updates: Partial<AppearanceSettings>) => void;
+  applyThemeSelection: (
+    themeId: string,
+    options?: {
+      forceManagedIcons?: boolean;
+    },
+  ) => void;
+  applyDockThemeSelection: (themeId: string) => void;
   updateSystem: (updates: Partial<SystemSettings>) => void;
   updateScreenshots: (updates: Partial<ScreenshotSettings>) => void;
   updateKeybindings: (updates: Partial<KeybindingSettings>) => void;
@@ -868,6 +880,63 @@ export const useSettingsStore = create<SettingsState>()(
           appearance: normalizeAppearanceSettings(state.settings.appearance, updates),
         },
       })),
+
+      applyThemeSelection: (themeId, options) => {
+        const normalizedThemeId = themeId.trim();
+        if (!normalizedThemeId) {
+          return;
+        }
+
+        const themeDefaults = getThemeSelectionDefaults(normalizedThemeId);
+        if (themeDefaults?.explorerSession) {
+          const explorerState = useExplorerStore.getState();
+          const targetInstanceIds = Object.keys(explorerState.sessions);
+          for (const instanceId of (targetInstanceIds.length > 0 ? targetInstanceIds : [PRIMARY_EXPLORER_INSTANCE_ID])) {
+            explorerState.updateSessionForInstance(instanceId, themeDefaults.explorerSession);
+          }
+        }
+
+        set((state) => {
+          const appearanceUpdates: Partial<AppearanceSettings> = {
+            activeThemeId: normalizedThemeId,
+            activeShaderId: null,
+            appOpenAnimation: null,
+            appCloseAnimation: null,
+            ...(themeDefaults?.appearance ?? {}),
+            ...(options?.forceManagedIcons ? { useNativeOsIcons: false } : {}),
+          };
+
+          return {
+            settings: {
+              ...state.settings,
+              appearance: normalizeAppearanceSettings(state.settings.appearance, appearanceUpdates),
+              explorer: themeDefaults?.explorer
+                ? normalizeExplorerSettings(state.settings.explorer, themeDefaults.explorer)
+                : state.settings.explorer,
+              layout: themeDefaults?.layout
+                ? { ...state.settings.layout, ...themeDefaults.layout }
+                : state.settings.layout,
+            },
+          };
+        });
+      },
+
+      applyDockThemeSelection: (themeId) => {
+        const normalizedThemeId = themeId.trim();
+        if (!normalizedThemeId) {
+          return;
+        }
+
+        set((state) => ({
+          settings: {
+            ...state.settings,
+            appearance: normalizeAppearanceSettings(state.settings.appearance, {
+              dockThemeMode: 'override',
+              activeDockThemeId: normalizedThemeId,
+            }),
+          },
+        }));
+      },
 
       updateSystem: (updates) => set((state) => ({
         settings: {
