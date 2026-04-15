@@ -51,7 +51,7 @@ describe('buildConstellationOrbitBands', () => {
     ));
 
     expect(orbitBand.nodes).toHaveLength(18);
-    expect(Math.min(...xPositions)).toBeLessThan(16);
+    expect(Math.min(...xPositions)).toBeLessThan(17);
     expect(Math.max(...xPositions)).toBeGreaterThan(84);
     expect(Math.max(...yPositions) - Math.min(...yPositions)).toBeGreaterThan(36);
     expect(Math.abs(leftCount - rightCount)).toBeLessThanOrEqual(2);

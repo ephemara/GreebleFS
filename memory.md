@@ -1,5 +1,17 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Constellation View Orbit Rebalance
+
+- Constellation mode no longer relies on a loose hash-jittered ellipse that can bunch many folders onto one side of the field.
+- Durable implementation shape:
+  - `src/components/explorer/constellationLayout.ts` now owns the constellation placement algorithm as a dedicated helper instead of burying the orbit math inside `FileExplorer.tsx`.
+  - visible nodes are distributed through deterministic multi-lane orbit slots with explicit left/right coverage, lane rotation, and a reserved center safe zone so entries do not stack under the `Orbit Map` card.
+  - `FileExplorer.tsx` still renders the same experimental mode, but the orbit field now gets a taller adaptive band height and per-node constellation data attributes for easier diagnostics.
+- Durable product note:
+  - the goal of constellation mode is now practical scan value, not just spectacle. Dense folder sets should read like a broad map with breathing room instead of collapsing into one clustered blob.
+- Validation:
+  - passed: `bun run test:unit src/test/constellationLayout.test.ts src/test/fileExplorer.viewModes.test.tsx`
+
 ## 2026-04-15 — Release Readiness Pass / v0.1.0-rc1
 
 - Ran a ship-room audit against the repo-declared Linux release path.

@@ -42,6 +42,13 @@ const CONSTELLATION_FIELD_BOUNDS = Object.freeze({
   minY: 12,
   maxY: 88,
 });
+const CONSTELLATION_CENTER_SAFE_ZONE = Object.freeze({
+  minX: 40,
+  maxX: 60,
+  minY: 35,
+  maxY: 65,
+  padding: 2,
+});
 
 const CONSTELLATION_SLOT_PROGRESS_SEQUENCE = [
   0.25,
@@ -258,9 +265,35 @@ function hashExplorerString(value: string): number {
 }
 
 function clampConstellationPoint(point: { x: number; y: number }): { x: number; y: number } {
+  let x = clamp(point.x, CONSTELLATION_FIELD_BOUNDS.minX, CONSTELLATION_FIELD_BOUNDS.maxX);
+  let y = clamp(point.y, CONSTELLATION_FIELD_BOUNDS.minY, CONSTELLATION_FIELD_BOUNDS.maxY);
+
+  const insideCenterSafeZone = x > CONSTELLATION_CENTER_SAFE_ZONE.minX
+    && x < CONSTELLATION_CENTER_SAFE_ZONE.maxX
+    && y > CONSTELLATION_CENTER_SAFE_ZONE.minY
+    && y < CONSTELLATION_CENTER_SAFE_ZONE.maxY;
+
+  if (insideCenterSafeZone) {
+    const distanceToLeft = Math.abs(x - CONSTELLATION_CENTER_SAFE_ZONE.minX);
+    const distanceToRight = Math.abs(CONSTELLATION_CENTER_SAFE_ZONE.maxX - x);
+    const distanceToTop = Math.abs(y - CONSTELLATION_CENTER_SAFE_ZONE.minY);
+    const distanceToBottom = Math.abs(CONSTELLATION_CENTER_SAFE_ZONE.maxY - y);
+    const nearestEdge = Math.min(distanceToLeft, distanceToRight, distanceToTop, distanceToBottom);
+
+    if (nearestEdge === distanceToLeft) {
+      x = CONSTELLATION_CENTER_SAFE_ZONE.minX - CONSTELLATION_CENTER_SAFE_ZONE.padding;
+    } else if (nearestEdge === distanceToRight) {
+      x = CONSTELLATION_CENTER_SAFE_ZONE.maxX + CONSTELLATION_CENTER_SAFE_ZONE.padding;
+    } else if (nearestEdge === distanceToTop) {
+      y = CONSTELLATION_CENTER_SAFE_ZONE.minY - CONSTELLATION_CENTER_SAFE_ZONE.padding;
+    } else {
+      y = CONSTELLATION_CENTER_SAFE_ZONE.maxY + CONSTELLATION_CENTER_SAFE_ZONE.padding;
+    }
+  }
+
   return {
-    x: clamp(point.x, CONSTELLATION_FIELD_BOUNDS.minX, CONSTELLATION_FIELD_BOUNDS.maxX),
-    y: clamp(point.y, CONSTELLATION_FIELD_BOUNDS.minY, CONSTELLATION_FIELD_BOUNDS.maxY),
+    x: clamp(x, CONSTELLATION_FIELD_BOUNDS.minX, CONSTELLATION_FIELD_BOUNDS.maxX),
+    y: clamp(y, CONSTELLATION_FIELD_BOUNDS.minY, CONSTELLATION_FIELD_BOUNDS.maxY),
   };
 }
 
