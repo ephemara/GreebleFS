@@ -9,7 +9,7 @@
  */
 
 import React, {
-  Suspense, startTransition, useState, useEffect, useRef, useCallback, useMemo, useId, type CSSProperties,
+  Suspense, startTransition, useState, useEffect, useEffectEvent, useRef, useCallback, useMemo, useId, type CSSProperties,
 } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -2339,6 +2339,7 @@ export function FileExplorer({
   const searchFocusRequestIdRef = useRef(0);
   const isExplorerMountedRef = useRef(false);
   const directoryLoadRequestIdRef = useRef(0);
+  const bootNavigationSequenceRef = useRef(0);
   const initialInteractiveRecordedRef = useRef(false);
   const explorerMountStartedAtRef = useRef(getExplorerPerformanceNow());
   const runtimeCachePolicyTelemetryMetadataRef = useRef<RuntimeCachePolicyTelemetryMetadata>(
@@ -2594,98 +2595,6 @@ export function FileExplorer({
     updateExplorerSessionForInstance,
   ]);
 
-  // ── Boot ──
-  useEffect(() => {
-    let disposed = false;
-    setDrivesLoading(true);
-    getExplorerDrives()
-      .then((nextDrives) => {
-        if (!disposed) {
-          setDrives(nextDrives);
-        }
-      })
-      .catch(() => {
-        if (!disposed) {
-          setDrives([]);
-        }
-      })
-      .finally(() => {
-        if (!disposed) {
-          setDrivesLoading(false);
-        }
-      });
-
-    const navigateToResolvedHome = () => {
-      void getExplorerHomeDir()
-        .then((home) => {
-          if (disposed) {
-            return;
-          }
-          return navigate(home);
-        })
-        .catch(() => {
-          if (disposed) {
-            return;
-          }
-          return navigate(getFallbackExplorerPath(runtimePlatform));
-        });
-    };
-
-    const navigateToBootstrapPath = (bootstrapPath: string) => {
-      void navigate(bootstrapPath).catch(() => {
-        if (disposed) {
-          return;
-        }
-        navigateToResolvedHome();
-      });
-    };
-
-    const restoredPath = initialSessionPathRef.current;
-
-    if (restoredPath) {
-      navigate(restoredPath, false).catch(() => {
-        if (disposed) {
-          return;
-        }
-        initialSessionPathRef.current = '';
-        setCurrentPath('');
-        setHistory([]);
-        setHistoryIdx(-1);
-        updateExplorerSessionForInstance(instanceId, {
-          currentPath: '',
-          history: [],
-          historyIdx: -1,
-        });
-
-        const preferredPath = explorerSettings.defaultPath.trim();
-        const bootstrapPath = preferredPath && preferredPath !== '.' ? preferredPath : null;
-
-        if (bootstrapPath) {
-          navigateToBootstrapPath(bootstrapPath);
-        } else {
-          navigateToResolvedHome();
-        }
-      });
-
-      return () => {
-        disposed = true;
-      };
-    }
-
-    const preferredPath = explorerSettings.defaultPath.trim();
-    const bootstrapPath = preferredPath && preferredPath !== '.' ? preferredPath : null;
-
-    if (bootstrapPath) {
-      navigateToBootstrapPath(bootstrapPath);
-    } else {
-      navigateToResolvedHome();
-    }
-
-    return () => {
-      disposed = true;
-    };
-  }, [explorerSettings.defaultPath, instanceId, runtimePlatform, updateExplorerSessionForInstance]);
-
   // ── Navigate ──
   const navigate = useCallback(async (path: string, push = true) => {
     if (!isExplorerMountedRef.current) {
@@ -2763,6 +2672,117 @@ export function FileExplorer({
       }
     }
   }, [historyIdx, isCloudExplorerPath, listExplorerLocation, recordExplorerMetric, showHidden]);
+
+  const runDeferredBootNavigation = useEffectEvent(async (
+    generation: number,
+    path: string,
+    push = true,
+  ) => {
+    await Promise.resolve();
+    if (!isExplorerMountedRef.current || bootNavigationSequenceRef.current !== generation) {
+      return false;
+    }
+    await navigate(path, push);
+    return true;
+  });
+
+  // ── Boot ──
+  useEffect(() => {
+    let disposed = false;
+    const generation = bootNavigationSequenceRef.current + 1;
+    bootNavigationSequenceRef.current = generation;
+
+    const isActiveBootNavigation = () => (
+      !disposed
+      && isExplorerMountedRef.current
+      && bootNavigationSequenceRef.current === generation
+    );
+
+    setDrivesLoading(true);
+    getExplorerDrives()
+      .then((nextDrives) => {
+        if (!disposed) {
+          setDrives(nextDrives);
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          setDrives([]);
+        }
+      })
+      .finally(() => {
+        if (!disposed) {
+          setDrivesLoading(false);
+        }
+      });
+
+    const navigateToResolvedHome = async () => {
+      let fallbackPath = getFallbackExplorerPath(runtimePlatform);
+      try {
+        const resolvedHome = await getExplorerHomeDir();
+        if (resolvedHome.trim()) {
+          fallbackPath = resolvedHome;
+        }
+      } catch {
+        // Keep the platform fallback path below.
+      }
+      if (!isActiveBootNavigation()) {
+        return false;
+      }
+      return runDeferredBootNavigation(generation, fallbackPath);
+    };
+
+    const navigateToBootstrapPath = async (bootstrapPath: string) => {
+      const navigated = await runDeferredBootNavigation(generation, bootstrapPath);
+      if (navigated || !isActiveBootNavigation()) {
+        return navigated;
+      }
+      return navigateToResolvedHome();
+    };
+
+    const resetBootSession = () => {
+      if (!isActiveBootNavigation()) {
+        return;
+      }
+      initialSessionPathRef.current = '';
+      setCurrentPath('');
+      setHistory([]);
+      setHistoryIdx(-1);
+      updateExplorerSessionForInstance(instanceId, {
+        currentPath: '',
+        history: [],
+        historyIdx: -1,
+      });
+    };
+
+    const startBootNavigation = async () => {
+      const restoredPath = initialSessionPathRef.current;
+      if (restoredPath) {
+        const restored = await runDeferredBootNavigation(generation, restoredPath, false);
+        if (restored || !isActiveBootNavigation()) {
+          return;
+        }
+        resetBootSession();
+      }
+
+      const preferredPath = explorerSettings.defaultPath.trim();
+      const bootstrapPath = preferredPath && preferredPath !== '.' ? preferredPath : null;
+      if (bootstrapPath) {
+        await navigateToBootstrapPath(bootstrapPath);
+        return;
+      }
+      await navigateToResolvedHome();
+    };
+
+    void startBootNavigation();
+
+    return () => {
+      disposed = true;
+      if (bootNavigationSequenceRef.current === generation) {
+        bootNavigationSequenceRef.current += 1;
+      }
+    };
+  }, [explorerSettings.defaultPath, getExplorerDrives, getExplorerHomeDir, instanceId, runtimePlatform, updateExplorerSessionForInstance]);
 
   const runSearch = useCallback(async (query: string, requestId: number) => {
     const isActiveSearchRequest = () => (
@@ -4581,6 +4601,7 @@ export function FileExplorer({
     () => (isExplorerGridMode(themedViewMode) ? getExplorerGridZoomPercent(gridZoom) : null),
     [gridZoom, themedViewMode],
   );
+  const showToolbarLocationStrips = !isCompactDock;
 
   const showZoomHud = useCallback(() => {
     setZoomHudVisible(true);
@@ -4667,7 +4688,7 @@ export function FileExplorer({
     const usesInset = usesFloatingShell || explorerTheme.toolbarStyle === 'minimal';
     return {
       display: 'flex',
-      alignItems: 'center',
+      flexDirection: 'column',
       gap: 'var(--overlay-explorer-toolbar-gap)',
       padding: 'var(--overlay-explorer-toolbar-padding)',
       background: explorerTheme.toolbarStyle === 'minimal'
@@ -4690,6 +4711,44 @@ export function FileExplorer({
       flexShrink: 0,
     };
   }, [explorerBlurEnabled, explorerTheme.toolbarStyle]);
+  const toolbarPrimaryRowStyle = useMemo<CSSProperties>(() => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--overlay-explorer-toolbar-gap)',
+    flexWrap: 'wrap',
+    minWidth: 0,
+  }), []);
+  const toolbarPrimaryControlsStyle = useMemo<CSSProperties>(() => ({
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 6,
+    flexWrap: 'wrap',
+    minWidth: 0,
+  }), []);
+  const toolbarSecondaryRowStyle = useMemo<CSSProperties>(() => ({
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    flexWrap: 'wrap',
+    minWidth: 0,
+  }), []);
+  const toolbarSecondaryLocationGroupStyle = useMemo<CSSProperties>(() => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+    flexWrap: 'wrap',
+    minWidth: 0,
+  }), []);
+  const toolbarSecondaryActionGroupStyle = useMemo<CSSProperties>(() => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+    minWidth: 0,
+  }), []);
   const mainColumnStyle = useMemo<CSSProperties>(() => ({
     flex: 1,
     display: 'flex',
