@@ -1,5 +1,22 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Adaptive Explorer Chrome Phase 1
+
+- Explorer chrome composition is now a first-class config/runtime layer, separate from explorer pane composition.
+- Durable implementation shape:
+  - `src/config/explorerChromeLayouts.ts` defines the built-in chrome surfaces (`explorerTopbar`, `explorerToolbar`, `workspaceHeader`), control ids, layout ids, zone/order metadata, and override normalization/resolution helpers.
+  - `src/components/explorer/ExplorerChromeSurface.tsx` is the shared renderer for resolved chrome surfaces. `FileExplorer.tsx` and `ExplorerWorkspace.tsx` should render resolved control surfaces through this component instead of hardcoding toolbar/header button order in JSX.
+  - `src/config/explorerTheme.ts` now carries `chromeLayoutId` on the resolved explorer recipe, with `default` normalization so existing themes keep working without explicit chrome config.
+  - `src/store/settingsStore.ts` now persists `settings.explorer.chromeLayoutOverridesByThemeId`, keyed by theme id and `chromeLayoutId`. This is intentionally separate from `shellLayoutId`, `sidebarWidth`, `previewWidth`, `sourcesVisible`, and named explorer session state.
+  - `shellLayoutId` still owns pane structure like rail visibility and preview placement. `chromeLayoutId` only owns explorer control composition.
+- Stabilization fix:
+  - `FileExplorer.tsx` no longer uses the old mount-time boot navigation effect path that could synchronously schedule state updates during passive-effect mount. Boot navigation now runs through a deferred callback path, which stops the `getRootForUpdatedFiber` / OverlayTerm runtime crash seen during initial explorer mount and strict remounts.
+- Durable testing posture:
+  - `src/test/explorerChromeLayouts.test.ts` covers chrome layout normalization and override resolution.
+  - `src/test/explorerTheme.test.ts`, `src/test/themePackageExplorerRecipe.test.ts`, `src/test/settingsStore.test.ts`, `src/test/fileExplorer.viewModes.test.tsx`, and `src/test/ExplorerWorkspace.test.tsx` now cover `chromeLayoutId`, per-theme overrides, workspace-header chrome composition, topbar rendering, and the strict-mode boot regression.
+- Related durable note:
+  - explorer drag intent still defaults to native drag-out on plain drag and internal-only drag on `Shift`. Keep docs/tests aligned with that runtime contract unless the drag model is deliberately redesigned.
+
 ## 2026-04-15 — Explorer To Filesystem Aquarium Handoff
 
 - Explorer can now hand a folder or file context directly into the `filesystem-aquarium` plugin instead of making the user paste a path manually.

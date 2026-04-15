@@ -18,6 +18,11 @@ import {
   readThemeStringProp,
   resolveThemeEngineBindings,
 } from './themeEngineBindings';
+import {
+  defaultExplorerChromeLayoutId,
+  normalizeExplorerChromeLayoutId,
+  type ExplorerChromeLayoutId,
+} from './explorerChromeLayouts';
 
 export type OverlayExplorerThemePreset = 'workbench' | 'xmb' | 'channel-grid' | 'custom';
 export type OverlayExplorerToolbarStyle = 'solid' | 'glass' | 'floating' | 'minimal';
@@ -90,6 +95,7 @@ export interface OverlayExplorerThemeTypography {
 
 export interface OverlayExplorerThemeRecipe {
   preset?: OverlayExplorerThemePreset;
+  chromeLayoutId?: ExplorerChromeLayoutId;
   layoutPrimitiveId?: string;
   navigationPatternId?: string;
   renderStyleId?: string;
@@ -112,6 +118,7 @@ export interface OverlayExplorerThemeRecipe {
 
 export interface ResolvedExplorerThemeRecipe {
   preset: OverlayExplorerThemePreset;
+  chromeLayoutId: ExplorerChromeLayoutId;
   layoutPrimitiveId: string | null;
   navigationPatternId: string | null;
   renderStyleId: string | null;
@@ -264,6 +271,7 @@ export function normalizeExplorerThemeRecipe(
 
   const next: OverlayExplorerThemeRecipe = {
     preset: recipe?.preset ?? fallback?.preset,
+    chromeLayoutId: normalizeExplorerChromeLayoutId(recipe?.chromeLayoutId ?? fallback?.chromeLayoutId),
     layoutPrimitiveId: asTrimmedString(recipe?.layoutPrimitiveId) ?? asTrimmedString(fallback?.layoutPrimitiveId),
     navigationPatternId: asTrimmedString(recipe?.navigationPatternId) ?? asTrimmedString(fallback?.navigationPatternId),
     renderStyleId: asTrimmedString(recipe?.renderStyleId) ?? asTrimmedString(fallback?.renderStyleId),
@@ -1013,6 +1021,12 @@ export function resolveExplorerThemeRecipe(
 
   return {
     preset,
+    chromeLayoutId: normalizeExplorerChromeLayoutId(
+      userRecipe?.chromeLayoutId
+      ?? engineRecipe.chromeLayoutId
+      ?? presetRecipe.chromeLayoutId
+      ?? defaultExplorerChromeLayoutId,
+    ),
     layoutPrimitiveId: engineBindings.layoutPrimitive?.id ?? null,
     navigationPatternId: engineBindings.navigationPattern?.id ?? null,
     renderStyleId: engineBindings.renderStyle?.id ?? null,

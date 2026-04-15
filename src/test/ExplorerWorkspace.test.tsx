@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/appearance';
 import { defaultExplorerRailSnapshot } from '../components/explorer/explorerRailState';
 import { defaultExplorerSession, defaultExplorerWorkspace, useExplorerStore } from '../store/explorerStore';
 
@@ -8,6 +9,10 @@ vi.mock('../components/FileExplorer', () => ({
 }));
 
 import { ExplorerWorkspace } from '../components/explorer/ExplorerWorkspace';
+
+function getWorkspaceControl(controlId: string) {
+  return document.querySelector(`[data-overlay-explorer-control="${controlId}"]`) as HTMLElement | null;
+}
 
 describe('ExplorerWorkspace', () => {
   beforeEach(() => {
@@ -68,5 +73,38 @@ describe('ExplorerWorkspace', () => {
     expect(explorerPane?.style.display).toBe('flex');
     expect(consoleErrorSpy).not.toHaveBeenCalled();
     consoleErrorSpy.mockRestore();
+  });
+
+  it('repositions workspace header controls through chromeLayoutId', () => {
+    const appearance = resolveOverlayAppearance({
+      activeThemeId: 'focused-layout',
+      customThemes: [
+        normalizeThemeDefinition({
+          id: 'focused-layout',
+          name: 'Focused Layout',
+          explorer: {
+            chromeLayoutId: 'focused-search',
+          },
+        }),
+      ],
+    });
+
+    render(
+      <ExplorerWorkspace
+        appearance={appearance}
+        theme={{
+          accent: '#8ab4f8',
+          bg: '#0f1115',
+          bgPanel: '#151923',
+          text: '#f4f7fb',
+          border: '#2a2f3a',
+          textMuted: '#9aa4b2',
+        }}
+        onOpenInTerminal={() => undefined}
+        onAddBookmark={() => undefined}
+      />,
+    );
+
+    expect(getWorkspaceControl('workspaceMode')?.getAttribute('data-overlay-explorer-control-zone')).toBe('end');
   });
 });

@@ -42,6 +42,7 @@ describe('explorer theme recipe', () => {
   it('keeps the default workbench explorer surfaces layered and premium', () => {
     const recipe = resolveExplorerThemeRecipe(undefined);
 
+    expect(recipe.chromeLayoutId).toBe('default');
     expect(recipe.toolbarStyle).toBe('solid');
     expect(recipe.surfaces.toolbarShadow).not.toBe('none');
     expect(recipe.surfaces.previewBackground).toContain('color-mix');
@@ -56,6 +57,7 @@ describe('explorer theme recipe', () => {
           name: 'Channel Grid',
           explorer: {
             preset: 'channel-grid',
+            chromeLayoutId: 'focused-search',
             metrics: {
               gridScale: 1.35,
               iconScale: 1.5,
@@ -68,6 +70,7 @@ describe('explorer theme recipe', () => {
     });
 
     const recipe = resolveExplorerThemeRecipe(appearance);
+    expect(recipe.chromeLayoutId).toBe('focused-search');
     const baseGrid = getExplorerGridMetricsForZoom(1);
     const scaledGrid = applyExplorerThemeToGridMetrics(baseGrid, recipe);
     const scaledRows = applyExplorerThemeToRowMetrics({

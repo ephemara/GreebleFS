@@ -34,6 +34,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Explorer-specific theme recipe resolution, metrics scaling, and explorer-scoped CSS variable contract.
 - `src/config/explorerShellLayouts.ts`
   User-selectable explorer pane-layout presets that rebalance the rail and preview pane independently from theme recipes.
+- `src/config/explorerChromeLayouts.ts`
+  Explorer chrome layout registry/resolver for adaptive toolbar, topbar, and workspace-header control placement.
 - `src/config/themeEngineBindings.ts`
   Shared engine-manifest binding helpers for layout/navigation/render-driven recipe defaults.
 - `src/config/workbenchRenderRuntime.ts`
@@ -46,6 +48,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Wallpaper directory resolution, fit-mode contract, and wallpaper runtime config.
 - `src/components/WorkbenchNavigationSurface.tsx`
   Runtime-swappable launcher surface for cross-axis, channel-grid, desktop, and tabbed shells.
+- `src/components/ScreenshotsManager.tsx`
+  Screenshot capture/editor/library surface. It owns monitor preview orchestration, selection editing, annotation authoring, and gallery actions, but annotated export is now delegated to Rust instead of being rasterized in the browser.
 - `src/components/DevPerformanceHud.tsx`
   Fixed dev-only diagnostics HUD rendered by `App.tsx` whenever the frontend runs in `import.meta.env.DEV` or explicit developer mode. It shows live frame, navigation, CLS, INP, long-task, and memory telemetry for local development.
 - `src/components/wallpaperRuntime.tsx`
@@ -73,6 +77,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Explorer theming is now a first-class recipe layer under `theme.explorer`.
 - `theme.explorer` supports optional recipe seeds like `workbench`, `xmb`, and `channel-grid`, plus explicit `layoutPrimitiveId` / `navigationPatternId` / `renderStyleId` bindings and local overrides for:
   - chrome style
+  - `chromeLayoutId` for explorer control composition
   - breadcrumb style
   - preview style
   - status bar style
@@ -122,6 +127,11 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - shell layout preset
   - explorer view mode
   - preview toggle
+- Explorer chrome composition is now a distinct layer from explorer pane composition:
+  - `src/config/explorerShellLayouts.ts` still owns pane structure like rail visibility, preview side, and live session sizing behavior
+  - `src/config/explorerChromeLayouts.ts` owns toolbar/topbar/workspace-header control zones, order, and per-layout adaptive placement
+  - `settingsStore.ts` persists per-theme `chromeLayoutOverridesByThemeId`, keyed by theme id and `chromeLayoutId`
+  - `FileExplorer.tsx` and `ExplorerWorkspace.tsx` should render resolved chrome surfaces instead of hardcoded button sequences
 - `settings.system.developerMode` is now the live-reload gate for expensive development-only watchers:
   - plugin directory watch / fallback polling in `useFolderPluginRuntime.ts`
   - authored shader polling in `App.tsx`
@@ -165,9 +175,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src-tauri/src/explorer_pro_commands.rs` owns app-managed trash + undo, batch rename, duplicate-scan lifecycle, tags, and saved searches
   - tags and saved searches live under Tauri app-local explorer metadata
   - trash currently uses a GreebleFS-managed trash root so restore locations stay deterministic across platforms
-- Explorer drag behavior now keeps pane-to-pane moves internal by default:
-  - plain explorer drag stays inside the explorer and still publishes `application/x-overlayterm-paths` for in-app drops
-  - `Shift` opts into native file-drag export for OS targets
+- Explorer drag behavior now defaults to native file export while keeping internal drop metadata available:
+  - plain explorer drag starts the native drag bridge and still publishes `application/x-overlayterm-paths` for in-app drops
+  - `Shift` forces an internal-only explorer drag
   - native drag previews use the dragged item's native icon when available, with a generated file-shaped fallback instead of the app icon
 - `ExplorerSideRail.tsx` is now navigator-first instead of bookmark-authoring-first:
   - the rail header foregrounds the current location and pinned-count summary
@@ -213,6 +223,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src-tauri/`
   Native host and Rust-side integration.
   `src-tauri/src/explorer_pro_commands.rs` is the explorer-pro feature backend for trash/undo, batch rename, duplicate scans, tags, and saved searches.
+  `src-tauri/src/screenshot_commands.rs` is the screenshot truth layer for monitor capture, cached full-resolution images, native clipboard work, gallery thumbnails, and annotated export compositing.
 
 ## Validation Commands
 
@@ -233,6 +244,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `plugins/**/dist/**` is versioned source for packaged frontend plugins in this repo. Do not treat those directories like app-build output or let a blanket `dist/` ignore swallow shipped plugin entries.
 - The dev HUD is internal to this app. It is not a Tauri plugin or external Chrome overlay, and it should be treated as part of the shell runtime.
 - Do not wire the screenshot panel to `explorerTaskStore`. That store is global explorer/Yazi task state; rendering it inside screenshot status chrome leaks unrelated delete/copy jobs into screenshot errors and makes debugging cross-subsystem issues much harder.
+- Annotated screenshot export belongs in Rust now, not in the browser canvas path. The frontend should author selection/annotation intent, while `src-tauri/src/screenshot_commands.rs` composites those annotations onto the cached full-resolution capture and handles save/copy. Reintroducing browser-side annotated save logic will silently degrade output resolution again.
+- Non-Windows screenshot preview capture now briefly hides/restores the app window to avoid self-capture. If Linux/macOS preview behavior regresses, inspect that hide/show path before assuming the capture backend itself is wrong.
 - Explorer interaction tests that need DOM drag/drop still need a browser-like environment, so the current JSDOM dependency failure blocks the most relevant explorer UI regressions even when the narrowed TypeScript pass is green.
 - Packaged theme SVG previews and wallpapers are safest when inlined to data URLs before they reach the frontend. In this workspace, Tauri/WebKit can intermittently fail on filesystem-backed SVG theme assets and spam `Failed to load resource` errors if they stay on raw asset URLs.
 - Theme renderer motion should prefer CSS animation for decorative effects. Renderer-local React state that ticks every frame can force mounted heavy panels like `FileExplorer` through avoidable rerender pressure and can resurrect update-depth problems.

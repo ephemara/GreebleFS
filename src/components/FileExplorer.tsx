@@ -9,7 +9,7 @@
  */
 
 import React, {
-  Suspense, startTransition, useState, useEffect, useEffectEvent, useRef, useCallback, useMemo, useId, type CSSProperties,
+  Suspense, startTransition, useState, useEffect, useRef, useCallback, useMemo, useId, type CSSProperties,
 } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -95,6 +95,7 @@ import {
 } from '../config/searchTelemetry';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { ExplorerSideRail } from './explorer/ExplorerSideRail';
+import { ExplorerChromeSurface } from './explorer/ExplorerChromeSurface';
 import { ExplorerTaskStatusBadge } from './explorer/ExplorerTaskStatusBadge';
 import { removeExplorerBookmarksByPath, upsertExplorerBookmark } from './explorer/explorerRailState';
 import {
@@ -149,6 +150,13 @@ import {
   type ExplorerTagMetadataSnapshot,
 } from '../runtime/explorerBackend';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
+import {
+  resolveExplorerChromeSurfaceLayout,
+  type ExplorerChromeControlDefinition,
+  type ExplorerChromeResolvedControlPlacement,
+  type ExplorerChromeSurfaceId,
+  type ExplorerChromeZoneId,
+} from '../config/explorerChromeLayouts';
 
 const LazyModelPreview = React.lazy(() =>
   import('./ModelPreview').then(module => ({ default: module.ModelPreview })),
@@ -364,6 +372,55 @@ function toolbarChipButtonStyle(disabled: boolean): CSSProperties {
     fontSize: 10,
     fontWeight: 700,
     opacity: disabled ? 0.55 : 1,
+    flexShrink: 0,
+  };
+}
+
+function toolbarToggleButtonStyle(active: boolean, disabled = false): CSSProperties {
+  return {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
+    border: `1px solid ${active ? 'var(--overlay-explorer-chip-active-border)' : 'var(--overlay-explorer-chip-border)'}`,
+    cursor: disabled ? 'default' : 'pointer',
+    color: disabled ? EXP.muted2 : (active ? 'var(--overlay-explorer-chip-active-text)' : EXP.muted),
+    padding: '4px 8px',
+    borderRadius: 'var(--overlay-explorer-control-radius)',
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    opacity: disabled ? 0.55 : 1,
+  };
+}
+
+function toolbarIconButtonStyle(disabled = false): CSSProperties {
+  return {
+    background: 'var(--overlay-explorer-chip-bg)',
+    border: '1px solid transparent',
+    cursor: disabled ? 'default' : 'pointer',
+    color: disabled ? EXP.muted2 : EXP.muted,
+    padding: 5,
+    borderRadius: 'var(--overlay-explorer-control-radius)',
+    display: 'flex',
+    alignItems: 'center',
+    flexShrink: 0,
+  };
+}
+
+function toolbarActionButtonStyle(): CSSProperties {
+  return {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    background: 'var(--overlay-explorer-chip-bg)',
+    border: '1px solid transparent',
+    cursor: 'pointer',
+    color: EXP.muted,
+    padding: '4px 7px',
+    borderRadius: 'var(--overlay-explorer-control-radius)',
+    fontSize: 'var(--overlay-explorer-toolbar-font-size)',
     flexShrink: 0,
   };
 }
@@ -2240,11 +2297,28 @@ export function FileExplorer({
     () => resolveExplorerSearchScope(explorerSearchScopeId),
     [explorerSearchScopeId],
   );
-  const isCompactDock = layoutMode === 'compact-dock';
+  const isCompactDock = layoutMode === 'dock';
   const showsGlobalChromeControls = chromeControlSurface === 'topbar';
   const explorerTheme = useMemo(
-    () => resolveExplorerThemeRecipe(appearance),
+    () => appearance?.explorerTheme ?? resolveExplorerThemeRecipe(appearance),
     [appearance],
+  );
+  const explorerChromeThemeId = useMemo(() => {
+    const resolvedAppearanceThemeId = appearance?.baseTheme.id?.trim();
+    if (resolvedAppearanceThemeId) {
+      return resolvedAppearanceThemeId;
+    }
+
+    const activeThemeId = appearanceSettings.activeThemeId.trim();
+    return activeThemeId || 'operator';
+  }, [appearance?.baseTheme.id, appearanceSettings.activeThemeId]);
+  const explorerChromeOverride = useMemo(
+    () => explorerSettings.chromeLayoutOverridesByThemeId[explorerChromeThemeId]?.[explorerTheme.chromeLayoutId] ?? null,
+    [
+      explorerChromeThemeId,
+      explorerSettings.chromeLayoutOverridesByThemeId,
+      explorerTheme.chromeLayoutId,
+    ],
   );
   const sidebarBounds = getExplorerRailWidthBounds(isCompactDock);
   const uiFont = appearance?.fonts.ui ?? 'Inter,system-ui,sans-serif';
@@ -2267,6 +2341,8 @@ export function FileExplorer({
   const [currentPath,  setCurrentPath]  = useState(() => initialSession.currentPath);
   const [history,      setHistory]      = useState<string[]>(() => initialSession.history);
   const [historyIdx,   setHistoryIdx]   = useState(() => initialSession.historyIdx);
+  const historyRef = useRef(history);
+  const historyIdxRef = useRef(historyIdx);
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const width = typeof initialSession.sidebarWidth === 'number'
       ? initialSession.sidebarWidth
@@ -2614,7 +2690,14 @@ export function FileExplorer({
     setEntrySizeLoadingPaths(new Set());
     setAddressEditing(false);
     setAddressDraft('');
-    if (push) { setHistory(h => [...h.slice(0, historyIdx + 1), normalizedPath]); setHistoryIdx(i => i + 1); }
+    if (push) {
+      const nextHistory = [...historyRef.current.slice(0, historyIdxRef.current + 1), normalizedPath];
+      const nextHistoryIdx = historyIdxRef.current + 1;
+      historyRef.current = nextHistory;
+      historyIdxRef.current = nextHistoryIdx;
+      setHistory(nextHistory);
+      setHistoryIdx(nextHistoryIdx);
+    }
     setLoading(true);
     try {
       const nextListing = await getOrLoadCachedExplorerDirectoryEntries(
@@ -2673,20 +2756,30 @@ export function FileExplorer({
         setLoading(false);
       }
     }
-  }, [historyIdx, isCloudExplorerPath, listExplorerLocation, recordExplorerMetric, showHidden]);
+  }, [isCloudExplorerPath, listExplorerLocation, recordExplorerMetric, showHidden]);
 
-  const runDeferredBootNavigation = useEffectEvent(async (
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
+
+  useEffect(() => {
+    historyIdxRef.current = historyIdx;
+  }, [historyIdx]);
+
+  const runDeferredBootNavigation = useCallback(async (
     generation: number,
     path: string,
     push = true,
   ) => {
-    await Promise.resolve();
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 0);
+    });
     if (!isExplorerMountedRef.current || bootNavigationSequenceRef.current !== generation) {
       return false;
     }
     await navigate(path, push);
     return true;
-  });
+  }, [navigate]);
 
   // ── Boot ──
   useEffect(() => {
@@ -2784,7 +2877,7 @@ export function FileExplorer({
         bootNavigationSequenceRef.current += 1;
       }
     };
-  }, [explorerSettings.defaultPath, getExplorerDrives, getExplorerHomeDir, instanceId, runtimePlatform, updateExplorerSessionForInstance]);
+  }, [explorerSettings.defaultPath, getExplorerDrives, getExplorerHomeDir, instanceId, runDeferredBootNavigation, runtimePlatform, updateExplorerSessionForInstance]);
 
   const runSearch = useCallback(async (query: string, requestId: number) => {
     const isActiveSearchRequest = () => (
@@ -4702,10 +4795,12 @@ export function FileExplorer({
       background: explorerTheme.toolbarStyle === 'minimal'
         ? 'transparent'
         : 'var(--overlay-explorer-toolbar-bg)',
-      borderBottom: usesFloatingShell || explorerTheme.toolbarStyle === 'minimal'
-        ? 'none'
-        : '1px solid var(--overlay-explorer-toolbar-border)',
-      border: usesFloatingShell ? '1px solid var(--overlay-explorer-toolbar-border)' : 'none',
+      borderTopWidth: usesFloatingShell ? 1 : 0,
+      borderRightWidth: usesFloatingShell ? 1 : 0,
+      borderLeftWidth: usesFloatingShell ? 1 : 0,
+      borderBottomWidth: usesFloatingShell || explorerTheme.toolbarStyle === 'minimal' ? 0 : 1,
+      borderStyle: usesFloatingShell || explorerTheme.toolbarStyle !== 'minimal' ? 'solid' : 'none',
+      borderColor: 'var(--overlay-explorer-toolbar-border)',
       borderRadius: usesFloatingShell ? 'var(--overlay-explorer-panel-radius)' : 0,
       margin: usesInset ? 'var(--overlay-explorer-chrome-inset)' : 0,
       marginBottom: 0,
@@ -4771,6 +4866,1300 @@ export function FileExplorer({
     overflow: 'hidden',
     background: 'var(--overlay-explorer-content-bg)',
   }), [shellLayout.previewPlacement]);
+  const batchRenameTargetCount = useMemo(
+    () => (selectedEntries.length > 0 ? selectedEntries : visibleEntries).filter((entry) => !entry.is_dir).length,
+    [selectedEntries, visibleEntries],
+  );
+  const isGlobalChromeSurfaceActive = useCallback((surfaceId: ExplorerChromeSurfaceId) => (
+    !isCompactDock
+    && (
+      (surfaceId === 'explorerTopbar' && showsGlobalChromeControls)
+      || (surfaceId === 'explorerToolbar' && !showsGlobalChromeControls)
+    )
+  ), [isCompactDock, showsGlobalChromeControls]);
+  const getExplorerChromeRowStyle = useCallback((rowId: string): CSSProperties => {
+    switch (rowId) {
+      case 'primary':
+        return toolbarPrimaryRowStyle;
+      case 'secondary':
+        return toolbarSecondaryRowStyle;
+      default:
+        return toolbarPrimaryRowStyle;
+    }
+  }, [toolbarPrimaryRowStyle, toolbarSecondaryRowStyle]);
+  const getExplorerChromeZoneStyle = useCallback((zoneId: ExplorerChromeZoneId): CSSProperties => {
+    switch (zoneId) {
+      case 'primaryStart':
+        return {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          flexWrap: 'wrap',
+          minWidth: 0,
+        };
+      case 'primaryCenter':
+        return {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          minWidth: 0,
+          flex: 1,
+        };
+      case 'primaryEnd':
+        return toolbarPrimaryControlsStyle;
+      case 'secondaryStart':
+        return toolbarSecondaryLocationGroupStyle;
+      case 'secondaryEnd':
+        return toolbarSecondaryActionGroupStyle;
+      case 'center':
+        return {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          minWidth: 0,
+          flex: 1,
+        };
+      case 'end':
+        return {
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          gap: 6,
+          flexWrap: 'wrap',
+          minWidth: 0,
+        };
+      case 'start':
+      default:
+        return {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          flexWrap: 'wrap',
+          minWidth: 0,
+        };
+    }
+  }, [
+    toolbarPrimaryControlsStyle,
+    toolbarSecondaryActionGroupStyle,
+    toolbarSecondaryLocationGroupStyle,
+  ]);
+  const renderToolbarNavigationButton = useCallback((input: {
+    action: () => void;
+    disabled: boolean;
+    icon: React.ReactNode;
+    title: string;
+  }) => (
+    <button
+      type="button"
+      onClick={input.action}
+      disabled={input.disabled}
+      title={input.title}
+      style={toolbarIconButtonStyle(input.disabled)}
+      onMouseEnter={(event) => {
+        if (!input.disabled) {
+          event.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)';
+          event.currentTarget.style.color = EXP.text;
+        }
+      }}
+      onMouseLeave={(event) => {
+        event.currentTarget.style.background = 'var(--overlay-explorer-chip-bg)';
+        event.currentTarget.style.color = input.disabled ? EXP.muted2 : EXP.muted;
+      }}
+    >
+      {input.icon}
+    </button>
+  ), []);
+  const explorerChromeControlRegistry = useMemo<Array<ExplorerChromeControlDefinition & {
+    isVisible: (surfaceId: ExplorerChromeSurfaceId) => boolean;
+    render: (placement: ExplorerChromeResolvedControlPlacement) => React.ReactNode;
+  }>>(() => [
+    {
+      id: 'navigateBack',
+      label: 'Back',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => true,
+      render: () => renderToolbarNavigationButton({
+        action: goBack,
+        disabled: historyIdx <= 0,
+        icon: <ChevronLeft size={14} />,
+        title: 'Back',
+      }),
+    },
+    {
+      id: 'navigateForward',
+      label: 'Forward',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => true,
+      render: () => renderToolbarNavigationButton({
+        action: goForward,
+        disabled: historyIdx >= history.length - 1,
+        icon: <ChevronRight size={14} />,
+        title: 'Forward',
+      }),
+    },
+    {
+      id: 'navigateUp',
+      label: 'Up',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => true,
+      render: () => renderToolbarNavigationButton({
+        action: goUp,
+        disabled: false,
+        icon: <ArrowUp size={14} />,
+        title: 'Up',
+      }),
+    },
+    {
+      id: 'addressBar',
+      label: 'Address Bar',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => true,
+      render: () => (
+        <div
+          onClick={() => {
+            if (!addressEditing) {
+              beginAddressEdit();
+            }
+          }}
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            background: 'var(--overlay-explorer-omnibox-bg)',
+            borderRadius: 'var(--overlay-explorer-control-radius)',
+            border: '1px solid var(--overlay-explorer-omnibox-border)',
+            padding: '3px 10px',
+            overflow: 'hidden',
+            cursor: addressEditing ? 'text' : 'pointer',
+            minWidth: 0,
+          }}
+        >
+          {addressEditing ? (
+            <input
+              ref={addressInputRef}
+              value={addressDraft}
+              onChange={e => setAddressDraft(e.target.value)}
+              onBlur={() => { void submitAddressDraft(addressDraft); }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void submitAddressDraft(addressDraft);
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setAddressEditing(false);
+                  setAddressDraft(search.trim() ? search : currentPath);
+                }
+              }}
+              placeholder="Search or enter path…"
+              style={{
+                flex: 1,
+                background: 'none',
+                border: 'none',
+                outline: 'none',
+                color: EXP.text,
+                fontSize: 'var(--overlay-explorer-breadcrumb-font-size)',
+                minWidth: 0,
+              }}
+            />
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flex: 1, overflow: 'hidden' }}>
+                {crumbs.length > 0 ? (
+                  crumbs.map((c, i) => (
+                    <React.Fragment key={c.path}>
+                      {i > 0 && <ChevronRight size={10} style={{ color: EXP.muted2, flexShrink: 0 }} />}
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation();
+                          navigate(c.path);
+                        }}
+                        style={{
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: i === crumbs.length - 1 ? EXP.text : EXP.muted,
+                          fontSize: 'var(--overlay-explorer-breadcrumb-font-size)',
+                          fontWeight: i === crumbs.length - 1 ? 600 : 400,
+                          padding: explorerTheme.breadcrumbStyle === 'plain' ? '0 2px' : '3px 8px',
+                          borderRadius: explorerTheme.breadcrumbStyle === 'plain'
+                            ? 4
+                            : 'var(--overlay-explorer-control-radius)',
+                          background: explorerTheme.breadcrumbStyle === 'plain'
+                            ? 'transparent'
+                            : (i === crumbs.length - 1
+                                ? 'var(--overlay-explorer-chip-active-bg)'
+                                : 'var(--overlay-explorer-chip-bg)'),
+                          whiteSpace: 'nowrap',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {c.label}
+                      </button>
+                    </React.Fragment>
+                  ))
+                ) : (
+                  <span style={{ fontSize: 'var(--overlay-explorer-breadcrumb-font-size)', color: EXP.muted, whiteSpace: 'nowrap' }}>Search or enter a path</span>
+                )}
+              </div>
+              {isSearchActive && (
+                <>
+                  <div style={{ width: 1, height: 14, background: EXP.border, flexShrink: 0 }} />
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      maxWidth: isCompactDock ? 140 : 260,
+                      padding: '2px 8px',
+                      borderRadius: 'var(--overlay-explorer-control-radius)',
+                      border: '1px solid var(--overlay-explorer-chip-border)',
+                      background: 'var(--overlay-explorer-chip-active-bg)',
+                      color: EXP.text,
+                      fontSize: 10,
+                      flexShrink: 0,
+                      minWidth: 0,
+                    }}
+                  >
+                    {searchLoading && <Loader size={10} style={{ color: EXP.muted2, animation: 'spin 1s linear infinite', flexShrink: 0 }} />}
+                    <Search size={10} style={{ color: EXP.muted2, flexShrink: 0 }} />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                      {search.trim()}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation();
+                        clearSearch();
+                      }}
+                      title="Clear search"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: EXP.muted2, padding: 0, display: 'flex', flexShrink: 0 }}
+                    >
+                      <X size={10} />
+                    </button>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 'recentLocations',
+      label: 'Recent Locations',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => showToolbarLocationStrips && recentLocations.length > 0,
+      render: () => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, minWidth: 0, maxWidth: isCompactDock ? 220 : 320, overflow: 'hidden' }} title="Recent locations">
+          <span style={{ fontSize: 10, color: EXP.muted2, fontWeight: 700, flexShrink: 0 }}>Recent</span>
+          {recentLocations.map((path) => (
+            <button
+              key={path}
+              type="button"
+              onClick={() => navigate(path)}
+              style={{
+                border: '1px solid var(--overlay-explorer-chip-border)',
+                background: 'var(--overlay-explorer-chip-bg)',
+                color: EXP.muted,
+                borderRadius: 999,
+                padding: '3px 8px',
+                fontSize: 10,
+                cursor: 'pointer',
+                maxWidth: 96,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+            >
+              {getPathLeaf(path)}
+            </button>
+          ))}
+        </div>
+      ),
+    },
+    {
+      id: 'pinnedLocations',
+      label: 'Pinned Locations',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => showToolbarLocationStrips && pinnedLocations.length > 0,
+      render: () => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, minWidth: 0, maxWidth: isCompactDock ? 220 : 320, overflow: 'hidden' }} title="Pinned locations">
+          <span style={{ fontSize: 10, color: EXP.muted2, fontWeight: 700, flexShrink: 0 }}>Pinned</span>
+          {pinnedLocations.map((item) => (
+            <button
+              key={item.path}
+              type="button"
+              onClick={() => navigate(item.path)}
+              style={{
+                border: '1px solid var(--overlay-explorer-chip-border)',
+                background: 'var(--overlay-explorer-chip-active-bg)',
+                color: EXP.text,
+                borderRadius: 999,
+                padding: '3px 8px',
+                fontSize: 10,
+                cursor: 'pointer',
+                maxWidth: 96,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ),
+    },
+    {
+      id: 'folderSizeSummary',
+      label: 'Folder Size Summary',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => showToolbarLocationStrips && Boolean(currentFolderSizeSummary),
+      render: () => currentFolderSizeSummary ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, minWidth: 0, maxWidth: isCompactDock ? 210 : 280, overflow: 'hidden' }} title="Visible folder size summary">
+          <span style={{ fontSize: 10, color: EXP.muted2, fontWeight: 700, flexShrink: 0 }}>Size</span>
+          <span style={{ fontSize: 10, color: EXP.text, fontWeight: 700, whiteSpace: 'nowrap' }}>
+            {formatSize(currentFolderSizeSummary.totalBytes)}
+          </span>
+          <span style={{ fontSize: 10, color: EXP.muted2, whiteSpace: 'nowrap' }}>
+            {currentFolderSizeSummary.fileCount} files · {currentFolderSizeSummary.folderCount} folders
+          </span>
+        </div>
+      ) : null,
+    },
+    {
+      id: 'selectionSizeSummary',
+      label: 'Selection Size Summary',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => showToolbarLocationStrips && Boolean(selectedSizeSummary) && selected.size > 0,
+      render: () => selectedSizeSummary && selected.size > 0 ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, minWidth: 0, maxWidth: isCompactDock ? 180 : 240, overflow: 'hidden' }} title="Selected item size summary">
+          <span style={{ fontSize: 10, color: EXP.muted2, fontWeight: 700, flexShrink: 0 }}>Selected</span>
+          <span style={{ fontSize: 10, color: EXP.text, fontWeight: 700, whiteSpace: 'nowrap' }}>
+            {formatSize(selectedSizeSummary.totalBytes)}
+          </span>
+          <span style={{ fontSize: 10, color: EXP.muted2, whiteSpace: 'nowrap' }}>
+            {selectedSizeSummary.count} measured
+          </span>
+        </div>
+      ) : null,
+    },
+    {
+      id: 'pinLocation',
+      label: 'Pin Location',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => Boolean(currentPath) && !currentPathIsCloud,
+      render: () => (
+        <button
+          type="button"
+          onClick={() => handleBookmarkCreated(getPathLeaf(currentPath), currentPath)}
+          title="Pin this location to bookmarks"
+          style={toolbarChipButtonStyle(false)}
+        >
+          <Star size={11} />
+          <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Pin</span>
+        </button>
+      ),
+    },
+    {
+      id: 'toggleSearchContent',
+      label: 'Toggle Search Content',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => true,
+      render: () => (
+        <button
+          type="button"
+          onClick={() => {
+            if (!currentPathIsCloud) {
+              setSearchIncludeContent(v => !v);
+            }
+          }}
+          title={currentPathIsCloud ? 'Cloud search is not available yet' : (searchIncludeContent ? 'Include file text in search (on)' : 'Include file text in search (off)')}
+          style={{
+            ...toolbarToggleButtonStyle(searchIncludeContent, currentPathIsCloud),
+            gap: 4,
+            fontSize: 'var(--overlay-explorer-toolbar-font-size)',
+          }}
+          onMouseEnter={e => {
+            if (!currentPathIsCloud) {
+              e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)';
+            }
+          }}
+          onMouseLeave={e => {
+            if (!currentPathIsCloud) {
+              e.currentTarget.style.background = searchIncludeContent ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)';
+            }
+          }}
+        >
+          <span style={{ fontWeight: 700, letterSpacing: '0.02em' }}>Aa</span>
+          <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Text</span>
+        </button>
+      ),
+    },
+    {
+      id: 'saveSearch',
+      label: 'Save Search',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => !currentPathIsCloud,
+      render: () => (
+        <button
+          type="button"
+          onClick={() => setSaveSearchState({ visible: true, name: search.trim() || getPathLeaf(currentPath) })}
+          disabled={!search.trim()}
+          title="Save current search"
+          style={toolbarChipButtonStyle(!search.trim())}
+        >
+          <Save size={11} />
+          <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Save Search</span>
+        </button>
+      ),
+    },
+    {
+      id: 'batchRename',
+      label: 'Batch Rename',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => !currentPathIsCloud,
+      render: () => (
+        <button
+          type="button"
+          onClick={() => setBatchRename((current) => ({ ...current, visible: true }))}
+          disabled={batchRenameTargetCount === 0}
+          title="Batch rename visible or selected files"
+          style={toolbarChipButtonStyle(batchRenameTargetCount === 0)}
+        >
+          <Edit3 size={11} />
+          <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Batch Rename</span>
+        </button>
+      ),
+    },
+    {
+      id: 'tagSelection',
+      label: 'Tag Selection',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => !currentPathIsCloud,
+      render: () => (
+        <button
+          type="button"
+          onClick={() => {
+            const input = window.prompt('Add tags to the current selection (comma-separated):', '');
+            if (input) {
+              void applyTagsToPaths(selectedEntries.map((entry) => entry.path), input, 'add');
+            }
+          }}
+          disabled={selectedEntries.length === 0}
+          title="Apply tags to the current selection"
+          style={toolbarChipButtonStyle(selectedEntries.length === 0)}
+        >
+          <Tags size={11} />
+          <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Tag</span>
+        </button>
+      ),
+    },
+    {
+      id: 'duplicateScan',
+      label: 'Find Duplicates',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => !currentPathIsCloud,
+      render: () => (
+        <button
+          type="button"
+          onClick={() => void startDuplicateFinder()}
+          disabled={!currentPath}
+          title="Scan the current folder tree for duplicates"
+          style={toolbarChipButtonStyle(!currentPath)}
+        >
+          <Sparkles size={11} />
+          <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Duplicates</span>
+        </button>
+      ),
+    },
+    {
+      id: 'undoTrash',
+      label: 'Undo Trash',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => !currentPathIsCloud,
+      render: () => (
+        <button
+          type="button"
+          onClick={() => void undoTrash()}
+          title="Undo the most recent trash action"
+          style={toolbarChipButtonStyle(false)}
+        >
+          <Undo2 size={11} />
+          <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Undo Trash</span>
+        </button>
+      ),
+    },
+    {
+      id: 'toggleSources',
+      label: 'Toggle Sources',
+      surfaces: ['explorerToolbar', 'explorerTopbar'],
+      isVisible: surfaceId => isGlobalChromeSurfaceActive(surfaceId),
+      render: () => (
+        <button
+          type="button"
+          aria-pressed={sourcesVisible}
+          onClick={() => setSourcesVisible(current => !current)}
+          title={sourcesVisible ? 'Hide explorer sources' : 'Show explorer sources'}
+          style={toolbarToggleButtonStyle(sourcesVisible)}
+          onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
+          onMouseLeave={e => (e.currentTarget.style.background = sourcesVisible ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
+        >
+          Sources
+        </button>
+      ),
+    },
+    {
+      id: 'focusAddressBar',
+      label: 'Focus Address Bar',
+      surfaces: ['explorerToolbar', 'explorerTopbar'],
+      isVisible: surfaceId => isGlobalChromeSurfaceActive(surfaceId),
+      render: () => {
+        const active = addressEditing || isSearchActive;
+        return (
+          <button
+            type="button"
+            aria-pressed={active}
+            onClick={focusExplorerAddressBar}
+            title="Focus explorer search or path bar"
+            style={toolbarToggleButtonStyle(active)}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
+            onMouseLeave={e => (e.currentTarget.style.background = active ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
+          >
+            <Search size={12} />
+            Search
+          </button>
+        );
+      },
+    },
+    {
+      id: 'experimentalModes',
+      label: 'Experimental Modes',
+      surfaces: ['explorerToolbar', 'explorerTopbar'],
+      isVisible: surfaceId => isGlobalChromeSurfaceActive(surfaceId),
+      render: () => (
+        <div
+          ref={experimentalMenuAnchorRef}
+          style={{ position: 'relative' }}
+          onClick={event => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            aria-label={`Experimental view modes: ${selectedExperimentalModeDefinition?.label ?? 'Off'}`}
+            aria-haspopup="menu"
+            aria-expanded={showExperimentalMenu}
+            onClick={() => {
+              setShowShellLayoutMenu(false);
+              setShowLayoutMenu(false);
+              setShowExperimentalMenu(current => !current);
+            }}
+            title={selectedExperimentalModeDefinition?.label ?? 'Experimental view modes'}
+            style={{
+              ...toolbarToggleButtonStyle(showExperimentalMenu),
+              color: showExperimentalMenu ? EXP.text : EXP.muted,
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
+            onMouseLeave={e => (e.currentTarget.style.background = showExperimentalMenu ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
+          >
+            <ExplorerExperimentalGlyph
+              accent={accent}
+              active={showExperimentalMenu || themedExperimentalViewMode !== 'off'}
+              mode={selectedExperimentalModeDefinition?.id ?? 'all'}
+            />
+            <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                {selectedExperimentalModeDefinition?.shortLabel ?? 'Labs'}
+              </span>
+              {experimentalDensityPercent != null && (
+                <span style={{ fontSize: 9, fontWeight: 700, color: showExperimentalMenu ? EXP.text : EXP.muted2 }}>
+                  {experimentalDensityPercent}%
+                </span>
+              )}
+            </span>
+          </button>
+          {experimentalHudVisible && selectedExperimentalModeDefinition && experimentalDensityPercent != null && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 8px)',
+                right: 0,
+                zIndex: 45,
+                minWidth: 168,
+                padding: '8px 10px',
+                borderRadius: 10,
+                border: `1px solid ${accent}55`,
+                background: 'rgba(15,18,24,0.94)',
+                boxShadow: '0 12px 30px rgba(0,0,0,0.32)',
+                backdropFilter: explorerBlurEnabled ? 'blur(10px)' : 'none',
+                WebkitBackdropFilter: explorerBlurEnabled ? 'blur(10px)' : 'none',
+                pointerEvents: 'none',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: EXP.text }}>
+                  {experimentalDensityDescriptor?.shortLabel ?? selectedExperimentalModeDefinition.shortLabel}
+                </span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: accent }}>
+                  {experimentalDensityPercent}%
+                </span>
+              </div>
+              <div style={{ marginTop: 8, height: 5, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                <div
+                  style={{
+                    width: `${experimentalDensityPercent}%`,
+                    height: '100%',
+                    borderRadius: 999,
+                    background: `linear-gradient(90deg, ${accent}99, ${accent})`,
+                    transition: 'width 0.14s ease',
+                  }}
+                />
+              </div>
+            </div>
+          )}
+          {showExperimentalMenu && (
+            <div
+              role="menu"
+              aria-label="Explorer experimental modes menu"
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 8px)',
+                right: 0,
+                zIndex: 40,
+                minWidth: 280,
+                borderRadius: 'var(--overlay-explorer-panel-radius)',
+                border: '1px solid var(--overlay-explorer-toolbar-border)',
+                background: 'var(--overlay-explorer-toolbar-bg)',
+                boxShadow: '0 18px 42px rgba(0,0,0,0.42)',
+                padding: 8,
+              }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={themedExperimentalViewMode === 'off'}
+                  onClick={() => {
+                    updateExplorerSettings({ experimentalViewMode: 'off' });
+                    setShowExperimentalMenu(false);
+                  }}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '18px minmax(0, 1fr)',
+                    gap: 10,
+                    alignItems: 'start',
+                    width: '100%',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '8px 10px',
+                    background: themedExperimentalViewMode === 'off' ? 'var(--overlay-explorer-chip-active-bg)' : 'transparent',
+                    color: EXP.text,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  <span style={{ display: 'flex', justifyContent: 'center', paddingTop: 1 }}>
+                    <Puzzle size={14} style={{ color: themedExperimentalViewMode === 'off' ? accent : EXP.muted }} />
+                  </span>
+                  <span>
+                    <span style={{ display: 'block', fontSize: 12, fontWeight: 600 }}>Standard Explorer</span>
+                    <span style={{ display: 'block', marginTop: 2, fontSize: 10, color: EXP.muted2, lineHeight: 1.35 }}>
+                      Keep using the normal explorer layout chain.
+                    </span>
+                  </span>
+                </button>
+                {explorerExperimentalModes.map(mode => {
+                  const active = themedExperimentalViewMode === mode.id;
+                  const disabled = !mode.available;
+                  return (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={active}
+                      disabled={disabled}
+                      onClick={() => {
+                        if (disabled) {
+                          return;
+                        }
+                        updateExplorerSettings({ experimentalViewMode: mode.id });
+                        showExperimentalHud();
+                        setShowExperimentalMenu(false);
+                      }}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '18px minmax(0, 1fr)',
+                        gap: 10,
+                        alignItems: 'start',
+                        width: '100%',
+                        border: 'none',
+                        borderRadius: 8,
+                        padding: '8px 10px',
+                        background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'transparent',
+                        color: disabled ? EXP.muted2 : EXP.text,
+                        cursor: disabled ? 'not-allowed' : 'pointer',
+                        textAlign: 'left',
+                        opacity: disabled ? 0.7 : 1,
+                      }}
+                      onMouseEnter={e => {
+                        if (!active && !disabled) {
+                          e.currentTarget.style.background = 'var(--overlay-explorer-chip-bg)';
+                        }
+                      }}
+                      onMouseLeave={e => {
+                        if (!active && !disabled) {
+                          e.currentTarget.style.background = 'transparent';
+                        }
+                      }}
+                    >
+                      <span style={{ display: 'flex', justifyContent: 'center', paddingTop: 1 }}>
+                        <ExplorerExperimentalGlyph accent={accent} active={active} mode={mode.id} />
+                      </span>
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: 12, fontWeight: 600 }}>
+                          {mode.label}
+                          {!mode.available && <span style={{ marginLeft: 6, fontSize: 10, color: EXP.muted2 }}>Coming soon</span>}
+                        </span>
+                        <span style={{ display: 'block', marginTop: 2, fontSize: 10, color: EXP.muted2, lineHeight: 1.35 }}>
+                          {mode.description}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--overlay-explorer-toolbar-border)', fontSize: 10, color: EXP.muted2 }}>
+                Experimental layouts keep Ctrl/Cmd + wheel inside a mode-specific detail scale.
+              </div>
+              {themedExperimentalViewMode !== 'off' && effectiveExperimentalViewMode === 'off' && (
+                <div style={{ marginTop: 6, fontSize: 10, color: EXP.muted2 }}>
+                  Temporarily falling back to the normal explorer while search is active or the dock is compact.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 'shellLayout',
+      label: 'Shell Layout',
+      surfaces: ['explorerToolbar', 'explorerTopbar'],
+      isVisible: surfaceId => isGlobalChromeSurfaceActive(surfaceId),
+      render: () => (
+        <div
+          ref={shellLayoutMenuAnchorRef}
+          style={{ position: 'relative' }}
+          onClick={event => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            aria-label={`Explorer shell layout: ${shellLayout.label}`}
+            aria-haspopup="menu"
+            aria-expanded={showShellLayoutMenu}
+            onClick={() => {
+              setShowExperimentalMenu(false);
+              setShowLayoutMenu(false);
+              setShowShellLayoutMenu(current => !current);
+            }}
+            title={`Explorer shell layout: ${shellLayout.label}`}
+            style={{
+              ...toolbarToggleButtonStyle(showShellLayoutMenu),
+              color: showShellLayoutMenu ? EXP.text : EXP.muted,
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
+            onMouseLeave={e => (e.currentTarget.style.background = showShellLayoutMenu ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
+          >
+            <ExplorerShellLayoutGlyph layout={shellLayout} accent={accent} active={showShellLayoutMenu} />
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+              {shellLayout.shortLabel}
+            </span>
+          </button>
+          {showShellLayoutMenu && (
+            <div
+              role="menu"
+              aria-label="Explorer shell layouts menu"
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 8px)',
+                right: 0,
+                zIndex: 40,
+                minWidth: 280,
+                borderRadius: 'var(--overlay-explorer-panel-radius)',
+                border: '1px solid var(--overlay-explorer-toolbar-border)',
+                background: 'var(--overlay-explorer-toolbar-bg)',
+                boxShadow: '0 18px 42px rgba(0,0,0,0.42)',
+                padding: 8,
+              }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {explorerShellLayouts.map(layout => {
+                  const active = shellLayout.id === layout.id;
+                  return (
+                    <button
+                      key={layout.id}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={active}
+                      onClick={() => applyShellLayoutPreset(layout.id)}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '18px minmax(0, 1fr)',
+                        gap: 10,
+                        alignItems: 'start',
+                        width: '100%',
+                        border: 'none',
+                        borderRadius: 8,
+                        padding: '8px 10px',
+                        background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'transparent',
+                        color: EXP.text,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                      onMouseEnter={e => {
+                        if (!active) {
+                          e.currentTarget.style.background = 'var(--overlay-explorer-chip-bg)';
+                        }
+                      }}
+                      onMouseLeave={e => {
+                        if (!active) {
+                          e.currentTarget.style.background = 'transparent';
+                        }
+                      }}
+                    >
+                      <span style={{ display: 'flex', justifyContent: 'center', paddingTop: 1 }}>
+                        <ExplorerShellLayoutGlyph layout={layout} accent={accent} active={active} />
+                      </span>
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: 12, fontWeight: 600 }}>
+                          {layout.label}
+                        </span>
+                        <span style={{ display: 'block', marginTop: 2, fontSize: 10, color: EXP.muted2, lineHeight: 1.35 }}>
+                          {layout.description}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--overlay-explorer-toolbar-border)', fontSize: 10, color: EXP.muted2 }}>
+                Shell layouts rebalance the rail and preview panes without changing your file card density.
+              </div>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 'viewLayout',
+      label: 'View Layout',
+      surfaces: ['explorerToolbar', 'explorerTopbar'],
+      isVisible: surfaceId => isGlobalChromeSurfaceActive(surfaceId),
+      render: () => (
+        <div
+          ref={layoutMenuAnchorRef}
+          style={{ position: 'relative' }}
+          onClick={event => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            aria-label={`Explorer layout: ${selectedViewModeDefinition.label}`}
+            aria-haspopup="menu"
+            aria-expanded={showLayoutMenu}
+            onClick={() => {
+              setShowShellLayoutMenu(false);
+              setShowExperimentalMenu(false);
+              setShowLayoutMenu(current => !current);
+            }}
+            title={`Explorer layout: ${selectedViewModeDefinition.label}`}
+            style={{
+              ...toolbarToggleButtonStyle(showLayoutMenu),
+              color: showLayoutMenu ? EXP.text : EXP.muted,
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
+            onMouseLeave={e => (e.currentTarget.style.background = showLayoutMenu ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
+          >
+            <ExplorerLayoutGlyph mode={selectedViewModeDefinition} accent={accent} active={showLayoutMenu} />
+            <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                {selectedViewModeDefinition.shortLabel}
+              </span>
+              {gridZoomPercent != null && (
+                <span style={{ fontSize: 9, fontWeight: 700, color: showLayoutMenu ? EXP.text : EXP.muted2 }}>
+                  {gridZoomPercent}%
+                </span>
+              )}
+            </span>
+          </button>
+          {zoomHudVisible && gridZoomPercent != null && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 8px)',
+                right: 0,
+                zIndex: 45,
+                minWidth: 148,
+                padding: '8px 10px',
+                borderRadius: 10,
+                border: `1px solid ${accent}55`,
+                background: 'rgba(15,18,24,0.94)',
+                boxShadow: '0 12px 30px rgba(0,0,0,0.32)',
+                backdropFilter: explorerBlurEnabled ? 'blur(10px)' : 'none',
+                WebkitBackdropFilter: explorerBlurEnabled ? 'blur(10px)' : 'none',
+                pointerEvents: 'none',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: EXP.text }}>
+                  {selectedViewModeDefinition.shortLabel}
+                </span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: accent }}>
+                  {gridZoomPercent}%
+                </span>
+              </div>
+              <div style={{ marginTop: 8, height: 5, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                <div
+                  style={{
+                    width: `${gridZoomPercent}%`,
+                    height: '100%',
+                    borderRadius: 999,
+                    background: `linear-gradient(90deg, ${accent}99, ${accent})`,
+                    transition: 'width 0.14s ease',
+                  }}
+                />
+              </div>
+            </div>
+          )}
+          {showLayoutMenu && (
+            <div
+              role="menu"
+              aria-label="Explorer layout menu"
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 8px)',
+                right: 0,
+                zIndex: 40,
+                minWidth: 240,
+                borderRadius: 'var(--overlay-explorer-panel-radius)',
+                border: '1px solid var(--overlay-explorer-toolbar-border)',
+                background: 'var(--overlay-explorer-toolbar-bg)',
+                boxShadow: '0 18px 42px rgba(0,0,0,0.42)',
+                padding: 8,
+              }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {explorerViewModes.map(mode => {
+                  const active = themedViewMode === mode.id;
+                  return (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={active}
+                      onClick={() => {
+                        updateExplorerSettings(
+                          isExplorerGridMode(mode.id)
+                            ? { viewMode: mode.id, gridZoom: getExplorerGridZoomAnchor(mode.id) }
+                            : { viewMode: mode.id },
+                        );
+                        showZoomHud();
+                        setShowLayoutMenu(false);
+                      }}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '18px minmax(0, 1fr)',
+                        gap: 10,
+                        alignItems: 'start',
+                        width: '100%',
+                        border: 'none',
+                        borderRadius: 8,
+                        padding: '8px 10px',
+                        background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'transparent',
+                        color: active ? EXP.text : EXP.muted,
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                      onMouseEnter={e => {
+                        if (!active) {
+                          e.currentTarget.style.background = 'var(--overlay-explorer-chip-bg)';
+                        }
+                      }}
+                      onMouseLeave={e => {
+                        if (!active) {
+                          e.currentTarget.style.background = 'transparent';
+                        }
+                      }}
+                    >
+                      <span style={{ display: 'flex', justifyContent: 'center', paddingTop: 1 }}>
+                        <ExplorerLayoutGlyph mode={mode} accent={accent} active={active} />
+                      </span>
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: active ? EXP.text : EXP.text }}>
+                          {mode.label}
+                        </span>
+                        <span style={{ display: 'block', marginTop: 2, fontSize: 10, color: EXP.muted2, lineHeight: 1.35 }}>
+                          {mode.description}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--overlay-explorer-toolbar-border)', fontSize: 10, color: EXP.muted2 }}>
+                Ctrl/Cmd + wheel moves through Small, M, L, XL, then row layouts with live zoom feedback.
+              </div>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 'togglePreview',
+      label: 'Toggle Preview',
+      surfaces: ['explorerToolbar', 'explorerTopbar'],
+      isVisible: surfaceId => isGlobalChromeSurfaceActive(surfaceId),
+      render: () => (
+        <button
+          type="button"
+          aria-pressed={previewEnabled}
+          onClick={togglePreviewEnabled}
+          title={previewEnabled
+            ? 'Turn off inline preview for previewable files'
+            : 'Turn on inline preview for previewable files'}
+          style={toolbarToggleButtonStyle(previewEnabled)}
+          onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
+          onMouseLeave={e => (e.currentTarget.style.background = previewEnabled ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
+        >
+          <Eye size={12} />
+          Preview
+        </button>
+      ),
+    },
+    {
+      id: 'toggleHiddenFiles',
+      label: 'Toggle Hidden Files',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => true,
+      render: () => (
+        <button
+          type="button"
+          onClick={() => updateExplorerSettings({ showHiddenFiles: !showHidden })}
+          title="Toggle hidden files"
+          style={{
+            ...toolbarIconButtonStyle(),
+            background: showHidden ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
+            color: showHidden ? 'var(--overlay-explorer-chip-active-text)' : EXP.muted,
+          }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
+          onMouseLeave={e => (e.currentTarget.style.background = showHidden ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
+        >
+          <Eye size={14} />
+        </button>
+      ),
+    },
+    {
+      id: 'refresh',
+      label: 'Refresh',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => true,
+      render: () => (
+        <button
+          type="button"
+          onClick={refresh}
+          title="Refresh (F5)"
+          style={toolbarIconButtonStyle()}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)';
+            e.currentTarget.style.color = EXP.text;
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'var(--overlay-explorer-chip-bg)';
+            e.currentTarget.style.color = EXP.muted;
+          }}
+        >
+          <RefreshCw size={14} />
+        </button>
+      ),
+    },
+    {
+      id: 'newFolder',
+      label: 'New Folder',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => true,
+      render: () => (
+        <button
+          type="button"
+          onClick={() => openNew('folder')}
+          title="New Folder"
+          style={toolbarActionButtonStyle()}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)';
+            e.currentTarget.style.color = EXP.text;
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'var(--overlay-explorer-chip-bg)';
+            e.currentTarget.style.color = EXP.muted;
+          }}
+        >
+          <FolderPlus size={13} />
+          Folder
+        </button>
+      ),
+    },
+    {
+      id: 'newFile',
+      label: 'New File',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => true,
+      render: () => (
+        <button
+          type="button"
+          onClick={() => openNew('file')}
+          title="New File"
+          style={toolbarActionButtonStyle()}
+          onMouseEnter={e => {
+            e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)';
+            e.currentTarget.style.color = EXP.text;
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.background = 'var(--overlay-explorer-chip-bg)';
+            e.currentTarget.style.color = EXP.muted;
+          }}
+        >
+          <FilePlus size={13} />
+          File
+        </button>
+      ),
+    },
+    {
+      id: 'pasteClipboard',
+      label: 'Paste Clipboard',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => Boolean(clipboard),
+      render: () => clipboard ? (
+        <button
+          type="button"
+          onClick={paste}
+          title={`Paste ${clipboard.entries.length} item${clipboard.entries.length === 1 ? '' : 's'} (Ctrl+V)`}
+          style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--overlay-explorer-chip-active-bg)', border: '1px solid var(--overlay-explorer-chip-active-border)', borderRadius: 'var(--overlay-explorer-control-radius)', cursor: 'pointer', color: 'var(--overlay-explorer-chip-active-text)', padding: '3px 8px', fontSize: 'var(--overlay-explorer-toolbar-font-size)' }}
+        >
+          <Clipboard size={12} />
+          Paste {clipboard.entries.length > 1 ? clipboard.entries.length : ''}
+        </button>
+      ) : null,
+    },
+  ], [
+    accent,
+    addressDraft,
+    addressEditing,
+    applyShellLayoutPreset,
+    applyTagsToPaths,
+    batchRenameTargetCount,
+    beginAddressEdit,
+    clearSearch,
+    clipboard,
+    crumbs,
+    currentFolderSizeSummary,
+    currentPath,
+    currentPathIsCloud,
+    effectiveExperimentalViewMode,
+    experimentalDensityDescriptor,
+    experimentalDensityPercent,
+    explorerTheme.breadcrumbStyle,
+    focusExplorerAddressBar,
+    goBack,
+    goForward,
+    goUp,
+    gridZoomPercent,
+    handleBookmarkCreated,
+    history.length,
+    historyIdx,
+    isCompactDock,
+    isGlobalChromeSurfaceActive,
+    isSearchActive,
+    navigate,
+    openNew,
+    paste,
+    pinnedLocations,
+    previewEnabled,
+    recentLocations,
+    refresh,
+    search,
+    searchIncludeContent,
+    searchLoading,
+    selected.size,
+    selectedEntries,
+    selectedExperimentalModeDefinition,
+    selectedSizeSummary,
+    selectedViewModeDefinition,
+    setAddressDraft,
+    setAddressEditing,
+    setBatchRename,
+    setSaveSearchState,
+    setSearchIncludeContent,
+    setShowExperimentalMenu,
+    setShowLayoutMenu,
+    setShowShellLayoutMenu,
+    setSourcesVisible,
+    shellLayout,
+    showExperimentalHud,
+    showExperimentalMenu,
+    showLayoutMenu,
+    showShellLayoutMenu,
+    showToolbarLocationStrips,
+    showZoomHud,
+    sourcesVisible,
+    startDuplicateFinder,
+    submitAddressDraft,
+    themedExperimentalViewMode,
+    themedViewMode,
+    togglePreviewEnabled,
+    undoTrash,
+    updateExplorerSettings,
+    visibleEntries,
+    zoomHudVisible,
+    explorerBlurEnabled,
+  ]);
+  const explorerChromeControlRegistryById = useMemo(
+    () => new Map(explorerChromeControlRegistry.map((entry) => [entry.id, entry])),
+    [explorerChromeControlRegistry],
+  );
+  const explorerTopbarSurface = useMemo(
+    () => resolveExplorerChromeSurfaceLayout({
+      layoutId: explorerTheme.chromeLayoutId,
+      surfaceId: 'explorerTopbar',
+      controlDefinitions: explorerChromeControlRegistry,
+      override: explorerChromeOverride,
+      isControlVisible: (controlId, surfaceId) => explorerChromeControlRegistryById.get(controlId)?.isVisible(surfaceId) ?? false,
+    }),
+    [
+      explorerChromeControlRegistry,
+      explorerChromeControlRegistryById,
+      explorerChromeOverride,
+      explorerTheme.chromeLayoutId,
+    ],
+  );
+  const explorerToolbarSurface = useMemo(
+    () => resolveExplorerChromeSurfaceLayout({
+      layoutId: explorerTheme.chromeLayoutId,
+      surfaceId: 'explorerToolbar',
+      controlDefinitions: explorerChromeControlRegistry,
+      override: explorerChromeOverride,
+      isControlVisible: (controlId, surfaceId) => explorerChromeControlRegistryById.get(controlId)?.isVisible(surfaceId) ?? false,
+    }),
+    [
+      explorerChromeControlRegistry,
+      explorerChromeControlRegistryById,
+      explorerChromeOverride,
+      explorerTheme.chromeLayoutId,
+    ],
+  );
+  const renderExplorerChromeControl = useCallback((placement: ExplorerChromeResolvedControlPlacement) => (
+    explorerChromeControlRegistryById.get(placement.controlId)?.render(placement) ?? null
+  ), [explorerChromeControlRegistryById]);
   const shouldRenderStatusBar = explorerTheme.statusBarStyle !== 'hidden';
   const statusBarStyle = useMemo<CSSProperties>(() => ({
     display: 'flex',
@@ -6079,945 +7468,21 @@ export function FileExplorer({
 
         {/* Toolbar */}
         <div style={toolbarContainerStyle}>
-          {[
-            { icon:<ChevronLeft size={14}/>,  action:goBack,    disabled:historyIdx<=0,                  title:'Back' },
-            { icon:<ChevronRight size={14}/>, action:goForward, disabled:historyIdx>=history.length-1,   title:'Forward' },
-            { icon:<ArrowUp size={14}/>,      action:goUp,      disabled:false,                          title:'Up' },
-          ].map((btn, i) => (
-            <button key={i} onClick={btn.action} disabled={btn.disabled} title={btn.title}
-              style={{ background:'var(--overlay-explorer-chip-bg)', border:'1px solid transparent', cursor:btn.disabled?'default':'pointer', color:btn.disabled?EXP.muted2:EXP.muted, padding:5, borderRadius:'var(--overlay-explorer-control-radius)', display:'flex', alignItems:'center' }}
-              onMouseEnter={e => !btn.disabled && (e.currentTarget.style.background='var(--overlay-explorer-chip-active-bg)', e.currentTarget.style.color=EXP.text)}
-              onMouseLeave={e => (e.currentTarget.style.background='transparent', e.currentTarget.style.color=btn.disabled?EXP.muted2:EXP.muted)}
-            >{btn.icon}</button>
-          ))}
-
-          {/* Omnibox */}
-          <div
-            onClick={() => {
-              if (!addressEditing) {
-                beginAddressEdit();
-              }
-            }}
-            style={{
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              background: 'var(--overlay-explorer-omnibox-bg)',
-              borderRadius: 'var(--overlay-explorer-control-radius)',
-              border: '1px solid var(--overlay-explorer-omnibox-border)',
-              padding: '3px 10px',
-              overflow: 'hidden',
-              cursor: addressEditing ? 'text' : 'pointer',
-              minWidth: 0,
-            }}
-          >
-            {addressEditing ? (
-              <input
-                ref={addressInputRef}
-                value={addressDraft}
-                onChange={e => setAddressDraft(e.target.value)}
-                onBlur={() => { void submitAddressDraft(addressDraft); }}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    void submitAddressDraft(addressDraft);
-                  }
-                  if (e.key === 'Escape') {
-                    e.preventDefault();
-                    setAddressEditing(false);
-                    setAddressDraft(search.trim() ? search : currentPath);
-                  }
-                }}
-                placeholder="Search or enter path…"
-                style={{
-                  flex: 1,
-                  background: 'none',
-                  border: 'none',
-                  outline: 'none',
-                  color: EXP.text,
-                  fontSize: 'var(--overlay-explorer-breadcrumb-font-size)',
-                  minWidth: 0,
-                }}
-              />
-            ) : (
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flex: 1, overflow: 'hidden' }}>
-                  {crumbs.length > 0 ? (
-                    crumbs.map((c, i) => (
-                      <React.Fragment key={c.path}>
-                        {i > 0 && <ChevronRight size={10} style={{ color: EXP.muted2, flexShrink: 0 }} />}
-                        <button
-                          onClick={e => {
-                            e.stopPropagation();
-                            navigate(c.path);
-                          }}
-                          style={{
-                            border: 'none',
-                            cursor: 'pointer',
-                            color: i === crumbs.length - 1 ? EXP.text : EXP.muted,
-                            fontSize: 'var(--overlay-explorer-breadcrumb-font-size)',
-                            fontWeight: i === crumbs.length - 1 ? 600 : 400,
-                            padding: explorerTheme.breadcrumbStyle === 'plain' ? '0 2px' : '3px 8px',
-                            borderRadius: explorerTheme.breadcrumbStyle === 'plain'
-                              ? 4
-                              : 'var(--overlay-explorer-control-radius)',
-                            background: explorerTheme.breadcrumbStyle === 'plain'
-                              ? 'transparent'
-                              : (i === crumbs.length - 1
-                                  ? 'var(--overlay-explorer-chip-active-bg)'
-                                  : 'var(--overlay-explorer-chip-bg)'),
-                            whiteSpace: 'nowrap',
-                            flexShrink: 0,
-                          }}
-                        >
-                          {c.label}
-                        </button>
-                      </React.Fragment>
-                    ))
-                  ) : (
-                    <span style={{ fontSize: 'var(--overlay-explorer-breadcrumb-font-size)', color: EXP.muted, whiteSpace: 'nowrap' }}>Search or enter a path</span>
-                  )}
-                </div>
-                {isSearchActive && (
-                  <>
-                    <div style={{ width: 1, height: 14, background: EXP.border, flexShrink: 0 }} />
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        maxWidth: isCompactDock ? 140 : 260,
-                        padding: '2px 8px',
-                        borderRadius: 'var(--overlay-explorer-control-radius)',
-                        border: '1px solid var(--overlay-explorer-chip-border)',
-                        background: 'var(--overlay-explorer-chip-active-bg)',
-                        color: EXP.text,
-                        fontSize: 10,
-                        flexShrink: 0,
-                        minWidth: 0,
-                      }}
-                    >
-                      {searchLoading && <Loader size={10} style={{ color: EXP.muted2, animation: 'spin 1s linear infinite', flexShrink: 0 }} />}
-                      <Search size={10} style={{ color: EXP.muted2, flexShrink: 0 }} />
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
-                        {search.trim()}
-                      </span>
-                      <button
-                        onClick={e => {
-                          e.stopPropagation();
-                          clearSearch();
-                        }}
-                        title="Clear search"
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: EXP.muted2, padding: 0, display: 'flex', flexShrink: 0 }}
-                      >
-                        <X size={10} />
-                      </button>
-                    </div>
-                  </>
-                )}
-              </>
-            )}
-          </div>
-
-          {recentLocations.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, minWidth: 0, maxWidth: isCompactDock ? 220 : 320, overflow: 'hidden' }} title="Recent locations">
-              <span style={{ fontSize: 10, color: EXP.muted2, fontWeight: 700, flexShrink: 0 }}>Recent</span>
-              {recentLocations.map((path) => (
-                <button
-                  key={path}
-                  type="button"
-                  onClick={() => navigate(path)}
-                  style={{
-                    border: '1px solid var(--overlay-explorer-chip-border)',
-                    background: 'var(--overlay-explorer-chip-bg)',
-                    color: EXP.muted,
-                    borderRadius: 999,
-                    padding: '3px 8px',
-                    fontSize: 10,
-                    cursor: 'pointer',
-                    maxWidth: 96,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    flexShrink: 0,
-                  }}
-                >
-                  {getPathLeaf(path)}
-                </button>
-              ))}
-            </div>
+          {showsGlobalChromeControls && (
+            <ExplorerChromeSurface
+              surface={explorerTopbarSurface}
+              getRowStyle={getExplorerChromeRowStyle}
+              getZoneStyle={getExplorerChromeZoneStyle}
+              renderControl={renderExplorerChromeControl}
+            />
           )}
-          {pinnedLocations.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, minWidth: 0, maxWidth: isCompactDock ? 220 : 320, overflow: 'hidden' }} title="Pinned locations">
-              <span style={{ fontSize: 10, color: EXP.muted2, fontWeight: 700, flexShrink: 0 }}>Pinned</span>
-              {pinnedLocations.map((item) => (
-                <button
-                  key={item.path}
-                  type="button"
-                  onClick={() => navigate(item.path)}
-                  style={{
-                    border: '1px solid var(--overlay-explorer-chip-border)',
-                    background: 'var(--overlay-explorer-chip-active-bg)',
-                    color: EXP.text,
-                    borderRadius: 999,
-                    padding: '3px 8px',
-                    fontSize: 10,
-                    cursor: 'pointer',
-                    maxWidth: 96,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    flexShrink: 0,
-                  }}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          )}
-          {currentFolderSizeSummary && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, minWidth: 0, maxWidth: isCompactDock ? 210 : 280, overflow: 'hidden' }} title="Visible folder size summary">
-              <span style={{ fontSize: 10, color: EXP.muted2, fontWeight: 700, flexShrink: 0 }}>Size</span>
-              <span style={{ fontSize: 10, color: EXP.text, fontWeight: 700, whiteSpace: 'nowrap' }}>
-                {formatSize(currentFolderSizeSummary.totalBytes)}
-              </span>
-              <span style={{ fontSize: 10, color: EXP.muted2, whiteSpace: 'nowrap' }}>
-                {currentFolderSizeSummary.fileCount} files · {currentFolderSizeSummary.folderCount} folders
-              </span>
-            </div>
-          )}
-          {selectedSizeSummary && selected.size > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, minWidth: 0, maxWidth: isCompactDock ? 180 : 240, overflow: 'hidden' }} title="Selected item size summary">
-              <span style={{ fontSize: 10, color: EXP.muted2, fontWeight: 700, flexShrink: 0 }}>Selected</span>
-              <span style={{ fontSize: 10, color: EXP.text, fontWeight: 700, whiteSpace: 'nowrap' }}>
-                {formatSize(selectedSizeSummary.totalBytes)}
-              </span>
-              <span style={{ fontSize: 10, color: EXP.muted2, whiteSpace: 'nowrap' }}>
-                {selectedSizeSummary.count} measured
-              </span>
-            </div>
-          )}
-          {currentPath && !currentPathIsCloud && (
-            <button
-              type="button"
-              onClick={() => handleBookmarkCreated(getPathLeaf(currentPath), currentPath)}
-              title="Pin this location to bookmarks"
-              style={toolbarChipButtonStyle(false)}
-            >
-              <Star size={11} />
-              <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Pin</span>
-            </button>
-          )}
-          {currentPath && !currentPathIsCloud && (
-            <button
-              type="button"
-              onClick={() => onOpenInFilesystemAquarium(currentPath)}
-              title="Open this location as a live biome in Filesystem Aquarium"
-              style={toolbarChipButtonStyle(false)}
-            >
-              <Sparkles size={11} />
-              <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Aquarium</span>
-            </button>
-          )}
-
-          {/* Include text */}
-          <button
-            onClick={() => {
-              if (!currentPathIsCloud) {
-                setSearchIncludeContent(v => !v);
-              }
-            }}
-            title={currentPathIsCloud ? 'Cloud search is not available yet' : (searchIncludeContent ? 'Include file text in search (on)' : 'Include file text in search (off)')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              background: searchIncludeContent ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
-              border: `1px solid ${searchIncludeContent ? 'var(--overlay-explorer-chip-active-border)' : 'var(--overlay-explorer-chip-border)'}`,
-              cursor: currentPathIsCloud ? 'default' : 'pointer',
-              color: currentPathIsCloud ? EXP.muted2 : (searchIncludeContent ? 'var(--overlay-explorer-chip-active-text)' : EXP.muted),
-              padding: '4px 8px',
-              borderRadius: 'var(--overlay-explorer-control-radius)',
-              fontSize: 'var(--overlay-explorer-toolbar-font-size)',
-              flexShrink: 0,
-              opacity: currentPathIsCloud ? 0.6 : 1,
-            }}
-            onMouseEnter={e => {
-              if (!currentPathIsCloud) {
-                e.currentTarget.style.background = searchIncludeContent ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-active-bg)';
-              }
-            }}
-            onMouseLeave={e => {
-              if (!currentPathIsCloud) {
-                e.currentTarget.style.background = searchIncludeContent ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)';
-              }
-            }}
-          >
-            <span style={{ fontWeight: 700, letterSpacing: '0.02em' }}>Aa</span>
-            <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Text</span>
-          </button>
-
-          {!currentPathIsCloud && (
-            <>
-              <button
-                type="button"
-                onClick={() => setSaveSearchState({ visible: true, name: search.trim() || getPathLeaf(currentPath) })}
-                disabled={!search.trim()}
-                title="Save current search"
-                style={toolbarChipButtonStyle(!search.trim())}
-              >
-                <Save size={11} />
-                <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Save Search</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setBatchRename((current) => ({ ...current, visible: true }))}
-                disabled={(selectedEntries.length > 0 ? selectedEntries : visibleEntries).filter((entry) => !entry.is_dir).length === 0}
-                title="Batch rename visible or selected files"
-                style={toolbarChipButtonStyle((selectedEntries.length > 0 ? selectedEntries : visibleEntries).filter((entry) => !entry.is_dir).length === 0)}
-              >
-                <Edit3 size={11} />
-                <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Batch Rename</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const input = window.prompt('Add tags to the current selection (comma-separated):', '');
-                  if (input) {
-                    void applyTagsToPaths(selectedEntries.map((entry) => entry.path), input, 'add');
-                  }
-                }}
-                disabled={selectedEntries.length === 0}
-                title="Apply tags to the current selection"
-                style={toolbarChipButtonStyle(selectedEntries.length === 0)}
-              >
-                <Tags size={11} />
-                <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Tag</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => void startDuplicateFinder()}
-                disabled={!currentPath}
-                title="Scan the current folder tree for duplicates"
-                style={toolbarChipButtonStyle(!currentPath)}
-              >
-                <Sparkles size={11} />
-                <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Duplicates</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => void undoTrash()}
-                title="Undo the most recent trash action"
-                style={toolbarChipButtonStyle(false)}
-              >
-                <Undo2 size={11} />
-                <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Undo Trash</span>
-              </button>
-            </>
-          )}
-
-          {/* Toolbar buttons */}
-          {!isCompactDock && !showsGlobalChromeControls && (
-            <>
-              <button
-                type="button"
-                aria-pressed={sourcesVisible}
-                onClick={() => setSourcesVisible(current => !current)}
-                title={sourcesVisible ? 'Hide explorer sources' : 'Show explorer sources'}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  background: sourcesVisible ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
-                  border: `1px solid ${sourcesVisible ? 'var(--overlay-explorer-chip-active-border)' : 'var(--overlay-explorer-chip-border)'}`,
-                  cursor: 'pointer',
-                  color: sourcesVisible ? 'var(--overlay-explorer-chip-active-text)' : EXP.muted,
-                  padding: '4px 8px',
-                  borderRadius: 'var(--overlay-explorer-control-radius)',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
-                onMouseLeave={e => (e.currentTarget.style.background = sourcesVisible ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
-              >
-                Sources
-              </button>
-
-              <button
-                type="button"
-                aria-pressed={addressEditing || isSearchActive}
-                onClick={focusExplorerAddressBar}
-                title="Focus explorer search or path bar"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  background: addressEditing || isSearchActive ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
-                  border: `1px solid ${addressEditing || isSearchActive ? 'var(--overlay-explorer-chip-active-border)' : 'var(--overlay-explorer-chip-border)'}`,
-                  cursor: 'pointer',
-                  color: addressEditing || isSearchActive ? 'var(--overlay-explorer-chip-active-text)' : EXP.muted,
-                  padding: '4px 8px',
-                  borderRadius: 'var(--overlay-explorer-control-radius)',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
-                onMouseLeave={e => (e.currentTarget.style.background = addressEditing || isSearchActive ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
-              >
-                <Search size={12} />
-                Search
-              </button>
-
-              <div
-                ref={experimentalMenuAnchorRef}
-                style={{ position: 'relative' }}
-                onClick={event => event.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  aria-label={`Experimental view modes: ${selectedExperimentalModeDefinition?.label ?? 'Off'}`}
-                  aria-haspopup="menu"
-                  aria-expanded={showExperimentalMenu}
-                  onClick={() => {
-                    setShowShellLayoutMenu(false);
-                    setShowLayoutMenu(false);
-                    setShowExperimentalMenu(current => !current);
-                  }}
-                  title={selectedExperimentalModeDefinition?.label ?? 'Experimental view modes'}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    background: showExperimentalMenu ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
-                    border: `1px solid ${showExperimentalMenu ? 'var(--overlay-explorer-chip-active-border)' : 'var(--overlay-explorer-chip-border)'}`,
-                    cursor: 'pointer',
-                    color: showExperimentalMenu ? EXP.text : EXP.muted,
-                    padding: '4px 8px',
-                    borderRadius: 'var(--overlay-explorer-control-radius)',
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = showExperimentalMenu ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
-                >
-                  <ExplorerExperimentalGlyph
-                    accent={accent}
-                    active={showExperimentalMenu || themedExperimentalViewMode !== 'off'}
-                    mode={selectedExperimentalModeDefinition?.id ?? 'all'}
-                  />
-                  <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                      {selectedExperimentalModeDefinition?.shortLabel ?? 'Labs'}
-                    </span>
-                    {experimentalDensityPercent != null && (
-                      <span style={{ fontSize: 9, fontWeight: 700, color: showExperimentalMenu ? EXP.text : EXP.muted2 }}>
-                        {experimentalDensityPercent}%
-                      </span>
-                    )}
-                  </span>
-                </button>
-                {experimentalHudVisible && selectedExperimentalModeDefinition && experimentalDensityPercent != null && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: 'calc(100% + 8px)',
-                      right: 0,
-                      zIndex: 45,
-                      minWidth: 168,
-                      padding: '8px 10px',
-                      borderRadius: 10,
-                      border: `1px solid ${accent}55`,
-                      background: 'rgba(15,18,24,0.94)',
-                      boxShadow: '0 12px 30px rgba(0,0,0,0.32)',
-                      backdropFilter: explorerBlurEnabled ? 'blur(10px)' : 'none',
-                      WebkitBackdropFilter: explorerBlurEnabled ? 'blur(10px)' : 'none',
-                      pointerEvents: 'none',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: EXP.text }}>
-                        {experimentalDensityDescriptor?.shortLabel ?? selectedExperimentalModeDefinition.shortLabel}
-                      </span>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: accent }}>
-                        {experimentalDensityPercent}%
-                      </span>
-                    </div>
-                    <div style={{ marginTop: 8, height: 5, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                      <div
-                        style={{
-                          width: `${experimentalDensityPercent}%`,
-                          height: '100%',
-                          borderRadius: 999,
-                          background: `linear-gradient(90deg, ${accent}99, ${accent})`,
-                          transition: 'width 0.14s ease',
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
-                {showExperimentalMenu && (
-                  <div
-                    role="menu"
-                    aria-label="Explorer experimental modes menu"
-                    style={{
-                      position: 'absolute',
-                      top: 'calc(100% + 8px)',
-                      right: 0,
-                      zIndex: 40,
-                      minWidth: 280,
-                      borderRadius: 'var(--overlay-explorer-panel-radius)',
-                      border: '1px solid var(--overlay-explorer-toolbar-border)',
-                      background: 'var(--overlay-explorer-toolbar-bg)',
-                      boxShadow: '0 18px 42px rgba(0,0,0,0.42)',
-                      padding: 8,
-                    }}
-                  >
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <button
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={themedExperimentalViewMode === 'off'}
-                        onClick={() => {
-                          updateExplorerSettings({ experimentalViewMode: 'off' });
-                          setShowExperimentalMenu(false);
-                        }}
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: '18px minmax(0, 1fr)',
-                          gap: 10,
-                          alignItems: 'start',
-                          width: '100%',
-                          border: 'none',
-                          borderRadius: 8,
-                          padding: '8px 10px',
-                          background: themedExperimentalViewMode === 'off' ? 'var(--overlay-explorer-chip-active-bg)' : 'transparent',
-                          color: EXP.text,
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                        }}
-                      >
-                        <span style={{ display: 'flex', justifyContent: 'center', paddingTop: 1 }}>
-                          <Puzzle size={14} style={{ color: themedExperimentalViewMode === 'off' ? accent : EXP.muted }} />
-                        </span>
-                        <span>
-                          <span style={{ display: 'block', fontSize: 12, fontWeight: 600 }}>Standard Explorer</span>
-                          <span style={{ display: 'block', marginTop: 2, fontSize: 10, color: EXP.muted2, lineHeight: 1.35 }}>
-                            Keep using the normal explorer layout chain.
-                          </span>
-                        </span>
-                      </button>
-                      {explorerExperimentalModes.map(mode => {
-                        const active = themedExperimentalViewMode === mode.id;
-                        const disabled = !mode.available;
-                        return (
-                          <button
-                            key={mode.id}
-                            type="button"
-                            role="menuitemradio"
-                            aria-checked={active}
-                            disabled={disabled}
-                            onClick={() => {
-                              if (disabled) {
-                                return;
-                              }
-                              updateExplorerSettings({ experimentalViewMode: mode.id });
-                              showExperimentalHud();
-                              setShowExperimentalMenu(false);
-                            }}
-                            style={{
-                              display: 'grid',
-                              gridTemplateColumns: '18px minmax(0, 1fr)',
-                              gap: 10,
-                              alignItems: 'start',
-                              width: '100%',
-                              border: 'none',
-                              borderRadius: 8,
-                              padding: '8px 10px',
-                              background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'transparent',
-                              color: disabled ? EXP.muted2 : EXP.text,
-                              cursor: disabled ? 'not-allowed' : 'pointer',
-                              textAlign: 'left',
-                              opacity: disabled ? 0.7 : 1,
-                            }}
-                            onMouseEnter={e => {
-                              if (!active && !disabled) {
-                                e.currentTarget.style.background = 'var(--overlay-explorer-chip-bg)';
-                              }
-                            }}
-                            onMouseLeave={e => {
-                              if (!active && !disabled) {
-                                e.currentTarget.style.background = 'transparent';
-                              }
-                            }}
-                          >
-                            <span style={{ display: 'flex', justifyContent: 'center', paddingTop: 1 }}>
-                              <ExplorerExperimentalGlyph accent={accent} active={active} mode={mode.id} />
-                            </span>
-                            <span style={{ minWidth: 0 }}>
-                              <span style={{ display: 'block', fontSize: 12, fontWeight: 600 }}>
-                                {mode.label}
-                                {!mode.available && <span style={{ marginLeft: 6, fontSize: 10, color: EXP.muted2 }}>Coming soon</span>}
-                              </span>
-                              <span style={{ display: 'block', marginTop: 2, fontSize: 10, color: EXP.muted2, lineHeight: 1.35 }}>
-                                {mode.description}
-                              </span>
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--overlay-explorer-toolbar-border)', fontSize: 10, color: EXP.muted2 }}>
-                      Experimental layouts keep Ctrl/Cmd + wheel inside a mode-specific detail scale.
-                    </div>
-                    {themedExperimentalViewMode !== 'off' && effectiveExperimentalViewMode === 'off' && (
-                      <div style={{ marginTop: 6, fontSize: 10, color: EXP.muted2 }}>
-                        Temporarily falling back to the normal explorer while search is active or the dock is compact.
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div
-                ref={shellLayoutMenuAnchorRef}
-                style={{ position: 'relative' }}
-                onClick={event => event.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  aria-label={`Explorer shell layout: ${shellLayout.label}`}
-                  aria-haspopup="menu"
-                  aria-expanded={showShellLayoutMenu}
-                  onClick={() => {
-                    setShowExperimentalMenu(false);
-                    setShowLayoutMenu(false);
-                    setShowShellLayoutMenu(current => !current);
-                  }}
-                  title={`Explorer shell layout: ${shellLayout.label}`}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    background: showShellLayoutMenu ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
-                    border: `1px solid ${showShellLayoutMenu ? 'var(--overlay-explorer-chip-active-border)' : 'var(--overlay-explorer-chip-border)'}`,
-                    cursor: 'pointer',
-                    color: showShellLayoutMenu ? EXP.text : EXP.muted,
-                    padding: '4px 8px',
-                    borderRadius: 'var(--overlay-explorer-control-radius)',
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = showShellLayoutMenu ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
-                >
-                  <ExplorerShellLayoutGlyph layout={shellLayout} accent={accent} active={showShellLayoutMenu} />
-                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                    {shellLayout.shortLabel}
-                  </span>
-                </button>
-                {showShellLayoutMenu && (
-                  <div
-                    role="menu"
-                    aria-label="Explorer shell layouts menu"
-                    style={{
-                      position: 'absolute',
-                      top: 'calc(100% + 8px)',
-                      right: 0,
-                      zIndex: 40,
-                      minWidth: 280,
-                      borderRadius: 'var(--overlay-explorer-panel-radius)',
-                      border: '1px solid var(--overlay-explorer-toolbar-border)',
-                      background: 'var(--overlay-explorer-toolbar-bg)',
-                      boxShadow: '0 18px 42px rgba(0,0,0,0.42)',
-                      padding: 8,
-                    }}
-                  >
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      {explorerShellLayouts.map(layout => {
-                        const active = shellLayout.id === layout.id;
-                        return (
-                          <button
-                            key={layout.id}
-                            type="button"
-                            role="menuitemradio"
-                            aria-checked={active}
-                            onClick={() => applyShellLayoutPreset(layout.id)}
-                            style={{
-                              display: 'grid',
-                              gridTemplateColumns: '18px minmax(0, 1fr)',
-                              gap: 10,
-                              alignItems: 'start',
-                              width: '100%',
-                              border: 'none',
-                              borderRadius: 8,
-                              padding: '8px 10px',
-                              background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'transparent',
-                              color: EXP.text,
-                              cursor: 'pointer',
-                              textAlign: 'left',
-                            }}
-                            onMouseEnter={e => {
-                              if (!active) {
-                                e.currentTarget.style.background = 'var(--overlay-explorer-chip-bg)';
-                              }
-                            }}
-                            onMouseLeave={e => {
-                              if (!active) {
-                                e.currentTarget.style.background = 'transparent';
-                              }
-                            }}
-                          >
-                            <span style={{ display: 'flex', justifyContent: 'center', paddingTop: 1 }}>
-                              <ExplorerShellLayoutGlyph layout={layout} accent={accent} active={active} />
-                            </span>
-                            <span style={{ minWidth: 0 }}>
-                              <span style={{ display: 'block', fontSize: 12, fontWeight: 600 }}>
-                                {layout.label}
-                              </span>
-                              <span style={{ display: 'block', marginTop: 2, fontSize: 10, color: EXP.muted2, lineHeight: 1.35 }}>
-                                {layout.description}
-                              </span>
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--overlay-explorer-toolbar-border)', fontSize: 10, color: EXP.muted2 }}>
-                      Shell layouts rebalance the rail and preview panes without changing your file card density.
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div
-                ref={layoutMenuAnchorRef}
-                style={{ position: 'relative' }}
-                onClick={event => event.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  aria-label={`Explorer layout: ${selectedViewModeDefinition.label}`}
-                  aria-haspopup="menu"
-                  aria-expanded={showLayoutMenu}
-                  onClick={() => {
-                    setShowShellLayoutMenu(false);
-                    setShowExperimentalMenu(false);
-                    setShowLayoutMenu(current => !current);
-                  }}
-                  title={`Explorer layout: ${selectedViewModeDefinition.label}`}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    background: showLayoutMenu ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
-                    border: `1px solid ${showLayoutMenu ? 'var(--overlay-explorer-chip-active-border)' : 'var(--overlay-explorer-chip-border)'}`,
-                    cursor: 'pointer',
-                    color: showLayoutMenu ? EXP.text : EXP.muted,
-                    padding: '4px 8px',
-                    borderRadius: 'var(--overlay-explorer-control-radius)',
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = showLayoutMenu ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
-                >
-                  <ExplorerLayoutGlyph mode={selectedViewModeDefinition} accent={accent} active={showLayoutMenu} />
-                  <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                      {selectedViewModeDefinition.shortLabel}
-                    </span>
-                    {gridZoomPercent != null && (
-                      <span style={{ fontSize: 9, fontWeight: 700, color: showLayoutMenu ? EXP.text : EXP.muted2 }}>
-                        {gridZoomPercent}%
-                      </span>
-                    )}
-                  </span>
-                </button>
-                {zoomHudVisible && gridZoomPercent != null && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: 'calc(100% + 8px)',
-                      right: 0,
-                      zIndex: 45,
-                      minWidth: 148,
-                      padding: '8px 10px',
-                      borderRadius: 10,
-                      border: `1px solid ${accent}55`,
-                      background: 'rgba(15,18,24,0.94)',
-                      boxShadow: '0 12px 30px rgba(0,0,0,0.32)',
-                      backdropFilter: explorerBlurEnabled ? 'blur(10px)' : 'none',
-                      WebkitBackdropFilter: explorerBlurEnabled ? 'blur(10px)' : 'none',
-                      pointerEvents: 'none',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: EXP.text }}>
-                        {selectedViewModeDefinition.shortLabel}
-                      </span>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: accent }}>
-                        {gridZoomPercent}%
-                      </span>
-                    </div>
-                    <div style={{ marginTop: 8, height: 5, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                      <div
-                        style={{
-                          width: `${gridZoomPercent}%`,
-                          height: '100%',
-                          borderRadius: 999,
-                          background: `linear-gradient(90deg, ${accent}99, ${accent})`,
-                          transition: 'width 0.14s ease',
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
-                {showLayoutMenu && (
-                  <div
-                    role="menu"
-                    aria-label="Explorer layout menu"
-                    style={{
-                      position: 'absolute',
-                      top: 'calc(100% + 8px)',
-                      right: 0,
-                      zIndex: 40,
-                      minWidth: 240,
-                      borderRadius: 'var(--overlay-explorer-panel-radius)',
-                      border: '1px solid var(--overlay-explorer-toolbar-border)',
-                      background: 'var(--overlay-explorer-toolbar-bg)',
-                      boxShadow: '0 18px 42px rgba(0,0,0,0.42)',
-                      padding: 8,
-                    }}
-                  >
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      {explorerViewModes.map(mode => {
-                        const active = themedViewMode === mode.id;
-                        return (
-                          <button
-                            key={mode.id}
-                            type="button"
-                            role="menuitemradio"
-                            aria-checked={active}
-                            onClick={() => {
-                              updateExplorerSettings(
-                                isExplorerGridMode(mode.id)
-                                  ? { viewMode: mode.id, gridZoom: getExplorerGridZoomAnchor(mode.id) }
-                                  : { viewMode: mode.id },
-                              );
-                              showZoomHud();
-                              setShowLayoutMenu(false);
-                            }}
-                            style={{
-                              display: 'grid',
-                              gridTemplateColumns: '18px minmax(0, 1fr)',
-                              gap: 10,
-                              alignItems: 'start',
-                              width: '100%',
-                              border: 'none',
-                              borderRadius: 8,
-                              padding: '8px 10px',
-                              background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'transparent',
-                              color: active ? EXP.text : EXP.muted,
-                              cursor: 'pointer',
-                              textAlign: 'left',
-                            }}
-                            onMouseEnter={e => {
-                              if (!active) {
-                                e.currentTarget.style.background = 'var(--overlay-explorer-chip-bg)';
-                              }
-                            }}
-                            onMouseLeave={e => {
-                              if (!active) {
-                                e.currentTarget.style.background = 'transparent';
-                              }
-                            }}
-                          >
-                            <span style={{ display: 'flex', justifyContent: 'center', paddingTop: 1 }}>
-                              <ExplorerLayoutGlyph mode={mode} accent={accent} active={active} />
-                            </span>
-                            <span style={{ minWidth: 0 }}>
-                              <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: active ? EXP.text : EXP.text }}>
-                                {mode.label}
-                              </span>
-                              <span style={{ display: 'block', marginTop: 2, fontSize: 10, color: EXP.muted2, lineHeight: 1.35 }}>
-                                {mode.description}
-                              </span>
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--overlay-explorer-toolbar-border)', fontSize: 10, color: EXP.muted2 }}>
-                      Ctrl/Cmd + wheel moves through Small, M, L, XL, then row layouts with live zoom feedback.
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <button
-                type="button"
-                aria-pressed={previewEnabled}
-                onClick={togglePreviewEnabled}
-                title={previewEnabled
-                  ? 'Turn off inline preview for previewable files'
-                  : 'Turn on inline preview for previewable files'}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  background: previewEnabled ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
-                  border: `1px solid ${previewEnabled ? 'var(--overlay-explorer-chip-active-border)' : 'var(--overlay-explorer-chip-border)'}`,
-                  cursor: 'pointer',
-                  color: previewEnabled ? 'var(--overlay-explorer-chip-active-text)' : EXP.muted,
-                  padding: '4px 8px',
-                  borderRadius: 'var(--overlay-explorer-control-radius)',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
-                onMouseLeave={e => (e.currentTarget.style.background = previewEnabled ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
-              >
-                <Eye size={12} />
-                Preview
-              </button>
-            </>
-          )}
-
-          <button onClick={() => updateExplorerSettings({ showHiddenFiles: !showHidden })} title="Toggle hidden files"
-            style={{ background:showHidden?'var(--overlay-explorer-chip-active-bg)':'var(--overlay-explorer-chip-bg)', border:'1px solid transparent', cursor:'pointer', color:showHidden?'var(--overlay-explorer-chip-active-text)':EXP.muted, padding:5, borderRadius:'var(--overlay-explorer-control-radius)', display:'flex' }}
-            onMouseEnter={e=>(e.currentTarget.style.background='var(--overlay-explorer-chip-active-bg)')}
-            onMouseLeave={e=>(e.currentTarget.style.background=showHidden?'var(--overlay-explorer-chip-active-bg)':'var(--overlay-explorer-chip-bg)')}
-          ><Eye size={14}/></button>
-
-          <button onClick={refresh} title="Refresh (F5)"
-            style={{ background:'var(--overlay-explorer-chip-bg)', border:'1px solid transparent', cursor:'pointer', color:EXP.muted, padding:5, borderRadius:'var(--overlay-explorer-control-radius)', display:'flex' }}
-            onMouseEnter={e=>(e.currentTarget.style.background='var(--overlay-explorer-chip-active-bg)')}
-            onMouseLeave={e=>(e.currentTarget.style.background='var(--overlay-explorer-chip-bg)')}
-          ><RefreshCw size={14}/></button>
-
-          <div style={{ width:1, height:16, background:EXP.border }} />
-
-          <button onClick={() => openNew('folder')} title="New Folder"
-            style={{ display:'flex', alignItems:'center', gap:4, background:'var(--overlay-explorer-chip-bg)', border:'1px solid transparent', cursor:'pointer', color:EXP.muted, padding:'4px 7px', borderRadius:'var(--overlay-explorer-control-radius)', fontSize:'var(--overlay-explorer-toolbar-font-size)' }}
-            onMouseEnter={e=>(e.currentTarget.style.background='var(--overlay-explorer-chip-active-bg)', (e.currentTarget.style.color=EXP.text))}
-            onMouseLeave={e=>(e.currentTarget.style.background='var(--overlay-explorer-chip-bg)', (e.currentTarget.style.color=EXP.muted))}
-          ><FolderPlus size={13}/> Folder</button>
-
-          <button onClick={() => openNew('file')} title="New File"
-            style={{ display:'flex', alignItems:'center', gap:4, background:'var(--overlay-explorer-chip-bg)', border:'1px solid transparent', cursor:'pointer', color:EXP.muted, padding:'4px 7px', borderRadius:'var(--overlay-explorer-control-radius)', fontSize:'var(--overlay-explorer-toolbar-font-size)' }}
-            onMouseEnter={e=>(e.currentTarget.style.background='var(--overlay-explorer-chip-active-bg)', (e.currentTarget.style.color=EXP.text))}
-            onMouseLeave={e=>(e.currentTarget.style.background='var(--overlay-explorer-chip-bg)', (e.currentTarget.style.color=EXP.muted))}
-          ><FilePlus size={13}/> File</button>
-
-          {clipboard && (
-            <button onClick={paste} title={`Paste ${clipboard.entries.length} item${clipboard.entries.length === 1 ? '' : 's'} (Ctrl+V)`}
-              style={{ display:'flex', alignItems:'center', gap:4, background:'var(--overlay-explorer-chip-active-bg)', border:'1px solid var(--overlay-explorer-chip-active-border)', borderRadius:'var(--overlay-explorer-control-radius)', cursor:'pointer', color:'var(--overlay-explorer-chip-active-text)', padding:'3px 8px', fontSize:'var(--overlay-explorer-toolbar-font-size)' }}>
-              <Clipboard size={12}/> Paste {clipboard.entries.length > 1 ? clipboard.entries.length : ''}
-            </button>
-          )}
+          <ExplorerChromeSurface
+            surface={explorerToolbarSurface}
+            getRowStyle={getExplorerChromeRowStyle}
+            getZoneStyle={getExplorerChromeZoneStyle}
+            renderControl={renderExplorerChromeControl}
+          />
         </div>
-
         {repositoryPicker?.active && (
           <div
             style={{

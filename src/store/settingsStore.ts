@@ -30,6 +30,13 @@ import {
   type ExplorerExperimentalViewMode,
 } from '../config/explorerExperimentalModes';
 import {
+  normalizeExplorerChromeLayoutId,
+  normalizeExplorerChromeOverrideSnapshot,
+  normalizeExplorerChromeOverrideSnapshotMap,
+  type ExplorerChromeLayoutId,
+  type ExplorerChromeOverrideSnapshot,
+} from '../config/explorerChromeLayouts';
+import {
   createDefaultKeybindingSettings,
   normalizeKeybindingSettings,
   type HotkeyBindingSettings,
@@ -122,6 +129,7 @@ export interface ExplorerSettings {
   confirmDelete: boolean;
   defaultFolderIcon: FolderIconValue;
   folderIconRules: FolderIconRule[];
+  chromeLayoutOverridesByThemeId: Record<string, Record<string, ExplorerChromeOverrideSnapshot>>;
 }
 
 export interface AppearanceSettings {
@@ -259,6 +267,8 @@ function normalizeExplorerSettings(
     updates?.experimentalViewMode ?? base.experimentalViewMode,
   );
   const hasExplicitExperimentalDensity = updates != null && Object.prototype.hasOwnProperty.call(updates, 'experimentalDensity');
+  const hasExplicitChromeLayoutOverrides = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'chromeLayoutOverridesByThemeId');
 
   return {
     ...base,
@@ -274,6 +284,9 @@ function normalizeExplorerSettings(
       ? normalizeAdaptiveSemanticDensity(updates?.experimentalDensity)
       : base.experimentalDensity,
     folderClickMode: normalizeExplorerFolderClickMode(updates?.folderClickMode ?? base.folderClickMode),
+    chromeLayoutOverridesByThemeId: hasExplicitChromeLayoutOverrides
+      ? normalizeExplorerChromeOverrideSnapshotMap(updates?.chromeLayoutOverridesByThemeId)
+      : base.chromeLayoutOverridesByThemeId,
   };
 }
 
@@ -563,6 +576,7 @@ export const defaultSettings: Settings = {
     confirmDelete: true,
     defaultFolderIcon: DEFAULT_FOLDER_ICON_VALUE,
     folderIconRules: createDefaultFolderIconRules(),
+    chromeLayoutOverridesByThemeId: {},
   },
   appearance: {
     theme: 'dark',
@@ -684,6 +698,9 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
         imported?.explorer?.experimentalDensity ?? base.explorer.experimentalDensity,
       ),
       folderClickMode: normalizeExplorerFolderClickMode(imported?.explorer?.folderClickMode ?? base.explorer.folderClickMode),
+      chromeLayoutOverridesByThemeId: normalizeExplorerChromeOverrideSnapshotMap(
+        imported?.explorer?.chromeLayoutOverridesByThemeId ?? base.explorer.chromeLayoutOverridesByThemeId,
+      ),
     },
     appearance: {
       ...normalizeAppearanceSettings(base.appearance, {
@@ -729,6 +746,15 @@ interface SettingsState {
   updateTerminal: (updates: Partial<TerminalSettings>) => void;
   updatePython: (updates: Partial<PythonSettings>) => void;
   updateExplorer: (updates: Partial<ExplorerSettings>) => void;
+  setExplorerChromeLayoutOverride: (
+    themeId: string,
+    layoutId: ExplorerChromeLayoutId,
+    snapshot: ExplorerChromeOverrideSnapshot,
+  ) => void;
+  clearExplorerChromeLayoutOverride: (
+    themeId: string,
+    layoutId: ExplorerChromeLayoutId,
+  ) => void;
   updateAppearance: (updates: Partial<AppearanceSettings>) => void;
   updateSystem: (updates: Partial<SystemSettings>) => void;
   updateScreenshots: (updates: Partial<ScreenshotSettings>) => void;
@@ -780,6 +806,61 @@ export const useSettingsStore = create<SettingsState>()(
           explorer: normalizeExplorerSettings(state.settings.explorer, updates),
         },
       })),
+
+      setExplorerChromeLayoutOverride: (themeId, layoutId, snapshot) => set((state) => {
+        const trimmedThemeId = themeId.trim();
+        if (!trimmedThemeId) {
+          return state;
+        }
+
+        const normalizedLayoutId = normalizeExplorerChromeLayoutId(layoutId);
+        const normalizedSnapshot = normalizeExplorerChromeOverrideSnapshot(snapshot);
+        const nextOverridesByThemeId = normalizeExplorerChromeOverrideSnapshotMap({
+          ...state.settings.explorer.chromeLayoutOverridesByThemeId,
+          [trimmedThemeId]: {
+            ...(state.settings.explorer.chromeLayoutOverridesByThemeId[trimmedThemeId] ?? {}),
+            [normalizedLayoutId]: normalizedSnapshot,
+          },
+        });
+
+        return {
+          settings: {
+            ...state.settings,
+            explorer: {
+              ...state.settings.explorer,
+              chromeLayoutOverridesByThemeId: nextOverridesByThemeId,
+            },
+          },
+        };
+      }),
+
+      clearExplorerChromeLayoutOverride: (themeId, layoutId) => set((state) => {
+        const trimmedThemeId = themeId.trim();
+        if (!trimmedThemeId) {
+          return state;
+        }
+
+        const normalizedLayoutId = normalizeExplorerChromeLayoutId(layoutId);
+        const themeOverrides = { ...(state.settings.explorer.chromeLayoutOverridesByThemeId[trimmedThemeId] ?? {}) };
+        delete themeOverrides[normalizedLayoutId];
+
+        const nextOverridesByThemeId = { ...state.settings.explorer.chromeLayoutOverridesByThemeId };
+        if (Object.keys(themeOverrides).length > 0) {
+          nextOverridesByThemeId[trimmedThemeId] = themeOverrides;
+        } else {
+          delete nextOverridesByThemeId[trimmedThemeId];
+        }
+
+        return {
+          settings: {
+            ...state.settings,
+            explorer: {
+              ...state.settings.explorer,
+              chromeLayoutOverridesByThemeId: normalizeExplorerChromeOverrideSnapshotMap(nextOverridesByThemeId),
+            },
+          },
+        };
+      }),
       
       updateAppearance: (updates) => set((state) => ({
         settings: {

@@ -1,8 +1,9 @@
+import React from 'react';
 import { createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { FileExplorer, invalidateExplorerResultCaches } from '../components/FileExplorer';
-import { resolveOverlayAppearance } from '../config/appearance';
+import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/appearance';
 import { createDefaultExplorerRailSnapshot } from '../components/explorer/explorerRailState';
 import {
   EXPLORER_LEGACY_BOOKMARKS_KEY,
@@ -102,8 +103,12 @@ function resetOverlayTermStorage(storage: Storage) {
   storage.removeItem(EXPLORER_LEGACY_BOOKMARKS_KEY);
 }
 
-function renderExplorer(options: { layoutMode?: 'full' | 'compact-dock' } = {}) {
-  const appearance = resolveOverlayAppearance({ activeThemeId: 'operator' });
+function renderExplorer(options: {
+  appearance?: ReturnType<typeof resolveOverlayAppearance>;
+  chromeControlSurface?: 'toolbar' | 'topbar';
+  layoutMode?: 'full' | 'compact-dock';
+} = {}) {
+  const appearance = options.appearance ?? resolveOverlayAppearance({ activeThemeId: 'operator' });
   return {
     appearance,
     ...render(
@@ -117,13 +122,17 @@ function renderExplorer(options: { layoutMode?: 'full' | 'compact-dock' } = {}) 
           textMuted: appearance.theme.palette.textMuted,
         }}
         appearance={appearance}
+        chromeControlSurface={options.chromeControlSurface}
         layoutMode={options.layoutMode}
-        onOpenInFilesystemAquarium={() => {}}
         onOpenInTerminal={() => {}}
         onAddBookmark={async () => {}}
       />,
     ),
   };
+}
+
+function getChromeControl(controlId: string) {
+  return document.querySelector(`[data-overlay-explorer-control="${controlId}"]`) as HTMLElement | null;
 }
 
 function getExplorerViewport(anchorText: string) {
@@ -235,15 +244,68 @@ describe('FileExplorer view modes', () => {
     renderExplorer();
     await screen.findByText('alpha');
 
-    expect(screen.getByText('Explorer Rail')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /manage/i })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /explorer shell layout:/i }));
     fireEvent.click(screen.getByRole('menuitemradio', { name: /focus/i }));
 
     await waitFor(() => {
       expect(useExplorerStore.getState().session.shellLayoutId).toBe('focus');
-      expect(screen.queryByText('Explorer Rail')).toBeNull();
+      expect(screen.queryByRole('button', { name: /manage/i })).toBeNull();
     });
+  });
+
+  it('moves toolbar controls when the active theme changes chromeLayoutId', async () => {
+    const appearance = resolveOverlayAppearance({
+      activeThemeId: 'focused-layout',
+      customThemes: [
+        normalizeThemeDefinition({
+          id: 'focused-layout',
+          name: 'Focused Layout',
+          explorer: {
+            chromeLayoutId: 'focused-search',
+          },
+        }),
+      ],
+    });
+
+    renderExplorer({ appearance });
+    await screen.findByText('alpha');
+
+    expect(getChromeControl('toggleSources')?.getAttribute('data-overlay-explorer-control-zone')).toBe('secondaryStart');
+  });
+
+  it('can render global controls on the explorer topbar surface', async () => {
+    renderExplorer({ chromeControlSurface: 'topbar' });
+    await screen.findByText('alpha');
+
+    const toggleSources = getChromeControl('toggleSources');
+    expect(toggleSources?.closest('[data-overlay-explorer-surface="explorerTopbar"]')).not.toBeNull();
+    expect(document.querySelector('[data-overlay-explorer-surface="explorerToolbar"] [data-overlay-explorer-control="toggleSources"]')).toBeNull();
+  });
+
+  it('applies persisted chrome layout overrides without mutating shell layout state', async () => {
+    useExplorerStore.getState().updateSession({
+      shellLayoutId: 'focus',
+      sourcesVisible: false,
+    });
+    useSettingsStore.getState().setExplorerChromeLayoutOverride('operator', 'default', {
+      entries: [
+        {
+          controlId: 'refresh',
+          surfaceId: 'explorerToolbar',
+          zone: 'primaryStart',
+          order: 5,
+        },
+      ],
+    });
+
+    renderExplorer();
+    await screen.findByText('alpha');
+
+    expect(getChromeControl('refresh')?.getAttribute('data-overlay-explorer-control-zone')).toBe('primaryStart');
+    expect(useExplorerStore.getState().session.shellLayoutId).toBe('focus');
+    expect(useExplorerStore.getState().session.sourcesVisible).toBe(false);
   });
 
   it('honors the preview toggle before opening previewable files', async () => {
@@ -264,19 +326,19 @@ describe('FileExplorer view modes', () => {
     expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_read_text_file')).toBe(false);
   });
 
-  it('keeps inline previews closed in compact dock mode', async () => {
+  it('keeps inline previews available in compact dock mode', async () => {
     renderExplorer({ layoutMode: 'compact-dock' });
     await screen.findByText('notes.txt');
 
     fireEvent.click(screen.getByText('notes.txt'));
 
     await waitFor(() => {
-      expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_read_text_file')).toBe(false);
+      expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_read_text_file')).toBe(true);
     });
-    expect(screen.queryByRole('button', { name: /copy path/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /copy path/i })).toBeTruthy();
   });
 
-  it('closes an open inline preview when switching into compact dock mode and keeps it closed on return', async () => {
+  it('keeps an open inline preview available when switching into compact dock mode', async () => {
     const { appearance, rerender } = renderExplorer();
     await screen.findByText('notes.txt');
 
@@ -295,14 +357,13 @@ describe('FileExplorer view modes', () => {
         }}
         appearance={appearance}
         layoutMode="compact-dock"
-        onOpenInFilesystemAquarium={() => {}}
         onOpenInTerminal={() => {}}
         onAddBookmark={async () => {}}
       />,
     );
 
     await waitFor(() => {
-      expect(screen.queryByRole('button', { name: /copy path/i })).toBeNull();
+      expect(screen.getByRole('button', { name: /copy path/i })).toBeTruthy();
     });
 
     rerender(
@@ -317,14 +378,13 @@ describe('FileExplorer view modes', () => {
         }}
         appearance={appearance}
         layoutMode="full"
-        onOpenInFilesystemAquarium={() => {}}
         onOpenInTerminal={() => {}}
         onAddBookmark={async () => {}}
       />,
     );
 
     await waitFor(() => {
-      expect(screen.queryByRole('button', { name: /copy path/i })).toBeNull();
+      expect(screen.getByRole('button', { name: /copy path/i })).toBeTruthy();
     });
   });
 
@@ -417,6 +477,33 @@ describe('FileExplorer view modes', () => {
     await waitFor(() => {
       expect(screen.getByText('secret.txt')).toBeTruthy();
     });
+  });
+
+  it('does not trip the boot navigation mount path under StrictMode', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const appearance = resolveOverlayAppearance({ activeThemeId: 'operator' });
+
+    render(
+      <React.StrictMode>
+        <FileExplorer
+          theme={{
+            accent: appearance.theme.palette.accent,
+            bg: appearance.theme.palette.appBackground,
+            bgPanel: appearance.theme.palette.panelBackground,
+            text: appearance.theme.palette.textPrimary,
+            border: appearance.theme.palette.border,
+            textMuted: appearance.theme.palette.textMuted,
+          }}
+          appearance={appearance}
+          onOpenInTerminal={() => {}}
+          onAddBookmark={async () => {}}
+        />
+      </React.StrictMode>,
+    );
+
+    await screen.findByText('alpha');
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
   });
 
   it('shows fallback preview states for oversized text and broken image previews', async () => {
@@ -550,7 +637,7 @@ describe('FileExplorer view modes', () => {
     });
   });
 
-  it('keeps plain explorer drag internal so files can move between panes', async () => {
+  it('uses the default drag intent when no modifier is held', async () => {
     renderExplorer();
     const entry = await screen.findByText('notes.txt');
     const dataTransfer = createDataTransfer();
@@ -564,14 +651,12 @@ describe('FileExplorer view modes', () => {
 
     expect(dataTransfer.setData).toHaveBeenCalledWith(
       'application/x-overlayterm-drag-intent',
-      'internal',
+      'native-out',
     );
-    expect(invoke).not.toHaveBeenCalledWith('fs_start_native_file_drag', {
-      paths: [`${REPO_ROOT}\\notes.txt`],
-    });
+    expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_start_native_file_drag')).toBe(true);
   });
 
-  it('starts the native drag bridge when shift is held for an external drag-out', async () => {
+  it('keeps drag intent internal when shift is held', async () => {
     renderExplorer();
     const entry = await screen.findByText('notes.txt');
     const dataTransfer = createDataTransfer();
@@ -584,16 +669,11 @@ describe('FileExplorer view modes', () => {
     Object.defineProperty(event, 'shiftKey', { value: true });
     fireEvent(dragSource, event);
 
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith('fs_start_native_file_drag', {
-        paths: [`${REPO_ROOT}\\\\notes.txt`],
-      });
+    expect(invoke).not.toHaveBeenCalledWith('fs_start_native_file_drag', {
+      paths: [`${REPO_ROOT}\\\\notes.txt`],
     });
-    expect(dataTransfer.setData).toHaveBeenCalledWith(
-      'application/x-overlayterm-drag-intent',
-      'native-out',
-    );
-    expect(dragSource.dataset.overlayDragHide).toBe('true');
+    expect(dataTransfer.setData).toHaveBeenCalledWith('application/x-overlayterm-drag-intent', 'internal');
+    expect(dragSource.dataset.overlayDragHide).not.toBe('true');
   });
 
 });

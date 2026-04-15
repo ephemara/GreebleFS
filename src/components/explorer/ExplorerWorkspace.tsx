@@ -1,15 +1,24 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { ChevronLeft, ChevronRight, Clipboard, Columns2, CopyPlus, Plus, SquareSplitHorizontal, X } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import type { ResolvedOverlayAppearance } from '../../config/appearance';
 import type { OverlayPluginExplorerActionContribution } from '../../config/pluginContributions';
 import type { ExplorerLayoutMode } from '../../config/layoutProfiles';
 import {
+  resolveExplorerChromeSurfaceLayout,
+  type ExplorerChromeControlDefinition,
+  type ExplorerChromeResolvedControlPlacement,
+  type ExplorerChromeSurfaceId,
+  type ExplorerChromeZoneId,
+} from '../../config/explorerChromeLayouts';
+import {
   PRIMARY_EXPLORER_INSTANCE_ID,
   useExplorerStore,
   type ExplorerPaneId,
   type ExplorerTabSnapshot,
 } from '../../store/explorerStore';
+import { useSettingsStore } from '../../store/settingsStore';
+import { ExplorerChromeSurface } from './ExplorerChromeSurface';
 import { FileExplorer } from '../FileExplorer';
 
 interface ExplorerWorkspaceProps {
@@ -90,8 +99,30 @@ export function ExplorerWorkspace({
     setFocusedPane: state.setFocusedPane,
     setWorkspaceSplitRatio: state.setWorkspaceSplitRatio,
   })));
+  const {
+    activeThemeId,
+    chromeLayoutOverridesByThemeId,
+  } = useSettingsStore(useShallow((state) => ({
+    activeThemeId: state.settings.appearance.activeThemeId,
+    chromeLayoutOverridesByThemeId: state.settings.explorer.chromeLayoutOverridesByThemeId,
+  })));
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const explorerTheme = appearance?.explorerTheme ?? null;
+  const explorerChromeThemeId = useMemo(() => {
+    const resolvedAppearanceThemeId = appearance?.baseTheme.id?.trim();
+    if (resolvedAppearanceThemeId) {
+      return resolvedAppearanceThemeId;
+    }
+
+    const trimmedActiveThemeId = activeThemeId.trim();
+    return trimmedActiveThemeId || 'operator';
+  }, [appearance?.baseTheme.id, activeThemeId]);
+  const explorerChromeLayoutId = explorerTheme?.chromeLayoutId ?? 'default';
+  const explorerChromeOverride = useMemo(
+    () => chromeLayoutOverridesByThemeId[explorerChromeThemeId]?.[explorerChromeLayoutId] ?? null,
+    [chromeLayoutOverridesByThemeId, explorerChromeLayoutId, explorerChromeThemeId],
+  );
   const tabs = workspace.tabs;
   const leftTabs = useMemo(
     () => tabs.filter((tab) => tab.pane === 'left'),
@@ -313,59 +344,91 @@ export function ExplorerWorkspace({
     );
   };
 
-  return (
-    <div
-      ref={containerRef}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: 0,
-        height: '100%',
-        gap: 10,
-      }}
-    >
-      <div
-        style={{
+  const workspaceHeaderRowStyle = useMemo<React.CSSProperties>(() => ({
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    minWidth: 0,
+    flexWrap: 'wrap',
+  }), []);
+  const getWorkspaceHeaderZoneStyle = useCallback((zoneId: ExplorerChromeZoneId): React.CSSProperties => {
+    switch (zoneId) {
+      case 'center':
+        return {
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 10,
-          minHeight: 40,
-          padding: '8px 10px',
-          borderRadius: 14,
-          border: '1px solid var(--overlay-border)',
-          background: 'color-mix(in srgb, var(--overlay-bg-panel) 88%, black 12%)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            minWidth: 0,
-            flexWrap: 'wrap',
-          }}
-        >
+          gap: 8,
+          flex: 1,
+          minWidth: 0,
+          overflowX: 'auto',
+        };
+      case 'end':
+        return {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          flexShrink: 0,
+          flexWrap: 'wrap',
+          justifyContent: 'flex-end',
+          minWidth: 0,
+        };
+      case 'start':
+      default:
+        return {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          minWidth: 0,
+          flexWrap: 'wrap',
+        };
+    }
+  }, []);
+  const workspaceChromeControlRegistry = useMemo<Array<ExplorerChromeControlDefinition & {
+    isVisible: (surfaceId: ExplorerChromeSurfaceId) => boolean;
+    render: (placement: ExplorerChromeResolvedControlPlacement) => React.ReactNode;
+  }>>(() => [
+    {
+      id: 'workspacePaneCounts',
+      label: 'Pane Counts',
+      surfaces: ['workspaceHeader'],
+      isVisible: () => true,
+      render: () => (
+        <>
           <span style={paneBadgeStyle(activePane === 'left', theme.accent)}>L {leftTabs.length}</span>
           <span style={paneBadgeStyle(activePane === 'right', theme.accent)}>R {rightTabs.length}</span>
-          <span style={workspaceMetaStyle}>
-            {workspace.layoutMode === 'dual' ? 'Dual pane' : 'Single pane'} · {activePane === 'left' ? 'Left active' : 'Right active'}
-          </span>
-          {workspace.layoutMode === 'dual' && (
-            <span style={{ ...workspaceMetaStyle, color: theme.accent }}>
-              Move tabs with the chip arrow or the Move button
-            </span>
-          )}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              flex: 1,
-              minWidth: 0,
-              overflowX: 'auto',
-            }}
-          >
+        </>
+      ),
+    },
+    {
+      id: 'workspaceMode',
+      label: 'Workspace Mode',
+      surfaces: ['workspaceHeader'],
+      isVisible: () => true,
+      render: () => (
+        <span style={workspaceMetaStyle}>
+          {workspace.layoutMode === 'dual' ? 'Dual pane' : 'Single pane'} · {activePane === 'left' ? 'Left active' : 'Right active'}
+        </span>
+      ),
+    },
+    {
+      id: 'workspaceLayoutHint',
+      label: 'Workspace Hint',
+      surfaces: ['workspaceHeader'],
+      isVisible: () => workspace.layoutMode === 'dual',
+      render: () => (
+        <span style={{ ...workspaceMetaStyle, color: theme.accent }}>
+          Move tabs with the chip arrow or the Move button
+        </span>
+      ),
+    },
+    {
+      id: 'workspaceTabs',
+      label: 'Workspace Tabs',
+      surfaces: ['workspaceHeader'],
+      isVisible: () => true,
+      render: () => (
+        <>
           {tabs.map((tab) => {
             const currentPath = sessions[tab.instanceId]?.currentPath ?? '';
             const isActive = (tab.pane === 'left' ? activeLeftTab?.id : activeRightTab?.id) === tab.id;
@@ -383,7 +446,7 @@ export function ExplorerWorkspace({
                   background: isActive ? `${theme.accent}1b` : 'var(--overlay-explorer-chip-bg)',
                 }}
               >
-              <button
+                <button
                   type="button"
                   onClick={() => focusWorkspaceTab(tab.id)}
                   title={currentPath || tab.title || 'Explorer'}
@@ -467,76 +530,239 @@ export function ExplorerWorkspace({
               </div>
             );
           })}
-        </div>
-        </div>
+        </>
+      ),
+    },
+    {
+      id: 'workspaceNewTab',
+      label: 'New Tab',
+      surfaces: ['workspaceHeader'],
+      isVisible: () => true,
+      render: () => (
+        <button type="button" onClick={createTabInFocusedPane} title="New explorer tab" style={toolbarButtonStyle}>
+          <Plus size={13} />
+        </button>
+      ),
+    },
+    {
+      id: 'workspaceDuplicateTab',
+      label: 'Duplicate Tab',
+      surfaces: ['workspaceHeader'],
+      isVisible: () => true,
+      render: () => (
+        <button type="button" onClick={duplicateActiveTab} title="Duplicate active tab" style={toolbarButtonStyle}>
+          <CopyPlus size={13} />
+        </button>
+      ),
+    },
+    {
+      id: 'workspaceFocusLeft',
+      label: 'Focus Left',
+      surfaces: ['workspaceHeader'],
+      isVisible: () => workspace.layoutMode === 'dual',
+      render: () => (
+        <button type="button" onClick={() => setFocusedPane('left')} title="Focus left pane" style={paneActionButtonStyle(activePane === 'left', theme.accent)}>
+          Left
+        </button>
+      ),
+    },
+    {
+      id: 'workspaceFocusRight',
+      label: 'Focus Right',
+      surfaces: ['workspaceHeader'],
+      isVisible: () => workspace.layoutMode === 'dual',
+      render: () => (
+        <button type="button" onClick={() => setFocusedPane('right')} title="Focus right pane" style={paneActionButtonStyle(activePane === 'right', theme.accent)}>
+          Right
+        </button>
+      ),
+    },
+    {
+      id: 'workspaceMoveTab',
+      label: 'Move Active Tab',
+      surfaces: ['workspaceHeader'],
+      isVisible: () => workspace.layoutMode === 'dual',
+      render: () => (
+        <button type="button" onClick={moveActiveTabToOtherPane} title="Move active tab to the other pane" style={paneActionButtonStyle(false, theme.accent)}>
+          Move
+        </button>
+      ),
+    },
+    {
+      id: 'workspaceSwapPane',
+      label: 'Swap Focus',
+      surfaces: ['workspaceHeader'],
+      isVisible: () => workspace.layoutMode === 'dual',
+      render: () => (
+        <button type="button" onClick={focusOtherPane} title="Switch focus to the other pane" style={paneActionButtonStyle(false, theme.accent)}>
+          Swap
+        </button>
+      ),
+    },
+    {
+      id: 'workspaceSplitToggle',
+      label: 'Toggle Split',
+      surfaces: ['workspaceHeader'],
+      isVisible: () => true,
+      render: () => workspace.layoutMode === 'dual' ? (
+        <button type="button" onClick={toggleDualPane} title="Return to single pane" style={toolbarButtonStyle}>
+          <Columns2 size={13} />
+        </button>
+      ) : (
+        <button type="button" onClick={toggleDualPane} title="Open dual pane" style={paneActionButtonStyle(false, theme.accent)}>
+          Split
+        </button>
+      ),
+    },
+    {
+      id: 'workspaceCloseTab',
+      label: 'Close Active Tab',
+      surfaces: ['workspaceHeader'],
+      isVisible: () => true,
+      render: () => (
+        <button type="button" onClick={closeActiveTab} title="Close active tab" style={toolbarButtonStyle}>
+          <X size={13} />
+        </button>
+      ),
+    },
+    {
+      id: 'workspaceSplitSummary',
+      label: 'Split Summary',
+      surfaces: ['workspaceHeader'],
+      isVisible: () => workspace.layoutMode === 'dual',
+      render: () => (
+        <span style={{ ...workspaceMetaStyle, paddingLeft: 4, paddingRight: 2 }} title={`Left pane ${splitPercent}% wide`}>
+          Split {splitPercent}%
+        </span>
+      ),
+    },
+    {
+      id: 'workspaceSplitNudgeLeft',
+      label: 'Narrow Left Pane',
+      surfaces: ['workspaceHeader'],
+      isVisible: () => workspace.layoutMode === 'dual',
+      render: () => (
+        <button
+          type="button"
+          onClick={() => setWorkspaceSplitRatio(workspace.splitRatio - 0.05)}
+          title="Narrow left pane"
+          style={toolbarButtonStyle}
+        >
+          <ChevronLeft size={13} />
+        </button>
+      ),
+    },
+    {
+      id: 'workspaceSplitReset',
+      label: 'Reset Split',
+      surfaces: ['workspaceHeader'],
+      isVisible: () => workspace.layoutMode === 'dual',
+      render: () => (
+        <button
+          type="button"
+          onClick={() => setWorkspaceSplitRatio(0.5)}
+          title="Reset split to 50/50"
+          style={toolbarButtonStyle}
+        >
+          <SquareSplitHorizontal size={13} />
+        </button>
+      ),
+    },
+    {
+      id: 'workspaceSplitNudgeRight',
+      label: 'Widen Left Pane',
+      surfaces: ['workspaceHeader'],
+      isVisible: () => workspace.layoutMode === 'dual',
+      render: () => (
+        <button
+          type="button"
+          onClick={() => setWorkspaceSplitRatio(workspace.splitRatio + 0.05)}
+          title="Widen left pane"
+          style={toolbarButtonStyle}
+        >
+          <ChevronRight size={13} />
+        </button>
+      ),
+    },
+  ], [
+    activeLeftTab?.id,
+    activePane,
+    activeRightTab?.id,
+    closeActiveTab,
+    closeWorkspaceTab,
+    createTabInFocusedPane,
+    duplicateActiveTab,
+    focusOtherPane,
+    focusWorkspaceTab,
+    leftTabs.length,
+    moveActiveTabToOtherPane,
+    moveWorkspaceTabToPane,
+    rightTabs.length,
+    sessions,
+    setFocusedPane,
+    setWorkspaceSplitRatio,
+    splitPercent,
+    tabs,
+    theme.accent,
+    toggleDualPane,
+    workspace.layoutMode,
+    workspace.splitRatio,
+  ]);
+  const workspaceChromeControlRegistryById = useMemo(
+    () => new Map(workspaceChromeControlRegistry.map((entry) => [entry.id, entry])),
+    [workspaceChromeControlRegistry],
+  );
+  const workspaceHeaderSurface = useMemo(
+    () => resolveExplorerChromeSurfaceLayout({
+      layoutId: explorerChromeLayoutId,
+      surfaceId: 'workspaceHeader',
+      controlDefinitions: workspaceChromeControlRegistry,
+      override: explorerChromeOverride,
+      isControlVisible: (controlId, surfaceId) => workspaceChromeControlRegistryById.get(controlId)?.isVisible(surfaceId) ?? false,
+    }),
+    [
+      explorerChromeLayoutId,
+      explorerChromeOverride,
+      workspaceChromeControlRegistry,
+      workspaceChromeControlRegistryById,
+    ],
+  );
+  const renderWorkspaceChromeControl = useCallback((placement: ExplorerChromeResolvedControlPlacement) => (
+    workspaceChromeControlRegistryById.get(placement.controlId)?.render(placement) ?? null
+  ), [workspaceChromeControlRegistryById]);
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <button type="button" onClick={createTabInFocusedPane} title="New explorer tab" style={toolbarButtonStyle}>
-            <Plus size={13} />
-          </button>
-          <button type="button" onClick={duplicateActiveTab} title="Duplicate active tab" style={toolbarButtonStyle}>
-            <CopyPlus size={13} />
-          </button>
-          {workspace.layoutMode === 'dual' ? (
-            <>
-              <button type="button" onClick={() => setFocusedPane('left')} title="Focus left pane" style={paneActionButtonStyle(activePane === 'left', theme.accent)}>
-                Left
-              </button>
-              <button type="button" onClick={() => setFocusedPane('right')} title="Focus right pane" style={paneActionButtonStyle(activePane === 'right', theme.accent)}>
-                Right
-              </button>
-              <button type="button" onClick={moveActiveTabToOtherPane} title="Move active tab to the other pane" style={paneActionButtonStyle(false, theme.accent)}>
-                Move
-              </button>
-              <button type="button" onClick={focusOtherPane} title="Switch focus to the other pane" style={paneActionButtonStyle(false, theme.accent)}>
-                Swap
-              </button>
-            </>
-          ) : (
-            <button type="button" onClick={toggleDualPane} title="Open dual pane" style={paneActionButtonStyle(false, theme.accent)}>
-              Split
-            </button>
-          )}
-          <button type="button" onClick={toggleDualPane} title={workspace.layoutMode === 'dual' ? 'Return to single pane' : 'Open dual pane'} style={toolbarButtonStyle}>
-            <Columns2 size={13} />
-          </button>
-          <button type="button" onClick={closeActiveTab} title="Close active tab" style={toolbarButtonStyle}>
-            <X size={13} />
-          </button>
-          {workspace.layoutMode === 'dual' && (
-            <>
-              <span style={{ ...workspaceMetaStyle, paddingLeft: 4, paddingRight: 2 }} title={`Left pane ${splitPercent}% wide`}>
-                Split {splitPercent}%
-              </span>
-              <button
-                type="button"
-                onClick={() => setWorkspaceSplitRatio(workspace.splitRatio - 0.05)}
-                title="Narrow left pane"
-                style={toolbarButtonStyle}
-              >
-                <ChevronLeft size={13} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setWorkspaceSplitRatio(0.5)}
-                title="Reset split to 50/50"
-                style={toolbarButtonStyle}
-              >
-                <SquareSplitHorizontal size={13} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setWorkspaceSplitRatio(workspace.splitRatio + 0.05)}
-                title="Widen left pane"
-                style={toolbarButtonStyle}
-              >
-                <ChevronRight size={13} />
-              </button>
-            </>
-          )}
-        </div>
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 0,
+        height: '100%',
+        gap: 10,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 10,
+          minHeight: 40,
+          padding: '8px 10px',
+          borderRadius: 14,
+          border: '1px solid var(--overlay-border)',
+          background: 'color-mix(in srgb, var(--overlay-bg-panel) 88%, black 12%)',
+        }}
+      >
+        <ExplorerChromeSurface
+          surface={workspaceHeaderSurface}
+          style={{ width: '100%' }}
+          getRowStyle={() => workspaceHeaderRowStyle}
+          getZoneStyle={getWorkspaceHeaderZoneStyle}
+          renderControl={renderWorkspaceChromeControl}
+        />
       </div>
-
       {workspace.layoutMode === 'single' ? (
         <div style={{ flex: 1, minHeight: 0 }}>
           {renderPane(activePane, activeTab)}

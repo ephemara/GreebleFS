@@ -70,12 +70,15 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.explorer.experimentalViewMode).toBe('off');
     expect(settings.explorer.experimentalDensity).toBe(defaultSettings.explorer.experimentalDensity);
     expect(settings.explorer.folderClickMode).toBe('double');
+    expect(settings.explorer.chromeLayoutOverridesByThemeId).toEqual({});
   });
 
   it('has the correct default appearance settings', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.appearance.theme).toBe('dark');
     expect(settings.appearance.activeThemeId).toBe('operator');
+    expect(settings.appearance.dockThemeMode).toBe('follow-app');
+    expect(settings.appearance.activeDockThemeId).toBeNull();
     expect(settings.appearance.activeWallpaperId).toBeNull();
     expect(settings.appearance.wallpaperFitMode).toBe('cover');
     expect(settings.appearance.wallpaperOpacity).toBe(1);
@@ -259,6 +262,39 @@ describe('useSettingsStore.updateExplorer()', () => {
     store.updateExplorer({ showHiddenFiles: true });
     expect(useSettingsStore.getState().settings.terminal).toEqual(beforeTerminal);
   });
+
+  it('stores chrome layout overrides independently from explorer session state', () => {
+    useExplorerStore.getState().updateSession({
+      shellLayoutId: 'focus',
+      sidebarWidth: 244,
+      previewWidth: 420,
+      sourcesVisible: false,
+    });
+
+    useSettingsStore.getState().setExplorerChromeLayoutOverride('operator', 'default', {
+      entries: [
+        {
+          controlId: 'refresh',
+          surfaceId: 'explorerToolbar',
+          zone: 'primaryStart',
+          order: 5,
+        },
+      ],
+    });
+
+    expect(useSettingsStore.getState().settings.explorer.chromeLayoutOverridesByThemeId.operator?.default?.entries).toEqual([
+      {
+        controlId: 'refresh',
+        surfaceId: 'explorerToolbar',
+        zone: 'primaryStart',
+        order: 5,
+      },
+    ]);
+    expect(useExplorerStore.getState().session.shellLayoutId).toBe('focus');
+    expect(useExplorerStore.getState().session.sidebarWidth).toBe(244);
+    expect(useExplorerStore.getState().session.previewWidth).toBe(420);
+    expect(useExplorerStore.getState().session.sourcesVisible).toBe(false);
+  });
 });
 
 describe('useSettingsStore.updateLayout()', () => {
@@ -384,6 +420,19 @@ describe('useSettingsStore.updateAppearance()', () => {
     expect(appearance.activeThemeId).toBe(defaultSettings.appearance.activeThemeId);
   });
 
+  it('stores dock theme selection independently from the application theme', () => {
+    const store = useSettingsStore.getState();
+    store.updateAppearance({
+      dockThemeMode: 'override',
+      activeDockThemeId: 'dock-burnished',
+    });
+
+    const { appearance } = useSettingsStore.getState().settings;
+    expect(appearance.activeThemeId).toBe(defaultSettings.appearance.activeThemeId);
+    expect(appearance.dockThemeMode).toBe('override');
+    expect(appearance.activeDockThemeId).toBe('dock-burnished');
+  });
+
   it('allows clearing motion overrides back to theme-managed defaults', () => {
     const store = useSettingsStore.getState();
     store.updateAppearance({
@@ -437,6 +486,7 @@ describe('useSettingsStore.importSettings()', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.terminal.fontSize).toBe(15);
     expect(settings.appearance.activeThemeId).toBe('nord');
+    expect(settings.appearance.dockThemeMode).toBe(defaultSettings.appearance.dockThemeMode);
     expect(settings.explorer).toEqual(defaultSettings.explorer);
   });
 
@@ -461,10 +511,17 @@ describe('useSettingsStore.importSettings()', () => {
 describe('useSettingsStore.exportSettings()', () => {
   it('returns a deep copy of the current settings', () => {
     const store = useSettingsStore.getState();
-    store.updateAppearance({ activeThemeId: 'catppuccin', appCloseAnimation: 'fizzle' });
+    store.updateAppearance({
+      activeThemeId: 'catppuccin',
+      dockThemeMode: 'override',
+      activeDockThemeId: 'dock-burnished',
+      appCloseAnimation: 'fizzle',
+    });
     const exported = store.exportSettings();
 
     expect(exported.appearance.activeThemeId).toBe('catppuccin');
+    expect(exported.appearance.dockThemeMode).toBe('override');
+    expect(exported.appearance.activeDockThemeId).toBe('dock-burnished');
     expect(exported.appearance.appCloseAnimation).toBe('fizzle');
     expect(exported).toEqual(useSettingsStore.getState().settings);
   });
@@ -482,6 +539,8 @@ describe('mergeSettingsWithDefaults()', () => {
     });
 
     expect(merged.appearance.activeThemeId).toBe('dracula');
+    expect(merged.appearance.dockThemeMode).toBe(defaultSettings.appearance.dockThemeMode);
+    expect(merged.appearance.activeDockThemeId).toBe(defaultSettings.appearance.activeDockThemeId);
     expect(merged.appearance.activeShaderId).toBeNull();
     expect(merged.appearance.uiFontFamily).toBe('Geist, Inter, system-ui, sans-serif');
     expect(merged.appearance.appZoom).toBe(1.1);
