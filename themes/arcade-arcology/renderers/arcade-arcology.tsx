@@ -1,14 +1,34 @@
+import { Building2, Layers3, Sparkles } from 'lucide-react';
 import { defineThemeRenderer } from 'overlayterm-theme-renderer';
 
-function resolveCssLength(host, name, fallback) {
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function resolveCssLength(host, name: string, fallback: string): string {
   const value = host.appearance.cssVars?.[name];
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback;
 }
 
-function resolveCssNumber(host, name, fallback) {
+function resolveCssNumber(host, name: string, fallback: number): number {
   const value = host.appearance.cssVars?.[name];
   const parsed = typeof value === 'string' ? Number.parseFloat(value) : Number.NaN;
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function resolveArcologyContext(host) {
+  const panels = host.shellModel.launcher.panels;
+  const groups = host.shellModel.launcher.groups;
+  const activePanel = panels.find(panel => panel.id === host.activePanelId) ?? panels[0] ?? null;
+  const activeGroup = groups.find(group => group.panels.some(panel => panel.id === activePanel?.id)) ?? groups[0] ?? null;
+
+  return {
+    panels,
+    groups,
+    activePanel,
+    activeGroup,
+    activeGroupPanels: activeGroup?.panels ?? panels,
+  };
 }
 
 export default defineThemeRenderer({
@@ -22,18 +42,46 @@ export default defineThemeRenderer({
     surfaceAdapters: true,
   },
   surfaceOwnership: {
+    launcher: true,
     chrome: true,
     contentFrame: true,
     wallpaper: true,
   },
   component({ host }) {
-    const panels = host.shellModel.launcher.panels;
-    const activePanel = panels.find(panel => panel.id === host.activePanelId) ?? panels[0] ?? null;
-    const featuredPanels = panels.slice(0, 6);
-    const stageWidth = resolveCssLength(host, '--overlay-workbench-arcology-stage-width', 'min(78%, 1080px)');
-    const stageHeight = resolveCssLength(host, '--overlay-workbench-arcology-stage-height', 'min(70%, 660px)');
-    const railWidth = resolveCssNumber(host, '--overlay-workbench-arcology-rail-width', 300);
-    const skylineGap = resolveCssNumber(host, '--overlay-workbench-arcology-skyline-gap', 10);
+    const layout = host.shellModel.layout;
+    const launcherRegion = layout.regions.launcher;
+    const contentRegion = layout.regions.content;
+    const pinnedRightRegion = layout.regions.pinnedRight;
+    const chromeRegion = layout.regions.chrome;
+    const { panels, groups, activePanel, activeGroup, activeGroupPanels } = resolveArcologyContext(host);
+
+    const shellInset = layout.shellInset;
+    const panelGap = layout.panelGap;
+    const railWidth = clampNumber(
+      resolveCssNumber(host, '--overlay-workbench-arcology-rail-width', launcherRegion.visible ? launcherRegion.width : 300),
+      250,
+      360,
+    );
+    const rightRailWidth = clampNumber(
+      pinnedRightRegion.visible ? pinnedRightRegion.width : Math.max(250, railWidth - 26),
+      230,
+      340,
+    );
+    const stageWidth = resolveCssLength(
+      host,
+      '--overlay-workbench-arcology-stage-width',
+      `min(${Math.max(540, Math.floor(contentRegion.width * 0.84))}px, 1120px)`,
+    );
+    const stageHeight = resolveCssLength(
+      host,
+      '--overlay-workbench-arcology-stage-height',
+      `min(${Math.max(400, Math.floor(contentRegion.height * 0.72))}px, 760px)`,
+    );
+    const skylineGap = clampNumber(
+      resolveCssNumber(host, '--overlay-workbench-arcology-skyline-gap', Math.max(10, panelGap)),
+      8,
+      18,
+    );
 
     return (
       <div
@@ -43,6 +91,8 @@ export default defineThemeRenderer({
           flex: 1,
           minHeight: 0,
           overflow: 'hidden',
+          background: 'linear-gradient(180deg, #070A10 0%, #04060A 100%)',
+          fontFamily: '"Space Grotesk", "Avenir Next", "Segoe UI", sans-serif',
         }}
       >
         {host.wallpaper.renderBackdropStack()}
@@ -52,8 +102,8 @@ export default defineThemeRenderer({
           style={{
             position: 'absolute',
             inset: 0,
-            background: 'radial-gradient(circle at 14% 20%, rgba(255,155,90,0.14), transparent 22%), radial-gradient(circle at 82% 18%, rgba(107,231,255,0.12), transparent 18%), linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0) 30%)',
             pointerEvents: 'none',
+            background: 'radial-gradient(circle at 18% 18%, rgba(255,155,90,0.14), transparent 22%), radial-gradient(circle at 82% 16%, rgba(107,231,255,0.12), transparent 18%), radial-gradient(circle at 50% 40%, rgba(255,255,255,0.04), transparent 26%), linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0) 26%)',
           }}
         />
 
@@ -61,21 +111,69 @@ export default defineThemeRenderer({
           style={{
             position: 'relative',
             zIndex: 1,
-            display: 'grid',
-            gridTemplateRows: 'auto minmax(0, 1fr) auto',
             width: '100%',
-            minHeight: 0,
-            padding: 20,
-            gap: 18,
+            height: '100%',
+            display: 'grid',
+            gridTemplateRows: 'auto minmax(0, 1fr)',
+            gap: Math.max(14, panelGap),
+            padding: shellInset + 12,
           }}
         >
-          {host.renderUtilityActionsSurface()}
+          <header
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 1fr) auto',
+              alignItems: 'center',
+              gap: 14,
+              padding: '10px 14px',
+              borderRadius: 24,
+              border: '1px solid rgba(146,164,191,0.18)',
+              background: 'rgba(10, 12, 19, 0.74)',
+              boxShadow: '0 18px 42px rgba(0,0,0,0.24)',
+              color: '#f5f8ff',
+              backdropFilter: 'blur(22px)',
+              WebkitBackdropFilter: 'blur(22px)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+              <div
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 16,
+                  display: 'grid',
+                  placeItems: 'center',
+                  border: '1px solid rgba(255, 155, 90, 0.16)',
+                  background: 'linear-gradient(180deg, rgba(255,155,90,0.16), rgba(255,255,255,0.06))',
+                  color: '#ffb27e',
+                  boxShadow: '0 12px 26px rgba(255,155,90,0.08)',
+                }}
+              >
+                <Building2 size={18} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+                <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(194,208,226,0.56)' }}>
+                  Arcade Arcology
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>
+                  {activePanel?.label ?? 'Launcher'}
+                </div>
+                <div style={{ fontSize: 12, lineHeight: 1.5, color: 'rgba(194,208,226,0.7)' }}>
+                  {activePanel?.description ?? 'A tower shell built from the launcher groups, the active content stage, and a separate observatory rail.'}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              {host.renderUtilityActionsSurface()}
+            </div>
+          </header>
 
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: `${railWidth}px minmax(0, 1fr) ${railWidth}px`,
-              gap: 16,
+              gridTemplateColumns: `${railWidth}px minmax(0, 1fr) ${rightRailWidth}px`,
+              gap: Math.max(14, panelGap),
               minHeight: 0,
             }}
           >
@@ -89,9 +187,9 @@ export default defineThemeRenderer({
             >
               <div
                 style={{
-                  padding: 18,
+                  padding: 16,
                   borderRadius: 30,
-                  border: '1px solid rgba(146, 164, 191, 0.18)',
+                  border: '1px solid rgba(146,164,191,0.18)',
                   background: 'rgba(10, 12, 19, 0.74)',
                   boxShadow: '0 18px 42px rgba(0,0,0,0.24)',
                   color: '#f5f8ff',
@@ -99,45 +197,139 @@ export default defineThemeRenderer({
                   WebkitBackdropFilter: 'blur(20px)',
                 }}
               >
-                <div style={{ fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(194,208,226,0.56)' }}>
-                  Arcology Control
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+                    <div style={{ fontSize: 10, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(194,208,226,0.56)' }}>
+                      District Rail
+                    </div>
+                    <div style={{ fontSize: 26, lineHeight: 1.02, fontWeight: 700 }}>
+                      {activeGroup?.label ?? 'Launcher'}
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      width: 42,
+                      height: 42,
+                      borderRadius: 16,
+                      display: 'grid',
+                      placeItems: 'center',
+                      border: '1px solid rgba(107,231,255,0.16)',
+                      background: 'rgba(107,231,255,0.08)',
+                      color: '#6be7ff',
+                    }}
+                  >
+                    <Layers3 size={18} />
+                  </div>
                 </div>
-                <div style={{ marginTop: 10, fontSize: 26, fontWeight: 700, lineHeight: 1.1 }}>
-                  {activePanel?.label ?? 'Launcher'}
+
+                <div style={{ marginTop: 10, fontSize: 12, lineHeight: 1.6, color: 'rgba(194,208,226,0.72)' }}>
+                  The launcher is rendered as districts, not an afterthought rail. That keeps the theme readable as the viewport collapses.
                 </div>
-                <div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.6, color: 'rgba(194,208,226,0.72)' }}>
-                  {activePanel?.description ?? 'Choose a tower or district to bring it into the center stage.'}
-                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                {groups.map(group => {
+                  const isActive = group.id === activeGroup?.id;
+                  return (
+                    <button
+                      key={group.id}
+                      onClick={() => host.activatePanel(group.panels[0]?.id)}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '9px 12px',
+                        borderRadius: 999,
+                        border: isActive ? '1px solid rgba(255,155,90,0.3)' : '1px solid rgba(146,164,191,0.08)',
+                        background: isActive ? 'rgba(255,155,90,0.14)' : 'rgba(8, 11, 18, 0.64)',
+                        color: isActive ? '#ffb27e' : '#c2d0e2',
+                        cursor: 'pointer',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: '0.14em',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      <span>{group.label}</span>
+                      <span style={{ opacity: 0.72 }}>{group.panels.length}</span>
+                    </button>
+                  );
+                })}
               </div>
 
               <div
                 style={{
                   flex: 1,
                   minHeight: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
                   padding: 12,
                   borderRadius: 30,
-                  border: '1px solid rgba(146, 164, 191, 0.18)',
-                  background: 'rgba(8, 11, 18, 0.64)',
+                  border: '1px solid rgba(146,164,191,0.12)',
+                  background: 'rgba(8, 11, 18, 0.68)',
                   boxShadow: '0 16px 38px rgba(0,0,0,0.22)',
                   overflow: 'auto',
                   backdropFilter: 'blur(18px)',
                   WebkitBackdropFilter: 'blur(18px)',
                 }}
               >
-                {host.renderDefaultNavigationSurface()}
-              </div>
-
-              <div style={{ display: 'flex', minHeight: 0, gap: 12, overflow: 'hidden' }}>
-                {host.renderPinnedPanels('left')}
+                {activeGroupPanels.map(panel => {
+                  const isActive = panel.id === activePanel?.id;
+                  return (
+                    <button
+                      key={panel.id}
+                      onClick={panel.activate}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 12,
+                        padding: '13px 14px',
+                        borderRadius: 22,
+                        border: isActive ? '1px solid rgba(255,155,90,0.28)' : '1px solid rgba(146,164,191,0.08)',
+                        background: isActive
+                          ? 'linear-gradient(180deg, rgba(255,155,90,0.14), rgba(11,13,20,0.96))'
+                          : 'linear-gradient(180deg, rgba(28,34,50,0.88), rgba(11,13,20,0.9))',
+                        boxShadow: isActive ? '0 18px 34px rgba(0,0,0,0.22)' : '0 12px 24px rgba(0,0,0,0.12)',
+                        color: '#f5f8ff',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 42,
+                          height: 42,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: 15,
+                          background: isActive ? 'rgba(255,155,90,0.14)' : 'rgba(255,255,255,0.05)',
+                          color: isActive ? '#ffb27e' : '#dce7f4',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {panel.icon}
+                      </span>
+                      <span style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700 }}>{panel.label}</span>
+                        <span style={{ fontSize: 10, lineHeight: 1.45, color: 'rgba(194,208,226,0.68)' }}>
+                          {panel.description}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </aside>
 
             <main
               style={{
                 position: 'relative',
+                minWidth: 0,
                 minHeight: 0,
                 borderRadius: 42,
-                border: '1px solid rgba(255, 155, 90, 0.18)',
+                border: '1px solid rgba(146,164,191,0.18)',
                 background: 'linear-gradient(180deg, rgba(14, 17, 26, 0.96), rgba(7, 9, 14, 0.96))',
                 boxShadow: '0 30px 84px rgba(0, 0, 0, 0.58)',
                 backdropFilter: 'blur(24px)',
@@ -150,8 +342,8 @@ export default defineThemeRenderer({
                 style={{
                   position: 'absolute',
                   inset: 0,
-                  background: 'radial-gradient(circle at 50% 30%, rgba(255,155,90,0.12), transparent 28%), linear-gradient(135deg, rgba(255,255,255,0.04), transparent 44%)',
                   pointerEvents: 'none',
+                  background: 'radial-gradient(circle at 50% 30%, rgba(255,155,90,0.12), transparent 28%), linear-gradient(135deg, rgba(255,255,255,0.04), transparent 44%)',
                 }}
               />
 
@@ -165,7 +357,7 @@ export default defineThemeRenderer({
                   gap: 10,
                   padding: '10px 14px',
                   borderRadius: 999,
-                  border: '1px solid rgba(146, 164, 191, 0.18)',
+                  border: '1px solid rgba(146,164,191,0.18)',
                   background: 'rgba(10, 12, 19, 0.74)',
                   color: '#f5f8ff',
                   fontSize: 11,
@@ -191,7 +383,7 @@ export default defineThemeRenderer({
                   gap: 10,
                   padding: '10px 14px',
                   borderRadius: 999,
-                  border: '1px solid rgba(146, 164, 191, 0.18)',
+                  border: '1px solid rgba(146,164,191,0.18)',
                   background: 'rgba(10, 12, 19, 0.74)',
                   color: '#dce7f4',
                   fontSize: 11,
@@ -231,23 +423,23 @@ export default defineThemeRenderer({
                     pointerEvents: 'none',
                   }}
                 />
-                <div style={{ position: 'relative', zIndex: 1, width: '100%', height: '100%' }}>
-                  {activePanel ? host.renderPanelSurface(activePanel.id, { forceMount: true, forceVisible: true }) : null}
+                <div style={{ position: 'relative', zIndex: 1, width: '100%', height: '100%', padding: Math.max(12, layout.contentInnerPadding) }}>
+                  {host.renderDefaultContentSurface()}
                 </div>
               </div>
 
               <div
                 style={{
                   position: 'absolute',
-                  left: 20,
-                  right: 20,
-                  bottom: 20,
+                  left: 18,
+                  right: 18,
+                  bottom: 18,
                   display: 'grid',
                   gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
                   gap: skylineGap,
                 }}
               >
-                {featuredPanels.map((panel, index) => {
+                {activeGroupPanels.slice(0, 3).map(panel => {
                   const isActive = panel.id === activePanel?.id;
 
                   return (
@@ -256,11 +448,9 @@ export default defineThemeRenderer({
                       onClick={() => host.activatePanel(panel.id)}
                       style={{
                         display: 'flex',
-                        flexDirection: 'column',
                         alignItems: 'flex-start',
-                        justifyContent: 'space-between',
-                        minHeight: 122 + (index % 2) * 18,
-                        padding: '15px 16px 14px',
+                        gap: 10,
+                        padding: '12px 14px',
                         borderRadius: 24,
                         border: isActive ? '1px solid rgba(255,155,90,0.28)' : '1px solid rgba(146,164,191,0.08)',
                         background: isActive
@@ -268,27 +458,27 @@ export default defineThemeRenderer({
                           : 'linear-gradient(180deg, rgba(28,34,50,0.88), rgba(11,13,20,0.9))',
                         boxShadow: isActive ? '0 18px 34px rgba(0,0,0,0.22)' : '0 12px 24px rgba(0,0,0,0.12)',
                         color: '#f5f8ff',
-                        cursor: 'pointer',
                         textAlign: 'left',
-                        transform: `translateY(${index % 2 === 0 ? 0 : 10}px)`,
+                        cursor: 'pointer',
                       }}
                     >
                       <span
                         style={{
-                          width: 42,
-                          height: 42,
+                          width: 36,
+                          height: 36,
                           display: 'inline-flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          borderRadius: 15,
+                          borderRadius: 14,
                           background: isActive ? 'rgba(255,155,90,0.14)' : 'rgba(255,255,255,0.05)',
                           color: isActive ? '#ffb27e' : '#dce7f4',
+                          flexShrink: 0,
                         }}
                       >
                         {panel.icon}
                       </span>
-                      <span style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-                        <span style={{ fontSize: 12, fontWeight: 700 }}>{panel.label}</span>
+                      <span style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700 }}>{panel.label}</span>
                         <span style={{ fontSize: 10, lineHeight: 1.45, color: 'rgba(194,208,226,0.68)' }}>
                           {panel.description}
                         </span>
@@ -322,11 +512,11 @@ export default defineThemeRenderer({
                 <div style={{ fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(194,208,226,0.56)' }}>
                   Skyline Stack
                 </div>
-                <div style={{ marginTop: 10, fontSize: 26, fontWeight: 700, lineHeight: 1.1 }}>
+                <div style={{ marginTop: 10, fontSize: 26, lineHeight: 1.04, fontWeight: 700 }}>
                   {activePanel?.label ?? 'Launcher'}
                 </div>
                 <div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.6, color: 'rgba(194,208,226,0.72)' }}>
-                  {activePanel?.description ?? 'Select a floor and pull a surface into the tower.'}
+                  The right rail carries secondary surfaces and pinned panels so the tower stays readable when the layout compresses.
                 </div>
               </div>
 
@@ -337,7 +527,7 @@ export default defineThemeRenderer({
                   padding: 12,
                   borderRadius: 30,
                   border: '1px solid rgba(146,164,191,0.18)',
-                  background: 'rgba(8, 11, 18, 0.6)',
+                  background: 'rgba(8, 11, 18, 0.64)',
                   boxShadow: '0 16px 38px rgba(0,0,0,0.22)',
                   overflow: 'auto',
                   backdropFilter: 'blur(18px)',
@@ -345,138 +535,49 @@ export default defineThemeRenderer({
                 }}
               >
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {panels.map(panel => {
-                    const isActive = panel.id === activePanel?.id;
-
-                    return (
-                      <button
-                        key={panel.id}
-                        onClick={() => host.activatePanel(panel.id)}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 12,
-                          padding: '12px 14px',
-                          borderRadius: 18,
-                          border: isActive ? '1px solid rgba(255,155,90,0.28)' : '1px solid rgba(255,255,255,0.06)',
-                          background: isActive ? 'rgba(24, 30, 44, 0.92)' : 'rgba(8, 11, 18, 0.5)',
-                          color: '#f5f8ff',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                        }}
-                      >
-                        <span
-                          style={{
-                            width: 34,
-                            height: 34,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            borderRadius: 12,
-                            background: isActive ? 'rgba(255,155,90,0.14)' : 'rgba(255,255,255,0.05)',
-                            color: isActive ? '#ffb27e' : '#dce7f4',
-                            flexShrink: 0,
-                          }}
-                        >
-                          {panel.icon}
-                        </span>
-                        <span style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-                          <span style={{ fontSize: 12, fontWeight: 700 }}>{panel.label}</span>
-                          <span style={{ fontSize: 10, lineHeight: 1.4, color: 'rgba(194,208,226,0.68)' }}>
-                            {panel.description}
-                          </span>
-                        </span>
-                      </button>
-                    );
-                  })}
+                  {host.renderPinnedPanels('right')}
                 </div>
               </div>
 
-              <div style={{ display: 'flex', minHeight: 0, gap: 12, overflow: 'hidden', justifyContent: 'flex-end' }}>
-                {host.renderPinnedPanels('right')}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                  gap: 10,
+                }}
+              >
+                <div
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: 20,
+                    border: '1px solid rgba(146,164,191,0.12)',
+                    background: 'rgba(10, 12, 19, 0.72)',
+                    color: '#f5f8ff',
+                    fontSize: 10,
+                    letterSpacing: '0.14em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  <div style={{ opacity: 0.58 }}>Layout</div>
+                  <div style={{ marginTop: 6, color: '#ffb27e' }}>{host.layoutProfile.label}</div>
+                </div>
+                <div
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: 20,
+                    border: '1px solid rgba(146,164,191,0.12)',
+                    background: 'rgba(10, 12, 19, 0.72)',
+                    color: '#f5f8ff',
+                    fontSize: 10,
+                    letterSpacing: '0.14em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  <div style={{ opacity: 0.58 }}>Chrome</div>
+                  <div style={{ marginTop: 6, color: '#6be7ff' }}>{chromeRegion.height}px</div>
+                </div>
               </div>
             </aside>
-          </div>
-
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr auto 1fr',
-              alignItems: 'center',
-              gap: 16,
-            }}
-          >
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '10px 14px',
-                borderRadius: 999,
-                border: '1px solid rgba(146,164,191,0.16)',
-                background: 'rgba(10, 12, 19, 0.72)',
-                color: '#c2d0e2',
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: '0.14em',
-                textTransform: 'uppercase',
-                justifySelf: 'start',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-              }}
-            >
-              <span>District</span>
-              <span style={{ width: 44, height: 1, background: 'rgba(255,255,255,0.1)' }} />
-              <span>{host.layoutProfile.label}</span>
-            </div>
-
-            <div
-              style={{
-                padding: '12px 18px',
-                borderRadius: 999,
-                border: '1px solid rgba(146,164,191,0.18)',
-                background: 'rgba(10, 12, 19, 0.8)',
-                boxShadow: '0 18px 38px rgba(0,0,0,0.3)',
-                color: '#f5f8ff',
-                backdropFilter: 'blur(18px)',
-                WebkitBackdropFilter: 'blur(18px)',
-              }}
-            >
-              <div style={{ fontSize: 10, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(194,208,226,0.56)' }}>
-                Center Stage
-              </div>
-              <div style={{ marginTop: 6, fontSize: 18, fontWeight: 700 }}>
-                {activePanel?.label ?? 'Launcher'}
-              </div>
-              <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.45, color: 'rgba(194,208,226,0.72)', maxWidth: 420 }}>
-                {activePanel?.description ?? 'Arcade lights, skyline cards, and a tower stage for the active panel.'}
-              </div>
-            </div>
-
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '10px 14px',
-                borderRadius: 999,
-                border: '1px solid rgba(146,164,191,0.16)',
-                background: 'rgba(10, 12, 19, 0.72)',
-                color: '#c2d0e2',
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: '0.14em',
-                textTransform: 'uppercase',
-                justifySelf: 'end',
-                justifyContent: 'flex-end',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-              }}
-            >
-              <span>{host.theme.name}</span>
-              <span style={{ width: 44, height: 1, background: 'rgba(255,255,255,0.1)' }} />
-              <span>{panels.length} floors</span>
-            </div>
           </div>
         </div>
       </div>
