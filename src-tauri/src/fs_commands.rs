@@ -6,6 +6,7 @@ use crate::entry_size_cache::{
     delete_entry_size_subtree, load_entry_size_cache, mark_path_and_ancestors_dirty,
     normalize_cache_path, upsert_entry_size_cache, PersistedEntrySize,
 };
+use crate::explorer_pro_commands::FsBatchRenameItem;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -24,6 +25,7 @@ use yazi_scheduler::{
 };
 use yazi_shared::{path::PathLike, strand::StrandLike, url::UrlBuf, Id as YaziTaskId};
 use yazi_vfs::provider as yazi_provider;
+use uuid::Uuid;
 
 #[cfg(test)]
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -77,7 +79,111 @@ pub enum FsWriteFileContent {
 #[serde(rename_all = "camelCase")]
 pub struct ExplorerTaskProgressEvent {
     pub task_id: String,
-    pub task: yazi_specta::YaziSchedulerTaskSnap,
+    pub task: ExplorerTaskRecord,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ExplorerTaskKind {
+    Copy,
+    Move,
+    Delete,
+    Trash,
+    BatchRename,
+    DuplicateScan,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ExplorerTaskStatus {
+    Running,
+    Succeeded,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ExplorerTaskHistoryClearScope {
+    Completed,
+    Failed,
+    Finished,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExplorerTaskRecord {
+    pub id: String,
+    pub kind: ExplorerTaskKind,
+    pub status: ExplorerTaskStatus,
+    pub title: String,
+    pub detail: String,
+    pub progress_current: Option<u64>,
+    pub progress_total: Option<u64>,
+    pub started_at: u64,
+    pub finished_at: Option<u64>,
+    pub source_paths: Vec<String>,
+    pub destination_path: Option<String>,
+    pub error_message: Option<String>,
+    pub can_retry: bool,
+    pub can_cancel: bool,
+    pub can_reveal_output: bool,
+    pub can_open_output: bool,
+    pub can_undo: bool,
+    pub scheduler_task: Option<yazi_specta::YaziSchedulerTaskSnap>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ExplorerTaskRegistration {
+    pub kind: ExplorerTaskKind,
+    pub title: String,
+    pub detail: String,
+    pub source_paths: Vec<String>,
+    pub destination_path: Option<String>,
+    pub retry_context: Option<ExplorerTaskRetryContext>,
+    pub can_undo: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum ExplorerTaskRetryContext {
+    Copy {
+        source_path: String,
+        destination_path: String,
+    },
+    Move {
+        source_path: String,
+        destination_path: String,
+    },
+    Delete {
+        path: String,
+        recursive: bool,
+    },
+    BatchRename {
+        items: Vec<FsBatchRenameItem>,
+    },
+    DuplicateScan {
+        root_path: String,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum ExplorerTaskCancelContext {
+    Yazi { scheduler_task_id: YaziTaskId },
+    DuplicateScan { scan_id: String },
+}
+
+#[derive(Debug, Clone)]
+struct ExplorerTaskRegistryEntry {
+    record: ExplorerTaskRecord,
+    retry_context: Option<ExplorerTaskRetryContext>,
+    cancel_context: Option<ExplorerTaskCancelContext>,
+    cancel_requested: bool,
+}
+
+#[derive(Debug, Default)]
+struct ExplorerTaskRegistry {
+    order: Vec<String>,
+    entries: HashMap<String, ExplorerTaskRegistryEntry>,
 }
 
 #[derive(Debug, Clone)]
@@ -265,6 +371,7 @@ static SEARCH_REQUESTS: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
 static FS_COMMAND_APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 static FS_COMMAND_YAZI_RUNTIME: OnceLock<Result<(), String>> = OnceLock::new();
 static FS_COMMAND_YAZI_SCHEDULER: OnceLock<Arc<YaziScheduler>> = OnceLock::new();
+static EXPLORER_TASK_REGISTRY: OnceLock<Mutex<ExplorerTaskRegistry>> = OnceLock::new();
 
 #[cfg(test)]
 static SEARCH_ENTRY_TEST_DELAY_MS: AtomicU64 = AtomicU64::new(0);
@@ -349,6 +456,10 @@ fn search_requests() -> &'static Mutex<HashMap<String, u64>> {
     SEARCH_REQUESTS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn explorer_task_registry() -> &'static Mutex<ExplorerTaskRegistry> {
+    EXPLORER_TASK_REGISTRY.get_or_init(|| Mutex::new(ExplorerTaskRegistry::default()))
+}
+
 pub fn initialize_fs_command_events(app: AppHandle) {
     let _ = FS_COMMAND_APP_HANDLE.set(app);
 }
@@ -379,6 +490,400 @@ fn fs_command_scheduler() -> Result<&'static Arc<YaziScheduler>, String> {
     Ok(FS_COMMAND_YAZI_SCHEDULER.get_or_init(|| Arc::new(YaziScheduler::serve())))
 }
 
+fn current_epoch_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn task_path_label(path: &Path) -> String {
+    path.file_name()
+        .map(|value| value.to_string_lossy().to_string())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| path.display().to_string())
+}
+
+fn task_output_ready(status: ExplorerTaskStatus, destination_path: Option<&String>) -> bool {
+    status == ExplorerTaskStatus::Succeeded
+        && destination_path
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false)
+}
+
+fn refresh_explorer_task_capabilities(entry: &mut ExplorerTaskRegistryEntry) {
+    entry.record.can_retry = entry.retry_context.is_some()
+        && matches!(
+            entry.record.status,
+            ExplorerTaskStatus::Failed | ExplorerTaskStatus::Cancelled
+        );
+    entry.record.can_cancel = entry.cancel_context.is_some()
+        && entry.record.status == ExplorerTaskStatus::Running;
+    let output_ready = task_output_ready(entry.record.status, entry.record.destination_path.as_ref());
+    entry.record.can_reveal_output = output_ready;
+    entry.record.can_open_output = output_ready;
+}
+
+fn emit_explorer_task_progress(record: &ExplorerTaskRecord) {
+    let Some(app) = fs_command_app_handle() else {
+        return;
+    };
+
+    let _ = ExplorerTaskProgressEvent {
+        task_id: record.id.clone(),
+        task: record.clone(),
+    }
+    .emit(app);
+}
+
+fn sort_explorer_tasks(tasks: &mut [ExplorerTaskRecord]) {
+    tasks.sort_by(|left, right| {
+        let left_running = left.status == ExplorerTaskStatus::Running;
+        let right_running = right.status == ExplorerTaskStatus::Running;
+        match right_running.cmp(&left_running) {
+            std::cmp::Ordering::Equal => {
+                let left_time = if left_running {
+                    left.started_at
+                } else {
+                    left.finished_at.unwrap_or(left.started_at)
+                };
+                let right_time = if right_running {
+                    right.started_at
+                } else {
+                    right.finished_at.unwrap_or(right.started_at)
+                };
+                right_time.cmp(&left_time)
+            }
+            ordering => ordering,
+        }
+    });
+}
+
+fn register_explorer_task(
+    task_id: String,
+    registration: ExplorerTaskRegistration,
+    cancel_context: Option<ExplorerTaskCancelContext>,
+) -> ExplorerTaskRecord {
+    let mut registry = explorer_task_registry()
+        .lock()
+        .expect("explorer task registry lock poisoned");
+    let started_at = current_epoch_ms();
+    let mut entry = ExplorerTaskRegistryEntry {
+        record: ExplorerTaskRecord {
+            id: task_id.clone(),
+            kind: registration.kind,
+            status: ExplorerTaskStatus::Running,
+            title: registration.title,
+            detail: registration.detail,
+            progress_current: None,
+            progress_total: None,
+            started_at,
+            finished_at: None,
+            source_paths: registration.source_paths,
+            destination_path: registration.destination_path,
+            error_message: None,
+            can_retry: false,
+            can_cancel: false,
+            can_reveal_output: false,
+            can_open_output: false,
+            can_undo: registration.can_undo,
+            scheduler_task: None,
+        },
+        retry_context: registration.retry_context,
+        cancel_context,
+        cancel_requested: false,
+    };
+    refresh_explorer_task_capabilities(&mut entry);
+    if !registry.order.iter().any(|existing| existing == &task_id) {
+        registry.order.push(task_id.clone());
+    }
+    let record = entry.record.clone();
+    registry.entries.insert(task_id, entry);
+    drop(registry);
+    emit_explorer_task_progress(&record);
+    record
+}
+
+fn mutate_explorer_task(
+    task_id: &str,
+    mutator: impl FnOnce(&mut ExplorerTaskRegistryEntry),
+) -> Result<ExplorerTaskRecord, String> {
+    let mut registry = explorer_task_registry()
+        .lock()
+        .map_err(|_| "Explorer task registry lock was poisoned.".to_string())?;
+    let entry = registry
+        .entries
+        .get_mut(task_id)
+        .ok_or_else(|| format!("Explorer task not found: {task_id}"))?;
+    mutator(entry);
+    refresh_explorer_task_capabilities(entry);
+    let record = entry.record.clone();
+    drop(registry);
+    emit_explorer_task_progress(&record);
+    Ok(record)
+}
+
+fn update_explorer_task_progress(
+    task_id: &str,
+    detail: Option<String>,
+    progress_current: Option<u64>,
+    progress_total: Option<u64>,
+) -> Result<ExplorerTaskRecord, String> {
+    mutate_explorer_task(task_id, |entry| {
+        if entry.record.status == ExplorerTaskStatus::Running {
+            if let Some(detail) = detail {
+                entry.record.detail = detail;
+            }
+            entry.record.progress_current = progress_current;
+            entry.record.progress_total = progress_total;
+        }
+    })
+}
+
+fn mark_explorer_task_finished(
+    task_id: &str,
+    status: ExplorerTaskStatus,
+    detail: Option<String>,
+    error_message: Option<String>,
+    can_undo: Option<bool>,
+) -> Result<ExplorerTaskRecord, String> {
+    mutate_explorer_task(task_id, |entry| {
+        entry.record.status = status;
+        entry.record.finished_at = Some(current_epoch_ms());
+        if let Some(detail) = detail {
+            entry.record.detail = detail;
+        }
+        entry.record.error_message = error_message;
+        if let Some(can_undo) = can_undo {
+            entry.record.can_undo = can_undo;
+        }
+    })
+}
+
+pub(crate) fn create_manual_explorer_task_with_id(
+    task_id: String,
+    registration: ExplorerTaskRegistration,
+) -> String {
+    register_explorer_task(task_id.clone(), registration, None);
+    task_id
+}
+
+pub(crate) fn create_manual_explorer_task(registration: ExplorerTaskRegistration) -> String {
+    create_manual_explorer_task_with_id(Uuid::new_v4().to_string(), registration)
+}
+
+pub(crate) fn set_manual_explorer_task_cancel_context(
+    task_id: &str,
+    cancel_context: ExplorerTaskCancelContext,
+) -> Result<ExplorerTaskRecord, String> {
+    mutate_explorer_task(task_id, |entry| {
+        entry.cancel_context = Some(cancel_context);
+    })
+}
+
+pub(crate) fn update_manual_explorer_task(
+    task_id: &str,
+    detail: Option<String>,
+    progress_current: Option<u64>,
+    progress_total: Option<u64>,
+) -> Result<ExplorerTaskRecord, String> {
+    update_explorer_task_progress(task_id, detail, progress_current, progress_total)
+}
+
+pub(crate) fn complete_manual_explorer_task(
+    task_id: &str,
+    detail: Option<String>,
+    can_undo: Option<bool>,
+) -> Result<ExplorerTaskRecord, String> {
+    mark_explorer_task_finished(task_id, ExplorerTaskStatus::Succeeded, detail, None, can_undo)
+}
+
+pub(crate) fn fail_manual_explorer_task(task_id: &str, error_message: String) -> Result<ExplorerTaskRecord, String> {
+    mark_explorer_task_finished(
+        task_id,
+        ExplorerTaskStatus::Failed,
+        Some(error_message.clone()),
+        Some(error_message),
+        None,
+    )
+}
+
+pub(crate) fn cancel_manual_explorer_task(task_id: &str, detail: Option<String>) -> Result<ExplorerTaskRecord, String> {
+    mark_explorer_task_finished(
+        task_id,
+        ExplorerTaskStatus::Cancelled,
+        detail.or_else(|| Some("Cancelled".to_string())),
+        Some("Cancelled".to_string()),
+        None,
+    )
+}
+
+pub(crate) fn set_recent_trash_task(task_id: Option<&str>) -> Result<(), String> {
+    let mut registry = explorer_task_registry()
+        .lock()
+        .map_err(|_| "Explorer task registry lock was poisoned.".to_string())?;
+    let mut changed_records = Vec::new();
+    for entry in registry.entries.values_mut() {
+        if entry.record.kind != ExplorerTaskKind::Trash {
+            continue;
+        }
+        let should_undo = task_id
+            .map(|candidate| candidate == entry.record.id)
+            .unwrap_or(false)
+            && entry.record.status == ExplorerTaskStatus::Succeeded;
+        if entry.record.can_undo != should_undo {
+            entry.record.can_undo = should_undo;
+            refresh_explorer_task_capabilities(entry);
+            changed_records.push(entry.record.clone());
+        }
+    }
+    drop(registry);
+    for record in changed_records {
+        emit_explorer_task_progress(&record);
+    }
+    Ok(())
+}
+
+fn list_explorer_tasks_snapshot() -> Result<Vec<ExplorerTaskRecord>, String> {
+    let registry = explorer_task_registry()
+        .lock()
+        .map_err(|_| "Explorer task registry lock was poisoned.".to_string())?;
+    let mut tasks = registry
+        .order
+        .iter()
+        .filter_map(|task_id| registry.entries.get(task_id))
+        .map(|entry| entry.record.clone())
+        .collect::<Vec<_>>();
+    drop(registry);
+    sort_explorer_tasks(&mut tasks);
+    Ok(tasks)
+}
+
+fn yazi_progress_counts(task: &yazi_specta::YaziSchedulerTaskSnap) -> (Option<u64>, Option<u64>) {
+    match &task.prog {
+        yazi_specta::YaziSchedulerTaskProg::FileCopy(prog) => {
+            if prog.total_bytes > 0 {
+                (Some(prog.processed_bytes), Some(prog.total_bytes))
+            } else if prog.total_files > 0 {
+                (
+                    Some((prog.success_files + prog.failed_files).into()),
+                    Some(prog.total_files.into()),
+                )
+            } else {
+                (None, None)
+            }
+        }
+        yazi_specta::YaziSchedulerTaskProg::FileCut(prog) => {
+            if prog.total_bytes > 0 {
+                (Some(prog.processed_bytes), Some(prog.total_bytes))
+            } else if prog.total_files > 0 {
+                (
+                    Some((prog.success_files + prog.failed_files).into()),
+                    Some(prog.total_files.into()),
+                )
+            } else {
+                (None, None)
+            }
+        }
+        yazi_specta::YaziSchedulerTaskProg::FileDelete(prog) => {
+            if prog.total_bytes > 0 {
+                (Some(prog.processed_bytes), Some(prog.total_bytes))
+            } else if prog.total_files > 0 {
+                (
+                    Some((prog.success_files + prog.failed_files).into()),
+                    Some(prog.total_files.into()),
+                )
+            } else {
+                (None, None)
+            }
+        }
+        yazi_specta::YaziSchedulerTaskProg::FileDownload(prog) => {
+            if prog.total_bytes > 0 {
+                (Some(prog.processed_bytes), Some(prog.total_bytes))
+            } else if prog.total_files > 0 {
+                (
+                    Some((prog.success_files + prog.failed_files).into()),
+                    Some(prog.total_files.into()),
+                )
+            } else {
+                (None, None)
+            }
+        }
+        yazi_specta::YaziSchedulerTaskProg::FileUpload(prog) => {
+            if prog.total_bytes > 0 {
+                (Some(prog.processed_bytes), Some(prog.total_bytes))
+            } else if prog.total_files > 0 {
+                (
+                    Some((prog.success_files + prog.failed_files).into()),
+                    Some(prog.total_files.into()),
+                )
+            } else {
+                (None, None)
+            }
+        }
+        yazi_specta::YaziSchedulerTaskProg::FileHardlink(prog) => {
+            if prog.total > 0 {
+                (
+                    Some((prog.success + prog.failed).into()),
+                    Some(prog.total.into()),
+                )
+            } else {
+                (None, None)
+            }
+        }
+        _ => (None, None),
+    }
+}
+
+fn yazi_task_failed(task: &yazi_specta::YaziSchedulerTaskSnap) -> bool {
+    match &task.prog {
+        yazi_specta::YaziSchedulerTaskProg::FileCopy(prog) => {
+            prog.cleaned == Some(false) || prog.collected == Some(false)
+        }
+        yazi_specta::YaziSchedulerTaskProg::FileCut(prog) => {
+            prog.cleaned == Some(false) || prog.collected == Some(false)
+        }
+        yazi_specta::YaziSchedulerTaskProg::FileDelete(prog) => {
+            prog.cleaned == Some(false) || prog.collected == Some(false)
+        }
+        yazi_specta::YaziSchedulerTaskProg::FileDownload(prog) => {
+            prog.cleaned == Some(false) || prog.collected == Some(false)
+        }
+        yazi_specta::YaziSchedulerTaskProg::FileUpload(prog) => {
+            prog.cleaned == Some(false) || prog.collected == Some(false)
+        }
+        yazi_specta::YaziSchedulerTaskProg::FileHardlink(prog) => prog.collected == Some(false),
+        yazi_specta::YaziSchedulerTaskProg::FileLink(prog) => prog.state == Some(false),
+        yazi_specta::YaziSchedulerTaskProg::FileTrash(prog) => {
+            prog.cleaned == Some(false) || prog.state == Some(false)
+        }
+        _ => false,
+    }
+}
+
+fn sync_yazi_task_record(
+    task_id: &str,
+    task: &yazi_specta::YaziSchedulerTaskSnap,
+) -> Result<ExplorerTaskRecord, String> {
+    let (progress_current, progress_total) = yazi_progress_counts(task);
+    mutate_explorer_task(task_id, |entry| {
+        entry.record.scheduler_task = Some(task.clone());
+        entry.record.progress_current = progress_current;
+        entry.record.progress_total = progress_total;
+        if !entry.cancel_requested && entry.record.status == ExplorerTaskStatus::Running && yazi_task_failed(task) {
+            entry.record.status = ExplorerTaskStatus::Failed;
+        }
+    })
+}
+
+fn explorer_task_cancel_requested(task_id: &str) -> bool {
+    explorer_task_registry()
+        .lock()
+        .ok()
+        .and_then(|registry| registry.entries.get(task_id).map(|entry| entry.cancel_requested))
+        .unwrap_or(false)
+}
+
 #[derive(Debug, Clone)]
 struct ExplorerYaziTaskState {
     snap: yazi_specta::YaziSchedulerTaskSnap,
@@ -399,18 +904,6 @@ fn current_explorer_yazi_task_state(task_id: YaziTaskId) -> Option<ExplorerYaziT
     })
 }
 
-fn emit_explorer_task_progress(task_id: YaziTaskId, task: &yazi_specta::YaziSchedulerTaskSnap) {
-    let Some(app) = fs_command_app_handle() else {
-        return;
-    };
-
-    let _ = ExplorerTaskProgressEvent {
-        task_id: task_id.to_string(),
-        task: task.clone(),
-    }
-    .emit(app);
-}
-
 fn explorer_yazi_task_error(state: &ExplorerYaziTaskState) -> String {
     state
         .logs
@@ -422,21 +915,47 @@ fn explorer_yazi_task_error(state: &ExplorerYaziTaskState) -> String {
         .unwrap_or_else(|| format!("{} failed", state.snap.name))
 }
 
-async fn await_explorer_yazi_task(ticket: YaziTaskTicket) -> Result<(), String> {
+const EXPLORER_TASK_CANCELLED_ERROR: &str = "Explorer task cancelled.";
+
+async fn await_explorer_yazi_task(
+    ticket: YaziTaskTicket,
+    registration: ExplorerTaskRegistration,
+) -> Result<String, String> {
     ensure_yazi_runtime()?;
+    let task_id = ticket.id.to_string();
+    register_explorer_task(
+        task_id.clone(),
+        registration.clone(),
+        Some(ExplorerTaskCancelContext::Yazi {
+            scheduler_task_id: ticket.id,
+        }),
+    );
     let mut last_state: Option<ExplorerYaziTaskState> = None;
 
     loop {
+        if explorer_task_cancel_requested(&task_id) {
+            if let Ok(scheduler) = fs_command_scheduler() {
+                scheduler.cancel(ticket.id);
+            }
+        }
+
         if ticket.done.completed() == Some(true) {
+            if explorer_task_cancel_requested(&task_id) {
+                let _ = cancel_manual_explorer_task(&task_id, None);
+                return Err(EXPLORER_TASK_CANCELLED_ERROR.to_string());
+            }
             if let Some(state) = &last_state {
                 if state.failed {
+                    let error_message = explorer_yazi_task_error(state);
+                    let _ = fail_manual_explorer_task(&task_id, error_message.clone());
                     if let Ok(scheduler) = fs_command_scheduler() {
                         scheduler.cancel(ticket.id);
                     }
-                    return Err(explorer_yazi_task_error(state));
+                    return Err(error_message);
                 }
             }
-            return Ok(());
+            let _ = complete_manual_explorer_task(&task_id, Some(registration.detail.clone()), None);
+            return Ok(task_id);
         }
 
         if let Some(state) = current_explorer_yazi_task_state(ticket.id) {
@@ -445,28 +964,42 @@ async fn await_explorer_yazi_task(ticket: YaziTaskTicket) -> Result<(), String> 
                 .map(|previous| previous.snap != state.snap)
                 .unwrap_or(true)
             {
-                emit_explorer_task_progress(ticket.id, &state.snap);
+                let _ = sync_yazi_task_record(&task_id, &state.snap);
             }
 
             if !state.running {
+                if explorer_task_cancel_requested(&task_id) {
+                    let _ = cancel_manual_explorer_task(&task_id, None);
+                    return Err(EXPLORER_TASK_CANCELLED_ERROR.to_string());
+                }
                 if state.failed {
+                    let error_message = explorer_yazi_task_error(&state);
+                    let _ = fail_manual_explorer_task(&task_id, error_message.clone());
                     if let Ok(scheduler) = fs_command_scheduler() {
                         scheduler.cancel(ticket.id);
                     }
-                    return Err(explorer_yazi_task_error(&state));
+                    return Err(error_message);
                 }
-                return Ok(());
+                let _ = complete_manual_explorer_task(&task_id, Some(registration.detail.clone()), None);
+                return Ok(task_id);
             }
 
             last_state = Some(state);
         } else if let Some(state) = &last_state {
+            if explorer_task_cancel_requested(&task_id) {
+                let _ = cancel_manual_explorer_task(&task_id, None);
+                return Err(EXPLORER_TASK_CANCELLED_ERROR.to_string());
+            }
             if state.failed {
+                let error_message = explorer_yazi_task_error(state);
+                let _ = fail_manual_explorer_task(&task_id, error_message.clone());
                 if let Ok(scheduler) = fs_command_scheduler() {
                     scheduler.cancel(ticket.id);
                 }
-                return Err(explorer_yazi_task_error(state));
+                return Err(error_message);
             }
-            return Ok(());
+            let _ = complete_manual_explorer_task(&task_id, Some(registration.detail.clone()), None);
+            return Ok(task_id);
         }
 
         tokio::time::sleep(Duration::from_millis(40)).await;
@@ -2810,7 +3343,7 @@ pub async fn fs_show_item_properties(path: String) -> Result<(), String> {
 pub async fn fs_delete(path: String, recursive: bool) -> Result<(), String> {
     let p = Path::new(&path);
     ensure_nonrecursive_delete_allowed(p, recursive)?;
-    delete_path_with_scheduler(p).await?;
+    delete_path_with_scheduler(p, recursive).await?;
 
     invalidate_all_fs_caches(p);
     if let Some(parent) = p.parent() {
@@ -2948,6 +3481,139 @@ pub async fn fs_transfer_items(
     Ok(results)
 }
 
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_list_explorer_tasks() -> Result<Vec<ExplorerTaskRecord>, String> {
+    list_explorer_tasks_snapshot()
+}
+
+fn should_clear_explorer_task(
+    scope: ExplorerTaskHistoryClearScope,
+    status: ExplorerTaskStatus,
+) -> bool {
+    match scope {
+        ExplorerTaskHistoryClearScope::Completed => status == ExplorerTaskStatus::Succeeded,
+        ExplorerTaskHistoryClearScope::Failed => {
+            matches!(status, ExplorerTaskStatus::Failed | ExplorerTaskStatus::Cancelled)
+        }
+        ExplorerTaskHistoryClearScope::Finished => status != ExplorerTaskStatus::Running,
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_clear_explorer_task_history(
+    scope: ExplorerTaskHistoryClearScope,
+) -> Result<(), String> {
+    let mut registry = explorer_task_registry()
+        .lock()
+        .map_err(|_| "Explorer task registry lock was poisoned.".to_string())?;
+    let retained_task_ids = registry
+        .order
+        .iter()
+        .filter_map(|task_id| {
+            registry.entries.get(task_id).and_then(|entry| {
+                if should_clear_explorer_task(scope, entry.record.status) {
+                    None
+                } else {
+                    Some(task_id.clone())
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    registry.order = retained_task_ids;
+    registry
+        .entries
+        .retain(|_, entry| !should_clear_explorer_task(scope, entry.record.status));
+    Ok(())
+}
+
+fn retry_context_for_task(task_id: &str) -> Result<ExplorerTaskRetryContext, String> {
+    let registry = explorer_task_registry()
+        .lock()
+        .map_err(|_| "Explorer task registry lock was poisoned.".to_string())?;
+    let entry = registry
+        .entries
+        .get(task_id)
+        .ok_or_else(|| format!("Explorer task not found: {task_id}"))?;
+    if !entry.record.can_retry {
+        return Err(format!("Explorer task is not retryable: {task_id}"));
+    }
+    entry
+        .retry_context
+        .clone()
+        .ok_or_else(|| format!("Explorer task has no retry context: {task_id}"))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_retry_explorer_task(
+    app: AppHandle,
+    task_id: String,
+) -> Result<ExplorerTaskRecord, String> {
+    let retry_context = retry_context_for_task(&task_id)?;
+    let next_task_id = match retry_context {
+        ExplorerTaskRetryContext::Copy {
+            source_path,
+            destination_path,
+        } => copy_path(Path::new(&source_path), Path::new(&destination_path), true).await?,
+        ExplorerTaskRetryContext::Move {
+            source_path,
+            destination_path,
+        } => move_path(Path::new(&source_path), Path::new(&destination_path), true).await?,
+        ExplorerTaskRetryContext::Delete { path, recursive } => {
+            let path_ref = Path::new(&path);
+            ensure_nonrecursive_delete_allowed(path_ref, recursive)?;
+            delete_path_with_scheduler(path_ref, recursive).await?
+        }
+        ExplorerTaskRetryContext::BatchRename { items } => {
+            crate::explorer_pro_commands::run_batch_rename_task(items).await?
+        }
+        ExplorerTaskRetryContext::DuplicateScan { root_path } => {
+            crate::explorer_pro_commands::start_duplicate_scan_task(app, root_path)?
+        }
+    };
+    let tasks = list_explorer_tasks_snapshot()?;
+    tasks.into_iter()
+        .find(|record| record.id == next_task_id)
+        .ok_or_else(|| format!("Retried explorer task was not registered: {next_task_id}"))
+}
+
+fn cancel_context_for_task(task_id: &str) -> Result<ExplorerTaskCancelContext, String> {
+    let mut registry = explorer_task_registry()
+        .lock()
+        .map_err(|_| "Explorer task registry lock was poisoned.".to_string())?;
+    let entry = registry
+        .entries
+        .get_mut(task_id)
+        .ok_or_else(|| format!("Explorer task not found: {task_id}"))?;
+    if !entry.record.can_cancel {
+        return Err(format!("Explorer task is not cancellable: {task_id}"));
+    }
+    entry.cancel_requested = true;
+    entry
+        .cancel_context
+        .clone()
+        .ok_or_else(|| format!("Explorer task has no cancel context: {task_id}"))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_cancel_explorer_task(task_id: String) -> Result<ExplorerTaskRecord, String> {
+    let cancel_context = cancel_context_for_task(&task_id)?;
+    match cancel_context {
+        ExplorerTaskCancelContext::Yazi { scheduler_task_id } => {
+            if let Ok(scheduler) = fs_command_scheduler() {
+                scheduler.cancel(scheduler_task_id);
+            }
+        }
+        ExplorerTaskCancelContext::DuplicateScan { scan_id } => {
+            crate::explorer_pro_commands::cancel_duplicate_scan_task(&scan_id)?;
+        }
+    }
+    cancel_manual_explorer_task(&task_id, None)
+}
+
 fn ensure_nonrecursive_delete_allowed(path: &Path, recursive: bool) -> Result<(), String> {
     if recursive || !path.is_dir() {
         return Ok(());
@@ -3023,7 +3689,26 @@ async fn ensure_destination_parent_dir(path: &Path) -> Result<(), String> {
         })
 }
 
-async fn copy_path(src: &Path, dst: &Path, force: bool) -> Result<(), String> {
+fn yazi_task_registration(
+    kind: ExplorerTaskKind,
+    title: String,
+    detail: String,
+    source_paths: Vec<String>,
+    destination_path: Option<String>,
+    retry_context: Option<ExplorerTaskRetryContext>,
+) -> ExplorerTaskRegistration {
+    ExplorerTaskRegistration {
+        kind,
+        title,
+        detail,
+        source_paths,
+        destination_path,
+        retry_context,
+        can_undo: false,
+    }
+}
+
+async fn copy_path(src: &Path, dst: &Path, force: bool) -> Result<String, String> {
     ensure_destination_parent_dir(dst).await?;
     let ticket = fs_command_scheduler()?.file_copy_ticket(
         UrlBuf::from(src),
@@ -3031,7 +3716,21 @@ async fn copy_path(src: &Path, dst: &Path, force: bool) -> Result<(), String> {
         force,
         false,
     );
-    await_explorer_yazi_task(ticket).await
+    await_explorer_yazi_task(
+        ticket,
+        yazi_task_registration(
+            ExplorerTaskKind::Copy,
+            format!("Copy {}", task_path_label(src)),
+            format!("{} -> {}", src.display(), dst.display()),
+            vec![src.to_string_lossy().to_string()],
+            Some(dst.to_string_lossy().to_string()),
+            Some(ExplorerTaskRetryContext::Copy {
+                source_path: src.to_string_lossy().to_string(),
+                destination_path: dst.to_string_lossy().to_string(),
+            }),
+        ),
+    )
+    .await
 }
 
 async fn yazi_path_metadata(path: &Path) -> Result<Option<Cha>, String> {
@@ -3063,11 +3762,25 @@ async fn cleanup_residual_move_source(source: &Path, metadata: Cha) -> Result<()
     })
 }
 
-async fn move_path(src: &Path, dst: &Path, force: bool) -> Result<(), String> {
+async fn move_path(src: &Path, dst: &Path, force: bool) -> Result<String, String> {
     ensure_destination_parent_dir(dst).await?;
     let ticket =
         fs_command_scheduler()?.file_cut_ticket(UrlBuf::from(src), UrlBuf::from(dst), force);
-    await_explorer_yazi_task(ticket).await?;
+    let task_id = await_explorer_yazi_task(
+        ticket,
+        yazi_task_registration(
+            ExplorerTaskKind::Move,
+            format!("Move {}", task_path_label(src)),
+            format!("{} -> {}", src.display(), dst.display()),
+            vec![src.to_string_lossy().to_string()],
+            Some(dst.to_string_lossy().to_string()),
+            Some(ExplorerTaskRetryContext::Move {
+                source_path: src.to_string_lossy().to_string(),
+                destination_path: dst.to_string_lossy().to_string(),
+            }),
+        ),
+    )
+    .await?;
 
     let destination_metadata = yazi_path_metadata(dst).await?;
     let source_metadata = yazi_path_metadata(src).await?;
@@ -3079,12 +3792,28 @@ async fn move_path(src: &Path, dst: &Path, force: bool) -> Result<(), String> {
         )),
         (Some(_), None) => Ok(()),
         (Some(_), Some(metadata)) => cleanup_residual_move_source(src, metadata).await,
-    }
+    }?;
+
+    Ok(task_id)
 }
 
-async fn delete_path_with_scheduler(path: &Path) -> Result<(), String> {
+async fn delete_path_with_scheduler(path: &Path, recursive: bool) -> Result<String, String> {
     let ticket = fs_command_scheduler()?.file_delete_ticket(UrlBuf::from(path));
-    await_explorer_yazi_task(ticket).await
+    await_explorer_yazi_task(
+        ticket,
+        yazi_task_registration(
+            ExplorerTaskKind::Delete,
+            format!("Delete {}", task_path_label(path)),
+            path.display().to_string(),
+            vec![path.to_string_lossy().to_string()],
+            None,
+            Some(ExplorerTaskRetryContext::Delete {
+                path: path.to_string_lossy().to_string(),
+                recursive,
+            }),
+        ),
+    )
+    .await
 }
 
 fn collision_free_destination(

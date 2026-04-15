@@ -13,7 +13,8 @@ use crate::explorer_pro_commands::{
     FsBatchRenameItem, FsBatchRenameResult,
 };
 use crate::fs_commands::{
-    DriveInfo, EntryStorageInfo, ExplorerTaskProgressEvent, FileEntry,
+    DriveInfo, EntryStorageInfo, ExplorerTaskHistoryClearScope, ExplorerTaskKind,
+    ExplorerTaskProgressEvent, ExplorerTaskRecord, ExplorerTaskStatus, FileEntry,
     FileSearchContentCacheStatus, FileSearchDiagnostics, FileSearchExecutionStrategy,
     FileSearchMatchKind, FileSearchResponse, FileSearchResult, FileTransferOperation,
     FileTransferResult, FsRuntimeCachePolicy, FsWriteFileContent,
@@ -105,6 +106,10 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::explorer_pro_commands::fs_find_duplicates_poll,
             crate::explorer_pro_commands::fs_find_duplicates_cancel,
             crate::fs_commands::fs_transfer_items,
+            crate::fs_commands::fs_list_explorer_tasks,
+            crate::fs_commands::fs_clear_explorer_task_history,
+            crate::fs_commands::fs_retry_explorer_task,
+            crate::fs_commands::fs_cancel_explorer_task,
             crate::fs_commands::fs_create_dir,
             crate::fs_commands::fs_read_file_base64,
             crate::fs_commands::fs_write_file,
@@ -171,6 +176,10 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<DriveInfo>()
         .typ::<EntryStorageInfo>()
         .typ::<ExplorerTaskProgressEvent>()
+        .typ::<ExplorerTaskKind>()
+        .typ::<ExplorerTaskStatus>()
+        .typ::<ExplorerTaskHistoryClearScope>()
+        .typ::<ExplorerTaskRecord>()
         .typ::<FsRuntimeCachePolicy>()
         .typ::<FsWriteFileContent>()
         .typ::<ExplorerTagRecord>()

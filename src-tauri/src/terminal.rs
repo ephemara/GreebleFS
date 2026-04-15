@@ -241,7 +241,7 @@ impl TerminalManager {
     pub fn read(&self, id: &str) -> Result<Vec<u8>, String> {
         let instance = self.terminal_instance(id)?;
         let mut reader = {
-            let mut instance = instance.lock().unwrap();
+            let instance = instance.lock().unwrap();
             instance
                 .master
                 .try_clone_reader()
@@ -297,7 +297,7 @@ impl TerminalManager {
 
     pub fn start_reader_thread(&self, id: String, app: AppHandle) {
         let reader = self.terminal_instance(&id).ok().and_then(|instance| {
-            let mut instance = instance.lock().unwrap();
+            let instance = instance.lock().unwrap();
             instance.master.try_clone_reader().ok()
         });
 
@@ -363,9 +363,6 @@ fn command_exists(command: &str) -> bool {
         .map(|value| value.trim().to_ascii_lowercase())
         .filter(|value| !value.is_empty())
         .collect();
-
-    #[cfg(not(target_os = "windows"))]
-    let extensions: Vec<String> = Vec::new();
 
     for dir in std::env::split_paths(&path_env) {
         let direct = dir.join(command);
@@ -723,29 +720,6 @@ end tell"#,
         command.stderr(Stdio::null());
         return Ok(command);
     }
-
-    let user_args = optional_args(&request.args);
-    let executable = request
-        .executable
-        .clone()
-        .filter(|value| !value.trim().is_empty())
-        .or_else(|| {
-            request
-                .shell
-                .clone()
-                .filter(|value| !value.trim().is_empty())
-        })
-        .unwrap_or_else(|| TerminalManager::get_shell(None).0);
-
-    let mut command = ProcessCommand::new(executable);
-    for arg in user_args {
-        command.arg(arg);
-    }
-    command.current_dir(working_dir);
-    command.stdin(Stdio::null());
-    command.stdout(Stdio::null());
-    command.stderr(Stdio::null());
-    Ok(command)
 }
 
 // Tauri commands
