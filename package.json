@@ -1,5 +1,5 @@
 {
-  "name": "greeble",
+  "name": "greeblefs",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -11,6 +11,7 @@
     "dev:vps": "bash scripts/with-vps-artifacts.sh bun run dev",
     "build": "bun scripts/sync-canonical-icons.mjs && cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings && vite build",
     "build:vps": "bash scripts/with-vps-artifacts.sh bun run build",
+    "release:linux:bundle": "bun run tauri build --bundles deb,rpm,appimage --no-sign --ci",
     "release:linux:install": "bash scripts/build-and-install-linux-local-release.sh",
     "release:linux:install:launch": "bash scripts/build-and-install-linux-local-release.sh --launch",
     "preview": "vite preview",

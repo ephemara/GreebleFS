@@ -56,7 +56,7 @@ pub fn run() {
             app.manage(EntrySizeWatcherState::default());
             app.manage(PluginWatcherState::default());
             if let Err(error) = wayland_dock::initialize_wayland_dock_host(&app.handle()) {
-                eprintln!("OverlayTerm: failed to initialize Wayland dock host: {error}");
+                eprintln!("GreebleFS: failed to initialize Wayland dock host: {error}");
             }
 
             if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
@@ -79,9 +79,9 @@ pub fn run() {
             let tray_icon = app.default_window_icon().cloned();
 
             let toggle_item =
-                MenuItem::with_id(app, "toggle", "Toggle Terminal", true, None::<&str>)?;
+                MenuItem::with_id(app, "toggle", "Toggle GreebleFS", true, None::<&str>)?;
             let separator = tauri::menu::PredefinedMenuItem::separator(app)?;
-            let quit_item = MenuItem::with_id(app, "quit", "Quit OverlayTerm", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit GreebleFS", true, None::<&str>)?;
 
             let menu = MenuBuilder::new(app)
                 .items(&[&toggle_item, &separator, &quit_item])
@@ -89,7 +89,7 @@ pub fn run() {
 
             let mut tray_builder = TrayIconBuilder::with_id(MAIN_TRAY_ICON_ID)
                 .menu(&menu)
-                .tooltip("OverlayTerm")
+                .tooltip("GreebleFS")
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "toggle" => toggle_overlay(app),

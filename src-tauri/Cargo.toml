@@ -1,10 +1,10 @@
 [package]
-name = "greeble"
+name = "greeblefs"
 version = "0.1.0"
-description = "OverlayTerm desktop command hub"
+description = "GreebleFS desktop workbench"
 authors = ["you"]
 edition = "2021"
-default-run = "greeble"
+default-run = "greeblefs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

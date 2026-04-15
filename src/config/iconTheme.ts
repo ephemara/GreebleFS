@@ -77,7 +77,7 @@ function normalizeThemeManifest(
   resolvePath: (iconPath: string) => string,
 ): OverlayResolvedIconTheme {
   return {
-    name: source.name?.trim() || 'OverlayTerm Icon Theme',
+    name: source.name?.trim() || 'GreebleFS Icon Theme',
     version: typeof source.version === 'number' ? source.version : 1,
     description: source.description?.trim() || undefined,
     file: normalizeIconId(source.file || 'txt'),

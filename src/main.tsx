@@ -13,7 +13,7 @@ import { initializeManagedContentDirectories } from "./config/appContentDirector
 
 window.addEventListener("error", (event) => {
     reportGlobalError(
-        "OverlayTerm runtime error",
+        "GreebleFS runtime error",
         formatGlobalErrorDetail(
             event.error
             ?? {
@@ -27,7 +27,7 @@ window.addEventListener("error", (event) => {
 });
 
 window.addEventListener("unhandledrejection", (event) => {
-    reportGlobalError("OverlayTerm unhandled rejection", formatGlobalErrorDetail(event.reason));
+    reportGlobalError("GreebleFS unhandled rejection", formatGlobalErrorDetail(event.reason));
 });
 
 // Disable default browser context menu globally for Tauri
@@ -67,7 +67,7 @@ async function bootstrapApp() {
           </React.StrictMode>
         );
     } catch (error) {
-        reportGlobalError("OverlayTerm render bootstrap failed", formatGlobalErrorDetail(error));
+        reportGlobalError("GreebleFS render bootstrap failed", formatGlobalErrorDetail(error));
     }
 }
 

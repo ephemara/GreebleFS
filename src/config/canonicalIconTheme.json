@@ -1,7 +1,7 @@
 {
-  "name": "OverlayTerm Canonical Icons",
+  "name": "GreebleFS Canonical Icons",
   "version": 1,
-  "description": "Canonical stock icon ids, icon files, and matcher tables for OverlayTerm themes.",
+  "description": "Canonical stock icon ids, icon files, and matcher tables for GreebleFS themes.",
   "file": "txt",
   "folder": "folder",
   "folderExpanded": "folder_open",

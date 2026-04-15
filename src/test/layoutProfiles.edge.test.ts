@@ -9,6 +9,8 @@ import {
 describe('layoutProfiles edge cases', () => {
   it('builds all default manifest candidates without duplicating separators', () => {
     expect(buildDefaultLayoutConfigCandidates('C:\\Users\\Alex\\')).toEqual([
+      'C:\\Users\\Alex\\.greeblefs\\greeblefs.layouts.json',
+      'C:\\Users\\Alex\\.greeblefs\\greeblefs.layouts.toml',
       'C:\\Users\\Alex\\.greeble\\greeble.layouts.json',
       'C:\\Users\\Alex\\.greeble\\greeble.layouts.toml',
       'C:\\Users\\Alex\\.overlayterm\\snapyard.layouts.json',

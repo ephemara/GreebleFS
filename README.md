@@ -1,6 +1,6 @@
-# OverlayTerm
+# GreebleFS
 
-OverlayTerm is a Tauri desktop command overlay that keeps the terminal, file explorer, source control, plugins, runtime theming, and screenshot capture in one workbench.
+GreebleFS is a Tauri desktop workbench that keeps the terminal, file explorer, source control, plugins, runtime theming, and screenshot capture in one shell.
 
 ## Product Surface
 
@@ -33,6 +33,13 @@ OverlayTerm is a Tauri desktop command overlay that keeps the terminal, file exp
 - Unit tests: `bun run test:unit` or `npm run test:unit`
 - Browser tests: `bun run test:browser` or `npm run test:browser`
 - Production build: `bun run build` or `npm run build`
+- Linux bundles: `bun run release:linux:bundle`
+- Linux local install: `bun run release:linux:install`
+
+## Release Notes
+
+- The shipped app, Tauri bundle identity, Linux installer, and desktop entry now use the `GreebleFS` name.
+- Legacy `OverlayTerm` runtime/import/storage identifiers remain supported for this release candidate where they are part of plugin compatibility or persisted local state.
 
 ## Recommended IDE Setup
 

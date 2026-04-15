@@ -125,7 +125,7 @@ describe('SettingsPage behavior', () => {
 
     renderSettingsPage();
 
-    expect(screen.getByText('OverlayTerm Control Surface')).toBeInTheDocument();
+    expect(screen.getByText('GreebleFS Control Surface')).toBeInTheDocument();
     expect(screen.getByText('Core Workflows')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Terminal Settings' }));

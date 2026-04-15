@@ -55,6 +55,7 @@ const MIN_PINNED_PANEL_SIZE = 220;
 const MAX_PINNED_PANEL_SIZE = 640;
 const DEFAULT_LAYOUT_VERSION = 1;
 const DEFAULT_LAYOUT_CONFIG_LOCATIONS = [
+  { relativeDir: '.greeblefs', basename: 'greeblefs.layouts' },
   { relativeDir: '.greeble', basename: 'greeble.layouts' },
   { relativeDir: '.overlayterm', basename: 'snapyard.layouts' },
 ] as const;

@@ -628,7 +628,7 @@ describe('GitManager onboarding behavior', () => {
     await user.click(await screen.findByRole('button', { name: 'Discard' }));
 
     expect(confirmSpy).toHaveBeenCalledWith(
-      'Remove the untracked file notes/todo.txt? This cannot be undone from OverlayTerm.',
+      'Remove the untracked file notes/todo.txt? This cannot be undone from GreebleFS.',
     );
 
     await waitFor(() => {
@@ -862,7 +862,7 @@ describe('GitManager onboarding behavior', () => {
     await user.click(await screen.findByRole('button', { name: 'Use Ours' }));
 
     expect(confirmSpy).toHaveBeenCalledWith(
-      'Resolve the conflict in src/app.ts with our version? OverlayTerm will replace the working tree file and stage the result as resolved.',
+      'Resolve the conflict in src/app.ts with our version? GreebleFS will replace the working tree file and stage the result as resolved.',
     );
 
     await waitFor(() => {
@@ -940,7 +940,7 @@ describe('GitManager onboarding behavior', () => {
     await user.click(await screen.findByRole('button', { name: 'Use Ours' }));
 
     expect(confirmSpy).toHaveBeenCalledWith(
-      'Resolve the conflict in src/obsolete.ts by deleting the file with our version? OverlayTerm will stage that resolution.',
+      'Resolve the conflict in src/obsolete.ts by deleting the file with our version? GreebleFS will stage that resolution.',
     );
 
     await waitFor(() => {
@@ -1203,4 +1203,3 @@ describe('GitManager onboarding behavior', () => {
     );
   });
 });
-
