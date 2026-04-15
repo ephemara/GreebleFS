@@ -191,7 +191,7 @@ function ThemeCatalogGrid({
           packageInfo?.capabilitySummary.visuals ? `Visuals ${packageInfo.capabilitySummary.visuals}` : null,
           compiledEngineManifest?.capabilitySummary.designTokens ? `Tokens ${compiledEngineManifest.capabilitySummary.designTokens}` : null,
           packageInfo?.capabilitySummary.themeRenderer ? 'Renderer V2' : null,
-        ].filter((value): value is string => Boolean(value)).slice(0, 6);
+        ].filter((value): value is string => Boolean(value)).slice(0, 10);
 
         return (
           <button

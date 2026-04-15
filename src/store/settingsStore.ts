@@ -53,7 +53,6 @@ import {
 } from '../config/overlayWindow';
 import {
   normalizeOverlayWallpaperFitMode,
-  wallpaperSystemConfig,
   type OverlayWallpaperFitMode,
 } from '../config/wallpapers';
 import {

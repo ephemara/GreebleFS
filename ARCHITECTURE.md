@@ -28,6 +28,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Explorer rail, drives, bookmarks, saved searches, and tag-filter browsing.
 - `src/config/appearance.ts`
   Core overlay theme model and resolved CSS variables.
+- `src/config/pilotThemeContract.ts`
+  Data-driven pilot theme baseline for built-in theme defaults, app/dock recipe normalization, and explorer/layout reset behavior when built-in themes are selected.
 - `src/config/workbenchTheme.ts`
   App-wide workbench recipe resolution and workbench-scoped CSS variable contract.
 - `src/config/explorerTheme.ts`
@@ -62,6 +64,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 ## Theme / Workbench Architecture
 
 - Overlay themes still own the global palette, effects, fonts, icon theme, visuals, and shader/motion defaults.
+- `src/config/pilotThemeContract.ts` is the source of truth for the boring default shell:
+  - `pilot-dark` and `pilot-light` are the canonical built-in defaults
+  - all built-in themes inherit the same pilot workbench, explorer, and dock recipe baseline unless they explicitly override it
+  - built-in theme switches can also carry appearance/explorer/layout reset defaults instead of only changing palette data
 - Theme packages can ship a wallpaper asset through `theme.assets.backgroundUrl`; that asset is now the theme-default wallpaper layer instead of only preview metadata.
 - Theme packages can also ship a generalized engine manifest through `presentation`, `layoutPrimitives`, `navigationPatterns`, and `renderStyles`.
 - `src/config/appearance.ts` now preserves compiled engine manifests on the active theme so recipe resolution can use them at runtime.
@@ -122,6 +128,11 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `settings.appearance.dockThemeMode === 'follow-app'` reuses the active app theme as the dock base theme, then merges any optional `theme.dock.workbench` / `theme.dock.explorer` recipe overrides
   - `settings.appearance.dockThemeMode === 'override'` resolves the dock lane from `settings.appearance.activeDockThemeId`, with safe fallback to the active app theme when the dock override id is missing or invalid
   - `src/config/appearance.ts` returns both `app` and `dock` channels and exposes the currently active channel based on `windowMode`
+- Theme selection now has an explicit normalization path in `src/store/settingsStore.ts`:
+  - `applyThemeSelection()` is the correct path for app-theme switches
+  - `applyDockThemeSelection()` is the correct path for dock override switches
+  - built-in app-theme switches can reset theme-managed appearance overrides plus explorer/layout presentation state, but they intentionally preserve navigation truth like current path, history, and search
+  - raw `updateAppearance({ activeThemeId })` should not be used for normal built-in theme switching because it skips that normalization contract
 - Theme packages can now declare dock-specific recipe overlays under `theme.dock`:
   - `theme.dock.workbench` tunes dock-shell chrome without changing the application shell recipe
   - `theme.dock.explorer` tunes dock explorer chrome, metrics, and layout defaults without forking explorer domain behavior
@@ -250,6 +261,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 ## Common Errors / Lessons Learned
 
 - Repo-wide `npx tsc --noEmit` is currently red on several pre-existing generated-contract and test typing issues unrelated to the workbench/explorer theme system. The narrowed command above now only leaves `src/runtime/useFolderPluginRuntime.ts` as an unrelated pre-existing failure.
+- Built-in theme switches should go through `settingsStore.applyThemeSelection()` or the Settings theme catalog flow, not a direct `updateAppearance({ activeThemeId })` call. The direct path now skips pilot baseline resets for dock mode, layout profile, explorer presentation, wallpaper/shader overrides, and related default-shell behavior.
 - JSDOM-backed Vitest runs currently fail in this workspace because `html-encoding-sniffer` requires an ESM dependency through a CommonJS path. Node-environment tests still work, so keep pure logic/package-loader tests runnable there until the dependency issue is fixed.
 - `bun run test:browser` currently launches a headed Playwright Chromium session in this workspace. Without an X server it fails before any tests run; use `xvfb-run` or a headless browser config if you need browser validation locally.
 - `plugins/**/dist/**` is versioned source for packaged frontend plugins in this repo. Do not treat those directories like app-build output or let a blanket `dist/` ignore swallow shipped plugin entries.

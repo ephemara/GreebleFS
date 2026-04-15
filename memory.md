@@ -1,5 +1,22 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Pilot Default Theme Baseline
+
+- Added `src/config/pilotThemeContract.ts` as the data-driven source of truth for the boring/default shell baseline.
+- Durable implementation shape:
+  - `pilot-dark` and `pilot-light` are now the canonical built-in defaults, and `pilot-dark` is the repo default/fallback theme instead of `operator`.
+  - `src/config/appearance.ts` now gives all built-in themes the same pilot workbench, explorer, and dock recipe baseline, so built-in theme changes keep the shell layout contract stable even when the palette changes.
+  - `src/store/settingsStore.ts` now owns `applyThemeSelection()` and `applyDockThemeSelection()`; Settings should use those actions instead of directly flipping `activeThemeId`.
+  - built-in theme selection now resets theme-managed shell state in one place: dock follow/override defaults, wallpaper/shader/open-close motion overrides, clean app visual controls, explorer presentation defaults, primary layout profile, and dock theme normalization.
+  - explorer session normalization only resets presentation state (`shellLayoutId`, preview/source visibility, sidebar/preview widths). It deliberately preserves navigation truth like `currentPath`, `history`, and `search`.
+  - package theme selection still clears theme-managed shader/motion overrides and can force managed icons on, but it does not force the pilot layout reset path unless the selected theme id is in the built-in pilot-default contract.
+- Durable UI note:
+  - `src/components/SettingsPage.tsx` theme cards can now show both pilot recipe badges and package capability badges, so the capability badge limit was widened to keep package metadata visible after the pilot baseline landed.
+- Validation:
+  - passed: `bunx vitest run src/test/appearance.test.ts src/test/settingsStore.test.ts src/test/settingsPage.behavior.test.tsx src/test/app.dockMode.test.tsx`
+  - passed: `bunx vitest run src/test/themeEngineBackend.test.ts src/test/workbenchRenderRuntime.test.ts src/test/fileExplorer.viewModes.test.tsx src/test/themeEngineCatalog.regression.test.ts`
+  - repo note: broad `bunx tsc --noEmit` is still red on many pre-existing `App.tsx`, `FileExplorer.tsx`, store, and test typing issues outside this pilot-theme pass
+
 ## 2026-04-15 — Dock Theme Lane / Dock Presentation Split
 
 - Dock mode is now a first-class presentation lane instead of a thin alias of the app shell.

@@ -15,7 +15,7 @@ import {
 } from '../config/appearance';
 
 describe('appearance config helpers', () => {
-  it('normalizes partial themes against the operator fallback shape', () => {
+  it('normalizes partial themes against the pilot fallback shape', () => {
     const normalized = normalizeThemeDefinition({
       id: 'custom-lab',
       name: 'Custom Lab',
@@ -33,6 +33,16 @@ describe('appearance config helpers', () => {
     expect(normalized.effects.shadow).toBe('0 0 0 #000');
     expect(normalized.palette.textPrimary.length).toBeGreaterThan(0);
     expect(normalized.xterm.cursor.length).toBeGreaterThan(0);
+  });
+
+  it('exposes pilot dark and light as the leading built-in themes and resolves pilot dark by default', () => {
+    expect(overlayThemePresets[0]?.id).toBe('pilot-dark');
+    expect(overlayThemePresets[1]?.id).toBe('pilot-light');
+
+    const resolved = resolveOverlayAppearance();
+    expect(resolved.theme.id).toBe('pilot-dark');
+    expect(resolved.app.baseTheme.id).toBe('pilot-dark');
+    expect(resolved.dock.baseTheme.id).toBe('pilot-dark');
   });
 
   it('upserts custom themes by id without duplicating entries', () => {

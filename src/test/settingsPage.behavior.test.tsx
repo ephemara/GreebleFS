@@ -11,6 +11,7 @@ import { pluginSystemConfig } from '../config/plugins';
 import { screenshotFeatureConfig } from '../config/screenshots';
 import { compileThemeEngineManifest, normalizeThemeManifestDraft } from '../runtime/themeEngineBackend';
 import { defaultSettings, useSettingsStore } from '../store/settingsStore';
+import { useExplorerStore } from '../store/explorerStore';
 import { useTerminalStore } from '../store/terminalStore';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
 
@@ -27,9 +28,15 @@ function renderSettingsPage(options?: {
   themePackages?: LoadedOverlayThemePackage[];
 }) {
   const packageThemes = (options?.themePackages ?? []).map(pkg => pkg.theme);
+  const appearanceSettings = useSettingsStore.getState().settings.appearance;
   const appearance = resolveOverlayAppearance({
-    activeThemeId: options?.appearanceThemeId ?? 'operator',
+    activeThemeId: options?.appearanceThemeId ?? appearanceSettings.activeThemeId,
+    activeDockThemeId: appearanceSettings.activeDockThemeId,
+    dockThemeMode: appearanceSettings.dockThemeMode,
+    customThemes: appearanceSettings.customThemes,
     packageThemes,
+    uiFontFamily: appearanceSettings.uiFontFamily,
+    panelTransparency: appearanceSettings.panelTransparency,
   });
 
   render(
@@ -71,6 +78,7 @@ function renderSettingsPage(options?: {
 describe('SettingsPage behavior', () => {
   beforeEach(() => {
     useSettingsStore.getState().resetToDefaults();
+    useExplorerStore.getState().resetSession();
     useTerminalStore.setState({
       isInitialized: true,
       directoryBookmarks: [],
@@ -570,6 +578,93 @@ describe('SettingsPage behavior', () => {
     expect(appearanceSettings.useNativeOsIcons).toBe(false);
   });
 
+  it('applies the pilot light baseline when selecting the built-in default theme', async () => {
+    const user = userEvent.setup();
+
+    useSettingsStore.setState(state => ({
+      settings: {
+        ...state.settings,
+        explorer: {
+          ...state.settings.explorer,
+          showHiddenFiles: true,
+          viewMode: 'icons-l',
+          experimentalViewMode: 'adaptive-semantic-grid',
+          experimentalDensity: 0.66,
+          folderClickMode: 'single',
+        },
+        appearance: {
+          ...state.settings.appearance,
+          activeThemeId: 'operator',
+          dockThemeMode: 'override',
+          activeDockThemeId: 'vista-glass',
+          activeWallpaperId: 'aurora',
+          activeShaderId: 'nebula-flow',
+          uiFontFamily: 'Geist, Inter, system-ui, sans-serif',
+          useNativeOsIcons: true,
+          panelTransparency: 0.42,
+          appZoom: 1.12,
+          appBlur: true,
+          appOpenAnimation: 'spring-lift',
+          appCloseAnimation: 'burn',
+        },
+        layout: {
+          ...state.settings.layout,
+          activeProfileId: 'navigator-bottom',
+        },
+      },
+    }));
+    useExplorerStore.getState().updateSession({
+      currentPath: '/workspace',
+      history: ['/workspace'],
+      historyIdx: 0,
+      shellLayoutId: 'focus',
+      sidebarWidth: 244,
+      previewWidth: 420,
+      previewEnabled: false,
+      sourcesVisible: false,
+    });
+
+    renderSettingsPage();
+
+    await user.click(findSectionButton('Appearance'));
+    const pilotLightCards = await screen.findAllByText('Pilot Light');
+    await user.click(pilotLightCards[0].closest('button') as HTMLButtonElement);
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.appearance.activeThemeId).toBe('pilot-light');
+    });
+
+    const { settings } = useSettingsStore.getState();
+    expect(settings.appearance.theme).toBe('light');
+    expect(settings.appearance.dockThemeMode).toBe('follow-app');
+    expect(settings.appearance.activeDockThemeId).toBeNull();
+    expect(settings.appearance.activeWallpaperId).toBeNull();
+    expect(settings.appearance.activeShaderId).toBeNull();
+    expect(settings.appearance.uiFontFamily).toBe(defaultSettings.appearance.uiFontFamily);
+    expect(settings.appearance.useNativeOsIcons).toBe(false);
+    expect(settings.appearance.panelTransparency).toBe(0);
+    expect(settings.appearance.appZoom).toBe(1);
+    expect(settings.appearance.appBlur).toBe(false);
+    expect(settings.appearance.appOpenAnimation).toBeNull();
+    expect(settings.appearance.appCloseAnimation).toBeNull();
+    expect(settings.explorer.showHiddenFiles).toBe(false);
+    expect(settings.explorer.viewMode).toBe('details');
+    expect(settings.explorer.experimentalViewMode).toBe('off');
+    expect(settings.explorer.experimentalDensity).toBe(defaultSettings.explorer.experimentalDensity);
+    expect(settings.explorer.folderClickMode).toBe('double');
+    expect(settings.layout.activeProfileId).toBe(defaultSettings.layout.activeProfileId);
+
+    const { session } = useExplorerStore.getState();
+    expect(session.currentPath).toBe('/workspace');
+    expect(session.history).toEqual(['/workspace']);
+    expect(session.historyIdx).toBe(0);
+    expect(session.shellLayoutId).toBe('balanced');
+    expect(session.sidebarWidth).toBeNull();
+    expect(session.previewWidth).toBeNull();
+    expect(session.previewEnabled).toBe(true);
+    expect(session.sourcesVisible).toBe(true);
+  });
+
   it('stores a separate dock theme override from the appearance catalog', async () => {
     const user = userEvent.setup();
     const packageTheme = normalizeThemeDefinition({
@@ -622,7 +717,7 @@ describe('SettingsPage behavior', () => {
     await user.click(dockThemeButtons[dockThemeButtons.length - 1] as HTMLButtonElement);
 
     const appearanceSettings = useSettingsStore.getState().settings.appearance;
-    expect(appearanceSettings.activeThemeId).toBe('operator');
+    expect(appearanceSettings.activeThemeId).toBe(defaultSettings.appearance.activeThemeId);
     expect(appearanceSettings.dockThemeMode).toBe('override');
     expect(appearanceSettings.activeDockThemeId).toBe('vista-glass');
   });

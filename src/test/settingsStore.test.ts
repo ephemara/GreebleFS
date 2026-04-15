@@ -76,7 +76,7 @@ describe('useSettingsStore — initial state', () => {
   it('has the correct default appearance settings', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.appearance.theme).toBe('dark');
-    expect(settings.appearance.activeThemeId).toBe('operator');
+    expect(settings.appearance.activeThemeId).toBe('pilot-dark');
     expect(settings.appearance.dockThemeMode).toBe('follow-app');
     expect(settings.appearance.activeDockThemeId).toBeNull();
     expect(settings.appearance.activeWallpaperId).toBeNull();
@@ -85,10 +85,11 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.appearance.wallpaperMuted).toBe(true);
     expect(settings.appearance.activeShaderId).toBeNull();
     expect(settings.appearance.shaderControlValues).toEqual({});
-    expect(settings.appearance.uiFontFamily).toBe('Inter, system-ui, sans-serif');
+    expect(settings.appearance.uiFontFamily).toBe('system-ui, sans-serif');
     expect(settings.appearance.useNativeOsIcons).toBe(false);
     expect(settings.appearance.animations).toBe(true);
     expect(settings.appearance.panelTransparency).toBe(0);
+    expect(settings.appearance.appBlur).toBe(false);
     expect(settings.appearance.appBlurStrength).toBe(18);
     expect(settings.appearance.appOpenAnimation).toBeNull();
     expect(settings.appearance.appCloseAnimation).toBeNull();
@@ -422,10 +423,7 @@ describe('useSettingsStore.updateAppearance()', () => {
 
   it('stores dock theme selection independently from the application theme', () => {
     const store = useSettingsStore.getState();
-    store.updateAppearance({
-      dockThemeMode: 'override',
-      activeDockThemeId: 'dock-burnished',
-    });
+    store.applyDockThemeSelection('dock-burnished');
 
     const { appearance } = useSettingsStore.getState().settings;
     expect(appearance.activeThemeId).toBe(defaultSettings.appearance.activeThemeId);
@@ -447,6 +445,143 @@ describe('useSettingsStore.updateAppearance()', () => {
     const { appearance } = useSettingsStore.getState().settings;
     expect(appearance.appOpenAnimation).toBeNull();
     expect(appearance.appCloseAnimation).toBeNull();
+  });
+});
+
+describe('useSettingsStore.applyThemeSelection()', () => {
+  it('applies pilot theme defaults across appearance, layout, and explorer session state', () => {
+    useSettingsStore.setState(state => ({
+      settings: {
+        ...state.settings,
+        explorer: {
+          ...state.settings.explorer,
+          showHiddenFiles: true,
+          viewMode: 'icons-l',
+          experimentalViewMode: 'adaptive-semantic-grid',
+          experimentalDensity: 0.64,
+          folderClickMode: 'single',
+        },
+        appearance: {
+          ...state.settings.appearance,
+          activeThemeId: 'operator',
+          dockThemeMode: 'override',
+          activeDockThemeId: 'dock-burnished',
+          activeWallpaperId: 'wallpaper-lab',
+          activeShaderId: 'nebula-flow',
+          uiFontFamily: 'Geist, Inter, system-ui, sans-serif',
+          useNativeOsIcons: true,
+          panelTransparency: 0.48,
+          appZoom: 1.16,
+          appBlur: true,
+          appOpenAnimation: 'spring-lift',
+          appCloseAnimation: 'burn',
+        },
+        layout: {
+          ...state.settings.layout,
+          activeProfileId: 'navigator-bottom',
+        },
+      },
+    }));
+    useExplorerStore.getState().updateSession({
+      currentPath: '/workspace',
+      history: ['/workspace'],
+      historyIdx: 0,
+      shellLayoutId: 'focus',
+      sidebarWidth: 244,
+      previewWidth: 420,
+      previewEnabled: false,
+      sourcesVisible: false,
+    });
+
+    useSettingsStore.getState().applyThemeSelection('pilot-light');
+
+    const { settings } = useSettingsStore.getState();
+    expect(settings.appearance.activeThemeId).toBe('pilot-light');
+    expect(settings.appearance.theme).toBe('light');
+    expect(settings.appearance.dockThemeMode).toBe('follow-app');
+    expect(settings.appearance.activeDockThemeId).toBeNull();
+    expect(settings.appearance.activeWallpaperId).toBeNull();
+    expect(settings.appearance.activeShaderId).toBeNull();
+    expect(settings.appearance.uiFontFamily).toBe(defaultSettings.appearance.uiFontFamily);
+    expect(settings.appearance.useNativeOsIcons).toBe(false);
+    expect(settings.appearance.panelTransparency).toBe(0);
+    expect(settings.appearance.appZoom).toBe(1);
+    expect(settings.appearance.appBlur).toBe(false);
+    expect(settings.appearance.appOpenAnimation).toBeNull();
+    expect(settings.appearance.appCloseAnimation).toBeNull();
+    expect(settings.explorer.showHiddenFiles).toBe(false);
+    expect(settings.explorer.viewMode).toBe('details');
+    expect(settings.explorer.experimentalViewMode).toBe('off');
+    expect(settings.explorer.experimentalDensity).toBe(defaultSettings.explorer.experimentalDensity);
+    expect(settings.explorer.folderClickMode).toBe('double');
+    expect(settings.layout.activeProfileId).toBe(defaultSettings.layout.activeProfileId);
+
+    const { session } = useExplorerStore.getState();
+    expect(session.currentPath).toBe('/workspace');
+    expect(session.history).toEqual(['/workspace']);
+    expect(session.historyIdx).toBe(0);
+    expect(session.shellLayoutId).toBe('balanced');
+    expect(session.sidebarWidth).toBeNull();
+    expect(session.previewWidth).toBeNull();
+    expect(session.previewEnabled).toBe(true);
+    expect(session.sourcesVisible).toBe(true);
+  });
+
+  it('clears theme-managed overrides for package themes without resetting pilot layout state', () => {
+    useSettingsStore.setState(state => ({
+      settings: {
+        ...state.settings,
+        explorer: {
+          ...state.settings.explorer,
+          showHiddenFiles: true,
+          viewMode: 'icons-l',
+        },
+        appearance: {
+          ...state.settings.appearance,
+          activeThemeId: 'operator',
+          activeShaderId: 'nebula-flow',
+          appOpenAnimation: 'spring-lift',
+          appCloseAnimation: 'burn',
+          useNativeOsIcons: true,
+        },
+        layout: {
+          ...state.settings.layout,
+          activeProfileId: 'navigator-bottom',
+        },
+      },
+    }));
+    useExplorerStore.getState().updateSession({
+      currentPath: '/workspace',
+      history: ['/workspace'],
+      historyIdx: 0,
+      shellLayoutId: 'focus',
+      sidebarWidth: 244,
+      previewWidth: 420,
+      previewEnabled: false,
+      sourcesVisible: false,
+    });
+
+    useSettingsStore.getState().applyThemeSelection('vista-glass', { forceManagedIcons: true });
+
+    const { settings } = useSettingsStore.getState();
+    expect(settings.appearance.activeThemeId).toBe('vista-glass');
+    expect(settings.appearance.activeShaderId).toBeNull();
+    expect(settings.appearance.appOpenAnimation).toBeNull();
+    expect(settings.appearance.appCloseAnimation).toBeNull();
+    expect(settings.appearance.useNativeOsIcons).toBe(false);
+    expect(settings.explorer.showHiddenFiles).toBe(true);
+    expect(settings.explorer.viewMode).toBe('icons-l');
+    expect(settings.layout.activeProfileId).toBe('navigator-bottom');
+
+    const { session } = useExplorerStore.getState();
+    expect(session.currentPath).toBe('/workspace');
+    expect(session.history).toEqual(['/workspace']);
+    expect(session.historyIdx).toBe(0);
+    expect(session.shellLayoutId).toBe('focus');
+    expect(session.sidebarWidth).toBe(244);
+    expect(session.previewWidth).toBe(420);
+    expect(session.previewEnabled).toBe(false);
+    expect(session.sourcesVisible).toBe(false);
   });
 });
 

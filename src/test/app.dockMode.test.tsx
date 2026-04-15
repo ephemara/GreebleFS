@@ -184,7 +184,7 @@ describe('App dock mode behavior', () => {
     render(<App />);
 
     expect(await screen.findByTestId('explorer-layout-mode')).toHaveTextContent('full');
-    expect(screen.getByTestId('explorer-theme-id')).toHaveTextContent('operator');
+    expect(screen.getByTestId('explorer-theme-id')).toHaveTextContent(defaultSettings.appearance.activeThemeId);
 
     await user.click(screen.getByTitle('Switch to Dock Mode'));
 
@@ -192,7 +192,7 @@ describe('App dock mode behavior', () => {
       expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('overlay');
     });
     expect(screen.getByTestId('explorer-layout-mode')).toHaveTextContent('dock');
-    expect(screen.getByTestId('explorer-theme-id')).toHaveTextContent('operator');
+    expect(screen.getByTestId('explorer-theme-id')).toHaveTextContent(defaultSettings.appearance.activeThemeId);
 
     await user.click(screen.getByTitle('Switch to Application Mode'));
 
@@ -200,7 +200,7 @@ describe('App dock mode behavior', () => {
       expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('windowed');
     });
     expect(screen.getByTestId('explorer-layout-mode')).toHaveTextContent('full');
-    expect(screen.getByTestId('explorer-theme-id')).toHaveTextContent('operator');
+    expect(screen.getByTestId('explorer-theme-id')).toHaveTextContent(defaultSettings.appearance.activeThemeId);
   });
 
   it('switches the active appearance channel when dock mode uses an override theme', async () => {
