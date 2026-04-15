@@ -1,5 +1,22 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Custom Theme Renderer Overhaul Lane A
+
+- Rewrote the owned custom themes to use the newer renderer contract and to feel materially more premium:
+  - `themes/clarity-line/renderers/clarity-line-shell.tsx`
+  - `themes/xmb-crosswave/renderers/xmb-crosswave.tsx`
+  - `themes/wii-channel-home/renderers/wii-channel-home.tsx`
+- Durable implementation shape:
+  - all three themes now read from `host.shellModel` and normalize their visible shell rails from `host.shellModel.layout.regions`
+  - no owned file uses `host.panels` or `host.renderChromeBar()`
+  - each renderer uses `host.renderUtilityActionsSurface()` for utility chrome and renders launcher/pinned surfaces as theme-native structural regions instead of duplicated top bars
+  - each renderer collapses hidden rails cleanly when the normalized shell regions disappear, so the layouts stay viewport-safe instead of depending on zero-width columns
+  - Clarity Line is now an editorial shell with grouped launcher cards and a dedicated pinned rail, XMB Crosswave is a console-style axis/wave layout, and Wii Channel Home is a bright channel wall with a hero surface and channel cards
+- Validation:
+  - passed: `rg -n "host\\.panels|renderChromeBar\\(" themes/clarity-line themes/xmb-crosswave themes/wii-channel-home`
+  - passed: `node <<'NODE' ... transpileModule ... NODE` over the three rewritten renderer files
+  - passed: `bunx vite build`
+
 ## 2026-04-15 — Retro Console Renderer Rewrite Lane B
 
 - Rebuilt the owned retro-console renderers to use the normalized renderer shell contract instead of the old hardcoded launcher/chrome compositions:
