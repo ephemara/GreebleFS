@@ -17,11 +17,15 @@ import {
   type ExplorerDuplicateScanStatus,
   type ExplorerSavedSearchRecord,
   type ExplorerSavedSearchSaveRequest,
+  type ExplorerTaskHistoryClearScope,
+  type ExplorerTaskKind,
   type ExplorerTagMutationRequest,
+  type ExplorerTaskRecord,
   type ExplorerTagSnapshot,
   type ExplorerTrashActionRecord,
   type ExplorerTrashRestoreResult,
   type ExplorerTaskProgressEvent,
+  type ExplorerTaskStatus,
   type FileEntry,
   type FileSearchResult,
   type FileTransferOperation,
@@ -38,7 +42,11 @@ export type ExplorerEntryStorageInfo = EntryStorageInfo;
 export type ExplorerFileTransferOperation = FileTransferOperation;
 export type ExplorerFileTransferResult = FileTransferResult;
 export type ExplorerTaskProgress = ExplorerTaskProgressEvent;
+export type ExplorerTaskSnapshot = ExplorerTaskRecord;
 export type ExplorerSchedulerTask = YaziSchedulerTaskSnap;
+export type ExplorerTaskHistoryScope = ExplorerTaskHistoryClearScope;
+export type ExplorerTaskKindValue = ExplorerTaskKind;
+export type ExplorerTaskStatusValue = ExplorerTaskStatus;
 export type ExplorerWritableContent = string | number[];
 export type ExplorerCloudProviderId = CloudProviderId;
 export type ExplorerCloudAccountStatus = CloudAccountStatus;
@@ -261,6 +269,10 @@ export type ExplorerBackendContract = {
   createDir: typeof createExplorerDir;
   createFile: typeof createExplorerFile;
   transferItems: typeof transferExplorerItems;
+  listTasks: typeof listExplorerTasks;
+  clearTaskHistory: typeof clearExplorerTaskHistory;
+  retryTask: typeof retryExplorerTask;
+  cancelTask: typeof cancelExplorerTask;
   writeFile: typeof writeExplorerFile;
   readTextFile: typeof readExplorerTextFile;
   readFileBase64: typeof readExplorerFileBase64;
@@ -499,6 +511,22 @@ export async function transferExplorerItems(
   return unwrapTauriResult(await commands.fsTransferItems(targetDir, sources, operation));
 }
 
+export async function listExplorerTasks(): Promise<ExplorerTaskSnapshot[]> {
+  return unwrapTauriResult(await commands.fsListExplorerTasks());
+}
+
+export async function clearExplorerTaskHistory(scope: ExplorerTaskHistoryScope): Promise<void> {
+  unwrapTauriResult(await commands.fsClearExplorerTaskHistory(scope));
+}
+
+export async function retryExplorerTask(taskId: string): Promise<ExplorerTaskSnapshot> {
+  return unwrapTauriResult(await commands.fsRetryExplorerTask(taskId));
+}
+
+export async function cancelExplorerTask(taskId: string): Promise<ExplorerTaskSnapshot> {
+  return unwrapTauriResult(await commands.fsCancelExplorerTask(taskId));
+}
+
 export async function writeExplorerFile(
   path: string,
   content: ExplorerWritableContent,
@@ -664,6 +692,10 @@ export const explorerBackendContract: ExplorerBackendContract = {
   createDir: createExplorerDir,
   createFile: createExplorerFile,
   transferItems: transferExplorerItems,
+  listTasks: listExplorerTasks,
+  clearTaskHistory: clearExplorerTaskHistory,
+  retryTask: retryExplorerTask,
+  cancelTask: cancelExplorerTask,
   writeFile: writeExplorerFile,
   readTextFile: readExplorerTextFile,
   readFileBase64: readExplorerFileBase64,
@@ -694,7 +726,7 @@ export async function listenToExplorerTaskProgress(
   );
 }
 
-export function getExplorerTaskProgressPercent(task: ExplorerSchedulerTask): number | null {
+function getSchedulerTaskProgressPercent(task: ExplorerSchedulerTask): number | null {
   switch (task.prog.kind) {
     case 'fileCopy':
     case 'fileCut':
@@ -724,7 +756,7 @@ export function getExplorerTaskProgressPercent(task: ExplorerSchedulerTask): num
   }
 }
 
-export function didExplorerTaskFail(task: ExplorerSchedulerTask): boolean {
+function didSchedulerTaskFail(task: ExplorerSchedulerTask): boolean {
   switch (task.prog.kind) {
     case 'fileCopy':
     case 'fileCut':
@@ -743,7 +775,7 @@ export function didExplorerTaskFail(task: ExplorerSchedulerTask): boolean {
   }
 }
 
-export function isExplorerTaskFinished(task: ExplorerSchedulerTask): boolean {
+function isSchedulerTaskFinished(task: ExplorerSchedulerTask): boolean {
   switch (task.prog.kind) {
     case 'fileCopy':
     case 'fileCut':
@@ -762,15 +794,59 @@ export function isExplorerTaskFinished(task: ExplorerSchedulerTask): boolean {
   }
 }
 
-export function getExplorerTaskStatusLabel(task: ExplorerSchedulerTask): string {
-  if (didExplorerTaskFail(task)) {
+export function getExplorerTaskProgressPercent(task: ExplorerTaskSnapshot | ExplorerSchedulerTask): number | null {
+  if ('status' in task) {
+    if (typeof task.progressCurrent === 'number' && typeof task.progressTotal === 'number' && task.progressTotal > 0) {
+      return Math.min(100, Math.round((task.progressCurrent / task.progressTotal) * 100));
+    }
+    if (task.schedulerTask) {
+      return getSchedulerTaskProgressPercent(task.schedulerTask);
+    }
+    return null;
+  }
+
+  return getSchedulerTaskProgressPercent(task);
+}
+
+export function didExplorerTaskFail(task: ExplorerTaskSnapshot | ExplorerSchedulerTask): boolean {
+  if ('status' in task) {
+    return task.status === 'failed';
+  }
+
+  return didSchedulerTaskFail(task);
+}
+
+export function isExplorerTaskFinished(task: ExplorerTaskSnapshot | ExplorerSchedulerTask): boolean {
+  if ('status' in task) {
+    return task.status !== 'running';
+  }
+
+  return isSchedulerTaskFinished(task);
+}
+
+export function getExplorerTaskStatusLabel(task: ExplorerTaskSnapshot | ExplorerSchedulerTask): string {
+  if ('status' in task) {
+    if (task.status === 'failed') {
+      return 'Failed';
+    }
+    if (task.status === 'cancelled') {
+      return 'Cancelled';
+    }
+    const percent = getExplorerTaskProgressPercent(task);
+    if (percent != null && task.status === 'running') {
+      return `${percent}%`;
+    }
+    return task.status === 'succeeded' ? 'Done' : 'Working…';
+  }
+
+  if (didSchedulerTaskFail(task)) {
     return 'Failed';
   }
 
-  const percent = getExplorerTaskProgressPercent(task);
-  if (percent != null && !isExplorerTaskFinished(task)) {
+  const percent = getSchedulerTaskProgressPercent(task);
+  if (percent != null && !isSchedulerTaskFinished(task)) {
     return `${percent}%`;
   }
 
-  return isExplorerTaskFinished(task) ? 'Done' : 'Working…';
+  return isSchedulerTaskFinished(task) ? 'Done' : 'Working…';
 }

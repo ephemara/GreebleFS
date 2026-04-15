@@ -134,7 +134,6 @@ import {
   type ExplorerInstanceId,
 } from '../store/explorerStore';
 import {
-  useCurrentExplorerTaskProgress,
   useExplorerTaskProgressFeed,
 } from '../store/explorerTaskStore';
 import { useSettingsStore } from '../store/settingsStore';
@@ -2623,7 +2622,6 @@ export function FileExplorer({
   const lastWorkspaceTransferSequenceRef = useRef(0);
   const lastWorkspaceRefreshSequenceRef = useRef(0);
   useExplorerTaskProgressFeed();
-  const explorerTaskProgress = useCurrentExplorerTaskProgress();
 
   const mainRef = useRef<HTMLDivElement>(null);
   const explorerViewportRef = useRef<HTMLDivElement>(null);
@@ -6885,7 +6883,6 @@ export function FileExplorer({
       isVisible: () => true,
       render: () => (
         <ExplorerTaskStatusBadge
-          taskProgress={explorerTaskProgress}
           accent={accent}
           text={EXP.text}
           muted={EXP.muted}

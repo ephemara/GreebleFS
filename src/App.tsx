@@ -155,6 +155,11 @@ import {
   type WindowHostRole,
 } from './runtime/windowHost';
 import {
+  clearCompletedExplorerTasks,
+  openExplorerTaskCenter,
+  retryFailedExplorerTasks,
+} from './store/explorerTaskStore';
+import {
   useSettingsStore,
   resolveSystemPresentationState,
   type LayoutPanelState,
