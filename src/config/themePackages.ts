@@ -38,6 +38,11 @@ import { resolveRuntimeAssetPollingEnabled } from './runtimeAssetPolling';
 import type { WorkbenchRenderRuntimeKind } from './workbenchRenderRuntime';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 import type { RuntimeRelativeModuleSourceResolver } from '../runtime/moduleRuntime';
+import {
+  compareThemeCatalogPackages,
+  resolveThemeCatalogPackageMetadata,
+  type ThemeCatalogPackageMetadata,
+} from './themeCatalogCuration';
 
 interface FileEntry {
   name: string;
@@ -50,6 +55,7 @@ interface FileEntry {
 type LooseRecord = Record<string, unknown>;
 const validShellBlueprintIds = new Set(OVERLAY_SHELL_BLUEPRINTS.map(blueprint => blueprint.id));
 const themeRendererRuntimeModuleExtensions = ['ts', 'tsx', 'js', 'jsx'] as const;
+type ShellBlueprintId = NonNullable<OverlayThemeCompatibility['shellBlueprints']>[number];
 
 export interface OverlayThemePackageManifest {
   version?: number;
@@ -130,6 +136,7 @@ export interface LoadedOverlayThemePackage {
   tags: string[];
   previewUrl?: string;
   warnings: string[];
+  catalog: ThemeCatalogPackageMetadata;
   capabilitySummary: {
     icons: boolean;
     wallpaper: boolean;
@@ -216,7 +223,7 @@ function parseThemeCompatibility(value: unknown): OverlayThemeCompatibility | un
     ? (source.shellBlueprints as unknown[])
       .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
       .map(entry => entry.trim())
-      .filter((entry): entry is OverlayThemeCompatibility['shellBlueprints'][number] => validShellBlueprintIds.has(entry as typeof OVERLAY_SHELL_BLUEPRINTS[number]['id']))
+      .filter((entry): entry is ShellBlueprintId => validShellBlueprintIds.has(entry as ShellBlueprintId))
     : [];
   const tags = Array.isArray(source.tags)
     ? (source.tags as unknown[])
@@ -976,6 +983,7 @@ export async function loadThemePackagesFromDirectoryEntries(
           author: asString(record.manifest.author) || undefined,
           homepage: asString(record.manifest.homepage) || undefined,
           tags: record.manifest.tags ?? [],
+          catalog: resolveThemeCatalogPackageMetadata(theme.id),
           previewUrl: theme.assets?.previewUrl ?? theme.assets?.backgroundUrl,
           warnings: packageWarnings,
           capabilitySummary: {
@@ -1001,7 +1009,7 @@ export async function loadThemePackagesFromDirectoryEntries(
       }
     }
 
-    packages.sort((left, right) => left.name.localeCompare(right.name));
+    packages.sort(compareThemeCatalogPackages);
     shaders.sort((left, right) => left.name.localeCompare(right.name));
     animations.sort((left, right) => left.name.localeCompare(right.name));
 

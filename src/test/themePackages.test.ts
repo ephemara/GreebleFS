@@ -326,6 +326,10 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.capabilitySummary.shaders).toBe(1);
     expect(result.packages[0]?.capabilitySummary.animations).toBe(1);
     expect(result.packages[0]?.capabilitySummary.themeRenderer).toBe(true);
+    expect(result.packages[0]?.catalog.tierId).toBe('legacy-lab');
+    expect(result.packages[0]?.catalog.tierLabel).toBe('Legacy Lab');
+    expect(result.packages[0]?.catalog.badgeLabel).toBe('Lab');
+    expect(result.packages[0]?.catalog.isOfficialPilot).toBe(false);
     expect(result.packages[0]?.theme.visuals).toHaveLength(1);
     expect(result.shaders).toHaveLength(1);
     expect(result.shaders[0]?.shaderRoot.replace(/\\/g, '/')).toBe('themes/vista-glass');
