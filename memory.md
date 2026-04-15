@@ -1,5 +1,13 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Dev HUD Always-On Pass
+
+- Added `src/components/DevPerformanceHud.tsx` and mounted it from `App.tsx` so local development now always shows a fixed telemetry HUD without needing a separate plugin or settings hop.
+- The HUD reuses the existing overlay frame sampler and adds browser-side navigation, long-task, CLS, INP, and memory reads so dev mode has a visible diagnostics surface instead of a hidden storage-only path.
+- `import.meta.env.DEV` now forces the HUD on in local development; the existing `systemSettings.developerMode` toggle still gates the heavier live-reload/watch paths.
+- Validation passed with `bunx vite build` and `bunx vitest run src/test/frameTelemetry.test.ts`.
+- `bunx vitest run src/test/performanceTelemetry.test.ts` still has a pre-existing failure in the `git_repo_state_load` assertion and was not changed by this pass.
+
 ## 2026-04-14 — Terminal Handoff Validation Pass
 
 - Explorer-to-terminal now uses the shared shell-aware `buildTerminalCdCommand` helper, which keeps PowerShell, cmd, and POSIX-style shells on the right `cd` syntax path.

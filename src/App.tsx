@@ -25,6 +25,7 @@ import {
   recordOverlayFrameTelemetry,
   shouldFlushOverlayFrameWindow,
   summarizeOverlayFrameWindow,
+  type OverlayFrameTelemetryStats,
 } from './config/frameTelemetry';
 import {
   pluginSystemConfig,
@@ -118,6 +119,7 @@ import { derivePanelOpenState, reorderPanelIds } from './components/panelUtils';
 import { OverlayScrollArea } from './components/OverlayScrollArea';
 import { WorkbenchNavigationSurface } from './components/WorkbenchNavigationSurface';
 import { WindowControls } from './components/WindowControls';
+import { DevPerformanceHud } from './components/DevPerformanceHud';
 import { useGlobalShortcut } from './input/GlobalShortcuts';
 import {
   buildThemeVisualStyle,
@@ -418,6 +420,7 @@ function App() {
   const [themeContributedAnimations, setThemeContributedAnimations] = useState<LoadedOverlayAnimation[]>([]);
   const [themeContributedShaders, setThemeContributedShaders] = useState<LoadedOverlayShader[]>([]);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [latestOverlayFrameStats, setLatestOverlayFrameStats] = useState<OverlayFrameTelemetryStats | null>(null);
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
   const [linuxDisplayServer, setLinuxDisplayServer] = useState<'unknown' | 'wayland' | 'x11'>('unknown');
   const builtInAnimations = useMemo(() => createBuiltInOverlayAnimations(), []);
@@ -1644,14 +1647,6 @@ function App() {
     }
   }, [setPanelOpenStateDirectly, updateTerminal, windowMode]);
 
-  useEffect(() => {
-    if (windowMode !== 'overlay' || openPanelIds.includes('explorer')) {
-      return;
-    }
-
-    setPanelOpenStateDirectly('explorer');
-  }, [openPanelIds, setPanelOpenStateDirectly, windowMode]);
-
   const handleOpenCommandPalette = useCallback(() => {
     if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
       void showCurrentPresentation();
@@ -2477,6 +2472,13 @@ function App() {
       savedPanelState.openPanelIds,
     ],
   );
+  useEffect(() => {
+    if (windowMode !== 'overlay' || openPanelIds.includes('explorer')) {
+      return;
+    }
+
+    setPanelOpenStateDirectly('explorer');
+  }, [openPanelIds, setPanelOpenStateDirectly, windowMode]);
   const tabbedOpenPanelIds = useMemo(
     () => getTabbedOpenPanelIds(activeLayoutProfile, openPanelIds),
     [activeLayoutProfile, openPanelIds],
@@ -2540,6 +2542,7 @@ function App() {
         isWindowed: context.windowMode === 'windowed',
         openPanelCount: context.openPanelCount,
       });
+      setLatestOverlayFrameStats(stats);
       if (FRAME_PROBE_OUTPUT_PATH && isTauri()) {
         void commands.fsWriteFile(FRAME_PROBE_OUTPUT_PATH, {
           kind: 'text',
@@ -3353,6 +3356,7 @@ function App() {
       />
       )
     : defaultShellBody;
+  const devHudEnabled = Boolean(import.meta.env.DEV) || systemSettings.developerMode;
   return (
     <div
       className="overlay-window-host w-full h-full overflow-hidden"
@@ -3437,6 +3441,13 @@ function App() {
           </div>
         </div>
       </div>
+      <DevPerformanceHud
+        enabled={devHudEnabled}
+        appearance={resolvedAppearance}
+        activePanelLabel={activePanelId ?? 'none'}
+        openPanelCount={openPanelIds.length}
+        frameStats={latestOverlayFrameStats}
+      />
       <CommandPalette
         isOpen={isCommandPaletteOpen}
         appearance={resolvedAppearance}
