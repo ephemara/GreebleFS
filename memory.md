@@ -1,5 +1,24 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Explorer Task Center / Release Hardening
+
+- Explorer long-running file operations now have a durable Rust-backed task model instead of a badge-only transient feed.
+- Durable implementation shape:
+  - `src-tauri/src/fs_commands.rs` now owns the explorer task registry and Specta-visible task contract for copy/move/delete plus shared retry/cancel/history commands.
+  - `src-tauri/src/explorer_pro_commands.rs` now reports trash, batch rename, duplicate scans, and undo-capable trash actions through the same durable task system instead of isolated one-off status updates.
+  - `src/runtime/explorerBackend.ts` is the typed TS bridge for task snapshots and task actions, and `src/store/explorerTaskStore.ts` hydrates from snapshot commands before merging live `explorerTaskProgressEvent` updates.
+  - `src/components/explorer/ExplorerTaskStatusBadge.tsx` is now an explorer-local Task Center popover with active/history grouping, retry/cancel/reveal/open/copy-error actions, and recent trash undo.
+  - `src/App.tsx` now exposes `Open Task Center`, `Retry Failed Explorer Tasks`, and `Clear Completed Explorer Tasks` through the command palette.
+- Release-hardening notes:
+  - `src/config/hotkeys.ts` now resolves the shipping collision set by moving explorer layout off `Ctrl+L`, leaving `Ctrl+L` for address focus, and leaving `find` / `replace` unassigned until they have a safe release default.
+  - `scripts/build-and-install-linux-local-release.sh` now points at the actual Cargo workspace release artifact `target/release/greeblefs`.
+  - `src-tauri/src/terminal.rs` warning cleanup removed unreachable code and stale locals so `cargo check` is clean again.
+- Validation:
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml`
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `bun test src/test/explorerTaskStore.test.tsx src/test/explorerBackend.bindings.test.ts src/test/hotkeys.test.ts`
+  - passed: `bun run build`
+
 ## 2026-04-15 — Constellation View Orbit Rebalance
 
 - Constellation mode no longer relies on a loose hash-jittered ellipse that can bunch many folders onto one side of the field.

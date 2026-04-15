@@ -3158,6 +3158,42 @@ function App() {
         onSelect: handleOpenSettings,
       },
       {
+        id: 'open-explorer-task-center',
+        title: 'Open Task Center',
+        subtitle: 'Show active and recent explorer operations.',
+        group: 'Explorer',
+        keywords: ['explorer', 'tasks', 'operations', 'transfers', 'history'],
+        badge: 'Tasks',
+        onSelect: () => {
+          handleActivatePanel('explorer');
+          openExplorerTaskCenter();
+        },
+      },
+      {
+        id: 'retry-failed-explorer-tasks',
+        title: 'Retry Failed Explorer Tasks',
+        subtitle: 'Re-run retryable failed or cancelled explorer operations.',
+        group: 'Explorer',
+        keywords: ['explorer', 'tasks', 'retry', 'failed'],
+        badge: 'Retry',
+        onSelect: () => {
+          handleActivatePanel('explorer');
+          void retryFailedExplorerTasks();
+        },
+      },
+      {
+        id: 'clear-completed-explorer-tasks',
+        title: 'Clear Completed Explorer Tasks',
+        subtitle: 'Remove completed explorer tasks from recent history.',
+        group: 'Explorer',
+        keywords: ['explorer', 'tasks', 'clear', 'history', 'completed'],
+        badge: 'Clear',
+        onSelect: () => {
+          handleActivatePanel('explorer');
+          void clearCompletedExplorerTasks();
+        },
+      },
+      {
         id: 'refresh-plugins',
         title: 'Refresh Plugins',
         subtitle: 'Rescan legacy and package plugins, then reload their contributions.',

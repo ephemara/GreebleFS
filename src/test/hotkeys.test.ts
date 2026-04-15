@@ -40,6 +40,12 @@ describe('hotkey config helpers', () => {
     expect(defaults.openInTerminal).toBe('Ctrl+Enter');
     expect(defaults.revealInExplorer).toBe('Ctrl+Alt+R');
     expect(defaults.openAsAdmin).toBe('Ctrl+Alt+Enter');
+    expect(defaults.focusExplorerAddressBar).toBe('Ctrl+L');
+    expect(defaults.toggleExplorerLayout).toBe('Ctrl+Shift+L');
+    expect(defaults.searchExplorer).toBe('Ctrl+F');
+    expect(defaults.find).toBe('');
+    expect(defaults.toggleHiddenFiles).toBe('Ctrl+H');
+    expect(defaults.replace).toBe('');
   });
 
   it('normalizes option-based wheel bindings to alt-modified scroll gestures', () => {

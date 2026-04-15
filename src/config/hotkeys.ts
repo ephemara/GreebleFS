@@ -278,7 +278,7 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     key: 'toggleExplorerLayout',
     label: 'Toggle Explorer Layout',
     description: 'Step through the explorer content-browser layouts.',
-    defaultValue: 'Ctrl+L',
+    defaultValue: 'Ctrl+Shift+L',
     scope: 'local',
   },
   {
@@ -313,14 +313,14 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     key: 'find',
     label: 'Find',
     description: 'Reserved for search actions.',
-    defaultValue: 'Ctrl+F',
+    defaultValue: '',
     scope: 'local',
   },
   {
     key: 'replace',
     label: 'Replace',
     description: 'Reserved for replace actions.',
-    defaultValue: 'Ctrl+H',
+    defaultValue: '',
     scope: 'local',
   },
 ];

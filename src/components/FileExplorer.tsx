@@ -7000,7 +7000,6 @@ export function FileExplorer({
     zoomHudVisible,
     explorerBlurEnabled,
     explorerChromeEditMode,
-    explorerTaskProgress,
     filteredEntryCount,
     hasPreview,
     isCompactDock,
