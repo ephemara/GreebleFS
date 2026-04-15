@@ -54,10 +54,14 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Runtime-swappable launcher surface for cross-axis, channel-grid, desktop, and tabbed shells.
 - `src/components/ScreenshotsManager.tsx`
   Screenshot capture/editor/library surface. It owns monitor preview orchestration, selection editing, annotation authoring, and gallery actions, but annotated export is now delegated to Rust instead of being rasterized in the browser.
+- `src/components/pluginRuntime.tsx`
+  Packaged frontend plugin runtime loader. It owns the allowlisted module graph for frontend plugins, including package-local relative imports and the host-provided `overlayterm-plugin` bridge helpers.
 - `src/components/DevPerformanceHud.tsx`
   Fixed dev-only diagnostics HUD rendered by `App.tsx` whenever the frontend runs in `import.meta.env.DEV` or explicit developer mode. It shows live frame, navigation, CLS, INP, long-task, and memory telemetry for local development.
 - `src/components/wallpaperRuntime.tsx`
   Imported image/video wallpapers, authored live wallpaper modules, and theme-wallpaper selection helpers.
+- `src/runtime/pluginPanelRequests.ts`
+  Shared plugin-panel handoff bridge for explorer/plugin context flows. It persists the latest request payload and dispatches shell-level open-panel events plus panel-specific update events.
 - `src/store/explorerStore.ts`
   Persisted explorer rail, named explorer session snapshots, and explorer-local workspace state for tabs/dual-pane layout.
 - `src/store/settingsStore.ts`
@@ -290,6 +294,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - JSDOM-backed Vitest runs currently fail in this workspace because `html-encoding-sniffer` requires an ESM dependency through a CommonJS path. Node-environment tests still work, so keep pure logic/package-loader tests runnable there until the dependency issue is fixed.
 - `bun run test:browser` currently launches a headed Playwright Chromium session in this workspace. Without an X server it fails before any tests run; use `xvfb-run` or a headless browser config if you need browser validation locally.
 - `plugins/**/dist/**` is versioned source for packaged frontend plugins in this repo. Do not treat those directories like app-build output or let a blanket `dist/` ignore swallow shipped plugin entries.
+- Packaged frontend plugins are no longer single-file only. `src/components/pluginRuntime.tsx` now executes a package-local module graph, so plugin entries may import sibling helpers with relative paths, but those imports must remain inside the plugin root and still cannot pull arbitrary npm dependencies.
+- Explorer context-menu plugin contributions can now open plugin panels through `panel-request` execution. If a plugin needs a folder/file handoff from Explorer, use `src/runtime/pluginPanelRequests.ts` and the `overlayterm-plugin` helpers instead of inventing ad hoc window events or local-storage keys.
 - The dev HUD is internal to this app. It is not a Tauri plugin or external Chrome overlay, and it should be treated as part of the shell runtime.
 - Do not wire the screenshot panel to `explorerTaskStore`. That store is global explorer/Yazi task state; rendering it inside screenshot status chrome leaks unrelated delete/copy jobs into screenshot errors and makes debugging cross-subsystem issues much harder.
 - Annotated screenshot export belongs in Rust now, not in the browser canvas path. The frontend should author selection/annotation intent, while `src-tauri/src/screenshot_commands.rs` composites those annotations onto the cached full-resolution capture and handles save/copy. Reintroducing browser-side annotated save logic will silently degrade output resolution again.
