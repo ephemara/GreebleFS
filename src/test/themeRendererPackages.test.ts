@@ -18,6 +18,14 @@ const rendererFixtures = [
     filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/clarity-line/renderers/clarity-line-shell.tsx',
   },
   {
+    name: 'celestial-astrolabe',
+    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/celestial-astrolabe/renderers/astrolabe.tsx',
+  },
+  {
+    name: 'cyber-nexus-hud',
+    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/cyber-nexus-hud/renderers/cyber-nexus.tsx',
+  },
+  {
     name: 'xmb-crosswave',
     filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/xmb-crosswave/renderers/xmb-crosswave.tsx',
   },

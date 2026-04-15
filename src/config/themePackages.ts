@@ -262,6 +262,10 @@ function toAssetUrl(filePath: string): string {
   }
 }
 
+function shouldInlineThemeAsset(filePath: string): boolean {
+  return /\.svg$/i.test(filePath);
+}
+
 async function toInlineAssetUrl(filePath: string): Promise<string> {
   if (typeof window === 'undefined' || !isTauri()) {
     return toAssetUrl(filePath);
@@ -272,6 +276,13 @@ async function toInlineAssetUrl(filePath: string): Promise<string> {
   } catch {
     return toAssetUrl(filePath);
   }
+}
+
+async function resolveThemePackageAssetUrl(filePath: string): Promise<string> {
+  if (shouldInlineThemeAsset(filePath)) {
+    return toInlineAssetUrl(filePath);
+  }
+  return toAssetUrl(filePath);
 }
 
 function normalizePackageAssetPath(assetPath: string): string {
@@ -640,15 +651,22 @@ async function buildPackageTheme(
     );
   }
 
+  const resolvedBackgroundPath = backgroundPath
+    ? joinPlatformPath(record.directoryPath, normalizePackageAssetPath(backgroundPath))
+    : null;
+  const resolvedPreviewPath = previewPath
+    ? joinPlatformPath(record.directoryPath, normalizePackageAssetPath(previewPath))
+    : null;
+  const [resolvedBackgroundUrl, resolvedPreviewUrl] = await Promise.all([
+    resolvedBackgroundPath ? resolveThemePackageAssetUrl(resolvedBackgroundPath) : Promise.resolve(undefined),
+    resolvedPreviewPath ? resolveThemePackageAssetUrl(resolvedPreviewPath) : Promise.resolve(undefined),
+  ]);
+
   const resolvedAssets: OverlayThemeAssets = {
     packageRoot: record.directoryPath,
     manifestPath: record.manifestPath,
-    backgroundUrl: backgroundPath
-      ? toAssetUrl(joinPlatformPath(record.directoryPath, normalizePackageAssetPath(backgroundPath)))
-      : undefined,
-    previewUrl: previewPath
-      ? toAssetUrl(joinPlatformPath(record.directoryPath, normalizePackageAssetPath(previewPath)))
-      : undefined,
+    backgroundUrl: resolvedBackgroundUrl,
+    previewUrl: resolvedPreviewUrl,
     iconTheme,
     iconEntries: iconTheme?.iconDefinitions,
   };

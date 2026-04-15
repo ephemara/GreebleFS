@@ -1,5 +1,16 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Theme Catalog / Renderer Stability Pass
+
+- `src/components/SettingsPage.tsx` now keys theme catalog cards with source-aware composite keys instead of raw `theme.id`, so package/custom themes that intentionally share an id no longer spam React duplicate-key warnings in Settings.
+- `src/config/themePackages.ts` now inlines packaged SVG preview and wallpaper assets through `fsReadFileBase64()` before handing them to the frontend. Durable reason:
+  Tauri/WebKit was intermittently failing to display packaged SVG theme assets when they stayed on filesystem-backed URLs, which showed up as repeated `Failed to load resource` errors for theme wallpapers/previews.
+- `themes/celestial-astrolabe/renderers/astrolabe.tsx` and `themes/cyber-nexus-hud/renderers/cyber-nexus.tsx` no longer animate via React state on every frame. They now use CSS keyframes for decorative motion so mounted heavy panels like `FileExplorer` are not forced through renderer-driven rerender loops.
+- Added regression coverage for the touched runtime surface by extending `src/test/themeRendererPackages.test.ts` to load the Astrolabe and Cyber Nexus theme renderers, and kept `src/test/themePackages.test.ts` green with SVG asset inlining expectations.
+- Validation:
+  - passed: `bunx vitest run src/test/themePackages.test.ts src/test/themeRendererPackages.test.ts`
+  - blocked by pre-existing workspace/typecheck issues: narrowed `bunx tsc --noEmit --skipLibCheck ...` still fails in unrelated `FileExplorer`, `GitManager`, `performanceTelemetry`, `explorerStore`, plus the runtime-only `overlayterm-theme-renderer` alias not being visible to plain `tsc`
+
 ## 2026-04-15 — File Explorer Async Navigation Guard
 
 - `src/components/FileExplorer.tsx` now invalidates in-flight directory/search work on unmount and on newer directory-load requests.

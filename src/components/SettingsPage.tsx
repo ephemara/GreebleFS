@@ -143,6 +143,16 @@ function getThemePackageSourceBadgeLabel(sourceKind: LoadedOverlayThemePackage['
   return sourceKind === 'plugin-package' ? 'Plugin Package' : 'Theme Folder';
 }
 
+function getThemeCatalogEntryKey(
+  theme: OverlayThemeDefinition,
+  packageInfo: LoadedOverlayThemePackage | undefined,
+  index: number,
+): string {
+  const sourceKind = packageInfo?.sourceKind ?? theme.source ?? 'built-in';
+  const sourceLabel = packageInfo?.sourceLabel ?? packageInfo?.directoryPath ?? 'catalog';
+  return `${theme.id}:${sourceKind}:${sourceLabel}:${index}`;
+}
+
 function ColorToken({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
     <label className="flex flex-col gap-1 rounded border p-2" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
@@ -1641,7 +1651,7 @@ export function SettingsPage({
               <div className="space-y-1.5">
                 <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Theme Catalog</label>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {appearance.themes.map(themeOption => {
+                  {appearance.themes.map((themeOption, index) => {
                     const active = settings.appearance.activeThemeId === themeOption.id;
                     const packageInfo = themePackageLookup.get(themeOption.id);
                     const description = clampThemeDescription(packageInfo?.description ?? themeOption.description);
@@ -1666,7 +1676,7 @@ export function SettingsPage({
                     ].filter((value): value is string => Boolean(value)).slice(0, 5);
                     return (
                       <button
-                        key={themeOption.id}
+                        key={getThemeCatalogEntryKey(themeOption, packageInfo, index)}
                         onClick={() => applyThemeSelection(themeOption.id)}
                         className="overflow-hidden rounded text-left transition-opacity hover:opacity-100"
                         style={{

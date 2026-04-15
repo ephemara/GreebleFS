@@ -207,6 +207,14 @@ describe('theme package loader', () => {
         return '<svg />';
       }
 
+      if (command === 'fs_read_file_base64' && normalizedPath === 'themes/vista-glass/assets/wallpaper.svg') {
+        return 'data:image/svg+xml;base64,d2FsbHBhcGVy';
+      }
+
+      if (command === 'fs_read_file_base64' && normalizedPath === 'themes/vista-glass/assets/preview.svg') {
+        return 'data:image/svg+xml;base64,cHJldmlldw==';
+      }
+
       if (command === 'fs_read_file_base64' && normalizedPath === 'themes/vista-glass/icons/folder.svg') {
         return 'data:image/svg+xml;base64,Zm9sZGVy';
       }
@@ -237,8 +245,8 @@ describe('theme package loader', () => {
     expect(result.packages[0]?.sourceLabel).toBe('themes/vista-glass');
     expect(result.packages[0]?.warnings).toEqual([]);
     expect(result.packages[0]?.theme.extendsThemeId).toBe('github-dark');
-    expect(result.packages[0]?.theme.assets?.backgroundUrl?.replace(/\\/g, '/')).toMatch(/themes\/vista-glass\/assets\/wallpaper\.svg$/);
-    expect(result.packages[0]?.previewUrl?.replace(/\\/g, '/')).toMatch(/themes\/vista-glass\/assets\/preview\.svg$/);
+    expect(result.packages[0]?.theme.assets?.backgroundUrl ?? '').toMatch(/(data:image\/svg\+xml;base64,d2FsbHBhcGVy|themes\/vista-glass\/assets\/wallpaper\.svg$)/);
+    expect(result.packages[0]?.previewUrl ?? '').toMatch(/(data:image\/svg\+xml;base64,cHJldmlldw==|themes\/vista-glass\/assets\/preview\.svg$)/);
     expect(result.packages[0]?.theme.assets?.iconEntries?.folder ?? '').toMatch(/(data:image\/svg\+xml;base64,Zm9sZGVy|themes\/vista-glass\/icons\/folder\.svg)$/);
     expect(result.packages[0]?.theme.assets?.iconTheme?.fileExtensions.ts).toBe('typescript');
     expect(result.packages[0]?.theme.defaultOpenAnimationId).toBe('package-open');
