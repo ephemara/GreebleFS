@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { getCurrentWebviewWindow, WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../panels/panelRegistry', () => ({
@@ -141,8 +142,10 @@ vi.mock('../runtime/tauriClient', () => ({
     traySetVisible: vi.fn(async () => undefined),
     terminalOpenExternal: vi.fn(async () => undefined),
     windowApplyMode: vi.fn(async () => undefined),
+    windowApplyWaylandDockLayout: vi.fn(async () => ({ status: 'ok', data: null })),
     windowSetTaskbarVisibility: vi.fn(async () => undefined),
     windowGetLinuxDisplayServer: vi.fn(async () => 'x11'),
+    windowGetWaylandDockHostStatus: vi.fn(async () => ({ enabled: false, windowLabel: null })),
     windowSetBlur: vi.fn(async () => undefined),
   },
 }));
@@ -150,6 +153,26 @@ vi.mock('../runtime/tauriClient', () => ({
 import App from '../App';
 import { commands } from '../runtime/tauriClient';
 import { defaultSettings, useSettingsStore } from '../store/settingsStore';
+import { SHOW_WINDOW_MODE_REQUEST_EVENT } from '../runtime/windowHost';
+
+type MockWebviewWindow = {
+  label: string;
+  emit: ReturnType<typeof vi.fn>;
+  listen: ReturnType<typeof vi.fn>;
+  once: ReturnType<typeof vi.fn>;
+};
+
+function createMockWebviewWindow(label: string): MockWebviewWindow {
+  return {
+    label,
+    emit: vi.fn(async () => undefined),
+    listen: vi.fn().mockResolvedValue(() => {}),
+    once: vi.fn().mockResolvedValue(() => {}),
+  };
+}
+
+let mainHostWindow: MockWebviewWindow;
+let dockHostWindow: MockWebviewWindow;
 
 function setWindowMode(mode: 'overlay' | 'windowed') {
   useSettingsStore.setState(state => ({
@@ -173,9 +196,18 @@ describe('App dock mode behavior', () => {
   beforeEach(() => {
     window.localStorage.clear();
     useSettingsStore.getState().resetToDefaults();
+    mainHostWindow = createMockWebviewWindow('main');
+    dockHostWindow = createMockWebviewWindow('dock');
+    vi.mocked(getCurrentWebviewWindow).mockImplementation(() => mainHostWindow as never);
+    vi.mocked(WebviewWindow.getByLabel).mockImplementation(async label => (
+      label === 'dock' ? dockHostWindow as never : mainHostWindow as never
+    ));
     vi.mocked(commands.traySetVisible).mockClear();
     vi.mocked(commands.windowApplyMode).mockClear();
+    vi.mocked(commands.windowApplyWaylandDockLayout).mockClear();
     vi.mocked(commands.windowSetTaskbarVisibility).mockClear();
+    vi.mocked(commands.windowGetLinuxDisplayServer).mockResolvedValue('x11');
+    vi.mocked(commands.windowGetWaylandDockHostStatus).mockResolvedValue({ enabled: false, windowLabel: null });
     setWindowMode('windowed');
   });
 
@@ -405,5 +437,46 @@ describe('App dock mode behavior', () => {
 
     await new Promise(resolve => window.setTimeout(resolve, 120));
     expect(vi.mocked(commands.windowApplyMode).mock.calls.length).toBe(baselineApplyModeCalls + 1);
+  });
+
+  it('routes dock handoff to the dedicated dock host on Wayland', async () => {
+    const user = userEvent.setup();
+
+    vi.mocked(commands.windowGetLinuxDisplayServer).mockResolvedValue('wayland');
+    vi.mocked(commands.windowGetWaylandDockHostStatus).mockResolvedValue({
+      enabled: true,
+      windowLabel: 'dock',
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(vi.mocked(commands.windowApplyMode)).toHaveBeenCalled();
+    });
+
+    await user.click(await screen.findByTitle('Switch to Dock Mode'));
+
+    await waitFor(() => {
+      expect(dockHostWindow.emit).toHaveBeenCalledWith(
+        SHOW_WINDOW_MODE_REQUEST_EVENT,
+        'overlay',
+      );
+    });
+  });
+
+  it('uses the dedicated Wayland dock layout command on the dock host', async () => {
+    vi.mocked(commands.windowGetLinuxDisplayServer).mockResolvedValue('wayland');
+    vi.mocked(commands.windowGetWaylandDockHostStatus).mockResolvedValue({
+      enabled: true,
+      windowLabel: 'dock',
+    });
+    vi.mocked(getCurrentWebviewWindow).mockImplementation(() => dockHostWindow as never);
+    setWindowMode('overlay');
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(vi.mocked(commands.windowApplyWaylandDockLayout)).toHaveBeenCalled();
+    });
   });
 });

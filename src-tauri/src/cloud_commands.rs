@@ -5,7 +5,7 @@ use async_recursion::async_recursion;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
 use chrono::{DateTime, Utc};
-use keyring::Entry;
+use keyring::{Entry, Error as KeyringError};
 use rand::{distributions::Alphanumeric, Rng};
 use reqwest::multipart::{Form, Part};
 use reqwest::Client;
@@ -24,17 +24,29 @@ use url::Url;
 use uuid::Uuid;
 
 const CLOUD_ACCOUNTS_FILE: &str = "accounts.json";
+const CLOUD_PROVIDER_CONFIG_FILE: &str = "providers.json";
 const CLOUD_ROOT_DIRECTORY: &str = "cloud";
 const CLOUD_TEMP_DIRECTORY: &str = "temp";
 const CLOUD_KEYRING_SERVICE: &str = "co.overlayterm.app.cloud";
+const CLOUD_PROVIDER_KEYRING_SERVICE: &str = "co.overlayterm.app.cloud.providers";
 const CLOUD_TEXT_PREVIEW_MAX_BYTES: usize = 10 * 1024 * 1024;
 const CLOUD_BASE64_PREVIEW_MAX_BYTES: usize = 12 * 1024 * 1024;
+const DROPBOX_OAUTH_CALLBACK_PORT: u16 = 53_682;
+const DROPBOX_OAUTH_CALLBACK_URI: &str = "http://localhost:53682/callback";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type, PartialEq, Eq, Hash)]
 #[serde(rename_all = "kebab-case")]
 pub enum CloudProviderId {
     GoogleDrive,
     Dropbox,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum CloudProviderConfigurationSource {
+    None,
+    Settings,
+    Environment,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type, PartialEq, Eq)]
@@ -50,6 +62,9 @@ pub struct CloudProviderConfigurationStatus {
     pub provider: CloudProviderId,
     pub configured: bool,
     pub missing_configuration: Vec<String>,
+    pub configuration_source: CloudProviderConfigurationSource,
+    pub client_id: Option<String>,
+    pub client_secret_present: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -111,6 +126,17 @@ struct PersistedCloudAccounts {
     accounts: Vec<PersistedCloudAccount>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct PersistedCloudProviderConfigurations {
+    providers: Vec<PersistedCloudProviderConfiguration>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PersistedCloudProviderConfiguration {
+    provider: CloudProviderId,
+    client_id: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PersistedCloudAccount {
     id: String,
@@ -160,6 +186,19 @@ struct PendingAuthSession {
 struct AuthCallbackPayload {
     code: Option<String>,
     error: Option<String>,
+}
+
+#[derive(Debug)]
+struct AuthCallbackListener {
+    redirect_uri: String,
+    listeners: Vec<TcpListener>,
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedProviderConfiguration {
+    source: CloudProviderConfigurationSource,
+    client_id: Option<String>,
+    client_secret: Option<String>,
 }
 
 #[derive(Clone)]
@@ -293,31 +332,62 @@ pub async fn cloud_list_accounts(app: AppHandle) -> Result<CloudAccountsSnapshot
         .collect::<Vec<_>>();
     Ok(CloudAccountsSnapshot {
         accounts,
-        providers: provider_configuration_statuses(),
+        providers: provider_configuration_statuses(&app)?,
     })
 }
 
 #[tauri::command]
 #[specta::specta]
+pub async fn cloud_set_provider_configuration(
+    app: AppHandle,
+    provider: CloudProviderId,
+    client_id: String,
+    client_secret: Option<String>,
+) -> Result<CloudProviderConfigurationStatus, String> {
+    let trimmed_client_id = client_id.trim().to_string();
+    if trimmed_client_id.is_empty() {
+        return Err(format!("{} client ID is required.", provider_label(provider)));
+    }
+
+    upsert_provider_configuration(&app, provider, &trimmed_client_id)?;
+    let trimmed_client_secret = client_secret
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if let Some(secret) = trimmed_client_secret {
+        write_provider_client_secret(provider, secret)?;
+    } else {
+        delete_provider_client_secret(provider)?;
+    }
+
+    provider_configuration_status(&app, provider)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn cloud_clear_provider_configuration(
+    app: AppHandle,
+    provider: CloudProviderId,
+) -> Result<CloudProviderConfigurationStatus, String> {
+    remove_provider_configuration(&app, provider)?;
+    delete_provider_client_secret(provider)?;
+    provider_configuration_status(&app, provider)
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn cloud_begin_auth(
+    app: AppHandle,
     state: State<'_, CloudRuntimeState>,
     provider: CloudProviderId,
 ) -> Result<CloudAuthSession, String> {
-    let config = provider_config(provider)?;
+    let config = provider_config(&app, provider)?;
     let request_id = Uuid::new_v4().to_string();
     let state_token = random_token(48);
     let code_verifier = random_token(96);
     let code_challenge = pkce_challenge(&code_verifier);
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .map_err(|error| format!("Failed to create OAuth callback listener: {error}"))?;
-    listener
-        .set_nonblocking(true)
-        .map_err(|error| format!("Failed to configure OAuth callback listener: {error}"))?;
-    let port = listener
-        .local_addr()
-        .map_err(|error| format!("Failed to resolve OAuth callback port: {error}"))?
-        .port();
-    let redirect_uri = format!("http://127.0.0.1:{port}/callback");
+    let callback_listener = create_auth_callback_listener(provider)?;
+    let redirect_uri = callback_listener.redirect_uri.clone();
     let authorization_url =
         build_authorization_url(&config, &redirect_uri, &state_token, &code_challenge)?;
 
@@ -342,6 +412,7 @@ pub async fn cloud_begin_auth(
 
     let sessions = state.auth_sessions.clone();
     let request_id_for_thread = request_id.clone();
+    let listeners = callback_listener.listeners;
     thread::spawn(move || {
         let deadline = std::time::Instant::now() + Duration::from_secs(300);
         loop {
@@ -357,40 +428,49 @@ pub async fn cloud_begin_auth(
                 break;
             }
 
-            match listener.accept() {
-                Ok((mut stream, _)) => {
-                    let result = read_callback_payload(&mut stream, &state_token);
-                    let _ = write_callback_response(&mut stream, result.is_ok());
-                    match result {
-                        Ok(payload) => {
-                            update_auth_callback(&sessions, &request_id_for_thread, payload)
+            let mut received_callback = false;
+            for listener in &listeners {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        let result = read_callback_payload(&mut stream, &state_token);
+                        let _ = write_callback_response(&mut stream, result.is_ok());
+                        match result {
+                            Ok(payload) => {
+                                update_auth_callback(&sessions, &request_id_for_thread, payload)
+                            }
+                            Err(error) => update_auth_callback(
+                                &sessions,
+                                &request_id_for_thread,
+                                AuthCallbackPayload {
+                                    code: None,
+                                    error: Some(error),
+                                },
+                            ),
                         }
-                        Err(error) => update_auth_callback(
+                        received_callback = true;
+                        break;
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+                    Err(error) => {
+                        update_auth_callback(
                             &sessions,
                             &request_id_for_thread,
                             AuthCallbackPayload {
                                 code: None,
-                                error: Some(error),
+                                error: Some(format!("OAuth callback listener failed: {error}")),
                             },
-                        ),
+                        );
+                        received_callback = true;
+                        break;
                     }
-                    break;
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                    thread::sleep(Duration::from_millis(120));
-                }
-                Err(error) => {
-                    update_auth_callback(
-                        &sessions,
-                        &request_id_for_thread,
-                        AuthCallbackPayload {
-                            code: None,
-                            error: Some(format!("OAuth callback listener failed: {error}")),
-                        },
-                    );
-                    break;
                 }
             }
+
+            if received_callback {
+                break;
+            }
+
+            thread::sleep(Duration::from_millis(120));
         }
     });
 
@@ -461,7 +541,7 @@ pub async fn cloud_poll_auth(
     let code = callback
         .code
         .ok_or_else(|| "Missing authorization code from browser callback.".to_string())?;
-    let config = provider_config(pending.provider)?;
+    let config = provider_config(&app, pending.provider)?;
     let client = cloud_http_client()?;
     let token = exchange_authorization_code(
         &client,
@@ -792,59 +872,47 @@ fn cloud_http_client() -> Result<Client, String> {
         .map_err(|error| format!("Failed to create cloud HTTP client: {error}"))
 }
 
-fn provider_configuration_statuses() -> Vec<CloudProviderConfigurationStatus> {
+fn provider_configuration_statuses(
+    app: &AppHandle,
+) -> Result<Vec<CloudProviderConfigurationStatus>, String> {
     [CloudProviderId::GoogleDrive, CloudProviderId::Dropbox]
         .into_iter()
-        .map(|provider| {
-            let missing_configuration = provider_missing_configuration(provider);
-            CloudProviderConfigurationStatus {
-                provider,
-                configured: missing_configuration.is_empty(),
-                missing_configuration,
-            }
-        })
+        .map(|provider| provider_configuration_status(app, provider))
         .collect()
 }
 
-fn provider_missing_configuration(provider: CloudProviderId) -> Vec<String> {
-    match provider {
-        CloudProviderId::GoogleDrive => {
-            let mut missing = Vec::new();
-            if env_trimmed("GREEBLE_GOOGLE_DRIVE_CLIENT_ID").is_none() {
-                missing.push("GREEBLE_GOOGLE_DRIVE_CLIENT_ID".to_string());
-            }
-            missing
-        }
-        CloudProviderId::Dropbox => {
-            let mut missing = Vec::new();
-            if env_trimmed("GREEBLE_DROPBOX_CLIENT_ID").is_none() {
-                missing.push("GREEBLE_DROPBOX_CLIENT_ID".to_string());
-            }
-            missing
-        }
+fn provider_configuration_status(
+    app: &AppHandle,
+    provider: CloudProviderId,
+) -> Result<CloudProviderConfigurationStatus, String> {
+    let resolved = resolved_provider_configuration(app, provider)?;
+    let mut missing_configuration = Vec::new();
+    if resolved.client_id.is_none() {
+        missing_configuration.push("client ID".to_string());
     }
+    Ok(CloudProviderConfigurationStatus {
+        provider,
+        configured: missing_configuration.is_empty(),
+        missing_configuration,
+        configuration_source: resolved.source,
+        client_id: resolved.client_id,
+        client_secret_present: resolved.client_secret.is_some(),
+    })
 }
 
-fn provider_config(provider: CloudProviderId) -> Result<ProviderConfig, String> {
-    let missing = provider_missing_configuration(provider);
-    if !missing.is_empty() {
+fn provider_config(app: &AppHandle, provider: CloudProviderId) -> Result<ProviderConfig, String> {
+    let resolved = resolved_provider_configuration(app, provider)?;
+    let Some(client_id) = resolved.client_id else {
         return Err(format!(
-            "{} is not configured. Missing: {}",
+            "{} is not configured. Add a client ID in Settings > Cloud Accounts or provide {}.",
             provider_label(provider),
-            missing.join(", ")
+            provider_client_id_env_key(provider),
         ));
-    }
-    Ok(match provider {
-        CloudProviderId::GoogleDrive => ProviderConfig {
-            provider,
-            client_id: env_trimmed("GREEBLE_GOOGLE_DRIVE_CLIENT_ID").unwrap_or_default(),
-            client_secret: env_trimmed("GREEBLE_GOOGLE_DRIVE_CLIENT_SECRET"),
-        },
-        CloudProviderId::Dropbox => ProviderConfig {
-            provider,
-            client_id: env_trimmed("GREEBLE_DROPBOX_CLIENT_ID").unwrap_or_default(),
-            client_secret: env_trimmed("GREEBLE_DROPBOX_CLIENT_SECRET"),
-        },
+    };
+    Ok(ProviderConfig {
+        provider,
+        client_id,
+        client_secret: resolved.client_secret,
     })
 }
 
@@ -873,6 +941,20 @@ fn provider_label(provider: CloudProviderId) -> &'static str {
     match provider {
         CloudProviderId::GoogleDrive => "Google Drive",
         CloudProviderId::Dropbox => "Dropbox",
+    }
+}
+
+fn provider_client_id_env_key(provider: CloudProviderId) -> &'static str {
+    match provider {
+        CloudProviderId::GoogleDrive => "GREEBLE_GOOGLE_DRIVE_CLIENT_ID",
+        CloudProviderId::Dropbox => "GREEBLE_DROPBOX_CLIENT_ID",
+    }
+}
+
+fn provider_client_secret_env_key(provider: CloudProviderId) -> &'static str {
+    match provider {
+        CloudProviderId::GoogleDrive => "GREEBLE_GOOGLE_DRIVE_CLIENT_SECRET",
+        CloudProviderId::Dropbox => "GREEBLE_DROPBOX_CLIENT_SECRET",
     }
 }
 
@@ -947,6 +1029,17 @@ fn accounts_file_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(base.join(CLOUD_ACCOUNTS_FILE))
 }
 
+fn provider_config_file_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let base = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| format!("Failed to resolve app local data directory: {error}"))?
+        .join(CLOUD_ROOT_DIRECTORY);
+    fs::create_dir_all(&base)
+        .map_err(|error| format!("Failed to create cloud configuration directory: {error}"))?;
+    Ok(base.join(CLOUD_PROVIDER_CONFIG_FILE))
+}
+
 fn temp_root_path(app: &AppHandle) -> Result<PathBuf, String> {
     let root = app
         .path()
@@ -972,11 +1065,36 @@ fn read_accounts(app: &AppHandle) -> Result<PersistedCloudAccounts, String> {
         .map_err(|error| format!("Failed to parse persisted cloud accounts: {error}"))
 }
 
+fn read_provider_configurations(
+    app: &AppHandle,
+) -> Result<PersistedCloudProviderConfigurations, String> {
+    let path = provider_config_file_path(app)?;
+    if !path.exists() {
+        return Ok(PersistedCloudProviderConfigurations::default());
+    }
+    let content = fs::read_to_string(&path)
+        .map_err(|error| format!("Failed to read persisted cloud provider settings: {error}"))?;
+    serde_json::from_str::<PersistedCloudProviderConfigurations>(&content)
+        .map_err(|error| format!("Failed to parse persisted cloud provider settings: {error}"))
+}
+
 fn write_accounts(app: &AppHandle, accounts: &PersistedCloudAccounts) -> Result<(), String> {
     let path = accounts_file_path(app)?;
     let content = serde_json::to_string_pretty(accounts)
         .map_err(|error| format!("Failed to serialize persisted cloud accounts: {error}"))?;
     fs::write(&path, content).map_err(|error| format!("Failed to persist cloud accounts: {error}"))
+}
+
+fn write_provider_configurations(
+    app: &AppHandle,
+    configurations: &PersistedCloudProviderConfigurations,
+) -> Result<(), String> {
+    let path = provider_config_file_path(app)?;
+    let content = serde_json::to_string_pretty(configurations).map_err(|error| {
+        format!("Failed to serialize persisted cloud provider settings: {error}")
+    })?;
+    fs::write(&path, content)
+        .map_err(|error| format!("Failed to persist cloud provider settings: {error}"))
 }
 
 fn upsert_account(app: &AppHandle, next: PersistedCloudAccount) -> Result<(), String> {
@@ -996,6 +1114,38 @@ fn upsert_account(app: &AppHandle, next: PersistedCloudAccount) -> Result<(), St
     write_accounts(app, &accounts)
 }
 
+fn upsert_provider_configuration(
+    app: &AppHandle,
+    provider: CloudProviderId,
+    client_id: &str,
+) -> Result<(), String> {
+    let mut configurations = read_provider_configurations(app)?;
+    if let Some(existing) = configurations
+        .providers
+        .iter_mut()
+        .find(|entry| entry.provider == provider)
+    {
+        existing.client_id = client_id.to_string();
+    } else {
+        configurations.providers.push(PersistedCloudProviderConfiguration {
+            provider,
+            client_id: client_id.to_string(),
+        });
+    }
+    configurations
+        .providers
+        .sort_by_key(|entry| provider_host(entry.provider));
+    write_provider_configurations(app, &configurations)
+}
+
+fn remove_provider_configuration(app: &AppHandle, provider: CloudProviderId) -> Result<(), String> {
+    let mut configurations = read_provider_configurations(app)?;
+    configurations
+        .providers
+        .retain(|entry| entry.provider != provider);
+    write_provider_configurations(app, &configurations)
+}
+
 fn load_account(app: &AppHandle, account_id: &str) -> Result<PersistedCloudAccount, String> {
     read_accounts(app)?
         .accounts
@@ -1004,12 +1154,59 @@ fn load_account(app: &AppHandle, account_id: &str) -> Result<PersistedCloudAccou
         .ok_or_else(|| "Cloud account was not found.".to_string())
 }
 
+fn provider_secret_keyring_entry(provider: CloudProviderId) -> Result<Entry, String> {
+    Entry::new(
+        CLOUD_PROVIDER_KEYRING_SERVICE,
+        &format!("{}:client_secret", provider_host(provider)),
+    )
+    .map_err(|error| format!("Failed to open provider credential keychain entry: {error}"))
+}
+
 fn keyring_entry(provider: CloudProviderId, account_id: &str) -> Result<Entry, String> {
     Entry::new(
         CLOUD_KEYRING_SERVICE,
         &format!("{}:{account_id}:refresh_token", provider_host(provider)),
     )
     .map_err(|error| format!("Failed to open keychain entry: {error}"))
+}
+
+fn write_provider_client_secret(
+    provider: CloudProviderId,
+    client_secret: &str,
+) -> Result<(), String> {
+    provider_secret_keyring_entry(provider)?
+        .set_password(client_secret)
+        .map_err(|error| format!("Failed to store provider client secret in the OS keychain: {error}"))
+}
+
+fn read_provider_client_secret(provider: CloudProviderId) -> Option<String> {
+    let entry = match provider_secret_keyring_entry(provider) {
+        Ok(entry) => entry,
+        Err(error) => {
+            eprintln!("GreebleFS: {error}");
+            return None;
+        }
+    };
+    match entry.get_password() {
+        Ok(secret) => Some(secret),
+        Err(KeyringError::NoEntry) => None,
+        Err(error) => {
+            eprintln!(
+                "GreebleFS: failed to read provider client secret from the OS keychain: {error}"
+            );
+            None
+        }
+    }
+}
+
+fn delete_provider_client_secret(provider: CloudProviderId) -> Result<(), String> {
+    let entry = provider_secret_keyring_entry(provider)?;
+    match entry.delete_credential() {
+        Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
+        Err(error) => Err(format!(
+            "Failed to remove provider client secret from the OS keychain: {error}"
+        )),
+    }
 }
 
 fn write_refresh_token(
@@ -1026,6 +1223,36 @@ fn read_refresh_token(provider: CloudProviderId, account_id: &str) -> Result<Str
     keyring_entry(provider, account_id)?
         .get_password()
         .map_err(|error| format!("Failed to read refresh token from the OS keychain: {error}"))
+}
+
+fn resolved_provider_configuration(
+    app: &AppHandle,
+    provider: CloudProviderId,
+) -> Result<ResolvedProviderConfiguration, String> {
+    let saved_configuration = read_provider_configurations(app)?
+        .providers
+        .into_iter()
+        .find(|entry| entry.provider == provider);
+    if let Some(saved_configuration) = saved_configuration {
+        return Ok(ResolvedProviderConfiguration {
+            source: CloudProviderConfigurationSource::Settings,
+            client_id: Some(saved_configuration.client_id),
+            client_secret: read_provider_client_secret(provider),
+        });
+    }
+
+    let client_id = env_trimmed(provider_client_id_env_key(provider));
+    let client_secret = env_trimmed(provider_client_secret_env_key(provider));
+    let source = if client_id.is_some() || client_secret.is_some() {
+        CloudProviderConfigurationSource::Environment
+    } else {
+        CloudProviderConfigurationSource::None
+    };
+    Ok(ResolvedProviderConfiguration {
+        source,
+        client_id,
+        client_secret,
+    })
 }
 
 fn delete_refresh_token(provider: CloudProviderId, account_id: &str) -> Result<(), String> {
@@ -1091,7 +1318,7 @@ async fn access_token_for_account(
         }
     }
     let refresh_token = read_refresh_token(account.provider, &account.id)?;
-    let config = provider_config(account.provider)?;
+    let config = provider_config(app, account.provider)?;
     let token = refresh_access_token(client, &config, &refresh_token).await?;
     store_access_token(
         state,
@@ -1107,7 +1334,6 @@ async fn access_token_for_account(
             token.refresh_token.as_deref().unwrap_or_default(),
         );
     }
-    let _ = app;
     Ok(token.access_token)
 }
 
@@ -1119,6 +1345,55 @@ fn update_auth_callback(
     if let Ok(mut lock) = sessions.lock() {
         if let Some(session) = lock.get_mut(request_id) {
             session.callback = Some(callback);
+        }
+    }
+}
+
+fn create_auth_callback_listener(provider: CloudProviderId) -> Result<AuthCallbackListener, String> {
+    match provider {
+        CloudProviderId::GoogleDrive => {
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .map_err(|error| format!("Failed to create OAuth callback listener: {error}"))?;
+            listener
+                .set_nonblocking(true)
+                .map_err(|error| format!("Failed to configure OAuth callback listener: {error}"))?;
+            let port = listener
+                .local_addr()
+                .map_err(|error| format!("Failed to resolve OAuth callback port: {error}"))?
+                .port();
+            Ok(AuthCallbackListener {
+                redirect_uri: format!("http://127.0.0.1:{port}/callback"),
+                listeners: vec![listener],
+            })
+        }
+        CloudProviderId::Dropbox => {
+            let mut listeners = Vec::new();
+            let mut binding_errors = Vec::new();
+            for bind_address in [
+                format!("127.0.0.1:{DROPBOX_OAUTH_CALLBACK_PORT}"),
+                format!("[::1]:{DROPBOX_OAUTH_CALLBACK_PORT}"),
+            ] {
+                match TcpListener::bind(bind_address.as_str()) {
+                    Ok(listener) => {
+                        listener.set_nonblocking(true).map_err(|error| {
+                            format!("Failed to configure Dropbox OAuth callback listener: {error}")
+                        })?;
+                        listeners.push(listener);
+                    }
+                    Err(error) => binding_errors.push(format!("{bind_address}: {error}")),
+                }
+            }
+            if listeners.is_empty() {
+                return Err(format!(
+                    "Failed to create the Dropbox OAuth callback listener for {}. {}",
+                    DROPBOX_OAUTH_CALLBACK_URI,
+                    binding_errors.join(" | ")
+                ));
+            }
+            Ok(AuthCallbackListener {
+                redirect_uri: DROPBOX_OAUTH_CALLBACK_URI.to_string(),
+                listeners,
+            })
         }
     }
 }
@@ -1225,41 +1500,43 @@ async fn exchange_authorization_code(
     code: &str,
 ) -> Result<GoogleTokenResponse, String> {
     match config.provider {
-        CloudProviderId::GoogleDrive => client
-            .post("https://oauth2.googleapis.com/token")
-            .form(&[
+        CloudProviderId::GoogleDrive => {
+            let mut form = vec![
                 ("client_id", config.client_id.as_str()),
-                (
-                    "client_secret",
-                    config.client_secret.as_deref().unwrap_or(""),
-                ),
                 ("code", code),
                 ("code_verifier", code_verifier),
                 ("grant_type", "authorization_code"),
                 ("redirect_uri", redirect_uri),
-            ])
-            .send()
-            .await
-            .map_err(|error| format!("Google Drive token exchange failed: {error}"))?
-            .error_for_status()
-            .map_err(|error| format!("Google Drive token exchange failed: {error}"))?
-            .json::<GoogleTokenResponse>()
-            .await
-            .map_err(|error| format!("Failed to parse Google Drive token response: {error}")),
+            ];
+            if let Some(client_secret) = config.client_secret.as_deref() {
+                form.push(("client_secret", client_secret));
+            }
+            client
+                .post("https://oauth2.googleapis.com/token")
+                .form(&form)
+                .send()
+                .await
+                .map_err(|error| format!("Google Drive token exchange failed: {error}"))?
+                .error_for_status()
+                .map_err(|error| format!("Google Drive token exchange failed: {error}"))?
+                .json::<GoogleTokenResponse>()
+                .await
+                .map_err(|error| format!("Failed to parse Google Drive token response: {error}"))
+        }
         CloudProviderId::Dropbox => {
+            let mut form = vec![
+                ("client_id", config.client_id.as_str()),
+                ("code", code),
+                ("code_verifier", code_verifier),
+                ("grant_type", "authorization_code"),
+                ("redirect_uri", redirect_uri),
+            ];
+            if let Some(client_secret) = config.client_secret.as_deref() {
+                form.push(("client_secret", client_secret));
+            }
             let response = client
                 .post("https://api.dropboxapi.com/oauth2/token")
-                .form(&[
-                    ("client_id", config.client_id.as_str()),
-                    (
-                        "client_secret",
-                        config.client_secret.as_deref().unwrap_or(""),
-                    ),
-                    ("code", code),
-                    ("code_verifier", code_verifier),
-                    ("grant_type", "authorization_code"),
-                    ("redirect_uri", redirect_uri),
-                ])
+                .form(&form)
                 .send()
                 .await
                 .map_err(|error| format!("Dropbox token exchange failed: {error}"))?
@@ -1283,37 +1560,39 @@ async fn refresh_access_token(
     refresh_token: &str,
 ) -> Result<GoogleTokenResponse, String> {
     match config.provider {
-        CloudProviderId::GoogleDrive => client
-            .post("https://oauth2.googleapis.com/token")
-            .form(&[
+        CloudProviderId::GoogleDrive => {
+            let mut form = vec![
                 ("client_id", config.client_id.as_str()),
-                (
-                    "client_secret",
-                    config.client_secret.as_deref().unwrap_or(""),
-                ),
                 ("refresh_token", refresh_token),
                 ("grant_type", "refresh_token"),
-            ])
-            .send()
-            .await
-            .map_err(|error| format!("Google Drive access token refresh failed: {error}"))?
-            .error_for_status()
-            .map_err(|error| format!("Google Drive access token refresh failed: {error}"))?
-            .json::<GoogleTokenResponse>()
-            .await
-            .map_err(|error| format!("Failed to parse Google Drive refresh response: {error}")),
+            ];
+            if let Some(client_secret) = config.client_secret.as_deref() {
+                form.push(("client_secret", client_secret));
+            }
+            client
+                .post("https://oauth2.googleapis.com/token")
+                .form(&form)
+                .send()
+                .await
+                .map_err(|error| format!("Google Drive access token refresh failed: {error}"))?
+                .error_for_status()
+                .map_err(|error| format!("Google Drive access token refresh failed: {error}"))?
+                .json::<GoogleTokenResponse>()
+                .await
+                .map_err(|error| format!("Failed to parse Google Drive refresh response: {error}"))
+        }
         CloudProviderId::Dropbox => {
+            let mut form = vec![
+                ("client_id", config.client_id.as_str()),
+                ("refresh_token", refresh_token),
+                ("grant_type", "refresh_token"),
+            ];
+            if let Some(client_secret) = config.client_secret.as_deref() {
+                form.push(("client_secret", client_secret));
+            }
             let response = client
                 .post("https://api.dropboxapi.com/oauth2/token")
-                .form(&[
-                    ("client_id", config.client_id.as_str()),
-                    (
-                        "client_secret",
-                        config.client_secret.as_deref().unwrap_or(""),
-                    ),
-                    ("refresh_token", refresh_token),
-                    ("grant_type", "refresh_token"),
-                ])
+                .form(&form)
                 .send()
                 .await
                 .map_err(|error| format!("Dropbox access token refresh failed: {error}"))?

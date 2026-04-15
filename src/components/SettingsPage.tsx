@@ -31,14 +31,17 @@ import {
 } from '../config/platform';
 import {
   beginCloudAuth,
+  clearCloudProviderConfiguration,
   disconnectCloudAccount,
   createExplorerDir,
   listCloudAccounts,
   listExplorerDir,
   openExplorerPath,
   pollCloudAuth,
+  setCloudProviderConfiguration,
   type ExplorerCloudAccountSummary,
   type ExplorerCloudAccountsSnapshot,
+  type ExplorerCloudProviderConfigurationSource,
   type ExplorerCloudProviderId,
 } from '../runtime/explorerBackend';
 import {
@@ -596,8 +599,38 @@ const EMPTY_CLOUD_ACCOUNTS_SNAPSHOT: ExplorerCloudAccountsSnapshot = {
   providers: [],
 };
 
+const CLOUD_PROVIDER_IDS = ['google-drive', 'dropbox'] as const satisfies readonly ExplorerCloudProviderId[];
+const DROPBOX_CALLBACK_URI = 'http://localhost:53682/callback';
+
+type CloudProviderCredentialDraft = {
+  clientId: string;
+  clientSecret: string;
+};
+
+type CloudProviderCredentialDraftMap = Record<ExplorerCloudProviderId, CloudProviderCredentialDraft>;
+
 function getCloudProviderLabel(provider: ExplorerCloudProviderId): string {
   return provider === 'google-drive' ? 'Google Drive' : 'Dropbox';
+}
+
+function createEmptyCloudProviderCredentialDrafts(): CloudProviderCredentialDraftMap {
+  return {
+    'google-drive': { clientId: '', clientSecret: '' },
+    dropbox: { clientId: '', clientSecret: '' },
+  };
+}
+
+function getCloudProviderConfigurationSourceLabel(
+  source: ExplorerCloudProviderConfigurationSource,
+): string {
+  switch (source) {
+    case 'settings':
+      return 'Saved in Settings';
+    case 'environment':
+      return 'Runtime Environment';
+    default:
+      return 'Not Configured';
+  }
 }
 
 
@@ -632,6 +665,7 @@ export function SettingsPage({
   onRefreshWallpapers,
   onOpenWallpapersFolder,
   onImportWallpaperFiles,
+  onSetWindowMode,
   pluginContextMenuItems = [],
   pluginExplorerActions = [],
 }: {
@@ -665,6 +699,7 @@ export function SettingsPage({
   onRefreshWallpapers: () => Promise<void>;
   onOpenWallpapersFolder: () => Promise<void>;
   onImportWallpaperFiles: (files: File[]) => Promise<void>;
+  onSetWindowMode?: (mode: TerminalWindowMode) => Promise<void> | void;
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   pluginExplorerActions?: OverlayPluginExplorerActionContribution[];
 }) {
@@ -722,6 +757,11 @@ export function SettingsPage({
   const [cloudNotice, setCloudNotice] = useState<string | null>(null);
   const [cloudError, setCloudError] = useState<string | null>(null);
   const [cloudAuthProvider, setCloudAuthProvider] = useState<ExplorerCloudProviderId | null>(null);
+  const [cloudCredentialDrafts, setCloudCredentialDrafts] = useState<CloudProviderCredentialDraftMap>(
+    () => createEmptyCloudProviderCredentialDrafts(),
+  );
+  const [cloudCredentialBusyProvider, setCloudCredentialBusyProvider] = useState<ExplorerCloudProviderId | null>(null);
+  const [cloudCredentialBusyAction, setCloudCredentialBusyAction] = useState<'save' | 'clear' | null>(null);
   const [wallpaperNotice, setWallpaperNotice] = useState<string | null>(null);
   const [wallpaperImportError, setWallpaperImportError] = useState<string | null>(null);
   const [layoutManifestState, setLayoutManifestState] = useState<LoadedLayoutManifest>(DEFAULT_LOADED_LAYOUT_MANIFEST);
@@ -1086,6 +1126,70 @@ export function SettingsPage({
     && Array.isArray(cloudSnapshot.providers)
       ? cloudSnapshot
       : EMPTY_CLOUD_ACCOUNTS_SNAPSHOT;
+
+  useEffect(() => {
+    const nextDrafts = createEmptyCloudProviderCredentialDrafts();
+    for (const provider of safeCloudSnapshot.providers) {
+      nextDrafts[provider.provider] = {
+        clientId: provider.client_id ?? '',
+        clientSecret: '',
+      };
+    }
+    setCloudCredentialDrafts(nextDrafts);
+  }, [safeCloudSnapshot.providers]);
+
+  const updateCloudCredentialDraft = useCallback((
+    provider: ExplorerCloudProviderId,
+    key: keyof CloudProviderCredentialDraft,
+    value: string,
+  ) => {
+    setCloudCredentialDrafts(current => ({
+      ...current,
+      [provider]: {
+        ...current[provider],
+        [key]: value,
+      },
+    }));
+  }, []);
+
+  const saveCloudProviderCredentials = useCallback(async (provider: ExplorerCloudProviderId) => {
+    const draft = cloudCredentialDrafts[provider];
+    setCloudError(null);
+    setCloudNotice(null);
+    setCloudCredentialBusyProvider(provider);
+    setCloudCredentialBusyAction('save');
+    try {
+      await setCloudProviderConfiguration(
+        provider,
+        draft.clientId,
+        draft.clientSecret.trim().length > 0 ? draft.clientSecret : null,
+      );
+      await refreshCloudAccounts();
+      setCloudNotice(`Saved ${getCloudProviderLabel(provider)} provider credentials.`);
+    } catch (error) {
+      setCloudError(`Failed to save ${getCloudProviderLabel(provider)} credentials: ${String(error)}`);
+    } finally {
+      setCloudCredentialBusyProvider(null);
+      setCloudCredentialBusyAction(null);
+    }
+  }, [cloudCredentialDrafts, refreshCloudAccounts]);
+
+  const clearSavedCloudProviderCredentials = useCallback(async (provider: ExplorerCloudProviderId) => {
+    setCloudError(null);
+    setCloudNotice(null);
+    setCloudCredentialBusyProvider(provider);
+    setCloudCredentialBusyAction('clear');
+    try {
+      await clearCloudProviderConfiguration(provider);
+      await refreshCloudAccounts();
+      setCloudNotice(`Cleared saved ${getCloudProviderLabel(provider)} provider credentials.`);
+    } catch (error) {
+      setCloudError(`Failed to clear ${getCloudProviderLabel(provider)} credentials: ${String(error)}`);
+    } finally {
+      setCloudCredentialBusyProvider(null);
+      setCloudCredentialBusyAction(null);
+    }
+  }, [refreshCloudAccounts]);
 
   const connectCloudProvider = useCallback(async (provider: ExplorerCloudProviderId) => {
     setCloudError(null);
@@ -1522,7 +1626,7 @@ export function SettingsPage({
       label: 'Cloud',
       subtitle: 'OAuth-backed Google Drive and Dropbox accounts.',
       summary: `${connectedCloudAccountCount} connected · ${configuredCloudProviderCount}/2 providers configured`,
-      detail: 'Connect real cloud accounts through the system browser, keep tokens off the settings store, and surface each connected account as an explorer drive.',
+      detail: 'Manage provider credentials from Settings or the runtime environment, keep account tokens off the settings store, and surface each connected account as an explorer drive.',
       icon: <HardDrive size={14} />,
     },
     {
@@ -2951,7 +3055,13 @@ export function SettingsPage({
                       <button
                         key={option.value}
                         type="button"
-                        onClick={() => updateTerminal({ windowMode: option.value })}
+                        onClick={() => {
+                          if (onSetWindowMode) {
+                            void onSetWindowMode(option.value);
+                            return;
+                          }
+                          updateTerminal({ windowMode: option.value });
+                        }}
                         className="rounded px-3 py-3 text-left transition-colors"
                         style={{
                           border: `1px solid ${active ? accent : border}`,
@@ -3714,37 +3824,43 @@ export function SettingsPage({
                   </div>
 
                   <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-                    {(['google-drive', 'dropbox'] as const).map(providerId => {
+                    {CLOUD_PROVIDER_IDS.map(providerId => {
                       const provider = safeCloudSnapshot.providers.find(item => item.provider === providerId) ?? {
                         provider: providerId,
                         configured: false,
-                        missing_configuration: ['provider configuration unavailable'],
+                        missing_configuration: ['client ID'],
+                        configuration_source: 'none' as const,
+                        client_id: null,
+                        client_secret_present: false,
                       };
                       const providerAccounts = safeCloudSnapshot.accounts.filter(account => account.provider === providerId);
                       const providerLabel = getCloudProviderLabel(providerId);
                       const providerBusy = cloudAuthProvider === providerId;
+                      const providerCredentialBusy = cloudCredentialBusyProvider === providerId;
+                      const providerDraft = cloudCredentialDrafts[providerId];
+                      const providerActionDisabled = providerBusy || providerCredentialBusy;
 
                       return (
                         <div key={providerId} className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
                           <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div>
+                            <div className="max-w-[520px]">
                               <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">{providerLabel}</div>
                               <p className="mt-1 text-[11px] opacity-40">
                                 {provider.configured
                                   ? 'Use the system browser to connect one or more accounts. Each connected account becomes its own explorer drive.'
-                                  : 'Provider credentials are missing in the runtime environment, so OAuth cannot start yet.'}
+                                  : 'Save a client ID here to enable browser login without external environment variables.'}
                               </p>
                             </div>
                             <button
                               type="button"
-                              disabled={!provider.configured || providerBusy}
+                              disabled={!provider.configured || providerActionDisabled}
                               onClick={() => void connectCloudProvider(providerId)}
                               className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
                               style={{
                                 border: `1px solid ${provider.configured ? `${accent}55` : border}`,
                                 background: provider.configured ? `${accent}18` : 'rgba(255,255,255,0.04)',
                                 color: provider.configured ? text : muted,
-                                opacity: providerBusy ? 0.7 : 1,
+                                opacity: providerActionDisabled ? 0.7 : 1,
                               }}
                             >
                               {providerBusy ? 'Waiting...' : providerAccounts.length > 0 ? 'Connect Another' : 'Connect Account'}
@@ -3756,6 +3872,12 @@ export function SettingsPage({
                               {provider.configured ? 'Configured' : 'Needs Credentials'}
                             </span>
                             <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                              {getCloudProviderConfigurationSourceLabel(provider.configuration_source)}
+                            </span>
+                            <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                              {provider.client_secret_present ? 'Secret Stored' : 'No Secret'}
+                            </span>
+                            <span className="rounded border px-2 py-1" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
                               {providerAccounts.length} account{providerAccounts.length === 1 ? '' : 's'}
                             </span>
                           </div>
@@ -3765,6 +3887,77 @@ export function SettingsPage({
                               Missing: {provider.missing_configuration.join(', ')}
                             </div>
                           ) : null}
+
+                          <div className="mt-4 space-y-3 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
+                            <div className="grid gap-3 md:grid-cols-2">
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
+                                  {providerLabel} Client ID
+                                </label>
+                                <input
+                                  aria-label={`${providerLabel} client ID`}
+                                  value={providerDraft.clientId}
+                                  onChange={event => updateCloudCredentialDraft(providerId, 'clientId', event.target.value)}
+                                  placeholder={providerId === 'google-drive' ? 'Google OAuth client ID' : 'Dropbox app key / client ID'}
+                                  className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                                  style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text, fontFamily: appearance.fonts.mono }}
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
+                                  {providerLabel} Client Secret
+                                </label>
+                                <input
+                                  aria-label={`${providerLabel} client secret`}
+                                  type="password"
+                                  value={providerDraft.clientSecret}
+                                  onChange={event => updateCloudCredentialDraft(providerId, 'clientSecret', event.target.value)}
+                                  placeholder={provider.client_secret_present ? 'Stored in keychain. Type to replace or leave blank.' : 'Optional, depending on provider app setup'}
+                                  className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                                  style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text, fontFamily: appearance.fonts.mono }}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                disabled={providerActionDisabled || providerDraft.clientId.trim().length === 0}
+                                onClick={() => void saveCloudProviderCredentials(providerId)}
+                                className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                                style={{
+                                  border: `1px solid ${accent}55`,
+                                  background: `${accent}18`,
+                                  color: text,
+                                  opacity: providerActionDisabled ? 0.7 : 1,
+                                }}
+                              >
+                                {providerCredentialBusy && cloudCredentialBusyAction === 'save' ? 'Saving...' : 'Save Credentials'}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={providerActionDisabled || provider.configuration_source !== 'settings'}
+                                onClick={() => void clearSavedCloudProviderCredentials(providerId)}
+                                className="rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                                style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: muted, opacity: providerActionDisabled ? 0.7 : 1 }}
+                              >
+                                {providerCredentialBusy && cloudCredentialBusyAction === 'clear' ? 'Clearing...' : 'Clear Saved'}
+                              </button>
+                            </div>
+
+                            <div className="space-y-1 text-[11px] opacity-45" style={{ color: muted }}>
+                              {providerId === 'google-drive' ? (
+                                <p>
+                                  Use a Google Cloud OAuth desktop client. This flow uses the system browser, PKCE, and a localhost callback.
+                                </p>
+                              ) : (
+                                <p>
+                                  Register <span style={{ fontFamily: appearance.fonts.mono }}>{DROPBOX_CALLBACK_URI}</span> in the Dropbox App Console. The callback URI is fixed so it can be whitelisted.
+                                </p>
+                              )}
+                              <p>Client secrets stay in the OS keychain when provided. Leave the secret blank if your client type does not require one.</p>
+                            </div>
+                          </div>
 
                           <div className="mt-3 space-y-2">
                             {providerAccounts.length === 0 ? (

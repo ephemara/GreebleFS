@@ -8,6 +8,7 @@ import {
   type CloudAuthSession,
   type CloudAuthStatus,
   type CloudBreadcrumb,
+  type CloudProviderConfigurationSource,
   type CloudProviderConfigurationStatus,
   type CloudProviderId,
   type DriveInfo,
@@ -45,6 +46,7 @@ export type ExplorerCloudAccountSummary = CloudAccountSummary;
 export type ExplorerCloudAccountsSnapshot = CloudAccountsSnapshot;
 export type ExplorerCloudAuthSession = CloudAuthSession;
 export type ExplorerCloudAuthStatus = CloudAuthStatus;
+export type ExplorerCloudProviderConfigurationSource = CloudProviderConfigurationSource;
 export type ExplorerCloudProviderConfigurationStatus = CloudProviderConfigurationStatus;
 export type ExplorerTagMetadataSnapshot = ExplorerTagSnapshot;
 export type ExplorerTagMutation = ExplorerTagMutationRequest;
@@ -613,6 +615,20 @@ export function supportsExplorerNativeDragOut(paths: string[]): boolean {
 
 export async function listCloudAccounts(): Promise<ExplorerCloudAccountsSnapshot> {
   return unwrapTauriResult(await commands.cloudListAccounts());
+}
+
+export async function setCloudProviderConfiguration(
+  provider: ExplorerCloudProviderId,
+  clientId: string,
+  clientSecret: string | null,
+): Promise<ExplorerCloudProviderConfigurationStatus> {
+  return unwrapTauriResult(await commands.cloudSetProviderConfiguration(provider, clientId, clientSecret));
+}
+
+export async function clearCloudProviderConfiguration(
+  provider: ExplorerCloudProviderId,
+): Promise<ExplorerCloudProviderConfigurationStatus> {
+  return unwrapTauriResult(await commands.cloudClearProviderConfiguration(provider));
 }
 
 export async function beginCloudAuth(provider: ExplorerCloudProviderId): Promise<ExplorerCloudAuthSession> {

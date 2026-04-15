@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
+use tauri::{AppHandle, PhysicalPosition, PhysicalSize, WebviewWindow};
 
 use crate::wayland_dock::{
     apply_wayland_dock_layout, wayland_dock_host_status, WaylandDockAnchor,

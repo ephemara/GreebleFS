@@ -240,17 +240,18 @@ describe('FileExplorer view modes', () => {
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('columns');
   });
 
-  it('lets the user switch explorer shell layouts from the toolbar', async () => {
+  it('lets the user switch explorer modes from the toolbar without mutating the live session shell preset', async () => {
     renderExplorer();
     await screen.findByText('alpha');
 
     expect(screen.getByRole('button', { name: /manage/i })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: /explorer shell layout:/i }));
+    fireEvent.click(screen.getByRole('button', { name: /explorer mode:/i }));
     fireEvent.click(screen.getByRole('menuitemradio', { name: /focus/i }));
 
     await waitFor(() => {
-      expect(useExplorerStore.getState().session.shellLayoutId).toBe('focus');
+      expect(useSettingsStore.getState().settings.explorer.modeProfileOverridesByThemeId.operator).toBe('focus');
+      expect(useExplorerStore.getState().session.shellLayoutId).toBe('balanced');
       expect(screen.queryByRole('button', { name: /manage/i })).toBeNull();
     });
   });

@@ -6,6 +6,20 @@ const browserMocks = vi.hoisted(() => ({
   isTauri: vi.fn(() => true),
   listen: vi.fn().mockResolvedValue(() => {}),
   emit: vi.fn().mockResolvedValue(undefined),
+  mainWebviewWindow: {
+    label: 'main',
+    emit: vi.fn().mockResolvedValue(undefined),
+    listen: vi.fn().mockResolvedValue(() => {}),
+    once: vi.fn().mockResolvedValue(() => {}),
+  },
+  dockWebviewWindow: {
+    label: 'dock',
+    emit: vi.fn().mockResolvedValue(undefined),
+    listen: vi.fn().mockResolvedValue(() => {}),
+    once: vi.fn().mockResolvedValue(() => {}),
+  },
+  getCurrentWebviewWindow: vi.fn(),
+  getWebviewWindowByLabel: vi.fn(),
   getCurrentWindow: vi.fn(() => ({
     scaleFactor: vi.fn().mockResolvedValue(1),
     setSize: vi.fn().mockResolvedValue(undefined),
@@ -67,6 +81,11 @@ const browserMocks = vi.hoisted(() => ({
   PhysicalPosition: vi.fn(),
 }));
 
+browserMocks.getCurrentWebviewWindow.mockImplementation(() => browserMocks.mainWebviewWindow);
+browserMocks.getWebviewWindowByLabel.mockImplementation(async (label: string) => (
+  label === 'dock' ? browserMocks.dockWebviewWindow : browserMocks.mainWebviewWindow
+));
+
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: browserMocks.invoke,
   convertFileSrc: (path: string) => `asset://localhost/${path}`,
@@ -80,6 +99,13 @@ vi.mock('@tauri-apps/api/window', () => ({
   primaryMonitor: browserMocks.primaryMonitor,
   PhysicalSize: browserMocks.PhysicalSize,
   PhysicalPosition: browserMocks.PhysicalPosition,
+}));
+
+vi.mock('@tauri-apps/api/webviewWindow', () => ({
+  getCurrentWebviewWindow: browserMocks.getCurrentWebviewWindow,
+  WebviewWindow: {
+    getByLabel: browserMocks.getWebviewWindowByLabel,
+  },
 }));
 
 vi.mock('@tauri-apps/api/event', () => ({

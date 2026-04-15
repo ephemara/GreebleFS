@@ -141,6 +141,18 @@ import { listExplorerDir, openExplorerPath, writeExplorerFile } from './runtime/
 import { commands, unwrapTauriResult } from './runtime/tauriClient';
 import { useFolderPluginRuntime } from './runtime/useFolderPluginRuntime';
 import {
+  DOCK_WINDOW_HOST_LABEL,
+  SHOW_WINDOW_MODE_REQUEST_EVENT,
+  TOGGLE_OVERLAY_REQUEST_EVENT,
+  emitWindowEventToHost,
+  getCurrentWindowHostRole,
+  hasSeparateWaylandDockHost,
+  isWindowHostResponsibleForMode,
+  resolvePresentationHostLabel,
+  shouldRegisterGlobalShortcutForHost,
+  type WindowHostRole,
+} from './runtime/windowHost';
+import {
   useSettingsStore,
   resolveSystemPresentationState,
   type LayoutPanelState,
@@ -436,7 +448,11 @@ function App() {
     height: typeof window === 'undefined' ? 720 : window.innerHeight,
   }));
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
+  const currentWindowHostRole = useMemo<WindowHostRole>(() => getCurrentWindowHostRole(), []);
   const [linuxDisplayServer, setLinuxDisplayServer] = useState<'unknown' | 'wayland' | 'x11'>('unknown');
+  const [linuxDisplayServerResolved, setLinuxDisplayServerResolved] = useState(runtimePlatform !== 'linux');
+  const [waylandDockHostEnabled, setWaylandDockHostEnabled] = useState(false);
+  const [waylandDockHostStatusResolved, setWaylandDockHostStatusResolved] = useState(runtimePlatform !== 'linux');
   const builtInAnimations = useMemo(() => createBuiltInOverlayAnimations(), []);
   const builtInShaders = useMemo(() => createBuiltInOverlayShaders(), []);
   const overlayPhaseRef = useRef<OverlayAnimationPhase>('closed');
@@ -595,7 +611,30 @@ function App() {
   overlayVisibleRef.current = isOverlayVisible;
   const isWindowedMode = windowMode === 'windowed';
   const startupPresentationShownRef = useRef(false);
-  const isWaylandOverlaySession = runtimePlatform === 'linux' && linuxDisplayServer === 'wayland' && !isWindowedMode;
+  const usesSeparateWaylandDockHost = hasSeparateWaylandDockHost({
+    runtimePlatform,
+    linuxDisplayServer,
+    waylandDockHostEnabled,
+  });
+  const presentationHostLabel = resolvePresentationHostLabel({
+    windowMode,
+    useSeparateWaylandDockHost: usesSeparateWaylandDockHost,
+  });
+  const isCurrentWindowPresentationHost = isWindowHostResponsibleForMode({
+    hostRole: currentWindowHostRole,
+    windowMode,
+    useSeparateWaylandDockHost: usesSeparateWaylandDockHost,
+  });
+  const usesWaylandDockLayerShell = usesSeparateWaylandDockHost
+    && currentWindowHostRole === DOCK_WINDOW_HOST_LABEL
+    && windowMode === 'overlay';
+  const isWaylandOverlaySession = runtimePlatform === 'linux'
+    && linuxDisplayServer === 'wayland'
+    && !isWindowedMode
+    && !usesSeparateWaylandDockHost;
+  const shouldWaitForWindowRouting = runtimePlatform === 'linux'
+    && (!linuxDisplayServerResolved || (linuxDisplayServer === 'wayland' && !waylandDockHostStatusResolved));
+  const canResizeOverlayShell = !usesWaylandDockLayerShell;
   const systemPresentationState = useMemo(
     () => resolveSystemPresentationState(systemSettings),
     [systemSettings],
@@ -900,6 +939,10 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (currentWindowHostRole === DOCK_WINDOW_HOST_LABEL) {
+      return;
+    }
+
     let cancelled = false;
 
     commands.startupGetLaunchAtStartup()
@@ -916,10 +959,15 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [updateSystem]);
+  }, [currentWindowHostRole, updateSystem]);
 
   useEffect(() => {
     if (!isTauri()) {
+      setDesktopPresentationSynced(true);
+      return;
+    }
+
+    if (currentWindowHostRole === DOCK_WINDOW_HOST_LABEL) {
       setDesktopPresentationSynced(true);
       return;
     }
@@ -953,7 +1001,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [systemPresentationState.taskbarVisible, systemPresentationState.trayVisible]);
+  }, [currentWindowHostRole, systemPresentationState.taskbarVisible, systemPresentationState.trayVisible]);
 
   useEffect(() => {
     setOverlayPluginFonts(pluginFonts);
@@ -1050,6 +1098,39 @@ function App() {
     overlayPhaseRef.current = phase;
     overlayVisibleRef.current = visible;
   }, []);
+
+  const isCurrentHostWindowVisible = useCallback(async () => {
+    if (!isTauri()) {
+      return overlayVisibleRef.current;
+    }
+
+    const currentWindow = getCurrentWindow() as ReturnType<typeof getCurrentWindow> & {
+      isVisible?: () => Promise<boolean>;
+      is_visible?: () => Promise<boolean>;
+    };
+    if (typeof currentWindow.isVisible === 'function') {
+      return currentWindow.isVisible().catch(() => false);
+    }
+    if (typeof currentWindow.is_visible === 'function') {
+      return currentWindow.is_visible().catch(() => false);
+    }
+
+    return overlayVisibleRef.current;
+  }, []);
+
+  const hideCurrentHostImmediately = useCallback(async () => {
+    clearAnimationClock();
+    dragHideRestoreRef.current = false;
+    setIsCommandPaletteOpen(false);
+    markOverlayRuntimePhase('closed', false);
+    setOverlayPhase('closed');
+    setAnimationProgress(0);
+    try {
+      await getCurrentWindow().hide();
+    } catch {
+      // Ignore hide failures during host handoff and shutdown.
+    }
+  }, [clearAnimationClock, markOverlayRuntimePhase]);
 
   const openWithoutMonitorLayout = useCallback(async (win: ReturnType<typeof getCurrentWindow>) => {
     await win.show();
@@ -1148,10 +1229,12 @@ function App() {
   useEffect(() => {
     if (!isTauri() || runtimePlatform !== 'linux') {
       setLinuxDisplayServer('unknown');
+      setLinuxDisplayServerResolved(true);
       return;
     }
 
     let cancelled = false;
+    setLinuxDisplayServerResolved(false);
     commands.windowGetLinuxDisplayServer()
       .then(displayServer => {
         if (cancelled) {
@@ -1163,10 +1246,12 @@ function App() {
             ? displayServer
             : 'unknown',
         );
+        setLinuxDisplayServerResolved(true);
       })
       .catch(() => {
         if (!cancelled) {
           setLinuxDisplayServer('unknown');
+          setLinuxDisplayServerResolved(true);
         }
       });
 
@@ -1174,6 +1259,48 @@ function App() {
       cancelled = true;
     };
   }, [runtimePlatform]);
+
+  useEffect(() => {
+    if (!isTauri() || runtimePlatform !== 'linux') {
+      setWaylandDockHostEnabled(false);
+      setWaylandDockHostStatusResolved(true);
+      return;
+    }
+
+    if (!linuxDisplayServerResolved) {
+      setWaylandDockHostStatusResolved(false);
+      return;
+    }
+
+    if (linuxDisplayServer !== 'wayland') {
+      setWaylandDockHostEnabled(false);
+      setWaylandDockHostStatusResolved(true);
+      return;
+    }
+
+    let cancelled = false;
+    setWaylandDockHostStatusResolved(false);
+    commands.windowGetWaylandDockHostStatus()
+      .then(status => {
+        if (cancelled) {
+          return;
+        }
+
+        setWaylandDockHostEnabled(Boolean(status.enabled));
+        setWaylandDockHostStatusResolved(true);
+      })
+      .catch(error => {
+        if (!cancelled) {
+          console.warn('OverlayTerm: failed to resolve Wayland dock host status', error);
+          setWaylandDockHostEnabled(false);
+          setWaylandDockHostStatusResolved(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [linuxDisplayServer, linuxDisplayServerResolved, runtimePlatform]);
 
   const resolveDockOverlayLayout = useCallback((args: {
     monitor: Awaited<ReturnType<typeof currentMonitor>>;
@@ -1224,6 +1351,16 @@ function App() {
       await new Promise(resolve => window.setTimeout(resolve, args.deferMs));
     }
 
+    if (usesWaylandDockLayerShell) {
+      unwrapTauriResult(await commands.windowApplyWaylandDockLayout(
+        store.overlayAnchor === 'top' ? 'top' : 'bottom',
+        args.monitor.name ?? null,
+        layout.width,
+        layout.height,
+      ));
+      return layout;
+    }
+
     if (isWaylandOverlaySession) {
       return layout;
     }
@@ -1245,7 +1382,7 @@ function App() {
     }
 
     return layout;
-  }, [isWaylandOverlaySession, resolveDockOverlayLayout, shouldSkipTaskbar]);
+  }, [isWaylandOverlaySession, resolveDockOverlayLayout, shouldSkipTaskbar, usesWaylandDockLayerShell]);
 
   // ── Position & show ──
   const positionAndShow = useCallback(async () => {
@@ -1479,13 +1616,37 @@ function App() {
   ]);
 
   const showCurrentPresentation = useCallback(async () => {
-    if (windowModeRef.current === 'windowed') {
+    if (shouldWaitForWindowRouting) {
+      return;
+    }
+
+    const activeWindowMode = windowModeRef.current;
+    const activePresentationHostLabel = resolvePresentationHostLabel({
+      windowMode: activeWindowMode,
+      useSeparateWaylandDockHost: usesSeparateWaylandDockHost,
+    });
+    if (usesSeparateWaylandDockHost && currentWindowHostRole !== activePresentationHostLabel) {
+      await emitWindowEventToHost(
+        activePresentationHostLabel,
+        SHOW_WINDOW_MODE_REQUEST_EVENT,
+        activeWindowMode,
+      );
+      return;
+    }
+
+    if (activeWindowMode === 'windowed') {
       await showWindowedPanel();
       return;
     }
 
     await positionAndShow();
-  }, [positionAndShow, showWindowedPanel]);
+  }, [
+    currentWindowHostRole,
+    positionAndShow,
+    shouldWaitForWindowRouting,
+    showWindowedPanel,
+    usesSeparateWaylandDockHost,
+  ]);
 
   const handleOpenInFilesystemAquarium: (path: string) => void = useCallback((path: string) => {
     const trimmedPath = path.trim();
@@ -1544,7 +1705,63 @@ function App() {
     }, nextDurationMs);
   }, [appAnimationDurationMs, clearAnimationClock, markOverlayRuntimePhase, resolveAnimationById, resolvedCloseAnimationId, startAnimationProgress]);
 
+  const requestWindowModeChange = useCallback(async (nextWindowMode: TerminalWindowMode) => {
+    const currentWindowMode = windowModeRef.current;
+    if (currentWindowMode === nextWindowMode) {
+      return;
+    }
+
+    const currentPresentationHost = resolvePresentationHostLabel({
+      windowMode: currentWindowMode,
+      useSeparateWaylandDockHost: usesSeparateWaylandDockHost,
+    });
+    const nextPresentationHost = resolvePresentationHostLabel({
+      windowMode: nextWindowMode,
+      useSeparateWaylandDockHost: usesSeparateWaylandDockHost,
+    });
+    const shouldCarryVisibleSession = overlayVisibleRef.current || await isCurrentHostWindowVisible();
+
+    updateTerminal({ windowMode: nextWindowMode });
+    if (nextWindowMode === 'overlay') {
+      setPanelOpenStateDirectly('explorer');
+    }
+
+    if (
+      usesSeparateWaylandDockHost
+      && currentWindowHostRole === currentPresentationHost
+      && currentPresentationHost !== nextPresentationHost
+    ) {
+      if (shouldCarryVisibleSession) {
+        await emitWindowEventToHost(
+          nextPresentationHost,
+          SHOW_WINDOW_MODE_REQUEST_EVENT,
+          nextWindowMode,
+        );
+      }
+      await hideCurrentHostImmediately();
+    }
+  }, [
+    currentWindowHostRole,
+    hideCurrentHostImmediately,
+    isCurrentHostWindowVisible,
+    setPanelOpenStateDirectly,
+    updateTerminal,
+    usesSeparateWaylandDockHost,
+  ]);
+
   const handleToggleOverlayRequest = useCallback(() => {
+    if (shouldWaitForWindowRouting) {
+      return;
+    }
+
+    if (usesSeparateWaylandDockHost && !isCurrentWindowPresentationHost) {
+      void emitWindowEventToHost(
+        presentationHostLabel,
+        TOGGLE_OVERLAY_REQUEST_EVENT,
+      );
+      return;
+    }
+
     const currentPhase = overlayPhaseRef.current;
     if (currentPhase === 'open' || currentPhase === 'opening') {
       void hideOverlay();
@@ -1552,12 +1769,28 @@ function App() {
     }
 
     void showCurrentPresentation();
-  }, [hideOverlay, showCurrentPresentation]);
+  }, [
+    hideOverlay,
+    isCurrentWindowPresentationHost,
+    presentationHostLabel,
+    shouldWaitForWindowRouting,
+    showCurrentPresentation,
+    usesSeparateWaylandDockHost,
+  ]);
 
-  useGlobalShortcut(keybindings.terminalToggle, handleToggleOverlayRequest, isTauri());
+  useGlobalShortcut(
+    keybindings.terminalToggle,
+    handleToggleOverlayRequest,
+    isTauri() && shouldRegisterGlobalShortcutForHost(currentWindowHostRole),
+  );
 
   useEffect(() => {
-    if (!isTauri() || !desktopPresentationSynced || startupPresentationShownRef.current) {
+    if (
+      !isTauri()
+      || !desktopPresentationSynced
+      || startupPresentationShownRef.current
+      || shouldWaitForWindowRouting
+    ) {
       return;
     }
 
@@ -1565,7 +1798,7 @@ function App() {
     const startupTimer = window.setTimeout(() => {
       const syncInitialPresentation = async () => {
         const win = getCurrentWindow();
-        const visible = (await getCurrentWindow().isVisible?.().catch(() => false)) ?? false;
+        const visible = await isCurrentHostWindowVisible();
         if (
           cancelled
           || overlayVisibleRef.current
@@ -1575,6 +1808,13 @@ function App() {
         }
 
         startupPresentationShownRef.current = true;
+        if (usesSeparateWaylandDockHost && !isCurrentWindowPresentationHost) {
+          if (visible) {
+            await win.hide().catch(() => {});
+          }
+          return;
+        }
+
         if (visible) {
           await win.hide().catch(() => {});
         }
@@ -1588,26 +1828,93 @@ function App() {
       cancelled = true;
       window.clearTimeout(startupTimer);
     };
-  }, [desktopPresentationSynced, showCurrentPresentation]);
+  }, [
+    desktopPresentationSynced,
+    isCurrentHostWindowVisible,
+    isCurrentWindowPresentationHost,
+    shouldWaitForWindowRouting,
+    showCurrentPresentation,
+      usesSeparateWaylandDockHost,
+    ]);
+
+  useEffect(() => {
+    if (
+      !isTauri()
+      || !usesSeparateWaylandDockHost
+      || shouldWaitForWindowRouting
+      || isCurrentWindowPresentationHost
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    void isCurrentHostWindowVisible().then(visible => {
+      if (cancelled || (!visible && !overlayVisibleRef.current)) {
+        return;
+      }
+
+      void hideCurrentHostImmediately();
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    hideCurrentHostImmediately,
+    isCurrentHostWindowVisible,
+    isCurrentWindowPresentationHost,
+    shouldWaitForWindowRouting,
+    usesSeparateWaylandDockHost,
+  ]);
 
   useEffect(() => {
     if (!isTauri()) {
       return;
     }
 
-    let unlisten: (() => void) | null = null;
-    listen('overlay://toggle-request', () => {
+    let unlistenToggle: (() => void) | null = null;
+    let unlistenShowWindowMode: (() => void) | null = null;
+    listen(TOGGLE_OVERLAY_REQUEST_EVENT, () => {
       handleToggleOverlayRequest();
     }).then(listener => {
-      unlisten = listener;
+      unlistenToggle = listener;
     }).catch(error => {
       console.warn('OverlayTerm: failed to listen for toggle requests', error);
     });
 
+    listen<TerminalWindowMode>(SHOW_WINDOW_MODE_REQUEST_EVENT, event => {
+      const nextWindowMode = event.payload === 'windowed' ? 'windowed' : 'overlay';
+      const targetHostLabel = resolvePresentationHostLabel({
+        windowMode: nextWindowMode,
+        useSeparateWaylandDockHost: usesSeparateWaylandDockHost,
+      });
+      if (currentWindowHostRole !== targetHostLabel) {
+        return;
+      }
+
+      if (nextWindowMode === 'windowed') {
+        void showWindowedPanel();
+        return;
+      }
+
+      void positionAndShow();
+    }).then(listener => {
+      unlistenShowWindowMode = listener;
+    }).catch(error => {
+      console.warn('OverlayTerm: failed to listen for window mode show requests', error);
+    });
+
     return () => {
-      unlisten?.();
+      unlistenToggle?.();
+      unlistenShowWindowMode?.();
     };
-  }, [handleToggleOverlayRequest]);
+  }, [
+    currentWindowHostRole,
+    handleToggleOverlayRequest,
+    positionAndShow,
+    showWindowedPanel,
+    usesSeparateWaylandDockHost,
+  ]);
 
   const hideOverlayForDrag = useCallback(async () => {
     const currentPhase = overlayPhaseRef.current;
@@ -1636,7 +1943,7 @@ function App() {
   }, [positionAndShow]);
 
   const syncWindowPresentation = useCallback(async (mode: TerminalWindowMode) => {
-    if (!isTauri() || !overlayVisibleRef.current) {
+    if (!isTauri() || !overlayVisibleRef.current || !isCurrentWindowPresentationHost) {
       return;
     }
 
@@ -1694,17 +2001,12 @@ function App() {
     } catch (error) {
       console.warn('OverlayTerm: failed to transition window presentation', error);
     }
-  }, [applyDockOverlayLayout, shouldSkipTaskbar]);
+  }, [applyDockOverlayLayout, isCurrentWindowPresentationHost, shouldSkipTaskbar]);
 
   const handleToggleWindowMode = useCallback(() => {
     const nextWindowMode = windowMode === 'windowed' ? 'overlay' : 'windowed';
-    updateTerminal({
-      windowMode: nextWindowMode,
-    });
-    if (nextWindowMode === 'overlay') {
-      setPanelOpenStateDirectly('explorer');
-    }
-  }, [setPanelOpenStateDirectly, updateTerminal, windowMode]);
+    void requestWindowModeChange(nextWindowMode);
+  }, [requestWindowModeChange, windowMode]);
 
   const handleOpenCommandPalette = useCallback(() => {
     if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
@@ -1738,12 +2040,12 @@ function App() {
   }, [restoreOverlayAfterDrag]);
 
   useEffect(() => {
-    if (!isTauri() || !overlayVisibleRef.current) {
+    if (!isTauri() || !overlayVisibleRef.current || !isCurrentWindowPresentationHost) {
       return;
     }
 
     void syncWindowPresentation(windowMode);
-  }, [syncWindowPresentation, windowMode]);
+  }, [isCurrentWindowPresentationHost, syncWindowPresentation, windowMode]);
 
   useEffect(() => {
     if (!isTauri()) {
@@ -1771,7 +2073,7 @@ function App() {
   }, [hideOverlay]);
 
   useEffect(() => {
-    if (!overlayVisibleRef.current || windowMode !== 'overlay') {
+    if (!overlayVisibleRef.current || windowMode !== 'overlay' || !isCurrentWindowPresentationHost) {
       return;
     }
 
@@ -1801,7 +2103,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [applyDockOverlayLayout, overlayAnchor, windowMode, resolvePreferredMonitor]);
+  }, [applyDockOverlayLayout, isCurrentWindowPresentationHost, overlayAnchor, windowMode, resolvePreferredMonitor]);
 
   useEffect(() => {
     if (!isOverlayVisible || typeof window === 'undefined' || !isTauri()) {
@@ -1856,7 +2158,12 @@ function App() {
   // ── Persist resize ──
   useEffect(() => {
     const unlistenResize = getCurrentWindow().onResized(async ev => {
-      if (isProgrammaticResizeRef.current || !overlayVisibleRef.current) {
+      if (
+        usesWaylandDockLayerShell
+        || !isCurrentWindowPresentationHost
+        || isProgrammaticResizeRef.current
+        || !overlayVisibleRef.current
+      ) {
         return;
       }
       const win = getCurrentWindow();
@@ -1905,11 +2212,17 @@ function App() {
       }
     });
     return () => { unlistenResize.then(fn => fn()); };
-  }, [applyDockOverlayLayout, resolvePreferredMonitor]);
+  }, [applyDockOverlayLayout, isCurrentWindowPresentationHost, resolvePreferredMonitor, usesWaylandDockLayerShell]);
 
   useEffect(() => {
     const unlistenMove = getCurrentWindow().onMoved(async ev => {
-      if (isProgrammaticResizeRef.current || !overlayVisibleRef.current || windowModeRef.current !== 'overlay') {
+      if (
+        usesWaylandDockLayerShell
+        || !isCurrentWindowPresentationHost
+        || isProgrammaticResizeRef.current
+        || !overlayVisibleRef.current
+        || windowModeRef.current !== 'overlay'
+      ) {
         return;
       }
       const win = getCurrentWindow();
@@ -1933,7 +2246,7 @@ function App() {
       }
     });
     return () => { unlistenMove.then(fn => fn()); };
-  }, [applyDockOverlayLayout, resolvePreferredMonitor]);
+  }, [applyDockOverlayLayout, isCurrentWindowPresentationHost, resolvePreferredMonitor, usesWaylandDockLayerShell]);
 
   // ── Explorer → Terminal bridge ──
   const handleOpenInTerminal = useCallback(async (path: string) => {
@@ -2421,6 +2734,7 @@ function App() {
         onRefreshWallpapers: () => refreshAuthoredWallpapers(true),
         onOpenWallpapersFolder: openWallpapersFolder,
         onImportWallpaperFiles: importWallpaperFiles,
+        onSetWindowMode: requestWindowModeChange,
         renderPluginsManager: () => (
           <PluginsManager
             appearance={resolvedAppearance}
@@ -2481,6 +2795,7 @@ function App() {
       refreshAuthoredWallpapers,
       refreshAuthoredShaders,
       refreshFolderPlugins,
+      requestWindowModeChange,
       repositoryPickerRequestId,
       resolvedAppearance,
       combinedThemePackages,
@@ -3256,7 +3571,7 @@ function App() {
       onOpenSettings={handleOpenSettings}
       onCycleLayout={handleCycleLayout}
       onSelectLayoutProfile={(profileId) => updateLayout({ activeProfileId: profileId })}
-      onSetWindowMode={(mode) => updateTerminal({ windowMode: mode })}
+      onSetWindowMode={(mode) => { void requestWindowModeChange(mode); }}
       onOpenCommandPalette={handleOpenCommandPalette}
       onToggleOverlayAnchor={handleToggleOverlayAnchor}
       onClose={() => { void hideOverlay(); }}
@@ -3289,7 +3604,7 @@ function App() {
   );
   const defaultShellBody = (
     <>
-      {!isWindowedMode && !isTopAnchored && (
+      {!isWindowedMode && !isTopAnchored && canResizeOverlayShell && (
         <div
           className="h-[4px] shrink-0 cursor-ns-resize select-none"
           style={{ background: `linear-gradient(90deg, transparent 0%, ${accent}99 30%, ${accent} 50%, ${accent}99 70%, transparent 100%)` }}
@@ -3305,7 +3620,7 @@ function App() {
 
       {!isWindowedMode && activeLayoutProfile.chrome.barPosition === 'bottom' && chromeBar}
 
-      {!isWindowedMode && isTopAnchored && (
+      {!isWindowedMode && isTopAnchored && canResizeOverlayShell && (
         <div
           className="h-[4px] shrink-0 cursor-ns-resize select-none"
           style={{ background: `linear-gradient(90deg, transparent 0%, ${accent}99 30%, ${accent} 50%, ${accent}99 70%, transparent 100%)` }}
@@ -3318,7 +3633,7 @@ function App() {
   );
   const themeRendererDefaultShellBody = (
     <>
-      {!isWindowedMode && !isTopAnchored && (
+      {!isWindowedMode && !isTopAnchored && canResizeOverlayShell && (
         <div
           className="h-[4px] shrink-0 cursor-ns-resize select-none"
           style={{ background: `linear-gradient(90deg, transparent 0%, ${accent}99 30%, ${accent} 50%, ${accent}99 70%, transparent 100%)` }}
@@ -3334,7 +3649,7 @@ function App() {
 
       {!activeThemeRendererSurfaceOwnership?.chrome && !isWindowedMode && activeLayoutProfile.chrome.barPosition === 'bottom' && chromeBar}
 
-      {!isWindowedMode && isTopAnchored && (
+      {!isWindowedMode && isTopAnchored && canResizeOverlayShell && (
         <div
           className="h-[4px] shrink-0 cursor-ns-resize select-none"
           style={{ background: `linear-gradient(90deg, transparent 0%, ${accent}99 30%, ${accent} 50%, ${accent}99 70%, transparent 100%)` }}
@@ -3413,7 +3728,7 @@ function App() {
         icon: <TerminalIcon size={12} />,
         isActive: windowMode === 'overlay',
         isVisible: true,
-        onSelect: () => updateTerminal({ windowMode: windowMode === 'overlay' ? 'windowed' : 'overlay' }),
+        onSelect: () => { void requestWindowModeChange(windowMode === 'overlay' ? 'windowed' : 'overlay'); },
       },
       {
         id: 'toggle-overlay-anchor',

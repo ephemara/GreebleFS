@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use crate::cloud_commands::{
     CloudAccountSummary, CloudAccountsSnapshot, CloudAuthSession, CloudAuthStatus, CloudBreadcrumb,
-    CloudDirectoryListing, CloudProviderConfigurationStatus,
+    CloudDirectoryListing, CloudProviderConfigurationSource, CloudProviderConfigurationStatus,
 };
 use crate::desktop_integration::{NativeIconRequest, NativeIconResponse};
 use crate::explorer_pro_commands::{
@@ -68,6 +68,8 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::terminal::terminal_kill,
             crate::terminal::terminal_open_external,
             crate::cloud_commands::cloud_list_accounts,
+            crate::cloud_commands::cloud_set_provider_configuration,
+            crate::cloud_commands::cloud_clear_provider_configuration,
             crate::cloud_commands::cloud_begin_auth,
             crate::cloud_commands::cloud_poll_auth,
             crate::cloud_commands::cloud_disconnect_account,
@@ -157,6 +159,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<overlay_contracts::ThemeNavigationAxis>()
         .typ::<NativeIconRequest>()
         .typ::<NativeIconResponse>()
+        .typ::<CloudProviderConfigurationSource>()
         .typ::<CloudProviderConfigurationStatus>()
         .typ::<CloudAccountSummary>()
         .typ::<CloudAccountsSnapshot>()

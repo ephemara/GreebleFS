@@ -8,7 +8,7 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 
 #[cfg(target_os = "linux")]
-use gdk::prelude::{DisplayExt, MonitorExt};
+use gdk::prelude::*;
 #[cfg(target_os = "linux")]
 use gtk::prelude::GtkWindowExt;
 #[cfg(target_os = "linux")]

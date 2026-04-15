@@ -70,6 +70,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.explorer.experimentalViewMode).toBe('off');
     expect(settings.explorer.experimentalDensity).toBe(defaultSettings.explorer.experimentalDensity);
     expect(settings.explorer.folderClickMode).toBe('double');
+    expect(settings.explorer.modeProfileOverridesByThemeId).toEqual({});
     expect(settings.explorer.chromeLayoutOverridesByThemeId).toEqual({});
   });
 
@@ -296,6 +297,25 @@ describe('useSettingsStore.updateExplorer()', () => {
     expect(useExplorerStore.getState().session.previewWidth).toBe(420);
     expect(useExplorerStore.getState().session.sourcesVisible).toBe(false);
   });
+
+  it('stores mode profile overrides independently from explorer session state', () => {
+    useExplorerStore.getState().updateSession({
+      shellLayoutId: 'focus',
+      sidebarWidth: 244,
+      previewWidth: 420,
+      sourcesVisible: false,
+    });
+
+    useSettingsStore.getState().setExplorerModeProfileOverride('operator', 'inspector');
+
+    expect(useSettingsStore.getState().settings.explorer.modeProfileOverridesByThemeId).toEqual({
+      operator: 'inspector',
+    });
+    expect(useExplorerStore.getState().session.shellLayoutId).toBe('focus');
+    expect(useExplorerStore.getState().session.sidebarWidth).toBe(244);
+    expect(useExplorerStore.getState().session.previewWidth).toBe(420);
+    expect(useExplorerStore.getState().session.sourcesVisible).toBe(false);
+  });
 });
 
 describe('useSettingsStore.updateLayout()', () => {
@@ -449,7 +469,7 @@ describe('useSettingsStore.updateAppearance()', () => {
 });
 
 describe('useSettingsStore.applyThemeSelection()', () => {
-  it('applies pilot theme defaults across appearance, layout, and explorer session state', () => {
+  it('applies pilot theme defaults across appearance and layout without mutating explorer session state', () => {
     useSettingsStore.setState(state => ({
       settings: {
         ...state.settings,
@@ -520,11 +540,11 @@ describe('useSettingsStore.applyThemeSelection()', () => {
     expect(session.currentPath).toBe('/workspace');
     expect(session.history).toEqual(['/workspace']);
     expect(session.historyIdx).toBe(0);
-    expect(session.shellLayoutId).toBe('balanced');
-    expect(session.sidebarWidth).toBeNull();
-    expect(session.previewWidth).toBeNull();
-    expect(session.previewEnabled).toBe(true);
-    expect(session.sourcesVisible).toBe(true);
+    expect(session.shellLayoutId).toBe('focus');
+    expect(session.sidebarWidth).toBe(244);
+    expect(session.previewWidth).toBe(420);
+    expect(session.previewEnabled).toBe(false);
+    expect(session.sourcesVisible).toBe(false);
   });
 
   it('clears theme-managed overrides for package themes without resetting pilot layout state', () => {

@@ -14,6 +14,7 @@ import type { LoadedOverlayShader } from '../components/shaderRuntime';
 import type { LoadedOverlayWallpaper } from '../components/wallpaperRuntime';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
+import type { TerminalWindowMode } from '../store/settingsStore';
 import type {
   LoadedOverlayPlugin,
   OverlayPluginApi,
@@ -143,6 +144,7 @@ export function createBuiltInPanelDefinitions({
   onRefreshWallpapers,
   onOpenWallpapersFolder,
   onImportWallpaperFiles,
+  onSetWindowMode,
   renderPluginsManager,
 }: {
   appearance: ResolvedOverlayAppearance;
@@ -195,6 +197,7 @@ export function createBuiltInPanelDefinitions({
   onRefreshWallpapers: () => Promise<void>;
   onOpenWallpapersFolder: () => Promise<void>;
   onImportWallpaperFiles: (files: File[]) => Promise<void>;
+  onSetWindowMode: (mode: TerminalWindowMode) => Promise<void> | void;
   renderPluginsManager: () => React.ReactNode;
 }): OverlayPanelDefinition[] {
   const accent = appearance.theme.palette.accent;
@@ -369,6 +372,7 @@ export function createBuiltInPanelDefinitions({
             onRefreshWallpapers={onRefreshWallpapers}
             onOpenWallpapersFolder={onOpenWallpapersFolder}
             onImportWallpaperFiles={onImportWallpaperFiles}
+            onSetWindowMode={onSetWindowMode}
             pluginContextMenuItems={pluginContextMenuItems}
             pluginExplorerActions={pluginExplorerActions}
           />

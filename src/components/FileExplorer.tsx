@@ -64,7 +64,6 @@ import {
   resolveEffectiveExplorerModeProfile,
   resolveExplorerModeProfileChromeLayoutId,
   type ExplorerModeProfileDefinition,
-  type ExplorerModeProfileId,
 } from '../config/explorerModeProfiles';
 import { getFolderIconSrc } from '../config/folderIcons';
 import { getBuiltInIconTheme, resolveFileIconSrc, resolveIconSrc } from '../config/iconTheme';
@@ -2474,7 +2473,6 @@ export function FileExplorer({
     systemSettings,
     keybindings,
     clearExplorerChromeLayoutOverride,
-    clearExplorerModeProfileOverride,
     setExplorerChromeLayoutOverride,
     setExplorerModeProfileOverride,
     updateExplorerSettings,
@@ -2484,7 +2482,6 @@ export function FileExplorer({
     systemSettings: state.settings.system,
     keybindings: state.settings.keybindings,
     clearExplorerChromeLayoutOverride: state.clearExplorerChromeLayoutOverride,
-    clearExplorerModeProfileOverride: state.clearExplorerModeProfileOverride,
     setExplorerChromeLayoutOverride: state.setExplorerChromeLayoutOverride,
     setExplorerModeProfileOverride: state.setExplorerModeProfileOverride,
     updateExplorerSettings: state.updateExplorer,
@@ -5076,6 +5073,116 @@ export function FileExplorer({
       persistedExplorerChromeOverride,
     ],
   );
+  const handleExplorerChromeControlMove = useCallback((args: {
+    controlId: ExplorerChromeControlId;
+    targetSurfaceId: ExplorerChromeSurfaceId;
+    targetZoneId: ExplorerChromeZoneId;
+    targetIndex: number;
+  }) => {
+    if (!chromeEditSession) {
+      return;
+    }
+
+    const registeredSurfaces = Object.values(chromeEditSession.registeredSurfaces)
+      .filter((surface): surface is NonNullable<typeof surface> => surface != null);
+    updateChromeEditDraft(moveExplorerChromeControlInResolvedSurfaces({
+      surfaces: registeredSurfaces,
+      controlId: args.controlId,
+      targetSurfaceId: args.targetSurfaceId,
+      targetZoneId: args.targetZoneId,
+      targetIndex: args.targetIndex,
+    }));
+  }, [chromeEditSession, updateChromeEditDraft]);
+  const explorerChromeEditMode = useMemo(
+    () => (
+      chromeEditSession
+      && chromeEditSession.themeId === explorerChromeThemeId
+      && chromeEditSession.layoutId === effectiveChromeLayoutId
+        ? {
+          active: true,
+          draggingControlId: chromeEditSession.draggingControlId,
+          onRegisterSurface: registerChromeEditSurface,
+          onUnregisterSurface: unregisterChromeEditSurface,
+          onDragStart: setChromeEditDraggingControl,
+          onDragEnd: () => setChromeEditDraggingControl(null),
+          onMoveControl: handleExplorerChromeControlMove,
+        }
+        : undefined
+    ),
+    [
+      chromeEditSession,
+      effectiveChromeLayoutId,
+      explorerChromeThemeId,
+      handleExplorerChromeControlMove,
+      registerChromeEditSurface,
+      setChromeEditDraggingControl,
+      unregisterChromeEditSurface,
+    ],
+  );
+  const beginExplorerChromeCustomization = useCallback(() => {
+    openChromeEditSession({
+      themeId: explorerChromeThemeId,
+      layoutId: effectiveChromeLayoutId,
+      initialOverride: persistedExplorerChromeOverride,
+    });
+  }, [
+    effectiveChromeLayoutId,
+    explorerChromeThemeId,
+    openChromeEditSession,
+    persistedExplorerChromeOverride,
+  ]);
+  const saveExplorerChromeCustomization = useCallback(() => {
+    if (
+      !chromeEditSession
+      || chromeEditSession.themeId !== explorerChromeThemeId
+      || chromeEditSession.layoutId !== effectiveChromeLayoutId
+    ) {
+      return;
+    }
+
+    if (chromeEditSession.draftOverride.entries.length > 0) {
+      setExplorerChromeLayoutOverride(
+        explorerChromeThemeId,
+        effectiveChromeLayoutId,
+        chromeEditSession.draftOverride,
+      );
+    } else {
+      clearExplorerChromeLayoutOverride(explorerChromeThemeId, effectiveChromeLayoutId);
+    }
+
+    closeChromeEditSession();
+    setShowModeProfileMenu(false);
+  }, [
+    chromeEditSession,
+    clearExplorerChromeLayoutOverride,
+    closeChromeEditSession,
+    effectiveChromeLayoutId,
+    explorerChromeThemeId,
+    setExplorerChromeLayoutOverride,
+  ]);
+  const resetExplorerChromeCustomization = useCallback(() => {
+    if (!chromeEditSession) {
+      return;
+    }
+
+    updateChromeEditDraft({ entries: [] });
+    setChromeEditDraggingControl(null);
+  }, [chromeEditSession, setChromeEditDraggingControl, updateChromeEditDraft]);
+  const cancelExplorerChromeCustomization = useCallback(() => {
+    closeChromeEditSession();
+    setShowModeProfileMenu(false);
+  }, [closeChromeEditSession]);
+  useEffect(() => {
+    if (
+      chromeEditSession
+      && (
+        chromeEditSession.themeId !== explorerChromeThemeId
+        || chromeEditSession.layoutId !== effectiveChromeLayoutId
+      )
+    ) {
+      closeChromeEditSession();
+    }
+  }, [chromeEditSession, closeChromeEditSession, effectiveChromeLayoutId, explorerChromeThemeId]);
   const effectiveShellLayout = useMemo(
     () => getExplorerShellLayoutDefinition(effectiveModeProfile.paneLayoutId),
     [effectiveModeProfile.paneLayoutId],
@@ -5921,7 +6028,7 @@ export function FileExplorer({
             aria-haspopup="menu"
             aria-expanded={showExperimentalMenu}
             onClick={() => {
-              setShowShellLayoutMenu(false);
+              setShowModeProfileMenu(false);
               setShowLayoutMenu(false);
               setShowExperimentalMenu(current => !current);
             }}
@@ -6114,42 +6221,42 @@ export function FileExplorer({
     },
     {
       id: 'shellLayout',
-      label: 'Shell Layout',
+      label: 'Explorer Mode',
       surfaces: ['explorerToolbar', 'explorerTopbar'],
       isVisible: surfaceId => isGlobalChromeSurfaceActive(surfaceId),
       render: () => (
         <div
-          ref={shellLayoutMenuAnchorRef}
+          ref={modeProfileMenuAnchorRef}
           style={{ position: 'relative' }}
           onClick={event => event.stopPropagation()}
         >
           <button
             type="button"
-            aria-label={`Explorer shell layout: ${shellLayout.label}`}
+            aria-label={`Explorer mode: ${effectiveModeProfile.label}`}
             aria-haspopup="menu"
-            aria-expanded={showShellLayoutMenu}
+            aria-expanded={showModeProfileMenu}
             onClick={() => {
               setShowExperimentalMenu(false);
               setShowLayoutMenu(false);
-              setShowShellLayoutMenu(current => !current);
+              setShowModeProfileMenu(current => !current);
             }}
-            title={`Explorer shell layout: ${shellLayout.label}`}
+            title={`Explorer mode: ${effectiveModeProfile.label}`}
             style={{
-              ...toolbarToggleButtonStyle(showShellLayoutMenu),
-              color: showShellLayoutMenu ? EXP.text : EXP.muted,
+              ...toolbarToggleButtonStyle(showModeProfileMenu),
+              color: showModeProfileMenu ? EXP.text : EXP.muted,
             }}
             onMouseEnter={e => (e.currentTarget.style.background = 'var(--overlay-explorer-chip-active-bg)')}
-            onMouseLeave={e => (e.currentTarget.style.background = showShellLayoutMenu ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
+            onMouseLeave={e => (e.currentTarget.style.background = showModeProfileMenu ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)')}
           >
-            <ExplorerShellLayoutGlyph layout={shellLayout} accent={accent} active={showShellLayoutMenu} />
+            <ExplorerShellLayoutGlyph layout={effectiveShellLayout} accent={accent} active={showModeProfileMenu} />
             <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-              {shellLayout.shortLabel}
+              {effectiveModeProfile.shortLabel}
             </span>
           </button>
-          {showShellLayoutMenu && (
+          {showModeProfileMenu && (
             <div
               role="menu"
-              aria-label="Explorer shell layouts menu"
+              aria-label="Explorer modes menu"
               style={{
                 position: 'absolute',
                 top: 'calc(100% + 8px)',
@@ -6164,15 +6271,16 @@ export function FileExplorer({
               }}
             >
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                {explorerShellLayouts.map(layout => {
-                  const active = shellLayout.id === layout.id;
+                {explorerModeProfiles.map((modeProfile) => {
+                  const active = effectiveModeProfile.id === modeProfile.id;
+                  const paneLayout = getExplorerShellLayoutDefinition(modeProfile.paneLayoutId);
                   return (
                     <button
-                      key={layout.id}
+                      key={modeProfile.id}
                       type="button"
                       role="menuitemradio"
                       aria-checked={active}
-                      onClick={() => applyShellLayoutPreset(layout.id)}
+                      onClick={() => applyModeProfilePreset(modeProfile)}
                       style={{
                         display: 'grid',
                         gridTemplateColumns: '18px minmax(0, 1fr)',
@@ -6199,22 +6307,70 @@ export function FileExplorer({
                       }}
                     >
                       <span style={{ display: 'flex', justifyContent: 'center', paddingTop: 1 }}>
-                        <ExplorerShellLayoutGlyph layout={layout} accent={accent} active={active} />
+                        <ExplorerShellLayoutGlyph layout={paneLayout} accent={accent} active={active} />
                       </span>
                       <span style={{ minWidth: 0 }}>
                         <span style={{ display: 'block', fontSize: 12, fontWeight: 600 }}>
-                          {layout.label}
+                          {modeProfile.label}
                         </span>
                         <span style={{ display: 'block', marginTop: 2, fontSize: 10, color: EXP.muted2, lineHeight: 1.35 }}>
-                          {layout.description}
+                          {modeProfile.description}
                         </span>
                       </span>
                     </button>
                   );
                 })}
               </div>
-              <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--overlay-explorer-toolbar-border)', fontSize: 10, color: EXP.muted2 }}>
-                Shell layouts rebalance the rail and preview panes without changing your file card density.
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--overlay-explorer-toolbar-border)' }}>
+                {explorerChromeEditMode ? (
+                  <>
+                    <div style={{ fontSize: 10, color: EXP.muted2 }}>
+                      Drag chrome controls across explorer surfaces, then save the layout override for this theme.
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                      <button
+                        type="button"
+                        onClick={saveExplorerChromeCustomization}
+                        style={toolbarActionButtonStyle()}
+                      >
+                        <Save size={12} />
+                        Save Layout
+                      </button>
+                      <button
+                        type="button"
+                        onClick={resetExplorerChromeCustomization}
+                        style={toolbarActionButtonStyle()}
+                      >
+                        <RefreshCw size={12} />
+                        Reset to Theme
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelExplorerChromeCustomization}
+                        style={toolbarActionButtonStyle()}
+                      >
+                        <X size={12} />
+                        Cancel
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 10, color: EXP.muted2 }}>
+                      Modes rebalance the rail and preview panes without mutating the live session shell preset.
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                      <button
+                        type="button"
+                        onClick={beginExplorerChromeCustomization}
+                        style={toolbarActionButtonStyle()}
+                      >
+                        <Edit3 size={12} />
+                        Customize Layout
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -6238,7 +6394,7 @@ export function FileExplorer({
             aria-haspopup="menu"
             aria-expanded={showLayoutMenu}
             onClick={() => {
-              setShowShellLayoutMenu(false);
+              setShowModeProfileMenu(false);
               setShowExperimentalMenu(false);
               setShowLayoutMenu(current => !current);
             }}
@@ -6519,14 +6675,157 @@ export function FileExplorer({
         </button>
       ) : null,
     },
+    {
+      id: 'statusItemCount',
+      label: 'Status Item Count',
+      surfaces: ['explorerStatusBar'],
+      isVisible: () => true,
+      render: () => (
+        <span>
+          {filteredEntryCount} item{filteredEntryCount !== 1 ? 's' : ''}
+          {sourceEntryCount !== filteredEntryCount && (
+            <span style={{ color: EXP.muted2 }}>
+              {` of ${sourceEntryCount}`}
+            </span>
+          )}
+        </span>
+      ),
+    },
+    {
+      id: 'statusSelectionSummary',
+      label: 'Status Selection Summary',
+      surfaces: ['explorerStatusBar'],
+      isVisible: () => selected.size > 0,
+      render: () => (
+        <span style={{ color: accent }}>
+          {selected.size} selected
+        </span>
+      ),
+    },
+    {
+      id: 'statusModeProfile',
+      label: 'Status Mode Profile',
+      surfaces: ['explorerStatusBar'],
+      isVisible: () => !isCompactDock,
+      render: () => (
+        <span>
+          Mode: <span style={{ color: EXP.text }}>{effectiveModeProfile.label}</span>
+        </span>
+      ),
+    },
+    {
+      id: 'statusViewSummary',
+      label: 'Status View Summary',
+      surfaces: ['explorerStatusBar'],
+      isVisible: () => !isCompactDock,
+      render: () => (
+        <span>
+          View: <span style={{ color: EXP.text }}>{selectedViewModeDefinition.label}</span>
+          {effectiveViewMode !== themedViewMode ? ` -> ${effectiveViewModeDefinition.label}` : ''}
+        </span>
+      ),
+    },
+    {
+      id: 'statusPreviewSummary',
+      label: 'Status Preview Summary',
+      surfaces: ['explorerStatusBar'],
+      isVisible: () => !isCompactDock,
+      render: () => (
+        <span>
+          Preview: <span style={{ color: previewEnabled ? accent : EXP.text }}>{previewEnabled ? 'On' : 'Off'}</span>
+          {hasPreview && (
+            <span style={{ color: EXP.muted2 }}>{` · ${previewModeLabel}: ${getPathLeaf(preview.path)}`}</span>
+          )}
+        </span>
+      ),
+    },
+    {
+      id: 'statusLabsSummary',
+      label: 'Status Labs Summary',
+      surfaces: ['explorerStatusBar'],
+      isVisible: () => Boolean(selectedExperimentalModeDefinition),
+      render: () => (
+        selectedExperimentalModeDefinition ? (
+          <span>
+            Labs: <span style={{ color: EXP.text }}>{selectedExperimentalModeDefinition.label}</span>
+            {experimentalDensityDescriptor ? ` · ${experimentalDensityDescriptor.label}` : ''}
+            {effectiveExperimentalViewMode === 'off' ? ' (fallback)' : ''}
+          </span>
+        ) : null
+      ),
+    },
+    {
+      id: 'statusSearchSummary',
+      label: 'Status Search Summary',
+      surfaces: ['explorerStatusBar'],
+      isVisible: () => Boolean(search),
+      render: () => (
+        search ? (
+          <span>
+            {searchModeLabel}: <span style={{ color: EXP.text }}>&quot;{search}&quot;</span>
+            <span style={{ color: EXP.muted2 }}>{searchLoading ? ' · searching…' : ` · ${filteredEntryCount} result${filteredEntryCount === 1 ? '' : 's'}`}</span>
+            {activeTagFilterIds.length > 0 && sourceEntryCount !== filteredEntryCount && (
+              <span style={{ color: EXP.muted2 }}>{` · ${sourceEntryCount - filteredEntryCount} hidden by tags`}</span>
+            )}
+          </span>
+        ) : null
+      ),
+    },
+    {
+      id: 'statusTaskBadge',
+      label: 'Status Task Badge',
+      surfaces: ['explorerStatusBar'],
+      isVisible: () => true,
+      render: () => (
+        <ExplorerTaskStatusBadge
+          taskProgress={explorerTaskProgress}
+          accent={accent}
+          text={EXP.text}
+          muted={EXP.muted}
+          border={EXP.border}
+          danger={EXP.red}
+          background="rgba(255,255,255,0.02)"
+        />
+      ),
+    },
+    {
+      id: 'statusClipboardQueue',
+      label: 'Status Clipboard Queue',
+      surfaces: ['explorerStatusBar'],
+      isVisible: () => Boolean(clipboard),
+      render: () => (
+        clipboard ? (
+          <span style={{ color: EXP.muted2 }}>
+            {clipboard.action === 'copy' ? 'Copy' : 'Move'} queue: {clipboard.entries[0]?.name}
+            {clipboard.entries.length > 1 ? ` +${clipboard.entries.length - 1} more` : ''} — ready (Ctrl+V)
+          </span>
+        ) : null
+      ),
+    },
+    {
+      id: 'statusPreviewLoading',
+      label: 'Status Preview Loading',
+      surfaces: ['explorerStatusBar'],
+      isVisible: () => previewLoading,
+      render: () => (
+        previewLoading ? (
+          <span style={{ color: accent, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Loader size={9} style={{ animation: 'spin 1s linear infinite' }} />
+            Loading…
+          </span>
+        ) : null
+      ),
+    },
   ], [
     accent,
     addressDraft,
     addressEditing,
-    applyShellLayoutPreset,
+    applyModeProfilePreset,
     applyTagsToPaths,
     batchRenameTargetCount,
+    beginExplorerChromeCustomization,
     beginAddressEdit,
+    cancelExplorerChromeCustomization,
     clearSearch,
     clipboard,
     crumbs,
@@ -6537,6 +6836,9 @@ export function FileExplorer({
     experimentalDensityDescriptor,
     experimentalDensityPercent,
     explorerTheme.breadcrumbStyle,
+    effectiveChromeLayoutId,
+    effectiveModeProfile,
+    effectiveShellLayout,
     focusExplorerAddressBar,
     goBack,
     goForward,
@@ -6553,8 +6855,12 @@ export function FileExplorer({
     paste,
     pinnedLocations,
     previewEnabled,
+    previewLoading,
+    previewModeLabel,
     recentLocations,
     refresh,
+    resetExplorerChromeCustomization,
+    saveExplorerChromeCustomization,
     search,
     searchIncludeContent,
     searchLoading,
@@ -6570,13 +6876,12 @@ export function FileExplorer({
     setSearchIncludeContent,
     setShowExperimentalMenu,
     setShowLayoutMenu,
-    setShowShellLayoutMenu,
+    setShowModeProfileMenu,
     setSourcesVisible,
-    shellLayout,
     showExperimentalHud,
+    showModeProfileMenu,
     showExperimentalMenu,
     showLayoutMenu,
-    showShellLayoutMenu,
     showToolbarLocationStrips,
     showZoomHud,
     sourcesVisible,
@@ -6590,6 +6895,14 @@ export function FileExplorer({
     visibleEntries,
     zoomHudVisible,
     explorerBlurEnabled,
+    explorerChromeEditMode,
+    explorerTaskProgress,
+    filteredEntryCount,
+    hasPreview,
+    isCompactDock,
+    preview,
+    searchModeLabel,
+    sourceEntryCount,
   ]);
   const explorerChromeControlRegistryById = useMemo(
     () => new Map(explorerChromeControlRegistry.map((entry) => [entry.id, entry])),
@@ -6597,7 +6910,7 @@ export function FileExplorer({
   );
   const explorerTopbarSurface = useMemo(
     () => resolveExplorerChromeSurfaceLayout({
-      layoutId: explorerTheme.chromeLayoutId,
+      layoutId: effectiveChromeLayoutId,
       surfaceId: 'explorerTopbar',
       controlDefinitions: explorerChromeControlRegistry,
       override: explorerChromeOverride,
@@ -6606,13 +6919,13 @@ export function FileExplorer({
     [
       explorerChromeControlRegistry,
       explorerChromeControlRegistryById,
+      effectiveChromeLayoutId,
       explorerChromeOverride,
-      explorerTheme.chromeLayoutId,
     ],
   );
   const explorerToolbarSurface = useMemo(
     () => resolveExplorerChromeSurfaceLayout({
-      layoutId: explorerTheme.chromeLayoutId,
+      layoutId: effectiveChromeLayoutId,
       surfaceId: 'explorerToolbar',
       controlDefinitions: explorerChromeControlRegistry,
       override: explorerChromeOverride,
@@ -6621,8 +6934,23 @@ export function FileExplorer({
     [
       explorerChromeControlRegistry,
       explorerChromeControlRegistryById,
+      effectiveChromeLayoutId,
       explorerChromeOverride,
-      explorerTheme.chromeLayoutId,
+    ],
+  );
+  const explorerStatusBarSurface = useMemo(
+    () => resolveExplorerChromeSurfaceLayout({
+      layoutId: effectiveChromeLayoutId,
+      surfaceId: 'explorerStatusBar',
+      controlDefinitions: explorerChromeControlRegistry,
+      override: explorerChromeOverride,
+      isControlVisible: (controlId, surfaceId) => explorerChromeControlRegistryById.get(controlId)?.isVisible(surfaceId) ?? false,
+    }),
+    [
+      explorerChromeControlRegistry,
+      explorerChromeControlRegistryById,
+      effectiveChromeLayoutId,
+      explorerChromeOverride,
     ],
   );
   const renderExplorerChromeControl = useCallback((placement: ExplorerChromeResolvedControlPlacement) => (
@@ -7927,6 +8255,9 @@ export function FileExplorer({
             onClearTagFilters={() => setActiveTagFilterIds([])}
             onBookmarkCreated={handleBookmarkCreated}
             resolveDroppedSources={resolveDroppedBookmarkSources}
+            chromeLayoutId={effectiveChromeLayoutId}
+            chromeOverride={explorerChromeOverride}
+            chromeEditMode={explorerChromeEditMode}
           />
         </ResizablePane>
       )}
@@ -7942,6 +8273,7 @@ export function FileExplorer({
               getRowStyle={getExplorerChromeRowStyle}
               getZoneStyle={getExplorerChromeZoneStyle}
               renderControl={renderExplorerChromeControl}
+              editMode={explorerChromeEditMode}
             />
           )}
           <ExplorerChromeSurface
@@ -7949,6 +8281,7 @@ export function FileExplorer({
             getRowStyle={getExplorerChromeRowStyle}
             getZoneStyle={getExplorerChromeZoneStyle}
             renderControl={renderExplorerChromeControl}
+            editMode={explorerChromeEditMode}
           />
         </div>
         {repositoryPicker?.active && (
@@ -8643,6 +8976,9 @@ export function FileExplorer({
               onViewModeChange={setDocumentViewMode}
               explorerTheme={explorerTheme}
               blurEnabled={explorerBlurEnabled}
+              chromeLayoutId={effectiveChromeLayoutId}
+              chromeOverride={explorerChromeOverride}
+              chromeEditMode={explorerChromeEditMode}
               onClose={() => { void closePreview(); }}
             />
           )}
@@ -8650,67 +8986,15 @@ export function FileExplorer({
 
         {/* Status bar */}
         {shouldRenderStatusBar && (
-        <div style={statusBarStyle}>
-          <span>{filteredEntryCount} item{filteredEntryCount !== 1 ? 's' : ''}</span>
-          {sourceEntryCount !== filteredEntryCount && (
-            <span style={{ color: EXP.muted2 }}>
-              of {sourceEntryCount}
-            </span>
-          )}
-          {selected.size > 0 && <span style={{ color:accent }}>{selected.size} selected</span>}
-          {!isCompactDock && (
-            <span>
-              View: <span style={{ color: EXP.text }}>{selectedViewModeDefinition.label}</span>
-              {effectiveViewMode !== themedViewMode ? ` -> ${effectiveViewModeDefinition.label}` : ''}
-            </span>
-          )}
-          {!isCompactDock && (
-            <span>
-              Shell: <span style={{ color: EXP.text }}>{shellLayout.label}</span>
-            </span>
-          )}
-          {!isCompactDock && (
-            <span>
-              Preview: <span style={{ color: previewEnabled ? accent : EXP.text }}>{previewEnabled ? 'On' : 'Off'}</span>
-              {hasPreview && (
-                <span style={{ color: EXP.muted2 }}>{` · ${previewModeLabel}: ${getPathLeaf(preview.path)}`}</span>
-              )}
-            </span>
-          )}
-          {selectedExperimentalModeDefinition && (
-            <span>
-              Labs: <span style={{ color: EXP.text }}>{selectedExperimentalModeDefinition.label}</span>
-              {experimentalDensityDescriptor ? ` · ${experimentalDensityDescriptor.label}` : ''}
-              {effectiveExperimentalViewMode === 'off' ? ' (fallback)' : ''}
-            </span>
-          )}
-          {search && (
-            <span>
-              {searchModeLabel}: <span style={{ color: EXP.text }}>&quot;{search}&quot;</span>
-              <span style={{ color: EXP.muted2 }}>{searchLoading ? ' · searching…' : ` · ${filteredEntryCount} result${filteredEntryCount === 1 ? '' : 's'}`}</span>
-              {activeTagFilterIds.length > 0 && sourceEntryCount !== filteredEntryCount && (
-                <span style={{ color: EXP.muted2 }}>{` · ${sourceEntryCount - filteredEntryCount} hidden by tags`}</span>
-              )}
-            </span>
-          )}
-          <ExplorerTaskStatusBadge
-            taskProgress={explorerTaskProgress}
-            accent={accent}
-            text={EXP.text}
-            muted={EXP.muted}
-            border={EXP.border}
-            danger={EXP.red}
-            background="rgba(255,255,255,0.02)"
-          />
-          <div style={{ flex:1 }} />
-          {clipboard && (
-            <span style={{ color:EXP.muted2 }}>
-              {clipboard.action === 'copy' ? 'Copy' : 'Move'} queue: {clipboard.entries[0]?.name}
-              {clipboard.entries.length > 1 ? ` +${clipboard.entries.length - 1} more` : ''} — ready (Ctrl+V)
-            </span>
-          )}
-          {previewLoading && <span style={{ color:accent, display:'flex', alignItems:'center', gap:4 }}><Loader size={9} style={{ animation:'spin 1s linear infinite' }} /> Loading…</span>}
-        </div>
+          <div style={statusBarStyle}>
+            <ExplorerChromeSurface
+              surface={explorerStatusBarSurface}
+              getRowStyle={getExplorerChromeRowStyle}
+              getZoneStyle={getExplorerChromeZoneStyle}
+              renderControl={renderExplorerChromeControl}
+              editMode={explorerChromeEditMode}
+            />
+          </div>
         )}
       </div>
 

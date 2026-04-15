@@ -249,6 +249,85 @@ describe('SettingsPage behavior', () => {
     });
   });
 
+  it('saves cloud provider credentials from settings and enables the provider login action', async () => {
+    const user = userEvent.setup();
+    const invokeMock = vi.mocked(invoke);
+    const providerStates: Record<string, {
+      provider: 'google-drive' | 'dropbox';
+      configured: boolean;
+      missing_configuration: string[];
+      configuration_source: 'none' | 'settings' | 'environment';
+      client_id: string | null;
+      client_secret_present: boolean;
+    }> = {
+      'google-drive': {
+        provider: 'google-drive',
+        configured: false,
+        missing_configuration: ['client ID'],
+        configuration_source: 'none',
+        client_id: null,
+        client_secret_present: false,
+      },
+      dropbox: {
+        provider: 'dropbox',
+        configured: false,
+        missing_configuration: ['client ID'],
+        configuration_source: 'none',
+        client_id: null,
+        client_secret_present: false,
+      },
+    };
+
+    invokeMock.mockImplementation(async (command: string, args: unknown) => {
+      if (command === 'cloud_list_accounts') {
+        return {
+          accounts: [],
+          providers: Object.values(providerStates),
+        };
+      }
+
+      if (command === 'cloud_set_provider_configuration') {
+        const payload = args as { provider?: 'google-drive' | 'dropbox'; clientId?: string; clientSecret?: string | null } | undefined;
+        if (!payload?.provider) {
+          throw new Error('missing provider');
+        }
+        providerStates[payload.provider] = {
+          provider: payload.provider,
+          configured: true,
+          missing_configuration: [],
+          configuration_source: 'settings',
+          client_id: payload.clientId ?? null,
+          client_secret_present: Boolean(payload.clientSecret),
+        };
+        return providerStates[payload.provider];
+      }
+
+      return null;
+    });
+
+    renderSettingsPage();
+
+    await user.click(findSectionButton('Cloud'));
+    const googleConnectButton = screen.getAllByRole('button', { name: 'Connect Account' })[0];
+    expect(googleConnectButton).toBeDisabled();
+
+    await user.type(screen.getByLabelText('Google Drive client ID'), 'google-client-id.apps.googleusercontent.com');
+    await user.type(screen.getByLabelText('Google Drive client secret'), 'test-google-secret');
+    await user.click(screen.getAllByRole('button', { name: 'Save Credentials' })[0]);
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('cloud_set_provider_configuration', {
+        provider: 'google-drive',
+        clientId: 'google-client-id.apps.googleusercontent.com',
+        clientSecret: 'test-google-secret',
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByText('Saved in Settings')).toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: 'Connect Account' })[0]).not.toBeDisabled();
+    });
+  });
+
   it('syncs startup registration, desktop visibility toggles, and commits hotkey edits', async () => {
     const user = userEvent.setup();
     const invokeMock = vi.mocked(invoke);
@@ -713,11 +792,11 @@ describe('SettingsPage behavior', () => {
     expect(session.currentPath).toBe('/workspace');
     expect(session.history).toEqual(['/workspace']);
     expect(session.historyIdx).toBe(0);
-    expect(session.shellLayoutId).toBe('balanced');
-    expect(session.sidebarWidth).toBeNull();
-    expect(session.previewWidth).toBeNull();
-    expect(session.previewEnabled).toBe(true);
-    expect(session.sourcesVisible).toBe(true);
+    expect(session.shellLayoutId).toBe('focus');
+    expect(session.sidebarWidth).toBe(244);
+    expect(session.previewWidth).toBe(420);
+    expect(session.previewEnabled).toBe(false);
+    expect(session.sourcesVisible).toBe(false);
   });
 
   it('stores a separate dock theme override from the appearance catalog', async () => {
@@ -771,9 +850,12 @@ describe('SettingsPage behavior', () => {
     );
     await user.click(dockThemeButtons[dockThemeButtons.length - 1] as HTMLButtonElement);
 
-    const appearanceSettings = useSettingsStore.getState().settings.appearance;
-    expect(appearanceSettings.activeThemeId).toBe(defaultSettings.appearance.activeThemeId);
-    expect(appearanceSettings.dockThemeMode).toBe('override');
-    expect(appearanceSettings.activeDockThemeId).toBe('vista-glass');
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.appearance).toMatchObject({
+        activeThemeId: defaultSettings.appearance.activeThemeId,
+        dockThemeMode: 'override',
+        activeDockThemeId: 'vista-glass',
+      });
+    });
   });
 });

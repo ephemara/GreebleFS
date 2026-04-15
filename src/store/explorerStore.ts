@@ -975,6 +975,8 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
   };
 });
 
+installExplorerStorageSync();
+
 function loadExplorerBackup(storage: Storage | null = getStorage()): Omit<ExplorerHydrationResult, 'persistence'> | null {
   if (!storage) {
     return null;
@@ -1010,6 +1012,40 @@ function getStorage(): Storage | null {
   } catch {
     return null;
   }
+}
+
+function installExplorerStorageSync(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const marker = '__greeblefs_explorer_storage_sync_installed__';
+  const globalState = globalThis as typeof globalThis & Record<string, unknown>;
+  if (globalState[marker]) {
+    return;
+  }
+  globalState[marker] = true;
+
+  window.addEventListener('storage', event => {
+    if (
+      event.key !== null
+      && event.key !== EXPLORER_STATE_STORAGE_KEY
+      && event.key !== EXPLORER_STATE_BACKUP_KEY
+      && event.key !== EXPLORER_LEGACY_BOOKMARKS_KEY
+    ) {
+      return;
+    }
+
+    const nextHydratedState = loadExplorerPersistedState();
+    useExplorerStore.setState(state => ({
+      ...state,
+      sessions: nextHydratedState.sessions,
+      session: nextHydratedState.session,
+      workspace: nextHydratedState.workspace,
+      rail: nextHydratedState.rail,
+      persistence: nextHydratedState.persistence,
+    }));
+  });
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

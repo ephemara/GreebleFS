@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  moveExplorerChromeControlInResolvedSurfaces,
   resolveExplorerChromeSurfaceLayout,
   type ExplorerChromeControlDefinition,
 } from '../config/explorerChromeLayouts';
@@ -10,6 +11,12 @@ const toolbarDefinitions: ExplorerChromeControlDefinition[] = [
   { id: 'toggleSources', label: 'Sources', surfaces: ['explorerToolbar', 'explorerTopbar'] },
   { id: 'experimentalModes', label: 'Experimental Modes', surfaces: ['explorerToolbar', 'explorerTopbar'] },
   { id: 'refresh', label: 'Refresh', surfaces: ['explorerToolbar'] },
+  { id: 'railIdentity', label: 'Rail Identity', surfaces: ['railHeader'] },
+  { id: 'railManageToggle', label: 'Rail Manage Toggle', surfaces: ['railHeader'] },
+  { id: 'previewIdentity', label: 'Preview Identity', surfaces: ['previewHeader'] },
+  { id: 'previewClose', label: 'Preview Close', surfaces: ['previewHeader'] },
+  { id: 'statusItemCount', label: 'Status Item Count', surfaces: ['explorerStatusBar'] },
+  { id: 'statusTaskBadge', label: 'Status Task Badge', surfaces: ['explorerStatusBar'] },
 ];
 
 describe('explorer chrome layout resolver', () => {
@@ -70,5 +77,63 @@ describe('explorer chrome layout resolver', () => {
 
     expect(primaryStart?.controls[0]?.controlId).toBe('refresh');
     expect(visibleControlIds).not.toContain('experimentalModes');
+  });
+
+  it('resolves rail, preview, and status surfaces through the shared chrome layout registry', () => {
+    const railHeader = resolveExplorerChromeSurfaceLayout({
+      layoutId: 'default',
+      surfaceId: 'railHeader',
+      controlDefinitions: toolbarDefinitions,
+      isControlVisible: () => true,
+    });
+    const previewHeader = resolveExplorerChromeSurfaceLayout({
+      layoutId: 'default',
+      surfaceId: 'previewHeader',
+      controlDefinitions: toolbarDefinitions,
+      isControlVisible: () => true,
+    });
+    const statusBar = resolveExplorerChromeSurfaceLayout({
+      layoutId: 'focused-search',
+      surfaceId: 'explorerStatusBar',
+      controlDefinitions: toolbarDefinitions,
+      isControlVisible: () => true,
+    });
+
+    expect(railHeader.rows[0]?.zones.find((zone) => zone.id === 'start')?.controls.map((control) => control.controlId)).toContain('railIdentity');
+    expect(railHeader.rows[0]?.zones.find((zone) => zone.id === 'end')?.controls.map((control) => control.controlId)).toContain('railManageToggle');
+    expect(previewHeader.rows[0]?.zones.find((zone) => zone.id === 'start')?.controls.map((control) => control.controlId)).toContain('previewIdentity');
+    expect(previewHeader.rows[0]?.zones.find((zone) => zone.id === 'end')?.controls.map((control) => control.controlId)).toContain('previewClose');
+    expect(statusBar.rows[0]?.zones.find((zone) => zone.id === 'start')?.controls.map((control) => control.controlId)).toContain('statusItemCount');
+    expect(statusBar.rows[0]?.zones.find((zone) => zone.id === 'end')?.controls.map((control) => control.controlId)).toContain('statusTaskBadge');
+  });
+
+  it('rebuilds override snapshots when a control moves across chrome surfaces', () => {
+    const toolbar = resolveExplorerChromeSurfaceLayout({
+      layoutId: 'default',
+      surfaceId: 'explorerToolbar',
+      controlDefinitions: toolbarDefinitions,
+      isControlVisible: () => true,
+    });
+    const statusBar = resolveExplorerChromeSurfaceLayout({
+      layoutId: 'default',
+      surfaceId: 'explorerStatusBar',
+      controlDefinitions: toolbarDefinitions,
+      isControlVisible: () => true,
+    });
+
+    const override = moveExplorerChromeControlInResolvedSurfaces({
+      surfaces: [toolbar, statusBar],
+      controlId: 'refresh',
+      targetSurfaceId: 'explorerStatusBar',
+      targetZoneId: 'end',
+      targetIndex: 0,
+    });
+
+    expect(override.entries).toContainEqual({
+      controlId: 'refresh',
+      surfaceId: 'explorerStatusBar',
+      zone: 'end',
+      order: 10,
+    });
   });
 });

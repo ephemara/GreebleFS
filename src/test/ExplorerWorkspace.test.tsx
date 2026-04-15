@@ -83,7 +83,7 @@ describe('ExplorerWorkspace', () => {
           id: 'focused-layout',
           name: 'Focused Layout',
           explorer: {
-            chromeLayoutId: 'focused-search',
+            defaultModeProfileId: 'focus',
           },
         }),
       ],

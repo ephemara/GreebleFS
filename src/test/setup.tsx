@@ -71,6 +71,28 @@ vi.mock('@tauri-apps/api/event', () => ({
   emit: vi.fn().mockResolvedValue(undefined),
 }));
 
+const createMockWebviewWindow = (label: string) => ({
+  label,
+  emit: vi.fn().mockResolvedValue(undefined),
+  listen: vi.fn().mockResolvedValue(() => {}),
+  once: vi.fn().mockResolvedValue(() => {}),
+});
+
+const mainWebviewWindowMock = createMockWebviewWindow('main');
+const dockWebviewWindowMock = createMockWebviewWindow('dock');
+
+vi.mock('@tauri-apps/api/webviewWindow', () => ({
+  getCurrentWebviewWindow: vi.fn(() => mainWebviewWindowMock),
+  WebviewWindow: {
+    getByLabel: vi.fn(async (label: string) => {
+      if (label === 'dock') {
+        return dockWebviewWindowMock;
+      }
+      return mainWebviewWindowMock;
+    }),
+  },
+}));
+
 vi.mock('@tauri-apps/api/window', () => ({
   availableMonitors: vi.fn().mockResolvedValue([{
     name: 'Primary Display',
