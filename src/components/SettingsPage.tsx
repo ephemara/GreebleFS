@@ -1575,7 +1575,7 @@ export function SettingsPage({
       id: 'plugins-and-assets',
       icon: <Puzzle size={13} />,
       title: 'Plugins + Assets',
-      description: 'Drop plugins, themes, wallpapers, shaders, and animations into their workspace folders so OverlayTerm can discover them as live runtime modules.',
+      description: 'Drop plugins, themes, wallpapers, shaders, and animations into their workspace folders so GreebleFS can discover them as live runtime modules.',
       actionLabel: 'Appearance Settings',
       action: () => setActiveSection('appearance'),
     },
@@ -1996,10 +1996,10 @@ export function SettingsPage({
                   <div className="rounded border p-4" style={{ borderColor: `${accent}44`, background: `${accent}0d` }}>
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="max-w-[640px]">
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: muted }}>OverlayTerm Control Surface</div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: muted }}>GreebleFS Control Surface</div>
                         <h2 className="mt-2 text-[18px] font-semibold" style={{ color: text }}>Ship the shell, not a template.</h2>
                         <p className="mt-2 text-[12px] leading-5" style={{ color: muted }}>
-                          OverlayTerm is a desktop command overlay with a live terminal, file explorer, source-control rail, plugin host, theme/shader/animation authoring, and screenshot proof capture in one surface.
+                          GreebleFS is a desktop workbench with a live terminal, file explorer, source-control rail, plugin host, theme and motion authoring, and screenshot proof capture in one surface.
                         </p>
                       </div>
                       <div className="grid min-w-[220px] flex-1 grid-cols-1 gap-2 sm:grid-cols-2">
@@ -2049,7 +2049,7 @@ export function SettingsPage({
 
                   <OverviewCard
                     title="Workspace Roots"
-                    subtitle="Open or create the directories that feed OverlayTerm runtime discovery."
+                    subtitle="Open or create the directories that feed GreebleFS runtime discovery."
                     badges={[`${workspaceRoots.length} roots`, 'Create on demand']}
                   >
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -2129,7 +2129,7 @@ export function SettingsPage({
                       <div>
                         <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Theme Packages</div>
                         <p className="mt-1 text-[11px] opacity-40">
-                          Drop packaged themes into <code>{themePackagesDirectory}</code> and OverlayTerm will discover them as curated themes with assets and visuals.
+                          Drop packaged themes into <code>{themePackagesDirectory}</code> and GreebleFS will discover them as curated themes with assets and visuals.
                           Official pilot themes surface first, built-ins stay supported, and archive material remains selectable without dominating the page.
                         </p>
                       </div>
@@ -3035,7 +3035,7 @@ export function SettingsPage({
                         <p className="mt-1 text-[11px] opacity-45">
                           {editableTheme.defaultOpenAnimationId
                             ? `Active theme ${editableTheme.name} defaults open motion to ${editableTheme.defaultOpenAnimationId}.`
-                            : `Active theme ${editableTheme.name} does not define open motion, so OverlayTerm falls back to ${animationSystemConfig.defaultOpenAnimationId}.`}
+                            : `Active theme ${editableTheme.name} does not define open motion, so GreebleFS falls back to ${animationSystemConfig.defaultOpenAnimationId}.`}
                         </p>
                       </button>
                       {openAnimationOptions.map(animation => {
@@ -3090,7 +3090,7 @@ export function SettingsPage({
                         <p className="mt-1 text-[11px] opacity-45">
                           {editableTheme.defaultCloseAnimationId
                             ? `Active theme ${editableTheme.name} defaults close motion to ${editableTheme.defaultCloseAnimationId}.`
-                            : `Active theme ${editableTheme.name} does not define close motion, so OverlayTerm falls back to ${animationSystemConfig.defaultCloseAnimationId}.`}
+                            : `Active theme ${editableTheme.name} does not define close motion, so GreebleFS falls back to ${animationSystemConfig.defaultCloseAnimationId}.`}
                         </p>
                       </button>
                       {closeAnimationOptions.map(animation => {
@@ -3439,7 +3439,7 @@ export function SettingsPage({
                 <input
                   value={settings.layout.configPath}
                   onChange={event => updateLayout({ configPath: event.target.value })}
-                  placeholder="Leave blank to probe ~/.greeble/greeble.layouts.json or .toml"
+                  placeholder="Leave blank to probe ~/.greeblefs/greeblefs.layouts.json or .toml"
                   className="w-full rounded border px-3 py-2 text-[11px] outline-none"
                   style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text, fontFamily: appearance.fonts.mono }}
                 />
@@ -3477,7 +3477,7 @@ export function SettingsPage({
                   <div>
                     <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Profiles</div>
                     <p className="mt-1 text-[11px] opacity-40">
-                      Click a profile to switch the entire workbench layout. The OverlayTerm chrome button still cycles this same ordered set.
+                      Click a profile to switch the entire workbench layout. The GreebleFS chrome button still cycles this same ordered set.
                     </p>
                   </div>
                   <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
@@ -3555,7 +3555,7 @@ export function SettingsPage({
                 <div>
                   <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Launch At Startup</div>
                   <p className="mt-1 text-[11px] opacity-40">
-                    Registers OverlayTerm as a login item so the tray and overlay are available after sign-in.
+                    Registers GreebleFS as a login item so the tray and overlay are available after sign-in.
                   </p>
                 </div>
                 <input

@@ -767,7 +767,7 @@ export function GitManager({
   const loadDiff = useCallback(async (repoPath: string, file: GitFileStatus) => {
     setDiffLoading(true);
     try {
-      const patch = await buildUnifiedDiff(repoPath, file, safeGit);
+      const patch = await buildUnifiedDiff(repoPath, file, safeGit, untrackedSizeHintCacheRef.current);
       setDiffView({
         content: patch,
         hunkLines: findDiffHunkLines(patch),
@@ -1049,10 +1049,10 @@ export function GitManager({
                   Source Control
                 </div>
                 <div style={{ marginTop: 10, fontSize: 18, fontWeight: 700, color: palette.text }}>
-                  Bring a repository into OverlayTerm
+                  Bring a repository into GreebleFS
                 </div>
                 <div style={{ marginTop: 8, fontSize: 11.5, lineHeight: 1.5, color: palette.muted }}>
-                  Pick a repo from Explorer or paste any nested folder path. OverlayTerm now normalizes selections to the real git root before loading diffs and ship actions.
+                  Pick a repo from Explorer or paste any nested folder path. GreebleFS now normalizes selections to the real git root before loading diffs and ship actions.
                 </div>
                 <div style={{ marginTop: 16, display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
                   {onRequestRepositoryImport ? (
@@ -1430,6 +1430,7 @@ async function buildUnifiedDiff(
   repoPath: string,
   file: GitFileStatus,
   safeGit: (repo: string, args: string[], fallback?: string) => Promise<string>,
+  untrackedSizeHintCache: Map<string, number | null>,
 ): Promise<string> {
   const diffPaths = [file.originalFile ?? file.file, file.file];
 
@@ -1439,7 +1440,7 @@ async function buildUnifiedDiff(
     }
 
     const absolutePath = joinRepoPath(repoPath, file.file);
-    const sizeHint = await getFileSizeHint(absolutePath, untrackedSizeHintCacheRef.current);
+    const sizeHint = await getFileSizeHint(absolutePath, untrackedSizeHintCache);
     if (typeof sizeHint === 'number' && sizeHint > MAX_SYNTHETIC_UNTRACKED_DIFF_BYTES) {
       return buildNonTextUntrackedDiff(
         file.file,
@@ -1598,7 +1599,7 @@ function discardActionLabel(file: GitFileStatus): string {
 
 function buildDiscardConfirmationMessage(file: GitFileStatus): string {
   if (file.isUntracked) {
-    return `Remove the untracked file ${file.file}? This cannot be undone from OverlayTerm.`;
+    return `Remove the untracked file ${file.file}? This cannot be undone from GreebleFS.`;
   }
 
   if (file.isStaged && file.hasUnstagedChanges) {
@@ -1616,10 +1617,10 @@ function buildConflictResolutionConfirmationMessage(
   const sideCode = side === 'ours' ? file.stagedCode : file.unstagedCode;
 
   if (sideCode === 'D') {
-    return `Resolve the conflict in ${file.file} by deleting the file with ${sideLabel} version? OverlayTerm will stage that resolution.`;
+    return `Resolve the conflict in ${file.file} by deleting the file with ${sideLabel} version? GreebleFS will stage that resolution.`;
   }
 
-  return `Resolve the conflict in ${file.file} with ${sideLabel} version? OverlayTerm will replace the working tree file and stage the result as resolved.`;
+  return `Resolve the conflict in ${file.file} with ${sideLabel} version? GreebleFS will replace the working tree file and stage the result as resolved.`;
 }
 
 function getGitTrackedPaths(file: GitFileStatus): string[] {
@@ -1739,4 +1740,3 @@ function repositoryPathListsEqual(left: string[], right: string[]): boolean {
     getRepositoryComparablePath(path) === getRepositoryComparablePath(right[index] ?? '')
   ));
 }
-

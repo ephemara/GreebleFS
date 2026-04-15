@@ -32,14 +32,24 @@ const RELEASE_DIRECTORY_NAMES: Record<ManagedContentDirectoryId, string> = {
 };
 
 const LEGACY_SCREENSHOT_DEFAULT_DIRECTORY = 'M:\\Assets\\Showcase\\TermOverlay';
+const CURRENT_RELEASE_APP_IDENTIFIER = 'co.greeblefs.app';
+const LEGACY_RELEASE_APP_IDENTIFIER = 'co.overlayterm.app';
 
 let initializedManagedDirectories = false;
 let initializationPromise: Promise<void> | null = null;
 let resolvedManagedDirectories: Partial<Record<ManagedContentDirectoryId, string>> = {};
 let resolvedLegacyHomeDirectories: Partial<Record<ManagedContentDirectoryId, string>> = {};
+let resolvedLegacyReleaseDirectories: Partial<Record<ManagedContentDirectoryId, string>> = {};
 
 function readDirectoryOverride(id: ManagedContentDirectoryId): string | null {
   const env = import.meta.env as {
+    VITE_GREEBLEFS_PLUGINS_DIR?: string;
+    VITE_GREEBLEFS_THEMES_DIR?: string;
+    VITE_GREEBLEFS_SHADERS_DIR?: string;
+    VITE_GREEBLEFS_ANIMATIONS_DIR?: string;
+    VITE_GREEBLEFS_WALLPAPERS_DIR?: string;
+    VITE_GREEBLEFS_NOTES_DIR?: string;
+    VITE_GREEBLEFS_SCREENSHOTS_DIR?: string;
     VITE_OVERLAYTERM_PLUGINS_DIR?: string;
     VITE_OVERLAYTERM_THEMES_DIR?: string;
     VITE_OVERLAYTERM_SHADERS_DIR?: string;
@@ -52,19 +62,19 @@ function readDirectoryOverride(id: ManagedContentDirectoryId): string | null {
   const rawValue = (() => {
     switch (id) {
       case 'plugins':
-        return env.VITE_OVERLAYTERM_PLUGINS_DIR;
+        return env.VITE_GREEBLEFS_PLUGINS_DIR ?? env.VITE_OVERLAYTERM_PLUGINS_DIR;
       case 'themes':
-        return env.VITE_OVERLAYTERM_THEMES_DIR;
+        return env.VITE_GREEBLEFS_THEMES_DIR ?? env.VITE_OVERLAYTERM_THEMES_DIR;
       case 'shaders':
-        return env.VITE_OVERLAYTERM_SHADERS_DIR;
+        return env.VITE_GREEBLEFS_SHADERS_DIR ?? env.VITE_OVERLAYTERM_SHADERS_DIR;
       case 'animations':
-        return env.VITE_OVERLAYTERM_ANIMATIONS_DIR;
+        return env.VITE_GREEBLEFS_ANIMATIONS_DIR ?? env.VITE_OVERLAYTERM_ANIMATIONS_DIR;
       case 'wallpapers':
-        return env.VITE_OVERLAYTERM_WALLPAPERS_DIR;
+        return env.VITE_GREEBLEFS_WALLPAPERS_DIR ?? env.VITE_OVERLAYTERM_WALLPAPERS_DIR;
       case 'notes':
-        return env.VITE_OVERLAYTERM_NOTES_DIR;
+        return env.VITE_GREEBLEFS_NOTES_DIR ?? env.VITE_OVERLAYTERM_NOTES_DIR;
       case 'screenshots':
-        return env.VITE_OVERLAYTERM_SCREENSHOTS_DIR;
+        return env.VITE_GREEBLEFS_SCREENSHOTS_DIR ?? env.VITE_OVERLAYTERM_SCREENSHOTS_DIR;
       default:
         return '';
     }
@@ -113,11 +123,43 @@ async function buildLegacyHomeDirectoryMap(): Promise<Record<ManagedContentDirec
   };
 }
 
-async function migrateLegacyHomeDirectory(
-  id: ManagedContentDirectoryId,
+function replaceTrailingDirectoryName(path: string, fromName: string, toName: string): string | null {
+  const escapedFromName = fromName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`([\\\\/])${escapedFromName}$`);
+  if (!pattern.test(path)) {
+    return null;
+  }
+
+  return path.replace(pattern, `$1${toName}`);
+}
+
+async function buildLegacyReleaseDirectoryMap(): Promise<Partial<Record<ManagedContentDirectoryId, string>>> {
+  const releaseRoot = (await appLocalDataDir()).replace(/[\\\\/]+$/, '');
+  const legacyRoot = replaceTrailingDirectoryName(
+    releaseRoot,
+    CURRENT_RELEASE_APP_IDENTIFIER,
+    LEGACY_RELEASE_APP_IDENTIFIER,
+  );
+
+  if (!legacyRoot || normalizePathForComparison(legacyRoot) === normalizePathForComparison(releaseRoot)) {
+    return {};
+  }
+
+  return {
+    plugins: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.plugins),
+    themes: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.themes),
+    shaders: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.shaders),
+    animations: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.animations),
+    wallpapers: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.wallpapers),
+    notes: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.notes),
+    screenshots: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.screenshots),
+  };
+}
+
+async function migrateLegacyDirectory(
+  legacyDirectory: string | undefined,
   nextDirectory: string,
 ): Promise<void> {
-  const legacyDirectory = resolvedLegacyHomeDirectories[id];
   if (!legacyDirectory) {
     return;
   }
@@ -152,18 +194,21 @@ export async function initializeManagedContentDirectories(): Promise<void> {
     try {
       resolvedManagedDirectories = {};
       resolvedLegacyHomeDirectories = {};
+      resolvedLegacyReleaseDirectories = {};
 
       if (!shouldUseReleaseManagedDirectories()) {
         initializedManagedDirectories = true;
         return;
       }
 
-      const [releaseDirectories, legacyDirectories] = await Promise.all([
+      const [releaseDirectories, legacyHomeDirectories, legacyReleaseDirectories] = await Promise.all([
         buildReleaseManagedDirectoryMap(),
         buildLegacyHomeDirectoryMap(),
+        buildLegacyReleaseDirectoryMap(),
       ]);
 
-      resolvedLegacyHomeDirectories = legacyDirectories;
+      resolvedLegacyHomeDirectories = legacyHomeDirectories;
+      resolvedLegacyReleaseDirectories = legacyReleaseDirectories;
 
       for (const id of Object.keys(RELEASE_DIRECTORY_NAMES) as ManagedContentDirectoryId[]) {
         const overrideDirectory = readDirectoryOverride(id);
@@ -177,11 +222,12 @@ export async function initializeManagedContentDirectories(): Promise<void> {
 
         const nextDirectory = resolvedManagedDirectories[id];
         if (typeof nextDirectory === 'string' && nextDirectory.length > 0) {
-          await migrateLegacyHomeDirectory(id, nextDirectory);
+          await migrateLegacyDirectory(resolvedLegacyHomeDirectories[id], nextDirectory);
+          await migrateLegacyDirectory(resolvedLegacyReleaseDirectories[id], nextDirectory);
         }
       }
     } catch (error) {
-      console.warn('OverlayTerm: failed to initialize managed content directories', error);
+      console.warn('GreebleFS: failed to initialize managed content directories', error);
     } finally {
       initializedManagedDirectories = true;
     }
@@ -215,6 +261,12 @@ export function isLegacyScreenshotDirectory(path: string | null | undefined): bo
   }
 
   const legacyHomeDirectory = resolvedLegacyHomeDirectories.screenshots;
-  return typeof legacyHomeDirectory === 'string'
-    && normalizePathForComparison(legacyHomeDirectory) === normalizedPath;
+  if (typeof legacyHomeDirectory === 'string'
+    && normalizePathForComparison(legacyHomeDirectory) === normalizedPath) {
+    return true;
+  }
+
+  const legacyReleaseDirectory = resolvedLegacyReleaseDirectories.screenshots;
+  return typeof legacyReleaseDirectory === 'string'
+    && normalizePathForComparison(legacyReleaseDirectory) === normalizedPath;
 }

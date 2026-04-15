@@ -685,7 +685,7 @@ function resolveExplorerDropOperation(
 function formatExplorerNativeDragError(error: unknown): string {
   const message = String(error);
   if (/access is denied|denied|elevat|privilege|administrator/i.test(message)) {
-    return 'Native file drag was blocked by Windows permissions. If OverlayTerm is running as Administrator, drag targets like Explorer/Desktop must be elevated too.';
+    return 'Native file drag was blocked by Windows permissions. If GreebleFS is running as Administrator, drag targets like Explorer/Desktop must be elevated too.';
   }
 
   return message;
@@ -5158,7 +5158,7 @@ export function FileExplorer({
       e.dataTransfer.setData('text/uri-list', uriList);
       if (isTauri() && dragPaths.length > 0) {
         if (runtimePlatform === 'windows' && isProcessElevatedRef.current) {
-          setError('OverlayTerm is running as Administrator, so Windows may block dragging files into normal Explorer/Desktop windows. Run OverlayTerm without elevation for drag-out support.');
+          setError('GreebleFS is running as Administrator, so Windows may block dragging files into normal Explorer/Desktop windows. Run GreebleFS without elevation for drag-out support.');
         }
         void commands.fsStartNativeFileDrag(dragPaths)
           .then(result => {
@@ -5167,7 +5167,7 @@ export function FileExplorer({
           .catch(error => {
             const fallback = formatExplorerNativeDragError(error);
             if (runtimePlatform === 'windows' && isProcessElevatedRef.current) {
-              setError('OverlayTerm is running as Administrator, so Windows blocked native drag into a non-elevated target. Run OverlayTerm without elevation for drag-out support.');
+              setError('GreebleFS is running as Administrator, so Windows blocked native drag into a non-elevated target. Run GreebleFS without elevation for drag-out support.');
               return;
             }
             setError(fallback);

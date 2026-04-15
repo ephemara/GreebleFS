@@ -14,10 +14,12 @@ const isDirectScriptRun = process.argv[1]
 const sharedNodeModules = path.join(projectRoot, "node_modules");
 const sharedTauriCliDir = path.join(sharedNodeModules, "@tauri-apps", "cli");
 const sharedTauriCliEntry = path.join(sharedTauriCliDir, "tauri.js");
-const cacheRoot = path.join(os.homedir(), ".cache", "overlayterm-tauri");
-const hasExplicitArtifactRoot = Boolean(process.env.OVERLAYTERM_VPS_ARTIFACTS_ROOT);
+const cacheRoot = path.join(os.homedir(), ".cache", "greeblefs-tauri");
+const hasExplicitArtifactRoot = Boolean(
+  process.env.GREEBLEFS_VPS_ARTIFACTS_ROOT || process.env.OVERLAYTERM_VPS_ARTIFACTS_ROOT,
+);
 const artifactRoot = hasExplicitArtifactRoot
-  ? path.resolve(process.env.OVERLAYTERM_VPS_ARTIFACTS_ROOT)
+  ? path.resolve(process.env.GREEBLEFS_VPS_ARTIFACTS_ROOT || process.env.OVERLAYTERM_VPS_ARTIFACTS_ROOT)
   : cacheRoot;
 const defaultFrontendDist = hasExplicitArtifactRoot
   ? path.join(artifactRoot, "dist")
@@ -26,24 +28,25 @@ const defaultCargoTargetDir = hasExplicitArtifactRoot
   ? path.join(artifactRoot, "cargo-target", "tauri")
   : path.join(projectRoot, "src-tauri", "target");
 const cacheNodeModules = path.join(cacheRoot, "node_modules");
-const frontendDist = process.env.OVERLAYTERM_TAURI_FRONTEND_DIST
-  ? path.resolve(process.env.OVERLAYTERM_TAURI_FRONTEND_DIST)
+const frontendDist = process.env.GREEBLEFS_TAURI_FRONTEND_DIST || process.env.OVERLAYTERM_TAURI_FRONTEND_DIST
+  ? path.resolve(process.env.GREEBLEFS_TAURI_FRONTEND_DIST || process.env.OVERLAYTERM_TAURI_FRONTEND_DIST)
   : defaultFrontendDist;
-const tauriConfigDir = process.env.OVERLAYTERM_TAURI_CONFIG_DIR
-  ? path.resolve(process.env.OVERLAYTERM_TAURI_CONFIG_DIR)
+const tauriConfigDir = process.env.GREEBLEFS_TAURI_CONFIG_DIR || process.env.OVERLAYTERM_TAURI_CONFIG_DIR
+  ? path.resolve(process.env.GREEBLEFS_TAURI_CONFIG_DIR || process.env.OVERLAYTERM_TAURI_CONFIG_DIR)
   : path.join(artifactRoot, "tauri-config");
 const tauriCargoTargetDir =
   process.env.CARGO_TARGET_DIR ??
+  process.env.GREEBLEFS_TAURI_CARGO_TARGET_DIR ??
   process.env.OVERLAYTERM_TAURI_CARGO_TARGET_DIR ??
   defaultCargoTargetDir;
 
 const devManagedContentDirectoryEnvKeys = {
-  plugins: "VITE_OVERLAYTERM_PLUGINS_DIR",
-  themes: "VITE_OVERLAYTERM_THEMES_DIR",
-  shaders: "VITE_OVERLAYTERM_SHADERS_DIR",
-  animations: "VITE_OVERLAYTERM_ANIMATIONS_DIR",
-  wallpapers: "VITE_OVERLAYTERM_WALLPAPERS_DIR",
-  notes: "VITE_OVERLAYTERM_NOTES_DIR",
+  plugins: { primary: "VITE_GREEBLEFS_PLUGINS_DIR", legacy: "VITE_OVERLAYTERM_PLUGINS_DIR" },
+  themes: { primary: "VITE_GREEBLEFS_THEMES_DIR", legacy: "VITE_OVERLAYTERM_THEMES_DIR" },
+  shaders: { primary: "VITE_GREEBLEFS_SHADERS_DIR", legacy: "VITE_OVERLAYTERM_SHADERS_DIR" },
+  animations: { primary: "VITE_GREEBLEFS_ANIMATIONS_DIR", legacy: "VITE_OVERLAYTERM_ANIMATIONS_DIR" },
+  wallpapers: { primary: "VITE_GREEBLEFS_WALLPAPERS_DIR", legacy: "VITE_OVERLAYTERM_WALLPAPERS_DIR" },
+  notes: { primary: "VITE_GREEBLEFS_NOTES_DIR", legacy: "VITE_OVERLAYTERM_NOTES_DIR" },
 };
 
 const devManagedContentDirectoryNames = {
@@ -70,15 +73,17 @@ export function buildManagedContentDirectoryEnvironment({
 
   const managedContentEnvironment = {};
 
-  for (const [directoryId, envKey] of Object.entries(devManagedContentDirectoryEnvKeys)) {
-    if (hasExplicitEnvValue(existingEnv[envKey])) {
+  for (const [directoryId, envKeys] of Object.entries(devManagedContentDirectoryEnvKeys)) {
+    if (hasExplicitEnvValue(existingEnv[envKeys.primary]) || hasExplicitEnvValue(existingEnv[envKeys.legacy])) {
       continue;
     }
 
-    managedContentEnvironment[envKey] = path.join(
+    const directoryPath = path.join(
       projectRootPath,
       devManagedContentDirectoryNames[directoryId],
     );
+    managedContentEnvironment[envKeys.primary] = directoryPath;
+    managedContentEnvironment[envKeys.legacy] = directoryPath;
   }
 
   return managedContentEnvironment;
@@ -126,8 +131,8 @@ async function writeRuntimeTauriConfig(packageManagerCommand, tauriCommand) {
   const config = JSON.parse(rawConfig);
   const runtimeConfigPath = path.join(tauriConfigDir, "tauri.vps.config.json");
   const runPrefix = `${packageManagerCommand} run`;
-  const explicitDevUrl = process.env.OVERLAYTERM_TAURI_DEV_URL?.trim();
-  const explicitDevPort = process.env.OVERLAYTERM_TAURI_DEV_PORT?.trim();
+  const explicitDevUrl = (process.env.GREEBLEFS_TAURI_DEV_URL || process.env.OVERLAYTERM_TAURI_DEV_URL)?.trim();
+  const explicitDevPort = (process.env.GREEBLEFS_TAURI_DEV_PORT || process.env.OVERLAYTERM_TAURI_DEV_PORT)?.trim();
   const isDevCommand = tauriCommand === "dev";
   const resolvedDevPort = explicitDevPort || "1420";
   const resolvedDevUrl = isDevCommand
@@ -190,7 +195,7 @@ function commandExists(command) {
 }
 
 function getPackageManagerCommand() {
-  const explicit = process.env.OVERLAYTERM_PACKAGE_MANAGER?.trim();
+  const explicit = (process.env.GREEBLEFS_PACKAGE_MANAGER || process.env.OVERLAYTERM_PACKAGE_MANAGER)?.trim();
   const bunCommand = process.platform === "win32" ? "bun.exe" : "bun";
   const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 
@@ -210,7 +215,7 @@ async function readSharedCliVersion() {
 
   if (!(await pathExists(packageJsonPath))) {
     throw new Error(
-      "Shared @tauri-apps/cli package is missing. Run bun install in OverlayTerm first."
+      "Shared @tauri-apps/cli package is missing. Run bun install in GreebleFS first."
     );
   }
 
@@ -248,7 +253,7 @@ async function ensureNativeBindingAvailable() {
 async function main() {
   if (!(await pathExists(sharedTauriCliEntry))) {
     throw new Error(
-      "Shared Tauri CLI entrypoint is missing. Run bun install in OverlayTerm first."
+      "Shared Tauri CLI entrypoint is missing. Run bun install in GreebleFS first."
     );
   }
 
@@ -276,6 +281,7 @@ async function main() {
       NODE_PATH: existingNodePath,
       npm_config_optional: "true",
       CARGO_TARGET_DIR: tauriCargoTargetDir,
+      GREEBLEFS_VITE_OUT_DIR: frontendDist,
       OVERLAYTERM_VITE_OUT_DIR: frontendDist,
       ...buildManagedContentDirectoryEnvironment({ tauriCommand }),
     }
