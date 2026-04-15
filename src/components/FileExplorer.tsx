@@ -1761,8 +1761,6 @@ function PreviewPanel({
           )}
           {supportsRenderedPreview && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: 2, borderRadius: 'var(--overlay-explorer-control-radius)', border: '1px solid var(--overlay-explorer-chip-border)', background: 'var(--overlay-explorer-chip-bg)' }}>
-              {([          {supportsRenderedPreview && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: 2, borderRadius: 'var(--overlay-explorer-control-radius)', border: '1px solid var(--overlay-explorer-chip-border)', background: 'var(--overlay-explorer-chip-bg)' }}>
               {([
                 { id: 'edit', label: 'Edit' },
                 { id: 'preview', label: 'Preview' },

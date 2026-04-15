@@ -358,11 +358,11 @@ export function ExplorerWorkspace({
               display: 'flex',
               alignItems: 'center',
               gap: 8,
+              flex: 1,
               minWidth: 0,
-            minWidth: 0,
-            overflowX: 'auto',
-          }}
-        >
+              overflowX: 'auto',
+            }}
+          >
           {tabs.map((tab) => {
             const currentPath = sessions[tab.instanceId]?.currentPath ?? '';
             const isActive = (tab.pane === 'left' ? activeLeftTab?.id : activeRightTab?.id) === tab.id;
@@ -464,6 +464,7 @@ export function ExplorerWorkspace({
               </div>
             );
           })}
+        </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
