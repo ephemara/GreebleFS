@@ -1083,12 +1083,25 @@ export function TerminalOverlay({
   const appearance = useMemo(
     () => appearanceProp ?? resolveOverlayAppearance({
       activeThemeId: appearanceSettings.activeThemeId,
+      activeDockThemeId: appearanceSettings.activeDockThemeId,
+      dockThemeMode: appearanceSettings.dockThemeMode,
       customThemes: appearanceSettings.customThemes,
       uiFontFamily: appearanceSettings.uiFontFamily,
       monoFontFamily: settings.fontFamily,
       panelTransparency: appearanceSettings.panelTransparency,
+      windowMode: settings.windowMode,
     }),
-    [appearanceProp, appearanceSettings.activeThemeId, appearanceSettings.customThemes, appearanceSettings.panelTransparency, appearanceSettings.uiFontFamily, settings.fontFamily],
+    [
+      appearanceProp,
+      appearanceSettings.activeDockThemeId,
+      appearanceSettings.activeThemeId,
+      appearanceSettings.customThemes,
+      appearanceSettings.dockThemeMode,
+      appearanceSettings.panelTransparency,
+      appearanceSettings.uiFontFamily,
+      settings.fontFamily,
+      settings.windowMode,
+    ],
   );
   const theme = useMemo(
     () => themeFromAppearance(appearance.theme, appearance.workbenchTheme),

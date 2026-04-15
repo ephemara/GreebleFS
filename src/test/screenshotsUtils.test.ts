@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   clampSelectionToBounds,
   createInsetSelection,
+  getSelectionHandleAtPoint,
   moveSelection,
   isSupportedScreenshotEntry,
   normalizeSelection,
@@ -111,6 +112,32 @@ describe('screenshotsUtils', () => {
       width: 180,
       height: 120,
     });
+  });
+
+  it('detects resize handles around an existing selection', () => {
+    expect(getSelectionHandleAtPoint(
+      { x: 100, y: 100 },
+      { x: 100, y: 100, width: 200, height: 120 },
+      8,
+    )).toBe('north-west');
+
+    expect(getSelectionHandleAtPoint(
+      { x: 300, y: 160 },
+      { x: 100, y: 100, width: 200, height: 120 },
+      8,
+    )).toBe('east');
+
+    expect(getSelectionHandleAtPoint(
+      { x: 200, y: 220 },
+      { x: 100, y: 100, width: 200, height: 120 },
+      8,
+    )).toBe('south');
+
+    expect(getSelectionHandleAtPoint(
+      { x: 180, y: 160 },
+      { x: 100, y: 100, width: 200, height: 120 },
+      8,
+    )).toBeNull();
   });
 
   it('resizes selections from a handle while preserving a minimum size', () => {

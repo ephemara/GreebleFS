@@ -153,6 +153,140 @@ function getThemeCatalogEntryKey(
   return `${theme.id}:${sourceKind}:${sourceLabel}:${index}`;
 }
 
+function ThemeCatalogGrid({
+  themes,
+  activeThemeId,
+  onSelect,
+  themePackageLookup,
+}: {
+  themes: OverlayThemeDefinition[];
+  activeThemeId: string | null;
+  onSelect: (themeId: string) => void;
+  themePackageLookup: Map<string, LoadedOverlayThemePackage>;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {themes.map((themeOption, index) => {
+        const active = activeThemeId === themeOption.id;
+        const packageInfo = themePackageLookup.get(themeOption.id);
+        const description = clampThemeDescription(packageInfo?.description ?? themeOption.description);
+        const previewBackground = getThemePreviewBackground(themeOption, packageInfo?.previewUrl);
+        const compiledEngineManifest = packageInfo?.compiledEngineManifest;
+        const defaultLayoutPrimitive = compiledEngineManifest?.defaultLayoutPrimitive;
+        const defaultNavigationPattern = compiledEngineManifest?.defaultNavigationPattern;
+        const defaultAnimationProfile = compiledEngineManifest?.defaultAnimationProfile;
+        const defaultIconPack = compiledEngineManifest?.defaultIconPack;
+        const defaultRenderStyle = compiledEngineManifest?.defaultRenderStyle;
+        const workbenchPreset = themeOption.workbench?.preset;
+        const explorerPreset = themeOption.explorer?.preset;
+        const dockPreset = themeOption.dock?.workbench?.preset ?? themeOption.dock?.explorer?.preset ?? null;
+        const capabilityLabels = [
+          workbenchPreset ? `Workbench ${workbenchPreset}` : null,
+          explorerPreset ? `Explorer ${explorerPreset}` : null,
+          dockPreset ? `Dock ${dockPreset}` : null,
+          (themeOption.dock?.workbench || themeOption.dock?.explorer) ? 'Dock Ready' : null,
+          packageInfo?.capabilitySummary.icons ? 'Icons' : null,
+          packageInfo?.capabilitySummary.shaders ? `Shaders ${packageInfo.capabilitySummary.shaders}` : null,
+          packageInfo?.capabilitySummary.animations ? `Motion ${packageInfo.capabilitySummary.animations}` : null,
+          packageInfo?.capabilitySummary.visuals ? `Visuals ${packageInfo.capabilitySummary.visuals}` : null,
+          compiledEngineManifest?.capabilitySummary.designTokens ? `Tokens ${compiledEngineManifest.capabilitySummary.designTokens}` : null,
+          packageInfo?.capabilitySummary.themeRenderer ? 'Renderer V2' : null,
+        ].filter((value): value is string => Boolean(value)).slice(0, 6);
+
+        return (
+          <button
+            key={getThemeCatalogEntryKey(themeOption, packageInfo, index)}
+            type="button"
+            onClick={() => onSelect(themeOption.id)}
+            className="overflow-hidden rounded text-left transition-opacity hover:opacity-100"
+            style={{
+              background: themeOption.palette.appBackground,
+              border: `1px solid ${active ? themeOption.palette.accent : themeOption.palette.border}`,
+              color: themeOption.palette.textPrimary,
+              boxShadow: active ? `0 0 0 1px ${themeOption.palette.accent}40 inset` : 'none',
+            }}
+          >
+            <div
+              className="relative h-24 w-full"
+              style={{
+                backgroundImage: previewBackground,
+                backgroundSize: packageInfo?.previewUrl ? 'cover' : '100% 100%',
+                backgroundPosition: 'center',
+              }}
+            >
+              <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-2">
+                <div className="flex items-center gap-1">
+                  <ThemeBadge label={getThemeSourceLabel(themeOption)} active={active} />
+                  {packageInfo ? <ThemeBadge label={getThemePackageSourceBadgeLabel(packageInfo.sourceKind)} active={active} /> : null}
+                  {packageInfo?.warnings.length ? <ThemeBadge label={`Warnings ${packageInfo.warnings.length}`} /> : null}
+                </div>
+                {packageInfo ? (
+                  <div className="flex items-center gap-1">
+                    <ThemeBadge label={`v${packageInfo.version}`} active={active} />
+                    {packageInfo.author ? <ThemeBadge label={packageInfo.author} /> : null}
+                  </div>
+                ) : null}
+              </div>
+              <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 p-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: themeOption.palette.accent }} />
+                  <div className="truncate text-[11px] font-semibold">{themeOption.name}</div>
+                </div>
+                {active && <span className="text-[9px] font-semibold uppercase tracking-[0.12em] opacity-75">Live</span>}
+              </div>
+            </div>
+            <div className="space-y-2 px-3 py-3">
+              <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.12em] opacity-55">
+                <span>{themeOption.id}</span>
+                {packageInfo?.sourceLabel ? (
+                  <>
+                    <span aria-hidden="true">•</span>
+                    <span>{packageInfo.sourceLabel}</span>
+                  </>
+                ) : null}
+                {packageInfo?.homepage ? <span>• {packageInfo.homepage.replace(/^https?:\/\//, '').replace(/\/$/, '')}</span> : null}
+              </div>
+              {description ? (
+                <p className="min-h-[2.75rem] text-[11px] leading-4 opacity-70">{description}</p>
+              ) : (
+                <p className="min-h-[2.75rem] text-[11px] leading-4 opacity-35">No package summary provided yet.</p>
+              )}
+              <div className="flex flex-wrap gap-1.5">
+                {defaultLayoutPrimitive ? <ThemeBadge label={`Layout ${defaultLayoutPrimitive.kind}`} active={active} /> : null}
+                {defaultNavigationPattern ? <ThemeBadge label={`Nav ${defaultNavigationPattern.kind}`} active={active} /> : null}
+                {defaultIconPack ? <ThemeBadge label={`Icons ${defaultIconPack.style}`} active={active} /> : null}
+                {defaultRenderStyle ? <ThemeBadge label={`Render ${defaultRenderStyle.kind}`} active={active} /> : null}
+                {compiledEngineManifest?.supportsHotSwappingRenderStyles
+                  ? <ThemeBadge label="Live Swap Ready" active={active} />
+                  : compiledEngineManifest
+                    ? <ThemeBadge label="Static Render" active={active} />
+                    : null}
+                {themeOption.defaultShaderId ? <ThemeBadge label={`Shader ${themeOption.defaultShaderId}`} active={active} /> : null}
+                {themeOption.defaultOpenAnimationId ? <ThemeBadge label={`Open ${themeOption.defaultOpenAnimationId}`} active={active} /> : null}
+                {themeOption.defaultCloseAnimationId ? <ThemeBadge label={`Close ${themeOption.defaultCloseAnimationId}`} active={active} /> : null}
+                {defaultAnimationProfile ? <ThemeBadge label={`Profile ${defaultAnimationProfile.id}`} active={active} /> : null}
+                {capabilityLabels.map(label => (
+                  <ThemeBadge key={`${themeOption.id}-${label}`} label={label} />
+                ))}
+                {(packageInfo?.tags ?? []).slice(0, 3).map(tag => (
+                  <ThemeBadge key={`${themeOption.id}-tag-${tag}`} label={tag} />
+                ))}
+              </div>
+              {packageInfo?.warnings.length ? (
+                <div className="rounded border px-2.5 py-2 text-[10px] leading-4" style={{ borderColor: 'rgba(245,158,11,0.32)', background: 'rgba(245,158,11,0.12)', color: '#fde68a' }}>
+                  {packageInfo.warnings.map(warning => (
+                    <div key={`${themeOption.id}-${warning}`}>{warning}</div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function ColorToken({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
     <label className="flex flex-col gap-1 rounded border p-2" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
@@ -554,7 +688,7 @@ export function SettingsPage({
   })));
 
   const profileOptions = useMemo(() => getExternalTerminalProfileOptions(platform), [platform]);
-  const [themeDraft, setThemeDraft] = useState(() => serializeTheme(appearance.baseTheme));
+  const [themeDraft, setThemeDraft] = useState(() => serializeTheme(appearance.app.baseTheme));
   const [folderIconSearch, setFolderIconSearch] = useState('');
   const [activeSection, setActiveSection] = useState<SettingsSectionKey>('overview');
   const [startupSyncPending, setStartupSyncPending] = useState(false);
@@ -619,9 +753,11 @@ export function SettingsPage({
     () => availableShaders.map(shader => shader.id),
     [availableShaders],
   );
+  const appAppearance = appearance.app;
+  const dockAppearance = appearance.dock;
   const blurEnabled = settings.appearance.appBlur !== false;
   const activeWallpaperSelectionId = settings.appearance.activeWallpaperId ?? null;
-  const themeWallpaperAvailable = Boolean(appearance.baseTheme.assets?.backgroundUrl);
+  const themeWallpaperAvailable = Boolean(appAppearance.baseTheme.assets?.backgroundUrl);
   const wallpaperSelectionSummary = activeWallpaperSelectionId == null
     ? (themeWallpaperAvailable ? 'Theme Default' : 'No Wallpaper')
     : activeWallpaperSelectionId === wallpaperSystemConfig.noneWallpaperId
@@ -631,9 +767,9 @@ export function SettingsPage({
     () => resolvePreferredShaderId({
       availableShaderIds,
       userOverrideId: settings.appearance.activeShaderId,
-      themeDefaultShaderId: appearance.baseTheme.defaultShaderId,
+      themeDefaultShaderId: appAppearance.baseTheme.defaultShaderId,
     }),
-    [appearance.baseTheme.defaultShaderId, availableShaderIds, settings.appearance.activeShaderId],
+    [appAppearance.baseTheme.defaultShaderId, availableShaderIds, settings.appearance.activeShaderId],
   );
   const effectiveShader = useMemo(
     () => availableShaders.find(shader => shader.id === effectiveShaderId) ?? null,
@@ -696,26 +832,26 @@ export function SettingsPage({
   );
   const shaderSelectionSummary = settings.appearance.activeShaderId
     ? 'Settings Override'
-    : appearance.baseTheme.defaultShaderId
+    : appAppearance.baseTheme.defaultShaderId
       ? 'Theme Default'
       : 'Fallback';
   const effectiveOpenAnimationId = useMemo(
     () => resolvePreferredAnimationId({
       availableAnimationIds: availableOpenAnimationIds,
       userOverrideId: settings.appearance.appOpenAnimation,
-      themeDefaultAnimationId: appearance.baseTheme.defaultOpenAnimationId,
+      themeDefaultAnimationId: appAppearance.baseTheme.defaultOpenAnimationId,
       fallbackAnimationId: animationSystemConfig.defaultOpenAnimationId,
     }),
-    [appearance.baseTheme.defaultOpenAnimationId, availableOpenAnimationIds, settings.appearance.appOpenAnimation],
+    [appAppearance.baseTheme.defaultOpenAnimationId, availableOpenAnimationIds, settings.appearance.appOpenAnimation],
   );
   const effectiveCloseAnimationId = useMemo(
     () => resolvePreferredAnimationId({
       availableAnimationIds: availableCloseAnimationIds,
       userOverrideId: settings.appearance.appCloseAnimation,
-      themeDefaultAnimationId: appearance.baseTheme.defaultCloseAnimationId,
+      themeDefaultAnimationId: appAppearance.baseTheme.defaultCloseAnimationId,
       fallbackAnimationId: animationSystemConfig.defaultCloseAnimationId,
     }),
-    [appearance.baseTheme.defaultCloseAnimationId, availableCloseAnimationIds, settings.appearance.appCloseAnimation],
+    [appAppearance.baseTheme.defaultCloseAnimationId, availableCloseAnimationIds, settings.appearance.appCloseAnimation],
   );
 
   useEffect(() => {
@@ -724,8 +860,8 @@ export function SettingsPage({
   }, [appearance.fonts.ui, settings.terminal.fontFamily]);
 
   useEffect(() => {
-    setThemeDraft(serializeTheme(appearance.baseTheme));
-  }, [appearance.baseTheme]);
+    setThemeDraft(serializeTheme(appAppearance.baseTheme));
+  }, [appAppearance.baseTheme]);
 
   useEffect(() => {
     let cancelled = false;
@@ -778,16 +914,22 @@ export function SettingsPage({
       ...(packageInfo?.capabilitySummary.icons ? { useNativeOsIcons: false } : {}),
     });
   }, [themePackageLookup, updateAppearance]);
+  const applyDockThemeSelection = useCallback((themeId: string) => {
+    updateAppearance({
+      dockThemeMode: 'override',
+      activeDockThemeId: themeId,
+    });
+  }, [updateAppearance]);
 
   const updateThemePalette = useCallback((patch: Partial<OverlayThemeDefinition['palette']>) => {
     persistTheme({
-      ...appearance.baseTheme,
+      ...appAppearance.baseTheme,
       palette: {
-        ...appearance.baseTheme.palette,
+        ...appAppearance.baseTheme.palette,
         ...patch,
       },
     });
-  }, [appearance.baseTheme, persistTheme]);
+  }, [appAppearance.baseTheme, persistTheme]);
 
   const applyThemeDraft = useCallback(() => {
     try {
@@ -925,7 +1067,7 @@ export function SettingsPage({
   }, []);
 
   const effectiveTheme = appearance.theme;
-  const editableTheme = appearance.baseTheme;
+  const editableTheme = appAppearance.baseTheme;
   const panelBackground = effectiveTheme.palette.panelBackground;
   const border = effectiveTheme.palette.border;
   const text = effectiveTheme.palette.textPrimary;
@@ -1649,122 +1791,82 @@ export function SettingsPage({
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Theme Catalog</label>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {appearance.themes.map((themeOption, index) => {
-                    const active = settings.appearance.activeThemeId === themeOption.id;
-                    const packageInfo = themePackageLookup.get(themeOption.id);
-                    const description = clampThemeDescription(packageInfo?.description ?? themeOption.description);
-                    const previewBackground = getThemePreviewBackground(themeOption, packageInfo?.previewUrl);
-                    const compiledEngineManifest = packageInfo?.compiledEngineManifest;
-                    const defaultLayoutPrimitive = compiledEngineManifest?.defaultLayoutPrimitive;
-                    const defaultNavigationPattern = compiledEngineManifest?.defaultNavigationPattern;
-                    const defaultAnimationProfile = compiledEngineManifest?.defaultAnimationProfile;
-                    const defaultIconPack = compiledEngineManifest?.defaultIconPack;
-                    const defaultRenderStyle = compiledEngineManifest?.defaultRenderStyle;
-                    const workbenchPreset = themeOption.workbench?.preset;
-                    const explorerPreset = themeOption.explorer?.preset;
-                    const capabilityLabels = [
-                      workbenchPreset ? `Workbench ${workbenchPreset}` : null,
-                      explorerPreset ? `Explorer ${explorerPreset}` : null,
-                      packageInfo?.capabilitySummary.icons ? 'Icons' : null,
-                      packageInfo?.capabilitySummary.shaders ? `Shaders ${packageInfo.capabilitySummary.shaders}` : null,
-                      packageInfo?.capabilitySummary.animations ? `Motion ${packageInfo.capabilitySummary.animations}` : null,
-                      packageInfo?.capabilitySummary.visuals ? `Visuals ${packageInfo.capabilitySummary.visuals}` : null,
-                      compiledEngineManifest?.capabilitySummary.designTokens ? `Tokens ${compiledEngineManifest.capabilitySummary.designTokens}` : null,
-                      packageInfo?.capabilitySummary.themeRenderer ? 'Renderer V2' : null,
-                    ].filter((value): value is string => Boolean(value)).slice(0, 5);
-                    return (
-                      <button
-                        key={getThemeCatalogEntryKey(themeOption, packageInfo, index)}
-                        onClick={() => applyThemeSelection(themeOption.id)}
-                        className="overflow-hidden rounded text-left transition-opacity hover:opacity-100"
-                        style={{
-                          background: themeOption.palette.appBackground,
-                          border: `1px solid ${active ? themeOption.palette.accent : themeOption.palette.border}`,
-                          color: themeOption.palette.textPrimary,
-                          boxShadow: active ? `0 0 0 1px ${themeOption.palette.accent}40 inset` : 'none',
-                        }}
-                      >
-                        <div
-                          className="relative h-24 w-full"
-                          style={{
-                            backgroundImage: previewBackground,
-                            backgroundSize: packageInfo?.previewUrl ? 'cover' : '100% 100%',
-                            backgroundPosition: 'center',
-                          }}
-                        >
-                          <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-2">
-                            <div className="flex items-center gap-1">
-                              <ThemeBadge label={getThemeSourceLabel(themeOption)} active={active} />
-                              {packageInfo ? <ThemeBadge label={getThemePackageSourceBadgeLabel(packageInfo.sourceKind)} active={active} /> : null}
-                              {packageInfo?.warnings.length ? <ThemeBadge label={`Warnings ${packageInfo.warnings.length}`} /> : null}
-                            </div>
-                            {packageInfo ? (
-                              <div className="flex items-center gap-1">
-                                <ThemeBadge label={`v${packageInfo.version}`} active={active} />
-                                {packageInfo.author ? <ThemeBadge label={packageInfo.author} /> : null}
-                              </div>
-                            ) : null}
-                          </div>
-                          <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 p-2">
-                            <div className="flex min-w-0 items-center gap-2">
-                              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: themeOption.palette.accent }} />
-                              <div className="truncate text-[11px] font-semibold">{themeOption.name}</div>
-                            </div>
-                            {active && <span className="text-[9px] font-semibold uppercase tracking-[0.12em] opacity-75">Live</span>}
-                          </div>
-                        </div>
-                        <div className="space-y-2 px-3 py-3">
-                          <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.12em] opacity-55">
-                            <span>{themeOption.id}</span>
-                            {packageInfo?.sourceLabel ? (
-                              <>
-                                <span aria-hidden="true">•</span>
-                                <span>{packageInfo.sourceLabel}</span>
-                              </>
-                            ) : null}
-                            {packageInfo?.homepage ? <span>• {packageInfo.homepage.replace(/^https?:\/\//, '').replace(/\/$/, '')}</span> : null}
-                          </div>
-                          {description ? (
-                            <p className="min-h-[2.75rem] text-[11px] leading-4 opacity-70">{description}</p>
-                          ) : (
-                            <p className="min-h-[2.75rem] text-[11px] leading-4 opacity-35">No package summary provided yet.</p>
-                          )}
-                          <div className="flex flex-wrap gap-1.5">
-                            {defaultLayoutPrimitive ? <ThemeBadge label={`Layout ${defaultLayoutPrimitive.kind}`} active={active} /> : null}
-                            {defaultNavigationPattern ? <ThemeBadge label={`Nav ${defaultNavigationPattern.kind}`} active={active} /> : null}
-                            {defaultIconPack ? <ThemeBadge label={`Icons ${defaultIconPack.style}`} active={active} /> : null}
-                            {defaultRenderStyle ? <ThemeBadge label={`Render ${defaultRenderStyle.kind}`} active={active} /> : null}
-                            {compiledEngineManifest?.supportsHotSwappingRenderStyles
-                              ? <ThemeBadge label="Live Swap Ready" active={active} />
-                              : compiledEngineManifest
-                                ? <ThemeBadge label="Static Render" active={active} />
-                                : null}
-                            {themeOption.defaultShaderId ? <ThemeBadge label={`Shader ${themeOption.defaultShaderId}`} active={active} /> : null}
-                            {themeOption.defaultOpenAnimationId ? <ThemeBadge label={`Open ${themeOption.defaultOpenAnimationId}`} active={active} /> : null}
-                            {themeOption.defaultCloseAnimationId ? <ThemeBadge label={`Close ${themeOption.defaultCloseAnimationId}`} active={active} /> : null}
-                            {defaultAnimationProfile ? <ThemeBadge label={`Profile ${defaultAnimationProfile.id}`} active={active} /> : null}
-                            {capabilityLabels.map(label => (
-                              <ThemeBadge key={`${themeOption.id}-${label}`} label={label} />
-                            ))}
-                            {(packageInfo?.tags ?? []).slice(0, 3).map(tag => (
-                              <ThemeBadge key={`${themeOption.id}-tag-${tag}`} label={tag} />
-                            ))}
-                          </div>
-                          {packageInfo?.warnings.length ? (
-                            <div className="rounded border px-2.5 py-2 text-[10px] leading-4" style={{ borderColor: 'rgba(245,158,11,0.32)', background: 'rgba(245,158,11,0.12)', color: '#fde68a' }}>
-                              {packageInfo.warnings.map(warning => (
-                                <div key={`${themeOption.id}-${warning}`}>{warning}</div>
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Application Theme Catalog</label>
+                <ThemeCatalogGrid
+                  themes={appearance.themes}
+                  activeThemeId={settings.appearance.activeThemeId}
+                  onSelect={applyThemeSelection}
+                  themePackageLookup={themePackageLookup}
+                />
               </div>
+
+              <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Dock Theme Mode</div>
+                    <p className="mt-1 text-[11px] opacity-40">
+                      Keep dock mode on the application theme, or pin dock mode to a completely different theme while still honoring dock-specific recipe overrides.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {[
+                      {
+                        value: 'follow-app',
+                        label: 'Follow Application',
+                        description: 'Dock uses the app theme plus any dock-specific recipes declared by that theme.',
+                      },
+                      {
+                        value: 'override',
+                        label: 'Override Theme',
+                        description: 'Dock uses its own separately selected theme.',
+                      },
+                    ].map(option => {
+                      const active = settings.appearance.dockThemeMode === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => updateAppearance({ dockThemeMode: option.value as 'follow-app' | 'override' })}
+                          className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                          style={{
+                            border: `1px solid ${active ? accent : border}`,
+                            background: active ? `${accent}18` : 'rgba(255,255,255,0.04)',
+                            color: text,
+                          }}
+                          title={option.description}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
+                  <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                    Dock Source: {settings.appearance.dockThemeMode === 'override' ? 'Override Theme' : 'Application Theme'}
+                  </span>
+                  <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+                    Current Dock Theme: {dockAppearance.baseTheme.name}
+                  </span>
+                </div>
+                {settings.appearance.dockThemeMode === 'follow-app' ? (
+                  <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${accent}33`, background: `${accent}10`, color: text }}>
+                    Dock mode is following <strong>{appAppearance.baseTheme.name}</strong>. If that theme declares `theme.dock.workbench` or `theme.dock.explorer`, those dock-specific recipes are applied automatically.
+                  </div>
+                ) : null}
+              </div>
+
+              {settings.appearance.dockThemeMode === 'override' && (
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Dock Theme Catalog</label>
+                  <ThemeCatalogGrid
+                    themes={appearance.themes}
+                    activeThemeId={settings.appearance.activeDockThemeId}
+                    onSelect={applyDockThemeSelection}
+                    themePackageLookup={themePackageLookup}
+                  />
+                </div>
+              )}
 
               <div className="space-y-1.5">
                 <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
@@ -1991,9 +2093,9 @@ export function SettingsPage({
                           <div
                             className="h-24 w-full"
                             style={{
-                              backgroundImage: appearance.baseTheme.assets?.backgroundUrl
-                                ? `linear-gradient(180deg, rgba(5,10,18,0.18), rgba(5,10,18,0.72)), url("${appearance.baseTheme.assets.backgroundUrl}")`
-                                : `linear-gradient(135deg, ${appearance.theme.palette.appBackgroundAlt}, ${appearance.theme.palette.appBackground})`,
+                              backgroundImage: editableTheme.assets?.backgroundUrl
+                                ? `linear-gradient(180deg, rgba(5,10,18,0.18), rgba(5,10,18,0.72)), url("${editableTheme.assets.backgroundUrl}")`
+                                : `linear-gradient(135deg, ${editableTheme.palette.appBackgroundAlt}, ${editableTheme.palette.appBackground})`,
                               backgroundSize: 'cover',
                               backgroundPosition: 'center',
                             }}
@@ -2005,8 +2107,8 @@ export function SettingsPage({
                             </div>
                             <p className="text-[10px] leading-4 opacity-55">
                               {themeWallpaperAvailable
-                                ? `Use ${appearance.baseTheme.name}'s packaged wallpaper asset as the base render layer.`
-                                : `${appearance.baseTheme.name} does not currently ship a wallpaper asset, so the base layer stays empty.`}
+                                ? `Use ${editableTheme.name}'s packaged wallpaper asset as the base render layer.`
+                                : `${editableTheme.name} does not currently ship a wallpaper asset, so the base layer stays empty.`}
                             </p>
                           </div>
                         </button>
@@ -2021,7 +2123,7 @@ export function SettingsPage({
                             color: text,
                           }}
                         >
-                          <div className="flex h-24 w-full items-center justify-center" style={{ background: `linear-gradient(135deg, ${appearance.theme.palette.appBackgroundAlt}, ${appearance.theme.palette.panelBackground})` }}>
+                          <div className="flex h-24 w-full items-center justify-center" style={{ background: `linear-gradient(135deg, ${editableTheme.palette.appBackgroundAlt}, ${editableTheme.palette.panelBackground})` }}>
                             <Image size={28} style={{ color: muted }} />
                           </div>
                           <div className="space-y-1 px-3 py-3">
@@ -2039,7 +2141,7 @@ export function SettingsPage({
                           const active = activeWallpaperSelectionId === wallpaper.id;
                           const previewBackground = wallpaper.previewUrl
                             ? `linear-gradient(180deg, rgba(5,10,18,0.14), rgba(5,10,18,0.72)), url("${wallpaper.previewUrl}")`
-                            : `linear-gradient(135deg, ${appearance.theme.palette.appBackgroundAlt}, ${appearance.theme.palette.panelBackground})`;
+                            : `linear-gradient(135deg, ${editableTheme.palette.appBackgroundAlt}, ${editableTheme.palette.panelBackground})`;
                           return (
                             <button
                               key={wallpaper.id}
@@ -2281,13 +2383,13 @@ export function SettingsPage({
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[11px] font-semibold">Follow Theme Default</span>
                         <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: settings.appearance.activeShaderId == null ? accent : muted }}>
-                          {appearance.baseTheme.defaultShaderId ?? 'none'}
+                          {editableTheme.defaultShaderId ?? 'none'}
                         </span>
                       </div>
                       <p className="mt-1 text-[11px] opacity-45">
-                        {appearance.baseTheme.defaultShaderId
-                          ? `Active theme ${appearance.baseTheme.name} defaults to ${appearance.baseTheme.defaultShaderId}.`
-                          : `Active theme ${appearance.baseTheme.name} does not define a shader, so the shell falls back to none.`}
+                        {editableTheme.defaultShaderId
+                          ? `Active theme ${editableTheme.name} defaults to ${editableTheme.defaultShaderId}.`
+                          : `Active theme ${editableTheme.name} does not define a shader, so the shell falls back to none.`}
                       </p>
                     </button>
 
@@ -2540,9 +2642,9 @@ export function SettingsPage({
                           </span>
                         </div>
                         <p className="mt-1 text-[11px] opacity-45">
-                          {appearance.baseTheme.defaultOpenAnimationId
-                            ? `Active theme ${appearance.baseTheme.name} defaults open motion to ${appearance.baseTheme.defaultOpenAnimationId}.`
-                            : `Active theme ${appearance.baseTheme.name} does not define open motion, so OverlayTerm falls back to ${animationSystemConfig.defaultOpenAnimationId}.`}
+                          {editableTheme.defaultOpenAnimationId
+                            ? `Active theme ${editableTheme.name} defaults open motion to ${editableTheme.defaultOpenAnimationId}.`
+                            : `Active theme ${editableTheme.name} does not define open motion, so OverlayTerm falls back to ${animationSystemConfig.defaultOpenAnimationId}.`}
                         </p>
                       </button>
                       {openAnimationOptions.map(animation => {
@@ -2595,9 +2697,9 @@ export function SettingsPage({
                           </span>
                         </div>
                         <p className="mt-1 text-[11px] opacity-45">
-                          {appearance.baseTheme.defaultCloseAnimationId
-                            ? `Active theme ${appearance.baseTheme.name} defaults close motion to ${appearance.baseTheme.defaultCloseAnimationId}.`
-                            : `Active theme ${appearance.baseTheme.name} does not define close motion, so OverlayTerm falls back to ${animationSystemConfig.defaultCloseAnimationId}.`}
+                          {editableTheme.defaultCloseAnimationId
+                            ? `Active theme ${editableTheme.name} defaults close motion to ${editableTheme.defaultCloseAnimationId}.`
+                            : `Active theme ${editableTheme.name} does not define close motion, so OverlayTerm falls back to ${animationSystemConfig.defaultCloseAnimationId}.`}
                         </p>
                       </button>
                       {closeAnimationOptions.map(animation => {
@@ -3707,7 +3809,7 @@ export function SettingsPage({
               />
               <div className="grid grid-cols-2 gap-2">
                 <button
-                  onClick={() => setThemeDraft(serializeTheme(appearance.baseTheme))}
+                  onClick={() => setThemeDraft(serializeTheme(editableTheme))}
                   className="rounded px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em]"
                   style={{ background: 'rgba(255,255,255,0.06)', color: text, border: `1px solid ${border}` }}
                 >

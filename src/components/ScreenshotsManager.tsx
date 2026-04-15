@@ -28,11 +28,9 @@ import {
 } from 'lucide-react';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 import { useSettingsStore } from '../store/settingsStore';
-import { joinPlatformPath } from '../config/platform';
 import { screenshotFeatureConfig } from '../config/screenshots';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import {
-  clampSelectionToBounds,
   getSelectionHandleAtPoint,
   isPointInSelection,
   moveSelection,
@@ -227,27 +225,6 @@ function getSelectionHandleLayout(selection: RectSelection) {
     { handle: 'south-west', x: left, y: bottom },
     { handle: 'west', x: left, y: centerY },
   ] as const;
-}
-
-function mapSelectionHandleCursor(handle: SelectionHandle): React.CSSProperties['cursor'] {
-  switch (handle) {
-    case 'north':
-    case 'south':
-      return 'ns-resize';
-    case 'east':
-    case 'west':
-      return 'ew-resize';
-    case 'north-east':
-    case 'south-west':
-      return 'nesw-resize';
-    case 'north-west':
-    case 'south-east':
-      return 'nwse-resize';
-    case 'move':
-      return 'move';
-    default:
-      return 'crosshair';
-  }
 }
 
 function formatToolbarActionLabel(
@@ -760,7 +737,9 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
 
     const { x, y } = getContainerPos(e.clientX, e.clientY, rect);
     e.currentTarget.focus();
-    e.currentTarget.setPointerCapture(e.pointerId);
+    if ('setPointerCapture' in e.currentTarget && typeof e.currentTarget.setPointerCapture === 'function') {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
 
     if (activeTool === 'select') {
       e.preventDefault();
@@ -867,7 +846,11 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
   }, [activeTool, annColor, annLw, getContainerPos]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+    if (
+      'hasPointerCapture' in e.currentTarget
+      && typeof e.currentTarget.hasPointerCapture === 'function'
+      && e.currentTarget.hasPointerCapture(e.pointerId)
+    ) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
     isDraggingRef.current = false;
@@ -1041,9 +1024,8 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
 
   // ── Save annotated ──
   const runAnnotatedOutputAction = useCallback(async (action: ScreenshotOutputActionId) => {
-    const canvas = canvasRef.current;
     const container = containerRef.current;
-    if (!canvas || !container || !activeMonitor) return;
+    if (!container || !activeMonitor?.captureId) return;
     setError(null);
     if (action === 'copy') {
       setIsCopying(true);
@@ -1051,50 +1033,28 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
       setIsSaving(true);
     }
     try {
-      const img = document.createElement('img');
-      img.src = activeMonitor.previewUrl ?? '';
-      await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = rej; });
-      const out = document.createElement('canvas');
-      out.width = img.naturalWidth; out.height = img.naturalHeight;
-      const ctx = out.getContext('2d')!;
-      ctx.drawImage(img, 0, 0);
-      const scaleX = img.naturalWidth  / container.getBoundingClientRect().width;
-      const scaleY = img.naturalHeight / container.getBoundingClientRect().height;
-      ctx.save(); ctx.scale(scaleX, scaleY);
-      [...annotations].forEach(ann => drawAnnotation(ctx, ann));
-      ctx.restore();
-      const px = getSelectionPx();
-      const previewScaleX = img.naturalWidth  / activeMonitor.imageWidth;
-      const previewScaleY = img.naturalHeight / activeMonitor.imageHeight;
-      let finalCanvas = out;
-      if (px) {
-        const norm = normalizeSelection(px);
-        const crop = document.createElement('canvas');
-        crop.width = Math.round(norm.width * previewScaleX);
-        crop.height = Math.round(norm.height * previewScaleY);
-        crop.getContext('2d')!.drawImage(out, Math.round(norm.x * previewScaleX), Math.round(norm.y * previewScaleY), crop.width, crop.height, 0, 0, crop.width, crop.height);
-        finalCanvas = crop;
-      }
-      const blob = await new Promise<Blob>((res, rej) => finalCanvas.toBlob(b => b ? res(b) : rej(new Error('canvas empty')), 'image/png'));
-      let fileName: string | null = null;
+      const rendered = container.getBoundingClientRect();
+      const renderedSize = { width: rendered.width, height: rendered.height };
+      const imageSize = { width: activeMonitor.imageWidth, height: activeMonitor.imageHeight };
+      const nativeAnnotations = annotations.map(annotation => annotationToImageSpace(annotation, renderedSize, imageSize));
+      const selectionRegion: NativeScreenshotRegion | null = selection
+        ? selectionToPixelRect(normalizeSelection(selection), renderedSize, imageSize)
+        : null;
 
-      if (action !== 'copy') {
-        const buf = await blob.arrayBuffer();
-        const bytes = Array.from(new Uint8Array(buf));
-        await ensureDir(screenshotDir);
-        const ts = Date.now();
-        fileName = `${screenshotFeatureConfig.filePrefix}-${ts}.png`;
-        const fullPath = joinPlatformPath(screenshotDir, fileName);
-        await writeExplorerFile(fullPath, bytes);
-      }
+      const exportResult = await commands.screenshotExportAnnotated(
+        activeMonitor.captureId,
+        selectionRegion,
+        nativeAnnotations,
+        action === 'copy' ? null : screenshotDir,
+        action === 'copy' ? null : screenshotFeatureConfig.filePrefix,
+        action !== 'save',
+      ).then(unwrapTauriResult);
 
-      if (action === 'copy' || action === 'save-copy') {
-        const item = new ClipboardItem({ 'image/png': blob });
-        await navigator.clipboard.write([item]);
-      }
       if (action !== 'copy') {
         await loadGallery();
       }
+
+      const fileName = exportResult.saved?.file_name ?? null;
       setStatusMsg(
         action === 'copy'
           ? 'Copied annotated selection.'
@@ -1106,7 +1066,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
       setIsSaving(false);
       setIsCopying(false);
     }
-  }, [activeMonitor, annotations, finishToolAction, screenshotDir, loadGallery, getSelectionPx]);
+  }, [activeMonitor, annotations, finishToolAction, screenshotDir, loadGallery, selection]);
 
   // ─── Tool content ──────────────────────────────────────────────────────────
 
@@ -1207,10 +1167,13 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
            */
           <div
             ref={containerRef}
+            tabIndex={0}
+            aria-label="Screenshot editor preview"
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             onPointerCancel={handlePointerUp}
+            onKeyDown={handlePreviewKeyDown}
             style={{
               position: 'relative',
               alignSelf: 'stretch',
@@ -1224,7 +1187,13 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
               overflow: 'hidden',
               border: `1px solid ${BORDER}`,
               boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-              cursor: activeTool === 'text' ? 'text' : isCapturing ? 'wait' : 'crosshair',
+              cursor: activeTool === 'text'
+                ? 'text'
+                : isCapturing
+                  ? 'wait'
+                  : activeTool === 'select' && hasSelection
+                    ? 'move'
+                    : 'crosshair',
               // touch-action none is REQUIRED for Pointer Events to work correctly on touch/pen
               touchAction: 'none',
               // Prevent the browser from applying any fractional sub-pixel offset
@@ -1299,6 +1268,23 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
                   outline: '1px solid rgba(255,255,255,0.35)',
                   pointerEvents: 'none',
                 }} />
+                {getSelectionHandleLayout(normalizedSel).map(handle => (
+                  <div
+                    key={handle.handle}
+                    style={{
+                      position: 'absolute',
+                      left: handle.x - SELECTION_HANDLE_SIZE / 2,
+                      top: handle.y - SELECTION_HANDLE_SIZE / 2,
+                      width: SELECTION_HANDLE_SIZE,
+                      height: SELECTION_HANDLE_SIZE,
+                      borderRadius: 999,
+                      background: '#f8fbff',
+                      border: `2px solid ${accent}`,
+                      boxShadow: '0 1px 6px rgba(0,0,0,0.45)',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                ))}
                 {selectionPx && (
                   <div style={{
                     position: 'absolute', pointerEvents: 'none',
@@ -1312,6 +1298,24 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
                     {normalizeSelection(selectionPx).width}×{normalizeSelection(selectionPx).height}
                   </div>
                 )}
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: normalizedSel.x + 10,
+                    top: Math.max(normalizedSel.y - 28, 8),
+                    pointerEvents: 'none',
+                    background: 'rgba(5,8,15,0.92)',
+                    border: `1px solid ${accent}44`,
+                    borderRadius: 6,
+                    padding: '2px 8px',
+                    fontSize: 10,
+                    fontWeight: 600,
+                    color: '#dce3ff',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Drag to move · drag handles to resize · arrows to nudge · Alt+arrows to resize
+                </div>
               </>
             )}
 

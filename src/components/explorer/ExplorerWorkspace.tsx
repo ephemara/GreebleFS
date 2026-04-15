@@ -16,6 +16,7 @@ interface ExplorerWorkspaceProps {
   theme: { accent: string; bg: string; bgPanel: string; text: string; border: string; textMuted: string };
   appearance?: ResolvedOverlayAppearance;
   onOpenInTerminal: (path: string) => void;
+  onOpenInFilesystemAquarium: (path: string) => void;
   onAddBookmark: (name: string, path: string) => void | Promise<void>;
   pluginActions?: OverlayPluginExplorerActionContribution[];
   layoutMode?: ExplorerLayoutMode;
@@ -61,6 +62,7 @@ export function ExplorerWorkspace({
   theme,
   appearance,
   onOpenInTerminal,
+  onOpenInFilesystemAquarium,
   onAddBookmark,
   pluginActions = [],
   layoutMode = 'full',
@@ -304,6 +306,7 @@ export function ExplorerWorkspace({
           repositoryPicker={repositoryPicker}
           theme={theme}
           onAddBookmark={onAddBookmark}
+          onOpenInFilesystemAquarium={onOpenInFilesystemAquarium}
           onOpenInTerminal={onOpenInTerminal}
         />
       </div>

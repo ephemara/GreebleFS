@@ -2129,6 +2129,7 @@ interface FileExplorerProps {
   appearance?: ResolvedOverlayAppearance;
   explorerBackend?: ExplorerBackendContract;
   onOpenInTerminal: (path: string) => void;
+  onOpenInFilesystemAquarium: (path: string) => void;
   onAddBookmark: (name: string, path: string) => void;
   pluginActions?: OverlayPluginExplorerActionContribution[];
   layoutMode?: ExplorerLayoutMode;
@@ -2149,6 +2150,7 @@ export function FileExplorer({
   appearance,
   explorerBackend = explorerBackendContract,
   onOpenInTerminal,
+  onOpenInFilesystemAquarium,
   onAddBookmark,
   pluginActions = [],
   layoutMode = 'full',
@@ -4060,6 +4062,11 @@ export function FileExplorer({
       ...(supportsNativeOpenWith && canUseNativeIntegration ? [{ label:'Open With...', icon:<ExternalLink size={13}/>, action:() => openWithSystemPicker(entry.path) }] : []),
       ...(canUseNativeIntegration ? [{ label: entry.is_dir ? 'Open Folder as Admin' : 'Open as Admin', icon:<Shield size={13}/>, action:() => openAsAdmin(entry.path) }] : []),
       ...(entry.is_dir && !isCloudExplorerPath(entry.path) ? [{ label:'Open in Terminal', icon:<Terminal size={13}/>, action:() => onOpenInTerminal(entry.path) }] : []),
+      ...(!isCloudExplorerPath(entry.path) && (entry.is_dir || parentPath) ? [{
+        label: entry.is_dir ? 'Open Habitat in Filesystem Aquarium' : 'Open Parent Habitat in Filesystem Aquarium',
+        icon:<Sparkles size={13}/>,
+        action:() => onOpenInFilesystemAquarium(entry.is_dir ? entry.path : parentPath),
+      }] : []),
       ...(canUseNativeIntegration ? [{ label: revealPathLabel, icon:<Eye size={13}/>, action:() => revealExplorerPath(entry.path).catch(e=>setError(String(e))) }] : []),
       ...(supportsNativeProperties && canUseNativeIntegration ? [{ label: propertiesLabel, icon:<Info size={13}/>, action:() => showNativeProperties(entry.path) }] : []),
       { label:'Copy Path',          icon:<Copy size={13}/>,         action:() => copyToSysClipboard(entry.path) },
@@ -4100,7 +4107,7 @@ export function FileExplorer({
       { label: '', icon:null, divider:true, action:()=>{} },
       { label:'Move to Trash', icon:<Trash2 size={13}/>, danger:true, action:() => openTrashDialog([entry]) },
     ];
-  }, [applyTagsToPaths, bookmarkPathSet, copyToSysClipboard, duplicate, explorerRail, handleBookmarkCreated, isCloudExplorerPath, onOpenInTerminal, openAsAdmin, openEntry, openTrashDialog, openWithSystemPicker, pluginActions, propertiesLabel, queueClipboard, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties, updateExplorerRail]);
+  }, [applyTagsToPaths, bookmarkPathSet, copyToSysClipboard, duplicate, explorerRail, handleBookmarkCreated, isCloudExplorerPath, onOpenInFilesystemAquarium, onOpenInTerminal, openAsAdmin, openEntry, openTrashDialog, openWithSystemPicker, pluginActions, propertiesLabel, queueClipboard, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties, updateExplorerRail]);
 
   const buildEmptyCtxItems = useCallback((): CtxItem[] => {
     const canUseNativeIntegration = supportsNativeIntegration(currentPath);
@@ -4109,13 +4116,14 @@ export function FileExplorer({
       { label:'New File...', icon:<FilePlus size={13}/>, action:() => openNew('file') },
       ...(clipboard ? [{ label:'Paste', icon:<Clipboard size={13}/>, action:() => paste() }] : []),
       { label: '', icon:null, divider:true, action:()=>{} },
+      ...(!isCloudExplorerPath(currentPath) ? [{ label:'Open Habitat in Filesystem Aquarium', icon:<Sparkles size={13}/>, action:() => onOpenInFilesystemAquarium(currentPath) }] : []),
       ...(canUseNativeIntegration ? [{ label:'Open Folder as Admin', icon:<Shield size={13}/>, action:() => openAsAdmin(currentPath) }] : []),
       ...(canUseNativeIntegration ? [{ label: revealPathLabel, icon:<Eye size={13}/>, action:() => revealExplorerPath(currentPath).catch(e => setError(String(e))) }] : []),
       ...(supportsNativeOpenWith && canUseNativeIntegration ? [{ label:'Open With...', icon:<ExternalLink size={13}/>, action:() => openWithSystemPicker(currentPath) }] : []),
       ...(supportsNativeProperties && canUseNativeIntegration ? [{ label: propertiesLabel, icon:<Info size={13}/>, action:() => showNativeProperties(currentPath) }] : []),
       { label:'Refresh', icon:<RefreshCw size={13}/>, action:() => refresh() },
     ];
-  }, [clipboard, currentPath, openAsAdmin, openWithSystemPicker, paste, propertiesLabel, refresh, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties]);
+  }, [clipboard, currentPath, isCloudExplorerPath, onOpenInFilesystemAquarium, openAsAdmin, openWithSystemPicker, paste, propertiesLabel, refresh, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties]);
 
   // ── Right-click ──
   const onRightClick = (e: React.MouseEvent, entry: FileEntry) => {
@@ -6299,6 +6307,17 @@ export function FileExplorer({
             >
               <Star size={11} />
               <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Pin</span>
+            </button>
+          )}
+          {currentPath && !currentPathIsCloud && (
+            <button
+              type="button"
+              onClick={() => onOpenInFilesystemAquarium(currentPath)}
+              title="Open this location as a live biome in Filesystem Aquarium"
+              style={toolbarChipButtonStyle(false)}
+            >
+              <Sparkles size={11} />
+              <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Aquarium</span>
             </button>
           )}
 

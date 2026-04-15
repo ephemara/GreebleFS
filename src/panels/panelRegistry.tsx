@@ -107,6 +107,7 @@ export function createBuiltInPanelDefinitions({
   pluginCommands,
   pluginExplorerActions,
   onOpenInTerminal,
+  onOpenInFilesystemAquarium,
   onAddBookmark,
   onRequestRepositoryImport,
   pendingRepositoryImports,
@@ -157,6 +158,7 @@ export function createBuiltInPanelDefinitions({
   pluginCommands: OverlayPluginCommandContribution[];
   pluginExplorerActions: OverlayPluginExplorerActionContribution[];
   onOpenInTerminal: (path: string) => void;
+  onOpenInFilesystemAquarium: (path: string) => void;
   onAddBookmark: (name: string, path: string) => Promise<void>;
   onRequestRepositoryImport: () => void;
   pendingRepositoryImports: string[];
@@ -225,6 +227,7 @@ export function createBuiltInPanelDefinitions({
           repositoryPicker={explorerRepoPicker}
           theme={explorerTheme}
           onOpenInTerminal={onOpenInTerminal}
+          onOpenInFilesystemAquarium={onOpenInFilesystemAquarium}
           onAddBookmark={onAddBookmark}
           pluginActions={pluginExplorerActions}
         />
