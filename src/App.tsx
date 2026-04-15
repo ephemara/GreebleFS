@@ -625,8 +625,7 @@ function App() {
   // The dedicated Wayland dock host must stay on the layer-shell geometry path
   // even during cross-window handoff, before its local persisted windowMode has
   // rehydrated to `overlay`.
-  const currentHostUsesWaylandDockLayerShell = usesSeparateWaylandDockHost
-    && currentWindowHostRole === DOCK_WINDOW_HOST_LABEL;
+  const currentHostUsesWaylandDockLayerShell = currentWindowHostRole === DOCK_WINDOW_HOST_LABEL;
   const isWaylandOverlaySession = runtimePlatform === 'linux'
     && linuxDisplayServer === 'wayland'
     && !isWindowedMode
@@ -1907,11 +1906,13 @@ function App() {
 
     listen<TerminalWindowMode>(SHOW_WINDOW_MODE_REQUEST_EVENT, event => {
       const nextWindowMode = event.payload === 'windowed' ? 'windowed' : 'overlay';
+      const shouldAcceptWaylandDockShowRequest = currentWindowHostRole === DOCK_WINDOW_HOST_LABEL
+        && nextWindowMode === 'overlay';
       const targetHostLabel = resolvePresentationHostLabel({
         windowMode: nextWindowMode,
         useSeparateWaylandDockHost: usesSeparateWaylandDockHost,
       });
-      if (currentWindowHostRole !== targetHostLabel) {
+      if (!shouldAcceptWaylandDockShowRequest && currentWindowHostRole !== targetHostLabel) {
         return;
       }
 
