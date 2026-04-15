@@ -34,6 +34,7 @@ import { isFrontendAnimationFile } from '../components/animationRuntime';
 import { getManagedContentDirectory } from './appContentDirectories';
 import { joinPlatformPath } from './platform';
 import { OVERLAY_SHELL_BLUEPRINTS } from './shellBlueprints';
+import { resolveRuntimeAssetPollingEnabled } from './runtimeAssetPolling';
 import type { WorkbenchRenderRuntimeKind } from './workbenchRenderRuntime';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 
