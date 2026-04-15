@@ -4,8 +4,9 @@
 
 - [x] Confirm canonical release commands
 - [x] Build production assets and bindings
-- [ ] Install the required appindicator development library on the Linux packaging host, then rerun `bun run release:linux:bundle`
-- [ ] Record exact artifact paths and signature status
+- [ ] Install a `pkg-config`-visible appindicator development package on the Linux bundle host and rerun `bun run release:linux:bundle`
+- [ ] Produce Linux `deb` / `rpm` / `AppImage` outputs from one clean bundle pass
+- [x] Record exact artifact paths and current signature status
 
 ## Delta — Integration And Docs
 
@@ -16,8 +17,9 @@
 
 ## Charlie — Validation And Evidence
 
-- [ ] Investigate or explicitly waive `fs_commands::tests::external_path_invalidation_refreshes_parent_directory_listing_cache`
-- [ ] Decide whether the long-running search/transfer Rust tests need isolation, extra timeout budget, or a targeted split
+- [ ] Stabilize the red `bun run test:unit` suite
+- [ ] Fix the repository-picker browser regression and rerun `bun run test:browser`
+- [ ] Re-run or explicitly waive `bun run test:rust`
 - [x] Complete checklist and build ledger
 - [x] Record bug sweep findings, blockers, and workarounds
 

@@ -10,16 +10,16 @@
 
 ## Validation
 
-- [x] Run tests relevant to shipping
+- [ ] Run tests relevant to shipping
 - [ ] Run lint or static analysis if required
-- [ ] Run typecheck or compile validation if required
+- [x] Run typecheck or compile validation if required
 - [x] Run production build or package dry run
 - [ ] Run targeted smoke verification on the produced artifact
 
 ## Artifacts
 
 - [ ] Produce Linux release artifacts
-- [ ] Record exact artifact paths
+- [x] Record exact artifact paths
 - [ ] Record checksums, signatures, or symbols if required
 - [ ] Copy or link artifacts into the release folder
 

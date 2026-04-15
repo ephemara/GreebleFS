@@ -2,13 +2,14 @@
 
 - Release ID: `v0.1.0-rc1`
 - Generated At (UTC): `2026-04-15T21:56:14Z`
+- Last Updated (America/New_York): `2026-04-15 18:24 EDT`
 - Release Folder: `/home/ephemara/Dev/Apps-2D/GreebleFS/release/v0.1.0-rc1`
 - Status: `blocked`
 - Decision: `blocked`
 
 ## Artifact Targets
 
-- [x] Canonical package and app identity updated to `GreebleFS`
+- [x] Native release binary produced
 - [ ] Linux `deb` / `rpm` / `AppImage` bundles produced
 - [ ] Checksums, signatures, or symbols if required
 - [x] Release notes and compatibility notes updated
@@ -16,33 +17,37 @@
 
 ## Command Highlights
 
-- `bun run build`
-- `bunx vitest run src/test/layoutProfiles.edge.test.ts src/test/appContentDirectories.test.ts`
-- `bunx vitest run --testTimeout 30000 src/test/settingsPage.behavior.test.tsx`
-- `bunx vitest run --testTimeout 30000 src/test/gitManager.behavior.test.tsx`
-- `bun run release:linux:bundle`
+- `bun run build` passed.
+- `bun run test:unit` failed with `9` files, `20` tests, and `2` unhandled errors.
+- `bun run test:browser` failed with `1` browser regression in repository-picker coverage.
+- `bun run test:rust` compiled and began running `src-tauri` tests but did not finish within the release pass window.
+- `bun run release:linux:bundle` built `/home/ephemara/Dev/Apps-2D/GreebleFS/src-tauri/target/release/greeblefs` and then failed in Tauri bundling with `Can't detect any appindicator library`.
+- `bunx vitest run src/test/gitManager.behavior.test.tsx -t "omits large untracked files from inline diffs without reading file contents"` passed as a targeted sanity rerun.
 
 ## Results
 
-- Passed:
-  - production frontend/native build
-  - targeted rename and release-surface tests
-  - legacy migration coverage for layout probes and app-content directory env overrides
-- Pending:
+- Produced:
+  - native release binary at `/home/ephemara/Dev/Apps-2D/GreebleFS/src-tauri/target/release/greeblefs`
+  - frontend production assets under `/home/ephemara/Dev/Apps-2D/GreebleFS/dist/`
+  - regenerated Specta bindings at `/home/ephemara/Dev/Apps-2D/GreebleFS/src/generated/tauri.ts`
+- Not produced:
   - Linux package artifacts under `src-tauri/target/release/bundle/`
-- Release-facing changes landed:
-  - package/app identity renamed to `GreebleFS`
-  - Tauri identifier changed to `co.greeblefs.app`
-  - Linux installer paths renamed to `~/.local/opt/greeblefs` and `~/.local/bin/greeblefs`
-  - old `overlayterm` plugin/runtime/storage contracts intentionally preserved for one RC via compatibility notes and fallback env/path handling
-  - release binary built at `src-tauri/target/release/greeblefs`
+  - checksums, signatures, or symbols
+- Release-facing rename and compatibility work remains present:
+  - package/app identity ships as `GreebleFS`
+  - Tauri identifier is `co.greeblefs.app`
+  - Linux installer paths target `~/.local/opt/greeblefs` and `~/.local/bin/greeblefs`
+  - legacy `overlayterm` plugin/runtime/storage contracts remain intentionally preserved for this RC via compatibility notes and fallback env/path handling
 
 ## Blockers
 
-- Linux bundle command compiles the release binary but aborts during bundling with `Can't detect any appindicator library`.
-- `bun run test:rust` is red/unstable in this workspace: one `fs_commands` test failed before a long-running search/transfer block forced the lane to be cut short.
-- Windows signing, macOS signing/notarization, and native-host packaging proof remain external follow-up work.
+- `bun run test:unit` is red.
+- `bun run test:browser` is red.
+- Linux packaging is blocked on appindicator detection through `pkg-config` on the current Linux bundle host.
+- `bun run test:rust` has no completed green result recorded for this pass.
+- Windows signing and macOS signing or notarization remain external follow-up work.
 
 ## Decision Rationale
 
-- The rename and migration slice is in place and the targeted release-surface tests now pass, but the release candidate stays blocked until at least one clean Linux bundle run finishes and the remaining cross-platform/signing tasks are explicitly handed off.
+- The release rename and compatibility slice is in place, and the production build itself succeeds, but the release candidate remains blocked because the declared validation gates are not green and the declared Linux package outputs were not produced.
+- If an internal binary drop is needed, `/home/ephemara/Dev/Apps-2D/GreebleFS/src-tauri/target/release/greeblefs` exists, but that is not equivalent to a release-ready bundle set.

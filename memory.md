@@ -1,5 +1,19 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Release Readiness Pass / v0.1.0-rc1
+
+- Ran a ship-room audit against the repo-declared Linux release path.
+- Durable release state:
+  - `bun run build` passes and exports bindings; the production frontend build completes and the optimized native binary exists at `src-tauri/target/release/greeblefs` when bundling runs.
+  - `bun run release:linux:bundle` currently fails after building the optimized binary because Tauri bundling cannot detect an appindicator package through `pkg-config` on the Linux host. Runtime `libayatana-appindicator3.so.1` is installed, but `pkg-config` cannot resolve `ayatana-appindicator3-0.1` or `appindicator3-0.1`, so the missing piece is likely the development package on the bundle machine.
+  - `bun run test:unit` is red with `9` failing files, `20` failing tests, and `2` unhandled errors. The failing areas include plugin watcher fallback timing, GitManager and telemetry expectations, generated binding expectations, workbench theme expectations, a settings composer timeout, terminal REPL behavior, and animation bundle count.
+  - `bun run test:browser` is red on the repository-picker current-folder title expectation.
+  - `bun run test:rust` compiles successfully and starts the `src-tauri` suite, but no green result was captured in the release pass because long-running filesystem search and transfer tests exceeded the time window.
+- Durable shipping decision:
+  - `v0.1.0-rc1` is blocked on both validation and Linux packaging even though the production build itself succeeds.
+- Recommended next step:
+  - fix the red JS and browser suites first, then rerun Rust to completion, then install the appindicator development package on the Linux bundle host and rerun `bun run release:linux:bundle`.
+
 ## 2026-04-15 — Release Candidate Rename / Compatibility Release Prep
 
 - Release-critical naming is now aligned on `GreebleFS` without breaking the legacy runtime surface in one pass.

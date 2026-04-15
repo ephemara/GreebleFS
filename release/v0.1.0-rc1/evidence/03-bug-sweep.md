@@ -11,34 +11,37 @@
 ## Findings
 
 - Severity: `high`
-  - Linux package artifacts were not produced because Tauri bundling aborted with `Can't detect any appindicator library`.
-- Severity: `high`
-  - `bun run test:rust` is not green. The lane reached a real failing test, `fs_commands::tests::external_path_invalidation_refreshes_parent_directory_listing_cache`, and then stalled in a long-running search/transfer cluster.
+  - Linux package artifacts were not produced in this pass. `bun run release:linux:bundle` built the optimized native binary and then aborted in the bundler with `Can't detect any appindicator library`, so there is still no packaged artifact to smoke-test.
 - Severity: `medium`
-  - `bun run build` still emits four Rust warnings from `src-tauri/src/terminal.rs`. They do not block compilation but should not remain invisible in a release gate.
+  - `bun run test:unit` is red with `9` failing files, `20` failing tests, and `2` unhandled errors. The failing areas include watcher fallback timing, GitManager and telemetry expectations, generated binding expectations, workbench theme expectations, one settings timeout, one terminal REPL assertion, and one animation-count assertion.
 - Severity: `medium`
-  - The Vite production build still emits oversized chunk warnings for `App` and `typescript`, which increases distribution size and startup risk.
+  - `bun run test:browser` is red on the repository-picker flow. That is a user-visible browser regression in a core explorer path, not just infrastructure noise.
 - Severity: `medium`
-  - Tauri warns that `co.greeblefs.app` ends with `.app`. Linux packaging is unaffected, but macOS bundle hygiene should be revisited before a public release.
+  - `bun run test:rust` compiled successfully and started the `src-tauri` suite, but no green result was recorded because long-running filesystem search and transfer tests exceeded the release-pass time budget.
 - Severity: `low`
-  - Legacy `OverlayTerm` runtime/plugin/event identifiers remain intentionally intact for compatibility in `v0.1.0-rc1`; this is a documented defer, not an accidental naming miss.
+  - `bun run build` still emits four Rust warnings from `src-tauri/src/terminal.rs`, and Vite still reports oversized chunks for `App` (`2.3M`) and `typescript` (`3.5M`).
+- Severity: `low`
+  - Tauri warns that `co.greeblefs.app` ends with `.app`. Linux packaging is unaffected, but macOS bundle-identity hygiene should be revisited before a public release.
 
 ## Logs And Evidence
 
-- Passing validation:
-  - `bunx vitest run src/test/layoutProfiles.edge.test.ts src/test/appContentDirectories.test.ts`
-  - `bunx vitest run --testTimeout 30000 src/test/settingsPage.behavior.test.tsx`
-  - `bunx vitest run --testTimeout 30000 src/test/gitManager.behavior.test.tsx`
-- Production build:
-  - `bun run build`
-- Rust validation:
+- Validation:
+  - `bun run test:unit`
+  - `bun run test:browser`
   - `bun run test:rust`
+- Production build and package:
+  - `bun run build`
+  - `bun run release:linux:bundle`
+- Targeted sanity rerun:
+  - `bunx vitest run src/test/gitManager.behavior.test.tsx -t "omits large untracked files from inline diffs without reading file contents"`
 - Compatibility reference:
   - `/home/ephemara/Dev/Apps-2D/GreebleFS/docs/release-compatibility.md`
 
 ## Exit Condition
 
 - Current ship blockers:
-  - missing packaged Linux artifacts due appindicator dependency gap
-  - red / unstable Rust test lane
-  - unsigned / unnotarized Windows and macOS release work
+  - red unit suite
+  - red browser suite
+  - missing packaged Linux artifacts
+  - no completed green Rust suite in the current ship pass
+  - unsigned or unnotarized Windows and macOS release work
