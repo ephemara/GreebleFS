@@ -2,7 +2,10 @@ import React, { useCallback, useMemo, useRef } from 'react';
 import { ChevronLeft, ChevronRight, Clipboard, Columns2, CopyPlus, Plus, SquareSplitHorizontal, X } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import type { ResolvedOverlayAppearance } from '../../config/appearance';
-import type { OverlayPluginExplorerActionContribution } from '../../config/pluginContributions';
+import type {
+  OverlayPluginContextMenuContribution,
+  OverlayPluginExplorerActionContribution,
+} from '../../config/pluginContributions';
 import type { ExplorerLayoutMode } from '../../config/layoutProfiles';
 import {
   resolveExplorerChromeSurfaceLayout,
@@ -25,9 +28,10 @@ interface ExplorerWorkspaceProps {
   theme: { accent: string; bg: string; bgPanel: string; text: string; border: string; textMuted: string };
   appearance?: ResolvedOverlayAppearance;
   onOpenInTerminal: (path: string) => void;
-  onOpenInFilesystemAquarium: (path: string) => void;
+  onOpenInFilesystemAquarium?: (path: string) => void;
   onAddBookmark: (name: string, path: string) => void | Promise<void>;
   pluginActions?: OverlayPluginExplorerActionContribution[];
+  pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   layoutMode?: ExplorerLayoutMode;
   chromeControlSurface?: 'toolbar' | 'topbar';
   repositoryPicker?: {
@@ -71,9 +75,10 @@ export function ExplorerWorkspace({
   theme,
   appearance,
   onOpenInTerminal,
-  onOpenInFilesystemAquarium,
+  onOpenInFilesystemAquarium = () => undefined,
   onAddBookmark,
   pluginActions = [],
+  pluginContextMenuItems = [],
   layoutMode = 'full',
   chromeControlSurface = 'toolbar',
   repositoryPicker = null,
@@ -339,6 +344,7 @@ export function ExplorerWorkspace({
           onAddBookmark={onAddBookmark}
           onOpenInFilesystemAquarium={onOpenInFilesystemAquarium}
           onOpenInTerminal={onOpenInTerminal}
+          pluginContextMenuItems={pluginContextMenuItems}
         />
       </div>
     );

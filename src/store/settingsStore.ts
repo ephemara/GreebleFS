@@ -37,6 +37,14 @@ import {
   type ExplorerChromeOverrideSnapshot,
 } from '../config/explorerChromeLayouts';
 import {
+  normalizeExplorerModeProfileId,
+  type ExplorerModeProfileId,
+} from '../config/explorerModeProfiles';
+import {
+  normalizeExplorerContextMenuItemOverrideMap,
+  type ExplorerContextMenuItemOverrideMap,
+} from '../config/explorerContextMenu';
+import {
   createDefaultKeybindingSettings,
   normalizeKeybindingSettings,
   type HotkeyBindingSettings,
@@ -70,7 +78,6 @@ import {
   DEFAULT_PILOT_UI_FONT_FAMILY,
   getThemeSelectionDefaults,
 } from '../config/pilotThemeContract';
-import { PRIMARY_EXPLORER_INSTANCE_ID, useExplorerStore } from './explorerStore';
 
 // ============================================================================
 // TYPES
@@ -133,7 +140,9 @@ export interface ExplorerSettings {
   confirmDelete: boolean;
   defaultFolderIcon: FolderIconValue;
   folderIconRules: FolderIconRule[];
+  modeProfileOverridesByThemeId: Record<string, ExplorerModeProfileId>;
   chromeLayoutOverridesByThemeId: Record<string, Record<string, ExplorerChromeOverrideSnapshot>>;
+  contextMenuItemOverrides: ExplorerContextMenuItemOverrideMap;
 }
 
 export interface AppearanceSettings {
@@ -261,6 +270,27 @@ export function normalizeExplorerFolderClickMode(value: unknown): ExplorerFolder
   return value === 'single' ? 'single' : 'double';
 }
 
+function normalizeExplorerModeProfileOverrideMap(
+  value: unknown,
+): Record<string, ExplorerModeProfileId> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .map(([themeId, modeProfileId]) => {
+        const trimmedThemeId = themeId.trim();
+        if (!trimmedThemeId) {
+          return null;
+        }
+
+        return [trimmedThemeId, normalizeExplorerModeProfileId(modeProfileId)] as const;
+      })
+      .filter((entry): entry is readonly [string, ExplorerModeProfileId] => entry != null),
+  );
+}
+
 function normalizeExplorerSettings(
   base: ExplorerSettings,
   updates?: Partial<ExplorerSettings>,
@@ -271,8 +301,12 @@ function normalizeExplorerSettings(
     updates?.experimentalViewMode ?? base.experimentalViewMode,
   );
   const hasExplicitExperimentalDensity = updates != null && Object.prototype.hasOwnProperty.call(updates, 'experimentalDensity');
+  const hasExplicitModeProfileOverrides = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'modeProfileOverridesByThemeId');
   const hasExplicitChromeLayoutOverrides = updates != null
     && Object.prototype.hasOwnProperty.call(updates, 'chromeLayoutOverridesByThemeId');
+  const hasExplicitContextMenuItemOverrides = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'contextMenuItemOverrides');
 
   return {
     ...base,
@@ -288,9 +322,15 @@ function normalizeExplorerSettings(
       ? normalizeAdaptiveSemanticDensity(updates?.experimentalDensity)
       : base.experimentalDensity,
     folderClickMode: normalizeExplorerFolderClickMode(updates?.folderClickMode ?? base.folderClickMode),
+    modeProfileOverridesByThemeId: hasExplicitModeProfileOverrides
+      ? normalizeExplorerModeProfileOverrideMap(updates?.modeProfileOverridesByThemeId)
+      : base.modeProfileOverridesByThemeId,
     chromeLayoutOverridesByThemeId: hasExplicitChromeLayoutOverrides
       ? normalizeExplorerChromeOverrideSnapshotMap(updates?.chromeLayoutOverridesByThemeId)
       : base.chromeLayoutOverridesByThemeId,
+    contextMenuItemOverrides: hasExplicitContextMenuItemOverrides
+      ? normalizeExplorerContextMenuItemOverrideMap(updates?.contextMenuItemOverrides)
+      : base.contextMenuItemOverrides,
   };
 }
 
@@ -580,7 +620,9 @@ export const defaultSettings: Settings = {
     confirmDelete: true,
     defaultFolderIcon: DEFAULT_FOLDER_ICON_VALUE,
     folderIconRules: createDefaultFolderIconRules(),
+    modeProfileOverridesByThemeId: {},
     chromeLayoutOverridesByThemeId: {},
+    contextMenuItemOverrides: {},
   },
   appearance: {
     theme: 'dark',
@@ -702,8 +744,14 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
         imported?.explorer?.experimentalDensity ?? base.explorer.experimentalDensity,
       ),
       folderClickMode: normalizeExplorerFolderClickMode(imported?.explorer?.folderClickMode ?? base.explorer.folderClickMode),
+      modeProfileOverridesByThemeId: normalizeExplorerModeProfileOverrideMap(
+        imported?.explorer?.modeProfileOverridesByThemeId ?? base.explorer.modeProfileOverridesByThemeId,
+      ),
       chromeLayoutOverridesByThemeId: normalizeExplorerChromeOverrideSnapshotMap(
         imported?.explorer?.chromeLayoutOverridesByThemeId ?? base.explorer.chromeLayoutOverridesByThemeId,
+      ),
+      contextMenuItemOverrides: normalizeExplorerContextMenuItemOverrideMap(
+        imported?.explorer?.contextMenuItemOverrides ?? base.explorer.contextMenuItemOverrides,
       ),
     },
     appearance: {
@@ -750,6 +798,8 @@ interface SettingsState {
   updateTerminal: (updates: Partial<TerminalSettings>) => void;
   updatePython: (updates: Partial<PythonSettings>) => void;
   updateExplorer: (updates: Partial<ExplorerSettings>) => void;
+  setExplorerModeProfileOverride: (themeId: string, modeProfileId: ExplorerModeProfileId) => void;
+  clearExplorerModeProfileOverride: (themeId: string) => void;
   setExplorerChromeLayoutOverride: (
     themeId: string,
     layoutId: ExplorerChromeLayoutId,
@@ -817,6 +867,50 @@ export const useSettingsStore = create<SettingsState>()(
           explorer: normalizeExplorerSettings(state.settings.explorer, updates),
         },
       })),
+
+      setExplorerModeProfileOverride: (themeId, modeProfileId) => set((state) => {
+        const trimmedThemeId = themeId.trim();
+        if (!trimmedThemeId) {
+          return state;
+        }
+
+        return {
+          settings: {
+            ...state.settings,
+            explorer: {
+              ...state.settings.explorer,
+              modeProfileOverridesByThemeId: normalizeExplorerModeProfileOverrideMap({
+                ...state.settings.explorer.modeProfileOverridesByThemeId,
+                [trimmedThemeId]: normalizeExplorerModeProfileId(modeProfileId),
+              }),
+            },
+          },
+        };
+      }),
+
+      clearExplorerModeProfileOverride: (themeId) => set((state) => {
+        const trimmedThemeId = themeId.trim();
+        if (!trimmedThemeId) {
+          return state;
+        }
+
+        const nextModeProfileOverridesByThemeId = {
+          ...state.settings.explorer.modeProfileOverridesByThemeId,
+        };
+        delete nextModeProfileOverridesByThemeId[trimmedThemeId];
+
+        return {
+          settings: {
+            ...state.settings,
+            explorer: {
+              ...state.settings.explorer,
+              modeProfileOverridesByThemeId: normalizeExplorerModeProfileOverrideMap(
+                nextModeProfileOverridesByThemeId,
+              ),
+            },
+          },
+        };
+      }),
 
       setExplorerChromeLayoutOverride: (themeId, layoutId, snapshot) => set((state) => {
         const trimmedThemeId = themeId.trim();
@@ -887,14 +981,6 @@ export const useSettingsStore = create<SettingsState>()(
         }
 
         const themeDefaults = getThemeSelectionDefaults(normalizedThemeId);
-        if (themeDefaults?.explorerSession) {
-          const explorerState = useExplorerStore.getState();
-          const targetInstanceIds = Object.keys(explorerState.sessions);
-          for (const instanceId of (targetInstanceIds.length > 0 ? targetInstanceIds : [PRIMARY_EXPLORER_INSTANCE_ID])) {
-            explorerState.updateSessionForInstance(instanceId, themeDefaults.explorerSession);
-          }
-        }
-
         set((state) => {
           const appearanceUpdates: Partial<AppearanceSettings> = {
             activeThemeId: normalizedThemeId,

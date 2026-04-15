@@ -123,6 +123,7 @@ export const pilotWorkbenchThemeRecipe: OverlayWorkbenchThemeRecipe = {
 export const pilotExplorerThemeRecipe: OverlayExplorerThemeRecipe = {
   preset: 'workbench',
   chromeLayoutId: 'default',
+  defaultModeProfileId: 'balanced',
   railPosition: 'left',
   railBrandLabel: 'Explorer',
   toolbarStyle: 'solid',

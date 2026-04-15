@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Camera, FolderOpen, GitBranch, HardDrive, Image, LayoutGrid, MonitorPlay, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Type, VolumeX } from 'lucide-react';
+import { ArrowDown, ArrowUp, Camera, FolderOpen, GitBranch, HardDrive, Image, LayoutGrid, MonitorPlay, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Type, VolumeX } from 'lucide-react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useShallow } from 'zustand/react/shallow';
 import type { LoadedOverlayAnimation } from './animationRuntime';
@@ -53,6 +53,16 @@ import {
   explorerViewModes,
   getExplorerViewModeDefinition,
 } from '../config/explorerViewModes';
+import {
+  BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS,
+  buildExplorerContextMenuOverrideMap,
+  createLegacyExplorerActionContextMenuContributions,
+  isExplorerContextMenuItemEnabled,
+  moveExplorerContextMenuItem,
+  normalizePluginContextMenuContributions,
+  sortExplorerContextMenuItems,
+  withExplorerContextMenuItemEnabled,
+} from '../config/explorerContextMenu';
 import { getBuiltInIconTheme } from '../config/iconTheme';
 import { animationSystemConfig, resolvePreferredAnimationId } from '../config/animations';
 import {
@@ -96,6 +106,10 @@ import {
   type HotkeyBindingKey,
 } from '../config/hotkeys';
 import { screenshotFeatureConfig, type ScreenshotOutputActionId } from '../config/screenshots';
+import type {
+  OverlayPluginContextMenuContribution,
+  OverlayPluginExplorerActionContribution,
+} from '../config/pluginContributions';
 import { useSettingsStore, resolveSystemPresentationState, type TerminalWindowMode } from '../store/settingsStore';
 import { useTerminalStore } from '../store/terminalStore';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
@@ -618,6 +632,8 @@ export function SettingsPage({
   onRefreshWallpapers,
   onOpenWallpapersFolder,
   onImportWallpaperFiles,
+  pluginContextMenuItems = [],
+  pluginExplorerActions = [],
 }: {
   appearance: ResolvedOverlayAppearance;
   themePackages: LoadedOverlayThemePackage[];
@@ -649,6 +665,8 @@ export function SettingsPage({
   onRefreshWallpapers: () => Promise<void>;
   onOpenWallpapersFolder: () => Promise<void>;
   onImportWallpaperFiles: (files: File[]) => Promise<void>;
+  pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
+  pluginExplorerActions?: OverlayPluginExplorerActionContribution[];
 }) {
   const platform = useMemo(() => detectClientPlatform(), []);
   const platformLabel = useMemo(() => {
@@ -709,6 +727,23 @@ export function SettingsPage({
   const [layoutManifestState, setLayoutManifestState] = useState<LoadedLayoutManifest>(DEFAULT_LOADED_LAYOUT_MANIFEST);
   const [railWidth, setRailWidth] = usePersistentPanelSize('overlayterm-settings-rail-width', 236, 190, 320);
   const wallpaperFileInputRef = useRef<HTMLInputElement | null>(null);
+  const contextMenuCatalog = useMemo(
+    () => sortExplorerContextMenuItems(
+      [
+        ...BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS,
+        ...normalizePluginContextMenuContributions([
+          ...pluginContextMenuItems,
+          ...createLegacyExplorerActionContextMenuContributions(pluginExplorerActions),
+        ]),
+      ],
+      settings.explorer.contextMenuItemOverrides,
+    ),
+    [
+      pluginContextMenuItems,
+      pluginExplorerActions,
+      settings.explorer.contextMenuItemOverrides,
+    ],
+  );
   const availableAnimations = useMemo(
     () => animations.filter(animation => !animation.error),
     [animations],
@@ -917,6 +952,52 @@ export function SettingsPage({
   const applyDockThemeSelection = useCallback((themeId: string) => {
     applyDockThemeSelectionWithDefaults(themeId);
   }, [applyDockThemeSelectionWithDefaults]);
+  const toggleContextMenuItemEnabled = useCallback((itemId: string, enabled: boolean) => {
+    const item = contextMenuCatalog.find(entry => entry.id === itemId);
+    if (!item) {
+      return;
+    }
+
+    updateExplorer({
+      contextMenuItemOverrides: withExplorerContextMenuItemEnabled(
+        settings.explorer.contextMenuItemOverrides,
+        item,
+        enabled,
+      ),
+    });
+  }, [contextMenuCatalog, settings.explorer.contextMenuItemOverrides, updateExplorer]);
+  const moveContextMenuItem = useCallback((itemId: string, direction: 'up' | 'down') => {
+    updateExplorer({
+      contextMenuItemOverrides: moveExplorerContextMenuItem(
+        contextMenuCatalog,
+        settings.explorer.contextMenuItemOverrides,
+        itemId,
+        direction,
+      ),
+    });
+  }, [contextMenuCatalog, settings.explorer.contextMenuItemOverrides, updateExplorer]);
+  const resetContextMenuLayout = useCallback(() => {
+    updateExplorer({
+      contextMenuItemOverrides: buildExplorerContextMenuOverrideMap(
+        sortExplorerContextMenuItems(
+          [
+            ...BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS,
+            ...normalizePluginContextMenuContributions([
+              ...pluginContextMenuItems,
+              ...createLegacyExplorerActionContextMenuContributions(pluginExplorerActions),
+            ]),
+          ],
+          {},
+        ),
+        settings.explorer.contextMenuItemOverrides,
+      ),
+    });
+  }, [
+    pluginContextMenuItems,
+    pluginExplorerActions,
+    settings.explorer.contextMenuItemOverrides,
+    updateExplorer,
+  ]);
 
   const updateThemePalette = useCallback((patch: Partial<OverlayThemeDefinition['palette']>) => {
     persistTheme({
@@ -3347,6 +3428,98 @@ export function SettingsPage({
                     onChange={event => updateExplorer({ confirmDelete: event.target.checked })}
                   />
                 </label>
+              </div>
+
+              <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Context Menu Composer</div>
+                    <p className="mt-1 text-[11px] opacity-40">
+                      Every explorer menu item now resolves through a typed catalog. Built-ins and plugin items share the same ordering and visibility controls.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={resetContextMenuLayout}
+                    className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                    style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                  >
+                    Normalize Order
+                  </button>
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  {contextMenuCatalog.map((item, index) => {
+                    const enabled = isExplorerContextMenuItemEnabled(item.id, settings.explorer.contextMenuItemOverrides);
+                    const isFirst = index === 0;
+                    const isLast = index === contextMenuCatalog.length - 1;
+                    const sourceLabel = item.source === 'built-in'
+                      ? 'Built-in'
+                      : `Plugin · ${item.pluginName}`;
+                    const contextLabel = item.contexts.join(' + ');
+                    const executionLabel = item.execution.kind === 'plugin-backend'
+                      ? `Backend · ${item.execution.entry}`
+                      : item.execution.kind === 'terminal-template'
+                        ? 'Terminal Template'
+                        : 'Host Action';
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="rounded border px-3 py-3"
+                        style={{ borderColor: enabled ? border : `${border}99`, background: enabled ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.015)', opacity: enabled ? 1 : 0.78 }}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-[11px] font-semibold">{item.title}</div>
+                            <div className="mt-1 flex flex-wrap gap-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] opacity-60">
+                              <ThemeBadge label={sourceLabel} />
+                              <ThemeBadge label={contextLabel} />
+                              <ThemeBadge label={executionLabel} />
+                            </div>
+                            {item.description && (
+                              <p className="mt-2 text-[11px] opacity-45">{item.description}</p>
+                            )}
+                          </div>
+                          <label className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70">
+                            <span>Enabled</span>
+                            <input
+                              type="checkbox"
+                              checked={enabled}
+                              onChange={event => toggleContextMenuItemEnabled(item.id, event.target.checked)}
+                            />
+                          </label>
+                        </div>
+
+                        <div className="mt-3 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => moveContextMenuItem(item.id, 'up')}
+                            disabled={isFirst}
+                            className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                            style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: isFirst ? muted : text, opacity: isFirst ? 0.5 : 1 }}
+                          >
+                            <ArrowUp size={11} />
+                            Up
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveContextMenuItem(item.id, 'down')}
+                            disabled={isLast}
+                            className="inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                            style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: isLast ? muted : text, opacity: isLast ? 0.5 : 1 }}
+                          >
+                            <ArrowDown size={11} />
+                            Down
+                          </button>
+                          <span className="text-[10px] opacity-45">
+                            Slot {(index + 1).toString().padStart(2, '0')}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>

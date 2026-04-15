@@ -19,6 +19,32 @@ export interface OverlayPluginExplorerActionContribution {
   runOnSelect: boolean;
 }
 
+export type OverlayPluginContextMenuContributionExecution =
+  | {
+    kind: 'terminal-template';
+    command: string;
+    runOnSelect: boolean;
+  }
+  | {
+    kind: 'plugin-backend';
+    entry: string;
+    args: string[];
+  };
+
+export interface OverlayPluginContextMenuContribution {
+  id: string;
+  pluginId: string;
+  pluginName: string;
+  title: string;
+  description?: string;
+  contexts: Array<'entry' | 'background'>;
+  appliesTo: 'any' | 'file' | 'directory';
+  group?: string;
+  defaultOrder?: number;
+  iconName?: string;
+  execution: OverlayPluginContextMenuContributionExecution;
+}
+
 export interface OverlayPluginCommandContext {
   path: string;
   name: string;

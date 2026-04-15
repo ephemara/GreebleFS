@@ -23,6 +23,11 @@ import {
   normalizeExplorerChromeLayoutId,
   type ExplorerChromeLayoutId,
 } from './explorerChromeLayouts';
+import {
+  defaultExplorerModeProfileId,
+  normalizeExplorerModeProfileId,
+  type ExplorerModeProfileId,
+} from './explorerModeProfiles';
 
 export type OverlayExplorerThemePreset = 'workbench' | 'xmb' | 'channel-grid' | 'custom';
 export type OverlayExplorerToolbarStyle = 'solid' | 'glass' | 'floating' | 'minimal';
@@ -96,6 +101,7 @@ export interface OverlayExplorerThemeTypography {
 export interface OverlayExplorerThemeRecipe {
   preset?: OverlayExplorerThemePreset;
   chromeLayoutId?: ExplorerChromeLayoutId;
+  defaultModeProfileId?: ExplorerModeProfileId;
   layoutPrimitiveId?: string;
   navigationPatternId?: string;
   renderStyleId?: string;
@@ -119,6 +125,7 @@ export interface OverlayExplorerThemeRecipe {
 export interface ResolvedExplorerThemeRecipe {
   preset: OverlayExplorerThemePreset;
   chromeLayoutId: ExplorerChromeLayoutId;
+  defaultModeProfileId: ExplorerModeProfileId | null;
   layoutPrimitiveId: string | null;
   navigationPatternId: string | null;
   renderStyleId: string | null;
@@ -272,6 +279,9 @@ export function normalizeExplorerThemeRecipe(
   const next: OverlayExplorerThemeRecipe = {
     preset: recipe?.preset ?? fallback?.preset,
     chromeLayoutId: normalizeExplorerChromeLayoutId(recipe?.chromeLayoutId ?? fallback?.chromeLayoutId),
+    defaultModeProfileId: normalizeExplorerModeProfileId(
+      recipe?.defaultModeProfileId ?? fallback?.defaultModeProfileId ?? defaultExplorerModeProfileId,
+    ),
     layoutPrimitiveId: asTrimmedString(recipe?.layoutPrimitiveId) ?? asTrimmedString(fallback?.layoutPrimitiveId),
     navigationPatternId: asTrimmedString(recipe?.navigationPatternId) ?? asTrimmedString(fallback?.navigationPatternId),
     renderStyleId: asTrimmedString(recipe?.renderStyleId) ?? asTrimmedString(fallback?.renderStyleId),
@@ -376,6 +386,7 @@ function createPresetRecipe(preset: OverlayExplorerThemePreset): OverlayExplorer
     case 'xmb':
       return {
         preset,
+        defaultModeProfileId: 'navigator',
         railPosition: 'left',
         railBrandLabel: 'Cross Media',
         toolbarStyle: 'floating',
@@ -445,6 +456,7 @@ function createPresetRecipe(preset: OverlayExplorerThemePreset): OverlayExplorer
     case 'channel-grid':
       return {
         preset,
+        defaultModeProfileId: 'navigator',
         railPosition: 'left',
         railBrandLabel: 'Channels',
         toolbarStyle: 'minimal',
@@ -514,6 +526,7 @@ function createPresetRecipe(preset: OverlayExplorerThemePreset): OverlayExplorer
     case 'custom':
       return {
         preset,
+        defaultModeProfileId: 'balanced',
         railPosition: 'left',
         railBrandLabel: 'Explorer',
         toolbarStyle: 'solid',
@@ -529,6 +542,7 @@ function createPresetRecipe(preset: OverlayExplorerThemePreset): OverlayExplorer
     default:
       return {
         preset: 'workbench',
+        defaultModeProfileId: 'balanced',
         railPosition: 'left',
         railBrandLabel: 'Explorer',
         toolbarStyle: 'solid',
@@ -969,6 +983,12 @@ export function resolveExplorerThemeRecipe(
     ?? engineRecipe.preferredExperimentalViewMode
     ?? presetRecipe.preferredExperimentalViewMode
     ?? null;
+  const defaultModeProfileId = normalizeExplorerModeProfileId(
+    userRecipe?.defaultModeProfileId
+      ?? engineRecipe.defaultModeProfileId
+      ?? presetRecipe.defaultModeProfileId
+      ?? defaultExplorerModeProfileId,
+  );
 
   const cssVars = {
     '--overlay-explorer-root-bg': surfaces.rootBackground,
@@ -1027,6 +1047,7 @@ export function resolveExplorerThemeRecipe(
       ?? presetRecipe.chromeLayoutId
       ?? defaultExplorerChromeLayoutId,
     ),
+    defaultModeProfileId,
     layoutPrimitiveId: engineBindings.layoutPrimitive?.id ?? null,
     navigationPatternId: engineBindings.navigationPattern?.id ?? null,
     renderStyleId: engineBindings.renderStyle?.id ?? null,

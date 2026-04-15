@@ -4,6 +4,7 @@ import { parse as parseToml } from 'smol-toml';
 import type { OverlayRegisteredFontContribution } from './appearance';
 import type {
   OverlayPluginCommandContribution,
+  OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
 } from './pluginContributions';
 import { joinPlatformPath } from './platform';
@@ -58,6 +59,24 @@ interface PluginPackageExplorerActionManifest {
   runOnSelect?: boolean;
 }
 
+interface PluginPackageContextMenuItemManifest {
+  id?: string;
+  title?: string;
+  label?: string;
+  description?: string;
+  contexts?: Array<'entry' | 'background'>;
+  appliesTo?: 'any' | 'file' | 'directory';
+  group?: string;
+  order?: number;
+  iconName?: string;
+  command?: string;
+  runOnSelect?: boolean;
+  backend?: {
+    entry?: string;
+    args?: string[];
+  };
+}
+
 interface PluginPackageManifest {
   version?: number;
   id?: string;
@@ -72,6 +91,7 @@ interface PluginPackageManifest {
     fonts?: PluginPackageFontManifest[];
     commands?: PluginPackageCommandManifest[];
     explorerActions?: PluginPackageExplorerActionManifest[];
+    contextMenuItems?: PluginPackageContextMenuItemManifest[];
   };
 }
 
@@ -89,6 +109,7 @@ export interface OverlayPluginDiscoveryResult {
   fonts: OverlayRegisteredFontContribution[];
   commands: OverlayPluginCommandContribution[];
   explorerActions: OverlayPluginExplorerActionContribution[];
+  contextMenuItems: OverlayPluginContextMenuContribution[];
   warnings: string[];
 }
 
@@ -210,6 +231,55 @@ function asExplorerActionManifestArray(value: unknown): PluginPackageExplorerAct
   });
 }
 
+function asContextMenuItemManifestArray(value: unknown): PluginPackageContextMenuItemManifest[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap(entry => {
+    const record = asRecord(entry);
+    if (!record) {
+      return [];
+    }
+
+    const backendRecord = asRecord(record.backend);
+    const command = asString(record.command);
+    const backendEntry = asString(backendRecord?.entry);
+    if (!command && !backendEntry) {
+      return [];
+    }
+
+    const contexts = Array.isArray(record.contexts)
+      ? record.contexts.filter(
+        (value): value is 'entry' | 'background' => value === 'entry' || value === 'background',
+      )
+      : [];
+    const appliesTo = asString(record.appliesTo, 'any');
+
+    return [{
+      id: asString(record.id),
+      title: asString(record.title) || asString(record.label),
+      label: asString(record.label),
+      description: asString(record.description),
+      contexts: contexts.length > 0 ? contexts : ['entry'],
+      appliesTo: appliesTo === 'file' || appliesTo === 'directory' ? appliesTo : 'any',
+      group: asString(record.group),
+      order: typeof record.order === 'number' && Number.isFinite(record.order)
+        ? Math.round(record.order)
+        : undefined,
+      iconName: asString(record.iconName),
+      command,
+      runOnSelect: asBoolean(record.runOnSelect),
+      backend: backendEntry
+        ? {
+          entry: backendEntry,
+          args: asStringArray(backendRecord?.args),
+        }
+        : undefined,
+    }];
+  });
+}
+
 function parsePluginManifestText(text: string, filePath: string): PluginPackageManifest {
   const trimmed = text.trim();
   if (!trimmed) {
@@ -239,6 +309,7 @@ function parsePluginManifestText(text: string, filePath: string): PluginPackageM
       fonts: asFontManifestArray(contributions?.fonts),
       commands: asCommandManifestArray(contributions?.commands),
       explorerActions: asExplorerActionManifestArray(contributions?.explorerActions),
+      contextMenuItems: asContextMenuItemManifestArray(contributions?.contextMenuItems),
     },
   };
 }
@@ -432,6 +503,7 @@ async function loadPluginPackage(
     fonts: [],
     commands: [],
     explorerActions: [],
+    contextMenuItems: [],
     warnings: [],
   };
 
@@ -550,6 +622,60 @@ async function loadPluginPackage(
     }))),
   );
 
+  result.contextMenuItems.push(
+    ...((record.manifest.contributions?.contextMenuItems ?? []).flatMap((item, index) => {
+      const title = item.title || item.label || deriveDisplayNameFromFilePath(item.command || item.backend?.entry || 'context-menu-item');
+      const stableId = item.id || deriveIdFromName(title, 'context-menu-item');
+
+      if (item.backend?.entry) {
+        if (!isSafeRelativePath(item.backend.entry)) {
+          packageWarnings.push(`context menu item ${title}: invalid backend entry path`);
+          return [];
+        }
+
+        return [{
+          id: `${packageId}.context-menu.${stableId}`,
+          pluginId: packageId,
+          pluginName: packageName,
+          title,
+          description: asString(item.description),
+          contexts: item.contexts && item.contexts.length > 0 ? item.contexts : ['entry'],
+          appliesTo: item.appliesTo ?? 'any',
+          group: asString(item.group) || 'plugin',
+          defaultOrder: item.order ?? (700 + index * 10),
+          iconName: asString(item.iconName) || 'Puzzle',
+          execution: {
+            kind: 'plugin-backend' as const,
+            entry: normalizeRelativePath(item.backend.entry),
+            args: item.backend.args ?? [],
+          },
+        }];
+      }
+
+      if (!item.command) {
+        return [];
+      }
+
+      return [{
+        id: `${packageId}.context-menu.${stableId}`,
+        pluginId: packageId,
+        pluginName: packageName,
+        title,
+        description: asString(item.description),
+        contexts: item.contexts && item.contexts.length > 0 ? item.contexts : ['entry'],
+        appliesTo: item.appliesTo ?? 'any',
+        group: asString(item.group) || 'plugin',
+        defaultOrder: item.order ?? (700 + index * 10),
+        iconName: asString(item.iconName) || 'Puzzle',
+        execution: {
+          kind: 'terminal-template' as const,
+          command: item.command,
+          runOnSelect: item.runOnSelect ?? true,
+        },
+      }];
+    })),
+  );
+
   if (packagePlugin) {
     const capabilities: OverlayPluginCapabilitySummary = {
       panel: true,
@@ -558,6 +684,7 @@ async function loadPluginPackage(
       fonts: result.fonts.length,
       commands: result.commands.length,
       explorerActions: result.explorerActions.length,
+      contextMenuItems: result.contextMenuItems.length,
     };
     result.plugins.push({
       ...packagePlugin,
@@ -583,6 +710,7 @@ export async function discoverOverlayPlugins(
     fonts: [],
     commands: [],
     explorerActions: [],
+    contextMenuItems: [],
     warnings: [],
   };
 
@@ -605,6 +733,7 @@ export async function discoverOverlayPlugins(
     fonts: [],
     commands: [],
     explorerActions: [],
+    contextMenuItems: [],
     warnings: [],
   };
 
@@ -643,6 +772,7 @@ export async function discoverOverlayPlugins(
       aggregate.fonts.push(...packageResult.fonts);
       aggregate.commands.push(...packageResult.commands);
       aggregate.explorerActions.push(...packageResult.explorerActions);
+      aggregate.contextMenuItems.push(...packageResult.contextMenuItems);
       aggregate.warnings.push(...packageResult.warnings);
     } catch (error) {
       aggregate.warnings.push(`${directory.name}: ${String(error)}`);
@@ -655,6 +785,7 @@ export async function discoverOverlayPlugins(
   aggregate.fonts.sort((left, right) => left.name.localeCompare(right.name));
   aggregate.commands.sort((left, right) => left.name.localeCompare(right.name));
   aggregate.explorerActions.sort((left, right) => left.label.localeCompare(right.label));
+  aggregate.contextMenuItems.sort((left, right) => left.title.localeCompare(right.title));
 
   return aggregate;
 }

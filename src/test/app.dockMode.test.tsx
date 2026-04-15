@@ -115,6 +115,7 @@ vi.mock('../runtime/useFolderPluginRuntime', () => ({
     pluginFonts: [],
     pluginCommands: [],
     pluginExplorerActions: [],
+    pluginContextMenuItems: [],
     folderPluginsError: null,
     folderPluginsLoading: false,
     openPluginsFolder: vi.fn(async () => {}),

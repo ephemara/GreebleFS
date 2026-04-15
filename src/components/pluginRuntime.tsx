@@ -100,6 +100,7 @@ export interface OverlayPluginCapabilitySummary {
   fonts: number;
   commands: number;
   explorerActions: number;
+  contextMenuItems: number;
 }
 
 export interface OverlayPluginDiagnostics {
@@ -175,6 +176,7 @@ export async function loadPluginFromSource(
       fonts: options?.diagnostics?.capabilities?.fonts ?? 0,
       commands: options?.diagnostics?.capabilities?.commands ?? 0,
       explorerActions: options?.diagnostics?.capabilities?.explorerActions ?? 0,
+      contextMenuItems: options?.diagnostics?.capabilities?.contextMenuItems ?? 0,
     },
   };
 

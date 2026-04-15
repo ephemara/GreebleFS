@@ -20,6 +20,7 @@ import {
 } from '../components/pluginRuntime';
 import type {
   OverlayPluginCommandContribution,
+  OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
 } from '../config/pluginContributions';
 import type { LoadedOverlayShader } from '../components/shaderRuntime';
@@ -38,6 +39,7 @@ export interface UseFolderPluginRuntimeResult {
   pluginFonts: OverlayRegisteredFontContribution[];
   pluginCommands: OverlayPluginCommandContribution[];
   pluginExplorerActions: OverlayPluginExplorerActionContribution[];
+  pluginContextMenuItems: OverlayPluginContextMenuContribution[];
   folderPluginsError: string | null;
   folderPluginsLoading: boolean;
   openPluginsFolder: () => Promise<void>;
@@ -60,6 +62,7 @@ export function useFolderPluginRuntime(
   const [pluginFonts, setPluginFonts] = useState<OverlayRegisteredFontContribution[]>([]);
   const [pluginCommands, setPluginCommands] = useState<OverlayPluginCommandContribution[]>([]);
   const [pluginExplorerActions, setPluginExplorerActions] = useState<OverlayPluginExplorerActionContribution[]>([]);
+  const [pluginContextMenuItems, setPluginContextMenuItems] = useState<OverlayPluginContextMenuContribution[]>([]);
   const [folderPluginsError, setFolderPluginsError] = useState<string | null>(null);
   const [folderPluginsLoading, setFolderPluginsLoading] = useState(true);
 
@@ -152,6 +155,7 @@ export function useFolderPluginRuntime(
       setPluginFonts([]);
       setPluginCommands([]);
       setPluginExplorerActions([]);
+      setPluginContextMenuItems([]);
       setFolderPluginsError(null);
       setFolderPluginsLoading(false);
       return;
@@ -199,6 +203,7 @@ export function useFolderPluginRuntime(
           setPluginFonts(discovered.fonts);
           setPluginCommands(discovered.commands);
           setPluginExplorerActions(discovered.explorerActions);
+          setPluginContextMenuItems(discovered.contextMenuItems);
           setFolderPluginsError(discovered.warnings.length > 0 ? discovered.warnings.join('\n') : null);
         } catch (error) {
           setFolderPlugins([]);
@@ -207,6 +212,7 @@ export function useFolderPluginRuntime(
           setPluginFonts([]);
           setPluginCommands([]);
           setPluginExplorerActions([]);
+          setPluginContextMenuItems([]);
           setFolderPluginsError(String(error));
         } finally {
           setFolderPluginsLoading(false);
@@ -370,6 +376,7 @@ export function useFolderPluginRuntime(
     pluginFonts,
     pluginCommands,
     pluginExplorerActions,
+    pluginContextMenuItems,
     folderPluginsError,
     folderPluginsLoading,
     openPluginsFolder,

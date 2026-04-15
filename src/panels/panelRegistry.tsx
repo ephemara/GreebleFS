@@ -3,6 +3,7 @@ import { Terminal as TerminalIcon, FolderOpen, GitBranch, StickyNote, Camera, Pu
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import type {
   OverlayPluginCommandContribution,
+  OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
 } from '../config/pluginContributions';
 import TerminalOverlay from '../components/TerminalOverlay';
@@ -106,6 +107,7 @@ export function createBuiltInPanelDefinitions({
   hideOverlay,
   pluginCommands,
   pluginExplorerActions,
+  pluginContextMenuItems,
   onOpenInTerminal,
   onOpenInFilesystemAquarium,
   onAddBookmark,
@@ -157,6 +159,7 @@ export function createBuiltInPanelDefinitions({
   hideOverlay: () => void;
   pluginCommands: OverlayPluginCommandContribution[];
   pluginExplorerActions: OverlayPluginExplorerActionContribution[];
+  pluginContextMenuItems: OverlayPluginContextMenuContribution[];
   onOpenInTerminal: (path: string) => void;
   onOpenInFilesystemAquarium: (path: string) => void;
   onAddBookmark: (name: string, path: string) => Promise<void>;
@@ -230,6 +233,7 @@ export function createBuiltInPanelDefinitions({
           onOpenInFilesystemAquarium={onOpenInFilesystemAquarium}
           onAddBookmark={onAddBookmark}
           pluginActions={pluginExplorerActions}
+          pluginContextMenuItems={pluginContextMenuItems}
         />
       ),
     },
@@ -365,6 +369,8 @@ export function createBuiltInPanelDefinitions({
             onRefreshWallpapers={onRefreshWallpapers}
             onOpenWallpapersFolder={onOpenWallpapersFolder}
             onImportWallpaperFiles={onImportWallpaperFiles}
+            pluginContextMenuItems={pluginContextMenuItems}
+            pluginExplorerActions={pluginExplorerActions}
           />
         </DeferredPanel>
       ),

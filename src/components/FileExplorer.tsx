@@ -23,7 +23,18 @@ import {
   FilePlus, FolderPlus, CopyPlus, Save, Tags, Undo2,
 } from 'lucide-react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
-import type { OverlayPluginExplorerActionContribution } from '../config/pluginContributions';
+import {
+  BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS,
+  createLegacyExplorerActionContextMenuContributions,
+  isExplorerContextMenuItemEnabled,
+  normalizePluginContextMenuContributions,
+  sortExplorerContextMenuItems,
+  type ExplorerContextMenuItemGroup,
+} from '../config/explorerContextMenu';
+import type {
+  OverlayPluginContextMenuContribution,
+  OverlayPluginExplorerActionContribution,
+} from '../config/pluginContributions';
 import { getExplorerRailWidthBounds } from '../config/explorerRail';
 import {
   explorerExperimentalModes,
@@ -79,6 +90,7 @@ import {
   joinPlatformPath,
   type RuntimePlatform,
 } from '../config/platform';
+import { pluginSystemConfig } from '../config/plugins';
 import {
   recordExplorerPerformanceSample,
   type ExplorerPerformanceMetadata,
@@ -1316,7 +1328,59 @@ function SvgIcon({ src, size = 20 }: { src: string; size?: number }) {
 
 // ─── Context menu ─────────────────────────────────────────────────────────────
 
-interface CtxItem { label: string; icon: React.ReactNode; danger?: boolean; divider?: boolean; action: () => void; }
+interface CtxItem {
+  id: string;
+  group: ExplorerContextMenuItemGroup;
+  defaultOrder: number;
+  label: string;
+  icon: React.ReactNode;
+  danger?: boolean;
+  divider?: boolean;
+  action: () => void | Promise<void>;
+}
+
+function resolveContextMenuIcon(iconName?: string): React.ReactNode {
+  switch (iconName) {
+    case 'Clipboard':
+      return <Clipboard size={13} />;
+    case 'Copy':
+      return <Copy size={13} />;
+    case 'CopyPlus':
+      return <CopyPlus size={13} />;
+    case 'Edit3':
+      return <Edit3 size={13} />;
+    case 'ExternalLink':
+      return <ExternalLink size={13} />;
+    case 'Eye':
+      return <Eye size={13} />;
+    case 'FilePlus':
+      return <FilePlus size={13} />;
+    case 'FolderPlus':
+      return <FolderPlus size={13} />;
+    case 'Info':
+      return <Info size={13} />;
+    case 'Puzzle':
+      return <Puzzle size={13} />;
+    case 'RefreshCw':
+      return <RefreshCw size={13} />;
+    case 'Scissors':
+      return <Scissors size={13} />;
+    case 'Shield':
+      return <Shield size={13} />;
+    case 'Sparkles':
+      return <Sparkles size={13} />;
+    case 'Star':
+      return <Star size={13} />;
+    case 'Tags':
+      return <Tags size={13} />;
+    case 'Terminal':
+      return <Terminal size={13} />;
+    case 'Trash2':
+      return <Trash2 size={13} />;
+    default:
+      return <Puzzle size={13} />;
+  }
+}
 
 function ContextMenu({ state, items, onClose }: { state: ContextMenuState; items: CtxItem[]; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -2186,9 +2250,10 @@ interface FileExplorerProps {
   appearance?: ResolvedOverlayAppearance;
   explorerBackend?: ExplorerBackendContract;
   onOpenInTerminal: (path: string) => void;
-  onOpenInFilesystemAquarium: (path: string) => void;
+  onOpenInFilesystemAquarium?: (path: string) => void;
   onAddBookmark: (name: string, path: string) => void;
   pluginActions?: OverlayPluginExplorerActionContribution[];
+  pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   layoutMode?: ExplorerLayoutMode;
   instanceId?: ExplorerInstanceId;
   chromeControlSurface?: 'toolbar' | 'topbar';
@@ -2207,9 +2272,10 @@ export function FileExplorer({
   appearance,
   explorerBackend = explorerBackendContract,
   onOpenInTerminal,
-  onOpenInFilesystemAquarium,
+  onOpenInFilesystemAquarium = () => undefined,
   onAddBookmark,
   pluginActions = [],
+  pluginContextMenuItems = [],
   layoutMode = 'full',
   instanceId = PRIMARY_EXPLORER_INSTANCE_ID,
   chromeControlSurface = 'toolbar',
@@ -4119,6 +4185,80 @@ export function FileExplorer({
   const propertiesLabel = runtimePlatform === 'macos' ? 'Get Info' : 'Properties';
   const supportsNativeOpenWith = runtimePlatform !== 'linux';
   const supportsNativeProperties = runtimePlatform !== 'linux';
+  const resolvedPluginContextMenuItems = useMemo(
+    () => normalizePluginContextMenuContributions([
+      ...pluginContextMenuItems,
+      ...createLegacyExplorerActionContextMenuContributions(pluginActions),
+    ]),
+    [pluginActions, pluginContextMenuItems],
+  );
+  const finalizeContextMenuItems = useCallback((items: CtxItem[]): CtxItem[] => {
+    const visibleItems = items.filter(item => isExplorerContextMenuItemEnabled(
+      item.id,
+      explorerSettings.contextMenuItemOverrides,
+    ));
+    const sortedItems = sortExplorerContextMenuItems(
+      visibleItems,
+      explorerSettings.contextMenuItemOverrides,
+    );
+    const finalizedItems: CtxItem[] = [];
+
+    sortedItems.forEach((item, index) => {
+      const previousItem = sortedItems[index - 1];
+      if (previousItem && previousItem.group !== item.group) {
+        finalizedItems.push({
+          id: `divider-${previousItem.id}-${item.id}`,
+          group: item.group,
+          defaultOrder: item.defaultOrder - 1,
+          label: '',
+          icon: null,
+          divider: true,
+          action: () => undefined,
+        });
+      }
+      finalizedItems.push(item);
+    });
+
+    return finalizedItems;
+  }, [explorerSettings.contextMenuItemOverrides]);
+  const executePluginContextMenuItem = useCallback(async (
+    contribution: ReturnType<typeof normalizePluginContextMenuContributions>[number],
+    context: {
+      path: string;
+      name: string;
+      parent: string;
+      extension: string;
+      stem: string;
+      isDirectory: boolean;
+    },
+  ) => {
+    if (contribution.execution.kind === 'plugin-backend') {
+      const resolvedArgs = contribution.execution.args.map(argument => resolvePluginCommandTemplate(argument, {
+        ...context,
+        pluginId: contribution.pluginId,
+        pluginName: contribution.pluginName,
+      }));
+      const result = await commands
+        .pluginRunBackend(
+          pluginSystemConfig.pluginsDirectory,
+          contribution.pluginId,
+          contribution.execution.entry,
+          resolvedArgs,
+        )
+        .then(unwrapTauriResult);
+      if (result.status !== 0) {
+        throw new Error(result.stderr.trim() || `Plugin backend exited with status ${result.status}`);
+      }
+      return;
+    }
+
+    const resolvedCommand = resolvePluginCommandTemplate(contribution.execution.command, {
+      ...context,
+      pluginId: contribution.pluginId,
+      pluginName: contribution.pluginName,
+    });
+    dispatchTerminalCommand(resolvedCommand, contribution.execution.runOnSelect);
+  }, []);
 
   // ── Context menu builder ──
   const buildCtxItems = useCallback((entry: FileEntry): CtxItem[] => {
@@ -4126,97 +4266,226 @@ export function FileExplorer({
     const parentPath = entry.path.replace(/[/\\\\][^/\\\\]+$/, '');
     const stem = entry.name.replace(/\.[^.]+$/, '');
     const canUseNativeIntegration = supportsNativeIntegration(entry.path);
-    const matchedPluginActions = pluginActions
-      .filter(action => (
-        action.appliesTo === 'any'
-        || (action.appliesTo === 'directory' && entry.is_dir)
-        || (action.appliesTo === 'file' && !entry.is_dir)
+    const builtInItems = BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS.flatMap(item => {
+      if (!item.contexts.includes('entry')) {
+        return [];
+      }
+      if (item.appliesTo === 'directory' && !entry.is_dir) {
+        return [];
+      }
+      if (item.appliesTo === 'file' && entry.is_dir) {
+        return [];
+      }
+
+      const sharedItem = {
+        id: item.id,
+        group: item.group,
+        defaultOrder: item.defaultOrder,
+        icon: resolveContextMenuIcon(item.iconName),
+      };
+
+      switch (item.execution.actionId) {
+        case 'open':
+          return [{ ...sharedItem, label: 'Open', action: () => openEntry(entry) }];
+        case 'open-with':
+          return supportsNativeOpenWith && canUseNativeIntegration
+            ? [{ ...sharedItem, label: 'Open With...', action: () => openWithSystemPicker(entry.path) }]
+            : [];
+        case 'open-admin':
+          return canUseNativeIntegration
+            ? [{
+              ...sharedItem,
+              label: entry.is_dir ? 'Open Folder as Admin' : 'Open as Admin',
+              action: () => openAsAdmin(entry.path),
+            }]
+            : [];
+        case 'open-terminal':
+          return entry.is_dir && !isCloudExplorerPath(entry.path)
+            ? [{ ...sharedItem, label: 'Open in Terminal', action: () => onOpenInTerminal(entry.path) }]
+            : [];
+        case 'open-aquarium':
+          return !isCloudExplorerPath(entry.path) && (entry.is_dir || parentPath)
+            ? [{
+              ...sharedItem,
+              label: entry.is_dir ? 'Open Habitat in Filesystem Aquarium' : 'Open Parent Habitat in Filesystem Aquarium',
+              action: () => onOpenInFilesystemAquarium(entry.is_dir ? entry.path : parentPath),
+            }]
+            : [];
+        case 'reveal':
+          return canUseNativeIntegration
+            ? [{ ...sharedItem, label: revealPathLabel, action: () => revealExplorerPath(entry.path).catch(e => setError(String(e))) }]
+            : [];
+        case 'properties':
+          return supportsNativeProperties && canUseNativeIntegration
+            ? [{ ...sharedItem, label: propertiesLabel, action: () => showNativeProperties(entry.path) }]
+            : [];
+        case 'copy-path':
+          return [{ ...sharedItem, label: 'Copy Path', action: () => copyToSysClipboard(entry.path) }];
+        case 'copy':
+          return [{ ...sharedItem, label: 'Copy', action: () => queueClipboard('copy', entry) }];
+        case 'cut':
+          return [{ ...sharedItem, label: 'Cut', action: () => queueClipboard('cut', entry) }];
+        case 'duplicate':
+          return [{ ...sharedItem, label: 'Duplicate', action: () => duplicate(entry) }];
+        case 'rename':
+          return [{ ...sharedItem, label: 'Rename (F2)', action: () => setRename({ active: true, path: entry.path, name: entry.name }) }];
+        case 'add-tags':
+          return [{
+            ...sharedItem,
+            label: 'Add Tags...',
+            action: () => {
+              const input = window.prompt('Add tags (comma-separated):', '');
+              if (input) {
+                void applyTagsToPaths([entry.path], input, 'add');
+              }
+            },
+          }];
+        case 'remove-tags':
+          return [{
+            ...sharedItem,
+            label: 'Remove Tags...',
+            action: () => {
+              const input = window.prompt('Remove tags (comma-separated):', '');
+              if (input) {
+                void applyTagsToPaths([entry.path], input, 'remove');
+              }
+            },
+          }];
+        case 'bookmark-toggle':
+          return [{
+            ...sharedItem,
+            icon: isBookmarked ? <StarOff size={13} /> : <Star size={13} />,
+            label: isBookmarked ? 'Remove Bookmark' : 'Add to Bookmarks',
+            action: () => {
+              if (isBookmarked) {
+                updateExplorerRail(removeExplorerBookmarksByPath(explorerRail, entry.path));
+                return;
+              }
+
+              const result = upsertExplorerBookmark(explorerRail, {
+                path: entry.path,
+                name: entry.name,
+                isDirectory: entry.is_dir,
+              });
+              updateExplorerRail(result.snapshot);
+              if (result.created) {
+                handleBookmarkCreated(entry.name, entry.path);
+              }
+            },
+          }];
+        case 'move-trash':
+          return [{
+            ...sharedItem,
+            label: 'Move to Trash',
+            danger: true,
+            action: () => openTrashDialog([entry]),
+          }];
+        default:
+          return [];
+      }
+    });
+    const pluginItems = resolvedPluginContextMenuItems
+      .filter(item => item.contexts.includes('entry'))
+      .filter(item => (
+        item.appliesTo === 'any'
+        || (item.appliesTo === 'directory' && entry.is_dir)
+        || (item.appliesTo === 'file' && !entry.is_dir)
       ))
-      .map(action => ({
-        label: `${action.pluginName}: ${action.label}`,
-        icon: <Puzzle size={13} />,
-        action: () => {
-          const resolvedCommand = resolvePluginCommandTemplate(action.command, {
-            path: entry.path,
-            name: entry.name,
-            parent: parentPath,
-            extension: entry.extension,
-            stem,
-            isDirectory: entry.is_dir,
-            pluginId: action.pluginId,
-            pluginName: action.pluginName,
-          });
-          dispatchTerminalCommand(resolvedCommand, action.runOnSelect);
-        },
+      .map(item => ({
+        id: item.id,
+        group: item.group,
+        defaultOrder: item.defaultOrder,
+        label: item.title,
+        icon: resolveContextMenuIcon(item.iconName),
+        action: () => executePluginContextMenuItem(item, {
+          path: entry.path,
+          name: entry.name,
+          parent: parentPath,
+          extension: entry.extension,
+          stem,
+          isDirectory: entry.is_dir,
+        }).catch(error => setError(String(error))),
       }));
 
-    return [
-      { label:'Open',               icon:<ExternalLink size={13}/>, action:() => openEntry(entry) },
-      ...(supportsNativeOpenWith && canUseNativeIntegration ? [{ label:'Open With...', icon:<ExternalLink size={13}/>, action:() => openWithSystemPicker(entry.path) }] : []),
-      ...(canUseNativeIntegration ? [{ label: entry.is_dir ? 'Open Folder as Admin' : 'Open as Admin', icon:<Shield size={13}/>, action:() => openAsAdmin(entry.path) }] : []),
-      ...(entry.is_dir && !isCloudExplorerPath(entry.path) ? [{ label:'Open in Terminal', icon:<Terminal size={13}/>, action:() => onOpenInTerminal(entry.path) }] : []),
-      ...(!isCloudExplorerPath(entry.path) && (entry.is_dir || parentPath) ? [{
-        label: entry.is_dir ? 'Open Habitat in Filesystem Aquarium' : 'Open Parent Habitat in Filesystem Aquarium',
-        icon:<Sparkles size={13}/>,
-        action:() => onOpenInFilesystemAquarium(entry.is_dir ? entry.path : parentPath),
-      }] : []),
-      ...(canUseNativeIntegration ? [{ label: revealPathLabel, icon:<Eye size={13}/>, action:() => revealExplorerPath(entry.path).catch(e=>setError(String(e))) }] : []),
-      ...(supportsNativeProperties && canUseNativeIntegration ? [{ label: propertiesLabel, icon:<Info size={13}/>, action:() => showNativeProperties(entry.path) }] : []),
-      { label:'Copy Path',          icon:<Copy size={13}/>,         action:() => copyToSysClipboard(entry.path) },
-      { label: '', icon:null, divider:true, action:()=>{} },
-      { label:'Copy',               icon:<Copy size={13}/>,         action:() => queueClipboard('copy', entry) },
-      { label:'Cut',                icon:<Scissors size={13}/>,     action:() => queueClipboard('cut', entry) },
-      { label:'Duplicate',          icon:<CopyPlus size={13}/>,     action:() => duplicate(entry) },
-      { label:'Rename (F2)',        icon:<Edit3 size={13}/>,        action:() => setRename({ active:true, path:entry.path, name:entry.name }) },
-      { label:'Add Tags...',        icon:<Tags size={13}/>,         action:() => {
-        const input = window.prompt('Add tags (comma-separated):', '');
-        if (input) {
-          void applyTagsToPaths([entry.path], input, 'add');
-        }
-      } },
-      { label:'Remove Tags...',     icon:<Tags size={13}/>,         action:() => {
-        const input = window.prompt('Remove tags (comma-separated):', '');
-        if (input) {
-          void applyTagsToPaths([entry.path], input, 'remove');
-        }
-      } },
-      { label: '', icon:null, divider:true, action:()=>{} },
-      { label: isBookmarked ? 'Remove Bookmark' : 'Add to Bookmarks', icon: isBookmarked ? <StarOff size={13}/> : <Star size={13}/>, action:() => {
-        if (isBookmarked) {
-          updateExplorerRail(removeExplorerBookmarksByPath(explorerRail, entry.path));
-        } else {
-          const result = upsertExplorerBookmark(explorerRail, {
-            path: entry.path,
-            name: entry.name,
-            isDirectory: entry.is_dir,
-          });
-          updateExplorerRail(result.snapshot);
-          if (result.created) {
-            handleBookmarkCreated(entry.name, entry.path);
-          }
-        }
-      }},
-      ...(matchedPluginActions.length > 0 ? [{ label: '', icon:null, divider:true, action:()=>{} }, ...matchedPluginActions] : []),
-      { label: '', icon:null, divider:true, action:()=>{} },
-      { label:'Move to Trash', icon:<Trash2 size={13}/>, danger:true, action:() => openTrashDialog([entry]) },
-    ];
-  }, [applyTagsToPaths, bookmarkPathSet, copyToSysClipboard, duplicate, explorerRail, handleBookmarkCreated, isCloudExplorerPath, onOpenInFilesystemAquarium, onOpenInTerminal, openAsAdmin, openEntry, openTrashDialog, openWithSystemPicker, pluginActions, propertiesLabel, queueClipboard, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties, updateExplorerRail]);
+    return finalizeContextMenuItems([
+      ...builtInItems,
+      ...pluginItems,
+    ]);
+  }, [applyTagsToPaths, bookmarkPathSet, copyToSysClipboard, duplicate, executePluginContextMenuItem, explorerRail, explorerSettings.contextMenuItemOverrides, finalizeContextMenuItems, handleBookmarkCreated, isCloudExplorerPath, onOpenInFilesystemAquarium, onOpenInTerminal, openAsAdmin, openEntry, openTrashDialog, openWithSystemPicker, propertiesLabel, queueClipboard, resolvedPluginContextMenuItems, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties, updateExplorerRail]);
 
   const buildEmptyCtxItems = useCallback((): CtxItem[] => {
     const canUseNativeIntegration = supportsNativeIntegration(currentPath);
-    return [
-      { label:'New Folder', icon:<FolderPlus size={13}/>, action:() => openNew('folder') },
-      { label:'New File...', icon:<FilePlus size={13}/>, action:() => openNew('file') },
-      ...(clipboard ? [{ label:'Paste', icon:<Clipboard size={13}/>, action:() => paste() }] : []),
-      { label: '', icon:null, divider:true, action:()=>{} },
-      ...(!isCloudExplorerPath(currentPath) ? [{ label:'Open Habitat in Filesystem Aquarium', icon:<Sparkles size={13}/>, action:() => onOpenInFilesystemAquarium(currentPath) }] : []),
-      ...(canUseNativeIntegration ? [{ label:'Open Folder as Admin', icon:<Shield size={13}/>, action:() => openAsAdmin(currentPath) }] : []),
-      ...(canUseNativeIntegration ? [{ label: revealPathLabel, icon:<Eye size={13}/>, action:() => revealExplorerPath(currentPath).catch(e => setError(String(e))) }] : []),
-      ...(supportsNativeOpenWith && canUseNativeIntegration ? [{ label:'Open With...', icon:<ExternalLink size={13}/>, action:() => openWithSystemPicker(currentPath) }] : []),
-      ...(supportsNativeProperties && canUseNativeIntegration ? [{ label: propertiesLabel, icon:<Info size={13}/>, action:() => showNativeProperties(currentPath) }] : []),
-      { label:'Refresh', icon:<RefreshCw size={13}/>, action:() => refresh() },
-    ];
-  }, [clipboard, currentPath, isCloudExplorerPath, onOpenInFilesystemAquarium, openAsAdmin, openWithSystemPicker, paste, propertiesLabel, refresh, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties]);
+    const pathSegments = currentPath.split(/[/\\]/).filter(Boolean);
+    const pathName = pathSegments[pathSegments.length - 1] ?? currentPath;
+    const pathParent = currentPath.replace(/[/\\][^/\\]+$/, '');
+    const builtInItems = BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS.flatMap(item => {
+      if (!item.contexts.includes('background')) {
+        return [];
+      }
+
+      const sharedItem = {
+        id: item.id,
+        group: item.group,
+        defaultOrder: item.defaultOrder,
+        icon: resolveContextMenuIcon(item.iconName),
+      };
+
+      switch (item.execution.actionId) {
+        case 'new-folder':
+          return [{ ...sharedItem, label: 'New Folder', action: () => openNew('folder') }];
+        case 'new-file':
+          return [{ ...sharedItem, label: 'New File...', action: () => openNew('file') }];
+        case 'paste':
+          return clipboard ? [{ ...sharedItem, label: 'Paste', action: () => paste() }] : [];
+        case 'open-aquarium':
+          return !isCloudExplorerPath(currentPath)
+            ? [{ ...sharedItem, label: 'Open Habitat in Filesystem Aquarium', action: () => onOpenInFilesystemAquarium(currentPath) }]
+            : [];
+        case 'open-admin':
+          return canUseNativeIntegration
+            ? [{ ...sharedItem, label: 'Open Folder as Admin', action: () => openAsAdmin(currentPath) }]
+            : [];
+        case 'reveal':
+          return canUseNativeIntegration
+            ? [{ ...sharedItem, label: revealPathLabel, action: () => revealExplorerPath(currentPath).catch(e => setError(String(e))) }]
+            : [];
+        case 'open-with':
+          return supportsNativeOpenWith && canUseNativeIntegration
+            ? [{ ...sharedItem, label: 'Open With...', action: () => openWithSystemPicker(currentPath) }]
+            : [];
+        case 'properties':
+          return supportsNativeProperties && canUseNativeIntegration
+            ? [{ ...sharedItem, label: propertiesLabel, action: () => showNativeProperties(currentPath) }]
+            : [];
+        case 'refresh':
+          return [{ ...sharedItem, label: 'Refresh', action: () => refresh() }];
+        default:
+          return [];
+      }
+    });
+    const pluginItems = resolvedPluginContextMenuItems
+      .filter(item => item.contexts.includes('background'))
+      .map(item => ({
+        id: item.id,
+        group: item.group,
+        defaultOrder: item.defaultOrder,
+        label: item.title,
+        icon: resolveContextMenuIcon(item.iconName),
+        action: () => executePluginContextMenuItem(item, {
+          path: currentPath,
+          name: pathName,
+          parent: pathParent,
+          extension: '',
+          stem: pathName,
+          isDirectory: true,
+        }).catch(error => setError(String(error))),
+      }));
+
+    return finalizeContextMenuItems([
+      ...builtInItems,
+      ...pluginItems,
+    ]);
+  }, [clipboard, currentPath, executePluginContextMenuItem, finalizeContextMenuItems, isCloudExplorerPath, onOpenInFilesystemAquarium, openAsAdmin, openWithSystemPicker, paste, propertiesLabel, refresh, resolvedPluginContextMenuItems, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties]);
 
   // ── Right-click ──
   const onRightClick = (e: React.MouseEvent, entry: FileEntry) => {

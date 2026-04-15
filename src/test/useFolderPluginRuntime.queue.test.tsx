@@ -6,6 +6,7 @@ import * as explorerBackend from '../runtime/explorerBackend';
 import { commands } from '../runtime/tauriClient';
 import * as pluginPackages from '../config/pluginPackages';
 import { useFolderPluginRuntime } from '../runtime/useFolderPluginRuntime';
+import type { ExplorerFileEntry } from '../runtime/explorerBackend';
 
 const directoryEntries = [
   {
@@ -15,7 +16,7 @@ const directoryEntries = [
     extension: 'tsx',
     modified: 1711111111111,
   },
-];
+] as ExplorerFileEntry[];
 
 const emptyDiscoveryResult: pluginPackages.OverlayPluginDiscoveryResult = {
   plugins: [],
@@ -24,6 +25,7 @@ const emptyDiscoveryResult: pluginPackages.OverlayPluginDiscoveryResult = {
   fonts: [],
   commands: [],
   explorerActions: [],
+  contextMenuItems: [],
   warnings: [],
 };
 
