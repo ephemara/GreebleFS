@@ -104,6 +104,10 @@ interface TreeRowProps {
   onDragLeaveFolder: () => void;
 }
 
+const EXPLORER_RAIL_DENSE_WIDTH = 260;
+const EXPLORER_RAIL_ULTRA_DENSE_WIDTH = 220;
+const EXPLORER_RAIL_VERBOSE_DRAG_GUIDE_MIN_WIDTH = 320;
+
 export function ExplorerSideRail({
   accent,
   brandLabel,
@@ -135,8 +139,9 @@ export function ExplorerSideRail({
   const restoreRailBackup = useExplorerStore((state) => state.restoreRailBackup);
   const clearPersistenceNotice = useExplorerStore((state) => state.clearPersistenceNotice);
 
-  const dense = isCompactDock || sidebarWidth < 260;
-  const ultraDense = isCompactDock || sidebarWidth < 220;
+  const dense = isCompactDock || sidebarWidth < EXPLORER_RAIL_DENSE_WIDTH;
+  const ultraDense = isCompactDock || sidebarWidth < EXPLORER_RAIL_ULTRA_DENSE_WIDTH;
+  const showVerboseDragGuide = !isCompactDock && sidebarWidth >= EXPLORER_RAIL_VERBOSE_DRAG_GUIDE_MIN_WIDTH;
   const [isManageMode, setIsManageMode] = useState(false);
   const [draftFolderParentId, setDraftFolderParentId] = useState<string | null | false>(false);
   const [draftFolderName, setDraftFolderName] = useState('New Folder');
@@ -310,7 +315,7 @@ export function ExplorerSideRail({
           <span style={railMetaPillStyle}>
             {bookmarkCount} pinned
           </span>
-          {!dense && (
+          {showVerboseDragGuide && (
             <span style={railMetaPillStyle}>
               Plain drag exports files. Shift keeps drag inside the explorer.
             </span>
@@ -343,7 +348,7 @@ export function ExplorerSideRail({
         </button>
       ),
     },
-  ], [accent, bookmarkCount, brandLabel, dense, isManageMode, locationLabel, locationTitle]);
+  ], [accent, bookmarkCount, brandLabel, isManageMode, locationLabel, locationTitle, showVerboseDragGuide]);
   const railChromeControlRegistryById = useMemo(
     () => new Map(railChromeControlRegistry.map((entry) => [entry.id, entry])),
     [railChromeControlRegistry],
@@ -1191,6 +1196,8 @@ const railMetaPillStyle: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: 5,
+  minWidth: 0,
+  maxWidth: '100%',
   borderRadius: 999,
   border: '1px solid var(--overlay-explorer-chip-border)',
   background: 'var(--overlay-explorer-chip-bg)',

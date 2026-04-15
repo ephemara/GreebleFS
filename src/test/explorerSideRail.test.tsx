@@ -25,6 +25,7 @@ describe('ExplorerSideRail', () => {
       <ExplorerSideRail
         accent="#7c3aed"
         brandLabel="Explorer"
+        chromeLayoutId="default"
         sidebarWidth={220}
         currentPath="M:\\OverlayTerm"
         drives={[]}
@@ -71,6 +72,7 @@ describe('ExplorerSideRail', () => {
       <ExplorerSideRail
         accent="#7c3aed"
         brandLabel="Explorer"
+        chromeLayoutId="default"
         sidebarWidth={240}
         currentPath="M:\\Workspace"
         drives={[]}
@@ -88,11 +90,46 @@ describe('ExplorerSideRail', () => {
     expect(screen.getByLabelText(/remove bookmark node/i)).toBeInTheDocument();
   }, 20000);
 
+  it('only shows the verbose drag guide when the rail is wide enough for it', () => {
+    const baseProps = {
+      accent: '#7c3aed',
+      brandLabel: 'Explorer',
+      currentPath: 'M:\\Workspace',
+      drives: [],
+      drivesLoading: false,
+      isCompactDock: false,
+      onNavigate: vi.fn(),
+      onGoHome: vi.fn(),
+      onBookmarkCreated: vi.fn(),
+      resolveDroppedSources: () => [],
+      chromeLayoutId: 'default' as const,
+    };
+    const { rerender } = render(
+      <ExplorerSideRail
+        {...baseProps}
+        sidebarWidth={264}
+      />,
+    );
+
+    expect(screen.getByText('0 pinned')).toBeInTheDocument();
+    expect(screen.queryByText(/plain drag exports files/i)).not.toBeInTheDocument();
+
+    rerender(
+      <ExplorerSideRail
+        {...baseProps}
+        sidebarWidth={336}
+      />,
+    );
+
+    expect(screen.getByText(/plain drag exports files/i)).toBeInTheDocument();
+  }, 20000);
+
   it('stores collapsed section state when sections are toggled', () => {
     render(
       <ExplorerSideRail
         accent="#7c3aed"
         brandLabel="Explorer"
+        chromeLayoutId="default"
         sidebarWidth={220}
         currentPath="M:\\OverlayTerm"
         drives={[]}
@@ -116,6 +153,7 @@ describe('ExplorerSideRail', () => {
       <ExplorerSideRail
         accent="#7c3aed"
         brandLabel="Explorer"
+        chromeLayoutId="default"
         sidebarWidth={240}
         currentPath="M:\\OverlayTerm"
         drives={[]}
