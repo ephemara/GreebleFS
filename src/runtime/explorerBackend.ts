@@ -276,6 +276,7 @@ export type ExplorerBackendContract = {
   writeFile: typeof writeExplorerFile;
   readTextFile: typeof readExplorerTextFile;
   readFileBase64: typeof readExplorerFileBase64;
+  readImageThumbnail: typeof readExplorerImageThumbnail;
   renamePath: typeof renameExplorerPath;
   deletePath: typeof deleteExplorerPath;
   trashPaths: typeof trashExplorerPaths;
@@ -553,6 +554,17 @@ export async function readExplorerFileBase64(path: string): Promise<string> {
   return unwrapTauriResult(await commands.fsReadFileBase64(path));
 }
 
+export async function readExplorerImageThumbnail(
+  path: string,
+  maxWidth: number,
+  maxHeight: number,
+): Promise<string> {
+  if (isCloudExplorerPath(path)) {
+    return readExplorerFileBase64(path);
+  }
+  return unwrapTauriResult(await commands.fsReadImageThumbnail(path, maxWidth, maxHeight));
+}
+
 export async function renameExplorerPath(oldPath: string, newPath: string): Promise<void> {
   if (isCloudExplorerPath(oldPath) || isCloudExplorerPath(newPath)) {
     if (!isCloudExplorerPath(oldPath) || !isCloudExplorerPath(newPath)) {
@@ -699,6 +711,7 @@ export const explorerBackendContract: ExplorerBackendContract = {
   writeFile: writeExplorerFile,
   readTextFile: readExplorerTextFile,
   readFileBase64: readExplorerFileBase64,
+  readImageThumbnail: readExplorerImageThumbnail,
   renamePath: renameExplorerPath,
   deletePath: deleteExplorerPath,
   trashPaths: trashExplorerPaths,

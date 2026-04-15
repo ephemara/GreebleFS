@@ -4026,6 +4026,8 @@ pub async fn git_exec(repo_path: String, args: Vec<String>) -> Result<String, St
 // Returns the file as a data-URI so the frontend can render it without
 // needing the asset:// protocol (which requires allow-listed paths).
 const FS_READ_FILE_BASE64_MAX_BYTES: u64 = 12 * 1024 * 1024;
+const FS_READ_IMAGE_THUMBNAIL_MAX_BYTES: u64 = 64 * 1024 * 1024;
+const FS_READ_IMAGE_THUMBNAIL_MAX_DIMENSION: u32 = 1024;
 
 #[tauri::command]
 #[specta::specta]
@@ -4066,6 +4068,97 @@ pub async fn fs_read_file_base64(path: String) -> Result<String, String> {
     // Use a simple base64 encoder (no external crate needed — stdlib in Rust is fine)
     let b64 = base64_encode(&buf);
     Ok(format!("data:{};base64,{}", mime, b64))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_read_image_thumbnail(
+    path: String,
+    max_width: u32,
+    max_height: u32,
+) -> Result<String, String> {
+    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+    if meta.len() > FS_READ_IMAGE_THUMBNAIL_MAX_BYTES {
+        return Err("Image is too large to thumbnail (> 64 MB)".to_string());
+    }
+
+    validate_image_thumbnail_bounds(max_width, max_height)?;
+
+    let extension = std::path::Path::new(&path)
+        .extension()
+        .map(|value| value.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    if extension == "svg" {
+        return fs_read_file_base64(path).await;
+    }
+
+    let image = read_image_file_as_rgba(std::path::Path::new(&path))?;
+    let thumbnail = resize_image_to_fit(&image, max_width, max_height);
+    let png = encode_rgba_image_as_png(&thumbnail)?;
+    Ok(format!("data:image/png;base64,{}", base64_encode(&png)))
+}
+
+fn validate_image_thumbnail_bounds(max_width: u32, max_height: u32) -> Result<(), String> {
+    if max_width == 0 || max_height == 0 {
+        return Err("Thumbnail bounds must be greater than zero.".to_string());
+    }
+    if max_width > FS_READ_IMAGE_THUMBNAIL_MAX_DIMENSION
+        || max_height > FS_READ_IMAGE_THUMBNAIL_MAX_DIMENSION
+    {
+        return Err(format!(
+            "Thumbnail bounds must be <= {} px.",
+            FS_READ_IMAGE_THUMBNAIL_MAX_DIMENSION
+        ));
+    }
+    Ok(())
+}
+
+fn read_image_file_as_rgba(path: &std::path::Path) -> Result<image::RgbaImage, String> {
+    use image::ImageReader;
+
+    ImageReader::open(path)
+        .map_err(|error| format!("Failed to open image '{}': {}", path.display(), error))?
+        .with_guessed_format()
+        .map_err(|error| format!("Failed to detect image format for '{}': {}", path.display(), error))?
+        .decode()
+        .map(|image| image.to_rgba8())
+        .map_err(|error| format!("Failed to decode image '{}': {}", path.display(), error))
+}
+
+fn resize_image_to_fit(
+    image: &image::RgbaImage,
+    max_width: u32,
+    max_height: u32,
+) -> image::RgbaImage {
+    use image::imageops::{resize, FilterType};
+
+    if image.width() <= max_width && image.height() <= max_height {
+        return image.clone();
+    }
+
+    let scale = f32::min(
+        max_width as f32 / image.width() as f32,
+        max_height as f32 / image.height() as f32,
+    );
+    let next_width = ((image.width() as f32) * scale).round().max(1.0) as u32;
+    let next_height = ((image.height() as f32) * scale).round().max(1.0) as u32;
+    resize(image, next_width, next_height, FilterType::Lanczos3)
+}
+
+fn encode_rgba_image_as_png(image: &image::RgbaImage) -> Result<Vec<u8>, String> {
+    use image::codecs::png::PngEncoder;
+    use image::{ColorType, ImageEncoder};
+
+    let mut bytes = Vec::new();
+    PngEncoder::new(&mut bytes)
+        .write_image(
+            image.as_raw(),
+            image.width(),
+            image.height(),
+            ColorType::Rgba8.into(),
+        )
+        .map_err(|error| format!("Failed to encode thumbnail as PNG: {}", error))?;
+    Ok(bytes)
 }
 
 /// Minimal, allocation-efficient base64 encoder (RFC 4648, no padding issues)

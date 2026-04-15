@@ -120,6 +120,12 @@ import {
   type ConstellationOrbitBand,
 } from './explorer/constellationLayout';
 import { ExplorerTaskStatusBadge } from './explorer/ExplorerTaskStatusBadge';
+import {
+  getExplorerDirectoryCacheKey,
+  invalidateExplorerDirectoryResultCaches,
+  loadCachedExplorerLocation,
+  storeExplorerCachedLocation,
+} from './explorer/explorerDirectoryCache';
 import { removeExplorerBookmarksByPath, upsertExplorerBookmark } from './explorer/explorerRailState';
 import {
   getRepositoryPickerConfirmLabel,
@@ -166,7 +172,6 @@ import {
   type ExplorerFileTransferOperation as FileTransferOperation,
   type ExplorerFileTransferResult as FileTransferResult,
   type ExplorerFileSearchResult as FileSearchResult,
-  type ExplorerLocationListing,
   type ExplorerSavedSearch,
   type ExplorerTagMetadataSnapshot,
 } from '../runtime/explorerBackend';
@@ -210,12 +215,7 @@ type ExplorerSearchCacheEntry = {
   diagnostics: Awaited<ReturnType<ExplorerBackendContract['searchEntriesWithDiagnostics']>>['diagnostics'];
 };
 
-const explorerDirectoryResultCache = new Map<string, Promise<ExplorerLocationListing> | ExplorerLocationListing>();
 const explorerSearchResultCache = new Map<string, Promise<ExplorerSearchCacheEntry> | ExplorerSearchCacheEntry>();
-
-function getExplorerDirectoryCacheKey(path: string, showHidden: boolean): string {
-  return `${showHidden ? 'hidden' : 'visible'}::${path}`;
-}
 
 function getExplorerSearchCacheKey(args: {
   path: string;
@@ -229,28 +229,6 @@ function getExplorerSearchCacheKey(args: {
     args.showHidden ? 'hidden' : 'visible',
     args.includeContent ? 'content' : 'names',
   ].join('::');
-}
-
-async function getOrLoadCachedExplorerDirectoryEntries(
-  key: string,
-  loader: () => Promise<ExplorerLocationListing>,
-): Promise<ExplorerLocationListing> {
-  const cachedValue = explorerDirectoryResultCache.get(key);
-  if (cachedValue) {
-    return cachedValue instanceof Promise ? cachedValue : cachedValue;
-  }
-
-  const pending = loader()
-    .then((entries) => {
-      explorerDirectoryResultCache.set(key, entries);
-      return entries;
-    })
-    .catch((error) => {
-      explorerDirectoryResultCache.delete(key);
-      throw error;
-    });
-  explorerDirectoryResultCache.set(key, pending);
-  return pending;
 }
 
 async function getOrLoadCachedExplorerSearchResults(
@@ -276,16 +254,10 @@ async function getOrLoadCachedExplorerSearchResults(
 }
 
 export function invalidateExplorerResultCaches(pathPrefix?: string): void {
+  invalidateExplorerDirectoryResultCaches(pathPrefix);
   if (!pathPrefix) {
-    explorerDirectoryResultCache.clear();
     explorerSearchResultCache.clear();
     return;
-  }
-
-  for (const key of explorerDirectoryResultCache.keys()) {
-    if (key.includes(`::${pathPrefix}`) || key.endsWith(`::${pathPrefix}`)) {
-      explorerDirectoryResultCache.delete(key);
-    }
   }
 
   for (const key of explorerSearchResultCache.keys()) {
@@ -2884,10 +2856,11 @@ export function FileExplorer({
     }
     setLoading(true);
     try {
-      const nextListing = await getOrLoadCachedExplorerDirectoryEntries(
-        directoryCacheKey,
-        () => listExplorerLocation(normalizedPath, showHidden),
-      );
+      const nextListing = await loadCachedExplorerLocation({
+        path: normalizedPath,
+        showHidden,
+        listLocation: listExplorerLocation,
+      });
       if (!isActiveDirectoryLoadRequest()) {
         return;
       }
@@ -3196,10 +3169,11 @@ export function FileExplorer({
       if (!isActiveDirectoryLoadRequest()) {
         return;
       }
-      explorerDirectoryResultCache.set(
-        getExplorerDirectoryCacheKey(currentPath, showHidden),
-        nextListing,
-      );
+      storeExplorerCachedLocation({
+        path: currentPath,
+        showHidden,
+        listing: nextListing,
+      });
       startTransition(() => {
         if (isActiveDirectoryLoadRequest()) {
           setEntries(nextListing.entries);

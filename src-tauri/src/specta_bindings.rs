@@ -112,6 +112,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::fs_commands::fs_cancel_explorer_task,
             crate::fs_commands::fs_create_dir,
             crate::fs_commands::fs_read_file_base64,
+            crate::fs_commands::fs_read_image_thumbnail,
             crate::fs_commands::fs_write_file,
             crate::fs_commands::fs_get_runtime_cache_policy,
             crate::fs_commands::fs_list_dir_uncached,

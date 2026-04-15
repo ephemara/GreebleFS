@@ -1,5 +1,11 @@
 export type ModelPreviewFormat = 'fbx' | 'glb' | 'gltf' | 'obj' | 'stl';
 
+export const EXPLORER_IMAGE_TILE_PREVIEW_CONFIG = {
+  batchSize: 12,
+  maxDimensionPx: 256,
+  minStagePx: 36,
+} as const;
+
 export const MODEL_PREVIEW_PROXY_CONFIG = {
   maxDirectSourceBytes: 48 * 1024 * 1024,
   maxRenderableVertexCount: 350_000,

@@ -1,8 +1,10 @@
-import React, { startTransition, useCallback, useDeferredValue, useMemo, useState } from 'react';
+import React, { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import {
   ChevronDown,
   ChevronRight,
+  Folder,
   FolderPlus,
+  FolderOpen,
   FolderTree,
   HardDrive,
   Home,
@@ -37,7 +39,15 @@ import {
   type ExplorerBookmarkImportSource,
   type ExplorerBookmarkTreeNode,
 } from './explorerRailState';
-import type { ExplorerDriveInfo, ExplorerSavedSearch, ExplorerTagMetadataSnapshot } from '../../runtime/explorerBackend';
+import {
+  isCloudExplorerPath,
+  listExplorerLocation,
+  type ExplorerDriveInfo,
+  type ExplorerFileEntry,
+  type ExplorerSavedSearch,
+  type ExplorerTagMetadataSnapshot,
+} from '../../runtime/explorerBackend';
+import { loadCachedExplorerLocation } from './explorerDirectoryCache';
 import type {
   ExplorerChromeControlDefinition,
   ExplorerChromeControlId,
@@ -59,6 +69,7 @@ interface ExplorerSideRailProps {
   locationLabel?: string;
   drives: ExplorerDriveInfo[];
   drivesLoading: boolean;
+  showHiddenFiles: boolean;
   isCompactDock: boolean;
   savedSearches?: ExplorerSavedSearch[];
   availableTags?: ExplorerTagMetadataSnapshot['tags'];
@@ -104,6 +115,25 @@ interface TreeRowProps {
   onDragLeaveFolder: () => void;
 }
 
+type LocalFolderTreeLoadState = {
+  childFolders: ExplorerFileEntry[];
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  errorMessage: string | null;
+};
+
+interface LocalFolderTreeRowProps {
+  accent: string;
+  dense: boolean;
+  currentPath: string;
+  path: string;
+  depth: number;
+  expandedFolderPaths: string[];
+  folderChildrenByPath: Record<string, LocalFolderTreeLoadState>;
+  onNavigate: (path: string) => void;
+  onToggleExpand: (path: string) => void;
+  onRetryLoad: (path: string) => void;
+}
+
 const EXPLORER_RAIL_DENSE_WIDTH = 260;
 const EXPLORER_RAIL_ULTRA_DENSE_WIDTH = 220;
 const EXPLORER_RAIL_VERBOSE_DRAG_GUIDE_MIN_WIDTH = 320;
@@ -117,6 +147,7 @@ export function ExplorerSideRail({
   locationLabel: locationLabelProp,
   drives,
   drivesLoading,
+  showHiddenFiles,
   isCompactDock,
   savedSearches = [],
   availableTags = [],
@@ -164,6 +195,115 @@ export function ExplorerSideRail({
     searchQuery: deferredQuery,
   }), [deferredQuery, rail]);
   const bookmarkTree = useMemo(() => buildExplorerBookmarkTree(filteredRail), [filteredRail]);
+  const localDrives = useMemo(
+    () => drives.filter((drive): drive is Extract<ExplorerDriveInfo, { kind: 'local' }> => drive.kind === 'local'),
+    [drives],
+  );
+  const [expandedFolderPaths, setExpandedFolderPaths] = useState<string[]>([]);
+  const [folderChildrenByPath, setFolderChildrenByPath] = useState<Record<string, LocalFolderTreeLoadState>>({});
+
+  const loadFolderChildren = useCallback(async (path: string) => {
+    if (!path || isCloudExplorerPath(path)) {
+      return;
+    }
+    const normalizedPath = normalizeLocalTreePath(path);
+    setFolderChildrenByPath((current) => {
+      const currentState = current[normalizedPath];
+      if (currentState?.status === 'loading') {
+        return current;
+      }
+      return {
+        ...current,
+        [normalizedPath]: {
+          childFolders: currentState?.childFolders ?? [],
+          status: 'loading',
+          errorMessage: null,
+        },
+      };
+    });
+
+    try {
+      const listing = await loadCachedExplorerLocation({
+        path: normalizedPath,
+        showHidden: showHiddenFiles,
+        listLocation: listExplorerLocation,
+      });
+      const childFolders = listing.entries
+        .filter((entry) => entry.is_dir)
+        .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }));
+      setFolderChildrenByPath((current) => ({
+        ...current,
+        [normalizedPath]: {
+          childFolders,
+          status: 'ready',
+          errorMessage: null,
+        },
+      }));
+    } catch (error) {
+      setFolderChildrenByPath((current) => ({
+        ...current,
+        [normalizedPath]: {
+          childFolders: current[normalizedPath]?.childFolders ?? [],
+          status: 'error',
+          errorMessage: error instanceof Error ? error.message : String(error),
+        },
+      }));
+    }
+  }, [showHiddenFiles]);
+
+  const toggleFolderExpand = useCallback((path: string) => {
+    const normalizedPath = normalizeLocalTreePath(path);
+    setExpandedFolderPaths((current) => {
+      if (current.includes(normalizedPath)) {
+        return current.filter((entry) => entry !== normalizedPath);
+      }
+      return [...current, normalizedPath];
+    });
+    if (!expandedFolderPaths.includes(normalizedPath)) {
+      void loadFolderChildren(normalizedPath);
+    }
+  }, [expandedFolderPaths, loadFolderChildren]);
+
+  useEffect(() => {
+    setFolderChildrenByPath({});
+  }, [showHiddenFiles, localDrives.map((drive) => drive.path).join('::')]);
+
+  useEffect(() => {
+    const knownDrivePaths = new Set(localDrives.map((drive) => normalizeLocalTreePath(drive.path)));
+    setExpandedFolderPaths((current) => current.filter((path) => {
+      const rootPath = getLocalTreeRootPath(path);
+      return rootPath ? knownDrivePaths.has(rootPath) : false;
+    }));
+  }, [localDrives]);
+
+  const currentPathAncestors = useMemo(() => {
+    if (!currentPath || isCloudExplorerPath(currentPath)) {
+      return [];
+    }
+    return getLocalPathAncestors(currentPath);
+  }, [currentPath]);
+
+  useEffect(() => {
+    if (currentPathAncestors.length === 0) {
+      return;
+    }
+
+    setExpandedFolderPaths((current) => {
+      const next = [...current];
+      for (const ancestor of currentPathAncestors) {
+        if (!next.includes(ancestor)) {
+          next.push(ancestor);
+        }
+      }
+      return next;
+    });
+
+    void (async () => {
+      for (const ancestor of currentPathAncestors) {
+        await loadFolderChildren(ancestor);
+      }
+    })();
+  }, [currentPathAncestors, loadFolderChildren]);
 
   const handleBookmarkDrop = (event: React.DragEvent, targetFolderId: string | null) => {
     event.preventDefault();
@@ -521,45 +661,81 @@ export function ExplorerSideRail({
 
             const usedBytes = Math.max(drive.total_bytes - drive.free_bytes, 0);
             const usedRatio = drive.total_bytes > 0 ? usedBytes / drive.total_bytes : 0;
+            const normalizedDrivePath = normalizeLocalTreePath(drive.path);
+            const isExpanded = expandedFolderPaths.includes(normalizedDrivePath);
             return (
-              <button
-                key={drive.id}
-                type="button"
-                onClick={() => onNavigate(drive.path)}
-                style={{
-                  width: '100%',
-                  padding: dense ? '5px 7px' : '8px 10px',
-                  borderRadius: 9,
-                  border: `1px solid ${isActive ? `${accent}66` : 'var(--overlay-border)'}`,
-                  background: isActive ? `${accent}17` : 'var(--overlay-explorer-chip-bg)',
-                  color: 'var(--overlay-text-primary)',
-                  display: 'grid',
-                  gridTemplateColumns: 'auto 1fr',
-                  gap: dense ? 6 : 10,
-                  alignItems: 'center',
-                  cursor: 'pointer',
-                  marginBottom: 4,
-                }}
-              >
-                <HardDrive size={dense ? 11 : 14} style={{ color: isActive ? accent : 'var(--overlay-text-muted)' }} />
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                    <span style={{ fontSize: dense ? 9.5 : 11, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {drive.label}
-                    </span>
-                    <span style={{ fontSize: 9, color: 'var(--overlay-text-dim)' }}>{drive.letter}</span>
-                  </div>
-                  <div style={{ height: 3, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginTop: 4 }}>
-                    <div style={{ width: `${Math.max(0, Math.min(usedRatio * 100, 100))}%`, height: '100%', background: usedRatio > 0.9 ? 'var(--overlay-danger)' : accent }} />
-                  </div>
-                  {!ultraDense && (
-                    <div style={{ marginTop: 3, fontSize: 8.5, color: 'var(--overlay-text-dim)', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                      <span>{formatBytes(usedBytes)} used</span>
-                      <span>{formatBytes(drive.total_bytes)} total</span>
+              <div key={drive.id} style={{ marginBottom: 4 }}>
+                <div
+                  style={{
+                    width: '100%',
+                    padding: dense ? '5px 7px' : '8px 10px',
+                    borderRadius: 9,
+                    border: `1px solid ${isActive ? `${accent}66` : 'var(--overlay-border)'}`,
+                    background: isActive ? `${accent}17` : 'var(--overlay-explorer-chip-bg)',
+                    color: 'var(--overlay-text-primary)',
+                    display: 'grid',
+                    gridTemplateColumns: 'auto auto 1fr',
+                    gap: dense ? 6 : 10,
+                    alignItems: 'center',
+                  }}
+                >
+                  <button
+                    type="button"
+                    aria-label={isExpanded ? `Collapse ${drive.label} folder tree` : `Expand ${drive.label} folder tree`}
+                    onClick={() => toggleFolderExpand(normalizedDrivePath)}
+                    style={treeIconButtonStyle}
+                  >
+                    {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                  </button>
+                  <HardDrive size={dense ? 11 : 14} style={{ color: isActive ? accent : 'var(--overlay-text-muted)' }} />
+                  <button
+                    type="button"
+                    onClick={() => onNavigate(drive.path)}
+                    style={{
+                      minWidth: 0,
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'inherit',
+                      cursor: 'pointer',
+                      padding: 0,
+                      textAlign: 'left',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                      <span style={{ fontSize: dense ? 9.5 : 11, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {drive.label}
+                      </span>
+                      <span style={{ fontSize: 9, color: 'var(--overlay-text-dim)' }}>{drive.letter}</span>
                     </div>
-                  )}
+                    <div style={{ height: 3, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginTop: 4 }}>
+                      <div style={{ width: `${Math.max(0, Math.min(usedRatio * 100, 100))}%`, height: '100%', background: usedRatio > 0.9 ? 'var(--overlay-danger)' : accent }} />
+                    </div>
+                    {!ultraDense && (
+                      <div style={{ marginTop: 3, fontSize: 8.5, color: 'var(--overlay-text-dim)', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                        <span>{formatBytes(usedBytes)} used</span>
+                        <span>{formatBytes(drive.total_bytes)} total</span>
+                      </div>
+                    )}
+                  </button>
                 </div>
-              </button>
+
+                {isExpanded && (
+                  <div role="tree" aria-label={`${drive.label} folder tree`} style={{ marginTop: 4 }}>
+                    <LocalFolderTreeRow
+                      accent={accent}
+                      dense={dense}
+                      currentPath={currentPath}
+                      path={normalizedDrivePath}
+                      depth={0}
+                      expandedFolderPaths={expandedFolderPaths}
+                      folderChildrenByPath={folderChildrenByPath}
+                      onNavigate={onNavigate}
+                      onToggleExpand={toggleFolderExpand}
+                      onRetryLoad={loadFolderChildren}
+                    />
+                  </div>
+                )}
+              </div>
             );
           })}
         </RailSection>
