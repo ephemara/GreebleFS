@@ -1,5 +1,39 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Theme Catalog Pilot Suite Reset
+
+- Package themes are no longer treated as one flat catalog.
+- Durable implementation shape:
+  - `src/config/themeCatalogCuration.ts` is now the host-owned source of truth for package-theme curation tiers and official pilot ordering.
+  - `src/config/themePackages.ts` attaches computed `catalog` metadata to every `LoadedOverlayThemePackage`, so downstream UI/runtime code can badge, sort, and group themes without hardcoding ids locally.
+  - `src/components/SettingsPage.tsx` now presents the catalog as three lanes:
+    - `Official Pilot Suite`
+    - `Built-In Baselines`
+    - `Legacy / Lab Archive`
+  - the current official pilot package set is:
+    - `vector-monolith`
+    - `cyber-nexus-hud`
+    - `celestial-astrolabe`
+    - `clarity-line`
+- Durable product note:
+  - official pilot themes are now the intended front-of-house shells; the archive remains selectable but should not visually dominate Settings or read like equal-status product direction.
+- Validation:
+  - passed: `bunx vitest run --environment node src/test/themePackages.test.ts src/test/themeCatalogCuration.test.ts`
+  - passed: `bunx vitest run --environment jsdom src/test/settingsPage.behavior.test.tsx`
+
+## 2026-04-15 — Celestial Astrolabe Full-Screen Observatory
+
+- `themes/celestial-astrolabe/renderers/astrolabe.tsx` no longer reads like a decorative three-column layout.
+- Durable implementation shape:
+  - the content stage now occupies the center of the viewport as the primary astronomical instrument
+  - launcher groups and panel selectors orbit the stage instead of living as a conventional left sidebar
+  - supporting controls moved into a full-width lower deck so the shell uses the full screen more aggressively
+  - viewport-safe clamping still comes from the renderer-owned shell model and normalized layout regions
+- Durable design note:
+  - this theme is now intended to be part of the official pilot suite, not a legacy spectacle demo
+- Validation:
+  - passed: `bunx vite build`
+
 ## 2026-04-15 — Sketchfab Package Plugin / Generic Plugin Panel Requests
 
 - Explorer plugin context menus can now open plugin panels through a shared generic handoff path instead of one-off panel bridges.

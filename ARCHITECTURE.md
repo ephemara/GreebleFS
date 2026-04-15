@@ -48,6 +48,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Built-in and external layout manifest normalization for shell blueprints, pinned panels, control docks, and top/bottom chrome behavior.
 - `src/config/themePackages.ts`
   Theme package discovery and manifest loading from `themes/`.
+- `src/config/themeCatalogCuration.ts`
+  Host-owned curation metadata for packaged themes. It defines the official pilot suite, legacy/lab tiers, archive tiers, and stable sort/badge metadata used by Settings and loader consumers.
 - `src/config/wallpapers.ts`
   Wallpaper directory resolution, fit-mode contract, and wallpaper runtime config.
 - `src/components/WorkbenchNavigationSurface.tsx`
@@ -75,6 +77,11 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - all built-in themes inherit the same pilot workbench, explorer, and dock recipe baseline unless they explicitly override it
   - built-in theme switches can also carry appearance/explorer/layout reset defaults instead of only changing palette data
 - Theme packages can ship a wallpaper asset through `theme.assets.backgroundUrl`; that asset is now the theme-default wallpaper layer instead of only preview metadata.
+- Package-theme curation is now host-owned instead of being implied by package manifests alone:
+  - `src/config/themeCatalogCuration.ts` defines the current official pilot set and the non-flagship tiers
+  - packaged themes carry computed `catalog` metadata through `LoadedOverlayThemePackage`
+  - `SettingsPage.tsx` groups the catalog into `Official Pilot Suite`, `Built-In Baselines`, and `Legacy / Lab Archive` instead of presenting one flat wall
+  - the current official pilot package set is `vector-monolith`, `cyber-nexus-hud`, `celestial-astrolabe`, and `clarity-line`
 - Theme packages can also ship a generalized engine manifest through `presentation`, `layoutPrimitives`, `navigationPatterns`, and `renderStyles`.
 - `src/config/appearance.ts` now preserves compiled engine manifests on the active theme so recipe resolution can use them at runtime.
 - Workbench theming is now a first-class recipe layer under `theme.workbench`.
@@ -122,6 +129,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - The shared top bar is now renderer-aware instead of universally assuming launcher ownership:
   - `TopBar` strips launcher/menu/tab-strip chrome when the active renderer claims `launcher`, so themes with custom radial/channel/XMB launchers no longer render a second launcher system through `host.renderChromeBar()`
 - `src/components/WorkbenchNavigationSurface.tsx` now takes its rail width from `src/config/workbenchRenderRuntime.ts` instead of hardcoded per-runtime widths inside the component, so launcher sizing stays in the runtime contract.
+- `themes/celestial-astrolabe/renderers/astrolabe.tsx` was rebuilt as a full-screen observatory shell:
+  - the content stage now owns the center of the viewport
+  - launcher groups/panels orbit the stage instead of living in a boxed sidebar column
+  - the lower deck is a full-width control band, so the theme uses the viewport more like a flagship shell and less like a themed three-column dashboard
 - Wallpaper rendering is now a first-class layered pass in `App.tsx`:
   - theme wallpaper asset or user-selected wallpaper renders as the base layer
   - `theme.effects.backgroundImage` renders as the theme effect layer above the wallpaper

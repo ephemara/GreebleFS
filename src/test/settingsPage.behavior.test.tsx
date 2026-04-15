@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
@@ -7,6 +7,7 @@ import { createBuiltInOverlayAnimations } from '../components/animationRuntime';
 import { createBuiltInOverlayShaders } from '../components/shaderRuntime';
 import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/appearance';
 import { createDefaultFolderIconRules } from '../config/folderIcons';
+import { resolveThemeCatalogPackageMetadata } from '../config/themeCatalogCuration';
 import { pluginSystemConfig } from '../config/plugins';
 import { screenshotFeatureConfig } from '../config/screenshots';
 import { compileThemeEngineManifest, normalizeThemeManifestDraft } from '../runtime/themeEngineBackend';
@@ -15,6 +16,15 @@ import { useExplorerStore } from '../store/explorerStore';
 import { useTerminalStore } from '../store/terminalStore';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
 import type { OverlayPluginContextMenuContribution, OverlayPluginExplorerActionContribution } from '../config/pluginContributions';
+
+function createThemePackageFixture(
+  fixture: Omit<LoadedOverlayThemePackage, 'catalog'> & { catalog?: LoadedOverlayThemePackage['catalog'] },
+): LoadedOverlayThemePackage {
+  return {
+    ...fixture,
+    catalog: fixture.catalog ?? resolveThemeCatalogPackageMetadata(fixture.id),
+  };
+}
 
 function findSectionButton(label: string): HTMLButtonElement {
   const button = screen.getAllByRole('button').find(entry => entry.textContent?.includes(label));
@@ -596,7 +606,7 @@ describe('SettingsPage behavior', () => {
 
     renderSettingsPage({
       appearanceThemeId: 'vista-glass',
-      themePackages: [{
+      themePackages: [createThemePackageFixture({
         id: 'vista-glass',
         name: 'Vista Glass',
         version: 2,
@@ -623,7 +633,7 @@ describe('SettingsPage behavior', () => {
         theme: packageTheme,
         engineManifest,
         compiledEngineManifest: compileThemeEngineManifest(engineManifest),
-      }],
+      })],
     });
 
     await userEvent.setup().click(findSectionButton('Appearance'));
@@ -676,7 +686,7 @@ describe('SettingsPage behavior', () => {
     }));
 
     renderSettingsPage({
-      themePackages: [{
+      themePackages: [createThemePackageFixture({
         id: 'vista-glass',
         name: 'Vista Glass',
         version: 2,
@@ -698,7 +708,7 @@ describe('SettingsPage behavior', () => {
         },
         warnings: [],
         theme: packageTheme,
-      }],
+      })],
     });
 
     await user.click(findSectionButton('Appearance'));
@@ -799,6 +809,142 @@ describe('SettingsPage behavior', () => {
     expect(session.sourcesVisible).toBe(false);
   });
 
+  it('groups the theme catalog into built-ins, an official pilot suite, and a demoted archive', async () => {
+    const user = userEvent.setup();
+
+    renderSettingsPage({
+      appearanceThemeId: 'cyber-nexus-hud',
+      themePackages: [
+        createThemePackageFixture({
+          id: 'cyber-nexus-hud',
+          name: 'Cyber Nexus HUD',
+          version: 2,
+          directoryPath: 'themes/cyber-nexus-hud',
+          manifestPath: 'themes/cyber-nexus-hud/theme.json',
+          sourceKind: 'theme-directory',
+          sourceLabel: 'themes/cyber-nexus-hud',
+          description: 'Neon pilot shell.',
+          author: 'OverlayTerm Labs',
+          previewUrl: 'asset://localhost/themes/cyber-nexus-hud/assets/preview.svg',
+          tags: ['neon', 'pilot'],
+          capabilitySummary: {
+            icons: true,
+            wallpaper: true,
+            dock: true,
+            visuals: 2,
+            shaders: 1,
+            animations: 1,
+            fonts: 1,
+            themeRenderer: true,
+          },
+          warnings: [],
+          theme: normalizeThemeDefinition({
+            id: 'cyber-nexus-hud',
+            name: 'Cyber Nexus HUD',
+            source: 'package',
+            description: 'Neon pilot shell.',
+            palette: {
+              accent: '#7cfcff',
+            },
+          } as never),
+        }),
+        createThemePackageFixture({
+          id: 'vector-monolith',
+          name: 'Vector Monolith',
+          version: 4,
+          directoryPath: 'themes/vector-monolith',
+          manifestPath: 'themes/vector-monolith/theme.json',
+          sourceKind: 'theme-directory',
+          sourceLabel: 'themes/vector-monolith',
+          description: 'Three.js flagship shell.',
+          author: 'OverlayTerm Labs',
+          previewUrl: 'asset://localhost/themes/vector-monolith/assets/preview.svg',
+          tags: ['3d', 'flagship'],
+          capabilitySummary: {
+            icons: true,
+            wallpaper: true,
+            dock: true,
+            visuals: 4,
+            shaders: 2,
+            animations: 2,
+            fonts: 1,
+            themeRenderer: true,
+          },
+          warnings: [],
+          theme: normalizeThemeDefinition({
+            id: 'vector-monolith',
+            name: 'Vector Monolith',
+            source: 'package',
+            description: 'Three.js flagship shell.',
+            palette: {
+              accent: '#a78bfa',
+            },
+          } as never),
+        }),
+        createThemePackageFixture({
+          id: 'arcade-arcology',
+          name: 'Arcade Arcology',
+          version: 1,
+          directoryPath: 'themes/arcade-arcology',
+          manifestPath: 'themes/arcade-arcology/theme.json',
+          sourceKind: 'theme-directory',
+          sourceLabel: 'themes/arcade-arcology',
+          description: 'Legacy archive shell.',
+          author: 'OverlayTerm Labs',
+          previewUrl: 'asset://localhost/themes/arcade-arcology/assets/preview.svg',
+          tags: ['archive'],
+          capabilitySummary: {
+            icons: true,
+            wallpaper: false,
+            dock: false,
+            visuals: 1,
+            shaders: 0,
+            animations: 0,
+            fonts: 1,
+            themeRenderer: false,
+          },
+          warnings: [],
+          theme: normalizeThemeDefinition({
+            id: 'arcade-arcology',
+            name: 'Arcade Arcology',
+            source: 'package',
+            description: 'Legacy archive shell.',
+            palette: {
+              accent: '#f59e0b',
+            },
+          } as never),
+        }),
+      ],
+    });
+
+    await user.click(findSectionButton('Appearance'));
+
+    const builtInSection = screen.getByText('Built-In Baselines').closest('section') as HTMLElement;
+    const officialSection = screen.getByText('Official Pilot Suite').closest('section') as HTMLElement;
+    const legacySection = screen.getByText('Legacy / Lab Archive').closest('section') as HTMLElement;
+
+    expect(builtInSection).toBeInTheDocument();
+    expect(officialSection).toBeInTheDocument();
+    expect(legacySection).toBeInTheDocument();
+
+    expect(within(builtInSection).getByText('Pilot Light')).toBeInTheDocument();
+    expect(within(officialSection).getByText('Cyber Nexus HUD')).toBeInTheDocument();
+    expect(within(officialSection).getAllByText('Pilot')[0]).toBeInTheDocument();
+    expect(within(legacySection).getByText('Arcade Arcology')).toBeInTheDocument();
+
+    const officialCard = within(officialSection).getByRole('button', { name: /Cyber Nexus HUD/i });
+    const legacyCard = within(legacySection).getByRole('button', { name: /Arcade Arcology/i });
+
+    expect(officialCard).toHaveStyle({ opacity: '1' });
+    expect(legacyCard).toHaveStyle({ opacity: '0.82' });
+
+    await user.click(officialCard);
+    expect(useSettingsStore.getState().settings.appearance.activeThemeId).toBe('cyber-nexus-hud');
+
+    await user.click(legacyCard);
+    expect(useSettingsStore.getState().settings.appearance.activeThemeId).toBe('arcade-arcology');
+  });
+
   it('stores a separate dock theme override from the appearance catalog', async () => {
     const user = userEvent.setup();
     const packageTheme = normalizeThemeDefinition({
@@ -817,7 +963,7 @@ describe('SettingsPage behavior', () => {
     } as never);
 
     renderSettingsPage({
-      themePackages: [{
+      themePackages: [createThemePackageFixture({
         id: 'vista-glass',
         name: 'Vista Glass',
         version: 2,
@@ -839,7 +985,7 @@ describe('SettingsPage behavior', () => {
         },
         warnings: [],
         theme: packageTheme,
-      }],
+      })],
     });
 
     await user.click(findSectionButton('Appearance'));

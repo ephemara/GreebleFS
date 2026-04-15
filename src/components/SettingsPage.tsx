@@ -160,6 +160,290 @@ function getThemePackageSourceBadgeLabel(sourceKind: LoadedOverlayThemePackage['
   return sourceKind === 'plugin-package' ? 'Plugin Package' : 'Theme Folder';
 }
 
+type ThemeCatalogSectionId = 'official-pilot' | 'built-in' | 'legacy-archive';
+
+function resolveThemeCatalogSectionId(
+  theme: OverlayThemeDefinition,
+  packageInfo: LoadedOverlayThemePackage | undefined,
+): ThemeCatalogSectionId {
+  if (theme.source === 'built-in') {
+    return 'built-in';
+  }
+
+  if (packageInfo?.catalog.isOfficialPilot) {
+    return 'official-pilot';
+  }
+
+  return 'legacy-archive';
+}
+
+function getThemeCatalogBadgeLabel(
+  sectionId: ThemeCatalogSectionId,
+  packageInfo: LoadedOverlayThemePackage | undefined,
+): string {
+  if (sectionId === 'built-in') {
+    return 'Built-In';
+  }
+
+  return packageInfo?.catalog.badgeLabel ?? 'Package';
+}
+
+function getThemeCatalogSectionTitle(sectionId: ThemeCatalogSectionId): string {
+  switch (sectionId) {
+    case 'official-pilot':
+      return 'Official Pilot Suite';
+    case 'built-in':
+      return 'Built-In Baselines';
+    case 'legacy-archive':
+      return 'Legacy / Lab Archive';
+  }
+}
+
+function getThemeCatalogSectionSubtitle(sectionId: ThemeCatalogSectionId): string {
+  switch (sectionId) {
+    case 'official-pilot':
+      return 'The current pilot set. These are the front-of-house themes that should feel full-screen, readable, and intentional.';
+    case 'built-in':
+      return 'Bundled baseline themes stay visible and supported as stable defaults for the app and dock.';
+    case 'legacy-archive':
+      return 'Older experiments, transitional shells, and archive material remain selectable without reading like the primary product.';
+  }
+}
+
+function getThemeCatalogEntrySortRank(packageInfo: LoadedOverlayThemePackage | undefined): number {
+  return packageInfo?.catalog.sortRank ?? 0;
+}
+
+function getThemeCatalogCardOpacity(sectionId: ThemeCatalogSectionId): number {
+  if (sectionId === 'legacy-archive') {
+    return 0.82;
+  }
+
+  if (sectionId === 'built-in') {
+    return 0.96;
+  }
+
+  return 1;
+}
+
+function ThemeCatalogCard({
+  themeOption,
+  packageInfo,
+  active,
+  sectionId,
+  onSelect,
+}: {
+  themeOption: OverlayThemeDefinition;
+  packageInfo: LoadedOverlayThemePackage | undefined;
+  active: boolean;
+  sectionId: ThemeCatalogSectionId;
+  onSelect: (themeId: string) => void;
+}) {
+  const description = clampThemeDescription(packageInfo?.description ?? themeOption.description);
+  const previewBackground = getThemePreviewBackground(themeOption, packageInfo?.previewUrl);
+  const compiledEngineManifest = packageInfo?.compiledEngineManifest;
+  const defaultLayoutPrimitive = compiledEngineManifest?.defaultLayoutPrimitive;
+  const defaultNavigationPattern = compiledEngineManifest?.defaultNavigationPattern;
+  const defaultAnimationProfile = compiledEngineManifest?.defaultAnimationProfile;
+  const defaultIconPack = compiledEngineManifest?.defaultIconPack;
+  const defaultRenderStyle = compiledEngineManifest?.defaultRenderStyle;
+  const workbenchPreset = themeOption.workbench?.preset;
+  const explorerPreset = themeOption.explorer?.preset;
+  const dockPreset = themeOption.dock?.workbench?.preset ?? themeOption.dock?.explorer?.preset ?? null;
+  const capabilityLabels = [
+    workbenchPreset ? `Workbench ${workbenchPreset}` : null,
+    explorerPreset ? `Explorer ${explorerPreset}` : null,
+    dockPreset ? `Dock ${dockPreset}` : null,
+    (themeOption.dock?.workbench || themeOption.dock?.explorer) ? 'Dock Ready' : null,
+    packageInfo?.capabilitySummary.icons ? 'Icons' : null,
+    packageInfo?.capabilitySummary.shaders ? `Shaders ${packageInfo.capabilitySummary.shaders}` : null,
+    packageInfo?.capabilitySummary.animations ? `Motion ${packageInfo.capabilitySummary.animations}` : null,
+    packageInfo?.capabilitySummary.visuals ? `Visuals ${packageInfo.capabilitySummary.visuals}` : null,
+    compiledEngineManifest?.capabilitySummary.designTokens ? `Tokens ${compiledEngineManifest.capabilitySummary.designTokens}` : null,
+    packageInfo?.capabilitySummary.themeRenderer ? 'Renderer V2' : null,
+  ].filter((value): value is string => Boolean(value)).slice(0, 10);
+
+  return (
+    <button
+      type="button"
+      data-theme-catalog-theme-id={themeOption.id}
+      onClick={() => onSelect(themeOption.id)}
+      className="overflow-hidden rounded text-left transition-opacity hover:opacity-100"
+      style={{
+        opacity: getThemeCatalogCardOpacity(sectionId),
+        background: themeOption.palette.appBackground,
+        border: `1px solid ${active ? themeOption.palette.accent : themeOption.palette.border}`,
+        color: themeOption.palette.textPrimary,
+        boxShadow: active ? `0 0 0 1px ${themeOption.palette.accent}40 inset` : 'none',
+      }}
+    >
+      <div
+        className="relative w-full"
+        style={{
+          minHeight: sectionId === 'official-pilot' ? '11rem' : '6.75rem',
+          backgroundImage: previewBackground,
+          backgroundSize: packageInfo?.previewUrl ? 'cover' : '100% 100%',
+          backgroundPosition: 'center',
+        }}
+      >
+        <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-2">
+          <div className="flex flex-wrap items-center gap-1">
+            <ThemeBadge label={getThemeSourceLabel(themeOption)} active={active} />
+            {packageInfo ? <ThemeBadge label={getThemePackageSourceBadgeLabel(packageInfo.sourceKind)} active={active} /> : null}
+            <ThemeBadge label={getThemeCatalogBadgeLabel(sectionId, packageInfo)} active={active} />
+          </div>
+          {packageInfo ? (
+            <div className="flex items-center gap-1">
+              {packageInfo?.warnings.length ? <ThemeBadge label={`Warnings ${packageInfo.warnings.length}`} /> : null}
+              <ThemeBadge label={`v${packageInfo.version}`} active={active} />
+              {packageInfo.author ? <ThemeBadge label={packageInfo.author} /> : null}
+            </div>
+          ) : null}
+        </div>
+        <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 p-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: themeOption.palette.accent }} />
+            <div className="truncate text-[11px] font-semibold">{themeOption.name}</div>
+          </div>
+          {active && <span className="text-[9px] font-semibold uppercase tracking-[0.12em] opacity-75">Live</span>}
+        </div>
+      </div>
+      <div className={sectionId === 'legacy-archive' ? 'space-y-2 px-3 py-2.5' : 'space-y-2 px-3 py-3'}>
+        <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.12em] opacity-55">
+          <span>{themeOption.id}</span>
+          {packageInfo?.sourceLabel ? (
+            <>
+              <span aria-hidden="true">•</span>
+              <span>{packageInfo.sourceLabel}</span>
+            </>
+          ) : null}
+          {packageInfo?.homepage ? <span>• {packageInfo.homepage.replace(/^https?:\/\//, '').replace(/\/$/, '')}</span> : null}
+        </div>
+        {description ? (
+          <p className={sectionId === 'official-pilot' ? 'min-h-[3rem] text-[11px] leading-4 opacity-75' : 'min-h-[2.5rem] text-[11px] leading-4 opacity-70'}>
+            {description}
+          </p>
+        ) : (
+          <p className="min-h-[2.5rem] text-[11px] leading-4 opacity-35">No package summary provided yet.</p>
+        )}
+        <div className="flex flex-wrap gap-1.5">
+          {defaultLayoutPrimitive ? <ThemeBadge label={`Layout ${defaultLayoutPrimitive.kind}`} active={active} /> : null}
+          {defaultNavigationPattern ? <ThemeBadge label={`Nav ${defaultNavigationPattern.kind}`} active={active} /> : null}
+          {defaultIconPack ? <ThemeBadge label={`Icons ${defaultIconPack.style}`} active={active} /> : null}
+          {defaultRenderStyle ? <ThemeBadge label={`Render ${defaultRenderStyle.kind}`} active={active} /> : null}
+          {compiledEngineManifest?.supportsHotSwappingRenderStyles
+            ? <ThemeBadge label="Live Swap Ready" active={active} />
+            : compiledEngineManifest
+              ? <ThemeBadge label="Static Render" active={active} />
+              : null}
+          {themeOption.defaultShaderId ? <ThemeBadge label={`Shader ${themeOption.defaultShaderId}`} active={active} /> : null}
+          {themeOption.defaultOpenAnimationId ? <ThemeBadge label={`Open ${themeOption.defaultOpenAnimationId}`} active={active} /> : null}
+          {themeOption.defaultCloseAnimationId ? <ThemeBadge label={`Close ${themeOption.defaultCloseAnimationId}`} active={active} /> : null}
+          {defaultAnimationProfile ? <ThemeBadge label={`Profile ${defaultAnimationProfile.id}`} active={active} /> : null}
+          {capabilityLabels.map(label => (
+            <ThemeBadge key={`${themeOption.id}-${label}`} label={label} />
+          ))}
+          {(packageInfo?.tags ?? []).slice(0, 3).map(tag => (
+            <ThemeBadge key={`${themeOption.id}-tag-${tag}`} label={tag} />
+          ))}
+        </div>
+        {packageInfo?.warnings.length ? (
+          <div className="rounded border px-2.5 py-2 text-[10px] leading-4" style={{ borderColor: 'rgba(245,158,11,0.32)', background: 'rgba(245,158,11,0.12)', color: '#fde68a' }}>
+            {packageInfo.warnings.map(warning => (
+              <div key={`${themeOption.id}-${warning}`}>{warning}</div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </button>
+  );
+}
+
+function ThemeCatalogSection({
+  sectionId,
+  themes,
+  activeThemeId,
+  onSelect,
+  themePackageLookup,
+}: {
+  sectionId: ThemeCatalogSectionId;
+  themes: OverlayThemeDefinition[];
+  activeThemeId: string | null;
+  onSelect: (themeId: string) => void;
+  themePackageLookup: Map<string, LoadedOverlayThemePackage>;
+}) {
+  if (themes.length === 0) {
+    return null;
+  }
+
+  const isOfficialSuite = sectionId === 'official-pilot';
+  const sectionStyle = sectionId === 'official-pilot'
+    ? {
+        borderColor: 'rgba(125,211,255,0.34)',
+        background: 'linear-gradient(180deg, rgba(16,22,34,0.94) 0%, rgba(10,14,24,0.98) 100%)',
+      }
+    : sectionId === 'built-in'
+      ? {
+          borderColor: 'rgba(255,255,255,0.12)',
+          background: 'rgba(255,255,255,0.03)',
+        }
+      : {
+          borderColor: 'rgba(148,163,184,0.18)',
+          background: 'rgba(255,255,255,0.018)',
+          opacity: 0.92,
+        };
+
+  const sortedThemes = [...themes].sort((left, right) => {
+    const leftPackageInfo = themePackageLookup.get(left.id);
+    const rightPackageInfo = themePackageLookup.get(right.id);
+    const leftWeight = getThemeCatalogEntrySortRank(leftPackageInfo);
+    const rightWeight = getThemeCatalogEntrySortRank(rightPackageInfo);
+    if (leftWeight !== rightWeight) {
+      return leftWeight - rightWeight;
+    }
+    return left.name.localeCompare(right.name);
+  });
+
+  return (
+    <section
+      data-theme-catalog-group={sectionId}
+      className="rounded border p-3"
+      style={sectionStyle}
+    >
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] opacity-65">
+            {isOfficialSuite ? <Sparkles size={11} /> : <LayoutGrid size={11} />}
+            <span>{getThemeCatalogSectionTitle(sectionId)}</span>
+          </div>
+          <p className="mt-1 text-[11px] leading-4 opacity-48">
+            {getThemeCatalogSectionSubtitle(sectionId)}
+          </p>
+        </div>
+        <ThemeBadge label={`${themes.length} theme${themes.length === 1 ? '' : 's'}`} active={isOfficialSuite} />
+      </div>
+      <div className={isOfficialSuite ? 'grid grid-cols-1 gap-4 xl:grid-cols-2' : 'grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3'}>
+        {sortedThemes.map((themeOption, index) => {
+          const packageInfo = themePackageLookup.get(themeOption.id);
+          const active = activeThemeId === themeOption.id;
+          const themeSectionId = resolveThemeCatalogSectionId(themeOption, packageInfo);
+
+          return (
+            <ThemeCatalogCard
+              key={getThemeCatalogEntryKey(themeOption, packageInfo, index)}
+              themeOption={themeOption}
+              packageInfo={packageInfo}
+              active={active}
+              sectionId={themeSectionId}
+              onSelect={onSelect}
+            />
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function getThemeCatalogEntryKey(
   theme: OverlayThemeDefinition,
   packageInfo: LoadedOverlayThemePackage | undefined,
@@ -181,125 +465,37 @@ function ThemeCatalogGrid({
   onSelect: (themeId: string) => void;
   themePackageLookup: Map<string, LoadedOverlayThemePackage>;
 }) {
-  return (
-    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-      {themes.map((themeOption, index) => {
-        const active = activeThemeId === themeOption.id;
-        const packageInfo = themePackageLookup.get(themeOption.id);
-        const description = clampThemeDescription(packageInfo?.description ?? themeOption.description);
-        const previewBackground = getThemePreviewBackground(themeOption, packageInfo?.previewUrl);
-        const compiledEngineManifest = packageInfo?.compiledEngineManifest;
-        const defaultLayoutPrimitive = compiledEngineManifest?.defaultLayoutPrimitive;
-        const defaultNavigationPattern = compiledEngineManifest?.defaultNavigationPattern;
-        const defaultAnimationProfile = compiledEngineManifest?.defaultAnimationProfile;
-        const defaultIconPack = compiledEngineManifest?.defaultIconPack;
-        const defaultRenderStyle = compiledEngineManifest?.defaultRenderStyle;
-        const workbenchPreset = themeOption.workbench?.preset;
-        const explorerPreset = themeOption.explorer?.preset;
-        const dockPreset = themeOption.dock?.workbench?.preset ?? themeOption.dock?.explorer?.preset ?? null;
-        const capabilityLabels = [
-          workbenchPreset ? `Workbench ${workbenchPreset}` : null,
-          explorerPreset ? `Explorer ${explorerPreset}` : null,
-          dockPreset ? `Dock ${dockPreset}` : null,
-          (themeOption.dock?.workbench || themeOption.dock?.explorer) ? 'Dock Ready' : null,
-          packageInfo?.capabilitySummary.icons ? 'Icons' : null,
-          packageInfo?.capabilitySummary.shaders ? `Shaders ${packageInfo.capabilitySummary.shaders}` : null,
-          packageInfo?.capabilitySummary.animations ? `Motion ${packageInfo.capabilitySummary.animations}` : null,
-          packageInfo?.capabilitySummary.visuals ? `Visuals ${packageInfo.capabilitySummary.visuals}` : null,
-          compiledEngineManifest?.capabilitySummary.designTokens ? `Tokens ${compiledEngineManifest.capabilitySummary.designTokens}` : null,
-          packageInfo?.capabilitySummary.themeRenderer ? 'Renderer V2' : null,
-        ].filter((value): value is string => Boolean(value)).slice(0, 10);
+  const catalogSections = useMemo(() => {
+    const groupedThemes: Record<ThemeCatalogSectionId, OverlayThemeDefinition[]> = {
+      'official-pilot': [],
+      'built-in': [],
+      'legacy-archive': [],
+    };
 
-        return (
-          <button
-            key={getThemeCatalogEntryKey(themeOption, packageInfo, index)}
-            type="button"
-            onClick={() => onSelect(themeOption.id)}
-            className="overflow-hidden rounded text-left transition-opacity hover:opacity-100"
-            style={{
-              background: themeOption.palette.appBackground,
-              border: `1px solid ${active ? themeOption.palette.accent : themeOption.palette.border}`,
-              color: themeOption.palette.textPrimary,
-              boxShadow: active ? `0 0 0 1px ${themeOption.palette.accent}40 inset` : 'none',
-            }}
-          >
-            <div
-              className="relative h-24 w-full"
-              style={{
-                backgroundImage: previewBackground,
-                backgroundSize: packageInfo?.previewUrl ? 'cover' : '100% 100%',
-                backgroundPosition: 'center',
-              }}
-            >
-              <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-2">
-                <div className="flex items-center gap-1">
-                  <ThemeBadge label={getThemeSourceLabel(themeOption)} active={active} />
-                  {packageInfo ? <ThemeBadge label={getThemePackageSourceBadgeLabel(packageInfo.sourceKind)} active={active} /> : null}
-                  {packageInfo?.warnings.length ? <ThemeBadge label={`Warnings ${packageInfo.warnings.length}`} /> : null}
-                </div>
-                {packageInfo ? (
-                  <div className="flex items-center gap-1">
-                    <ThemeBadge label={`v${packageInfo.version}`} active={active} />
-                    {packageInfo.author ? <ThemeBadge label={packageInfo.author} /> : null}
-                  </div>
-                ) : null}
-              </div>
-              <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 p-2">
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: themeOption.palette.accent }} />
-                  <div className="truncate text-[11px] font-semibold">{themeOption.name}</div>
-                </div>
-                {active && <span className="text-[9px] font-semibold uppercase tracking-[0.12em] opacity-75">Live</span>}
-              </div>
-            </div>
-            <div className="space-y-2 px-3 py-3">
-              <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.12em] opacity-55">
-                <span>{themeOption.id}</span>
-                {packageInfo?.sourceLabel ? (
-                  <>
-                    <span aria-hidden="true">•</span>
-                    <span>{packageInfo.sourceLabel}</span>
-                  </>
-                ) : null}
-                {packageInfo?.homepage ? <span>• {packageInfo.homepage.replace(/^https?:\/\//, '').replace(/\/$/, '')}</span> : null}
-              </div>
-              {description ? (
-                <p className="min-h-[2.75rem] text-[11px] leading-4 opacity-70">{description}</p>
-              ) : (
-                <p className="min-h-[2.75rem] text-[11px] leading-4 opacity-35">No package summary provided yet.</p>
-              )}
-              <div className="flex flex-wrap gap-1.5">
-                {defaultLayoutPrimitive ? <ThemeBadge label={`Layout ${defaultLayoutPrimitive.kind}`} active={active} /> : null}
-                {defaultNavigationPattern ? <ThemeBadge label={`Nav ${defaultNavigationPattern.kind}`} active={active} /> : null}
-                {defaultIconPack ? <ThemeBadge label={`Icons ${defaultIconPack.style}`} active={active} /> : null}
-                {defaultRenderStyle ? <ThemeBadge label={`Render ${defaultRenderStyle.kind}`} active={active} /> : null}
-                {compiledEngineManifest?.supportsHotSwappingRenderStyles
-                  ? <ThemeBadge label="Live Swap Ready" active={active} />
-                  : compiledEngineManifest
-                    ? <ThemeBadge label="Static Render" active={active} />
-                    : null}
-                {themeOption.defaultShaderId ? <ThemeBadge label={`Shader ${themeOption.defaultShaderId}`} active={active} /> : null}
-                {themeOption.defaultOpenAnimationId ? <ThemeBadge label={`Open ${themeOption.defaultOpenAnimationId}`} active={active} /> : null}
-                {themeOption.defaultCloseAnimationId ? <ThemeBadge label={`Close ${themeOption.defaultCloseAnimationId}`} active={active} /> : null}
-                {defaultAnimationProfile ? <ThemeBadge label={`Profile ${defaultAnimationProfile.id}`} active={active} /> : null}
-                {capabilityLabels.map(label => (
-                  <ThemeBadge key={`${themeOption.id}-${label}`} label={label} />
-                ))}
-                {(packageInfo?.tags ?? []).slice(0, 3).map(tag => (
-                  <ThemeBadge key={`${themeOption.id}-tag-${tag}`} label={tag} />
-                ))}
-              </div>
-              {packageInfo?.warnings.length ? (
-                <div className="rounded border px-2.5 py-2 text-[10px] leading-4" style={{ borderColor: 'rgba(245,158,11,0.32)', background: 'rgba(245,158,11,0.12)', color: '#fde68a' }}>
-                  {packageInfo.warnings.map(warning => (
-                    <div key={`${themeOption.id}-${warning}`}>{warning}</div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </button>
-        );
-      })}
+    themes.forEach(themeOption => {
+      const packageInfo = themePackageLookup.get(themeOption.id);
+      const sectionId = resolveThemeCatalogSectionId(themeOption, packageInfo);
+      groupedThemes[sectionId].push(themeOption);
+    });
+
+    return (['official-pilot', 'built-in', 'legacy-archive'] as const).map(sectionId => ({
+      sectionId,
+      themes: groupedThemes[sectionId],
+    }));
+  }, [themes, themePackageLookup]);
+
+  return (
+    <div className="space-y-4">
+      {catalogSections.map(section => (
+        <ThemeCatalogSection
+          key={section.sectionId}
+          sectionId={section.sectionId}
+          themes={section.themes}
+          activeThemeId={activeThemeId}
+          onSelect={onSelect}
+          themePackageLookup={themePackageLookup}
+        />
+      ))}
     </div>
   );
 }
@@ -1921,78 +2117,79 @@ export function SettingsPage({
 
             {activeSection === 'appearance' && (
               <section className="rounded border p-4" style={{ borderColor: 'var(--overlay-workbench-settings-card-border)', background: 'var(--overlay-workbench-settings-card-bg)' }}>
-            <SectionTitle
-              icon={<Palette size={12} />}
-              title="Appearance"
-              subtitle="Theme recipes, UI fonts, and direct palette editing."
-            />
-
-            <div className="mt-4 space-y-4">
-              <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Theme Packages</div>
-                    <p className="mt-1 text-[11px] opacity-40">
-                      Drop packaged themes into <code>{themePackagesDirectory}</code> and OverlayTerm will discover them as first-class themes with assets and visuals.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => void onOpenThemesFolder()}
-                      className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                      style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
-                    >
-                      Open Folder
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void onRefreshThemes()}
-                      className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                      style={{ border: `1px solid ${accent}`, background: `${accent}18`, color: text }}
-                    >
-                      <RefreshCw size={10} />
-                      Refresh
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
-                  <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
-                    {themePackagesLoading ? 'Scanning Packages' : `${themePackages.length} Package${themePackages.length === 1 ? '' : 's'} Loaded`}
-                  </span>
-                  <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
-                    Active Source: {getThemeSourceLabel(editableTheme)}
-                  </span>
-                </div>
-
-                {themePackagesError && (
-                  <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.18)', color: '#fecaca' }}>
-                    Theme package scan failed: {themePackagesError}
-                  </div>
-                )}
-
-                {themePackagesWarnings.length > 0 && (
-                  <div className="mt-3 rounded border px-3 py-3 text-[11px]" style={{ borderColor: '#854d0e', background: 'rgba(133,77,14,0.18)', color: '#fde68a' }}>
-                    <div className="font-semibold uppercase tracking-[0.12em]">Package warnings</div>
-                    <div className="mt-2 space-y-1.5">
-                      {themePackagesWarnings.map(warning => (
-                        <div key={warning}>{warning}</div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Application Theme Catalog</label>
-                <ThemeCatalogGrid
-                  themes={appearance.themes}
-                  activeThemeId={settings.appearance.activeThemeId}
-                  onSelect={applyThemeSelection}
-                  themePackageLookup={themePackageLookup}
+                <SectionTitle
+                  icon={<Palette size={12} />}
+                  title="Appearance"
+                  subtitle="Theme recipes, UI fonts, and direct palette editing."
                 />
-              </div>
+
+                <div className="mt-4 space-y-4">
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Theme Packages</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          Drop packaged themes into <code>{themePackagesDirectory}</code> and OverlayTerm will discover them as curated themes with assets and visuals.
+                          Official pilot themes surface first, built-ins stay supported, and archive material remains selectable without dominating the page.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void onOpenThemesFolder()}
+                          className="rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                          style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                        >
+                          Open Folder
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void onRefreshThemes()}
+                          className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                          style={{ border: `1px solid ${accent}`, background: `${accent}18`, color: text }}
+                        >
+                          <RefreshCw size={10} />
+                          Refresh
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
+                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                        {themePackagesLoading ? 'Scanning Packages' : `${themePackages.length} Package${themePackages.length === 1 ? '' : 's'} Loaded`}
+                      </span>
+                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+                        Active Source: {getThemeSourceLabel(editableTheme)}
+                      </span>
+                    </div>
+
+                    {themePackagesError && (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.18)', color: '#fecaca' }}>
+                        Theme package scan failed: {themePackagesError}
+                      </div>
+                    )}
+
+                    {themePackagesWarnings.length > 0 && (
+                      <div className="mt-3 rounded border px-3 py-3 text-[11px]" style={{ borderColor: '#854d0e', background: 'rgba(133,77,14,0.18)', color: '#fde68a' }}>
+                        <div className="font-semibold uppercase tracking-[0.12em]">Package warnings</div>
+                        <div className="mt-2 space-y-1.5">
+                          {themePackagesWarnings.map(warning => (
+                            <div key={warning}>{warning}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Curated Theme Suite</label>
+                    <ThemeCatalogGrid
+                      themes={appearance.themes}
+                      activeThemeId={settings.appearance.activeThemeId}
+                      onSelect={applyThemeSelection}
+                      themePackageLookup={themePackageLookup}
+                    />
+                  </div>
 
               <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2052,7 +2249,7 @@ export function SettingsPage({
 
               {settings.appearance.dockThemeMode === 'override' && (
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Dock Theme Catalog</label>
+                  <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Curated Dock Theme Suite</label>
                   <ThemeCatalogGrid
                     themes={appearance.themes}
                     activeThemeId={settings.appearance.activeDockThemeId}
