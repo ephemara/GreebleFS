@@ -1,5 +1,25 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Explorer Context Menu Catalog / Plugin Composer
+
+- Explorer context menus now resolve through a shared typed catalog instead of ad hoc hardcoded JSX-only item lists.
+- Durable implementation shape:
+  - `src/config/explorerContextMenu.ts` is the source of truth for built-in explorer context menu actions, group/order metadata, override normalization, sorting, and legacy explorer-action compatibility shims.
+  - `src/config/pluginContributions.ts` and `src/config/pluginPackages.ts` now support `contextMenuItems` plugin contributions. Package manifests can contribute either:
+    - terminal-template items that inject/run terminal commands with token substitution
+    - compiled backend items that execute a plugin-owned binary/script entry through the existing native plugin backend runner
+  - `src/runtime/useFolderPluginRuntime.ts`, `src/panels/panelRegistry.tsx`, `src/components/explorer/ExplorerWorkspace.tsx`, and `src/components/FileExplorer.tsx` now carry `pluginContextMenuItems` all the way into the explorer surface.
+  - `FileExplorer.tsx` now builds entry/background menus from the shared catalog, then applies per-item visibility and user-defined sort overrides before rendering separators.
+  - `src/store/settingsStore.ts` now persists `settings.explorer.contextMenuItemOverrides`, and `src/components/SettingsPage.tsx` exposes a `Context Menu Composer` for enabling/disabling items and reordering built-ins plus plugin items together.
+- Durable authoring note:
+  - plugin manifest `contributions.contextMenuItems` supports `contexts`, `appliesTo`, `group`, `order`, `iconName`, `command`, `runOnSelect`, and `backend.{ entry, args }`
+  - backend entries must stay package-relative and pass the same safe-relative-path validation as other plugin assets
+- Validation:
+  - passed: `bunx vitest run src/test/pluginPackages.test.ts src/test/panelRegistry.test.tsx src/test/pluginsManager.test.tsx src/test/useFolderPluginRuntime.test.tsx src/test/useFolderPluginRuntime.queue.test.tsx src/test/ExplorerWorkspace.test.tsx`
+  - passed: `bunx vitest run src/test/settingsStore.test.ts -t "context menu overrides"`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "context menu composer"`
+  - repo note: broad `bunx tsc --noEmit --skipLibCheck` is still red on unrelated long-standing `explorerStore` and `FileExplorer.tsx` issues, and the fallback polling watcher suite still has pre-existing timer/cleanup instability that is not specific to the context-menu plugin path
+
 ## 2026-04-15 — Theme Renderer Multi-File Module Graph
 
 - Theme renderers are no longer single-file only.

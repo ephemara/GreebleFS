@@ -136,6 +136,27 @@ describe('plugin package discovery', () => {
                 appliesTo: 'file',
               },
             ],
+            contextMenuItems: [
+              {
+                id: 'send-to-aquarium',
+                title: 'Send To Aquarium',
+                contexts: ['entry', 'background'],
+                appliesTo: 'directory',
+                group: 'plugin',
+                order: 640,
+                command: 'aquarium {path}',
+              },
+              {
+                id: 'compiled-index',
+                title: 'Run Compiled Indexer',
+                contexts: ['entry'],
+                appliesTo: 'any',
+                backend: {
+                  entry: 'backend/indexer',
+                  args: ['--path', '{path}'],
+                },
+              },
+            ],
           },
         });
       }
@@ -228,6 +249,7 @@ describe('plugin package discovery', () => {
     expect(result.plugins[1]?.diagnostics.capabilities.themes).toBe(1);
     expect(result.plugins[1]?.diagnostics.capabilities.shaders).toBe(1);
     expect(result.plugins[1]?.diagnostics.capabilities.commands).toBe(1);
+    expect(result.plugins[1]?.diagnostics.capabilities.contextMenuItems).toBe(2);
     expect(result.themePackages).toHaveLength(1);
     expect(result.themePackages[0]?.theme.id).toBe('cobalt-plugin-theme');
     expect(result.themePackages[0]?.sourceKind).toBe('plugin-package');
@@ -238,6 +260,20 @@ describe('plugin package discovery', () => {
     expect(result.fonts[0]?.sourceUrl?.replace(/\\/g, '/')).toContain('plugins/mega-plugin/fonts/mega-ui.ttf');
     expect(result.commands.map(command => command.name)).toEqual(['Build Project']);
     expect(result.explorerActions.map(action => action.label)).toEqual(['Echo Path']);
+    expect(result.contextMenuItems.map(item => item.title)).toEqual([
+      'Run Compiled Indexer',
+      'Send To Aquarium',
+    ]);
+    expect(result.contextMenuItems[0]?.execution).toEqual({
+      kind: 'plugin-backend',
+      entry: 'backend/indexer',
+      args: ['--path', '{path}'],
+    });
+    expect(result.contextMenuItems[1]?.execution).toEqual({
+      kind: 'terminal-template',
+      command: 'aquarium {path}',
+      runOnSelect: true,
+    });
   });
 
   it('rejects unsafe package-relative paths before loading bundled assets', async () => {
@@ -295,6 +331,8 @@ describe('plugin package discovery', () => {
     expect(result.plugins).toHaveLength(0);
     expect(result.themePackages).toHaveLength(0);
     expect(result.fonts).toHaveLength(0);
-    expect(result.warnings).toEqual([]);
+    expect(result.warnings).toEqual([
+      'Unsafe Plugin: font Broken Font: invalid relative path',
+    ]);
   });
 });

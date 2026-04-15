@@ -692,6 +692,7 @@ describe('mergeSettingsWithDefaults()', () => {
     expect(merged.system.showInTaskbar).toBe(defaultSettings.system.showInTaskbar);
     expect(merged.screenshots).toEqual(defaultSettings.screenshots);
     expect(merged.layout).toEqual(defaultSettings.layout);
+    expect(merged.explorer.contextMenuItemOverrides).toEqual(defaultSettings.explorer.contextMenuItemOverrides);
   });
 
   it('clamps imported animation tuning into a supported range', () => {
@@ -754,6 +755,23 @@ describe('mergeSettingsWithDefaults()', () => {
 
     expect(merged.explorer.experimentalViewMode).toBe('off');
     expect(merged.explorer.experimentalDensity).toBe(defaultSettings.explorer.experimentalDensity);
+  });
+
+  it('normalizes malformed context menu overrides into a safe sortable map', () => {
+    const merged = mergeSettingsWithDefaults({
+      explorer: {
+        contextMenuItemOverrides: {
+          'built-in.open': { enabled: false, order: 27.6 },
+          '': { enabled: true },
+          'broken-shape': 'nope',
+          'plugin.action': { enabled: 'yes', order: Number.NaN },
+        },
+      } as unknown as typeof defaultSettings.explorer,
+    });
+
+    expect(merged.explorer.contextMenuItemOverrides).toEqual({
+      'built-in.open': { enabled: false, order: 28 },
+    });
   });
 
   it('normalizes unsupported window presentation values back to safe defaults', () => {

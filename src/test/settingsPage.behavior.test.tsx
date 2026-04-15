@@ -14,6 +14,7 @@ import { defaultSettings, useSettingsStore } from '../store/settingsStore';
 import { useExplorerStore } from '../store/explorerStore';
 import { useTerminalStore } from '../store/terminalStore';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
+import type { OverlayPluginContextMenuContribution, OverlayPluginExplorerActionContribution } from '../config/pluginContributions';
 
 function findSectionButton(label: string): HTMLButtonElement {
   const button = screen.getAllByRole('button').find(entry => entry.textContent?.includes(label));
@@ -26,6 +27,8 @@ function findSectionButton(label: string): HTMLButtonElement {
 function renderSettingsPage(options?: {
   appearanceThemeId?: string;
   themePackages?: LoadedOverlayThemePackage[];
+  pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
+  pluginExplorerActions?: OverlayPluginExplorerActionContribution[];
 }) {
   const packageThemes = (options?.themePackages ?? []).map(pkg => pkg.theme);
   const appearanceSettings = useSettingsStore.getState().settings.appearance;
@@ -71,6 +74,8 @@ function renderSettingsPage(options?: {
       onRefreshWallpapers={async () => {}}
       onOpenWallpapersFolder={async () => {}}
       onImportWallpaperFiles={async () => {}}
+      pluginContextMenuItems={options?.pluginContextMenuItems}
+      pluginExplorerActions={options?.pluginExplorerActions}
     />,
   );
 }
@@ -193,6 +198,56 @@ describe('SettingsPage behavior', () => {
     );
     expect(invokeMock).toHaveBeenCalledWith('fs_get_home_dir');
   }, 30000);
+
+  it('lets the explorer context menu composer disable and reorder plugin menu items', async () => {
+    const user = userEvent.setup();
+    renderSettingsPage({
+      pluginContextMenuItems: [
+        {
+          id: 'sample-plugin.context-menu.capture',
+          pluginId: 'sample-plugin',
+          pluginName: 'Sample Tools',
+          title: 'Capture Memory Snapshot',
+          contexts: ['entry'],
+          appliesTo: 'file',
+          group: 'plugin',
+          defaultOrder: 650,
+          execution: {
+            kind: 'plugin-backend',
+            entry: 'backend/capture-snapshot',
+            args: ['{path}'],
+          },
+        },
+      ],
+    });
+
+    await user.click(findSectionButton('Explorer'));
+    expect(screen.getByText('Context Menu Composer')).toBeInTheDocument();
+    expect(screen.getByText('Capture Memory Snapshot')).toBeInTheDocument();
+    expect(screen.getByText('Plugin · Sample Tools')).toBeInTheDocument();
+    expect(screen.getByText('Backend · backend/capture-snapshot')).toBeInTheDocument();
+
+    const contextMenuCheckboxes = screen.getAllByRole('checkbox');
+    const pluginCheckbox = contextMenuCheckboxes[contextMenuCheckboxes.length - 1] as HTMLInputElement | undefined;
+    if (!pluginCheckbox) {
+      throw new Error('Expected plugin context menu checkbox');
+    }
+
+    expect(pluginCheckbox.checked).toBe(true);
+    await user.click(pluginCheckbox);
+
+    expect(useSettingsStore.getState().settings.explorer.contextMenuItemOverrides['sample-plugin.context-menu.capture']).toEqual({
+      enabled: false,
+      order: expect.any(Number),
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Normalize Order' }));
+
+    expect(useSettingsStore.getState().settings.explorer.contextMenuItemOverrides['sample-plugin.context-menu.capture']).toEqual({
+      enabled: false,
+      order: expect.any(Number),
+    });
+  });
 
   it('syncs startup registration, desktop visibility toggles, and commits hotkey edits', async () => {
     const user = userEvent.setup();
