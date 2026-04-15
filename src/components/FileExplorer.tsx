@@ -121,7 +121,6 @@ import {
 } from './explorer/constellationLayout';
 import { ExplorerTaskStatusBadge } from './explorer/ExplorerTaskStatusBadge';
 import {
-  getExplorerDirectoryCacheKey,
   invalidateExplorerDirectoryResultCaches,
   loadCachedExplorerLocation,
   storeExplorerCachedLocation,
@@ -147,6 +146,7 @@ import { shouldOpenExplorerEntryOnTrigger } from './fileExplorerClickBehavior';
 import { resolveExplorerSearchScope } from './fileExplorerSearchScope';
 import type { DocumentPreviewKind } from './documentPreview';
 import {
+  EXPLORER_IMAGE_TILE_PREVIEW_CONFIG,
   getModelPreviewFormat,
   getMonacoLanguage,
   isEditableTextExtension,
@@ -209,6 +209,7 @@ const EXPLORER_GRID_OVERSCAN_ROWS = 2;
 const EXPLORER_LAYOUT_WHEEL_STEP_DELTA = 80;
 const EXPLORER_ENTRY_SIZE_BATCH_SETTLE_MS = 72;
 const EXPLORER_NATIVE_ICON_BATCH_SETTLE_MS = 96;
+const EXPLORER_IMAGE_TILE_THUMBNAIL_BATCH_SETTLE_MS = 88;
 
 type ExplorerSearchCacheEntry = {
   results: FileSearchResult[];
@@ -2384,6 +2385,7 @@ export function FileExplorer({
     openWithDialog: openExplorerPathWithDialog,
     openPathAsAdmin: openExplorerPathAsAdmin,
     readFileBase64: readExplorerFileBase64,
+    readImageThumbnail: readExplorerImageThumbnail,
     readTextFile: readExplorerTextFile,
     renamePath: renameExplorerPath,
     revealPath: revealExplorerPath,
@@ -2527,6 +2529,8 @@ export function FileExplorer({
   const [entrySizeLoadingPaths, setEntrySizeLoadingPaths] = useState<Set<string>>(() => new Set());
   const [nativeIconMap, setNativeIconMap] = useState<Record<string, string | null>>({});
   const [nativeIconLoadingKeys, setNativeIconLoadingKeys] = useState<Set<string>>(() => new Set());
+  const [imageThumbnailMap, setImageThumbnailMap] = useState<Record<string, string | null>>({});
+  const [imageThumbnailLoadingPaths, setImageThumbnailLoadingPaths] = useState<Set<string>>(() => new Set());
   const [searchResults, setSearchResults] = useState<FileSearchResult[]>([]);
   const [drives,       setDrives]       = useState<DriveInfo[]>([]);
   const [drivesLoading, setDrivesLoading] = useState(true);
@@ -2836,7 +2840,6 @@ export function FileExplorer({
     }
     const startedAt = getExplorerPerformanceNow();
     const normalizedPath = normalizeExplorerPath(path);
-    const directoryCacheKey = getExplorerDirectoryCacheKey(normalizedPath, showHidden);
     const requestId = directoryLoadRequestIdRef.current + 1;
     directoryLoadRequestIdRef.current = requestId;
     const isActiveDirectoryLoadRequest = () => (
@@ -3671,6 +3674,16 @@ export function FileExplorer({
     themeIconTheme,
     useNativeOsIcons,
   ]);
+
+  const getGridEntryThumbnailSrc = useCallback((entry: FileEntry): string | null => {
+    if (entry.is_dir || currentPathIsCloud) {
+      return null;
+    }
+    if (!isImagePreviewExtension(getEntryExtension(entry))) {
+      return null;
+    }
+    return imageThumbnailMap[entry.path] ?? null;
+  }, [currentPathIsCloud, imageThumbnailMap]);
 
   const queueClipboard = useCallback((action: 'copy' | 'cut', entry?: FileEntry) => {
     const entriesForAction = resolveEntriesForAction(entry);
@@ -8320,6 +8333,7 @@ export function FileExplorer({
               locationLabel={locationLabel}
               drives={drives}
               drivesLoading={drivesLoading}
+              showHiddenFiles={showHidden}
               isCompactDock={isCompactDock}
               savedSearches={savedSearches}
               availableTags={tagMetadata.tags}

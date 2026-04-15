@@ -280,8 +280,14 @@ export function ExplorerSideRail({
     if (!currentPath || isCloudExplorerPath(currentPath)) {
       return [];
     }
-    return getLocalPathAncestors(currentPath);
-  }, [currentPath]);
+    const ancestors = getLocalPathAncestors(currentPath);
+    const rootPath = ancestors[0];
+    if (!rootPath) {
+      return [];
+    }
+    const knownDrivePaths = new Set(localDrives.map((drive) => normalizeLocalTreePath(drive.path)));
+    return knownDrivePaths.has(rootPath) ? ancestors : [];
+  }, [currentPath, localDrives]);
 
   useEffect(() => {
     if (currentPathAncestors.length === 0) {
@@ -1262,6 +1268,143 @@ function BookmarkTreeRow({
   );
 }
 
+function LocalFolderTreeRow({
+  accent,
+  dense,
+  currentPath,
+  path,
+  depth,
+  expandedFolderPaths,
+  folderChildrenByPath,
+  onNavigate,
+  onToggleExpand,
+  onRetryLoad,
+}: LocalFolderTreeRowProps) {
+  const normalizedPath = normalizeLocalTreePath(path);
+  const loadState = folderChildrenByPath[normalizedPath];
+  const childFolders = loadState?.childFolders ?? [];
+
+  if (loadState?.status === 'loading' || !loadState) {
+    return (
+      <div style={{ marginTop: 4, marginLeft: depth === 0 ? 0 : 12 + depth * 16, fontSize: 9, color: 'var(--overlay-text-dim)' }}>
+        Loading folders…
+      </div>
+    );
+  }
+
+  if (loadState.status === 'error') {
+    return (
+      <div style={{ marginTop: 4, marginLeft: depth === 0 ? 0 : 12 + depth * 16 }}>
+        <div style={localTreeFeedbackStyle}>
+          <span>{loadState.errorMessage || 'Unable to load folders.'}</span>
+          <button type="button" onClick={() => onRetryLoad(normalizedPath)} style={localTreeRetryButtonStyle}>
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (childFolders.length === 0) {
+    return (
+      <div style={{ marginTop: 4, marginLeft: depth === 0 ? 0 : 12 + depth * 16, fontSize: 9, color: 'var(--overlay-text-dim)' }}>
+        No subfolders
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {childFolders.map((childFolder) => {
+        const childPath = normalizeLocalTreePath(childFolder.path);
+        const childState = folderChildrenByPath[childPath];
+        const isExpanded = expandedFolderPaths.includes(childPath);
+        const isActive = isSameLocalPath(childPath, currentPath);
+        const isAncestor = !isActive && isSameOrDescendantLocalPath(childPath, currentPath);
+        const canExpand = isExpanded || childState?.status !== 'ready' || (childState.childFolders?.length ?? 0) > 0;
+
+        return (
+          <div key={childPath} style={{ marginTop: 4 }}>
+            <div
+              role="treeitem"
+              aria-expanded={canExpand ? isExpanded : undefined}
+              aria-selected={isActive}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: dense ? '5px 6px' : '6px 8px',
+                paddingLeft: 8 + depth * 16,
+                borderRadius: 10,
+                border: `1px solid ${isActive ? `${accent}44` : 'transparent'}`,
+                background: isActive ? `${accent}12` : isAncestor ? `${accent}0d` : 'transparent',
+              }}
+            >
+              {canExpand ? (
+                <button
+                  type="button"
+                  aria-label={isExpanded ? `Collapse ${childFolder.name}` : `Expand ${childFolder.name}`}
+                  onClick={() => onToggleExpand(childPath)}
+                  style={treeIconButtonStyle}
+                >
+                  {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                </button>
+              ) : (
+                <span style={{ width: 20, flexShrink: 0 }} />
+              )}
+
+              <button
+                type="button"
+                onClick={() => onNavigate(childPath)}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--overlay-text-primary)',
+                  cursor: 'pointer',
+                  padding: 0,
+                  textAlign: 'left',
+                }}
+              >
+                {isExpanded ? (
+                  <FolderOpen size={dense ? 11 : 13} style={{ color: isActive ? accent : 'var(--overlay-text-muted)', flexShrink: 0 }} />
+                ) : (
+                  <Folder size={dense ? 11 : 13} style={{ color: isActive ? accent : 'var(--overlay-text-muted)', flexShrink: 0 }} />
+                )}
+                <div style={{ minWidth: 0 }}>
+                  <div style={bookmarkTitleStyle}>{childFolder.name || getPathLeaf(childPath)}</div>
+                  {!dense && (
+                    <div style={bookmarkMetaStyle}>{childPath}</div>
+                  )}
+                </div>
+              </button>
+            </div>
+
+            {isExpanded && (
+              <LocalFolderTreeRow
+                accent={accent}
+                dense={dense}
+                currentPath={currentPath}
+                path={childPath}
+                depth={depth + 1}
+                expandedFolderPaths={expandedFolderPaths}
+                folderChildrenByPath={folderChildrenByPath}
+                onNavigate={onNavigate}
+                onToggleExpand={onToggleExpand}
+                onRetryLoad={onRetryLoad}
+              />
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 function RailSection({
   title,
   collapsed,
@@ -1340,6 +1483,96 @@ function getPathLeaf(path: string): string {
   return segments[segments.length - 1] ?? trimmed;
 }
 
+function isWindowsLocalPath(path: string): boolean {
+  return /^[A-Za-z]:/.test(path.trim());
+}
+
+function normalizeLocalTreePath(path: string): string {
+  const trimmed = path.trim();
+  if (!trimmed) {
+    return '';
+  }
+  if (/^[A-Za-z]:[\\/]?$/.test(trimmed)) {
+    return `${trimmed.slice(0, 2)}\\`;
+  }
+  if (/^\/+$/.test(trimmed)) {
+    return '/';
+  }
+  return isWindowsLocalPath(trimmed)
+    ? trimmed.replace(/\//g, '\\').replace(/[\\]+$/, '')
+    : trimmed.replace(/[\\/]+$/, '');
+}
+
+function getLocalPathComparisonKey(path: string): string {
+  const normalized = normalizeLocalTreePath(path);
+  return isWindowsLocalPath(normalized) ? normalized.toUpperCase() : normalized;
+}
+
+function isSameLocalPath(leftPath: string, rightPath: string): boolean {
+  return getLocalPathComparisonKey(leftPath) === getLocalPathComparisonKey(rightPath);
+}
+
+function isSameOrDescendantLocalPath(candidateAncestorPath: string, candidatePath: string): boolean {
+  const ancestor = normalizeLocalTreePath(candidateAncestorPath);
+  const target = normalizeLocalTreePath(candidatePath);
+  if (!ancestor || !target) {
+    return false;
+  }
+  const ancestorKey = getLocalPathComparisonKey(ancestor);
+  const targetKey = getLocalPathComparisonKey(target);
+  if (ancestorKey === targetKey) {
+    return true;
+  }
+  if (ancestor === '/') {
+    return target.startsWith('/');
+  }
+  const separator = isWindowsLocalPath(ancestor) ? '\\' : '/';
+  return targetKey.startsWith(`${ancestorKey}${separator}`);
+}
+
+function getLocalTreeRootPath(path: string): string | null {
+  const ancestors = getLocalPathAncestors(path);
+  return ancestors[0] ?? null;
+}
+
+function getLocalPathAncestors(path: string): string[] {
+  const normalized = normalizeLocalTreePath(path);
+  if (!normalized) {
+    return [];
+  }
+
+  if (isWindowsLocalPath(normalized)) {
+    const driveRoot = `${normalized.slice(0, 2)}\\`;
+    if (normalized === driveRoot) {
+      return [driveRoot];
+    }
+    const remainder = normalized.slice(2).replace(/^\\+/, '');
+    const parts = remainder.split(/\\/).filter(Boolean);
+    const ancestors: string[] = [driveRoot];
+    let currentPath = driveRoot;
+    for (const part of parts) {
+      currentPath = currentPath.endsWith('\\')
+        ? `${currentPath}${part}`
+        : `${currentPath}\\${part}`;
+      ancestors.push(currentPath);
+    }
+    return ancestors;
+  }
+
+  if (normalized === '/') {
+    return ['/'];
+  }
+
+  const parts = normalized.replace(/^\/+/, '').split('/').filter(Boolean);
+  const ancestors: string[] = ['/'];
+  let currentPath = '';
+  for (const part of parts) {
+    currentPath = `${currentPath}/${part}`;
+    ancestors.push(currentPath);
+  }
+  return ancestors;
+}
+
 const dismissButtonStyle: React.CSSProperties = {
   width: 18,
   height: 18,
@@ -1350,6 +1583,30 @@ const dismissButtonStyle: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
+  cursor: 'pointer',
+  flexShrink: 0,
+};
+
+const localTreeFeedbackStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 8,
+  padding: '6px 8px',
+  borderRadius: 'var(--overlay-explorer-control-radius)',
+  border: '1px solid var(--overlay-explorer-chip-border)',
+  background: 'var(--overlay-explorer-chip-bg)',
+  color: 'var(--overlay-text-dim)',
+  fontSize: 9,
+};
+
+const localTreeRetryButtonStyle: React.CSSProperties = {
+  borderRadius: 'var(--overlay-explorer-control-radius)',
+  border: '1px solid var(--overlay-explorer-chip-border)',
+  background: 'transparent',
+  color: 'var(--overlay-text-primary)',
+  fontSize: 9,
+  padding: '3px 7px',
   cursor: 'pointer',
   flexShrink: 0,
 };

@@ -1,5 +1,14 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { listExplorerLocation } from '../runtime/explorerBackend';
+
+vi.mock('../runtime/explorerBackend', () => {
+  return {
+    isCloudExplorerPath: (path: string) => path.trim().startsWith('cloud://'),
+    listExplorerLocation: vi.fn(),
+  };
+});
+
 import { ExplorerSideRail } from '../components/explorer/ExplorerSideRail';
 import { createDefaultExplorerRailSnapshot } from '../components/explorer/explorerRailState';
 import { useExplorerStore } from '../store/explorerStore';
@@ -17,6 +26,7 @@ beforeEach(() => {
   useExplorerStore.getState().resetSession();
   useExplorerStore.getState().replaceRail(createDefaultExplorerRailSnapshot());
   useExplorerStore.getState().clearPersistenceNotice();
+  vi.mocked(listExplorerLocation).mockReset();
 });
 
 describe('ExplorerSideRail', () => {
@@ -30,6 +40,7 @@ describe('ExplorerSideRail', () => {
         currentPath="M:\\OverlayTerm"
         drives={[]}
         drivesLoading={false}
+        showHiddenFiles={false}
         isCompactDock={false}
         onNavigate={vi.fn()}
         onGoHome={vi.fn()}
@@ -77,6 +88,7 @@ describe('ExplorerSideRail', () => {
         currentPath="M:\\Workspace"
         drives={[]}
         drivesLoading={false}
+        showHiddenFiles={false}
         isCompactDock={false}
         onNavigate={vi.fn()}
         onGoHome={vi.fn()}
@@ -97,6 +109,7 @@ describe('ExplorerSideRail', () => {
       currentPath: 'M:\\Workspace',
       drives: [],
       drivesLoading: false,
+      showHiddenFiles: false,
       isCompactDock: false,
       onNavigate: vi.fn(),
       onGoHome: vi.fn(),
@@ -134,6 +147,7 @@ describe('ExplorerSideRail', () => {
         currentPath="M:\\OverlayTerm"
         drives={[]}
         drivesLoading={false}
+        showHiddenFiles={false}
         isCompactDock={false}
         onNavigate={vi.fn()}
         onGoHome={vi.fn()}
@@ -158,6 +172,7 @@ describe('ExplorerSideRail', () => {
         currentPath="M:\\OverlayTerm"
         drives={[]}
         drivesLoading={false}
+        showHiddenFiles={false}
         isCompactDock={false}
         onNavigate={vi.fn()}
         onGoHome={vi.fn()}
@@ -184,4 +199,103 @@ describe('ExplorerSideRail', () => {
       expect.objectContaining({ kind: 'bookmark', path: 'M:\\OverlayTerm' }),
     ]));
   }, 20000);
+
+  it('renders a lazy local folder tree under expanded drives and navigates nested folders', async () => {
+    const onNavigate = vi.fn();
+    vi.mocked(listExplorerLocation).mockImplementation(async (path: string) => {
+      if (path === 'C:\\') {
+        return {
+          kind: 'local',
+          path,
+          parentPath: null,
+          breadcrumbs: [{ label: 'C:\\', path: 'C:\\' }],
+          entries: [
+            {
+              name: 'Users',
+              path: 'C:\\Users',
+              is_dir: true,
+              size: 0,
+              modified: 0,
+              extension: '',
+              is_hidden: false,
+              is_symlink: false,
+            },
+          ],
+        };
+      }
+      if (path === 'C:\\Users') {
+        return {
+          kind: 'local',
+          path,
+          parentPath: 'C:\\',
+          breadcrumbs: [
+            { label: 'C:\\', path: 'C:\\' },
+            { label: 'Users', path: 'C:\\Users' },
+          ],
+          entries: [
+            {
+              name: 'alice',
+              path: 'C:\\Users\\alice',
+              is_dir: true,
+              size: 0,
+              modified: 0,
+              extension: '',
+              is_hidden: false,
+              is_symlink: false,
+            },
+          ],
+        };
+      }
+      return {
+        kind: 'local',
+        path,
+        parentPath: null,
+        breadcrumbs: [],
+        entries: [],
+      };
+    });
+
+    render(
+      <ExplorerSideRail
+        accent="#7c3aed"
+        brandLabel="Explorer"
+        chromeLayoutId="default"
+        sidebarWidth={260}
+        currentPath="C:\\"
+        drives={[
+          {
+            kind: 'local',
+            id: 'C:',
+            path: 'C:\\',
+            letter: 'C:\\',
+            label: 'System',
+            total_bytes: 1000,
+            free_bytes: 400,
+            drive_type: 'fixed',
+          },
+        ]}
+        drivesLoading={false}
+        showHiddenFiles={false}
+        isCompactDock={false}
+        onNavigate={onNavigate}
+        onGoHome={vi.fn()}
+        onBookmarkCreated={vi.fn()}
+        resolveDroppedSources={() => []}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Users')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText(/expand users/i));
+
+    await waitFor(() => {
+      expect(screen.getByText('alice')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('alice').closest('button') as HTMLButtonElement);
+
+    expect(onNavigate).toHaveBeenCalledWith('C:\\Users\\alice');
+  });
 });

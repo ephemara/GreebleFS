@@ -1,5 +1,17 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Explorer Rail Folder Tree
+
+- The explorer rail now has a real lazy local folder tree under `Drives`, closer to the expected Windows/Finder-style folder-navigation model instead of a flat drive-only list.
+- Durable implementation shape:
+  - `src/components/explorer/ExplorerSideRail.tsx` now expands local drive roots into nested folder rows, auto-expands the active path ancestors, shows load/error/empty states, and routes folder clicks back through the existing explorer navigation path.
+  - `src/components/explorer/explorerDirectoryCache.ts` is now the shared directory-listing cache contract for both `FileExplorer.tsx` and the rail tree, so the side rail does not invent a second uncached filesystem-read path.
+  - `src/components/FileExplorer.tsx` now passes hidden-file visibility into the rail and continues to own global cache invalidation through `invalidateExplorerResultCaches()`.
+- Validation:
+  - passed: `bunx vitest run --environment jsdom src/test/explorerSideRail.test.tsx`
+  - passed: `bunx vitest run --environment jsdom src/test/fileExplorer.viewModes.test.tsx`
+  - passed: `bun run build`
+
 ## 2026-04-15 — Explorer Task Center / Release Hardening
 
 - Explorer long-running file operations now have a durable Rust-backed task model instead of a badge-only transient feed.
