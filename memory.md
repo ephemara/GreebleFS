@@ -1,5 +1,27 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Vibe Capsule Flagship Plugin Pass
+
+- Added a new built-in package plugin under `plugins/vibe-capsule/`:
+  - `plugin.json` package manifest
+  - `dist/index.tsx` runtime entry
+  - `themes/vibe-capsule-shell/theme.json` packaged theme contribution
+- `Vibe Capsule` is meant to be a high-signal consumer/creative reference plugin, not a narrow utility panel. It ingests dropped explorer paths or browser-picked files, derives a mood profile from the source material, renders a playable ambient shrine scene, persists archived capsules in plugin storage, and exports a generated shell-skin theme manifest.
+- Durable implementation constraints:
+  - the current plugin runtime still only exposes the allowlisted frontend modules (`react`, `lucide-react`, selected Tauri modules, `overlayterm-plugin`), so this plugin stays single-file and avoids relative imports/bundled `three`
+  - explorer-origin drops flow through `application/x-overlayterm-paths`
+  - native file access inside plugins currently routes through `api.invoke('fs_list_dir' | 'fs_read_text_file' | 'fs_read_file_base64' | 'fs_open_file' | 'fs_reveal_in_explorer')`
+- Added regression coverage:
+  - `src/test/pluginRuntime.test.ts` now validates the shipped runtime-entry plugins that actually exist on disk: `drawable-canvas`, `filesystem-aquarium`, and `vibe-capsule`
+  - `src/test/vibeCapsule.pluginPackage.test.ts` exercises real on-disk package discovery for `plugins/vibe-capsule`, including its theme contribution
+- Updated `.gitignore` to whitelist `plugins/**/dist/**`. Durable reason:
+  packaged plugin `dist/` folders are source/runtime entries in this repo, not disposable app-build output. Without the whitelist, built-in package plugins vanish from Git tracking.
+- Validation:
+  - passed: `bunx vitest run src/test/pluginRuntime.test.ts src/test/vibeCapsule.pluginPackage.test.ts`
+  - repo note: `bunx vitest run src/test/pluginPackages.test.ts` still has a pre-existing failing assertion in the unsafe-relative-path warning case and was not part of this plugin pass
+- Recommended next step:
+  if Aquarium becomes the second flagship plugin, either expose `three` through the plugin runtime allowlist or add a dedicated richer visual host path before pushing it further.
+
 ## 2026-04-15 — Renderer-Owned Shell Contract Pass
 
 - Added `src/components/themeRendererShellModel.ts`, which builds a normalized theme-renderer shell model with:

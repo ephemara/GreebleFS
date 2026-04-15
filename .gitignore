@@ -6,6 +6,8 @@ node_modules-linux/
 node_modules-win32/
 node_modules-darwin/
 dist/
+!plugins/**/dist/
+!plugins/**/dist/**
 website/
 dist-ssr/
 build/

@@ -173,8 +173,12 @@ describe('pluginRuntime helpers', () => {
     expect(typeof loaded.component).toBe('function');
   });
 
-  it('loads the portable sample plugins from disk through the runtime transpiler', async () => {
-    for (const filename of ['drawable-canvas.tsx', 'chronorift/dist/index.tsx']) {
+  it('loads the shipped sample plugins with runtime panel entries from disk through the runtime transpiler', async () => {
+    for (const filename of [
+      'drawable-canvas.tsx',
+      'filesystem-aquarium/dist/index.tsx',
+      'vibe-capsule/dist/index.tsx',
+    ]) {
       const pluginPath = resolve(pluginSystemConfig.pluginsDirectory, filename);
       const source = await readFile(pluginPath, 'utf8');
 
@@ -190,10 +194,10 @@ describe('pluginRuntime helpers', () => {
         () => ({
           invoke: async <T,>() => null as T,
           event: {} as never,
-        window: {} as never,
-        fs: {} as never,
-        notification: {} as never,
-        refreshPlugins: async () => undefined,
+          window: {} as never,
+          fs: {} as never,
+          notification: {} as never,
+          refreshPlugins: async () => undefined,
           openPluginsFolder: async () => undefined,
           runBackend: async () => ({ stdout: '', stderr: '', status: 0 }),
         }),
