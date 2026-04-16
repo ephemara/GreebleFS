@@ -1,0 +1,90 @@
+name: Publish & Release on version bump
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'package.json'
+
+permissions:
+  contents: write
+
+jobs:
+  publish-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js and auth
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: https://registry.npmjs.org
+          scope: '@anu3ev'
+          always-auth: true
+          token: ${{ secrets.NPM_TOKEN }}
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Check package.json version bump
+        id: check_bump
+        run: |
+          git diff --quiet HEAD^ HEAD -- package.json && {
+            echo "package.json не менялся — пропускаем всё"
+            echo "should_publish=false" >> $GITHUB_OUTPUT
+            exit 0
+          }
+          if git diff HEAD^ HEAD -- package.json | grep -q '"version":'; then
+            echo "Обнаружен bump версии в package.json"
+            echo "should_publish=true" >> $GITHUB_OUTPUT
+          else
+            echo "package.json менялся, но версия осталась прежней — пропускаем"
+            echo "should_publish=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish to npm and create Git tag
+        id: publish_npm
+        if: steps.check_bump.outputs.should_publish == 'true'
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v${VERSION}"
+
+          echo "► Публикация пакета в npm (version=${VERSION})"
+          npm publish --access public
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Тэг $TAG уже существует → пропускаем его создание"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+
+          # Передаём внешний параметр, чтобы следующий шаг видел, какой тег создать в релизе
+          echo "RELEASE_TAG=$TAG" >> $GITHUB_OUTPUT
+
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release (softprops)
+        if: steps.check_bump.outputs.should_publish == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.publish_npm.outputs.RELEASE_TAG }}
+          name: "Release ${{ steps.publish_npm.outputs.RELEASE_TAG }}"
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

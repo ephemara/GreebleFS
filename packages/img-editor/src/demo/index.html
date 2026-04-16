@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Простой редактор на Fabric.js</title>
+  <link href="./vendor/bootstrap.min.css" rel="stylesheet">
+
+  <script type="module" src="./js/index.js"></script>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+
+<body class="bg-light p-3">
+  <div class="container-fluid py-3">
+    <div id="canvas-container" class="d-flex row justify-content-center">
+      <div class="col-md-3">
+        <div class="card h-100">
+          <div class="w-100 card-body canvas-state">
+            <div class="h5">Canvas State</div>
+            <hr>
+
+            <div class="h5">
+              Canvas Backstore Resolution
+            </div>
+            <div id="canvas-resolution"></div>
+
+            <div class="h5">
+              Montage Area Resolution
+            </div>
+            <div id="montage-area-resolution"></div>
+
+            <div class="h5">
+              Canvas Display Size
+            </div>
+            <div id="canvas-display-size"></div>
+
+            <div class="h5">
+              Current Canvas Zoom
+            </div>
+            <div id="canvas-zoom"></div>
+
+            <div class="h5">
+              Current Object Data
+            </div>
+            <div id="current-object-data"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex col-md-6 justify-content-center">
+        <div id="editor" class="border rounded bg-white"></div>
+      </div>
+
+      <div class="col-md-3">
+        <div class="card">
+          <div class="card-body controls">
+            <div class="resolution-controls mb-3">
+              <div class="h6">Montage Area</div>
+              <div class="row g-2 align-items-end">
+                <div class="col-6">
+                  <label for="montage-width-input" class="form-label">Width</label>
+                  <input type="number" class="form-control form-control-sm" id="montage-width-input" min="16" max="8192" value="512" />
+                </div>
+                <div class="col-6">
+                  <label for="montage-height-input" class="form-label">Height</label>
+                  <input type="number" class="form-control form-control-sm" id="montage-height-input" min="16" max="8192" value="512" />
+                </div>
+              </div>
+              <button class="btn btn-outline-primary btn-sm w-100 mt-2" id="apply-montage-resolution-btn">
+                Apply Montage Resolution
+              </button>
+            </div>
+
+            <div class="main-controls">
+              <div class="h6">Controls</div>
+
+              <div class="d-flex gap-2">
+                <input type="file" id="file-input" multiple accept="image/*" style="display:none;" />
+                <button class="btn btn-outline-primary btn-sm w-100" id="choose-images-btn">Import Image</button>
+                <button class="btn btn-outline-primary btn-sm w-100" id="save-canvas">Save result</button>
+                <button class="btn btn-outline-primary btn-sm w-100" id="clear-btn">Clear Canvas</button>
+              </div>
+            </div>
+
+            <div class="state-controls">
+              <div class="h6">State</div>
+
+              <div class="d-flex gap-2">
+                <button class="btn btn-outline-primary btn-sm w-100" id="undo-btn">
+                  Undo
+                </button>
+
+                <button class="btn btn-outline-primary btn-sm w-100" id="redo-btn">
+                  Redo
+                </button>
+              </div>
+            </div>
+
+            <div class="interaction-controls">
+              <div class="h6">Interaction</div>
+
+              <div class="d-flex gap-2">
+                <button class="btn btn-outline-primary btn-sm w-100" id="block-editor-btn">
+                  Block Editor
+                </button>
+
+                <button class="btn btn-outline-primary btn-sm w-100" id="unblock-editor-btn">
+                  Unblock Editor
+                </button>
+              </div>
+
+              <div class="form-text">
+                State:
+                <span id="interaction-blocker-state">Unblocked</span>
+              </div>
+            </div>
+
+            <div class="selection-controls">
+              <div class="h6">Selection</div>
+
+              <div class="d-flex gap-2">
+                <button class="btn btn-outline-primary btn-sm w-100" id="group-btn">
+                  Group
+                </button>
+
+                <button class="btn btn-outline-primary btn-sm w-100" id="ungroup-btn">
+                  Ungroup
+                </button>
+
+                <button class="btn btn-outline-primary btn-sm w-100" id="select-all-btn">
+                  Select All
+                </button>
+
+                <button class="btn btn-outline-primary btn-sm w-100" id="delete-selected-btn">
+                  Delete Selected
+                </button>
+              </div>
+            </div>
+
+            <div class="layer-controls">
+              <div class="h6">Layers</div>
+
+              <div class="d-flex gap-2">
+                <button class="btn btn-outline-primary btn-sm w-100" id="bring-to-front-btn">
+                  Bring to Front
+                </button>
+
+                <button class="btn btn-outline-primary btn-sm w-100" id="bring-object-forward">
+                  Bring Object Forward
+                </button>
+                <button class="btn btn-outline-primary btn-sm w-100" id="send-to-back-btn">
+                  Send to Back
+                </button>
+                <button class="btn btn-outline-primary btn-sm w-100" id="send-object-backwards">
+                  Send Object Backwards
+                </button>
+              </div>
+            </div>
+            <div class="copy-paste-controls">
+              <div class="h6">
+                Copy/Paste
+              </div>
+
+              <div class="d-flex gap-2">
+                <button class="btn btn-outline-primary btn-sm w-100" id="copy-btn">
+                  Copy
+                </button>
+                <button class="btn btn-outline-primary btn-sm w-100" id="paste-btn">
+                  Paste
+                </button>
+              </div>
+            </div>
+
+            <div class="image-fit-controls">
+              <div class="h6">
+                Image Fit
+              </div>
+
+              <div class="d-flex gap-2">
+                <button class="btn btn-outline-primary btn-sm w-100" id="fit-contain-btn">
+                  Fit Contain
+                </button>
+                <button class="btn btn-outline-primary btn-sm w-100" id="fit-cover-btn">
+                  Fit Cover
+                </button>
+                <button class="btn btn-outline-primary btn-sm w-100" id="reset-fit-btn">
+                  Reset Object Fit
+                </button>
+              </div>
+            </div>
+
+            <button class="btn btn-outline-primary btn-sm w-100" id="scale-canvas-btn">
+              Scale Canvas
+            </button>
+
+            <div class="text-controls">
+              <div class="h6">
+                Text
+              </div>
+
+              <div class="d-flex gap-2 mb-2">
+                <button class="btn btn-outline-primary btn-sm w-100" id="add-text-btn">
+                  Add Text
+                </button>
+              </div>
+
+              <div class="mb-2">
+                <label for="text-content" class="form-label">Content</label>
+                <textarea class="form-control form-control-sm" id="text-content" rows="2" placeholder="Введите текст"></textarea>
+              </div>
+
+              <div class="row g-2 align-items-end mb-2">
+                <div class="col-7">
+                  <label for="text-font-family" class="form-label">Font family</label>
+                  <select class="form-select form-select-sm" id="text-font-family"></select>
+                </div>
+                <div class="col-5">
+                  <label for="text-font-size" class="form-label">Font size</label>
+                  <input type="number" class="form-control form-control-sm" id="text-font-size" min="8" max="300" step="1" value="48" />
+                </div>
+              </div>
+
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="text-auto-expand" checked>
+                <label class="form-check-label" for="text-auto-expand">
+                  Auto expand
+                </label>
+              </div>
+
+              <div class="btn-toolbar mb-2">
+                <div class="btn-group btn-group-sm w-100 flex-wrap" role="group">
+                  <button type="button" class="btn btn-outline-secondary" id="text-bold-btn" title="Bold">
+                    <strong>B</strong>
+                  </button>
+                  <button type="button" class="btn btn-outline-secondary" id="text-italic-btn" title="Italic">
+                    <em>I</em>
+                  </button>
+                  <button type="button" class="btn btn-outline-secondary" id="text-underline-btn" title="Underline">
+                    <span class="text-underline">U</span>
+                  </button>
+                  <button type="button" class="btn btn-outline-secondary" id="text-uppercase-btn" title="Uppercase">
+                    Aa
+                  </button>
+                  <button type="button" class="btn btn-outline-secondary" id="text-strike-btn" title="Strikethrough">
+                    <span class="text-strike">S</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="mb-2">
+                <label class="form-label" for="text-align-toggle">Align</label>
+                <button type="button" class="btn btn-outline-secondary btn-sm w-100" id="text-align-toggle" data-align="left">
+                  Align: Left
+                </button>
+              </div>
+
+              <div class="mb-2">
+                <label class="form-label" for="text-color">Fill</label>
+                <div class="d-flex gap-2 align-items-center flex-wrap">
+                  <input type="color" class="form-control form-control-color" id="text-color" value="#000000">
+                  <div class="d-flex gap-1 flex-wrap" id="text-color-palette"></div>
+                </div>
+              </div>
+
+              <div class="mb-2">
+                <label class="form-label" for="text-stroke-color">Stroke</label>
+                <div class="d-flex gap-2 align-items-center flex-wrap">
+                  <input type="color" class="form-control form-control-color" id="text-stroke-color" value="#000000">
+                  <div class="d-flex gap-1 flex-wrap" id="text-stroke-palette"></div>
+                </div>
+                <div class="d-flex align-items-center gap-2 mt-2">
+                  <input type="range" class="form-range flex-grow-1" id="text-stroke-width" min="0" max="20" step="1" value="0">
+                  <span class="text-muted small" id="text-stroke-width-value">0px</span>
+                </div>
+              </div>
+
+              <div class="mb-2">
+                <label class="form-label" for="text-opacity">Opacity</label>
+                <div class="d-flex align-items-center gap-2">
+                  <input type="range" class="form-range flex-grow-1" id="text-opacity" min="0" max="100" step="1" value="100">
+                  <span class="text-muted small" id="text-opacity-value">100%</span>
+                </div>
+              </div>
+
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="text-background-enabled">
+                <label class="form-check-label" for="text-background-enabled">
+                  Background enabled
+                </label>
+              </div>
+
+              <div class="mb-2">
+                <label class="form-label" for="text-background-color">Background color</label>
+                <div class="d-flex gap-2 align-items-center flex-wrap">
+                  <input type="color" class="form-control form-control-color" id="text-background-color" value="#ffffff" disabled>
+                  <div class="d-flex align-items-center gap-2 flex-grow-1">
+                    <input type="range" class="form-range flex-grow-1" id="text-background-opacity" min="0" max="100" step="1" value="100" disabled>
+                    <span class="text-muted small" id="text-background-opacity-value">100%</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mb-2">
+                <label class="form-label">Background padding (px)</label>
+                <div class="row g-2">
+                  <div class="col-6">
+                    <label for="text-padding-top" class="form-label small mb-1">Top</label>
+                    <input type="number" class="form-control form-control-sm" id="text-padding-top" min="0" max="300" value="0" disabled>
+                  </div>
+                  <div class="col-6">
+                    <label for="text-padding-right" class="form-label small mb-1">Right</label>
+                    <input type="number" class="form-control form-control-sm" id="text-padding-right" min="0" max="300" value="0" disabled>
+                  </div>
+                  <div class="col-6">
+                    <label for="text-padding-bottom" class="form-label small mb-1">Bottom</label>
+                    <input type="number" class="form-control form-control-sm" id="text-padding-bottom" min="0" max="300" value="0" disabled>
+                  </div>
+                  <div class="col-6">
+                    <label for="text-padding-left" class="form-label small mb-1">Left</label>
+                    <input type="number" class="form-control form-control-sm" id="text-padding-left" min="0" max="300" value="0" disabled>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mb-2">
+                <label class="form-label">Corner radius (px)</label>
+                <div class="row g-2">
+                  <div class="col-6">
+                    <label for="text-radius-top-left" class="form-label small mb-1">Top Left</label>
+                    <input type="number" class="form-control form-control-sm" id="text-radius-top-left" min="0" max="500" value="0" disabled>
+                  </div>
+                  <div class="col-6">
+                    <label for="text-radius-top-right" class="form-label small mb-1">Top Right</label>
+                    <input type="number" class="form-control form-control-sm" id="text-radius-top-right" min="0" max="500" value="0" disabled>
+                  </div>
+                  <div class="col-6">
+                    <label for="text-radius-bottom-right" class="form-label small mb-1">Bottom Right</label>
+                    <input type="number" class="form-control form-control-sm" id="text-radius-bottom-right" min="0" max="500" value="0" disabled>
+                  </div>
+                  <div class="col-6">
+                    <label for="text-radius-bottom-left" class="form-label small mb-1">Bottom Left</label>
+                    <input type="number" class="form-control form-control-sm" id="text-radius-bottom-left" min="0" max="500" value="0" disabled>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="template-controls">
+              <div class="h6">
+                Templates
+              </div>
+
+              <button class="btn btn-outline-primary btn-sm w-100 mb-2" id="serialize-template-btn">
+                Serialize Selection
+              </button>
+
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="serialize-with-background" checked>
+                <label class="form-check-label" for="serialize-with-background">
+                  Include background
+                </label>
+              </div>
+
+              <div class="mb-2">
+                <label class="form-label" for="template-json-input">Template JSON</label>
+                <textarea class="form-control form-control-sm" id="template-json-input" rows="6" placeholder="Here will appear the template JSON"></textarea>
+                <div class="form-text">
+                  After serialization, edit the JSON if necessary and click Apply Template.
+                </div>
+              </div>
+
+              <button class="btn btn-outline-primary btn-sm w-100" id="apply-template-btn">
+                Apply Template
+              </button>
+            </div>
+
+            <div class="active-object-editor">
+              <div class="h6">
+                Active Object
+              </div>
+
+              <div class="mb-2">
+                <label class="form-label" for="active-object-json">Object JSON</label>
+                <textarea
+                  class="form-control form-control-sm"
+                  id="active-object-json"
+                  rows="6"
+                  placeholder="Here will appear active object JSON"
+                ></textarea>
+                <div class="form-text">
+                  Edit the JSON and click Save to apply to the current object.
+                </div>
+              </div>
+
+              <div class="d-flex gap-2">
+                <button class="btn btn-outline-secondary btn-sm w-100" id="load-active-object-btn">
+                  Load Active Object
+                </button>
+                <button class="btn btn-outline-primary btn-sm w-100" id="save-active-object-btn">
+                  Save Active Object
+                </button>
+              </div>
+            </div>
+
+            <div class="rotate-controls">
+              <div class="h6">
+                Rotate
+              </div>
+
+              <div class="d-flex gap-2">
+                <button class="btn btn-outline-primary btn-sm w-100" id="rotate-minus-90-btn">
+                  Rotate -90
+                </button>
+                <button class="btn btn-outline-primary btn-sm w-100" id="rotate-plus-90-btn">
+                  Rotate +90
+                </button>
+              </div>
+            </div>
+
+            <div class="flip-controls">
+              <div class="h6">
+                Flip
+              </div>
+
+              <div class="d-flex gap-2">
+                <button class="btn btn-outline-primary btn-sm w-100" id="flip-x-btn">
+                  Flip X
+                </button>
+                <button class="btn btn-outline-primary btn-sm w-100" id="flip-y-btn">
+                  Flip Y
+                </button>
+              </div>
+            </div>
+
+            <div class="zoom-controls">
+              <div class="h6">
+                Resize
+              </div>
+
+              <div class="d-flex gap-2">
+                <button class="btn btn-outline-primary btn-sm w-100" id="zoom-in-btn">
+                  Zoom In
+                </button>
+                <button class="btn btn-outline-primary btn-sm w-100" id="zoom-out-btn">
+                  Zoom Out
+                </button>
+                <button class="btn btn-outline-primary btn-sm w-100" id="reset-zoom-btn">
+                  Reset Zoom
+                </button>
+                <button class="btn btn-outline-primary btn-sm w-100" id="set-default-scale-btn">
+                  Set Default Scale
+                </button>
+              </div>
+            </div>
+
+            <div class="filter-controls">
+              <div class="h6">
+                Filters
+              </div>
+
+              <div class="d-flex gap-2">
+                <button class="btn btn-outline-primary btn-sm w-100" id="apply-brightness-btn">
+                  Brightness
+                </button>
+                <button class="btn btn-outline-primary btn-sm w-100" id="remove-filters-btn">
+                  Remove Filters
+                </button>
+              </div>
+            </div>
+
+            <div class="figures-controls">
+              <div class="h6">
+                Shapes
+              </div>
+
+              <div class="shape-picker">
+                <button
+                  class="btn btn-outline-primary btn-sm w-100"
+                  id="add-shape-btn"
+                  aria-controls="shape-picker-menu"
+                  aria-expanded="false"
+                  type="button"
+                >
+                  Add Shape
+                </button>
+
+                <div id="shape-picker-menu" class="shape-picker-menu" role="menu" aria-label="Shape presets">
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="circle">Circle</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="pie">Pie</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="triangle">Triangle</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="square">Square</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="diamond">Diamond</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="pentagon">Pentagon</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="hexagon">Hexagon</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="star">Star</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="star-16">16-Point Star</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="sparkle">Sparkle</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="heart">Heart</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="arrow-right-fat">Arrow Right Bold</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="arrow-up-fat">Arrow Up Bold</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="arrow-right">Arrow Right</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="arrow-left">Arrow Left</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="arrow-up">Arrow Up</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="arrow-down-fat">Arrow Down Bold</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="arrow-down">Arrow Down</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="arrow-up-down">Arrow Up Down</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="arrow-left-right">Arrow Left Right</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="banner">Banner</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="drop">Drop</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="cross">Cross</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="ribbon">Ribbon</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="gear">Gear</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="badge">Badge</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="bookmark">Bookmark</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="tag">Tag</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-preset-btn" type="button" data-shape-preset="moon">Moon</button>
+                </div>
+              </div>
+
+              <div class="shape-picker mt-2">
+                <button
+                  class="btn btn-outline-secondary btn-sm w-100"
+                  id="replace-shape-btn"
+                  aria-controls="replace-shape-menu"
+                  aria-expanded="false"
+                  type="button"
+                  disabled
+                >
+                  Replace Shape
+                </button>
+
+                <div id="replace-shape-menu" class="shape-picker-menu" role="menu" aria-label="Replace shape preset">
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="circle">Circle</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="pie">Pie</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="triangle">Triangle</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="square">Square</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="diamond">Diamond</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="pentagon">Pentagon</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="hexagon">Hexagon</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="star">Star</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="star-16">16-Point Star</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="sparkle">Sparkle</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="heart">Heart</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="arrow-right-fat">Arrow Right Bold</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="arrow-up-fat">Arrow Up Bold</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="arrow-right">Arrow Right</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="arrow-left">Arrow Left</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="arrow-up">Arrow Up</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="arrow-down-fat">Arrow Down Bold</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="arrow-down">Arrow Down</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="arrow-up-down">Arrow Up Down</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="arrow-left-right">Arrow Left Right</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="banner">Banner</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="drop">Drop</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="cross">Cross</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="ribbon">Ribbon</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="gear">Gear</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="badge">Badge</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="bookmark">Bookmark</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="tag">Tag</button>
+                  <button class="btn btn-outline-secondary btn-sm shape-replace-preset-btn" type="button" data-replace-shape-preset="moon">Moon</button>
+                </div>
+              </div>
+
+              <div class="shape-controls mt-2">
+                <div class="form-check form-switch mb-2">
+                  <input
+                    class="form-check-input"
+                    type="checkbox"
+                    id="shape-text-auto-expand"
+                    checked
+                  >
+                  <label class="form-check-label" for="shape-text-auto-expand">
+                    Text Auto Expand
+                  </label>
+                </div>
+
+                <div class="mb-2">
+                  <label class="form-label">Content align</label>
+                  <div class="row g-2">
+                    <div class="col-6">
+                      <label class="form-label small mb-1">Horizontal</label>
+                      <div class="btn-group btn-group-sm w-100" role="group" aria-label="Horizontal content align">
+                        <button
+                          type="button"
+                          class="btn btn-outline-secondary shape-align-btn"
+                          data-shape-align-axis="horizontal"
+                          data-shape-align-value="left"
+                          aria-label="Align content left"
+                          title="Align content left"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                            <rect x="2" y="3" width="9" height="1.5" rx="0.75" fill="currentColor" />
+                            <rect x="2" y="7" width="12" height="1.5" rx="0.75" fill="currentColor" />
+                            <rect x="2" y="11" width="7" height="1.5" rx="0.75" fill="currentColor" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-outline-secondary shape-align-btn"
+                          data-shape-align-axis="horizontal"
+                          data-shape-align-value="center"
+                          aria-label="Align content center"
+                          title="Align content center"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                            <rect x="3.5" y="3" width="9" height="1.5" rx="0.75" fill="currentColor" />
+                            <rect x="2" y="7" width="12" height="1.5" rx="0.75" fill="currentColor" />
+                            <rect x="4.5" y="11" width="7" height="1.5" rx="0.75" fill="currentColor" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-outline-secondary shape-align-btn"
+                          data-shape-align-axis="horizontal"
+                          data-shape-align-value="right"
+                          aria-label="Align content right"
+                          title="Align content right"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                            <rect x="5" y="3" width="9" height="1.5" rx="0.75" fill="currentColor" />
+                            <rect x="2" y="7" width="12" height="1.5" rx="0.75" fill="currentColor" />
+                            <rect x="7" y="11" width="7" height="1.5" rx="0.75" fill="currentColor" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-outline-secondary shape-align-btn"
+                          data-shape-align-axis="horizontal"
+                          data-shape-align-value="justify"
+                          aria-label="Justify content"
+                          title="Justify content"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                            <rect x="2" y="3" width="12" height="1.5" rx="0.75" fill="currentColor" />
+                            <rect x="2" y="6.75" width="12" height="1.5" rx="0.75" fill="currentColor" />
+                            <rect x="2" y="10.5" width="12" height="1.5" rx="0.75" fill="currentColor" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label small mb-1">Vertical</label>
+                      <div class="btn-group btn-group-sm w-100" role="group" aria-label="Vertical content align">
+                        <button
+                          type="button"
+                          class="btn btn-outline-secondary shape-align-btn"
+                          data-shape-align-axis="vertical"
+                          data-shape-align-value="top"
+                          aria-label="Align content top"
+                          title="Align content top"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                            <rect x="2" y="1.5" width="12" height="13" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.25" />
+                            <rect x="4.5" y="4" width="7" height="2.5" rx="0.75" fill="currentColor" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-outline-secondary shape-align-btn"
+                          data-shape-align-axis="vertical"
+                          data-shape-align-value="middle"
+                          aria-label="Align content middle"
+                          title="Align content middle"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                            <rect x="2" y="1.5" width="12" height="13" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.25" />
+                            <rect x="4.5" y="6.75" width="7" height="2.5" rx="0.75" fill="currentColor" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-outline-secondary shape-align-btn"
+                          data-shape-align-axis="vertical"
+                          data-shape-align-value="bottom"
+                          aria-label="Align content bottom"
+                          title="Align content bottom"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                            <rect x="2" y="1.5" width="12" height="13" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.25" />
+                            <rect x="4.5" y="9.5" width="7" height="2.5" rx="0.75" fill="currentColor" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mb-2">
+                  <label class="form-label" for="shape-fill-color">Shape Fill</label>
+                  <div class="d-flex gap-2 align-items-center flex-wrap">
+                    <input type="color" class="form-control form-control-color" id="shape-fill-color" value="#B0B5BF" disabled>
+                    <div class="d-flex gap-1 flex-wrap" id="shape-fill-palette"></div>
+                  </div>
+                </div>
+
+                <div class="mb-2">
+                  <label class="form-label" for="shape-stroke-color">Shape Stroke</label>
+                  <div class="d-flex gap-2 align-items-center flex-wrap">
+                    <input type="color" class="form-control form-control-color" id="shape-stroke-color" value="#000000" disabled>
+                    <div class="d-flex gap-1 flex-wrap" id="shape-stroke-palette"></div>
+                  </div>
+                  <div class="d-flex align-items-center gap-2 mt-2">
+                    <input type="range" class="form-range flex-grow-1" id="shape-stroke-width" min="0" max="20" step="1" value="0" disabled>
+                    <span class="text-muted small" id="shape-stroke-width-value">0px</span>
+                  </div>
+                </div>
+
+                <div class="mb-2">
+                  <label class="form-label" for="shape-opacity">Shape Opacity</label>
+                  <div class="d-flex align-items-center gap-2">
+                    <input type="range" class="form-range flex-grow-1" id="shape-opacity" min="0" max="100" step="1" value="100" disabled>
+                    <span class="text-muted small" id="shape-opacity-value">100%</span>
+                  </div>
+                  <div class="form-check mt-2">
+                    <input class="form-check-input" type="checkbox" id="shape-opacity-apply-to-text" checked>
+                    <label class="form-check-label small" for="shape-opacity-apply-to-text">Apply to text</label>
+                  </div>
+                </div>
+
+                <div class="mb-2">
+                  <label class="form-label">Text padding (px)</label>
+                  <div class="row g-2">
+                    <div class="col-6">
+                      <label for="shape-padding-top" class="form-label small mb-1">Top</label>
+                      <input type="number" class="form-control form-control-sm" id="shape-padding-top" min="0" step="1" value="0">
+                    </div>
+                    <div class="col-6">
+                      <label for="shape-padding-right" class="form-label small mb-1">Right</label>
+                      <input type="number" class="form-control form-control-sm" id="shape-padding-right" min="0" step="1" value="0">
+                    </div>
+                    <div class="col-6">
+                      <label for="shape-padding-bottom" class="form-label small mb-1">Bottom</label>
+                      <input type="number" class="form-control form-control-sm" id="shape-padding-bottom" min="0" step="1" value="0">
+                    </div>
+                    <div class="col-6">
+                      <label for="shape-padding-left" class="form-label small mb-1">Left</label>
+                      <input type="number" class="form-control form-control-sm" id="shape-padding-left" min="0" step="1" value="0">
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mb-0">
+                  <label class="form-label" for="shape-rounding">Shape Corner Radius</label>
+                  <div class="d-flex align-items-center gap-2">
+                    <input type="range" class="form-range flex-grow-1" id="shape-rounding" min="0" max="100" step="1" value="0" disabled>
+                    <span class="text-muted small" id="shape-rounding-value">0px</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="background-controls">
+              <div class="h6">
+                Background
+              </div>
+
+              <div class="mb-2">
+                <label for="background-type" class="form-label">Type:</label>
+                <select class="form-select form-select-sm" id="background-type">
+                  <option value="">No Background</option>
+                  <option value="color">Color</option>
+                  <option value="gradient">Gradient</option>
+                  <option value="image">Image</option>
+                </select>
+              </div>
+
+              <!-- Color Background -->
+              <div id="color-background-controls" class="background-option" style="display: none;">
+                <div class="mb-2">
+                  <label for="background-color" class="form-label">Color:</label>
+                  <input type="color" class="form-control form-control-color" id="background-color" value="#ffffff">
+                </div>
+                <button class="btn btn-primary btn-sm w-100" id="set-color-background-btn">
+                  Set Color Background
+                </button>
+              </div>
+
+              <!-- Gradient Background -->
+              <div id="gradient-background-controls" class="background-option" style="display: none;">
+                <div class="mb-2">
+                  <label for="gradient-type" class="form-label">Gradient Type:</label>
+                  <select class="form-select form-select-sm" id="gradient-type">
+                    <option value="linear" selected>Linear</option>
+                    <option value="radial">Radial</option>
+                  </select>
+                </div>
+                <div class="mb-2">
+                  <label class="form-label">Color Stops:</label>
+                  <div id="gradient-stops-container" class="d-flex flex-column gap-2 mb-2">
+                    <!-- Stops will be injected here -->
+                  </div>
+                  <button class="btn btn-outline-secondary btn-sm w-100" id="add-gradient-stop-btn">
+                    Add Color Stop
+                  </button>
+                </div>
+                <div id="linear-gradient-controls" class="mb-2">
+                  <label for="gradient-angle" class="form-label">Angle:</label>
+                  <input type="range" class="form-range" id="gradient-angle" min="0" max="360" value="135">
+                  <small class="text-muted"><span id="gradient-angle-value">135</span>°</small>
+                </div>
+                <div id="radial-gradient-controls" class="mb-2" style="display: none;">
+                  <div class="row">
+                    <div class="col-6">
+                      <label for="gradient-center-x" class="form-label">Center X:</label>
+                      <input type="range" class="form-range" id="gradient-center-x" min="0" max="100" value="50">
+                      <small class="text-muted"><span id="gradient-center-x-value">50</span>%</small>
+                    </div>
+                    <div class="col-6">
+                      <label for="gradient-center-y" class="form-label">Center Y:</label>
+                      <input type="range" class="form-range" id="gradient-center-y" min="0" max="100" value="50">
+                      <small class="text-muted"><span id="gradient-center-y-value">50</span>%</small>
+                    </div>
+                  </div>
+                  <div class="row">
+                    <div class="col-12">
+                      <label for="gradient-radius" class="form-label">Radius:</label>
+                      <input type="range" class="form-range" id="gradient-radius" min="1" max="100" value="50">
+                      <small class="text-muted"><span id="gradient-radius-value">50</span>%</small>
+                    </div>
+                  </div>
+                </div>
+                <button class="btn btn-primary btn-sm w-100" id="set-gradient-background-btn">
+                  Set Gradient Background
+                </button>
+              </div>
+
+              <!-- Image Background -->
+              <div id="image-background-controls" class="background-option" style="display: none;">
+                <div class="mb-2">
+                  <input type="file" id="background-image-input" accept="image/*" class="form-control form-control-sm">
+                </div>
+                <button class="btn btn-primary btn-sm w-100" id="set-image-background-btn">
+                  Set Image Background
+                </button>
+              </div>
+
+              <button class="btn btn-outline-danger btn-sm w-100 mt-2" id="remove-background-btn">
+                Remove Background
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</body>
+
+</html>

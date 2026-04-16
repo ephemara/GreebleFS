@@ -1,0 +1,13 @@
+export const SQUARE_SIZE = 12
+export const SQUARE_RADIUS = 2
+export const VERT_WIDTH = 8
+export const VERT_HEIGHT = 20
+export const VERT_RADIUS = 100
+export const HORIZ_WIDTH = 20
+export const HORIZ_HEIGHT = 8
+export const HORIZ_RADIUS = 100
+export const ROTATE_DIAMETER = 32
+export const LINE_WIDTH = 1
+export const ROTATE_BG = '#2B2D33'
+export const STROKE = '#3D8BF4'
+export const FILL = '#FFFFFF'

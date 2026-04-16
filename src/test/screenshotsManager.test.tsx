@@ -486,6 +486,7 @@ describe('ScreenshotsManager', () => {
       canOpenOutput: false,
       canUndo: false,
       schedulerTask: null,
+      /*
         name: 'Delete M:\\Assets\\OverlayTerm\\notes\\new-note_1775861948830-jzyb4i.md',
         prog: {
           kind: 'fileDelete',

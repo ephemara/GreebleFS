@@ -1,0 +1,122 @@
+body {
+  margin: 0 auto;
+
+  #editor {
+    overflow: hidden;
+  }
+
+  .controls {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: calc(100vh - 66px);
+    overflow-y: auto;
+  }
+
+  .canvas-state {
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    width: 300px;
+    gap: 8px;
+  }
+
+  .shape-picker {
+    position: relative;
+  }
+
+  .shape-picker-menu {
+    display: none;
+    position: absolute;
+    left: 0;
+    top: calc(100% + 8px);
+    width: 100%;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+    padding: 8px;
+    z-index: 10;
+    max-height: 260px;
+    overflow-y: auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .shape-picker-menu.is-open {
+    display: grid;
+  }
+
+  .shape-preset-btn {
+    text-align: left;
+  }
+
+  h3, h4, hr {
+    margin: 0;
+    padding: 0;
+  }
+
+  hr {
+    width: 100%;
+  }
+}
+
+.text-controls .palette-swatch,
+.shape-controls .palette-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.text-controls .palette-swatch.active,
+.shape-controls .palette-swatch.active {
+  outline: 2px solid #0d6efd;
+  outline-offset: 1px;
+}
+
+.text-controls .palette-swatch:disabled,
+.shape-controls .palette-swatch:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.text-underline {
+  text-decoration: underline;
+}
+
+.text-strike {
+  text-decoration: line-through;
+}
+
+.shape-controls .shape-align-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 31px;
+}
+
+.shape-controls .shape-align-btn svg {
+  display: block;
+}
+
+/* HTML: <div class="loader"></div> */
+.loader {
+  width: fit-content;
+  font-weight: bold;
+  font-family: sans-serif;
+  font-size: 30px;
+  padding-bottom: 8px;
+  background: linear-gradient(currentColor 0 0) 0 100%/0% 3px no-repeat;
+  animation: l2 2s linear infinite;
+}
+
+.loader:before {
+  content:"Loading..."
+}
+
+@keyframes l2 {to{background-size: 100% 3px}}
