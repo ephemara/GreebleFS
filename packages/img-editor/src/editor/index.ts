@@ -44,6 +44,11 @@ import type { ImportImageOptions } from './image-manager'
  */
 export class ImageEditor {
   /**
+   * Tracks whether the editor has been destroyed so async init work can stop cleanly.
+   */
+  private isDestroyed = false
+
+  /**
    * Опции и настройки редактора
    */
   readonly options: CanvasOptions
@@ -213,7 +218,7 @@ export class ImageEditor {
     this.containerId = canvasId
     this.editorId = `${canvasId}-${nanoid()}`
 
-    this.init()
+    void this.init()
   }
 
   /**
@@ -286,6 +291,9 @@ export class ImageEditor {
 
     // Загружаем шрифты после того как редактор получил размеры
     await this.fontManager.loadFonts()
+    if (this.isDestroyed) {
+      return
+    }
 
     if (initialState) {
       this.historyManager.suspendHistory()
@@ -327,6 +335,9 @@ export class ImageEditor {
       } = initialImage as ImportImageOptions
 
       await this.imageManager.importImage({ source, scale, withoutSave, ...rest })
+    }
+    if (this.isDestroyed) {
+      return
     }
 
     this.historyManager.saveState()
@@ -409,17 +420,22 @@ export class ImageEditor {
    * Метод для удаления редактора и всех слушателей.
    */
   public destroy(): void {
-    this.listeners.destroy()
+    if (this.isDestroyed) {
+      return
+    }
+
+    this.isDestroyed = true
+    this.listeners?.destroy()
     this.snappingManager?.destroy()
     this.measurementManager?.destroy()
-    this.toolbar.destroy()
+    this.toolbar?.destroy()
     this.angleIndicator?.destroy()
     this.textManager?.destroy()
-    this.selectionManager.destroy()
-    this.canvas.dispose()
-    this.workerManager.worker.terminate()
-    this.imageManager.revokeBlobUrls()
-    this.errorManager.cleanBuffer()
+    this.selectionManager?.destroy()
+    this.canvas?.dispose()
+    this.workerManager?.worker?.terminate()
+    this.imageManager?.revokeBlobUrls()
+    this.errorManager?.cleanBuffer()
   }
 
   /**

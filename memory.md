@@ -1,5 +1,35 @@
 # GreebleFS Memory
 
+## 2026-04-16 — Inline Image Editor Fabric Reinit Guard
+
+- The embedded image editor no longer trips Fabric's `Trying to initialize a canvas that has already been initialized` error when the preview editor remounts quickly or React dev lifecycle tears down one mount before the third-party editor finishes getting ready.
+- Durable implementation shape:
+  - `packages/img-editor/src/main.ts` now treats the vendored editor as a single active instance per host container. Reinitializing the same container destroys the previous instance first, clears stale DOM, and allocates a fresh canvas id instead of reusing the old Fabric target.
+  - That same runtime seam now wraps `destroy()` so pending init promises reject cleanly if an editor is replaced or torn down before `_onReadyCallback` fires, which keeps shell-level callers from racing stale editor instances.
+  - `packages/img-editor/src/editor/index.ts` now makes `destroy()` idempotent and safe against half-initialized instances, and async init exits early once the editor has been destroyed instead of continuing work against a disposed Fabric canvas.
+  - `packages/img-editor/src/main.test.ts` covers the regression path where one editor is still initializing and a second init for the same container arrives before readiness.
+- Durable product note:
+  - the imported image editor package is not safe to treat as fire-and-forget. Container ownership must remain exclusive, and future lifecycle changes need to preserve explicit pre-dispose behavior around same-container remounts.
+- Validation:
+  - passed: `bunx vitest run packages/img-editor/src/main.test.ts`
+  - passed: `bunx vitest run src/test/explorerImageEditor.test.tsx`
+
+## 2026-04-16 — Unix Explorer Rail Home Drive Rooting
+
+- The explorer side rail now treats the real Unix home directory as a first-class local drive instead of only exposing `/` plus mount folders under `/media`, `/mnt`, or `/Volumes`.
+- Durable implementation shape:
+  - `src-tauri/src/fs_commands.rs` now synthesizes a Unix `Home` drive entry from `dirs::home_dir()` on Linux and macOS before appending root and mounted volumes.
+  - The side rail drive-root matching in `src/components/explorer/ExplorerSideRail.tsx` now resolves the most specific local drive path for the active location instead of always anchoring descendant paths to `/`.
+  - That same path-resolution pass now decides both active-drive highlighting and which ancestor folders auto-expand, so `/home/<user>/...` no longer expands the whole root/system tree just because `/` is present in the drive list.
+  - Windows root descendant checks now honor drive roots like `C:\` without requiring a second separator boundary, which keeps the existing nested drive-tree behavior intact after the new shared helper was introduced.
+- Durable product note:
+  - On Unix, root is still available as a drive for system-level browsing, but it is no longer the default active tree branch when a more specific drive root like `Home` matches the current path.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerSideRail.test.tsx`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml home_dir -- --nocapture`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml unix_home_drive_info -- --nocapture`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml`
+
 ## 2026-04-16 — Dev Telemetry HUD Toggle
 
 - The dev-only performance HUD is no longer unavoidably forced on whenever the app runs under `import.meta.env.DEV`.
