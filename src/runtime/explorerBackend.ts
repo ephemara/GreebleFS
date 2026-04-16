@@ -17,6 +17,9 @@ import {
   type ExplorerDuplicateScanStatus,
   type ExplorerSavedSearchRecord,
   type ExplorerSavedSearchSaveRequest,
+  type FsArchiveExtractionMode,
+  type FsArchiveExtractionRequest,
+  type FsArchiveExtractionResult,
   type ExplorerTaskHistoryClearScope,
   type ExplorerTaskKind,
   type ExplorerTagMutationRequest,
@@ -66,6 +69,9 @@ export type ExplorerTagMetadataSnapshot = ExplorerTagSnapshot;
 export type ExplorerTagMutation = ExplorerTagMutationRequest;
 export type ExplorerSavedSearch = ExplorerSavedSearchRecord;
 export type ExplorerSavedSearchInput = ExplorerSavedSearchSaveRequest;
+export type ExplorerArchiveExtractionMode = FsArchiveExtractionMode;
+export type ExplorerArchiveExtractionInput = FsArchiveExtractionRequest;
+export type ExplorerArchiveExtractionOutcome = FsArchiveExtractionResult;
 export type ExplorerTrashAction = ExplorerTrashActionRecord;
 export type ExplorerTrashRestore = ExplorerTrashRestoreResult;
 export type ExplorerBatchRenameItem = FsBatchRenameItem;
@@ -269,12 +275,14 @@ export type ExplorerBackendContract = {
   unwatchEntrySizeRoot: typeof unwatchExplorerEntrySizeRoot;
   planItemTransfer: typeof planExplorerItemTransfer;
   openPath: typeof openExplorerPath;
+  openArchive: typeof openExplorerArchive;
   openWithDialog: typeof openExplorerPathWithDialog;
   revealPath: typeof revealExplorerPath;
   showPathProperties: typeof showExplorerPathProperties;
   openPathAsAdmin: typeof openExplorerPathAsAdmin;
   createDir: typeof createExplorerDir;
   createFile: typeof createExplorerFile;
+  extractArchive: typeof extractExplorerArchive;
   transferItems: typeof transferExplorerItems;
   listTasks: typeof listExplorerTasks;
   clearTaskHistory: typeof clearExplorerTaskHistory;
@@ -454,6 +462,13 @@ export async function openExplorerPath(path: string): Promise<void> {
   unwrapTauriResult(await commands.fsOpenFile(path));
 }
 
+export async function openExplorerArchive(path: string): Promise<ExplorerArchiveExtractionOutcome> {
+  if (isCloudExplorerPath(path)) {
+    throw new Error('Archive extraction is only available for local filesystem items.');
+  }
+  return unwrapTauriResult(await commands.fsOpenArchive(path));
+}
+
 export async function openExplorerPathWithDialog(path: string): Promise<void> {
   if (isCloudExplorerPath(path)) {
     throw new Error('Open With is only available for local filesystem items.');
@@ -488,6 +503,15 @@ export async function createExplorerDir(path: string): Promise<void> {
     return;
   }
   unwrapTauriResult(await commands.fsCreateDir(path));
+}
+
+export async function extractExplorerArchive(
+  request: ExplorerArchiveExtractionInput,
+): Promise<ExplorerArchiveExtractionOutcome> {
+  if (isCloudExplorerPath(request.archivePath)) {
+    throw new Error('Archive extraction is only available for local filesystem items.');
+  }
+  return unwrapTauriResult(await commands.fsExtractArchive(request));
 }
 
 export async function createExplorerFile(
@@ -722,12 +746,14 @@ export const explorerBackendContract: ExplorerBackendContract = {
   unwatchEntrySizeRoot: unwatchExplorerEntrySizeRoot,
   planItemTransfer: planExplorerItemTransfer,
   openPath: openExplorerPath,
+  openArchive: openExplorerArchive,
   openWithDialog: openExplorerPathWithDialog,
   revealPath: revealExplorerPath,
   showPathProperties: showExplorerPathProperties,
   openPathAsAdmin: openExplorerPathAsAdmin,
   createDir: createExplorerDir,
   createFile: createExplorerFile,
+  extractArchive: extractExplorerArchive,
   transferItems: transferExplorerItems,
   listTasks: listExplorerTasks,
   clearTaskHistory: clearExplorerTaskHistory,

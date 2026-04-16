@@ -1,6 +1,1 @@
-<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M16 8 Q20 8 20 12 Q20 16 16 16 Q12 16 12 20 Q12 24 16 24" stroke="#5586A4" stroke-width="2.5" fill="none" stroke-linecap="round"/>
-  <circle cx="16" cy="8" r="1.5" fill="#5586A4"/>
-  <circle cx="16" cy="24" r="1.5" fill="#5586A4"/>
-  <text x="16" y="18" font-family="monospace" font-size="5" fill="#5586A4" text-anchor="middle">01</text>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><path d="M10 4.5h10l6 6V31.5H10A2.5 2.5 0 0 1 7.5 29V7A2.5 2.5 0 0 1 10 4.5z" fill="#67b7ff"/><path d="M20 4.5v6h6" fill="#bde1ff"/><path d="M12 17h12v2H12zm0 5h9v2h-9z" fill="#0f2a43" opacity="0.7"/></svg>

@@ -31,6 +31,11 @@ import {
   sortExplorerContextMenuItems,
   type ExplorerContextMenuItemGroup,
 } from '../config/explorerContextMenu';
+import {
+  getExplorerArchiveDefaultFolderName,
+  getExplorerArchiveExtractToFolderLabel,
+  isExplorerArchiveEntry,
+} from '../config/explorerArchives';
 import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
@@ -180,6 +185,7 @@ import {
   type ExplorerFileTransferOperation as FileTransferOperation,
   type ExplorerFileTransferResult as FileTransferResult,
   type ExplorerFileSearchResult as FileSearchResult,
+  type ExplorerArchiveExtractionMode,
   type ExplorerSavedSearch,
   type ExplorerTagMetadataSnapshot,
 } from '../runtime/explorerBackend';
@@ -2581,6 +2587,7 @@ export function FileExplorer({
     createDir: createExplorerDir,
     createFile: createExplorerFile,
     deletePath: deleteExplorerPath,
+    extractArchive: extractExplorerArchive,
     getDrives: getExplorerDrives,
     getHomeDir: getExplorerHomeDir,
     getRuntimeCachePolicy: getExplorerRuntimeCachePolicy,
@@ -2588,6 +2595,7 @@ export function FileExplorer({
     listLocation: listExplorerLocation,
     listLocationUncached: listExplorerLocationUncached,
     measureEntrySizes: measureExplorerEntrySizes,
+    openArchive: openExplorerArchive,
     openPath: openExplorerPath,
     openWithDialog: openExplorerPathWithDialog,
     openPathAsAdmin: openExplorerPathAsAdmin,

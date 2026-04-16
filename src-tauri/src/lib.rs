@@ -1,3 +1,4 @@
+pub mod archive_ops;
 pub mod cloud_commands;
 pub mod desktop_integration;
 pub mod domain_commands;

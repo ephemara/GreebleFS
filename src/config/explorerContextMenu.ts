@@ -16,6 +16,7 @@ export type ExplorerContextMenuItemGroup =
 
 export type ExplorerBuiltInContextMenuActionId =
   | 'open'
+  | 'open-archive'
   | 'open-with'
   | 'open-admin'
   | 'open-terminal'
@@ -30,6 +31,8 @@ export type ExplorerBuiltInContextMenuActionId =
   | 'cut'
   | 'copy-to'
   | 'move-to'
+  | 'extract-here'
+  | 'extract-new-folder'
   | 'duplicate'
   | 'rename'
   | 'add-tags'
@@ -114,6 +117,17 @@ export const BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS: ExplorerBuiltInContextMenuCat
     source: 'built-in',
     iconName: 'ExternalLink',
     execution: { kind: 'built-in', actionId: 'open-with' },
+  },
+  {
+    id: 'built-in.open-archive',
+    title: 'Open Extracted Contents',
+    contexts: ['entry'],
+    appliesTo: 'file',
+    group: 'open',
+    defaultOrder: 25,
+    source: 'built-in',
+    iconName: 'FolderPlus',
+    execution: { kind: 'built-in', actionId: 'open-archive' },
   },
   {
     id: 'built-in.open-admin',
@@ -257,6 +271,28 @@ export const BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS: ExplorerBuiltInContextMenuCat
     source: 'built-in',
     iconName: 'Scissors',
     execution: { kind: 'built-in', actionId: 'move-to' },
+  },
+  {
+    id: 'built-in.extract-here',
+    title: 'Extract Here',
+    contexts: ['entry'],
+    appliesTo: 'file',
+    group: 'organize',
+    defaultOrder: 155,
+    source: 'built-in',
+    iconName: 'FolderPlus',
+    execution: { kind: 'built-in', actionId: 'extract-here' },
+  },
+  {
+    id: 'built-in.extract-new-folder',
+    title: 'Extract to New Folder',
+    contexts: ['entry'],
+    appliesTo: 'file',
+    group: 'organize',
+    defaultOrder: 156,
+    source: 'built-in',
+    iconName: 'CopyPlus',
+    execution: { kind: 'built-in', actionId: 'extract-new-folder' },
   },
   {
     id: 'built-in.duplicate',

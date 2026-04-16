@@ -1,5 +1,8 @@
 use std::{fs, path::PathBuf};
 
+use crate::archive_ops::{
+    FsArchiveExtractionMode, FsArchiveExtractionRequest, FsArchiveExtractionResult,
+};
 use crate::cloud_commands::{
     CloudAccountSummary, CloudAccountsSnapshot, CloudAuthSession, CloudAuthStatus, CloudBreadcrumb,
     CloudDirectoryListing, CloudProviderConfigurationSource, CloudProviderConfigurationStatus,
@@ -91,6 +94,8 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::entry_size_cache::fs_unwatch_entry_size_root,
             crate::fs_commands::fs_read_text_file,
             crate::fs_commands::fs_open_file,
+            crate::fs_commands::fs_open_archive,
+            crate::fs_commands::fs_extract_archive,
             crate::fs_commands::fs_open_with_dialog,
             crate::fs_commands::fs_open_as_admin,
             crate::fs_commands::fs_reveal_in_explorer,
@@ -175,6 +180,9 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<CloudBreadcrumb>()
         .typ::<CloudDirectoryListing>()
         .typ::<FileEntry>()
+        .typ::<FsArchiveExtractionMode>()
+        .typ::<FsArchiveExtractionRequest>()
+        .typ::<FsArchiveExtractionResult>()
         .typ::<DriveInfo>()
         .typ::<EntryStorageInfo>()
         .typ::<ExplorerTaskProgressEvent>()
