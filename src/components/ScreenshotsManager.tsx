@@ -45,6 +45,7 @@ import {
   type ScreenshotEntryLike,
 } from './screenshotsUtils';
 import { OverlayScrollArea } from './OverlayScrollArea';
+import { AppConfirmDialog } from './AppModal';
 import {
   createExplorerDir,
   deleteExplorerPath,
@@ -373,6 +374,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
   const [copyingPath,     setCopyingPath]     = useState<string | null>(null);
   const [copiedPath,      setCopiedPath]      = useState<string | null>(null);
   const [deletingPath,    setDeletingPath]    = useState<string | null>(null);
+  const [pendingDeleteItem, setPendingDeleteItem] = useState<ScreenshotItem | null>(null);
   const [libraryWidth, setLibraryWidth] = usePersistentPanelSize('overlayterm-screenshots-library-width', 280, 220, 480);
 
   const activeMonitor = monitors.find(m => m.id === activeMonitorId) ?? null;
@@ -994,10 +996,24 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
     finally { setCopyingPath(null); }
   }, []);
 
-  const deleteGalleryItem = useCallback(async (item: ScreenshotItem) => {
-    if (deletingPath || !window.confirm(`Delete ${item.name} from the screenshot library?`)) {
+  const requestDeleteGalleryItem = useCallback((item: ScreenshotItem) => {
+    if (deletingPath) {
       return;
     }
+    setPendingDeleteItem(item);
+  }, [deletingPath]);
+
+  const closeDeleteDialog = useCallback(() => {
+    setPendingDeleteItem(null);
+  }, []);
+
+  const deleteGalleryItem = useCallback(async () => {
+    const item = pendingDeleteItem;
+    if (deletingPath || !item) {
+      closeDeleteDialog();
+      return;
+    }
+    closeDeleteDialog();
     setDeletingPath(item.path);
     setError(null);
     try {
@@ -1015,7 +1031,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
     } finally {
       setDeletingPath(null);
     }
-  }, [copiedPath, copyingPath, deletingPath, loadGallery]);
+  }, [closeDeleteDialog, copiedPath, copyingPath, deletingPath, loadGallery, pendingDeleteItem]);
 
   const isWorking = isCapturing || isSaving || isCopying;
   const normalizedSel = selection ? normalizeSelection(selection) : null;
@@ -1438,7 +1454,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
                       <button type="button" onClick={() => openExplorerPath(item.path).catch(e => setError(String(e)))} disabled={isDeleting} style={btnStyle(false, accent, isDeleting)}>
                         <ExternalLink size={10} /> Open
                       </button>
-                      <button type="button" onClick={() => void deleteGalleryItem(item)} disabled={isDeleting} style={btnStyle(false, accent, isDeleting)}>
+                      <button type="button" onClick={() => requestDeleteGalleryItem(item)} disabled={isDeleting} style={btnStyle(false, accent, isDeleting)}>
                         {isDeleting ? <LoaderCircle size={10} className="animate-spin" /> : <Trash2 size={10} />}
                         {isDeleting ? 'Deleting' : 'Delete'}
                       </button>
@@ -1519,6 +1535,17 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
           <div style={{ flex: 1, minHeight: 0 }}>{libraryContent}</div>
         )}
       </div>
+
+      <AppConfirmDialog
+        open={pendingDeleteItem !== null}
+        title="Delete Screenshot"
+        description={pendingDeleteItem ? `Delete ${pendingDeleteItem.name} from the screenshot library?` : ''}
+        icon={<Trash2 size={16} style={{ color: '#f87171' }} />}
+        confirmLabel="Delete"
+        tone="danger"
+        onConfirm={() => { void deleteGalleryItem(); }}
+        onCancel={closeDeleteDialog}
+      />
 
       <style>{`.animate-spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>

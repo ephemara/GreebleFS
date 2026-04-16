@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
@@ -108,13 +108,14 @@ describe('ScreenshotsManager', () => {
       return null;
     });
 
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-
     render(<ScreenshotsManager />);
 
     expect(await screen.findByText(screenshot.name)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Delete' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(`Delete ${screenshot.name} from the screenshot library?`)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
 
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith('fs_delete', {
@@ -152,13 +153,13 @@ describe('ScreenshotsManager', () => {
       return null;
     });
 
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
-
     render(<ScreenshotsManager />);
 
     expect(await screen.findByText(screenshot.name)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Delete' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
 
     expect(invokeMock).not.toHaveBeenCalledWith('fs_delete', expect.anything());
     expect(screen.getByText(screenshot.name)).toBeInTheDocument();

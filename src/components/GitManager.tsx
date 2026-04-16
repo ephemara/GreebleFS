@@ -1,9 +1,10 @@
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import type { EditorProps } from '@monaco-editor/react';
-import { ChevronDown, ChevronUp, Download, FolderGit2, GitBranch, GitCommit, Plus, RefreshCw, Rocket, Search, Upload, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronUp, Download, FolderGit2, GitBranch, GitCommit, Plus, RefreshCw, Rocket, Search, Upload, X } from 'lucide-react';
 import { multiplyColorAlpha, type ResolvedOverlayAppearance } from '../config/appearance';
 import { recordExplorerPerformanceSample } from '../config/performanceTelemetry';
 import { OverlayScrollArea } from './OverlayScrollArea';
+import { AppConfirmDialog, AppPromptDialog } from './AppModal';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 import { useSettingsStore } from '../store/settingsStore';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
@@ -40,6 +41,24 @@ interface ResolvedRepositoryImport {
   requestedPath: string;
   repoPath: string;
   comparablePath: string;
+}
+
+interface RepositoryImportDialogState {
+  visible: boolean;
+  path: string;
+}
+
+type GitManagerConfirmationAction =
+  | { kind: 'discard'; file: GitFileStatus }
+  | { kind: 'resolve'; file: GitFileStatus; side: ConflictResolutionSide };
+
+interface GitManagerConfirmationState {
+  visible: boolean;
+  title: string;
+  description: string;
+  confirmLabel: string;
+  tone: 'accent' | 'danger';
+  action: GitManagerConfirmationAction | null;
 }
 
 type ChangeFilter = 'all' | 'staged' | 'unstaged' | 'untracked';
@@ -118,6 +137,18 @@ export function GitManager({
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [diffView, setDiffView] = useState<DiffViewState | null>(null);
   const [activeHunkIndex, setActiveHunkIndex] = useState(0);
+  const [repositoryImportDialog, setRepositoryImportDialog] = useState<RepositoryImportDialogState>({
+    visible: false,
+    path: '',
+  });
+  const [confirmationDialog, setConfirmationDialog] = useState<GitManagerConfirmationState>({
+    visible: false,
+    title: '',
+    description: '',
+    confirmLabel: 'Confirm',
+    tone: 'accent',
+    action: null,
+  });
   const deferredQuery = useDeferredValue(changeQuery);
   const [repoRailWidth, setRepoRailWidth] = usePersistentPanelSize('overlayterm-source-repo-rail-width', 208, 160, 300);
   const [changeListWidth, setChangeListWidth] = usePersistentPanelSize('overlayterm-source-change-list-width', 360, 260, 720);
@@ -593,11 +624,40 @@ export function GitManager({
     }
   }, [resolveRepoRoot]);
 
-  const importRepoFromPrompt = useCallback(async () => {
-    const path = window.prompt('Enter absolute path to Git repository or any folder inside it:');
-    if (!path) return;
+  const closeRepositoryImportDialog = useCallback(() => {
+    setRepositoryImportDialog({ visible: false, path: '' });
+  }, []);
+
+  const openRepositoryImportDialog = useCallback(() => {
+    setRepositoryImportDialog({ visible: true, path: '' });
+  }, []);
+
+  const submitRepositoryImportDialog = useCallback(async () => {
+    const path = repositoryImportDialog.path.trim();
+    closeRepositoryImportDialog();
+    if (!path) {
+      return;
+    }
     await importRepositories([path]);
-  }, [importRepositories]);
+  }, [closeRepositoryImportDialog, importRepositories, repositoryImportDialog.path]);
+
+  const closeConfirmationDialog = useCallback(() => {
+    setConfirmationDialog({
+      visible: false,
+      title: '',
+      description: '',
+      confirmLabel: 'Confirm',
+      tone: 'accent',
+      action: null,
+    });
+  }, []);
+
+  const openConfirmationDialog = useCallback((state: Omit<GitManagerConfirmationState, 'visible'>) => {
+    setConfirmationDialog({
+      visible: true,
+      ...state,
+    });
+  }, []);
 
   useEffect(() => {
     if (pendingRepositoryImports.length === 0) {
@@ -621,8 +681,8 @@ export function GitManager({
       onRequestRepositoryImport();
       return;
     }
-    await importRepoFromPrompt();
-  }, [importRepoFromPrompt, onRequestRepositoryImport]);
+    openRepositoryImportDialog();
+  }, [onRequestRepositoryImport, openRepositoryImportDialog]);
 
   const removeRepo = useCallback((path: string, event: React.MouseEvent) => {
     event.stopPropagation();
@@ -735,36 +795,51 @@ export function GitManager({
     if (!selectedRepo || !selectedFile || !canDiscardFile(selectedFile)) {
       return;
     }
-
-    const confirmed = window.confirm(buildDiscardConfirmationMessage(selectedFile));
-    if (!confirmed) {
-      return;
-    }
-
-    await runRepoAction(async () => {
-      if (selectedFile.isUntracked) {
-        await runGit(selectedRepo, ['clean', '-fd', '--', selectedFile.file]);
-        return;
-      }
-
-      await discardTrackedFileChanges(selectedRepo, selectedFile, runGit, safeGit);
+    openConfirmationDialog({
+      title: selectedFile.isUntracked ? 'Delete Untracked File' : 'Discard Changes',
+      description: buildDiscardConfirmationMessage(selectedFile),
+      confirmLabel: discardActionLabel(selectedFile),
+      tone: 'danger',
+      action: { kind: 'discard', file: selectedFile },
     });
-  }, [runGit, runRepoAction, safeGit, selectedFile, selectedRepo]);
+  }, [openConfirmationDialog, selectedFile, selectedRepo]);
 
   const handleResolveSelectedConflict = useCallback(async (side: ConflictResolutionSide) => {
     if (!selectedRepo || !selectedFile || selectedFile.kind !== 'conflicted') {
       return;
     }
+    openConfirmationDialog({
+      title: side === 'ours' ? 'Use Ours' : 'Use Theirs',
+      description: buildConflictResolutionConfirmationMessage(selectedFile, side),
+      confirmLabel: side === 'ours' ? 'Resolve with Ours' : 'Resolve with Theirs',
+      tone: 'accent',
+      action: { kind: 'resolve', file: selectedFile, side },
+    });
+  }, [openConfirmationDialog, selectedFile, selectedRepo]);
 
-    const confirmed = window.confirm(buildConflictResolutionConfirmationMessage(selectedFile, side));
-    if (!confirmed) {
+  const confirmPendingAction = useCallback(async () => {
+    const pendingAction = confirmationDialog.action;
+    if (!selectedRepo || !pendingAction) {
+      closeConfirmationDialog();
       return;
     }
 
+    closeConfirmationDialog();
+
     await runRepoAction(async () => {
-      await resolveConflictedFile(selectedRepo, selectedFile, side, runGit);
+      if (pendingAction.kind === 'discard') {
+        if (pendingAction.file.isUntracked) {
+          await runGit(selectedRepo, ['clean', '-fd', '--', pendingAction.file.file]);
+          return;
+        }
+
+        await discardTrackedFileChanges(selectedRepo, pendingAction.file, runGit, safeGit);
+        return;
+      }
+
+      await resolveConflictedFile(selectedRepo, pendingAction.file, pendingAction.side, runGit);
     });
-  }, [runGit, runRepoAction, selectedFile, selectedRepo]);
+  }, [closeConfirmationDialog, confirmationDialog.action, runGit, runRepoAction, safeGit, selectedRepo]);
 
   const loadDiff = useCallback(async (repoPath: string, file: GitFileStatus) => {
     setDiffLoading(true);
@@ -1063,7 +1138,7 @@ export function GitManager({
                       Pick In Explorer
                     </button>
                   ) : null}
-                  <button type="button" onClick={() => void importRepoFromPrompt()} style={{ ...toolbarButtonStyle(palette), minHeight: 32 }}>
+                  <button type="button" onClick={openRepositoryImportDialog} style={{ ...toolbarButtonStyle(palette), minHeight: 32 }}>
                     <Plus size={13} />
                     Paste Repo Path
                   </button>
@@ -1371,6 +1446,30 @@ export function GitManager({
           </>
         )}
       </div>
+
+      <AppPromptDialog
+        open={repositoryImportDialog.visible}
+        title="Paste Repository Path"
+        description="Enter an absolute path to a Git repository or any folder inside it. GreebleFS will normalize it to the repo root."
+        icon={<FolderGit2 size={16} />}
+        value={repositoryImportDialog.path}
+        onChange={(path) => setRepositoryImportDialog((current) => ({ ...current, path }))}
+        onSubmit={() => { void submitRepositoryImportDialog(); }}
+        onCancel={closeRepositoryImportDialog}
+        submitLabel="Import Repository"
+        placeholder="/absolute/path/to/repo"
+      />
+
+      <AppConfirmDialog
+        open={confirmationDialog.visible}
+        title={confirmationDialog.title}
+        description={confirmationDialog.description}
+        icon={<AlertTriangle size={16} style={{ color: confirmationDialog.tone === 'danger' ? palette.red : palette.accent }} />}
+        confirmLabel={confirmationDialog.confirmLabel}
+        tone={confirmationDialog.tone}
+        onConfirm={() => { void confirmPendingAction(); }}
+        onCancel={closeConfirmationDialog}
+      />
 
       <style>{`@keyframes spin { 100% { transform: rotate(360deg); } } .animate-spin { animation: spin 1s linear infinite; }`}</style>
     </div>

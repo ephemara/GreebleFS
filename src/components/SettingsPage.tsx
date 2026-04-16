@@ -942,6 +942,7 @@ export function SettingsPage({
 
   const profileOptions = useMemo(() => getExternalTerminalProfileOptions(platform), [platform]);
   const [themeDraft, setThemeDraft] = useState(() => serializeTheme(appearance.app.baseTheme));
+  const [themeImportError, setThemeImportError] = useState<string | null>(null);
   const [folderIconSearch, setFolderIconSearch] = useState('');
   const [activeSection, setActiveSection] = useState<SettingsSectionKey>('overview');
   const [startupSyncPending, setStartupSyncPending] = useState(false);
@@ -1246,8 +1247,9 @@ export function SettingsPage({
     try {
       const importedTheme = parseImportedTheme(themeDraft);
       persistTheme(importedTheme);
+      setThemeImportError(null);
     } catch (error) {
-      window.alert(`Theme import failed: ${String(error)}`);
+      setThemeImportError(`Theme import failed: ${String(error)}`);
     }
   }, [persistTheme, themeDraft]);
 
@@ -4374,13 +4376,33 @@ export function SettingsPage({
             <div className="mt-4 space-y-2">
               <textarea
                 value={themeDraft}
-                onChange={event => setThemeDraft(event.target.value)}
+                onChange={event => {
+                  setThemeDraft(event.target.value);
+                  if (themeImportError) {
+                    setThemeImportError(null);
+                  }
+                }}
                 className="min-h-[280px] w-full rounded border px-3 py-3 text-[11px] outline-none"
                 style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text, fontFamily: appearance.fonts.mono }}
               />
+              {themeImportError ? (
+                <div
+                  className="rounded border px-3 py-2 text-[11px]"
+                  style={{
+                    borderColor: 'rgba(248,113,113,0.3)',
+                    background: 'rgba(127,29,29,0.28)',
+                    color: '#fca5a5',
+                  }}
+                >
+                  {themeImportError}
+                </div>
+              ) : null}
               <div className="grid grid-cols-2 gap-2">
                 <button
-                  onClick={() => setThemeDraft(serializeTheme(editableTheme))}
+                  onClick={() => {
+                    setThemeDraft(serializeTheme(editableTheme));
+                    setThemeImportError(null);
+                  }}
                   className="rounded px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em]"
                   style={{ background: 'rgba(255,255,255,0.06)', color: text, border: `1px solid ${border}` }}
                 >

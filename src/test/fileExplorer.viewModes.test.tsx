@@ -1,5 +1,6 @@
 import React from 'react';
 import { createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { FileExplorer, invalidateExplorerResultCaches } from '../components/FileExplorer';
@@ -15,6 +16,7 @@ import { useExplorerStore } from '../store/explorerStore';
 
 const SETTINGS_STORAGE_KEY = 'ultacode-settings';
 const REPO_ROOT = 'C:\\workspace\\repo';
+const EMPTY_TAG_SNAPSHOT = { tags: [], assignments: [] };
 const ENTRIES = [
   {
     name: 'alpha',
@@ -219,6 +221,10 @@ describe('FileExplorer view modes', () => {
             throw new Error('Image is too large to thumbnail (> 64 MB)');
           }
           return 'data:image/png;base64,ZmFrZQ==';
+        case 'explorer_tags_list':
+          return EMPTY_TAG_SNAPSHOT;
+        case 'explorer_tags_set_for_paths':
+          return EMPTY_TAG_SNAPSHOT;
         case 'fs_measure_entry_sizes':
           return (payload?.paths ?? []).map(path => ({
             path,
@@ -779,7 +785,7 @@ describe('FileExplorer view modes', () => {
     });
   });
 
-  it('starts the native drag bridge when no modifier is held for supported local entries', async () => {
+  it('keeps plain explorer drags internal so folders can accept drops inside the app', async () => {
     renderExplorer();
     const entry = await screen.findByText('notes.txt');
     const dataTransfer = createDataTransfer();
@@ -793,12 +799,42 @@ describe('FileExplorer view modes', () => {
 
     expect(dataTransfer.setData).toHaveBeenCalledWith(
       'application/x-overlayterm-drag-intent',
-      'native-out',
+      'internal',
     );
-    expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_start_native_file_drag')).toBe(true);
+    expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_start_native_file_drag')).toBe(false);
   });
 
-  it('keeps drag intent internal when shift is held', async () => {
+  it('moves multi-selected files into the hovered folder without leaking the drop to the viewport root', async () => {
+    renderExplorer();
+    await screen.findByText('alpha');
+
+    fireEvent.click(screen.getByText('notes.txt'));
+    fireEvent.click(screen.getByText('preview.png'), { ctrlKey: true });
+    expect(screen.getByText(/2 selected/i)).toBeTruthy();
+
+    const dataTransfer = createDataTransfer();
+    const dragSource = screen.getByText('preview.png').closest('[data-overlay-drag-source="file"]');
+    const folderTarget = screen.getByText('alpha').closest('[data-overlay-drag-source="file"]');
+    if (!(dragSource instanceof HTMLElement) || !(folderTarget instanceof HTMLElement)) {
+      throw new Error('Expected draggable explorer entries');
+    }
+
+    fireEvent(dragSource, createEvent.dragStart(dragSource, { dataTransfer }));
+    fireEvent.dragOver(folderTarget, { dataTransfer });
+    fireEvent.drop(folderTarget, { dataTransfer });
+
+    await waitFor(() => {
+      const transferCalls = vi.mocked(invoke).mock.calls.filter(([command]) => command === 'fs_transfer_items');
+      expect(transferCalls).toHaveLength(1);
+      expect(transferCalls[0]?.[1]).toMatchObject({
+        targetDir: `${REPO_ROOT}\\alpha`,
+        sources: [`${REPO_ROOT}\\notes.txt`, `${REPO_ROOT}\\preview.png`],
+        operation: 'move',
+      });
+    });
+  });
+
+  it('starts the native drag bridge only when Alt is held for supported local entries', async () => {
     renderExplorer();
     const entry = await screen.findByText('notes.txt');
     const dataTransfer = createDataTransfer();
@@ -808,13 +844,11 @@ describe('FileExplorer view modes', () => {
     }
 
     const event = createEvent.dragStart(dragSource, { dataTransfer });
-    Object.defineProperty(event, 'shiftKey', { value: true });
+    Object.defineProperty(event, 'altKey', { value: true });
     fireEvent(dragSource, event);
 
-    expect(invoke).not.toHaveBeenCalledWith('fs_start_native_file_drag', {
-      paths: [`${REPO_ROOT}\\\\notes.txt`],
-    });
-    expect(dataTransfer.setData).toHaveBeenCalledWith('application/x-overlayterm-drag-intent', 'internal');
+    expect(dataTransfer.setData).toHaveBeenCalledWith('application/x-overlayterm-drag-intent', 'native-out');
+    expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_start_native_file_drag')).toBe(true);
   });
 
 });

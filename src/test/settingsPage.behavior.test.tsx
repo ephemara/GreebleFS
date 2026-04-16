@@ -1004,4 +1004,19 @@ describe('SettingsPage behavior', () => {
       });
     });
   });
+
+  it('shows theme import failures inline instead of using a browser alert', async () => {
+    const user = userEvent.setup();
+
+    renderSettingsPage();
+
+    await user.click(findSectionButton('Theme JSON'));
+
+    const editor = screen.getByRole('textbox');
+    await user.clear(editor);
+    await user.type(editor, '{ invalid json');
+    await user.click(screen.getByRole('button', { name: 'Import / Apply' }));
+
+    expect(await screen.findByText(/Theme import failed:/)).toBeInTheDocument();
+  });
 });

@@ -551,13 +551,14 @@ function getExplorerEntryStateSurface(
   }
 
   if (state === 'drop') {
+    const dropShadow = explorerTheme.selectionStyle === 'glow'
+      ? 'var(--overlay-explorer-item-focus-shadow)'
+      : '0 16px 34px rgba(0, 0, 0, 0.22)';
     return {
       background: 'var(--overlay-explorer-item-drop-bg)',
       borderColor: 'var(--overlay-explorer-item-drop-border)',
-      boxShadow: explorerTheme.selectionStyle === 'glow'
-        ? 'var(--overlay-explorer-item-focus-shadow)'
-        : 'none',
-      transform: 'translateY(0)',
+      boxShadow: `${dropShadow}, 0 0 0 1px var(--overlay-explorer-item-drop-border)`,
+      transform: 'translateY(calc(var(--overlay-explorer-hover-lift) * -1))',
     };
   }
 
@@ -596,6 +597,25 @@ function applyExplorerEntrySurface(
   target.style.borderColor = surface.borderColor;
   target.style.boxShadow = surface.boxShadow;
   target.style.transform = surface.transform;
+}
+
+function shouldIgnoreExplorerDragLeave(event: React.DragEvent): boolean {
+  const currentTarget = event.currentTarget as HTMLElement | null;
+  if (!currentTarget) {
+    return false;
+  }
+
+  const relatedTarget = event.relatedTarget;
+  if (relatedTarget instanceof Node && currentTarget.contains(relatedTarget)) {
+    return true;
+  }
+
+  if (typeof document === 'undefined') {
+    return false;
+  }
+
+  const elementAtPointer = document.elementFromPoint(event.clientX, event.clientY);
+  return elementAtPointer instanceof Node && currentTarget.contains(elementAtPointer);
 }
 
 const EXT_TYPE_LABEL: Record<string, string> = {
@@ -5569,6 +5589,7 @@ export function FileExplorer({
       : requestedDragIntent;
     activeDragPathsRef.current = dragPaths;
     e.currentTarget.dataset.overlayDragIntent = dragIntent;
+    e.currentTarget.dataset.overlayDragHide = dragIntent === 'native-out' ? 'true' : 'false';
     e.dataTransfer.setData('text/plain', dragPaths[0] ?? entry.path);
     e.dataTransfer.setData('application/x-overlayterm-paths', JSON.stringify(dragPaths));
     e.dataTransfer.setData('application/x-overlayterm-drag-intent', dragIntent);
@@ -5600,25 +5621,36 @@ export function FileExplorer({
       }
     }
     if (requestedDragIntent === 'native-out' && dragIntent === 'internal') {
-      setError('Native drag-out is only available for local filesystem items. Cloud files still drag inside the explorer.');
+      setError('Native drag-out is only available for local filesystem items. Hold Alt/Option only when dragging to the OS.');
     }
     e.dataTransfer.effectAllowed = dragIntent === 'native-out' ? 'copy' : 'copyMove';
   };
 
   const onDragEnd = (e: React.DragEvent<HTMLElement>) => {
     delete e.currentTarget.dataset.overlayDragIntent;
+    delete e.currentTarget.dataset.overlayDragHide;
     activeDragPathsRef.current = [];
     setDragOver(null);
   };
 
   const onDragOver = (e: React.DragEvent, targetPath: string) => {
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = resolveExplorerDropOperation(e, runtimePlatform);
     setDragOver(targetPath);
   };
 
+  const onDragLeave = (e: React.DragEvent, targetPath: string) => {
+    if (shouldIgnoreExplorerDragLeave(e)) {
+      return;
+    }
+    e.stopPropagation();
+    setDragOver(current => (current === targetPath ? null : current));
+  };
+
   const onDrop = async (e: React.DragEvent, targetDir: string) => {
     e.preventDefault();
+    e.stopPropagation();
     setDragOver(null);
     const payload = e.dataTransfer.getData('application/x-overlayterm-paths');
     let sources: string[] = [];
@@ -6275,7 +6307,7 @@ export function FileExplorer({
                           navigate(c.path);
                         }}
                         onDragOver={e => onDragOver(e, c.path)}
-                        onDragLeave={() => setDragOver(null)}
+                        onDragLeave={e => onDragLeave(e, c.path)}
                         onDrop={e => onDrop(e, c.path)}
                         style={{
                           border: 'none',
@@ -7482,6 +7514,7 @@ export function FileExplorer({
     isSearchActive,
     navigate,
     openNew,
+    openTagDialog,
     paste,
     pinnedLocations,
     previewEnabled,
@@ -8272,7 +8305,7 @@ export function FileExplorer({
           onDragStart={e => onDragStart(e, entry)}
           onDragEnd={onDragEnd}
           onDragOver={entry.is_dir ? e => onDragOver(e, entry.path) : undefined}
-          onDragLeave={() => setDragOver(null)}
+          onDragLeave={e => onDragLeave(e, entry.path)}
           onDrop={entry.is_dir ? e => onDrop(e, entry.path) : undefined}
           onClick={e => onEntryClick(e, entry)}
           onDoubleClick={() => onEntryDoubleClick(entry)}
@@ -8361,7 +8394,7 @@ export function FileExplorer({
         onDragStart={e => onDragStart(e, entry)}
         onDragEnd={onDragEnd}
         onDragOver={entry.is_dir ? e => onDragOver(e, entry.path) : undefined}
-        onDragLeave={() => setDragOver(null)}
+        onDragLeave={e => onDragLeave(e, entry.path)}
         onDrop={entry.is_dir ? e => onDrop(e, entry.path) : undefined}
         onClick={e => onEntryClick(e, entry)}
         onDoubleClick={() => onEntryDoubleClick(entry)}
@@ -8700,7 +8733,7 @@ export function FileExplorer({
                 onDragStart={e => onDragStart(e, node.entry)}
                 onDragEnd={onDragEnd}
                 onDragOver={node.entry.is_dir ? e => onDragOver(e, node.entry.path) : undefined}
-                onDragLeave={() => setDragOver(null)}
+                onDragLeave={e => onDragLeave(e, node.entry.path)}
                 onDrop={node.entry.is_dir ? e => onDrop(e, node.entry.path) : undefined}
                 onClick={e => onEntryClick(e, node.entry)}
                 onDoubleClick={() => onEntryDoubleClick(node.entry)}
@@ -8807,7 +8840,7 @@ export function FileExplorer({
         onDragStart={e => onDragStart(e, entry)}
         onDragEnd={onDragEnd}
         onDragOver={entry.is_dir ? e => onDragOver(e, entry.path) : undefined}
-        onDragLeave={() => setDragOver(null)}
+        onDragLeave={e => onDragLeave(e, entry.path)}
         onDrop={entry.is_dir ? e => onDrop(e, entry.path) : undefined}
         onClick={e => onEntryClick(e, entry)}
         onDoubleClick={() => onEntryDoubleClick(entry)}
@@ -9121,7 +9154,7 @@ export function FileExplorer({
               e.dataTransfer.dropEffect = resolveExplorerDropOperation(e, runtimePlatform);
               setDragOver('__main__');
             }}
-            onDragLeave={() => setDragOver(null)}
+            onDragLeave={e => onDragLeave(e, '__main__')}
             onDrop={e => onDrop(e, currentPath)}
             onContextMenu={e => {
               if (e.target !== e.currentTarget) return;
@@ -9377,7 +9410,7 @@ export function FileExplorer({
                         onDragStart={e => onDragStart(e, entry)}
                         onDragEnd={onDragEnd}
                         onDragOver={entry.is_dir ? e => onDragOver(e, entry.path) : undefined}
-                        onDragLeave={() => setDragOver(null)}
+                        onDragLeave={e => onDragLeave(e, entry.path)}
                         onDrop={entry.is_dir ? e => onDrop(e, entry.path) : undefined}
                         onClick={e => onEntryClick(e, entry)}
                         onDoubleClick={() => onEntryDoubleClick(entry)}
@@ -9535,7 +9568,7 @@ export function FileExplorer({
                       onDragStart={e => onDragStart(e, entry)}
                       onDragEnd={onDragEnd}
                       onDragOver={entry.is_dir ? e => onDragOver(e, entry.path) : undefined}
-                      onDragLeave={() => setDragOver(null)}
+                      onDragLeave={e => onDragLeave(e, entry.path)}
                       onDrop={entry.is_dir ? e => onDrop(e, entry.path) : undefined}
                       onClick={e => onEntryClick(e, entry)}
                       onDoubleClick={() => onEntryDoubleClick(entry)}
@@ -9674,7 +9707,7 @@ export function FileExplorer({
                         onDragStart={e => onDragStart(e, entry)}
                         onDragEnd={onDragEnd}
                         onDragOver={entry.is_dir ? e => onDragOver(e, entry.path) : undefined}
-                        onDragLeave={() => setDragOver(null)}
+                        onDragLeave={e => onDragLeave(e, entry.path)}
                         onDrop={entry.is_dir ? e => onDrop(e, entry.path) : undefined}
                         onClick={e => onEntryClick(e, entry)}
                         onDoubleClick={() => onEntryDoubleClick(entry)}
@@ -9786,6 +9819,19 @@ export function FileExplorer({
           onCancel={() => setSaveSearchState({ visible: false, name: '' })}
         />
       )}
+
+      <AppPromptDialog
+        open={tagDialog.visible}
+        title={tagDialog.title}
+        description={tagDialog.description}
+        icon={<Tags size={16} />}
+        value={tagDialog.input}
+        onChange={(value) => setTagDialog((current) => ({ ...current, input: value }))}
+        onSubmit={() => { void submitTagDialog(); }}
+        onCancel={closeTagDialog}
+        submitLabel={tagDialog.mode === 'add' ? 'Apply Tags' : 'Remove Tags'}
+        placeholder="tag-one, tag-two"
+      />
 
       {batchRename.visible && (
         <BatchRenameDialog

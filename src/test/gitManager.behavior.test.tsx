@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
@@ -501,6 +501,18 @@ describe('GitManager onboarding behavior', () => {
     expect(promptSpy).not.toHaveBeenCalled();
   });
 
+  it('opens an in-app repository path dialog when explorer handoff is unavailable', async () => {
+    const user = userEvent.setup();
+
+    renderGitManager();
+
+    await user.click(screen.getByRole('button', { name: 'Paste Repo Path' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Paste Repository Path')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Import Repository' })).toBeInTheDocument();
+  });
+
   it('omits large untracked files from inline diffs without reading file contents', async () => {
     const user = userEvent.setup();
     const invokeMock = vi.mocked(invoke);
@@ -565,7 +577,6 @@ describe('GitManager onboarding behavior', () => {
   it('discards an untracked file from the selected-file controls after confirmation', async () => {
     const user = userEvent.setup();
     const invokeMock = vi.mocked(invoke);
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     let statusText = '?? notes/todo.txt\n';
 
     invokeMock.mockImplementation(async (command: string, args: unknown) => {
@@ -627,9 +638,9 @@ describe('GitManager onboarding behavior', () => {
     await user.click(screen.getByText('notes/todo.txt'));
     await user.click(await screen.findByRole('button', { name: 'Discard' }));
 
-    expect(confirmSpy).toHaveBeenCalledWith(
-      'Remove the untracked file notes/todo.txt? This cannot be undone from GreebleFS.',
-    );
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Remove the untracked file notes/todo.txt? This cannot be undone from GreebleFS.')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Discard' }));
 
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith('git_exec', {
@@ -789,7 +800,6 @@ describe('GitManager onboarding behavior', () => {
   it('resolves a conflicted file with the ours version and stages the result', async () => {
     const user = userEvent.setup();
     const invokeMock = vi.mocked(invoke);
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     let statusText = 'UU src/app.ts\n';
     let unstagedNumstat = '';
     let stagedNumstat = '';
@@ -861,9 +871,9 @@ describe('GitManager onboarding behavior', () => {
     await user.click(screen.getByText('src/app.ts'));
     await user.click(await screen.findByRole('button', { name: 'Use Ours' }));
 
-    expect(confirmSpy).toHaveBeenCalledWith(
-      'Resolve the conflict in src/app.ts with our version? GreebleFS will replace the working tree file and stage the result as resolved.',
-    );
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Resolve the conflict in src/app.ts with our version? GreebleFS will replace the working tree file and stage the result as resolved.')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Resolve with Ours' }));
 
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith('git_exec', {
@@ -882,7 +892,6 @@ describe('GitManager onboarding behavior', () => {
   it('resolves delete-side conflicts by staging the selected deletion', async () => {
     const user = userEvent.setup();
     const invokeMock = vi.mocked(invoke);
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     let statusText = 'DU src/obsolete.ts\n';
 
     invokeMock.mockImplementation(async (command: string, args: unknown) => {
@@ -939,9 +948,9 @@ describe('GitManager onboarding behavior', () => {
     await user.click(screen.getByText('src/obsolete.ts'));
     await user.click(await screen.findByRole('button', { name: 'Use Ours' }));
 
-    expect(confirmSpy).toHaveBeenCalledWith(
-      'Resolve the conflict in src/obsolete.ts by deleting the file with our version? GreebleFS will stage that resolution.',
-    );
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Resolve the conflict in src/obsolete.ts by deleting the file with our version? GreebleFS will stage that resolution.')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Resolve with Ours' }));
 
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith('git_exec', {
@@ -956,7 +965,6 @@ describe('GitManager onboarding behavior', () => {
   it('falls back to the index when discarding tracked working-tree changes before the first commit', async () => {
     const user = userEvent.setup();
     const invokeMock = vi.mocked(invoke);
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     let statusText = 'AM src/app.ts\n';
     let unstagedNumstat = '2\t0\tsrc/app.ts\n';
     let stagedNumstat = '4\t0\tsrc/app.ts\n';
@@ -1025,9 +1033,9 @@ describe('GitManager onboarding behavior', () => {
     await user.click(screen.getByText('src/app.ts'));
     await user.click(await screen.findByRole('button', { name: 'Discard Working' }));
 
-    expect(confirmSpy).toHaveBeenCalledWith(
-      'Discard only the unstaged changes in src/app.ts? Staged changes will be kept.',
-    );
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Discard only the unstaged changes in src/app.ts? Staged changes will be kept.')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Discard Working' }));
 
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith('git_exec', {

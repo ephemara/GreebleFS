@@ -3965,7 +3965,9 @@ async fn run_archive_extraction_task_with_result(
     }
 }
 
-async fn run_archive_extraction_task(request: FsArchiveExtractionRequest) -> Result<String, String> {
+async fn run_archive_extraction_task(
+    request: FsArchiveExtractionRequest,
+) -> Result<String, String> {
     let (task_id, _) = run_archive_extraction_task_with_result(request).await?;
     Ok(task_id)
 }

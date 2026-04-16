@@ -1,8 +1,4 @@
-use std::{
-    env,
-    fs,
-    path::Path,
-};
+use std::{env, fs, path::Path};
 
 const NVIDIA_VENDOR_ID: &str = "0x10de";
 const SYSFS_DRM_ROOT: &str = "/sys/class/drm";
@@ -35,7 +31,8 @@ impl LinuxGraphicsEnvironmentSnapshot {
     fn from_process_environment() -> Self {
         Self {
             gdk_backend: read_trimmed_env_var("GDK_BACKEND"),
-            xdg_session_type: read_trimmed_env_var("XDG_SESSION_TYPE").map(|value| value.to_ascii_lowercase()),
+            xdg_session_type: read_trimmed_env_var("XDG_SESSION_TYPE")
+                .map(|value| value.to_ascii_lowercase()),
             display: read_trimmed_env_var("DISPLAY"),
             wayland_display: read_trimmed_env_var("WAYLAND_DISPLAY"),
             webkit_disable_dmabuf_renderer: read_trimmed_env_var("WEBKIT_DISABLE_DMABUF_RENDERER"),
@@ -55,7 +52,10 @@ fn resolve_linux_display_backend(
     environment: &LinuxGraphicsEnvironmentSnapshot,
 ) -> Option<LinuxDisplayBackend> {
     if let Some(gdk_backend) = environment.gdk_backend.as_deref() {
-        for backend in gdk_backend.split(',').map(|value| value.trim().to_ascii_lowercase()) {
+        for backend in gdk_backend
+            .split(',')
+            .map(|value| value.trim().to_ascii_lowercase())
+        {
             match backend.as_str() {
                 "wayland" => return Some(LinuxDisplayBackend::Wayland),
                 "x11" => return Some(LinuxDisplayBackend::X11),
@@ -323,6 +323,9 @@ mod tests {
         let module_root = PathBuf::from(sys_module_fixture.path());
         fs::create_dir_all(module_root.join("nvidia")).expect("module fixture");
 
-        assert!(linux_nvidia_gpu_detected(drm_fixture.path(), sys_module_fixture.path()));
+        assert!(linux_nvidia_gpu_detected(
+            drm_fixture.path(),
+            sys_module_fixture.path()
+        ));
     }
 }
