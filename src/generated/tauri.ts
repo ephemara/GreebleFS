@@ -704,9 +704,25 @@ async pluginUnwatchDirectory() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async videoCreatePreviewProxy(inputPath: string) : Promise<Result<ResolvedVideoPreviewSource, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("video_create_preview_proxy", { inputPath }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async videoExportTrim(request: VideoTrimExportRequest) : Promise<Result<VideoTrimExportResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("video_export_trim", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async videoResolvePreviewSource(inputPath: string) : Promise<Result<ResolvedVideoPreviewSource, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("video_resolve_preview_source", { inputPath }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -913,6 +929,7 @@ export type PythonPackageInstallRequest = { config: PythonRuntimeConfig | null; 
 export type PythonRuntimeConfig = { preferredInterpreterPath: string | null; runtimeRoot: string | null; bootstrapPackages: string | null; autoUpgradePip: boolean | null; createBoilerplate: boolean | null }
 export type PythonRuntimeStatus = { runtimeRoot: string; envDir: string; scriptsDir: string; tempDir: string; logsDir: string; managedPythonPath: string; envExists: boolean; ready: boolean; managedPythonVersion: string | null; managedPipVersion: string | null; preferredInterpreterPath: string | null; bootstrapPackages: string[]; interpreterHint: string; baseInterpreter: PythonInterpreterDescriptor | null; discoveredInterpreters: PythonInterpreterDescriptor[]; boilerplate: PythonBoilerplateFiles }
 export type ResolvedAudioPreviewSource = { taskId: string | null; sourcePath: string; sourceKind: AudioPreviewSourceKind; mimeType: string | null; generatedFromPath: string | null }
+export type ResolvedVideoPreviewSource = { sourcePath: string; sourceKind: VideoPreviewSourceKind; mimeType: string | null; generatedFromPath: string | null }
 export type SavedScreenshot = { path: string; file_name: string; created_at: number }
 export type ScreenshotAnnotatedExportResult = { saved: SavedScreenshot | null; copiedToClipboard: boolean }
 export type ScreenshotAnnotation = { type: "rect"; x1: number; y1: number; x2: number; y2: number; color: string; lw: number } | { type: "arrow"; x1: number; y1: number; x2: number; y2: number; color: string; lw: number } | { type: "text"; x: number; y: number; text: string; color: string; size: number }
@@ -943,6 +960,7 @@ export type ThemePresentation = { density: ThemeDensity; chromeStyle: ThemeChrom
 export type ThemeRenderStyleKind = "vs-code-workbench" | "ps-3-xmb" | "ios-springboard" | "wii-channels" | "desktop-window-manager" | "custom"
 export type ThemeRenderStyleManifest = { id: string; label: string; kind: ThemeRenderStyleKind; entryModule: string; supportsLiveSwap: boolean; description: string | null }
 export type ThemeTokenKind = "color" | "typography" | "spacing" | "radius" | "shadow" | "motion"
+export type VideoPreviewSourceKind = "direct" | "proxy"
 export type VideoTrimExportRequest = { inputPath: string; outputPath: string; startTimeSeconds: number; endTimeSeconds: number; overwriteExisting: boolean }
 export type VideoTrimExportResult = { outputPath: string; startTimeSeconds: number; endTimeSeconds: number; durationSeconds: number; ffmpegBinary: string }
 export type WaylandDockAnchor = "top" | "bottom"

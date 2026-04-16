@@ -48,17 +48,19 @@
 - Video files can now stay inside the explorer preview workflow with a host-native timeline surface instead of bouncing straight into the OS player.
 - Durable implementation shape:
   - `src/config/filePreview.ts` now owns a dedicated video-preview extension/MIME registry, keeping preview routing data-driven and preventing small video files from falling through the editable-text heuristic. Bare `.ts` intentionally remains text-first because this repo is TypeScript-heavy; video transport streams should use container-specific extensions such as `mts` / `m2ts`.
-  - `src/components/ExplorerVideoEditor.tsx` is the shell-owned inline video surface. It keeps the useful trim/timeline idea from `packages/vid-editor`, but the app shell now owns playback state, trim handles, export prompting, loop behavior, and the visual treatment so the feature feels native to the explorer instead of like an embedded demo app.
+  - `src/components/ExplorerVideoEditor.tsx` is the shell-owned inline video surface. It keeps the useful trim/timeline idea from `packages/vid-editor`, but the app shell now owns playback state, trim handles, export prompting, loop behavior, visual treatment, and the direct-to-proxy playback fallback so the feature feels native to the explorer instead of like an embedded demo app.
   - `src/components/FileExplorer.tsx` now treats previewable video entries as a first-class preview state and routes them into the embedded video editor instead of external open or text fallback.
-  - `src-tauri/src/video_commands.rs` is the native trim/export backend. It validates trim ranges, ensures the output path stays separate from the source, creates parent directories when needed, and shells out to `ffmpeg` for a non-destructive MP4 export.
-  - `src/runtime/videoEditorBackend.ts` is the TS bridge for that native trim/export command. React should keep calling that bridge instead of ad hoc `invoke(...)`.
+  - `src-tauri/src/video_commands.rs` is now both the preview compatibility backend and the trim/export backend. It resolves direct preview sources, generates cacheable ffmpeg-backed MP4 preview proxies under app-local managed storage when the desktop webview cannot decode the original cleanly, validates trim ranges, ensures the output path stays separate from the source, and shells out to `ffmpeg` for a non-destructive MP4 export.
+  - `src/runtime/videoEditorBackend.ts` is the TS bridge for those native video commands. React should resolve preview sources, request preview proxies, and export trims through that bridge instead of ad hoc `invoke(...)`.
 - Durable product note:
   - this is intentionally a trim/export workflow, not a full nonlinear editor. The imported `packages/vid-editor` package was mostly CRA shell + Redux + remote upload/transcode assumptions, so only the timeline interaction concept was assimilated. Filesystem truth and final media mutation stay in the GreebleFS host architecture.
+  - direct preview is still preferred when the webview can decode the source, but playback must no longer depend on desktop codec luck alone. The host now owns the fallback lane and regenerates a preview-safe MP4 proxy instead of leaving preview dead on `.mov` / unsupported codec captures.
 - Validation:
   - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
   - passed: `cargo check --manifest-path src-tauri/Cargo.toml`
-  - passed: `bunx vitest run src/test/filePreview.test.ts src/test/explorerVideoEditor.test.tsx src/test/fileExplorer.viewModes.test.tsx`
-  - passed: filtered typecheck for touched video/editor surfaces via `bunx tsc --noEmit --pretty false 2>&1 | rg "ExplorerVideoEditor|videoEditorBackend|videoExportTrim|src/config/filePreview.ts|src/components/FileExplorer.tsx|src/test/explorerVideoEditor.test.tsx|src/test/filePreview.test.ts|src/test/fileExplorer.viewModes.test.tsx" || true`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml video_commands:: -- --nocapture`
+  - passed: `bunx vitest run src/test/explorerVideoEditor.test.tsx src/test/explorerBackend.bindings.test.ts`
+  - passed: filtered typecheck for touched video/editor surfaces via `bunx tsc --noEmit --pretty false 2>&1 | rg "ExplorerVideoEditor|videoEditorBackend|video_commands|explorerVideoEditor|explorerBackend.bindings|src/generated/tauri.ts" || true`
 
 ## 2026-04-16 — Explorer Inline Image Editor
 

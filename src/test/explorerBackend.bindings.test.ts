@@ -101,6 +101,8 @@ describe('explorer backend task bindings', () => {
     expect(typeof commands.fsCancelExplorerTask).toBe('function');
     expect(typeof commands.fsOpenArchive).toBe('function');
     expect(typeof commands.fsExtractArchive).toBe('function');
+    expect(typeof commands.videoResolvePreviewSource).toBe('function');
+    expect(typeof commands.videoCreatePreviewProxy).toBe('function');
     expect(typeof listExplorerTasks).toBe('function');
     expect(typeof clearExplorerTaskHistory).toBe('function');
     expect(typeof retryExplorerTask).toBe('function');

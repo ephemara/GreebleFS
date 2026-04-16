@@ -1,3 +1,4 @@
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
   Clapperboard,
@@ -10,7 +11,12 @@ import {
   SkipForward,
 } from 'lucide-react';
 import { AppPromptDialog } from './AppModal';
-import { exportExplorerVideoTrim } from '../runtime/videoEditorBackend';
+import {
+  createExplorerVideoPreviewProxy,
+  exportExplorerVideoTrim,
+  resolveExplorerVideoPreviewSource,
+  type ExplorerVideoPreviewSource,
+} from '../runtime/videoEditorBackend';
 
 type ExplorerVideoEditorProps = {
   videoPath: string;
@@ -65,6 +71,15 @@ function getVideoPlaybackErrorLabel(videoError: MediaError | null): string {
       return 'This video format is not supported by the current desktop webview.';
     default:
       return 'This video preview could not be played by the current desktop webview.';
+  }
+}
+
+function buildVideoPlaybackUrl(sourcePath: string): string {
+  try {
+    return convertFileSrc(sourcePath);
+  } catch {
+    const normalized = sourcePath.replace(/\\/g, '/');
+    return normalized.startsWith('/') ? `file://${encodeURI(normalized)}` : `file:///${encodeURI(normalized)}`;
   }
 }
 
@@ -136,6 +151,10 @@ export function ExplorerVideoEditor({
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [previewSource, setPreviewSource] = useState<ExplorerVideoPreviewSource | null>(null);
+  const [playbackSource, setPlaybackSource] = useState(videoSource);
+  const [playbackMimeType, setPlaybackMimeType] = useState(videoMimeType);
+  const [isGeneratingProxy, setIsGeneratingProxy] = useState(false);
   const [loopSelection, setLoopSelection] = useState(true);
   const [statusMessage, setStatusMessage] = useState('Loading video metadata…');
   const [playbackError, setPlaybackError] = useState<string | null>(null);
@@ -143,6 +162,7 @@ export function ExplorerVideoEditor({
   const [exportMessage, setExportMessage] = useState('Trim export writes a sibling MP4 so the source file stays untouched.');
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportPathInput, setExportPathInput] = useState(() => buildTrimmedVideoOutputPath(videoPath));
+  const previewRequestTokenRef = useRef(0);
 
   useEffect(() => {
     durationRef.current = duration;
@@ -162,16 +182,91 @@ export function ExplorerVideoEditor({
     setTrimStart(0);
     setTrimEnd(0);
     setIsPlaying(false);
+    setPreviewSource(null);
+    setPlaybackSource(videoSource);
+    setPlaybackMimeType(videoMimeType);
+    setIsGeneratingProxy(false);
     setPlaybackError(null);
     setExportState('idle');
     setExportMessage('Trim export writes a sibling MP4 so the source file stays untouched.');
     setStatusMessage('Loading video metadata…');
     setExportPathInput(buildTrimmedVideoOutputPath(videoPath));
-  }, [videoPath]);
+  }, [videoMimeType, videoPath, videoSource]);
 
-  useEffect(() => () => {
-    videoRef.current?.pause();
-  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    const requestToken = previewRequestTokenRef.current + 1;
+    previewRequestTokenRef.current = requestToken;
+
+    async function loadPreviewSource() {
+      try {
+        const resolvedSource = await resolveExplorerVideoPreviewSource(videoPath);
+        if (cancelled || previewRequestTokenRef.current !== requestToken) {
+          return;
+        }
+        setPreviewSource(resolvedSource);
+        setPlaybackSource(buildVideoPlaybackUrl(resolvedSource.sourcePath));
+        setPlaybackMimeType(resolvedSource.mimeType ?? videoMimeType);
+        setPlaybackError(null);
+      } catch (error) {
+        if (cancelled || previewRequestTokenRef.current !== requestToken) {
+          return;
+        }
+        setPlaybackError(String(error));
+        setStatusMessage('Video preview source resolution failed.');
+      }
+    }
+
+    void loadPreviewSource();
+
+    return () => {
+      cancelled = true;
+      videoRef.current?.pause();
+    };
+  }, [videoMimeType, videoPath]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+    video.pause();
+    video.load();
+  }, [playbackMimeType, playbackSource]);
+
+  async function ensurePlaybackProxy() {
+    const currentSourceKind = previewSource?.sourceKind ?? 'direct';
+    if (isGeneratingProxy || currentSourceKind === 'proxy') {
+      return;
+    }
+
+    const requestToken = previewRequestTokenRef.current;
+    setIsGeneratingProxy(true);
+    setPlaybackError(null);
+    setStatusMessage('Generating ffmpeg preview proxy…');
+
+    try {
+      const proxy = await createExplorerVideoPreviewProxy(videoPath);
+      if (previewRequestTokenRef.current !== requestToken) {
+        return;
+      }
+      setPreviewSource(proxy);
+      setPlaybackSource(buildVideoPlaybackUrl(proxy.sourcePath));
+      setPlaybackMimeType(proxy.mimeType ?? 'video/mp4');
+      setPlaybackError(null);
+      setStatusMessage('Preview proxy ready.');
+    } catch (error) {
+      if (previewRequestTokenRef.current !== requestToken) {
+        return;
+      }
+      setPlaybackError(String(error));
+      setStatusMessage('Preview proxy generation failed.');
+    } finally {
+      if (previewRequestTokenRef.current === requestToken) {
+        setIsGeneratingProxy(false);
+      }
+    }
+  }
 
   function syncCurrentTime(nextTime: number) {
     const video = videoRef.current;
@@ -257,6 +352,9 @@ export function ExplorerVideoEditor({
       setPlaybackError(String(error));
       setStatusMessage('Playback could not start.');
       setIsPlaying(false);
+      if ((previewSource?.sourceKind ?? 'direct') === 'direct') {
+        void ensurePlaybackProxy();
+      }
     }
   }
 
@@ -293,6 +391,8 @@ export function ExplorerVideoEditor({
   const selectionLeft = duration > 0 ? `${(trimStart / duration) * 100}%` : '0%';
   const selectionWidth = duration > 0 ? `${(selectionDuration / duration) * 100}%` : '0%';
   const playheadLeft = duration > 0 ? `${(currentTime / duration) * 100}%` : '0%';
+  const currentPreviewSourceKind = previewSource?.sourceKind ?? 'direct';
+  const previewTransportLabel = currentPreviewSourceKind === 'proxy' ? 'Preview Proxy' : 'Direct Preview';
 
   return (
     <div style={{ width: '100%', height: '100%', display: 'grid', gridTemplateRows: 'minmax(0, 1fr) auto', background: 'var(--overlay-explorer-preview-bg)' }}>
@@ -339,11 +439,17 @@ export function ExplorerVideoEditor({
               }
             }}
             onError={(event) => {
-              setPlaybackError(getVideoPlaybackErrorLabel(event.currentTarget.error));
+              const nextErrorLabel = getVideoPlaybackErrorLabel(event.currentTarget.error);
+              setPlaybackError(nextErrorLabel);
+              if ((previewSource?.sourceKind ?? 'direct') === 'direct') {
+                setStatusMessage('Direct preview failed. Falling back to an ffmpeg proxy…');
+                void ensurePlaybackProxy();
+                return;
+              }
               setStatusMessage('Preview playback failed.');
             }}
           >
-            <source src={videoSource} type={videoMimeType ?? undefined} />
+            <source src={playbackSource} type={playbackMimeType ?? undefined} />
             This video preview is not supported by the current desktop webview.
           </video>
         </div>
@@ -356,7 +462,7 @@ export function ExplorerVideoEditor({
                 Video Timeline
               </div>
               <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--overlay-text-muted)' }}>
-                {videoExtension.toUpperCase()} · {formatSize(videoSize)} · Selection {formatTimelineTimestamp(selectionDuration)}
+                {videoExtension.toUpperCase()} · {formatSize(videoSize)} · {previewTransportLabel} · Selection {formatTimelineTimestamp(selectionDuration)}
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -379,6 +485,17 @@ export function ExplorerVideoEditor({
               <button type="button" onClick={() => updateTrimRange(0, duration)} style={toolbarButtonStyle()}>
                 <RotateCcw size={13} />
                 Reset
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void ensurePlaybackProxy();
+                }}
+                disabled={isGeneratingProxy || currentPreviewSourceKind === 'proxy'}
+                style={toolbarButtonStyle(false, currentPreviewSourceKind === 'proxy' ? 'primary' : 'default')}
+              >
+                <Clapperboard size={13} />
+                {currentPreviewSourceKind === 'proxy' ? 'Proxy Ready' : isGeneratingProxy ? 'Proxying…' : 'Make Proxy'}
               </button>
               <button type="button" onClick={() => setExportDialogOpen(true)} style={toolbarButtonStyle(false, 'primary')}>
                 <Save size={13} />

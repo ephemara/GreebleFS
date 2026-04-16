@@ -39,7 +39,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/ExplorerImageEditor.tsx`
   Shell-owned wrapper for the embedded preview-pane image editor. It provides GreebleFS-native toolbar/status chrome, save/reset wiring, resize adaptation, and the static-preview fallback for unsupported image formats.
 - `src/components/ExplorerVideoEditor.tsx`
-  Shell-owned wrapper for the embedded preview-pane video surface. It owns playback chrome, trim handles, timeline state, export prompting, and the non-destructive MP4 trim workflow.
+  Shell-owned wrapper for the embedded preview-pane video surface. It owns playback chrome, trim handles, timeline state, export prompting, the automatic preview-proxy fallback path for webview codec failures, and the non-destructive MP4 trim workflow.
 - `src/components/ExplorerAudioWorkbench.tsx`
   Shell-owned wrapper for the embedded preview-pane audio surface. It owns transport controls, waveform selection, SoX-backed preview fallback, analysis cards, trim/normalize/convert actions, and spectrogram rendering.
 - `src/components/explorer/ExplorerWorkspace.tsx`
@@ -93,7 +93,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/runtime/imageEditorRuntime.ts`
   Runtime seam for the embedded preview-pane image editor. It loads the local editor package through the `@img-editor-runtime` alias so the shell can consume the editor at runtime without importing the package internals into the main app typecheck.
 - `src/runtime/videoEditorBackend.ts`
-  TS bridge for the preview-pane video trim/export flow. It routes trim exports through the generated Tauri command surface instead of letting React invoke ffmpeg directly.
+  TS bridge for the preview-pane video preview/trim flow. It resolves direct preview sources, requests ffmpeg-backed preview proxies when the webview cannot decode the source cleanly, and routes trim exports through the generated Tauri command surface instead of letting React invoke ffmpeg directly.
 - `src/runtime/audioWorkbenchBackend.ts`
   TS bridge for the preview-pane audio analysis/proxy/export/batch flow. It routes SoX-backed audio work through the generated Tauri command surface instead of letting React or vendored packages own media mutation.
 - `src/config/explorerArchives.ts`
@@ -277,7 +277,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Previewable media is now split into three host-owned explorer lanes instead of one generic browser fallback:
   - image editing stays in `ExplorerImageEditor.tsx` through the local package seam
   - audio playback/editing now lives in `ExplorerAudioWorkbench.tsx`, while the actual analysis/proxy/export/batch mutation stays in `src-tauri/src/audio_commands.rs`
-  - video playback + trim/export lives in `ExplorerVideoEditor.tsx`, while the actual export mutation stays in `src-tauri/src/video_commands.rs`
+  - video playback + trim/export lives in `ExplorerVideoEditor.tsx`; direct playback still starts in the webview, but codec fallback and export mutation stay in `src-tauri/src/video_commands.rs` through generated preview-source/proxy commands
 - Local archive handling is now a first-class explorer workflow instead of a pure OS-shell fallback:
   - `src/config/explorerArchives.ts` defines the supported local archive suffix registry (`zip`/`cbz`/`jar`/`apk`, `7z`, `tar`, `tar.gz`, `tar.bz2`, `tar.xz`, `gz`, `bz2`, `xz`) plus the default extracted-folder naming rules
   - `src-tauri/src/archive_ops.rs` owns the actual Rust extraction logic, including cache-backed archive opening and collision-safe extraction into the current folder

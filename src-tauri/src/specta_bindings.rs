@@ -40,7 +40,9 @@ use crate::screenshot_commands::{
     ScreenshotRegion,
 };
 use crate::terminal::{ExternalTerminalRequest, TerminalWriteRequest};
-use crate::video_commands::{VideoTrimExportRequest, VideoTrimExportResult};
+use crate::video_commands::{
+    ResolvedVideoPreviewSource, VideoPreviewSourceKind, VideoTrimExportRequest, VideoTrimExportResult,
+};
 use crate::wayland_dock::{WaylandDockAnchor, WaylandDockHostStatus};
 use overlay_contracts::{
     ExplorerLayoutMode, LayoutBackBehavior, LayoutBarPosition, LayoutBehaviorConfig,
@@ -161,7 +163,9 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::plugin_commands::plugin_run_backend,
             crate::plugin_commands::plugin_watch_directory,
             crate::plugin_commands::plugin_unwatch_directory,
+            crate::video_commands::video_create_preview_proxy,
             crate::video_commands::video_export_trim,
+            crate::video_commands::video_resolve_preview_source,
             crate::startup_commands::startup_get_launch_at_startup,
             crate::startup_commands::startup_get_linux_display_backend_status,
             crate::startup_commands::startup_set_launch_at_startup,
@@ -257,6 +261,8 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<ScreenshotPreview>()
         .typ::<ExternalTerminalRequest>()
         .typ::<TerminalWriteRequest>()
+        .typ::<VideoPreviewSourceKind>()
+        .typ::<ResolvedVideoPreviewSource>()
         .typ::<VideoTrimExportRequest>()
         .typ::<VideoTrimExportResult>()
         .typ::<LinuxDisplayBackend>()
