@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
@@ -45,6 +46,9 @@ export default defineConfig({
     },
   },
   resolve: {
-    alias: { '@': '/src' },
+    alias: {
+      '@': '/src',
+      '@img-editor-runtime': path.resolve('packages/img-editor/src/main.ts'),
+    },
   },
 });

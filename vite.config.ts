@@ -23,6 +23,7 @@ export default defineConfig(async () => ({
   resolve: {
     alias: {
       "@": "/src",
+      "@img-editor-runtime": path.resolve("packages/img-editor/src/main.ts"),
     },
   },
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
@@ -33,6 +34,9 @@ export default defineConfig(async () => ({
   build: {
     outDir: process.env.OVERLAYTERM_VITE_OUT_DIR ?? "dist",
     emptyOutDir: true,
+  },
+  worker: {
+    format: "es",
   },
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {

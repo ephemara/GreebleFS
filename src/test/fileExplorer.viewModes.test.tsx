@@ -3,6 +3,13 @@ import { createEvent, fireEvent, render, screen, waitFor, within } from '@testin
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
+
+vi.mock('../components/ExplorerImageEditor', () => ({
+  ExplorerImageEditor: ({ imageName }: { imageName: string }) => (
+    <div data-testid="mock-explorer-image-editor">{imageName}</div>
+  ),
+}));
+
 import { FileExplorer, invalidateExplorerResultCaches } from '../components/FileExplorer';
 import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/appearance';
 import { createDefaultExplorerRailSnapshot } from '../components/explorer/explorerRailState';
@@ -806,6 +813,15 @@ describe('FileExplorer view modes', () => {
         ),
       ).toBe(true);
     });
+  });
+
+  it('mounts the embedded image editor when selecting an editable image preview', async () => {
+    renderExplorer();
+    const imageEntry = await screen.findByText('preview.png');
+
+    fireEvent.click(imageEntry);
+
+    expect(await screen.findByTestId('mock-explorer-image-editor')).toHaveTextContent('preview.png');
   });
 
   it('keeps plain explorer drags internal so folders can accept drops inside the app', async () => {

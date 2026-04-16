@@ -1,13 +1,17 @@
-import type { CanvasOptions } from 'fabric';
-import type { ImageEditor } from '../../packages/img-editor/src/editor/index.ts';
+import type {
+  ExplorerImageEditorHandle,
+  ExplorerImageEditorOptions,
+} from '@img-editor-runtime';
 
-export type ExplorerImageEditorHandle = ImageEditor;
-export type ExplorerImageEditorOptions = Partial<CanvasOptions>;
+export type {
+  ExplorerImageEditorHandle,
+  ExplorerImageEditorOptions,
+} from '@img-editor-runtime';
 
 export async function initExplorerImageEditor(
   containerId: string,
   options: ExplorerImageEditorOptions = {},
 ): Promise<ExplorerImageEditorHandle> {
-  const module = await import('../../packages/img-editor/src/main.ts');
+  const module = await import('@img-editor-runtime');
   return module.default(containerId, options);
 }

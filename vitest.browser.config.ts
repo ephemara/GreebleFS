@@ -1,3 +1,4 @@
+import path from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 import { playwright } from '@vitest/browser-playwright';
@@ -36,6 +37,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': '/src',
+      '@img-editor-runtime': path.resolve('packages/img-editor/src/main.ts'),
     },
   },
   test: {

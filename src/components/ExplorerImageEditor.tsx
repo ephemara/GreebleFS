@@ -92,7 +92,7 @@ export function ExplorerImageEditor({
   const containerId = useId().replace(/:/g, '_');
   const canvasHostRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<ExplorerImageEditorHandle | null>(null);
-  const savedStateRef = useRef<object | null>(null);
+  const savedStateRef = useRef<unknown>(null);
   const savedStateSignatureRef = useRef('');
   const mountedRef = useRef(true);
   const saveResetTimerRef = useRef<number | null>(null);
@@ -225,14 +225,22 @@ export function ExplorerImageEditor({
           }
           clearSaveResetTimer();
           setSaveState('error');
-          setStatusMessage(payload.message ?? 'Editor error');
+          setStatusMessage(
+            typeof payload === 'object' && payload && 'message' in payload
+              ? String(payload.message ?? 'Editor error')
+              : 'Editor error',
+          );
         });
 
         editor.canvas.on('editor:warning', (payload) => {
           if (!mountedRef.current || saveState === 'saving') {
             return;
           }
-          setStatusMessage(payload.message ?? 'Editor warning');
+          setStatusMessage(
+            typeof payload === 'object' && payload && 'message' in payload
+              ? String(payload.message ?? 'Editor warning')
+              : 'Editor warning',
+          );
         });
 
         if (typeof ResizeObserver !== 'undefined') {
