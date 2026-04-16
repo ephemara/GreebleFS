@@ -1,5 +1,41 @@
 # GreebleFS Memory
 
+## 2026-04-16 — Explorer Tree / Grid Zoom / Icon Grid Stabilization
+
+- The explorer now survives the three failure modes that were feeding each other in the file-area workflow: unreliable `Ctrl/Cmd + wheel` scaling, blank icon grids after directory navigation, and stale/stuck local side-rail tree branches.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now handles `Ctrl/Cmd + wheel` from the stable file-area shell instead of depending on a one-time wheel listener attached to whichever viewport DOM node happened to exist at mount time. The handler still ignores editable targets and preview-pane events, but it now accepts events from anywhere inside the file-area plane.
+  - The explorer viewport metrics path in `FileExplorer.tsx` now tracks the actual live viewport element, rebinds scroll/resize observers when that element changes, and clamps virtual-window math against current content height and entry count. That prevents stale `scrollTop` from pushing icon mode into an empty visible range after navigating from a long folder into a short one.
+  - Directory navigation in `FileExplorer.tsx` now resets the file-area scroll position and refreshes viewport metrics immediately. Layout/view-mode changes clamp existing scroll instead of leaving the viewport beyond the resized content height.
+  - `src/components/explorer/ExplorerSideRail.tsx` now treats the local folder tree as active-path-driven state. Current-path ancestors auto-expand, unrelated local branches collapse, and cached local subtree state is pruned back to the active lineage instead of accumulating forever.
+  - Side-rail local-tree refresh now uses a monotonic `localTreeRefreshRevision` prop from `FileExplorer.tsx` plus `forceRefresh` support in `src/components/explorer/explorerDirectoryCache.ts`. The rail can explicitly invalidate subtree listings after explorer refresh/mutation instead of reusing stale cached children.
+  - The local-tree loader in `ExplorerSideRail.tsx` now reads child-folder state from a ref-backed snapshot instead of closing over `folderChildrenByPath` in its callback identity. That keeps the ancestor-loading effect stable during refresh passes and avoids cancelling a forced subtree reload after only the first ancestor finishes.
+- Durable product note:
+  - Explorer wheel-scaling is scoped to the file-area interaction plane, not to arbitrary remount-prone viewport nodes.
+  - The local side-rail tree is now navigation-focused by design; persistent multi-branch manual expansion is no longer the model for local drives.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx src/test/explorerSideRail.test.tsx`
+  - passed: filtered typecheck for touched explorer surfaces via `bunx tsc --noEmit --pretty false 2>&1 | rg "FileExplorer|ExplorerSideRail|explorerDirectoryCache|fileExplorer.viewModes|explorerSideRail"`
+
+## 2026-04-16 — Explorer Rail Focus / Reopen Loop
+
+- The explorer sources rail now behaves more like a closable Slate panel instead of a one-way mode preset.
+- Durable implementation shape:
+  - `src/components/explorer/ExplorerSideRail.tsx` now exposes a rail-header `Focus` action that tells the owning explorer to switch into the built-in `focus` mode profile and close the rail in one click.
+  - `src/components/FileExplorer.tsx` now distinguishes three states for the sources rail:
+    - normal layout-following visibility
+    - explicitly closed
+    - explicitly reopened while the active mode profile would normally hide the rail
+  - That reopened-in-focus behavior is persisted through the new `session.sourcesRailPinnedOpen` flag in `src/store/explorerStore.ts`, so focus mode can still default to a hidden rail without trapping the operator in a no-reopen state.
+  - The existing toolbar `Sources` control now reflects actual rendered rail visibility instead of only the old raw session boolean, and the toolbar shows an explicit `Open Sources` affordance whenever the rail is closed.
+  - `src/config/explorerChromeLayouts.ts` treats the new rail focus action as first-class chrome so themes and chrome overrides can move it like the other explorer controls.
+- Durable product note:
+  - explorer mode presets still define the default rail posture, but panel reopen/close is now a live per-session interaction on top of that layout intent rather than a hard stop.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerChromeLayouts.test.ts src/test/fileExplorer.viewModes.test.tsx src/test/explorerStore.test.ts src/test/settingsStore.test.ts`
+  - passed: `bunx vitest run src/test/explorerSideRail.test.tsx -t "exposes a focus action in the rail header when the explorer supplies one"`
+  - note: the broader `src/test/explorerSideRail.test.tsx` suite still has an existing failure in `reloads the active local tree branch when the explorer bumps the tree refresh revision`, and this workspace already had unrelated in-flight explorer cache/rail edits when this pass started
+
 ## 2026-04-16 — Inline Image Editor Fabric Reinit Guard
 
 - The embedded image editor no longer trips Fabric's `Trying to initialize a canvas that has already been initialized` error when the preview editor remounts quickly or React dev lifecycle tears down one mount before the third-party editor finishes getting ready.
@@ -110,14 +146,18 @@
 
 - Audio files now stay inside the explorer as a shell-native workbench instead of a lightweight inline player.
 - Durable implementation shape:
-  - `src-tauri/src/audio_commands.rs` is the new native audio lane. It resolves vendored SoX bundles from `packages/sox/bin`, unpacks the current-platform bundle into app-local managed storage, and exposes typed commands for preview analysis, preview-proxy generation, single-file transforms, and batch processing.
+  - `src-tauri/src/audio_commands.rs` is the native audio lane. It resolves vendored SoX bundles from `packages/sox/bin`, unpacks the current-platform bundle into app-local managed storage, and exposes typed commands for preview analysis, preview-proxy generation, single-file transforms, and batch processing.
+  - That lane is now explicitly hybrid instead of assuming vendored SoX can handle every codec on every OS:
+    - SoX still owns waveform analysis, trim/fade/normalize effects, and spectrogram generation.
+    - `ffmpeg` is now the codec bridge when the vendored SoX bundle cannot read or write a format on the current platform. Current proven case: Linux SoX bundle cannot read or write `mp3`, so the backend now decodes unsupported inputs to cached WAV staging assets and re-encodes unsupported outputs through `ffmpeg`.
   - `src-tauri/src/fs_commands.rs` now treats audio transforms and audio batch runs as first-class explorer tasks, including retry/cancel support through the same task center used by copy/move/archive work.
   - `src/runtime/audioWorkbenchBackend.ts` is the TS bridge for the new audio command surface; React should call that bridge instead of raw invoke strings.
-  - `src/components/ExplorerAudioWorkbench.tsx` is the shell-owned inline audio surface. It owns transport controls, waveform rendering, draggable in/out selection, analysis cards, trim/fade/normalize/convert actions, overwrite confirmation, and spectrogram rendering.
+  - `src/components/ExplorerAudioWorkbench.tsx` is the shell-owned inline audio surface. It owns transport controls, waveform rendering, draggable in/out selection, analysis cards, trim/fade/normalize/convert actions, overwrite confirmation, spectrogram rendering, and reliable source reload/proxy retry behavior when the player swaps from direct media to a generated proxy.
   - `src/components/FileExplorer.tsx` now routes previewable audio into the workbench instead of the raw `<audio>` card, and audio-heavy selection context menus expose `Batch Convert Audio` plus `Batch Normalize Audio`.
-  - `src/config/filePreview.ts` now also owns a data-driven audio export-format catalog and direct-playback hints so format/UI behavior is not hardcoded inside the workbench component.
+  - `src/config/filePreview.ts` now also owns a data-driven audio export-format catalog, plus `DEFAULT_EXPLORER_AUDIO_EXPORT_FORMAT_ID` so non-destructive exports default to a safe cross-platform target (`wav`) instead of blindly reusing the source extension.
 - Durable operator note:
-  - direct playback still depends on the host webview codec stack. When direct playback fails, the workbench now falls back to a SoX-generated preview proxy instead of degrading to a dead inline player.
+  - direct playback still depends on the host webview codec stack. The workbench now reloads the player source explicitly, retries playback after proxy generation, and prefers proxy playback earlier on Linux for webview-fragile codecs.
+  - do not assume the vendored SoX bundle has `mp3` support just because another workstation did. The runtime must probe and route by actual platform capability.
   - batch v1 is intentionally narrow: convert/normalize only. Trim/fade stay single-file workbench actions.
 - Validation:
   - passed: `cargo check --manifest-path src-tauri/Cargo.toml`
@@ -125,6 +165,7 @@
   - passed: `cargo test --manifest-path src-tauri/Cargo.toml audio_commands:: -- --nocapture`
   - passed: `bunx vitest run src/test/filePreview.test.ts src/test/explorerAudioWorkbench.test.tsx src/test/fileExplorer.viewModes.test.tsx`
   - passed: filtered typecheck for touched audio/explorer surfaces via `bunx tsc --noEmit --pretty false 2>&1 | rg "ExplorerAudioWorkbench|audioWorkbenchBackend|src/config/filePreview.ts|src/components/FileExplorer.tsx|src/test/explorerAudioWorkbench.test.tsx|src/test/filePreview.test.ts|src/test/fileExplorer.viewModes.test.tsx|src/runtime/audioWorkbenchBackend.ts" || true`
+  - passed: shell smoke on Linux proving `mp3` input decode -> SoX trim/normalize/fade -> `mp3` re-encode plus playable WAV preview proxy via `ffmpeg` / `ffprobe`
   - note: Rust tests still emit the same pre-existing unrelated `src-tauri/src/terminal.rs` warnings about `OsStr` and `ENV_TEST_LOCK`; this pass did not touch that subsystem
 
 ## 2026-04-16 — Shell-Native Dialog Cleanup

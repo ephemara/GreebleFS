@@ -41,7 +41,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/ExplorerVideoEditor.tsx`
   Shell-owned wrapper for the embedded preview-pane video surface. It owns playback chrome, trim handles, timeline state, export prompting, the automatic preview-proxy fallback path for webview codec failures, and the non-destructive MP4 trim workflow.
 - `src/components/ExplorerAudioWorkbench.tsx`
-  Shell-owned wrapper for the embedded preview-pane audio surface. It owns transport controls, waveform selection, SoX-backed preview fallback, analysis cards, trim/normalize/convert actions, and spectrogram rendering.
+  Shell-owned wrapper for the embedded preview-pane audio surface. It owns transport controls, waveform selection, proxy fallback playback, analysis cards, trim/normalize/convert actions, and spectrogram rendering.
 - `src/components/explorer/ExplorerWorkspace.tsx`
   Explorer-local workspace shell that wraps `FileExplorer` instances with explorer tabs, slot-based `1-Up` / `2-Up` / `4-Up` pane layouts, pane focus, and adaptive split sizing.
 - `src/components/explorer/ExplorerSideRail.tsx`
@@ -95,7 +95,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/runtime/videoEditorBackend.ts`
   TS bridge for the preview-pane video preview/trim flow. It resolves direct preview sources, requests ffmpeg-backed preview proxies when the webview cannot decode the source cleanly, and routes trim exports through the generated Tauri command surface instead of letting React invoke ffmpeg directly.
 - `src/runtime/audioWorkbenchBackend.ts`
-  TS bridge for the preview-pane audio analysis/proxy/export/batch flow. It routes SoX-backed audio work through the generated Tauri command surface instead of letting React or vendored packages own media mutation.
+  TS bridge for the preview-pane audio analysis/proxy/export/batch flow. It routes the native audio lane through the generated Tauri command surface instead of letting React or vendored packages own media mutation.
 - `src/config/explorerArchives.ts`
   Data-driven archive registry for the explorer. It is the TS-side source of truth for which local archive suffixes should route through native extraction/opening and how archive folder labels are derived.
 - `src/windows/FileOperationsWindowApp.tsx`
@@ -277,6 +277,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Previewable media is now split into three host-owned explorer lanes instead of one generic browser fallback:
   - image editing stays in `ExplorerImageEditor.tsx` through the local package seam
   - audio playback/editing now lives in `ExplorerAudioWorkbench.tsx`, while the actual analysis/proxy/export/batch mutation stays in `src-tauri/src/audio_commands.rs`
+  - audio preview on Linux now prefers native-generated proxy playback for webview-fragile codecs instead of assuming direct decode will work
   - video playback + trim/export lives in `ExplorerVideoEditor.tsx`; direct playback still starts in the webview, but codec fallback and export mutation stay in `src-tauri/src/video_commands.rs` through generated preview-source/proxy commands
 - Local archive handling is now a first-class explorer workflow instead of a pure OS-shell fallback:
   - `src/config/explorerArchives.ts` defines the supported local archive suffix registry (`zip`/`cbz`/`jar`/`apk`, `7z`, `tar`, `tar.gz`, `tar.bz2`, `tar.xz`, `gz`, `bz2`, `xz`) plus the default extracted-folder naming rules
@@ -288,6 +289,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src-tauri/src/explorer_pro_commands.rs` owns app-managed trash + undo, batch rename, duplicate-scan lifecycle, tags, and saved searches
   - `src-tauri/src/fs_commands.rs` now also owns the durable explorer task registry used by copy/move/delete jobs plus the retry/cancel/history command surface exposed through Specta
   - `src-tauri/src/audio_commands.rs` owns explorer-facing audio analysis, vendored SoX runtime extraction, preview-proxy generation, trim/fade/normalize/convert exports, batch audio processing, and explorer task cancellation/retry hooks
+  - the audio lane is intentionally hybrid: SoX owns waveform/effects/spectrogram work, while `ffmpeg` is the codec bridge for source files or export targets the vendored SoX bundle cannot read/write on a given platform (for example Linux `mp3`)
   - `src-tauri/src/video_commands.rs` owns explorer-facing video trim export through a native `ffmpeg` subprocess. The frontend supplies trim intent and destination path, but the output mutation stays in Rust.
   - local transfer UX now has a two-step contract instead of silent collision auto-rename:
     - `fs_plan_transfer_items` reports pending name collisions before paste/drag/pane transfers run
@@ -397,7 +399,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Avoid mixing CSS border shorthands with border longhands in the same React style object on explorer rows and chrome surfaces. The dock/layout tests hit real `cssstyle` failures when `borderBottom` and `borderColor` were mounted together, and the longhand form is safer for theme-driven overrides anyway.
 - Explorer directory/search caches are intentionally shared at the module level across explorer mounts. Tests or one-off diagnostics harnesses that need isolated backend behavior should call the exported `invalidateExplorerResultCaches()` helper before rendering.
 - The side rail local folder tree must use the shared explorer directory cache in `src/components/explorer/explorerDirectoryCache.ts` rather than calling `fs_list_dir` blindly from component-local state. Otherwise the rail and the main explorer will drift on refresh and remount behavior.
+- The side rail local-tree refresh path is sensitive to effect cancellation. Do not make the ancestor-loading effect depend on a callback that closes over `folderChildrenByPath` or on a transient `shouldForceRefresh` boolean that flips during the same refresh pass; use a stable loader plus explicit refresh revision/state refs so forced subtree reloads can finish.
 - Explorer async directory/search work needs both mount cleanup and request invalidation. Overlay-mode panel swaps and `React.StrictMode` remounts can otherwise let stale `navigate()` / `refresh()` completions write into a dead or superseded explorer instance, which shows up as `getRootForUpdatedFiber` runtime errors or visible listing flicker.
+- Explorer `Ctrl/Cmd + wheel` density changes should be attached to the stable file-area interaction plane, not a remount-prone scroll viewport node. Otherwise icon/grid zoom appears to \"randomly\" stop responding after layout or DOM remounts even when the settings logic is correct.
 - If the Linux/native overlay appears on the wrong display, inspect the monitor-resolution path in `App.tsx` before touching Rust window flags. The frontend now owns monitor selection and overlay geometry; `windowApplyMode` should only apply the chosen presentation atomically.
 - If Linux dock mode starts floating in the middle of the screen again, check the post-show re-dock path in `App.tsx` and confirm overlay move/resize listeners are not re-persisting raw X/Y coordinates into `runtimeOverlayBoundsRef`.
 - On Linux, do not let `window_apply_mode` abort geometry just because a WM rejects `set_shadow`, `set_skip_taskbar`, or another presentation-only flag. The TS call sites should unwrap the returned Tauri `Result`, and the Rust command should log best-effort flag failures while still applying size/position.
