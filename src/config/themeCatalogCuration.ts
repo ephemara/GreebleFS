@@ -54,6 +54,13 @@ export const THEME_CATALOG_TIERS: Record<ThemeCatalogTierId, ThemeCatalogTierDef
 } as const;
 
 const THEME_CATALOG_PACKAGE_OVERRIDES: Record<string, ThemeCatalogPackageOverride> = {
+  'caveman-god-mode': {
+    tierId: 'official-pilot',
+    sortRank: 0,
+    badgeLabel: 'Pilot',
+    suiteLabel: 'Pilot Suite',
+    suiteDescription: 'The canonical reference package for future LLM-authored shells.',
+  },
   'vector-monolith': {
     tierId: 'official-pilot',
     sortRank: 0,

@@ -8,6 +8,14 @@ import { loadThemePackagesFromDirectoryEntries } from '../config/themePackages';
 
 describe('theme catalog curation', () => {
   it('classifies the official pilot suite and lower tiers from the host-owned map', () => {
+    expect(resolveThemeCatalogPackageMetadata('caveman-god-mode')).toMatchObject({
+      tierId: 'official-pilot',
+      badgeLabel: 'Pilot',
+      isOfficialPilot: true,
+      sortRank: 0,
+      suiteDescription: 'The canonical reference package for future LLM-authored shells.',
+    });
+
     expect(resolveThemeCatalogPackageMetadata('vector-monolith')).toEqual({
       tierId: 'official-pilot',
       tierLabel: 'Official Pilot',

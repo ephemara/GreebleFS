@@ -1,0 +1,194 @@
+{
+  "version": 1,
+  "id": "caveman-god-mode",
+  "name": "Caveman God Mode",
+  "description": "A flagship command citadel tuned as the clearest end-to-end example for future LLM-authored theme packages: strong palette, engine manifest, dock overrides, renderer ownership, and readable helper modules.",
+  "author": "Codex + Caveman",
+  "homepage": "https://overlayterm.local/themes/caveman-god-mode",
+  "tags": ["flagship", "example", "llm-reference", "command-center", "custom-renderer", "god-mode"],
+  "assets": {
+    "background": "assets/wallpaper.svg",
+    "preview": "assets/preview.svg"
+  },
+  "fonts": {
+    "ui": "\"Space Grotesk\", \"IBM Plex Sans\", sans-serif",
+    "mono": "\"JetBrains Mono\", \"IBM Plex Mono\", monospace"
+  },
+  "presentation": {
+    "chromeStyle": "glass",
+    "density": "comfortable",
+    "iconStyle": "vector",
+    "motionStyle": "fluid",
+    "cornerRadius": 28,
+    "panelSpacing": 14
+  },
+  "theme": {
+    "palette": {
+      "appBackground": "#05070d",
+      "appBackgroundAlt": "#0b1020",
+      "shellBackground": "rgba(7, 10, 18, 0.76)",
+      "shellBackgroundSolid": "rgba(8, 12, 22, 0.96)",
+      "topBarBackground": "rgba(10, 15, 26, 0.9)",
+      "topBarMenuBackground": "rgba(9, 14, 24, 0.96)",
+      "sidebarBackground": "rgba(8, 13, 23, 0.88)",
+      "panelBackground": "rgba(10, 16, 27, 0.76)",
+      "panelAltBackground": "rgba(13, 20, 34, 0.84)",
+      "cardBackground": "rgba(12, 19, 30, 0.78)",
+      "cardHoverBackground": "rgba(18, 28, 43, 0.92)",
+      "contextMenuBackground": "rgba(8, 13, 23, 0.98)",
+      "inputBackground": "rgba(10, 16, 27, 0.94)",
+      "terminalBackground": "#04070e",
+      "selectionBackground": "rgba(93, 228, 255, 0.16)",
+      "textPrimary": "#f4f7ff",
+      "textSecondary": "#c4d4ee",
+      "textMuted": "rgba(196, 212, 238, 0.68)",
+      "textDim": "rgba(196, 212, 238, 0.44)",
+      "textInverse": "#04101a",
+      "border": "rgba(141, 178, 255, 0.14)",
+      "borderStrong": "rgba(93, 228, 255, 0.36)",
+      "accent": "#5de4ff",
+      "accentSoft": "rgba(93, 228, 255, 0.14)",
+      "accentContrast": "#03131c",
+      "success": "#67efb0",
+      "warning": "#ffcf6e",
+      "danger": "#ff7b8f",
+      "info": "#89a9ff",
+      "note": "#7dd7ff",
+      "prompt": "#ff9d6e"
+    },
+    "effects": {
+      "backgroundImage": "radial-gradient(circle at 14% 18%, rgba(93,228,255,0.18), transparent 22%), radial-gradient(circle at 82% 14%, rgba(255,157,110,0.12), transparent 18%), radial-gradient(circle at 50% 82%, rgba(137,169,255,0.14), transparent 26%), linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0) 24%)",
+      "shadow": "0 34px 72px rgba(0, 0, 0, 0.42)",
+      "overlayShadow": "0 -3px 0 0 rgba(93,228,255,0.5), 0 -30px 60px rgba(0, 0, 0, 0.44)"
+    },
+    "workbench": {
+      "brandLabel": "God Mode",
+      "topBarStyle": "floating",
+      "commandPaletteStyle": "glass",
+      "terminalStyle": "glass",
+      "settingsStyle": "glass",
+      "tabStyle": "segment",
+      "metrics": {
+        "chromeHeight": 42,
+        "controlRadius": 18,
+        "panelRadius": 28,
+        "shellInset": 14,
+        "pagePadding": 16,
+        "panelGap": 14,
+        "commandPaletteWidth": 980
+      },
+      "cssVars": {
+        "--overlay-workbench-brand": "caveman-god-mode",
+        "--overlay-workbench-caveman-stage-width": "min(calc(100% - 72px), 1260px)",
+        "--overlay-workbench-caveman-stage-height": "min(calc(100% - 84px), 760px)"
+      }
+    },
+    "explorer": {
+      "railBrandLabel": "Command Index",
+      "toolbarStyle": "floating",
+      "breadcrumbStyle": "capsule",
+      "selectionStyle": "glow",
+      "hoverStyle": "lift",
+      "previewStyle": "floating",
+      "statusBarStyle": "floating",
+      "preferredViewMode": "icons-xl",
+      "preferredExperimentalViewMode": "adaptive-semantic-grid",
+      "defaultModeProfileId": "inspector",
+      "metrics": {
+        "railWidth": 268,
+        "previewWidth": 468,
+        "panelRadius": 28,
+        "gridScale": 1.22,
+        "iconScale": 1.18,
+        "hoverLiftPx": 5
+      },
+      "cssVars": {
+        "--overlay-explorer-brand": "command-index"
+      }
+    },
+    "dock": {
+      "workbench": {
+        "topBarStyle": "minimal",
+        "metrics": {
+          "chromeHeight": 38,
+          "shellInset": 10,
+          "panelGap": 10
+        }
+      },
+      "explorer": {
+        "railBrandLabel": "Dock Grid",
+        "preferredViewMode": "icons-l",
+        "metrics": {
+          "railWidth": 230,
+          "previewWidth": 408,
+          "gridScale": 1.1,
+          "iconScale": 1.08
+        }
+      }
+    }
+  },
+  "compatibility": {
+    "shellBlueprints": ["classic-dock", "tile-start", "xmb-cross-media"],
+    "tags": ["flagship", "reference", "command-citadel"]
+  },
+  "layoutPrimitives": [
+    {
+      "id": "god-citadel",
+      "name": "God Citadel",
+      "kind": "split",
+      "props": {
+        "primaryRatio": 0.72
+      }
+    }
+  ],
+  "navigationPatterns": [
+    {
+      "id": "god-command-grid",
+      "name": "God Command Grid",
+      "kind": "spatial",
+      "axis": "both",
+      "props": {
+        "breadcrumb": false,
+        "focusRing": "accent"
+      }
+    }
+  ],
+  "renderStyles": [
+    {
+      "id": "god-citadel-render",
+      "label": "God Citadel",
+      "description": "A desktop-grade command deck with a focus stage, telemetry rail, and renderer-owned launcher shell.",
+      "kind": "desktop-window-manager",
+      "entryModule": "renderers/caveman-god-mode-shell.tsx",
+      "supportsLiveSwap": true
+    }
+  ],
+  "themeRenderer": {
+    "entryModule": "renderers/caveman-god-mode-shell.tsx",
+    "apiVersion": 1,
+    "supportsLiveSwap": true,
+    "fallbackRuntime": "desktop-stack",
+    "capabilities": {
+      "customScreens": true,
+      "wallpaperScene": true,
+      "surfaceAdapters": true
+    }
+  },
+  "defaultLayoutPrimitiveId": "god-citadel",
+  "defaultNavigationPatternId": "god-command-grid",
+  "defaultRenderStyleId": "god-citadel-render",
+  "visuals": [
+    {
+      "id": "god-grid",
+      "backgroundImage": "repeating-linear-gradient(90deg, rgba(93,228,255,0.05) 0 1px, transparent 1px 56px), repeating-linear-gradient(180deg, rgba(137,169,255,0.04) 0 1px, transparent 1px 56px)",
+      "opacity": 0.52,
+      "blendMode": "screen"
+    },
+    {
+      "id": "god-sheen",
+      "backgroundImage": "linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0) 26%), radial-gradient(circle at 50% -10%, rgba(93,228,255,0.18), transparent 34%)",
+      "opacity": 0.78,
+      "blendMode": "screen"
+    }
+  ]
+}
