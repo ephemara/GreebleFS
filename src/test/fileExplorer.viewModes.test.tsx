@@ -873,6 +873,49 @@ describe('FileExplorer view modes', () => {
     });
   });
 
+  it('keeps the current folder mounted until the next folder listing resolves', async () => {
+    const alphaPath = `${REPO_ROOT}\\alpha`;
+    const childEntries = [{
+      name: 'child.txt',
+      path: `${alphaPath}\\child.txt`,
+      is_dir: false,
+      size: 42,
+      modified: 0,
+      extension: 'txt',
+      is_hidden: false,
+      is_symlink: false,
+    }];
+    const deferredListing = createDeferred<typeof childEntries>();
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error('Missing default invoke mock implementation');
+    }
+
+    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
+      const payload = args as { path?: string } | undefined;
+      if (command === 'fs_list_dir' || command === 'fs_list_dir_uncached') {
+        return payload?.path === alphaPath ? deferredListing.promise : ENTRIES;
+      }
+      return baseInvokeImplementation(command, args as Parameters<typeof invoke>[1]);
+    });
+
+    renderExplorer();
+    await screen.findByText('alpha');
+    expect(screen.getByText('notes.txt')).toBeInTheDocument();
+
+    fireEvent.doubleClick(screen.getByText('alpha'));
+
+    expect(screen.getByText('notes.txt')).toBeInTheDocument();
+    expect(screen.queryByText('child.txt')).not.toBeInTheDocument();
+
+    deferredListing.resolve(childEntries);
+
+    await waitFor(() => {
+      expect(screen.getByText('child.txt')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('notes.txt')).not.toBeInTheDocument();
+  });
+
   it('keeps ctrl-wheel scaling responsive after the explorer remounts its layout shell', async () => {
     useSettingsStore.getState().updateExplorer({ viewMode: 'icons-m', gridZoom: 0 });
 

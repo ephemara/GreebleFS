@@ -1,5 +1,21 @@
 # GreebleFS Memory
 
+## 2026-04-16 — Explorer Navigation Commit Smoothing
+
+- Folder-to-folder movement in the flagship explorer should now feel materially less glitchy because the file area no longer hard-blanks itself while every navigation is in flight.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now keeps pending navigation state in refs and only commits `currentPath`, history, breadcrumbs, and the new entry list once the winning directory response is ready. That prevents the old `loading -> blank file area -> new folder` flash and also keeps stale requests from partially switching the explorer.
+  - Refresh flows now understand in-flight navigation targets. If a newer refresh supersedes an older pending directory load, the refresh can still claim that target path and commit it as the live explorer location instead of getting blocked by an uncommitted `currentPath`.
+  - The file-area surface now distinguishes blocking boot loading from in-place navigation loading. Initial mount can still show the centered loader when no location has resolved yet, but subsequent navigations keep the previous folder visible under a lightweight loading veil until the new listing lands.
+  - Explorer entry sorting in `FileExplorer.tsx` now reuses a shared collator and a dedicated `sortExplorerEntries()` helper instead of rebuilding expensive locale-compare options inline for every comparator invocation. Type-sorted folders also precompute their type labels once per sort pass.
+  - `src/test/fileExplorer.viewModes.test.tsx` now covers the new behavior where the current folder stays mounted until the destination folder listing resolves.
+- Durable product note:
+  - Explorer navigation is supposed to commit atomically. Future performance work should preserve that contract instead of reintroducing eager path/history mutations that make the shell flash or momentarily desynchronize its folder state.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx`
+  - attempted: `bunx tsc --noEmit --pretty false`
+  - note: the repo still has unrelated TypeScript failures in other app/theme/audio/test files, so there is no clean repo-wide typecheck signal for this change yet.
+
 ## 2026-04-16 — Terminal Sidebar Reopen / Persistence
 
 - The integrated terminal sidebar can now be tucked away in both the embedded application panel and the dock overlay, and that visibility choice now persists through terminal settings instead of resetting every mount.

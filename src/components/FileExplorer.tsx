@@ -873,6 +873,15 @@ function getEntryTypeLabel(entry: Pick<FileEntry, 'is_dir' | 'name' | 'extension
   return EXT_TYPE_LABEL[extension] ?? `${extension.toUpperCase()} File`;
 }
 
+const EXPLORER_ENTRY_TEXT_COLLATOR = new Intl.Collator(undefined, {
+  sensitivity: 'base',
+  numeric: true,
+});
+
+function compareExplorerEntryText(left: string, right: string): number {
+  return EXPLORER_ENTRY_TEXT_COLLATOR.compare(left, right);
+}
+
 function compareExplorerEntries(
   left: FileEntry,
   right: FileEntry,
@@ -892,28 +901,56 @@ function compareExplorerEntries(
       comparison = left.modified - right.modified;
       break;
     case 'type':
-      comparison = getEntryTypeLabel(left).localeCompare(getEntryTypeLabel(right), undefined, {
-        sensitivity: 'base',
-        numeric: true,
-      });
+      comparison = compareExplorerEntryText(getEntryTypeLabel(left), getEntryTypeLabel(right));
       break;
     case 'name':
     default:
-      comparison = left.name.localeCompare(right.name, undefined, {
-        sensitivity: 'base',
-        numeric: true,
-      });
+      comparison = compareExplorerEntryText(left.name, right.name);
       break;
   }
 
   if (comparison === 0) {
-    comparison = left.name.localeCompare(right.name, undefined, {
-      sensitivity: 'base',
-      numeric: true,
-    });
+    comparison = compareExplorerEntryText(left.name, right.name);
   }
 
   return sortOrder === 'asc' ? comparison : -comparison;
+}
+
+function sortExplorerEntries(
+  entries: FileEntry[],
+  sortBy: ExplorerSortKey,
+  sortOrder: 'asc' | 'desc',
+): FileEntry[] {
+  if (entries.length <= 1) {
+    return entries;
+  }
+
+  if (sortBy !== 'type') {
+    return [...entries].sort((left, right) => compareExplorerEntries(left, right, sortBy, sortOrder));
+  }
+
+  const decoratedEntries = entries.map((entry, index) => ({
+    entry,
+    index,
+    typeLabel: getEntryTypeLabel(entry),
+  }));
+
+  decoratedEntries.sort((left, right) => {
+    if (left.entry.is_dir !== right.entry.is_dir) {
+      return left.entry.is_dir ? -1 : 1;
+    }
+
+    let comparison = compareExplorerEntryText(left.typeLabel, right.typeLabel);
+    if (comparison === 0) {
+      comparison = compareExplorerEntryText(left.entry.name, right.entry.name);
+    }
+    if (comparison === 0) {
+      comparison = left.index - right.index;
+    }
+    return sortOrder === 'asc' ? comparison : -comparison;
+  });
+
+  return decoratedEntries.map(({ entry }) => entry);
 }
 
 function getIconSrc(
@@ -1048,7 +1085,7 @@ function buildAdaptiveSemanticBands(
       label: 'Recent Activity',
       description: 'Fresh work stays elevated without replacing the folder map.',
       dominant: false,
-      entries: recentEntries.sort((left, right) => compareExplorerEntries(left, right, sortBy, sortOrder)),
+      entries: sortExplorerEntries(recentEntries, sortBy, sortOrder),
     });
   }
 
@@ -2921,6 +2958,9 @@ export function FileExplorer({
   const searchFocusRequestIdRef = useRef(0);
   const isExplorerMountedRef = useRef(false);
   const directoryLoadRequestIdRef = useRef(0);
+  const pendingNavigationPathRef = useRef<string | null>(null);
+  const pendingNavigationHistoryRef = useRef<string[] | null>(null);
+  const pendingNavigationHistoryIdxRef = useRef<number | null>(null);
   const bootNavigationSequenceRef = useRef(0);
   const initialInteractiveRecordedRef = useRef(false);
   const explorerMountStartedAtRef = useRef(getExplorerPerformanceNow());
@@ -3235,19 +3275,21 @@ export function FileExplorer({
     const isActiveDirectoryLoadRequest = () => (
       isExplorerMountedRef.current && directoryLoadRequestIdRef.current === requestId
     );
-    setCurrentPath(normalizedPath); setSelected(new Set()); setSearch(''); setSearchResults([]); setSearchLoading(false); setError(null);
-    setEntrySizeLoadingPaths(new Set());
+
+    const nextHistory = push
+      ? [...historyRef.current.slice(0, historyIdxRef.current + 1), normalizedPath]
+      : historyRef.current;
+    const nextHistoryIdx = push
+      ? historyIdxRef.current + 1
+      : historyIdxRef.current;
+
+    pendingNavigationPathRef.current = normalizedPath;
+    pendingNavigationHistoryRef.current = nextHistory;
+    pendingNavigationHistoryIdxRef.current = nextHistoryIdx;
+
     setAddressEditing(false);
     setAddressDraft('');
-    resetExplorerViewport();
-    if (push) {
-      const nextHistory = [...historyRef.current.slice(0, historyIdxRef.current + 1), normalizedPath];
-      const nextHistoryIdx = historyIdxRef.current + 1;
-      historyRef.current = nextHistory;
-      historyIdxRef.current = nextHistoryIdx;
-      setHistory(nextHistory);
-      setHistoryIdx(nextHistoryIdx);
-    }
+    setError(null);
     setLoading(true);
     try {
       const nextListing = await loadCachedExplorerLocation({
@@ -3260,14 +3302,25 @@ export function FileExplorer({
       }
       startTransition(() => {
         if (isActiveDirectoryLoadRequest()) {
+          pendingNavigationPathRef.current = null;
+          pendingNavigationHistoryRef.current = null;
+          pendingNavigationHistoryIdxRef.current = null;
+          historyRef.current = nextHistory;
+          historyIdxRef.current = nextHistoryIdx;
+          setCurrentPath(normalizedPath);
+          setHistory(nextHistory);
+          setHistoryIdx(nextHistoryIdx);
+          setSelected(new Set());
+          setSearch('');
+          setSearchResults([]);
+          setSearchLoading(false);
           setEntries(nextListing.entries);
+          setEntrySizeLoadingPaths(new Set());
+          setLocationBreadcrumbs(nextListing.breadcrumbs);
+          setLocationParentPath(nextListing.parentPath);
+          resetExplorerViewport();
         }
       });
-      if (!isActiveDirectoryLoadRequest()) {
-        return;
-      }
-      setLocationBreadcrumbs(nextListing.breadcrumbs);
-      setLocationParentPath(nextListing.parentPath);
       recordExplorerMetric({
         metricId: 'explorer_navigation',
         durationMs: getExplorerPerformanceNow() - startedAt,
@@ -3283,14 +3336,10 @@ export function FileExplorer({
       if (!isActiveDirectoryLoadRequest()) {
         return;
       }
+      pendingNavigationPathRef.current = null;
+      pendingNavigationHistoryRef.current = null;
+      pendingNavigationHistoryIdxRef.current = null;
       setError(String(e));
-      startTransition(() => {
-        if (isActiveDirectoryLoadRequest()) {
-          setEntries([]);
-        }
-      });
-      setLocationBreadcrumbs([]);
-      setLocationParentPath(null);
       recordExplorerMetric({
         metricId: 'explorer_navigation',
         durationMs: getExplorerPerformanceNow() - startedAt,
@@ -3307,7 +3356,7 @@ export function FileExplorer({
         setLoading(false);
       }
     }
-  }, [isCloudExplorerPath, listExplorerLocation, recordExplorerMetric, resetExplorerViewport, showHidden]);
+  }, [listExplorerLocation, recordExplorerMetric, resetExplorerViewport, showHidden]);
 
   useEffect(() => {
     historyRef.current = history;
@@ -3534,14 +3583,16 @@ export function FileExplorer({
   }, [currentPath, explorerSearchScope, recordExplorerMetric, searchIncludeContent, showHidden, supportsSearch]);
 
   const refresh = useCallback(async () => {
-    if (!currentPath || !isExplorerMountedRef.current) return;
+    const refreshPath = pendingNavigationPathRef.current?.trim() || currentPath;
+    if (!refreshPath || !isExplorerMountedRef.current) return;
     const requestId = directoryLoadRequestIdRef.current + 1;
     directoryLoadRequestIdRef.current = requestId;
     const isActiveDirectoryLoadRequest = () => (
       isExplorerMountedRef.current && directoryLoadRequestIdRef.current === requestId
     );
     const entriesToInvalidate = search.trim() ? searchResults : entries;
-    invalidateExplorerResultCaches(currentPath);
+    const pendingNavigationPath = pendingNavigationPathRef.current;
+    invalidateExplorerResultCaches(refreshPath);
     setLocalTreeRefreshRevision((current) => current + 1);
     setLoading(true);
     setEntrySizes(current => {
@@ -3575,28 +3626,42 @@ export function FileExplorer({
     });
     setImageThumbnailLoadingPaths(new Set());
     try {
-      const nextListing = await listExplorerLocationUncached(currentPath, showHidden);
+      const nextListing = await listExplorerLocationUncached(refreshPath, showHidden);
       if (!isActiveDirectoryLoadRequest()) {
         return;
       }
       storeExplorerCachedLocation({
-        path: currentPath,
+        path: refreshPath,
         showHidden,
         listing: nextListing,
       });
       startTransition(() => {
         if (isActiveDirectoryLoadRequest()) {
+          if (pendingNavigationPath && refreshPath === pendingNavigationPath) {
+            const pendingHistory = pendingNavigationHistoryRef.current ?? historyRef.current;
+            const pendingHistoryIdx = pendingNavigationHistoryIdxRef.current ?? historyIdxRef.current;
+            pendingNavigationPathRef.current = null;
+            pendingNavigationHistoryRef.current = null;
+            pendingNavigationHistoryIdxRef.current = null;
+            historyRef.current = pendingHistory;
+            historyIdxRef.current = pendingHistoryIdx;
+            setCurrentPath(refreshPath);
+            setHistory(pendingHistory);
+            setHistoryIdx(pendingHistoryIdx);
+          }
           setEntries(nextListing.entries);
+          setLocationBreadcrumbs(nextListing.breadcrumbs);
+          setLocationParentPath(nextListing.parentPath);
         }
       });
-      if (!isActiveDirectoryLoadRequest()) {
-        return;
-      }
-      setLocationBreadcrumbs(nextListing.breadcrumbs);
-      setLocationParentPath(nextListing.parentPath);
     }
     catch (e) {
       if (isActiveDirectoryLoadRequest()) {
+        if (pendingNavigationPath && refreshPath === pendingNavigationPath) {
+          pendingNavigationPathRef.current = null;
+          pendingNavigationHistoryRef.current = null;
+          pendingNavigationHistoryIdxRef.current = null;
+        }
         setError(String(e));
       }
     }
@@ -3605,7 +3670,7 @@ export function FileExplorer({
         setLoading(false);
       }
     }
-    if (isActiveDirectoryLoadRequest() && search.trim() && supportsSearch(currentPath)) {
+    if (isActiveDirectoryLoadRequest() && search.trim() && supportsSearch(refreshPath)) {
       const requestId = ++searchRequestIdRef.current;
       void runSearch(search, requestId);
     }
@@ -3821,14 +3886,7 @@ export function FileExplorer({
     [activeTagFilterIds, entries, isSearchActive, pathTagIdsByPath, searchResults],
   );
   const visibleEntries = useMemo(
-    () => [...filteredEntries].sort((left, right) => (
-      compareExplorerEntries(
-        left,
-        right,
-        explorerSettings.sortBy,
-        explorerSettings.sortOrder,
-      )
-    )),
+    () => sortExplorerEntries(filteredEntries, explorerSettings.sortBy, explorerSettings.sortOrder),
     [
       filteredEntries,
       explorerSettings.sortBy,
@@ -9243,6 +9301,11 @@ export function FileExplorer({
     );
   };
 
+  const hasResolvedExplorerLocation = currentPath.trim().length > 0;
+  const showBlockingExplorerLoadingState = loading && !hasResolvedExplorerLocation;
+  const showInlineExplorerLoadingState = loading && hasResolvedExplorerLocation;
+  const shouldRenderExplorerContent = !showBlockingExplorerLoadingState;
+
   return (
     <div
       data-overlay-explorer
@@ -9459,7 +9522,13 @@ export function FileExplorer({
             ref={mainRef}
             data-overlay-explorer-plane="content-viewport"
             tabIndex={0}
-            style={{ minHeight: '100%', outline:'none', background:'var(--overlay-explorer-content-bg)' }}
+            aria-busy={loading ? true : undefined}
+            style={{
+              minHeight: '100%',
+              outline:'none',
+              background:'var(--overlay-explorer-content-bg)',
+              position: 'relative',
+            }}
             onClick={() => mainRef.current?.focus()}
             onDragOver={e => {
               e.preventDefault();
@@ -9501,7 +9570,50 @@ export function FileExplorer({
               </div>
             )}
 
-            {loading && (
+            {showInlineExplorerLoadingState && (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  zIndex: 6,
+                  pointerEvents: 'auto',
+                  background: 'linear-gradient(180deg, rgba(6, 8, 12, 0.12), rgba(6, 8, 12, 0.05) 24%, rgba(6, 8, 12, 0))',
+                }}
+              >
+                <div
+                  style={{
+                    position: 'sticky',
+                    top: 12,
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    padding: '0 12px',
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '8px 12px',
+                      borderRadius: 999,
+                      border: `1px solid ${accent}44`,
+                      background: 'rgba(9, 12, 17, 0.84)',
+                      boxShadow: '0 12px 28px rgba(0,0,0,0.22)',
+                      color: EXP.text,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      letterSpacing: '0.04em',
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    <Loader size={12} style={{ animation:'spin 1s linear infinite', color: accent }} />
+                    <span>Loading Folder</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {showBlockingExplorerLoadingState && (
               <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:120, gap:10, color:EXP.muted }}>
                 <Loader size={16} style={{ animation:'spin 1s linear infinite' }} />
                 <span style={{ fontSize:12 }}>Loading…</span>
@@ -9530,7 +9642,7 @@ export function FileExplorer({
               </div>
             )}
 
-            {!loading && effectiveExperimentalViewMode === 'adaptive-semantic-grid' && adaptiveDensityStop && (
+            {shouldRenderExplorerContent && effectiveExperimentalViewMode === 'adaptive-semantic-grid' && adaptiveDensityStop && (
               <div style={{ minHeight: 0, padding: '14px 0 20px' }}>
                 {renderExperimentalInlineNewItem(
                   adaptiveDensityStop.presentation === 'table'
@@ -9577,7 +9689,7 @@ export function FileExplorer({
               </div>
             )}
 
-            {!loading && effectiveExperimentalViewMode === 'constellation' && (
+            {shouldRenderExplorerContent && effectiveExperimentalViewMode === 'constellation' && (
               <div style={{ minHeight: 0, padding: '14px 0 24px' }}>
                 {renderExperimentalInlineNewItem(26)}
                 <div style={{ padding: '0 14px 18px' }}>
@@ -9618,7 +9730,7 @@ export function FileExplorer({
               </div>
             )}
 
-            {!loading && effectiveExperimentalViewMode === 'timeline-surface' && (
+            {shouldRenderExplorerContent && effectiveExperimentalViewMode === 'timeline-surface' && (
               <div style={{ minHeight: 0, padding: '14px 0 24px' }}>
                 {renderExperimentalInlineNewItem(22)}
                 <div style={{ padding: '0 14px 18px' }}>
@@ -9694,7 +9806,7 @@ export function FileExplorer({
               </div>
             )}
 
-            {effectiveExperimentalViewMode === 'off' && !loading && virtualWindow.kind === 'grid' && activeGridMetrics && (
+            {effectiveExperimentalViewMode === 'off' && shouldRenderExplorerContent && virtualWindow.kind === 'grid' && activeGridMetrics && (
               <div style={{ minHeight: 0 }}>
                 <div style={{ height: virtualWindow.topSpacer }} />
                 <div
@@ -9864,7 +9976,7 @@ export function FileExplorer({
               </div>
             )}
 
-            {effectiveExperimentalViewMode === 'off' && !loading && virtualWindow.kind === 'list' && effectiveViewModeDefinition.presentation === 'list' && (
+            {effectiveExperimentalViewMode === 'off' && shouldRenderExplorerContent && virtualWindow.kind === 'list' && effectiveViewModeDefinition.presentation === 'list' && (
               <div style={{ minHeight: 0 }}>
                 <div style={{ height: virtualWindow.topSpacer }} />
                 {virtualizedEntries.map(entry => {
@@ -9961,7 +10073,7 @@ export function FileExplorer({
               </table>
             )}
 
-            {effectiveExperimentalViewMode === 'off' && !loading && virtualWindow.kind === 'list' && effectiveViewModeDefinition.presentation === 'table' && (
+            {effectiveExperimentalViewMode === 'off' && shouldRenderExplorerContent && virtualWindow.kind === 'list' && effectiveViewModeDefinition.presentation === 'table' && (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, tableLayout: 'fixed' }}>
                 <thead>
                   <tr style={{ background: 'var(--overlay-explorer-toolbar-bg)', position: 'sticky', top: 0, zIndex: 2 }}>
