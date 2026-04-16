@@ -1,5 +1,32 @@
 # GreebleFS Memory
 
+## 2026-04-16 — Native Archive Open / Extract Pass
+
+- Local archive files are now a first-class explorer workflow instead of always falling back to the OS shell.
+- Durable implementation shape:
+  - `src-tauri/src/archive_ops.rs` is the new Rust archive layer. It detects supported archive suffixes, extracts archives through native Rust libraries, rejects unsafe embedded paths, and supports three explorer-facing modes:
+    - cached archive open
+    - `Extract Here`
+    - `Extract to "<name>"/`
+  - The current supported local formats are:
+    - `zip`, `cbz`, `jar`, `apk`
+    - `7z`
+    - `tar`, `tar.gz` / `tgz`, `tar.bz2` / `tbz2`, `tar.xz` / `txz`
+    - single-stream `gz`, `bz2`, and `xz`
+  - `src-tauri/src/fs_commands.rs` now exposes `fs_open_archive` plus `fs_extract_archive`, and archive extractions register as durable explorer tasks under the existing task-center model.
+  - `src/config/explorerArchives.ts` is the TS-side archive registry and naming contract, so archive suffix checks and extracted-folder labels are not hardcoded inline in `FileExplorer.tsx`.
+  - `src/runtime/explorerBackend.ts` now owns the typed archive bridge for the frontend.
+  - `src/components/FileExplorer.tsx` now routes supported local archive opens through native archive extraction/opening, and archive context menus expose `Open Extracted Contents`, `Extract Here`, and `Extract to "<name>"/`.
+- Durable product note:
+  - archive opening now favors a cache-backed “browse extracted contents” flow so double-clicking archives does not litter the working directory by default, while explicit extraction actions still create real local files/folders where operators expect them.
+- Validation:
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml`
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml archive_ops:: -- --nocapture`
+  - passed: `bunx vitest run src/test/explorerArchives.test.ts src/test/explorerBackend.bindings.test.ts`
+  - passed: filtered typecheck for touched archive/explorer surfaces via `bunx tsc --noEmit --skipLibCheck --pretty false 2>&1 | rg "explorerArchives|explorerBackend|FileExplorer|explorerContextMenu|tauri.ts|explorerBackend.bindings|explorerArchives.test" || true`
+  - note: Rust test output still included pre-existing unrelated warnings in `src-tauri/src/terminal.rs` (`unused import: OsStr`, `ENV_TEST_LOCK` dead code); this pass did not touch that subsystem
+
 ## 2026-04-16 — Linux NVIDIA WebKit Launch Guard
 
 - GreebleFS now applies a native Linux NVIDIA WebKitGTK workaround before Tauri boot so the app can recover from the recent `libEGL` / `driver (null)` / `failed to create dri2 screen` startup failures that were blocking launch on the Linux workstation.

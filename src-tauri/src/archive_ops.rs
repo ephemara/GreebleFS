@@ -76,7 +76,11 @@ pub fn open_archive_cached(path: &Path) -> Result<FsArchiveExtractionResult, Str
         });
     }
 
-    let staging_base = cache_root.join(format!("{}-tmp-{}", cache_base_name(&cache_base), uuid::Uuid::new_v4()));
+    let staging_base = cache_root.join(format!(
+        "{}-tmp-{}",
+        cache_base_name(&cache_base),
+        uuid::Uuid::new_v4()
+    ));
     let staging_output_dir = staging_base.join("contents");
     let extraction_result = extract_archive_to_directory(path, format, &staging_output_dir);
 
@@ -101,11 +105,13 @@ pub fn open_archive_cached(path: &Path) -> Result<FsArchiveExtractionResult, Str
     }
 }
 
-pub fn extract_archive(request: &FsArchiveExtractionRequest) -> Result<FsArchiveExtractionResult, String> {
+pub fn extract_archive(
+    request: &FsArchiveExtractionRequest,
+) -> Result<FsArchiveExtractionResult, String> {
     let archive_path = PathBuf::from(&request.archive_path);
     validate_archive_path(&archive_path)?;
-    let format =
-        detect_archive_format(&archive_path).ok_or_else(|| unsupported_archive_error(&archive_path))?;
+    let format = detect_archive_format(&archive_path)
+        .ok_or_else(|| unsupported_archive_error(&archive_path))?;
 
     match request.mode {
         FsArchiveExtractionMode::OpenCached => open_archive_cached(&archive_path),
@@ -133,11 +139,10 @@ pub fn extract_archive(request: &FsArchiveExtractionRequest) -> Result<FsArchive
                     archive_path.display()
                 )
             })?;
-            let staging_root = archive_temp_root()?.join(format!(
-                "extract-here-{}",
-                uuid::Uuid::new_v4()
-            ));
-            let extraction_result = extract_archive_to_directory(&archive_path, format, &staging_root);
+            let staging_root =
+                archive_temp_root()?.join(format!("extract-here-{}", uuid::Uuid::new_v4()));
+            let extraction_result =
+                extract_archive_to_directory(&archive_path, format, &staging_root);
             match extraction_result {
                 Ok(extracted_entry_count) => {
                     merge_extracted_tree_into_directory(&staging_root, target_dir)?;
@@ -196,14 +201,21 @@ fn extract_archive_to_directory(
     match format {
         ArchiveFormat::Zip => extract_zip_archive(archive_path, destination_root),
         ArchiveFormat::SevenZip => extract_seven_zip_archive(archive_path, destination_root),
-        ArchiveFormat::Tar => extract_tar_archive(File::open(archive_path).map(BufReader::new).map_err(
-            |error| format!("Failed to open archive {}: {error}", archive_path.display()),
-        )?, destination_root),
+        ArchiveFormat::Tar => extract_tar_archive(
+            File::open(archive_path)
+                .map(BufReader::new)
+                .map_err(|error| {
+                    format!("Failed to open archive {}: {error}", archive_path.display())
+                })?,
+            destination_root,
+        ),
         ArchiveFormat::TarGz => extract_tar_archive(
             GzDecoder::new(
                 File::open(archive_path)
                     .map(BufReader::new)
-                    .map_err(|error| format!("Failed to open archive {}: {error}", archive_path.display()))?,
+                    .map_err(|error| {
+                        format!("Failed to open archive {}: {error}", archive_path.display())
+                    })?,
             ),
             destination_root,
         ),
@@ -211,7 +223,9 @@ fn extract_archive_to_directory(
             BzDecoder::new(
                 File::open(archive_path)
                     .map(BufReader::new)
-                    .map_err(|error| format!("Failed to open archive {}: {error}", archive_path.display()))?,
+                    .map_err(|error| {
+                        format!("Failed to open archive {}: {error}", archive_path.display())
+                    })?,
             ),
             destination_root,
         ),
@@ -219,7 +233,9 @@ fn extract_archive_to_directory(
             XzDecoder::new(
                 File::open(archive_path)
                     .map(BufReader::new)
-                    .map_err(|error| format!("Failed to open archive {}: {error}", archive_path.display()))?,
+                    .map_err(|error| {
+                        format!("Failed to open archive {}: {error}", archive_path.display())
+                    })?,
             ),
             destination_root,
         ),
@@ -227,7 +243,9 @@ fn extract_archive_to_directory(
             GzDecoder::new(
                 File::open(archive_path)
                     .map(BufReader::new)
-                    .map_err(|error| format!("Failed to open archive {}: {error}", archive_path.display()))?,
+                    .map_err(|error| {
+                        format!("Failed to open archive {}: {error}", archive_path.display())
+                    })?,
             ),
             destination_root,
             single_stream_output_name(archive_path, ".gz"),
@@ -236,7 +254,9 @@ fn extract_archive_to_directory(
             BzDecoder::new(
                 File::open(archive_path)
                     .map(BufReader::new)
-                    .map_err(|error| format!("Failed to open archive {}: {error}", archive_path.display()))?,
+                    .map_err(|error| {
+                        format!("Failed to open archive {}: {error}", archive_path.display())
+                    })?,
             ),
             destination_root,
             single_stream_output_name(archive_path, ".bz2"),
@@ -245,7 +265,9 @@ fn extract_archive_to_directory(
             XzDecoder::new(
                 File::open(archive_path)
                     .map(BufReader::new)
-                    .map_err(|error| format!("Failed to open archive {}: {error}", archive_path.display()))?,
+                    .map_err(|error| {
+                        format!("Failed to open archive {}: {error}", archive_path.display())
+                    })?,
             ),
             destination_root,
             single_stream_output_name(archive_path, ".xz"),
@@ -257,8 +279,12 @@ fn extract_zip_archive(archive_path: &Path, destination_root: &Path) -> Result<u
     let archive_file = File::open(archive_path)
         .map(BufReader::new)
         .map_err(|error| format!("Failed to open archive {}: {error}", archive_path.display()))?;
-    let mut archive = ZipArchive::new(archive_file)
-        .map_err(|error| format!("Failed to read zip archive {}: {error}", archive_path.display()))?;
+    let mut archive = ZipArchive::new(archive_file).map_err(|error| {
+        format!(
+            "Failed to read zip archive {}: {error}",
+            archive_path.display()
+        )
+    })?;
     let mut extracted_entry_count = 0_u64;
 
     for index in 0..archive.len() {
@@ -315,17 +341,22 @@ fn extract_zip_archive(archive_path: &Path, destination_root: &Path) -> Result<u
 fn extract_tar_archive<R: Read>(reader: R, destination_root: &Path) -> Result<u64, String> {
     let mut archive = Archive::new(reader);
     let mut extracted_entry_count = 0_u64;
-    let entries = archive.entries().map_err(|error| format!("Failed to read tar archive: {error}"))?;
+    let entries = archive
+        .entries()
+        .map_err(|error| format!("Failed to read tar archive: {error}"))?;
 
     for entry_result in entries {
-        let mut entry = entry_result.map_err(|error| format!("Failed to read tar entry: {error}"))?;
+        let mut entry =
+            entry_result.map_err(|error| format!("Failed to read tar entry: {error}"))?;
         let entry_type = entry.header().entry_type();
         if !(entry_type.is_dir() || entry_type.is_file()) {
             continue;
         }
 
         let relative_path = {
-            let raw_path = entry.path().map_err(|error| format!("Failed to read tar path: {error}"))?;
+            let raw_path = entry
+                .path()
+                .map_err(|error| format!("Failed to read tar path: {error}"))?;
             sanitize_relative_path(raw_path.as_ref()).ok_or_else(|| {
                 format!(
                     "Tar archive contains an unsafe path and cannot be extracted: {}",
@@ -371,9 +402,8 @@ fn extract_single_stream_archive<R: Read>(
     destination_root: &Path,
     output_name: String,
 ) -> Result<u64, String> {
-    let relative_path = sanitize_relative_path(Path::new(&output_name)).ok_or_else(|| {
-        format!("Archive would extract to an unsafe output path: {output_name}")
-    })?;
+    let relative_path = sanitize_relative_path(Path::new(&output_name))
+        .ok_or_else(|| format!("Archive would extract to an unsafe output path: {output_name}"))?;
     let destination_path = destination_root.join(relative_path);
     if let Some(parent) = destination_path.parent() {
         fs::create_dir_all(parent).map_err(|error| {
@@ -400,8 +430,12 @@ fn extract_single_stream_archive<R: Read>(
 }
 
 fn extract_seven_zip_archive(archive_path: &Path, destination_root: &Path) -> Result<u64, String> {
-    let archive = sevenz_rust::Archive::open(archive_path)
-        .map_err(|error| format!("Failed to read 7z archive {}: {error}", archive_path.display()))?;
+    let archive = sevenz_rust::Archive::open(archive_path).map_err(|error| {
+        format!(
+            "Failed to read 7z archive {}: {error}",
+            archive_path.display()
+        )
+    })?;
     let extracted_entry_count = archive
         .files
         .iter()
@@ -417,17 +451,27 @@ fn extract_seven_zip_archive(archive_path: &Path, destination_root: &Path) -> Re
         })?;
     }
 
-    sevenz_rust::decompress_file_with_extract_fn(archive_path, destination_root, |entry, reader, _| {
-        let relative_path = sanitize_relative_path(Path::new(entry.name())).ok_or_else(|| {
-            sevenz_rust::Error::other(format!(
-                "7z archive contains an unsafe path and cannot be extracted: {}",
-                entry.name()
-            ))
-        })?;
-        let destination_path = destination_root.join(relative_path);
-        sevenz_rust::default_entry_extract_fn(entry, reader, &destination_path)
-    })
-    .map_err(|error| format!("Failed to extract 7z archive {}: {error}", archive_path.display()))?;
+    sevenz_rust::decompress_file_with_extract_fn(
+        archive_path,
+        destination_root,
+        |entry, reader, _| {
+            let relative_path =
+                sanitize_relative_path(Path::new(entry.name())).ok_or_else(|| {
+                    sevenz_rust::Error::other(format!(
+                        "7z archive contains an unsafe path and cannot be extracted: {}",
+                        entry.name()
+                    ))
+                })?;
+            let destination_path = destination_root.join(relative_path);
+            sevenz_rust::default_entry_extract_fn(entry, reader, &destination_path)
+        },
+    )
+    .map_err(|error| {
+        format!(
+            "Failed to extract 7z archive {}: {error}",
+            archive_path.display()
+        )
+    })?;
 
     Ok(extracted_entry_count)
 }
@@ -442,7 +486,10 @@ fn validate_archive_path(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn merge_extracted_tree_into_directory(source_root: &Path, destination_root: &Path) -> Result<(), String> {
+fn merge_extracted_tree_into_directory(
+    source_root: &Path,
+    destination_root: &Path,
+) -> Result<(), String> {
     fs::create_dir_all(destination_root).map_err(|error| {
         format!(
             "Failed to create extraction target directory {}: {error}",
@@ -594,8 +641,12 @@ fn archive_cache_root() -> Result<PathBuf, String> {
         .unwrap_or_else(std::env::temp_dir)
         .join("GreebleFS")
         .join("archive-open");
-    fs::create_dir_all(&root)
-        .map_err(|error| format!("Failed to create archive cache root {}: {error}", root.display()))?;
+    fs::create_dir_all(&root).map_err(|error| {
+        format!(
+            "Failed to create archive cache root {}: {error}",
+            root.display()
+        )
+    })?;
     Ok(root)
 }
 
@@ -658,9 +709,16 @@ fn archive_default_folder_name(path: &Path, format: ArchiveFormat) -> String {
     let suffix = ARCHIVE_SUFFIXES
         .iter()
         .find(|(candidate_format, suffixes)| {
-            *candidate_format == format && suffixes.iter().any(|candidate| lower_name.ends_with(candidate))
+            *candidate_format == format
+                && suffixes
+                    .iter()
+                    .any(|candidate| lower_name.ends_with(candidate))
         })
-        .and_then(|(_, suffixes)| suffixes.iter().find(|candidate| lower_name.ends_with(**candidate)))
+        .and_then(|(_, suffixes)| {
+            suffixes
+                .iter()
+                .find(|candidate| lower_name.ends_with(**candidate))
+        })
         .copied()
         .unwrap_or("");
     let trimmed = if suffix.is_empty() {
@@ -720,6 +778,9 @@ fn unsupported_archive_error(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use tempfile::tempdir;
+    use zip::write::SimpleFileOptions;
 
     #[test]
     fn detects_compound_archive_suffixes_before_single_suffixes() {
@@ -760,6 +821,71 @@ mod tests {
         assert_eq!(
             sanitize_relative_path(Path::new("folder/nested.txt")),
             Some(PathBuf::from("folder/nested.txt"))
+        );
+    }
+
+    fn create_zip_archive(path: &Path, entries: &[(&str, &str)]) {
+        let file = File::create(path).expect("create zip archive");
+        let mut writer = zip::ZipWriter::new(file);
+        let options = SimpleFileOptions::default();
+        for (name, contents) in entries {
+            writer.start_file(name, options).expect("start zip file");
+            writer
+                .write_all(contents.as_bytes())
+                .expect("write zip contents");
+        }
+        writer.finish().expect("finish zip archive");
+    }
+
+    #[test]
+    fn extracts_zip_into_a_new_folder() {
+        let workspace = tempdir().expect("tempdir");
+        let archive_path = workspace.path().join("sample.zip");
+        create_zip_archive(
+            &archive_path,
+            &[("nested/alpha.txt", "hello"), ("nested/beta.txt", "world")],
+        );
+
+        let result = extract_archive(&FsArchiveExtractionRequest {
+            archive_path: archive_path.to_string_lossy().into_owned(),
+            mode: FsArchiveExtractionMode::ExtractToNewFolder,
+        })
+        .expect("extract zip to new folder");
+
+        let output_dir = PathBuf::from(result.output_path);
+        assert!(output_dir.exists(), "output directory should exist");
+        assert_eq!(
+            fs::read_to_string(output_dir.join("nested/alpha.txt")).expect("read alpha"),
+            "hello"
+        );
+        assert_eq!(
+            fs::read_to_string(output_dir.join("nested/beta.txt")).expect("read beta"),
+            "world"
+        );
+    }
+
+    #[test]
+    fn extract_here_uses_collision_safe_names() {
+        let workspace = tempdir().expect("tempdir");
+        let archive_path = workspace.path().join("sample.zip");
+        create_zip_archive(&archive_path, &[("alpha.txt", "from archive")]);
+        fs::write(workspace.path().join("alpha.txt"), "existing").expect("write existing file");
+
+        let result = extract_archive(&FsArchiveExtractionRequest {
+            archive_path: archive_path.to_string_lossy().into_owned(),
+            mode: FsArchiveExtractionMode::ExtractHere,
+        })
+        .expect("extract zip here");
+
+        let output_dir = PathBuf::from(result.output_path);
+        assert_eq!(
+            fs::read_to_string(output_dir.join("alpha.txt")).expect("read original file"),
+            "existing"
+        );
+        assert_eq!(
+            fs::read_to_string(output_dir.join("alpha (copy).txt"))
+                .expect("read collision-safe extracted file"),
+            "from archive"
         );
     }
 }
