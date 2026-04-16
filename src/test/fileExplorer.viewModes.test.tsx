@@ -1048,6 +1048,7 @@ describe('FileExplorer view modes', () => {
       'application/x-overlayterm-drag-intent',
       'internal',
     );
+    expect(dataTransfer.setDragImage).toHaveBeenCalledTimes(1);
     expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_start_native_file_drag')).toBe(false);
   });
 

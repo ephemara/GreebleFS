@@ -234,6 +234,8 @@ const EXPLORER_ENTRY_SIZE_BATCH_SETTLE_MS = 72;
 const EXPLORER_NATIVE_ICON_BATCH_SETTLE_MS = 96;
 const EXPLORER_IMAGE_TILE_THUMBNAIL_BATCH_SETTLE_MS = 88;
 
+let transparentExplorerDragImage: HTMLCanvasElement | null = null;
+
 type ExplorerSearchCacheEntry = {
   results: FileSearchResult[];
   diagnostics: Awaited<ReturnType<ExplorerBackendContract['searchEntriesWithDiagnostics']>>['diagnostics'];
@@ -782,6 +784,20 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
 
 function resolveExplorerDragIntent(event: Pick<React.DragEvent, 'altKey'>): ExplorerDragIntent {
   return event.altKey ? 'native-out' : 'internal';
+}
+
+function applyExplorerNativeFeelingDragImage(dataTransfer: DataTransfer | null | undefined): void {
+  if (!dataTransfer || typeof dataTransfer.setDragImage !== 'function' || typeof document === 'undefined') {
+    return;
+  }
+
+  if (!transparentExplorerDragImage) {
+    transparentExplorerDragImage = document.createElement('canvas');
+    transparentExplorerDragImage.width = 1;
+    transparentExplorerDragImage.height = 1;
+  }
+
+  dataTransfer.setDragImage(transparentExplorerDragImage, 0, 0);
 }
 
 function resolveExplorerDropOperation(
@@ -5793,6 +5809,7 @@ export function FileExplorer({
     activeDragPathsRef.current = dragPaths;
     e.currentTarget.dataset.overlayDragIntent = dragIntent;
     e.currentTarget.dataset.overlayDragHide = dragIntent === 'native-out' ? 'true' : 'false';
+    applyExplorerNativeFeelingDragImage(e.dataTransfer);
     e.dataTransfer.setData('text/plain', dragPaths[0] ?? entry.path);
     e.dataTransfer.setData('application/x-overlayterm-paths', JSON.stringify(dragPaths));
     e.dataTransfer.setData('application/x-overlayterm-drag-intent', dragIntent);

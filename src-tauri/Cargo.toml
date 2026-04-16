@@ -72,6 +72,11 @@ yazi-scheduler = { path = "../crates/fileexplorer/crates/yazi-scheduler" }
 yazi-shared = { path = "../crates/fileexplorer/crates/yazi-shared" }
 yazi-term = { path = "../crates/fileexplorer/crates/yazi-term" }
 yazi-vfs = { path = "../crates/fileexplorer/crates/yazi-vfs" }
+arc-swap = "1.7.1"
+cpal = "0.17.3"
+rubato = "2.0.0"
+rustfft = "6.4.1"
+symphonia = { version = "0.5.5", features = ["all", "opt-simd"] }
 
 [dev-dependencies]
 tokio  = { version = "1", features = ["full"] }

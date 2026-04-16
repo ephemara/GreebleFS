@@ -1,4 +1,5 @@
 pub mod archive_ops;
+pub mod audio_engine;
 pub mod audio_commands;
 pub mod cloud_commands;
 pub mod desktop_integration;
@@ -17,6 +18,7 @@ pub mod video_commands;
 pub mod wayland_dock;
 pub mod window_commands;
 
+use audio_engine::AudioEngineManager;
 use cloud_commands::CloudRuntimeState;
 use entry_size_cache::{initialize_entry_size_cache, EntrySizeWatcherState};
 use fs_commands::initialize_fs_command_events;
@@ -58,6 +60,7 @@ pub fn run() {
             initialize_fs_command_events(app.handle().clone());
             app.manage(TerminalManager::new());
             app.manage(CloudRuntimeState::default());
+            app.manage(AudioEngineManager::default());
             initialize_entry_size_cache(app.handle())?;
             app.manage(EntrySizeWatcherState::default());
             app.manage(PluginWatcherState::default());

@@ -3,10 +3,15 @@ use std::{fs, path::PathBuf};
 use crate::archive_ops::{
     FsArchiveExtractionMode, FsArchiveExtractionRequest, FsArchiveExtractionResult,
 };
+use crate::audio_engine::{
+    AudioDeckId, AudioDeckState, AudioEngineDeckRequest, AudioEngineGainRequest,
+    AudioEngineLoadDeckRequest, AudioEngineLoopRegion, AudioEngineLoopRegionRequest,
+    AudioEngineRateRequest, AudioEngineSeekRequest, AudioEngineSetArmedDeckRequest,
+    AudioEngineStateEvent, AudioEngineStateSnapshot, AudioEngineSyncSelectionRequest,
+};
 use crate::audio_commands::{
     AudioBatchProcessRequest, AudioBatchProcessResult, AudioPreviewAnalysis,
-    AudioPreviewSourceKind, AudioTransformRequest, AudioTransformResult, AudioWaveformBucket,
-    ResolvedAudioPreviewSource,
+    AudioTransformRequest, AudioTransformResult, AudioWaveformBucket,
 };
 use crate::cloud_commands::{
     CloudAccountSummary, CloudAccountsSnapshot, CloudAuthSession, CloudAuthStatus, CloudBreadcrumb,
@@ -109,10 +114,21 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::fs_commands::fs_open_archive,
             crate::fs_commands::fs_extract_archive,
             crate::audio_commands::audio_analyze_preview,
-            crate::audio_commands::audio_create_preview_proxy,
             crate::audio_commands::audio_export_transform,
             crate::audio_commands::audio_batch_process,
-            crate::audio_commands::audio_resolve_preview_source,
+            crate::audio_engine::audio_engine_prepare,
+            crate::audio_engine::audio_engine_get_state,
+            crate::audio_engine::audio_engine_load_deck,
+            crate::audio_engine::audio_engine_unload_deck,
+            crate::audio_engine::audio_engine_set_armed_deck,
+            crate::audio_engine::audio_engine_play,
+            crate::audio_engine::audio_engine_pause,
+            crate::audio_engine::audio_engine_stop,
+            crate::audio_engine::audio_engine_seek,
+            crate::audio_engine::audio_engine_set_loop_region,
+            crate::audio_engine::audio_engine_set_gain,
+            crate::audio_engine::audio_engine_set_rate,
+            crate::audio_engine::audio_engine_sync_selection_to_armed_deck,
             crate::fs_commands::fs_open_with_dialog,
             crate::fs_commands::fs_open_as_admin,
             crate::fs_commands::fs_reveal_in_explorer,
@@ -184,7 +200,8 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::domain_commands::domain_list_workbench_presets,
         ])
         .events(collect_events![
-            crate::fs_commands::ExplorerTaskProgressEvent
+            crate::fs_commands::ExplorerTaskProgressEvent,
+            crate::audio_engine::AudioEngineStateEvent
         ])
         .typ::<ShellBlueprint>()
         .typ::<overlay_contracts::ThemeTokenKind>()
@@ -207,12 +224,23 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<FsArchiveExtractionResult>()
         .typ::<AudioWaveformBucket>()
         .typ::<AudioPreviewAnalysis>()
-        .typ::<AudioPreviewSourceKind>()
-        .typ::<ResolvedAudioPreviewSource>()
         .typ::<AudioTransformRequest>()
         .typ::<AudioTransformResult>()
         .typ::<AudioBatchProcessRequest>()
         .typ::<AudioBatchProcessResult>()
+        .typ::<AudioDeckId>()
+        .typ::<AudioDeckState>()
+        .typ::<AudioEngineLoopRegion>()
+        .typ::<AudioEngineStateSnapshot>()
+        .typ::<AudioEngineStateEvent>()
+        .typ::<AudioEngineLoadDeckRequest>()
+        .typ::<AudioEngineDeckRequest>()
+        .typ::<AudioEngineSeekRequest>()
+        .typ::<AudioEngineLoopRegionRequest>()
+        .typ::<AudioEngineGainRequest>()
+        .typ::<AudioEngineRateRequest>()
+        .typ::<AudioEngineSetArmedDeckRequest>()
+        .typ::<AudioEngineSyncSelectionRequest>()
         .typ::<DriveInfo>()
         .typ::<EntryStorageInfo>()
         .typ::<ExplorerTaskProgressEvent>()

@@ -1,3 +1,4 @@
+use crate::audio_engine::analyze_audio_file_native;
 use crate::fs_commands::{
     cancel_manual_explorer_task, complete_manual_explorer_task,
     create_manual_explorer_task_with_id, fail_manual_explorer_task,
@@ -52,23 +53,7 @@ pub struct AudioPreviewAnalysis {
     pub loudness_db: Option<f64>,
     pub headroom_db: Option<f64>,
     pub waveform_buckets: Vec<AudioWaveformBucket>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
-#[serde(rename_all = "camelCase")]
-pub enum AudioPreviewSourceKind {
-    Direct,
-    Proxy,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
-#[serde(rename_all = "camelCase")]
-pub struct ResolvedAudioPreviewSource {
-    pub task_id: Option<String>,
-    pub source_path: String,
-    pub source_kind: AudioPreviewSourceKind,
-    pub mime_type: Option<String>,
-    pub generated_from_path: Option<String>,
+    pub spectral_bands: Vec<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -1856,7 +1841,6 @@ fn execute_audio_batch_process(
 #[tauri::command]
 #[specta::specta]
 pub async fn audio_analyze_preview(
-    app: AppHandle,
     input_path: String,
 ) -> Result<AudioPreviewAnalysis, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -1868,86 +1852,10 @@ pub async fn audio_analyze_preview(
         if !input.exists() || !input.is_file() {
             return Err(format!("Input audio does not exist: {}", input.display()));
         }
-        let runtime = ensure_unpacked_sox_runtime(&app)?;
-        let prepared_input = ensure_processing_input(&app, &runtime, &input, None)?;
-        let duration_seconds = parse_optional_f64(sox_info_scalar(
-            &runtime,
-            "-D",
-            &prepared_input.source_path,
-        )?)
-        .unwrap_or(0.0);
-        let sample_rate_hz = parse_optional_u32(sox_info_scalar(
-            &runtime,
-            "-r",
-            &prepared_input.source_path,
-        )?);
-        let channels = parse_optional_u32(sox_info_scalar(
-            &runtime,
-            "-c",
-            &prepared_input.source_path,
-        )?);
-        let bits_per_sample = parse_optional_u32(sox_info_scalar(
-            &runtime,
-            "-b",
-            &prepared_input.source_path,
-        )?);
-        let encoding = if prepared_input.decoded_via_ffmpeg {
-            Some("Decoded via ffmpeg fallback".to_string())
-        } else {
-            sox_info_scalar(&runtime, "-e", &prepared_input.source_path)?
-        };
-        let container_type = if prepared_input.decoded_via_ffmpeg {
-            input_audio_extension(&input)
-        } else {
-            sox_info_scalar(&runtime, "-t", &prepared_input.source_path)?
-        };
-        let (peak_level, rms_level, waveform_buckets) =
-            analyze_waveform(&runtime, &prepared_input.source_path)?;
-        Ok(AudioPreviewAnalysis {
-            input_path: path_to_string(&input),
-            duration_seconds,
-            sample_rate_hz,
-            channels,
-            encoding,
-            bits_per_sample,
-            container_type,
-            peak_level,
-            rms_level,
-            loudness_db: decibels_from_linear(rms_level),
-            headroom_db: headroom_from_peak(peak_level),
-            waveform_buckets,
-        })
+        analyze_audio_file_native(&input)
     })
     .await
     .map_err(|error| format!("Audio preview analysis task failed to join: {error}"))?
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn audio_create_preview_proxy(
-    app: AppHandle,
-    input_path: String,
-) -> Result<ResolvedAudioPreviewSource, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let trimmed = input_path.trim();
-        if trimmed.is_empty() {
-            return Err("Input audio path cannot be empty.".to_string());
-        }
-        let input = PathBuf::from(trimmed);
-        if !input.exists() || !input.is_file() {
-            return Err(format!("Input audio does not exist: {}", input.display()));
-        }
-        let proxy_path = ensure_audio_preview_proxy(&app, &input)?;
-        Ok(ResolvedAudioPreviewSource {
-            task_id: None,
-            source_path: path_to_string(&proxy_path),
-            source_kind: AudioPreviewSourceKind::Proxy,
-            mime_type: Some(PREVIEW_PROXY_MIME_TYPE.to_string()),
-            generated_from_path: Some(path_to_string(&input)),
-        })
-    })
-    .await
-    .map_err(|error| format!("Audio preview proxy task failed to join: {error}"))?
 }
 
 #[tauri::command]
@@ -2009,39 +1917,6 @@ pub async fn audio_batch_process(
     .map_err(|error| format!("Audio batch task failed to join: {error}"))?
 }
 
-#[tauri::command]
-#[specta::specta]
-pub async fn audio_resolve_preview_source(
-    app: AppHandle,
-    input_path: String,
-) -> Result<ResolvedAudioPreviewSource, String> {
-    let trimmed = input_path.trim();
-    if trimmed.is_empty() {
-        return Err("Input audio path cannot be empty.".to_string());
-    }
-    let input = PathBuf::from(trimmed);
-    if !input.exists() || !input.is_file() {
-        return Err(format!("Input audio does not exist: {}", input.display()));
-    }
-    if should_prefer_proxy_preview_on_first_load(&input) {
-        if let Ok(proxy_path) = ensure_audio_preview_proxy(&app, &input) {
-            return Ok(ResolvedAudioPreviewSource {
-                task_id: None,
-                source_path: path_to_string(&proxy_path),
-                source_kind: AudioPreviewSourceKind::Proxy,
-                mime_type: Some(PREVIEW_PROXY_MIME_TYPE.to_string()),
-                generated_from_path: Some(path_to_string(&input)),
-            });
-        }
-    }
-    Ok(ResolvedAudioPreviewSource {
-        task_id: None,
-        source_path: path_to_string(&input),
-        source_kind: AudioPreviewSourceKind::Direct,
-        mime_type: direct_audio_preview_mime_type(&input),
-        generated_from_path: None,
-    })
-}
 
 fn paths_match(left: &Path, right: &Path) -> bool {
     let canonical_left = fs::canonicalize(left).ok();
