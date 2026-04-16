@@ -16,6 +16,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use tauri_specta::Event;
+use uuid::Uuid;
 use yazi_fs::{
     cha::{Cha, ChaType},
     provider::{local::Local, DirReader, FileHolder, Provider},
@@ -25,7 +26,6 @@ use yazi_scheduler::{
 };
 use yazi_shared::{path::PathLike, strand::StrandLike, url::UrlBuf, Id as YaziTaskId};
 use yazi_vfs::provider as yazi_provider;
-use uuid::Uuid;
 
 #[cfg(test)]
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -517,9 +517,10 @@ fn refresh_explorer_task_capabilities(entry: &mut ExplorerTaskRegistryEntry) {
             entry.record.status,
             ExplorerTaskStatus::Failed | ExplorerTaskStatus::Cancelled
         );
-    entry.record.can_cancel = entry.cancel_context.is_some()
-        && entry.record.status == ExplorerTaskStatus::Running;
-    let output_ready = task_output_ready(entry.record.status, entry.record.destination_path.as_ref());
+    entry.record.can_cancel =
+        entry.cancel_context.is_some() && entry.record.status == ExplorerTaskStatus::Running;
+    let output_ready =
+        task_output_ready(entry.record.status, entry.record.destination_path.as_ref());
     entry.record.can_reveal_output = output_ready;
     entry.record.can_open_output = output_ready;
 }
@@ -695,10 +696,19 @@ pub(crate) fn complete_manual_explorer_task(
     detail: Option<String>,
     can_undo: Option<bool>,
 ) -> Result<ExplorerTaskRecord, String> {
-    mark_explorer_task_finished(task_id, ExplorerTaskStatus::Succeeded, detail, None, can_undo)
+    mark_explorer_task_finished(
+        task_id,
+        ExplorerTaskStatus::Succeeded,
+        detail,
+        None,
+        can_undo,
+    )
 }
 
-pub(crate) fn fail_manual_explorer_task(task_id: &str, error_message: String) -> Result<ExplorerTaskRecord, String> {
+pub(crate) fn fail_manual_explorer_task(
+    task_id: &str,
+    error_message: String,
+) -> Result<ExplorerTaskRecord, String> {
     mark_explorer_task_finished(
         task_id,
         ExplorerTaskStatus::Failed,
@@ -708,7 +718,10 @@ pub(crate) fn fail_manual_explorer_task(task_id: &str, error_message: String) ->
     )
 }
 
-pub(crate) fn cancel_manual_explorer_task(task_id: &str, detail: Option<String>) -> Result<ExplorerTaskRecord, String> {
+pub(crate) fn cancel_manual_explorer_task(
+    task_id: &str,
+    detail: Option<String>,
+) -> Result<ExplorerTaskRecord, String> {
     mark_explorer_task_finished(
         task_id,
         ExplorerTaskStatus::Cancelled,
@@ -870,7 +883,10 @@ fn sync_yazi_task_record(
         entry.record.scheduler_task = Some(task.clone());
         entry.record.progress_current = progress_current;
         entry.record.progress_total = progress_total;
-        if !entry.cancel_requested && entry.record.status == ExplorerTaskStatus::Running && yazi_task_failed(task) {
+        if !entry.cancel_requested
+            && entry.record.status == ExplorerTaskStatus::Running
+            && yazi_task_failed(task)
+        {
             entry.record.status = ExplorerTaskStatus::Failed;
         }
     })
@@ -880,7 +896,12 @@ fn explorer_task_cancel_requested(task_id: &str) -> bool {
     explorer_task_registry()
         .lock()
         .ok()
-        .and_then(|registry| registry.entries.get(task_id).map(|entry| entry.cancel_requested))
+        .and_then(|registry| {
+            registry
+                .entries
+                .get(task_id)
+                .map(|entry| entry.cancel_requested)
+        })
         .unwrap_or(false)
 }
 
@@ -954,7 +975,8 @@ async fn await_explorer_yazi_task(
                     return Err(error_message);
                 }
             }
-            let _ = complete_manual_explorer_task(&task_id, Some(registration.detail.clone()), None);
+            let _ =
+                complete_manual_explorer_task(&task_id, Some(registration.detail.clone()), None);
             return Ok(task_id);
         }
 
@@ -980,7 +1002,11 @@ async fn await_explorer_yazi_task(
                     }
                     return Err(error_message);
                 }
-                let _ = complete_manual_explorer_task(&task_id, Some(registration.detail.clone()), None);
+                let _ = complete_manual_explorer_task(
+                    &task_id,
+                    Some(registration.detail.clone()),
+                    None,
+                );
                 return Ok(task_id);
             }
 
@@ -998,7 +1024,8 @@ async fn await_explorer_yazi_task(
                 }
                 return Err(error_message);
             }
-            let _ = complete_manual_explorer_task(&task_id, Some(registration.detail.clone()), None);
+            let _ =
+                complete_manual_explorer_task(&task_id, Some(registration.detail.clone()), None);
             return Ok(task_id);
         }
 
@@ -1564,11 +1591,38 @@ pub enum FileTransferOperation {
     Move,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum FileTransferCollisionPolicy {
+    KeepBoth,
+    Replace,
+    Skip,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum FileTransferDisposition {
+    Transferred,
+    SkippedExisting,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
+pub struct FileTransferCollision {
+    pub source_path: String,
+    pub source_name: String,
+    pub destination_path: String,
+    pub operation: FileTransferOperation,
+    pub destination_exists: bool,
+    pub destination_is_dir: bool,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct FileTransferResult {
     pub source_path: String,
     pub destination_path: String,
     pub operation: FileTransferOperation,
+    pub collision_policy: FileTransferCollisionPolicy,
+    pub disposition: FileTransferDisposition,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, specta::Type)]
@@ -3417,11 +3471,11 @@ pub async fn fs_copy(src: String, dst: String) -> Result<(), String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn fs_transfer_items(
+pub async fn fs_plan_transfer_items(
     target_dir: String,
     sources: Vec<String>,
     operation: FileTransferOperation,
-) -> Result<Vec<FileTransferResult>, String> {
+) -> Result<Vec<FileTransferCollision>, String> {
     let target_dir_path = Path::new(&target_dir);
     if !target_dir_path.exists() {
         return Err(format!("Target directory does not exist: {}", target_dir));
@@ -3430,7 +3484,7 @@ pub async fn fs_transfer_items(
         return Err(format!("Target path is not a directory: {}", target_dir));
     }
 
-    let mut results = Vec::new();
+    let mut collisions = Vec::new();
 
     for source in sources {
         let source_path = PathBuf::from(&source);
@@ -3442,10 +3496,81 @@ pub async fn fs_transfer_items(
             return Err(format!("Source path has no file name: {}", source));
         };
 
-        let destination =
-            collision_free_destination(target_dir_path.join(file_name), operation, &source_path);
+        let preferred_destination = target_dir_path.join(file_name);
+        if preferred_destination == source_path {
+            continue;
+        }
+
+        if !preferred_destination.exists() {
+            continue;
+        }
+
+        collisions.push(FileTransferCollision {
+            source_path: source_path.to_string_lossy().to_string(),
+            source_name: file_name.to_string_lossy().to_string(),
+            destination_path: preferred_destination.to_string_lossy().to_string(),
+            operation,
+            destination_exists: true,
+            destination_is_dir: preferred_destination.is_dir(),
+        });
+    }
+
+    Ok(collisions)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_transfer_items(
+    target_dir: String,
+    sources: Vec<String>,
+    operation: FileTransferOperation,
+    collision_policy: Option<FileTransferCollisionPolicy>,
+) -> Result<Vec<FileTransferResult>, String> {
+    let target_dir_path = Path::new(&target_dir);
+    if !target_dir_path.exists() {
+        return Err(format!("Target directory does not exist: {}", target_dir));
+    }
+    if !target_dir_path.is_dir() {
+        return Err(format!("Target path is not a directory: {}", target_dir));
+    }
+
+    let mut results = Vec::new();
+    let resolved_collision_policy =
+        collision_policy.unwrap_or(FileTransferCollisionPolicy::KeepBoth);
+
+    for source in sources {
+        let source_path = PathBuf::from(&source);
+        if !source_path.exists() {
+            return Err(format!("Source path does not exist: {}", source));
+        }
+
+        let Some(file_name) = source_path.file_name() else {
+            return Err(format!("Source path has no file name: {}", source));
+        };
+
+        let preferred_destination = target_dir_path.join(file_name);
+        let destination = resolve_transfer_destination(
+            preferred_destination.clone(),
+            operation,
+            &source_path,
+            resolved_collision_policy,
+        );
 
         if source_path == destination {
+            continue;
+        }
+
+        if resolved_collision_policy == FileTransferCollisionPolicy::Skip
+            && preferred_destination.exists()
+            && preferred_destination != source_path
+        {
+            results.push(FileTransferResult {
+                source_path: source_path.to_string_lossy().to_string(),
+                destination_path: preferred_destination.to_string_lossy().to_string(),
+                operation,
+                collision_policy: resolved_collision_policy,
+                disposition: FileTransferDisposition::SkippedExisting,
+            });
             continue;
         }
 
@@ -3464,6 +3589,8 @@ pub async fn fs_transfer_items(
             source_path: source_path.to_string_lossy().to_string(),
             destination_path: destination.to_string_lossy().to_string(),
             operation,
+            collision_policy: resolved_collision_policy,
+            disposition: FileTransferDisposition::Transferred,
         });
     }
 
@@ -3494,7 +3621,10 @@ fn should_clear_explorer_task(
     match scope {
         ExplorerTaskHistoryClearScope::Completed => status == ExplorerTaskStatus::Succeeded,
         ExplorerTaskHistoryClearScope::Failed => {
-            matches!(status, ExplorerTaskStatus::Failed | ExplorerTaskStatus::Cancelled)
+            matches!(
+                status,
+                ExplorerTaskStatus::Failed | ExplorerTaskStatus::Cancelled
+            )
         }
         ExplorerTaskHistoryClearScope::Finished => status != ExplorerTaskStatus::Running,
     }
@@ -3574,7 +3704,8 @@ pub async fn fs_retry_explorer_task(
         }
     };
     let tasks = list_explorer_tasks_snapshot()?;
-    tasks.into_iter()
+    tasks
+        .into_iter()
         .find(|record| record.id == next_task_id)
         .ok_or_else(|| format!("Retried explorer task was not registered: {next_task_id}"))
 }
@@ -3814,6 +3945,20 @@ async fn delete_path_with_scheduler(path: &Path, recursive: bool) -> Result<Stri
         ),
     )
     .await
+}
+
+fn resolve_transfer_destination(
+    preferred_path: PathBuf,
+    operation: FileTransferOperation,
+    source_path: &Path,
+    collision_policy: FileTransferCollisionPolicy,
+) -> PathBuf {
+    match collision_policy {
+        FileTransferCollisionPolicy::KeepBoth => {
+            collision_free_destination(preferred_path, operation, source_path)
+        }
+        FileTransferCollisionPolicy::Replace | FileTransferCollisionPolicy::Skip => preferred_path,
+    }
 }
 
 fn collision_free_destination(
@@ -4119,7 +4264,13 @@ fn read_image_file_as_rgba(path: &std::path::Path) -> Result<image::RgbaImage, S
     ImageReader::open(path)
         .map_err(|error| format!("Failed to open image '{}': {}", path.display(), error))?
         .with_guessed_format()
-        .map_err(|error| format!("Failed to detect image format for '{}': {}", path.display(), error))?
+        .map_err(|error| {
+            format!(
+                "Failed to detect image format for '{}': {}",
+                path.display(),
+                error
+            )
+        })?
         .decode()
         .map(|image| image.to_rgba8())
         .map_err(|error| format!("Failed to decode image '{}': {}", path.display(), error))
@@ -6264,6 +6415,7 @@ mod tests {
             target_dir.to_string_lossy().into(),
             vec![external.to_string_lossy().into()],
             FileTransferOperation::Copy,
+            None,
         )
         .await
         .expect("fs_transfer_items should copy");
@@ -6277,6 +6429,98 @@ mod tests {
         );
         assert_eq!(fs::read(copied_path).unwrap(), b"external");
         assert_eq!(fs::read(original).unwrap(), b"original");
+    }
+
+    #[tokio::test]
+    async fn plan_transfer_items_reports_existing_destination_collisions() {
+        let dir = tmp_dir();
+        let target_dir = dir.path().join("target");
+        fs::create_dir(&target_dir).unwrap();
+
+        let existing = target_dir.join("note.txt");
+        fs::write(&existing, b"original").unwrap();
+
+        let external = dir.path().join("note.txt");
+        fs::write(&external, b"external").unwrap();
+
+        let collisions = fs_plan_transfer_items(
+            target_dir.to_string_lossy().into(),
+            vec![external.to_string_lossy().into()],
+            FileTransferOperation::Copy,
+        )
+        .await
+        .expect("fs_plan_transfer_items should succeed");
+
+        assert_eq!(collisions.len(), 1);
+        assert_eq!(collisions[0].source_path, external.to_string_lossy());
+        assert_eq!(collisions[0].destination_path, existing.to_string_lossy());
+        assert!(collisions[0].destination_exists);
+    }
+
+    #[tokio::test]
+    async fn transfer_items_replace_policy_overwrites_existing_destination() {
+        let dir = tmp_dir();
+        let target_dir = dir.path().join("target");
+        fs::create_dir(&target_dir).unwrap();
+
+        let existing = target_dir.join("note.txt");
+        fs::write(&existing, b"original").unwrap();
+
+        let external = dir.path().join("note.txt");
+        fs::write(&external, b"external").unwrap();
+
+        let result = fs_transfer_items(
+            target_dir.to_string_lossy().into(),
+            vec![external.to_string_lossy().into()],
+            FileTransferOperation::Copy,
+            Some(FileTransferCollisionPolicy::Replace),
+        )
+        .await
+        .expect("fs_transfer_items should replace");
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].destination_path, existing.to_string_lossy());
+        assert_eq!(
+            result[0].collision_policy,
+            FileTransferCollisionPolicy::Replace
+        );
+        assert_eq!(result[0].disposition, FileTransferDisposition::Transferred);
+        assert_eq!(fs::read(existing).unwrap(), b"external");
+    }
+
+    #[tokio::test]
+    async fn transfer_items_skip_policy_leaves_existing_destination_untouched() {
+        let dir = tmp_dir();
+        let target_dir = dir.path().join("target");
+        fs::create_dir(&target_dir).unwrap();
+
+        let existing = target_dir.join("note.txt");
+        fs::write(&existing, b"original").unwrap();
+
+        let external = dir.path().join("note.txt");
+        fs::write(&external, b"external").unwrap();
+
+        let result = fs_transfer_items(
+            target_dir.to_string_lossy().into(),
+            vec![external.to_string_lossy().into()],
+            FileTransferOperation::Copy,
+            Some(FileTransferCollisionPolicy::Skip),
+        )
+        .await
+        .expect("fs_transfer_items should skip");
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].destination_path, existing.to_string_lossy());
+        assert_eq!(
+            result[0].collision_policy,
+            FileTransferCollisionPolicy::Skip
+        );
+        assert_eq!(
+            result[0].disposition,
+            FileTransferDisposition::SkippedExisting
+        );
+        assert_eq!(fs::read(existing).unwrap(), b"original");
+        assert_eq!(fs::read(external).unwrap(), b"external");
     }
 
     #[tokio::test]
@@ -6300,6 +6544,7 @@ mod tests {
                 folder_b.to_string_lossy().into(),
             ],
             FileTransferOperation::Move,
+            None,
         )
         .await
         .expect("fs_transfer_items should move");
@@ -6396,6 +6641,7 @@ mod tests {
             target_dir.to_string_lossy().into_owned(),
             vec![source_file.to_string_lossy().into_owned()],
             FileTransferOperation::Move,
+            None,
         )
         .await
         .expect("fs_transfer_items should move and invalidate caches");
@@ -6530,6 +6776,7 @@ mod tests {
             target_dir.to_string_lossy().into_owned(),
             vec![source_file.to_string_lossy().into_owned()],
             FileTransferOperation::Copy,
+            None,
         )
         .await
         .expect("fs_transfer_items should copy and invalidate caches");
@@ -6628,6 +6875,7 @@ mod tests {
             nested_target.to_string_lossy().into(),
             vec![source_dir.to_string_lossy().into()],
             FileTransferOperation::Move,
+            None,
         )
         .await;
 

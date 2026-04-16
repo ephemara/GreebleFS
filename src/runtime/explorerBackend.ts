@@ -28,6 +28,9 @@ import {
   type ExplorerTaskStatus,
   type FileEntry,
   type FileSearchResult,
+  type FileTransferCollision,
+  type FileTransferCollisionPolicy,
+  type FileTransferDisposition,
   type FileTransferOperation,
   type FileTransferResult,
   type FsWriteFileContent,
@@ -41,6 +44,9 @@ export type ExplorerFileSearchResult = FileSearchResult;
 export type ExplorerEntryStorageInfo = EntryStorageInfo;
 export type ExplorerFileTransferOperation = FileTransferOperation;
 export type ExplorerFileTransferResult = FileTransferResult;
+export type ExplorerFileTransferCollision = FileTransferCollision;
+export type ExplorerFileTransferCollisionPolicy = FileTransferCollisionPolicy;
+export type ExplorerFileTransferDisposition = FileTransferDisposition;
 export type ExplorerTaskProgress = ExplorerTaskProgressEvent;
 export type ExplorerTaskSnapshot = ExplorerTaskRecord;
 export type ExplorerSchedulerTask = YaziSchedulerTaskSnap;
@@ -261,6 +267,7 @@ export type ExplorerBackendContract = {
   cancelSearchEntries: typeof cancelExplorerSearchEntries;
   watchEntrySizeRoot: typeof watchExplorerEntrySizeRoot;
   unwatchEntrySizeRoot: typeof unwatchExplorerEntrySizeRoot;
+  planItemTransfer: typeof planExplorerItemTransfer;
   openPath: typeof openExplorerPath;
   openWithDialog: typeof openExplorerPathWithDialog;
   revealPath: typeof revealExplorerPath;
@@ -505,11 +512,28 @@ export async function transferExplorerItems(
   targetDir: string,
   sources: string[],
   operation: ExplorerFileTransferOperation,
+  collisionPolicy: ExplorerFileTransferCollisionPolicy = 'keep_both',
 ): Promise<ExplorerFileTransferResult[]> {
   if (isCloudExplorerPath(targetDir) || sources.some(isCloudExplorerPath)) {
+    if (collisionPolicy !== 'keep_both') {
+      throw new Error('Replace and skip collision policies are only available for local filesystem transfers.');
+    }
     return unwrapTauriResult(await commands.cloudTransferItems(targetDir, sources, operation));
   }
-  return unwrapTauriResult(await commands.fsTransferItems(targetDir, sources, operation));
+  return unwrapTauriResult(
+    await commands.fsTransferItems(targetDir, sources, operation, collisionPolicy),
+  );
+}
+
+export async function planExplorerItemTransfer(
+  targetDir: string,
+  sources: string[],
+  operation: ExplorerFileTransferOperation,
+): Promise<ExplorerFileTransferCollision[]> {
+  if (isCloudExplorerPath(targetDir) || sources.some(isCloudExplorerPath)) {
+    return [];
+  }
+  return unwrapTauriResult(await commands.fsPlanTransferItems(targetDir, sources, operation));
 }
 
 export async function listExplorerTasks(): Promise<ExplorerTaskSnapshot[]> {
@@ -696,6 +720,7 @@ export const explorerBackendContract: ExplorerBackendContract = {
   cancelSearchEntries: cancelExplorerSearchEntries,
   watchEntrySizeRoot: watchExplorerEntrySizeRoot,
   unwatchEntrySizeRoot: unwatchExplorerEntrySizeRoot,
+  planItemTransfer: planExplorerItemTransfer,
   openPath: openExplorerPath,
   openWithDialog: openExplorerPathWithDialog,
   revealPath: revealExplorerPath,

@@ -105,6 +105,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::explorer_pro_commands::fs_find_duplicates_start,
             crate::explorer_pro_commands::fs_find_duplicates_poll,
             crate::explorer_pro_commands::fs_find_duplicates_cancel,
+            crate::fs_commands::fs_plan_transfer_items,
             crate::fs_commands::fs_transfer_items,
             crate::fs_commands::fs_list_explorer_tasks,
             crate::fs_commands::fs_clear_explorer_task_history,

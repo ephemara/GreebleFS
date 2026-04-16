@@ -349,9 +349,17 @@ async fsFindDuplicatesCancel(scanId: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async fsTransferItems(targetDir: string, sources: string[], operation: FileTransferOperation) : Promise<Result<FileTransferResult[], string>> {
+async fsPlanTransferItems(targetDir: string, sources: string[], operation: FileTransferOperation) : Promise<Result<FileTransferCollision[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("fs_transfer_items", { targetDir, sources, operation }) };
+    return { status: "ok", data: await TAURI_INVOKE("fs_plan_transfer_items", { targetDir, sources, operation }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async fsTransferItems(targetDir: string, sources: string[], operation: FileTransferOperation, collisionPolicy: FileTransferCollisionPolicy | null) : Promise<Result<FileTransferResult[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("fs_transfer_items", { targetDir, sources, operation, collisionPolicy }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -774,8 +782,11 @@ export type FileSearchExecutionStrategy = "name_index_cache_hit" | "content_inde
 export type FileSearchMatchKind = "name" | "content" | "name_and_content"
 export type FileSearchResponse = { results: FileSearchResult[]; diagnostics: FileSearchDiagnostics }
 export type FileSearchResult = { name: string; path: string; relative_path: string; is_dir: boolean; size: number; modified: number; extension: string; is_hidden: boolean; is_symlink: boolean; match_kind: FileSearchMatchKind; snippet: string; line_number: number | null }
+export type FileTransferCollision = { source_path: string; source_name: string; destination_path: string; operation: FileTransferOperation; destination_exists: boolean; destination_is_dir: boolean }
+export type FileTransferCollisionPolicy = "keep_both" | "replace" | "skip"
+export type FileTransferDisposition = "transferred" | "skipped_existing"
 export type FileTransferOperation = "copy" | "move"
-export type FileTransferResult = { source_path: string; destination_path: string; operation: FileTransferOperation }
+export type FileTransferResult = { source_path: string; destination_path: string; operation: FileTransferOperation; collision_policy: FileTransferCollisionPolicy; disposition: FileTransferDisposition }
 export type FsBatchRenameItem = { sourcePath: string; destinationPath: string }
 export type FsBatchRenameResult = { sourcePath: string; destinationPath: string }
 export type FsRuntimeCachePolicy = { dirListCacheTtlMs: number; searchNameIndexCacheTtlMs: number; searchContentIndexCacheTtlMs: number; entrySizeCacheTtlMs: number; entrySizeScanBudgetMs: number; searchContentIndexTotalBytesBudget: number; maxSearchContentFileBytes: number; searchMaxIndexedEntries: number }

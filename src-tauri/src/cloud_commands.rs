@@ -1,5 +1,6 @@
 use crate::fs_commands::{
-    fs_open_file, FileEntry, FileTransferOperation, FileTransferResult, FsWriteFileContent,
+    fs_open_file, FileEntry, FileTransferCollisionPolicy, FileTransferDisposition,
+    FileTransferOperation, FileTransferResult, FsWriteFileContent,
 };
 use async_recursion::async_recursion;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -345,7 +346,10 @@ pub async fn cloud_set_provider_configuration(
 ) -> Result<CloudProviderConfigurationStatus, String> {
     let trimmed_client_id = client_id.trim().to_string();
     if trimmed_client_id.is_empty() {
-        return Err(format!("{} client ID is required.", provider_label(provider)));
+        return Err(format!(
+            "{} client ID is required.",
+            provider_label(provider)
+        ));
     }
 
     upsert_provider_configuration(&app, provider, &trimmed_client_id)?;
@@ -834,6 +838,8 @@ pub async fn cloud_transfer_items(
                 source_path: source.clone(),
                 destination_path: target_dir.clone(),
                 operation,
+                collision_policy: FileTransferCollisionPolicy::KeepBoth,
+                disposition: FileTransferDisposition::Transferred,
             });
         }
     }
@@ -1125,10 +1131,12 @@ fn upsert_provider_configuration(
     {
         existing.client_id = client_id.to_string();
     } else {
-        configurations.providers.push(PersistedCloudProviderConfiguration {
-            provider,
-            client_id: client_id.to_string(),
-        });
+        configurations
+            .providers
+            .push(PersistedCloudProviderConfiguration {
+                provider,
+                client_id: client_id.to_string(),
+            });
     }
     configurations
         .providers
@@ -1174,7 +1182,9 @@ fn write_provider_client_secret(
 ) -> Result<(), String> {
     provider_secret_keyring_entry(provider)?
         .set_password(client_secret)
-        .map_err(|error| format!("Failed to store provider client secret in the OS keychain: {error}"))
+        .map_err(|error| {
+            format!("Failed to store provider client secret in the OS keychain: {error}")
+        })
 }
 
 fn read_provider_client_secret(provider: CloudProviderId) -> Option<String> {
@@ -1347,7 +1357,9 @@ fn update_auth_callback(
     }
 }
 
-fn create_auth_callback_listener(provider: CloudProviderId) -> Result<AuthCallbackListener, String> {
+fn create_auth_callback_listener(
+    provider: CloudProviderId,
+) -> Result<AuthCallbackListener, String> {
     match provider {
         CloudProviderId::GoogleDrive => {
             let listener = TcpListener::bind("127.0.0.1:0")

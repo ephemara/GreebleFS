@@ -175,7 +175,14 @@ describe('FileExplorer view modes', () => {
 
     vi.mocked(invoke).mockReset();
     vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
-      const payload = args as { path?: string; paths?: string[] } | undefined;
+      const payload = args as {
+        path?: string;
+        paths?: string[];
+        targetDir?: string;
+        sources?: string[];
+        operation?: 'copy' | 'move';
+        collisionPolicy?: 'keep_both' | 'replace' | 'skip';
+      } | undefined;
       switch (command) {
         case 'fs_get_drives':
           return [];
@@ -234,6 +241,16 @@ describe('FileExplorer view modes', () => {
               truncatedByScanBudget: false,
             },
           };
+        case 'fs_plan_transfer_items':
+          return [];
+        case 'fs_transfer_items':
+          return (payload?.sources ?? []).map((sourcePath) => ({
+            source_path: sourcePath,
+            destination_path: `${payload?.targetDir ?? REPO_ROOT}\\${sourcePath.split('\\').pop() ?? 'item'}`,
+            operation: payload?.operation ?? 'copy',
+            collision_policy: payload?.collisionPolicy ?? 'keep_both',
+            disposition: 'transferred',
+          }));
         case 'fs_watch_entry_size_root':
         case 'fs_unwatch_entry_size_root':
         case 'fs_cancel_search_entries':
@@ -566,12 +583,12 @@ describe('FileExplorer view modes', () => {
       if (clientWidthDescriptor) {
         Object.defineProperty(HTMLElement.prototype, 'clientWidth', clientWidthDescriptor);
       } else {
-        delete (HTMLElement.prototype as Partial<HTMLElement>).clientWidth;
+        Reflect.deleteProperty(HTMLElement.prototype, 'clientWidth');
       }
       if (clientHeightDescriptor) {
         Object.defineProperty(HTMLElement.prototype, 'clientHeight', clientHeightDescriptor);
       } else {
-        delete (HTMLElement.prototype as Partial<HTMLElement>).clientHeight;
+        Reflect.deleteProperty(HTMLElement.prototype, 'clientHeight');
       }
     }
   });
@@ -691,6 +708,74 @@ describe('FileExplorer view modes', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/2 selected/i)).toBeTruthy();
+    });
+  });
+
+  it('prompts for a collision policy before pasting over an existing name', async () => {
+    const defaultInvoke = vi.mocked(invoke).getMockImplementation();
+    if (!defaultInvoke) {
+      throw new Error('Expected default invoke mock implementation');
+    }
+
+    useExplorerStore.getState().setClipboard({
+      action: 'copy',
+      entries: [
+        {
+          path: `${REPO_ROOT}\\notes.txt`,
+          name: 'notes.txt',
+          is_dir: false,
+        },
+      ],
+    });
+
+    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
+      const payload = args as {
+        targetDir?: string;
+        sources?: string[];
+        operation?: 'copy' | 'move';
+        collisionPolicy?: 'keep_both' | 'replace' | 'skip';
+      } | undefined;
+      if (command === 'fs_plan_transfer_items') {
+        return [
+          {
+            source_path: `${REPO_ROOT}\\notes.txt`,
+            source_name: 'notes.txt',
+            destination_path: `${REPO_ROOT}\\notes.txt`,
+            operation: 'copy',
+            destination_exists: true,
+            destination_is_dir: false,
+          },
+        ];
+      }
+      if (command === 'fs_transfer_items') {
+        return [
+          {
+            source_path: `${REPO_ROOT}\\notes.txt`,
+            destination_path: `${payload?.targetDir ?? REPO_ROOT}\\notes.txt`,
+            operation: payload?.operation ?? 'copy',
+            collision_policy: payload?.collisionPolicy ?? 'keep_both',
+            disposition: 'transferred',
+          },
+        ];
+      }
+      return defaultInvoke(command, args as never);
+    });
+
+    renderExplorer();
+    await screen.findByText('alpha');
+
+    fireEvent.keyDown(window, { key: 'v', ctrlKey: true });
+
+    await screen.findByText(/name conflict/i);
+    fireEvent.click(screen.getByLabelText(/replace existing items/i));
+    fireEvent.click(screen.getByRole('button', { name: /copy with replace/i }));
+
+    await waitFor(() => {
+      expect(
+        vi.mocked(invoke).mock.calls.some(([command, payload]) =>
+          command === 'fs_transfer_items' && (payload as { collisionPolicy?: string }).collisionPolicy === 'replace',
+        ),
+      ).toBe(true);
     });
   });
 

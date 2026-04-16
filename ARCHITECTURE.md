@@ -29,7 +29,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 ## Main Entry Points
 
 - `src/main.tsx`
-  Frontend bootstrap.
+  Frontend bootstrap. It now selects the root app by webview label, rendering `App` for the main shell and `src/windows/FileOperationsWindowApp.tsx` for the dedicated `file-operations` popout.
 - `src/App.tsx`
   Overlay window shell, theme/runtime discovery, panel orchestration.
 - `src/panels/panelRegistry.tsx`
@@ -78,6 +78,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Imported image/video wallpapers, authored live wallpaper modules, and theme-wallpaper selection helpers.
 - `src/runtime/pluginPanelRequests.ts`
   Shared plugin-panel handoff bridge for explorer/plugin context flows. It persists the latest request payload and dispatches shell-level open-panel events plus panel-specific update events.
+- `src/runtime/fileOperationsWindow.ts`
+  Shared file-operations popout bridge. It owns the `file-operations` window label, persisted request/completion payloads, cross-window event names, and the helper that creates or focuses the dedicated popout window.
+- `src/windows/FileOperationsWindowApp.tsx`
+  Themeable secondary window for destination picking and long-running explorer file-operation visibility. It shares the same appearance/runtime stack as the main shell but stays scoped to copy/move flows and the explorer task feed.
 - `src/store/explorerStore.ts`
   Persisted explorer rail, named explorer session snapshots, and explorer-local workspace state for tabs plus slot-based workspace layouts.
 - `src/store/explorerTaskStore.ts`
@@ -250,13 +254,23 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Explorer Pro metadata and long-running utilities now route through Rust instead of TS-only persistence:
   - `src-tauri/src/explorer_pro_commands.rs` owns app-managed trash + undo, batch rename, duplicate-scan lifecycle, tags, and saved searches
   - `src-tauri/src/fs_commands.rs` now also owns the durable explorer task registry used by copy/move/delete jobs plus the retry/cancel/history command surface exposed through Specta
+  - local transfer UX now has a two-step contract instead of silent collision auto-rename:
+    - `fs_plan_transfer_items` reports pending name collisions before paste/drag/pane transfers run
+    - `fs_transfer_items` accepts explicit collision policies: `keep_both`, `replace`, and `skip`
+    - transfer results now report both the collision policy used and whether a source was actually transferred or skipped
   - `src/runtime/explorerBackend.ts` is the only TS entry point for explorer task list/retry/cancel/clear operations; React surfaces should not call raw `invoke(...)` for task actions
   - `src/components/explorer/ExplorerTaskStatusBadge.tsx` is now an explorer-local Task Center popover instead of a transient badge-only indicator, and it is intentionally scoped to the explorer chrome rather than a global shell panel
+  - `src/components/explorer/ExplorerTaskCenterContent.tsx` is the shared Task Center renderer used by both the inline explorer popover and the dedicated file-operations popout window
+  - `src/runtime/fileOperationsWindow.ts` plus `src/windows/FileOperationsWindowApp.tsx` are now the shell-owned copy/move popout path:
+    - `FileExplorer.tsx` can issue explicit `Copy To...` / `Move To...` requests into the popout
+    - successful transfers publish completion events so other explorer instances can refresh source and target folders without inventing a second transfer backend
+    - the popout is destination-picking and task-visibility UI only; transfer truth still stays in Rust plus `src/runtime/explorerBackend.ts`
   - tags and saved searches live under Tauri app-local explorer metadata
   - trash currently uses a GreebleFS-managed trash root so restore locations stay deterministic across platforms
 - Explorer drag behavior now defaults to native file export while keeping internal drop metadata available:
   - plain explorer drag starts the native drag bridge and still publishes `application/x-overlayterm-paths` for in-app drops
   - `Shift` forces an internal-only explorer drag
+  - breadcrumb chips now accept internal drop targets, so operators can move/copy directly onto ancestor folders without navigating first
   - native drag previews use the dragged item's native icon when available, with a generated file-shaped fallback instead of the app icon
 - `ExplorerSideRail.tsx` is now navigator-first instead of bookmark-authoring-first:
   - the rail header foregrounds the current location and pinned-count summary

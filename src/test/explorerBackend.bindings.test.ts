@@ -4,6 +4,7 @@ import {
   events,
   type ExplorerTaskProgressEvent,
   type ExplorerTaskRecord,
+  type YaziSchedulerTaskProg,
   type YaziSchedulerTaskSnap,
 } from '../generated/tauri';
 import {
@@ -22,7 +23,9 @@ import {
 } from '../runtime/explorerBackend';
 import { commands } from '../runtime/tauriClient';
 
-function makeSchedulerTask(overrides: Partial<YaziSchedulerTaskSnap['prog']> = {}): YaziSchedulerTaskSnap {
+function makeSchedulerTask(
+  overrides: Partial<Extract<YaziSchedulerTaskProg, { kind: 'fileCopy' }>> = {},
+): YaziSchedulerTaskSnap {
   return {
     name: 'Copy assets',
     prog: {
@@ -35,7 +38,7 @@ function makeSchedulerTask(overrides: Partial<YaziSchedulerTaskSnap['prog']> = {
       collected: null,
       cleaned: null,
       ...overrides,
-    },
+    } satisfies Extract<YaziSchedulerTaskProg, { kind: 'fileCopy' }>,
   };
 }
 

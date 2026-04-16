@@ -73,25 +73,85 @@ vi.mock('@tauri-apps/api/event', () => ({
 
 const createMockWebviewWindow = (label: string) => ({
   label,
+  close: vi.fn().mockResolvedValue(undefined),
   emit: vi.fn().mockResolvedValue(undefined),
   listen: vi.fn().mockResolvedValue(() => {}),
-  once: vi.fn().mockResolvedValue(() => {}),
+  once: vi.fn().mockImplementation(async (_event: string, handler?: () => void | Promise<void>) => {
+    await handler?.();
+    return () => {};
+  }),
+  hide: vi.fn().mockResolvedValue(undefined),
+  setFocus: vi.fn().mockResolvedValue(undefined),
+  show: vi.fn().mockResolvedValue(undefined),
 });
 
-const mainWebviewWindowMock = createMockWebviewWindow('main');
-const dockWebviewWindowMock = createMockWebviewWindow('dock');
+const webviewWindowRegistry = new Map<string, ReturnType<typeof createMockWebviewWindow>>();
+
+const ensureMockWebviewWindow = (label: string) => {
+  const existingWindow = webviewWindowRegistry.get(label);
+  if (existingWindow) {
+    return existingWindow;
+  }
+
+  const nextWindow = createMockWebviewWindow(label);
+  webviewWindowRegistry.set(label, nextWindow);
+  return nextWindow;
+};
+
+const mainWebviewWindowMock = ensureMockWebviewWindow('main');
+const dockWebviewWindowMock = ensureMockWebviewWindow('dock');
+
+class MockWebviewWindow {
+  static getByLabel = vi.fn(async (label: string) => webviewWindowRegistry.get(label) ?? null);
+
+  constructor(label: string) {
+    return ensureMockWebviewWindow(label);
+  }
+}
 
 vi.mock('@tauri-apps/api/webviewWindow', () => ({
   getCurrentWebviewWindow: vi.fn(() => mainWebviewWindowMock),
-  WebviewWindow: {
-    getByLabel: vi.fn(async (label: string) => {
-      if (label === 'dock') {
-        return dockWebviewWindowMock;
-      }
-      return mainWebviewWindowMock;
-    }),
-  },
+  WebviewWindow: MockWebviewWindow,
 }));
+
+const currentWindowMock = {
+  close: vi.fn().mockResolvedValue(undefined),
+  emit: vi.fn().mockResolvedValue(undefined),
+  emitTo: vi.fn().mockResolvedValue(undefined),
+  hide: vi.fn().mockResolvedValue(undefined),
+  isMaximized: vi.fn().mockResolvedValue(false),
+  is_visible: vi.fn().mockResolvedValue(false),
+  listen: vi.fn().mockResolvedValue(() => {}),
+  maximize: vi.fn().mockResolvedValue(undefined),
+  minimize: vi.fn().mockResolvedValue(undefined),
+  onCloseRequested: vi.fn().mockResolvedValue(() => {}),
+  onDragDropEvent: vi.fn().mockResolvedValue(() => {}),
+  onMoved: vi.fn().mockResolvedValue(() => {}),
+  onResized: vi.fn().mockResolvedValue(() => {}),
+  outerPosition: vi.fn().mockResolvedValue({ x: 0, y: 0 }),
+  outerSize: vi.fn().mockResolvedValue({ width: 1000, height: 500 }),
+  scaleFactor: vi.fn().mockResolvedValue(1),
+  setAlwaysOnTop: vi.fn().mockResolvedValue(undefined),
+  setDecorations: vi.fn().mockResolvedValue(undefined),
+  setFocus: vi.fn().mockResolvedValue(undefined),
+  setPosition: vi.fn().mockResolvedValue(undefined),
+  setResizable: vi.fn().mockResolvedValue(undefined),
+  setShadow: vi.fn().mockResolvedValue(undefined),
+  setSize: vi.fn().mockResolvedValue(undefined),
+  setSkipTaskbar: vi.fn().mockResolvedValue(undefined),
+  setTitle: vi.fn().mockResolvedValue(undefined),
+  show: vi.fn().mockResolvedValue(undefined),
+  startDragging: vi.fn().mockResolvedValue(undefined),
+  startResizeDragging: vi.fn().mockResolvedValue(undefined),
+  unmaximize: vi.fn().mockResolvedValue(undefined),
+  unminimize: vi.fn().mockResolvedValue(undefined),
+};
+
+function resetMockWebviewWindowRegistry() {
+  webviewWindowRegistry.clear();
+  webviewWindowRegistry.set('main', mainWebviewWindowMock);
+  webviewWindowRegistry.set('dock', dockWebviewWindowMock);
+}
 
 vi.mock('@tauri-apps/api/window', () => ({
   availableMonitors: vi.fn().mockResolvedValue([{
@@ -114,33 +174,7 @@ vi.mock('@tauri-apps/api/window', () => ({
       size: { width: 1920, height: 1080 },
     },
   }),
-  getCurrentWindow: vi.fn(() => ({
-    scaleFactor: vi.fn().mockResolvedValue(1),
-    setSize: vi.fn().mockResolvedValue(undefined),
-    setPosition: vi.fn().mockResolvedValue(undefined),
-    setDecorations: vi.fn().mockResolvedValue(undefined),
-    setAlwaysOnTop: vi.fn().mockResolvedValue(undefined),
-    setResizable: vi.fn().mockResolvedValue(undefined),
-    setShadow: vi.fn().mockResolvedValue(undefined),
-    setSkipTaskbar: vi.fn().mockResolvedValue(undefined),
-    show: vi.fn().mockResolvedValue(undefined),
-    setFocus: vi.fn().mockResolvedValue(undefined),
-    hide: vi.fn().mockResolvedValue(undefined),
-    maximize: vi.fn().mockResolvedValue(undefined),
-    unmaximize: vi.fn().mockResolvedValue(undefined),
-    minimize: vi.fn().mockResolvedValue(undefined),
-    unminimize: vi.fn().mockResolvedValue(undefined),
-    isMaximized: vi.fn().mockResolvedValue(false),
-    outerPosition: vi.fn().mockResolvedValue({ x: 0, y: 0 }),
-    outerSize: vi.fn().mockResolvedValue({ width: 1000, height: 500 }),
-    onDragDropEvent: vi.fn().mockResolvedValue(() => {}),
-    onResized: vi.fn().mockResolvedValue(() => {}),
-    onMoved: vi.fn().mockResolvedValue(() => {}),
-    onCloseRequested: vi.fn().mockResolvedValue(() => {}),
-    is_visible: vi.fn().mockResolvedValue(false),
-    startResizeDragging: vi.fn().mockResolvedValue(undefined),
-    startDragging: vi.fn().mockResolvedValue(undefined),
-  })),
+  getCurrentWindow: vi.fn(() => currentWindowMock),
   primaryMonitor: vi.fn().mockResolvedValue({
     name: 'Primary Display',
     position: { x: 0, y: 0 },
@@ -186,5 +220,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetMockWebviewWindowRegistry();
   vi.restoreAllMocks();
 });

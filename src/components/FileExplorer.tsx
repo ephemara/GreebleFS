@@ -20,7 +20,7 @@ import {
   X, Star, StarOff, Terminal,
   Trash2, Copy, Scissors, Clipboard, Edit3, ExternalLink,
   Shield, Eye, Info, Loader, Puzzle, Sparkles,
-  FilePlus, FolderPlus, CopyPlus, Save, Tags, Undo2,
+  FilePlus, FolderPlus, CopyPlus, Save, Tags, Undo2, AlertTriangle,
 } from 'lucide-react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import {
@@ -99,6 +99,12 @@ import {
   requestPluginPanelOpen,
 } from '../runtime/pluginPanelRequests';
 import {
+  listenToFileOperationsTransferCompleted,
+  openFileOperationsWindow,
+  publishFileOperationsTransferCompleted,
+  type FileOperationsTransferCompletedEventDetail,
+} from '../runtime/fileOperationsWindow';
+import {
   recordExplorerPerformanceSample,
   type ExplorerPerformanceMetadata,
   type ExplorerPerformanceMetricId,
@@ -169,6 +175,8 @@ import {
   type ExplorerDriveInfo as DriveInfo,
   type ExplorerEntryStorageInfo as EntryStorageInfo,
   type ExplorerFileEntry as FileEntry,
+  type ExplorerFileTransferCollision,
+  type ExplorerFileTransferCollisionPolicy,
   type ExplorerFileTransferOperation as FileTransferOperation,
   type ExplorerFileTransferResult as FileTransferResult,
   type ExplorerFileSearchResult as FileSearchResult,
@@ -313,6 +321,13 @@ interface DuplicateFinderState {
   status: ExplorerDuplicateScan | null;
   loading: boolean;
 }
+interface TransferConflictDialogState {
+  visible: boolean;
+  collisions: ExplorerFileTransferCollision[];
+  targetDir: string;
+  sources: string[];
+  operation: FileTransferOperation;
+}
 type PreviewState =
   | { type: 'none'; path: string }
   | { type: 'image'; path: string; name: string; content: string }
@@ -334,6 +349,12 @@ type PreviewState =
 interface NewItemState   { visible: boolean; kind: 'file'|'folder'; }
 type ExplorerDragIntent = 'internal' | 'native-out';
 type ExplorerSortKey = 'name' | 'size' | 'date' | 'type';
+interface PendingExplorerTransferRequest {
+  targetDir: string;
+  sources: string[];
+  operation: FileTransferOperation;
+  collisionPolicy?: ExplorerFileTransferCollisionPolicy;
+}
 
 interface ExplorerChromeEditModeState {
   active: boolean;
@@ -369,6 +390,63 @@ function getPathLeaf(path: string): string {
   }
   const parts = trimmed.split(/[\\/]/).filter(Boolean);
   return parts.length > 0 ? (parts[parts.length - 1] ?? trimmed) : trimmed;
+}
+
+function getPathParent(path: string): string | null {
+  const trimmed = path.trim().replace(/[/\\]+$/, '');
+  if (!trimmed) {
+    return null;
+  }
+
+  if (/^[A-Za-z]:$/.test(trimmed)) {
+    return `${trimmed}\\`;
+  }
+
+  const nextPath = trimmed.replace(/[/\\][^/\\]+$/, '');
+  if (nextPath === trimmed) {
+    return trimmed.startsWith('/') ? '/' : null;
+  }
+
+  if (/^[A-Za-z]:$/.test(nextPath)) {
+    return `${nextPath}\\`;
+  }
+
+  return nextPath || (trimmed.startsWith('/') ? '/' : null);
+}
+
+function isSameOrDescendantPath(path: string, candidate: string): boolean {
+  const normalizedPath = path.trim().replace(/[/\\]+$/, '');
+  const normalizedCandidate = candidate.trim().replace(/[/\\]+$/, '');
+  if (!normalizedPath || !normalizedCandidate) {
+    return false;
+  }
+
+  if (normalizedPath === normalizedCandidate) {
+    return true;
+  }
+
+  return normalizedPath.startsWith(`${normalizedCandidate}/`)
+    || normalizedPath.startsWith(`${normalizedCandidate}\\`);
+}
+
+function shouldRefreshExplorerForTransferEvent(
+  currentPath: string,
+  detail: FileOperationsTransferCompletedEventDetail,
+): boolean {
+  const normalizedCurrentPath = currentPath.trim();
+  if (!normalizedCurrentPath) {
+    return false;
+  }
+
+  if (normalizedCurrentPath === detail.targetDir.trim()) {
+    return true;
+  }
+
+  return detail.sourcePaths.some((sourcePath) => {
+    const parentPath = getPathParent(sourcePath);
+    return parentPath === normalizedCurrentPath
+      || isSameOrDescendantPath(normalizedCurrentPath, sourcePath);
+  });
 }
 
 function toolbarChipButtonStyle(disabled: boolean): CSSProperties {
@@ -2100,6 +2178,135 @@ function TrashDialog({
   );
 }
 
+function TransferConflictDialog({
+  state,
+  policy,
+  onPolicyChange,
+  onConfirm,
+  onCancel,
+}: {
+  state: TransferConflictDialogState;
+  policy: ExplorerFileTransferCollisionPolicy;
+  onPolicyChange: (value: ExplorerFileTransferCollisionPolicy) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const actionLabel = state.operation === 'move' ? 'Move' : 'Copy';
+  const destinationLabel = getPathLeaf(state.targetDir) || state.targetDir;
+  const visibleCollisions = state.collisions.slice(0, 6);
+  const remainingCount = Math.max(0, state.collisions.length - visibleCollisions.length);
+  const options: Array<{
+    value: ExplorerFileTransferCollisionPolicy;
+    label: string;
+    detail: string;
+  }> = [
+    {
+      value: 'replace',
+      label: 'Replace existing items',
+      detail: 'Overwrite matching files or folders at the destination.',
+    },
+    {
+      value: 'skip',
+      label: 'Skip duplicates',
+      detail: 'Leave matching destination items untouched.',
+    },
+    {
+      value: 'keep_both',
+      label: 'Keep both',
+      detail: 'Create collision-safe names for the incoming items.',
+    },
+  ];
+
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:10000, background:'rgba(0,0,0,0.72)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <div style={{ width:'min(920px, 94vw)', maxHeight:'82vh', display:'flex', flexDirection:'column', background:'var(--overlay-explorer-preview-bg)', border:'1px solid var(--overlay-explorer-preview-border)', borderRadius:'var(--overlay-explorer-panel-radius)', padding:20, boxShadow:'0 24px 64px rgba(0,0,0,0.9)' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+          <AlertTriangle size={18} style={{ color:EXP.yellow }} />
+          <div style={{ color:EXP.text, fontWeight:700, fontSize:14 }}>Name conflict</div>
+        </div>
+        <p style={{ color:EXP.muted, fontSize:12, lineHeight:1.55, margin:'0 0 14px' }}>
+          {actionLabel} {state.collisions.length === 1 ? '1 item has' : `${state.collisions.length} items have`} matching names in <strong style={{ color:EXP.text }}>{destinationLabel}</strong>. Choose how this transfer should handle duplicates.
+        </p>
+        <div style={{ display:'grid', gap:8, marginBottom:14 }}>
+          {options.map((option) => {
+            const active = policy === option.value;
+            return (
+              <label
+                key={option.value}
+                style={{
+                  display:'grid',
+                  gridTemplateColumns:'auto minmax(0, 1fr)',
+                  gap:10,
+                  alignItems:'flex-start',
+                  padding:'10px 12px',
+                  borderRadius:12,
+                  border:`1px solid ${active ? 'var(--overlay-explorer-chip-active-border)' : 'var(--overlay-border)'}`,
+                  background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-bg-panel)',
+                  cursor:'pointer',
+                }}
+              >
+                <input
+                  type="radio"
+                  checked={active}
+                  onChange={() => onPolicyChange(option.value)}
+                  style={{ marginTop: 2 }}
+                />
+                <div style={{ minWidth:0 }}>
+                  <div style={{ color: active ? 'var(--overlay-explorer-chip-active-text)' : EXP.text, fontSize:12, fontWeight:600 }}>
+                    {option.label}
+                  </div>
+                  <div style={{ marginTop:3, color: active ? 'var(--overlay-explorer-chip-active-text)' : EXP.muted, fontSize:11, lineHeight:1.45 }}>
+                    {option.detail}
+                  </div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+        <div style={{ minHeight:0, flex:1, border:'1px solid var(--overlay-border)', borderRadius:12, overflow:'hidden' }}>
+          <OverlayScrollArea style={{ maxHeight:'34vh' }}>
+            <div style={{ display:'grid', gap:1, background:'var(--overlay-border)' }}>
+              {visibleCollisions.map((collision) => (
+                <div key={`${collision.source_path}-${collision.destination_path}`} style={{ display:'grid', gap:4, background:'var(--overlay-bg-panel)', padding:'10px 12px' }}>
+                  <div style={{ color:EXP.text, fontSize:11.5, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    {collision.source_name}
+                  </div>
+                  <div style={{ color:EXP.muted, fontSize:10.5, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                    Destination: {collision.destination_path}
+                  </div>
+                </div>
+              ))}
+              {remainingCount > 0 && (
+                <div style={{ background:'var(--overlay-bg-panel)', color:EXP.muted, fontSize:11, padding:'10px 12px' }}>
+                  +{remainingCount} more matching item{remainingCount === 1 ? '' : 's'}
+                </div>
+              )}
+            </div>
+          </OverlayScrollArea>
+        </div>
+        <div style={{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:14 }}>
+          <button onClick={onCancel} style={dialogSecondaryButtonStyle}>Cancel</button>
+          <button
+            onClick={onConfirm}
+            style={{
+              background:'var(--overlay-explorer-chip-active-bg)',
+              border:'1px solid var(--overlay-explorer-chip-active-border)',
+              borderRadius:'var(--overlay-explorer-control-radius)',
+              color:'var(--overlay-explorer-chip-active-text)',
+              padding:'6px 14px',
+              fontSize:12,
+              cursor:'pointer',
+              fontWeight:600,
+            }}
+          >
+            {actionLabel} with {policy === 'replace' ? 'replace' : policy === 'skip' ? 'skip' : 'keep both'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SaveSearchDialog({
   state,
   onChangeName,
@@ -2394,6 +2601,7 @@ export function FileExplorer({
     listSavedSearches: listExplorerSavedSearches,
     deleteSavedSearch: deleteExplorerSavedSearch,
     listTags: listExplorerTags,
+    planItemTransfer: planExplorerItemTransfer,
     searchEntriesWithDiagnostics: searchExplorerEntriesWithDiagnostics,
     saveSavedSearch: saveExplorerSavedSearch,
     setTagsForPaths: setExplorerTagsForPaths,
@@ -2550,6 +2758,14 @@ export function FileExplorer({
   const [showExperimentalMenu, setShowExperimentalMenu] = useState(false);
   const [rename,       setRename]       = useState<RenameState>({ active:false, path:'', name:'' });
   const [deleteTargets, setDeleteTargets] = useState<FileEntry[]>([]);
+  const [transferConflictDialog, setTransferConflictDialog] = useState<TransferConflictDialogState>({
+    visible: false,
+    collisions: [],
+    targetDir: '',
+    sources: [],
+    operation: 'copy',
+  });
+  const [transferConflictPolicy, setTransferConflictPolicy] = useState<ExplorerFileTransferCollisionPolicy>('keep_both');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [newItem,      setNewItem]      = useState<NewItemState>({ visible:false, kind:'folder' });
   const [newItemName,  setNewItemName]  = useState('');
@@ -2588,6 +2804,11 @@ export function FileExplorer({
     getRuntimeCachePolicyTelemetryMetadata(null, isTauri() ? 'pending' : 'unavailable'),
   );
   const pendingExplorerMetricSamplesRef = useRef<PendingExplorerMetricSample[]>([]);
+  const pendingTransferRequestRef = useRef<{
+    request: PendingExplorerTransferRequest;
+    onSuccess?: (results: FileTransferResult[]) => Promise<void> | void;
+    onCancel?: () => void;
+  } | null>(null);
   const addressInputRef = useRef<HTMLInputElement>(null);
   const [addressEditing, setAddressEditing] = useState(false);
   const [addressDraft, setAddressDraft] = useState('');
@@ -3613,6 +3834,7 @@ export function FileExplorer({
     }), [droppedSourceLookup]);
   const activeDragPathsRef = useRef<string[]>([]);
   const isProcessElevatedRef = useRef(false);
+  const lastObservedFileTransferNonceRef = useRef<string | null>(null);
   const selectedDirectoryEntries = useMemo(
     () => selectedEntries.filter(entry => entry.is_dir),
     [selectedEntries],
@@ -3669,6 +3891,20 @@ export function FileExplorer({
     }
     return [entry];
   }, [selected, selectedEntries]);
+
+  const requestTransferDestination = useCallback((operation: FileTransferOperation, entry?: FileEntry) => {
+    const sourcePaths = resolveEntriesForAction(entry).map((item) => item.path);
+    if (sourcePaths.length === 0) {
+      return;
+    }
+
+    void openFileOperationsWindow({
+      view: 'transfer',
+      operation,
+      sourcePaths,
+      suggestedTargetDir: currentPath,
+    });
+  }, [currentPath, resolveEntriesForAction]);
 
   const getRenderableIconSrc = useCallback((entry: FileEntry, open = false) => {
     if (useNativeOsIcons) {
@@ -3729,12 +3965,128 @@ export function FileExplorer({
     targetDir: string,
     sources: string[],
     operation: FileTransferOperation,
+    collisionPolicy: ExplorerFileTransferCollisionPolicy = 'keep_both',
   ): Promise<FileTransferResult[]> => {
     if (sources.length === 0) return [];
-    const results = await transferExplorerItems(targetDir, sources, operation);
-    invalidateExplorerResultCaches();
+    void openFileOperationsWindow({ view: 'tasks' });
+    const results = await transferExplorerItems(targetDir, sources, operation, collisionPolicy);
+    if (results.some((result) => result.disposition === 'transferred')) {
+      invalidateExplorerResultCaches();
+      await publishFileOperationsTransferCompleted({
+        operation,
+        results,
+        sourcePaths: sources,
+        targetDir,
+      });
+    }
     return results;
-  }, [transferExplorerItems]);
+  }, [publishFileOperationsTransferCompleted, transferExplorerItems]);
+
+  const finalizeTransferResults = useCallback((results: FileTransferResult[]) => {
+    const skippedCount = results.filter((result) => result.disposition === 'skipped_existing').length;
+    if (skippedCount > 0) {
+      setError(
+        `${skippedCount} item${skippedCount === 1 ? '' : 's'} skipped because matching names already exist at the destination.`,
+      );
+    }
+  }, []);
+
+  const executeTransferRequest = useCallback(async (
+    request: PendingExplorerTransferRequest,
+    options?: {
+      onSuccess?: (results: FileTransferResult[]) => Promise<void> | void;
+      onCancel?: () => void;
+    },
+  ): Promise<FileTransferResult[] | null> => {
+    if (request.sources.length === 0) {
+      return [];
+    }
+
+    const isLocalTransfer = !isCloudExplorerPath(request.targetDir)
+      && request.sources.every((source) => !isCloudExplorerPath(source));
+    if (!request.collisionPolicy && isLocalTransfer) {
+      const collisions = await planExplorerItemTransfer(
+        request.targetDir,
+        request.sources,
+        request.operation,
+      );
+      if (collisions.length > 0) {
+        pendingTransferRequestRef.current = {
+          request,
+          onSuccess: options?.onSuccess,
+          onCancel: options?.onCancel,
+        };
+        setTransferConflictPolicy('keep_both');
+        setTransferConflictDialog({
+          visible: true,
+          collisions,
+          targetDir: request.targetDir,
+          sources: request.sources,
+          operation: request.operation,
+        });
+        return null;
+      }
+    }
+
+    const results = await transferIntoDirectory(
+      request.targetDir,
+      request.sources,
+      request.operation,
+      request.collisionPolicy ?? 'keep_both',
+    );
+    finalizeTransferResults(results);
+    await options?.onSuccess?.(results);
+    return results;
+  }, [finalizeTransferResults, planExplorerItemTransfer, transferIntoDirectory]);
+
+  const resetTransferConflictDialog = useCallback(() => {
+    pendingTransferRequestRef.current = null;
+    setTransferConflictDialog({
+      visible: false,
+      collisions: [],
+      targetDir: '',
+      sources: [],
+      operation: 'copy',
+    });
+  }, []);
+
+  const closeTransferConflictDialog = useCallback(() => {
+    pendingTransferRequestRef.current?.onCancel?.();
+    resetTransferConflictDialog();
+  }, [resetTransferConflictDialog]);
+
+  const confirmTransferConflictDialog = useCallback(() => {
+    const pending = pendingTransferRequestRef.current;
+    if (!pending) {
+      resetTransferConflictDialog();
+      return;
+    }
+
+    resetTransferConflictDialog();
+    void executeTransferRequest(
+      {
+        ...pending.request,
+        collisionPolicy: transferConflictPolicy,
+      },
+      {
+        onSuccess: pending.onSuccess,
+      },
+    ).catch((transferError) => {
+      setError(String(transferError));
+    });
+  }, [executeTransferRequest, resetTransferConflictDialog, transferConflictPolicy]);
+
+  useEffect(() => {
+    return listenToFileOperationsTransferCompleted((detail) => {
+      if (lastObservedFileTransferNonceRef.current === detail.nonce) {
+        return;
+      }
+      lastObservedFileTransferNonceRef.current = detail.nonce;
+      if (shouldRefreshExplorerForTransferEvent(currentPath, detail)) {
+        void refresh();
+      }
+    });
+  }, [currentPath, refresh]);
 
   useEffect(() => {
     if (!isTauri()) {
@@ -3780,8 +4132,16 @@ export function FileExplorer({
         setWindowDropState({ active: false, count: 0 });
         if (!currentPath) return;
         try {
-          await transferIntoDirectory(currentPath, event.payload.paths, 'copy');
-          refresh();
+          await executeTransferRequest(
+            {
+              targetDir: currentPath,
+              sources: event.payload.paths,
+              operation: 'copy',
+            },
+            {
+              onSuccess: () => refresh(),
+            },
+          );
         } catch (error) {
           setError(String(error));
         }
@@ -3796,7 +4156,7 @@ export function FileExplorer({
       disposed = true;
       unlisten?.();
     };
-  }, [currentPath, refresh, transferIntoDirectory]);
+  }, [currentPath, executeTransferRequest, refresh]);
 
   // ── Open ──
   const getSearchFocusTarget = useCallback((entry: FileEntry): EditorSearchFocusTarget | null => {
@@ -4064,11 +4424,19 @@ export function FileExplorer({
   // ── Duplicate ──
   const duplicate = useCallback(async (entry: FileEntry) => {
     try {
-      await transferIntoDirectory(currentPath, [entry.path], 'copy');
-      refresh();
+      await executeTransferRequest(
+        {
+          targetDir: currentPath,
+          sources: [entry.path],
+          operation: 'copy',
+        },
+        {
+          onSuccess: () => refresh(),
+        },
+      );
     }
     catch(e) { setError(String(e)); }
-  }, [currentPath, refresh, transferIntoDirectory]);
+  }, [currentPath, executeTransferRequest, refresh]);
 
   // ── Clipboard (system) ──
   const copyToSysClipboard = useCallback(async (text: string) => {
@@ -4079,17 +4447,23 @@ export function FileExplorer({
   const paste = useCallback(async () => {
     if (!clipboard) return;
     try {
-      await transferIntoDirectory(
-        currentPath,
-        clipboard.entries.map(entry => entry.path),
-        clipboard.action === 'cut' ? 'move' : 'copy',
+      await executeTransferRequest(
+        {
+          targetDir: currentPath,
+          sources: clipboard.entries.map(entry => entry.path),
+          operation: clipboard.action === 'cut' ? 'move' : 'copy',
+        },
+        {
+          onSuccess: () => {
+            if (clipboard.action === 'cut') {
+              setClipboard(null);
+            }
+            return refresh();
+          },
+        },
       );
-      if (clipboard.action === 'cut') {
-        setClipboard(null);
-      }
-      refresh();
     } catch(e) { setError(String(e)); }
-  }, [clipboard, currentPath, refresh, transferIntoDirectory]);
+  }, [clipboard, currentPath, executeTransferRequest, refresh, setClipboard]);
 
   useEffect(() => {
     if (!externalSelectionTransferRequest) {
@@ -4116,19 +4490,38 @@ export function FileExplorer({
 
     void (async () => {
       try {
-        await transferIntoDirectory(
-          targetDir,
-          sourcePaths,
-          externalSelectionTransferRequest.operation,
+        const transferResults = await executeTransferRequest(
+          {
+            targetDir,
+            sources: sourcePaths,
+            operation: externalSelectionTransferRequest.operation,
+          },
+          {
+            onSuccess: async () => {
+              if (externalSelectionTransferRequest.operation === 'move') {
+                setSelected(new Set());
+                if (sourcePaths.includes(previewRef.current.path)) {
+                  setPreview({ type: 'none', path: '' });
+                  setPreviewLoading(false);
+                }
+              }
+              await refresh();
+            },
+            onCancel: () => {
+              onWorkspaceSelectionTransferComplete?.({
+                sequence: externalSelectionTransferRequest.sequence,
+                instanceId,
+                targetDir,
+                operation: externalSelectionTransferRequest.operation,
+                sourcePaths,
+                success: false,
+              });
+            },
+          },
         );
-        if (externalSelectionTransferRequest.operation === 'move') {
-          setSelected(new Set());
-          if (sourcePaths.includes(previewRef.current.path)) {
-            setPreview({ type: 'none', path: '' });
-            setPreviewLoading(false);
-          }
+        if (transferResults === null) {
+          return;
         }
-        await refresh();
         onWorkspaceSelectionTransferComplete?.({
           sequence: externalSelectionTransferRequest.sequence,
           instanceId,
@@ -4151,11 +4544,11 @@ export function FileExplorer({
     })();
   }, [
     externalSelectionTransferRequest,
+    executeTransferRequest,
     instanceId,
     onWorkspaceSelectionTransferComplete,
     refresh,
     selectedEntries,
-    transferIntoDirectory,
   ]);
 
   // ── Rename ──
@@ -4577,6 +4970,10 @@ export function FileExplorer({
           return [{ ...sharedItem, label: 'Copy', action: () => queueClipboard('copy', entry) }];
         case 'cut':
           return [{ ...sharedItem, label: 'Cut', action: () => queueClipboard('cut', entry) }];
+        case 'copy-to':
+          return [{ ...sharedItem, label: 'Copy To...', action: () => requestTransferDestination('copy', entry) }];
+        case 'move-to':
+          return [{ ...sharedItem, label: 'Move To...', action: () => requestTransferDestination('move', entry) }];
         case 'duplicate':
           return [{ ...sharedItem, label: 'Duplicate', action: () => duplicate(entry) }];
         case 'rename':
@@ -4663,7 +5060,7 @@ export function FileExplorer({
       ...builtInItems,
       ...pluginItems,
     ]);
-  }, [applyTagsToPaths, bookmarkPathSet, copyToSysClipboard, duplicate, executePluginContextMenuItem, explorerRail, explorerSettings.contextMenuItemOverrides, finalizeContextMenuItems, handleBookmarkCreated, isCloudExplorerPath, onOpenInFilesystemAquarium, onOpenInTerminal, openAsAdmin, openEntry, openTrashDialog, openWithSystemPicker, propertiesLabel, queueClipboard, resolvedPluginContextMenuItems, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties, updateExplorerRail]);
+  }, [applyTagsToPaths, bookmarkPathSet, copyToSysClipboard, duplicate, executePluginContextMenuItem, explorerRail, explorerSettings.contextMenuItemOverrides, finalizeContextMenuItems, handleBookmarkCreated, isCloudExplorerPath, onOpenInFilesystemAquarium, onOpenInTerminal, openAsAdmin, openEntry, openTrashDialog, openWithSystemPicker, propertiesLabel, queueClipboard, requestTransferDestination, resolvedPluginContextMenuItems, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties, updateExplorerRail]);
 
   const buildEmptyCtxItems = useCallback((): CtxItem[] => {
     const canUseNativeIntegration = supportsNativeIntegration(currentPath);
@@ -5131,9 +5528,19 @@ export function FileExplorer({
     }
     if (sources.length === 0) return;
     try {
-      await transferIntoDirectory(targetDir, sources, resolveExplorerDropOperation(e, runtimePlatform));
-      activeDragPathsRef.current = [];
-      refresh();
+      const results = await executeTransferRequest(
+        {
+          targetDir,
+          sources,
+          operation: resolveExplorerDropOperation(e, runtimePlatform),
+        },
+        {
+          onSuccess: () => refresh(),
+        },
+      );
+      if (results !== null) {
+        activeDragPathsRef.current = [];
+      }
     } catch(e) { setError(String(e)); }
   };
 
@@ -5758,6 +6165,9 @@ export function FileExplorer({
                           e.stopPropagation();
                           navigate(c.path);
                         }}
+                        onDragOver={e => onDragOver(e, c.path)}
+                        onDragLeave={() => setDragOver(null)}
+                        onDrop={e => onDrop(e, c.path)}
                         style={{
                           border: 'none',
                           cursor: 'pointer',
@@ -5768,13 +6178,16 @@ export function FileExplorer({
                           borderRadius: explorerTheme.breadcrumbStyle === 'plain'
                             ? 4
                             : 'var(--overlay-explorer-control-radius)',
-                          background: explorerTheme.breadcrumbStyle === 'plain'
-                            ? 'transparent'
-                            : (i === crumbs.length - 1
-                                ? 'var(--overlay-explorer-chip-active-bg)'
-                                : 'var(--overlay-explorer-chip-bg)'),
+                          background: dragOver === c.path
+                            ? 'var(--overlay-explorer-chip-active-bg)'
+                            : explorerTheme.breadcrumbStyle === 'plain'
+                              ? 'transparent'
+                              : (i === crumbs.length - 1
+                                  ? 'var(--overlay-explorer-chip-active-bg)'
+                                  : 'var(--overlay-explorer-chip-bg)'),
                           whiteSpace: 'nowrap',
                           flexShrink: 0,
+                          outline: dragOver === c.path ? `1px solid ${accent}` : 'none',
                         }}
                       >
                         {c.label}
@@ -9241,6 +9654,16 @@ export function FileExplorer({
           onConfirm={() => { void confirmTrash(); }}
           onDeletePermanently={() => { void permanentlyDeleteTargets(); }}
           onCancel={() => setDeleteTargets([])}
+        />
+      )}
+
+      {transferConflictDialog.visible && (
+        <TransferConflictDialog
+          state={transferConflictDialog}
+          policy={transferConflictPolicy}
+          onPolicyChange={setTransferConflictPolicy}
+          onConfirm={confirmTransferConflictDialog}
+          onCancel={closeTransferConflictDialog}
         />
       )}
 

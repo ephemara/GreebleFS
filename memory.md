@@ -1,5 +1,43 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Dedicated File Operations Popout Window
+
+- Explorer copy/move workflows now have a dedicated themeable popout window instead of only relying on in-surface destination picking and the inline task badge.
+- Durable implementation shape:
+  - `src/runtime/fileOperationsWindow.ts` is the shared request/completion bridge for the `file-operations` window. It owns the window label, persisted request keys, cross-window event names, and the helpers that create/focus the popout plus broadcast completed transfers.
+  - `src/main.tsx` now bootstraps by webview label. The normal `main` window still renders `App`, while the `file-operations` label renders `src/windows/FileOperationsWindowApp.tsx`.
+  - `src/windows/FileOperationsWindowApp.tsx` is a standalone themed destination picker plus Task Center surface. It can browse folders, create a destination folder, submit copy/move operations, and then fall back to the shared explorer task feed.
+  - `src/components/explorer/ExplorerTaskCenterContent.tsx` is the shared task-center body used by both the inline explorer badge and the dedicated popout window.
+  - `src/components/explorer/ExplorerTaskStatusBadge.tsx` now exposes a `Pop Out` action so operators can move from the inline status surface into the standalone file-operations window.
+  - `src/components/FileExplorer.tsx` now routes explicit `Copy To...` / `Move To...` context-menu actions through the popout destination picker, and all successful transfer paths publish a cross-window completion event so other explorer instances can refresh when source or target folders change.
+  - `src/App.tsx` now routes the command-palette task-center action into the dedicated file-operations window instead of only toggling the inline badge.
+- Durable product note:
+  - the file-operations window is intentionally a shell surface, not a second filesystem truth layer. Rust task/transfer truth still flows through `src/runtime/explorerBackend.ts`; the popout only owns presentation, destination selection, and cross-window coordination.
+- Validation:
+  - passed: `bunx vitest run src/test/fileOperationsWindow.test.ts src/test/pluginPanelRequests.test.ts src/test/app.dockMode.test.tsx`
+  - passed: targeted file-operations/window mock coverage in `src/test/fileOperationsWindow.test.ts`
+  - blocked: narrowed `npx tsc --noEmit ...` still reports a pre-existing unrelated `src/components/ScreenshotsManager.tsx` type error (`SelectionHandle` includes `"move"` but the resize-handle prop does not)
+
+## 2026-04-15 — Explorer Transfer Collision Pass
+
+- Local explorer transfers no longer rely on silent collision-safe renaming as the only behavior.
+- Durable implementation shape:
+  - `src-tauri/src/fs_commands.rs` now exposes `fs_plan_transfer_items` plus explicit transfer collision policies on `fs_transfer_items`: `keep_both`, `replace`, and `skip`.
+  - transfer results now include both the collision policy used and whether each source was actually transferred or skipped, so the frontend can treat conflict resolution as first-class state instead of assuming every request mutated disk.
+  - `src/runtime/explorerBackend.ts` now exposes the new transfer-planning path and forwards the collision policy through the generated Specta bindings.
+  - `src/components/FileExplorer.tsx` now routes paste, drag/drop, window-drop imports, and workspace pane transfers through one shared transfer workflow:
+    - local collisions are planned before execution
+    - the explorer opens a modal conflict chooser instead of silently inventing destination names
+    - breadcrumb chips are valid internal drop targets for ancestor-folder copy/move flows
+  - `src/test/setup.tsx` now mocks enough Tauri window/webview APIs for the file-operations event bridge used by the explorer transfer flow.
+- Durable product note:
+  - this closes one of the main “below Explorer baseline” trust gaps. The shell can keep its premium/power-user posture, but the core move/copy loop now behaves like a serious file manager instead of a best-effort content browser.
+- Validation:
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml transfer_items_ -- --nocapture`
+  - passed: `bun run test:unit -- src/test/fileExplorer.viewModes.test.tsx src/test/explorerBackend.bindings.test.ts`
+  - passed: filtered typecheck for touched explorer/binding surfaces via `bunx tsc --noEmit --skipLibCheck --pretty false 2>&1 | rg 'FileExplorer|explorerBackend|fileExplorer.viewModes|explorerBackend.bindings|tauri.ts|setup.tsx|cloud_commands|fs_commands' || true`
+
 ## 2026-04-15 — Native OS Icons Default
 
 - The explorer now defaults to native OS file/folder icons instead of the managed theme icon pack baseline.
@@ -7,10 +45,13 @@
   - `src/store/settingsStore.ts` now seeds `appearance.useNativeOsIcons` to `true` for fresh settings.
   - `src/config/pilotThemeContract.ts` now resets built-in pilot theme selections back to native OS icons instead of forcing the sparse managed icon set.
   - `src/components/SettingsPage.tsx` no longer forces `forceManagedIcons` when selecting a packaged theme that advertises icon assets. Theme packs can still provide managed icons as the fallback layer, but they no longer automatically override the OS-icon preference.
+  - `src-tauri/src/desktop_integration.rs` no longer depends solely on `file_icon_provider` for Windows explorer icons. It now tries a direct Win32 shell-icon extraction path (`SHGetFileInfoW` + `HICON` rasterization) before falling back to the crate path, and it logs backend failures instead of silently converting every Windows failure into permanent null icon cache entries.
 - Durable product note:
   - Managed/theme icons are currently too sparse to be a credible default explorer presentation. Native OS icons should remain the front-door baseline until the managed icon catalog is substantially broader.
 - Validation:
   - passed: `bunx vitest run src/test/settingsStore.test.ts src/test/settingsPage.behavior.test.tsx`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml`
+  - blocked: cross-target Windows `cargo check --target x86_64-pc-windows-gnu` currently cannot complete on the Linux workstation because `ring` needs a MinGW compiler (`x86_64-w64-mingw32-gcc`) that is not installed here
 
 ## 2026-04-15 — Explorer Grid Image Thumbnails
 
