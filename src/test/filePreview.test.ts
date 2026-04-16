@@ -3,10 +3,12 @@ import {
   getAudioPreviewMimeType,
   getModelPreviewFormat,
   getMonacoLanguage,
+  getVideoPreviewMimeType,
   isAudioPreviewExtension,
   isEditableTextExtension,
   isExecutableExtension,
   isImagePreviewExtension,
+  isVideoPreviewExtension,
 } from '../config/filePreview';
 
 describe('filePreview config', () => {
@@ -31,6 +33,15 @@ describe('filePreview config', () => {
     expect(getAudioPreviewMimeType('txt')).toBeNull();
   });
 
+  it('detects video preview extensions and maps their mime types', () => {
+    expect(isVideoPreviewExtension('mp4')).toBe(true);
+    expect(isVideoPreviewExtension('.mkv')).toBe(true);
+    expect(isVideoPreviewExtension('txt')).toBe(false);
+    expect(getVideoPreviewMimeType('mov')).toBe('video/quicktime');
+    expect(getVideoPreviewMimeType('webm')).toBe('video/webm');
+    expect(getVideoPreviewMimeType('txt')).toBeNull();
+  });
+
   it('maps supported 3d extensions to model formats', () => {
     expect(getModelPreviewFormat('fbx')).toBe('fbx');
     expect(getModelPreviewFormat('glb')).toBe('glb');
@@ -50,6 +61,12 @@ describe('filePreview config', () => {
     expect(isEditableTextExtension('mp3', 1024)).toBe(false);
     expect(isEditableTextExtension('flac', 1024)).toBe(false);
     expect(isEditableTextExtension('opus', 1024)).toBe(false);
+  });
+
+  it('keeps video assets out of editable text mode even when small', () => {
+    expect(isEditableTextExtension('mp4', 1024)).toBe(false);
+    expect(isEditableTextExtension('mkv', 1024)).toBe(false);
+    expect(isEditableTextExtension('mov', 1024)).toBe(false);
   });
 
   it('still allows normal source files to open in the editor', () => {

@@ -41,6 +41,28 @@ const AUDIO_PREVIEW_MIME_TYPE_BY_EXTENSION = {
   wma: 'audio/x-ms-wma',
 } as const satisfies Record<string, string>;
 
+const VIDEO_PREVIEW_MIME_TYPE_BY_EXTENSION = {
+  '3g2': 'video/3gpp2',
+  '3gp': 'video/3gpp',
+  asf: 'video/x-ms-asf',
+  avi: 'video/x-msvideo',
+  flv: 'video/x-flv',
+  m2ts: 'video/mp2t',
+  m2v: 'video/mpeg',
+  m4v: 'video/x-m4v',
+  mkv: 'video/x-matroska',
+  mov: 'video/quicktime',
+  mp4: 'video/mp4',
+  mpe: 'video/mpeg',
+  mpeg: 'video/mpeg',
+  mpg: 'video/mpeg',
+  mts: 'video/mp2t',
+  ogv: 'video/ogg',
+  qt: 'video/quicktime',
+  webm: 'video/webm',
+  wmv: 'video/x-ms-wmv',
+} as const satisfies Record<string, string>;
+
 const EXECUTABLE_EXTENSIONS = [
   'exe', 'msi', 'bat', 'cmd', 'ps1', 'sh', 'app', 'dmg',
 ] as const;
@@ -106,6 +128,7 @@ const MONACO_LANGUAGE_BY_EXTENSION: Record<string, string> = {
 
 const IMAGE_PREVIEW_EXTENSION_SET = new Set<string>(IMAGE_PREVIEW_EXTENSIONS);
 const AUDIO_PREVIEW_EXTENSION_SET = new Set<string>(Object.keys(AUDIO_PREVIEW_MIME_TYPE_BY_EXTENSION));
+const VIDEO_PREVIEW_EXTENSION_SET = new Set<string>(Object.keys(VIDEO_PREVIEW_MIME_TYPE_BY_EXTENSION));
 const EXECUTABLE_EXTENSION_SET = new Set<string>(EXECUTABLE_EXTENSIONS);
 const EDITABLE_TEXT_EXTENSION_SET = new Set<string>(EDITABLE_TEXT_EXTENSIONS);
 
@@ -121,10 +144,21 @@ export function isAudioPreviewExtension(extension: string): boolean {
   return AUDIO_PREVIEW_EXTENSION_SET.has(normalizeExtension(extension));
 }
 
+export function isVideoPreviewExtension(extension: string): boolean {
+  return VIDEO_PREVIEW_EXTENSION_SET.has(normalizeExtension(extension));
+}
+
 export function getAudioPreviewMimeType(extension: string): string | null {
   const normalizedExtension = normalizeExtension(extension);
   return normalizedExtension in AUDIO_PREVIEW_MIME_TYPE_BY_EXTENSION
     ? AUDIO_PREVIEW_MIME_TYPE_BY_EXTENSION[normalizedExtension as keyof typeof AUDIO_PREVIEW_MIME_TYPE_BY_EXTENSION]
+    : null;
+}
+
+export function getVideoPreviewMimeType(extension: string): string | null {
+  const normalizedExtension = normalizeExtension(extension);
+  return normalizedExtension in VIDEO_PREVIEW_MIME_TYPE_BY_EXTENSION
+    ? VIDEO_PREVIEW_MIME_TYPE_BY_EXTENSION[normalizedExtension as keyof typeof VIDEO_PREVIEW_MIME_TYPE_BY_EXTENSION]
     : null;
 }
 
@@ -145,6 +179,9 @@ export function isEditableTextExtension(extension: string, size: number): boolea
     return false;
   }
   if (isAudioPreviewExtension(normalizedExtension)) {
+    return false;
+  }
+  if (isVideoPreviewExtension(normalizedExtension)) {
     return false;
   }
   if (getModelPreviewFormat(normalizedExtension)) {

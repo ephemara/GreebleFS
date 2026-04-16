@@ -10,6 +10,12 @@ vi.mock('../components/ExplorerImageEditor', () => ({
   ),
 }));
 
+vi.mock('../components/ExplorerVideoEditor', () => ({
+  ExplorerVideoEditor: ({ videoName }: { videoName: string }) => (
+    <div data-testid="mock-explorer-video-editor">{videoName}</div>
+  ),
+}));
+
 import { FileExplorer, invalidateExplorerResultCaches } from '../components/FileExplorer';
 import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/appearance';
 import { createDefaultExplorerRailSnapshot } from '../components/explorer/explorerRailState';
@@ -62,6 +68,16 @@ const ENTRIES = [
     size: 6 * 1024 * 1024,
     modified: 0,
     extension: 'mp3',
+    is_hidden: false,
+    is_symlink: false,
+  },
+  {
+    name: 'trailer.mp4',
+    path: `${REPO_ROOT}\\trailer.mp4`,
+    is_dir: false,
+    size: 48 * 1024 * 1024,
+    modified: 0,
+    extension: 'mp4',
     is_hidden: false,
     is_symlink: false,
   },
@@ -587,6 +603,16 @@ describe('FileExplorer view modes', () => {
     expect(player).toHaveAttribute('preload', 'metadata');
     expect(player.querySelector('source')).toHaveAttribute('src', `asset://localhost/${REPO_ROOT}\\anthem.mp3`);
     expect(player.querySelector('source')).toHaveAttribute('type', 'audio/mpeg');
+    expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_read_text_file')).toBe(false);
+  });
+
+  it('mounts the embedded video editor when selecting a previewable video file', async () => {
+    renderExplorer();
+    await screen.findByText('trailer.mp4');
+
+    fireEvent.click(screen.getByText('trailer.mp4'));
+
+    expect(await screen.findByTestId('mock-explorer-video-editor')).toHaveTextContent('trailer.mp4');
     expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_read_text_file')).toBe(false);
   });
 

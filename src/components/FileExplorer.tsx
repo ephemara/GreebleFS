@@ -125,6 +125,7 @@ import {
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { AppPromptDialog } from './AppModal';
 import { ExplorerImageEditor } from './ExplorerImageEditor';
+import { ExplorerVideoEditor } from './ExplorerVideoEditor';
 import { ExplorerSideRail } from './explorer/ExplorerSideRail';
 import { ExplorerChromeSurface } from './explorer/ExplorerChromeSurface';
 import {
@@ -162,10 +163,12 @@ import {
   getAudioPreviewMimeType,
   getModelPreviewFormat,
   getMonacoLanguage,
+  getVideoPreviewMimeType,
   isAudioPreviewExtension,
   isEditableTextExtension,
   isExecutableExtension,
   isImagePreviewExtension,
+  isVideoPreviewExtension,
   type ModelPreviewFormat,
 } from '../config/filePreview';
 import {
@@ -349,6 +352,7 @@ type PreviewState =
   | { type: 'none'; path: string }
   | { type: 'image'; path: string; name: string; content: string }
   | { type: 'audio'; path: string; name: string; source: string; extension: string; mimeType: string | null; size: number }
+  | { type: 'video'; path: string; name: string; source: string; extension: string; mimeType: string | null; size: number }
   | {
       type: 'text';
       path: string;
@@ -2143,6 +2147,17 @@ function PreviewPanel({
               </div>
             </div>
           </div>
+        )}
+        {preview.type === 'video' && (
+          <ExplorerVideoEditor
+            videoPath={preview.path}
+            videoName={preview.name}
+            videoSource={preview.source}
+            videoExtension={preview.extension}
+            videoMimeType={preview.mimeType}
+            videoSize={preview.size}
+            onExported={onRefreshPreviewEntry}
+          />
         )}
         {preview.type === 'text' && viewMode === 'preview' && supportsRenderedPreview && (
           <Suspense fallback={<DocumentPreviewFallback label="Loading rendered preview…" />}>
@@ -4469,6 +4484,19 @@ export function FileExplorer({
       return;
     }
 
+    if (isVideoPreviewExtension(ext)) {
+      setPreview({
+        type: 'video',
+        path: entry.path,
+        name: entry.name,
+        source: getPreviewAssetUrl(entry.path),
+        extension: ext,
+        mimeType: getVideoPreviewMimeType(ext),
+        size: entry.size,
+      });
+      return;
+    }
+
     if (isImagePreviewExtension(ext)) {
       setPreviewLoading(true);
       try {
@@ -4554,7 +4582,10 @@ export function FileExplorer({
       return;
     }
 
-    if (canInlinePreview && (getModelPreviewFormat(ext) || isImagePreviewExtension(ext) || isAudioPreviewExtension(ext))) {
+    if (
+      canInlinePreview
+      && (getModelPreviewFormat(ext) || isImagePreviewExtension(ext) || isAudioPreviewExtension(ext) || isVideoPreviewExtension(ext))
+    ) {
       await previewEntry(entry, focusTarget);
       return;
     }

@@ -1,5 +1,42 @@
 # GreebleFS Memory
 
+## 2026-04-16 — Explorer Inline Video Editor
+
+- Video files can now stay inside the explorer preview workflow with a host-native timeline surface instead of bouncing straight into the OS player.
+- Durable implementation shape:
+  - `src/config/filePreview.ts` now owns a dedicated video-preview extension/MIME registry, keeping preview routing data-driven and preventing small video files from falling through the editable-text heuristic. Bare `.ts` intentionally remains text-first because this repo is TypeScript-heavy; video transport streams should use container-specific extensions such as `mts` / `m2ts`.
+  - `src/components/ExplorerVideoEditor.tsx` is the shell-owned inline video surface. It keeps the useful trim/timeline idea from `packages/vid-editor`, but the app shell now owns playback state, trim handles, export prompting, loop behavior, and the visual treatment so the feature feels native to the explorer instead of like an embedded demo app.
+  - `src/components/FileExplorer.tsx` now treats previewable video entries as a first-class preview state and routes them into the embedded video editor instead of external open or text fallback.
+  - `src-tauri/src/video_commands.rs` is the native trim/export backend. It validates trim ranges, ensures the output path stays separate from the source, creates parent directories when needed, and shells out to `ffmpeg` for a non-destructive MP4 export.
+  - `src/runtime/videoEditorBackend.ts` is the TS bridge for that native trim/export command. React should keep calling that bridge instead of ad hoc `invoke(...)`.
+- Durable product note:
+  - this is intentionally a trim/export workflow, not a full nonlinear editor. The imported `packages/vid-editor` package was mostly CRA shell + Redux + remote upload/transcode assumptions, so only the timeline interaction concept was assimilated. Filesystem truth and final media mutation stay in the GreebleFS host architecture.
+- Validation:
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml`
+  - passed: `bunx vitest run src/test/filePreview.test.ts src/test/explorerVideoEditor.test.tsx src/test/fileExplorer.viewModes.test.tsx`
+  - passed: filtered typecheck for touched video/editor surfaces via `bunx tsc --noEmit --pretty false 2>&1 | rg "ExplorerVideoEditor|videoEditorBackend|videoExportTrim|src/config/filePreview.ts|src/components/FileExplorer.tsx|src/test/explorerVideoEditor.test.tsx|src/test/filePreview.test.ts|src/test/fileExplorer.viewModes.test.tsx" || true`
+
+## 2026-04-16 — Explorer Inline Image Editor
+
+- The explorer preview pane now embeds a built-in image editor for supported raster files instead of only showing a static image preview.
+- Durable implementation shape:
+  - `src/components/ExplorerImageEditor.tsx` is the shell-owned wrapper for the embedded preview editor. It owns the host-native toolbar, save/reset/undo/redo actions, resize adaptation, status chrome, and the static-preview fallback path.
+  - The current inline editing support set is intentionally save-safe: `png`, `jpg`, `jpeg`, and `webp`. Other image previews still render as static previews instead of risking a format-mismatch write-back.
+  - `src/runtime/imageEditorRuntime.ts` is the integration seam for the local `packages/img-editor` package. The app now loads that editor through the `@img-editor-runtime` alias so the runtime can consume the package without dragging its entire TS surface into the main app typecheck.
+  - `src/components/FileExplorer.tsx` now routes supported image previews through the embedded editor wrapper and refreshes the explorer after successful saves so metadata and thumbnails stay current.
+  - The imported editor package was cleaned where it matters for host UX:
+    - runtime-visible toolbar labels are now English
+    - the default inserted text is now English
+    - noisy history/image/editor-init debug logging was removed
+    - key runtime error/warning strings now read like host-facing diagnostics instead of demo-package copy
+- Durable product note:
+  - this is still a preview-surface workflow, not a new filesystem truth lane. Saves flow back through `writeExplorerFile` and the normal explorer refresh/cache invalidation path.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerImageEditor.test.tsx src/test/fileExplorer.viewModes.test.tsx`
+  - passed: filtered typecheck for touched explorer/editor surfaces via `bunx tsc --noEmit --skipLibCheck --pretty false 2>&1 | rg "ExplorerImageEditor|imageEditorRuntime|FileExplorer|explorerImageEditor|imgEditorRuntime|packages/img-editor" || true`
+  - passed: `bun run build`
+
 ## 2026-04-16 — Frontend Worker Runtime / Runtime Module Offload
 
 - Frontend worker execution is now an explicit shell subsystem instead of implicit one-off transpilation work.
