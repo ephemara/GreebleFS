@@ -1,5 +1,17 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Native OS Icons Default
+
+- The explorer now defaults to native OS file/folder icons instead of the managed theme icon pack baseline.
+- Durable implementation shape:
+  - `src/store/settingsStore.ts` now seeds `appearance.useNativeOsIcons` to `true` for fresh settings.
+  - `src/config/pilotThemeContract.ts` now resets built-in pilot theme selections back to native OS icons instead of forcing the sparse managed icon set.
+  - `src/components/SettingsPage.tsx` no longer forces `forceManagedIcons` when selecting a packaged theme that advertises icon assets. Theme packs can still provide managed icons as the fallback layer, but they no longer automatically override the OS-icon preference.
+- Durable product note:
+  - Managed/theme icons are currently too sparse to be a credible default explorer presentation. Native OS icons should remain the front-door baseline until the managed icon catalog is substantially broader.
+- Validation:
+  - passed: `bunx vitest run src/test/settingsStore.test.ts src/test/settingsPage.behavior.test.tsx`
+
 ## 2026-04-15 — Explorer Grid Image Thumbnails
 
 - Grid/icon explorer modes now support inline image thumbnails for visible local image files, so directories with screenshots, artwork, or captures read more like a modern content browser instead of an icon wall.

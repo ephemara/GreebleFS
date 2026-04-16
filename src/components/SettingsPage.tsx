@@ -1180,11 +1180,8 @@ export function SettingsPage({
   }, [settings.appearance.customThemes, updateAppearance]);
 
   const applyThemeSelection = useCallback((themeId: string) => {
-    const packageInfo = themePackageLookup.get(themeId);
-    applyThemeSelectionWithDefaults(themeId, {
-      forceManagedIcons: Boolean(packageInfo?.capabilitySummary.icons),
-    });
-  }, [applyThemeSelectionWithDefaults, themePackageLookup]);
+    applyThemeSelectionWithDefaults(themeId);
+  }, [applyThemeSelectionWithDefaults]);
   const applyDockThemeSelection = useCallback((themeId: string) => {
     applyDockThemeSelectionWithDefaults(themeId);
   }, [applyDockThemeSelectionWithDefaults]);

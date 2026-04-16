@@ -639,7 +639,7 @@ export const defaultSettings: Settings = {
     activeShaderId: null,
     shaderControlValues: {},
     uiFontFamily: DEFAULT_PILOT_UI_FONT_FAMILY,
-    useNativeOsIcons: false,
+    useNativeOsIcons: true,
     accentColor: DEFAULT_PILOT_ACCENT_COLOR,
     sidebarPosition: 'left',
     activityBarPosition: 'side',
