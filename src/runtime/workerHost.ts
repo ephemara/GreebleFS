@@ -278,3 +278,11 @@ export function subscribeFrontendWorkerTelemetry(
     workerTelemetryListeners.delete(listener);
   };
 }
+
+export function resetFrontendWorkerTelemetryForTests(): void {
+  workerTelemetrySnapshot = {
+    lanes: {
+      'runtime-module': createEmptyLaneTelemetry(),
+    },
+  };
+}

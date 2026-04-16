@@ -1,5 +1,27 @@
 # GreebleFS Memory
 
+## 2026-04-16 — Frontend Worker Runtime / Runtime Module Offload
+
+- Frontend worker execution is now an explicit shell subsystem instead of implicit one-off transpilation work.
+- Durable implementation shape:
+  - `src/runtime/workerHost.ts` is now the shared frontend worker orchestrator. It owns browser-worker lane lifecycle, request/response routing, fallback-to-main-thread behavior, and lane telemetry snapshots for runtime-authored frontend work.
+  - `src/runtime/moduleRuntime.ts`, `src/runtime/moduleRuntimeCore.ts`, and `src/runtime/moduleRuntime.worker.ts` now split authored-module loading into:
+    - shared pure compile/execute helpers in `moduleRuntimeCore`
+    - a dedicated worker entrypoint for serializable transpilation work
+    - a main-thread bridge that keeps the public runtime API stable while routing transpilation through the worker host
+  - plugin, shader, animation, wallpaper, and theme-renderer loaders inherit the worker-backed transpilation path automatically because they already load through `moduleRuntime.ts`.
+  - execution remains intentionally hybrid:
+    - workers own serializable TS/TSX transpilation
+    - the main thread still owns final module execution/materialization for React-bearing runtime exports and host-bound allowlisted imports
+  - `src/components/DevPerformanceHud.tsx` now surfaces worker telemetry (`WORK`, `WFALL`, `WERR`, `WLAST`) so browser threading activity is visible during local profiling and regression work.
+- Durable testing note:
+  - `src/test/moduleRuntime.workerBridge.test.ts` covers the fallback bridge path used in Vitest/test mode and verifies that runtime-module graph transpilation still preserves relative module resolution while worker telemetry updates.
+- Validation:
+  - passed: `bunx vitest run src/test/moduleRuntime.workerBridge.test.ts src/test/pluginRuntime.test.ts src/test/shaderRuntime.test.ts src/test/animationRuntime.test.ts src/test/themeRendererRuntime.test.tsx`
+  - targeted TS check no longer reports the touched HUD path after replacing `PerformanceEntryList.at()` with array indexing
+- Current limit:
+  - the worker system currently accelerates runtime-authored module transpilation and observability; explorer derivation and package/theme normalization are still future lanes rather than landed worker-backed paths.
+
 ## 2026-04-16 — Explorer Inline Audio Preview
 
 - Audio files can now stay inside the explorer preview workflow instead of forcing an external app handoff.

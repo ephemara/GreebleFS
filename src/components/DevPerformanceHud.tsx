@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import type { OverlayFrameTelemetryStats } from '../config/frameTelemetry';
+import {
+  readFrontendWorkerTelemetrySnapshot,
+  subscribeFrontendWorkerTelemetry,
+  type FrontendWorkerTelemetrySnapshot,
+} from '../runtime/workerHost';
 
 interface DevPerformanceHudSnapshot {
   navigationMs: number | null;
@@ -11,6 +16,10 @@ interface DevPerformanceHudSnapshot {
   cls: number | null;
   memoryUsedMb: number | null;
   memoryLimitMb: number | null;
+  workerActiveTaskCount: number;
+  workerFallbackCount: number;
+  workerErrorCount: number;
+  workerLastDurationMs: number | null;
 }
 
 interface DevPerformanceHudProps {
@@ -30,6 +39,10 @@ const EMPTY_SNAPSHOT: DevPerformanceHudSnapshot = {
   cls: null,
   memoryUsedMb: null,
   memoryLimitMb: null,
+  workerActiveTaskCount: 0,
+  workerFallbackCount: 0,
+  workerErrorCount: 0,
+  workerLastDurationMs: null,
 };
 
 export function DevPerformanceHud({
@@ -95,6 +108,26 @@ export function DevPerformanceHud({
       title: snapshot.memoryLimitMb == null
         ? 'JavaScript heap usage, if the browser exposes it.'
         : `JavaScript heap usage. Limit: ${formatNumber(snapshot.memoryLimitMb)} MB.`,
+    },
+    {
+      label: 'WORK',
+      value: formatInteger(snapshot.workerActiveTaskCount),
+      title: 'Active frontend worker tasks across the shared worker host.',
+    },
+    {
+      label: 'WFALL',
+      value: formatInteger(snapshot.workerFallbackCount),
+      title: 'Worker tasks that fell back to the main thread.',
+    },
+    {
+      label: 'WERR',
+      value: formatInteger(snapshot.workerErrorCount),
+      title: 'Worker task or worker-runtime errors observed in this session.',
+    },
+    {
+      label: 'WLAST',
+      value: formatMilliseconds(snapshot.workerLastDurationMs),
+      title: 'Duration of the most recently completed worker task.',
     },
   ];
 
@@ -282,7 +315,11 @@ function useDevPerformanceHudSnapshot(enabled: boolean, navigationKey: string): 
 
     if (supportedEntryTypes.has('first-input')) {
       const observer = new PerformanceObserver(list => {
-        const latest = list.getEntries().at(-1) as PerformanceEntry & { processingStart?: number; startTime?: number } | undefined;
+        const entries = list.getEntries();
+        const latest = entries[entries.length - 1] as (PerformanceEntry & {
+          processingStart?: number;
+          startTime?: number;
+        }) | undefined;
         if (!latest || typeof latest.processingStart !== 'number' || typeof latest.startTime !== 'number') {
           return;
         }
@@ -331,6 +368,27 @@ function useDevPerformanceHudSnapshot(enabled: boolean, navigationKey: string): 
       window.clearInterval(intervalId);
       observers.forEach(observer => observer.disconnect());
     };
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    const applyWorkerSnapshot = (workerSnapshot: FrontendWorkerTelemetrySnapshot) => {
+      const runtimeTelemetry = workerSnapshot.lanes['runtime-module'];
+      snapshotRef.current = {
+        ...snapshotRef.current,
+        workerActiveTaskCount: runtimeTelemetry.activeTaskCount,
+        workerFallbackCount: runtimeTelemetry.fallbackCount,
+        workerErrorCount: runtimeTelemetry.errorCount,
+        workerLastDurationMs: runtimeTelemetry.lastDurationMs,
+      };
+      setSnapshot({ ...snapshotRef.current });
+    };
+
+    applyWorkerSnapshot(readFrontendWorkerTelemetrySnapshot());
+    return subscribeFrontendWorkerTelemetry(applyWorkerSnapshot);
   }, [enabled]);
 
   return snapshot;

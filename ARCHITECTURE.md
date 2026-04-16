@@ -72,8 +72,12 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Screenshot capture/editor/library surface. It owns monitor preview orchestration, selection editing, annotation authoring, and gallery actions, but annotated export is now delegated to Rust instead of being rasterized in the browser.
 - `src/components/pluginRuntime.tsx`
   Packaged frontend plugin runtime loader. It owns the allowlisted module graph for frontend plugins, including package-local relative imports and the host-provided `overlayterm-plugin` bridge helpers.
+- `src/runtime/moduleRuntime.ts`
+  Shared runtime-authored module bridge. It compiles authored TS/TSX module graphs for plugins, theme renderers, wallpapers, shaders, and animations, and now routes serializable compile work through the frontend worker host before falling back to the main thread.
+- `src/runtime/workerHost.ts`
+  Browser-worker orchestration layer for frontend CPU-heavy tasks. It owns worker-lane lifecycle, per-lane telemetry, fallback-to-main-thread behavior, and the shared request/response bridge used by runtime module compilation.
 - `src/components/DevPerformanceHud.tsx`
-  Fixed dev-only diagnostics HUD rendered by `App.tsx` whenever the frontend runs in `import.meta.env.DEV` or explicit developer mode. It shows live frame, navigation, CLS, INP, long-task, and memory telemetry for local development.
+  Fixed dev-only diagnostics HUD rendered by `App.tsx` whenever the frontend runs in `import.meta.env.DEV` or explicit developer mode. It shows live frame, navigation, CLS, INP, long-task, memory, and frontend worker telemetry for local development.
 - `src/components/wallpaperRuntime.tsx`
   Imported image/video wallpapers, authored live wallpaper modules, and theme-wallpaper selection helpers.
 - `src/runtime/pluginPanelRequests.ts`
@@ -204,6 +208,12 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - authored animation polling in `App.tsx`
   - explorer entry-size root watching in `FileExplorer.tsx`
 - `App.tsx` now also renders a fixed `DevPerformanceHud` in local development so frame and browser telemetry stay visible without a manual diagnostics toggle.
+- Frontend worker execution is now a first-class runtime lane instead of an ad hoc optimization:
+  - `src/runtime/workerHost.ts` is the only place that should create browser `Worker` instances for shared shell/runtime workloads
+  - runtime-authored module transpilation now uses the `runtime-module` worker lane, while final React/component materialization still stays on the main thread
+  - worker tasks must stay fully serializable; React elements, host APIs, DOM state, and Tauri handles must not cross the worker boundary
+  - worker lanes must always keep a safe fallback path so test mode, unsupported environments, or worker boot failures do not break plugin/theme/shader loading
+  - `DevPerformanceHud.tsx` now surfaces worker activity, fallback count, error count, and last-task duration so frontend threading changes are observable during local performance work
 - Managed content roots now split by runtime mode:
   - `tauri dev` keeps repo-relative `plugins/`, `themes/`, `shaders/`, `animations/`, `wallpapers/`, and `notes/` so authoring stays in the workspace
   - installed/release builds resolve those directories under Tauri `AppLocalData` instead of creating top-level `$HOME/plugins`, `$HOME/themes`, `$HOME/shaders`, `$HOME/animations`, `$HOME/wallpapers`, `$HOME/notes`, or `$HOME/Screenshots`
