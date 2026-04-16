@@ -254,9 +254,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src/components/explorer/ExplorerTaskStatusBadge.tsx` is now an explorer-local Task Center popover instead of a transient badge-only indicator, and it is intentionally scoped to the explorer chrome rather than a global shell panel
   - tags and saved searches live under Tauri app-local explorer metadata
   - trash currently uses a GreebleFS-managed trash root so restore locations stay deterministic across platforms
-- Explorer drag behavior now defaults to internal explorer transfers while keeping native export available:
-  - plain explorer drag stays inside the explorer so folder/file reorganization routes through the Rust-backed transfer pipeline
-  - `Shift` starts the native drag bridge for drag-out to the OS shell
+- Explorer drag behavior now defaults to native file export while keeping internal drop metadata available:
+  - plain explorer drag starts the native drag bridge and still publishes `application/x-overlayterm-paths` for in-app drops
+  - `Shift` forces an internal-only explorer drag
   - native drag previews use the dragged item's native icon when available, with a generated file-shaped fallback instead of the app icon
 - `ExplorerSideRail.tsx` is now navigator-first instead of bookmark-authoring-first:
   - the rail header foregrounds the current location and pinned-count summary

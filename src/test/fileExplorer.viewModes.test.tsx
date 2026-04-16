@@ -538,15 +538,42 @@ describe('FileExplorer view modes', () => {
   });
 
   it('renders grid thumbnails for visible image entries in icon layouts', async () => {
+    const clientWidthDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+    const clientHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get() {
+        return 1280;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+      configurable: true,
+      get() {
+        return 900;
+      },
+    });
     useSettingsStore.getState().updateExplorer({ viewMode: 'icons-l' });
 
-    renderExplorer();
-    await screen.findByAltText('Thumbnail for preview.png');
-    expect(vi.mocked(invoke)).toHaveBeenCalledWith('fs_read_image_thumbnail', {
-      path: `${REPO_ROOT}\\preview.png`,
-      maxWidth: 256,
-      maxHeight: 256,
-    });
+    try {
+      renderExplorer();
+      await screen.findByAltText('Thumbnail for preview.png');
+      expect(vi.mocked(invoke)).toHaveBeenCalledWith('fs_read_image_thumbnail', {
+        path: `${REPO_ROOT}\\preview.png`,
+        maxWidth: 256,
+        maxHeight: 256,
+      });
+    } finally {
+      if (clientWidthDescriptor) {
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', clientWidthDescriptor);
+      } else {
+        delete (HTMLElement.prototype as Partial<HTMLElement>).clientWidth;
+      }
+      if (clientHeightDescriptor) {
+        Object.defineProperty(HTMLElement.prototype, 'clientHeight', clientHeightDescriptor);
+      } else {
+        delete (HTMLElement.prototype as Partial<HTMLElement>).clientHeight;
+      }
+    }
   });
 
   it('renders a dedicated experimental modes button and menu next to the standard layout control', async () => {
@@ -667,7 +694,7 @@ describe('FileExplorer view modes', () => {
     });
   });
 
-  it('keeps plain drags internal for supported local entries', async () => {
+  it('starts the native drag bridge when no modifier is held for supported local entries', async () => {
     renderExplorer();
     const entry = await screen.findByText('notes.txt');
     const dataTransfer = createDataTransfer();
@@ -681,12 +708,12 @@ describe('FileExplorer view modes', () => {
 
     expect(dataTransfer.setData).toHaveBeenCalledWith(
       'application/x-overlayterm-drag-intent',
-      'internal',
+      'native-out',
     );
-    expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_start_native_file_drag')).toBe(false);
+    expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_start_native_file_drag')).toBe(true);
   });
 
-  it('starts the native drag bridge when shift is held for supported local entries', async () => {
+  it('keeps drag intent internal when shift is held', async () => {
     renderExplorer();
     const entry = await screen.findByText('notes.txt');
     const dataTransfer = createDataTransfer();
@@ -699,8 +726,10 @@ describe('FileExplorer view modes', () => {
     Object.defineProperty(event, 'shiftKey', { value: true });
     fireEvent(dragSource, event);
 
-    expect(dataTransfer.setData).toHaveBeenCalledWith('application/x-overlayterm-drag-intent', 'native-out');
-    expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_start_native_file_drag')).toBe(true);
+    expect(invoke).not.toHaveBeenCalledWith('fs_start_native_file_drag', {
+      paths: [`${REPO_ROOT}\\\\notes.txt`],
+    });
+    expect(dataTransfer.setData).toHaveBeenCalledWith('application/x-overlayterm-drag-intent', 'internal');
   });
 
 });

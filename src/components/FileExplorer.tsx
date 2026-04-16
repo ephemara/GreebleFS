@@ -644,7 +644,7 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
 }
 
 function resolveExplorerDragIntent(event: Pick<React.DragEvent, 'shiftKey'>): ExplorerDragIntent {
-  return event.shiftKey ? 'native-out' : 'internal';
+  return event.shiftKey ? 'internal' : 'native-out';
 }
 
 function resolveExplorerDropOperation(
@@ -5094,7 +5094,7 @@ export function FileExplorer({
       }
     }
     if (requestedDragIntent === 'native-out' && dragIntent === 'internal') {
-      setError('Native drag-out is only available for local filesystem items. Standard explorer drags still move or copy them internally.');
+      setError('Native drag-out is only available for local filesystem items. Cloud files still drag inside the explorer.');
     }
     e.dataTransfer.effectAllowed = dragIntent === 'native-out' ? 'copy' : 'copyMove';
   };
@@ -8901,9 +8901,13 @@ export function FileExplorer({
                             overflow: 'hidden',
                             flexShrink: 0,
                             borderRadius: thumbnailSrc ? Math.max(10, Math.round(activeGridMetrics.tileRadius * 0.72)) : undefined,
-                            border: thumbnailSrc ? `1px solid ${alphaColor(EXP.border, isSel ? 0.52 : 0.28)}` : undefined,
-                            background: thumbnailSrc ? alphaColor(EXP.panel, isSel ? 0.58 : 0.84) : undefined,
-                            boxShadow: thumbnailSrc ? `inset 0 1px 0 ${alphaColor('#ffffff', 0.06)}` : undefined,
+                            border: thumbnailSrc ? '1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)' : undefined,
+                            background: thumbnailSrc
+                              ? (isSel
+                                  ? 'color-mix(in srgb, var(--overlay-bg-selection) 72%, var(--overlay-bg-panel))'
+                                  : 'color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)')
+                              : undefined,
+                            boxShadow: thumbnailSrc ? 'inset 0 1px 0 color-mix(in srgb, white 8%, transparent)' : undefined,
                             transition: 'width 0.18s cubic-bezier(0.22, 1, 0.36, 1), height 0.18s cubic-bezier(0.22, 1, 0.36, 1)',
                           }}
                         >

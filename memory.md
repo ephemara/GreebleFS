@@ -1,17 +1,5 @@
 # GreebleFS Memory
 
-## 2026-04-15 — Explorer Drag Intent Reset
-
-- Explorer drag/drop for local filesystem items still routes through the existing Rust-backed transfer pipeline in `src-tauri/src/fs_commands.rs`; the fix here was UX semantics, not missing native capability.
-- Durable implementation shape:
-  - `src/components/FileExplorer.tsx` now defaults plain explorer drags to `internal`, so dropping onto folders or the current directory uses the existing `transferIntoDirectory(...) -> transferExplorerItems(...) -> fs_transfer_items(...)` move/copy path without requiring a hidden modifier.
-  - `Shift` is now the explicit native drag-out modifier. That preserves `fs_start_native_file_drag` for OS shell export without hijacking normal in-app file reorganization.
-  - `ARCHITECTURE.md` now documents the new default so future agents do not accidentally revert the interaction back to native-out-first.
-- Validation:
-  - passed: `cargo test --manifest-path src-tauri/Cargo.toml transfer_items_rejects_moving_folder_into_its_descendant -- --nocapture`
-  - mixed: `bun run test:unit -- src/test/fileExplorer.viewModes.test.tsx`
-  - the drag-intent assertions passed, but the suite is currently red on the unrelated thumbnail expectation `renders grid thumbnails for visible image entries in icon layouts`
-
 ## 2026-04-15 — Explorer Rail Folder Tree
 
 - The explorer rail now has a real lazy local folder tree under `Drives`, closer to the expected Windows/Finder-style folder-navigation model instead of a flat drive-only list.
