@@ -1,8 +1,10 @@
 #[cfg(target_os = "linux")]
-use std::{env, sync::mpsc};
+use std::sync::mpsc;
 
 use specta::Type;
 use tauri::{AppHandle, Manager, WebviewWindow};
+
+use crate::linux_graphics::{current_linux_display_backend, LinuxDisplayBackend};
 
 #[cfg(target_os = "linux")]
 use tauri::{WebviewUrl, WebviewWindowBuilder};
@@ -246,10 +248,7 @@ where
 
 #[cfg(target_os = "linux")]
 fn is_wayland_session() -> bool {
-    env::var_os("WAYLAND_DISPLAY").is_some()
-        || env::var("XDG_SESSION_TYPE")
-            .map(|value| value.eq_ignore_ascii_case("wayland"))
-            .unwrap_or(false)
+    current_linux_display_backend() == Some(LinuxDisplayBackend::Wayland)
 }
 
 #[cfg(not(target_os = "linux"))]

@@ -963,6 +963,29 @@ function App() {
   }, [currentWindowHostRole, updateSystem]);
 
   useEffect(() => {
+    if (currentWindowHostRole === DOCK_WINDOW_HOST_LABEL || runtimePlatform !== 'linux') {
+      return;
+    }
+
+    let cancelled = false;
+
+    commands.startupGetLinuxDisplayBackendStatus()
+      .then(unwrapTauriResult)
+      .then(status => {
+        if (!cancelled) {
+          updateSystem({ linuxDisplayBackendPreference: status.preferredBackend });
+        }
+      })
+      .catch(error => {
+        console.warn('OverlayTerm: failed to sync Linux display backend preference', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentWindowHostRole, runtimePlatform, updateSystem]);
+
+  useEffect(() => {
     if (!isTauri()) {
       setDesktopPresentationSynced(true);
       return;

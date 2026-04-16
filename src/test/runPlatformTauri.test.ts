@@ -73,7 +73,31 @@ describe('buildLinuxGraphicsEnvironment', () => {
     })).toEqual({});
   });
 
-  it('derives a wayland backend when the session advertises wayland', () => {
+  it('leaves backend selection to Rust when both Wayland and X11 are available', () => {
+    expect(buildLinuxGraphicsEnvironment({
+      tauriCommand: 'dev',
+      platform: 'linux',
+      existingEnv: {
+        DISPLAY: ':0',
+        WAYLAND_DISPLAY: 'wayland-0',
+        XDG_SESSION_TYPE: 'wayland',
+      },
+    })).toEqual({});
+  });
+
+  it('respects explicit app backend overrides without forcing GDK_BACKEND', () => {
+    expect(buildLinuxGraphicsEnvironment({
+      tauriCommand: 'dev',
+      platform: 'linux',
+      existingEnv: {
+        DISPLAY: ':0',
+        WAYLAND_DISPLAY: 'wayland-0',
+        GREEBLEFS_LINUX_DISPLAY_BACKEND: 'x11',
+      },
+    })).toEqual({});
+  });
+
+  it('pins the only available Linux backend when no fallback path exists', () => {
     expect(buildLinuxGraphicsEnvironment({
       tauriCommand: 'dev',
       platform: 'linux',

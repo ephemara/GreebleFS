@@ -87,16 +87,23 @@ export function buildLinuxGraphicsEnvironment({
     return {};
   }
 
+  if (
+    hasExplicitEnvValue(existingEnv.GREEBLEFS_LINUX_DISPLAY_BACKEND)
+    || hasExplicitEnvValue(existingEnv.OVERLAYTERM_LINUX_DISPLAY_BACKEND)
+  ) {
+    return {};
+  }
+
   if (sessionType === "wayland" && hasWaylandDisplay) {
-    return { GDK_BACKEND: "wayland" };
+    return hasDisplay ? {} : { GDK_BACKEND: "wayland" };
   }
 
   if (sessionType === "x11" && hasDisplay) {
-    return { GDK_BACKEND: "x11" };
+    return hasWaylandDisplay ? {} : { GDK_BACKEND: "x11" };
   }
 
   if (hasWaylandDisplay && hasDisplay) {
-    return { GDK_BACKEND: "wayland,x11" };
+    return {};
   }
 
   if (hasWaylandDisplay) {

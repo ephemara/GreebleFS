@@ -109,6 +109,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.system.launchAtStartup).toBe(false);
     expect(settings.system.hideAppInTray).toBe(true);
     expect(settings.system.showInTaskbar).toBe(true);
+    expect(settings.system.linuxDisplayBackendPreference).toBe('auto');
   });
 
   it('has the correct default hotkey settings', () => {
@@ -399,6 +400,16 @@ describe('useSettingsStore.updateSystem()', () => {
     store.updateSystem({ showInTaskbar: false });
     expect(useSettingsStore.getState().settings.system.hideAppInTray).toBe(true);
     expect(useSettingsStore.getState().settings.system.showInTaskbar).toBe(false);
+  });
+
+  it('stores a normalized Linux display backend preference', () => {
+    const store = useSettingsStore.getState();
+
+    store.updateSystem({ linuxDisplayBackendPreference: 'x11' });
+    expect(useSettingsStore.getState().settings.system.linuxDisplayBackendPreference).toBe('x11');
+
+    store.updateSystem({ linuxDisplayBackendPreference: 'invalid' as never });
+    expect(useSettingsStore.getState().settings.system.linuxDisplayBackendPreference).toBe('auto');
   });
 });
 

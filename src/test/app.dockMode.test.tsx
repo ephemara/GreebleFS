@@ -140,6 +140,13 @@ vi.mock('../runtime/tauriClient', () => ({
     }),
     fsWriteFile: vi.fn(async () => undefined),
     startupGetLaunchAtStartup: vi.fn(async () => false),
+    startupGetLinuxDisplayBackendStatus: vi.fn(async () => ({
+      availableBackends: ['x11'],
+      sessionBackend: 'x11',
+      activeBackend: 'x11',
+      preferredBackend: 'auto',
+      autoX11FallbackActive: false,
+    })),
     traySetVisible: vi.fn(async () => undefined),
     terminalOpenExternal: vi.fn(async () => undefined),
     windowApplyMode: vi.fn(async () => undefined),
@@ -218,6 +225,13 @@ describe('App dock mode behavior', () => {
     vi.mocked(commands.windowApplyMode).mockClear();
     vi.mocked(commands.windowApplyWaylandDockLayout).mockClear();
     vi.mocked(commands.windowSetTaskbarVisibility).mockClear();
+    vi.mocked(commands.startupGetLinuxDisplayBackendStatus).mockResolvedValue({
+      availableBackends: ['x11'],
+      sessionBackend: 'x11',
+      activeBackend: 'x11',
+      preferredBackend: 'auto',
+      autoX11FallbackActive: false,
+    });
     vi.mocked(commands.windowGetLinuxDisplayServer).mockResolvedValue('x11');
     vi.mocked(commands.windowGetWaylandDockHostStatus).mockResolvedValue({ enabled: false, windowLabel: null });
     setWindowMode('windowed');

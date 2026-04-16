@@ -115,7 +115,12 @@ import type {
 } from '../config/pluginContributions';
 import { useSettingsStore, resolveSystemPresentationState, type TerminalWindowMode } from '../store/settingsStore';
 import { useTerminalStore } from '../store/terminalStore';
-import { commands, unwrapTauriResult } from '../runtime/tauriClient';
+import {
+  commands,
+  unwrapTauriResult,
+  type LinuxDisplayBackendPreference,
+  type LinuxDisplayBackendStatus,
+} from '../runtime/tauriClient';
 
 function ThemeBadge({ label, active = false }: { label: string; active?: boolean }) {
   return (
@@ -947,6 +952,9 @@ export function SettingsPage({
   const [activeSection, setActiveSection] = useState<SettingsSectionKey>('overview');
   const [startupSyncPending, setStartupSyncPending] = useState(false);
   const [startupSyncError, setStartupSyncError] = useState<string | null>(null);
+  const [linuxDisplayBackendSyncPending, setLinuxDisplayBackendSyncPending] = useState(false);
+  const [linuxDisplayBackendSyncError, setLinuxDisplayBackendSyncError] = useState<string | null>(null);
+  const [linuxDisplayBackendStatus, setLinuxDisplayBackendStatus] = useState<LinuxDisplayBackendStatus | null>(null);
   const [overviewNotice, setOverviewNotice] = useState<string | null>(null);
   const [overviewError, setOverviewError] = useState<string | null>(null);
   const [cloudSnapshot, setCloudSnapshot] = useState<ExplorerCloudAccountsSnapshot>(EMPTY_CLOUD_ACCOUNTS_SNAPSHOT);
@@ -963,6 +971,44 @@ export function SettingsPage({
   const [wallpaperImportError, setWallpaperImportError] = useState<string | null>(null);
   const [layoutManifestState, setLayoutManifestState] = useState<LoadedLayoutManifest>(DEFAULT_LOADED_LAYOUT_MANIFEST);
   const [railWidth, setRailWidth] = usePersistentPanelSize('overlayterm-settings-rail-width', 236, 190, 320);
+  const availableLinuxDisplayBackends = linuxDisplayBackendStatus?.availableBackends ?? [];
+  const linuxDisplayBackendStatusSummary = useMemo(() => {
+    if (platform !== 'linux') {
+      return null;
+    }
+
+    if (linuxDisplayBackendSyncPending && linuxDisplayBackendStatus == null) {
+      return 'Reading Linux display backend status...';
+    }
+
+    if (linuxDisplayBackendSyncError) {
+      return `Linux display backend sync failed: ${linuxDisplayBackendSyncError}`;
+    }
+
+    if (linuxDisplayBackendStatus == null) {
+      return 'Linux display backend status is unavailable.';
+    }
+
+    const availableBackendsLabel = availableLinuxDisplayBackends.length > 0
+      ? availableLinuxDisplayBackends.join(', ')
+      : 'none detected';
+
+    return [
+      `session ${linuxDisplayBackendStatus.sessionBackend ?? 'unknown'}`,
+      `active backend ${linuxDisplayBackendStatus.activeBackend ?? 'unknown'}`,
+      `available launch backends ${availableBackendsLabel}`,
+      linuxDisplayBackendStatus.autoX11FallbackActive
+        ? 'auto X11 fallback active for NVIDIA/WebKit'
+        : 'auto fallback inactive',
+      'restart required after changes',
+    ].join(' · ');
+  }, [
+    availableLinuxDisplayBackends,
+    linuxDisplayBackendStatus,
+    linuxDisplayBackendSyncError,
+    linuxDisplayBackendSyncPending,
+    platform,
+  ]);
   const wallpaperFileInputRef = useRef<HTMLInputElement | null>(null);
   const contextMenuCatalog = useMemo(
     () => sortExplorerContextMenuItems(
@@ -1705,6 +1751,45 @@ export function SettingsPage({
     }
   }, [updateSystem]);
 
+  useEffect(() => {
+    if (platform !== 'linux') {
+      setLinuxDisplayBackendStatus(null);
+      setLinuxDisplayBackendSyncPending(false);
+      setLinuxDisplayBackendSyncError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setLinuxDisplayBackendSyncPending(true);
+    setLinuxDisplayBackendSyncError(null);
+
+    commands.startupGetLinuxDisplayBackendStatus()
+      .then(unwrapTauriResult)
+      .then(status => {
+        if (cancelled) {
+          return;
+        }
+
+        setLinuxDisplayBackendStatus(status);
+        updateSystem({ linuxDisplayBackendPreference: status.preferredBackend });
+      })
+      .catch(error => {
+        if (!cancelled) {
+          setLinuxDisplayBackendStatus(null);
+          setLinuxDisplayBackendSyncError(String(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLinuxDisplayBackendSyncPending(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [platform, updateSystem]);
+
   const setHideAppInTray = useCallback((enabled: boolean) => {
     updateSystem({
       hideAppInTray: enabled,
@@ -1717,6 +1802,22 @@ export function SettingsPage({
       showInTaskbar: enabled,
       ...(enabled ? {} : { hideAppInTray: true }),
     });
+  }, [updateSystem]);
+
+  const setLinuxDisplayBackendPreference = useCallback(async (preferredBackend: LinuxDisplayBackendPreference) => {
+    setLinuxDisplayBackendSyncPending(true);
+    setLinuxDisplayBackendSyncError(null);
+    try {
+      const nextStatus = await commands
+        .startupSetLinuxDisplayBackendPreference(preferredBackend)
+        .then(unwrapTauriResult);
+      setLinuxDisplayBackendStatus(nextStatus);
+      updateSystem({ linuxDisplayBackendPreference: nextStatus.preferredBackend });
+    } catch (error) {
+      setLinuxDisplayBackendSyncError(String(error));
+    } finally {
+      setLinuxDisplayBackendSyncPending(false);
+    }
   }, [updateSystem]);
 
   const setShaderControlValue = useCallback((
@@ -3603,12 +3704,46 @@ export function SettingsPage({
                   onChange={event => updateSystem({ developerMode: event.target.checked })}
                 />
               </label>
+              {platform === 'linux' && (
+                <label className="flex items-center justify-between gap-4 rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                  <div className="min-w-0">
+                    <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Linux Display Backend</div>
+                    <p className="mt-1 text-[11px] opacity-40">
+                      Chooses whether GreebleFS launches through Auto selection, X11 fallback, or native Wayland. Auto will switch to X11 on NVIDIA Wayland sessions when XWayland is available.
+                    </p>
+                  </div>
+                  <select
+                    aria-label="Linux Display Backend"
+                    value={settings.system.linuxDisplayBackendPreference}
+                    disabled={linuxDisplayBackendSyncPending}
+                    onChange={event => void setLinuxDisplayBackendPreference(
+                      event.target.value as LinuxDisplayBackendPreference,
+                    )}
+                    className="min-w-[140px] rounded border bg-transparent px-2 py-1 text-[11px]"
+                    style={{ borderColor: border, color: text }}
+                  >
+                    <option value="auto">Auto</option>
+                    <option
+                      value="x11"
+                      disabled={linuxDisplayBackendStatus != null && !availableLinuxDisplayBackends.includes('x11')}
+                    >
+                      X11
+                    </option>
+                    <option
+                      value="wayland"
+                      disabled={linuxDisplayBackendStatus != null && !availableLinuxDisplayBackends.includes('wayland')}
+                    >
+                      Wayland
+                    </option>
+                  </select>
+                </label>
+              )}
               <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: startupSyncError ? '#fda4af' : muted }}>
                 {startupSyncPending
                   ? 'Updating OS startup registration...'
                   : startupSyncError
                     ? `Startup registration failed: ${startupSyncError}`
-                  : `Current status: startup ${settings.system.launchAtStartup ? 'enabled' : 'disabled'} · tray ${systemPresentationState.trayVisible ? 'enabled' : 'disabled'} · ${platform === 'macos' ? 'Dock' : 'taskbar'} ${systemPresentationState.taskbarVisible ? 'enabled' : 'disabled'} · recovery path ${systemPresentationState.recoveryPath === 'tray' ? (platform === 'macos' ? 'Dock' : 'tray') : platform === 'macos' ? 'Dock' : 'taskbar'} · developer mode ${settings.system.developerMode ? 'enabled' : 'disabled'}`}
+                  : `Current status: startup ${settings.system.launchAtStartup ? 'enabled' : 'disabled'} · tray ${systemPresentationState.trayVisible ? 'enabled' : 'disabled'} · ${platform === 'macos' ? 'Dock' : 'taskbar'} ${systemPresentationState.taskbarVisible ? 'enabled' : 'disabled'} · recovery path ${systemPresentationState.recoveryPath === 'tray' ? (platform === 'macos' ? 'Dock' : 'tray') : platform === 'macos' ? 'Dock' : 'taskbar'} · developer mode ${settings.system.developerMode ? 'enabled' : 'disabled'}${platform === 'linux' && linuxDisplayBackendStatusSummary ? ` · ${linuxDisplayBackendStatusSummary}` : ''}`}
               </div>
             </div>
           </section>

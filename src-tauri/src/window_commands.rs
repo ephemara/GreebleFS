@@ -1,5 +1,6 @@
 use tauri::{AppHandle, PhysicalPosition, PhysicalSize, WebviewWindow};
 
+use crate::linux_graphics::{current_linux_display_backend, LinuxDisplayBackend};
 use crate::wayland_dock::{
     apply_wayland_dock_layout, wayland_dock_host_status, WaylandDockAnchor, WaylandDockHostStatus,
 };
@@ -86,7 +87,7 @@ pub fn tray_set_visible(app: AppHandle, visible: bool) -> Result<(), String> {
 #[tauri::command]
 #[specta::specta]
 pub fn window_get_linux_display_server() -> Option<String> {
-    detect_linux_display_server().map(str::to_string)
+    current_linux_display_backend().map(|backend| backend.as_label().to_string())
 }
 
 #[tauri::command]
@@ -209,23 +210,11 @@ fn log_optional_window_error<T, E: std::fmt::Display>(result: Result<T, E>, oper
 
 #[cfg(target_os = "linux")]
 pub fn detect_linux_display_server() -> Option<&'static str> {
-    if std::env::var_os("WAYLAND_DISPLAY").is_some()
-        || std::env::var("XDG_SESSION_TYPE")
-            .map(|value| value.eq_ignore_ascii_case("wayland"))
-            .unwrap_or(false)
-    {
-        return Some("wayland");
+    match current_linux_display_backend() {
+        Some(LinuxDisplayBackend::Wayland) => Some("wayland"),
+        Some(LinuxDisplayBackend::X11) => Some("x11"),
+        None => None,
     }
-
-    if std::env::var_os("DISPLAY").is_some()
-        || std::env::var("XDG_SESSION_TYPE")
-            .map(|value| value.eq_ignore_ascii_case("x11"))
-            .unwrap_or(false)
-    {
-        return Some("x11");
-    }
-
-    None
 }
 
 #[cfg(not(target_os = "linux"))]

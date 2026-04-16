@@ -379,12 +379,14 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `bun run tauri dev` uses the generated runtime Tauri config from `scripts/run-platform-tauri.mjs`, which points Tauri at the Vite `devUrl`. TS/React edits hot-reload through Vite during that session, but binding generation and startup prep scripts only rerun when the Tauri dev process starts.
 - Linux NVIDIA/WebKitGTK launch stability now has a native pre-Tauri guard in `src-tauri/src/linux_graphics.rs`:
   - it runs before `tauri::Builder::default()` so both dev and installed binaries inherit the workaround
+  - it now owns Linux backend selection too: `Auto`, `X11`, or `Wayland` can be persisted in `~/.config/GreebleFS/startup-preferences.json`, while `GREEBLEFS_LINUX_DISPLAY_BACKEND` / `OVERLAYTERM_LINUX_DISPLAY_BACKEND` and `GDK_BACKEND` still override from the shell
+  - in `Auto`, NVIDIA Wayland sessions that also expose X11 now fall back to `GDK_BACKEND=x11` before WebKit boots, so XWayland is used for the risky WebKit/NVIDIA path instead of native Wayland
   - when the active Linux backend resolves to Wayland on an NVIDIA system, it sets both `WEBKIT_DISABLE_DMABUF_RENDERER=1` and `__NV_DISABLE_EXPLICIT_SYNC=1`
   - when the active Linux backend resolves to X11 on an NVIDIA system, it sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`
   - explicit user-provided values for those environment variables are respected
   - if Linux launch regresses with `libEGL`, `driver (null)`, `failed to create dri2 screen`, blank WebKit surfaces, or Wayland protocol errors on NVIDIA, inspect that helper before changing shell/UI code
 - Wayland overlay handling is now compositor-preserving instead of backend-forcing:
-  - `window_get_linux_display_server()` exposes whether the Linux session is running on Wayland or X11
+  - `window_get_linux_display_server()` now reports the app's resolved backend, not just the raw compositor session, so X11 fallback and the Wayland dock host stay in sync
   - overlay `Ctrl+Space` reopen on Wayland now avoids reapplying dock geometry during the hidden-to-visible transition so manual compositor snaps can survive hide/show
   - `isFreefloatingRef` is now set on real overlay move/resize events so reopened overlay sessions can reuse the last compositor-managed bounds instead of recomputing from a fresh dock anchor every time
 - Do not try to fix Wayland dock centering by adding more `set_position` / `set_outer_position` retries to the normal app window path. The durable fix is the separate layer-shell dock host in `src-tauri/src/wayland_dock.rs`; if dock mode recenters again, inspect host routing in `src/runtime/windowHost.ts` and `App.tsx` before touching generic window geometry.

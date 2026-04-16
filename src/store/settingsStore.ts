@@ -180,6 +180,7 @@ export interface SystemSettings {
   hideAppInTray: boolean;
   showInTaskbar: boolean;
   developerMode: boolean;
+  linuxDisplayBackendPreference: LinuxDisplayBackendPreference;
 }
 
 export interface ScreenshotSettings {
@@ -192,6 +193,7 @@ export interface ScreenshotSettings {
 
 export type KeybindingSettings = HotkeyBindingSettings;
 export type DockThemeMode = 'follow-app' | 'override';
+export type LinuxDisplayBackendPreference = 'auto' | 'wayland' | 'x11';
 
 export interface PolyGeminiSettings {
   serverUrl: string;
@@ -266,6 +268,10 @@ export function normalizeTerminalWindowMode(value: unknown): TerminalWindowMode 
 
 export function normalizeDockThemeMode(value: unknown): DockThemeMode {
   return value === 'override' ? 'override' : 'follow-app';
+}
+
+export function normalizeLinuxDisplayBackendPreference(value: unknown): LinuxDisplayBackendPreference {
+  return value === 'wayland' || value === 'x11' ? value : 'auto';
 }
 
 export function normalizeExplorerFolderClickMode(value: unknown): ExplorerFolderClickMode {
@@ -428,6 +434,9 @@ export function normalizeSystemSettings(
     hideAppInTray: merged.hideAppInTray !== false,
     showInTaskbar: Boolean(merged.showInTaskbar),
     developerMode: Boolean(merged.developerMode),
+    linuxDisplayBackendPreference: normalizeLinuxDisplayBackendPreference(
+      merged.linuxDisplayBackendPreference,
+    ),
   };
 
   const hideAppInTrayUpdated = updates != null && Object.prototype.hasOwnProperty.call(updates, 'hideAppInTray');
@@ -660,6 +669,7 @@ export const defaultSettings: Settings = {
     hideAppInTray: true,
     showInTaskbar: true,
     developerMode: false,
+    linuxDisplayBackendPreference: 'auto',
   },
   screenshots: {
     saveDirectory: screenshotFeatureConfig.defaultSaveDirectory,

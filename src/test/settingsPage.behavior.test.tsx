@@ -471,6 +471,58 @@ describe('SettingsPage behavior', () => {
     });
   }, 30000);
 
+  it('syncs and updates the Linux display backend preference through the native startup config', async () => {
+    const user = userEvent.setup();
+    const invokeMock = vi.mocked(invoke);
+    let preferredBackend: 'auto' | 'x11' | 'wayland' = 'auto';
+
+    Object.defineProperty(navigator, 'platform', {
+      configurable: true,
+      value: 'Linux x86_64',
+    });
+
+    invokeMock.mockImplementation(async (command: string, args: unknown) => {
+      if (command === 'startup_get_linux_display_backend_status') {
+        return {
+          availableBackends: ['wayland', 'x11'],
+          sessionBackend: 'wayland',
+          activeBackend: 'x11',
+          preferredBackend,
+          autoX11FallbackActive: true,
+        };
+      }
+
+      if (command === 'startup_set_linux_display_backend_preference') {
+        preferredBackend = ((args as { preferredBackend?: typeof preferredBackend } | undefined)?.preferredBackend ?? 'auto');
+        return {
+          availableBackends: ['wayland', 'x11'],
+          sessionBackend: 'wayland',
+          activeBackend: preferredBackend === 'wayland' ? 'wayland' : 'x11',
+          preferredBackend,
+          autoX11FallbackActive: preferredBackend === 'auto',
+        };
+      }
+
+      return null;
+    });
+
+    renderSettingsPage();
+
+    await user.click(findSectionButton('System'));
+    const backendSelect = await screen.findByLabelText('Linux Display Backend');
+    expect((backendSelect as HTMLSelectElement).value).toBe('auto');
+    expect(screen.getByText(/auto X11 fallback active/i)).toBeInTheDocument();
+
+    await user.selectOptions(backendSelect, 'wayland');
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.system.linuxDisplayBackendPreference).toBe('wayland');
+    });
+    expect(invokeMock).toHaveBeenCalledWith('startup_set_linux_display_backend_preference', {
+      preferredBackend: 'wayland',
+    });
+  });
+
   it('switches the terminal between application and dock presentation and persists the windowed size', async () => {
     const user = userEvent.setup();
 

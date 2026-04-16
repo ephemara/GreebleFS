@@ -2,6 +2,11 @@ import { invoke } from '@tauri-apps/api/core';
 import * as tauriBindings from '../generated/tauri';
 import type { Result } from '../generated/tauri';
 
+export type {
+  LinuxDisplayBackendPreference,
+  LinuxDisplayBackendStatus,
+} from '../generated/tauri';
+
 export interface WaylandDockHostStatus {
   enabled: boolean;
   windowLabel: string | null;

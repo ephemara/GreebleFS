@@ -1,5 +1,23 @@
 # GreebleFS Memory
 
+## 2026-04-16 — Shell-Native Dialog Cleanup
+
+- Browser-native `window.prompt` / `window.confirm` / `window.alert` usage has been removed from the shipped React shell surfaces so the app no longer leaks `localhost says`-style browser chrome into premium workflows.
+- Durable implementation shape:
+  - `src/components/AppModal.tsx` is the shared shell-native modal primitive for prompt and confirm flows. New shell dialogs should route through it instead of calling browser APIs directly.
+  - Explorer tag actions now use the in-app prompt flow instead of browser prompts:
+    - `Add Tags...`
+    - `Remove Tags...`
+    - toolbar `Tag`
+  - Source Control repo-path entry and destructive file/conflict confirmations now use the shared in-app modal flow instead of browser prompt/confirm behavior.
+  - Screenshot-library deletion now uses the shared in-app confirmation flow instead of browser confirm.
+  - Theme JSON import failures now stay inline inside `SettingsPage.tsx` instead of opening a browser alert.
+- Durable operator note:
+  - future shell work should treat browser-native dialogs as a regression. If a workflow needs input or confirmation, it belongs in the app visual system.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx src/test/gitManager.behavior.test.tsx src/test/screenshotsManager.test.tsx src/test/settingsPage.behavior.test.tsx`
+  - passed: filtered typecheck for touched shell/dialog surfaces via `bunx tsc --noEmit --skipLibCheck --pretty false 2>&1 | rg "AppModal|FileExplorer|GitManager|ScreenshotsManager|SettingsPage|fileExplorer.viewModes|gitManager.behavior|screenshotsManager|settingsPage.behavior" || true`
+
 ## 2026-04-16 — Native Archive Open / Extract Pass
 
 - Local archive files are now a first-class explorer workflow instead of always falling back to the OS shell.
@@ -32,10 +50,13 @@
 - GreebleFS now applies a native Linux NVIDIA WebKitGTK workaround before Tauri boot so the app can recover from the recent `libEGL` / `driver (null)` / `failed to create dri2 screen` startup failures that were blocking launch on the Linux workstation.
 - Durable implementation shape:
   - `src-tauri/src/linux_graphics.rs` is the new native startup helper. It resolves the effective Linux display backend from `GDK_BACKEND`, `XDG_SESSION_TYPE`, `WAYLAND_DISPLAY`, and `DISPLAY`, then checks for an NVIDIA primary GPU or loaded NVIDIA kernel modules through sysfs.
+  - The helper now also persists a Linux startup backend preference in `~/.config/GreebleFS/startup-preferences.json` and honors `Auto`, `X11`, or `Wayland`, with legacy `OverlayTerm` config/env names still accepted on read.
+  - `Auto` now deliberately falls back to `GDK_BACKEND=x11` on NVIDIA Wayland sessions when `DISPLAY` is available, so the app can launch through XWayland instead of staying on the fragile native Wayland WebKit path.
   - Wayland + NVIDIA now sets both `WEBKIT_DISABLE_DMABUF_RENDERER=1` and `__NV_DISABLE_EXPLICIT_SYNC=1` before `tauri::Builder::default()`.
   - X11 + NVIDIA now sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` before `tauri::Builder::default()`.
   - Explicit user-provided env overrides are preserved, so operators can still force or disable these knobs outside the app when debugging.
   - `src-tauri/src/lib.rs` now calls the helper at the top of `run()`, making the workaround apply to both `bun run tauri dev` and installed release binaries instead of depending on shell wrappers.
+  - `src-tauri/src/startup_commands.rs`, `src/App.tsx`, `src/components/SettingsPage.tsx`, and `src/store/settingsStore.ts` now expose a Linux-only startup toggle so the UI can switch between `Auto`, `X11`, and `Wayland` for the next launch instead of relying on manual shell env exports.
 - Durable operator note:
   - Local evidence on the current Linux workstation showed NVIDIA `580.126.09` with `eglinfo -B` succeeding on GBM/surfaceless but failing on Wayland/X11 platform init, which matches the class of WebKitGTK + NVIDIA launch failures this guard targets.
   - This shell session had no active `DISPLAY` or `WAYLAND_DISPLAY`, so no GUI smoke launch was possible here; proof for this pass is compile/test coverage plus the native startup placement.
