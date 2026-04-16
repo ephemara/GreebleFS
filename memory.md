@@ -1,5 +1,28 @@
 # GreebleFS Memory
 
+## 2026-04-16 — Native Dual-Deck Explorer Audio Engine
+
+- Explorer audio preview no longer routes through the webview media stack. The preview pane is now a React transport UI over a native Rust engine.
+- Durable implementation shape:
+  - `src-tauri/src/audio_engine.rs` is the native realtime playback subsystem. It owns the default output device stream through `cpal`, clip decode through `symphonia`, sample-rate conversion through `rubato`, deck mixing, loop smoothing, gain/rate transport state, and the `AudioEngineStateEvent` feed exported through Specta.
+  - The engine is explicitly dual-deck: `A` and `B`. Explorer selection loads into the currently armed deck, while the non-armed deck stays loaded until explicitly replaced or cleared.
+  - `src/runtime/audioWorkbenchBackend.ts` now exposes explicit engine commands and event subscription helpers. The old preview-source/proxy APIs were removed from the public TS bridge.
+  - `src/store/audioEngineStore.ts` is now the shell-side audio engine source of truth. It hydrates the engine, subscribes to `AudioEngineStateEvent`, and provides the deck transport helpers used by the workbench.
+  - `src/components/ExplorerAudioWorkbench.tsx` was rewritten to remove the `<audio>` element path. It now renders dual deck cards, armed-deck behavior, native transport buttons, gain/rate meters, shared waveform loop selection, analysis cards, spectral profile, and the existing SoX offline export/spectrogram flow.
+  - `src/components/FileExplorer.tsx` still routes previewable audio into the workbench, but preview now means “load the current selection into the native engine” rather than “attach a browser media source”.
+  - `src-tauri/src/audio_commands.rs` still owns offline-only audio work: analysis, SoX export/convert/normalize, batch processing, and explorer task integration. Preview-proxy/browser-playback commands and types were removed.
+- Durable product note:
+  - audio playback should stay native. Do not reintroduce HTML media elements or preview proxies as the primary playback path for explorer audio.
+  - SoX is now a static utility knife, not the transport engine.
+  - `ffmpeg` still matters as a codec bridge for offline transforms when vendored SoX cannot read or write a target format on a given OS.
+- Validation:
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml`
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml audio_engine -- --nocapture`
+  - passed: `bunx vitest run src/test/explorerAudioWorkbench.test.tsx src/test/filePreview.test.ts src/test/fileExplorer.viewModes.test.tsx`
+  - passed: filtered full-project typecheck grep for touched audio files via `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "ExplorerAudioWorkbench|audioWorkbenchBackend|audioEngineStore|src/generated/tauri.ts|FileExplorer.tsx|explorerAudioWorkbench.test.tsx"`
+  - note: the repo still has unrelated project-wide TypeScript failures outside the audio lane, so the useful TS signal is the filtered grep, not a clean repo-wide `tsc` exit code.
+
 ## 2026-04-16 — Explorer Navigation Commit Smoothing
 
 - Folder-to-folder movement in the flagship explorer should now feel materially less glitchy because the file area no longer hard-blanks itself while every navigation is in flight.

@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -9,19 +9,20 @@ use std::time::Duration;
 use arc_swap::ArcSwapOption;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, Sample, SizedSample, StreamConfig};
-use rubato::{FftFixedInOut, Resampler};
+use rubato::audioadapter_buffers::direct::InterleavedSlice;
+use rubato::{Fft, FixedSync, Resampler};
 use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
 use serde::{Deserialize, Serialize};
-use symphonia::core::audio::{AudioBufferRef, SampleBuffer};
-use symphonia::core::codecs::{CodecParameters, DecoderOptions};
+use symphonia::core::audio::SampleBuffer;
+use symphonia::core::codecs::DecoderOptions;
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::{FormatOptions, Track};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::default::{get_codecs, get_probe};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_specta::Event;
 
 use crate::audio_commands::{AudioPreviewAnalysis, AudioWaveformBucket};
@@ -31,6 +32,7 @@ const LOOP_CROSSFADE_FRAMES: usize = 128;
 const MIN_LOOP_DURATION_SECONDS: f64 = 0.05;
 const DEFAULT_GAIN_LINEAR: f64 = 1.0;
 const DEFAULT_RATE: f64 = 1.0;
+const DEFAULT_ANALYSIS_WAVEFORM_BUCKET_COUNT: usize = 160;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -403,11 +405,8 @@ fn ensure_audio_engine_shared(app: &AppHandle) -> Result<Arc<AudioEngineSharedSt
 
 fn existing_audio_engine_shared(app: &AppHandle) -> Option<Arc<AudioEngineSharedState>> {
     let manager = app.state::<AudioEngineManager>();
-    manager
-        .runtime
-        .lock()
-        .ok()
-        .and_then(|runtime| runtime.as_ref().map(|value| value.shared.clone()))
+    let runtime = manager.runtime.lock().ok()?;
+    runtime.as_ref().map(|value| value.shared.clone())
 }
 
 fn build_audio_engine_runtime(app: &AppHandle) -> Result<AudioEngineRuntimeHost, String> {
@@ -419,10 +418,11 @@ fn build_audio_engine_runtime(app: &AppHandle) -> Result<AudioEngineRuntimeHost,
         .default_output_config()
         .map_err(|error| format!("Failed to query default audio output config: {error}"))?;
     let sample_format = supported_config.sample_format();
+    let output_sample_rate_hz = supported_config.sample_rate();
     let stream_config: StreamConfig = supported_config.config();
     let shared = Arc::new(AudioEngineSharedState::new(
         app.clone(),
-        stream_config.sample_rate.0,
+        output_sample_rate_hz,
         stream_config.channels,
     ));
     let error_shared = shared.clone();
@@ -482,8 +482,8 @@ where
     T: Sample + FromSample<f32>,
 {
     let mut contexts = [
-        DeckRenderContext::from_runtime(&shared.decks[0], output_channels),
-        DeckRenderContext::from_runtime(&shared.decks[1], output_channels),
+        DeckRenderContext::from_runtime(&shared.decks[0]),
+        DeckRenderContext::from_runtime(&shared.decks[1]),
     ];
     for frame in output.chunks_mut(output_channels) {
         for sample in frame.iter_mut() {
@@ -518,11 +518,10 @@ struct DeckRenderContext<'a> {
     peak_meter_linear: f64,
     rms_sum_squares: f64,
     rms_count: u64,
-    output_channels: usize,
 }
 
 impl<'a> DeckRenderContext<'a> {
-    fn from_runtime(runtime: &'a AudioDeckRuntime, output_channels: usize) -> Self {
+    fn from_runtime(runtime: &'a AudioDeckRuntime) -> Self {
         Self {
             runtime,
             clip: runtime.clip.load_full(),
@@ -536,7 +535,6 @@ impl<'a> DeckRenderContext<'a> {
             peak_meter_linear: 0.0,
             rms_sum_squares: 0.0,
             rms_count: 0,
-            output_channels: output_channels.max(1),
         }
     }
 
@@ -676,7 +674,7 @@ fn start_audio_engine_event_emitter(shared: Arc<AudioEngineSharedState>) {
 pub fn analyze_audio_file_native(input_path: &Path) -> Result<AudioPreviewAnalysis, String> {
     let decoded = decode_audio_file(input_path)?;
     let (peak_level, rms_level, waveform_buckets) =
-        analyze_decoded_waveform(&decoded.samples, DEFAULT_WAVEFORM_BUCKET_COUNT);
+        analyze_decoded_waveform(&decoded.samples, DEFAULT_ANALYSIS_WAVEFORM_BUCKET_COUNT);
     let spectral_bands = compute_spectral_bands(&decoded, 24);
     Ok(AudioPreviewAnalysis {
         input_path: input_path.to_string_lossy().to_string(),
@@ -745,7 +743,7 @@ fn decode_audio_file(input_path: &Path) -> Result<DecodedAudioData, String> {
             )
         })?;
     let mut format = probed.format;
-    let track = select_audio_track(&format)?;
+    let track = select_audio_track(format.as_ref())?;
     let track_id = track.id;
     let codec_params = track.codec_params.clone();
     let sample_rate_hz = codec_params
@@ -825,53 +823,35 @@ fn resample_audio_data(
             ..decoded
         });
     }
-    let input_channels = deinterleave_samples(&decoded.samples, decoded.channels);
-    let mut resampler = FftFixedInOut::<f32>::new(
+    let input = InterleavedSlice::new(decoded.samples.as_slice(), decoded.channels, decoded.frames)
+        .map_err(|error| format!("Failed to wrap decoded audio for resampling: {error}"))?;
+    let mut resampler = Fft::<f32>::new(
         decoded.sample_rate_hz as usize,
         output_sample_rate_hz as usize,
-        decoded.frames,
+        decoded.frames.max(1024),
+        1,
         decoded.channels,
+        FixedSync::Input,
     )
     .map_err(|error| format!("Failed to construct audio resampler: {error}"))?;
-    let resampled_channels = resampler
-        .process(&input_channels, None)
-        .map_err(|error| format!("Failed to resample audio: {error}"))?;
-    let resampled_frames = resampled_channels
-        .first()
-        .map(|channel| channel.len())
-        .unwrap_or_default();
+    let output_frames = resampler.process_all_needed_output_len(decoded.frames);
+    let mut output_samples = vec![0.0f32; output_frames * decoded.channels];
+    let resampled_frames = {
+        let mut output =
+            InterleavedSlice::new_mut(output_samples.as_mut_slice(), decoded.channels, output_frames)
+                .map_err(|error| format!("Failed to allocate resampled audio buffer: {error}"))?;
+        let (_, written_frames) = resampler
+            .process_all_into_buffer(&input, &mut output, decoded.frames, None)
+            .map_err(|error| format!("Failed to resample audio: {error}"))?;
+        written_frames
+    };
+    output_samples.truncate(resampled_frames * decoded.channels);
     Ok(DecodedAudioData {
         sample_rate_hz: output_sample_rate_hz,
         channels: decoded.channels,
         frames: resampled_frames,
-        samples: interleave_channels(&resampled_channels),
+        samples: output_samples,
     })
-}
-
-fn deinterleave_samples(interleaved: &[f32], channels: usize) -> Vec<Vec<f32>> {
-    if channels == 0 {
-        return Vec::new();
-    }
-    let frames = interleaved.len() / channels;
-    let mut separated = vec![Vec::with_capacity(frames); channels];
-    for frame_index in 0..frames {
-        for channel_index in 0..channels {
-            separated[channel_index].push(interleaved[(frame_index * channels) + channel_index]);
-        }
-    }
-    separated
-}
-
-fn interleave_channels(channels: &[Vec<f32>]) -> Vec<f32> {
-    let channel_count = channels.len();
-    let frames = channels.first().map(|channel| channel.len()).unwrap_or_default();
-    let mut interleaved = Vec::with_capacity(frames * channel_count);
-    for frame_index in 0..frames {
-        for channel in channels {
-            interleaved.push(*channel.get(frame_index).unwrap_or(&0.0));
-        }
-    }
-    interleaved
 }
 
 fn analyze_decoded_waveform(

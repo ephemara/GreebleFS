@@ -2179,9 +2179,7 @@ function PreviewPanel({
           <ExplorerAudioWorkbench
             audioPath={preview.path}
             audioName={preview.name}
-            audioSource={preview.source}
             audioExtension={preview.extension}
-            audioMimeType={preview.mimeType}
             audioSize={preview.size}
             onExported={onRefreshPreviewEntry}
           />

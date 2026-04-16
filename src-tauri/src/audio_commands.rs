@@ -22,12 +22,7 @@ use zip::ZipArchive;
 
 const DEFAULT_FFMPEG_BINARY: &str = "ffmpeg";
 const SOX_VERSION: &str = "14.4.2";
-const DEFAULT_WAVEFORM_BUCKET_COUNT: usize = 160;
-const PREVIEW_PROXY_EXTENSION: &str = "wav";
-const PREVIEW_PROXY_MIME_TYPE: &str = "audio/wav";
 const SOX_INTERMEDIATE_OUTPUT_FORMAT: &str = "wav";
-const AUDIO_DIRECT_PREVIEW_SAFE_LINUX_EXTENSIONS: &[&str] =
-    &["wav", "wave", "flac", "ogg", "oga", "opus"];
 const FFMPEG_FALLBACK_OUTPUT_FORMATS: &[&str] = &["mp3"];
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -154,7 +149,6 @@ struct NormalizedAudioTransformRequest {
 struct PreparedAudioInput {
     source_path: PathBuf,
     cleanup_paths: Vec<PathBuf>,
-    decoded_via_ffmpeg: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -576,52 +570,11 @@ fn sox_info_scalar(
     }
 }
 
-fn parse_optional_u32(value: Option<String>) -> Option<u32> {
-    value.and_then(|candidate| candidate.trim().parse::<u32>().ok())
-}
-
 fn parse_optional_f64(value: Option<String>) -> Option<f64> {
     value.and_then(|candidate| candidate.trim().parse::<f64>().ok())
 }
 
-fn analyze_waveform(
-    runtime: &SoxRuntime,
-    input_path: &Path,
-) -> Result<(f64, f64, Vec<AudioWaveformBucket>), String> {
-    let output = sox_command(runtime)
-        .arg(input_path)
-        .args([
-            "-r",
-            "8000",
-            "-c",
-            "1",
-            "-b",
-            "16",
-            "-e",
-            "signed-integer",
-            "-t",
-            "raw",
-            "-",
-        ])
-        .output()
-        .map_err(|error| format!("Failed to launch SoX waveform analysis: {error}"))?;
-    if !output.status.success() {
-        let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(format!("SoX waveform analysis failed: {message}"));
-    }
-    let samples = pcm_samples_from_le_i16(&output.stdout);
-    Ok(compute_waveform_buckets(
-        &samples,
-        DEFAULT_WAVEFORM_BUCKET_COUNT,
-    ))
-}
-
-fn pcm_samples_from_le_i16(raw: &[u8]) -> Vec<f64> {
-    raw.chunks_exact(2)
-        .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]) as f64 / i16::MAX as f64)
-        .collect()
-}
-
+#[cfg(test)]
 fn compute_waveform_buckets(
     samples: &[f64],
     bucket_count: usize,
@@ -661,42 +614,6 @@ fn compute_waveform_buckets(
     (peak, rms, buckets)
 }
 
-fn decibels_from_linear(value: f64) -> Option<f64> {
-    if value > 0.0 {
-        Some(20.0 * value.log10())
-    } else {
-        None
-    }
-}
-
-fn headroom_from_peak(peak: f64) -> Option<f64> {
-    if peak <= 0.0 {
-        None
-    } else {
-        Some(20.0 * (1.0 / peak).log10())
-    }
-}
-
-fn direct_audio_preview_mime_type(input_path: &Path) -> Option<String> {
-    let extension = input_path
-        .extension()
-        .and_then(|value| value.to_str())
-        .map(|value| value.to_ascii_lowercase())?;
-    let mime = match extension.as_str() {
-        "aac" => "audio/aac",
-        "aif" | "aiff" => "audio/aiff",
-        "alac" | "m4a" | "m4b" => "audio/mp4",
-        "flac" => "audio/flac",
-        "mid" | "midi" => "audio/midi",
-        "mp3" => "audio/mpeg",
-        "oga" | "ogg" => "audio/ogg",
-        "opus" => "audio/ogg; codecs=opus",
-        "wav" | "wave" => "audio/wav",
-        "weba" => "audio/webm",
-        _ => return None,
-    };
-    Some(mime.to_string())
-}
 
 fn sanitize_audio_temp_stem(value: &str) -> String {
     let sanitized: String = value
@@ -795,110 +712,6 @@ fn build_audio_temp_path(input_path: &Path, suffix: &str, output_format: &str) -
     ))
 }
 
-fn should_prefer_proxy_preview_on_first_load(input_path: &Path) -> bool {
-    let Some(extension) = input_audio_extension(input_path) else {
-        return true;
-    };
-    if direct_audio_preview_mime_type(input_path).is_none() {
-        return true;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        !AUDIO_DIRECT_PREVIEW_SAFE_LINUX_EXTENSIONS.contains(&extension.as_str())
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        false
-    }
-}
-
-fn generate_audio_preview_proxy_with_sox(
-    runtime: &SoxRuntime,
-    input_path: &Path,
-    proxy_path: &Path,
-) -> Result<(), String> {
-    let output = sox_command(runtime)
-        .arg("--clobber")
-        .arg(input_path)
-        .arg("-r")
-        .arg("44100")
-        .arg("-c")
-        .arg("2")
-        .arg("-b")
-        .arg("16")
-        .arg("-e")
-        .arg("signed-integer")
-        .arg("-t")
-        .arg("wav")
-        .arg(proxy_path)
-        .output()
-        .map_err(|error| format!("Failed to launch SoX preview proxy command: {error}"))?;
-    if !output.status.success() {
-        let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(format!("SoX preview proxy generation failed: {message}"));
-    }
-    Ok(())
-}
-
-fn generate_audio_preview_proxy_with_ffmpeg(
-    input_path: &Path,
-    proxy_path: &Path,
-) -> Result<(), String> {
-    let ffmpeg_binary = resolve_ffmpeg_binary();
-    let mut command = ffmpeg_command();
-    command.args(["-hide_banner", "-loglevel", "error", "-y"]);
-    command.args(["-i", &path_to_string(input_path)]);
-    command.args([
-        "-vn",
-        "-ac",
-        "2",
-        "-ar",
-        "44100",
-        "-codec:a",
-        "pcm_s16le",
-        &path_to_string(proxy_path),
-    ]);
-    let output = spawn_ffmpeg_and_wait(None, command)?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let message = if !stderr.is_empty() {
-            stderr
-        } else if !stdout.is_empty() {
-            stdout
-        } else {
-            format!(
-                "ffmpeg exited with status {} while generating preview proxy",
-                output.status
-            )
-        };
-        return Err(format!(
-            "Preview proxy generation failed through ffmpeg at '{ffmpeg_binary}': {message}"
-        ));
-    }
-    Ok(())
-}
-
-fn ensure_audio_preview_proxy(app: &AppHandle, input_path: &Path) -> Result<PathBuf, String> {
-    let runtime = ensure_unpacked_sox_runtime(app)?;
-    let proxy_path = audio_cached_temp_path(
-        app,
-        input_path,
-        "preview-proxies",
-        "preview",
-        PREVIEW_PROXY_EXTENSION,
-    )?;
-    if can_reuse_audio_temp_path(input_path, &proxy_path) {
-        return Ok(proxy_path);
-    }
-    if sox_can_read_audio_input(&runtime, input_path)? {
-        generate_audio_preview_proxy_with_sox(&runtime, input_path, &proxy_path)?;
-    } else {
-        generate_audio_preview_proxy_with_ffmpeg(input_path, &proxy_path)?;
-    }
-    Ok(proxy_path)
-}
-
 fn ensure_processing_input(
     app: &AppHandle,
     runtime: &SoxRuntime,
@@ -909,7 +722,6 @@ fn ensure_processing_input(
         return Ok(PreparedAudioInput {
             source_path: input_path.to_path_buf(),
             cleanup_paths: Vec::new(),
-            decoded_via_ffmpeg: false,
         });
     }
     let decoded_path = audio_cached_temp_path(app, input_path, "decoded-inputs", "decoded", "wav")?;
@@ -946,7 +758,6 @@ fn ensure_processing_input(
     Ok(PreparedAudioInput {
         source_path: decoded_path,
         cleanup_paths: Vec::new(),
-        decoded_via_ffmpeg: true,
     })
 }
 

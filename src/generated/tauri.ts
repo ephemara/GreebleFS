@@ -261,14 +261,6 @@ async audioAnalyzePreview(inputPath: string) : Promise<Result<AudioPreviewAnalys
     else return { status: "error", error: e  as any };
 }
 },
-async audioCreatePreviewProxy(inputPath: string) : Promise<Result<ResolvedAudioPreviewSource, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("audio_create_preview_proxy", { inputPath }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async audioExportTransform(request: AudioTransformRequest) : Promise<Result<AudioTransformResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("audio_export_transform", { request }) };
@@ -285,9 +277,105 @@ async audioBatchProcess(request: AudioBatchProcessRequest) : Promise<Result<Audi
     else return { status: "error", error: e  as any };
 }
 },
-async audioResolvePreviewSource(inputPath: string) : Promise<Result<ResolvedAudioPreviewSource, string>> {
+async audioEnginePrepare() : Promise<Result<AudioEngineStateSnapshot, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("audio_resolve_preview_source", { inputPath }) };
+    return { status: "ok", data: await TAURI_INVOKE("audio_engine_prepare") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async audioEngineGetState() : Promise<Result<AudioEngineStateSnapshot, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("audio_engine_get_state") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async audioEngineLoadDeck(request: AudioEngineLoadDeckRequest) : Promise<Result<AudioEngineStateSnapshot, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("audio_engine_load_deck", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async audioEngineUnloadDeck(request: AudioEngineDeckRequest) : Promise<Result<AudioEngineStateSnapshot, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("audio_engine_unload_deck", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async audioEngineSetArmedDeck(request: AudioEngineSetArmedDeckRequest) : Promise<Result<AudioEngineStateSnapshot, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("audio_engine_set_armed_deck", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async audioEnginePlay(request: AudioEngineDeckRequest) : Promise<Result<AudioEngineStateSnapshot, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("audio_engine_play", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async audioEnginePause(request: AudioEngineDeckRequest) : Promise<Result<AudioEngineStateSnapshot, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("audio_engine_pause", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async audioEngineStop(request: AudioEngineDeckRequest) : Promise<Result<AudioEngineStateSnapshot, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("audio_engine_stop", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async audioEngineSeek(request: AudioEngineSeekRequest) : Promise<Result<AudioEngineStateSnapshot, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("audio_engine_seek", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async audioEngineSetLoopRegion(request: AudioEngineLoopRegionRequest) : Promise<Result<AudioEngineStateSnapshot, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("audio_engine_set_loop_region", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async audioEngineSetGain(request: AudioEngineGainRequest) : Promise<Result<AudioEngineStateSnapshot, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("audio_engine_set_gain", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async audioEngineSetRate(request: AudioEngineRateRequest) : Promise<Result<AudioEngineStateSnapshot, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("audio_engine_set_rate", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async audioEngineSyncSelectionToArmedDeck(request: AudioEngineSyncSelectionRequest) : Promise<Result<AudioEngineStateSnapshot, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("audio_engine_sync_selection_to_armed_deck", { request }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -826,8 +914,10 @@ async domainListWorkbenchPresets() : Promise<WorkbenchPreset[]> {
 
 
 export const events = __makeEvents__<{
+audioEngineStateEvent: AudioEngineStateEvent,
 explorerTaskProgressEvent: ExplorerTaskProgressEvent
 }>({
+audioEngineStateEvent: "audio-engine-state-event",
 explorerTaskProgressEvent: "explorer-task-progress-event"
 })
 
@@ -842,8 +932,20 @@ export const OVERLAY_WORKBENCH_PRESETS = [{"description":"Cross-axis shell","id"
 export type AudioBatchProcessMode = "convert" | "normalize"
 export type AudioBatchProcessRequest = { inputPaths: string[]; recurseDirectories: boolean | null; mode: AudioBatchProcessMode; outputFormat: string | null; overwriteExisting: boolean | null; outputDirectory: string | null }
 export type AudioBatchProcessResult = { taskId: string; processedPaths: string[]; skippedPaths: string[]; failedPaths: string[]; outputDirectory: string | null; soxBinary: string }
-export type AudioPreviewAnalysis = { inputPath: string; durationSeconds: number; sampleRateHz: number | null; channels: number | null; encoding: string | null; bitsPerSample: number | null; containerType: string | null; peakLevel: number; rmsLevel: number; loudnessDb: number | null; headroomDb: number | null; waveformBuckets: AudioWaveformBucket[] }
-export type AudioPreviewSourceKind = "direct" | "proxy"
+export type AudioDeckId = "a" | "b"
+export type AudioDeckState = { deckId: AudioDeckId; loadedPath: string | null; loadedName: string | null; durationSeconds: number; currentTimeSeconds: number; gainLinear: number; rate: number; isPlaying: boolean; isLoading: boolean; isBuffering: boolean; peakMeterLinear: number; rmsMeterLinear: number; loopRegion: AudioEngineLoopRegion; error: string | null }
+export type AudioEngineDeckRequest = { deckId: AudioDeckId }
+export type AudioEngineGainRequest = { deckId: AudioDeckId; gainLinear: number }
+export type AudioEngineLoadDeckRequest = { deckId: AudioDeckId; inputPath: string }
+export type AudioEngineLoopRegion = { startSeconds: number; endSeconds: number; enabled: boolean }
+export type AudioEngineLoopRegionRequest = { deckId: AudioDeckId; startSeconds: number; endSeconds: number; enabled: boolean }
+export type AudioEngineRateRequest = { deckId: AudioDeckId; rate: number }
+export type AudioEngineSeekRequest = { deckId: AudioDeckId; positionSeconds: number }
+export type AudioEngineSetArmedDeckRequest = { deckId: AudioDeckId }
+export type AudioEngineStateEvent = { state: AudioEngineStateSnapshot }
+export type AudioEngineStateSnapshot = { ready: boolean; engineError: string | null; armedDeck: AudioDeckId; outputSampleRateHz: number | null; outputChannels: number | null; decks: AudioDeckState[] }
+export type AudioEngineSyncSelectionRequest = { inputPath: string }
+export type AudioPreviewAnalysis = { inputPath: string; durationSeconds: number; sampleRateHz: number | null; channels: number | null; encoding: string | null; bitsPerSample: number | null; containerType: string | null; peakLevel: number; rmsLevel: number; loudnessDb: number | null; headroomDb: number | null; waveformBuckets: AudioWaveformBucket[]; spectralBands: number[] }
 export type AudioTransformMode = "exportClip" | "exportNormalized" | "convertFormat" | "overwriteOriginal"
 export type AudioTransformRequest = { inputPath: string; outputPath: string | null; overwriteExisting: boolean; mode: AudioTransformMode; trimStartSeconds: number | null; trimEndSeconds: number | null; fadeInSeconds: number | null; fadeOutSeconds: number | null; normalize: boolean | null; outputFormat: string | null; generateSpectrogram: boolean | null }
 export type AudioTransformResult = { taskId: string; outputPath: string; spectrogramPath: string | null; durationSeconds: number | null; outputFormat: string; overwrittenOriginal: boolean; soxBinary: string }
@@ -928,7 +1030,6 @@ export type PythonInterpreterDescriptor = { id: string; label: string; command: 
 export type PythonPackageInstallRequest = { config: PythonRuntimeConfig | null; packageInput: string; persistToRequirements: boolean | null }
 export type PythonRuntimeConfig = { preferredInterpreterPath: string | null; runtimeRoot: string | null; bootstrapPackages: string | null; autoUpgradePip: boolean | null; createBoilerplate: boolean | null }
 export type PythonRuntimeStatus = { runtimeRoot: string; envDir: string; scriptsDir: string; tempDir: string; logsDir: string; managedPythonPath: string; envExists: boolean; ready: boolean; managedPythonVersion: string | null; managedPipVersion: string | null; preferredInterpreterPath: string | null; bootstrapPackages: string[]; interpreterHint: string; baseInterpreter: PythonInterpreterDescriptor | null; discoveredInterpreters: PythonInterpreterDescriptor[]; boilerplate: PythonBoilerplateFiles }
-export type ResolvedAudioPreviewSource = { taskId: string | null; sourcePath: string; sourceKind: AudioPreviewSourceKind; mimeType: string | null; generatedFromPath: string | null }
 export type ResolvedVideoPreviewSource = { sourcePath: string; sourceKind: VideoPreviewSourceKind; mimeType: string | null; generatedFromPath: string | null }
 export type SavedScreenshot = { path: string; file_name: string; created_at: number }
 export type ScreenshotAnnotatedExportResult = { saved: SavedScreenshot | null; copiedToClipboard: boolean }
