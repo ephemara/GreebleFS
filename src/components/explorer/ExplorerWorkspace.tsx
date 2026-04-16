@@ -275,10 +275,10 @@ export function ExplorerWorkspace({
       return null;
     }
     const targetLeaf = getPathLeaf(commanderTargetPath);
-    const selectionLabel = commanderSelectionCount > 0
-      ? `${commanderSelectionCount} selected`
-      : 'No selection';
-    return `${selectionLabel} -> ${getPaneShortLabel(commanderTargetPaneId)} · ${targetLeaf}`;
+    if (commanderSelectionCount > 0) {
+      return `${commanderSelectionCount} selected -> ${getPaneShortLabel(commanderTargetPaneId)} · ${targetLeaf}`;
+    }
+    return `${getPaneShortLabel(commanderTargetPaneId)} · ${targetLeaf}`;
   }, [
     canUseCommanderActions,
     commanderSelectionCount,
@@ -684,7 +684,7 @@ export function ExplorerWorkspace({
       isVisible: () => true,
       render: () => (
         <span style={workspaceMetaStyle}>
-          {workspaceLayout.shortLabel} · {getExplorerPaneLabel(activePane)} active
+          {workspaceLayout.shortLabel} · {getPaneShortLabel(activePane)} active
         </span>
       ),
     },
@@ -698,21 +698,6 @@ export function ExplorerWorkspace({
           {commanderSummaryText}
         </span>
       ) : null,
-    },
-    {
-      id: 'workspaceLayoutHint',
-      label: 'Workspace Hint',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => true,
-      render: () => (
-        <span style={workspaceMetaStyle}>
-          {workspace.layoutMode === 'single'
-            ? 'Cycle into 2-Up or 4-Up when you want commander-style pane work.'
-            : workspace.layoutMode === 'split'
-              ? 'Sync or transfer into the opposite pane without leaving the keyboard loop.'
-              : 'Click any pane to focus it. Column and row dividers stay live.'}
-        </span>
-      ),
     },
     {
       id: 'workspaceTabs',

@@ -220,6 +220,7 @@ describe('ExplorerWorkspace', () => {
 
     await waitFor(() => {
       expect(getWorkspaceControl('workspaceCommanderSummary')?.textContent).toContain('1 selected -> P2 · destination');
+      expect(screen.queryByText('Sync or transfer into the opposite pane without leaving the keyboard loop.')).not.toBeInTheDocument();
     });
 
     const syncButton = getWorkspaceButton('workspaceSyncPath');
@@ -276,6 +277,17 @@ describe('ExplorerWorkspace', () => {
       expect(getRenderedFileExplorerProps(targetInstanceId as string).externalNavigationRequest).toMatchObject({
         path: '/workspace/source/materials',
       });
+    });
+
+    emitRuntimeSnapshot(PRIMARY_EXPLORER_INSTANCE_ID, {
+      currentPath: '/workspace/source/materials',
+      currentPathIsCloud: false,
+      selectedEntries: [],
+    });
+
+    await waitFor(() => {
+      expect(getWorkspaceControl('workspaceCommanderSummary')?.textContent).toContain('P2 · destination');
+      expect(getWorkspaceControl('workspaceCommanderSummary')?.textContent).not.toContain('No selection');
     });
   });
 
