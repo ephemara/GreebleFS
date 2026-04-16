@@ -1,5 +1,20 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Explorer Grid Image Thumbnails
+
+- Grid/icon explorer modes now support inline image thumbnails for visible local image files, so directories with screenshots, artwork, or captures read more like a modern content browser instead of an icon wall.
+- Durable implementation shape:
+  - `src-tauri/src/fs_commands.rs` exposes `fs_read_image_thumbnail`, which decodes local images, resizes them into bounded PNG thumbnails, and rejects oversized sources or invalid dimensions.
+  - `src/runtime/explorerBackend.ts` now routes thumbnail reads through the typed explorer backend contract instead of ad hoc UI-side invoke calls.
+  - `src/components/FileExplorer.tsx` batches thumbnail requests only for visible grid entries, caches them by path, invalidates them on refresh, and falls back to the existing icon lane for folders, cloud paths, non-images, or failed thumbnail reads.
+  - `src/test/fileExplorer.viewModes.test.tsx` now covers the grid thumbnail path with a deterministic viewport-size shim so virtualization does not hide the tile under jsdom.
+- Durable product note:
+  - this is intentionally a grid-surface enhancement, not a replacement for the existing selected-item preview panel. The explorer now has both: focused preview on selection and thumbnail scanning while browsing image-heavy folders.
+- Validation:
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml fs_read_image_thumbnail`
+  - passed: `bun run test:unit src/test/fileExplorer.viewModes.test.tsx`
+
 ## 2026-04-15 — Explorer Rail Folder Tree
 
 - The explorer rail now has a real lazy local folder tree under `Drives`, closer to the expected Windows/Finder-style folder-navigation model instead of a flat drive-only list.
