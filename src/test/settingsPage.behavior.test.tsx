@@ -1013,8 +1013,7 @@ describe('SettingsPage behavior', () => {
     await user.click(findSectionButton('Theme JSON'));
 
     const editor = screen.getByRole('textbox');
-    await user.clear(editor);
-    await user.type(editor, '{ invalid json');
+    fireEvent.change(editor, { target: { value: '{ invalid json' } });
     await user.click(screen.getByRole('button', { name: 'Import / Apply' }));
 
     expect(await screen.findByText(/Theme import failed:/)).toBeInTheDocument();

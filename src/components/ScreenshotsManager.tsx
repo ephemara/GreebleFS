@@ -750,7 +750,7 @@ export function ScreenshotsManager({ appearance }: { appearance?: ResolvedOverla
         ? getSelectionHandleAtPoint({ x, y }, existingSelection, SELECTION_HANDLE_RADIUS)
         : null;
 
-      if (existingSelection && existingHandle) {
+      if (existingSelection && existingHandle && existingHandle !== 'move') {
         selectionInteractionRef.current = {
           kind: 'resize',
           origin: { x, y },

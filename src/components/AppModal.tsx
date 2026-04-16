@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 
 type AppDialogTone = 'accent' | 'danger';
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { createEvent, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
@@ -849,6 +849,31 @@ describe('FileExplorer view modes', () => {
 
     expect(dataTransfer.setData).toHaveBeenCalledWith('application/x-overlayterm-drag-intent', 'native-out');
     expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_start_native_file_drag')).toBe(true);
+  });
+
+  it('opens an in-app tag dialog and applies comma-separated tags to the current selection', async () => {
+    const user = userEvent.setup();
+    const invokeMock = vi.mocked(invoke);
+
+    renderExplorer();
+
+    await screen.findByText('notes.txt');
+    await user.click(screen.getByText('notes.txt'));
+    await user.click(screen.getByRole('button', { name: 'Tag' }));
+
+    const dialog = await screen.findByRole('dialog');
+    await user.type(within(dialog).getByRole('textbox'), 'docs, review');
+    await user.click(within(dialog).getByRole('button', { name: 'Apply Tags' }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('explorer_tags_set_for_paths', {
+        request: {
+          paths: [`${REPO_ROOT}\\notes.txt`],
+          tagNames: ['docs', 'review'],
+          mode: 'add',
+        },
+      });
+    });
   });
 
 });

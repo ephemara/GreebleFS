@@ -35,7 +35,7 @@ fn toggle_overlay(app: &tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    linux_graphics::apply_linux_webkit_nvidia_workaround();
+    linux_graphics::apply_linux_graphics_startup_configuration();
 
     let builder = specta_bindings::app_specta_builder();
     let invoke_handler = builder.invoke_handler();

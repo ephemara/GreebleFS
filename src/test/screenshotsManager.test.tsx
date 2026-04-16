@@ -468,8 +468,24 @@ describe('ScreenshotsManager', () => {
     });
 
     useExplorerTaskStore.getState().upsertTask({
-      taskId: 'rogue-delete-task',
-      task: {
+      id: 'rogue-delete-task',
+      kind: 'delete',
+      status: 'running',
+      title: 'Delete M:\\\\\\\\Assets\\\\\\\\OverlayTerm\\\\\\\\notes\\\\\\\\new-note_1775861948830-jzyb4i.md',
+      detail: '',
+      progressCurrent: 0,
+      progressTotal: 1,
+      startedAt: Date.now(),
+      finishedAt: null,
+      sourcePaths: [],
+      destinationPath: null,
+      errorMessage: null,
+      canRetry: false,
+      canCancel: true,
+      canRevealOutput: false,
+      canOpenOutput: false,
+      canUndo: false,
+      schedulerTask: null,
         name: 'Delete M:\\Assets\\OverlayTerm\\notes\\new-note_1775861948830-jzyb4i.md',
         prog: {
           kind: 'fileDelete',
@@ -482,6 +498,7 @@ describe('ScreenshotsManager', () => {
           cleaned: null,
         },
       },
+      */
     });
 
     render(<ScreenshotsManager />);
