@@ -4,6 +4,7 @@ pub mod domain_commands;
 pub mod entry_size_cache;
 pub mod explorer_pro_commands;
 pub mod fs_commands;
+mod linux_graphics;
 pub mod plugin_commands;
 pub mod python_commands;
 pub mod screenshot_commands;
@@ -33,6 +34,8 @@ fn toggle_overlay(app: &tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    linux_graphics::apply_linux_webkit_nvidia_workaround();
+
     let builder = specta_bindings::app_specta_builder();
     let invoke_handler = builder.invoke_handler();
 
