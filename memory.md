@@ -1,5 +1,18 @@
 # GreebleFS Memory
 
+## 2026-04-16 — Dev Telemetry HUD Toggle
+
+- The dev-only performance HUD is no longer unavoidably forced on whenever the app runs under `import.meta.env.DEV`.
+- Durable implementation shape:
+  - `src/store/settingsStore.ts` now persists `system.devTelemetryHudVisible`, defaulting to `true` so existing dev behavior stays intact until the operator explicitly hides the HUD.
+  - `src/config/hotkeys.ts` now defines `toggleDeveloperTelemetryHud` (`Ctrl+Alt+D` by default) as a first-class local hotkey instead of burying the toggle inside ad hoc component state.
+  - `src/App.tsx` now gates `DevPerformanceHud` on both developer tooling availability and the persisted visibility flag, and it listens for the new local hotkey only while dev tooling is active.
+  - `src/components/SettingsPage.tsx` exposes that binding alongside the other shell-level hotkeys so operators can rebind it without touching storage manually.
+- Durable product note:
+  - developer mode and dev telemetry HUD visibility are now separate concerns. Future dev tooling should avoid assuming that `developerMode === visible diagnostics chrome`.
+- Validation:
+  - passed: `bunx vitest run src/test/hotkeys.test.ts src/test/settingsStore.test.ts`
+
 ## 2026-04-16 — Explorer Inline Video Editor
 
 - Video files can now stay inside the explorer preview workflow with a host-native timeline surface instead of bouncing straight into the OS player.

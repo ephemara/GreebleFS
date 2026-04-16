@@ -1,4 +1,5 @@
 export type HotkeyBindingKey =
+  | 'toggleDeveloperTelemetryHud'
   | 'commandPalette'
   | 'terminalFocus'
   | 'terminalToggle'
@@ -50,6 +51,13 @@ export interface HotkeyBindingDefinition {
 export type HotkeyBindingSettings = Record<HotkeyBindingKey, string>;
 
 export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
+  {
+    key: 'toggleDeveloperTelemetryHud',
+    label: 'Toggle Dev Telemetry HUD',
+    description: 'Show or hide the developer telemetry HUD while local developer tooling is active.',
+    defaultValue: 'Ctrl+Alt+D',
+    scope: 'local',
+  },
   {
     key: 'terminalToggle',
     label: 'Toggle Main Window',

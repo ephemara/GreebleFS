@@ -93,7 +93,7 @@ import {
 } from './config/appearance';
 import { loadThemePackages as discoverThemePackages, themeSystemConfig, type LoadedOverlayThemePackage } from './config/themePackages';
 import { dispatchTerminalCommand } from './config/pluginContributions';
-import { formatHotkeyLabel, matchesWheelHotkey } from './config/hotkeys';
+import { formatHotkeyLabel, matchesKeybinding, matchesWheelHotkey } from './config/hotkeys';
 import {
   BUILT_IN_LAYOUT_MANIFEST,
   getNextLayoutProfileId,
@@ -2068,6 +2068,39 @@ function App() {
   const handleCloseCommandPalette = useCallback(() => {
     setIsCommandPaletteOpen(false);
   }, []);
+
+  useEffect(() => {
+    const developerTelemetryAllowed = Boolean(import.meta.env.DEV) || systemSettings.developerMode;
+    if (!developerTelemetryAllowed || typeof window === 'undefined') {
+      return;
+    }
+
+    const handleKeydown = (event: KeyboardEvent) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (
+        target?.isContentEditable
+        || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')
+        || Boolean(target?.closest('.monaco-editor'))
+      ) {
+        return;
+      }
+
+      if (!matchesKeybinding(event, keybindings.toggleDeveloperTelemetryHud)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const currentSystemSettings = useSettingsStore.getState().settings.system;
+      useSettingsStore.getState().updateSystem({
+        devTelemetryHudVisible: !currentSystemSettings.devTelemetryHudVisible,
+      });
+    };
+
+    window.addEventListener('keydown', handleKeydown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeydown, { capture: true });
+  }, [keybindings.toggleDeveloperTelemetryHud, systemSettings.developerMode]);
 
   const handleDragStart = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     const target = event.target instanceof HTMLElement ? event.target : null;
@@ -4050,7 +4083,8 @@ function App() {
       />
       )
     : defaultShellBody;
-  const devHudEnabled = Boolean(import.meta.env.DEV) || systemSettings.developerMode;
+  const devHudEnabled = (Boolean(import.meta.env.DEV) || systemSettings.developerMode)
+    && systemSettings.devTelemetryHudVisible;
   return (
     <div
       className="overlay-window-host w-full h-full overflow-hidden"

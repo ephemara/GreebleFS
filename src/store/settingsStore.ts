@@ -180,6 +180,7 @@ export interface SystemSettings {
   hideAppInTray: boolean;
   showInTaskbar: boolean;
   developerMode: boolean;
+  devTelemetryHudVisible: boolean;
   linuxDisplayBackendPreference: LinuxDisplayBackendPreference;
 }
 
@@ -434,6 +435,7 @@ export function normalizeSystemSettings(
     hideAppInTray: merged.hideAppInTray !== false,
     showInTaskbar: Boolean(merged.showInTaskbar),
     developerMode: Boolean(merged.developerMode),
+    devTelemetryHudVisible: merged.devTelemetryHudVisible !== false,
     linuxDisplayBackendPreference: normalizeLinuxDisplayBackendPreference(
       merged.linuxDisplayBackendPreference,
     ),
@@ -669,6 +671,7 @@ export const defaultSettings: Settings = {
     hideAppInTray: true,
     showInTaskbar: true,
     developerMode: false,
+    devTelemetryHudVisible: true,
     linuxDisplayBackendPreference: 'auto',
   },
   screenshots: {

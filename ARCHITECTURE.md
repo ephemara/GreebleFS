@@ -83,7 +83,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/runtime/workerHost.ts`
   Browser-worker orchestration layer for frontend CPU-heavy tasks. It owns worker-lane lifecycle, per-lane telemetry, fallback-to-main-thread behavior, and the shared request/response bridge used by runtime module compilation.
 - `src/components/DevPerformanceHud.tsx`
-  Fixed dev-only diagnostics HUD rendered by `App.tsx` whenever the frontend runs in `import.meta.env.DEV` or explicit developer mode. It shows live frame, navigation, CLS, INP, long-task, memory, and frontend worker telemetry for local development.
+  Fixed dev-only diagnostics HUD rendered by `App.tsx` whenever the frontend runs in `import.meta.env.DEV` or explicit developer mode. It shows live frame, navigation, CLS, INP, long-task, memory, and frontend worker telemetry for local development, and its visibility now rides a persisted system flag plus a local shell hotkey instead of being permanently forced on in dev sessions.
 - `src/components/wallpaperRuntime.tsx`
   Imported image/video wallpapers, authored live wallpaper modules, and theme-wallpaper selection helpers.
 - `src/runtime/pluginPanelRequests.ts`

@@ -15,12 +15,15 @@ describe('hotkey config helpers', () => {
   it('falls back to defaults for missing or blank keybinding values', () => {
     const defaults = createDefaultKeybindingSettings();
     const normalized = normalizeKeybindingSettings({
+      toggleDeveloperTelemetryHud: '   ',
       terminalToggle: '   ',
       terminalFocus: '   ',
       windowModeToggle: '   ',
       zoomAdjust: 'Ctrl + Scroll',
     });
 
+    expect(defaults.toggleDeveloperTelemetryHud).toBe('Ctrl+Alt+D');
+    expect(normalized.toggleDeveloperTelemetryHud).toBe(defaults.toggleDeveloperTelemetryHud);
     expect(normalized.terminalToggle).toBe(defaults.terminalToggle);
     expect(defaults.terminalFocus).toBe('Ctrl+J');
     expect(normalized.terminalFocus).toBe(defaults.terminalFocus);

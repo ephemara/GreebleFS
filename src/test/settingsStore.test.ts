@@ -109,11 +109,13 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.system.launchAtStartup).toBe(false);
     expect(settings.system.hideAppInTray).toBe(true);
     expect(settings.system.showInTaskbar).toBe(true);
+    expect(settings.system.devTelemetryHudVisible).toBe(true);
     expect(settings.system.linuxDisplayBackendPreference).toBe('auto');
   });
 
   it('has the correct default hotkey settings', () => {
     const { settings } = useSettingsStore.getState();
+    expect(settings.keybindings.toggleDeveloperTelemetryHud).toBe('Ctrl+Alt+D');
     expect(settings.keybindings.terminalToggle).toBe('Ctrl+Space');
     expect(settings.keybindings.terminalFocus).toBe('Ctrl+J');
     expect(settings.keybindings.windowModeToggle).toBe('F11');

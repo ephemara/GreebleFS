@@ -3266,6 +3266,7 @@ export function SettingsPage({
                   definition.scope === 'global'
                   || definition.scope === 'gesture'
                   || definition.key === 'windowModeToggle'
+                  || definition.key === 'toggleDeveloperTelemetryHud'
                 ))
                 .map(definition => (
                   <ShortcutField
