@@ -3167,6 +3167,21 @@ export function FileExplorer({
       return changed ? next : current;
     });
     setEntrySizeLoadingPaths(new Set());
+    setImageThumbnailMap(current => {
+      if (entriesToInvalidate.length === 0) {
+        return current;
+      }
+      const next = { ...current };
+      let changed = false;
+      for (const entry of entriesToInvalidate) {
+        if (next[entry.path] !== undefined) {
+          delete next[entry.path];
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+    setImageThumbnailLoadingPaths(new Set());
     try {
       const nextListing = await listExplorerLocationUncached(currentPath, showHidden);
       if (!isActiveDirectoryLoadRequest()) {
@@ -7441,6 +7456,13 @@ export function FileExplorer({
     return () => {
       disposed = true;
       window.clearTimeout(batchTimer);
+      setImageThumbnailLoadingPaths(current => {
+        const next = new Set(current);
+        for (const path of pendingPaths) {
+          next.delete(path);
+        }
+        return next.size === current.size ? current : next;
+      });
     };
   }, [
     effectiveViewMode,
@@ -7567,6 +7589,102 @@ export function FileExplorer({
       window.clearTimeout(batchTimer);
     };
   }, [loading, nativeIconLoadingKeys, nativeIconMap, recordExplorerMetric, useNativeOsIcons, virtualizedEntries]);
+
+  useEffect(() => {
+    if (
+      loading
+      || currentPathIsCloud
+      || virtualWindow.kind !== 'grid'
+      || !activeGridMetrics
+      || activeGridMetrics.iconStageSize < EXPLORER_IMAGE_TILE_PREVIEW_CONFIG.minStagePx
+      || virtualizedEntries.length === 0
+    ) {
+      return;
+    }
+
+    const pendingEntries = virtualizedEntries
+      .filter((entry) => {
+        if (entry.is_dir || isCloudExplorerPath(entry.path)) {
+          return false;
+        }
+        if (!isImagePreviewExtension(getEntryExtension(entry))) {
+          return false;
+        }
+        return imageThumbnailMap[entry.path] === undefined && !imageThumbnailLoadingPaths.has(entry.path);
+      })
+      .slice(0, EXPLORER_IMAGE_TILE_PREVIEW_CONFIG.batchSize);
+
+    if (pendingEntries.length === 0) {
+      return;
+    }
+
+    const pendingPaths = pendingEntries.map(entry => entry.path);
+    let disposed = false;
+    const batchTimer = window.setTimeout(() => {
+      setImageThumbnailLoadingPaths(current => {
+        const next = new Set(current);
+        let changed = false;
+        for (const path of pendingPaths) {
+          if (!next.has(path)) {
+            next.add(path);
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+
+      void Promise.all(
+        pendingEntries.map(async (entry) => {
+          try {
+            const src = await readExplorerImageThumbnail(
+              entry.path,
+              EXPLORER_IMAGE_TILE_PREVIEW_CONFIG.maxDimensionPx,
+              EXPLORER_IMAGE_TILE_PREVIEW_CONFIG.maxDimensionPx,
+            );
+            return { path: entry.path, src };
+          } catch {
+            return { path: entry.path, src: null };
+          }
+        }),
+      ).then(results => {
+        if (disposed) {
+          return;
+        }
+
+        startTransition(() => {
+          setImageThumbnailMap(current => {
+            const next = { ...current };
+            for (const result of results) {
+              next[result.path] = result.src;
+            }
+            return next;
+          });
+        });
+
+        setImageThumbnailLoadingPaths(current => {
+          const next = new Set(current);
+          for (const path of pendingPaths) {
+            next.delete(path);
+          }
+          return next.size === current.size ? current : next;
+        });
+      });
+    }, EXPLORER_IMAGE_TILE_THUMBNAIL_BATCH_SETTLE_MS);
+
+    return () => {
+      disposed = true;
+      window.clearTimeout(batchTimer);
+    };
+  }, [
+    activeGridMetrics,
+    currentPathIsCloud,
+    imageThumbnailLoadingPaths,
+    imageThumbnailMap,
+    loading,
+    readExplorerImageThumbnail,
+    virtualWindow.kind,
+    virtualizedEntries,
+  ]);
 
   const renderSearchMetadata = (entry: FileEntry) => {
     if (!isSearchActive) return null;
@@ -8736,6 +8854,7 @@ export function FileExplorer({
                     const isDrop = dragOver === entry.path && entry.is_dir;
                     const isRenaming = rename.active && rename.path === entry.path;
                     const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
+                    const thumbnailSrc = getGridEntryThumbnailSrc(entry);
                     return (
                       <div
                         key={entry.path}
@@ -8791,10 +8910,28 @@ export function FileExplorer({
                             justifyContent: 'center',
                             overflow: 'hidden',
                             flexShrink: 0,
+                            borderRadius: thumbnailSrc ? Math.max(10, Math.round(activeGridMetrics.tileRadius * 0.72)) : undefined,
+                            border: thumbnailSrc ? `1px solid ${alphaColor(EXP.border, isSel ? 0.52 : 0.28)}` : undefined,
+                            background: thumbnailSrc ? alphaColor(EXP.panel, isSel ? 0.58 : 0.84) : undefined,
+                            boxShadow: thumbnailSrc ? `inset 0 1px 0 ${alphaColor('#ffffff', 0.06)}` : undefined,
                             transition: 'width 0.18s cubic-bezier(0.22, 1, 0.36, 1), height 0.18s cubic-bezier(0.22, 1, 0.36, 1)',
                           }}
                         >
-                          <SvgIcon src={iconSrc} size={activeGridMetrics.iconSize} />
+                          {thumbnailSrc ? (
+                            <img
+                              src={thumbnailSrc}
+                              alt={`Thumbnail for ${entry.name}`}
+                              draggable={false}
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'contain',
+                                display: 'block',
+                              }}
+                            />
+                          ) : (
+                            <SvgIcon src={iconSrc} size={activeGridMetrics.iconSize} />
+                          )}
                         </div>
                         {isRenaming
                           ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active: false, path: '', name: '' })} />

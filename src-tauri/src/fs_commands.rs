@@ -4259,6 +4259,7 @@ pub async fn fs_is_process_elevated() -> Result<bool, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::{Rgba, RgbaImage};
     use std::fs;
     use std::path::PathBuf;
     use tempfile::TempDir;
@@ -6710,6 +6711,36 @@ mod tests {
         let result = fs_read_file_base64(file_path.to_string_lossy().into()).await;
         let error = result.expect_err("oversized preview should be rejected");
         assert!(error.contains("> 12 MB"), "unexpected error: {error}");
+    }
+
+    #[tokio::test]
+    async fn fs_read_image_thumbnail_returns_png_data_url_for_image_file() {
+        let dir = tmp_dir();
+        let file_path = dir.path().join("thumbnail-source.png");
+        let image = RgbaImage::from_pixel(1600, 900, Rgba([12, 34, 56, 255]));
+        image.save(&file_path).expect("write image");
+
+        let result = fs_read_image_thumbnail(file_path.to_string_lossy().into(), 320, 240).await;
+        let data_url = result.expect("thumbnail preview should succeed");
+        assert!(
+            data_url.starts_with("data:image/png;base64,"),
+            "unexpected thumbnail data url: {data_url}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fs_read_image_thumbnail_rejects_invalid_bounds() {
+        let dir = tmp_dir();
+        let file_path = dir.path().join("thumbnail-source.png");
+        let image = RgbaImage::from_pixel(64, 64, Rgba([255, 0, 0, 255]));
+        image.save(&file_path).expect("write image");
+
+        let result = fs_read_image_thumbnail(file_path.to_string_lossy().into(), 0, 240).await;
+        let error = result.expect_err("thumbnail preview should reject invalid bounds");
+        assert!(
+            error.contains("greater than zero"),
+            "unexpected thumbnail bounds error: {error}"
+        );
     }
 
     #[tokio::test]

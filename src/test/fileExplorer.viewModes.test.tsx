@@ -37,6 +37,16 @@ const ENTRIES = [
     is_symlink: false,
   },
   {
+    name: 'preview.png',
+    path: `${REPO_ROOT}\\preview.png`,
+    is_dir: false,
+    size: 4096,
+    modified: 0,
+    extension: 'png',
+    is_hidden: false,
+    is_symlink: false,
+  },
+  {
     name: 'large.txt',
     path: `${REPO_ROOT}\\large.txt`,
     is_dir: false,
@@ -197,6 +207,11 @@ describe('FileExplorer view modes', () => {
             throw new Error('File is too large to preview (> 12 MB)');
           }
           return 'data:text/plain;base64,aGVsbG8=';
+        case 'fs_read_image_thumbnail':
+          if (payload?.path === `${REPO_ROOT}\\broken.png`) {
+            throw new Error('Image is too large to thumbnail (> 64 MB)');
+          }
+          return 'data:image/png;base64,ZmFrZQ==';
         case 'fs_measure_entry_sizes':
           return (payload?.paths ?? []).map(path => ({
             path,
@@ -431,6 +446,8 @@ describe('FileExplorer view modes', () => {
           return 'hello from preview';
         case 'fs_read_file_base64':
           return 'data:text/plain;base64,aGVsbG8=';
+        case 'fs_read_image_thumbnail':
+          return 'data:image/png;base64,ZmFrZQ==';
         case 'fs_measure_entry_sizes':
           return (payload?.paths ?? []).map(path => ({
             path,
@@ -518,6 +535,20 @@ describe('FileExplorer view modes', () => {
     fireEvent.click(screen.getByText('broken.png'));
     await screen.findByText(/image preview unavailable/i);
     expect(screen.getByText(/file is too large to preview/i)).toBeTruthy();
+  });
+
+  it('renders grid thumbnails for visible image entries in icon layouts', async () => {
+    useSettingsStore.getState().updateExplorer({ viewMode: 'icons-l' });
+
+    renderExplorer();
+    await screen.findByText('preview.png');
+
+    await screen.findByAltText('Thumbnail for preview.png');
+    expect(vi.mocked(invoke)).toHaveBeenCalledWith('fs_read_image_thumbnail', {
+      path: `${REPO_ROOT}\\preview.png`,
+      maxWidth: 256,
+      maxHeight: 256,
+    });
   });
 
   it('renders a dedicated experimental modes button and menu next to the standard layout control', async () => {

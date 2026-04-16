@@ -1,6 +1,7 @@
 import { isTauri } from '@tauri-apps/api/core';
 import { useEffect } from 'react';
 import { create } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
 import {
   cancelExplorerTask,
   clearExplorerTaskHistory,
@@ -183,9 +184,9 @@ export function useExplorerTaskProgressFeed(): void {
 }
 
 export function useExplorerTaskSnapshots(): ExplorerTaskSnapshot[] {
-  return useExplorerTaskStore((state) => state.taskOrder
+  return useExplorerTaskStore(useShallow((state) => state.taskOrder
     .map((taskId) => state.tasks[taskId])
-    .filter((task): task is ExplorerTaskSnapshot => Boolean(task)));
+    .filter((task): task is ExplorerTaskSnapshot => Boolean(task))));
 }
 
 export function useExplorerTaskCenterOpen(): boolean {
