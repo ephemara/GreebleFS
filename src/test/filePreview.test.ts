@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getAudioPreviewMimeType,
   getModelPreviewFormat,
   getMonacoLanguage,
+  isAudioPreviewExtension,
   isEditableTextExtension,
   isExecutableExtension,
   isImagePreviewExtension,
@@ -20,6 +22,15 @@ describe('filePreview config', () => {
     expect(isExecutableExtension('glb')).toBe(false);
   });
 
+  it('detects audio preview extensions and maps their mime types', () => {
+    expect(isAudioPreviewExtension('mp3')).toBe(true);
+    expect(isAudioPreviewExtension('.opus')).toBe(true);
+    expect(isAudioPreviewExtension('txt')).toBe(false);
+    expect(getAudioPreviewMimeType('m4a')).toBe('audio/mp4');
+    expect(getAudioPreviewMimeType('weba')).toBe('audio/webm');
+    expect(getAudioPreviewMimeType('txt')).toBeNull();
+  });
+
   it('maps supported 3d extensions to model formats', () => {
     expect(getModelPreviewFormat('fbx')).toBe('fbx');
     expect(getModelPreviewFormat('glb')).toBe('glb');
@@ -33,6 +44,12 @@ describe('filePreview config', () => {
     expect(isEditableTextExtension('obj', 1024)).toBe(false);
     expect(isEditableTextExtension('fbx', 1024)).toBe(false);
     expect(isEditableTextExtension('glb', 1024)).toBe(false);
+  });
+
+  it('keeps audio assets out of editable text mode even when small', () => {
+    expect(isEditableTextExtension('mp3', 1024)).toBe(false);
+    expect(isEditableTextExtension('flac', 1024)).toBe(false);
+    expect(isEditableTextExtension('opus', 1024)).toBe(false);
   });
 
   it('still allows normal source files to open in the editor', () => {

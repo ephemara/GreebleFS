@@ -49,6 +49,16 @@ const ENTRIES = [
     is_symlink: false,
   },
   {
+    name: 'anthem.mp3',
+    path: `${REPO_ROOT}\\anthem.mp3`,
+    is_dir: false,
+    size: 6 * 1024 * 1024,
+    modified: 0,
+    extension: 'mp3',
+    is_hidden: false,
+    is_symlink: false,
+  },
+  {
     name: 'large.txt',
     path: `${REPO_ROOT}\\large.txt`,
     is_dir: false,
@@ -558,6 +568,19 @@ describe('FileExplorer view modes', () => {
     fireEvent.click(screen.getByText('broken.png'));
     await screen.findByText(/image preview unavailable/i);
     expect(screen.getByText(/file is too large to preview/i)).toBeTruthy();
+  });
+
+  it('renders an inline audio player for previewable audio files without routing them through text loading', async () => {
+    renderExplorer();
+    await screen.findByText('anthem.mp3');
+
+    fireEvent.click(screen.getByText('anthem.mp3'));
+
+    const player = await screen.findByLabelText(/audio preview player for anthem\.mp3/i);
+    expect(player).toHaveAttribute('preload', 'metadata');
+    expect(player.querySelector('source')).toHaveAttribute('src', `asset://localhost/${REPO_ROOT}\\anthem.mp3`);
+    expect(player.querySelector('source')).toHaveAttribute('type', 'audio/mpeg');
+    expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_read_text_file')).toBe(false);
   });
 
   it('renders grid thumbnails for visible image entries in icon layouts', async () => {

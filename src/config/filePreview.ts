@@ -18,6 +18,29 @@ const IMAGE_PREVIEW_EXTENSIONS = [
   'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tiff', 'tif', 'avif',
 ] as const;
 
+const AUDIO_PREVIEW_MIME_TYPE_BY_EXTENSION = {
+  aac: 'audio/aac',
+  aif: 'audio/aiff',
+  aiff: 'audio/aiff',
+  alac: 'audio/mp4',
+  amr: 'audio/amr',
+  caf: 'audio/x-caf',
+  flac: 'audio/flac',
+  m4a: 'audio/mp4',
+  m4b: 'audio/mp4',
+  mid: 'audio/midi',
+  midi: 'audio/midi',
+  mka: 'audio/x-matroska',
+  mp3: 'audio/mpeg',
+  oga: 'audio/ogg',
+  ogg: 'audio/ogg',
+  opus: 'audio/ogg; codecs=opus',
+  wav: 'audio/wav',
+  wave: 'audio/wav',
+  weba: 'audio/webm',
+  wma: 'audio/x-ms-wma',
+} as const satisfies Record<string, string>;
+
 const EXECUTABLE_EXTENSIONS = [
   'exe', 'msi', 'bat', 'cmd', 'ps1', 'sh', 'app', 'dmg',
 ] as const;
@@ -82,6 +105,7 @@ const MONACO_LANGUAGE_BY_EXTENSION: Record<string, string> = {
 };
 
 const IMAGE_PREVIEW_EXTENSION_SET = new Set<string>(IMAGE_PREVIEW_EXTENSIONS);
+const AUDIO_PREVIEW_EXTENSION_SET = new Set<string>(Object.keys(AUDIO_PREVIEW_MIME_TYPE_BY_EXTENSION));
 const EXECUTABLE_EXTENSION_SET = new Set<string>(EXECUTABLE_EXTENSIONS);
 const EDITABLE_TEXT_EXTENSION_SET = new Set<string>(EDITABLE_TEXT_EXTENSIONS);
 
@@ -91,6 +115,17 @@ export function isImagePreviewExtension(extension: string): boolean {
 
 export function isExecutableExtension(extension: string): boolean {
   return EXECUTABLE_EXTENSION_SET.has(normalizeExtension(extension));
+}
+
+export function isAudioPreviewExtension(extension: string): boolean {
+  return AUDIO_PREVIEW_EXTENSION_SET.has(normalizeExtension(extension));
+}
+
+export function getAudioPreviewMimeType(extension: string): string | null {
+  const normalizedExtension = normalizeExtension(extension);
+  return normalizedExtension in AUDIO_PREVIEW_MIME_TYPE_BY_EXTENSION
+    ? AUDIO_PREVIEW_MIME_TYPE_BY_EXTENSION[normalizedExtension as keyof typeof AUDIO_PREVIEW_MIME_TYPE_BY_EXTENSION]
+    : null;
 }
 
 export function getModelPreviewFormat(extension: string): ModelPreviewFormat | null {
@@ -107,6 +142,9 @@ export function isEditableTextExtension(extension: string, size: number): boolea
     return size < 2 * 1024 * 1024;
   }
   if (isImagePreviewExtension(normalizedExtension) || isExecutableExtension(normalizedExtension)) {
+    return false;
+  }
+  if (isAudioPreviewExtension(normalizedExtension)) {
     return false;
   }
   if (getModelPreviewFormat(normalizedExtension)) {

@@ -11,7 +11,7 @@
 import React, {
   Suspense, startTransition, useState, useEffect, useRef, useCallback, useMemo, useId, type CSSProperties,
 } from 'react';
-import { isTauri } from '@tauri-apps/api/core';
+import { convertFileSrc, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useShallow } from 'zustand/react/shallow';
 import type { EditorProps as MonacoEditorProps } from '@monaco-editor/react';
@@ -124,6 +124,7 @@ import {
 } from '../config/searchTelemetry';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { AppPromptDialog } from './AppModal';
+import { ExplorerImageEditor } from './ExplorerImageEditor';
 import { ExplorerSideRail } from './explorer/ExplorerSideRail';
 import { ExplorerChromeSurface } from './explorer/ExplorerChromeSurface';
 import {
@@ -158,8 +159,10 @@ import { resolveExplorerSearchScope } from './fileExplorerSearchScope';
 import type { DocumentPreviewKind } from './documentPreview';
 import {
   EXPLORER_IMAGE_TILE_PREVIEW_CONFIG,
+  getAudioPreviewMimeType,
   getModelPreviewFormat,
   getMonacoLanguage,
+  isAudioPreviewExtension,
   isEditableTextExtension,
   isExecutableExtension,
   isImagePreviewExtension,
@@ -345,6 +348,7 @@ interface TransferConflictDialogState {
 type PreviewState =
   | { type: 'none'; path: string }
   | { type: 'image'; path: string; name: string; content: string }
+  | { type: 'audio'; path: string; name: string; source: string; extension: string; mimeType: string | null; size: number }
   | {
       type: 'text';
       path: string;
@@ -799,6 +803,19 @@ function getEntryExtension(entry: Pick<FileEntry, 'is_dir' | 'name' | 'extension
   }
 
   return entry.name.slice(lastDotIndex + 1).toLowerCase();
+}
+
+function getPreviewAssetUrl(filePath: string): string {
+  if (typeof window === 'undefined') {
+    return filePath;
+  }
+
+  try {
+    return convertFileSrc(filePath);
+  } catch {
+    const normalized = filePath.replace(/\\/g, '/');
+    return normalized.startsWith('/') ? `file://${encodeURI(normalized)}` : `file:///${encodeURI(normalized)}`;
+  }
 }
 
 function getEntryTypeLabel(entry: Pick<FileEntry, 'is_dir' | 'name' | 'extension'>): string {
@@ -1780,6 +1797,21 @@ function EditorFallback({ label }: { label: string }) {
   );
 }
 
+function getAudioPreviewErrorLabel(audioError: MediaError | null): string {
+  switch (audioError?.code) {
+    case 1:
+      return 'Audio playback was aborted before the preview could start.';
+    case 2:
+      return 'The audio preview could not finish loading because the media request failed.';
+    case 3:
+      return 'The audio file loaded, but the embedded codec could not be decoded by this webview.';
+    case 4:
+      return 'This audio format is not supported by the current desktop webview.';
+    default:
+      return 'This audio preview could not be played by the current desktop webview.';
+  }
+}
+
 // ─── Resizable Preview Panel ──────────────────────────────────────────────────
 
 function PreviewPanel({
@@ -1788,6 +1820,7 @@ function PreviewPanel({
   onClose,
   onWidthChange,
   onTextChange,
+  onRefreshPreviewEntry,
   onCopyPath,
   viewMode,
   onViewModeChange,
@@ -1802,6 +1835,7 @@ function PreviewPanel({
   onClose: () => void;
   onWidthChange: (width: number) => void;
   onTextChange: (path: string, content: string) => void;
+  onRefreshPreviewEntry: () => void | Promise<void>;
   onCopyPath: (path: string) => void;
   viewMode: ExplorerDocumentViewMode;
   onViewModeChange: (mode: ExplorerDocumentViewMode) => void;
@@ -1815,6 +1849,7 @@ function PreviewPanel({
   const startX   = useRef(0);
   const startW   = useRef(width);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  const [audioPlaybackError, setAudioPlaybackError] = useState<string | null>(null);
 
   const onMouseDown = (e: React.MouseEvent) => {
     dragging.current = true;
@@ -1842,6 +1877,7 @@ function PreviewPanel({
 
   useEffect(() => {
     setCopiedPath(null);
+    setAudioPlaybackError(null);
   }, [preview.path]);
 
   const previewTitle = preview.type === 'none' ? 'Preview' : preview.name;
@@ -2076,12 +2112,36 @@ function PreviewPanel({
       {/* Content */}
       <div style={{ flex:1, overflow:'hidden', position:'relative' }}>
         {preview.type === 'image' && preview.content && (
-          <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', padding:16, boxSizing:'border-box' }}>
-            <img
-              src={preview.content}   /* data-URI — always works */
-              alt="preview"
-              style={{ maxWidth:'100%', maxHeight:'100%', objectFit:'contain', borderRadius:'var(--overlay-explorer-control-radius)', boxShadow:'0 4px 24px rgba(0,0,0,0.6)' }}
-            />
+          <ExplorerImageEditor
+            imagePath={preview.path}
+            imageName={preview.name}
+            imageSource={preview.content}
+            onSaved={onRefreshPreviewEntry}
+          />
+        )}
+        {preview.type === 'audio' && (
+          <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', padding: 24, boxSizing: 'border-box', background: 'var(--overlay-explorer-preview-bg)' }}>
+            <div style={{ width: '100%', maxWidth: 420, display: 'grid', gap: 14, padding: '18px 18px 16px', borderRadius: 'var(--overlay-explorer-panel-radius)', border: '1px solid var(--overlay-explorer-chip-border)', background: 'var(--overlay-explorer-chip-bg)', boxShadow: '0 14px 32px rgba(0,0,0,0.24)' }}>
+              <div style={{ display: 'grid', gap: 4 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: EXP.text }}>Audio Preview</div>
+                <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: EXP.muted }}>
+                  {preview.extension.toUpperCase()} · {formatSize(preview.size)}
+                </div>
+              </div>
+              <audio
+                controls
+                preload="metadata"
+                aria-label={`Audio preview player for ${preview.name}`}
+                onError={event => setAudioPlaybackError(getAudioPreviewErrorLabel(event.currentTarget.error))}
+                style={{ width: '100%' }}
+              >
+                <source src={preview.source} type={preview.mimeType ?? undefined} />
+                This audio preview is not supported by the current desktop webview.
+              </audio>
+              <div style={{ fontSize: 11, lineHeight: 1.5, color: audioPlaybackError ? EXP.red : EXP.muted }}>
+                {audioPlaybackError ?? 'Use the inline player to scrub, pause, and verify audio without leaving the explorer.'}
+              </div>
+            </div>
           </div>
         )}
         {preview.type === 'text' && viewMode === 'preview' && supportsRenderedPreview && (
@@ -4396,6 +4456,19 @@ export function FileExplorer({
       return;
     }
 
+    if (isAudioPreviewExtension(ext)) {
+      setPreview({
+        type: 'audio',
+        path: entry.path,
+        name: entry.name,
+        source: getPreviewAssetUrl(entry.path),
+        extension: ext,
+        mimeType: getAudioPreviewMimeType(ext),
+        size: entry.size,
+      });
+      return;
+    }
+
     if (isImagePreviewExtension(ext)) {
       setPreviewLoading(true);
       try {
@@ -4481,7 +4554,7 @@ export function FileExplorer({
       return;
     }
 
-    if (canInlinePreview && (getModelPreviewFormat(ext) || isImagePreviewExtension(ext))) {
+    if (canInlinePreview && (getModelPreviewFormat(ext) || isImagePreviewExtension(ext) || isAudioPreviewExtension(ext))) {
       await previewEntry(entry, focusTarget);
       return;
     }
@@ -5922,6 +5995,8 @@ export function FileExplorer({
   const hasPreview = !isCompactDock && previewEnabled && preview.type !== 'none';
   const previewModeLabel = preview.type === 'text'
     ? (preview.renderKind === 'markdown' ? 'Text preview (markdown)' : 'Text preview')
+    : preview.type === 'audio'
+      ? 'Audio preview'
     : preview.type === 'image'
       ? 'Image preview'
       : preview.type === 'model3d'
@@ -9762,6 +9837,7 @@ export function FileExplorer({
               width={previewWidth}
               onWidthChange={setPreviewWidth}
               onTextChange={updatePreviewTextContent}
+              onRefreshPreviewEntry={() => refresh()}
               onCopyPath={copyToSysClipboard}
               viewMode={documentViewMode}
               onViewModeChange={setDocumentViewMode}

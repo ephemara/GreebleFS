@@ -1,5 +1,19 @@
 # GreebleFS Memory
 
+## 2026-04-16 — Explorer Inline Audio Preview
+
+- Audio files can now stay inside the explorer preview workflow instead of forcing an external app handoff.
+- Durable implementation shape:
+  - `src/config/filePreview.ts` now owns the audio-preview extension registry plus MIME metadata. This keeps audio routing data-driven and prevents small audio files from falling through the editable-text heuristic.
+  - `src/components/FileExplorer.tsx` now treats supported audio entries as a first-class preview state, resolves them through `convertFileSrc`/asset URLs, and renders an inline `<audio controls>` player in the preview pane.
+  - The preview pane now surfaces a codec/support error message if the current desktop webview cannot decode the selected file, instead of silently failing.
+- Durable operator note:
+  - support is intentionally broad at the extension-routing layer (`mp3`, `wav`, `flac`, `ogg`, `opus`, `m4a`, plus adjacent container variants), but final playback still depends on the host webview codec stack. Unsupported codecs should degrade to the inline error state instead of bouncing into text preview.
+- Validation:
+  - passed: `bunx vitest run src/test/filePreview.test.ts src/test/fileExplorer.viewModes.test.tsx`
+  - passed: filtered typecheck for touched audio-preview surfaces via `bunx tsc --noEmit --pretty false 2>&1 | rg "src/config/filePreview.ts|src/components/FileExplorer.tsx|src/test/filePreview.test.ts|src/test/fileExplorer.viewModes.test.tsx"`
+  - note: full `bunx tsc --noEmit --pretty false` still reports many unrelated pre-existing repo errors outside the explorer/audio files
+
 ## 2026-04-16 — Shell-Native Dialog Cleanup
 
 - Browser-native `window.prompt` / `window.confirm` / `window.alert` usage has been removed from the shipped React shell surfaces so the app no longer leaks `localhost says`-style browser chrome into premium workflows.
