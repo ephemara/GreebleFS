@@ -541,8 +541,6 @@ describe('FileExplorer view modes', () => {
     useSettingsStore.getState().updateExplorer({ viewMode: 'icons-l' });
 
     renderExplorer();
-    await screen.findByText('preview.png');
-
     await screen.findByAltText('Thumbnail for preview.png');
     expect(vi.mocked(invoke)).toHaveBeenCalledWith('fs_read_image_thumbnail', {
       path: `${REPO_ROOT}\\preview.png`,
@@ -669,7 +667,7 @@ describe('FileExplorer view modes', () => {
     });
   });
 
-  it('starts the native drag bridge when no modifier is held for supported local entries', async () => {
+  it('keeps plain drags internal for supported local entries', async () => {
     renderExplorer();
     const entry = await screen.findByText('notes.txt');
     const dataTransfer = createDataTransfer();
@@ -683,12 +681,12 @@ describe('FileExplorer view modes', () => {
 
     expect(dataTransfer.setData).toHaveBeenCalledWith(
       'application/x-overlayterm-drag-intent',
-      'native-out',
+      'internal',
     );
-    expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_start_native_file_drag')).toBe(true);
+    expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_start_native_file_drag')).toBe(false);
   });
 
-  it('keeps drag intent internal when shift is held', async () => {
+  it('starts the native drag bridge when shift is held for supported local entries', async () => {
     renderExplorer();
     const entry = await screen.findByText('notes.txt');
     const dataTransfer = createDataTransfer();
@@ -701,11 +699,8 @@ describe('FileExplorer view modes', () => {
     Object.defineProperty(event, 'shiftKey', { value: true });
     fireEvent(dragSource, event);
 
-    expect(invoke).not.toHaveBeenCalledWith('fs_start_native_file_drag', {
-      paths: [`${REPO_ROOT}\\\\notes.txt`],
-    });
-    expect(dataTransfer.setData).toHaveBeenCalledWith('application/x-overlayterm-drag-intent', 'internal');
-    expect(dragSource.dataset.overlayDragHide).not.toBe('true');
+    expect(dataTransfer.setData).toHaveBeenCalledWith('application/x-overlayterm-drag-intent', 'native-out');
+    expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_start_native_file_drag')).toBe(true);
   });
 
 });

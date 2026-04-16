@@ -644,7 +644,7 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
 }
 
 function resolveExplorerDragIntent(event: Pick<React.DragEvent, 'shiftKey'>): ExplorerDragIntent {
-  return event.shiftKey ? 'internal' : 'native-out';
+  return event.shiftKey ? 'native-out' : 'internal';
 }
 
 function resolveExplorerDropOperation(
@@ -5094,7 +5094,7 @@ export function FileExplorer({
       }
     }
     if (requestedDragIntent === 'native-out' && dragIntent === 'internal') {
-      setError('Native drag-out is only available for local filesystem items. Cloud files still drag inside the explorer.');
+      setError('Native drag-out is only available for local filesystem items. Standard explorer drags still move or copy them internally.');
     }
     e.dataTransfer.effectAllowed = dragIntent === 'native-out' ? 'copy' : 'copyMove';
   };
@@ -7456,13 +7456,6 @@ export function FileExplorer({
     return () => {
       disposed = true;
       window.clearTimeout(batchTimer);
-      setImageThumbnailLoadingPaths(current => {
-        const next = new Set(current);
-        for (const path of pendingPaths) {
-          next.delete(path);
-        }
-        return next.size === current.size ? current : next;
-      });
     };
   }, [
     effectiveViewMode,
@@ -7619,7 +7612,6 @@ export function FileExplorer({
     }
 
     const pendingPaths = pendingEntries.map(entry => entry.path);
-    let disposed = false;
     const batchTimer = window.setTimeout(() => {
       setImageThumbnailLoadingPaths(current => {
         const next = new Set(current);
@@ -7647,7 +7639,7 @@ export function FileExplorer({
           }
         }),
       ).then(results => {
-        if (disposed) {
+        if (!isExplorerMountedRef.current) {
           return;
         }
 
@@ -7672,13 +7664,11 @@ export function FileExplorer({
     }, EXPLORER_IMAGE_TILE_THUMBNAIL_BATCH_SETTLE_MS);
 
     return () => {
-      disposed = true;
       window.clearTimeout(batchTimer);
     };
   }, [
     activeGridMetrics,
     currentPathIsCloud,
-    imageThumbnailLoadingPaths,
     imageThumbnailMap,
     loading,
     readExplorerImageThumbnail,
