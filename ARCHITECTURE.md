@@ -40,6 +40,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Shell-owned wrapper for the embedded preview-pane image editor. It provides GreebleFS-native toolbar/status chrome, save/reset wiring, resize adaptation, and the static-preview fallback for unsupported image formats.
 - `src/components/ExplorerVideoEditor.tsx`
   Shell-owned wrapper for the embedded preview-pane video surface. It owns playback chrome, trim handles, timeline state, export prompting, and the non-destructive MP4 trim workflow.
+- `src/components/ExplorerAudioWorkbench.tsx`
+  Shell-owned wrapper for the embedded preview-pane audio surface. It owns transport controls, waveform selection, SoX-backed preview fallback, analysis cards, trim/normalize/convert actions, and spectrogram rendering.
 - `src/components/explorer/ExplorerWorkspace.tsx`
   Explorer-local workspace shell that wraps `FileExplorer` instances with explorer tabs, slot-based `1-Up` / `2-Up` / `4-Up` pane layouts, pane focus, and adaptive split sizing.
 - `src/components/explorer/ExplorerSideRail.tsx`
@@ -92,6 +94,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Runtime seam for the embedded preview-pane image editor. It loads the local editor package through the `@img-editor-runtime` alias so the shell can consume the editor at runtime without importing the package internals into the main app typecheck.
 - `src/runtime/videoEditorBackend.ts`
   TS bridge for the preview-pane video trim/export flow. It routes trim exports through the generated Tauri command surface instead of letting React invoke ffmpeg directly.
+- `src/runtime/audioWorkbenchBackend.ts`
+  TS bridge for the preview-pane audio analysis/proxy/export/batch flow. It routes SoX-backed audio work through the generated Tauri command surface instead of letting React or vendored packages own media mutation.
 - `src/config/explorerArchives.ts`
   Data-driven archive registry for the explorer. It is the TS-side source of truth for which local archive suffixes should route through native extraction/opening and how archive folder labels are derived.
 - `src/windows/FileOperationsWindowApp.tsx`
@@ -272,7 +276,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `FileExplorer.tsx` owns both file-centric actions and explorer-local shell controls, so the shared top bar stays panel-agnostic while the explorer keeps its mode/source/preview controls adjacent to the path/search field.
 - Previewable media is now split into three host-owned explorer lanes instead of one generic browser fallback:
   - image editing stays in `ExplorerImageEditor.tsx` through the local package seam
-  - audio playback stays as a lightweight inline player in `FileExplorer.tsx`
+  - audio playback/editing now lives in `ExplorerAudioWorkbench.tsx`, while the actual analysis/proxy/export/batch mutation stays in `src-tauri/src/audio_commands.rs`
   - video playback + trim/export lives in `ExplorerVideoEditor.tsx`, while the actual export mutation stays in `src-tauri/src/video_commands.rs`
 - Local archive handling is now a first-class explorer workflow instead of a pure OS-shell fallback:
   - `src/config/explorerArchives.ts` defines the supported local archive suffix registry (`zip`/`cbz`/`jar`/`apk`, `7z`, `tar`, `tar.gz`, `tar.bz2`, `tar.xz`, `gz`, `bz2`, `xz`) plus the default extracted-folder naming rules
@@ -283,6 +287,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Explorer Pro metadata and long-running utilities now route through Rust instead of TS-only persistence:
   - `src-tauri/src/explorer_pro_commands.rs` owns app-managed trash + undo, batch rename, duplicate-scan lifecycle, tags, and saved searches
   - `src-tauri/src/fs_commands.rs` now also owns the durable explorer task registry used by copy/move/delete jobs plus the retry/cancel/history command surface exposed through Specta
+  - `src-tauri/src/audio_commands.rs` owns explorer-facing audio analysis, vendored SoX runtime extraction, preview-proxy generation, trim/fade/normalize/convert exports, batch audio processing, and explorer task cancellation/retry hooks
   - `src-tauri/src/video_commands.rs` owns explorer-facing video trim export through a native `ffmpeg` subprocess. The frontend supplies trim intent and destination path, but the output mutation stays in Rust.
   - local transfer UX now has a two-step contract instead of silent collision auto-rename:
     - `fs_plan_transfer_items` reports pending name collisions before paste/drag/pane transfers run

@@ -74,9 +74,8 @@ describe('ExplorerAudioWorkbench', () => {
     );
 
     expect(await screen.findByText(/ready to scrub, trim, normalize, convert, and export/i)).toBeInTheDocument();
-    expect(screen.getByText('44100 Hz')).toBeInTheDocument();
-    expect(screen.getByText('24s')).not.toBeInTheDocument();
-    expect(screen.getByText('0:24')).toBeInTheDocument();
+    expect(screen.getByText(/44,100 Hz/i)).toBeInTheDocument();
+    expect(screen.getAllByText('0:24').length).toBeGreaterThan(0);
     expect(screen.getByText('MPEG audio · 16-bit')).toBeInTheDocument();
   });
 

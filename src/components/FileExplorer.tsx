@@ -1866,7 +1866,6 @@ function PreviewPanel({
 
   useEffect(() => {
     setCopiedPath(null);
-    setAudioPlaybackError(null);
   }, [preview.path]);
 
   const previewTitle = preview.type === 'none' ? 'Preview' : preview.name;

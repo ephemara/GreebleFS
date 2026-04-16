@@ -59,19 +59,26 @@
 - Current limit:
   - the worker system currently accelerates runtime-authored module transpilation and observability; explorer derivation and package/theme normalization are still future lanes rather than landed worker-backed paths.
 
-## 2026-04-16 — Explorer Inline Audio Preview
+## 2026-04-16 — Explorer SoX Audio Workbench
 
-- Audio files can now stay inside the explorer preview workflow instead of forcing an external app handoff.
+- Audio files now stay inside the explorer as a shell-native workbench instead of a lightweight inline player.
 - Durable implementation shape:
-  - `src/config/filePreview.ts` now owns the audio-preview extension registry plus MIME metadata. This keeps audio routing data-driven and prevents small audio files from falling through the editable-text heuristic.
-  - `src/components/FileExplorer.tsx` now treats supported audio entries as a first-class preview state, resolves them through `convertFileSrc`/asset URLs, and renders an inline `<audio controls>` player in the preview pane.
-  - The preview pane now surfaces a codec/support error message if the current desktop webview cannot decode the selected file, instead of silently failing.
+  - `src-tauri/src/audio_commands.rs` is the new native audio lane. It resolves vendored SoX bundles from `packages/sox/bin`, unpacks the current-platform bundle into app-local managed storage, and exposes typed commands for preview analysis, preview-proxy generation, single-file transforms, and batch processing.
+  - `src-tauri/src/fs_commands.rs` now treats audio transforms and audio batch runs as first-class explorer tasks, including retry/cancel support through the same task center used by copy/move/archive work.
+  - `src/runtime/audioWorkbenchBackend.ts` is the TS bridge for the new audio command surface; React should call that bridge instead of raw invoke strings.
+  - `src/components/ExplorerAudioWorkbench.tsx` is the shell-owned inline audio surface. It owns transport controls, waveform rendering, draggable in/out selection, analysis cards, trim/fade/normalize/convert actions, overwrite confirmation, and spectrogram rendering.
+  - `src/components/FileExplorer.tsx` now routes previewable audio into the workbench instead of the raw `<audio>` card, and audio-heavy selection context menus expose `Batch Convert Audio` plus `Batch Normalize Audio`.
+  - `src/config/filePreview.ts` now also owns a data-driven audio export-format catalog and direct-playback hints so format/UI behavior is not hardcoded inside the workbench component.
 - Durable operator note:
-  - support is intentionally broad at the extension-routing layer (`mp3`, `wav`, `flac`, `ogg`, `opus`, `m4a`, plus adjacent container variants), but final playback still depends on the host webview codec stack. Unsupported codecs should degrade to the inline error state instead of bouncing into text preview.
+  - direct playback still depends on the host webview codec stack. When direct playback fails, the workbench now falls back to a SoX-generated preview proxy instead of degrading to a dead inline player.
+  - batch v1 is intentionally narrow: convert/normalize only. Trim/fade stay single-file workbench actions.
 - Validation:
-  - passed: `bunx vitest run src/test/filePreview.test.ts src/test/fileExplorer.viewModes.test.tsx`
-  - passed: filtered typecheck for touched audio-preview surfaces via `bunx tsc --noEmit --pretty false 2>&1 | rg "src/config/filePreview.ts|src/components/FileExplorer.tsx|src/test/filePreview.test.ts|src/test/fileExplorer.viewModes.test.tsx"`
-  - note: full `bunx tsc --noEmit --pretty false` still reports many unrelated pre-existing repo errors outside the explorer/audio files
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml`
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml audio_commands:: -- --nocapture`
+  - passed: `bunx vitest run src/test/filePreview.test.ts src/test/explorerAudioWorkbench.test.tsx src/test/fileExplorer.viewModes.test.tsx`
+  - passed: filtered typecheck for touched audio/explorer surfaces via `bunx tsc --noEmit --pretty false 2>&1 | rg "ExplorerAudioWorkbench|audioWorkbenchBackend|src/config/filePreview.ts|src/components/FileExplorer.tsx|src/test/explorerAudioWorkbench.test.tsx|src/test/filePreview.test.ts|src/test/fileExplorer.viewModes.test.tsx|src/runtime/audioWorkbenchBackend.ts" || true`
+  - note: Rust tests still emit the same pre-existing unrelated `src-tauri/src/terminal.rs` warnings about `OsStr` and `ENV_TEST_LOCK`; this pass did not touch that subsystem
 
 ## 2026-04-16 — Shell-Native Dialog Cleanup
 
