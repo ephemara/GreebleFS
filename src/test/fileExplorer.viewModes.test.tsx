@@ -16,6 +16,12 @@ vi.mock('../components/ExplorerVideoEditor', () => ({
   ),
 }));
 
+vi.mock('../components/ExplorerAudioWorkbench', () => ({
+  ExplorerAudioWorkbench: ({ audioName }: { audioName: string }) => (
+    <div data-testid="mock-explorer-audio-workbench">{audioName}</div>
+  ),
+}));
+
 import { FileExplorer, invalidateExplorerResultCaches } from '../components/FileExplorer';
 import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/appearance';
 import { createDefaultExplorerRailSnapshot } from '../components/explorer/explorerRailState';
@@ -593,16 +599,13 @@ describe('FileExplorer view modes', () => {
     expect(screen.getByText(/file is too large to preview/i)).toBeTruthy();
   });
 
-  it('renders an inline audio player for previewable audio files without routing them through text loading', async () => {
+  it('mounts the embedded audio workbench for previewable audio files without routing them through text loading', async () => {
     renderExplorer();
     await screen.findByText('anthem.mp3');
 
     fireEvent.click(screen.getByText('anthem.mp3'));
 
-    const player = await screen.findByLabelText(/audio preview player for anthem\.mp3/i);
-    expect(player).toHaveAttribute('preload', 'metadata');
-    expect(player.querySelector('source')).toHaveAttribute('src', `asset://localhost/${REPO_ROOT}\\anthem.mp3`);
-    expect(player.querySelector('source')).toHaveAttribute('type', 'audio/mpeg');
+    expect(await screen.findByTestId('mock-explorer-audio-workbench')).toHaveTextContent('anthem.mp3');
     expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_read_text_file')).toBe(false);
   });
 

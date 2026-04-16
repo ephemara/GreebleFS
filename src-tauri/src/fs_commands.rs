@@ -95,6 +95,8 @@ pub enum ExplorerTaskKind {
     BatchRename,
     DuplicateScan,
     ExtractArchive,
+    AudioTransform,
+    AudioBatchProcess,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, specta::Type)]
@@ -171,12 +173,19 @@ pub(crate) enum ExplorerTaskRetryContext {
     ArchiveExtraction {
         request: FsArchiveExtractionRequest,
     },
+    AudioTransform {
+        request: crate::audio_commands::AudioTransformRequest,
+    },
+    AudioBatchProcess {
+        request: crate::audio_commands::AudioBatchProcessRequest,
+    },
 }
 
 #[derive(Debug, Clone)]
 pub(crate) enum ExplorerTaskCancelContext {
     Yazi { scheduler_task_id: YaziTaskId },
     DuplicateScan { scan_id: String },
+    AudioOperation { operation_id: String },
 }
 
 #[derive(Debug, Clone)]
@@ -3734,6 +3743,16 @@ pub async fn fs_retry_explorer_task(
         ExplorerTaskRetryContext::ArchiveExtraction { request } => {
             run_archive_extraction_task(request).await?
         }
+        ExplorerTaskRetryContext::AudioTransform { request } => {
+            crate::audio_commands::audio_export_transform(app, request)
+                .await?
+                .task_id
+        }
+        ExplorerTaskRetryContext::AudioBatchProcess { request } => {
+            crate::audio_commands::audio_batch_process(app, request)
+                .await?
+                .task_id
+        }
     };
     let tasks = list_explorer_tasks_snapshot()?;
     tasks
@@ -3772,6 +3791,9 @@ pub async fn fs_cancel_explorer_task(task_id: String) -> Result<ExplorerTaskReco
         }
         ExplorerTaskCancelContext::DuplicateScan { scan_id } => {
             crate::explorer_pro_commands::cancel_duplicate_scan_task(&scan_id)?;
+        }
+        ExplorerTaskCancelContext::AudioOperation { operation_id } => {
+            crate::audio_commands::cancel_audio_task(&operation_id)?;
         }
     }
     cancel_manual_explorer_task(&task_id, None)

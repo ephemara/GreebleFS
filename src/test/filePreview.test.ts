@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  EXPLORER_AUDIO_EXPORT_FORMATS,
   getAudioPreviewMimeType,
+  getExplorerAudioExportFormatDefinition,
   getModelPreviewFormat,
   getMonacoLanguage,
   getVideoPreviewMimeType,
+  isDirectAudioPreviewExtension,
   isAudioPreviewExtension,
   isEditableTextExtension,
   isExecutableExtension,
@@ -31,6 +34,14 @@ describe('filePreview config', () => {
     expect(getAudioPreviewMimeType('m4a')).toBe('audio/mp4');
     expect(getAudioPreviewMimeType('weba')).toBe('audio/webm');
     expect(getAudioPreviewMimeType('txt')).toBeNull();
+  });
+
+  it('keeps audio export formats and direct-playback hints data-driven', () => {
+    expect(EXPLORER_AUDIO_EXPORT_FORMATS.map((format) => format.id)).toEqual(['mp3', 'wav', 'flac', 'ogg']);
+    expect(getExplorerAudioExportFormatDefinition('wav')?.mimeType).toBe('audio/wav');
+    expect(getExplorerAudioExportFormatDefinition('txt')).toBeNull();
+    expect(isDirectAudioPreviewExtension('mp3')).toBe(true);
+    expect(isDirectAudioPreviewExtension('wma')).toBe(false);
   });
 
   it('detects video preview extensions and maps their mime types', () => {

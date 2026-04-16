@@ -3,6 +3,10 @@ use std::{fs, path::PathBuf};
 use crate::archive_ops::{
     FsArchiveExtractionMode, FsArchiveExtractionRequest, FsArchiveExtractionResult,
 };
+use crate::audio_commands::{
+    AudioBatchProcessRequest, AudioBatchProcessResult, AudioPreviewAnalysis, AudioPreviewSourceKind,
+    AudioTransformRequest, AudioTransformResult, AudioWaveformBucket, ResolvedAudioPreviewSource,
+};
 use crate::cloud_commands::{
     CloudAccountSummary, CloudAccountsSnapshot, CloudAuthSession, CloudAuthStatus, CloudBreadcrumb,
     CloudDirectoryListing, CloudProviderConfigurationSource, CloudProviderConfigurationStatus,
@@ -100,6 +104,11 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::fs_commands::fs_open_file,
             crate::fs_commands::fs_open_archive,
             crate::fs_commands::fs_extract_archive,
+            crate::audio_commands::audio_analyze_preview,
+            crate::audio_commands::audio_create_preview_proxy,
+            crate::audio_commands::audio_export_transform,
+            crate::audio_commands::audio_batch_process,
+            crate::audio_commands::audio_resolve_preview_source,
             crate::fs_commands::fs_open_with_dialog,
             crate::fs_commands::fs_open_as_admin,
             crate::fs_commands::fs_reveal_in_explorer,
@@ -190,6 +199,14 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<FsArchiveExtractionMode>()
         .typ::<FsArchiveExtractionRequest>()
         .typ::<FsArchiveExtractionResult>()
+        .typ::<AudioWaveformBucket>()
+        .typ::<AudioPreviewAnalysis>()
+        .typ::<AudioPreviewSourceKind>()
+        .typ::<ResolvedAudioPreviewSource>()
+        .typ::<AudioTransformRequest>()
+        .typ::<AudioTransformResult>()
+        .typ::<AudioBatchProcessRequest>()
+        .typ::<AudioBatchProcessResult>()
         .typ::<DriveInfo>()
         .typ::<EntryStorageInfo>()
         .typ::<ExplorerTaskProgressEvent>()

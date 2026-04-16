@@ -20,7 +20,7 @@ import {
   X, Star, StarOff, Terminal,
   Trash2, Copy, Scissors, Clipboard, Edit3, ExternalLink,
   Shield, Eye, Info, Loader, Puzzle, Sparkles,
-  FilePlus, FolderPlus, CopyPlus, Save, Tags, Undo2, AlertTriangle,
+  Waves, FilePlus, FolderPlus, CopyPlus, Save, Tags, Undo2, AlertTriangle,
 } from 'lucide-react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import {
@@ -124,6 +124,7 @@ import {
 } from '../config/searchTelemetry';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { AppPromptDialog } from './AppModal';
+import { ExplorerAudioWorkbench } from './ExplorerAudioWorkbench';
 import { ExplorerImageEditor } from './ExplorerImageEditor';
 import { ExplorerVideoEditor } from './ExplorerVideoEditor';
 import { ExplorerSideRail } from './explorer/ExplorerSideRail';
@@ -195,6 +196,7 @@ import {
   type ExplorerSavedSearch,
   type ExplorerTagMetadataSnapshot,
 } from '../runtime/explorerBackend';
+import { runExplorerAudioBatchProcess } from '../runtime/audioWorkbenchBackend';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 import {
   moveExplorerChromeControlInResolvedSurfaces,
@@ -1801,21 +1803,6 @@ function EditorFallback({ label }: { label: string }) {
   );
 }
 
-function getAudioPreviewErrorLabel(audioError: MediaError | null): string {
-  switch (audioError?.code) {
-    case 1:
-      return 'Audio playback was aborted before the preview could start.';
-    case 2:
-      return 'The audio preview could not finish loading because the media request failed.';
-    case 3:
-      return 'The audio file loaded, but the embedded codec could not be decoded by this webview.';
-    case 4:
-      return 'This audio format is not supported by the current desktop webview.';
-    default:
-      return 'This audio preview could not be played by the current desktop webview.';
-  }
-}
-
 // ─── Resizable Preview Panel ──────────────────────────────────────────────────
 
 function PreviewPanel({
@@ -1853,8 +1840,6 @@ function PreviewPanel({
   const startX   = useRef(0);
   const startW   = useRef(width);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
-  const [audioPlaybackError, setAudioPlaybackError] = useState<string | null>(null);
-
   const onMouseDown = (e: React.MouseEvent) => {
     dragging.current = true;
     startX.current   = e.clientX;
@@ -2124,29 +2109,15 @@ function PreviewPanel({
           />
         )}
         {preview.type === 'audio' && (
-          <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', padding: 24, boxSizing: 'border-box', background: 'var(--overlay-explorer-preview-bg)' }}>
-            <div style={{ width: '100%', maxWidth: 420, display: 'grid', gap: 14, padding: '18px 18px 16px', borderRadius: 'var(--overlay-explorer-panel-radius)', border: '1px solid var(--overlay-explorer-chip-border)', background: 'var(--overlay-explorer-chip-bg)', boxShadow: '0 14px 32px rgba(0,0,0,0.24)' }}>
-              <div style={{ display: 'grid', gap: 4 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: EXP.text }}>Audio Preview</div>
-                <div style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', color: EXP.muted }}>
-                  {preview.extension.toUpperCase()} · {formatSize(preview.size)}
-                </div>
-              </div>
-              <audio
-                controls
-                preload="metadata"
-                aria-label={`Audio preview player for ${preview.name}`}
-                onError={event => setAudioPlaybackError(getAudioPreviewErrorLabel(event.currentTarget.error))}
-                style={{ width: '100%' }}
-              >
-                <source src={preview.source} type={preview.mimeType ?? undefined} />
-                This audio preview is not supported by the current desktop webview.
-              </audio>
-              <div style={{ fontSize: 11, lineHeight: 1.5, color: audioPlaybackError ? EXP.red : EXP.muted }}>
-                {audioPlaybackError ?? 'Use the inline player to scrub, pause, and verify audio without leaving the explorer.'}
-              </div>
-            </div>
-          </div>
+          <ExplorerAudioWorkbench
+            audioPath={preview.path}
+            audioName={preview.name}
+            audioSource={preview.source}
+            audioExtension={preview.extension}
+            audioMimeType={preview.mimeType}
+            audioSize={preview.size}
+            onExported={onRefreshPreviewEntry}
+          />
         )}
         {preview.type === 'video' && (
           <ExplorerVideoEditor
@@ -4048,6 +4019,47 @@ export function FileExplorer({
     }
   }, [extractExplorerArchive, navigate, openExplorerArchive, refresh]);
 
+  const resolveAudioBatchTargets = useCallback((entry?: FileEntry) => {
+    const entriesForAction = resolveEntriesForAction(entry);
+    if (entriesForAction.length === 0) {
+      return null;
+    }
+    const includesUnsupportedFile = entriesForAction.some((candidate) => (
+      !candidate.is_dir && !isAudioPreviewExtension(getEntryExtension(candidate))
+    ));
+    const hasAudioCandidate = entriesForAction.some((candidate) => (
+      candidate.is_dir || isAudioPreviewExtension(getEntryExtension(candidate))
+    ));
+    if (includesUnsupportedFile || !hasAudioCandidate) {
+      return null;
+    }
+    return entriesForAction.map((candidate) => candidate.path);
+  }, [resolveEntriesForAction]);
+
+  const handleAudioBatchAction = useCallback(async (
+    mode: 'convert' | 'normalize',
+    entry?: FileEntry,
+  ) => {
+    const inputPaths = resolveAudioBatchTargets(entry);
+    if (!inputPaths) {
+      return;
+    }
+    try {
+      await runExplorerAudioBatchProcess({
+        inputPaths,
+        recurseDirectories: true,
+        mode: mode === 'convert' ? 'convert' : 'normalize',
+        outputFormat: mode === 'convert' ? 'wav' : null,
+        overwriteExisting: false,
+        outputDirectory: null,
+      });
+      invalidateExplorerResultCaches();
+      await refresh();
+    } catch (audioBatchError) {
+      setError(String(audioBatchError));
+    }
+  }, [refresh, resolveAudioBatchTargets]);
+
   const getRenderableIconSrc = useCallback((entry: FileEntry, open = false) => {
     if (useNativeOsIcons) {
       const nativeIconSrc = nativeIconMap[getNativeIconCacheKey(entry.path, DEFAULT_NATIVE_ICON_SIZE)];
@@ -5138,6 +5150,7 @@ export function FileExplorer({
     const parentPath = entry.path.replace(/[/\\\\][^/\\\\]+$/, '');
     const stem = entry.name.replace(/\.[^.]+$/, '');
     const canUseNativeIntegration = supportsNativeIntegration(entry.path);
+    const audioBatchTargets = resolveAudioBatchTargets(entry);
     const builtInItems = BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS.flatMap(item => {
       if (!item.contexts.includes('entry')) {
         return [];
@@ -5266,6 +5279,24 @@ export function FileExplorer({
           return [];
       }
     });
+    const audioBatchItems = audioBatchTargets ? [
+      {
+        id: 'audio.batch-convert',
+        group: 'library' as const,
+        defaultOrder: 336,
+        icon: <Waves size={13} />,
+        label: 'Batch Convert Audio',
+        action: () => { void handleAudioBatchAction('convert', entry); },
+      },
+      {
+        id: 'audio.batch-normalize',
+        group: 'library' as const,
+        defaultOrder: 337,
+        icon: <Sparkles size={13} />,
+        label: 'Batch Normalize Audio',
+        action: () => { void handleAudioBatchAction('normalize', entry); },
+      },
+    ] : [];
     const pluginItems = resolvedPluginContextMenuItems
       .filter(item => item.contexts.includes('entry'))
       .filter(item => (
@@ -5291,9 +5322,10 @@ export function FileExplorer({
 
     return finalizeContextMenuItems([
       ...builtInItems,
+      ...audioBatchItems,
       ...pluginItems,
     ]);
-  }, [bookmarkPathSet, copyToSysClipboard, duplicate, executePluginContextMenuItem, explorerRail, explorerSettings.contextMenuItemOverrides, finalizeContextMenuItems, handleArchiveAction, handleBookmarkCreated, isCloudExplorerPath, onOpenInFilesystemAquarium, onOpenInTerminal, openAsAdmin, openEntry, openTagDialog, openTrashDialog, openWithSystemPicker, propertiesLabel, queueClipboard, requestTransferDestination, resolvedPluginContextMenuItems, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties, updateExplorerRail]);
+  }, [bookmarkPathSet, copyToSysClipboard, duplicate, executePluginContextMenuItem, explorerRail, explorerSettings.contextMenuItemOverrides, finalizeContextMenuItems, handleArchiveAction, handleAudioBatchAction, handleBookmarkCreated, isCloudExplorerPath, onOpenInFilesystemAquarium, onOpenInTerminal, openAsAdmin, openEntry, openTagDialog, openTrashDialog, openWithSystemPicker, propertiesLabel, queueClipboard, requestTransferDestination, resolveAudioBatchTargets, resolvedPluginContextMenuItems, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties, updateExplorerRail]);
 
   const buildEmptyCtxItems = useCallback((): CtxItem[] => {
     const canUseNativeIntegration = supportsNativeIntegration(currentPath);

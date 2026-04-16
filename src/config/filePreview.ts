@@ -1,4 +1,12 @@
 export type ModelPreviewFormat = 'fbx' | 'glb' | 'gltf' | 'obj' | 'stl';
+export type ExplorerAudioExportFormatId = 'mp3' | 'wav' | 'flac' | 'ogg';
+
+export interface ExplorerAudioExportFormatDefinition {
+  id: ExplorerAudioExportFormatId;
+  label: string;
+  extension: string;
+  mimeType: string;
+}
 
 export const EXPLORER_IMAGE_TILE_PREVIEW_CONFIG = {
   batchSize: 12,
@@ -40,6 +48,26 @@ const AUDIO_PREVIEW_MIME_TYPE_BY_EXTENSION = {
   weba: 'audio/webm',
   wma: 'audio/x-ms-wma',
 } as const satisfies Record<string, string>;
+
+export const EXPLORER_AUDIO_EXPORT_FORMATS: readonly ExplorerAudioExportFormatDefinition[] = [
+  { id: 'mp3', label: 'MP3', extension: 'mp3', mimeType: 'audio/mpeg' },
+  { id: 'wav', label: 'WAV', extension: 'wav', mimeType: 'audio/wav' },
+  { id: 'flac', label: 'FLAC', extension: 'flac', mimeType: 'audio/flac' },
+  { id: 'ogg', label: 'Ogg', extension: 'ogg', mimeType: 'audio/ogg' },
+] as const;
+
+const DIRECT_AUDIO_PLAYBACK_EXTENSION_SET = new Set<string>([
+  'mp3',
+  'wav',
+  'wave',
+  'ogg',
+  'oga',
+  'opus',
+  'flac',
+  'm4a',
+  'm4b',
+  'weba',
+]);
 
 const VIDEO_PREVIEW_MIME_TYPE_BY_EXTENSION = {
   '3g2': 'video/3gpp2',
@@ -153,6 +181,17 @@ export function getAudioPreviewMimeType(extension: string): string | null {
   return normalizedExtension in AUDIO_PREVIEW_MIME_TYPE_BY_EXTENSION
     ? AUDIO_PREVIEW_MIME_TYPE_BY_EXTENSION[normalizedExtension as keyof typeof AUDIO_PREVIEW_MIME_TYPE_BY_EXTENSION]
     : null;
+}
+
+export function getExplorerAudioExportFormatDefinition(
+  formatId: string,
+): ExplorerAudioExportFormatDefinition | null {
+  const normalizedId = normalizeExtension(formatId);
+  return EXPLORER_AUDIO_EXPORT_FORMATS.find((format) => format.id === normalizedId) ?? null;
+}
+
+export function isDirectAudioPreviewExtension(extension: string): boolean {
+  return DIRECT_AUDIO_PLAYBACK_EXTENSION_SET.has(normalizeExtension(extension));
 }
 
 export function getVideoPreviewMimeType(extension: string): string | null {

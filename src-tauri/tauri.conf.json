@@ -35,7 +35,10 @@
     ],
     "resources": {
       "icons/tray.ico": "icons/tray.ico",
-      "icons/icon.ico": "icons/icon.ico"
+      "icons/icon.ico": "icons/icon.ico",
+      "../packages/sox/bin/sox-14.4.2-linux.zip": "packages/sox/bin/sox-14.4.2-linux.zip",
+      "../packages/sox/bin/sox-14.4.2-darwin.zip": "packages/sox/bin/sox-14.4.2-darwin.zip",
+      "../packages/sox/bin/sox-14.4.2-win32.zip": "packages/sox/bin/sox-14.4.2-win32.zip"
     }
   }
 }
