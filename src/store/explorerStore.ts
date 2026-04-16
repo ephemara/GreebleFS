@@ -90,6 +90,7 @@ export interface ExplorerSessionSnapshot {
   searchIncludeContent: boolean;
   documentViewMode: ExplorerDocumentViewMode;
   sourcesVisible: boolean;
+  sourcesRailPinnedOpen: boolean;
 }
 
 export interface ExplorerPersistenceNotice {
@@ -138,6 +139,7 @@ export const defaultExplorerSession: ExplorerSessionSnapshot = {
   searchIncludeContent: true,
   documentViewMode: 'edit',
   sourcesVisible: true,
+  sourcesRailPinnedOpen: false,
 };
 
 const defaultExplorerPersistenceNotice: ExplorerPersistenceNotice = {
@@ -273,6 +275,9 @@ export function normalizeExplorerSessionSnapshot(value: unknown): ExplorerSessio
     sourcesVisible: typeof source?.sourcesVisible === 'boolean'
       ? source.sourcesVisible
       : defaultExplorerSession.sourcesVisible,
+    sourcesRailPinnedOpen: typeof source?.sourcesRailPinnedOpen === 'boolean'
+      ? source.sourcesRailPinnedOpen
+      : defaultExplorerSession.sourcesRailPinnedOpen,
   };
 }
 

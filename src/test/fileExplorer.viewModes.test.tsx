@@ -205,6 +205,19 @@ function dispatchLayoutWheel(anchorText: string, deltaY: number) {
   }));
 }
 
+function dispatchLayoutWheelOnFileArea(deltaY: number) {
+  const fileArea = document.querySelector('[data-overlay-explorer-plane="file-area"]') as HTMLElement | null;
+  if (!fileArea) {
+    throw new Error('Explorer file area not found');
+  }
+  fileArea.dispatchEvent(new WheelEvent('wheel', {
+    bubbles: true,
+    cancelable: true,
+    ctrlKey: true,
+    deltaY,
+  }));
+}
+
 describe('FileExplorer view modes', () => {
   beforeEach(() => {
     resetOverlayTermStorage(window.localStorage);
@@ -740,6 +753,147 @@ describe('FileExplorer view modes', () => {
     await waitFor(() => {
       expect(useSettingsStore.getState().settings.explorer.gridZoom).toBeGreaterThan(0.5);
       expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('icons-xl');
+    });
+  });
+
+  it('scales the explorer grid when ctrl-wheel happens on the file area shell', async () => {
+    useSettingsStore.getState().updateExplorer({ viewMode: 'icons-m', gridZoom: 0 });
+
+    renderExplorer();
+    await screen.findByText('alpha');
+
+    dispatchLayoutWheelOnFileArea(-120);
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('icons-l');
+      expect(useSettingsStore.getState().settings.explorer.gridZoom).toBeGreaterThan(0);
+    });
+  });
+
+  it('renders the destination folder after navigating from a deeply scrolled icon grid', async () => {
+    const alphaPath = `${REPO_ROOT}\\\\alpha`;
+    const longEntries = [
+      {
+        name: 'alpha',
+        path: alphaPath,
+        is_dir: true,
+        size: 0,
+        modified: 0,
+        extension: '',
+        is_hidden: false,
+        is_symlink: false,
+      },
+      ...Array.from({ length: 180 }, (_, index) => ({
+        name: `item-${index.toString().padStart(3, '0')}.txt`,
+        path: `${REPO_ROOT}\\\\item-${index.toString().padStart(3, '0')}.txt`,
+        is_dir: false,
+        size: index + 1,
+        modified: index,
+        extension: 'txt',
+        is_hidden: false,
+        is_symlink: false,
+      })),
+    ];
+    const shortEntries = [
+      {
+        name: 'child.txt',
+        path: `${alphaPath}\\\\child.txt`,
+        is_dir: false,
+        size: 42,
+        modified: 0,
+        extension: 'txt',
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ];
+    const allEntriesByPath = new Map([
+      ...longEntries.map((entry) => [entry.path, entry] as const),
+      ...shortEntries.map((entry) => [entry.path, entry] as const),
+    ]);
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error('Missing default invoke mock implementation');
+    }
+    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
+      const payload = args as { path?: string; paths?: string[] } | undefined;
+      if (command === 'fs_list_dir' || command === 'fs_list_dir_uncached') {
+        return payload?.path === alphaPath ? shortEntries : longEntries;
+      }
+      if (command === 'fs_measure_entry_sizes') {
+        return (payload?.paths ?? []).map((path) => {
+          const entry = allEntriesByPath.get(path);
+          return {
+            path,
+            bytes: entry?.size ?? 0,
+            is_dir: entry?.is_dir ?? false,
+            is_complete: true,
+          };
+        });
+      }
+      return baseInvokeImplementation(command, args);
+    });
+    useSettingsStore.getState().updateExplorer({ viewMode: 'icons-l', gridZoom: 0.67 });
+
+    renderExplorer();
+    await screen.findByText('alpha');
+
+    const viewport = getExplorerViewport('alpha');
+    viewport.scrollTop = 20000;
+    fireEvent.scroll(viewport);
+
+    fireEvent.doubleClick(screen.getByText('alpha'));
+
+    await waitFor(() => {
+      expect(screen.getByText('child.txt')).toBeInTheDocument();
+    });
+  });
+
+  it('keeps ctrl-wheel scaling responsive after the explorer remounts its layout shell', async () => {
+    useSettingsStore.getState().updateExplorer({ viewMode: 'icons-m', gridZoom: 0 });
+
+    const { appearance, rerender } = renderExplorer();
+    await screen.findByText('alpha');
+
+    rerender(
+      <FileExplorer
+        theme={{
+          accent: appearance.theme.palette.accent,
+          bg: appearance.theme.palette.appBackground,
+          bgPanel: appearance.theme.palette.panelBackground,
+          text: appearance.theme.palette.textPrimary,
+          border: appearance.theme.palette.border,
+          textMuted: appearance.theme.palette.textMuted,
+        }}
+        appearance={appearance}
+        layoutMode="dock"
+        onOpenInTerminal={() => {}}
+        onAddBookmark={async () => {}}
+      />,
+    );
+    await screen.findByText('alpha');
+
+    rerender(
+      <FileExplorer
+        theme={{
+          accent: appearance.theme.palette.accent,
+          bg: appearance.theme.palette.appBackground,
+          bgPanel: appearance.theme.palette.panelBackground,
+          text: appearance.theme.palette.textPrimary,
+          border: appearance.theme.palette.border,
+          textMuted: appearance.theme.palette.textMuted,
+        }}
+        appearance={appearance}
+        onOpenInTerminal={() => {}}
+        onAddBookmark={async () => {}}
+      />,
+    );
+    await screen.findByText('alpha');
+
+    dispatchLayoutWheelOnFileArea(-120);
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('icons-l');
+      expect(useSettingsStore.getState().settings.explorer.gridZoom).toBeGreaterThan(0);
     });
   });
 

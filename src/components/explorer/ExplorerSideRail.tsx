@@ -1,4 +1,4 @@
-import React, { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import React, { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   ChevronRight,
@@ -82,12 +82,15 @@ interface ExplorerSideRailProps {
   activeTagFilterIds?: string[];
   onNavigate: (path: string) => void;
   onGoHome: () => void;
+  focusModeActive?: boolean;
   onOpenSavedSearch?: (savedSearch: ExplorerSavedSearch) => void;
   onDeleteSavedSearch?: (savedSearchId: string) => void;
   onToggleTagFilter?: (tagId: string) => void;
   onClearTagFilters?: () => void;
   onBookmarkCreated: (name: string, path: string) => void;
+  onEnterFocusMode?: () => void;
   resolveDroppedSources: (paths: string[]) => ExplorerBookmarkImportSource[];
+  localTreeRefreshRevision?: number;
   chromeLayoutId: ExplorerChromeLayoutId;
   chromeOverride?: ExplorerChromeOverrideSnapshot | null;
   chromeEditMode?: {
@@ -161,17 +164,20 @@ export function ExplorerSideRail({
   drivesLoading,
   showHiddenFiles,
   isCompactDock,
+  focusModeActive = false,
   savedSearches = [],
   availableTags = [],
   activeTagFilterIds = [],
   onNavigate,
   onGoHome,
+  onEnterFocusMode,
   onOpenSavedSearch,
   onDeleteSavedSearch,
   onToggleTagFilter,
   onClearTagFilters,
   onBookmarkCreated,
   resolveDroppedSources,
+  localTreeRefreshRevision = 0,
   chromeLayoutId,
   chromeOverride,
   chromeEditMode,
@@ -220,23 +226,37 @@ export function ExplorerSideRail({
     () => drives.filter((drive): drive is Extract<ExplorerDriveInfo, { kind: 'local' }> => drive.kind === 'local'),
     [drives],
   );
+  const localDrivePaths = useMemo(
+    () => localDrives.map((drive) => normalizeLocalTreePath(drive.path)).filter(Boolean),
+    [localDrives],
+  );
+  const activeLocalDrivePath = useMemo(
+    () => resolveMostSpecificLocalDrivePath(currentPath, localDrivePaths),
+    [currentPath, localDrivePaths],
+  );
   const [expandedFolderPaths, setExpandedFolderPaths] = useState<string[]>([]);
   const [folderChildrenByPath, setFolderChildrenByPath] = useState<Record<string, LocalFolderTreeLoadState>>({});
+  const lastLocalTreeRefreshRevisionRef = useRef(localTreeRefreshRevision);
+  const shouldForceRefreshLocalTree = lastLocalTreeRefreshRevisionRef.current !== localTreeRefreshRevision;
 
-  const loadFolderChildren = useCallback(async (path: string) => {
+  const loadFolderChildren = useCallback(async (
+    path: string,
+    options?: { forceRefresh?: boolean },
+  ) => {
     if (!path || isCloudExplorerPath(path)) {
       return;
     }
     const normalizedPath = normalizeLocalTreePath(path);
+    const forceRefresh = options?.forceRefresh === true;
+    const currentState = folderChildrenByPath[normalizedPath];
+    if (currentState?.status === 'loading' || (currentState?.status === 'ready' && !forceRefresh)) {
+      return;
+    }
     setFolderChildrenByPath((current) => {
-      const currentState = current[normalizedPath];
-      if (currentState?.status === 'loading') {
-        return current;
-      }
       return {
         ...current,
         [normalizedPath]: {
-          childFolders: currentState?.childFolders ?? [],
+          childFolders: current[normalizedPath]?.childFolders ?? [],
           status: 'loading',
           errorMessage: null,
         },
@@ -248,6 +268,7 @@ export function ExplorerSideRail({
         path: normalizedPath,
         showHidden: showHiddenFiles,
         listLocation: listExplorerLocation,
+        forceRefresh,
       });
       const childFolders = listing.entries
         .filter((entry) => entry.is_dir)
@@ -270,67 +291,83 @@ export function ExplorerSideRail({
         },
       }));
     }
-  }, [showHiddenFiles]);
+  }, [folderChildrenByPath, showHiddenFiles]);
 
   const toggleFolderExpand = useCallback((path: string) => {
     const normalizedPath = normalizeLocalTreePath(path);
+    let shouldLoad = false;
     setExpandedFolderPaths((current) => {
       if (current.includes(normalizedPath)) {
         return current.filter((entry) => entry !== normalizedPath);
       }
+      shouldLoad = true;
       return [...current, normalizedPath];
     });
-    if (!expandedFolderPaths.includes(normalizedPath)) {
+    if (shouldLoad) {
       void loadFolderChildren(normalizedPath);
     }
-  }, [expandedFolderPaths, loadFolderChildren]);
+  }, [loadFolderChildren]);
 
   useEffect(() => {
     setFolderChildrenByPath({});
-  }, [showHiddenFiles, localDrives.map((drive) => drive.path).join('::')]);
+  }, [showHiddenFiles, localDrivePaths.join('::')]);
 
   useEffect(() => {
-    const knownDrivePaths = new Set(localDrives.map((drive) => normalizeLocalTreePath(drive.path)));
     setExpandedFolderPaths((current) => current.filter((path) => {
-      const rootPath = getLocalTreeRootPath(path);
-      return rootPath ? knownDrivePaths.has(rootPath) : false;
+      return resolveMostSpecificLocalDrivePath(path, localDrivePaths) !== null;
     }));
-  }, [localDrives]);
+  }, [localDrivePaths]);
 
   const currentPathAncestors = useMemo(() => {
     if (!currentPath || isCloudExplorerPath(currentPath)) {
       return [];
     }
     const ancestors = getLocalPathAncestors(currentPath);
-    const rootPath = ancestors[0];
-    if (!rootPath) {
+    const matchedDrivePath = resolveMostSpecificLocalDrivePath(currentPath, localDrivePaths);
+    if (!matchedDrivePath) {
       return [];
     }
-    const knownDrivePaths = new Set(localDrives.map((drive) => normalizeLocalTreePath(drive.path)));
-    return knownDrivePaths.has(rootPath) ? ancestors : [];
-  }, [currentPath, localDrives]);
+    const matchedDriveIndex = ancestors.findIndex((ancestor) => isSameLocalPath(ancestor, matchedDrivePath));
+    return matchedDriveIndex >= 0 ? ancestors.slice(matchedDriveIndex) : [];
+  }, [currentPath, localDrivePaths]);
+
+  useEffect(() => {
+    const normalizedAncestors = currentPathAncestors.map((path) => normalizeLocalTreePath(path));
+    setExpandedFolderPaths((current) => (
+      areNormalizedPathListsEqual(current, normalizedAncestors)
+        ? current
+        : normalizedAncestors
+    ));
+    setFolderChildrenByPath((current) => pruneLocalFolderTreeState(current, normalizedAncestors));
+  }, [currentPathAncestors]);
+
+  useEffect(() => {
+    if (!shouldForceRefreshLocalTree) {
+      return;
+    }
+    lastLocalTreeRefreshRevisionRef.current = localTreeRefreshRevision;
+    setFolderChildrenByPath({});
+  }, [localTreeRefreshRevision, shouldForceRefreshLocalTree]);
 
   useEffect(() => {
     if (currentPathAncestors.length === 0) {
       return;
     }
 
-    setExpandedFolderPaths((current) => {
-      const next = [...current];
-      for (const ancestor of currentPathAncestors) {
-        if (!next.includes(ancestor)) {
-          next.push(ancestor);
-        }
-      }
-      return next;
-    });
-
+    let cancelled = false;
     void (async () => {
       for (const ancestor of currentPathAncestors) {
-        await loadFolderChildren(ancestor);
+        if (cancelled) {
+          return;
+        }
+        await loadFolderChildren(ancestor, { forceRefresh: shouldForceRefreshLocalTree });
       }
     })();
-  }, [currentPathAncestors, loadFolderChildren]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPathAncestors, loadFolderChildren, shouldForceRefreshLocalTree]);
 
   const handleBookmarkDrop = (event: React.DragEvent, targetFolderId: string | null) => {
     event.preventDefault();
@@ -493,6 +530,25 @@ export function ExplorerSideRail({
       ),
     },
     {
+      id: 'railFocusModeToggle',
+      label: 'Rail Focus Mode Toggle',
+      surfaces: ['railHeader'],
+      isVisible: () => typeof onEnterFocusMode === 'function',
+      render: () => (
+        <button
+          type="button"
+          aria-pressed={focusModeActive}
+          onClick={() => onEnterFocusMode?.()}
+          title={focusModeActive
+            ? 'Close the sources rail again while keeping focus mode active'
+            : 'Enter focus mode and close the sources rail'}
+          style={manageToggleButtonStyle(accent, focusModeActive)}
+        >
+          Focus
+        </button>
+      ),
+    },
+    {
       id: 'railManageToggle',
       label: 'Rail Manage Toggle',
       surfaces: ['railHeader'],
@@ -517,7 +573,18 @@ export function ExplorerSideRail({
         </button>
       ),
     },
-  ], [accent, bookmarkCount, brandLabel, isManageMode, locationLabel, locationTitle, showSupportingMeta, showVerboseDragGuide]);
+  ], [
+    accent,
+    bookmarkCount,
+    brandLabel,
+    focusModeActive,
+    isManageMode,
+    locationLabel,
+    locationTitle,
+    onEnterFocusMode,
+    showSupportingMeta,
+    showVerboseDragGuide,
+  ]);
   const railChromeControlRegistryById = useMemo(
     () => new Map(railChromeControlRegistry.map((entry) => [entry.id, entry])),
     [railChromeControlRegistry],
@@ -665,7 +732,7 @@ export function ExplorerSideRail({
             const drivePath = drive.path;
             const isActive = isCloudDrive
               ? currentPath === drivePath || currentPath.startsWith(`${drivePath}/`)
-              : currentPath.toUpperCase().startsWith(drive.path.toUpperCase());
+              : activeLocalDrivePath !== null && isSameLocalPath(drive.path, activeLocalDrivePath);
 
             if (isCloudDrive) {
               return (
@@ -1595,12 +1662,32 @@ function isSameOrDescendantLocalPath(candidateAncestorPath: string, candidatePat
     return target.startsWith('/');
   }
   const separator = isWindowsLocalPath(ancestor) ? '\\' : '/';
-  return targetKey.startsWith(`${ancestorKey}${separator}`);
+  const pathBoundaryPrefix = ancestorKey.endsWith(separator)
+    ? ancestorKey
+    : `${ancestorKey}${separator}`;
+  return targetKey.startsWith(pathBoundaryPrefix);
 }
 
-function getLocalTreeRootPath(path: string): string | null {
-  const ancestors = getLocalPathAncestors(path);
-  return ancestors[0] ?? null;
+function resolveMostSpecificLocalDrivePath(
+  candidatePath: string,
+  availableDrivePaths: string[],
+): string | null {
+  const normalizedCandidatePath = normalizeLocalTreePath(candidatePath);
+  if (!normalizedCandidatePath) {
+    return null;
+  }
+
+  let bestMatch: string | null = null;
+  for (const drivePath of availableDrivePaths) {
+    if (!drivePath || !isSameOrDescendantLocalPath(drivePath, normalizedCandidatePath)) {
+      continue;
+    }
+    if (!bestMatch || drivePath.length > bestMatch.length) {
+      bestMatch = drivePath;
+    }
+  }
+
+  return bestMatch;
 }
 
 function getLocalPathAncestors(path: string): string[] {
@@ -1639,6 +1726,34 @@ function getLocalPathAncestors(path: string): string[] {
     ancestors.push(currentPath);
   }
   return ancestors;
+}
+
+function areNormalizedPathListsEqual(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  return left.every((value, index) => value === right[index]);
+}
+
+function pruneLocalFolderTreeState(
+  current: Record<string, LocalFolderTreeLoadState>,
+  relevantPaths: string[],
+): Record<string, LocalFolderTreeLoadState> {
+  if (relevantPaths.length === 0) {
+    return Object.keys(current).length === 0 ? current : {};
+  }
+
+  const allowedPaths = new Set(relevantPaths);
+  let changed = false;
+  const next: Record<string, LocalFolderTreeLoadState> = {};
+  for (const [path, state] of Object.entries(current)) {
+    if (allowedPaths.has(path)) {
+      next[path] = state;
+      continue;
+    }
+    changed = true;
+  }
+  return changed ? next : current;
 }
 
 const dismissButtonStyle: React.CSSProperties = {

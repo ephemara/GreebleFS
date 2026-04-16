@@ -12,6 +12,7 @@ import {
   Waves,
 } from 'lucide-react';
 import {
+  DEFAULT_EXPLORER_AUDIO_EXPORT_FORMAT_ID,
   EXPLORER_AUDIO_EXPORT_FORMATS,
   getExplorerAudioExportFormatDefinition,
 } from '../config/filePreview';
@@ -151,6 +152,7 @@ export function ExplorerAudioWorkbench({
 }: ExplorerAudioWorkbenchProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
+  const shouldResumePlaybackAfterSourceSwapRef = useRef(false);
 
   const [analysis, setAnalysis] = useState<ExplorerAudioPreviewAnalysis | null>(null);
   const [previewSource, setPreviewSource] = useState<ExplorerAudioPreviewSource | null>(null);
@@ -168,7 +170,7 @@ export function ExplorerAudioWorkbench({
   const [fadeInSeconds, setFadeInSeconds] = useState(0);
   const [fadeOutSeconds, setFadeOutSeconds] = useState(0);
   const [generateSpectrogram, setGenerateSpectrogram] = useState(true);
-  const [convertFormat, setConvertFormat] = useState<'mp3' | 'wav' | 'flac' | 'ogg'>('wav');
+  const [convertFormat, setConvertFormat] = useState<'mp3' | 'wav' | 'flac' | 'ogg'>(DEFAULT_EXPLORER_AUDIO_EXPORT_FORMAT_ID);
   const [exportDialogMode, setExportDialogMode] = useState<ExportDialogMode>(null);
   const [exportPathInput, setExportPathInput] = useState('');
   const [exportState, setExportState] = useState<ExportState>('idle');
@@ -191,9 +193,9 @@ export function ExplorerAudioWorkbench({
     setFadeInSeconds(0);
     setFadeOutSeconds(0);
     setGenerateSpectrogram(true);
-    setConvertFormat('wav');
+    setConvertFormat(DEFAULT_EXPLORER_AUDIO_EXPORT_FORMAT_ID);
     setExportDialogMode(null);
-    setExportPathInput(buildAudioOutputPath(audioPath, 'clip', audioExtension || 'wav'));
+    setExportPathInput(buildAudioOutputPath(audioPath, 'clip', DEFAULT_EXPLORER_AUDIO_EXPORT_FORMAT_ID));
     setExportState('idle');
     setExportMessage('Waveform, trim, and transform controls stay inside the explorer.');
     setSpectrogramSource(null);
@@ -234,6 +236,34 @@ export function ExplorerAudioWorkbench({
       audioRef.current?.pause();
     };
   }, [audioExtension, audioMimeType, audioName, audioPath, audioSource]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+    audio.pause();
+    audio.load();
+    setIsPlaying(false);
+    setCurrentTime(0);
+    if (!shouldResumePlaybackAfterSourceSwapRef.current) {
+      return;
+    }
+    shouldResumePlaybackAfterSourceSwapRef.current = false;
+    const resumePlayback = async () => {
+      try {
+        await audio.play();
+        setPlaybackError(null);
+        setPlaybackStatus('Preview proxy ready.');
+        setIsPlaying(true);
+      } catch (error) {
+        setPlaybackError(String(error));
+        setPlaybackStatus('Playback could not start.');
+        setIsPlaying(false);
+      }
+    };
+    void resumePlayback();
+  }, [playbackMimeType, playbackSource]);
 
   const waveformBuckets = analysis?.waveformBuckets ?? [];
   const effectiveDuration = duration > 0 ? duration : analysis?.durationSeconds ?? 0;
@@ -336,10 +366,11 @@ export function ExplorerAudioWorkbench({
     }
   }
 
-  async function ensurePlaybackProxy() {
+  async function ensurePlaybackProxy(resumePlayback = false) {
     if (isGeneratingProxy || previewSource?.sourceKind === 'proxy') {
       return;
     }
+    shouldResumePlaybackAfterSourceSwapRef.current = resumePlayback;
     setIsGeneratingProxy(true);
     setPlaybackStatus('Generating SoX preview proxy…');
     try {
@@ -350,6 +381,7 @@ export function ExplorerAudioWorkbench({
       setPlaybackError(null);
       setPlaybackStatus('Preview proxy ready.');
     } catch (error) {
+      shouldResumePlaybackAfterSourceSwapRef.current = false;
       setPlaybackError(String(error));
       setPlaybackStatus('Preview proxy generation failed.');
     } finally {
@@ -361,7 +393,7 @@ export function ExplorerAudioWorkbench({
     const suffix = mode === 'clip' ? 'clip' : mode === 'normalized' ? 'normalized' : 'converted';
     const extension = mode === 'convert'
       ? getExplorerAudioExportFormatDefinition(convertFormat)?.extension ?? convertFormat
-      : audioExtension;
+      : DEFAULT_EXPLORER_AUDIO_EXPORT_FORMAT_ID;
     setExportPathInput(buildAudioOutputPath(audioPath, suffix, extension));
     setExportDialogMode(mode);
   }
@@ -374,7 +406,7 @@ export function ExplorerAudioWorkbench({
     }
     const nextOutputFormat = mode === 'convert'
       ? getExplorerAudioExportFormatDefinition(convertFormat)?.extension ?? convertFormat
-      : audioExtension || 'wav';
+      : DEFAULT_EXPLORER_AUDIO_EXPORT_FORMAT_ID;
     setExportDialogMode(null);
     setExportState('running');
     setExportMessage('Running SoX transform…');
@@ -503,14 +535,16 @@ export function ExplorerAudioWorkbench({
                 }}
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
+                src={playbackSource}
                 onError={(event) => {
                   const nextError = getAudioPlaybackErrorLabel(event.currentTarget.error);
                   setPlaybackError(nextError);
-                  void ensurePlaybackProxy();
+                  setPlaybackStatus('Direct preview failed. Falling back to preview proxy…');
+                  void ensurePlaybackProxy(true);
                 }}
                 style={{ width: '100%' }}
+                type={playbackMimeType ?? undefined}
               >
-                <source src={playbackSource} type={playbackMimeType ?? undefined} />
                 This audio preview is not supported by the current desktop webview.
               </audio>
 

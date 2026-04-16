@@ -4,6 +4,7 @@ use crate::fs_commands::{
     ExplorerTaskCancelContext, ExplorerTaskKind, ExplorerTaskRegistration, ExplorerTaskRetryContext,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write;
@@ -12,13 +13,19 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 use zip::ZipArchive;
 
+const DEFAULT_FFMPEG_BINARY: &str = "ffmpeg";
 const SOX_VERSION: &str = "14.4.2";
 const DEFAULT_WAVEFORM_BUCKET_COUNT: usize = 160;
 const PREVIEW_PROXY_EXTENSION: &str = "wav";
+const PREVIEW_PROXY_MIME_TYPE: &str = "audio/wav";
+const SOX_INTERMEDIATE_OUTPUT_FORMAT: &str = "wav";
+const AUDIO_DIRECT_PREVIEW_SAFE_LINUX_EXTENSIONS: &[&str] =
+    &["wav", "wave", "flac", "ogg", "oga", "opus"];
+const FFMPEG_FALLBACK_OUTPUT_FORMATS: &[&str] = &["mp3"];
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -157,8 +164,25 @@ struct NormalizedAudioTransformRequest {
     overwrite_original: bool,
 }
 
+#[derive(Debug, Clone)]
+struct PreparedAudioInput {
+    source_path: PathBuf,
+    cleanup_paths: Vec<PathBuf>,
+    decoded_via_ffmpeg: bool,
+}
+
+#[derive(Debug, Clone)]
+struct PlannedAudioOutput {
+    sox_output_path: PathBuf,
+    sox_output_format: String,
+    final_output_path: PathBuf,
+    final_output_format: String,
+    ffmpeg_output_path: Option<PathBuf>,
+}
+
 static AUDIO_TASKS: OnceLock<Mutex<HashMap<String, Arc<AudioTaskRuntime>>>> = OnceLock::new();
 static SOX_RUNTIME_CACHE: OnceLock<Mutex<Option<SoxRuntime>>> = OnceLock::new();
+static SOX_FORMAT_SUPPORT_CACHE: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
 
 fn audio_tasks() -> &'static Mutex<HashMap<String, Arc<AudioTaskRuntime>>> {
     AUDIO_TASKS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -166,6 +190,10 @@ fn audio_tasks() -> &'static Mutex<HashMap<String, Arc<AudioTaskRuntime>>> {
 
 fn sox_runtime_cache() -> &'static Mutex<Option<SoxRuntime>> {
     SOX_RUNTIME_CACHE.get_or_init(|| Mutex::new(None))
+}
+
+fn sox_format_support_cache() -> &'static Mutex<HashMap<String, bool>> {
+    SOX_FORMAT_SUPPORT_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn path_to_string(path: &Path) -> String {
@@ -177,6 +205,43 @@ fn normalize_optional_string(value: Option<&str>) -> Option<String> {
         .map(str::trim)
         .filter(|candidate| !candidate.is_empty())
         .map(ToOwned::to_owned)
+}
+
+fn normalize_audio_format(value: &str) -> String {
+    match value.trim().trim_start_matches('.').to_ascii_lowercase().as_str() {
+        "wave" => "wav".to_string(),
+        "vorbis" => "ogg".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn input_audio_extension(input_path: &Path) -> Option<String> {
+    input_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(normalize_audio_format)
+        .filter(|value| !value.is_empty())
+}
+
+fn resolve_ffmpeg_binary() -> String {
+    std::env::var("FFMPEG_BIN")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_FFMPEG_BINARY.to_string())
+}
+
+fn ffmpeg_supports_output_format(output_format: &str) -> bool {
+    FFMPEG_FALLBACK_OUTPUT_FORMATS.contains(&normalize_audio_format(output_format).as_str())
+}
+
+fn ffmpeg_codec_arguments(output_format: &str) -> Result<Vec<&'static str>, String> {
+    match normalize_audio_format(output_format).as_str() {
+        "mp3" => Ok(vec!["-codec:a", "libmp3lame", "-q:a", "2"]),
+        unsupported => Err(format!(
+            "Audio format '{unsupported}' is not available through ffmpeg fallback."
+        )),
+    }
 }
 
 fn current_platform_tag() -> &'static str {
@@ -373,6 +438,77 @@ fn sox_command(runtime: &SoxRuntime) -> Command {
     command
 }
 
+fn sox_has_format_support(runtime: &SoxRuntime, format: &str) -> Result<bool, String> {
+    let normalized_format = normalize_audio_format(format);
+    if normalized_format.is_empty() {
+        return Ok(false);
+    }
+    let cache_key = format!(
+        "{}::{}",
+        runtime.executable_path.display(),
+        normalized_format
+    );
+    if let Some(cached) = sox_format_support_cache()
+        .lock()
+        .map_err(|_| "SoX format support cache lock was poisoned.".to_string())?
+        .get(&cache_key)
+        .copied()
+    {
+        return Ok(cached);
+    }
+    let output = sox_command(runtime)
+        .arg("--help-format")
+        .arg(&normalized_format)
+        .output()
+        .map_err(|error| format!("Failed to launch SoX format help command: {error}"))?;
+    let supported = output.status.success();
+    sox_format_support_cache()
+        .lock()
+        .map_err(|_| "SoX format support cache lock was poisoned.".to_string())?
+        .insert(cache_key, supported);
+    Ok(supported)
+}
+
+fn sox_can_read_audio_input(runtime: &SoxRuntime, input_path: &Path) -> Result<bool, String> {
+    Ok(input_audio_extension(input_path)
+        .map(|extension| sox_has_format_support(runtime, &extension))
+        .transpose()?
+        .unwrap_or(false))
+}
+
+fn sox_can_write_audio_output(runtime: &SoxRuntime, output_format: &str) -> Result<bool, String> {
+    sox_has_format_support(runtime, output_format)
+}
+
+fn ffmpeg_command() -> Command {
+    Command::new(resolve_ffmpeg_binary())
+}
+
+fn spawn_ffmpeg_and_wait(
+    task_runtime: Option<&Arc<AudioTaskRuntime>>,
+    mut command: Command,
+) -> Result<std::process::Output, String> {
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = command.output().map_err(|error| {
+        format!(
+            "Failed to launch ffmpeg at '{}': {error}",
+            resolve_ffmpeg_binary()
+        )
+    })?;
+    if let Some(task_runtime) = task_runtime {
+        if task_runtime.cancelled.load(Ordering::SeqCst) {
+            return Err("Cancelled".to_string());
+        }
+    }
+    Ok(output)
+}
+
 fn sox_info_scalar(runtime: &SoxRuntime, flag: &str, input_path: &Path) -> Result<Option<String>, String> {
     let output = sox_command(runtime)
         .args(["--i", flag])
@@ -491,6 +627,311 @@ fn direct_audio_preview_mime_type(input_path: &Path) -> Option<String> {
     Some(mime.to_string())
 }
 
+fn sanitize_audio_temp_stem(value: &str) -> String {
+    let sanitized: String = value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || character == '-' || character == '_' {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let collapsed = sanitized.trim_matches('-');
+    if collapsed.is_empty() {
+        "audio".to_string()
+    } else {
+        collapsed.to_string()
+    }
+}
+
+fn audio_cache_digest(input_path: &Path) -> Result<String, String> {
+    let metadata = fs::metadata(input_path)
+        .map_err(|error| format!("Failed to read audio metadata '{}': {error}", input_path.display()))?;
+    let modified_nanos = metadata
+        .modified()
+        .ok()
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|value| value.as_nanos())
+        .unwrap_or_default();
+    let mut hasher = Sha256::new();
+    hasher.update(input_path.to_string_lossy().as_bytes());
+    hasher.update(metadata.len().to_le_bytes());
+    hasher.update(modified_nanos.to_le_bytes());
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn audio_cached_temp_path(
+    app: &AppHandle,
+    input_path: &Path,
+    subdirectory: &str,
+    suffix: &str,
+    extension: &str,
+) -> Result<PathBuf, String> {
+    let temp_root = resolve_audio_temp_root(app)?.join(subdirectory);
+    fs::create_dir_all(&temp_root)
+        .map_err(|error| format!("Failed to create audio temp directory '{}': {error}", temp_root.display()))?;
+    let digest = audio_cache_digest(input_path)?;
+    let digest_prefix = &digest[..16];
+    let stem = sanitize_audio_temp_stem(
+        input_path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("audio"),
+    );
+    Ok(temp_root.join(format!(
+        "{stem}.{digest_prefix}.{suffix}.{}",
+        normalize_audio_format(extension)
+    )))
+}
+
+fn can_reuse_audio_temp_path(input_path: &Path, cached_path: &Path) -> bool {
+    let Ok(cached_metadata) = fs::metadata(cached_path) else {
+        return false;
+    };
+    if !cached_metadata.is_file() || cached_metadata.len() == 0 {
+        return false;
+    }
+    let Ok(input_metadata) = fs::metadata(input_path) else {
+        return false;
+    };
+    let input_modified = input_metadata.modified().ok();
+    let cached_modified = cached_metadata.modified().ok();
+    match (input_modified, cached_modified) {
+        (Some(input_time), Some(cached_time)) => cached_time >= input_time,
+        _ => false,
+    }
+}
+
+fn build_audio_temp_path(input_path: &Path, suffix: &str, output_format: &str) -> PathBuf {
+    let parent = input_path.parent().unwrap_or_else(|| Path::new(""));
+    let stem = input_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("audio");
+    parent.join(format!(
+        "{stem}.greeblefs-{suffix}.{}",
+        normalize_audio_format(output_format)
+    ))
+}
+
+fn should_prefer_proxy_preview_on_first_load(input_path: &Path) -> bool {
+    let Some(extension) = input_audio_extension(input_path) else {
+        return true;
+    };
+    if direct_audio_preview_mime_type(input_path).is_none() {
+        return true;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        !AUDIO_DIRECT_PREVIEW_SAFE_LINUX_EXTENSIONS.contains(&extension.as_str())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
+fn generate_audio_preview_proxy_with_sox(
+    runtime: &SoxRuntime,
+    input_path: &Path,
+    proxy_path: &Path,
+) -> Result<(), String> {
+    let output = sox_command(runtime)
+        .arg("--clobber")
+        .arg(input_path)
+        .arg("-r")
+        .arg("44100")
+        .arg("-c")
+        .arg("2")
+        .arg("-b")
+        .arg("16")
+        .arg("-e")
+        .arg("signed-integer")
+        .arg("-t")
+        .arg("wav")
+        .arg(proxy_path)
+        .output()
+        .map_err(|error| format!("Failed to launch SoX preview proxy command: {error}"))?;
+    if !output.status.success() {
+        let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!("SoX preview proxy generation failed: {message}"));
+    }
+    Ok(())
+}
+
+fn generate_audio_preview_proxy_with_ffmpeg(input_path: &Path, proxy_path: &Path) -> Result<(), String> {
+    let ffmpeg_binary = resolve_ffmpeg_binary();
+    let mut command = ffmpeg_command();
+    command.args(["-hide_banner", "-loglevel", "error", "-y"]);
+    command.args(["-i", &path_to_string(input_path)]);
+    command.args([
+        "-vn",
+        "-ac",
+        "2",
+        "-ar",
+        "44100",
+        "-codec:a",
+        "pcm_s16le",
+        &path_to_string(proxy_path),
+    ]);
+    let output = spawn_ffmpeg_and_wait(None, command)?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let message = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            format!("ffmpeg exited with status {} while generating preview proxy", output.status)
+        };
+        return Err(format!(
+            "Preview proxy generation failed through ffmpeg at '{ffmpeg_binary}': {message}"
+        ));
+    }
+    Ok(())
+}
+
+fn ensure_audio_preview_proxy(app: &AppHandle, input_path: &Path) -> Result<PathBuf, String> {
+    let runtime = ensure_unpacked_sox_runtime(app)?;
+    let proxy_path = audio_cached_temp_path(app, input_path, "preview-proxies", "preview", PREVIEW_PROXY_EXTENSION)?;
+    if can_reuse_audio_temp_path(input_path, &proxy_path) {
+        return Ok(proxy_path);
+    }
+    if sox_can_read_audio_input(&runtime, input_path)? {
+        generate_audio_preview_proxy_with_sox(&runtime, input_path, &proxy_path)?;
+    } else {
+        generate_audio_preview_proxy_with_ffmpeg(input_path, &proxy_path)?;
+    }
+    Ok(proxy_path)
+}
+
+fn ensure_processing_input(
+    app: &AppHandle,
+    runtime: &SoxRuntime,
+    input_path: &Path,
+    task_runtime: Option<&Arc<AudioTaskRuntime>>,
+) -> Result<PreparedAudioInput, String> {
+    if sox_can_read_audio_input(runtime, input_path)? {
+        return Ok(PreparedAudioInput {
+            source_path: input_path.to_path_buf(),
+            cleanup_paths: Vec::new(),
+            decoded_via_ffmpeg: false,
+        });
+    }
+    let decoded_path = audio_cached_temp_path(app, input_path, "decoded-inputs", "decoded", "wav")?;
+    if !can_reuse_audio_temp_path(input_path, &decoded_path) {
+        let ffmpeg_binary = resolve_ffmpeg_binary();
+        let mut command = ffmpeg_command();
+        command.args(["-hide_banner", "-loglevel", "error", "-y"]);
+        command.args(["-i", &path_to_string(input_path)]);
+        command.args(["-vn", "-codec:a", "pcm_s16le", &path_to_string(&decoded_path)]);
+        let output = spawn_ffmpeg_and_wait(task_runtime, command)?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let message = if !stderr.is_empty() {
+                stderr
+            } else if !stdout.is_empty() {
+                stdout
+            } else {
+                format!("ffmpeg exited with status {} while decoding input audio", output.status)
+            };
+            return Err(format!(
+                "Input audio codec is not readable by vendored SoX. ffmpeg decode fallback at '{ffmpeg_binary}' failed: {message}"
+            ));
+        }
+    }
+    Ok(PreparedAudioInput {
+        source_path: decoded_path,
+        cleanup_paths: Vec::new(),
+        decoded_via_ffmpeg: true,
+    })
+}
+
+fn plan_audio_output(
+    runtime: &SoxRuntime,
+    request: &NormalizedAudioTransformRequest,
+) -> Result<PlannedAudioOutput, String> {
+    let final_output_format = normalize_audio_format(&request.output_format);
+    let sox_can_write_final = sox_can_write_audio_output(runtime, &final_output_format)?;
+    if sox_can_write_final {
+        let sox_output_path = if request.overwrite_original {
+            build_audio_temp_path(&request.input_path, "overwrite-stage", &final_output_format)
+        } else {
+            request.final_output_path.clone()
+        };
+        return Ok(PlannedAudioOutput {
+            sox_output_path,
+            sox_output_format: final_output_format.clone(),
+            final_output_path: request.final_output_path.clone(),
+            final_output_format,
+            ffmpeg_output_path: None,
+        });
+    }
+    if !ffmpeg_supports_output_format(&final_output_format) {
+        return Err(format!(
+            "Audio format '{}' is not writable by vendored SoX on this platform, and no fallback encoder is configured.",
+            final_output_format
+        ));
+    }
+    let sox_output_path = build_audio_temp_path(&request.input_path, "transform-stage", SOX_INTERMEDIATE_OUTPUT_FORMAT);
+    let ffmpeg_output_path = if request.overwrite_original {
+        build_audio_temp_path(&request.input_path, "overwrite-encoded", &final_output_format)
+    } else {
+        request.final_output_path.clone()
+    };
+    Ok(PlannedAudioOutput {
+        sox_output_path,
+        sox_output_format: SOX_INTERMEDIATE_OUTPUT_FORMAT.to_string(),
+        final_output_path: request.final_output_path.clone(),
+        final_output_format,
+        ffmpeg_output_path: Some(ffmpeg_output_path),
+    })
+}
+
+fn encode_audio_with_ffmpeg(
+    task_runtime: Option<&Arc<AudioTaskRuntime>>,
+    input_path: &Path,
+    output_path: &Path,
+    output_format: &str,
+    overwrite_existing: bool,
+) -> Result<(), String> {
+    let ffmpeg_binary = resolve_ffmpeg_binary();
+    let codec_arguments = ffmpeg_codec_arguments(output_format)?;
+    let mut command = ffmpeg_command();
+    command.args(["-hide_banner", "-loglevel", "error"]);
+    command.arg(if overwrite_existing { "-y" } else { "-n" });
+    command.args(["-i", &path_to_string(input_path)]);
+    command.arg("-vn");
+    command.args(codec_arguments);
+    command.arg(output_path);
+    let output = spawn_ffmpeg_and_wait(task_runtime, command)?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let message = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            format!("ffmpeg exited with status {}", output.status)
+        };
+        return Err(format!(
+            "Audio encode fallback failed through ffmpeg at '{ffmpeg_binary}': {message}"
+        ));
+    }
+    Ok(())
+}
+
+fn remove_file_if_exists(path: &Path) {
+    if path.exists() {
+        let _ = fs::remove_file(path);
+    }
+}
+
 fn normalize_audio_transform_request(request: AudioTransformRequest) -> Result<NormalizedAudioTransformRequest, String> {
     let input_path = PathBuf::from(request.input_path.trim());
     if request.input_path.trim().is_empty() {
@@ -513,8 +954,15 @@ fn normalize_audio_transform_request(request: AudioTransformRequest) -> Result<N
     let fade_out_seconds = request.fade_out_seconds.filter(|value| value.is_finite() && *value >= 0.0);
     let mode = request.mode.clone();
     let overwrite_original = matches!(mode, AudioTransformMode::OverwriteOriginal);
-    let output_format = normalize_optional_string(request.output_format.as_deref())
+    let source_extension = input_audio_extension(&input_path);
+    let mut output_format = normalize_optional_string(request.output_format.as_deref())
+        .map(|value| normalize_audio_format(&value))
         .unwrap_or_else(|| default_audio_output_format(&input_path, &mode));
+    if overwrite_original {
+        if let Some(source_extension) = source_extension.as_deref() {
+            output_format = source_extension.to_string();
+        }
+    }
     let requested_output_path = request
         .output_path
         .as_deref()
@@ -525,7 +973,7 @@ fn normalize_audio_transform_request(request: AudioTransformRequest) -> Result<N
         build_default_audio_output_path(&input_path, &mode, output_format.as_str())
     });
     let output_path = if overwrite_original {
-        build_overwrite_temp_path(&input_path, output_format.as_str())
+        build_audio_temp_path(&input_path, "overwrite-stage", output_format.as_str())
     } else {
         final_output_path.clone()
     };
@@ -565,13 +1013,10 @@ fn normalize_audio_transform_request(request: AudioTransformRequest) -> Result<N
 
 fn default_audio_output_format(input_path: &Path, mode: &AudioTransformMode) -> String {
     match mode {
-        AudioTransformMode::ConvertFormat => "wav".to_string(),
-        _ => input_path
-            .extension()
-            .and_then(|value| value.to_str())
-            .map(|value| value.to_ascii_lowercase())
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| "wav".to_string()),
+        AudioTransformMode::OverwriteOriginal => input_audio_extension(input_path).unwrap_or_else(|| "wav".to_string()),
+        AudioTransformMode::ConvertFormat | AudioTransformMode::ExportClip | AudioTransformMode::ExportNormalized => {
+            "wav".to_string()
+        }
     }
 }
 
@@ -588,15 +1033,6 @@ fn build_default_audio_output_path(input_path: &Path, mode: &AudioTransformMode,
         AudioTransformMode::OverwriteOriginal => "edited",
     };
     parent.join(format!("{stem}.{suffix}.{output_format}"))
-}
-
-fn build_overwrite_temp_path(input_path: &Path, output_format: &str) -> PathBuf {
-    let parent = input_path.parent().unwrap_or_else(|| Path::new(""));
-    let stem = input_path
-        .file_stem()
-        .and_then(|value| value.to_str())
-        .unwrap_or("audio");
-    parent.join(format!("{stem}.greeblefs-overwrite.{output_format}"))
 }
 
 fn build_audio_transform_registration(request: &NormalizedAudioTransformRequest) -> ExplorerTaskRegistration {

@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { listExplorerLocation } from '../runtime/explorerBackend';
+import { invalidateExplorerDirectoryResultCaches } from '../components/explorer/explorerDirectoryCache';
 
 vi.mock('../runtime/explorerBackend', () => {
   return {
@@ -26,6 +27,7 @@ beforeEach(() => {
   useExplorerStore.getState().resetSession();
   useExplorerStore.getState().replaceRail(createDefaultExplorerRailSnapshot());
   useExplorerStore.getState().clearPersistenceNotice();
+  invalidateExplorerDirectoryResultCaches();
   vi.mocked(listExplorerLocation).mockReset();
 });
 
@@ -200,7 +202,7 @@ describe('ExplorerSideRail', () => {
     ]));
   }, 20000);
 
-  it('renders a lazy local folder tree under expanded drives and navigates nested folders', async () => {
+  it('renders a lazy local folder tree under the active drive path and navigates nested folders', async () => {
     const onNavigate = vi.fn();
     vi.mocked(listExplorerLocation).mockImplementation(async (path: string) => {
       if (path === 'C:\\') {
@@ -261,7 +263,7 @@ describe('ExplorerSideRail', () => {
         brandLabel="Explorer"
         chromeLayoutId="default"
         sidebarWidth={260}
-        currentPath="C:\\"
+        currentPath="C:\\Users"
         drives={[
           {
             kind: 'local',
@@ -284,11 +286,7 @@ describe('ExplorerSideRail', () => {
       />,
     );
 
-    await waitFor(() => {
-      expect(screen.getByText('Users')).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByLabelText(/expand users/i));
+    expect(screen.getAllByText('Users').length).toBeGreaterThan(0);
 
     await waitFor(() => {
       expect(screen.getByText('alice')).toBeInTheDocument();
@@ -297,6 +295,329 @@ describe('ExplorerSideRail', () => {
     fireEvent.click(screen.getByText('alice').closest('button') as HTMLButtonElement);
 
     expect(onNavigate).toHaveBeenCalledWith('C:\\Users\\alice');
+  });
+
+  it('collapses unrelated local tree branches when navigation moves to a different branch', async () => {
+    vi.mocked(listExplorerLocation).mockImplementation(async (path: string) => {
+      if (path === 'C:\\\\') {
+        return {
+          kind: 'local',
+          path,
+          parentPath: null,
+          breadcrumbs: [{ label: 'C:\\\\', path: 'C:\\\\' }],
+          entries: [
+            {
+              name: 'Users',
+              path: 'C:\\\\Users',
+              is_dir: true,
+              size: 0,
+              modified: 0,
+              extension: '',
+              is_hidden: false,
+              is_symlink: false,
+            },
+            {
+              name: 'Projects',
+              path: 'C:\\\\Projects',
+              is_dir: true,
+              size: 0,
+              modified: 0,
+              extension: '',
+              is_hidden: false,
+              is_symlink: false,
+            },
+          ],
+        };
+      }
+      if (path === 'C:\\\\Users') {
+        return {
+          kind: 'local',
+          path,
+          parentPath: 'C:\\\\',
+          breadcrumbs: [
+            { label: 'C:\\\\', path: 'C:\\\\' },
+            { label: 'Users', path: 'C:\\\\Users' },
+          ],
+          entries: [
+            {
+              name: 'alice',
+              path: 'C:\\\\Users\\\\alice',
+              is_dir: true,
+              size: 0,
+              modified: 0,
+              extension: '',
+              is_hidden: false,
+              is_symlink: false,
+            },
+            {
+              name: 'bob',
+              path: 'C:\\\\Users\\\\bob',
+              is_dir: true,
+              size: 0,
+              modified: 0,
+              extension: '',
+              is_hidden: false,
+              is_symlink: false,
+            },
+          ],
+        };
+      }
+      if (path === 'C:\\\\Projects') {
+        return {
+          kind: 'local',
+          path,
+          parentPath: 'C:\\\\',
+          breadcrumbs: [
+            { label: 'C:\\\\', path: 'C:\\\\' },
+            { label: 'Projects', path: 'C:\\\\Projects' },
+          ],
+          entries: [
+            {
+              name: 'zeta',
+              path: 'C:\\\\Projects\\\\zeta',
+              is_dir: true,
+              size: 0,
+              modified: 0,
+              extension: '',
+              is_hidden: false,
+              is_symlink: false,
+            },
+          ],
+        };
+      }
+      return {
+        kind: 'local',
+        path,
+        parentPath: null,
+        breadcrumbs: [],
+        entries: [],
+      };
+    });
+
+    const { rerender } = render(
+      <ExplorerSideRail
+        accent="#7c3aed"
+        brandLabel="Explorer"
+        chromeLayoutId="default"
+        sidebarWidth={260}
+        currentPath="C:\\\\Users"
+        drives={[
+          {
+            kind: 'local',
+            id: 'C:',
+            path: 'C:\\\\',
+            letter: 'C:\\\\',
+            label: 'System',
+            total_bytes: 1000,
+            free_bytes: 400,
+            drive_type: 'fixed',
+          },
+        ]}
+        drivesLoading={false}
+        showHiddenFiles={false}
+        isCompactDock={false}
+        onNavigate={vi.fn()}
+        onGoHome={vi.fn()}
+        onBookmarkCreated={vi.fn()}
+        resolveDroppedSources={() => []}
+      />,
+    );
+
+    await waitFor(() => {
+      const tree = screen.getByRole('tree', { name: 'System folder tree' });
+      expect(within(tree).getByText('bob')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Collapse Users' })).toBeInTheDocument();
+    });
+
+    rerender(
+      <ExplorerSideRail
+        accent="#7c3aed"
+        brandLabel="Explorer"
+        chromeLayoutId="default"
+        sidebarWidth={260}
+        currentPath="C:\\\\Projects"
+        drives={[
+          {
+            kind: 'local',
+            id: 'C:',
+            path: 'C:\\\\',
+            letter: 'C:\\\\',
+            label: 'System',
+            total_bytes: 1000,
+            free_bytes: 400,
+            drive_type: 'fixed',
+          },
+        ]}
+        drivesLoading={false}
+        showHiddenFiles={false}
+        isCompactDock={false}
+        onNavigate={vi.fn()}
+        onGoHome={vi.fn()}
+        onBookmarkCreated={vi.fn()}
+        resolveDroppedSources={() => []}
+      />,
+    );
+
+    await waitFor(() => {
+      const tree = screen.getByRole('tree', { name: 'System folder tree' });
+      expect(within(tree).getByText('zeta')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Collapse Projects' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Expand Users' })).toBeInTheDocument();
+    });
+
+    expect(screen.queryByRole('button', { name: 'Collapse Users' })).not.toBeInTheDocument();
+    expect(screen.queryByText('bob')).not.toBeInTheDocument();
+  });
+
+  it('reloads the active local tree branch when the explorer bumps the tree refresh revision', async () => {
+    let usersChildren = [
+      {
+        name: 'alpha',
+        path: 'C:\\\\Users\\\\alpha',
+        is_dir: true,
+        size: 0,
+        modified: 0,
+        extension: '',
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ];
+
+    vi.mocked(listExplorerLocation).mockImplementation(async (path: string) => {
+      if (path === 'C:\\\\') {
+        return {
+          kind: 'local',
+          path,
+          parentPath: null,
+          breadcrumbs: [{ label: 'C:\\\\', path: 'C:\\\\' }],
+          entries: [
+            {
+              name: 'Users',
+              path: 'C:\\\\Users',
+              is_dir: true,
+              size: 0,
+              modified: 0,
+              extension: '',
+              is_hidden: false,
+              is_symlink: false,
+            },
+          ],
+        };
+      }
+      if (path === 'C:\\\\Users') {
+        return {
+          kind: 'local',
+          path,
+          parentPath: 'C:\\\\',
+          breadcrumbs: [
+            { label: 'C:\\\\', path: 'C:\\\\' },
+            { label: 'Users', path: 'C:\\\\Users' },
+          ],
+          entries: usersChildren,
+        };
+      }
+      return {
+        kind: 'local',
+        path,
+        parentPath: null,
+        breadcrumbs: [],
+        entries: [],
+      };
+    });
+
+    const { rerender } = render(
+      <ExplorerSideRail
+        accent="#7c3aed"
+        brandLabel="Explorer"
+        chromeLayoutId="default"
+        sidebarWidth={260}
+        currentPath="C:\\\\Users"
+        drives={[
+          {
+            kind: 'local',
+            id: 'C:',
+            path: 'C:\\\\',
+            letter: 'C:\\\\',
+            label: 'System',
+            total_bytes: 1000,
+            free_bytes: 400,
+            drive_type: 'fixed',
+          },
+        ]}
+        drivesLoading={false}
+        showHiddenFiles={false}
+        isCompactDock={false}
+        onNavigate={vi.fn()}
+        onGoHome={vi.fn()}
+        onBookmarkCreated={vi.fn()}
+        resolveDroppedSources={() => []}
+        localTreeRefreshRevision={0}
+      />,
+    );
+
+    await waitFor(() => {
+      const tree = screen.getByRole('tree', { name: 'System folder tree' });
+      expect(within(tree).getByText('alpha')).toBeInTheDocument();
+    });
+
+    const listExplorerLocationCallsBeforeRefresh = vi
+      .mocked(listExplorerLocation)
+      .mock
+      .calls
+      .filter(([path]) => path === 'C:\\\\Users').length;
+
+    usersChildren = [
+      {
+        name: 'beta',
+        path: 'C:\\\\Users\\\\beta',
+        is_dir: true,
+        size: 0,
+        modified: 0,
+        extension: '',
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ];
+
+    rerender(
+      <ExplorerSideRail
+        accent="#7c3aed"
+        brandLabel="Explorer"
+        chromeLayoutId="default"
+        sidebarWidth={260}
+        currentPath="C:\\\\Users"
+        drives={[
+          {
+            kind: 'local',
+            id: 'C:',
+            path: 'C:\\\\',
+            letter: 'C:\\\\',
+            label: 'System',
+            total_bytes: 1000,
+            free_bytes: 400,
+            drive_type: 'fixed',
+          },
+        ]}
+        drivesLoading={false}
+        showHiddenFiles={false}
+        isCompactDock={false}
+        onNavigate={vi.fn()}
+        onGoHome={vi.fn()}
+        onBookmarkCreated={vi.fn()}
+        resolveDroppedSources={() => []}
+        localTreeRefreshRevision={1}
+      />,
+    );
+
+    await waitFor(() => {
+      const tree = screen.getByRole('tree', { name: 'System folder tree' });
+      expect(within(tree).getByText('beta')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('alpha')).not.toBeInTheDocument();
+    expect(
+      vi.mocked(listExplorerLocation).mock.calls.filter(([path]) => path === 'C:\\\\Users').length,
+    ).toBeGreaterThan(listExplorerLocationCallsBeforeRefresh);
   });
 
   it('stores compact rail view mode and hides local tree metadata in compact mode', async () => {
@@ -408,5 +729,110 @@ describe('ExplorerSideRail', () => {
     expect(useExplorerStore.getState().rail.viewMode).toBe('tree');
     expect(screen.queryByText('600 B used')).not.toBeInTheDocument();
     expect(screen.queryByText('1000 B total')).not.toBeInTheDocument();
+  });
+
+  it('prefers the most specific Unix drive root so home paths do not auto-expand the system root tree', async () => {
+    vi.mocked(listExplorerLocation).mockImplementation(async (path: string) => {
+      if (path === '/home/alice') {
+        return {
+          kind: 'local',
+          path,
+          parentPath: '/home',
+          breadcrumbs: [
+            { label: '/', path: '/' },
+            { label: 'home', path: '/home' },
+            { label: 'alice', path: '/home/alice' },
+          ],
+          entries: [
+            {
+              name: 'Projects',
+              path: '/home/alice/Projects',
+              is_dir: true,
+              size: 0,
+              modified: 0,
+              extension: '',
+              is_hidden: false,
+              is_symlink: false,
+            },
+          ],
+        };
+      }
+
+      if (path === '/') {
+        return {
+          kind: 'local',
+          path,
+          parentPath: null,
+          breadcrumbs: [{ label: '/', path: '/' }],
+          entries: [
+            {
+              name: 'bin',
+              path: '/bin',
+              is_dir: true,
+              size: 0,
+              modified: 0,
+              extension: '',
+              is_hidden: false,
+              is_symlink: false,
+            },
+          ],
+        };
+      }
+
+      return {
+        kind: 'local',
+        path,
+        parentPath: null,
+        breadcrumbs: [],
+        entries: [],
+      };
+    });
+
+    render(
+      <ExplorerSideRail
+        accent="#7c3aed"
+        brandLabel="Explorer"
+        chromeLayoutId="default"
+        sidebarWidth={260}
+        currentPath="/home/alice/Projects/demo"
+        drives={[
+          {
+            kind: 'local',
+            id: 'home',
+            path: '/home/alice',
+            letter: '/home/alice',
+            label: 'Home',
+            total_bytes: 0,
+            free_bytes: 0,
+            drive_type: 'home',
+          },
+          {
+            kind: 'local',
+            id: 'root',
+            path: '/',
+            letter: '/',
+            label: 'Root',
+            total_bytes: 0,
+            free_bytes: 0,
+            drive_type: 'fixed',
+          },
+        ]}
+        drivesLoading={false}
+        showHiddenFiles={false}
+        isCompactDock={false}
+        onNavigate={vi.fn()}
+        onGoHome={vi.fn()}
+        onBookmarkCreated={vi.fn()}
+        resolveDroppedSources={() => []}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Projects')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText('bin')).not.toBeInTheDocument();
+    expect(vi.mocked(listExplorerLocation)).toHaveBeenCalledWith('/home/alice', false);
+    expect(vi.mocked(listExplorerLocation)).not.toHaveBeenCalledWith('/', false);
   });
 });

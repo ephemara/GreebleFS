@@ -69,6 +69,7 @@ export type BuiltInExplorerChromeControlId =
   | 'workspaceSplitNudgeRight'
   | 'railIdentity'
   | 'railBookmarkSummary'
+  | 'railFocusModeToggle'
   | 'railManageToggle'
   | 'previewIdentity'
   | 'previewState'
@@ -368,8 +369,11 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       railBookmarkSummary: {
         railHeader: { zone: 'center', order: 10, shrink: 1, collapsePriority: 30, overflowEligible: true },
       },
-      railManageToggle: {
+      railFocusModeToggle: {
         railHeader: { zone: 'end', order: 10 },
+      },
+      railManageToggle: {
+        railHeader: { zone: 'end', order: 20 },
       },
       previewIdentity: {
         previewHeader: { zone: 'start', order: 10, grow: 1, shrink: 1 },
@@ -574,6 +578,9 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       },
       railBookmarkSummary: {
         railHeader: { zone: 'end', order: 10, shrink: 1, collapsePriority: 20, overflowEligible: true },
+      },
+      railFocusModeToggle: {
+        railHeader: { zone: 'end', order: 10 },
       },
       railManageToggle: {
         railHeader: { zone: 'end', order: 20 },

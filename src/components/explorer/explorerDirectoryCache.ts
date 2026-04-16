@@ -13,8 +13,12 @@ export async function loadCachedExplorerLocation(args: {
   path: string;
   showHidden: boolean;
   listLocation: ExplorerBackendContract['listLocation'];
+  forceRefresh?: boolean;
 }): Promise<ExplorerLocationListing> {
   const key = getExplorerDirectoryCacheKey(args.path, args.showHidden);
+  if (args.forceRefresh) {
+    explorerDirectoryResultCache.delete(key);
+  }
   const cachedValue = explorerDirectoryResultCache.get(key);
   if (cachedValue) {
     return cachedValue instanceof Promise ? cachedValue : cachedValue;

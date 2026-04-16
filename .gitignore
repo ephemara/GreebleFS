@@ -34,6 +34,8 @@ Cargo.lock
 **/*.rs.bk
 /output
 output/
+.bak/*
+/.bak
 
 # --- C++ ---
 *.o

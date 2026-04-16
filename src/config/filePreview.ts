@@ -56,6 +56,8 @@ export const EXPLORER_AUDIO_EXPORT_FORMATS: readonly ExplorerAudioExportFormatDe
   { id: 'ogg', label: 'Ogg', extension: 'ogg', mimeType: 'audio/ogg' },
 ] as const;
 
+export const DEFAULT_EXPLORER_AUDIO_EXPORT_FORMAT_ID: ExplorerAudioExportFormatId = 'wav';
+
 const DIRECT_AUDIO_PLAYBACK_EXTENSION_SET = new Set<string>([
   'mp3',
   'wav',

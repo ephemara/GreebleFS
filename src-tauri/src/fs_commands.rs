@@ -1972,14 +1972,22 @@ pub async fn fs_get_drives() -> Result<Vec<DriveInfo>, String> {
 
     #[cfg(target_os = "macos")]
     {
-        let mut drives = vec![root_drive_info()];
+        let mut drives = Vec::new();
+        if let Some(home_drive) = unix_home_drive_info() {
+            drives.push(home_drive);
+        }
+        drives.push(root_drive_info());
         drives.extend(read_unix_mount_directories("/Volumes"));
         return Ok(drives);
     }
 
     #[cfg(target_os = "linux")]
     {
-        let mut drives = vec![root_drive_info()];
+        let mut drives = Vec::new();
+        if let Some(home_drive) = unix_home_drive_info() {
+            drives.push(home_drive);
+        }
+        drives.push(root_drive_info());
         drives.extend(read_unix_mount_directories("/media"));
         drives.extend(read_unix_mount_directories("/mnt"));
         return Ok(deduplicate_drives(drives));
@@ -2095,6 +2103,23 @@ fn root_drive_info() -> DriveInfo {
         free_bytes: 0,
         drive_type: "fixed".to_string(),
     }
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn unix_home_drive_info() -> Option<DriveInfo> {
+    let home_dir = dirs::home_dir()?;
+    let normalized_path = home_dir.to_string_lossy().trim().to_string();
+    if normalized_path.is_empty() {
+        return None;
+    }
+
+    Some(DriveInfo {
+        letter: normalized_path,
+        label: "Home".to_string(),
+        total_bytes: 0,
+        free_bytes: 0,
+        drive_type: "home".to_string(),
+    })
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -7103,6 +7128,19 @@ mod tests {
         // Should be an absolute path
         let p = std::path::Path::new(&home);
         assert!(p.is_absolute(), "home dir '{}' should be absolute", home);
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn unix_home_drive_info_returns_absolute_home_drive() {
+        let drive = unix_home_drive_info().expect("unix home drive should exist");
+        assert_eq!(drive.label, "Home");
+        assert_eq!(drive.drive_type, "home");
+        assert!(
+            Path::new(&drive.letter).is_absolute(),
+            "home drive path '{}' should be absolute",
+            drive.letter
+        );
     }
 
     #[tokio::test]
