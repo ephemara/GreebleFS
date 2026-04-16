@@ -1,5 +1,21 @@
 # GreebleFS Memory
 
+## 2026-04-16 — Linux NVIDIA WebKit Launch Guard
+
+- GreebleFS now applies a native Linux NVIDIA WebKitGTK workaround before Tauri boot so the app can recover from the recent `libEGL` / `driver (null)` / `failed to create dri2 screen` startup failures that were blocking launch on the Linux workstation.
+- Durable implementation shape:
+  - `src-tauri/src/linux_graphics.rs` is the new native startup helper. It resolves the effective Linux display backend from `GDK_BACKEND`, `XDG_SESSION_TYPE`, `WAYLAND_DISPLAY`, and `DISPLAY`, then checks for an NVIDIA primary GPU or loaded NVIDIA kernel modules through sysfs.
+  - Wayland + NVIDIA now sets `__NV_DISABLE_EXPLICIT_SYNC=1` before `tauri::Builder::default()`.
+  - X11 + NVIDIA now sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` before `tauri::Builder::default()`.
+  - Explicit user-provided env overrides are preserved, so operators can still force or disable these knobs outside the app when debugging.
+  - `src-tauri/src/lib.rs` now calls the helper at the top of `run()`, making the workaround apply to both `bun run tauri dev` and installed release binaries instead of depending on shell wrappers.
+- Durable operator note:
+  - Local evidence on the current Linux workstation showed NVIDIA `580.126.09` with `eglinfo -B` succeeding on GBM/surfaceless but failing on Wayland/X11 platform init, which matches the class of WebKitGTK + NVIDIA launch failures this guard targets.
+  - This shell session had no active `DISPLAY` or `WAYLAND_DISPLAY`, so no GUI smoke launch was possible here; proof for this pass is compile/test coverage plus the native startup placement.
+- Validation:
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml linux_graphics -- --nocapture`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml`
+
 ## 2026-04-15 — Explorer Side Rail View Modes
 
 - The explorer side rail now has an explicit persisted view-mode contract instead of relying only on width-driven density heuristics.

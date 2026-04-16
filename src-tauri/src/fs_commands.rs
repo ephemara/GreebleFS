@@ -2,6 +2,9 @@
 // Provides: dir listing with metadata, Windows drive enumeration,
 // open-with-default-app, open-as-admin (runas), delete, rename, copy.
 
+use crate::archive_ops::{
+    self, FsArchiveExtractionMode, FsArchiveExtractionRequest, FsArchiveExtractionResult,
+};
 use crate::entry_size_cache::{
     delete_entry_size_subtree, load_entry_size_cache, mark_path_and_ancestors_dirty,
     normalize_cache_path, upsert_entry_size_cache, PersistedEntrySize,
@@ -91,6 +94,7 @@ pub enum ExplorerTaskKind {
     Trash,
     BatchRename,
     DuplicateScan,
+    ExtractArchive,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, specta::Type)]
@@ -163,6 +167,9 @@ pub(crate) enum ExplorerTaskRetryContext {
     },
     DuplicateScan {
         root_path: String,
+    },
+    ArchiveExtraction {
+        request: FsArchiveExtractionRequest,
     },
 }
 
@@ -3251,6 +3258,28 @@ pub async fn fs_open_file(path: String) -> Result<(), String> {
 
 #[tauri::command]
 #[specta::specta]
+pub async fn fs_open_archive(path: String) -> Result<FsArchiveExtractionResult, String> {
+    let target = PathBuf::from(path);
+    tauri::async_runtime::spawn_blocking(move || archive_ops::open_archive_cached(&target))
+        .await
+        .map_err(|error| format!("Archive open task join failure: {error}"))?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_extract_archive(
+    request: FsArchiveExtractionRequest,
+) -> Result<FsArchiveExtractionResult, String> {
+    if request.mode == FsArchiveExtractionMode::OpenCached {
+        return Err("Use fs_open_archive for cached archive opening.".to_string());
+    }
+
+    let (_, result) = run_archive_extraction_task_with_result(request).await?;
+    Ok(result)
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn fs_open_with_dialog(path: String) -> Result<(), String> {
     let target = PathBuf::from(&path);
     if !target.exists() {
@@ -3702,6 +3731,9 @@ pub async fn fs_retry_explorer_task(
         ExplorerTaskRetryContext::DuplicateScan { root_path } => {
             crate::explorer_pro_commands::start_duplicate_scan_task(app, root_path)?
         }
+        ExplorerTaskRetryContext::ArchiveExtraction { request } => {
+            run_archive_extraction_task(request).await?
+        }
     };
     let tasks = list_explorer_tasks_snapshot()?;
     tasks
@@ -3837,6 +3869,105 @@ fn yazi_task_registration(
         retry_context,
         can_undo: false,
     }
+}
+
+fn archive_task_initial_output_path(request: &FsArchiveExtractionRequest) -> Option<String> {
+    match request.mode {
+        FsArchiveExtractionMode::ExtractHere => Path::new(&request.archive_path)
+            .parent()
+            .map(|path| path.to_string_lossy().into_owned()),
+        FsArchiveExtractionMode::OpenCached | FsArchiveExtractionMode::ExtractToNewFolder => None,
+    }
+}
+
+fn archive_task_registration(
+    request: &FsArchiveExtractionRequest,
+    output_path: Option<String>,
+) -> ExplorerTaskRegistration {
+    let archive_path = Path::new(&request.archive_path);
+    let archive_label = task_path_label(archive_path);
+    let (title_prefix, detail_suffix) = match request.mode {
+        FsArchiveExtractionMode::OpenCached => ("Open", "cached contents"),
+        FsArchiveExtractionMode::ExtractHere => ("Extract", "here"),
+        FsArchiveExtractionMode::ExtractToNewFolder => ("Extract", "to a new folder"),
+    };
+    let detail = output_path
+        .as_ref()
+        .map(|path| format!("{} -> {}", archive_path.display(), path))
+        .unwrap_or_else(|| format!("{} -> {}", archive_path.display(), detail_suffix));
+
+    ExplorerTaskRegistration {
+        kind: ExplorerTaskKind::ExtractArchive,
+        title: format!("{title_prefix} {archive_label}"),
+        detail,
+        source_paths: vec![request.archive_path.clone()],
+        destination_path: output_path,
+        retry_context: Some(ExplorerTaskRetryContext::ArchiveExtraction {
+            request: request.clone(),
+        }),
+        can_undo: false,
+    }
+}
+
+fn archive_task_success_detail(result: &FsArchiveExtractionResult) -> String {
+    if result.reused_cached_output {
+        return format!("Reused extracted contents at {}", result.output_path);
+    }
+
+    let item_label = if result.extracted_entry_count == 1 {
+        "item"
+    } else {
+        "items"
+    };
+    format!(
+        "Extracted {} {} to {}",
+        result.extracted_entry_count, item_label, result.output_path
+    )
+}
+
+fn complete_archive_extraction_task(
+    task_id: &str,
+    result: &FsArchiveExtractionResult,
+) -> Result<ExplorerTaskRecord, String> {
+    mutate_explorer_task(task_id, |entry| {
+        entry.record.status = ExplorerTaskStatus::Succeeded;
+        entry.record.finished_at = Some(current_epoch_ms());
+        entry.record.detail = archive_task_success_detail(result);
+        entry.record.destination_path = Some(result.output_path.clone());
+        entry.record.error_message = None;
+    })
+}
+
+async fn execute_archive_extraction(
+    request: FsArchiveExtractionRequest,
+) -> Result<FsArchiveExtractionResult, String> {
+    tauri::async_runtime::spawn_blocking(move || archive_ops::extract_archive(&request))
+        .await
+        .map_err(|error| format!("Archive extraction task join failure: {error}"))?
+}
+
+async fn run_archive_extraction_task_with_result(
+    request: FsArchiveExtractionRequest,
+) -> Result<(String, FsArchiveExtractionResult), String> {
+    let task_id = create_manual_explorer_task(archive_task_registration(
+        &request,
+        archive_task_initial_output_path(&request),
+    ));
+    match execute_archive_extraction(request).await {
+        Ok(result) => {
+            complete_archive_extraction_task(&task_id, &result)?;
+            Ok((task_id, result))
+        }
+        Err(error) => {
+            let _ = fail_manual_explorer_task(&task_id, error.clone());
+            Err(error)
+        }
+    }
+}
+
+async fn run_archive_extraction_task(request: FsArchiveExtractionRequest) -> Result<String, String> {
+    let (task_id, _) = run_archive_extraction_task_with_result(request).await?;
+    Ok(task_id)
 }
 
 async fn copy_path(src: &Path, dst: &Path, force: bool) -> Result<String, String> {

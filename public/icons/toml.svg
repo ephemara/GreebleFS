@@ -1,7 +1,1 @@
-<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="6" y="8" width="20" height="16" rx="2" stroke="#9C4121" stroke-width="2" fill="none"/>
-  <line x1="6" y1="14" x2="26" y2="14" stroke="#9C4121" stroke-width="2"/>
-  <line x1="16" y1="8" x2="16" y2="24" stroke="#9C4121" stroke-width="2"/>
-  <text x="11" y="12" font-family="monospace" font-size="4" fill="#9C4121" text-anchor="middle">key</text>
-  <text x="21" y="12" font-family="monospace" font-size="4" fill="#9C4121" text-anchor="middle">val</text>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><path d="M10 4.5h10l6 6V31.5H10A2.5 2.5 0 0 1 7.5 29V7A2.5 2.5 0 0 1 10 4.5z" fill="#67b7ff"/><path d="M20 4.5v6h6" fill="#bde1ff"/><path d="M12 17h12v2H12zm0 5h9v2h-9z" fill="#0f2a43" opacity="0.7"/></svg>

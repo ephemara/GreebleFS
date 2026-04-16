@@ -11,12 +11,14 @@ import {
   cancelExplorerSearchEntries,
   cancelExplorerTask,
   clearExplorerTaskHistory,
+  extractExplorerArchive,
   didExplorerTaskFail,
   getExplorerTaskProgressPercent,
   getExplorerTaskStatusLabel,
   isExplorerTaskFinished,
   listExplorerTasks,
   listenToExplorerTaskProgress,
+  openExplorerArchive,
   retryExplorerTask,
   searchExplorerEntriesWithDiagnostics,
   type ExplorerTaskProgress,
@@ -97,10 +99,47 @@ describe('explorer backend task bindings', () => {
     expect(typeof commands.fsClearExplorerTaskHistory).toBe('function');
     expect(typeof commands.fsRetryExplorerTask).toBe('function');
     expect(typeof commands.fsCancelExplorerTask).toBe('function');
+    expect(typeof commands.fsOpenArchive).toBe('function');
+    expect(typeof commands.fsExtractArchive).toBe('function');
     expect(typeof listExplorerTasks).toBe('function');
     expect(typeof clearExplorerTaskHistory).toBe('function');
     expect(typeof retryExplorerTask).toBe('function');
     expect(typeof cancelExplorerTask).toBe('function');
+    expect(typeof openExplorerArchive).toBe('function');
+    expect(typeof extractExplorerArchive).toBe('function');
+  });
+
+  it('forwards archive open and extraction requests through the generated Tauri contract', async () => {
+    const openSpy = vi.spyOn(commands, 'fsOpenArchive').mockResolvedValue({
+      status: 'ok',
+      data: {
+        outputPath: '/tmp/archive-open/demo',
+        extractedEntryCount: 3,
+        reusedCachedOutput: false,
+      },
+    });
+    const extractSpy = vi.spyOn(commands, 'fsExtractArchive').mockResolvedValue({
+      status: 'ok',
+      data: {
+        outputPath: '/tmp/archive-open/demo',
+        extractedEntryCount: 3,
+        reusedCachedOutput: false,
+      },
+    });
+
+    const openResult = await openExplorerArchive('/tmp/demo.zip');
+    const extractResult = await extractExplorerArchive({
+      archivePath: '/tmp/demo.zip',
+      mode: 'extractToNewFolder',
+    });
+
+    expect(openSpy).toHaveBeenCalledWith('/tmp/demo.zip');
+    expect(extractSpy).toHaveBeenCalledWith({
+      archivePath: '/tmp/demo.zip',
+      mode: 'extractToNewFolder',
+    });
+    expect(openResult.outputPath).toBe('/tmp/archive-open/demo');
+    expect(extractResult.extractedEntryCount).toBe(3);
   });
 
   it('preserves scoped search and cancel argument forwarding through the generated Tauri contract', async () => {

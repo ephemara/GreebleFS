@@ -31,6 +31,10 @@ import {
   sortExplorerContextMenuItems,
   type ExplorerContextMenuItemGroup,
 } from '../config/explorerContextMenu';
+import {
+  getExplorerArchiveExtractToFolderLabel,
+  isExplorerArchiveEntry,
+} from '../config/explorerArchives';
 import type {
   OverlayPluginContextMenuContribution,
   OverlayPluginExplorerActionContribution,
@@ -119,6 +123,7 @@ import {
   getExplorerSearchTelemetryMetadata,
 } from '../config/searchTelemetry';
 import { OverlayScrollArea } from './OverlayScrollArea';
+import { AppPromptDialog } from './AppModal';
 import { ExplorerSideRail } from './explorer/ExplorerSideRail';
 import { ExplorerChromeSurface } from './explorer/ExplorerChromeSurface';
 import {
@@ -180,6 +185,7 @@ import {
   type ExplorerFileTransferOperation as FileTransferOperation,
   type ExplorerFileTransferResult as FileTransferResult,
   type ExplorerFileSearchResult as FileSearchResult,
+  type ExplorerArchiveExtractionMode,
   type ExplorerSavedSearch,
   type ExplorerTagMetadataSnapshot,
 } from '../runtime/explorerBackend';
@@ -314,6 +320,14 @@ interface BatchRenameState {
 interface SaveSearchState {
   visible: boolean;
   name: string;
+}
+interface TagDialogState {
+  visible: boolean;
+  mode: 'add' | 'remove';
+  paths: string[];
+  input: string;
+  title: string;
+  description: string;
 }
 interface DuplicateFinderState {
   visible: boolean;
@@ -721,8 +735,8 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
     || Boolean(element.closest('.monaco-editor'));
 }
 
-function resolveExplorerDragIntent(event: Pick<React.DragEvent, 'shiftKey'>): ExplorerDragIntent {
-  return event.shiftKey ? 'internal' : 'native-out';
+function resolveExplorerDragIntent(event: Pick<React.DragEvent, 'altKey'>): ExplorerDragIntent {
+  return event.altKey ? 'native-out' : 'internal';
 }
 
 function resolveExplorerDropOperation(
@@ -2581,6 +2595,7 @@ export function FileExplorer({
     createDir: createExplorerDir,
     createFile: createExplorerFile,
     deletePath: deleteExplorerPath,
+    extractArchive: extractExplorerArchive,
     getDrives: getExplorerDrives,
     getHomeDir: getExplorerHomeDir,
     getRuntimeCachePolicy: getExplorerRuntimeCachePolicy,
@@ -2588,6 +2603,7 @@ export function FileExplorer({
     listLocation: listExplorerLocation,
     listLocationUncached: listExplorerLocationUncached,
     measureEntrySizes: measureExplorerEntrySizes,
+    openArchive: openExplorerArchive,
     openPath: openExplorerPath,
     openWithDialog: openExplorerPathWithDialog,
     openPathAsAdmin: openExplorerPathAsAdmin,
@@ -2769,6 +2785,14 @@ export function FileExplorer({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [newItem,      setNewItem]      = useState<NewItemState>({ visible:false, kind:'folder' });
   const [newItemName,  setNewItemName]  = useState('');
+  const [tagDialog, setTagDialog] = useState<TagDialogState>({
+    visible: false,
+    mode: 'add',
+    paths: [],
+    input: '',
+    title: 'Add Tags',
+    description: '',
+  });
   const [batchRename, setBatchRename] = useState<BatchRenameState>({
     visible: false,
     findText: '',
@@ -3906,6 +3930,29 @@ export function FileExplorer({
     });
   }, [currentPath, resolveEntriesForAction]);
 
+  const handleArchiveAction = useCallback(async (
+    entry: FileEntry,
+    mode: ExplorerArchiveExtractionMode,
+  ) => {
+    try {
+      if (mode === 'openCached') {
+        const result = await openExplorerArchive(entry.path);
+        navigate(result.outputPath);
+        return;
+      }
+
+      await extractExplorerArchive({
+        archivePath: entry.path,
+        mode,
+      });
+      invalidateExplorerResultCaches();
+      await refresh();
+    }
+    catch (archiveError) {
+      setError(String(archiveError));
+    }
+  }, [extractExplorerArchive, navigate, openExplorerArchive, refresh]);
+
   const getRenderableIconSrc = useCallback((entry: FileEntry, open = false) => {
     if (useNativeOsIcons) {
       const nativeIconSrc = nativeIconMap[getNativeIconCacheKey(entry.path, DEFAULT_NATIVE_ICON_SIZE)];
@@ -4399,6 +4446,12 @@ export function FileExplorer({
       navigate(entry.path);
       return;
     }
+
+    if (isExplorerArchiveEntry(entry)) {
+      await handleArchiveAction(entry, 'openCached');
+      return;
+    }
+
     const ext = getEntryExtension(entry);
     const focusTarget = getSearchFocusTarget(entry);
     const canInlinePreview = previewEnabled && !isCompactDock;
@@ -4419,7 +4472,7 @@ export function FileExplorer({
     }
 
     await openExplorerPath(entry.path).catch(e => setError(String(e)));
-  }, [getSearchFocusTarget, isCompactDock, navigate, openExplorerPath, previewEnabled, previewEntry]);
+  }, [getSearchFocusTarget, handleArchiveAction, isCompactDock, navigate, openExplorerPath, previewEnabled, previewEntry]);
 
   // ── Duplicate ──
   const duplicate = useCallback(async (entry: FileEntry) => {
@@ -4590,6 +4643,44 @@ export function FileExplorer({
     setDeleteTargets(targets);
   }, []);
 
+  const closeTagDialog = useCallback(() => {
+    setTagDialog({
+      visible: false,
+      mode: 'add',
+      paths: [],
+      input: '',
+      title: 'Add Tags',
+      description: '',
+    });
+  }, []);
+
+  const openTagDialog = useCallback((
+    paths: string[],
+    mode: 'add' | 'remove',
+    options?: {
+      title?: string;
+      description?: string;
+    },
+  ) => {
+    if (paths.length === 0) {
+      return;
+    }
+
+    const fallbackTitle = mode === 'add' ? 'Add Tags' : 'Remove Tags';
+    const fallbackDescription = mode === 'add'
+      ? `Enter comma-separated tags for ${paths.length === 1 ? 'the selected item' : `${paths.length} selected items`}.`
+      : `Enter comma-separated tags to remove from ${paths.length === 1 ? 'the selected item' : `${paths.length} selected items`}.`;
+
+    setTagDialog({
+      visible: true,
+      mode,
+      paths,
+      input: '',
+      title: options?.title ?? fallbackTitle,
+      description: options?.description ?? fallbackDescription,
+    });
+  }, []);
+
   const applyTagsToPaths = useCallback(async (
     paths: string[],
     rawTagInput: string,
@@ -4613,6 +4704,17 @@ export function FileExplorer({
       setError(String(tagError));
     }
   }, [setExplorerTagsForPaths]);
+
+  const submitTagDialog = useCallback(async () => {
+    const trimmedInput = tagDialog.input.trim();
+    const targetPaths = [...tagDialog.paths];
+    const mode = tagDialog.mode;
+    closeTagDialog();
+    if (!trimmedInput || targetPaths.length === 0) {
+      return;
+    }
+    await applyTagsToPaths(targetPaths, trimmedInput, mode);
+  }, [applyTagsToPaths, closeTagDialog, tagDialog.input, tagDialog.mode, tagDialog.paths]);
 
   const recentLocations = useMemo(() => {
     const candidatePaths = history.slice(0, Math.max(0, historyIdx)).reverse();
@@ -4907,6 +5009,7 @@ export function FileExplorer({
 
   // ── Context menu builder ──
   const buildCtxItems = useCallback((entry: FileEntry): CtxItem[] => {
+    const isArchive = isExplorerArchiveEntry(entry);
     const isBookmarked = bookmarkPathSet.has(entry.path);
     const parentPath = entry.path.replace(/[/\\\\][^/\\\\]+$/, '');
     const stem = entry.name.replace(/\.[^.]+$/, '');
@@ -4931,7 +5034,7 @@ export function FileExplorer({
 
       switch (item.execution.actionId) {
         case 'open':
-          return [{ ...sharedItem, label: 'Open', action: () => openEntry(entry) }];
+          return [{ ...sharedItem, label: isArchive ? 'Open Extracted Contents' : 'Open', action: () => openEntry(entry) }];
         case 'open-with':
           return supportsNativeOpenWith && canUseNativeIntegration
             ? [{ ...sharedItem, label: 'Open With...', action: () => openWithSystemPicker(entry.path) }]
@@ -4974,6 +5077,18 @@ export function FileExplorer({
           return [{ ...sharedItem, label: 'Copy To...', action: () => requestTransferDestination('copy', entry) }];
         case 'move-to':
           return [{ ...sharedItem, label: 'Move To...', action: () => requestTransferDestination('move', entry) }];
+        case 'extract-here':
+          return isArchive
+            ? [{ ...sharedItem, label: 'Extract Here', action: () => { void handleArchiveAction(entry, 'extractHere'); } }]
+            : [];
+        case 'extract-new-folder':
+          return isArchive
+            ? [{
+              ...sharedItem,
+              label: getExplorerArchiveExtractToFolderLabel(entry),
+              action: () => { void handleArchiveAction(entry, 'extractToNewFolder'); },
+            }]
+            : [];
         case 'duplicate':
           return [{ ...sharedItem, label: 'Duplicate', action: () => duplicate(entry) }];
         case 'rename':
@@ -4982,23 +5097,17 @@ export function FileExplorer({
           return [{
             ...sharedItem,
             label: 'Add Tags...',
-            action: () => {
-              const input = window.prompt('Add tags (comma-separated):', '');
-              if (input) {
-                void applyTagsToPaths([entry.path], input, 'add');
-              }
-            },
+            action: () => openTagDialog([entry.path], 'add', {
+              description: `Enter comma-separated tags to add to ${entry.name}.`,
+            }),
           }];
         case 'remove-tags':
           return [{
             ...sharedItem,
             label: 'Remove Tags...',
-            action: () => {
-              const input = window.prompt('Remove tags (comma-separated):', '');
-              if (input) {
-                void applyTagsToPaths([entry.path], input, 'remove');
-              }
-            },
+            action: () => openTagDialog([entry.path], 'remove', {
+              description: `Enter comma-separated tags to remove from ${entry.name}.`,
+            }),
           }];
         case 'bookmark-toggle':
           return [{
@@ -5060,7 +5169,7 @@ export function FileExplorer({
       ...builtInItems,
       ...pluginItems,
     ]);
-  }, [applyTagsToPaths, bookmarkPathSet, copyToSysClipboard, duplicate, executePluginContextMenuItem, explorerRail, explorerSettings.contextMenuItemOverrides, finalizeContextMenuItems, handleBookmarkCreated, isCloudExplorerPath, onOpenInFilesystemAquarium, onOpenInTerminal, openAsAdmin, openEntry, openTrashDialog, openWithSystemPicker, propertiesLabel, queueClipboard, requestTransferDestination, resolvedPluginContextMenuItems, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties, updateExplorerRail]);
+  }, [bookmarkPathSet, copyToSysClipboard, duplicate, executePluginContextMenuItem, explorerRail, explorerSettings.contextMenuItemOverrides, finalizeContextMenuItems, handleArchiveAction, handleBookmarkCreated, isCloudExplorerPath, onOpenInFilesystemAquarium, onOpenInTerminal, openAsAdmin, openEntry, openTagDialog, openTrashDialog, openWithSystemPicker, propertiesLabel, queueClipboard, requestTransferDestination, resolvedPluginContextMenuItems, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties, updateExplorerRail]);
 
   const buildEmptyCtxItems = useCallback((): CtxItem[] => {
     const canUseNativeIntegration = supportsNativeIntegration(currentPath);
@@ -6439,12 +6548,14 @@ export function FileExplorer({
       render: () => (
         <button
           type="button"
-          onClick={() => {
-            const input = window.prompt('Add tags to the current selection (comma-separated):', '');
-            if (input) {
-              void applyTagsToPaths(selectedEntries.map((entry) => entry.path), input, 'add');
-            }
-          }}
+          onClick={() => openTagDialog(
+            selectedEntries.map((entry) => entry.path),
+            'add',
+            {
+              title: 'Tag Selection',
+              description: `Enter comma-separated tags to add to ${selectedEntries.length === 1 ? 'the current selection' : `${selectedEntries.length} selected items`}.`,
+            },
+          )}
           disabled={selectedEntries.length === 0}
           title="Apply tags to the current selection"
           style={toolbarChipButtonStyle(selectedEntries.length === 0)}
