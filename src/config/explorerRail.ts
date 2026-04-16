@@ -1,5 +1,7 @@
 export type ExplorerRailSectionId = 'quick-access' | 'drives' | 'saved-searches' | 'tags' | 'bookmarks';
 
+export type ExplorerRailViewMode = 'default' | 'compact' | 'tree';
+
 export interface ExplorerRailWidthBounds {
   defaultWidth: number;
   minWidth: number;
@@ -16,6 +18,18 @@ export interface ExplorerBookmarkCategoryPreset {
 export interface ExplorerBookmarkColorOption {
   id: string;
   value: string;
+}
+
+export interface ExplorerRailViewModeDefinition {
+  id: ExplorerRailViewMode;
+  label: string;
+  shortLabel: string;
+  description: string;
+  useCompactChrome: boolean;
+  hideSupportingMeta: boolean;
+  flattenDriveRows: boolean;
+  hideDriveCapacity: boolean;
+  treeIndentStep: number;
 }
 
 export const explorerRailWidthBoundsByLayout: Record<'full' | 'compact', ExplorerRailWidthBounds> = {
@@ -37,6 +51,42 @@ export const explorerRailSectionOrder: ExplorerRailSectionId[] = [
   'saved-searches',
   'tags',
   'bookmarks',
+];
+
+export const explorerRailViewModes: ExplorerRailViewModeDefinition[] = [
+  {
+    id: 'default',
+    label: 'Default',
+    shortLabel: 'Def',
+    description: 'Balanced rail with metadata and drive details.',
+    useCompactChrome: false,
+    hideSupportingMeta: false,
+    flattenDriveRows: false,
+    hideDriveCapacity: false,
+    treeIndentStep: 16,
+  },
+  {
+    id: 'compact',
+    label: 'Compact',
+    shortLabel: 'Cmp',
+    description: 'Denser rows with metadata trimmed back.',
+    useCompactChrome: true,
+    hideSupportingMeta: true,
+    flattenDriveRows: false,
+    hideDriveCapacity: true,
+    treeIndentStep: 12,
+  },
+  {
+    id: 'tree',
+    label: 'Tree',
+    shortLabel: 'Tree',
+    description: 'Navigation-first rail with flatter drive roots and tighter indentation.',
+    useCompactChrome: true,
+    hideSupportingMeta: true,
+    flattenDriveRows: true,
+    hideDriveCapacity: true,
+    treeIndentStep: 10,
+  },
 ];
 
 export const explorerBookmarkCategoryPresets: ExplorerBookmarkCategoryPreset[] = [
@@ -90,4 +140,13 @@ export const explorerBookmarkColorOptions: ExplorerBookmarkColorOption[] = [
 
 export function getExplorerRailWidthBounds(isCompactDock: boolean): ExplorerRailWidthBounds {
   return isCompactDock ? explorerRailWidthBoundsByLayout.compact : explorerRailWidthBoundsByLayout.full;
+}
+
+export function normalizeExplorerRailViewMode(value: unknown): ExplorerRailViewMode {
+  return explorerRailViewModes.some((entry) => entry.id === value) ? value as ExplorerRailViewMode : 'default';
+}
+
+export function getExplorerRailViewModeDefinition(value: unknown): ExplorerRailViewModeDefinition {
+  const normalizedViewMode = normalizeExplorerRailViewMode(value);
+  return explorerRailViewModes.find((entry) => entry.id === normalizedViewMode) ?? explorerRailViewModes[0];
 }

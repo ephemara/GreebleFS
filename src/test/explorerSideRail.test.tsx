@@ -298,4 +298,115 @@ describe('ExplorerSideRail', () => {
 
     expect(onNavigate).toHaveBeenCalledWith('C:\\Users\\alice');
   });
+
+  it('stores compact rail view mode and hides local tree metadata in compact mode', async () => {
+    vi.mocked(listExplorerLocation).mockImplementation(async (path: string) => {
+      if (path === 'C:\\') {
+        return {
+          kind: 'local',
+          path,
+          parentPath: null,
+          breadcrumbs: [{ label: 'C:\\', path: 'C:\\' }],
+          entries: [
+            {
+              name: 'Users',
+              path: 'C:\\Users',
+              is_dir: true,
+              size: 0,
+              modified: 0,
+              extension: '',
+              is_hidden: false,
+              is_symlink: false,
+            },
+          ],
+        };
+      }
+      return {
+        kind: 'local',
+        path,
+        parentPath: null,
+        breadcrumbs: [],
+        entries: [],
+      };
+    });
+
+    render(
+      <ExplorerSideRail
+        accent="#7c3aed"
+        brandLabel="Explorer"
+        chromeLayoutId="default"
+        sidebarWidth={320}
+        currentPath="C:\\"
+        drives={[
+          {
+            kind: 'local',
+            id: 'C:',
+            path: 'C:\\',
+            letter: 'C:\\',
+            label: 'System',
+            total_bytes: 1000,
+            free_bytes: 400,
+            drive_type: 'fixed',
+          },
+        ]}
+        drivesLoading={false}
+        showHiddenFiles={false}
+        isCompactDock={false}
+        onNavigate={vi.fn()}
+        onGoHome={vi.fn()}
+        onBookmarkCreated={vi.fn()}
+        resolveDroppedSources={() => []}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Users')).toBeInTheDocument();
+      expect(screen.getByText('C:\\Users')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Compact side rail view' }));
+
+    expect(useExplorerStore.getState().rail.viewMode).toBe('compact');
+    expect(screen.queryByText('C:\\Users')).not.toBeInTheDocument();
+  });
+
+  it('switches to tree rail view mode and trims drive capacity chrome', () => {
+    render(
+      <ExplorerSideRail
+        accent="#7c3aed"
+        brandLabel="Explorer"
+        chromeLayoutId="default"
+        sidebarWidth={320}
+        currentPath="C:\\"
+        drives={[
+          {
+            kind: 'local',
+            id: 'C:',
+            path: 'C:\\',
+            letter: 'C:\\',
+            label: 'System',
+            total_bytes: 1000,
+            free_bytes: 400,
+            drive_type: 'fixed',
+          },
+        ]}
+        drivesLoading={false}
+        showHiddenFiles={false}
+        isCompactDock={false}
+        onNavigate={vi.fn()}
+        onGoHome={vi.fn()}
+        onBookmarkCreated={vi.fn()}
+        resolveDroppedSources={() => []}
+      />,
+    );
+
+    expect(screen.getByText('600 B used')).toBeInTheDocument();
+    expect(screen.getByText('1000 B total')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tree side rail view' }));
+
+    expect(useExplorerStore.getState().rail.viewMode).toBe('tree');
+    expect(screen.queryByText('600 B used')).not.toBeInTheDocument();
+    expect(screen.queryByText('1000 B total')).not.toBeInTheDocument();
+  });
 });

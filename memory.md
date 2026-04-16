@@ -1,5 +1,18 @@
 # GreebleFS Memory
 
+## 2026-04-15 — Explorer Side Rail View Modes
+
+- The explorer side rail now has an explicit persisted view-mode contract instead of relying only on width-driven density heuristics.
+- Durable implementation shape:
+  - `src/config/explorerRail.ts` now defines the rail mode catalog: `default`, `compact`, and `tree`. Each mode carries presentation rules such as metadata visibility, drive-capacity chrome visibility, flattened drive roots, and tree indentation depth.
+  - `src/components/explorer/explorerRailState.ts` now persists `rail.viewMode` and normalizes old saved rail snapshots back to `default`, so this feature rides the existing explorer rail persistence path instead of inventing a second settings surface.
+  - `src/components/explorer/ExplorerSideRail.tsx` now renders a mode switcher in the rail header and routes all tree/bookmark row density through the selected mode. `compact` trims supporting metadata for the local folder tree and saved-search rows; `tree` goes further by flattening drive roots and hiding drive-capacity chrome for a more navigation-first rail.
+- Durable product note:
+  - this is intentionally a rail-presentation layer, not new filesystem behavior. Folder loading, navigation, and cache truth still stay in the existing explorer cache/runtime path.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerSideRail.test.tsx`
+  - blocked: full `bunx tsc --noEmit --pretty false` still reports pre-existing unrelated repo errors in `App.tsx`, `ScreenshotsManager.tsx`, several config/contracts files, and multiple older tests; no new blocker surfaced in the rail-mode files during this pass
+
 ## 2026-04-15 — Dedicated File Operations Popout Window
 
 - Explorer copy/move workflows now have a dedicated themeable popout window instead of only relying on in-surface destination picking and the inline task badge.
@@ -52,6 +65,18 @@
   - passed: `bunx vitest run src/test/settingsStore.test.ts src/test/settingsPage.behavior.test.tsx`
   - passed: `cargo check --manifest-path src-tauri/Cargo.toml`
   - blocked: cross-target Windows `cargo check --target x86_64-pc-windows-gnu` currently cannot complete on the Linux workstation because `ring` needs a MinGW compiler (`x86_64-w64-mingw32-gcc`) that is not installed here
+
+## 2026-04-15 — Linux Native Dev Launch Preflight
+
+- `bun run tauri dev` on Linux was crashing deep in `tao`/GTK when launched from a shell with no active desktop session environment.
+- Durable implementation shape:
+  - `scripts/run-platform-tauri.mjs` now preflights Linux native dev launches.
+  - the launcher derives a sane `GDK_BACKEND` from `XDG_SESSION_TYPE`, `WAYLAND_DISPLAY`, and `DISPLAY` when the caller did not set one explicitly.
+  - when no `DISPLAY` and no `WAYLAND_DISPLAY` are present, the script now fails fast with a direct error instead of allowing the Tauri host to panic in GTK initialization.
+- Durable operator note:
+  - this failure is not caused by persisted frontend settings. If native dev mode dies before app setup with GTK backend errors, inspect the shell environment first.
+- Validation:
+  - passed: `bunx vitest run src/test/runPlatformTauri.test.ts`
 
 ## 2026-04-15 — Explorer Grid Image Thumbnails
 

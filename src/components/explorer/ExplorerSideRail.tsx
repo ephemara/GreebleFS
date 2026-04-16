@@ -32,6 +32,7 @@ import {
   removeExplorerBookmarkNode,
   renameExplorerBookmarkNode,
   setExplorerBookmarkSearchQuery,
+  setExplorerRailViewMode,
   toggleExplorerBookmarkCategoryFilter,
   toggleExplorerBookmarkFolder,
   toggleExplorerRailSection,
@@ -59,6 +60,11 @@ import type {
   ExplorerChromeZoneId,
 } from '../../config/explorerChromeLayouts';
 import { resolveExplorerChromeSurfaceLayout } from '../../config/explorerChromeLayouts';
+import {
+  explorerRailViewModes,
+  getExplorerRailViewModeDefinition,
+  type ExplorerRailViewModeDefinition,
+} from '../../config/explorerRail';
 
 interface ExplorerSideRailProps {
   accent: string;
@@ -102,7 +108,10 @@ interface ExplorerSideRailProps {
 
 interface TreeRowProps {
   accent: string;
+  compactTree: boolean;
   dense: boolean;
+  showSupportingMeta: boolean;
+  treeIndentStep: number;
   manageMode: boolean;
   currentPath: string;
   row: ExplorerBookmarkTreeNode;
@@ -123,12 +132,15 @@ type LocalFolderTreeLoadState = {
 
 interface LocalFolderTreeRowProps {
   accent: string;
+  compactTree: boolean;
   dense: boolean;
   currentPath: string;
   path: string;
   depth: number;
   expandedFolderPaths: string[];
   folderChildrenByPath: Record<string, LocalFolderTreeLoadState>;
+  showSupportingMeta: boolean;
+  treeIndentStep: number;
   onNavigate: (path: string) => void;
   onToggleExpand: (path: string) => void;
   onRetryLoad: (path: string) => void;
@@ -170,9 +182,18 @@ export function ExplorerSideRail({
   const restoreRailBackup = useExplorerStore((state) => state.restoreRailBackup);
   const clearPersistenceNotice = useExplorerStore((state) => state.clearPersistenceNotice);
 
-  const dense = isCompactDock || sidebarWidth < EXPLORER_RAIL_DENSE_WIDTH;
+  const railViewMode = useMemo<ExplorerRailViewModeDefinition>(
+    () => getExplorerRailViewModeDefinition(rail.viewMode),
+    [rail.viewMode],
+  );
+  const dense = isCompactDock || sidebarWidth < EXPLORER_RAIL_DENSE_WIDTH || railViewMode.useCompactChrome;
   const ultraDense = isCompactDock || sidebarWidth < EXPLORER_RAIL_ULTRA_DENSE_WIDTH;
-  const showVerboseDragGuide = !isCompactDock && sidebarWidth >= EXPLORER_RAIL_VERBOSE_DRAG_GUIDE_MIN_WIDTH;
+  const compactTree = dense || railViewMode.hideSupportingMeta;
+  const showSupportingMeta = !ultraDense && !railViewMode.hideSupportingMeta;
+  const showDriveCapacity = !ultraDense && !railViewMode.hideDriveCapacity;
+  const showVerboseDragGuide = !isCompactDock
+    && sidebarWidth >= EXPLORER_RAIL_VERBOSE_DRAG_GUIDE_MIN_WIDTH
+    && railViewMode.id === 'default';
   const [isManageMode, setIsManageMode] = useState(false);
   const [draftFolderParentId, setDraftFolderParentId] = useState<string | null | false>(false);
   const [draftFolderName, setDraftFolderName] = useState('New Folder');
@@ -445,9 +466,11 @@ export function ExplorerSideRail({
           <div style={{ marginTop: 2, fontSize: 'var(--overlay-explorer-rail-title-size)', color: 'var(--overlay-text-primary)', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {locationLabel}
           </div>
-          <div title={locationTitle} style={{ marginTop: 3, fontSize: 9.5, color: 'var(--overlay-text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {locationTitle}
-          </div>
+          {showSupportingMeta && (
+            <div title={locationTitle} style={{ marginTop: 3, fontSize: 9.5, color: 'var(--overlay-text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {locationTitle}
+            </div>
+          )}
         </div>
       ),
     },
@@ -494,7 +517,7 @@ export function ExplorerSideRail({
         </button>
       ),
     },
-  ], [accent, bookmarkCount, brandLabel, isManageMode, locationLabel, locationTitle, showVerboseDragGuide]);
+  ], [accent, bookmarkCount, brandLabel, isManageMode, locationLabel, locationTitle, showSupportingMeta, showVerboseDragGuide]);
   const railChromeControlRegistryById = useMemo(
     () => new Map(railChromeControlRegistry.map((entry) => [entry.id, entry])),
     [railChromeControlRegistry],
@@ -536,6 +559,24 @@ export function ExplorerSideRail({
           renderControl={renderRailChromeControl}
           editMode={chromeEditMode}
         />
+        <div role="group" aria-label="Side rail view mode" style={railViewModeGroupStyle}>
+          {explorerRailViewModes.map((mode) => {
+            const active = rail.viewMode === mode.id;
+            return (
+              <button
+                key={mode.id}
+                type="button"
+                aria-pressed={active}
+                aria-label={`${mode.label} side rail view`}
+                title={mode.description}
+                onClick={() => updateRail((current) => setExplorerRailViewMode(current, mode.id))}
+                style={railViewModeButtonStyle(accent, active)}
+              >
+                {dense ? mode.shortLabel : mode.label}
+              </button>
+            );
+          })}
+        </div>
         {persistence.message && (
           <div
             style={{
@@ -593,7 +634,7 @@ export function ExplorerSideRail({
             <Home size={dense ? 12 : 13} style={{ color: accent, flexShrink: 0 }} />
             <div style={{ minWidth: 0 }}>
               <div style={quickLinkTitleStyle}>Home</div>
-              {!dense && <div style={quickLinkMetaStyle}>Jump to your user root.</div>}
+              {showSupportingMeta && <div style={quickLinkMetaStyle}>Jump to your user root.</div>}
             </div>
           </button>
         </RailSection>
@@ -657,9 +698,11 @@ export function ExplorerSideRail({
                         {drive.provider === 'google-drive' ? 'Drive' : 'Dropbox'}
                       </span>
                     </div>
-                    <div style={{ marginTop: 4, fontSize: 8.5, color: 'var(--overlay-text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {drive.email}
-                    </div>
+                    {showSupportingMeta && (
+                      <div style={{ marginTop: 4, fontSize: 8.5, color: 'var(--overlay-text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {drive.email}
+                      </div>
+                    )}
                   </div>
                 </button>
               );
@@ -676,8 +719,12 @@ export function ExplorerSideRail({
                     width: '100%',
                     padding: dense ? '5px 7px' : '8px 10px',
                     borderRadius: 9,
-                    border: `1px solid ${isActive ? `${accent}66` : 'var(--overlay-border)'}`,
-                    background: isActive ? `${accent}17` : 'var(--overlay-explorer-chip-bg)',
+                    border: `1px solid ${isActive ? `${accent}66` : railViewMode.flattenDriveRows ? 'transparent' : 'var(--overlay-border)'}`,
+                    background: railViewMode.flattenDriveRows
+                      ? (isActive ? `${accent}12` : 'transparent')
+                      : isActive
+                        ? `${accent}17`
+                        : 'var(--overlay-explorer-chip-bg)',
                     color: 'var(--overlay-text-primary)',
                     display: 'grid',
                     gridTemplateColumns: 'auto auto 1fr',
@@ -713,14 +760,16 @@ export function ExplorerSideRail({
                       </span>
                       <span style={{ fontSize: 9, color: 'var(--overlay-text-dim)' }}>{drive.letter}</span>
                     </div>
-                    <div style={{ height: 3, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginTop: 4 }}>
-                      <div style={{ width: `${Math.max(0, Math.min(usedRatio * 100, 100))}%`, height: '100%', background: usedRatio > 0.9 ? 'var(--overlay-danger)' : accent }} />
-                    </div>
-                    {!ultraDense && (
-                      <div style={{ marginTop: 3, fontSize: 8.5, color: 'var(--overlay-text-dim)', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                        <span>{formatBytes(usedBytes)} used</span>
-                        <span>{formatBytes(drive.total_bytes)} total</span>
-                      </div>
+                    {showDriveCapacity && (
+                      <>
+                        <div style={{ height: 3, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginTop: 4 }}>
+                          <div style={{ width: `${Math.max(0, Math.min(usedRatio * 100, 100))}%`, height: '100%', background: usedRatio > 0.9 ? 'var(--overlay-danger)' : accent }} />
+                        </div>
+                        <div style={{ marginTop: 3, fontSize: 8.5, color: 'var(--overlay-text-dim)', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                          <span>{formatBytes(usedBytes)} used</span>
+                          <span>{formatBytes(drive.total_bytes)} total</span>
+                        </div>
+                      </>
                     )}
                   </button>
                 </div>
@@ -729,12 +778,15 @@ export function ExplorerSideRail({
                   <div role="tree" aria-label={`${drive.label} folder tree`} style={{ marginTop: 4 }}>
                     <LocalFolderTreeRow
                       accent={accent}
+                      compactTree={compactTree}
                       dense={dense}
                       currentPath={currentPath}
                       path={normalizedDrivePath}
                       depth={0}
                       expandedFolderPaths={expandedFolderPaths}
                       folderChildrenByPath={folderChildrenByPath}
+                      showSupportingMeta={showSupportingMeta}
+                      treeIndentStep={railViewMode.treeIndentStep}
                       onNavigate={onNavigate}
                       onToggleExpand={toggleFolderExpand}
                       onRetryLoad={loadFolderChildren}
@@ -790,7 +842,7 @@ export function ExplorerSideRail({
                   <div style={{ fontSize: dense ? 9.5 : 10.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {savedSearch.name}
                   </div>
-                  {!dense && (
+                  {showSupportingMeta && (
                     <div style={{ marginTop: 3, fontSize: 8.5, color: 'var(--overlay-text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {savedSearch.query}
                     </div>
@@ -1084,7 +1136,10 @@ export function ExplorerSideRail({
               <BookmarkTreeRow
                 key={row.node.id}
                 accent={accent}
+                compactTree={compactTree}
                 dense={dense}
+                showSupportingMeta={showSupportingMeta}
+                treeIndentStep={railViewMode.treeIndentStep}
                 manageMode={isManageMode}
                 currentPath={currentPath}
                 row={row}
@@ -1139,7 +1194,10 @@ export function ExplorerSideRail({
 
 function BookmarkTreeRow({
   accent,
+  compactTree,
   dense,
+  showSupportingMeta,
+  treeIndentStep,
   manageMode,
   currentPath,
   row,
@@ -1169,7 +1227,7 @@ function BookmarkTreeRow({
           alignItems: 'center',
           gap: 6,
           padding: dense ? '5px 6px' : '6px 8px',
-          paddingLeft: dense ? 6 + row.depth * 14 : 8 + row.depth * 16,
+          paddingLeft: (compactTree ? 6 : 8) + row.depth * treeIndentStep,
           borderRadius: 10,
           border: `1px solid ${isDropTarget ? `${accent}66` : isActive ? `${accent}44` : 'transparent'}`,
           background: isDropTarget ? `${accent}14` : isActive ? `${accent}12` : 'transparent',
@@ -1188,7 +1246,7 @@ function BookmarkTreeRow({
             {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
           </button>
         ) : (
-          <span style={{ width: 16, display: 'flex', justifyContent: 'center', color: 'var(--overlay-text-dim)' }}>
+          <span style={{ width: compactTree ? 14 : 16, display: 'flex', justifyContent: 'center', color: 'var(--overlay-text-dim)' }}>
             <Star size={10} />
           </span>
         )}
@@ -1219,7 +1277,7 @@ function BookmarkTreeRow({
           <span style={{ width: 8, height: 8, borderRadius: 999, background: row.node.color ?? accent, flexShrink: 0 }} />
           <div style={{ minWidth: 0 }}>
             <div style={bookmarkTitleStyle}>{row.node.name}</div>
-            {row.node.kind === 'bookmark' && (
+            {showSupportingMeta && row.node.kind === 'bookmark' && (
               <div style={bookmarkMetaStyle}>{row.node.path}</div>
             )}
           </div>
@@ -1251,7 +1309,10 @@ function BookmarkTreeRow({
         <BookmarkTreeRow
           key={child.node.id}
           accent={accent}
+          compactTree={compactTree}
           dense={dense}
+          showSupportingMeta={showSupportingMeta}
+          treeIndentStep={treeIndentStep}
           manageMode={manageMode}
           currentPath={currentPath}
           row={child}
@@ -1270,12 +1331,15 @@ function BookmarkTreeRow({
 
 function LocalFolderTreeRow({
   accent,
+  compactTree,
   dense,
   currentPath,
   path,
   depth,
   expandedFolderPaths,
   folderChildrenByPath,
+  showSupportingMeta,
+  treeIndentStep,
   onNavigate,
   onToggleExpand,
   onRetryLoad,
@@ -1283,10 +1347,11 @@ function LocalFolderTreeRow({
   const normalizedPath = normalizeLocalTreePath(path);
   const loadState = folderChildrenByPath[normalizedPath];
   const childFolders = loadState?.childFolders ?? [];
+  const feedbackIndent = depth === 0 ? 0 : (compactTree ? 10 : 12) + depth * treeIndentStep;
 
   if (loadState?.status === 'loading' || !loadState) {
     return (
-      <div style={{ marginTop: 4, marginLeft: depth === 0 ? 0 : 12 + depth * 16, fontSize: 9, color: 'var(--overlay-text-dim)' }}>
+      <div style={{ marginTop: 4, marginLeft: feedbackIndent, fontSize: 9, color: 'var(--overlay-text-dim)' }}>
         Loading folders…
       </div>
     );
@@ -1294,7 +1359,7 @@ function LocalFolderTreeRow({
 
   if (loadState.status === 'error') {
     return (
-      <div style={{ marginTop: 4, marginLeft: depth === 0 ? 0 : 12 + depth * 16 }}>
+      <div style={{ marginTop: 4, marginLeft: feedbackIndent }}>
         <div style={localTreeFeedbackStyle}>
           <span>{loadState.errorMessage || 'Unable to load folders.'}</span>
           <button type="button" onClick={() => onRetryLoad(normalizedPath)} style={localTreeRetryButtonStyle}>
@@ -1307,7 +1372,7 @@ function LocalFolderTreeRow({
 
   if (childFolders.length === 0) {
     return (
-      <div style={{ marginTop: 4, marginLeft: depth === 0 ? 0 : 12 + depth * 16, fontSize: 9, color: 'var(--overlay-text-dim)' }}>
+      <div style={{ marginTop: 4, marginLeft: feedbackIndent, fontSize: 9, color: 'var(--overlay-text-dim)' }}>
         No subfolders
       </div>
     );
@@ -1334,7 +1399,7 @@ function LocalFolderTreeRow({
                 alignItems: 'center',
                 gap: 6,
                 padding: dense ? '5px 6px' : '6px 8px',
-                paddingLeft: 8 + depth * 16,
+                paddingLeft: (compactTree ? 6 : 8) + depth * treeIndentStep,
                 borderRadius: 10,
                 border: `1px solid ${isActive ? `${accent}44` : 'transparent'}`,
                 background: isActive ? `${accent}12` : isAncestor ? `${accent}0d` : 'transparent',
@@ -1350,7 +1415,7 @@ function LocalFolderTreeRow({
                   {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
                 </button>
               ) : (
-                <span style={{ width: 20, flexShrink: 0 }} />
+                <span style={{ width: compactTree ? 18 : 20, flexShrink: 0 }} />
               )}
 
               <button
@@ -1377,7 +1442,7 @@ function LocalFolderTreeRow({
                 )}
                 <div style={{ minWidth: 0 }}>
                   <div style={bookmarkTitleStyle}>{childFolder.name || getPathLeaf(childPath)}</div>
-                  {!dense && (
+                  {showSupportingMeta && (
                     <div style={bookmarkMetaStyle}>{childPath}</div>
                   )}
                 </div>
@@ -1387,12 +1452,15 @@ function LocalFolderTreeRow({
             {isExpanded && (
               <LocalFolderTreeRow
                 accent={accent}
+                compactTree={compactTree}
                 dense={dense}
                 currentPath={currentPath}
                 path={childPath}
                 depth={depth + 1}
                 expandedFolderPaths={expandedFolderPaths}
                 folderChildrenByPath={folderChildrenByPath}
+                showSupportingMeta={showSupportingMeta}
+                treeIndentStep={treeIndentStep}
                 onNavigate={onNavigate}
                 onToggleExpand={onToggleExpand}
                 onRetryLoad={onRetryLoad}
@@ -1639,6 +1707,13 @@ const railMetaPillStyle: React.CSSProperties = {
   padding: '3px 8px',
 };
 
+const railViewModeGroupStyle: React.CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 6,
+  marginTop: 8,
+};
+
 const searchInputStyle: React.CSSProperties = {
   width: '100%',
   minWidth: 0,
@@ -1757,6 +1832,21 @@ function manageToggleButtonStyle(accent: string, active: boolean): React.CSSProp
     fontWeight: 700,
     letterSpacing: '0.04em',
     padding: '5px 10px',
+    cursor: 'pointer',
+    flexShrink: 0,
+  };
+}
+
+function railViewModeButtonStyle(accent: string, active: boolean): React.CSSProperties {
+  return {
+    borderRadius: 999,
+    border: `1px solid ${active ? `${accent}66` : 'var(--overlay-explorer-chip-border)'}`,
+    background: active ? `${accent}14` : 'var(--overlay-explorer-chip-bg)',
+    color: active ? accent : 'var(--overlay-text-muted)',
+    fontSize: 9,
+    fontWeight: 700,
+    letterSpacing: '0.04em',
+    padding: '4px 9px',
     cursor: 'pointer',
     flexShrink: 0,
   };

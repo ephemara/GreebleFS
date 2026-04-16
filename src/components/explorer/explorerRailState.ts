@@ -2,7 +2,9 @@ import {
   explorerBookmarkCategoryPresets,
   explorerBookmarkColorOptions,
   explorerRailSectionOrder,
+  normalizeExplorerRailViewMode,
   type ExplorerRailSectionId,
+  type ExplorerRailViewMode,
 } from '../../config/explorerRail';
 
 export interface ExplorerBookmarkCategory {
@@ -45,6 +47,7 @@ export interface ExplorerRailSnapshot {
   expandedFolderIds: string[];
   activeCategoryIds: string[];
   searchQuery: string;
+  viewMode: ExplorerRailViewMode;
 }
 
 export interface ExplorerBookmarkTreeNode {
@@ -91,6 +94,7 @@ export const defaultExplorerRailSnapshot: ExplorerRailSnapshot = {
   expandedFolderIds: [],
   activeCategoryIds: [],
   searchQuery: '',
+  viewMode: 'default',
 };
 
 export function createDefaultExplorerRailSnapshot(): ExplorerRailSnapshot {
@@ -102,6 +106,7 @@ export function createDefaultExplorerRailSnapshot(): ExplorerRailSnapshot {
     expandedFolderIds: [],
     activeCategoryIds: [],
     searchQuery: '',
+    viewMode: 'default',
   };
 }
 
@@ -151,6 +156,7 @@ export function normalizeExplorerRailSnapshot(value: unknown): ExplorerRailSnaps
       ? source.activeCategoryIds.filter((entry): entry is string => typeof entry === 'string' && categoryIds.has(entry))
       : [],
     searchQuery: typeof source?.searchQuery === 'string' ? source.searchQuery : '',
+    viewMode: normalizeExplorerRailViewMode(source?.viewMode),
   };
 }
 
@@ -214,6 +220,13 @@ export function setExplorerBookmarkSearchQuery(snapshot: ExplorerRailSnapshot, q
   return {
     ...snapshot,
     searchQuery: query,
+  };
+}
+
+export function setExplorerRailViewMode(snapshot: ExplorerRailSnapshot, viewMode: ExplorerRailViewMode): ExplorerRailSnapshot {
+  return {
+    ...snapshot,
+    viewMode,
   };
 }
 
