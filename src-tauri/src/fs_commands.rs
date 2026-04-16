@@ -4659,10 +4659,25 @@ mod tests {
     #[cfg(test)]
     async fn search_test_serial_lock() -> tokio::sync::MutexGuard<'static, ()> {
         static SEARCH_TEST_SERIAL_MUTEX: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
-        SEARCH_TEST_SERIAL_MUTEX
+        let guard = SEARCH_TEST_SERIAL_MUTEX
             .get_or_init(|| tokio::sync::Mutex::new(()))
             .lock()
-            .await
+            .await;
+
+        SEARCH_ENTRY_TEST_DELAY_MS.store(0, Ordering::Relaxed);
+        SEARCH_ENTRY_TEST_SCAN_COUNT.store(0, Ordering::Relaxed);
+
+        if let Ok(mut requests) = search_requests().lock() {
+            requests.clear();
+        }
+        if let Ok(mut cache) = search_name_index_cache().lock() {
+            cache.clear();
+        }
+        if let Ok(mut cache) = search_content_index_cache().lock() {
+            cache.clear();
+        }
+
+        guard
     }
 
     #[test]

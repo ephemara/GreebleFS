@@ -62,6 +62,50 @@ function hasExplicitEnvValue(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+export function buildLinuxGraphicsEnvironment({
+  tauriCommand,
+  existingEnv = process.env,
+  platform = process.platform,
+} = {}) {
+  if (platform !== "linux" || tauriCommand !== "dev") {
+    return {};
+  }
+
+  const display = existingEnv.DISPLAY?.trim() || "";
+  const waylandDisplay = existingEnv.WAYLAND_DISPLAY?.trim() || "";
+  const sessionType = existingEnv.XDG_SESSION_TYPE?.trim().toLowerCase() || "";
+  const hasDisplay = display.length > 0;
+  const hasWaylandDisplay = waylandDisplay.length > 0;
+
+  if (!hasDisplay && !hasWaylandDisplay) {
+    throw new Error(
+      "Native Tauri dev mode requires a graphical Linux session. No DISPLAY or WAYLAND_DISPLAY environment variable was found. Start a desktop session, or forward one into this shell before running `bun run tauri dev`."
+    );
+  }
+
+  if (hasExplicitEnvValue(existingEnv.GDK_BACKEND)) {
+    return {};
+  }
+
+  if (sessionType === "wayland" && hasWaylandDisplay) {
+    return { GDK_BACKEND: "wayland" };
+  }
+
+  if (sessionType === "x11" && hasDisplay) {
+    return { GDK_BACKEND: "x11" };
+  }
+
+  if (hasWaylandDisplay && hasDisplay) {
+    return { GDK_BACKEND: "wayland,x11" };
+  }
+
+  if (hasWaylandDisplay) {
+    return { GDK_BACKEND: "wayland" };
+  }
+
+  return { GDK_BACKEND: "x11" };
+}
+
 export function buildManagedContentDirectoryEnvironment({
   tauriCommand,
   projectRootPath = projectRoot,
@@ -260,12 +304,12 @@ async function main() {
   await ensureNativeBindingAvailable();
   await fs.mkdir(frontendDist, { recursive: true });
   const packageManagerCommand = getPackageManagerCommand();
-
+  const cliArgs = process.argv.slice(2);
+  const tauriCommand = cliArgs.find((arg) => !arg.startsWith("-")) ?? null;
+  const linuxGraphicsEnvironment = buildLinuxGraphicsEnvironment({ tauriCommand });
   const existingNodePath = process.env.NODE_PATH
     ? `${cacheNodeModules}${path.delimiter}${process.env.NODE_PATH}`
     : cacheNodeModules;
-  const cliArgs = process.argv.slice(2);
-  const tauriCommand = cliArgs.find((arg) => !arg.startsWith("-")) ?? null;
   const hasExplicitConfig = cliArgs.includes("--config") || cliArgs.includes("-c");
   const runtimeConfigPath = await writeRuntimeTauriConfig(packageManagerCommand, tauriCommand);
   const tauriArgs = hasExplicitConfig
@@ -283,6 +327,7 @@ async function main() {
       CARGO_TARGET_DIR: tauriCargoTargetDir,
       GREEBLEFS_VITE_OUT_DIR: frontendDist,
       OVERLAYTERM_VITE_OUT_DIR: frontendDist,
+      ...linuxGraphicsEnvironment,
       ...buildManagedContentDirectoryEnvironment({ tauriCommand }),
     }
   );

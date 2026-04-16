@@ -35,7 +35,8 @@ pub enum WaylandDockAnchor {
 
 pub fn wayland_dock_host_status(app: &AppHandle) -> WaylandDockHostStatus {
     WaylandDockHostStatus {
-        enabled: is_wayland_session() && app.get_webview_window(WAYLAND_DOCK_WINDOW_LABEL).is_some(),
+        enabled: is_wayland_session()
+            && app.get_webview_window(WAYLAND_DOCK_WINDOW_LABEL).is_some(),
         window_label: app
             .get_webview_window(WAYLAND_DOCK_WINDOW_LABEL)
             .map(|_| WAYLAND_DOCK_WINDOW_LABEL.to_string()),
@@ -116,7 +117,9 @@ pub fn apply_wayland_dock_layout(
 #[cfg(target_os = "linux")]
 fn configure_wayland_dock_window(window: &WebviewWindow) -> Result<(), String> {
     let dock_window = window.clone();
-    run_on_window_main_thread(window, move || configure_wayland_dock_window_on_main_thread(&dock_window))?
+    run_on_window_main_thread(window, move || {
+        configure_wayland_dock_window_on_main_thread(&dock_window)
+    })?
 }
 
 #[cfg(target_os = "linux")]
@@ -178,7 +181,9 @@ fn apply_wayland_dock_layout_on_main_thread(
 
 #[cfg(target_os = "linux")]
 fn resolve_gtk_monitor_by_name(monitor_name: Option<&str>) -> Option<gdk::Monitor> {
-    let trimmed_name = monitor_name.map(str::trim).filter(|value| !value.is_empty());
+    let trimmed_name = monitor_name
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
     let display = gdk::Display::default()?;
     let monitor_count = display.n_monitors();
     let mut first_monitor: Option<gdk::Monitor> = None;

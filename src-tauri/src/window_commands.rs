@@ -1,8 +1,7 @@
 use tauri::{AppHandle, PhysicalPosition, PhysicalSize, WebviewWindow};
 
 use crate::wayland_dock::{
-    apply_wayland_dock_layout, wayland_dock_host_status, WaylandDockAnchor,
-    WaylandDockHostStatus,
+    apply_wayland_dock_layout, wayland_dock_host_status, WaylandDockAnchor, WaylandDockHostStatus,
 };
 
 pub const MAIN_TRAY_ICON_ID: &str = "main-tray";
@@ -56,7 +55,11 @@ pub fn window_apply_mode(
 
 #[tauri::command]
 #[specta::specta]
-pub fn window_set_blur(window: WebviewWindow, enabled: bool, strength: Option<f64>) -> Result<(), String> {
+pub fn window_set_blur(
+    window: WebviewWindow,
+    enabled: bool,
+    strength: Option<f64>,
+) -> Result<(), String> {
     set_native_blur(&window, enabled, strength)
 }
 

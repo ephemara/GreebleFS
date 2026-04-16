@@ -338,5 +338,7 @@ function createMetricRecord<T>(factory: (metricId: ExplorerPerformanceMetricId) 
     explorer_native_icon_batch: factory('explorer_native_icon_batch'),
     explorer_first_interactive: factory('explorer_first_interactive'),
     overlay_frame_time: factory('overlay_frame_time'),
+    git_repo_state_load: factory('git_repo_state_load'),
+    git_repo_badge_sync: factory('git_repo_badge_sync'),
   };
 }

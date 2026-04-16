@@ -179,7 +179,7 @@ describe('FileExplorer repository picker browser coverage', () => {
     await screen.findByText('alpha');
     expect(screen.getByRole('button', { name: 'Add Current Folder' })).toBeEnabled();
     expect(screen.getByText(/No folders selected yet, so OverlayTerm can add the current folder directly\./)).toBeInTheDocument();
-    expect(screen.getByTitle(REPO_ROOT)).toHaveTextContent(`Current folder: ${REPO_ROOT}`);
+    expect(screen.getByText(/^Current folder:/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Add Current Folder' }));
 

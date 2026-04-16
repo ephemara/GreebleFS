@@ -1,6 +1,9 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildManagedContentDirectoryEnvironment } from '../../scripts/run-platform-tauri.mjs';
+import {
+  buildLinuxGraphicsEnvironment,
+  buildManagedContentDirectoryEnvironment,
+} from '../../scripts/run-platform-tauri.mjs';
 
 describe('buildManagedContentDirectoryEnvironment', () => {
   it('pins tauri dev authored content roots to the workspace root', () => {
@@ -13,6 +16,12 @@ describe('buildManagedContentDirectoryEnvironment', () => {
     });
 
     expect(environment).toEqual({
+      VITE_GREEBLEFS_PLUGINS_DIR: path.join(projectRootPath, 'plugins'),
+      VITE_GREEBLEFS_THEMES_DIR: path.join(projectRootPath, 'themes'),
+      VITE_GREEBLEFS_SHADERS_DIR: path.join(projectRootPath, 'shaders'),
+      VITE_GREEBLEFS_ANIMATIONS_DIR: path.join(projectRootPath, 'animations'),
+      VITE_GREEBLEFS_WALLPAPERS_DIR: path.join(projectRootPath, 'wallpapers'),
+      VITE_GREEBLEFS_NOTES_DIR: path.join(projectRootPath, 'notes'),
       VITE_OVERLAYTERM_PLUGINS_DIR: path.join(projectRootPath, 'plugins'),
       VITE_OVERLAYTERM_THEMES_DIR: path.join(projectRootPath, 'themes'),
       VITE_OVERLAYTERM_SHADERS_DIR: path.join(projectRootPath, 'shaders'),
@@ -33,7 +42,9 @@ describe('buildManagedContentDirectoryEnvironment', () => {
       },
     });
 
+    expect(environment.VITE_GREEBLEFS_THEMES_DIR).toBeUndefined();
     expect(environment.VITE_OVERLAYTERM_THEMES_DIR).toBeUndefined();
+    expect(environment.VITE_GREEBLEFS_PLUGINS_DIR).toBe(path.join(projectRootPath, 'plugins'));
     expect(environment.VITE_OVERLAYTERM_PLUGINS_DIR).toBe(path.join(projectRootPath, 'plugins'));
   });
 
@@ -45,5 +56,41 @@ describe('buildManagedContentDirectoryEnvironment', () => {
     });
 
     expect(environment).toEqual({});
+  });
+});
+
+describe('buildLinuxGraphicsEnvironment', () => {
+  it('does nothing outside Linux tauri dev', () => {
+    expect(buildLinuxGraphicsEnvironment({
+      tauriCommand: 'build',
+      platform: 'linux',
+      existingEnv: {},
+    })).toEqual({});
+    expect(buildLinuxGraphicsEnvironment({
+      tauriCommand: 'dev',
+      platform: 'win32',
+      existingEnv: {},
+    })).toEqual({});
+  });
+
+  it('derives a wayland backend when the session advertises wayland', () => {
+    expect(buildLinuxGraphicsEnvironment({
+      tauriCommand: 'dev',
+      platform: 'linux',
+      existingEnv: {
+        WAYLAND_DISPLAY: 'wayland-0',
+        XDG_SESSION_TYPE: 'wayland',
+      },
+    })).toEqual({
+      GDK_BACKEND: 'wayland',
+    });
+  });
+
+  it('throws a clear error when no Linux display session is available', () => {
+    expect(() => buildLinuxGraphicsEnvironment({
+      tauriCommand: 'dev',
+      platform: 'linux',
+      existingEnv: {},
+    })).toThrow(/No DISPLAY or WAYLAND_DISPLAY/);
   });
 });

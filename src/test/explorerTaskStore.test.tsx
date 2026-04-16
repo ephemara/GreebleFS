@@ -2,9 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ExplorerTaskSnapshot } from '../runtime/explorerBackend';
 
-const retryExplorerTaskMock = vi.fn();
-const clearExplorerTaskHistoryMock = vi.fn();
-const cancelExplorerTaskMock = vi.fn();
+const {
+  retryExplorerTaskMock,
+  clearExplorerTaskHistoryMock,
+  cancelExplorerTaskMock,
+} = vi.hoisted(() => ({
+  retryExplorerTaskMock: vi.fn(),
+  clearExplorerTaskHistoryMock: vi.fn(),
+  cancelExplorerTaskMock: vi.fn(),
+}));
 
 vi.mock('../runtime/explorerBackend', async () => {
   return {

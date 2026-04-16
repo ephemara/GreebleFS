@@ -1,11 +1,31 @@
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
+use log::warn;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Mutex, OnceLock};
 use tauri::WebviewWindow;
+
+#[cfg(target_os = "windows")]
+use std::iter::once;
+#[cfg(target_os = "windows")]
+use std::os::windows::ffi::OsStrExt;
+#[cfg(target_os = "windows")]
+use std::ptr::null_mut;
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::{
+    Graphics::Gdi::{
+        CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, SelectObject, BITMAPINFO,
+        BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
+    },
+    Storage::FileSystem::{FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL},
+    UI::{
+        Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGFI_SMALLICON},
+        WindowsAndMessaging::{DestroyIcon, DrawIconEx, DI_NORMAL},
+    },
+};
 
 const DEFAULT_NATIVE_ICON_SIZE: u32 = 32;
 const DRAG_PREVIEW_ICON_SIZE: u32 = 64;
@@ -66,25 +86,175 @@ fn icon_pixels_to_png_data_url(width: u32, height: u32, pixels: Vec<u8>) -> Resu
     )?))
 }
 
-fn resolve_native_icon_png_bytes(path: &Path, size: u32) -> Result<Option<Vec<u8>>, String> {
+type NativeIconPixelBuffer = (u32, u32, Vec<u8>);
+
+fn resolve_native_icon_pixels_with_provider(
+    path: &Path,
+    size: u32,
+) -> Result<Option<NativeIconPixelBuffer>, String> {
     if !path.exists() {
         return Ok(None);
     }
 
     let icon = file_icon_provider::get_file_icon(path.to_path_buf(), size as u16)
         .map_err(|error| error.to_string())?;
-    let png = icon_pixels_to_png_bytes(icon.width, icon.height, icon.pixels)?;
+    Ok(Some((icon.width, icon.height, icon.pixels)))
+}
+
+#[cfg(target_os = "windows")]
+fn path_to_wide_null(path: &Path) -> Vec<u16> {
+    path.as_os_str().encode_wide().chain(once(0)).collect()
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_native_icon_pixels_with_windows_shell(
+    path: &Path,
+    size: u32,
+) -> Result<Option<NativeIconPixelBuffer>, String> {
+    if !path.exists() {
+        return Ok(None);
+    }
+
+    let path_wide = path_to_wide_null(path);
+    let mut file_info: SHFILEINFOW = unsafe { std::mem::zeroed() };
+    let icon_size = if size <= 16 {
+        SHGFI_SMALLICON
+    } else {
+        SHGFI_LARGEICON
+    };
+    let file_attributes = if path.is_dir() {
+        FILE_ATTRIBUTE_DIRECTORY
+    } else {
+        FILE_ATTRIBUTE_NORMAL
+    };
+    let result = unsafe {
+        SHGetFileInfoW(
+            path_wide.as_ptr(),
+            file_attributes,
+            &mut file_info,
+            std::mem::size_of::<SHFILEINFOW>() as u32,
+            SHGFI_ICON | icon_size,
+        )
+    };
+    if result == 0 || file_info.hIcon == 0 {
+        return Ok(None);
+    }
+
+    let hicon = file_info.hIcon;
+    let hdc = unsafe { CreateCompatibleDC(0) };
+    if hdc == 0 {
+        unsafe {
+            DestroyIcon(hicon);
+        }
+        return Err(
+            "failed to create a compatible device context for native icon rendering".to_string(),
+        );
+    }
+
+    let mut bitmap_info: BITMAPINFO = unsafe { std::mem::zeroed() };
+    bitmap_info.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+    bitmap_info.bmiHeader.biWidth = size as i32;
+    bitmap_info.bmiHeader.biHeight = -(size as i32);
+    bitmap_info.bmiHeader.biPlanes = 1;
+    bitmap_info.bmiHeader.biBitCount = 32;
+    bitmap_info.bmiHeader.biCompression = BI_RGB;
+
+    let mut pixels_ptr = null_mut();
+    let hbitmap =
+        unsafe { CreateDIBSection(hdc, &bitmap_info, DIB_RGB_COLORS, &mut pixels_ptr, 0, 0) };
+    if hbitmap == 0 || pixels_ptr.is_null() {
+        unsafe {
+            DeleteDC(hdc);
+            DestroyIcon(hicon);
+        }
+        return Err("failed to create a bitmap surface for native icon rendering".to_string());
+    }
+
+    let previous_bitmap = unsafe { SelectObject(hdc, hbitmap as _) };
+    if previous_bitmap == 0 {
+        unsafe {
+            DeleteObject(hbitmap as _);
+            DeleteDC(hdc);
+            DestroyIcon(hicon);
+        }
+        return Err("failed to select the native icon bitmap surface".to_string());
+    }
+
+    let byte_len = (size as usize) * (size as usize) * 4;
+    unsafe {
+        std::ptr::write_bytes(pixels_ptr as *mut u8, 0, byte_len);
+    }
+    let draw_result =
+        unsafe { DrawIconEx(hdc, 0, 0, hicon, size as i32, size as i32, 0, 0, DI_NORMAL) };
+    let mut pixels = if draw_result == 0 {
+        Vec::new()
+    } else {
+        unsafe { std::slice::from_raw_parts(pixels_ptr as *const u8, byte_len).to_vec() }
+    };
+
+    unsafe {
+        SelectObject(hdc, previous_bitmap);
+        DeleteObject(hbitmap as _);
+        DeleteDC(hdc);
+        DestroyIcon(hicon);
+    }
+
+    if draw_result == 0 {
+        return Err("failed to rasterize native Windows icon".to_string());
+    }
+
+    for chunk in pixels.chunks_exact_mut(4) {
+        chunk.swap(0, 2);
+    }
+
+    Ok(Some((size, size, pixels)))
+}
+
+fn resolve_native_icon_pixels(
+    path: &Path,
+    size: u32,
+) -> Result<Option<NativeIconPixelBuffer>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        match resolve_native_icon_pixels_with_windows_shell(path, size) {
+            Ok(Some(icon)) => return Ok(Some(icon)),
+            Ok(None) => {}
+            Err(error) => {
+                warn!(
+                    "GreebleFS: Windows shell icon extraction failed for {}: {}",
+                    path.display(),
+                    error
+                );
+            }
+        }
+    }
+
+    match resolve_native_icon_pixels_with_provider(path, size) {
+        Ok(icon) => Ok(icon),
+        Err(error) => {
+            warn!(
+                "GreebleFS: file_icon_provider failed for {}: {}",
+                path.display(),
+                error
+            );
+            Ok(None)
+        }
+    }
+}
+
+fn resolve_native_icon_png_bytes(path: &Path, size: u32) -> Result<Option<Vec<u8>>, String> {
+    let Some((width, height, pixels)) = resolve_native_icon_pixels(path, size)? else {
+        return Ok(None);
+    };
+    let png = icon_pixels_to_png_bytes(width, height, pixels)?;
     Ok(Some(png))
 }
 
 fn resolve_native_icon_for_path(path: &Path, size: u32) -> Result<Option<String>, String> {
-    if !path.exists() {
+    let Some((width, height, pixels)) = resolve_native_icon_pixels(path, size)? else {
         return Ok(None);
-    }
-
-    let icon = file_icon_provider::get_file_icon(path.to_path_buf(), size as u16)
-        .map_err(|error| error.to_string())?;
-    let src = icon_pixels_to_png_data_url(icon.width, icon.height, icon.pixels)?;
+    };
+    let src = icon_pixels_to_png_data_url(width, height, pixels)?;
     Ok(Some(src))
 }
 

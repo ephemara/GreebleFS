@@ -1315,9 +1315,11 @@ export function normalizeThemeDefinition(
       ...(fallback.cssVars ?? {}),
       ...(theme.cssVars ?? {}),
     },
-    workbench: normalizeWorkbenchThemeRecipe(theme.workbench, fallback.workbench),
-    explorer: normalizeExplorerThemeRecipe(theme.explorer, fallback.explorer),
-    dock: normalizeDockThemeOverrides(theme.dock, fallback.dock),
+    // Only inherit these recipe overrides from an explicit parent theme.
+    // The generic fallback theme is a data seed, not a workbench/explorer style parent.
+    workbench: normalizeWorkbenchThemeRecipe(theme.workbench, fallbackTheme?.workbench),
+    explorer: normalizeExplorerThemeRecipe(theme.explorer, fallbackTheme?.explorer),
+    dock: normalizeDockThemeOverrides(theme.dock, fallbackTheme?.dock),
     engineManifest,
     compiledEngineManifest,
   };

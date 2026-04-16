@@ -1,1 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><path d="M10 4.5h10l6 6V31.5H10A2.5 2.5 0 0 1 7.5 29V7A2.5 2.5 0 0 1 10 4.5z" fill="#67b7ff"/><path d="M20 4.5v6h6" fill="#bde1ff"/><path d="M12 17h12v2H12zm0 5h9v2h-9z" fill="#0f2a43" opacity="0.7"/></svg>
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="6" y="6" width="20" height="20" rx="2" fill="#5C6BC0"/>
+  <path d="M10 12 L10 20 L14 20 Q16 20 16 18 Q16 16 14 16 L10 16" stroke="white" stroke-width="2" fill="none"/>
+  <path d="M18 12 L18 20 M18 12 L22 12 M18 20 L22 20" stroke="white" stroke-width="2"/>
+  <text x="16" y="28" font-family="monospace" font-size="5" font-weight="bold" 
+        fill="#5C6BC0" text-anchor="middle">DLL</text>
+</svg>

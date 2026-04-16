@@ -1,9 +1,9 @@
 use crate::fs_commands::{
-    complete_manual_explorer_task, create_manual_explorer_task, create_manual_explorer_task_with_id,
-    fail_manual_explorer_task, invalidate_all_fs_caches_for_path,
-    set_manual_explorer_task_cancel_context, set_recent_trash_task, update_manual_explorer_task,
-    ExplorerTaskCancelContext, ExplorerTaskKind, ExplorerTaskRegistration,
-    ExplorerTaskRetryContext, FileEntry,
+    complete_manual_explorer_task, create_manual_explorer_task,
+    create_manual_explorer_task_with_id, fail_manual_explorer_task,
+    invalidate_all_fs_caches_for_path, set_manual_explorer_task_cancel_context,
+    set_recent_trash_task, update_manual_explorer_task, ExplorerTaskCancelContext,
+    ExplorerTaskKind, ExplorerTaskRegistration, ExplorerTaskRetryContext, FileEntry,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -314,8 +314,7 @@ fn duplicate_scan_task_detail(progress: &ExplorerDuplicateScanProgress) -> Strin
     }
     format!(
         "Scanned {} files · {} duplicate candidates",
-        progress.scanned_file_count,
-        progress.candidate_file_count
+        progress.scanned_file_count, progress.candidate_file_count
     )
 }
 
@@ -788,7 +787,8 @@ fn run_duplicate_scan(
             Some("Cancelled".to_string()),
         );
     } else {
-        let _ = complete_manual_explorer_task(&scan_id, Some(duplicate_scan_task_detail(&state)), None);
+        let _ =
+            complete_manual_explorer_task(&scan_id, Some(duplicate_scan_task_detail(&state)), None);
     }
 }
 
@@ -921,9 +921,7 @@ pub async fn explorer_saved_searches_delete(app: AppHandle, id: String) -> Resul
     Ok(())
 }
 
-pub(crate) async fn run_batch_rename_task(
-    items: Vec<FsBatchRenameItem>,
-) -> Result<String, String> {
+pub(crate) async fn run_batch_rename_task(items: Vec<FsBatchRenameItem>) -> Result<String, String> {
     ensure_batch_rename_is_valid(&items)?;
     let destination_parent = items
         .first()
@@ -931,7 +929,11 @@ pub(crate) async fn run_batch_rename_task(
         .map(|path| path.to_string_lossy().to_string());
     let task_id = create_manual_explorer_task(explorer_task_registration(
         ExplorerTaskKind::BatchRename,
-        format!("Batch rename {} item{}", items.len(), if items.len() == 1 { "" } else { "s" }),
+        format!(
+            "Batch rename {} item{}",
+            items.len(),
+            if items.len() == 1 { "" } else { "s" }
+        ),
         items
             .first()
             .map(|item| item.destination_path.clone())
@@ -965,7 +967,9 @@ pub(crate) async fn run_batch_rename_task(
         }
 
         let mut applied_results = Vec::new();
-        for (index, (item, (_, temporary_path))) in items.iter().zip(temporary_renames.iter()).enumerate() {
+        for (index, (item, (_, temporary_path))) in
+            items.iter().zip(temporary_renames.iter()).enumerate()
+        {
             let destination = PathBuf::from(&item.destination_path);
             move_path_preserving_contents(temporary_path, &destination)?;
             invalidate_all_fs_caches_for_path(&destination);
@@ -992,7 +996,11 @@ pub(crate) async fn run_batch_rename_task(
         Ok(_) => {
             let _ = complete_manual_explorer_task(
                 &task_id,
-                Some(format!("Renamed {} item{}", items.len(), if items.len() == 1 { "" } else { "s" })),
+                Some(format!(
+                    "Renamed {} item{}",
+                    items.len(),
+                    if items.len() == 1 { "" } else { "s" }
+                )),
                 None,
             );
             Ok(task_id)
@@ -1004,7 +1012,10 @@ pub(crate) async fn run_batch_rename_task(
     }
 }
 
-pub(crate) fn start_duplicate_scan_task(_app: AppHandle, root_path: String) -> Result<String, String> {
+pub(crate) fn start_duplicate_scan_task(
+    _app: AppHandle,
+    root_path: String,
+) -> Result<String, String> {
     let normalized_root = root_path.trim().to_string();
     if normalized_root.is_empty() {
         return Err("Duplicate scan root path cannot be empty.".to_string());
@@ -1026,21 +1037,27 @@ pub(crate) fn start_duplicate_scan_task(_app: AppHandle, root_path: String) -> R
         .map_err(|_| "Duplicate scan registry lock was poisoned.".to_string())?
         .insert(scan_id.clone(), progress.clone());
 
-    create_manual_explorer_task_with_id(scan_id.clone(), explorer_task_registration(
-        ExplorerTaskKind::DuplicateScan,
-        format!("Scan duplicates in {}", Path::new(&normalized_root)
-            .file_name()
-            .map(|value| value.to_string_lossy().to_string())
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or_else(|| normalized_root.clone())),
-        normalized_root.clone(),
-        vec![normalized_root.clone()],
-        Some(normalized_root.clone()),
-        Some(ExplorerTaskRetryContext::DuplicateScan {
-            root_path: normalized_root.clone(),
-        }),
-        false,
-    ));
+    create_manual_explorer_task_with_id(
+        scan_id.clone(),
+        explorer_task_registration(
+            ExplorerTaskKind::DuplicateScan,
+            format!(
+                "Scan duplicates in {}",
+                Path::new(&normalized_root)
+                    .file_name()
+                    .map(|value| value.to_string_lossy().to_string())
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or_else(|| normalized_root.clone())
+            ),
+            normalized_root.clone(),
+            vec![normalized_root.clone()],
+            Some(normalized_root.clone()),
+            Some(ExplorerTaskRetryContext::DuplicateScan {
+                root_path: normalized_root.clone(),
+            }),
+            false,
+        ),
+    );
     let _ = set_manual_explorer_task_cancel_context(
         &scan_id,
         ExplorerTaskCancelContext::DuplicateScan {
@@ -1081,7 +1098,11 @@ pub async fn fs_trash(
 
     let task_id = create_manual_explorer_task(explorer_task_registration(
         ExplorerTaskKind::Trash,
-        format!("Move {} item{} to trash", paths.len(), if paths.len() == 1 { "" } else { "s" }),
+        format!(
+            "Move {} item{} to trash",
+            paths.len(),
+            if paths.len() == 1 { "" } else { "s" }
+        ),
         paths
             .first()
             .cloned()
@@ -1123,7 +1144,12 @@ pub async fn fs_trash(
             });
             let _ = update_manual_explorer_task(
                 &task_id,
-                Some(format!("Moved {} of {} item{}", index + 1, entries.len().max(index + 1), if entries.len() == 1 { "" } else { "s" })),
+                Some(format!(
+                    "Moved {} of {} item{}",
+                    index + 1,
+                    entries.len().max(index + 1),
+                    if entries.len() == 1 { "" } else { "s" }
+                )),
                 Some((index + 1) as u64),
                 Some((index + 1) as u64),
             );
@@ -1145,7 +1171,11 @@ pub async fn fs_trash(
         Ok(action) => {
             let _ = complete_manual_explorer_task(
                 &task_id,
-                Some(format!("Moved {} item{} to trash", action.entries.len(), if action.entries.len() == 1 { "" } else { "s" })),
+                Some(format!(
+                    "Moved {} item{} to trash",
+                    action.entries.len(),
+                    if action.entries.len() == 1 { "" } else { "s" }
+                )),
                 Some(true),
             );
             let _ = set_recent_trash_task(Some(&task_id));
