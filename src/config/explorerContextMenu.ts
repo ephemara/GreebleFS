@@ -16,7 +16,6 @@ export type ExplorerContextMenuItemGroup =
 
 export type ExplorerBuiltInContextMenuActionId =
   | 'open'
-  | 'open-archive'
   | 'open-with'
   | 'open-admin'
   | 'open-terminal'
@@ -117,17 +116,6 @@ export const BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS: ExplorerBuiltInContextMenuCat
     source: 'built-in',
     iconName: 'ExternalLink',
     execution: { kind: 'built-in', actionId: 'open-with' },
-  },
-  {
-    id: 'built-in.open-archive',
-    title: 'Open Extracted Contents',
-    contexts: ['entry'],
-    appliesTo: 'file',
-    group: 'open',
-    defaultOrder: 25,
-    source: 'built-in',
-    iconName: 'FolderPlus',
-    execution: { kind: 'built-in', actionId: 'open-archive' },
   },
   {
     id: 'built-in.open-admin',

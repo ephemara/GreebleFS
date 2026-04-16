@@ -1,0 +1,327 @@
+import React, { useEffect, useId, useRef, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+
+type AppDialogTone = 'accent' | 'danger';
+
+interface AppDialogFrameProps {
+  title: string;
+  description?: ReactNode;
+  icon?: ReactNode;
+  children?: ReactNode;
+  actions?: ReactNode;
+  width?: number | string;
+  onClose?: () => void;
+  closeOnBackdrop?: boolean;
+}
+
+interface AppPromptDialogProps {
+  open: boolean;
+  title: string;
+  description?: ReactNode;
+  icon?: ReactNode;
+  value: string;
+  placeholder?: string;
+  submitLabel?: string;
+  cancelLabel?: string;
+  tone?: AppDialogTone;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+}
+
+interface AppConfirmDialogProps {
+  open: boolean;
+  title: string;
+  description?: ReactNode;
+  icon?: ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  tone?: AppDialogTone;
+  onConfirm: () => void;
+  onCancel: () => void;
+  children?: ReactNode;
+}
+
+export function AppDialogFrame({
+  title,
+  description,
+  icon,
+  children,
+  actions,
+  width = 420,
+  onClose,
+  closeOnBackdrop = true,
+}: AppDialogFrameProps) {
+  const titleId = useId();
+  const descriptionId = useId();
+
+  return (
+    <div
+      role="presentation"
+      onMouseDown={(event) => {
+        if (!closeOnBackdrop || event.target !== event.currentTarget) {
+          return;
+        }
+        onClose?.();
+      }}
+      style={overlayStyle}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
+        style={{
+          ...panelStyle,
+          width: typeof width === 'number' ? `${width}px` : width,
+        }}
+      >
+        <div style={headerStyle}>
+          {icon ? <div style={iconWrapStyle}>{icon}</div> : null}
+          <div style={{ minWidth: 0 }}>
+            <div id={titleId} style={titleStyle}>{title}</div>
+            {description ? (
+              <div id={descriptionId} style={descriptionStyle}>{description}</div>
+            ) : null}
+          </div>
+        </div>
+        {children ? <div style={{ marginTop: 16 }}>{children}</div> : null}
+        {actions ? <div style={actionsStyle}>{actions}</div> : null}
+      </div>
+    </div>
+  );
+}
+
+export function AppPromptDialog({
+  open,
+  title,
+  description,
+  icon,
+  value,
+  placeholder,
+  submitLabel = 'Confirm',
+  cancelLabel = 'Cancel',
+  tone = 'accent',
+  onChange,
+  onSubmit,
+  onCancel,
+}: AppPromptDialogProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [open]);
+
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <AppDialogFrame
+      title={title}
+      description={description}
+      icon={icon}
+      onClose={onCancel}
+      actions={(
+        <>
+          <button type="button" onClick={onCancel} style={secondaryButtonStyle}>
+            {cancelLabel}
+          </button>
+          <button type="button" onClick={onSubmit} style={getToneButtonStyle(tone)}>
+            {submitLabel}
+          </button>
+        </>
+      )}
+    >
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => handlePromptKeyDown(event, onSubmit, onCancel)}
+        placeholder={placeholder}
+        style={inputStyle}
+      />
+    </AppDialogFrame>
+  );
+}
+
+export function AppConfirmDialog({
+  open,
+  title,
+  description,
+  icon,
+  confirmLabel = 'Confirm',
+  cancelLabel = 'Cancel',
+  tone = 'accent',
+  onConfirm,
+  onCancel,
+  children,
+}: AppConfirmDialogProps) {
+  const confirmButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      confirmButtonRef.current?.focus();
+    }
+  }, [open]);
+
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <AppDialogFrame
+      title={title}
+      description={description}
+      icon={icon}
+      onClose={onCancel}
+      actions={(
+        <>
+          <button type="button" onClick={onCancel} style={secondaryButtonStyle}>
+            {cancelLabel}
+          </button>
+          <button
+            ref={confirmButtonRef}
+            type="button"
+            onClick={onConfirm}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                onCancel();
+              }
+            }}
+            style={getToneButtonStyle(tone)}
+          >
+            {confirmLabel}
+          </button>
+        </>
+      )}
+    >
+      {children}
+    </AppDialogFrame>
+  );
+}
+
+function handlePromptKeyDown(
+  event: KeyboardEvent<HTMLInputElement>,
+  onSubmit: () => void,
+  onCancel: () => void,
+) {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    onSubmit();
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    onCancel();
+  }
+}
+
+function getToneButtonStyle(tone: AppDialogTone): CSSProperties {
+  if (tone === 'danger') {
+    return dangerButtonStyle;
+  }
+  return primaryButtonStyle;
+}
+
+const overlayStyle: CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  zIndex: 10000,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 20,
+  background: 'rgba(0,0,0,0.72)',
+};
+
+const panelStyle: CSSProperties = {
+  maxWidth: 'min(92vw, 560px)',
+  borderRadius: 'var(--overlay-explorer-panel-radius, 18px)',
+  border: '1px solid var(--overlay-explorer-preview-border, var(--overlay-border))',
+  background: 'var(--overlay-explorer-preview-bg, var(--overlay-bg-panel))',
+  color: 'var(--overlay-text-primary)',
+  boxShadow: '0 24px 64px rgba(0,0,0,0.9)',
+  padding: 20,
+};
+
+const headerStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'flex-start',
+  gap: 12,
+};
+
+const iconWrapStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  flexShrink: 0,
+  color: 'var(--overlay-accent)',
+  marginTop: 1,
+};
+
+const titleStyle: CSSProperties = {
+  fontSize: 14,
+  fontWeight: 700,
+  color: 'var(--overlay-text-primary)',
+};
+
+const descriptionStyle: CSSProperties = {
+  marginTop: 8,
+  fontSize: 12,
+  lineHeight: 1.55,
+  color: 'var(--overlay-text-muted)',
+};
+
+const actionsStyle: CSSProperties = {
+  display: 'flex',
+  justifyContent: 'flex-end',
+  gap: 8,
+  marginTop: 18,
+};
+
+const inputStyle: CSSProperties = {
+  width: '100%',
+  boxSizing: 'border-box',
+  borderRadius: 'var(--overlay-explorer-control-radius, 10px)',
+  border: '1px solid var(--overlay-explorer-input-border, var(--overlay-border))',
+  background: 'var(--overlay-explorer-input-bg, rgba(255,255,255,0.04))',
+  color: 'var(--overlay-text-primary)',
+  outline: 'none',
+  padding: '9px 11px',
+  fontSize: 12,
+};
+
+const secondaryButtonStyle: CSSProperties = {
+  background: 'var(--overlay-explorer-chip-bg, rgba(255,255,255,0.04))',
+  border: '1px solid var(--overlay-explorer-chip-border, var(--overlay-border))',
+  borderRadius: 'var(--overlay-explorer-control-radius, 10px)',
+  color: 'var(--overlay-text-primary)',
+  padding: '7px 14px',
+  fontSize: 12,
+  cursor: 'pointer',
+};
+
+const primaryButtonStyle: CSSProperties = {
+  background: 'var(--overlay-explorer-chip-active-bg, rgba(255,255,255,0.12))',
+  border: '1px solid var(--overlay-explorer-chip-active-border, var(--overlay-accent))',
+  borderRadius: 'var(--overlay-explorer-control-radius, 10px)',
+  color: 'var(--overlay-explorer-chip-active-text, var(--overlay-text-primary))',
+  padding: '7px 14px',
+  fontSize: 12,
+  cursor: 'pointer',
+  fontWeight: 600,
+};
+
+const dangerButtonStyle: CSSProperties = {
+  background: 'rgba(248,113,113,0.12)',
+  border: '1px solid rgba(248,113,113,0.28)',
+  borderRadius: 'var(--overlay-explorer-control-radius, 10px)',
+  color: 'var(--overlay-danger, #f87171)',
+  padding: '7px 14px',
+  fontSize: 12,
+  cursor: 'pointer',
+  fontWeight: 600,
+};
