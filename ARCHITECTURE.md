@@ -372,7 +372,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `bun run tauri dev` uses the generated runtime Tauri config from `scripts/run-platform-tauri.mjs`, which points Tauri at the Vite `devUrl`. TS/React edits hot-reload through Vite during that session, but binding generation and startup prep scripts only rerun when the Tauri dev process starts.
 - Linux NVIDIA/WebKitGTK launch stability now has a native pre-Tauri guard in `src-tauri/src/linux_graphics.rs`:
   - it runs before `tauri::Builder::default()` so both dev and installed binaries inherit the workaround
-  - when the active Linux backend resolves to Wayland on an NVIDIA system, it sets `__NV_DISABLE_EXPLICIT_SYNC=1`
+  - when the active Linux backend resolves to Wayland on an NVIDIA system, it sets both `WEBKIT_DISABLE_DMABUF_RENDERER=1` and `__NV_DISABLE_EXPLICIT_SYNC=1`
   - when the active Linux backend resolves to X11 on an NVIDIA system, it sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`
   - explicit user-provided values for those environment variables are respected
   - if Linux launch regresses with `libEGL`, `driver (null)`, `failed to create dri2 screen`, blank WebKit surfaces, or Wayland protocol errors on NVIDIA, inspect that helper before changing shell/UI code

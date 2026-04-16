@@ -16,9 +16,9 @@ enum LinuxDisplayBackend {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LinuxWebkitNvidiaWorkaround {
-    DisableDmabufRenderer,
-    DisableNvExplicitSync,
+struct LinuxWebkitNvidiaWorkaroundPlan {
+    disable_dmabuf_renderer: bool,
+    disable_nv_explicit_sync: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,21 +86,36 @@ fn resolve_linux_display_backend(
 fn resolve_linux_webkit_nvidia_workaround(
     environment: &LinuxGraphicsEnvironmentSnapshot,
     nvidia_gpu_detected: bool,
-) -> Option<LinuxWebkitNvidiaWorkaround> {
+) -> Option<LinuxWebkitNvidiaWorkaroundPlan> {
     if !nvidia_gpu_detected {
         return None;
     }
 
     match resolve_linux_display_backend(environment) {
-        Some(LinuxDisplayBackend::Wayland) if environment.nv_disable_explicit_sync.is_none() => {
-            Some(LinuxWebkitNvidiaWorkaround::DisableNvExplicitSync)
+        Some(LinuxDisplayBackend::Wayland) => {
+            let disable_dmabuf_renderer = environment.webkit_disable_dmabuf_renderer.is_none();
+            let disable_nv_explicit_sync = environment.nv_disable_explicit_sync.is_none();
+
+            if disable_dmabuf_renderer || disable_nv_explicit_sync {
+                Some(LinuxWebkitNvidiaWorkaroundPlan {
+                    disable_dmabuf_renderer,
+                    disable_nv_explicit_sync,
+                })
+            } else {
+                None
+            }
         }
-        Some(LinuxDisplayBackend::X11)
-            if environment.webkit_disable_dmabuf_renderer.is_none() =>
-        {
-            Some(LinuxWebkitNvidiaWorkaround::DisableDmabufRenderer)
+        Some(LinuxDisplayBackend::X11) => {
+            if environment.webkit_disable_dmabuf_renderer.is_none() {
+                Some(LinuxWebkitNvidiaWorkaroundPlan {
+                    disable_dmabuf_renderer: true,
+                    disable_nv_explicit_sync: false,
+                })
+            } else {
+                None
+            }
         }
-        _ => None,
+        None => None,
     }
 }
 
@@ -164,17 +179,20 @@ pub(crate) fn apply_linux_webkit_nvidia_workaround() {
         linux_nvidia_gpu_detected(Path::new(SYSFS_DRM_ROOT), Path::new(SYS_MODULE_ROOT));
 
     match resolve_linux_webkit_nvidia_workaround(&environment, nvidia_gpu_detected) {
-        Some(LinuxWebkitNvidiaWorkaround::DisableDmabufRenderer) => {
-            env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-            eprintln!(
-                "GreebleFS: applied Linux NVIDIA WebKit workaround: WEBKIT_DISABLE_DMABUF_RENDERER=1"
-            );
-        }
-        Some(LinuxWebkitNvidiaWorkaround::DisableNvExplicitSync) => {
-            env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
-            eprintln!(
-                "GreebleFS: applied Linux NVIDIA WebKit workaround: __NV_DISABLE_EXPLICIT_SYNC=1"
-            );
+        Some(plan) => {
+            if plan.disable_dmabuf_renderer {
+                env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+                eprintln!(
+                    "GreebleFS: applied Linux NVIDIA WebKit workaround: WEBKIT_DISABLE_DMABUF_RENDERER=1"
+                );
+            }
+
+            if plan.disable_nv_explicit_sync {
+                env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
+                eprintln!(
+                    "GreebleFS: applied Linux NVIDIA WebKit workaround: __NV_DISABLE_EXPLICIT_SYNC=1"
+                );
+            }
         }
         None => {}
     }
@@ -225,7 +243,10 @@ mod tests {
 
         assert_eq!(
             resolve_linux_webkit_nvidia_workaround(&environment, true),
-            Some(LinuxWebkitNvidiaWorkaround::DisableDmabufRenderer)
+            Some(LinuxWebkitNvidiaWorkaroundPlan {
+                disable_dmabuf_renderer: true,
+                disable_nv_explicit_sync: false,
+            })
         );
     }
 
@@ -242,18 +263,41 @@ mod tests {
 
         assert_eq!(
             resolve_linux_webkit_nvidia_workaround(&environment, true),
-            Some(LinuxWebkitNvidiaWorkaround::DisableNvExplicitSync)
+            Some(LinuxWebkitNvidiaWorkaroundPlan {
+                disable_dmabuf_renderer: true,
+                disable_nv_explicit_sync: true,
+            })
         );
     }
 
     #[test]
-    fn respects_existing_explicit_sync_override() {
+    fn respects_existing_wayland_overrides_individually() {
         let environment = LinuxGraphicsEnvironmentSnapshot {
             gdk_backend: Some("wayland".into()),
             xdg_session_type: Some("wayland".into()),
             display: None,
             wayland_display: Some("wayland-0".into()),
-            webkit_disable_dmabuf_renderer: None,
+            webkit_disable_dmabuf_renderer: Some("1".into()),
+            nv_disable_explicit_sync: None,
+        };
+
+        assert_eq!(
+            resolve_linux_webkit_nvidia_workaround(&environment, true),
+            Some(LinuxWebkitNvidiaWorkaroundPlan {
+                disable_dmabuf_renderer: false,
+                disable_nv_explicit_sync: true,
+            })
+        );
+    }
+
+    #[test]
+    fn returns_none_when_all_wayland_overrides_are_already_present() {
+        let environment = LinuxGraphicsEnvironmentSnapshot {
+            gdk_backend: Some("wayland".into()),
+            xdg_session_type: Some("wayland".into()),
+            display: None,
+            wayland_display: Some("wayland-0".into()),
+            webkit_disable_dmabuf_renderer: Some("1".into()),
             nv_disable_explicit_sync: Some("1".into()),
         };
 

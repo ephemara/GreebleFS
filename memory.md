@@ -5,7 +5,7 @@
 - GreebleFS now applies a native Linux NVIDIA WebKitGTK workaround before Tauri boot so the app can recover from the recent `libEGL` / `driver (null)` / `failed to create dri2 screen` startup failures that were blocking launch on the Linux workstation.
 - Durable implementation shape:
   - `src-tauri/src/linux_graphics.rs` is the new native startup helper. It resolves the effective Linux display backend from `GDK_BACKEND`, `XDG_SESSION_TYPE`, `WAYLAND_DISPLAY`, and `DISPLAY`, then checks for an NVIDIA primary GPU or loaded NVIDIA kernel modules through sysfs.
-  - Wayland + NVIDIA now sets `__NV_DISABLE_EXPLICIT_SYNC=1` before `tauri::Builder::default()`.
+  - Wayland + NVIDIA now sets both `WEBKIT_DISABLE_DMABUF_RENDERER=1` and `__NV_DISABLE_EXPLICIT_SYNC=1` before `tauri::Builder::default()`.
   - X11 + NVIDIA now sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` before `tauri::Builder::default()`.
   - Explicit user-provided env overrides are preserved, so operators can still force or disable these knobs outside the app when debugging.
   - `src-tauri/src/lib.rs` now calls the helper at the top of `run()`, making the workaround apply to both `bun run tauri dev` and installed release binaries instead of depending on shell wrappers.
