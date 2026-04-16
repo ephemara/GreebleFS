@@ -102,6 +102,7 @@ export interface TerminalSettings {
   fontSize: number;
   fontFamily: string;
   shell: string;
+  showSidebar: boolean;
   cursorBlink: boolean;
   cursorStyle: 'bar' | 'block' | 'underline';
   scrollback: number;
@@ -358,6 +359,7 @@ function normalizeTerminalSettings(
   const merged = { ...base, ...updates };
   return {
     ...merged,
+    showSidebar: merged.showSidebar !== false,
     overlayHeight: normalizeSavedWindowDimension(
       merged.overlayHeight,
       base.overlayHeight,
@@ -599,6 +601,7 @@ export const defaultSettings: Settings = {
     fontSize: 13,
     fontFamily: 'JetBrains Mono, Fira Code, Cascadia Code, Consolas, monospace',
     shell: getDefaultIntegratedShell(),
+    showSidebar: true,
     cursorBlink: true,
     cursorStyle: 'bar',
     scrollback: 10000,

@@ -1074,10 +1074,11 @@ export function TerminalOverlay({
   appearance: appearanceProp,
   pluginCommands = [],
 }: TerminalOverlayProps) {
-  const { settings, appearanceSettings, keybindings } = useSettingsStore(useShallow(state => ({
+  const { settings, appearanceSettings, keybindings, updateTerminal } = useSettingsStore(useShallow(state => ({
     settings: state.settings.terminal,
     appearanceSettings: state.settings.appearance,
     keybindings: state.settings.keybindings,
+    updateTerminal: state.updateTerminal,
   })));
   const runtimePlatform = useMemo(() => detectClientPlatform(), []);
   const appearance = useMemo(
@@ -1137,7 +1138,6 @@ export function TerminalOverlay({
   const [renameVal, setRenameVal] = useState('');
 
   const [activePanel, setActivePanel] = useState<SidebarPanel>('dirs');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(210);
   const [readyTerminalIds, setReadyTerminalIds] = useState<string[]>([]);
   const [terminalActionMessage, setTerminalActionMessage] = useState<string | null>(null);
@@ -1155,6 +1155,7 @@ export function TerminalOverlay({
 
   const hasMountedRef = useRef(false);
   if (isOpen && !hasMountedRef.current) hasMountedRef.current = true;
+  const sidebarOpen = settings.showSidebar;
 
   const setTransientActionMessage = useCallback((message: string) => {
     setTerminalActionMessage(message);
@@ -1172,6 +1173,22 @@ export function TerminalOverlay({
       window.clearTimeout(actionMessageTimerRef.current);
     }
   }, []);
+
+  useEffect(() => {
+    if (sidebarOpen || activePanel) {
+      return;
+    }
+
+    setActivePanel('dirs');
+  }, [activePanel, sidebarOpen]);
+
+  const setSidebarVisibility = useCallback((nextOpen: boolean) => {
+    updateTerminal({ showSidebar: nextOpen });
+  }, [updateTerminal]);
+
+  const toggleSidebarVisibility = useCallback(() => {
+    setSidebarVisibility(!sidebarOpen);
+  }, [setSidebarVisibility, sidebarOpen]);
 
   const activeTab = useMemo(
     () => tabs.find(tab => tab.id === activeTabId) ?? tabs[0] ?? null,
@@ -1595,13 +1612,13 @@ export function TerminalOverlay({
 
   const togglePanel = useCallback((panel: SidebarPanel) => {
     if (activePanel === panel && sidebarOpen) {
-      setSidebarOpen(false);
+      setSidebarVisibility(false);
       setActivePanel(null);
       return;
     }
     setActivePanel(panel);
-    setSidebarOpen(true);
-  }, [activePanel, sidebarOpen]);
+    setSidebarVisibility(true);
+  }, [activePanel, setSidebarVisibility, sidebarOpen]);
 
   const slideClass = isOpen ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0';
   const activeTerminalReady = isPaneReady(activePaneId);
@@ -1691,6 +1708,7 @@ export function TerminalOverlay({
     ?? (activeTerminalReady
       ? `${activeTabReadyCount}/${activeTab?.paneIds.length ?? 0} panes live · ${activeTab?.broadcastInput ? 'broadcasting input' : 'focused input'}`
       : `${activeTabLabel} starting...`);
+  const sidebarToggleLabel = sidebarOpen ? 'Hide Sidebar' : 'Show Sidebar';
 
 
   const sidebarPanelNode = sidebarOpen && activePanel ? (
@@ -1963,6 +1981,17 @@ export function TerminalOverlay({
                 </button>
               );
             })}
+            <div className="mx-1 h-4 w-px shrink-0 bg-white/10" aria-hidden="true" />
+            <button
+              type="button"
+              onClick={toggleSidebarVisibility}
+              aria-label={sidebarToggleLabel}
+              title={sidebarToggleLabel}
+              style={{ color: theme.textMuted }}
+              className="w-6 h-6 flex items-center justify-center rounded-sm transition-all hover:opacity-90"
+            >
+              {sidebarOpen ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+            </button>
           </div>
           {tabStrip}
         </div>
@@ -2066,10 +2095,12 @@ export function TerminalOverlay({
           <div className="flex-1" />
 
           <button
-            onClick={() => setSidebarOpen(s => !s)}
+            type="button"
+            onClick={toggleSidebarVisibility}
             className="w-7 h-7 flex items-center justify-center transition-all hover:opacity-80"
             style={{ color: theme.textMuted }}
-            title={sidebarOpen ? 'Collapse' : 'Expand'}
+            aria-label={sidebarToggleLabel}
+            title={sidebarToggleLabel}
           >
             {sidebarOpen ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
           </button>

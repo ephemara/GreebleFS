@@ -71,12 +71,14 @@ vi.mock('@xterm/addon-web-links', () => ({
 }));
 
 import TerminalOverlay from '../components/TerminalOverlay';
+import { useSettingsStore } from '../store/settingsStore';
 
 describe('TerminalOverlay', () => {
   beforeEach(() => {
     mockXtermInstances.length = 0;
     vi.mocked(invoke).mockReset();
     vi.mocked(invoke).mockResolvedValue(null);
+    useSettingsStore.getState().resetToDefaults();
 
     Object.defineProperty(window, 'ResizeObserver', {
       configurable: true,
@@ -208,6 +210,27 @@ describe('TerminalOverlay', () => {
     expect(invokeMock).toHaveBeenCalledWith('terminal_write', {
       id: 'overlay-0',
       data: "'C:\\Python Runtime\\env\\Scripts\\python.exe'\r",
+    });
+  }, 20000);
+
+  it('lets the embedded terminal tuck the sidebar away and persist that choice', async () => {
+    render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
+
+    expect(await screen.findByText('No directories yet — click + to add')).toBeInTheDocument();
+    expect(useSettingsStore.getState().settings.terminal.showSidebar).toBe(true);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Hide Sidebar' }));
+
+    await waitFor(() => {
+      expect(screen.queryByText('No directories yet — click + to add')).not.toBeInTheDocument();
+      expect(useSettingsStore.getState().settings.terminal.showSidebar).toBe(false);
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Show Sidebar' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('No directories yet — click + to add')).toBeInTheDocument();
+      expect(useSettingsStore.getState().settings.terminal.showSidebar).toBe(true);
     });
   }, 20000);
 });

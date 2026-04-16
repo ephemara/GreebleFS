@@ -3401,6 +3401,24 @@ export function SettingsPage({
                     />
                   </div>
                 </div>
+
+                <label
+                  className="flex items-center justify-between gap-3 rounded border px-3 py-2 text-[11px]"
+                  style={{ borderColor: border }}
+                >
+                  <div>
+                    <div className="font-medium">Show Terminal Sidebar</div>
+                    <p className="mt-1 text-[10px] opacity-45">
+                      Keeps the directories and command rail expanded when the terminal opens. You can still tuck it away live from the terminal header.
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    aria-label="Show terminal sidebar"
+                    checked={settings.terminal.showSidebar}
+                    onChange={event => updateTerminal({ showSidebar: event.target.checked })}
+                  />
+                </label>
               </div>
 
               <div className="space-y-1.5">

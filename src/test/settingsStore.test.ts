@@ -38,6 +38,7 @@ describe('resolveSystemPresentationState()', () => {
 describe('useSettingsStore — initial state', () => {
   it('has the correct default terminal settings', () => {
     const { settings } = useSettingsStore.getState();
+    expect(settings.terminal.showSidebar).toBe(true);
     expect(settings.terminal.cursorBlink).toBe(true);
     expect(settings.terminal.scrollback).toBe(10000);
     expect(settings.terminal.overlayHeight).toBe(overlayWindowGeometry.defaultHeight);
@@ -201,6 +202,16 @@ describe('useSettingsStore.updateTerminal()', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.terminal.cursorBlink).toBe(false);
     expect(settings.terminal.cursorStyle).toBe('block');
+  });
+
+  it('stores terminal sidebar visibility independently from other terminal settings', () => {
+    const store = useSettingsStore.getState();
+    store.updateTerminal({ showSidebar: false });
+
+    const { settings } = useSettingsStore.getState();
+    expect(settings.terminal.showSidebar).toBe(false);
+    expect(settings.terminal.fontSize).toBe(13);
+    expect(settings.terminal.windowMode).toBe('windowed');
   });
 });
 

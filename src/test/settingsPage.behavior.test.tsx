@@ -541,11 +541,19 @@ describe('SettingsPage behavior', () => {
     expect(useSettingsStore.getState().settings.terminal.windowedWidth).toBe(1560);
     expect(useSettingsStore.getState().settings.terminal.windowedHeight).toBe(960);
 
+    const sidebarToggle = screen.getByRole('checkbox', { name: 'Show terminal sidebar' });
+    expect(sidebarToggle).toBeChecked();
+
+    await user.click(sidebarToggle);
+
+    expect(useSettingsStore.getState().settings.terminal.showSidebar).toBe(false);
+
     await user.click(screen.getByRole('button', { name: /Dock Mode/ }));
 
     await waitFor(() => {
       expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('overlay');
     });
+    expect(useSettingsStore.getState().settings.terminal.showSidebar).toBe(false);
   }, 30000);
 
   it('surfaces screenshot defaults in settings and opens the configured save folder', async () => {

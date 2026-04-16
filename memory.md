@@ -1,5 +1,20 @@
 # GreebleFS Memory
 
+## 2026-04-16 — Terminal Sidebar Reopen / Persistence
+
+- The integrated terminal sidebar can now be tucked away in both the embedded application panel and the dock overlay, and that visibility choice now persists through terminal settings instead of resetting every mount.
+- Durable implementation shape:
+  - `src/store/settingsStore.ts` now persists `terminal.showSidebar`, defaulting to `true` and normalizing missing/legacy imports back to a safe visible-by-default state.
+  - `src/components/TerminalOverlay.tsx` now reads terminal sidebar visibility from settings instead of local-only component state, so hide/show is shared across terminal presentations and survives restarts.
+  - The embedded terminal header now exposes the same explicit hide/show affordance the dock view already had, instead of forcing operators to rediscover that the active rail icon can collapse the panel.
+  - `src/components/SettingsPage.tsx` now exposes `Show Terminal Sidebar` in the terminal section so the rail posture is discoverable and tweakable from the shared settings surface.
+- Durable product note:
+  - terminal sidebar posture is now a persisted shell preference, not a per-mount accident. Future terminal chrome work should route visibility state through terminal settings rather than adding new local toggle state in `TerminalOverlay.tsx`.
+- Validation:
+  - passed: `bunx vitest run src/test/terminalOverlay.test.tsx src/test/settingsStore.test.ts src/test/settingsPage.behavior.test.tsx -t "lets the embedded terminal tuck the sidebar away and persist that choice|stores terminal sidebar visibility independently from other terminal settings|switches the terminal between application and dock presentation and persists the windowed size"`
+  - passed: filtered typecheck for touched terminal/settings surfaces via `bunx tsc --noEmit --pretty false 2>&1 | rg "TerminalOverlay|settingsStore|SettingsPage|terminalOverlay|settingsPage.behavior" || true`
+  - note: the broader `src/test/settingsPage.behavior.test.tsx` file still has an existing unrelated failure in `syncs startup registration, desktop visibility toggles, and commits hotkey edits`
+
 ## 2026-04-16 — Explorer Tree / Grid Zoom / Icon Grid Stabilization
 
 - The explorer now survives the three failure modes that were feeding each other in the file-area workflow: unreliable `Ctrl/Cmd + wheel` scaling, blank icon grids after directory navigation, and stale/stuck local side-rail tree branches.
