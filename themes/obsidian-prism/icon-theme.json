@@ -1,0 +1,16 @@
+{
+  "name": "Obsidian Prism Icons",
+  "version": 1,
+  "description": "Custom prismatic icons for the Obsidian Prism flagship theme.",
+  "file": "txt",
+  "folder": "folder",
+  "folderExpanded": "folder",
+  "iconDefinitions": {
+    "folder": { "iconPath": "./icons/folder.svg" },
+    "typescript": { "iconPath": "./icons/typescript.svg" }
+  },
+  "fileExtensions": {
+    "ts": "typescript",
+    "tsx": "typescript"
+  }
+}
