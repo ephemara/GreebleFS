@@ -2,8 +2,8 @@ use tauri::AppHandle;
 use tauri_plugin_autostart::ManagerExt;
 
 use crate::linux_graphics::{
-    current_linux_display_backend_status, set_linux_display_backend_preference, LinuxDisplayBackendPreference,
-    LinuxDisplayBackendStatus,
+    current_linux_display_backend_status, set_linux_display_backend_preference,
+    LinuxDisplayBackendPreference, LinuxDisplayBackendStatus,
 };
 
 #[tauri::command]
@@ -29,7 +29,8 @@ pub async fn startup_set_launch_at_startup(app: AppHandle, enabled: bool) -> Res
 
 #[tauri::command]
 #[specta::specta]
-pub async fn startup_get_linux_display_backend_status() -> Result<LinuxDisplayBackendStatus, String> {
+pub async fn startup_get_linux_display_backend_status() -> Result<LinuxDisplayBackendStatus, String>
+{
     Ok(current_linux_display_backend_status())
 }
 

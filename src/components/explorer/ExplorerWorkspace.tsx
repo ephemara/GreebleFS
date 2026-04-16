@@ -109,20 +109,6 @@ function getNextVisiblePaneId(
   return visiblePaneIds[(currentIndex + 1) % visiblePaneIds.length] ?? null;
 }
 
-function getNextWorkspaceLayoutMode(
-  currentLayoutMode: ExplorerWorkspaceLayoutMode,
-): ExplorerWorkspaceLayoutMode {
-  switch (currentLayoutMode) {
-    case 'single':
-      return 'split';
-    case 'split':
-      return 'quad';
-    case 'quad':
-    default:
-      return 'single';
-  }
-}
-
 function sameSelectionEntry(
   left: ExplorerWorkspaceRuntimeSelectionEntry,
   right: ExplorerWorkspaceRuntimeSelectionEntry,
@@ -434,9 +420,6 @@ export function ExplorerWorkspace({
     setFocusedPane,
     setWorkspaceLayoutMode,
   ]);
-  const cycleWorkspaceLayout = useCallback(() => {
-    ensureWorkspaceLayout(getNextWorkspaceLayoutMode(workspace.layoutMode));
-  }, [ensureWorkspaceLayout, workspace.layoutMode]);
   const duplicateActiveTab = useCallback(() => {
     if (!activeTab) {
       return;
@@ -674,10 +657,6 @@ export function ExplorerWorkspace({
         };
     }
   }, []);
-  const nextLayoutDefinition = useMemo(
-    () => getExplorerWorkspaceLayoutDefinition(getNextWorkspaceLayoutMode(workspace.layoutMode)),
-    [workspace.layoutMode],
-  );
   const commanderButtonsDisabled = !canUseCommanderActions || commanderSelectionCount === 0;
   const workspaceChromeControlRegistry = useMemo<Array<ExplorerChromeControlDefinition & {
     isVisible: (surfaceId: ExplorerChromeSurfaceId) => boolean;
@@ -984,13 +963,44 @@ export function ExplorerWorkspace({
     },
     {
       id: 'workspaceSplitToggle',
-      label: 'Cycle Layout',
+      label: 'Workspace Layout',
       surfaces: ['workspaceHeader'],
       isVisible: () => true,
       render: () => (
-        <button type="button" onClick={cycleWorkspaceLayout} title={`Switch workspace to ${nextLayoutDefinition.label}`} style={paneActionButtonStyle(false, theme.accent)}>
-          {nextLayoutDefinition.shortLabel}
-        </button>
+        <div
+          aria-label="Workspace layout"
+          role="group"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: 3,
+            borderRadius: 999,
+            border: '1px solid var(--overlay-border)',
+            background: 'color-mix(in srgb, var(--overlay-explorer-chip-bg) 86%, black 14%)',
+          }}
+        >
+          {(['single', 'split', 'quad'] as const).map((layoutId) => {
+            const layoutDefinition = getExplorerWorkspaceLayoutDefinition(layoutId);
+            const isActiveLayout = workspace.layoutMode === layoutId;
+            return (
+              <button
+                key={layoutId}
+                type="button"
+                aria-pressed={isActiveLayout}
+                onClick={() => ensureWorkspaceLayout(layoutId)}
+                title={
+                  isActiveLayout
+                    ? `${layoutDefinition.shortLabel} active`
+                    : `Switch workspace to ${layoutDefinition.label}`
+                }
+                style={paneActionButtonStyle(isActiveLayout, theme.accent)}
+              >
+                {layoutDefinition.shortLabel}
+              </button>
+            );
+          })}
+        </div>
       ),
     },
     {
@@ -1080,16 +1090,14 @@ export function ExplorerWorkspace({
     copySelectionToCommanderTarget,
     copyPanePath,
     createTabInFocusedPane,
-    cycleWorkspaceLayout,
     duplicateActiveTab,
+    ensureWorkspaceLayout,
     focusNextPane,
     focusWorkspaceTab,
     linkedNavigationEnabled,
     moveActiveTabToNextPane,
     moveSelectionToCommanderTarget,
     moveWorkspaceTabToPane,
-    nextLayoutDefinition.label,
-    nextLayoutDefinition.shortLabel,
     rowSplitPercent,
     runtimeSnapshotsByInstanceId,
     sessions,

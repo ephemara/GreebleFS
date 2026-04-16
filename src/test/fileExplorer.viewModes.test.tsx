@@ -343,6 +343,31 @@ describe('FileExplorer view modes', () => {
       expect(useSettingsStore.getState().settings.explorer.modeProfileOverridesByThemeId.operator).toBe('focus');
       expect(useExplorerStore.getState().session.shellLayoutId).toBe('balanced');
       expect(screen.queryByRole('button', { name: /manage/i })).toBeNull();
+      expect(screen.getByRole('button', { name: /open sources rail/i })).toBeInTheDocument();
+    });
+  });
+
+  it('can close the sources rail into focus mode and reopen it without leaving that mode', async () => {
+    renderExplorer();
+    await screen.findByText('alpha');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Focus' }));
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.explorer.modeProfileOverridesByThemeId.operator).toBe('focus');
+      expect(useExplorerStore.getState().session.sourcesVisible).toBe(false);
+      expect(useExplorerStore.getState().session.sourcesRailPinnedOpen).toBe(false);
+      expect(screen.queryByRole('button', { name: /manage/i })).toBeNull();
+      expect(screen.getByRole('button', { name: /open sources rail/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /open sources rail/i }));
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.sourcesVisible).toBe(true);
+      expect(useExplorerStore.getState().session.sourcesRailPinnedOpen).toBe(true);
+      expect(screen.getByRole('button', { name: /manage/i })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /open sources rail/i })).toBeNull();
     });
   });
 
@@ -830,7 +855,7 @@ describe('FileExplorer view modes', () => {
           };
         });
       }
-      return baseInvokeImplementation(command, args);
+      return baseInvokeImplementation(command, args as Parameters<typeof invoke>[1]);
     });
     useSettingsStore.getState().updateExplorer({ viewMode: 'icons-l', gridZoom: 0.67 });
 

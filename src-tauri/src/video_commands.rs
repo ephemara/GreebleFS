@@ -112,8 +112,14 @@ fn run_video_trim_export(request: VideoTrimExportRequest) -> Result<VideoTrimExp
         "-n"
     });
     command.args(["-i", &normalized_request.input_path]);
-    command.args(["-ss", &format_ffmpeg_seconds(normalized_request.start_time_seconds)]);
-    command.args(["-to", &format_ffmpeg_seconds(normalized_request.end_time_seconds)]);
+    command.args([
+        "-ss",
+        &format_ffmpeg_seconds(normalized_request.start_time_seconds),
+    ]);
+    command.args([
+        "-to",
+        &format_ffmpeg_seconds(normalized_request.end_time_seconds),
+    ]);
     command.args([
         "-vf",
         VIDEO_TRIM_SCALE_FILTER,
@@ -162,7 +168,8 @@ fn run_video_trim_export(request: VideoTrimExportRequest) -> Result<VideoTrimExp
         output_path: normalized_request.output_path,
         start_time_seconds: normalized_request.start_time_seconds,
         end_time_seconds: normalized_request.end_time_seconds,
-        duration_seconds: normalized_request.end_time_seconds - normalized_request.start_time_seconds,
+        duration_seconds: normalized_request.end_time_seconds
+            - normalized_request.start_time_seconds,
         ffmpeg_binary,
     })
 }
@@ -260,18 +267,30 @@ fn resolve_video_runtime_root(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn resolve_video_temp_root(app: &AppHandle) -> Result<PathBuf, String> {
     let root = resolve_video_runtime_root(app)?.join("temp");
-    fs::create_dir_all(&root)
-        .map_err(|error| format!("Failed to create video temp directory '{}': {error}", root.display()))?;
+    fs::create_dir_all(&root).map_err(|error| {
+        format!(
+            "Failed to create video temp directory '{}': {error}",
+            root.display()
+        )
+    })?;
     Ok(root)
 }
 
 fn video_preview_proxy_path(app: &AppHandle, input_path: &Path) -> Result<PathBuf, String> {
     let temp_root = resolve_video_temp_root(app)?.join("preview-proxies");
-    fs::create_dir_all(&temp_root)
-        .map_err(|error| format!("Failed to create video proxy directory '{}': {error}", temp_root.display()))?;
+    fs::create_dir_all(&temp_root).map_err(|error| {
+        format!(
+            "Failed to create video proxy directory '{}': {error}",
+            temp_root.display()
+        )
+    })?;
 
-    let metadata = fs::metadata(input_path)
-        .map_err(|error| format!("Failed to read video metadata '{}': {error}", input_path.display()))?;
+    let metadata = fs::metadata(input_path).map_err(|error| {
+        format!(
+            "Failed to read video metadata '{}': {error}",
+            input_path.display()
+        )
+    })?;
     let modified_nanos = metadata
         .modified()
         .ok()

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/appearance';
 import { defaultExplorerRailSnapshot } from '../components/explorer/explorerRailState';
@@ -37,6 +37,14 @@ function getWorkspaceButton(controlId: string): HTMLButtonElement | null {
   return control instanceof HTMLButtonElement
     ? control
     : (control.querySelector('button') as HTMLButtonElement | null);
+}
+
+function getWorkspaceLayoutButton(label: string): HTMLButtonElement {
+  const control = getWorkspaceControl('workspaceSplitToggle');
+  if (!control) {
+    throw new Error('Workspace layout control not found');
+  }
+  return within(control).getByRole('button', { name: label });
 }
 
 function getRenderedFileExplorerProps(instanceId: string) {
@@ -184,7 +192,7 @@ describe('ExplorerWorkspace', () => {
       />,
     );
 
-    fireEvent.click(getWorkspaceButton('workspaceSplitToggle') as HTMLButtonElement);
+    fireEvent.click(getWorkspaceLayoutButton('2-Up'));
     await waitFor(() => {
       expect(renderedFileExplorerPropsByInstanceId.has(PRIMARY_EXPLORER_INSTANCE_ID)).toBe(true);
       expect(renderedFileExplorerPropsByInstanceId.size).toBe(2);
@@ -268,6 +276,35 @@ describe('ExplorerWorkspace', () => {
       expect(getRenderedFileExplorerProps(targetInstanceId as string).externalNavigationRequest).toMatchObject({
         path: '/workspace/source/materials',
       });
+    });
+  });
+
+  it('keeps single-pane mode one click away through direct workspace layout buttons', async () => {
+    render(
+      <ExplorerWorkspace
+        theme={{
+          accent: '#8ab4f8',
+          bg: '#0f1115',
+          bgPanel: '#151923',
+          text: '#f4f7fb',
+          border: '#2a2f3a',
+          textMuted: '#9aa4b2',
+        }}
+        onOpenInTerminal={() => undefined}
+        onAddBookmark={() => undefined}
+      />,
+    );
+
+    fireEvent.click(getWorkspaceLayoutButton('2-Up'));
+    await waitFor(() => {
+      expect(useExplorerStore.getState().workspace.layoutMode).toBe('split');
+      expect(renderedFileExplorerPropsByInstanceId.size).toBe(2);
+    });
+
+    fireEvent.click(getWorkspaceLayoutButton('1-Up'));
+    await waitFor(() => {
+      expect(useExplorerStore.getState().workspace.layoutMode).toBe('single');
+      expect(getWorkspaceLayoutButton('1-Up')).toHaveAttribute('aria-pressed', 'true');
     });
   });
 });

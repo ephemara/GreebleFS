@@ -104,6 +104,33 @@ describe('ExplorerSideRail', () => {
     expect(screen.getByLabelText(/remove bookmark node/i)).toBeInTheDocument();
   }, 20000);
 
+  it('exposes a focus action in the rail header when the explorer supplies one', () => {
+    const onEnterFocusMode = vi.fn();
+
+    render(
+      <ExplorerSideRail
+        accent="#7c3aed"
+        brandLabel="Explorer"
+        chromeLayoutId="default"
+        sidebarWidth={240}
+        currentPath="M:\\Workspace"
+        drives={[]}
+        drivesLoading={false}
+        showHiddenFiles={false}
+        isCompactDock={false}
+        focusModeActive={false}
+        onNavigate={vi.fn()}
+        onGoHome={vi.fn()}
+        onEnterFocusMode={onEnterFocusMode}
+        onBookmarkCreated={vi.fn()}
+        resolveDroppedSources={() => []}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Focus' }));
+    expect(onEnterFocusMode).toHaveBeenCalledTimes(1);
+  });
+
   it('only shows the verbose drag guide when the rail is wide enough for it', () => {
     const baseProps = {
       accent: '#7c3aed',
@@ -299,16 +326,16 @@ describe('ExplorerSideRail', () => {
 
   it('collapses unrelated local tree branches when navigation moves to a different branch', async () => {
     vi.mocked(listExplorerLocation).mockImplementation(async (path: string) => {
-      if (path === 'C:\\\\') {
+      if (path === 'C:\\') {
         return {
           kind: 'local',
           path,
           parentPath: null,
-          breadcrumbs: [{ label: 'C:\\\\', path: 'C:\\\\' }],
+          breadcrumbs: [{ label: 'C:\\', path: 'C:\\' }],
           entries: [
             {
               name: 'Users',
-              path: 'C:\\\\Users',
+              path: 'C:\\Users',
               is_dir: true,
               size: 0,
               modified: 0,
@@ -318,7 +345,7 @@ describe('ExplorerSideRail', () => {
             },
             {
               name: 'Projects',
-              path: 'C:\\\\Projects',
+              path: 'C:\\Projects',
               is_dir: true,
               size: 0,
               modified: 0,
@@ -329,19 +356,19 @@ describe('ExplorerSideRail', () => {
           ],
         };
       }
-      if (path === 'C:\\\\Users') {
+      if (path === 'C:\\Users') {
         return {
           kind: 'local',
           path,
-          parentPath: 'C:\\\\',
+          parentPath: 'C:\\',
           breadcrumbs: [
-            { label: 'C:\\\\', path: 'C:\\\\' },
-            { label: 'Users', path: 'C:\\\\Users' },
+            { label: 'C:\\', path: 'C:\\' },
+            { label: 'Users', path: 'C:\\Users' },
           ],
           entries: [
             {
               name: 'alice',
-              path: 'C:\\\\Users\\\\alice',
+              path: 'C:\\Users\\alice',
               is_dir: true,
               size: 0,
               modified: 0,
@@ -351,7 +378,7 @@ describe('ExplorerSideRail', () => {
             },
             {
               name: 'bob',
-              path: 'C:\\\\Users\\\\bob',
+              path: 'C:\\Users\\bob',
               is_dir: true,
               size: 0,
               modified: 0,
@@ -362,19 +389,19 @@ describe('ExplorerSideRail', () => {
           ],
         };
       }
-      if (path === 'C:\\\\Projects') {
+      if (path === 'C:\\Projects') {
         return {
           kind: 'local',
           path,
-          parentPath: 'C:\\\\',
+          parentPath: 'C:\\',
           breadcrumbs: [
-            { label: 'C:\\\\', path: 'C:\\\\' },
-            { label: 'Projects', path: 'C:\\\\Projects' },
+            { label: 'C:\\', path: 'C:\\' },
+            { label: 'Projects', path: 'C:\\Projects' },
           ],
           entries: [
             {
               name: 'zeta',
-              path: 'C:\\\\Projects\\\\zeta',
+              path: 'C:\\Projects\\zeta',
               is_dir: true,
               size: 0,
               modified: 0,
@@ -400,13 +427,13 @@ describe('ExplorerSideRail', () => {
         brandLabel="Explorer"
         chromeLayoutId="default"
         sidebarWidth={260}
-        currentPath="C:\\\\Users"
+        currentPath="C:\\Users"
         drives={[
           {
             kind: 'local',
             id: 'C:',
-            path: 'C:\\\\',
-            letter: 'C:\\\\',
+            path: 'C:\\',
+            letter: 'C:\\',
             label: 'System',
             total_bytes: 1000,
             free_bytes: 400,
@@ -435,13 +462,13 @@ describe('ExplorerSideRail', () => {
         brandLabel="Explorer"
         chromeLayoutId="default"
         sidebarWidth={260}
-        currentPath="C:\\\\Projects"
+        currentPath="C:\\Projects"
         drives={[
           {
             kind: 'local',
             id: 'C:',
-            path: 'C:\\\\',
-            letter: 'C:\\\\',
+            path: 'C:\\',
+            letter: 'C:\\',
             label: 'System',
             total_bytes: 1000,
             free_bytes: 400,
@@ -473,7 +500,7 @@ describe('ExplorerSideRail', () => {
     let usersChildren = [
       {
         name: 'alpha',
-        path: 'C:\\\\Users\\\\alpha',
+        path: 'C:\\Users\\alpha',
         is_dir: true,
         size: 0,
         modified: 0,
@@ -484,16 +511,16 @@ describe('ExplorerSideRail', () => {
     ];
 
     vi.mocked(listExplorerLocation).mockImplementation(async (path: string) => {
-      if (path === 'C:\\\\') {
+      if (path === 'C:\\') {
         return {
           kind: 'local',
           path,
           parentPath: null,
-          breadcrumbs: [{ label: 'C:\\\\', path: 'C:\\\\' }],
+          breadcrumbs: [{ label: 'C:\\', path: 'C:\\' }],
           entries: [
             {
               name: 'Users',
-              path: 'C:\\\\Users',
+              path: 'C:\\Users',
               is_dir: true,
               size: 0,
               modified: 0,
@@ -504,14 +531,14 @@ describe('ExplorerSideRail', () => {
           ],
         };
       }
-      if (path === 'C:\\\\Users') {
+      if (path === 'C:\\Users') {
         return {
           kind: 'local',
           path,
-          parentPath: 'C:\\\\',
+          parentPath: 'C:\\',
           breadcrumbs: [
-            { label: 'C:\\\\', path: 'C:\\\\' },
-            { label: 'Users', path: 'C:\\\\Users' },
+            { label: 'C:\\', path: 'C:\\' },
+            { label: 'Users', path: 'C:\\Users' },
           ],
           entries: usersChildren,
         };
@@ -531,13 +558,13 @@ describe('ExplorerSideRail', () => {
         brandLabel="Explorer"
         chromeLayoutId="default"
         sidebarWidth={260}
-        currentPath="C:\\\\Users"
+        currentPath="C:\\Users"
         drives={[
           {
             kind: 'local',
             id: 'C:',
-            path: 'C:\\\\',
-            letter: 'C:\\\\',
+            path: 'C:\\',
+            letter: 'C:\\',
             label: 'System',
             total_bytes: 1000,
             free_bytes: 400,
@@ -564,12 +591,12 @@ describe('ExplorerSideRail', () => {
       .mocked(listExplorerLocation)
       .mock
       .calls
-      .filter(([path]) => path === 'C:\\\\Users').length;
+      .filter(([path]) => path === 'C:\\Users').length;
 
     usersChildren = [
       {
         name: 'beta',
-        path: 'C:\\\\Users\\\\beta',
+        path: 'C:\\Users\\beta',
         is_dir: true,
         size: 0,
         modified: 0,
@@ -585,13 +612,13 @@ describe('ExplorerSideRail', () => {
         brandLabel="Explorer"
         chromeLayoutId="default"
         sidebarWidth={260}
-        currentPath="C:\\\\Users"
+        currentPath="C:\\Users"
         drives={[
           {
             kind: 'local',
             id: 'C:',
-            path: 'C:\\\\',
-            letter: 'C:\\\\',
+            path: 'C:\\',
+            letter: 'C:\\',
             label: 'System',
             total_bytes: 1000,
             free_bytes: 400,
@@ -616,7 +643,7 @@ describe('ExplorerSideRail', () => {
 
     expect(screen.queryByText('alpha')).not.toBeInTheDocument();
     expect(
-      vi.mocked(listExplorerLocation).mock.calls.filter(([path]) => path === 'C:\\\\Users').length,
+      vi.mocked(listExplorerLocation).mock.calls.filter(([path]) => path === 'C:\\Users').length,
     ).toBeGreaterThan(listExplorerLocationCallsBeforeRefresh);
   });
 

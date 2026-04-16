@@ -13,16 +13,7 @@ const LEGACY_STARTUP_PREFERENCES_DIRECTORY_NAME: &str = "OverlayTerm";
 const PRIMARY_DISPLAY_BACKEND_ENV_VAR: &str = "GREEBLEFS_LINUX_DISPLAY_BACKEND";
 const LEGACY_DISPLAY_BACKEND_ENV_VAR: &str = "OVERLAYTERM_LINUX_DISPLAY_BACKEND";
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize,
-    specta::Type,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "lowercase")]
 pub enum LinuxDisplayBackend {
     Wayland,
@@ -43,15 +34,7 @@ impl LinuxDisplayBackend {
 }
 
 #[derive(
-    Debug,
-    Default,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize,
-    specta::Type,
+    Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type,
 )]
 #[serde(rename_all = "lowercase")]
 pub enum LinuxDisplayBackendPreference {
@@ -161,9 +144,7 @@ fn parse_linux_display_backend_preference(value: &str) -> Option<LinuxDisplayBac
 }
 
 fn resolve_backend_from_gdk_backend_value(gdk_backend: &str) -> Option<LinuxDisplayBackend> {
-    gdk_backend
-        .split(',')
-        .find_map(parse_linux_display_backend)
+    gdk_backend.split(',').find_map(parse_linux_display_backend)
 }
 
 fn resolve_active_linux_display_backend(
@@ -294,15 +275,17 @@ fn resolve_linux_display_backend_selection(
             }
         }
         LinuxDisplayBackendPreference::Wayland => {
-            let backend =
-                select_preferred_available_backend(LinuxDisplayBackend::Wayland, &available_backends)
-                    .or_else(|| {
-                        fallback_backend_for_unavailable_preference(
-                            LinuxDisplayBackend::Wayland,
-                            environment,
-                            &available_backends,
-                        )
-                    });
+            let backend = select_preferred_available_backend(
+                LinuxDisplayBackend::Wayland,
+                &available_backends,
+            )
+            .or_else(|| {
+                fallback_backend_for_unavailable_preference(
+                    LinuxDisplayBackend::Wayland,
+                    environment,
+                    &available_backends,
+                )
+            });
             LinuxDisplayBackendSelection {
                 backend,
                 reason: if backend == Some(LinuxDisplayBackend::Wayland) {
@@ -385,17 +368,18 @@ fn current_startup_preferences() -> StartupPreferences {
 }
 
 fn persist_startup_preferences(preferences: &StartupPreferences) -> Result<(), String> {
-    let config_root =
-        dirs::config_dir().ok_or_else(|| "Linux startup preferences require a config directory".to_string())?;
+    let config_root = dirs::config_dir()
+        .ok_or_else(|| "Linux startup preferences require a config directory".to_string())?;
     let preferences_path = startup_preferences_path_from_config_root(&config_root);
-    let preferences_directory = preferences_path
-        .parent()
-        .ok_or_else(|| "Linux startup preferences path is missing a parent directory".to_string())?;
+    let preferences_directory = preferences_path.parent().ok_or_else(|| {
+        "Linux startup preferences path is missing a parent directory".to_string()
+    })?;
     let serialized_preferences = serde_json::to_string_pretty(preferences)
         .map_err(|error| format!("Failed to serialize Linux startup preferences: {error}"))?;
 
-    fs::create_dir_all(preferences_directory)
-        .map_err(|error| format!("Failed to create Linux startup preferences directory: {error}"))?;
+    fs::create_dir_all(preferences_directory).map_err(|error| {
+        format!("Failed to create Linux startup preferences directory: {error}")
+    })?;
     fs::write(preferences_path, format!("{serialized_preferences}\n"))
         .map_err(|error| format!("Failed to write Linux startup preferences: {error}"))
 }
@@ -441,7 +425,8 @@ fn resolve_linux_backend_preference_and_selection(
         );
     }
 
-    if let Some(preference) = resolve_linux_display_backend_preference_from_environment(environment) {
+    if let Some(preference) = resolve_linux_display_backend_preference_from_environment(environment)
+    {
         let mut selection =
             resolve_linux_display_backend_selection(environment, preference, nvidia_gpu_detected);
         if selection.reason == LinuxDisplayBackendSelectionReason::PersistedPreference {
@@ -561,7 +546,9 @@ pub(crate) fn current_linux_display_backend_status() -> LinuxDisplayBackendStatu
     LinuxDisplayBackendStatus {
         available_backends: collect_available_linux_display_backends(&environment),
         session_backend: resolve_linux_session_backend(&environment),
-        active_backend: selection.backend.or_else(|| resolve_active_linux_display_backend(&environment)),
+        active_backend: selection
+            .backend
+            .or_else(|| resolve_active_linux_display_backend(&environment)),
         preferred_backend,
         auto_x11_fallback_active: selection.auto_x11_fallback_active,
     }
@@ -597,9 +584,11 @@ pub(crate) fn apply_linux_graphics_startup_configuration() {
     let configured_environment = LinuxGraphicsEnvironmentSnapshot::from_process_environment();
     let active_backend = resolve_active_linux_display_backend(&configured_environment);
 
-    if let Some(plan) =
-        resolve_linux_webkit_nvidia_workaround(&configured_environment, active_backend, nvidia_gpu_detected)
-    {
+    if let Some(plan) = resolve_linux_webkit_nvidia_workaround(
+        &configured_environment,
+        active_backend,
+        nvidia_gpu_detected,
+    ) {
         if plan.disable_dmabuf_renderer {
             env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
             eprintln!(
@@ -779,7 +768,8 @@ mod tests {
     #[test]
     fn reads_legacy_startup_preferences_when_primary_file_is_missing() {
         let fixture = tempdir().expect("tempdir");
-        let legacy_preferences_path = legacy_startup_preferences_path_from_config_root(fixture.path());
+        let legacy_preferences_path =
+            legacy_startup_preferences_path_from_config_root(fixture.path());
         fs::create_dir_all(legacy_preferences_path.parent().expect("legacy parent"))
             .expect("legacy preferences parent");
         fs::write(

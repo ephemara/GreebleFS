@@ -236,8 +236,22 @@ export function ExplorerSideRail({
   );
   const [expandedFolderPaths, setExpandedFolderPaths] = useState<string[]>([]);
   const [folderChildrenByPath, setFolderChildrenByPath] = useState<Record<string, LocalFolderTreeLoadState>>({});
+  const folderChildrenByPathRef = useRef<Record<string, LocalFolderTreeLoadState>>({});
   const lastLocalTreeRefreshRevisionRef = useRef(localTreeRefreshRevision);
   const shouldForceRefreshLocalTree = lastLocalTreeRefreshRevisionRef.current !== localTreeRefreshRevision;
+  const updateFolderChildrenByPath = useCallback((
+    nextState:
+      | Record<string, LocalFolderTreeLoadState>
+      | ((current: Record<string, LocalFolderTreeLoadState>) => Record<string, LocalFolderTreeLoadState>),
+  ) => {
+    setFolderChildrenByPath((current) => {
+      const resolvedNextState = typeof nextState === 'function'
+        ? nextState(current)
+        : nextState;
+      folderChildrenByPathRef.current = resolvedNextState;
+      return resolvedNextState;
+    });
+  }, []);
 
   const loadFolderChildren = useCallback(async (
     path: string,
@@ -248,11 +262,11 @@ export function ExplorerSideRail({
     }
     const normalizedPath = normalizeLocalTreePath(path);
     const forceRefresh = options?.forceRefresh === true;
-    const currentState = folderChildrenByPath[normalizedPath];
+    const currentState = folderChildrenByPathRef.current[normalizedPath];
     if (currentState?.status === 'loading' || (currentState?.status === 'ready' && !forceRefresh)) {
       return;
     }
-    setFolderChildrenByPath((current) => {
+    updateFolderChildrenByPath((current) => {
       return {
         ...current,
         [normalizedPath]: {
@@ -273,7 +287,7 @@ export function ExplorerSideRail({
       const childFolders = listing.entries
         .filter((entry) => entry.is_dir)
         .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }));
-      setFolderChildrenByPath((current) => ({
+      updateFolderChildrenByPath((current) => ({
         ...current,
         [normalizedPath]: {
           childFolders,
@@ -282,7 +296,7 @@ export function ExplorerSideRail({
         },
       }));
     } catch (error) {
-      setFolderChildrenByPath((current) => ({
+      updateFolderChildrenByPath((current) => ({
         ...current,
         [normalizedPath]: {
           childFolders: current[normalizedPath]?.childFolders ?? [],
@@ -291,7 +305,7 @@ export function ExplorerSideRail({
         },
       }));
     }
-  }, [folderChildrenByPath, showHiddenFiles]);
+  }, [showHiddenFiles, updateFolderChildrenByPath]);
 
   const toggleFolderExpand = useCallback((path: string) => {
     const normalizedPath = normalizeLocalTreePath(path);
@@ -309,8 +323,8 @@ export function ExplorerSideRail({
   }, [loadFolderChildren]);
 
   useEffect(() => {
-    setFolderChildrenByPath({});
-  }, [showHiddenFiles, localDrivePaths.join('::')]);
+    updateFolderChildrenByPath({});
+  }, [localDrivePaths, showHiddenFiles, updateFolderChildrenByPath]);
 
   useEffect(() => {
     setExpandedFolderPaths((current) => current.filter((path) => {
@@ -338,36 +352,37 @@ export function ExplorerSideRail({
         ? current
         : normalizedAncestors
     ));
-    setFolderChildrenByPath((current) => pruneLocalFolderTreeState(current, normalizedAncestors));
-  }, [currentPathAncestors]);
+    updateFolderChildrenByPath((current) => pruneLocalFolderTreeState(current, normalizedAncestors));
+  }, [currentPathAncestors, updateFolderChildrenByPath]);
 
   useEffect(() => {
     if (!shouldForceRefreshLocalTree) {
       return;
     }
     lastLocalTreeRefreshRevisionRef.current = localTreeRefreshRevision;
-    setFolderChildrenByPath({});
-  }, [localTreeRefreshRevision, shouldForceRefreshLocalTree]);
+    updateFolderChildrenByPath({});
+  }, [localTreeRefreshRevision, shouldForceRefreshLocalTree, updateFolderChildrenByPath]);
 
   useEffect(() => {
     if (currentPathAncestors.length === 0) {
       return;
     }
 
+    const forceRefresh = shouldForceRefreshLocalTree;
     let cancelled = false;
     void (async () => {
       for (const ancestor of currentPathAncestors) {
         if (cancelled) {
           return;
         }
-        await loadFolderChildren(ancestor, { forceRefresh: shouldForceRefreshLocalTree });
+        await loadFolderChildren(ancestor, { forceRefresh });
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [currentPathAncestors, loadFolderChildren, shouldForceRefreshLocalTree]);
+  }, [currentPathAncestors, loadFolderChildren, localTreeRefreshRevision]);
 
   const handleBookmarkDrop = (event: React.DragEvent, targetFolderId: string | null) => {
     event.preventDefault();

@@ -4,8 +4,9 @@ use crate::archive_ops::{
     FsArchiveExtractionMode, FsArchiveExtractionRequest, FsArchiveExtractionResult,
 };
 use crate::audio_commands::{
-    AudioBatchProcessRequest, AudioBatchProcessResult, AudioPreviewAnalysis, AudioPreviewSourceKind,
-    AudioTransformRequest, AudioTransformResult, AudioWaveformBucket, ResolvedAudioPreviewSource,
+    AudioBatchProcessRequest, AudioBatchProcessResult, AudioPreviewAnalysis,
+    AudioPreviewSourceKind, AudioTransformRequest, AudioTransformResult, AudioWaveformBucket,
+    ResolvedAudioPreviewSource,
 };
 use crate::cloud_commands::{
     CloudAccountSummary, CloudAccountsSnapshot, CloudAuthSession, CloudAuthStatus, CloudBreadcrumb,
@@ -41,7 +42,8 @@ use crate::screenshot_commands::{
 };
 use crate::terminal::{ExternalTerminalRequest, TerminalWriteRequest};
 use crate::video_commands::{
-    ResolvedVideoPreviewSource, VideoPreviewSourceKind, VideoTrimExportRequest, VideoTrimExportResult,
+    ResolvedVideoPreviewSource, VideoPreviewSourceKind, VideoTrimExportRequest,
+    VideoTrimExportResult,
 };
 use crate::wayland_dock::{WaylandDockAnchor, WaylandDockHostStatus};
 use overlay_contracts::{
