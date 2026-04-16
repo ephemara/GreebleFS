@@ -1,5 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import "./App.css";
 import {
     shouldAllowDocumentSelection,
@@ -10,6 +12,7 @@ import {
     reportGlobalError,
 } from "./runtime/globalErrorPanel";
 import { initializeManagedContentDirectories } from "./config/appContentDirectories";
+import { FILE_OPERATIONS_WINDOW_LABEL } from "./runtime/fileOperationsWindow";
 
 window.addEventListener("error", (event) => {
     reportGlobalError(
@@ -56,14 +59,28 @@ document.addEventListener('keydown', (e) => {
     }
 }, { capture: true });
 
+async function resolveBootstrapComponent() {
+    if (isTauri()) {
+        try {
+            if (getCurrentWebviewWindow().label === FILE_OPERATIONS_WINDOW_LABEL) {
+                return import("./windows/FileOperationsWindowApp");
+            }
+        } catch {
+            // Fall back to the main app bootstrap when the webview label is unavailable.
+        }
+    }
+
+    return import("./App");
+}
+
 async function bootstrapApp() {
     try {
         await initializeManagedContentDirectories();
-        const { default: App } = await import("./App");
+        const { default: RootComponent } = await resolveBootstrapComponent();
 
         ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
           <React.StrictMode>
-            <App />
+            <RootComponent />
           </React.StrictMode>
         );
     } catch (error) {

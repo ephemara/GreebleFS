@@ -158,17 +158,28 @@ import { SHOW_WINDOW_MODE_REQUEST_EVENT } from '../runtime/windowHost';
 
 type MockWebviewWindow = {
   label: string;
+  close: ReturnType<typeof vi.fn>;
   emit: ReturnType<typeof vi.fn>;
+  hide: ReturnType<typeof vi.fn>;
   listen: ReturnType<typeof vi.fn>;
   once: ReturnType<typeof vi.fn>;
+  setFocus: ReturnType<typeof vi.fn>;
+  show: ReturnType<typeof vi.fn>;
 };
 
 function createMockWebviewWindow(label: string): MockWebviewWindow {
   return {
     label,
+    close: vi.fn(async () => undefined),
     emit: vi.fn(async () => undefined),
+    hide: vi.fn(async () => undefined),
     listen: vi.fn().mockResolvedValue(() => {}),
-    once: vi.fn().mockResolvedValue(() => {}),
+    once: vi.fn().mockImplementation(async (_event: string, handler?: () => void | Promise<void>) => {
+      await handler?.();
+      return () => {};
+    }),
+    setFocus: vi.fn(async () => undefined),
+    show: vi.fn(async () => undefined),
   };
 }
 

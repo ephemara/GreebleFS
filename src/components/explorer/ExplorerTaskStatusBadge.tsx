@@ -2,110 +2,82 @@ import { useEffect, useMemo, useRef } from 'react';
 import {
   AlertTriangle,
   Check,
-  Copy,
   FolderOpen,
   LoaderCircle,
-  RotateCcw,
-  Trash2,
-  XCircle,
+  X,
 } from 'lucide-react';
+import type { ExplorerTaskSnapshot } from '../../runtime/explorerBackend';
+import { openFileOperationsWindow } from '../../runtime/fileOperationsWindow';
 import {
-  getExplorerTaskProgressPercent,
-  getExplorerTaskStatusLabel,
-  openExplorerPath,
-  restoreExplorerTrashAction,
-  revealExplorerPath,
-  type ExplorerTaskSnapshot,
-} from '../../runtime/explorerBackend';
-import {
-  cancelExplorerTaskById,
   closeExplorerTaskCenter,
-  retryExplorerTaskById,
   toggleExplorerTaskCenter,
   useExplorerTaskCenterOpen,
   useExplorerTaskSnapshots,
 } from '../../store/explorerTaskStore';
+import {
+  ExplorerTaskCenterContent,
+  getExplorerTaskSummary,
+} from './ExplorerTaskCenterContent';
 
 interface ExplorerTaskStatusBadgeProps {
   accent: string;
-  text: string;
-  muted: string;
+  background?: string;
   border: string;
   danger: string;
-  background?: string;
+  muted: string;
+  text: string;
 }
 
-function getTaskSummary(task: ExplorerTaskSnapshot): string {
-  const percent = getExplorerTaskProgressPercent(task);
-  if (percent != null && task.status === 'running') {
-    return `${percent}%`;
-  }
-
-  if (task.status === 'failed' && task.errorMessage) {
-    return task.errorMessage;
-  }
-
-  return getExplorerTaskStatusLabel(task);
-}
-
-function TaskStatusIcon({
-  task,
-  accent,
-  danger,
-}: {
-  task: ExplorerTaskSnapshot;
+function resolveExplorerTaskBadgeSummary(args: {
   accent: string;
   danger: string;
+  muted: string;
+  tasks: ExplorerTaskSnapshot[];
+  text: string;
 }) {
-  if (task.status === 'failed') {
-    return <AlertTriangle size={12} style={{ color: danger }} />;
-  }
-  if (task.status === 'cancelled') {
-    return <XCircle size={12} style={{ color: danger }} />;
-  }
-  if (task.status === 'succeeded') {
-    return <Check size={12} style={{ color: accent }} />;
-  }
-  return <LoaderCircle size={12} className="animate-spin" style={{ color: accent }} />;
-}
+  const activeTasks = args.tasks.filter((task) => task.status === 'running');
+  const failedTasks = args.tasks.filter((task) => task.status === 'failed');
+  const dominantTask = activeTasks[0] ?? failedTasks[0] ?? args.tasks[0] ?? null;
 
-function TaskActionButton({
-  label,
-  onClick,
-  disabled = false,
-}: {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        border: '1px solid rgba(255,255,255,0.08)',
-        background: disabled ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.05)',
-        color: disabled ? 'rgba(255,255,255,0.35)' : 'inherit',
-        borderRadius: 8,
-        padding: '4px 8px',
-        fontSize: 10,
-        fontWeight: 700,
-        cursor: disabled ? 'default' : 'pointer',
-      }}
-    >
-      {label}
-    </button>
-  );
+  if (!dominantTask) {
+    return {
+      color: args.muted,
+      icon: <FolderOpen size={12} style={{ color: args.muted }} />,
+      label: 'No tasks',
+    };
+  }
+
+  if (failedTasks.length > 0) {
+    return {
+      color: args.danger,
+      icon: <AlertTriangle size={12} style={{ color: args.danger }} />,
+      label: `${failedTasks.length} failed${activeTasks.length > 0 ? ` · ${activeTasks.length} active` : ''}`,
+    };
+  }
+
+  if (activeTasks.length > 0) {
+    const dominantSummary = getExplorerTaskSummary(dominantTask);
+    return {
+      color: args.accent,
+      icon: <LoaderCircle size={12} className="animate-spin" style={{ color: args.accent }} />,
+      label: `${activeTasks.length} active${dominantSummary ? ` · ${dominantSummary}` : ''}`,
+    };
+  }
+
+  return {
+    color: args.text,
+    icon: <Check size={12} style={{ color: args.accent }} />,
+    label: `${args.tasks.length} recent`,
+  };
 }
 
 export function ExplorerTaskStatusBadge({
   accent,
-  text,
-  muted,
+  background = 'rgba(255,255,255,0.03)',
   border,
   danger,
-  background = 'rgba(255,255,255,0.03)',
+  muted,
+  text,
 }: ExplorerTaskStatusBadgeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const isOpen = useExplorerTaskCenterOpen();
@@ -126,45 +98,10 @@ export function ExplorerTaskStatusBadge({
     return () => window.removeEventListener('mousedown', handlePointerDown);
   }, [isOpen]);
 
-  const summary = useMemo(() => {
-    const activeTasks = tasks.filter((task) => task.status === 'running');
-    const failedTasks = tasks.filter((task) => task.status === 'failed');
-    const dominantTask = activeTasks[0] ?? failedTasks[0] ?? tasks[0] ?? null;
-
-    if (!dominantTask) {
-      return {
-        label: 'No tasks',
-        color: muted,
-        icon: <FolderOpen size={12} style={{ color: muted }} />,
-      };
-    }
-
-    if (failedTasks.length > 0) {
-      return {
-        label: `${failedTasks.length} failed${activeTasks.length > 0 ? ` · ${activeTasks.length} active` : ''}`,
-        color: danger,
-        icon: <AlertTriangle size={12} style={{ color: danger }} />,
-      };
-    }
-
-    if (activeTasks.length > 0) {
-      const dominantSummary = getTaskSummary(dominantTask);
-      return {
-        label: `${activeTasks.length} active${dominantSummary ? ` · ${dominantSummary}` : ''}`,
-        color: accent,
-        icon: <LoaderCircle size={12} className="animate-spin" style={{ color: accent }} />,
-      };
-    }
-
-    return {
-      label: `${tasks.length} recent`,
-      color: text,
-      icon: <Check size={12} style={{ color: accent }} />,
-    };
-  }, [accent, danger, muted, tasks, text]);
-
-  const activeTasks = tasks.filter((task) => task.status === 'running');
-  const historyTasks = tasks.filter((task) => task.status !== 'running').slice(0, 8);
+  const summary = useMemo(
+    () => resolveExplorerTaskBadgeSummary({ accent, danger, muted, tasks, text }),
+    [accent, danger, muted, tasks, text],
+  );
 
   return (
     <div ref={containerRef} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
@@ -218,183 +155,57 @@ export function ExplorerTaskStatusBadge({
             zIndex: 40,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <div>
-              <div style={{ color: text, fontSize: 12, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                Explorer Tasks
+          <ExplorerTaskCenterContent
+            accent={accent}
+            border={border}
+            danger={danger}
+            muted={muted}
+            tasks={tasks}
+            text={text}
+            headerActions={(
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void openFileOperationsWindow({ view: 'tasks' });
+                    closeExplorerTaskCenter();
+                  }}
+                  style={{
+                    border: `1px solid ${border}`,
+                    background: 'rgba(255,255,255,0.04)',
+                    color: text,
+                    cursor: 'pointer',
+                    borderRadius: 8,
+                    padding: '5px 8px',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Pop Out
+                </button>
+                <button
+                  type="button"
+                  onClick={closeExplorerTaskCenter}
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    color: muted,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 22,
+                    height: 22,
+                  }}
+                  aria-label="Close task center"
+                >
+                  <X size={14} />
+                </button>
               </div>
-              <div style={{ color: muted, fontSize: 11 }}>
-                {activeTasks.length > 0
-                  ? `${activeTasks.length} running · ${historyTasks.filter((task) => task.status === 'failed').length} failed`
-                  : tasks.length > 0
-                    ? `${historyTasks.length} recent result${historyTasks.length === 1 ? '' : 's'}`
-                    : 'No explorer tasks yet'}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={closeExplorerTaskCenter}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                color: muted,
-                cursor: 'pointer',
-                fontSize: 16,
-                lineHeight: 1,
-              }}
-            >
-              ×
-            </button>
-          </div>
-
-          {tasks.length === 0 ? (
-            <div
-              style={{
-                marginTop: 14,
-                padding: 16,
-                borderRadius: 12,
-                border: `1px dashed ${border}`,
-                color: muted,
-                fontSize: 12,
-              }}
-            >
-              File transfers, duplicate scans, trash actions, and batch renames will show up here.
-            </div>
-          ) : null}
-
-          {activeTasks.length > 0 ? (
-            <div style={{ marginTop: 14 }}>
-              <div style={{ color: muted, fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                Active
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
-                {activeTasks.map((task) => (
-                  <div
-                    key={task.id}
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 8,
-                      padding: 12,
-                      borderRadius: 12,
-                      border: `1px solid ${border}`,
-                      background: 'rgba(255,255,255,0.03)',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                      <TaskStatusIcon task={task} accent={accent} danger={danger} />
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ color: text, fontSize: 12, fontWeight: 700 }}>{task.title}</div>
-                        <div
-                          style={{
-                            color: muted,
-                            fontSize: 11,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
-                        >
-                          {task.detail}
-                        </div>
-                      </div>
-                      <div style={{ color: accent, fontSize: 11, fontWeight: 700 }}>{getTaskSummary(task)}</div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <TaskActionButton
-                        label="Cancel"
-                        disabled={!task.canCancel}
-                        onClick={() => { void cancelExplorerTaskById(task.id); }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          {historyTasks.length > 0 ? (
-            <div style={{ marginTop: 14 }}>
-              <div style={{ color: muted, fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                Recent
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
-                {historyTasks.map((task) => (
-                  <div
-                    key={task.id}
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 8,
-                      padding: 12,
-                      borderRadius: 12,
-                      border: `1px solid ${border}`,
-                      background: 'rgba(255,255,255,0.02)',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                      <TaskStatusIcon task={task} accent={accent} danger={danger} />
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ color: text, fontSize: 12, fontWeight: 700 }}>{task.title}</div>
-                        <div
-                          style={{
-                            color: task.status === 'failed' ? danger : muted,
-                            fontSize: 11,
-                            whiteSpace: 'nowrap',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
-                        >
-                          {task.errorMessage ?? task.detail}
-                        </div>
-                      </div>
-                      <div style={{ color: task.status === 'failed' ? danger : muted, fontSize: 11, fontWeight: 700 }}>
-                        {getTaskSummary(task)}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <TaskActionButton
-                        label="Retry"
-                        disabled={!task.canRetry}
-                        onClick={() => { void retryExplorerTaskById(task.id); }}
-                      />
-                      <TaskActionButton
-                        label="Reveal"
-                        disabled={!task.canRevealOutput || !task.destinationPath}
-                        onClick={() => {
-                          if (task.destinationPath) {
-                            void revealExplorerPath(task.destinationPath);
-                          }
-                        }}
-                      />
-                      <TaskActionButton
-                        label="Open"
-                        disabled={!task.canOpenOutput || !task.destinationPath}
-                        onClick={() => {
-                          if (task.destinationPath) {
-                            void openExplorerPath(task.destinationPath);
-                          }
-                        }}
-                      />
-                      <TaskActionButton
-                        label="Copy Error"
-                        disabled={!task.errorMessage}
-                        onClick={() => {
-                          if (task.errorMessage) {
-                            void navigator.clipboard.writeText(task.errorMessage);
-                          }
-                        }}
-                      />
-                      <TaskActionButton
-                        label="Undo"
-                        disabled={!task.canUndo}
-                        onClick={() => { void restoreExplorerTrashAction(); }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
+            )}
+          />
         </div>
       ) : null}
     </div>

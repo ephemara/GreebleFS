@@ -139,6 +139,7 @@ import {
   PLUGIN_PANEL_OPEN_REQUEST_EVENT,
   type PluginPanelOpenRequest,
 } from './runtime/pluginPanelRequests';
+import { openFileOperationsWindow } from './runtime/fileOperationsWindow';
 import { listExplorerDir, openExplorerPath, writeExplorerFile } from './runtime/explorerBackend';
 import { commands, unwrapTauriResult } from './runtime/tauriClient';
 import { useFolderPluginRuntime } from './runtime/useFolderPluginRuntime';
@@ -156,7 +157,6 @@ import {
 } from './runtime/windowHost';
 import {
   clearCompletedExplorerTasks,
-  openExplorerTaskCenter,
   retryFailedExplorerTasks,
 } from './store/explorerTaskStore';
 import {
@@ -3160,13 +3160,13 @@ function App() {
       {
         id: 'open-explorer-task-center',
         title: 'Open Task Center',
-        subtitle: 'Show active and recent explorer operations.',
+        subtitle: 'Open the dedicated file operations window.',
         group: 'Explorer',
         keywords: ['explorer', 'tasks', 'operations', 'transfers', 'history'],
         badge: 'Tasks',
         onSelect: () => {
           handleActivatePanel('explorer');
-          openExplorerTaskCenter();
+          void openFileOperationsWindow({ view: 'tasks' });
         },
       },
       {

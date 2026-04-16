@@ -28,6 +28,8 @@ export type ExplorerBuiltInContextMenuActionId =
   | 'paste'
   | 'copy'
   | 'cut'
+  | 'copy-to'
+  | 'move-to'
   | 'duplicate'
   | 'rename'
   | 'add-tags'
@@ -233,6 +235,28 @@ export const BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS: ExplorerBuiltInContextMenuCat
     source: 'built-in',
     iconName: 'Scissors',
     execution: { kind: 'built-in', actionId: 'cut' },
+  },
+  {
+    id: 'built-in.copy-to',
+    title: 'Copy To...',
+    contexts: ['entry'],
+    appliesTo: 'any',
+    group: 'clipboard',
+    defaultOrder: 135,
+    source: 'built-in',
+    iconName: 'Copy',
+    execution: { kind: 'built-in', actionId: 'copy-to' },
+  },
+  {
+    id: 'built-in.move-to',
+    title: 'Move To...',
+    contexts: ['entry'],
+    appliesTo: 'any',
+    group: 'clipboard',
+    defaultOrder: 138,
+    source: 'built-in',
+    iconName: 'Scissors',
+    execution: { kind: 'built-in', actionId: 'move-to' },
   },
   {
     id: 'built-in.duplicate',
