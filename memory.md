@@ -7,11 +7,13 @@
   - `packages/img-editor/src/main.ts` now treats the vendored editor as a single active instance per host container. Reinitializing the same container destroys the previous instance first, clears stale DOM, and allocates a fresh canvas id instead of reusing the old Fabric target.
   - That same runtime seam now wraps `destroy()` so pending init promises reject cleanly if an editor is replaced or torn down before `_onReadyCallback` fires, which keeps shell-level callers from racing stale editor instances.
   - `packages/img-editor/src/editor/index.ts` now makes `destroy()` idempotent and safe against half-initialized instances, and async init exits early once the editor has been destroyed instead of continuing work against a disposed Fabric canvas.
+  - `packages/img-editor/src/editor/ui/toolbar-manager/index.ts` now treats teardown as optional when `showToolbar` is disabled, so the shell-owned preview integration can destroy a partially initialized editor without dereferencing a toolbar element that was never created.
   - `packages/img-editor/src/main.test.ts` covers the regression path where one editor is still initializing and a second init for the same container arrives before readiness.
+  - `packages/img-editor/src/editor/ui/toolbar-manager/index.test.ts` covers the disabled-toolbar destroy path that previously crashed with `this.el.removeEventListener`.
 - Durable product note:
   - the imported image editor package is not safe to treat as fire-and-forget. Container ownership must remain exclusive, and future lifecycle changes need to preserve explicit pre-dispose behavior around same-container remounts.
 - Validation:
-  - passed: `bunx vitest run packages/img-editor/src/main.test.ts`
+  - passed: `bunx vitest run --config vitest.img-editor.temp.config.ts`
   - passed: `bunx vitest run src/test/explorerImageEditor.test.tsx`
 
 ## 2026-04-16 — Unix Explorer Rail Home Drive Rooting

@@ -5,6 +5,7 @@ const { mockState } = vi.hoisted(() => ({
     instances: [] as Array<{
       canvasId: string
       destroy: ReturnType<typeof vi.fn>
+      destroySpy: ReturnType<typeof vi.fn>
       options: Record<string, unknown>
     }>
   }
@@ -12,7 +13,8 @@ const { mockState } = vi.hoisted(() => ({
 
 vi.mock('./editor', () => ({
   ImageEditor: class MockImageEditor {
-    public destroy = vi.fn()
+    public destroySpy = vi.fn()
+    public destroy = this.destroySpy
     public canvasId: string
     public options: Record<string, unknown>
 
@@ -35,17 +37,20 @@ describe('img-editor initEditor', () => {
 
     const firstInitPromise = initEditor('editor-host')
     const firstEditor = mockState.instances[0]
+    const handledFirstInitPromise = firstInitPromise.catch((error) => error)
 
     const secondInitPromise = initEditor('editor-host')
     const secondEditor = mockState.instances[1]
 
-    expect(firstEditor.destroy).toHaveBeenCalledTimes(1)
+    expect(firstEditor.destroySpy).toHaveBeenCalledTimes(1)
     expect(firstEditor.canvasId).not.toBe(secondEditor.canvasId)
     expect(document.querySelectorAll('#editor-host canvas')).toHaveLength(1)
 
     ;(secondEditor.options._onReadyCallback as (editor: unknown) => void)(secondEditor)
 
-    await expect(firstInitPromise).rejects.toThrow('destroyed before it finished initializing')
+    await expect(handledFirstInitPromise).resolves.toMatchObject({
+      message: expect.stringContaining('destroyed before it finished initializing')
+    })
     await expect(secondInitPromise).resolves.toBe(secondEditor)
   })
 })

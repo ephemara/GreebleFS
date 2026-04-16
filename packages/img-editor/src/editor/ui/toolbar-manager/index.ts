@@ -409,6 +409,10 @@ export default class ToolbarManager {
    * Удаляет слушатели событий и DOM элемент панели инструментов
    */
   destroy(): void {
+    if (!this.options.showToolbar || !this.el) {
+      return
+    }
+
     this.el.removeEventListener('mouseover', this._onBtnOver)
     this.el.removeEventListener('mouseout', this._onBtnOut)
 
