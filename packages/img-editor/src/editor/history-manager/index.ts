@@ -323,7 +323,6 @@ export default class HistoryManager {
       state = this.diffPatcher.patch(state, patches[i].diff)
     }
 
-    console.log('getFullState state', state)
     return state
   }
 
@@ -453,7 +452,6 @@ export default class HistoryManager {
       this.baseState = currentStateObj
       this.patches = []
       this.currentIndex = 0
-      console.log('Базовое состояние сохранено.')
       return
     }
 
@@ -470,12 +468,8 @@ export default class HistoryManager {
     })
     const diff = this.diffPatcher.diff(normalizedPrevState, normalizedCurrentState)
 
-    console.log('normalizedPrevState', normalizedPrevState)
-    console.log('normalizedCurrentState', normalizedCurrentState)
-
     // Если изменений нет, не сохраняем новый шаг
     if (!diff) {
-      console.log('Нет изменений для сохранения.')
       return
     }
 
@@ -485,19 +479,14 @@ export default class HistoryManager {
     })
 
     if (statesEqual) {
-      console.log('statesEqual. Нет изменений для сохранения.')
       return
     }
-
-    console.log('baseState', this.baseState)
 
     // Если мы уже сделали undo и сейчас добавляем новое состояние,
     // удаляем «редо»-ветку
     if (this.currentIndex < this.patches.length) {
       this.patches.splice(this.currentIndex)
     }
-
-    console.log('diff', diff)
 
     this.totalChangesCount += 1
 
@@ -517,14 +506,12 @@ export default class HistoryManager {
       this.baseStateChangesCount += 1
     }
 
-    console.log('Состояние сохранено. Текущий индекс истории:', this.currentIndex)
   }
 
   /**
    * Сохраняем текущее состояние в виде диффа от последнего сохранённого полного состояния.
    */
   public saveState(): void {
-    console.log('saveState')
     if (this.skipHistory) return
     if (this._isUiBlocked()) {
       this._deferSaveAfterUiUnblock()
@@ -532,8 +519,6 @@ export default class HistoryManager {
     }
 
     this._isSavingState = true
-
-    console.time('saveState')
 
     try {
       const pendingCommittedState = this._consumePendingCommittedState()
@@ -561,8 +546,6 @@ export default class HistoryManager {
         callback: () => this.canvas.toDatalessObject([...OBJECT_SERIALIZATION_PROPS])
       })
 
-      console.timeEnd('saveState')
-
       this._saveSerializedState({
         currentStateObj: currentStateObj as CanvasFullState
       })
@@ -583,8 +566,6 @@ export default class HistoryManager {
    */
   public async loadStateFromFullState(fullState: CanvasFullState): Promise<void> {
     if (!fullState) return
-
-    console.log('loadStateFromFullState fullState', fullState)
 
     const {
       canvas,
@@ -679,7 +660,6 @@ export default class HistoryManager {
     this.flushPendingSave()
 
     if (this.currentIndex <= 0) {
-      console.log('Нет предыдущих состояний для отмены.')
       return
     }
 
@@ -692,8 +672,6 @@ export default class HistoryManager {
       const fullState = this.getFullState()
 
       await this.loadStateFromFullState(fullState)
-
-      console.log('Undo выполнен. Текущий индекс истории:', this.currentIndex)
 
       this.canvas.fire('editor:undo', {
         fullState,
@@ -708,7 +686,7 @@ export default class HistoryManager {
         origin: 'HistoryManager',
         method: 'undo',
         code: 'UNDO_ERROR',
-        message: 'Ошибка отмены действия',
+        message: 'Undo failed.',
         data: error as Error
       })
     } finally {
@@ -729,7 +707,6 @@ export default class HistoryManager {
     this.flushPendingSave()
 
     if (this.currentIndex >= this.patches.length) {
-      console.log('Нет состояний для повтора.')
       return
     }
 
@@ -740,11 +717,7 @@ export default class HistoryManager {
       this.totalChangesCount += 1
 
       const fullState = this.getFullState()
-      console.log('fullState', fullState)
-
       await this.loadStateFromFullState(fullState)
-
-      console.log('Redo выполнен. Текущий индекс истории:', this.currentIndex)
 
       this.canvas.fire('editor:redo', {
         fullState,
@@ -759,7 +732,7 @@ export default class HistoryManager {
         origin: 'HistoryManager',
         method: 'redo',
         code: 'REDO_ERROR',
-        message: 'Ошибка повтора действия',
+        message: 'Redo failed.',
         data: error as Error
       })
     } finally {

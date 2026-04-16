@@ -143,7 +143,7 @@ export default class TextManager {
   public addText(
     {
       id = `text-${nanoid()}`,
-      text = 'Новый текст',
+      text = 'New text',
       autoExpand = true,
       fontFamily,
       fontSize = 48,

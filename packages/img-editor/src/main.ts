@@ -14,7 +14,7 @@ export default function initEditor(containerId:string, options:Partial<CanvasOpt
   // Находим контейнер по ID.
   const container = document.getElementById(containerId)
   if (!container) {
-    return Promise.reject(new Error(`Контейнер с ID "${containerId}" не найден.`))
+    return Promise.reject(new Error(`Editor container "${containerId}" was not found.`))
   }
 
   // Создаём канвас

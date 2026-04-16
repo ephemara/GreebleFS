@@ -91,7 +91,7 @@ export default class FontManager {
         FontManager.registeredFontKeys.add(registrationKey)
         return
       } catch (error) {
-        console.warn(`Не удалось загрузить шрифт "${family}" через FontFace API`, error)
+        console.warn(`Failed to load font "${family}" through the FontFace API.`, error)
       }
     }
 
@@ -239,7 +239,7 @@ export default class FontManager {
         }
       })
     } catch (error) {
-      console.warn('Не удалось проверить, загружен ли шрифт ранее через FontFaceSet', error)
+      console.warn('Failed to inspect previously loaded fonts via FontFaceSet.', error)
       return false
     }
 

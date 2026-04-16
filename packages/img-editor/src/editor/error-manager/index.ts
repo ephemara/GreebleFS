@@ -50,7 +50,7 @@ export default class ErrorManager {
    */
   public emitError({ origin = 'ImageEditor', method = 'Unknown Method', code, data, message }: ErrorItem): void {
     if (!ErrorManager.isValidErrorCode(code)) {
-      console.warn('Неизвестный код ошибки: ', { code, origin, method })
+      console.warn('Unknown editor error code:', { code, origin, method })
       return
     }
 
@@ -89,7 +89,7 @@ export default class ErrorManager {
    */
   public emitWarning({ origin = 'ImageEditor', method = 'Unknown Method', code, message, data }:ErrorItem): void {
     if (!ErrorManager.isValidErrorCode(code)) {
-      console.warn('Неизвестный код предупреждения: ', { code, origin, method })
+      console.warn('Unknown editor warning code:', { code, origin, method })
       return
     }
 

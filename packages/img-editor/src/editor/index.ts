@@ -312,7 +312,7 @@ export class ImageEditor {
           origin: 'ImageEditor',
           method: 'init',
           code: 'INITIAL_STATE_LOAD_FAILED',
-          message: 'Не удалось загрузить состояние редактора. Попытка импортировать начальное изображение.',
+          message: 'Failed to load the initial editor state. Falling back to the source image.',
           data: error as Error
         })
       } finally {
@@ -331,7 +331,6 @@ export class ImageEditor {
 
     this.historyManager.saveState()
 
-    console.log('editor:ready')
     this.canvas.fire('editor:ready', this)
 
     // вызываем колбэк если он есть

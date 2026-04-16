@@ -119,7 +119,6 @@ export default class ImageManager {
 
     const { objects = [] } = clonedState
 
-    console.log('objects', objects)
     for (let index = 0; index < objects.length; index += 1) {
       const object = objects[index] as Record<string, unknown>
 
@@ -144,7 +143,6 @@ export default class ImageManager {
 
     const { type, src, objects } = object
 
-    console.log('_replaceImageSrcInObject', { type, src, objects })
     if (type?.toLowerCase() === 'image') {
       const blobUrl = await this._getOrCreateBlobUrl({ src, cache })
 
@@ -180,7 +178,6 @@ export default class ImageManager {
     }
 
     const blobUrl = await this._fetchAsBlobUrl({ src })
-    console.log('_getOrCreateBlobUrl', { src, blobUrl })
     if (!blobUrl) return null
 
     cache.set(src, blobUrl)
@@ -209,8 +206,6 @@ export default class ImageManager {
 
       const blob = await response.blob()
       const blobUrl = URL.createObjectURL(blob)
-      console.log('_fetchAsBlobUrl', { src, blobUrl })
-
       this._createdBlobUrls.push(blobUrl)
 
       return blobUrl
@@ -263,7 +258,7 @@ export default class ImageManager {
 
     if (!this.isAllowedContentType(contentType)) {
       // eslint-disable-next-line max-len
-      const message = `Неверный contentType для изображения: ${contentType}. Ожидается один из: ${this.acceptContentTypes.join(', ')}.`
+      const message = `Invalid image content type "${contentType}". Expected one of: ${this.acceptContentTypes.join(', ')}.`
 
       errorManager.emitError({
         origin: 'ImageManager',
@@ -303,7 +298,7 @@ export default class ImageManager {
           origin: 'ImageManager',
           method: 'importImage',
           code: 'INVALID_SOURCE_TYPE',
-          message: 'Неверный тип источника изображения. Ожидается URL или объект File.',
+          message: 'Invalid image source type. Expected a URL string or File instance.',
           data: {
             source,
             format,
@@ -444,7 +439,7 @@ export default class ImageManager {
         origin: 'ImageManager',
         method: 'importImage',
         code: 'IMPORT_FAILED',
-        message: `Ошибка импорта изображения: ${(error as Error).message}`,
+        message: `Image import failed: ${(error as Error).message}`,
         data: {
           source,
           format,
@@ -772,7 +767,7 @@ export default class ImageManager {
         origin: 'ImageManager',
         method: 'exportCanvasAsImageFile',
         code: 'IMAGE_EXPORT_FAILED',
-        message: `Ошибка экспорта изображения: ${(error as Error).message}`,
+        message: `Image export failed: ${(error as Error).message}`,
         data: { contentType, fileName, exportAsBase64, exportAsBlob }
       })
 
@@ -814,7 +809,7 @@ export default class ImageManager {
         origin: 'ImageManager',
         method: 'exportObjectAsImageFile',
         code: 'NO_OBJECT_SELECTED',
-        message: 'Не выбран объект для экспорта',
+        message: 'No object is selected for export.',
         data: { contentType: fallbackContentType, fileName: fallbackFileName, exportAsBase64, exportAsBlob }
       })
 
@@ -922,7 +917,7 @@ export default class ImageManager {
         origin: 'ImageManager',
         method: 'exportObjectAsImageFile',
         code: 'IMAGE_EXPORT_FAILED',
-        message: `Ошибка экспорта объекта: ${(error as Error).message}`,
+        message: `Object export failed: ${(error as Error).message}`,
         data: {
           contentType: processedContentType,
           fileName: processedFileName,
@@ -997,7 +992,7 @@ export default class ImageManager {
         return contentType.split(';')[0] // убираем дополнительные параметры
       }
     } catch (error) {
-      console.warn('HEAD запрос неудачен, определяем тип по расширению:', error)
+      console.warn('HEAD request failed, falling back to file extension detection:', error)
     }
 
     // Если HEAD запрос не сработал, определяем по расширению
@@ -1026,7 +1021,7 @@ export default class ImageManager {
 
       return extension ? mimeMap[extension] || 'application/octet-stream' : 'application/octet-stream'
     } catch (error) {
-      console.warn('Не удалось определить расширение из URL:', url, error)
+      console.warn('Failed to resolve the file extension from URL:', url, error)
       return 'application/octet-stream'
     }
   }

@@ -36,36 +36,36 @@ export const defaults: Partial<CanvasOptions> = {
   showToolbar: true,
   toolbar: {
     lockedActions: [{
-      name: 'Разблокировать',
+      name: 'Unlock',
       handle: 'unlock'
     }],
     actions: [
       {
-        name: 'Создать копию',
+        name: 'Duplicate',
         handle: 'copyPaste'
       },
       {
-        name: 'Заблокировать',
+        name: 'Lock',
         handle: 'lock'
       },
       {
-        name: 'На передний план',
+        name: 'Bring to Front',
         handle: 'bringToFront'
       },
       {
-        name: 'На задний план',
+        name: 'Send to Back',
         handle: 'sendToBack'
       },
       {
-        name: 'На один уровень вверх',
+        name: 'Bring Forward',
         handle: 'bringForward'
       },
       {
-        name: 'На один уровень вниз',
+        name: 'Send Backward',
         handle: 'sendBackwards'
       },
       {
-        name: 'Удалить',
+        name: 'Delete',
         handle: 'delete'
       }
     ]
