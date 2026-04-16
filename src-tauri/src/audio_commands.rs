@@ -2057,6 +2057,32 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    #[cfg(unix)]
+    fn write_fake_sox_binary(script_path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+
+        fs::write(
+            script_path,
+            r#"#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "--help-format" ]]; then
+  case "${2:-}" in
+    wav) exit 0 ;;
+    mp3) exit 1 ;;
+    *) exit 1 ;;
+  esac
+fi
+exit 0
+"#,
+        )
+        .expect("write fake sox script");
+        let mut permissions = fs::metadata(script_path)
+            .expect("stat fake sox script")
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(script_path, permissions).expect("chmod fake sox script");
+    }
+
     #[test]
     fn sox_bundle_name_tracks_platform() {
         let file_name = sox_bundle_file_name();
@@ -2114,5 +2140,43 @@ mod tests {
         assert!(collected_paths.contains(&path_to_string(&audio)));
         assert!(collected_paths.contains(&path_to_string(&nested_audio)));
         assert!(!collected_paths.contains(&path_to_string(&text)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn plan_audio_output_routes_mp3_through_ffmpeg_when_sox_cannot_write_it() {
+        let workspace = tempdir().expect("tempdir");
+        let input_path = workspace.path().join("anthem.wav");
+        let output_path = workspace.path().join("anthem.converted.mp3");
+        let fake_sox_path = workspace.path().join("fake-sox.sh");
+        fs::write(&input_path, b"demo").expect("write input");
+        write_fake_sox_binary(&fake_sox_path);
+
+        let runtime = SoxRuntime {
+            executable_path: fake_sox_path,
+            runtime_root: workspace.path().to_path_buf(),
+        };
+        let request = NormalizedAudioTransformRequest {
+            input_path: input_path.clone(),
+            final_output_path: output_path.clone(),
+            overwrite_existing: true,
+            mode: AudioTransformMode::ConvertFormat,
+            trim_start_seconds: None,
+            trim_end_seconds: None,
+            fade_in_seconds: None,
+            fade_out_seconds: None,
+            normalize: false,
+            output_format: "mp3".to_string(),
+            generate_spectrogram: false,
+            overwrite_original: false,
+        };
+
+        let plan = plan_audio_output(&runtime, &request).expect("plan output");
+
+        assert_eq!(plan.sox_output_format, SOX_INTERMEDIATE_OUTPUT_FORMAT);
+        assert_eq!(plan.final_output_format, "mp3");
+        assert_eq!(plan.final_output_path, output_path);
+        assert!(plan.ffmpeg_output_path.is_some());
+        assert_ne!(plan.sox_output_path.extension().and_then(|value| value.to_str()), Some("mp3"));
     }
 }
