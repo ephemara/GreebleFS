@@ -660,7 +660,7 @@ describe('FileExplorer view modes', () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const appearance = resolveOverlayAppearance({ activeThemeId: 'operator' });
 
-    render(
+    const { unmount } = render(
       <React.StrictMode>
         <FileExplorer
           theme={{
@@ -679,6 +679,7 @@ describe('FileExplorer view modes', () => {
     );
 
     await screen.findByText('alpha');
+    unmount();
     expect(consoleErrorSpy).not.toHaveBeenCalled();
     consoleErrorSpy.mockRestore();
   });

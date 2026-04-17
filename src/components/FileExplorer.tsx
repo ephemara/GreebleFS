@@ -3493,7 +3493,6 @@ export function FileExplorer({
 
   const mainRef = useRef<HTMLDivElement>(null);
   const explorerViewportRef = useRef<HTMLDivElement | null>(null);
-  const [explorerViewportElement, setExplorerViewportElement] = useState<HTMLDivElement | null>(null);
   const modeProfileMenuAnchorRef = useRef<HTMLDivElement>(null);
   const layoutMenuAnchorRef = useRef<HTMLDivElement>(null);
   const experimentalMenuAnchorRef = useRef<HTMLDivElement>(null);
@@ -3528,11 +3527,6 @@ export function FileExplorer({
       source: 'navigation',
     });
   }, [currentPath, currentPathIsCloud]);
-
-  const setExplorerViewportNode = useCallback((node: HTMLDivElement | null) => {
-    explorerViewportRef.current = node;
-    setExplorerViewportElement((current) => (current === node ? current : node));
-  }, []);
 
   const syncExplorerViewportMetrics = useCallback((viewport?: HTMLDivElement | null) => {
     const target = viewport ?? explorerViewportRef.current;
@@ -8970,15 +8964,16 @@ export function FileExplorer({
     }
   }, []);
 
-  useEffect(() => {
-    if (!explorerViewportElement) {
+  useLayoutEffect(() => {
+    const viewport = explorerViewportRef.current;
+    if (!viewport) {
       return;
     }
 
     let rafId = 0;
     const updateMetrics = () => {
       rafId = 0;
-      syncExplorerViewportMetrics(explorerViewportElement);
+      syncExplorerViewportMetrics(viewport);
     };
 
     const scheduleMetricsUpdate = () => {
@@ -8992,18 +8987,18 @@ export function FileExplorer({
       ? new ResizeObserver(scheduleMetricsUpdate)
       : null;
 
-    resizeObserver?.observe(explorerViewportElement);
-    explorerViewportElement.addEventListener('scroll', scheduleMetricsUpdate, { passive: true });
+    resizeObserver?.observe(viewport);
+    viewport.addEventListener('scroll', scheduleMetricsUpdate, { passive: true });
     scheduleMetricsUpdate();
 
     return () => {
-      explorerViewportElement.removeEventListener('scroll', scheduleMetricsUpdate);
+      viewport.removeEventListener('scroll', scheduleMetricsUpdate);
       resizeObserver?.disconnect();
       if (rafId !== 0) {
         window.cancelAnimationFrame(rafId);
       }
     };
-  }, [explorerViewportElement, syncExplorerViewportMetrics]);
+  }, [syncExplorerViewportMetrics]);
 
   const handleExplorerLayoutWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
     if (isCompactDock || !(event.ctrlKey || event.metaKey)) {
@@ -10721,7 +10716,7 @@ export function FileExplorer({
             style={{ flex: 1, minHeight: 0 }}
             viewportClassName="overlay-scroll-area__viewport--explorer-file-list"
             viewportStyle={{ padding: 0 }}
-            viewportRef={setExplorerViewportNode}
+            viewportRef={explorerViewportRef}
           >
           <div
             ref={mainRef}
