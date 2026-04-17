@@ -511,8 +511,8 @@ fn terminal_auto_cd_command(shell_kind: &TerminalShellKind, cwd: &str) -> Option
         )),
         TerminalShellKind::Fish
         | TerminalShellKind::Zsh
-        | TerminalShellKind::Bash
-        | TerminalShellKind::Unknown => Some(format!("cd -- {}\n", shell_quote_single(cwd))),
+        | TerminalShellKind::Bash => Some(format!("builtin cd -- {}\n", shell_quote_single(cwd))),
+        TerminalShellKind::Unknown => Some(format!("cd -- {}\n", shell_quote_single(cwd))),
     }
 }
 
@@ -1083,7 +1083,7 @@ mod tests {
     fn terminal_auto_cd_command_uses_shell_specific_syntax() {
         let command = terminal_auto_cd_command(&TerminalShellKind::Bash, "/tmp/demo")
             .expect("bash auto-cd command");
-        assert_eq!(command, "cd -- '/tmp/demo'\n");
+        assert_eq!(command, "builtin cd -- '/tmp/demo'\n");
     }
 
     #[test]

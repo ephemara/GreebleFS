@@ -28,7 +28,7 @@ const THUMBNAIL_VIDEO_POSTER_RATIO: f64 = 0.22;
 const THUMBNAIL_DEFAULT_BACKGROUND: Rgba<u8> = Rgba([9, 12, 18, 255]);
 const THUMBNAIL_TEXT_COLOR: Rgba<u8> = Rgba([234, 240, 248, 255]);
 const THUMBNAIL_MUTED_TEXT_COLOR: Rgba<u8> = Rgba([145, 157, 178, 255]);
-const THUMBNAIL_SHADOW_TEXT_COLOR: Rgba<u8> = Rgba([0, 0, 0, 190]);
+const THUMBNAIL_SHADOW_TEXT_COLOR: Rgba<u8> = Rgba([0, 0, 0, 130]);
 const THUMBNAIL_WAVEFORM_COLOR: Rgba<u8> = Rgba([240, 246, 255, 210]);
 const DEFAULT_FFMPEG_BINARY: &str = "ffmpeg";
 const DEFAULT_FFPROBE_BINARY: &str = "ffprobe";
@@ -173,7 +173,7 @@ fn build_entry_thumbnail(
                 &request.input_path,
                 request.max_width,
                 request.max_height,
-                "code",
+                "code-v2",
                 || render_code_thumbnail_png(&request.input_path, request.max_width, request.max_height),
             )?,
             hover_frames: Vec::new(),
@@ -186,7 +186,7 @@ fn build_entry_thumbnail(
                 &request.input_path,
                 request.max_width,
                 request.max_height,
-                "shader",
+                "shader-v2",
                 || render_shader_thumbnail_png(&request.input_path, request.max_width, request.max_height),
             )?,
             hover_frames: Vec::new(),
@@ -199,7 +199,7 @@ fn build_entry_thumbnail(
                 &request.input_path,
                 request.max_width,
                 request.max_height,
-                "audio",
+                "audio-v2",
                 || render_audio_thumbnail_png(&request.input_path, request.max_width, request.max_height),
             )?,
             hover_frames: Vec::new(),
@@ -680,6 +680,25 @@ fn render_text_thumbnail_png(
         tint_color(accent, 0.22, 10),
     );
     fill_rect(&mut image, 0, 44, 6, max_height, accent);
+    let preview_panel_top = 52;
+    let preview_panel_bottom = max_height.saturating_sub(16);
+    fill_rect(
+        &mut image,
+        12,
+        preview_panel_top,
+        max_width.saturating_sub(12),
+        preview_panel_bottom,
+        Rgba([11, 15, 22, 232]),
+    );
+    fill_rect(
+        &mut image,
+        12,
+        preview_panel_top,
+        max_width.saturating_sub(12),
+        preview_panel_top + 18,
+        tint_color(accent, 0.16, 10),
+    );
+    fill_rect(&mut image, 12, preview_panel_top, 16, preview_panel_bottom, accent);
 
     let sans_font = load_thumbnail_font(ThumbnailFontSpec {
         family: Family::SansSerif,
@@ -695,12 +714,13 @@ fn render_text_thumbnail_png(
             .file_name()
             .and_then(|value| value.to_str())
             .unwrap_or("code");
+        let title_scale = if shader_mode { 15.5 } else { 16.5 };
         draw_text_with_shadow(
             &mut image,
             font,
-            PxScale::from(15.0),
+            PxScale::from(title_scale),
             (16.0, 10.0),
-            &truncate_text(title, 28),
+            &truncate_text(title, 24),
             THUMBNAIL_TEXT_COLOR,
         );
         let subtitle = if shader_mode {
@@ -711,7 +731,7 @@ fn render_text_thumbnail_png(
         draw_text_with_shadow(
             &mut image,
             font,
-            PxScale::from(10.0),
+            PxScale::from(10.5),
             (16.0, 28.0),
             subtitle,
             THUMBNAIL_MUTED_TEXT_COLOR,
@@ -721,7 +741,7 @@ fn render_text_thumbnail_png(
         } else {
             extension.to_ascii_uppercase()
         };
-        let badge_width = 12 + (badge_text.len() as u32 * 8);
+        let badge_width = 14 + (badge_text.len() as u32 * 8);
         fill_rounded_badge(
             &mut image,
             max_width.saturating_sub(badge_width + 12),
@@ -745,9 +765,9 @@ fn render_text_thumbnail_png(
 
     if shader_mode {
         let profile = build_shader_profile(&content);
-        let sphere_size = max_width.min(max_height).saturating_mul(34) / 100;
+        let sphere_size = max_width.min(max_height).saturating_mul(30) / 100;
         let sphere_left = max_width.saturating_sub(sphere_size + 18);
-        let sphere_top = 58;
+        let sphere_top = 64;
         draw_shader_sphere(
             &mut image,
             sphere_left,
@@ -757,41 +777,50 @@ fn render_text_thumbnail_png(
         );
     }
 
-    let code_area_top = if shader_mode { 58 } else { 54 };
+    let preview_lines = {
+        let lines = collect_text_thumbnail_preview_lines(&content, 4);
+        if lines.is_empty() {
+            vec![if shader_mode {
+                "Shader source preview".to_string()
+            } else {
+                "Empty source file".to_string()
+            }]
+        } else {
+            lines
+        }
+    };
     if let Some(font) = mono_font.as_ref() {
-        let line_height = 14;
-        for (index, line) in content.lines().take(10).enumerate() {
-            let y = code_area_top + 10 + (index as u32 * line_height);
-            if y + line_height as u32 >= max_height {
+        let line_height = if shader_mode { 24 } else { 22 };
+        let text_scale = if shader_mode { 13.0 } else { 13.5 };
+        let text_max_chars = if shader_mode { 16 } else { 22 };
+        let preview_text_left = 42;
+        let preview_line_left = 22;
+        let preview_start_y = preview_panel_top + 26;
+        for (index, line) in preview_lines.iter().enumerate() {
+            let y = preview_start_y + (index as u32 * line_height);
+            if y + line_height as u32 >= preview_panel_bottom {
                 break;
             }
-            let line_number_color = tint_color(accent, 0.24, 38);
-            draw_text_with_shadow(
+            let line_color = text_thumbnail_line_color(line, accent);
+            fill_rect(
                 &mut image,
-                font,
-                PxScale::from(11.5),
-                (18.0, y as f32),
-                &format!("{:02}", index + 1),
-                line_number_color,
+                preview_line_left,
+                y + 6,
+                preview_line_left + 10,
+                y + 16,
+                line_color,
             );
             draw_text_with_shadow(
                 &mut image,
                 font,
-                PxScale::from(11.5),
-                (46.0, y as f32),
-                &truncate_text(line.trim_end(), 28),
-                if line.trim_start().starts_with("//")
-                    || line.trim_start().starts_with('#')
-                    || line.trim_start().starts_with("/*")
-                {
-                    THUMBNAIL_MUTED_TEXT_COLOR
-                } else {
-                    THUMBNAIL_TEXT_COLOR
-                },
+                PxScale::from(text_scale),
+                (preview_text_left as f32, y as f32),
+                &truncate_text(line, text_max_chars),
+                line_color,
             );
         }
     } else {
-        draw_text_thumbnail_fallback_bars(&mut image, code_area_top, accent, shader_mode);
+        draw_text_thumbnail_fallback_bars(&mut image, preview_panel_top, accent, shader_mode);
     }
 
     encode_rgba_image_as_png(&image)
@@ -1231,34 +1260,75 @@ fn draw_text_thumbnail_fallback_bars(
     accent: Rgba<u8>,
     shader_mode: bool,
 ) {
-    let line_count = if shader_mode { 8 } else { 10 };
+    let line_count = if shader_mode { 6 } else { 6 };
     for index in 0..line_count {
-        let y = top + 12 + index * 16;
-        if y + 8 >= image.height() {
+        let y = top + 14 + index * 20;
+        if y + 10 >= image.height() {
             break;
         }
-        let width = image.width().saturating_sub(56 + (index as u32 * 9 % 48));
+        let width = image.width().saturating_sub(64 + (index as u32 * 11 % 56));
         fill_rect(
             image,
             18,
             y,
-            28,
-            y + 8,
-            tint_color(accent, 0.22, 40),
+            30,
+            y + 10,
+            tint_color(accent, 0.24, 42),
         );
         fill_rect(
             image,
-            46,
+            42,
             y,
-            46 + width,
-            y + 8,
-            if index % 3 == 0 {
+            42 + width,
+            y + 10,
+            if index % 2 == 0 {
                 THUMBNAIL_TEXT_COLOR
             } else {
                 THUMBNAIL_MUTED_TEXT_COLOR
             },
         );
     }
+}
+
+fn collect_text_thumbnail_preview_lines(content: &str, max_lines: usize) -> Vec<String> {
+    content
+        .lines()
+        .map(|line| line.replace('\t', "    ").trim_end().to_string())
+        .filter(|line| !line.trim().is_empty())
+        .take(max_lines)
+        .collect()
+}
+
+fn text_thumbnail_line_color(line: &str, accent: Rgba<u8>) -> Rgba<u8> {
+    let trimmed = line.trim_start();
+    if trimmed.is_empty() {
+        return THUMBNAIL_MUTED_TEXT_COLOR;
+    }
+    if trimmed.starts_with("//")
+        || trimmed.starts_with("/*")
+        || trimmed.starts_with('*')
+        || trimmed.starts_with("<!--")
+    {
+        return THUMBNAIL_MUTED_TEXT_COLOR;
+    }
+    if trimmed.starts_with('#') {
+        return accent;
+    }
+    if trimmed.starts_with("use ")
+        || trimmed.starts_with("import ")
+        || trimmed.starts_with("from ")
+        || trimmed.starts_with("const ")
+        || trimmed.starts_with("let ")
+        || trimmed.starts_with("pub ")
+        || trimmed.starts_with("fn ")
+        || trimmed.starts_with("def ")
+        || trimmed.starts_with("class ")
+        || trimmed.starts_with("export ")
+        || trimmed.starts_with("return ")
+    {
+        return THUMBNAIL_TEXT_COLOR;
+    }
+    tint_color(THUMBNAIL_TEXT_COLOR, 0.08, 0)
 }
 
 fn load_thumbnail_font(spec: ThumbnailFontSpec) -> Result<FontArc, String> {
@@ -1309,17 +1379,15 @@ fn draw_text_with_shadow(
 ) {
     let x = origin.0.round() as i32;
     let y = origin.1.round() as i32;
-    for (offset_x, offset_y) in [(1, 1), (1, 2), (2, 1), (2, 2)] {
-        draw_text_mut(
-            image,
-            THUMBNAIL_SHADOW_TEXT_COLOR,
-            x + offset_x,
-            y + offset_y,
-            scale,
-            font,
-            text,
-        );
-    }
+    draw_text_mut(
+        image,
+        THUMBNAIL_SHADOW_TEXT_COLOR,
+        x + 1,
+        y + 1,
+        scale,
+        font,
+        text,
+    );
     draw_text_mut(image, color, x, y, scale, font, text);
 }
 
@@ -1504,6 +1572,22 @@ mod tests {
         let decoded = image::load_from_memory(&png).expect("decode png");
         assert_eq!(decoded.width(), 320);
         assert_eq!(decoded.height(), 180);
+    }
+
+    #[test]
+    fn collect_text_thumbnail_preview_lines_skips_blank_lines_and_expands_tabs() {
+        let lines = collect_text_thumbnail_preview_lines(
+            "fn main() {\n\n\tprintln!(\"hello\");\n}\n",
+            4,
+        );
+        assert_eq!(
+            lines,
+            vec![
+                "fn main() {".to_string(),
+                "    println!(\"hello\");".to_string(),
+                "}".to_string(),
+            ]
+        );
     }
 
     #[test]

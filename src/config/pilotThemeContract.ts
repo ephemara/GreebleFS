@@ -125,7 +125,7 @@ export const pilotExplorerThemeRecipe: OverlayExplorerThemeRecipe = {
   chromeLayoutId: 'default',
   defaultModeProfileId: 'balanced',
   railPosition: 'left',
-  railBrandLabel: 'Explorer',
+  railBrandLabel: '',
   toolbarStyle: 'solid',
   breadcrumbStyle: 'segmented',
   selectionStyle: 'fill',

@@ -45,6 +45,7 @@ fontdb = "0.16.2"
 xcap = "0.9.1"
 drag = "2.1.0"
 file_icon_provider = "1.0.0"
+ignore = "0.4.25"
 notify = "8.2.0"
 rusqlite = { version = "0.32.1", features = ["bundled"] }
 tokio = { version = "1", features = ["time"] }

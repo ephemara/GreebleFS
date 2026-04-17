@@ -221,6 +221,9 @@ export function ExplorerSideRail({
   );
   const locationTitle = locationTitleProp ?? (currentPath.trim() || 'Home');
   const locationLabel = locationLabelProp ?? getPathLeaf(locationTitle);
+  const normalizedBrandLabel = brandLabel.trim();
+  const showBrandLabel = normalizedBrandLabel.length > 0
+    && !['explorer', 'overlayterm'].includes(normalizedBrandLabel.toLowerCase());
   const filteredRail = useMemo(() => ({
     ...rail,
     searchQuery: deferredQuery,
@@ -548,9 +551,11 @@ export function ExplorerSideRail({
       isVisible: () => true,
       render: () => (
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--overlay-text-dim)', fontWeight: 700 }}>
-            {brandLabel}
-          </div>
+          {showBrandLabel && (
+            <div style={{ fontSize: 10, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'var(--overlay-text-dim)', fontWeight: 700 }}>
+              {normalizedBrandLabel}
+            </div>
+          )}
           <div style={{ marginTop: 2, fontSize: 'var(--overlay-explorer-rail-title-size)', color: 'var(--overlay-text-primary)', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {locationLabel}
           </div>
@@ -633,6 +638,8 @@ export function ExplorerSideRail({
     locationLabel,
     locationTitle,
     onEnterFocusMode,
+    normalizedBrandLabel,
+    showBrandLabel,
     showSupportingMeta,
     showVerboseDragGuide,
   ]);

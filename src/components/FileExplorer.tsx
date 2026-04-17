@@ -10519,7 +10519,6 @@ export function FileExplorer({
 
   const hasResolvedExplorerLocation = currentPath.trim().length > 0;
   const showBlockingExplorerLoadingState = loading && !hasResolvedExplorerLocation;
-  const showInlineExplorerLoadingState = loading && hasResolvedExplorerLocation;
   const shouldRenderExplorerContent = !showBlockingExplorerLoadingState;
 
   return (
@@ -10783,49 +10782,6 @@ export function FileExplorer({
                 </div>
                 <div style={{ marginTop:4, fontSize:11, color:EXP.muted }}>
                   External files are handled through the Rust transfer pipeline.
-                </div>
-              </div>
-            )}
-
-            {showInlineExplorerLoadingState && (
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  zIndex: 6,
-                  pointerEvents: 'auto',
-                  background: 'linear-gradient(180deg, rgba(6, 8, 12, 0.12), rgba(6, 8, 12, 0.05) 24%, rgba(6, 8, 12, 0))',
-                }}
-              >
-                <div
-                  style={{
-                    position: 'sticky',
-                    top: 12,
-                    display: 'flex',
-                    justifyContent: 'flex-end',
-                    padding: '0 12px',
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '8px 12px',
-                      borderRadius: 999,
-                      border: `1px solid ${accent}44`,
-                      background: 'rgba(9, 12, 17, 0.84)',
-                      boxShadow: '0 12px 28px rgba(0,0,0,0.22)',
-                      color: EXP.text,
-                      fontSize: 11,
-                      fontWeight: 600,
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    <Loader size={12} style={{ animation:'spin 1s linear infinite', color: accent }} />
-                    <span>Loading Folder</span>
-                  </div>
                 </div>
               </div>
             )}

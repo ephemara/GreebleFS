@@ -521,7 +521,7 @@ function createPresetRecipe(preset: OverlayExplorerThemePreset): OverlayExplorer
         preset,
         defaultModeProfileId: 'balanced',
         railPosition: 'left',
-        railBrandLabel: 'Explorer',
+        railBrandLabel: '',
         toolbarStyle: 'solid',
         breadcrumbStyle: 'plain',
         selectionStyle: 'fill',
@@ -537,7 +537,7 @@ function createPresetRecipe(preset: OverlayExplorerThemePreset): OverlayExplorer
         preset: 'workbench',
         defaultModeProfileId: 'balanced',
         railPosition: 'left',
-        railBrandLabel: 'Explorer',
+        railBrandLabel: '',
         toolbarStyle: 'solid',
         breadcrumbStyle: 'plain',
         selectionStyle: 'fill',
@@ -966,8 +966,8 @@ export function resolveExplorerThemeRecipe(
     userRecipe?.typography,
   );
   const railBrandLabel = userRecipe?.railBrandLabel?.trim()
-    || presetRecipe.railBrandLabel
-    || 'Explorer';
+    || presetRecipe.railBrandLabel?.trim()
+    || '';
   const preferredViewMode = userRecipe?.preferredViewMode
     ?? engineRecipe.preferredViewMode
     ?? presetRecipe.preferredViewMode

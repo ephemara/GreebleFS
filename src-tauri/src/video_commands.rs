@@ -91,15 +91,35 @@ pub async fn video_create_preview_proxy(
 #[tauri::command]
 #[specta::specta]
 pub async fn video_resolve_preview_source(
+    app: AppHandle,
     input_path: String,
 ) -> Result<ResolvedVideoPreviewSource, String> {
-    let input = validate_video_source_path(&input_path)?;
-    Ok(ResolvedVideoPreviewSource {
-        source_path: path_to_string(&input),
-        source_kind: VideoPreviewSourceKind::Direct,
-        mime_type: direct_video_preview_mime_type(&input),
-        generated_from_path: None,
+    tauri::async_runtime::spawn_blocking(move || {
+        let input = validate_video_source_path(&input_path)?;
+        if should_generate_video_preview_proxy(&input) {
+            let proxy_path = video_preview_proxy_path(&app, &input)?;
+
+            if !can_reuse_video_preview_proxy(&input, &proxy_path) {
+                generate_video_preview_proxy(&input, &proxy_path)?;
+            }
+
+            return Ok(ResolvedVideoPreviewSource {
+                source_path: path_to_string(&proxy_path),
+                source_kind: VideoPreviewSourceKind::Proxy,
+                mime_type: Some(VIDEO_PREVIEW_PROXY_MIME_TYPE.to_string()),
+                generated_from_path: Some(path_to_string(&input)),
+            });
+        }
+
+        Ok(ResolvedVideoPreviewSource {
+            source_path: path_to_string(&input),
+            source_kind: VideoPreviewSourceKind::Direct,
+            mime_type: direct_video_preview_mime_type(&input),
+            generated_from_path: None,
+        })
     })
+    .await
+    .map_err(|error| format!("Video preview source task failed to join: {error}"))?
 }
 
 fn run_video_trim_export(request: VideoTrimExportRequest) -> Result<VideoTrimExportResult, String> {
@@ -367,6 +387,18 @@ fn generate_video_preview_proxy(input_path: &Path, proxy_path: &Path) -> Result<
     Ok(())
 }
 
+fn should_generate_video_preview_proxy(input_path: &Path) -> bool {
+    let extension = input_path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| value.trim().trim_start_matches('.').to_ascii_lowercase());
+
+    !matches!(
+        extension.as_deref(),
+        Some("mp4" | "m4v" | "ogv" | "webm")
+    )
+}
+
 fn direct_video_preview_mime_type(input_path: &Path) -> Option<String> {
     let extension = input_path
         .extension()
@@ -412,7 +444,8 @@ fn paths_match(left: &Path, right: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        direct_video_preview_mime_type, normalize_trim_export_request, VideoTrimExportRequest,
+        direct_video_preview_mime_type, normalize_trim_export_request,
+        should_generate_video_preview_proxy, VideoTrimExportRequest,
     };
     use crate::video_engine::sanitize_video_runtime_stem;
     use std::path::Path;
@@ -445,6 +478,14 @@ mod tests {
             direct_video_preview_mime_type(Path::new("/tmp/demo.unknown")),
             None
         );
+    }
+
+    #[test]
+    fn preview_proxy_generation_prefers_safe_webview_containers_only() {
+        assert!(!should_generate_video_preview_proxy(Path::new("/tmp/demo.mp4")));
+        assert!(!should_generate_video_preview_proxy(Path::new("/tmp/demo.webm")));
+        assert!(should_generate_video_preview_proxy(Path::new("/tmp/demo.mov")));
+        assert!(should_generate_video_preview_proxy(Path::new("/tmp/demo.mkv")));
     }
 
     #[test]

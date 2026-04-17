@@ -45,6 +45,7 @@ describe('explorer theme recipe', () => {
 
     expect(recipe.chromeLayoutId).toBe('default');
     expect(recipe.defaultModeProfileId).toBe('balanced');
+    expect(recipe.railBrandLabel).toBe('');
     expect(recipe.toolbarStyle).toBe('solid');
     expect(recipe.surfaces.toolbarShadow).not.toBe('none');
     expect(recipe.surfaces.previewBackground).toContain('color-mix');

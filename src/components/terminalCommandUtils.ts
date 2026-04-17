@@ -8,7 +8,7 @@ function shellExecutableName(shell: string): string {
     return '';
   }
 
-  const match = trimmed.match(/^(?:"([^"]+)"|'([^']+)'|(\S+))/);
+  const match = trimmed.match(/^(?:\"([^\"]+)\"|'([^']+)'|(\S+))/);
   return (match?.[1] ?? match?.[2] ?? match?.[3] ?? trimmed).toLowerCase();
 }
 
@@ -27,6 +27,15 @@ export function buildTerminalCdCommand(path: string, shell: string): string {
   if (normalizedShell.endsWith('cmd.exe') || normalizedShell.endsWith('cmd')) {
     const escaped = normalizedPath.replace(/"/g, '""');
     return `cd /d "${escaped}"`;
+  }
+
+  if (
+    normalizedShell.endsWith('bash.exe')
+    || normalizedShell.endsWith('bash')
+    || normalizedShell.endsWith('zsh')
+    || normalizedShell.endsWith('fish')
+  ) {
+    return `builtin cd -- '${escapeSingleQuotedPath(normalizedPath)}'`;
   }
 
   return `cd -- '${escapeSingleQuotedPath(normalizedPath)}'`;

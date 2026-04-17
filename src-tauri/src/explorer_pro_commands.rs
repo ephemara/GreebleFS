@@ -6,6 +6,7 @@ use crate::fs_commands::{
     ExplorerTaskKind, ExplorerTaskRegistration, ExplorerTaskRetryContext, FileEntry,
 };
 use chrono::Local;
+use ignore::WalkBuilder;
 use md5::Context as Md5Context;
 use serde::{Deserialize, Serialize};
 use regex::Regex;
@@ -923,6 +924,16 @@ pub(crate) fn compute_file_checksums(path: &Path) -> Result<(String, String), St
     ))
 }
 
+fn duplicate_scan_walker(root: &Path) -> ignore::Walk {
+    // Use the shared ignore walker so duplicate scans respect repo ignore rules
+    // and do not waste time descending into generated or dependency trees.
+    let mut builder = WalkBuilder::new(root);
+    builder
+        .standard_filters(true)
+        .require_git(false);
+    builder.build()
+}
+
 fn to_file_entry(path: &Path) -> Result<FileEntry, String> {
     let metadata = fs::symlink_metadata(path).map_err(|error| {
         format!(
@@ -966,38 +977,28 @@ fn collect_duplicate_candidates(
     progress: &Arc<Mutex<ExplorerDuplicateScanProgress>>,
     groups_by_size: &mut HashMap<u64, Vec<PathBuf>>,
 ) -> Result<(), String> {
-    if progress
-        .lock()
-        .map_err(|_| "Duplicate scan lock was poisoned.".to_string())?
-        .cancelled
-    {
-        return Ok(());
-    }
+    for result in duplicate_scan_walker(root) {
+        if progress
+            .lock()
+            .map_err(|_| "Duplicate scan lock was poisoned.".to_string())?
+            .cancelled
+        {
+            return Ok(());
+        }
 
-    for entry in fs::read_dir(root).map_err(|error| {
-        format!(
-            "Failed to read duplicate scan directory {}: {error}",
-            root.display()
-        )
-    })? {
-        let entry = entry.map_err(|error| {
+        let entry = result.map_err(|error| {
             format!(
-                "Failed to read duplicate scan entry {}: {error}",
+                "Failed to walk duplicate scan tree {}: {error}",
                 root.display()
             )
         })?;
-        let path = entry.path();
+        let path = entry.path().to_path_buf();
         let metadata = fs::symlink_metadata(&path).map_err(|error| {
             format!(
                 "Failed to inspect duplicate scan path {}: {error}",
                 path.display()
             )
         })?;
-
-        if metadata.is_dir() {
-            collect_duplicate_candidates(&path, task_id, progress, groups_by_size)?;
-            continue;
-        }
 
         if !metadata.is_file() {
             continue;
@@ -1667,10 +1668,14 @@ pub async fn fs_find_duplicates_cancel(scan_id: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        batch_rename_preview_rows, ensure_batch_rename_is_valid, ExplorerSavedSearchSaveRequest,
-        FsBatchRenameItem, FsBatchRenameMode, FsBatchRenameRecipe, fs_batch_rename_apply,
+        batch_rename_preview_rows, collect_duplicate_candidates,
+        ensure_batch_rename_is_valid, ExplorerDuplicateScanProgress,
+        ExplorerSavedSearchSaveRequest, FsBatchRenameItem, FsBatchRenameMode,
+        FsBatchRenameRecipe, fs_batch_rename_apply,
     };
+    use std::collections::HashMap;
     use std::fs;
+    use std::sync::{Arc, Mutex};
     use tempfile::tempdir;
 
     #[test]
@@ -1693,6 +1698,46 @@ mod tests {
         ]);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn duplicate_scan_skips_gitignored_directories() {
+        let temp = tempdir().expect("tempdir");
+        let src_dir = temp.path().join("src");
+        let ignored_dir = temp.path().join("node_modules").join("pkg");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::create_dir_all(&ignored_dir).expect("create ignored dir");
+        fs::write(temp.path().join(".gitignore"), "node_modules/\n").expect("write gitignore");
+
+        let kept_file = src_dir.join("duplicate.txt");
+        let ignored_file = ignored_dir.join("duplicate.txt");
+        fs::write(&kept_file, "duplicate payload").expect("write kept file");
+        fs::write(&ignored_file, "duplicate payload").expect("write ignored file");
+
+        let progress = Arc::new(Mutex::new(ExplorerDuplicateScanProgress {
+            root_path: temp.path().to_string_lossy().to_string(),
+            scanned_file_count: 0,
+            candidate_file_count: 0,
+            completed: false,
+            cancelled: false,
+            error: None,
+            groups: Vec::new(),
+        }));
+        let mut groups_by_size = HashMap::new();
+
+        collect_duplicate_candidates(temp.path(), "scan-1", &progress, &mut groups_by_size)
+            .expect("collect duplicate candidates");
+
+        let file_size = fs::metadata(&kept_file).expect("kept file metadata").len();
+        let candidates = groups_by_size
+            .get(&file_size)
+            .expect("expected candidate size bucket");
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0], kept_file);
+        assert_eq!(
+            progress.lock().expect("progress lock").scanned_file_count,
+            1
+        );
     }
 
     #[test]

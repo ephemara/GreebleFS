@@ -12,7 +12,12 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react';
-import { exportExplorerVideoTrim } from '../runtime/videoEditorBackend';
+import {
+  createExplorerVideoPreviewProxy,
+  exportExplorerVideoTrim,
+  resolveExplorerVideoPreviewSource,
+  type ExplorerVideoPreviewSource,
+} from '../runtime/videoEditorBackend';
 import {
   loadVideoSource,
   pauseVideo,
@@ -36,6 +41,7 @@ type ExplorerVideoEditorProps = {
 };
 
 type VideoExportState = 'idle' | 'exporting' | 'saved' | 'error';
+type VideoCompatibilityPreviewStatus = 'idle' | 'loading' | 'ready' | 'error';
 type TimelineDragMode = 'playhead' | 'trimStart' | 'trimEnd';
 
 const MINIMUM_TRIM_DURATION_SECONDS = 0.1;
@@ -143,27 +149,52 @@ function previewSurfaceStyle(previewImageUrl: string | null): CSSProperties {
   };
 }
 
+function previewMediaStyle(opacity: number): CSSProperties {
+  return {
+    position: 'absolute',
+    inset: 0,
+    width: '100%',
+    height: '100%',
+    objectFit: 'contain',
+    opacity,
+    transition: 'opacity 180ms ease',
+    userSelect: 'none',
+  };
+}
+
 export function ExplorerVideoEditor({
   videoPath,
   videoName,
+  videoSource,
   videoExtension,
+  videoMimeType,
   videoSize,
   onExported,
 }: ExplorerVideoEditorProps) {
   useVideoEngineFeed();
 
   const snapshot = useVideoEngineSnapshot();
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const durationRef = useRef(0);
   const trimStartRef = useRef(0);
   const trimEndRef = useRef(0);
   const loadRequestTokenRef = useRef(0);
+  const previewProxyRequestedRef = useRef(false);
 
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(0);
   const [loopSelection, setLoopSelection] = useState(true);
   const [statusMessage, setStatusMessage] = useState('Preparing native video engine…');
   const [playbackError, setPlaybackError] = useState<string | null>(null);
+  const [compatibilityPreviewSource, setCompatibilityPreviewSource] =
+    useState<ExplorerVideoPreviewSource | null>(null);
+  const [compatibilityPreviewUrl, setCompatibilityPreviewUrl] = useState<string | null>(null);
+  const [compatibilityPreviewStatus, setCompatibilityPreviewStatus] =
+    useState<VideoCompatibilityPreviewStatus>('idle');
+  const [compatibilityPreviewError, setCompatibilityPreviewError] = useState<string | null>(null);
+  const [framePreviewLoaded, setFramePreviewLoaded] = useState(false);
+  const [backendStreamReady, setBackendStreamReady] = useState(false);
   const [exportState, setExportState] = useState<VideoExportState>('idle');
   const [exportMessage, setExportMessage] = useState(
     'Trim export writes a sibling MP4 so the source file stays untouched.',
@@ -173,14 +204,18 @@ export function ExplorerVideoEditor({
     buildTrimmedVideoOutputPath(videoPath),
   );
 
-  const duration = snapshot.loadedPath === videoPath ? snapshot.durationSeconds : 0;
-  const currentTime =
-    snapshot.loadedPath === videoPath ? snapshot.currentTimeSeconds : 0;
-  const isPlaying = snapshot.loadedPath === videoPath && snapshot.isPlaying;
+  const isCurrentVideoLoaded = snapshot.loadedPath === videoPath;
+  const duration = isCurrentVideoLoaded ? snapshot.durationSeconds : 0;
+  const currentTime = isCurrentVideoLoaded ? snapshot.currentTimeSeconds : 0;
+  const isPlaying = isCurrentVideoLoaded && snapshot.isPlaying;
   const previewImageUrl =
-    snapshot.loadedPath === videoPath && snapshot.previewFramePath
+    isCurrentVideoLoaded && snapshot.previewFramePath
       ? buildFilePreviewUrl(snapshot.previewFramePath)
       : null;
+  const previewAspectRatio =
+    isCurrentVideoLoaded && snapshot.widthPx && snapshot.heightPx
+      ? `${snapshot.widthPx} / ${snapshot.heightPx}`
+      : undefined;
 
   useEffect(() => {
     durationRef.current = duration;
@@ -203,6 +238,13 @@ export function ExplorerVideoEditor({
     setTrimEnd(0);
     setLoopSelection(true);
     setPlaybackError(null);
+    setBackendStreamReady(false);
+    setCompatibilityPreviewSource(null);
+    setCompatibilityPreviewUrl(null);
+    setCompatibilityPreviewStatus('idle');
+    setCompatibilityPreviewError(null);
+    setFramePreviewLoaded(false);
+    previewProxyRequestedRef.current = false;
     setExportState('idle');
     setExportMessage(
       'Trim export writes a sibling MP4 so the source file stays untouched.',
@@ -219,11 +261,8 @@ export function ExplorerVideoEditor({
         setTrimStart(0);
         setTrimEnd(nextSnapshot.durationSeconds);
         setPlaybackError(null);
-        setStatusMessage(
-          nextSnapshot.audioTransportReady
-            ? 'Native preview ready. Rust owns transport and timing.'
-            : 'Native preview ready. Rust owns timing; audio transport is unavailable for this file.',
-        );
+        setBackendStreamReady(nextSnapshot.ready && nextSnapshot.durationSeconds > 0);
+        setStatusMessage('Native engine ready. Waiting for preview surface…');
         if (nextSnapshot.durationSeconds > 0) {
           await setVideoLoopRegion(0, nextSnapshot.durationSeconds, true);
         }
@@ -232,17 +271,188 @@ export function ExplorerVideoEditor({
           return;
         }
         const message = error instanceof Error ? error.message : String(error);
+        console.error('ExplorerVideoEditor: failed to load native video source', {
+          videoPath,
+          error,
+        });
         setPlaybackError(message);
         setStatusMessage('Native video load failed.');
       }
     }
 
+    async function resolveCompatibilityPreview(): Promise<void> {
+      try {
+        const resolvedSource = await resolveExplorerVideoPreviewSource(videoPath);
+        if (cancelled || loadRequestTokenRef.current !== requestToken) {
+          return;
+        }
+        setCompatibilityPreviewSource(resolvedSource);
+        setCompatibilityPreviewUrl(buildFilePreviewUrl(resolvedSource.sourcePath));
+        setCompatibilityPreviewStatus('loading');
+        setCompatibilityPreviewError(null);
+      } catch (error) {
+        if (cancelled || loadRequestTokenRef.current !== requestToken) {
+          return;
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        console.error('ExplorerVideoEditor: failed to resolve compatibility preview source', {
+          videoPath,
+          error,
+        });
+        if (videoSource) {
+          setCompatibilityPreviewSource({
+            sourcePath: videoPath,
+            sourceKind: 'direct',
+            mimeType: videoMimeType,
+            generatedFromPath: null,
+          });
+          setCompatibilityPreviewUrl(videoSource);
+          setCompatibilityPreviewStatus('loading');
+          setCompatibilityPreviewError(
+            `Preview source resolution failed. Falling back to the provided asset URL. ${message}`,
+          );
+          return;
+        }
+        setCompatibilityPreviewStatus('error');
+        setCompatibilityPreviewError(message);
+      }
+    }
+
     void loadNativeVideoSource();
+    void resolveCompatibilityPreview();
 
     return () => {
       cancelled = true;
     };
-  }, [videoPath]);
+  }, [videoMimeType, videoPath, videoSource]);
+
+  async function requestPreviewProxy(reason: string): Promise<void> {
+    if (
+      previewProxyRequestedRef.current
+      || compatibilityPreviewSource?.sourceKind === 'proxy'
+    ) {
+      return;
+    }
+    const requestToken = loadRequestTokenRef.current;
+    previewProxyRequestedRef.current = true;
+    setCompatibilityPreviewStatus('loading');
+    try {
+      console.warn('ExplorerVideoEditor: falling back to FFmpeg preview proxy', {
+        videoPath,
+        reason,
+        sourceKind: compatibilityPreviewSource?.sourceKind ?? 'unknown',
+      });
+      const proxySource = await createExplorerVideoPreviewProxy(videoPath);
+      if (loadRequestTokenRef.current !== requestToken) {
+        return;
+      }
+      setCompatibilityPreviewSource(proxySource);
+      setCompatibilityPreviewUrl(buildFilePreviewUrl(proxySource.sourcePath));
+      setCompatibilityPreviewStatus('loading');
+      setCompatibilityPreviewError(null);
+    } catch (error) {
+      if (loadRequestTokenRef.current !== requestToken) {
+        return;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('ExplorerVideoEditor: failed to create FFmpeg preview proxy', {
+        videoPath,
+        reason,
+        error,
+      });
+      setCompatibilityPreviewStatus('error');
+      setCompatibilityPreviewError(message);
+    }
+  }
+
+  useEffect(() => {
+    const previewVideo = previewVideoRef.current;
+    if (!previewVideo || compatibilityPreviewStatus !== 'ready') {
+      return;
+    }
+
+    const targetTime = clamp(currentTime, 0, duration || 0);
+    if (
+      Number.isFinite(previewVideo.currentTime)
+      && Math.abs(previewVideo.currentTime - targetTime) > (isPlaying ? 0.24 : 0.05)
+    ) {
+      try {
+        previewVideo.currentTime = targetTime;
+      } catch (error) {
+        console.error('ExplorerVideoEditor: failed to sync compatibility preview time', {
+          videoPath,
+          targetTime,
+          error,
+        });
+      }
+    }
+
+    if (isPlaying) {
+      const playPromise = previewVideo.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        void playPromise.catch((error) => {
+          console.error('ExplorerVideoEditor: compatibility preview could not start', {
+            videoPath,
+            sourceKind: compatibilityPreviewSource?.sourceKind ?? 'unknown',
+            error,
+          });
+          void requestPreviewProxy('playback-start-failed');
+        });
+      }
+      return;
+    }
+
+    previewVideo.pause();
+  }, [
+    compatibilityPreviewSource?.sourceKind,
+    compatibilityPreviewStatus,
+    currentTime,
+    duration,
+    isPlaying,
+    videoPath,
+  ]);
+
+  useEffect(() => {
+    if (playbackError || snapshot.engineError) {
+      return;
+    }
+    if (snapshot.isLoading) {
+      setStatusMessage('Generating native preview frames…');
+      return;
+    }
+    if (!backendStreamReady) {
+      setStatusMessage('Preparing native video engine…');
+      return;
+    }
+    if (compatibilityPreviewStatus === 'loading') {
+      setStatusMessage('Native engine ready. Waiting for preview surface metadata…');
+      return;
+    }
+    if (compatibilityPreviewStatus === 'ready') {
+      setStatusMessage(
+        compatibilityPreviewSource?.sourceKind === 'proxy'
+          ? 'Preview ready via FFmpeg proxy.'
+          : 'Native preview ready.',
+      );
+      return;
+    }
+    if (framePreviewLoaded) {
+      setStatusMessage('Native frame preview ready.');
+      return;
+    }
+    if (compatibilityPreviewError) {
+      setStatusMessage('Compatibility preview failed. Falling back to frame rendering.');
+    }
+  }, [
+    backendStreamReady,
+    compatibilityPreviewError,
+    compatibilityPreviewSource?.sourceKind,
+    compatibilityPreviewStatus,
+    framePreviewLoaded,
+    playbackError,
+    snapshot.engineError,
+    snapshot.isLoading,
+  ]);
 
   async function applyLoopRegion(
     nextTrimStart: number,
@@ -403,6 +613,12 @@ export function ExplorerVideoEditor({
   const transportLabel = snapshot.audioTransportReady
     ? 'Native Preview + Audio'
     : 'Native Preview';
+  const previewNoticeMessage =
+    compatibilityPreviewSource?.sourceKind === 'proxy'
+      ? 'FFmpeg compatibility proxy is active for the webview preview surface.'
+      : compatibilityPreviewError && framePreviewLoaded
+        ? compatibilityPreviewError
+        : null;
   const playbackStatusMessage =
     playbackError ??
     snapshot.engineError ??

@@ -65,6 +65,28 @@ describe('ExplorerSideRail', () => {
     ]));
   }, 20000);
 
+  it('omits the redundant default rail brand label', () => {
+    render(
+      <ExplorerSideRail
+        accent="#7c3aed"
+        brandLabel="Explorer"
+        chromeLayoutId="default"
+        sidebarWidth={240}
+        currentPath="M:\\OverlayTerm"
+        drives={[]}
+        drivesLoading={false}
+        showHiddenFiles={false}
+        isCompactDock={false}
+        onNavigate={vi.fn()}
+        onGoHome={vi.fn()}
+        onBookmarkCreated={vi.fn()}
+        resolveDroppedSources={() => []}
+      />,
+    );
+
+    expect(screen.queryByText('Explorer')).not.toBeInTheDocument();
+  });
+
   it('keeps bookmark row management controls hidden until manage mode is enabled', () => {
     const timestamp = Date.now();
     useExplorerStore.getState().replaceRail({
