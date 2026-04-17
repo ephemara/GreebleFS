@@ -1,5 +1,20 @@
 # GreebleFS Memory
 
+## 2026-04-17 — Explorer Plugin Context Menu Render Guard
+
+- The explorer and settings context-menu composer no longer trust plugin-contributed context-menu items blindly during render. Malformed plugin data now gets dropped or normalized instead of crashing `FileExplorer.tsx` inside the plugin-context-menu `useMemo`.
+- Durable implementation shape:
+  - `src/config/explorerContextMenu.ts` now sanitizes plugin context-menu contributions before converting them into explorer catalog items.
+  - Invalid execution payloads are rejected early, malformed `contexts` / `appliesTo` / `group` / `iconName` values fall back to safe defaults, and non-string backend args or panel payload values are filtered out.
+  - `src/components/FileExplorer.tsx` now hardens plugin-backend failure handling so a malformed backend result cannot throw on `result.stderr.trim()` when `stderr` is missing or non-string.
+  - `src/test/explorerContextMenu.test.ts` covers the render-safety regression directly.
+- Durable product note:
+  - Plugin-contributed explorer menu items are an external boundary. Future work should keep validation at the config/runtime seam instead of assuming plugin manifests or plugin runtime data always match the ideal TS shape.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerContextMenu.test.ts`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx`
+  - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "lets the explorer context menu composer disable and reorder plugin menu items"`
+
 ## 2026-04-16 — Native Explorer Thumbnails + Video Hover Scrub
 
 - The explorer now has a Rust-owned rich-thumbnail lane instead of an image-only grid preview hack. Generated thumbnails can replace file icons when the operator enables explorer thumbnails.

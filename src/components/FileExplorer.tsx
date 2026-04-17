@@ -5972,7 +5972,9 @@ export function FileExplorer({
         )
         .then(unwrapTauriResult);
       if (result.status !== 0) {
-        throw new Error(result.stderr.trim() || `Plugin backend exited with status ${result.status}`);
+        const stderr = typeof result.stderr === 'string' ? result.stderr.trim() : '';
+        const stdout = typeof result.stdout === 'string' ? result.stdout.trim() : '';
+        throw new Error(stderr || stdout || `Plugin backend exited with status ${result.status}`);
       }
       return;
     }

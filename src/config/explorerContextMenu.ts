@@ -94,6 +94,81 @@ const EXPLORER_CONTEXT_MENU_GROUPS: ExplorerContextMenuItemGroup[] = [
   'danger',
 ];
 
+function sanitizeContextMenuString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
+function sanitizeContextMenuContexts(value: unknown): ExplorerContextMenuTarget[] {
+  if (!Array.isArray(value)) {
+    return ['entry'];
+  }
+
+  const contexts = value.filter(
+    (context): context is ExplorerContextMenuTarget => context === 'entry' || context === 'background',
+  );
+  return contexts.length > 0 ? contexts : ['entry'];
+}
+
+function sanitizeContextMenuAppliesTo(value: unknown): 'any' | 'file' | 'directory' {
+  return value === 'file' || value === 'directory' ? value : 'any';
+}
+
+function sanitizeContextMenuExecution(
+  execution: unknown,
+): OverlayPluginContextMenuContribution['execution'] | null {
+  if (!execution || typeof execution !== 'object') {
+    return null;
+  }
+
+  const record = execution as Record<string, unknown>;
+  if (record.kind === 'terminal-template') {
+    const command = sanitizeContextMenuString(record.command);
+    if (!command) {
+      return null;
+    }
+    return {
+      kind: 'terminal-template',
+      command,
+      runOnSelect: record.runOnSelect === true,
+    };
+  }
+
+  if (record.kind === 'plugin-backend') {
+    const entry = sanitizeContextMenuString(record.entry);
+    if (!entry) {
+      return null;
+    }
+    return {
+      kind: 'plugin-backend',
+      entry,
+      args: Array.isArray(record.args)
+        ? record.args.filter((argument): argument is string => typeof argument === 'string')
+        : [],
+    };
+  }
+
+  if (record.kind === 'panel-request') {
+    const panelId = sanitizeContextMenuString(record.panelId);
+    if (!panelId) {
+      return null;
+    }
+    const payloadEntries = record.payload && typeof record.payload === 'object'
+      ? Object.entries(record.payload as Record<string, unknown>)
+        .filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+      : [];
+    const payload = record.payload && typeof record.payload === 'object'
+      ? Object.fromEntries(payloadEntries) as Record<string, string>
+      : {};
+    return {
+      kind: 'panel-request',
+      panelId,
+      payload,
+    };
+  }
+
+  return null;
+}
+
 export const BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS: ExplorerBuiltInContextMenuCatalogItem[] = [
   {
     id: 'built-in.open',
@@ -500,22 +575,45 @@ export function createLegacyExplorerActionContextMenuContributions(
 }
 
 export function normalizePluginContextMenuContributions(
-  contributions: OverlayPluginContextMenuContribution[],
+  contributions: ReadonlyArray<OverlayPluginContextMenuContribution | null | undefined>,
 ): ExplorerResolvedPluginContextMenuContribution[] {
-  return contributions.map((contribution, index) => ({
-    id: contribution.id,
-    pluginId: contribution.pluginId,
-    pluginName: contribution.pluginName,
-    title: contribution.title,
-    description: contribution.description,
-    contexts: contribution.contexts,
-    appliesTo: contribution.appliesTo,
-    group: EXPLORER_CONTEXT_MENU_GROUPS.includes(contribution.group as ExplorerContextMenuItemGroup)
+  return contributions.flatMap((contribution, index) => {
+    if (!contribution || typeof contribution !== 'object') {
+      return [];
+    }
+
+    const execution = sanitizeContextMenuExecution(contribution.execution);
+    if (!execution) {
+      return [];
+    }
+
+    const pluginId = sanitizeContextMenuString(contribution.pluginId, `plugin-${index + 1}`);
+    const pluginName = sanitizeContextMenuString(contribution.pluginName, pluginId);
+    const id = sanitizeContextMenuString(contribution.id, `${pluginId}.context-menu.${index + 1}`);
+    const title = sanitizeContextMenuString(contribution.title, pluginName);
+    const group = EXPLORER_CONTEXT_MENU_GROUPS.includes(contribution.group as ExplorerContextMenuItemGroup)
       ? contribution.group as ExplorerContextMenuItemGroup
-      : 'plugin',
-    defaultOrder: contribution.defaultOrder ?? (700 + index * 10),
-    source: 'plugin',
-    iconName: contribution.iconName ?? 'Puzzle',
-    execution: contribution.execution,
-  }));
+      : 'plugin';
+    const defaultOrder = typeof contribution.defaultOrder === 'number' && Number.isFinite(contribution.defaultOrder)
+      ? contribution.defaultOrder
+      : (700 + index * 10);
+    const description = typeof contribution.description === 'string' && contribution.description.trim()
+      ? contribution.description.trim()
+      : undefined;
+
+    return [{
+      id,
+      pluginId,
+      pluginName,
+      title,
+      description,
+      contexts: sanitizeContextMenuContexts(contribution.contexts),
+      appliesTo: sanitizeContextMenuAppliesTo(contribution.appliesTo),
+      group,
+      defaultOrder,
+      source: 'plugin' as const,
+      iconName: sanitizeContextMenuString(contribution.iconName, 'Puzzle'),
+      execution,
+    }];
+  });
 }
