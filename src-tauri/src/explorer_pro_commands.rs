@@ -5,7 +5,10 @@ use crate::fs_commands::{
     set_recent_trash_task, update_manual_explorer_task, ExplorerTaskCancelContext,
     ExplorerTaskKind, ExplorerTaskRegistration, ExplorerTaskRetryContext, FileEntry,
 };
+use chrono::Local;
+use md5::Context as Md5Context;
 use serde::{Deserialize, Serialize};
+use regex::Regex;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -117,6 +120,37 @@ pub struct ExplorerTrashRestoreResult {
 pub struct FsBatchRenameItem {
     pub source_path: String,
     pub destination_path: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum FsBatchRenameMode {
+    Literal,
+    Regex,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FsBatchRenameRecipe {
+    pub source_paths: Vec<String>,
+    pub search: String,
+    pub replacement: String,
+    pub prefix: String,
+    pub suffix: String,
+    pub mode: FsBatchRenameMode,
+    pub start_index: Option<u64>,
+    pub index_padding: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FsBatchRenamePreviewRow {
+    pub source_path: String,
+    pub current_name: String,
+    pub next_name: String,
+    pub destination_path: String,
+    pub collision: bool,
+    pub validation_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -441,6 +475,280 @@ fn unique_path_in_directory(directory: &Path, preferred_name: &str) -> PathBuf {
     directory.join(format!("{}-{}", Uuid::new_v4(), preferred_name))
 }
 
+fn batch_rename_split_name(name: &str) -> (String, String) {
+    let path = Path::new(name);
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or(name)
+        .to_string();
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_string();
+    (stem, extension)
+}
+
+fn batch_rename_parent_label(path: &Path) -> String {
+    path.parent()
+        .and_then(|parent| parent.file_name())
+        .and_then(|name| name.to_str())
+        .unwrap_or("")
+        .to_string()
+}
+
+fn batch_rename_token_date() -> String {
+    Local::now().format("%Y-%m-%d").to_string()
+}
+
+fn batch_rename_expand_tokens(
+    template: &str,
+    index: u64,
+    parent: &str,
+    padding: u32,
+) -> String {
+    let index_text = if padding == 0 {
+        index.to_string()
+    } else {
+        format!("{index:0width$}", width = padding as usize)
+    };
+    let date_text = batch_rename_token_date();
+
+    let mut rendered = template.replace("{{date}}", &date_text);
+    rendered = rendered.replace("{{parent}}", parent);
+    rendered = rendered.replace("{{index}}", &index_text);
+    rendered
+}
+
+fn batch_rename_expand_capture_template(
+    template: &str,
+    captures: &regex::Captures<'_>,
+) -> String {
+    let mut rendered = String::with_capacity(template.len());
+    let mut chars = template.chars().peekable();
+
+    while let Some(character) = chars.next() {
+        if character != '$' {
+            rendered.push(character);
+            continue;
+        }
+
+        match chars.peek().copied() {
+            Some('$') => {
+                rendered.push('$');
+                chars.next();
+            }
+            Some('{') => {
+                chars.next();
+                let mut name = String::new();
+                while let Some(next) = chars.next() {
+                    if next == '}' {
+                        break;
+                    }
+                    name.push(next);
+                }
+                if !name.is_empty() {
+                    if let Some(value) = captures.name(&name) {
+                        rendered.push_str(value.as_str());
+                    }
+                }
+            }
+            Some(next) if next.is_ascii_digit() => {
+                let mut digits = String::new();
+                while let Some(next) = chars.peek().copied() {
+                    if next.is_ascii_digit() {
+                        digits.push(next);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                if let Ok(index) = digits.parse::<usize>() {
+                    if let Some(value) = captures.get(index) {
+                        rendered.push_str(value.as_str());
+                    }
+                }
+            }
+            _ => rendered.push('$'),
+        }
+    }
+
+    rendered
+}
+
+fn batch_rename_apply_pattern(
+    stem: &str,
+    recipe: &FsBatchRenameRecipe,
+) -> Result<String, String> {
+    let search = recipe.search.clone();
+    if search.trim().is_empty() {
+        return Ok(stem.to_string());
+    }
+
+    let compiled = match recipe.mode {
+        FsBatchRenameMode::Literal => {
+            Regex::new(&regex::escape(&search)).map_err(|error| {
+                format!("Failed to prepare literal rename matcher: {error}")
+            })?
+        }
+        FsBatchRenameMode::Regex => Regex::new(&search)
+            .map_err(|error| format!("Invalid rename regex: {error}"))?,
+    };
+
+    let replaced = match recipe.mode {
+        FsBatchRenameMode::Literal => compiled
+            .replace_all(stem, |_captures: &regex::Captures<'_>| recipe.replacement.clone())
+            .to_string(),
+        FsBatchRenameMode::Regex => compiled
+            .replace_all(stem, |captures: &regex::Captures<'_>| {
+                batch_rename_expand_capture_template(&recipe.replacement, captures)
+            })
+            .to_string(),
+    };
+
+    Ok(replaced)
+}
+
+fn batch_rename_preview_rows(
+    recipe: &FsBatchRenameRecipe,
+) -> Result<Vec<FsBatchRenamePreviewRow>, String> {
+    if recipe.source_paths.is_empty() {
+        return Err("Batch rename request was empty.".to_string());
+    }
+
+    let start_index = recipe.start_index.unwrap_or(1);
+    let index_padding = recipe.index_padding.unwrap_or(0);
+    let source_set = recipe.source_paths.iter().cloned().collect::<HashSet<_>>();
+    let mut rows = Vec::with_capacity(recipe.source_paths.len());
+
+    for (offset, source_path) in recipe.source_paths.iter().enumerate() {
+        let source = PathBuf::from(source_path);
+        let current_name = source
+            .file_name()
+            .map(|value| value.to_string_lossy().to_string())
+            .unwrap_or_else(|| source_path.clone());
+        let mut validation_error = None;
+
+        if source_path.trim().is_empty() {
+            validation_error = Some("Source path cannot be empty.".to_string());
+        } else if !source.exists() {
+            validation_error = Some(format!("Source path does not exist: {source_path}"));
+        }
+
+        let parent = source.parent().map(|path| path.to_path_buf());
+        let parent_label = batch_rename_parent_label(&source);
+        let (stem, extension) = batch_rename_split_name(&current_name);
+        let applied_stem = if validation_error.is_none() {
+            match batch_rename_apply_pattern(&stem, recipe) {
+                Ok(rendered) => {
+                    let rename_index = start_index + offset as u64;
+                    let expanded_prefix = batch_rename_expand_tokens(
+                        &recipe.prefix,
+                        rename_index,
+                        &parent_label,
+                        index_padding,
+                    );
+                    let expanded_stem = batch_rename_expand_tokens(
+                        &rendered,
+                        rename_index,
+                        &parent_label,
+                        index_padding,
+                    );
+                    let expanded_suffix = batch_rename_expand_tokens(
+                        &recipe.suffix,
+                        rename_index,
+                        &parent_label,
+                        index_padding,
+                    );
+                    format!("{expanded_prefix}{expanded_stem}{expanded_suffix}")
+                }
+                Err(error) => {
+                    validation_error = Some(error);
+                    stem.clone()
+                }
+            }
+        } else {
+            stem.clone()
+        };
+
+        let next_name = if extension.is_empty() {
+            applied_stem.clone()
+        } else {
+            format!("{applied_stem}.{extension}")
+        };
+
+        if next_name.trim().is_empty() {
+            validation_error.get_or_insert_with(|| {
+                "Batch rename produced an empty file name.".to_string()
+            });
+        }
+
+        if next_name.contains('/') || next_name.contains('\\') {
+            validation_error.get_or_insert_with(|| {
+                format!("Batch rename produced an invalid file name: {next_name}")
+            });
+        }
+
+        let destination_path = parent
+            .as_ref()
+            .map(|directory| directory.join(&next_name))
+            .unwrap_or_else(|| PathBuf::from(&next_name));
+        rows.push(FsBatchRenamePreviewRow {
+            source_path: source_path.clone(),
+            current_name,
+            next_name,
+            destination_path: destination_path.to_string_lossy().to_string(),
+            collision: false,
+            validation_error,
+        });
+    }
+
+    let mut destination_counts = HashMap::<String, usize>::new();
+    for row in &rows {
+        *destination_counts
+            .entry(row.destination_path.clone())
+            .or_insert(0) += 1;
+    }
+
+    for row in rows.iter_mut() {
+        let destination_exists = Path::new(&row.destination_path).exists();
+        let destination_is_source = source_set.contains(&row.destination_path);
+        let source_equals_destination = row.source_path == row.destination_path;
+        let is_duplicate_destination =
+            destination_counts.get(&row.destination_path).copied().unwrap_or(0) > 1;
+
+        if source_equals_destination {
+            row.collision = true;
+            row.validation_error.get_or_insert_with(|| {
+                format!(
+                    "Source and destination cannot be identical: {}",
+                    row.source_path
+                )
+            });
+        }
+
+        if is_duplicate_destination {
+            row.collision = true;
+            row.validation_error.get_or_insert_with(|| {
+                format!(
+                    "Duplicate destination path in batch rename: {}",
+                    row.destination_path
+                )
+            });
+        }
+
+        if destination_exists && !destination_is_source && !source_equals_destination {
+            row.collision = true;
+            row.validation_error.get_or_insert_with(|| {
+                format!("Destination already exists: {}", row.destination_path)
+            });
+        }
+    }
+
+    Ok(rows)
+}
+
 fn copy_path_recursive(source: &Path, destination: &Path) -> Result<(), String> {
     let metadata = fs::symlink_metadata(source)
         .map_err(|error| format!("Failed to inspect path {}: {error}", source.display()))?;
@@ -590,6 +898,29 @@ fn compute_file_hash(path: &Path) -> Result<String, String> {
         hasher.update(&buffer[..read_count]);
     }
     Ok(format!("{:x}", hasher.finalize()))
+}
+
+pub(crate) fn compute_file_checksums(path: &Path) -> Result<(String, String), String> {
+    let mut file = fs::File::open(path)
+        .map_err(|error| format!("Failed to open {} for hashing: {error}", path.display()))?;
+    let mut buffer = [0_u8; 64 * 1024];
+    let mut md5_hasher = Md5Context::new();
+    let mut sha256_hasher = Sha256::new();
+    loop {
+        let read_count = file.read(&mut buffer).map_err(|error| {
+            format!("Failed to read {} during hashing: {error}", path.display())
+        })?;
+        if read_count == 0 {
+            break;
+        }
+        let chunk = &buffer[..read_count];
+        md5_hasher.consume(chunk);
+        sha256_hasher.update(chunk);
+    }
+    Ok((
+        format!("{:x}", md5_hasher.compute()),
+        format!("{:x}", sha256_hasher.finalize()),
+    ))
 }
 
 fn to_file_entry(path: &Path) -> Result<FileEntry, String> {
@@ -1237,6 +1568,54 @@ pub async fn fs_restore_recent_trash_action(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn fs_batch_rename_preview(
+    recipe: FsBatchRenameRecipe,
+) -> Result<Vec<FsBatchRenamePreviewRow>, String> {
+    batch_rename_preview_rows(&recipe)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_batch_rename_apply(
+    recipe: FsBatchRenameRecipe,
+) -> Result<Vec<FsBatchRenameResult>, String> {
+    let preview = batch_rename_preview_rows(&recipe)?;
+    if let Some(error) = preview
+        .iter()
+        .find_map(|row| row.validation_error.clone())
+    {
+        return Err(error);
+    }
+    if preview.iter().any(|row| row.collision) {
+        return Err("Batch rename contains conflicting destinations.".to_string());
+    }
+
+    let items = preview
+        .iter()
+        .filter(|row| row.source_path != row.destination_path)
+        .map(|row| FsBatchRenameItem {
+            source_path: row.source_path.clone(),
+            destination_path: row.destination_path.clone(),
+        })
+        .collect::<Vec<_>>();
+
+    if items.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let task_id = run_batch_rename_task(items.clone()).await?;
+    let _ = task_id;
+    Ok(items
+        .into_iter()
+        .map(|item| FsBatchRenameResult {
+            source_path: item.source_path,
+            destination_path: item.destination_path,
+        })
+        .collect())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn fs_batch_rename(
     items: Vec<FsBatchRenameItem>,
 ) -> Result<Vec<FsBatchRenameResult>, String> {
@@ -1287,7 +1666,10 @@ pub async fn fs_find_duplicates_cancel(scan_id: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ensure_batch_rename_is_valid, ExplorerSavedSearchSaveRequest, FsBatchRenameItem};
+    use super::{
+        batch_rename_preview_rows, ensure_batch_rename_is_valid, ExplorerSavedSearchSaveRequest,
+        FsBatchRenameItem, FsBatchRenameMode, FsBatchRenameRecipe, fs_batch_rename_apply,
+    };
     use std::fs;
     use tempfile::tempdir;
 
@@ -1325,5 +1707,81 @@ mod tests {
         };
 
         assert_eq!(request.tag_filter_ids.len(), 2);
+    }
+
+    #[test]
+    fn batch_rename_preview_supports_regex_tokens_and_extension_preservation() {
+        let temp = tempdir().expect("tempdir");
+        let source = temp.path().join("ship_42.png");
+        fs::write(&source, "ship").expect("write ship");
+
+        let rows = batch_rename_preview_rows(&FsBatchRenameRecipe {
+            source_paths: vec![source.to_string_lossy().to_string()],
+            search: "^(?<name>[a-z]+)_(\\d+)$".to_string(),
+            replacement: "${name}-{{parent}}-$2-{{index}}".to_string(),
+            mode: FsBatchRenameMode::Regex,
+            start_index: Some(3),
+            index_padding: Some(2),
+        })
+        .expect("preview rows");
+
+        let row = rows.first().expect("row");
+        assert!(row.next_name.ends_with("-03.png"));
+        assert!(row.next_name.contains("ship-"));
+        assert!(row.validation_error.is_none());
+    }
+
+    #[test]
+    fn batch_rename_preview_rejects_invalid_regex() {
+        let temp = tempdir().expect("tempdir");
+        let source = temp.path().join("alpha.txt");
+        fs::write(&source, "alpha").expect("write alpha");
+
+        let rows = batch_rename_preview_rows(&FsBatchRenameRecipe {
+            source_paths: vec![source.to_string_lossy().to_string()],
+            search: "(".to_string(),
+            replacement: "$1".to_string(),
+            mode: FsBatchRenameMode::Regex,
+            start_index: Some(1),
+            index_padding: Some(0),
+        })
+        .expect("preview rows");
+
+        assert!(
+            rows[0]
+                .validation_error
+                .as_deref()
+                .unwrap()
+                .contains("Invalid rename regex")
+        );
+    }
+
+    #[tokio::test]
+    async fn batch_rename_apply_uses_the_preview_evaluator() {
+        let temp = tempdir().expect("tempdir");
+        let source = temp.path().join("alpha.txt");
+        fs::write(&source, "alpha").expect("write alpha");
+
+        let results = fs_batch_rename_apply(FsBatchRenameRecipe {
+            source_paths: vec![source.to_string_lossy().to_string()],
+            search: String::new(),
+            replacement: "{{parent}}-{{index}}".to_string(),
+            mode: FsBatchRenameMode::Literal,
+            start_index: Some(5),
+            index_padding: Some(2),
+        })
+        .await
+        .expect("batch rename apply");
+
+        assert_eq!(results.len(), 1);
+        let renamed = temp.path().join(format!(
+            "{}-05.txt",
+            temp.path()
+                .file_name()
+                .expect("tempdir file name")
+                .to_string_lossy()
+        ));
+        assert!(renamed.exists(), "renamed file should exist");
+        assert!(!source.exists(), "source should be moved");
     }
 }

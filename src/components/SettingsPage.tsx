@@ -56,6 +56,7 @@ import {
   explorerViewModes,
   getExplorerViewModeDefinition,
 } from '../config/explorerViewModes';
+import { clampVideoHoverScrubFrameCount } from '../config/explorerThumbnails';
 import {
   BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS,
   buildExplorerContextMenuOverrideMap,
@@ -1913,7 +1914,7 @@ export function SettingsPage({
       key: 'explorer',
       label: 'Explorer',
       subtitle: 'Startup path, file visibility, and folder rules.',
-      summary: `${getExplorerViewModeDefinition(settings.explorer.viewMode).label} · ${settings.explorer.folderClickMode === 'single' ? 'Single-click folders' : 'Double-click folders'} · ${settings.explorer.folderIconRules.length} icon rules`,
+      summary: `${getExplorerViewModeDefinition(settings.explorer.viewMode).label} · ${settings.explorer.folderClickMode === 'single' ? 'Single-click folders' : 'Double-click folders'} · ${settings.explorer.thumbnails.enabled ? 'Rich thumbnails' : 'Icons only'}`,
       detail: 'Shape the file browser around your machine, including content-browser layout modes, folder activation behavior, and icon rules.',
       icon: <FolderOpen size={14} />,
     },
@@ -3857,6 +3858,149 @@ export function SettingsPage({
                       </button>
                     );
                   })}
+                </div>
+              </div>
+
+              <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Thumbnail Rendering</div>
+                    <p className="mt-1 text-[11px] opacity-40">
+                      Generated thumbnails replace file icons with native previews for images, code, shaders, audio waveforms, and video posters. Video hover-scrub uses a cached frame montage instead of live playback.
+                    </p>
+                  </div>
+                  <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                    {settings.explorer.thumbnails.enabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                  <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                    <span>Enable Generated Thumbnails</span>
+                    <input
+                      type="checkbox"
+                      checked={settings.explorer.thumbnails.enabled}
+                      onChange={event => updateExplorer({
+                        thumbnails: {
+                          ...settings.explorer.thumbnails,
+                          enabled: event.target.checked,
+                        },
+                      })}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
+                    <span>Video Hover Scrub</span>
+                    <input
+                      type="checkbox"
+                      checked={settings.explorer.thumbnails.enableVideoHoverScrub}
+                      disabled={!settings.explorer.thumbnails.enabled || !settings.explorer.thumbnails.includeVideo}
+                      onChange={event => updateExplorer({
+                        thumbnails: {
+                          ...settings.explorer.thumbnails,
+                          enableVideoHoverScrub: event.target.checked,
+                        },
+                      })}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
+                    <span>Image Files</span>
+                    <input
+                      type="checkbox"
+                      checked={settings.explorer.thumbnails.includeImages}
+                      disabled={!settings.explorer.thumbnails.enabled}
+                      onChange={event => updateExplorer({
+                        thumbnails: {
+                          ...settings.explorer.thumbnails,
+                          includeImages: event.target.checked,
+                        },
+                      })}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
+                    <span>Code Files</span>
+                    <input
+                      type="checkbox"
+                      checked={settings.explorer.thumbnails.includeCode}
+                      disabled={!settings.explorer.thumbnails.enabled}
+                      onChange={event => updateExplorer({
+                        thumbnails: {
+                          ...settings.explorer.thumbnails,
+                          includeCode: event.target.checked,
+                        },
+                      })}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
+                    <span>Shader Files</span>
+                    <input
+                      type="checkbox"
+                      checked={settings.explorer.thumbnails.includeShaders}
+                      disabled={!settings.explorer.thumbnails.enabled}
+                      onChange={event => updateExplorer({
+                        thumbnails: {
+                          ...settings.explorer.thumbnails,
+                          includeShaders: event.target.checked,
+                        },
+                      })}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
+                    <span>Audio Waveforms</span>
+                    <input
+                      type="checkbox"
+                      checked={settings.explorer.thumbnails.includeAudio}
+                      disabled={!settings.explorer.thumbnails.enabled}
+                      onChange={event => updateExplorer({
+                        thumbnails: {
+                          ...settings.explorer.thumbnails,
+                          includeAudio: event.target.checked,
+                        },
+                      })}
+                    />
+                  </label>
+                  <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, opacity: settings.explorer.thumbnails.enabled ? 1 : 0.55 }}>
+                    <span>Video Posters</span>
+                    <input
+                      type="checkbox"
+                      checked={settings.explorer.thumbnails.includeVideo}
+                      disabled={!settings.explorer.thumbnails.enabled}
+                      onChange={event => updateExplorer({
+                        thumbnails: {
+                          ...settings.explorer.thumbnails,
+                          includeVideo: event.target.checked,
+                        },
+                      })}
+                    />
+                  </label>
+                </div>
+
+                <div className="mt-3 rounded border px-3 py-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)', opacity: settings.explorer.thumbnails.enabled && settings.explorer.thumbnails.enableVideoHoverScrub && settings.explorer.thumbnails.includeVideo ? 1 : 0.55 }}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Hover Montage Frames</div>
+                      <p className="mt-1 text-[11px] opacity-40">
+                        Cached frame count for each video hover-scrub sequence.
+                      </p>
+                    </div>
+                    <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                      {settings.explorer.thumbnails.videoHoverScrubFrameCount} frames
+                    </span>
+                  </div>
+                  <input
+                    className="mt-3 w-full"
+                    type="range"
+                    min={1}
+                    max={10}
+                    step={1}
+                    value={settings.explorer.thumbnails.videoHoverScrubFrameCount}
+                    disabled={!settings.explorer.thumbnails.enabled || !settings.explorer.thumbnails.enableVideoHoverScrub || !settings.explorer.thumbnails.includeVideo}
+                    onChange={event => updateExplorer({
+                      thumbnails: {
+                        ...settings.explorer.thumbnails,
+                        videoHoverScrubFrameCount: clampVideoHoverScrubFrameCount(Number(event.target.value)),
+                      },
+                    })}
+                  />
                 </div>
               </div>
 

@@ -10,6 +10,7 @@ use crate::entry_size_cache::{
     normalize_cache_path, upsert_entry_size_cache, PersistedEntrySize,
 };
 use crate::explorer_pro_commands::FsBatchRenameItem;
+use md5::Context as Md5Context;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -20,6 +21,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use tauri_specta::Event;
 use uuid::Uuid;
+use sha2::{Digest, Sha256};
 use yazi_fs::{
     cha::{Cha, ChaType},
     provider::{local::Local, DirReader, FileHolder, Provider},
@@ -72,6 +74,68 @@ pub struct EntryStorageInfo {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FsChecksumEntryInfo {
+    pub path: String,
+    pub bytes: u64,
+    pub is_dir: bool,
+    pub md5: Option<String>,
+    pub sha256: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FsPermissionInfo {
+    pub readonly: bool,
+    pub display: String,
+    pub unix_mode: Option<u32>,
+    pub unix_mode_octal: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FsItemPropertiesInfo {
+    pub path: String,
+    pub name: String,
+    pub is_dir: bool,
+    pub is_symlink: bool,
+    pub bytes: u64,
+    pub modified_at_ms: Option<u64>,
+    pub created_at_ms: Option<u64>,
+    pub accessed_at_ms: Option<u64>,
+    pub permissions: FsPermissionInfo,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FsJumpFilterEntry {
+    pub path: String,
+    pub name: String,
+    pub is_dir: bool,
+    pub sort_order: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FsJumpFilterRequest {
+    pub query: String,
+    pub entries: Vec<FsJumpFilterEntry>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FsJumpFilterMatch {
+    pub path: String,
+    pub name: String,
+    pub is_dir: bool,
+    pub sort_order: u64,
+    pub score: i64,
+    pub matched_indices: Vec<usize>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(tag = "kind", content = "value", rename_all = "camelCase")]
 pub enum FsWriteFileContent {
     Text(String),
@@ -95,6 +159,8 @@ pub enum ExplorerTaskKind {
     BatchRename,
     DuplicateScan,
     ExtractArchive,
+    RecursiveSize,
+    Checksum,
     AudioTransform,
     AudioBatchProcess,
 }
@@ -169,6 +235,13 @@ pub(crate) enum ExplorerTaskRetryContext {
     },
     DuplicateScan {
         root_path: String,
+    },
+    RecursiveSize {
+        paths: Vec<String>,
+        force_refresh: bool,
+    },
+    Checksum {
+        paths: Vec<String>,
     },
     ArchiveExtraction {
         request: FsArchiveExtractionRequest,
@@ -745,6 +818,304 @@ pub(crate) fn cancel_manual_explorer_task(
         Some("Cancelled".to_string()),
         None,
     )
+}
+
+fn recursive_size_task_detail(current: usize, total: usize) -> String {
+    if total == 0 {
+        return "Calculating recursive sizes".to_string();
+    }
+    format!(
+        "Calculated {} of {} recursive size item{}",
+        current,
+        total,
+        if total == 1 { "" } else { "s" }
+    )
+}
+
+fn checksum_task_detail(current: usize, total: usize) -> String {
+    if total == 0 {
+        return "Calculating checksums".to_string();
+    }
+    format!(
+        "Calculated {} of {} checksum item{}",
+        current,
+        total,
+        if total == 1 { "" } else { "s" }
+    )
+}
+
+fn batch_recursive_size_task_registration(
+    paths: Vec<String>,
+    force_refresh: bool,
+) -> ExplorerTaskRegistration {
+    ExplorerTaskRegistration {
+        kind: ExplorerTaskKind::RecursiveSize,
+        title: format!(
+            "Calculate recursive size for {} item{}",
+            paths.len(),
+            if paths.len() == 1 { "" } else { "s" }
+        ),
+        detail: "Calculating recursive sizes".to_string(),
+        source_paths: paths.clone(),
+        destination_path: None,
+        retry_context: Some(ExplorerTaskRetryContext::RecursiveSize {
+            paths,
+            force_refresh,
+        }),
+        can_undo: false,
+    }
+}
+
+fn batch_checksum_task_registration(paths: Vec<String>) -> ExplorerTaskRegistration {
+    ExplorerTaskRegistration {
+        kind: ExplorerTaskKind::Checksum,
+        title: format!(
+            "Calculate checksums for {} item{}",
+            paths.len(),
+            if paths.len() == 1 { "" } else { "s" }
+        ),
+        detail: "Calculating checksums".to_string(),
+        source_paths: paths.clone(),
+        destination_path: None,
+        retry_context: Some(ExplorerTaskRetryContext::Checksum { paths }),
+        can_undo: false,
+    }
+}
+
+fn calculate_file_checksums(path: &Path) -> Result<FsChecksumEntryInfo, String> {
+    let metadata = fs::metadata(path)
+        .map_err(|error| format!("Failed to inspect {}: {error}", path.display()))?;
+    if metadata.is_dir() {
+        return Ok(FsChecksumEntryInfo {
+            path: path.to_string_lossy().to_string(),
+            bytes: 0,
+            is_dir: true,
+            md5: None,
+            sha256: None,
+            error: Some("Checksums are only supported for regular files.".to_string()),
+        });
+    }
+
+    let mut file = fs::File::open(path)
+        .map_err(|error| format!("Failed to open {}: {error}", path.display()))?;
+    let mut md5_hasher = Md5Context::new();
+    let mut sha256_hasher = Sha256::new();
+    let mut buffer = [0_u8; 128 * 1024];
+    let mut bytes = 0_u64;
+
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|error| format!("Failed to read {}: {error}", path.display()))?;
+        if read == 0 {
+            break;
+        }
+        bytes = bytes.saturating_add(read as u64);
+        md5_hasher.consume(&buffer[..read]);
+        sha256_hasher.update(&buffer[..read]);
+    }
+
+    Ok(FsChecksumEntryInfo {
+        path: path.to_string_lossy().to_string(),
+        bytes,
+        is_dir: false,
+        md5: Some(format!("{:x}", md5_hasher.compute())),
+        sha256: Some(format!("{:x}", sha256_hasher.finalize())),
+        error: None,
+    })
+}
+
+fn fuzzy_boundary_score(chars: &[char], index: usize) -> i64 {
+    if index == 0 {
+        return 16;
+    }
+    let previous = chars[index - 1];
+    let current = chars[index];
+    if matches!(previous, '/' | '\\' | '.' | '-' | '_' | ' ') {
+        14
+    } else if previous.is_lowercase() && current.is_uppercase() {
+        10
+    } else {
+        0
+    }
+}
+
+fn fuzzy_score_text(query: &str, haystack: &str) -> Option<(i64, Vec<usize>)> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Some((0, Vec::new()));
+    }
+
+    let lower_query = query.to_lowercase().chars().collect::<Vec<_>>();
+    let lower_haystack = haystack.to_lowercase().chars().collect::<Vec<_>>();
+    let haystack_chars = haystack.chars().collect::<Vec<_>>();
+
+    let mut matched_indices = Vec::with_capacity(lower_query.len());
+    let mut search_start = 0usize;
+    let mut score = 0i64;
+    let mut last_match = None;
+
+    for (query_index, query_char) in lower_query.iter().enumerate() {
+        let mut found = None;
+        for index in search_start..lower_haystack.len() {
+            if lower_haystack[index] == *query_char {
+                found = Some(index);
+                break;
+            }
+        }
+
+        let index = found?;
+        matched_indices.push(index);
+        score += 20;
+        score += fuzzy_boundary_score(&haystack_chars, index);
+
+        if let Some(previous) = last_match {
+            let gap = index.saturating_sub(previous + 1);
+            if gap == 0 {
+                score += 12;
+            } else {
+                score -= (gap as i64).min(10);
+            }
+        } else if query_index == 0 && index == 0 {
+            score += 20;
+        }
+
+        search_start = index + 1;
+        last_match = Some(index);
+    }
+
+    score -= (haystack_chars.len() as i64 / 6).min(20);
+    Some((score, matched_indices))
+}
+
+fn fuzzy_score_entry(query: &str, entry: &FsJumpFilterEntry) -> Option<(i64, Vec<usize>)> {
+    if let Some(name_match) = fuzzy_score_text(query, &entry.name) {
+        let path_bonus = fuzzy_score_text(query, &entry.path)
+            .as_ref()
+            .map(|(score, _)| *score)
+            .unwrap_or(0);
+        let mut score = name_match.0.saturating_mul(1_000) + path_bonus.saturating_mul(10);
+        if entry.is_dir {
+            score += 5;
+        }
+        Some((score, name_match.1))
+    } else if let Some(path_match) = fuzzy_score_text(query, &entry.path) {
+        let mut score = path_match.0.saturating_mul(100);
+        if entry.is_dir {
+            score += 5;
+        }
+        Some((score, path_match.1))
+    } else {
+        None
+    }
+}
+
+async fn run_recursive_size_task(
+    paths: Vec<String>,
+    force_refresh: bool,
+) -> Result<(String, Vec<EntryStorageInfo>), String> {
+    if paths.is_empty() {
+        return Err("Recursive size request was empty.".to_string());
+    }
+    let total = paths.len();
+
+    let task_id = create_manual_explorer_task(batch_recursive_size_task_registration(
+        paths.clone(),
+        force_refresh,
+    ));
+    let task_id_for_thread = task_id.clone();
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let mut results = Vec::with_capacity(total);
+        for (index, path) in paths.iter().enumerate() {
+            let mut measured = measure_entry_sizes_blocking(vec![path.clone()], force_refresh);
+            let entry = measured.pop().unwrap_or_else(|| EntryStorageInfo {
+                path: path.clone(),
+                bytes: 0,
+                is_dir: Path::new(path).is_dir(),
+                is_complete: false,
+            });
+            results.push(entry);
+            let _ = update_manual_explorer_task(
+                &task_id_for_thread,
+                Some(recursive_size_task_detail(index + 1, total)),
+                Some((index + 1) as u64),
+                Some(total as u64),
+            );
+        }
+        Ok::<Vec<EntryStorageInfo>, String>(results)
+    })
+    .await
+    .map_err(|error| format!("Recursive size task join failure: {error}"))?;
+
+    match result {
+        Ok(results) => {
+            let _ = complete_manual_explorer_task(
+                &task_id,
+                Some(recursive_size_task_detail(total, total)),
+                None,
+            );
+            Ok((task_id, results))
+        }
+        Err(error) => {
+            let _ = fail_manual_explorer_task(&task_id, error.clone());
+            Err(error)
+        }
+    }
+}
+
+async fn run_checksum_task(
+    paths: Vec<String>,
+) -> Result<(String, Vec<FsChecksumEntryInfo>), String> {
+    if paths.is_empty() {
+        return Err("Checksum request was empty.".to_string());
+    }
+    let total = paths.len();
+
+    let task_id = create_manual_explorer_task(batch_checksum_task_registration(paths.clone()));
+    let task_id_for_thread = task_id.clone();
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let mut results = Vec::with_capacity(total);
+        for (index, path) in paths.iter().enumerate() {
+            let entry = match calculate_file_checksums(Path::new(path)) {
+                Ok(entry) => entry,
+                Err(error) => FsChecksumEntryInfo {
+                    path: path.clone(),
+                    bytes: 0,
+                    is_dir: Path::new(path).is_dir(),
+                    md5: None,
+                    sha256: None,
+                    error: Some(error),
+                },
+            };
+            results.push(entry);
+            let _ = update_manual_explorer_task(
+                &task_id_for_thread,
+                Some(checksum_task_detail(index + 1, total)),
+                Some((index + 1) as u64),
+                Some(total as u64),
+            );
+        }
+        Ok::<Vec<FsChecksumEntryInfo>, String>(results)
+    })
+    .await
+    .map_err(|error| format!("Checksum task join failure: {error}"))?;
+
+    match result {
+        Ok(results) => {
+            let _ = complete_manual_explorer_task(
+                &task_id,
+                Some(checksum_task_detail(total, total)),
+                None,
+            );
+            Ok((task_id, results))
+        }
+        Err(error) => {
+            let _ = fail_manual_explorer_task(&task_id, error.clone());
+            Err(error)
+        }
+    }
 }
 
 pub(crate) fn set_recent_trash_task(task_id: Option<&str>) -> Result<(), String> {
@@ -1330,6 +1701,87 @@ fn metadata_modified_ms(metadata: &std::fs::Metadata) -> Option<u64> {
         .ok()
         .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
         .map(|duration| duration.as_millis() as u64)
+}
+
+fn metadata_created_ms(metadata: &std::fs::Metadata) -> Option<u64> {
+    metadata
+        .created()
+        .ok()
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as u64)
+}
+
+fn metadata_accessed_ms(metadata: &std::fs::Metadata) -> Option<u64> {
+    metadata
+        .accessed()
+        .ok()
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as u64)
+}
+
+#[cfg(unix)]
+fn unix_permissions_octal(metadata: &std::fs::Metadata) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+
+    metadata.permissions().mode() & 0o777
+}
+
+#[cfg(unix)]
+fn format_unix_permissions(mode: u32) -> String {
+    let mut rendered = String::with_capacity(9);
+    for shift in [6, 3, 0] {
+        rendered.push(if mode & (0o4 << shift) != 0 { 'r' } else { '-' });
+        rendered.push(if mode & (0o2 << shift) != 0 { 'w' } else { '-' });
+        rendered.push(if mode & (0o1 << shift) != 0 { 'x' } else { '-' });
+    }
+    rendered
+}
+
+fn describe_permissions(metadata: &std::fs::Metadata) -> FsPermissionInfo {
+    #[cfg(unix)]
+    {
+        let mode = unix_permissions_octal(metadata);
+        return FsPermissionInfo {
+            readonly: metadata.permissions().readonly(),
+            display: format!("{} ({mode:03o})", format_unix_permissions(mode)),
+            unix_mode: Some(mode),
+            unix_mode_octal: Some(format!("{mode:03o}")),
+        };
+    }
+
+    #[cfg(not(unix))]
+    {
+        let readonly = metadata.permissions().readonly();
+        FsPermissionInfo {
+            readonly,
+            display: if readonly {
+                "Read-only".to_string()
+            } else {
+                "Read/Write".to_string()
+            },
+            unix_mode: None,
+            unix_mode_octal: None,
+        }
+    }
+}
+
+fn read_item_properties(path: &Path) -> Result<FsItemPropertiesInfo, String> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|error| format!("Failed to inspect {}: {error}", path.display()))?;
+    Ok(FsItemPropertiesInfo {
+        path: path.to_string_lossy().to_string(),
+        name: path
+            .file_name()
+            .map(|value| value.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.to_string_lossy().to_string()),
+        is_dir: metadata.is_dir(),
+        is_symlink: metadata.file_type().is_symlink(),
+        bytes: if metadata.is_dir() { 0 } else { metadata.len() },
+        modified_at_ms: metadata_modified_ms(&metadata),
+        created_at_ms: metadata_created_ms(&metadata),
+        accessed_at_ms: metadata_accessed_ms(&metadata),
+        permissions: describe_permissions(&metadata),
+    })
 }
 
 fn cha_modified_ms(metadata: &Cha) -> Option<u64> {
@@ -1957,6 +2409,83 @@ pub async fn fs_measure_entry_sizes(
     })
     .await
     .map_err(|error| format!("Failed to measure entry sizes: {error}"))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_calculate_recursive_sizes(
+    paths: Vec<String>,
+    force_refresh: Option<bool>,
+) -> Result<Vec<EntryStorageInfo>, String> {
+    let (_, results) = run_recursive_size_task(
+        paths
+            .into_iter()
+            .filter(|path| !path.trim().is_empty())
+            .collect::<Vec<_>>(),
+        force_refresh.unwrap_or(false),
+    )
+    .await?;
+    Ok(results)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_calculate_checksums(
+    paths: Vec<String>,
+) -> Result<Vec<FsChecksumEntryInfo>, String> {
+    let (_, results) = run_checksum_task(
+        paths
+            .into_iter()
+            .filter(|path| !path.trim().is_empty())
+            .collect::<Vec<_>>(),
+    )
+    .await?;
+    Ok(results)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_get_item_properties(path: String) -> Result<FsItemPropertiesInfo, String> {
+    let target = PathBuf::from(&path);
+    if !target.exists() {
+        return Err(format!("Path does not exist: {path}"));
+    }
+    read_item_properties(&target)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_fuzzy_filter_entries(
+    request: FsJumpFilterRequest,
+) -> Result<Vec<FsJumpFilterMatch>, String> {
+    let limit = request.limit.unwrap_or(usize::MAX);
+    let mut matches = request
+        .entries
+        .into_iter()
+        .filter_map(|entry| {
+            fuzzy_score_entry(&request.query, &entry).map(|(score, matched_indices)| {
+                FsJumpFilterMatch {
+                    path: entry.path,
+                    name: entry.name,
+                    is_dir: entry.is_dir,
+                    sort_order: entry.sort_order,
+                    score,
+                    matched_indices,
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+
+    matches.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then_with(|| left.sort_order.cmp(&right.sort_order))
+            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    matches.truncate(limit);
+    Ok(matches)
 }
 
 // ─── fs_get_drives (Windows) ──────────────────────────────────────────────────
@@ -3765,6 +4294,11 @@ pub async fn fs_retry_explorer_task(
         ExplorerTaskRetryContext::DuplicateScan { root_path } => {
             crate::explorer_pro_commands::start_duplicate_scan_task(app, root_path)?
         }
+        ExplorerTaskRetryContext::RecursiveSize {
+            paths,
+            force_refresh,
+        } => run_recursive_size_task(paths, force_refresh).await?.0,
+        ExplorerTaskRetryContext::Checksum { paths } => run_checksum_task(paths).await?.0,
         ExplorerTaskRetryContext::ArchiveExtraction { request } => {
             run_archive_extraction_task(request).await?
         }
@@ -4351,9 +4885,6 @@ pub async fn git_exec(repo_path: String, args: Vec<String>) -> Result<String, St
 // Returns the file as a data-URI so the frontend can render it without
 // needing the asset:// protocol (which requires allow-listed paths).
 const FS_READ_FILE_BASE64_MAX_BYTES: u64 = 12 * 1024 * 1024;
-const FS_READ_IMAGE_THUMBNAIL_MAX_BYTES: u64 = 64 * 1024 * 1024;
-const FS_READ_IMAGE_THUMBNAIL_MAX_DIMENSION: u32 = 1024;
-
 #[tauri::command]
 #[specta::specta]
 pub async fn fs_read_file_base64(path: String) -> Result<String, String> {
@@ -4402,94 +4933,11 @@ pub async fn fs_read_image_thumbnail(
     max_width: u32,
     max_height: u32,
 ) -> Result<String, String> {
-    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
-    if meta.len() > FS_READ_IMAGE_THUMBNAIL_MAX_BYTES {
-        return Err("Image is too large to thumbnail (> 64 MB)".to_string());
-    }
-
-    validate_image_thumbnail_bounds(max_width, max_height)?;
-
-    let extension = std::path::Path::new(&path)
-        .extension()
-        .map(|value| value.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
-    if extension == "svg" {
-        return fs_read_file_base64(path).await;
-    }
-
-    let image = read_image_file_as_rgba(std::path::Path::new(&path))?;
-    let thumbnail = resize_image_to_fit(&image, max_width, max_height);
-    let png = encode_rgba_image_as_png(&thumbnail)?;
-    Ok(format!("data:image/png;base64,{}", base64_encode(&png)))
-}
-
-fn validate_image_thumbnail_bounds(max_width: u32, max_height: u32) -> Result<(), String> {
-    if max_width == 0 || max_height == 0 {
-        return Err("Thumbnail bounds must be greater than zero.".to_string());
-    }
-    if max_width > FS_READ_IMAGE_THUMBNAIL_MAX_DIMENSION
-        || max_height > FS_READ_IMAGE_THUMBNAIL_MAX_DIMENSION
-    {
-        return Err(format!(
-            "Thumbnail bounds must be <= {} px.",
-            FS_READ_IMAGE_THUMBNAIL_MAX_DIMENSION
-        ));
-    }
-    Ok(())
-}
-
-fn read_image_file_as_rgba(path: &std::path::Path) -> Result<image::RgbaImage, String> {
-    use image::ImageReader;
-
-    ImageReader::open(path)
-        .map_err(|error| format!("Failed to open image '{}': {}", path.display(), error))?
-        .with_guessed_format()
-        .map_err(|error| {
-            format!(
-                "Failed to detect image format for '{}': {}",
-                path.display(),
-                error
-            )
-        })?
-        .decode()
-        .map(|image| image.to_rgba8())
-        .map_err(|error| format!("Failed to decode image '{}': {}", path.display(), error))
-}
-
-fn resize_image_to_fit(
-    image: &image::RgbaImage,
-    max_width: u32,
-    max_height: u32,
-) -> image::RgbaImage {
-    use image::imageops::{resize, FilterType};
-
-    if image.width() <= max_width && image.height() <= max_height {
-        return image.clone();
-    }
-
-    let scale = f32::min(
-        max_width as f32 / image.width() as f32,
-        max_height as f32 / image.height() as f32,
-    );
-    let next_width = ((image.width() as f32) * scale).round().max(1.0) as u32;
-    let next_height = ((image.height() as f32) * scale).round().max(1.0) as u32;
-    resize(image, next_width, next_height, FilterType::Lanczos3)
-}
-
-fn encode_rgba_image_as_png(image: &image::RgbaImage) -> Result<Vec<u8>, String> {
-    use image::codecs::png::PngEncoder;
-    use image::{ColorType, ImageEncoder};
-
-    let mut bytes = Vec::new();
-    PngEncoder::new(&mut bytes)
-        .write_image(
-            image.as_raw(),
-            image.width(),
-            image.height(),
-            ColorType::Rgba8.into(),
-        )
-        .map_err(|error| format!("Failed to encode thumbnail as PNG: {}", error))?;
-    Ok(bytes)
+    crate::thumbnail_commands::build_image_thumbnail_data_url(
+        std::path::Path::new(&path),
+        max_width,
+        max_height,
+    )
 }
 
 /// Minimal, allocation-efficient base64 encoder (RFC 4648, no padding issues)
@@ -5425,6 +5873,77 @@ mod tests {
             results[0].is_complete,
             "symlink handling should return immediately"
         );
+    }
+
+    #[tokio::test]
+    async fn calculate_checksums_returns_md5_and_sha256() {
+        let dir = tmp_dir();
+        let file_path = dir.path().join("payload.txt");
+        let content = b"hello world";
+        fs::write(&file_path, content).unwrap();
+
+        let results = fs_calculate_checksums(vec![file_path.to_string_lossy().into_owned()])
+            .await
+            .expect("fs_calculate_checksums failed");
+
+        assert_eq!(results.len(), 1);
+        let entry = &results[0];
+        assert_eq!(entry.path, file_path.to_string_lossy());
+        assert_eq!(entry.bytes, content.len() as u64);
+        let expected_md5 = format!("{:x}", md5::compute(content));
+        assert_eq!(entry.md5.as_deref(), Some(expected_md5.as_str()));
+        let expected_sha256 = format!("{:x}", Sha256::digest(content));
+        assert_eq!(entry.sha256.as_deref(), Some(expected_sha256.as_str()));
+        assert!(entry.error.is_none());
+    }
+
+    #[tokio::test]
+    async fn recursive_size_task_returns_directory_totals() {
+        let dir = tmp_dir();
+        let root = dir.path().join("assets");
+        let nested = root.join("nested");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(root.join("a.bin"), vec![0_u8; 32]).unwrap();
+        fs::write(nested.join("b.bin"), vec![0_u8; 64]).unwrap();
+
+        let results = fs_calculate_recursive_sizes(vec![root.to_string_lossy().into_owned()], Some(true))
+            .await
+            .expect("fs_calculate_recursive_sizes failed");
+
+        assert_eq!(results.len(), 1);
+        let entry = &results[0];
+        assert!(entry.is_dir);
+        assert!(entry.is_complete);
+        assert_eq!(entry.bytes, 96);
+    }
+
+    #[tokio::test]
+    async fn fuzzy_jump_filter_prefers_filename_matches_but_keeps_path_matches() {
+        let results = fs_fuzzy_filter_entries(FsJumpFilterRequest {
+            query: "proj".to_string(),
+            entries: vec![
+                FsJumpFilterEntry {
+                    path: "/tmp/project/readme.txt".to_string(),
+                    name: "readme.txt".to_string(),
+                    is_dir: false,
+                    sort_order: 1,
+                },
+                FsJumpFilterEntry {
+                    path: "/tmp/elsewhere/project.txt".to_string(),
+                    name: "project.txt".to_string(),
+                    is_dir: false,
+                    sort_order: 0,
+                },
+            ],
+            limit: Some(10),
+        })
+        .await
+        .expect("fs_fuzzy_filter_entries failed");
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].name, "project.txt");
+        assert_eq!(results[1].name, "readme.txt");
+        assert!(!results[0].matched_indices.is_empty());
     }
 
     #[test]

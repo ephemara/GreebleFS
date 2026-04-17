@@ -7,6 +7,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { useSettingsStore, defaultSettings, mergeSettingsWithDefaults, resolveSystemPresentationState } from '../store/settingsStore';
 import { useExplorerStore } from '../store/explorerStore';
 import { overlayWindowGeometry } from '../config/overlayWindow';
+import { defaultExplorerThumbnailSettings } from '../config/explorerThumbnails';
 
 beforeEach(() => {
   useSettingsStore.getState().resetToDefaults();
@@ -71,6 +72,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.explorer.experimentalViewMode).toBe('off');
     expect(settings.explorer.experimentalDensity).toBe(defaultSettings.explorer.experimentalDensity);
     expect(settings.explorer.folderClickMode).toBe('double');
+    expect(settings.explorer.thumbnails).toEqual(defaultExplorerThumbnailSettings);
     expect(settings.explorer.modeProfileOverridesByThemeId).toEqual({});
     expect(settings.explorer.chromeLayoutOverridesByThemeId).toEqual({});
   });
@@ -805,6 +807,34 @@ describe('mergeSettingsWithDefaults()', () => {
 
     expect(merged.explorer.experimentalViewMode).toBe('off');
     expect(merged.explorer.experimentalDensity).toBe(defaultSettings.explorer.experimentalDensity);
+  });
+
+  it('normalizes explorer thumbnail settings when importing older explorer payloads', () => {
+    const merged = mergeSettingsWithDefaults({
+      explorer: {
+        thumbnails: {
+          enabled: false,
+          includeImages: false,
+          includeCode: false,
+          includeShaders: false,
+          includeAudio: false,
+          includeVideo: false,
+          enableVideoHoverScrub: false,
+          videoHoverScrubFrameCount: 99,
+        },
+      } as unknown as typeof defaultSettings.explorer,
+    });
+
+    expect(merged.explorer.thumbnails).toEqual({
+      enabled: false,
+      includeImages: false,
+      includeCode: false,
+      includeShaders: false,
+      includeAudio: false,
+      includeVideo: false,
+      enableVideoHoverScrub: false,
+      videoHoverScrubFrameCount: 10,
+    });
   });
 
   it('normalizes malformed context menu overrides into a safe sortable map', () => {

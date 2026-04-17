@@ -7,6 +7,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
 use std::sync::{Arc, Mutex};
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
 #[cfg(target_os = "windows")]
@@ -23,6 +24,7 @@ pub struct TerminalInstance {
 
 pub struct TerminalManager {
     terminals: Mutex<HashMap<String, Arc<Mutex<TerminalInstance>>>>,
+    shell_states: Mutex<HashMap<String, TerminalShellIntegrationState>>,
 }
 
 #[derive(Debug, serde::Deserialize, specta::Type)]
@@ -33,6 +35,46 @@ pub struct ExternalTerminalRequest {
     pub executable: Option<String>,
     pub args: Option<Vec<String>>,
     pub shell: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum TerminalShellKind {
+    Bash,
+    Zsh,
+    Fish,
+    PowerShell,
+    Cmd,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalShellIntegrationState {
+    pub shell_kind: TerminalShellKind,
+    pub supports_auto_cd: bool,
+    pub at_prompt: bool,
+    pub reported_cwd: Option<String>,
+    pub pending_cwd: Option<String>,
+    pub last_synced_cwd: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalShellIntegrationRequest {
+    pub id: String,
+    pub shell_kind: Option<TerminalShellKind>,
+    pub supports_auto_cd: Option<bool>,
+    pub at_prompt: Option<bool>,
+    pub reported_cwd: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalShellIntegrationStateEvent {
+    pub id: String,
+    pub state: TerminalShellIntegrationState,
+    pub applied_cwd: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize, specta::Type)]
@@ -46,6 +88,7 @@ impl TerminalManager {
     pub fn new() -> Self {
         Self {
             terminals: Mutex::new(HashMap::new()),
+            shell_states: Mutex::new(HashMap::new()),
         }
     }
 
@@ -200,6 +243,21 @@ impl TerminalManager {
 
         let mut terminals = self.terminals.lock().unwrap();
         terminals.insert(id.to_string(), instance);
+        drop(terminals);
+
+        let shell_kind = terminal_shell_kind_from_executable(&shell);
+        let mut shell_states = self.shell_states.lock().unwrap();
+        shell_states.insert(
+            id.to_string(),
+            TerminalShellIntegrationState {
+                shell_kind,
+                supports_auto_cd: true,
+                at_prompt: true,
+                reported_cwd: working_dir,
+                pending_cwd: None,
+                last_synced_cwd: None,
+            },
+        );
 
         Ok(())
     }
@@ -292,7 +350,110 @@ impl TerminalManager {
         terminals
             .remove(id)
             .ok_or_else(|| format!("Terminal {} not found", id))?;
+        drop(terminals);
+        let mut shell_states = self.shell_states.lock().unwrap();
+        shell_states.remove(id);
         Ok(())
+    }
+
+    pub fn register_shell_integration(
+        &self,
+        request: &TerminalShellIntegrationRequest,
+    ) -> Result<TerminalShellIntegrationState, String> {
+        let mut states = self.shell_states.lock().unwrap();
+        let state = states
+            .entry(request.id.clone())
+            .or_insert_with(|| TerminalShellIntegrationState {
+                shell_kind: request
+                    .shell_kind
+                    .clone()
+                    .unwrap_or(TerminalShellKind::Unknown),
+                supports_auto_cd: request.supports_auto_cd.unwrap_or(true),
+                at_prompt: request.at_prompt.unwrap_or(true),
+                reported_cwd: request.reported_cwd.clone(),
+                pending_cwd: None,
+                last_synced_cwd: None,
+            });
+
+        if let Some(shell_kind) = &request.shell_kind {
+            state.shell_kind = shell_kind.clone();
+        }
+        if let Some(supports_auto_cd) = request.supports_auto_cd {
+            state.supports_auto_cd = supports_auto_cd;
+        }
+        if let Some(at_prompt) = request.at_prompt {
+            state.at_prompt = at_prompt;
+        }
+        if let Some(reported_cwd) = &request.reported_cwd {
+            state.reported_cwd = Some(reported_cwd.clone());
+        }
+
+        Ok(state.clone())
+    }
+
+    pub fn request_cwd_sync(
+        &self,
+        id: &str,
+        cwd: &str,
+    ) -> Result<(TerminalShellIntegrationState, Option<String>), String> {
+        let mut states = self.shell_states.lock().unwrap();
+        let state = states
+            .get_mut(id)
+            .ok_or_else(|| format!("Terminal {} shell state not found", id))?;
+        state.reported_cwd = Some(cwd.to_string());
+        state.pending_cwd = Some(cwd.to_string());
+        if state.supports_auto_cd && state.at_prompt {
+            let applied = self.flush_pending_cwd_locked(id, state)?;
+            return Ok((state.clone(), applied));
+        }
+        Ok((state.clone(), None))
+    }
+
+    pub fn set_prompt_state(
+        &self,
+        id: &str,
+        at_prompt: bool,
+        reported_cwd: Option<String>,
+    ) -> Result<(TerminalShellIntegrationState, Option<String>), String> {
+        let mut states = self.shell_states.lock().unwrap();
+        let state = states
+            .get_mut(id)
+            .ok_or_else(|| format!("Terminal {} shell state not found", id))?;
+        state.at_prompt = at_prompt;
+        if let Some(reported_cwd) = reported_cwd {
+            state.reported_cwd = Some(reported_cwd);
+        }
+        let applied = if state.at_prompt {
+            self.flush_pending_cwd_locked(id, state)?
+        } else {
+            None
+        };
+        Ok((state.clone(), applied))
+    }
+
+    fn flush_pending_cwd_locked(
+        &self,
+        id: &str,
+        state: &mut TerminalShellIntegrationState,
+    ) -> Result<Option<String>, String> {
+        let Some(cwd) = state.pending_cwd.clone() else {
+            return Ok(None);
+        };
+        if !state.supports_auto_cd {
+            return Ok(None);
+        }
+        if state.last_synced_cwd.as_deref() == Some(cwd.as_str()) {
+            state.pending_cwd = None;
+            return Ok(None);
+        }
+
+        let Some(command) = terminal_auto_cd_command(&state.shell_kind, &cwd) else {
+            return Ok(None);
+        };
+        self.write(id, command.as_bytes())?;
+        state.last_synced_cwd = Some(cwd.clone());
+        state.pending_cwd = None;
+        Ok(Some(cwd))
     }
 
     pub fn start_reader_thread(&self, id: String, app: AppHandle) {
@@ -321,6 +482,37 @@ impl TerminalManager {
                 }
             });
         }
+    }
+}
+
+fn terminal_shell_kind_from_executable(shell: &str) -> TerminalShellKind {
+    let executable = shell_executable_name(shell).to_ascii_lowercase();
+    if executable.contains("pwsh") || executable.contains("powershell") {
+        TerminalShellKind::PowerShell
+    } else if executable.ends_with("cmd") || executable.ends_with("cmd.exe") {
+        TerminalShellKind::Cmd
+    } else if executable.ends_with("fish") {
+        TerminalShellKind::Fish
+    } else if executable.ends_with("zsh") {
+        TerminalShellKind::Zsh
+    } else if executable.ends_with("bash") {
+        TerminalShellKind::Bash
+    } else {
+        TerminalShellKind::Unknown
+    }
+}
+
+fn terminal_auto_cd_command(shell_kind: &TerminalShellKind, cwd: &str) -> Option<String> {
+    match shell_kind {
+        TerminalShellKind::Cmd => Some(format!("cd /d \"{}\"\r\n", cwd.replace('"', "\"\""))),
+        TerminalShellKind::PowerShell => Some(format!(
+            "Set-Location -LiteralPath '{}'\r\n",
+            cwd.replace('\'', "''")
+        )),
+        TerminalShellKind::Fish
+        | TerminalShellKind::Zsh
+        | TerminalShellKind::Bash
+        | TerminalShellKind::Unknown => Some(format!("cd -- {}\n", shell_quote_single(cwd))),
     }
 }
 
@@ -788,6 +980,66 @@ pub async fn terminal_kill(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn terminal_register_shell_integration(
+    app: AppHandle,
+    terminal_manager: tauri::State<'_, TerminalManager>,
+    request: TerminalShellIntegrationRequest,
+) -> Result<TerminalShellIntegrationState, String> {
+    let state = terminal_manager.register_shell_integration(&request)?;
+    let _ = app.emit(
+        "terminal-shell-integration-state",
+        TerminalShellIntegrationStateEvent {
+            id: request.id,
+            state: state.clone(),
+            applied_cwd: state.last_synced_cwd.clone(),
+        },
+    );
+    Ok(state)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn terminal_sync_cwd(
+    app: AppHandle,
+    terminal_manager: tauri::State<'_, TerminalManager>,
+    id: String,
+    cwd: String,
+) -> Result<TerminalShellIntegrationState, String> {
+    let (state, applied_cwd) = terminal_manager.request_cwd_sync(&id, &cwd)?;
+    let _ = app.emit(
+        "terminal-shell-integration-state",
+        TerminalShellIntegrationStateEvent {
+            id,
+            state: state.clone(),
+            applied_cwd,
+        },
+    );
+    Ok(state)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn terminal_set_prompt_state(
+    app: AppHandle,
+    terminal_manager: tauri::State<'_, TerminalManager>,
+    id: String,
+    at_prompt: bool,
+    reported_cwd: Option<String>,
+) -> Result<TerminalShellIntegrationState, String> {
+    let (state, applied_cwd) = terminal_manager.set_prompt_state(&id, at_prompt, reported_cwd)?;
+    let _ = app.emit(
+        "terminal-shell-integration-state",
+        TerminalShellIntegrationStateEvent {
+            id,
+            state: state.clone(),
+            applied_cwd,
+        },
+    );
+    Ok(state)
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn terminal_open_external(request: ExternalTerminalRequest) -> Result<(), String> {
     let working_dir = resolve_working_dir(&request.working_dir)?;
 
@@ -825,6 +1077,36 @@ mod tests {
         let file = temp.path().join("tool.exe");
         std::fs::write(&file, "binary").expect("write fake executable");
         assert!(command_exists(file.to_str().expect("utf8 path")));
+    }
+
+    #[test]
+    fn terminal_auto_cd_command_uses_shell_specific_syntax() {
+        let command = terminal_auto_cd_command(&TerminalShellKind::Bash, "/tmp/demo")
+            .expect("bash auto-cd command");
+        assert_eq!(command, "cd -- '/tmp/demo'\n");
+    }
+
+    #[test]
+    fn terminal_shell_state_queues_cwd_until_prompt_is_ready() {
+        let manager = TerminalManager::new();
+        let request = TerminalShellIntegrationRequest {
+            id: "terminal-a".to_string(),
+            shell_kind: Some(TerminalShellKind::Fish),
+            supports_auto_cd: Some(true),
+            at_prompt: Some(false),
+            reported_cwd: None,
+        };
+
+        let state = manager
+            .register_shell_integration(&request)
+            .expect("register shell integration");
+        assert!(!state.at_prompt);
+
+        let (updated_state, applied) = manager
+            .request_cwd_sync("terminal-a", "/tmp/workspace")
+            .expect("queue cwd sync");
+        assert_eq!(updated_state.pending_cwd.as_deref(), Some("/tmp/workspace"));
+        assert!(applied.is_none());
     }
 
     #[cfg(target_os = "windows")]

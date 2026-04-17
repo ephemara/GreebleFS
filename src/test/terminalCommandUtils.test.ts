@@ -25,4 +25,17 @@ describe('buildTerminalCdCommand', () => {
       "cd -- '/home/taloor/overlay'\"'\"'s'",
     );
   });
+
+  it('handles quoted shell names and additional shell arguments', () => {
+    expect(buildTerminalCdCommand('/workspace/repo', '"C:\\Program Files\\Git\\bin\\bash.exe" --login')).toBe(
+      "cd -- '/workspace/repo'",
+    );
+    expect(buildTerminalCdCommand('/workspace/repo', "'/opt/homebrew/bin/fish' -l")).toBe(
+      "cd -- '/workspace/repo'",
+    );
+  });
+
+  it('returns an empty command when the target path is blank', () => {
+    expect(buildTerminalCdCommand('   ', 'bash')).toBe('');
+  });
 });

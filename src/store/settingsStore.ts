@@ -41,6 +41,11 @@ import {
   type ExplorerModeProfileId,
 } from '../config/explorerModeProfiles';
 import {
+  defaultExplorerThumbnailSettings,
+  normalizeExplorerThumbnailSettings,
+  type ExplorerThumbnailSettings,
+} from '../config/explorerThumbnails';
+import {
   normalizeExplorerContextMenuItemOverrideMap,
   type ExplorerContextMenuItemOverrideMap,
 } from '../config/explorerContextMenu';
@@ -141,6 +146,7 @@ export interface ExplorerSettings {
   confirmDelete: boolean;
   defaultFolderIcon: FolderIconValue;
   folderIconRules: FolderIconRule[];
+  thumbnails: ExplorerThumbnailSettings;
   modeProfileOverridesByThemeId: Record<string, ExplorerModeProfileId>;
   chromeLayoutOverridesByThemeId: Record<string, Record<string, ExplorerChromeOverrideSnapshot>>;
   contextMenuItemOverrides: ExplorerContextMenuItemOverrideMap;
@@ -317,6 +323,8 @@ function normalizeExplorerSettings(
     && Object.prototype.hasOwnProperty.call(updates, 'chromeLayoutOverridesByThemeId');
   const hasExplicitContextMenuItemOverrides = updates != null
     && Object.prototype.hasOwnProperty.call(updates, 'contextMenuItemOverrides');
+  const hasExplicitThumbnailSettings = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'thumbnails');
 
   return {
     ...base,
@@ -332,6 +340,9 @@ function normalizeExplorerSettings(
       ? normalizeAdaptiveSemanticDensity(updates?.experimentalDensity)
       : base.experimentalDensity,
     folderClickMode: normalizeExplorerFolderClickMode(updates?.folderClickMode ?? base.folderClickMode),
+    thumbnails: hasExplicitThumbnailSettings
+      ? normalizeExplorerThumbnailSettings(updates?.thumbnails)
+      : base.thumbnails,
     modeProfileOverridesByThemeId: hasExplicitModeProfileOverrides
       ? normalizeExplorerModeProfileOverrideMap(updates?.modeProfileOverridesByThemeId)
       : base.modeProfileOverridesByThemeId,
@@ -636,6 +647,7 @@ export const defaultSettings: Settings = {
     confirmDelete: true,
     defaultFolderIcon: DEFAULT_FOLDER_ICON_VALUE,
     folderIconRules: createDefaultFolderIconRules(),
+    thumbnails: defaultExplorerThumbnailSettings,
     modeProfileOverridesByThemeId: {},
     chromeLayoutOverridesByThemeId: {},
     contextMenuItemOverrides: {},
@@ -762,6 +774,9 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
         imported?.explorer?.experimentalDensity ?? base.explorer.experimentalDensity,
       ),
       folderClickMode: normalizeExplorerFolderClickMode(imported?.explorer?.folderClickMode ?? base.explorer.folderClickMode),
+      thumbnails: normalizeExplorerThumbnailSettings(
+        imported?.explorer?.thumbnails ?? base.explorer.thumbnails,
+      ),
       modeProfileOverridesByThemeId: normalizeExplorerModeProfileOverrideMap(
         imported?.explorer?.modeProfileOverridesByThemeId ?? base.explorer.modeProfileOverridesByThemeId,
       ),

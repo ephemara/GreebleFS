@@ -197,3 +197,32 @@ describe('explorerStore persistence', () => {
     expect(singleWorkspace.tabs.every((tab) => tab.pane === 'pane-1')).toBe(true);
   });
 });
+
+describe('explorerStore transient explorer state', () => {
+  it('stores and clears jump-filter state in a single transition', () => {
+    const store = useExplorerStore.getState();
+
+    store.setJumpFilter({
+      active: true,
+      query: 'notes',
+      resultIndex: 1,
+      resultPaths: ['C:\\workspace\\repo\\notes.txt', 'C:\\workspace\\repo\\preview.png'],
+    });
+
+    expect(useExplorerStore.getState().jumpFilter).toEqual({
+      active: true,
+      query: 'notes',
+      resultIndex: 1,
+      resultPaths: ['C:\\workspace\\repo\\notes.txt', 'C:\\workspace\\repo\\preview.png'],
+    });
+
+    store.setJumpFilter(null);
+
+    expect(useExplorerStore.getState().jumpFilter).toEqual({
+      active: false,
+      query: '',
+      resultIndex: -1,
+      resultPaths: [],
+    });
+  });
+});

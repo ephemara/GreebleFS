@@ -100,6 +100,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   TS bridge for explorer audio analysis, native engine transport commands/events, and offline export/batch work. React should talk to this bridge and `src/store/audioEngineStore.ts` instead of browser media APIs or raw invoke strings.
 - `src/config/explorerArchives.ts`
   Data-driven archive registry for the explorer. It is the TS-side source of truth for which local archive suffixes should route through native extraction/opening and how archive folder labels are derived.
+- `src/config/explorerThumbnails.ts`
+  Data-driven explorer thumbnail policy for generated image/code/shader/audio/video thumbnails, hover-scrub frame counts, and batch sizing limits.
 - `src/windows/FileOperationsWindowApp.tsx`
   Themeable secondary window for destination picking and long-running explorer file-operation visibility. It shares the same appearance/runtime stack as the main shell but stays scoped to copy/move flows and the explorer task feed.
 - `src/store/explorerStore.ts`
@@ -250,6 +252,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - status bar visibility/treatment
 - `FileExplorer.tsx` also layers user-controlled explorer session state on top of the theme recipe:
   - persisted inline preview enable/disable
+  - persisted generated-thumbnail toggles and video hover-scrub frame count
   - persisted path/history/search/layout/preview/source-panel state
   - legacy `session.shellLayoutId` remains the pane-layout compatibility fallback for older sessions
   - active explorer mode now resolves through theme default -> per-theme mode override -> legacy `session.shellLayoutId` -> built-in `balanced`
@@ -299,6 +302,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
     - SoX stays as the offline trim/fade/normalize/convert/spectrogram utility
     - `ffmpeg` remains the codec bridge for formats the vendored SoX bundle cannot read/write on a given platform (for example Linux `mp3`)
   - `src-tauri/src/video_commands.rs` owns explorer-facing video trim export through a native `ffmpeg` subprocess. The frontend supplies trim intent and destination path, but the output mutation stays in Rust.
+  - `src-tauri/src/thumbnail_commands.rs` owns rich explorer thumbnail generation and caching for image posters, code cards, shader spheres, audio waveform/spectral thumbnails, and video poster + hover-scrub frame sequences.
+  - `src/runtime/explorerBackend.ts` is the only TS bridge for `fs_read_entry_thumbnail`; React should request generated thumbnails there instead of decoding files, probing media, or shelling out from components.
   - local transfer UX now has a two-step contract instead of silent collision auto-rename:
     - `fs_plan_transfer_items` reports pending name collisions before paste/drag/pane transfers run
     - `fs_transfer_items` accepts explicit collision policies: `keep_both`, `replace`, and `skip`
@@ -384,6 +389,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
     Saved Settings credentials take precedence over env vars until they are cleared.
 - Dropbox OAuth no longer uses a random localhost callback. The app now expects the Dropbox app console to allow the fixed redirect URI `http://localhost:53682/callback`; if Dropbox sign-in times out, check that exact callback registration before touching the browser-launch code.
 - Repo-wide `npx tsc --noEmit` is currently red on several pre-existing generated-contract and test typing issues unrelated to the workbench/explorer theme system. The narrowed command above now only leaves `src/runtime/useFolderPluginRuntime.ts` as an unrelated pre-existing failure.
+- Explorer rich thumbnails are native and cache-backed. `src-tauri/src/thumbnail_commands.rs` writes generated posters and video hover frames under the app-local `explorer-thumbnails` cache. If thumbnails look stale, inspect cache-key inputs and the app-local cache before trying to patch React rendering.
 - A current narrowed file-operations/explorer typecheck also still trips an unrelated screenshot typing issue in `src/components/ScreenshotsManager.tsx`: `SelectionHandle` includes `"move"` but the resize-handle consumer only accepts edge handles. Treat that as pre-existing unless the task is on screenshot selection editing.
 - Built-in theme switches should go through `settingsStore.applyThemeSelection()` or the Settings theme catalog flow, not a direct `updateAppearance({ activeThemeId })` call. The direct path now skips pilot baseline resets for dock mode, layout profile, explorer presentation, wallpaper/shader overrides, and related default-shell behavior.
 - JSDOM-backed Vitest runs currently fail in this workspace because `html-encoding-sniffer` requires an ESM dependency through a CommonJS path. Node-environment tests still work, so keep pure logic/package-loader tests runnable there until the dependency issue is fixed.

@@ -23,14 +23,17 @@ use crate::explorer_pro_commands::{
     ExplorerPathTagAssignment, ExplorerSavedSearchRecord, ExplorerSavedSearchSaveRequest,
     ExplorerTagMutationMode, ExplorerTagMutationRequest, ExplorerTagRecord, ExplorerTagSnapshot,
     ExplorerTrashActionRecord, ExplorerTrashRestoreResult, ExplorerTrashedEntryRecord,
-    FsBatchRenameItem, FsBatchRenameResult,
+    FsBatchRenameItem, FsBatchRenameMode, FsBatchRenamePreviewRow, FsBatchRenameRecipe,
+    FsBatchRenameResult,
 };
 use crate::fs_commands::{
     DriveInfo, EntryStorageInfo, ExplorerTaskHistoryClearScope, ExplorerTaskKind,
     ExplorerTaskProgressEvent, ExplorerTaskRecord, ExplorerTaskStatus, FileEntry,
     FileSearchContentCacheStatus, FileSearchDiagnostics, FileSearchExecutionStrategy,
     FileSearchMatchKind, FileSearchResponse, FileSearchResult, FileTransferOperation,
-    FileTransferResult, FsRuntimeCachePolicy, FsWriteFileContent,
+    FileTransferResult, FsChecksumEntryInfo, FsItemPropertiesInfo, FsJumpFilterEntry,
+    FsJumpFilterMatch, FsJumpFilterRequest, FsPermissionInfo, FsRuntimeCachePolicy,
+    FsWriteFileContent,
 };
 use crate::linux_graphics::{
     LinuxDisplayBackend, LinuxDisplayBackendPreference, LinuxDisplayBackendStatus,
@@ -45,7 +48,10 @@ use crate::screenshot_commands::{
     SavedScreenshot, ScreenshotAnnotatedExportResult, ScreenshotAnnotation, ScreenshotPreview,
     ScreenshotRegion,
 };
-use crate::terminal::{ExternalTerminalRequest, TerminalWriteRequest};
+use crate::terminal::{
+    ExternalTerminalRequest, TerminalShellIntegrationRequest, TerminalShellIntegrationState,
+    TerminalShellIntegrationStateEvent, TerminalShellKind, TerminalWriteRequest,
+};
 use crate::video_commands::{
     ResolvedVideoPreviewSource, VideoPreviewSourceKind, VideoTrimExportRequest,
     VideoTrimExportResult,
@@ -87,6 +93,9 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::terminal::terminal_write_many,
             crate::terminal::terminal_resize,
             crate::terminal::terminal_kill,
+            crate::terminal::terminal_register_shell_integration,
+            crate::terminal::terminal_sync_cwd,
+            crate::terminal::terminal_set_prompt_state,
             crate::terminal::terminal_open_external,
             crate::cloud_commands::cloud_list_accounts,
             crate::cloud_commands::cloud_set_provider_configuration,
@@ -107,6 +116,9 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::fs_commands::fs_list_dir,
             crate::fs_commands::fs_get_drives,
             crate::fs_commands::fs_measure_entry_sizes,
+            crate::fs_commands::fs_calculate_recursive_sizes,
+            crate::fs_commands::fs_calculate_checksums,
+            crate::fs_commands::fs_get_item_properties,
             crate::entry_size_cache::fs_watch_entry_size_root,
             crate::entry_size_cache::fs_unwatch_entry_size_root,
             crate::fs_commands::fs_read_text_file,
@@ -139,6 +151,8 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::fs_commands::fs_copy,
             crate::explorer_pro_commands::fs_trash,
             crate::explorer_pro_commands::fs_restore_recent_trash_action,
+            crate::explorer_pro_commands::fs_batch_rename_preview,
+            crate::explorer_pro_commands::fs_batch_rename_apply,
             crate::explorer_pro_commands::fs_batch_rename,
             crate::explorer_pro_commands::fs_find_duplicates_start,
             crate::explorer_pro_commands::fs_find_duplicates_poll,
@@ -152,12 +166,14 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::fs_commands::fs_create_dir,
             crate::fs_commands::fs_read_file_base64,
             crate::fs_commands::fs_read_image_thumbnail,
+            crate::thumbnail_commands::fs_read_entry_thumbnail,
             crate::fs_commands::fs_write_file,
             crate::fs_commands::fs_get_runtime_cache_policy,
             crate::fs_commands::fs_list_dir_uncached,
             crate::fs_commands::fs_cancel_search_entries,
             crate::fs_commands::fs_search_entries,
             crate::fs_commands::fs_search_entries_with_diagnostics,
+            crate::fs_commands::fs_fuzzy_filter_entries,
             crate::fs_commands::git_exec,
             crate::fs_commands::fs_get_home_dir,
             crate::fs_commands::fs_is_process_elevated,
@@ -201,7 +217,8 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         ])
         .events(collect_events![
             crate::fs_commands::ExplorerTaskProgressEvent,
-            crate::audio_engine::AudioEngineStateEvent
+            crate::audio_engine::AudioEngineStateEvent,
+            crate::terminal::TerminalShellIntegrationStateEvent
         ])
         .typ::<ShellBlueprint>()
         .typ::<overlay_contracts::ThemeTokenKind>()
@@ -261,10 +278,17 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<ExplorerTrashActionRecord>()
         .typ::<ExplorerTrashRestoreResult>()
         .typ::<FsBatchRenameItem>()
+        .typ::<FsBatchRenameMode>()
+        .typ::<FsBatchRenameRecipe>()
+        .typ::<FsBatchRenamePreviewRow>()
         .typ::<FsBatchRenameResult>()
         .typ::<ExplorerDuplicateScanStartResponse>()
         .typ::<ExplorerDuplicateGroup>()
         .typ::<ExplorerDuplicateScanStatus>()
+        .typ::<FsChecksumEntryInfo>()
+        .typ::<FsJumpFilterEntry>()
+        .typ::<FsJumpFilterRequest>()
+        .typ::<FsJumpFilterMatch>()
         .typ::<FileTransferOperation>()
         .typ::<FileTransferResult>()
         .typ::<FileSearchMatchKind>()
@@ -290,6 +314,10 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<ScreenshotAnnotatedExportResult>()
         .typ::<ScreenshotPreview>()
         .typ::<ExternalTerminalRequest>()
+        .typ::<TerminalShellKind>()
+        .typ::<TerminalShellIntegrationState>()
+        .typ::<TerminalShellIntegrationRequest>()
+        .typ::<TerminalShellIntegrationStateEvent>()
         .typ::<TerminalWriteRequest>()
         .typ::<VideoPreviewSourceKind>()
         .typ::<ResolvedVideoPreviewSource>()

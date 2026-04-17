@@ -14,6 +14,7 @@ pub mod screenshot_commands;
 pub mod specta_bindings;
 pub mod startup_commands;
 pub mod terminal;
+pub mod thumbnail_commands;
 pub mod video_commands;
 pub mod wayland_dock;
 pub mod window_commands;

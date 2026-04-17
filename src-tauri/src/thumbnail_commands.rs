@@ -1,0 +1,1519 @@
+use crate::audio_engine::analyze_audio_file_native;
+use ab_glyph::{FontArc, PxScale};
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use fontdb::{Database, Family, Query, Source};
+use image::codecs::png::PngEncoder;
+use image::imageops::{resize, FilterType};
+use image::{ColorType, ImageEncoder, ImageReader, Rgba, RgbaImage};
+use imageproc::drawing::{draw_filled_circle_mut, draw_line_segment_mut, draw_text_mut};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::f32::consts::PI;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::{LazyLock, Mutex};
+use std::time::UNIX_EPOCH;
+use tauri::{AppHandle, Manager};
+
+const THUMBNAIL_MAX_DIMENSION: u32 = 1_024;
+const THUMBNAIL_IMAGE_MAX_BYTES: u64 = 64 * 1024 * 1024;
+const THUMBNAIL_TEXT_MAX_BYTES: u64 = 256 * 1024;
+const THUMBNAIL_RUNTIME_DIR: &str = "explorer-thumbnails";
+const THUMBNAIL_VIDEO_FRAME_COUNT_DEFAULT: u32 = 6;
+const THUMBNAIL_VIDEO_FRAME_COUNT_MAX: u32 = 10;
+const THUMBNAIL_VIDEO_TIMESTAMPS_START_RATIO: f64 = 0.08;
+const THUMBNAIL_VIDEO_TIMESTAMPS_END_RATIO: f64 = 0.92;
+const THUMBNAIL_VIDEO_POSTER_RATIO: f64 = 0.22;
+const THUMBNAIL_DEFAULT_BACKGROUND: Rgba<u8> = Rgba([9, 12, 18, 255]);
+const THUMBNAIL_TEXT_COLOR: Rgba<u8> = Rgba([234, 240, 248, 255]);
+const THUMBNAIL_MUTED_TEXT_COLOR: Rgba<u8> = Rgba([145, 157, 178, 255]);
+const THUMBNAIL_SHADOW_TEXT_COLOR: Rgba<u8> = Rgba([0, 0, 0, 190]);
+const THUMBNAIL_WAVEFORM_COLOR: Rgba<u8> = Rgba([240, 246, 255, 210]);
+const DEFAULT_FFMPEG_BINARY: &str = "ffmpeg";
+const DEFAULT_FFPROBE_BINARY: &str = "ffprobe";
+const VIDEO_FRAME_FILTER_TEMPLATE: &str =
+    "scale=w={width}:h={height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=0x0b1118ff";
+
+static THUMBNAIL_SANS_FONT_CACHE: LazyLock<Mutex<Option<FontArc>>> =
+    LazyLock::new(|| Mutex::new(None));
+static THUMBNAIL_MONO_FONT_CACHE: LazyLock<Mutex<Option<FontArc>>> =
+    LazyLock::new(|| Mutex::new(None));
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ExplorerThumbnailKind {
+    Image,
+    Code,
+    Shader,
+    Audio,
+    Video,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExplorerVideoHoverFrame {
+    pub image_data_url: String,
+    pub timestamp_seconds: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExplorerEntryThumbnail {
+    pub kind: ExplorerThumbnailKind,
+    pub poster_data_url: String,
+    pub hover_frames: Vec<ExplorerVideoHoverFrame>,
+    pub hover_frame_delay_ms: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExplorerEntryThumbnailRequest {
+    pub path: String,
+    pub max_width: u32,
+    pub max_height: u32,
+    pub include_video_hover_scrub: Option<bool>,
+    pub video_hover_frame_count: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ThumbnailRenderKind {
+    Image,
+    Code,
+    Shader,
+    Audio,
+    Video,
+}
+
+#[derive(Debug, Clone)]
+struct NormalizedThumbnailRequest {
+    input_path: PathBuf,
+    max_width: u32,
+    max_height: u32,
+    include_video_hover_scrub: bool,
+    video_hover_frame_count: u32,
+}
+
+#[derive(Debug, Clone)]
+struct ThumbnailFontSpec {
+    family: Family<'static>,
+}
+
+#[derive(Debug, Clone)]
+struct ShaderProfile {
+    palette: [Rgba<u8>; 3],
+    stripe_frequency: f32,
+    stripe_mix: f32,
+    fresnel_strength: f32,
+    highlight_strength: f32,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_read_entry_thumbnail(
+    app: AppHandle,
+    request: ExplorerEntryThumbnailRequest,
+) -> Result<ExplorerEntryThumbnail, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let normalized = normalize_thumbnail_request(request)?;
+        build_entry_thumbnail(&app, &normalized)
+    })
+    .await
+    .map_err(|error| format!("Thumbnail generation task failed to join: {error}"))?
+}
+
+pub(crate) fn build_image_thumbnail_data_url(
+    path: &Path,
+    max_width: u32,
+    max_height: u32,
+) -> Result<String, String> {
+    validate_thumbnail_bounds(max_width, max_height)?;
+    let metadata = fs::metadata(path)
+        .map_err(|error| format!("Failed to read image metadata '{}': {error}", path.display()))?;
+    if metadata.len() > THUMBNAIL_IMAGE_MAX_BYTES {
+        return Err("Image is too large to thumbnail (> 64 MB)".to_string());
+    }
+
+    let extension = normalized_extension(path);
+    if extension == "svg" {
+        let bytes = fs::read(path)
+            .map_err(|error| format!("Failed to read SVG image '{}': {error}", path.display()))?;
+        return Ok(format!(
+            "data:image/svg+xml;base64,{}",
+            BASE64_STANDARD.encode(bytes)
+        ));
+    }
+
+    let image = read_image_file_as_rgba(path)?;
+    let thumbnail = resize_image_to_fit(&image, max_width, max_height);
+    let png = encode_rgba_image_as_png(&thumbnail)?;
+    Ok(png_bytes_to_data_url(&png))
+}
+
+fn build_entry_thumbnail(
+    app: &AppHandle,
+    request: &NormalizedThumbnailRequest,
+) -> Result<ExplorerEntryThumbnail, String> {
+    let kind = classify_thumbnail_kind(&request.input_path)?;
+    match kind {
+        ThumbnailRenderKind::Image => Ok(ExplorerEntryThumbnail {
+            kind: ExplorerThumbnailKind::Image,
+            poster_data_url: build_image_thumbnail_data_url(
+                &request.input_path,
+                request.max_width,
+                request.max_height,
+            )?,
+            hover_frames: Vec::new(),
+            hover_frame_delay_ms: None,
+        }),
+        ThumbnailRenderKind::Code => Ok(ExplorerEntryThumbnail {
+            kind: ExplorerThumbnailKind::Code,
+            poster_data_url: generate_cached_static_thumbnail_data_url(
+                app,
+                &request.input_path,
+                request.max_width,
+                request.max_height,
+                "code",
+                || render_code_thumbnail_png(&request.input_path, request.max_width, request.max_height),
+            )?,
+            hover_frames: Vec::new(),
+            hover_frame_delay_ms: None,
+        }),
+        ThumbnailRenderKind::Shader => Ok(ExplorerEntryThumbnail {
+            kind: ExplorerThumbnailKind::Shader,
+            poster_data_url: generate_cached_static_thumbnail_data_url(
+                app,
+                &request.input_path,
+                request.max_width,
+                request.max_height,
+                "shader",
+                || render_shader_thumbnail_png(&request.input_path, request.max_width, request.max_height),
+            )?,
+            hover_frames: Vec::new(),
+            hover_frame_delay_ms: None,
+        }),
+        ThumbnailRenderKind::Audio => Ok(ExplorerEntryThumbnail {
+            kind: ExplorerThumbnailKind::Audio,
+            poster_data_url: generate_cached_static_thumbnail_data_url(
+                app,
+                &request.input_path,
+                request.max_width,
+                request.max_height,
+                "audio",
+                || render_audio_thumbnail_png(&request.input_path, request.max_width, request.max_height),
+            )?,
+            hover_frames: Vec::new(),
+            hover_frame_delay_ms: None,
+        }),
+        ThumbnailRenderKind::Video => build_video_thumbnail(app, request),
+    }
+}
+
+fn normalize_thumbnail_request(
+    request: ExplorerEntryThumbnailRequest,
+) -> Result<NormalizedThumbnailRequest, String> {
+    validate_thumbnail_bounds(request.max_width, request.max_height)?;
+    let trimmed_path = request.path.trim();
+    if trimmed_path.is_empty() {
+        return Err("Thumbnail path cannot be empty.".to_string());
+    }
+    let input_path = PathBuf::from(trimmed_path);
+    if !input_path.exists() {
+        return Err(format!(
+            "Thumbnail path does not exist: {}",
+            input_path.display()
+        ));
+    }
+    if !input_path.is_file() {
+        return Err(format!(
+            "Thumbnail path is not a file: {}",
+            input_path.display()
+        ));
+    }
+    Ok(NormalizedThumbnailRequest {
+        input_path,
+        max_width: request.max_width,
+        max_height: request.max_height,
+        include_video_hover_scrub: request.include_video_hover_scrub.unwrap_or(false),
+        video_hover_frame_count: request
+            .video_hover_frame_count
+            .unwrap_or(THUMBNAIL_VIDEO_FRAME_COUNT_DEFAULT)
+            .clamp(1, THUMBNAIL_VIDEO_FRAME_COUNT_MAX),
+    })
+}
+
+fn validate_thumbnail_bounds(max_width: u32, max_height: u32) -> Result<(), String> {
+    if max_width == 0 || max_height == 0 {
+        return Err("Thumbnail bounds must be greater than zero.".to_string());
+    }
+    if max_width > THUMBNAIL_MAX_DIMENSION || max_height > THUMBNAIL_MAX_DIMENSION {
+        return Err(format!(
+            "Thumbnail bounds must be <= {} px.",
+            THUMBNAIL_MAX_DIMENSION
+        ));
+    }
+    Ok(())
+}
+
+fn classify_thumbnail_kind(path: &Path) -> Result<ThumbnailRenderKind, String> {
+    let extension = normalized_extension(path);
+    if extension == "svg" {
+        return Ok(ThumbnailRenderKind::Image);
+    }
+
+    if fs::metadata(path)
+        .map_err(|error| format!("Failed to read file metadata '{}': {error}", path.display()))?
+        .len()
+        <= THUMBNAIL_IMAGE_MAX_BYTES
+        && read_image_file_as_rgba(path).is_ok()
+    {
+        return Ok(ThumbnailRenderKind::Image);
+    }
+
+    if is_video_extension(&extension) {
+        return Ok(ThumbnailRenderKind::Video);
+    }
+    if is_audio_extension(&extension) {
+        return Ok(ThumbnailRenderKind::Audio);
+    }
+    if is_shader_extension(&extension) {
+        return Ok(ThumbnailRenderKind::Shader);
+    }
+    if is_code_extension(&extension) || file_looks_like_text(path)? {
+        return Ok(ThumbnailRenderKind::Code);
+    }
+
+    Err(format!(
+        "No thumbnail renderer is available for '{}'.",
+        path.display()
+    ))
+}
+
+fn normalized_extension(path: &Path) -> String {
+    path.extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .trim()
+        .trim_start_matches('.')
+        .to_ascii_lowercase()
+}
+
+fn is_video_extension(extension: &str) -> bool {
+    matches!(
+        extension,
+        "3g2"
+            | "3gp"
+            | "asf"
+            | "avi"
+            | "flv"
+            | "m2ts"
+            | "m2v"
+            | "m4v"
+            | "mkv"
+            | "mov"
+            | "mp4"
+            | "mpe"
+            | "mpeg"
+            | "mpg"
+            | "mts"
+            | "ogv"
+            | "qt"
+            | "webm"
+            | "wmv"
+    )
+}
+
+fn is_audio_extension(extension: &str) -> bool {
+    matches!(
+        extension,
+        "aac"
+            | "aif"
+            | "aiff"
+            | "alac"
+            | "amr"
+            | "caf"
+            | "flac"
+            | "m4a"
+            | "m4b"
+            | "mid"
+            | "midi"
+            | "mka"
+            | "mp3"
+            | "oga"
+            | "ogg"
+            | "opus"
+            | "wav"
+            | "wave"
+            | "weba"
+            | "wma"
+    )
+}
+
+fn is_shader_extension(extension: &str) -> bool {
+    matches!(extension, "glsl" | "hlsl" | "wgsl")
+}
+
+fn is_code_extension(extension: &str) -> bool {
+    matches!(
+        extension,
+        "txt"
+            | "md"
+            | "mdx"
+            | "log"
+            | "json"
+            | "yaml"
+            | "yml"
+            | "toml"
+            | "xml"
+            | "ini"
+            | "cfg"
+            | "csv"
+            | "ts"
+            | "tsx"
+            | "js"
+            | "jsx"
+            | "mjs"
+            | "cjs"
+            | "rs"
+            | "py"
+            | "go"
+            | "c"
+            | "h"
+            | "cpp"
+            | "hpp"
+            | "cc"
+            | "cxx"
+            | "cs"
+            | "java"
+            | "kt"
+            | "kts"
+            | "rb"
+            | "php"
+            | "swift"
+            | "dart"
+            | "lua"
+            | "zig"
+            | "html"
+            | "htm"
+            | "css"
+            | "scss"
+            | "sass"
+            | "less"
+            | "sh"
+            | "bash"
+            | "zsh"
+            | "ps1"
+            | "bat"
+            | "cmd"
+            | "env"
+            | "sql"
+            | "kain"
+            | "ink"
+    )
+}
+
+fn file_looks_like_text(path: &Path) -> Result<bool, String> {
+    let metadata = fs::metadata(path)
+        .map_err(|error| format!("Failed to inspect file '{}': {error}", path.display()))?;
+    if metadata.len() > THUMBNAIL_TEXT_MAX_BYTES {
+        return Ok(false);
+    }
+    let bytes = fs::read(path)
+        .map_err(|error| format!("Failed to read text thumbnail source '{}': {error}", path.display()))?;
+    Ok(std::str::from_utf8(&bytes).is_ok())
+}
+
+fn read_image_file_as_rgba(path: &Path) -> Result<RgbaImage, String> {
+    ImageReader::open(path)
+        .map_err(|error| format!("Failed to open image '{}': {error}", path.display()))?
+        .with_guessed_format()
+        .map_err(|error| {
+            format!(
+                "Failed to detect image format for '{}': {error}",
+                path.display()
+            )
+        })?
+        .decode()
+        .map(|image| image.to_rgba8())
+        .map_err(|error| format!("Failed to decode image '{}': {error}", path.display()))
+}
+
+fn resize_image_to_fit(image: &RgbaImage, max_width: u32, max_height: u32) -> RgbaImage {
+    if image.width() <= max_width && image.height() <= max_height {
+        return image.clone();
+    }
+    let scale = f32::min(
+        max_width as f32 / image.width() as f32,
+        max_height as f32 / image.height() as f32,
+    );
+    let width = ((image.width() as f32) * scale).round().max(1.0) as u32;
+    let height = ((image.height() as f32) * scale).round().max(1.0) as u32;
+    resize(image, width, height, FilterType::Lanczos3)
+}
+
+fn encode_rgba_image_as_png(image: &RgbaImage) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::new();
+    PngEncoder::new(&mut bytes)
+        .write_image(
+            image.as_raw(),
+            image.width(),
+            image.height(),
+            ColorType::Rgba8.into(),
+        )
+        .map_err(|error| format!("Failed to encode thumbnail as PNG: {error}"))?;
+    Ok(bytes)
+}
+
+fn png_bytes_to_data_url(bytes: &[u8]) -> String {
+    format!("data:image/png;base64,{}", BASE64_STANDARD.encode(bytes))
+}
+
+fn generate_cached_static_thumbnail_data_url<F>(
+    app: &AppHandle,
+    input_path: &Path,
+    max_width: u32,
+    max_height: u32,
+    variant: &str,
+    render_png: F,
+) -> Result<String, String>
+where
+    F: FnOnce() -> Result<Vec<u8>, String>,
+{
+    let cache_path = static_thumbnail_cache_path(app, input_path, max_width, max_height, variant)?;
+    if cache_path.exists() {
+        let bytes = fs::read(&cache_path).map_err(|error| {
+            format!(
+                "Failed to read cached thumbnail '{}': {error}",
+                cache_path.display()
+            )
+        })?;
+        return Ok(png_bytes_to_data_url(&bytes));
+    }
+
+    let png = render_png()?;
+    if let Some(parent) = cache_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "Failed to create thumbnail cache directory '{}': {error}",
+                parent.display()
+            )
+        })?;
+    }
+    fs::write(&cache_path, &png).map_err(|error| {
+        format!(
+            "Failed to write cached thumbnail '{}': {error}",
+            cache_path.display()
+        )
+    })?;
+    Ok(png_bytes_to_data_url(&png))
+}
+
+fn resolve_thumbnail_runtime_root(app: &AppHandle) -> Result<PathBuf, String> {
+    let root = app
+        .path()
+        .app_local_data_dir()
+        .map(|path| path.join(THUMBNAIL_RUNTIME_DIR))
+        .map_err(|error| format!("Failed to resolve app local data directory: {error}"))?;
+    fs::create_dir_all(&root).map_err(|error| {
+        format!(
+            "Failed to create thumbnail runtime directory '{}': {error}",
+            root.display()
+        )
+    })?;
+    Ok(root)
+}
+
+fn static_thumbnail_cache_path(
+    app: &AppHandle,
+    input_path: &Path,
+    max_width: u32,
+    max_height: u32,
+    variant: &str,
+) -> Result<PathBuf, String> {
+    let root = resolve_thumbnail_runtime_root(app)?.join("static");
+    let digest = thumbnail_cache_digest(input_path, max_width, max_height, variant, None)?;
+    let digest_prefix = &digest[..16];
+    let stem = sanitize_thumbnail_file_stem(
+        input_path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("thumb"),
+    );
+    Ok(root.join(format!(
+        "{stem}.{digest_prefix}.{variant}.png"
+    )))
+}
+
+fn video_hover_frame_cache_paths(
+    app: &AppHandle,
+    input_path: &Path,
+    max_width: u32,
+    max_height: u32,
+    frame_count: u32,
+) -> Result<Vec<PathBuf>, String> {
+    let root = resolve_thumbnail_runtime_root(app)?.join("video-hover");
+    let digest = thumbnail_cache_digest(
+        input_path,
+        max_width,
+        max_height,
+        "video-hover",
+        Some(frame_count),
+    )?;
+    let digest_prefix = &digest[..16];
+    let stem = sanitize_thumbnail_file_stem(
+        input_path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("video"),
+    );
+    Ok((0..frame_count)
+        .map(|index| {
+            root.join(format!(
+                "{stem}.{digest_prefix}.hover-{:02}.png",
+                index + 1
+            ))
+        })
+        .collect())
+}
+
+fn thumbnail_cache_digest(
+    input_path: &Path,
+    max_width: u32,
+    max_height: u32,
+    variant: &str,
+    extra_number: Option<u32>,
+) -> Result<String, String> {
+    let metadata = fs::metadata(input_path).map_err(|error| {
+        format!(
+            "Failed to read thumbnail source metadata '{}': {error}",
+            input_path.display()
+        )
+    })?;
+    let modified_nanos = metadata
+        .modified()
+        .ok()
+        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+        .map(|value| value.as_nanos())
+        .unwrap_or_default();
+    let mut hasher = Sha256::new();
+    hasher.update(input_path.to_string_lossy().as_bytes());
+    hasher.update(metadata.len().to_le_bytes());
+    hasher.update(modified_nanos.to_le_bytes());
+    hasher.update(max_width.to_le_bytes());
+    hasher.update(max_height.to_le_bytes());
+    hasher.update(variant.as_bytes());
+    if let Some(extra_number) = extra_number {
+        hasher.update(extra_number.to_le_bytes());
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn sanitize_thumbnail_file_stem(value: &str) -> String {
+    let sanitized: String = value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || character == '-' || character == '_' {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let collapsed = sanitized.trim_matches('-');
+    if collapsed.is_empty() {
+        "thumbnail".to_string()
+    } else {
+        collapsed.to_string()
+    }
+}
+
+fn render_code_thumbnail_png(
+    input_path: &Path,
+    max_width: u32,
+    max_height: u32,
+) -> Result<Vec<u8>, String> {
+    render_text_thumbnail_png(input_path, max_width, max_height, false)
+}
+
+fn render_shader_thumbnail_png(
+    input_path: &Path,
+    max_width: u32,
+    max_height: u32,
+) -> Result<Vec<u8>, String> {
+    render_text_thumbnail_png(input_path, max_width, max_height, true)
+}
+
+fn render_text_thumbnail_png(
+    input_path: &Path,
+    max_width: u32,
+    max_height: u32,
+    shader_mode: bool,
+) -> Result<Vec<u8>, String> {
+    let metadata = fs::metadata(input_path).map_err(|error| {
+        format!(
+            "Failed to read text thumbnail metadata '{}': {error}",
+            input_path.display()
+        )
+    })?;
+    if metadata.len() > THUMBNAIL_TEXT_MAX_BYTES {
+        return Err("Text source is too large to thumbnail.".to_string());
+    }
+
+    let bytes = fs::read(input_path).map_err(|error| {
+        format!(
+            "Failed to read text thumbnail source '{}': {error}",
+            input_path.display()
+        )
+    })?;
+    let content = String::from_utf8_lossy(&bytes).to_string();
+    let mut image = RgbaImage::from_pixel(max_width, max_height, THUMBNAIL_DEFAULT_BACKGROUND);
+    let extension = normalized_extension(input_path);
+    let accent = extension_accent_color(&extension);
+    let secondary = tint_color(accent, 0.55, 40);
+    draw_vertical_gradient(&mut image, THUMBNAIL_DEFAULT_BACKGROUND, tint_color(accent, 0.15, 0));
+    fill_rect(
+        &mut image,
+        0,
+        0,
+        max_width,
+        max_height.min(44),
+        tint_color(accent, 0.22, 10),
+    );
+    fill_rect(&mut image, 0, 44, 6, max_height, accent);
+
+    let sans_font = load_thumbnail_font(ThumbnailFontSpec {
+        family: Family::SansSerif,
+    })
+    .ok();
+    let mono_font = load_thumbnail_font(ThumbnailFontSpec {
+        family: Family::Monospace,
+    })
+    .ok();
+
+    if let Some(font) = sans_font.as_ref() {
+        let title = input_path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("code");
+        draw_text_with_shadow(
+            &mut image,
+            font,
+            PxScale::from(15.0),
+            (16.0, 10.0),
+            &truncate_text(title, 28),
+            THUMBNAIL_TEXT_COLOR,
+        );
+        let subtitle = if shader_mode {
+            "Shader material preview"
+        } else {
+            "Source snapshot"
+        };
+        draw_text_with_shadow(
+            &mut image,
+            font,
+            PxScale::from(10.0),
+            (16.0, 28.0),
+            subtitle,
+            THUMBNAIL_MUTED_TEXT_COLOR,
+        );
+        let badge_text = if extension.is_empty() {
+            "text".to_string()
+        } else {
+            extension.to_ascii_uppercase()
+        };
+        let badge_width = 12 + (badge_text.len() as u32 * 8);
+        fill_rounded_badge(
+            &mut image,
+            max_width.saturating_sub(badge_width + 12),
+            10,
+            badge_width,
+            22,
+            secondary,
+        );
+        draw_text_with_shadow(
+            &mut image,
+            font,
+            PxScale::from(11.0),
+            (
+                max_width.saturating_sub(badge_width + 2) as f32,
+                15.0,
+            ),
+            &badge_text,
+            THUMBNAIL_TEXT_COLOR,
+        );
+    }
+
+    if shader_mode {
+        let profile = build_shader_profile(&content);
+        let sphere_size = max_width.min(max_height).saturating_mul(34) / 100;
+        let sphere_left = max_width.saturating_sub(sphere_size + 18);
+        let sphere_top = 58;
+        draw_shader_sphere(
+            &mut image,
+            sphere_left,
+            sphere_top.min(max_height.saturating_sub(sphere_size + 12)),
+            sphere_size,
+            &profile,
+        );
+    }
+
+    let code_area_top = if shader_mode { 58 } else { 54 };
+    if let Some(font) = mono_font.as_ref() {
+        let line_height = 14;
+        for (index, line) in content.lines().take(10).enumerate() {
+            let y = code_area_top + 10 + (index as u32 * line_height);
+            if y + line_height as u32 >= max_height {
+                break;
+            }
+            let line_number_color = tint_color(accent, 0.24, 38);
+            draw_text_with_shadow(
+                &mut image,
+                font,
+                PxScale::from(11.5),
+                (18.0, y as f32),
+                &format!("{:02}", index + 1),
+                line_number_color,
+            );
+            draw_text_with_shadow(
+                &mut image,
+                font,
+                PxScale::from(11.5),
+                (46.0, y as f32),
+                &truncate_text(line.trim_end(), 28),
+                if line.trim_start().starts_with("//")
+                    || line.trim_start().starts_with('#')
+                    || line.trim_start().starts_with("/*")
+                {
+                    THUMBNAIL_MUTED_TEXT_COLOR
+                } else {
+                    THUMBNAIL_TEXT_COLOR
+                },
+            );
+        }
+    } else {
+        draw_text_thumbnail_fallback_bars(&mut image, code_area_top, accent, shader_mode);
+    }
+
+    encode_rgba_image_as_png(&image)
+}
+
+fn render_audio_thumbnail_png(
+    input_path: &Path,
+    max_width: u32,
+    max_height: u32,
+) -> Result<Vec<u8>, String> {
+    let analysis = analyze_audio_file_native(input_path)?;
+    let mut image = RgbaImage::from_pixel(max_width, max_height, THUMBNAIL_DEFAULT_BACKGROUND);
+    draw_vertical_gradient(
+        &mut image,
+        Rgba([7, 10, 16, 255]),
+        Rgba([14, 24, 36, 255]),
+    );
+    fill_rect(
+        &mut image,
+        0,
+        0,
+        max_width,
+        max_height.min(38),
+        Rgba([12, 18, 27, 235]),
+    );
+    if let Ok(font) = load_thumbnail_font(ThumbnailFontSpec {
+        family: Family::SansSerif,
+    }) {
+        let title = input_path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("audio");
+        draw_text_with_shadow(
+            &mut image,
+            &font,
+            PxScale::from(14.0),
+            (14.0, 9.0),
+            &truncate_text(title, 26),
+            THUMBNAIL_TEXT_COLOR,
+        );
+        let subtitle = format!(
+            "{:.1}s · {} ch · {} Hz",
+            analysis.duration_seconds,
+            analysis.channels.unwrap_or(0),
+            analysis.sample_rate_hz.unwrap_or(0)
+        );
+        draw_text_with_shadow(
+            &mut image,
+            &font,
+            PxScale::from(9.5),
+            (14.0, 24.0),
+            &subtitle,
+            THUMBNAIL_MUTED_TEXT_COLOR,
+        );
+    }
+
+    let waveform_top = 46;
+    let waveform_height = max_height.saturating_sub(waveform_top + 16);
+    let baseline = waveform_top + waveform_height / 2;
+    let bucket_count = analysis.waveform_buckets.len().max(1) as u32;
+    let spectral_len = analysis.spectral_bands.len().max(1) as u32;
+    for (index, bucket) in analysis.waveform_buckets.iter().enumerate() {
+        let x = 10 + (index as u32 * max_width.saturating_sub(20)) / bucket_count;
+        let band_index = ((index as u32 * spectral_len) / bucket_count) as usize;
+        let energy = analysis
+            .spectral_bands
+            .get(band_index.min(analysis.spectral_bands.len().saturating_sub(1)))
+            .copied()
+            .unwrap_or(0.15)
+            .clamp(0.0, 1.0);
+        let color = lerp_rgba(
+            Rgba([69, 153, 255, 210]),
+            Rgba([255, 107, 107, 230]),
+            band_index as f32 / spectral_len.max(1) as f32,
+        );
+        let peak_height = ((waveform_height as f64 * 0.42) * bucket.peak_level.clamp(0.0, 1.0))
+            .round()
+            .max(1.0) as i32;
+        let rms_height = ((waveform_height as f64 * 0.32) * bucket.rms_level.clamp(0.0, 1.0))
+            .round()
+            .max(1.0) as i32;
+        draw_line_segment_mut(
+            &mut image,
+            (x as f32, (baseline as i32 - peak_height) as f32),
+            (x as f32, (baseline as i32 + peak_height) as f32),
+            with_alpha(color, (110.0 + energy as f32 * 90.0) as u8),
+        );
+        draw_line_segment_mut(
+            &mut image,
+            (x as f32, (baseline as i32 - rms_height) as f32),
+            (x as f32, (baseline as i32 + rms_height) as f32),
+            with_alpha(THUMBNAIL_WAVEFORM_COLOR, 220),
+        );
+    }
+    draw_line_segment_mut(
+        &mut image,
+        (10.0, baseline as f32),
+        (max_width.saturating_sub(10) as f32, baseline as f32),
+        Rgba([255, 255, 255, 30]),
+    );
+    encode_rgba_image_as_png(&image)
+}
+
+fn build_video_thumbnail(
+    app: &AppHandle,
+    request: &NormalizedThumbnailRequest,
+) -> Result<ExplorerEntryThumbnail, String> {
+    let poster_data_url = generate_cached_static_thumbnail_data_url(
+        app,
+        &request.input_path,
+        request.max_width,
+        request.max_height,
+        "video-poster",
+        || render_video_poster_png(&request.input_path, request.max_width, request.max_height),
+    )?;
+    let mut hover_frames = Vec::new();
+    let mut hover_frame_delay_ms = None;
+    if request.include_video_hover_scrub {
+        let frame_sources = render_video_hover_scrub_data_urls(
+            app,
+            &request.input_path,
+            request.max_width,
+            request.max_height,
+            request.video_hover_frame_count,
+        )?;
+        hover_frame_delay_ms = Some(150);
+        hover_frames = frame_sources;
+    }
+    Ok(ExplorerEntryThumbnail {
+        kind: ExplorerThumbnailKind::Video,
+        poster_data_url,
+        hover_frames,
+        hover_frame_delay_ms,
+    })
+}
+
+fn render_video_poster_png(
+    input_path: &Path,
+    max_width: u32,
+    max_height: u32,
+) -> Result<Vec<u8>, String> {
+    let duration = probe_video_duration_seconds(input_path).unwrap_or(0.0);
+    let timestamp = if duration > 0.15 {
+        (duration * THUMBNAIL_VIDEO_POSTER_RATIO).clamp(0.0, duration.max(0.15))
+    } else {
+        0.0
+    };
+    let temp = tempfile_path_for_render("video-poster.png");
+    generate_video_frame_png(input_path, &temp, max_width, max_height, timestamp)?;
+    let png = fs::read(&temp).map_err(|error| {
+        format!(
+            "Failed to read generated video poster '{}': {error}",
+            temp.display()
+        )
+    })?;
+    let _ = fs::remove_file(temp);
+    Ok(png)
+}
+
+fn render_video_hover_scrub_data_urls(
+    app: &AppHandle,
+    input_path: &Path,
+    max_width: u32,
+    max_height: u32,
+    frame_count: u32,
+) -> Result<Vec<ExplorerVideoHoverFrame>, String> {
+    let frame_paths = video_hover_frame_cache_paths(app, input_path, max_width, max_height, frame_count)?;
+    let duration = probe_video_duration_seconds(input_path).unwrap_or(0.0);
+    let timestamps = sample_video_timestamps(duration, frame_count);
+    for (index, frame_path) in frame_paths.iter().enumerate() {
+        if frame_path.exists() {
+            continue;
+        }
+        if let Some(parent) = frame_path.parent() {
+            fs::create_dir_all(parent).map_err(|error| {
+                format!(
+                    "Failed to create video hover cache directory '{}': {error}",
+                    parent.display()
+                )
+            })?;
+        }
+        generate_video_frame_png(
+            input_path,
+            frame_path,
+            max_width,
+            max_height,
+            *timestamps.get(index).unwrap_or(&0.0),
+        )?;
+    }
+    frame_paths
+        .iter()
+        .enumerate()
+        .map(|(index, path)| {
+            let bytes = fs::read(path).map_err(|error| {
+                format!("Failed to read cached hover frame '{}': {error}", path.display())
+            })?;
+            Ok(ExplorerVideoHoverFrame {
+                image_data_url: png_bytes_to_data_url(&bytes),
+                timestamp_seconds: *timestamps.get(index).unwrap_or(&0.0),
+            })
+        })
+        .collect()
+}
+
+fn sample_video_timestamps(duration_seconds: f64, frame_count: u32) -> Vec<f64> {
+    if frame_count <= 1 {
+        return vec![(duration_seconds * THUMBNAIL_VIDEO_POSTER_RATIO).max(0.0)];
+    }
+    if duration_seconds <= 0.1 {
+        return (0..frame_count).map(|_| 0.0).collect();
+    }
+    let start = duration_seconds * THUMBNAIL_VIDEO_TIMESTAMPS_START_RATIO;
+    let end = duration_seconds * THUMBNAIL_VIDEO_TIMESTAMPS_END_RATIO;
+    let span = (end - start).max(0.01);
+    (0..frame_count)
+        .map(|index| {
+            let alpha = index as f64 / (frame_count - 1) as f64;
+            (start + (span * alpha)).clamp(0.0, duration_seconds)
+        })
+        .collect()
+}
+
+fn resolve_ffmpeg_binary() -> String {
+    std::env::var("GREEBLEFS_FFMPEG_BINARY")
+        .or_else(|_| std::env::var("OVERLAYTERM_FFMPEG_BINARY"))
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_FFMPEG_BINARY.to_string())
+}
+
+fn resolve_ffprobe_binary() -> String {
+    std::env::var("GREEBLEFS_FFPROBE_BINARY")
+        .or_else(|_| std::env::var("OVERLAYTERM_FFPROBE_BINARY"))
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_FFPROBE_BINARY.to_string())
+}
+
+fn probe_video_duration_seconds(input_path: &Path) -> Option<f64> {
+    let ffprobe_binary = resolve_ffprobe_binary();
+    let ffprobe_output = Command::new(&ffprobe_binary)
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            &input_path.to_string_lossy(),
+        ])
+        .output();
+    if let Ok(output) = ffprobe_output {
+        if output.status.success() {
+            let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if let Ok(parsed) = value.parse::<f64>() {
+                if parsed.is_finite() && parsed >= 0.0 {
+                    return Some(parsed);
+                }
+            }
+        }
+    }
+
+    let ffmpeg_binary = resolve_ffmpeg_binary();
+    let ffmpeg_output = Command::new(&ffmpeg_binary)
+        .args(["-i", &input_path.to_string_lossy()])
+        .output()
+        .ok()?;
+    let stderr = String::from_utf8_lossy(&ffmpeg_output.stderr);
+    parse_ffmpeg_duration(stderr.as_ref())
+}
+
+fn parse_ffmpeg_duration(stderr: &str) -> Option<f64> {
+    let marker = "Duration:";
+    let index = stderr.find(marker)?;
+    let duration = stderr[index + marker.len()..]
+        .split(',')
+        .next()?
+        .trim();
+    let mut parts = duration.split(':');
+    let hours = parts.next()?.trim().parse::<f64>().ok()?;
+    let minutes = parts.next()?.trim().parse::<f64>().ok()?;
+    let seconds = parts.next()?.trim().parse::<f64>().ok()?;
+    Some((hours * 3600.0) + (minutes * 60.0) + seconds)
+}
+
+fn generate_video_frame_png(
+    input_path: &Path,
+    output_path: &Path,
+    max_width: u32,
+    max_height: u32,
+    timestamp_seconds: f64,
+) -> Result<(), String> {
+    let ffmpeg_binary = resolve_ffmpeg_binary();
+    let filter = VIDEO_FRAME_FILTER_TEMPLATE
+        .replace("{width}", &max_width.to_string())
+        .replace("{height}", &max_height.to_string());
+    let mut command = Command::new(&ffmpeg_binary);
+    command.args(["-hide_banner", "-loglevel", "error", "-y"]);
+    if timestamp_seconds > 0.0 {
+        command.args(["-ss", &format!("{timestamp_seconds:.3}")]);
+    }
+    command.args(["-i", &input_path.to_string_lossy()]);
+    command.args([
+        "-frames:v",
+        "1",
+        "-vf",
+        &filter,
+        &output_path.to_string_lossy(),
+    ]);
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let output = command
+        .output()
+        .map_err(|error| format!("Failed to launch ffmpeg at '{ffmpeg_binary}': {error}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let message = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            format!("ffmpeg exited with status {}", output.status)
+        };
+        return Err(format!("Video thumbnail generation failed: {message}"));
+    }
+    Ok(())
+}
+
+fn tempfile_path_for_render(file_name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "greeblefs-thumbnail-{}-{}",
+        uuid::Uuid::new_v4(),
+        file_name
+    ))
+}
+
+fn extension_accent_color(extension: &str) -> Rgba<u8> {
+    let normalized = if extension.is_empty() {
+        "txt"
+    } else {
+        extension
+    };
+    let mut hasher = Sha256::new();
+    hasher.update(normalized.as_bytes());
+    let digest = hasher.finalize();
+    Rgba([
+        72_u8.saturating_add(digest[0] % 120),
+        92_u8.saturating_add(digest[1] % 100),
+        110_u8.saturating_add(digest[2] % 100),
+        255,
+    ])
+}
+
+fn build_shader_profile(source: &str) -> ShaderProfile {
+    let mut hasher = Sha256::new();
+    hasher.update(source.as_bytes());
+    let digest = hasher.finalize();
+    let keyword_weight = [
+        source.matches("time").count() as f32,
+        source.matches("texture").count() as f32,
+        source.matches("sin").count() as f32 + source.matches("cos").count() as f32,
+    ];
+    let palette = [
+        Rgba([58 + digest[0] % 90, 82 + digest[1] % 110, 120 + digest[2] % 100, 255]),
+        Rgba([90 + digest[3] % 120, 60 + digest[4] % 90, 120 + digest[5] % 110, 255]),
+        Rgba([40 + digest[6] % 120, 110 + digest[7] % 110, 90 + digest[8] % 120, 255]),
+    ];
+    ShaderProfile {
+        palette,
+        stripe_frequency: 3.0 + (digest[9] as f32 / 255.0 * 8.0) + keyword_weight[2].min(6.0),
+        stripe_mix: 0.25 + (digest[10] as f32 / 255.0 * 0.45),
+        fresnel_strength: 0.22 + (keyword_weight[1].min(5.0) * 0.03),
+        highlight_strength: 0.36 + (digest[11] as f32 / 255.0 * 0.4),
+    }
+}
+
+fn draw_shader_sphere(
+    image: &mut RgbaImage,
+    left: u32,
+    top: u32,
+    size: u32,
+    profile: &ShaderProfile,
+) {
+    if size < 24 {
+        return;
+    }
+    let radius = size as f32 / 2.0;
+    let center_x = left as f32 + radius;
+    let center_y = top as f32 + radius;
+    let shadow_color = Rgba([0, 0, 0, 120]);
+    draw_filled_circle_mut(
+        image,
+        (center_x.round() as i32 + 6, center_y.round() as i32 + 8),
+        radius.round() as i32,
+        shadow_color,
+    );
+
+    for y in top..top.saturating_add(size).min(image.height()) {
+        for x in left..left.saturating_add(size).min(image.width()) {
+            let nx = (x as f32 + 0.5 - center_x) / radius;
+            let ny = (y as f32 + 0.5 - center_y) / radius;
+            let distance_sq = nx * nx + ny * ny;
+            if distance_sq > 1.0 {
+                continue;
+            }
+            let nz = (1.0 - distance_sq).sqrt();
+            let stripe = (((nx * profile.stripe_frequency) + (ny * 1.4) + (nz * 1.8)) * PI).sin();
+            let stripe_mix = (stripe * 0.5 + 0.5).clamp(0.0, 1.0);
+            let fresnel = (1.0 - nz).powf(3.2) * profile.fresnel_strength;
+            let diffuse = (0.25 + (nz * 0.75)).clamp(0.0, 1.0);
+            let light_dir = normalize_vec3((0.48, -0.58, 0.66));
+            let view_dir = (0.0, 0.0, 1.0);
+            let normal = normalize_vec3((nx, ny, nz));
+            let ndotl = dot_vec3(normal, light_dir).max(0.0);
+            let reflected = reflect_vec3((-light_dir.0, -light_dir.1, -light_dir.2), normal);
+            let specular = dot_vec3(reflected, view_dir).max(0.0).powf(24.0) * profile.highlight_strength;
+            let base = lerp_rgba(profile.palette[0], profile.palette[1], stripe_mix);
+            let shaded = lerp_rgba(base, profile.palette[2], fresnel + profile.stripe_mix * 0.1);
+            let lit = brighten_color(shaded, diffuse * 0.28 + ndotl * 0.42 + specular * 0.6);
+            image.put_pixel(x, y, lit);
+        }
+    }
+}
+
+fn draw_text_thumbnail_fallback_bars(
+    image: &mut RgbaImage,
+    top: u32,
+    accent: Rgba<u8>,
+    shader_mode: bool,
+) {
+    let line_count = if shader_mode { 8 } else { 10 };
+    for index in 0..line_count {
+        let y = top + 12 + index * 16;
+        if y + 8 >= image.height() {
+            break;
+        }
+        let width = image.width().saturating_sub(56 + (index as u32 * 9 % 48));
+        fill_rect(
+            image,
+            18,
+            y,
+            28,
+            y + 8,
+            tint_color(accent, 0.22, 40),
+        );
+        fill_rect(
+            image,
+            46,
+            y,
+            46 + width,
+            y + 8,
+            if index % 3 == 0 {
+                THUMBNAIL_TEXT_COLOR
+            } else {
+                THUMBNAIL_MUTED_TEXT_COLOR
+            },
+        );
+    }
+}
+
+fn load_thumbnail_font(spec: ThumbnailFontSpec) -> Result<FontArc, String> {
+    let cache = match spec.family {
+        Family::Monospace => &THUMBNAIL_MONO_FONT_CACHE,
+        _ => &THUMBNAIL_SANS_FONT_CACHE,
+    };
+    let mut cache_guard = cache
+        .lock()
+        .map_err(|_| "Failed to lock thumbnail font cache.".to_string())?;
+    if let Some(font) = cache_guard.as_ref() {
+        return Ok(font.clone());
+    }
+
+    let mut database = Database::new();
+    database.load_system_fonts();
+    let query = Query {
+        families: &[spec.family],
+        ..Query::default()
+    };
+    let face_id = database
+        .query(&query)
+        .ok_or_else(|| "Failed to locate a system font for thumbnail rendering.".to_string())?;
+    let face = database
+        .face(face_id)
+        .ok_or_else(|| "Resolved thumbnail font face is unavailable.".to_string())?;
+
+    let bytes = match &face.source {
+        Source::Binary(data) => data.as_ref().as_ref().to_vec(),
+        Source::File(path) => fs::read(path)
+            .map_err(|error| format!("Failed to read thumbnail font '{}': {error}", path.display()))?,
+        Source::SharedFile(path, _) => fs::read(path)
+            .map_err(|error| format!("Failed to read thumbnail font '{}': {error}", path.display()))?,
+    };
+    let font = FontArc::try_from_vec(bytes)
+        .map_err(|_| "Failed to decode the system font used for thumbnails.".to_string())?;
+    *cache_guard = Some(font.clone());
+    Ok(font)
+}
+
+fn draw_text_with_shadow(
+    image: &mut RgbaImage,
+    font: &FontArc,
+    scale: PxScale,
+    origin: (f32, f32),
+    text: &str,
+    color: Rgba<u8>,
+) {
+    let x = origin.0.round() as i32;
+    let y = origin.1.round() as i32;
+    for (offset_x, offset_y) in [(1, 1), (1, 2), (2, 1), (2, 2)] {
+        draw_text_mut(
+            image,
+            THUMBNAIL_SHADOW_TEXT_COLOR,
+            x + offset_x,
+            y + offset_y,
+            scale,
+            font,
+            text,
+        );
+    }
+    draw_text_mut(image, color, x, y, scale, font, text);
+}
+
+fn fill_rect(image: &mut RgbaImage, left: u32, top: u32, right: u32, bottom: u32, color: Rgba<u8>) {
+    let bounded_right = right.min(image.width());
+    let bounded_bottom = bottom.min(image.height());
+    for y in top.min(image.height())..bounded_bottom {
+        for x in left.min(image.width())..bounded_right {
+            image.put_pixel(x, y, color);
+        }
+    }
+}
+
+fn draw_vertical_gradient(image: &mut RgbaImage, top_color: Rgba<u8>, bottom_color: Rgba<u8>) {
+    let height = image.height().max(1);
+    for y in 0..image.height() {
+        let alpha = y as f32 / height as f32;
+        let row_color = lerp_rgba(top_color, bottom_color, alpha);
+        for x in 0..image.width() {
+            image.put_pixel(x, y, row_color);
+        }
+    }
+}
+
+fn fill_rounded_badge(
+    image: &mut RgbaImage,
+    left: u32,
+    top: u32,
+    width: u32,
+    height: u32,
+    color: Rgba<u8>,
+) {
+    let radius = (height / 2) as i32;
+    fill_rect(
+        image,
+        left.saturating_add(radius as u32),
+        top,
+        left.saturating_add(width).saturating_sub(radius as u32),
+        top.saturating_add(height),
+        color,
+    );
+    draw_filled_circle_mut(
+        image,
+        (
+            left.saturating_add(radius as u32) as i32,
+            top.saturating_add(radius as u32) as i32,
+        ),
+        radius,
+        color,
+    );
+    draw_filled_circle_mut(
+        image,
+        (
+            left.saturating_add(width).saturating_sub(radius as u32) as i32,
+            top.saturating_add(radius as u32) as i32,
+        ),
+        radius,
+        color,
+    );
+}
+
+fn truncate_text(text: &str, max_chars: usize) -> String {
+    let trimmed = text.trim();
+    if trimmed.chars().count() <= max_chars {
+        return trimmed.to_string();
+    }
+    let mut output = trimmed.chars().take(max_chars.saturating_sub(1)).collect::<String>();
+    output.push('…');
+    output
+}
+
+fn tint_color(color: Rgba<u8>, mix: f32, lift: u8) -> Rgba<u8> {
+    let clamped_mix = mix.clamp(0.0, 1.0);
+    let mix_channel = |channel: u8| -> u8 {
+        let mixed = channel as f32 * (1.0 - clamped_mix) + 255.0 * clamped_mix;
+        mixed.round().clamp(0.0, 255.0) as u8
+    };
+    Rgba([
+        mix_channel(color[0]).saturating_add(lift),
+        mix_channel(color[1]).saturating_add(lift),
+        mix_channel(color[2]).saturating_add(lift),
+        color[3],
+    ])
+}
+
+fn brighten_color(color: Rgba<u8>, amount: f32) -> Rgba<u8> {
+    let clamped = amount.clamp(0.0, 1.2);
+    Rgba([
+        ((color[0] as f32) * (1.0 + clamped)).clamp(0.0, 255.0) as u8,
+        ((color[1] as f32) * (1.0 + clamped)).clamp(0.0, 255.0) as u8,
+        ((color[2] as f32) * (1.0 + clamped)).clamp(0.0, 255.0) as u8,
+        color[3],
+    ])
+}
+
+fn with_alpha(color: Rgba<u8>, alpha: u8) -> Rgba<u8> {
+    Rgba([color[0], color[1], color[2], alpha])
+}
+
+fn lerp_rgba(start: Rgba<u8>, end: Rgba<u8>, amount: f32) -> Rgba<u8> {
+    let alpha = amount.clamp(0.0, 1.0);
+    let lerp_channel = |a: u8, b: u8| -> u8 {
+        ((a as f32) + ((b as f32 - a as f32) * alpha))
+            .round()
+            .clamp(0.0, 255.0) as u8
+    };
+    Rgba([
+        lerp_channel(start[0], end[0]),
+        lerp_channel(start[1], end[1]),
+        lerp_channel(start[2], end[2]),
+        lerp_channel(start[3], end[3]),
+    ])
+}
+
+fn dot_vec3(left: (f32, f32, f32), right: (f32, f32, f32)) -> f32 {
+    (left.0 * right.0) + (left.1 * right.1) + (left.2 * right.2)
+}
+
+fn normalize_vec3(input: (f32, f32, f32)) -> (f32, f32, f32) {
+    let length = (input.0 * input.0 + input.1 * input.1 + input.2 * input.2).sqrt();
+    if length <= f32::EPSILON {
+        return (0.0, 0.0, 1.0);
+    }
+    (input.0 / length, input.1 / length, input.2 / length)
+}
+
+fn reflect_vec3(input: (f32, f32, f32), normal: (f32, f32, f32)) -> (f32, f32, f32) {
+    let dot = dot_vec3(input, normal);
+    (
+        input.0 - 2.0 * dot * normal.0,
+        input.1 - 2.0 * dot * normal.1,
+        input.2 - 2.0 * dot * normal.2,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::RgbaImage;
+    use tempfile::tempdir;
+
+    #[test]
+    fn sample_video_timestamps_spans_the_clip() {
+        let timestamps = sample_video_timestamps(120.0, 6);
+        assert_eq!(timestamps.len(), 6);
+        assert!(timestamps.first().copied().unwrap_or_default() >= 9.0);
+        assert!(timestamps.last().copied().unwrap_or_default() <= 111.0);
+    }
+
+    #[test]
+    fn parse_ffmpeg_duration_handles_standard_output() {
+        let stderr = "Duration: 00:01:42.53, start: 0.000000, bitrate: 4143 kb/s";
+        let duration = parse_ffmpeg_duration(stderr).expect("duration");
+        assert!((duration - 102.53).abs() < 0.01);
+    }
+
+    #[test]
+    fn render_code_thumbnail_png_returns_png_bytes() {
+        let workspace = tempdir().expect("tempdir");
+        let file_path = workspace.path().join("sample.rs");
+        fs::write(
+            &file_path,
+            "fn main() {\n    println!(\"hello\");\n}\n",
+        )
+        .expect("write");
+        let png = render_code_thumbnail_png(&file_path, 320, 180).expect("thumbnail png");
+        let decoded = image::load_from_memory(&png).expect("decode png");
+        assert_eq!(decoded.width(), 320);
+        assert_eq!(decoded.height(), 180);
+    }
+
+    #[test]
+    fn render_shader_thumbnail_png_returns_png_bytes() {
+        let workspace = tempdir().expect("tempdir");
+        let file_path = workspace.path().join("material.glsl");
+        fs::write(
+            &file_path,
+            "void mainImage(out vec4 fragColor, in vec2 fragCoord) {\n  float t = sin(iTime);\n  fragColor = vec4(vec3(t), 1.0);\n}\n",
+        )
+        .expect("write");
+        let png = render_shader_thumbnail_png(&file_path, 320, 180).expect("thumbnail png");
+        let decoded = image::load_from_memory(&png).expect("decode png");
+        assert_eq!(decoded.width(), 320);
+        assert_eq!(decoded.height(), 180);
+    }
+
+    #[test]
+    fn build_image_thumbnail_data_url_returns_png_data_url() {
+        let workspace = tempdir().expect("tempdir");
+        let file_path = workspace.path().join("sample.png");
+        let image = RgbaImage::from_pixel(640, 480, Rgba([32, 48, 96, 255]));
+        image.save(&file_path).expect("save image");
+        let data_url =
+            build_image_thumbnail_data_url(&file_path, 256, 256).expect("thumbnail data url");
+        assert!(data_url.starts_with("data:image/png;base64,"));
+    }
+}

@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
+import { useExplorerStore } from '../store/explorerStore';
 
 const { mockXtermInstances } = vi.hoisted(() => ({
   mockXtermInstances: [] as {
@@ -157,6 +158,29 @@ describe('TerminalOverlay', () => {
           { id: 'overlay-0', data: 'npm test' },
           { id: 'overlay-1', data: 'npm test' },
         ],
+      });
+    });
+  }, 20000);
+
+  it('injects a shell-specific cd command when the explorer queues a terminal cwd sync', async () => {
+    const invokeMock = vi.mocked(invoke);
+
+    render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
+
+    await waitFor(() => expect(mockXtermInstances).toHaveLength(1));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Copy Output' })).toBeEnabled());
+
+    useExplorerStore.getState().setPendingTerminalCwdSync({
+      path: 'C:\\workspace\\Taloor\'s Lab',
+      shell: 'pwsh.exe -NoLogo',
+      source: 'navigation',
+      updatedAt: 0,
+    });
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('terminal_write', {
+        id: 'overlay-0',
+        data: "Set-Location -LiteralPath 'C:\\workspace\\Taloor'\"'\"'s Lab'\r",
       });
     });
   }, 20000);

@@ -1,5 +1,32 @@
 # GreebleFS Memory
 
+## 2026-04-16 — Native Explorer Thumbnails + Video Hover Scrub
+
+- The explorer now has a Rust-owned rich-thumbnail lane instead of an image-only grid preview hack. Generated thumbnails can replace file icons when the operator enables explorer thumbnails.
+- Durable implementation shape:
+  - `src-tauri/src/thumbnail_commands.rs` is the new native thumbnail backend. It routes local files by type and generates:
+    - raster/SVG image posters
+    - code thumbnails rendered from source text
+    - shader thumbnails rendered as a code card plus a procedural sphere preview
+    - audio waveform/spectral thumbnails
+    - video poster frames plus cached hover-scrub frame sequences
+  - Thumbnail outputs are cached under the app-local `explorer-thumbnails` directory, keyed by file path plus metadata and requested dimensions so refreshes can invalidate naturally when the source changes.
+  - `fs_read_image_thumbnail` in `src-tauri/src/fs_commands.rs` now delegates to the shared thumbnail module instead of maintaining a second image-thumbnail implementation.
+  - `src/runtime/explorerBackend.ts` now exposes `readExplorerEntryThumbnail()` as the typed frontend bridge for generated thumbnails.
+  - `src/config/explorerThumbnails.ts` is the TS-side thumbnail policy layer. It owns persisted enable/disable flags per media class, hover-scrub frame count clamping, and the shared batch sizing constants used by the explorer UI.
+  - `src/store/settingsStore.ts` now persists explorer thumbnail settings under `settings.explorer.thumbnails`.
+  - `src/components/SettingsPage.tsx` now exposes a dedicated explorer `Thumbnail Rendering` card so operators can toggle image/code/shader/audio/video thumbnails and video hover-scrub behavior.
+  - `src/components/FileExplorer.tsx` now uses the rich thumbnail contract across the flagship explorer surfaces instead of only the old grid image path. Grid, list, table/details, adaptive semantic, constellation, and timeline entry renderers all prefer generated thumbnails and fall back to icons when thumbnails are disabled, unsupported, or unavailable.
+  - Video hover scrub is on-demand instead of eager. The explorer loads poster thumbnails in the normal batch lane, then requests cached hover frames only when the pointer enters a supported video entry and the setting is enabled.
+- Durable product note:
+  - Generated thumbnails are now host-owned explorer truth, not decorative frontend sugar. Future work should extend the Rust thumbnail backend and the `explorerThumbnails` policy/config layer instead of scattering new file-type rendering logic through `FileExplorer.tsx`.
+  - Hover-scrub should stay montage-based and cache-backed. Do not replace it with full inline autoplay inside entry cells.
+- Validation:
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml`
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: filtered typecheck for the new thumbnail lane via `bunx tsc --noEmit --pretty false 2>&1 | rg "readEntryThumbnail|ExplorerEntryThumbnail|explorerThumbnails|SettingsPage.tsx|settingsStore.ts|explorerBackend.ts|fsReadEntryThumbnail|videoHoverScrub|thumbnail_commands" || true`
+  - note: repo-wide TypeScript remains red on unrelated existing `FileExplorer.tsx`, `App.tsx`, and test typing debt, so the useful frontend signal for this pass is the thumbnail-specific filtered check rather than a clean full-project `tsc` exit.
+
 ## 2026-04-16 — Explorer File-List Scrollbar Visibility + Bottom-Zoom Clamp Timing
 
 - The flagship explorer file list no longer inherits the app-wide "hide every scrollbar" rule. The main file-area viewport now opts into a dedicated visible scrollbar so operators can read list scale and position while browsing.
