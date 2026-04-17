@@ -417,6 +417,15 @@ describe('SettingsPage behavior', () => {
       expect(useSettingsStore.getState().settings.keybindings.windowModeToggle).toBe('F10');
     });
 
+    const zenFocusInput = screen.getByDisplayValue('Ctrl+Alt+Z');
+    await user.clear(zenFocusInput);
+    await user.type(zenFocusInput, 'Ctrl + Shift + Z');
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.keybindings.zenFocusModeToggle).toBe('Ctrl+Shift+Z');
+    });
+
     const toggleHotkeyCard = screen.getByText('Toggle Main Window').closest('label');
     if (!toggleHotkeyCard) {
       throw new Error('Missing Toggle Main Window hotkey card');

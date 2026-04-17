@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow, WebviewWindow } from '@tauri-apps/api/webviewWindow';
@@ -447,6 +447,66 @@ describe('App dock mode behavior', () => {
       expect(useSettingsStore.getState().settings.terminal.windowMode).toBe('windowed');
     });
     expect(screen.getByTestId('explorer-layout-mode')).toHaveTextContent('full');
+  });
+
+  it('hides the top bar and foregrounds explorer while zen focus mode is enabled', async () => {
+    useSettingsStore.setState(state => ({
+      settings: {
+        ...state.settings,
+        layout: {
+          ...state.settings.layout,
+          panelStateByProfile: {
+            ...state.settings.layout.panelStateByProfile,
+            'overlay-classic': {
+              openPanelIds: ['terminal'],
+              activePanelId: 'terminal',
+              dismissedPanelIds: ['explorer'],
+            },
+          },
+        },
+      },
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByTitle('Switch to Dock Mode')).toBeInTheDocument();
+
+    useSettingsStore.getState().updateLayout({ zenFocusMode: true });
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.layout.zenFocusMode).toBe(true);
+      expect(useSettingsStore.getState().settings.layout.panelStateByProfile['overlay-classic']?.activePanelId).toBe('explorer');
+    });
+    expect(screen.queryByTitle('Switch to Dock Mode')).toBeNull();
+    expect(screen.getByTestId('explorer-layout-mode')).toHaveTextContent('full');
+
+    useSettingsStore.getState().updateLayout({ zenFocusMode: false });
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.layout.zenFocusMode).toBe(false);
+      expect(useSettingsStore.getState().settings.layout.panelStateByProfile['overlay-classic']?.activePanelId).toBe('terminal');
+    });
+    expect(await screen.findByTitle('Switch to Dock Mode')).toBeInTheDocument();
+  });
+
+  it('toggles zen focus mode from the local keybinding', async () => {
+    render(<App />);
+
+    expect(await screen.findByTitle('Switch to Dock Mode')).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true, altKey: true });
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.layout.zenFocusMode).toBe(true);
+    });
+    expect(screen.queryByTitle('Switch to Dock Mode')).toBeNull();
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true, altKey: true });
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.layout.zenFocusMode).toBe(false);
+    });
+    expect(await screen.findByTitle('Switch to Dock Mode')).toBeInTheDocument();
   });
 
   it('reapplies window mode once when syncing tray and taskbar changes', async () => {

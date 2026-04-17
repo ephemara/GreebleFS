@@ -219,6 +219,7 @@ export interface LayoutSettings {
   activeProfileId: string;
   configPath: string;
   panelStateByProfile: Record<string, LayoutPanelState>;
+  zenFocusMode: boolean;
 }
 
 export interface LayoutPanelState {
@@ -709,6 +710,7 @@ export const defaultSettings: Settings = {
     activeProfileId: DEFAULT_PILOT_LAYOUT_PROFILE_ID,
     configPath: '',
     panelStateByProfile: {},
+    zenFocusMode: false,
   },
 };
 
@@ -736,6 +738,26 @@ function normalizePanelStateByProfile(value: unknown): Record<string, LayoutPane
       normalizeLayoutPanelState(panelState),
     ]),
   );
+}
+
+function normalizeLayoutSettings(
+  base: LayoutSettings,
+  updates?: Partial<LayoutSettings>,
+): LayoutSettings {
+  const merged = { ...base, ...updates };
+  const hasExplicitPanelStateByProfile = updates != null
+    && Object.prototype.hasOwnProperty.call(updates, 'panelStateByProfile');
+
+  return {
+    activeProfileId: typeof merged.activeProfileId === 'string' && merged.activeProfileId.trim().length > 0
+      ? merged.activeProfileId.trim()
+      : base.activeProfileId,
+    configPath: typeof merged.configPath === 'string' ? merged.configPath : base.configPath,
+    panelStateByProfile: hasExplicitPanelStateByProfile
+      ? normalizePanelStateByProfile(updates?.panelStateByProfile)
+      : base.panelStateByProfile,
+    zenFocusMode: merged.zenFocusMode === true,
+  };
 }
 
 function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Settings {
@@ -798,13 +820,7 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
     screenshots: normalizeScreenshotSettings(base.screenshots, migratedImportedScreenshots),
     keybindings: normalizeKeybindingSettings({ ...base.keybindings, ...imported?.keybindings }),
     polygemini: { ...base.polygemini, ...imported?.polygemini },
-    layout: {
-      ...base.layout,
-      ...(imported as Partial<Settings> | undefined)?.layout,
-      panelStateByProfile: normalizePanelStateByProfile(
-        (imported as Partial<Settings> | undefined)?.layout?.panelStateByProfile ?? base.layout.panelStateByProfile,
-      ),
-    },
+    layout: normalizeLayoutSettings(base.layout, (imported as Partial<Settings> | undefined)?.layout),
   };
 }
 
@@ -1032,7 +1048,7 @@ export const useSettingsStore = create<SettingsState>()(
                 ? normalizeExplorerSettings(state.settings.explorer, themeDefaults.explorer)
                 : state.settings.explorer,
               layout: themeDefaults?.layout
-                ? { ...state.settings.layout, ...themeDefaults.layout }
+                ? normalizeLayoutSettings(state.settings.layout, themeDefaults.layout)
                 : state.settings.layout,
             },
           };
@@ -1087,7 +1103,7 @@ export const useSettingsStore = create<SettingsState>()(
       updateLayout: (updates) => set((state) => ({
         settings: {
           ...state.settings,
-          layout: { ...state.settings.layout, ...updates },
+          layout: normalizeLayoutSettings(state.settings.layout, updates),
         },
       })),
       

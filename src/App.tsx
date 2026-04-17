@@ -502,6 +502,7 @@ function App() {
   });
   const dragHideRestoreRef = useRef(false);
   const openTerminalPanelRef = useRef<() => void>(() => undefined);
+  const zenFocusRestorePanelIdRef = useRef<string | null>(null);
   // Tracks whether the overlay has been dragged away from its anchor position
   const isFreefloatingRef = useRef(false);
   const [layoutManifest, setLayoutManifest] = useState(BUILT_IN_LAYOUT_MANIFEST);
@@ -584,6 +585,7 @@ function App() {
     [combinedThemePackages],
   );
   const windowMode: TerminalWindowMode = settings.windowMode === 'windowed' ? 'windowed' : 'overlay';
+  const zenFocusMode = layoutSettings.zenFocusMode === true;
   windowModeRef.current = windowMode;
   const resolvedAppearance = useMemo(
     () => resolveOverlayAppearance({
@@ -2063,6 +2065,12 @@ function App() {
     void requestWindowModeChange(nextWindowMode);
   }, [requestWindowModeChange, windowMode]);
 
+  const handleToggleZenFocusMode = useCallback(() => {
+    updateLayout({
+      zenFocusMode: !layoutSettings.zenFocusMode,
+    });
+  }, [layoutSettings.zenFocusMode, updateLayout]);
+
   const handleOpenCommandPalette = useCallback(() => {
     if (!overlayVisibleRef.current || overlayPhaseRef.current === 'closed') {
       void showCurrentPresentation();
@@ -2075,8 +2083,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const developerTelemetryAllowed = Boolean(import.meta.env.DEV) || systemSettings.developerMode;
-    if (!developerTelemetryAllowed || typeof window === 'undefined') {
+    if (typeof window === 'undefined') {
       return;
     }
 
@@ -2090,7 +2097,29 @@ function App() {
         return;
       }
 
-      if (!matchesKeybinding(event, keybindings.toggleDeveloperTelemetryHud)) {
+      if (matchesKeybinding(event, keybindings.commandPalette)) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleOpenCommandPalette();
+        return;
+      }
+
+      if (matchesKeybinding(event, keybindings.windowModeToggle)) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleToggleWindowMode();
+        return;
+      }
+
+      if (matchesKeybinding(event, keybindings.zenFocusModeToggle)) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleToggleZenFocusMode();
+        return;
+      }
+
+      const developerTelemetryAllowed = Boolean(import.meta.env.DEV) || systemSettings.developerMode;
+      if (!developerTelemetryAllowed || !matchesKeybinding(event, keybindings.toggleDeveloperTelemetryHud)) {
         return;
       }
 
@@ -2105,7 +2134,16 @@ function App() {
 
     window.addEventListener('keydown', handleKeydown, { capture: true });
     return () => window.removeEventListener('keydown', handleKeydown, { capture: true });
-  }, [keybindings.toggleDeveloperTelemetryHud, systemSettings.developerMode]);
+  }, [
+    handleOpenCommandPalette,
+    handleToggleWindowMode,
+    handleToggleZenFocusMode,
+    keybindings.commandPalette,
+    keybindings.toggleDeveloperTelemetryHud,
+    keybindings.windowModeToggle,
+    keybindings.zenFocusModeToggle,
+    systemSettings.developerMode,
+  ]);
 
   const handleDragStart = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     const target = event.target instanceof HTMLElement ? event.target : null;
@@ -3089,6 +3127,44 @@ function App() {
     });
   }, [activeLayoutProfile.id, availablePanelIds, pinnedPanelIds]);
 
+  useEffect(() => {
+    if (!zenFocusMode) {
+      const restorePanelId = zenFocusRestorePanelIdRef.current;
+      zenFocusRestorePanelIdRef.current = null;
+
+      if (!restorePanelId || restorePanelId === 'explorer' || !availablePanelIds.includes(restorePanelId)) {
+        return;
+      }
+
+      updateActiveLayoutPanelState(current => ({
+        ...current,
+        openPanelIds: uniquePanelIds([...current.openPanelIds, restorePanelId]),
+        activePanelId: restorePanelId,
+        dismissedPanelIds: current.dismissedPanelIds.filter(id => id !== restorePanelId),
+      }));
+      return;
+    }
+
+    if (!availablePanelIds.includes('explorer')) {
+      return;
+    }
+
+    if (activePanelId && activePanelId !== 'explorer' && zenFocusRestorePanelIdRef.current == null) {
+      zenFocusRestorePanelIdRef.current = activePanelId;
+    }
+
+    if (activePanelId === 'explorer' && openPanelIds.includes('explorer')) {
+      return;
+    }
+
+    updateActiveLayoutPanelState(current => ({
+      ...current,
+      openPanelIds: uniquePanelIds([...current.openPanelIds, 'explorer']),
+      activePanelId: 'explorer',
+      dismissedPanelIds: current.dismissedPanelIds.filter(id => id !== 'explorer'),
+    }));
+  }, [activePanelId, availablePanelIds, openPanelIds, updateActiveLayoutPanelState, zenFocusMode]);
+
   const handleSelectPanel = useCallback((panelId: string | null) => {
     if (!panelId || pinnedPanelIds.includes(panelId) || !panelLookup.has(panelId)) {
       return;
@@ -3333,6 +3409,17 @@ function App() {
         badge: windowMode === 'windowed' ? 'Dock' : 'App',
         onSelect: handleToggleWindowMode,
       },
+      {
+        id: 'toggle-zen-focus-mode',
+        title: zenFocusMode ? 'Exit Zen Focus Mode' : 'Enter Zen Focus Mode',
+        subtitle: zenFocusMode
+          ? 'Restore the shell top bar and return to the normal chrome pass.'
+          : 'Hide the shell top bar and foreground the explorer for a cleaner browsing surface.',
+        group: 'Layout',
+        keywords: ['zen', 'focus', 'chrome', 'top bar', 'immersive', 'explorer'],
+        badge: zenFocusMode ? 'Zen On' : 'Zen Off',
+        onSelect: handleToggleZenFocusMode,
+      },
       ...(windowMode === 'overlay'
         ? [{
             id: 'toggle-dock-edge',
@@ -3379,6 +3466,7 @@ function App() {
     handleCycleLayout,
     handleOpenSettings,
     handleToggleOverlayAnchor,
+    handleToggleZenFocusMode,
     handleToggleWindowMode,
     overlayAnchor,
     openPluginsFolder,
@@ -3392,6 +3480,7 @@ function App() {
     refreshFolderPlugins,
     refreshThemePackages,
     windowMode,
+    zenFocusMode,
   ]);
 
   useEffect(() => {
@@ -3703,6 +3792,9 @@ function App() {
       surfaceOwnership={activeThemeRendererSurfaceOwnership}
       commandPaletteShortcutLabel={formatHotkeyLabel(keybindings.commandPalette)}
       toggleShortcutLabel={formatHotkeyLabel(keybindings.terminalToggle)}
+      zenFocusMode={zenFocusMode}
+      zenFocusShortcutLabel={formatHotkeyLabel(keybindings.zenFocusModeToggle)}
+      onToggleZenFocusMode={handleToggleZenFocusMode}
       topBarShaderLayer={(
         <ShaderSurfaceLayer
           shader={activeShader}
@@ -3724,11 +3816,11 @@ function App() {
         />
       )}
 
-      {(isWindowedMode || activeLayoutProfile.chrome.barPosition === 'top') && chromeBar}
+      {!zenFocusMode && (isWindowedMode || activeLayoutProfile.chrome.barPosition === 'top') && chromeBar}
 
       {defaultWorkbenchContent}
 
-      {!isWindowedMode && activeLayoutProfile.chrome.barPosition === 'bottom' && chromeBar}
+      {!zenFocusMode && !isWindowedMode && activeLayoutProfile.chrome.barPosition === 'bottom' && chromeBar}
 
       {!isWindowedMode && isTopAnchored && canResizeOverlayShell && (
         <div
@@ -3753,11 +3845,11 @@ function App() {
         />
       )}
 
-      {!activeThemeRendererSurfaceOwnership?.chrome && (isWindowedMode || activeLayoutProfile.chrome.barPosition === 'top') && chromeBar}
+      {!zenFocusMode && !activeThemeRendererSurfaceOwnership?.chrome && (isWindowedMode || activeLayoutProfile.chrome.barPosition === 'top') && chromeBar}
 
       {themeRendererDefaultWorkbenchContent}
 
-      {!activeThemeRendererSurfaceOwnership?.chrome && !isWindowedMode && activeLayoutProfile.chrome.barPosition === 'bottom' && chromeBar}
+      {!zenFocusMode && !activeThemeRendererSurfaceOwnership?.chrome && !isWindowedMode && activeLayoutProfile.chrome.barPosition === 'bottom' && chromeBar}
 
       {!isWindowedMode && isTopAnchored && canResizeOverlayShell && (
         <div
@@ -3841,6 +3933,15 @@ function App() {
         onSelect: () => { void requestWindowModeChange(windowMode === 'overlay' ? 'windowed' : 'overlay'); },
       },
       {
+        id: 'toggle-zen-focus-mode',
+        label: zenFocusMode ? 'Zen On' : 'Zen Off',
+        title: zenFocusMode ? 'Exit zen focus mode' : 'Enter zen focus mode',
+        icon: <LayoutGrid size={12} />,
+        isActive: zenFocusMode,
+        isVisible: true,
+        onSelect: handleToggleZenFocusMode,
+      },
+      {
         id: 'toggle-overlay-anchor',
         label: overlayAnchor === 'top' ? 'Top Edge' : 'Bottom Edge',
         title: `Dock overlay to the ${overlayAnchor === 'top' ? 'bottom' : 'top'} edge`,
@@ -3855,10 +3956,11 @@ function App() {
       handleOpenCommandPalette,
       handleOpenSettings,
       handleToggleOverlayAnchor,
+      handleToggleZenFocusMode,
       keybindings.commandPalette,
       overlayAnchor,
-      updateTerminal,
       windowMode,
+      zenFocusMode,
     ],
   );
   const themeRendererShellModel = useMemo<OverlayThemeRendererShellModel>(() => {
@@ -3874,7 +3976,7 @@ function App() {
       shellInset: resolvedAppearance.workbenchTheme.metrics.shellInset,
       panelGap: resolvedAppearance.workbenchTheme.metrics.panelGap,
       contentInnerPadding: contentStagePadding,
-      chromeHeight: resolvedAppearance.workbenchTheme.metrics.chromeHeight,
+      chromeHeight: zenFocusMode ? 0 : resolvedAppearance.workbenchTheme.metrics.chromeHeight,
       launcherVisible: renderRuntime.launcherPlacement === 'sidebar' && themeRendererLauncherGroups.length > 0,
       launcherWidth: renderRuntime.navigationRailWidth,
       leftPinnedWidth,
@@ -3906,6 +4008,7 @@ function App() {
     themeRendererUtilityActions,
     themeRendererViewport.height,
     themeRendererViewport.width,
+    zenFocusMode,
   ]);
   const themeRendererUtilityActionSurface = useMemo(() => {
     const actions = themeRendererShellModel.chrome.utilityActions;
@@ -4221,6 +4324,9 @@ function TopBar({
   surfaceOwnership,
   commandPaletteShortcutLabel,
   toggleShortcutLabel,
+  zenFocusMode,
+  zenFocusShortcutLabel,
+  onToggleZenFocusMode,
   topBarShaderLayer,
 }: {
   appearance: ResolvedOverlayAppearance;
@@ -4251,6 +4357,9 @@ function TopBar({
   surfaceOwnership?: OverlayThemeRendererSurfaceOwnership | null;
   commandPaletteShortcutLabel: string;
   toggleShortcutLabel: string;
+  zenFocusMode: boolean;
+  zenFocusShortcutLabel: string;
+  onToggleZenFocusMode: () => void;
   topBarShaderLayer?: React.ReactNode;
 }) {
   const BORDER = appearance.theme.palette.border;
@@ -4740,6 +4849,33 @@ function TopBar({
             <Droplet size={11} />
           </button>
         )}
+
+        <button
+          onClick={onToggleZenFocusMode}
+          title={`${zenFocusMode ? 'Exit' : 'Enter'} Zen Focus Mode (${zenFocusShortcutLabel})`}
+          style={{
+            height: 22,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '0 7px',
+            borderRadius: workbench.metrics.controlRadius,
+            border: `1px solid ${zenFocusMode ? 'var(--overlay-workbench-chrome-button-active-border)' : 'var(--overlay-workbench-chrome-border)'}`,
+            background: zenFocusMode
+              ? 'var(--overlay-workbench-chrome-button-active-bg)'
+              : 'var(--overlay-workbench-chrome-button-bg)',
+            color: zenFocusMode ? TEXT : MUTED,
+            fontSize: 'var(--overlay-workbench-chrome-meta-size)',
+            fontWeight: 700,
+            letterSpacing: 'var(--overlay-workbench-label-spacing)',
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+            transition: 'background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s',
+            boxShadow: zenFocusMode ? `0 0 0 1px ${accent}18 inset` : 'none',
+          }}
+        >
+          <span>Zen</span>
+        </button>
 
         {showPrimaryLauncherChrome && layoutProfile.chrome.showPanelMenu && (
           <div ref={menuRef} style={{ position: 'relative', flexShrink: 0, marginRight: 4 }}>

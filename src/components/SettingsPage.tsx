@@ -1938,7 +1938,7 @@ export function SettingsPage({
       key: 'layouts',
       label: 'Layouts',
       subtitle: 'Workbench profiles and shell chrome.',
-      summary: `${activeLayoutProfile.label} · ${layoutManifestState.manifest.profiles.length} profiles`,
+      summary: `${activeLayoutProfile.label} · ${layoutManifestState.manifest.profiles.length} profiles · ${settings.layout.zenFocusMode ? 'Zen on' : 'Zen off'}`,
       detail: 'Switch between shell profiles, point at external manifests, and control the workbench shape at the layout level.',
       icon: <LayoutGrid size={14} />,
     },
@@ -1946,10 +1946,10 @@ export function SettingsPage({
       key: 'hotkeys',
       label: 'Hotkeys',
       subtitle: 'Overlay opener and gesture bindings.',
-      summary: [settings.keybindings.terminalToggle, settings.keybindings.windowModeToggle, settings.keybindings.terminalFocus]
+      summary: [settings.keybindings.terminalToggle, settings.keybindings.windowModeToggle, settings.keybindings.zenFocusModeToggle]
         .map(formatHotkeyLabel)
         .join(' · '),
-      detail: 'Keep the overlay easy to summon, jump straight to the terminal panel, and remap the first global gestures without digging through raw config.',
+      detail: 'Keep the overlay easy to summon, control shell presentation, and remap the primary focus toggles without digging through raw config.',
       icon: <SlidersHorizontal size={14} />,
     },
     {
@@ -3258,7 +3258,7 @@ export function SettingsPage({
             <SectionTitle
               icon={<TerminalSquare size={12} />}
               title="Hotkeys"
-              subtitle="Keep the overlay opener configurable and expose the regular-window mode toggle alongside the first global gesture controls."
+              subtitle="Keep the overlay opener configurable and expose the shell presentation toggles alongside the first global gesture controls."
             />
 
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -3267,6 +3267,7 @@ export function SettingsPage({
                   definition.scope === 'global'
                   || definition.scope === 'gesture'
                   || definition.key === 'windowModeToggle'
+                  || definition.key === 'zenFocusModeToggle'
                   || definition.key === 'toggleDeveloperTelemetryHud'
                 ))
                 .map(definition => (
@@ -3328,7 +3329,7 @@ export function SettingsPage({
                   <div>
                     <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shell Presentation</div>
                     <p className="mt-1 text-[11px] opacity-40">
-                      `Ctrl+Space` always shows the current presentation mode. Use {formatHotkeyLabel(settings.keybindings.windowModeToggle)} while the shell is focused to swap between the dock-style overlay shell and a regular desktop application window.
+                      `Ctrl+Space` always shows the current presentation mode. Use {formatHotkeyLabel(settings.keybindings.windowModeToggle)} to swap between the dock-style overlay shell and a regular desktop application window, and {formatHotkeyLabel(settings.keybindings.zenFocusModeToggle)} to hide the shell top bar for a cleaner explorer-focused pass.
                     </p>
                   </div>
                   <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>

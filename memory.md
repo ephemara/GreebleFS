@@ -1,5 +1,21 @@
 # GreebleFS Memory
 
+## 2026-04-17 — Shell Zen Focus Mode
+
+- The shell now has a layout-level zen focus mode that hides the top chrome without entering OS fullscreen and automatically foregrounds the explorer while the mode is active.
+- Durable implementation shape:
+  - `src/store/settingsStore.ts` now persists `settings.layout.zenFocusMode` and normalizes layout updates through a dedicated layout normalizer so theme defaults, imports, and partial layout writes do not accidentally drop the zen flag or panel-state map.
+  - `src/config/hotkeys.ts` now defines `zenFocusModeToggle`, defaulting to `Ctrl+Alt+Z`, and `src/components/SettingsPage.tsx` exposes it alongside the other shell-presentation bindings.
+  - `src/App.tsx` now treats zen focus mode as shell truth: local shell hotkey handling can toggle it, command palette and theme-renderer utility actions can toggle it, the default shell and theme-renderer shell both stop rendering the top bar while zen is active, and the theme-renderer shell model drops `chromeHeight` to `0` so layouts do not reserve dead space.
+  - Zen mode captures the previously active non-explorer panel in a ref, forces the explorer open/active while enabled, then restores the captured panel when zen is disabled if that panel still exists.
+  - The top bar now exposes a `Zen` control before it hides, so operators can enter the mode from chrome as well as by hotkey.
+- Durable product note:
+  - This is intentionally not native fullscreen. Future focus-mode work should stay in the shell/layout lane unless the task explicitly requires OS-level fullscreen/window-state control.
+  - Zen mode is a shell-presentation state, not explorer-local state. Keep the persisted flag in layout settings and keep the actual chrome suppression in `App.tsx` instead of recreating per-panel hide/show logic.
+- Validation:
+  - passed: `bunx vitest run src/test/hotkeys.test.ts src/test/settingsStore.test.ts src/test/settingsPage.behavior.test.tsx src/test/app.dockMode.test.tsx`
+  - passed: filtered typecheck via `bunx tsc --noEmit --pretty false 2>&1 | rg "App.tsx|SettingsPage.tsx|settingsStore.ts|hotkeys.ts|app.dockMode.test.tsx|settingsPage.behavior.test.tsx|settingsStore.test.ts|hotkeys.test.ts" || true`
+
 ## 2026-04-17 — Audio Workbench Waveform Fade Handles
 
 - Explorer audio fades no longer live as separate transform inputs. The workbench now exposes small DAW-style fade-in/out handles directly on the waveform strip.

@@ -105,6 +105,7 @@ describe('useSettingsStore — initial state', () => {
     const { settings } = useSettingsStore.getState();
     expect(settings.layout.activeProfileId).toBe(defaultSettings.layout.activeProfileId);
     expect(settings.layout.configPath).toBe('');
+    expect(settings.layout.zenFocusMode).toBe(false);
   });
 
   it('has safe default system visibility settings', () => {
@@ -122,6 +123,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.keybindings.terminalToggle).toBe('Ctrl+Space');
     expect(settings.keybindings.terminalFocus).toBe('Ctrl+J');
     expect(settings.keybindings.windowModeToggle).toBe('F11');
+    expect(settings.keybindings.zenFocusModeToggle).toBe('Ctrl+Alt+Z');
     expect(settings.keybindings.commandPalette).toBe('Ctrl+Shift+P');
   });
 
@@ -348,12 +350,37 @@ describe('useSettingsStore.updateLayout()', () => {
     store.updateLayout({
       activeProfileId: 'navigator-bottom',
       configPath: 'M:\\layouts\\greeble.layouts.toml',
+      zenFocusMode: true,
     });
 
     const { settings } = useSettingsStore.getState();
     expect(settings.layout.activeProfileId).toBe('navigator-bottom');
     expect(settings.layout.configPath).toBe('M:\\layouts\\greeble.layouts.toml');
+    expect(settings.layout.zenFocusMode).toBe(true);
     expect(settings.appearance).toEqual(beforeAppearance);
+  });
+
+  it('stores zen focus mode without disturbing the saved layout panel state', () => {
+    const store = useSettingsStore.getState();
+    store.updateLayout({
+      panelStateByProfile: {
+        'overlay-classic': {
+          openPanelIds: ['terminal'],
+          activePanelId: 'terminal',
+          dismissedPanelIds: ['explorer'],
+        },
+      },
+    });
+
+    store.updateLayout({ zenFocusMode: true });
+
+    const { layout } = useSettingsStore.getState().settings;
+    expect(layout.zenFocusMode).toBe(true);
+    expect(layout.panelStateByProfile['overlay-classic']).toEqual({
+      openPanelIds: ['terminal'],
+      activePanelId: 'terminal',
+      dismissedPanelIds: ['explorer'],
+    });
   });
 
   it('keeps explorer anchors intact when switching layout profiles', () => {

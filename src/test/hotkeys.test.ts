@@ -19,6 +19,7 @@ describe('hotkey config helpers', () => {
       terminalToggle: '   ',
       terminalFocus: '   ',
       windowModeToggle: '   ',
+      zenFocusModeToggle: '   ',
       zoomAdjust: 'Ctrl + Scroll',
     });
 
@@ -29,6 +30,8 @@ describe('hotkey config helpers', () => {
     expect(normalized.terminalFocus).toBe(defaults.terminalFocus);
     expect(defaults.windowModeToggle).toBe('F11');
     expect(normalized.windowModeToggle).toBe(defaults.windowModeToggle);
+    expect(defaults.zenFocusModeToggle).toBe('Ctrl+Alt+Z');
+    expect(normalized.zenFocusModeToggle).toBe(defaults.zenFocusModeToggle);
     expect(normalized.zoomAdjust).toBe('Ctrl+Scroll');
     expect(defaults.opacityAdjust).toBe('Alt+Scroll');
     expect(defaults.goBackDirectory).toBe('Alt+Left');

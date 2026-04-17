@@ -4,6 +4,7 @@ export type HotkeyBindingKey =
   | 'terminalFocus'
   | 'terminalToggle'
   | 'windowModeToggle'
+  | 'zenFocusModeToggle'
   | 'saveFile'
   | 'newFile'
   | 'newFolder'
@@ -78,6 +79,13 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     label: 'Toggle App/Dock Mode',
     description: 'Switch between the dock-style overlay shell and the regular desktop application window.',
     defaultValue: 'F11',
+    scope: 'local',
+  },
+  {
+    key: 'zenFocusModeToggle',
+    label: 'Toggle Zen Focus Mode',
+    description: 'Hide or restore the shell top bar and foreground the explorer for a cleaner focus pass.',
+    defaultValue: 'Ctrl+Alt+Z',
     scope: 'local',
   },
   {
