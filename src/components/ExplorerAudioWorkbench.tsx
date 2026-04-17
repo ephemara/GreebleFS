@@ -163,10 +163,6 @@ function deckLabel(deckId: ExplorerAudioDeckId): string {
   return deckId === 'a' ? 'Deck A' : 'Deck B';
 }
 
-function oppositeDeck(deckId: ExplorerAudioDeckId): ExplorerAudioDeckId {
-  return deckId === 'a' ? 'b' : 'a';
-}
-
 function deckCardStyle(isArmed: boolean, isPreviewDeck: boolean): CSSProperties {
   return {
     borderRadius: 16,
@@ -216,6 +212,7 @@ export function ExplorerAudioWorkbench({
   const [workbenchError, setWorkbenchError] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [spectrogramSource, setSpectrogramSource] = useState<string | null>(null);
+  const [showDeckB, setShowDeckB] = useState(false);
 
   const previewDeck = getAudioDeckState(snapshot, previewDeckId);
   const effectiveDuration = Math.max(
@@ -669,7 +666,13 @@ export function ExplorerAudioWorkbench({
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(110px, max-content))',
+            gap: 8,
+          }}
+        >
           <button type="button" style={toolbarButtonStyle()} onClick={() => void handleArmDeck(deckId)}>
             Arm
           </button>
@@ -775,7 +778,7 @@ export function ExplorerAudioWorkbench({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
               gap: 10,
             }}
           >
@@ -803,7 +806,13 @@ export function ExplorerAudioWorkbench({
             </label>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+              gap: 8,
+            }}
+          >
             <div style={metricCardStyle()}>
               <div style={miniLabelStyle}>Loop In</div>
               <div style={miniValueStyle}>{formatDuration(deck.loopRegion.startSeconds)}</div>
@@ -899,7 +908,7 @@ export function ExplorerAudioWorkbench({
                       color: 'var(--overlay-text-muted)',
                     }}
                   >
-                    {audioExtension.toUpperCase()} · {formatSize(audioSize)} · Preview Deck {previewDeckId.toUpperCase()}
+                    {audioExtension.toUpperCase()} · {formatSize(audioSize)} · Native playback
                   </div>
                 </div>
                 <div
@@ -921,9 +930,9 @@ export function ExplorerAudioWorkbench({
                   <button
                     type="button"
                     style={toolbarButtonStyle()}
-                    onClick={() => void handleArmDeck(oppositeDeck(snapshot.armedDeck))}
+                    onClick={() => setShowDeckB((current) => !current)}
                   >
-                    Swap Focus
+                    {showDeckB ? 'Hide Deck B' : 'Deck B'}
                   </button>
                   <button
                     type="button"
@@ -939,12 +948,42 @@ export function ExplorerAudioWorkbench({
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                  gridTemplateColumns: 'minmax(0, 1fr)',
                   gap: 12,
                 }}
               >
                 {renderDeckCard('a')}
-                {renderDeckCard('b')}
+                {showDeckB ? (
+                  renderDeckCard('b')
+                ) : (
+                  <div
+                    style={{
+                      borderRadius: 14,
+                      border: '1px dashed rgba(255,255,255,0.12)',
+                      background: 'rgba(255,255,255,0.025)',
+                      padding: 14,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <div style={{ display: 'grid', gap: 4 }}>
+                      <div style={{ fontSize: 12, fontWeight: 800 }}>Deck B</div>
+                      <div style={{ fontSize: 11, color: 'var(--overlay-text-muted)' }}>
+                        Optional reference deck. Keep it hidden unless you need a second loaded clip.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      style={toolbarButtonStyle()}
+                      onClick={() => setShowDeckB(true)}
+                    >
+                      Open Deck B
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'grid', gap: 10 }}>
@@ -1072,7 +1111,7 @@ export function ExplorerAudioWorkbench({
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
                     gap: 10,
                   }}
                 >
@@ -1099,7 +1138,7 @@ export function ExplorerAudioWorkbench({
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
                     gap: 10,
                   }}
                 >
@@ -1117,7 +1156,7 @@ export function ExplorerAudioWorkbench({
               style={{
                 display: 'grid',
                 gap: 14,
-                gridTemplateColumns: 'minmax(0, 1.1fr) minmax(320px, 0.9fr)',
+                gridTemplateColumns: 'minmax(0, 1fr)',
               }}
             >
               <div
@@ -1145,7 +1184,7 @@ export function ExplorerAudioWorkbench({
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
                     gap: 12,
                   }}
                 >

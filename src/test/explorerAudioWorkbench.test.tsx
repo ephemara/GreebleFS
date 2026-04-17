@@ -208,6 +208,7 @@ describe('ExplorerAudioWorkbench', () => {
       expect(syncSelectionIntoArmedAudioDeckMock).toHaveBeenCalledWith('/tmp/anthem.mp3');
     });
 
+    fireEvent.click(screen.getByRole('button', { name: /open deck b/i }));
     fireEvent.click(screen.getAllByRole('button', { name: /load selection/i })[1]);
 
     await waitFor(() => {
