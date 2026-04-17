@@ -1,5 +1,5 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import {
   AlertTriangle,
   AudioLines,
@@ -45,10 +45,11 @@ type ExplorerAudioWorkbenchProps = {
 };
 
 type ExportDialogMode = 'clip' | 'normalized' | 'convert' | 'overwrite' | null;
-type TimelineDragMode = 'playhead' | 'selectionStart' | 'selectionEnd';
+type TimelineDragMode = 'playhead' | 'selectionStart' | 'selectionEnd' | 'fadeIn' | 'fadeOut';
 type ExportState = 'idle' | 'running' | 'saved' | 'error';
 
 const MINIMUM_SELECTION_SECONDS = 0.05;
+const FADE_KEYBOARD_STEP_SECONDS = 0.1;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -73,6 +74,16 @@ function formatDb(value: number | null | undefined): string {
     return 'n/a';
   }
   return `${(20 * Math.log10(value)).toFixed(1)} dB`;
+}
+
+function formatFadeDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return '0.00s';
+  }
+  if (seconds >= 60) {
+    return formatDuration(seconds);
+  }
+  return `${seconds.toFixed(seconds < 10 ? 2 : 1)}s`;
 }
 
 function formatSize(bytes: number): string {
@@ -134,12 +145,55 @@ function toolbarButtonStyle(
 
 function metricCardStyle(): CSSProperties {
   return {
-    borderRadius: 14,
+    borderRadius: 12,
     border: '1px solid var(--overlay-explorer-chip-border)',
     background: 'rgba(255,255,255,0.04)',
-    padding: '10px 12px',
+    padding: '8px 10px',
     display: 'grid',
-    gap: 4,
+    gap: 2,
+    minWidth: 0,
+  };
+}
+
+function fadeOverlayStyle(kind: 'in' | 'out'): CSSProperties {
+  const isFadeIn = kind === 'in';
+  return {
+    position: 'absolute',
+    top: 5,
+    height: 14,
+    borderRadius: 8,
+    pointerEvents: 'none',
+    background: isFadeIn
+      ? 'linear-gradient(90deg, rgba(123, 205, 255, 0.02), rgba(123, 205, 255, 0.22))'
+      : 'linear-gradient(90deg, rgba(255, 184, 92, 0.22), rgba(255, 184, 92, 0.02))',
+    border: isFadeIn
+      ? '1px solid rgba(123, 205, 255, 0.2)'
+      : '1px solid rgba(255, 184, 92, 0.2)',
+  };
+}
+
+function fadeHandleStyle(kind: 'in' | 'out'): CSSProperties {
+  const isFadeIn = kind === 'in';
+  return {
+    position: 'absolute',
+    top: 1,
+    width: 16,
+    height: 18,
+    transform: 'translateX(-50%)',
+    borderRadius: 999,
+    display: 'grid',
+    placeItems: 'center',
+    background: isFadeIn
+      ? 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(123, 205, 255, 0.86))'
+      : 'linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255, 184, 92, 0.86))',
+    border: isFadeIn
+      ? '1px solid rgba(123, 205, 255, 0.3)'
+      : '1px solid rgba(255, 184, 92, 0.3)',
+    boxShadow: isFadeIn
+      ? '0 0 0 2px rgba(123, 205, 255, 0.16), 0 8px 18px rgba(0,0,0,0.22)'
+      : '0 0 0 2px rgba(255, 184, 92, 0.16), 0 8px 18px rgba(0,0,0,0.22)',
+    cursor: 'ew-resize',
+    zIndex: 4,
   };
 }
 
@@ -184,10 +238,18 @@ export function ExplorerAudioWorkbench({
     previewDeck.durationSeconds ?? 0,
   );
   const selectionDuration = Math.max(0, selectionEnd - selectionStart);
+  const boundedFadeInSeconds = clamp(fadeInSeconds, 0, selectionDuration);
+  const boundedFadeOutSeconds = clamp(fadeOutSeconds, 0, selectionDuration);
   const selectionLeft =
     effectiveDuration > 0 ? `${(selectionStart / effectiveDuration) * 100}%` : '0%';
   const selectionWidth =
     effectiveDuration > 0 ? `${(selectionDuration / effectiveDuration) * 100}%` : '0%';
+  const fadeInWidth =
+    selectionDuration > 0 ? `${(boundedFadeInSeconds / selectionDuration) * 100}%` : '0%';
+  const fadeOutWidth =
+    selectionDuration > 0 ? `${(boundedFadeOutSeconds / selectionDuration) * 100}%` : '0%';
+  const fadeInHandleLeft = `calc(${selectionLeft} + ${fadeInWidth})`;
+  const fadeOutHandleLeft = `calc(${selectionLeft} + ${selectionWidth} - ${fadeOutWidth})`;
   const playheadLeft =
     effectiveDuration > 0
       ? `${(previewDeck.currentTimeSeconds / effectiveDuration) * 100}%`
@@ -272,6 +334,11 @@ export function ExplorerAudioWorkbench({
     selectionEnd,
   ]);
 
+  useEffect(() => {
+    setFadeInSeconds((current) => clamp(current, 0, selectionDuration));
+    setFadeOutSeconds((current) => clamp(current, 0, selectionDuration));
+  }, [selectionDuration]);
+
   const waveformBuckets = analysis?.waveformBuckets ?? [];
   const spectralBands = analysis?.spectralBands ?? [];
 
@@ -343,11 +410,21 @@ export function ExplorerAudioWorkbench({
     );
     setSelectionStart(boundedStart);
     setSelectionEnd(finalEnd);
+    setFadeInSeconds((current) => clamp(current, 0, finalEnd - boundedStart));
+    setFadeOutSeconds((current) => clamp(current, 0, finalEnd - boundedStart));
     void setAudioDeckLoopRegion(activeDeckId, boundedStart, finalEnd, true).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       setWorkbenchError(message);
       setWorkbenchStatus('Loop region update failed.');
     });
+  }
+
+  function updateFadeIn(nextSeconds: number) {
+    setFadeInSeconds(clamp(nextSeconds, 0, selectionDuration));
+  }
+
+  function updateFadeOut(nextSeconds: number) {
+    setFadeOutSeconds(clamp(nextSeconds, 0, selectionDuration));
   }
 
   function resolveTimeFromClientX(clientX: number): number {
@@ -368,6 +445,14 @@ export function ExplorerAudioWorkbench({
       }
       if (mode === 'selectionStart') {
         updateSelection(nextTime, selectionEnd);
+        return;
+      }
+      if (mode === 'fadeIn') {
+        updateFadeIn(nextTime - selectionStart);
+        return;
+      }
+      if (mode === 'fadeOut') {
+        updateFadeOut(selectionEnd - nextTime);
         return;
       }
       updateSelection(selectionStart, nextTime);
@@ -405,6 +490,44 @@ export function ExplorerAudioWorkbench({
       setWorkbenchError(message);
       setWorkbenchStatus('Playback command failed.');
     }
+  }
+
+  function handleFadeHandleKeyDown(
+    mode: 'fadeIn' | 'fadeOut',
+    event: KeyboardEvent<HTMLDivElement>,
+  ) {
+    if (selectionDuration <= 0) {
+      return;
+    }
+
+    let nextValue = mode === 'fadeIn' ? boundedFadeInSeconds : boundedFadeOutSeconds;
+    const step = event.shiftKey ? FADE_KEYBOARD_STEP_SECONDS * 5 : FADE_KEYBOARD_STEP_SECONDS;
+
+    switch (event.key) {
+      case 'ArrowLeft':
+      case 'ArrowDown':
+        nextValue -= step;
+        break;
+      case 'ArrowRight':
+      case 'ArrowUp':
+        nextValue += step;
+        break;
+      case 'Home':
+        nextValue = 0;
+        break;
+      case 'End':
+        nextValue = selectionDuration;
+        break;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+    if (mode === 'fadeIn') {
+      updateFadeIn(nextValue);
+      return;
+    }
+    updateFadeOut(nextValue);
   }
 
   async function clearLoopRegion() {
@@ -499,8 +622,8 @@ export function ExplorerAudioWorkbench({
               : 'convertFormat',
         trimStartSeconds: selectionStart,
         trimEndSeconds: selectionEnd,
-        fadeInSeconds,
-        fadeOutSeconds,
+        fadeInSeconds: boundedFadeInSeconds,
+        fadeOutSeconds: boundedFadeOutSeconds,
         normalize: mode === 'normalized' ? true : null,
         outputFormat: nextOutputFormat,
         generateSpectrogram,
@@ -529,8 +652,8 @@ export function ExplorerAudioWorkbench({
         mode: 'overwriteOriginal',
         trimStartSeconds: selectionStart,
         trimEndSeconds: selectionEnd,
-        fadeInSeconds,
-        fadeOutSeconds,
+        fadeInSeconds: boundedFadeInSeconds,
+        fadeOutSeconds: boundedFadeOutSeconds,
         normalize: true,
         outputFormat: audioExtension || 'wav',
         generateSpectrogram,
@@ -656,29 +779,34 @@ export function ExplorerAudioWorkbench({
 
               <div
                 style={{
+                  borderRadius: 'var(--overlay-explorer-panel-radius)',
+                  border: '1px solid var(--overlay-explorer-chip-border)',
+                  background: 'rgba(255,255,255,0.03)',
+                  padding: 10,
                   display: 'grid',
                   gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-                  gap: 10,
+                  gap: 8,
                 }}
               >
-                <div style={metricCardStyle()}>
-                  <div style={miniLabelStyle}>Loaded File</div>
-                  <div style={{ fontSize: 14, fontWeight: 800 }}>{previewDeck.loadedName ?? audioName}</div>
-                </div>
-                <div style={metricCardStyle()}>
-                  <div style={miniLabelStyle}>Playhead</div>
-                  <div style={miniValueStyle}>{formatDuration(previewDeck.currentTimeSeconds)}</div>
-                </div>
-                <div style={metricCardStyle()}>
-                  <div style={miniLabelStyle}>Selection</div>
-                  <div style={miniValueStyle}>{formatDuration(selectionDuration)}</div>
-                </div>
-                <div style={metricCardStyle()}>
-                  <div style={miniLabelStyle}>Peak / RMS</div>
-                  <div style={{ fontSize: 14, fontWeight: 700 }}>
-                    {formatDb(previewDeck.peakMeterLinear)} / {formatDb(previewDeck.rmsMeterLinear)}
+                {analysisCards.map((card) => (
+                  <div key={card.label} style={metricCardStyle()}>
+                    <div style={miniLabelStyle}>{card.label}</div>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 800,
+                        lineHeight: 1.2,
+                        color: 'var(--overlay-text-primary)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                      title={card.value}
+                    >
+                      {card.value}
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
 
               <div style={{ display: 'grid', gap: 10 }}>
@@ -688,7 +816,7 @@ export function ExplorerAudioWorkbench({
                   onMouseDown={(event) => beginTimelineDrag('playhead', event.clientX)}
                   style={{
                     position: 'relative',
-                    height: 120,
+                    height: 144,
                     borderRadius: 16,
                     border: '1px solid rgba(255,255,255,0.1)',
                     background:
@@ -752,6 +880,20 @@ export function ExplorerAudioWorkbench({
                     }}
                   />
                   <div
+                    style={{
+                      ...fadeOverlayStyle('in'),
+                      left: selectionLeft,
+                      width: fadeInWidth,
+                    }}
+                  />
+                  <div
+                    style={{
+                      ...fadeOverlayStyle('out'),
+                      left: fadeOutHandleLeft,
+                      width: fadeOutWidth,
+                    }}
+                  />
+                  <div
                     role="presentation"
                     onMouseDown={(event) => {
                       event.stopPropagation();
@@ -768,6 +910,24 @@ export function ExplorerAudioWorkbench({
                       background: 'rgba(255,255,255,0.92)',
                       boxShadow: '0 0 0 3px rgba(92, 167, 255, 0.22)',
                       cursor: 'ew-resize',
+                    }}
+                  />
+                  <div
+                    role="slider"
+                    aria-label={`Fade in handle for ${audioName}`}
+                    aria-valuemin={0}
+                    aria-valuemax={selectionDuration}
+                    aria-valuenow={boundedFadeInSeconds}
+                    aria-valuetext={formatFadeDuration(boundedFadeInSeconds)}
+                    tabIndex={0}
+                    onKeyDown={(event) => handleFadeHandleKeyDown('fadeIn', event)}
+                    onMouseDown={(event) => {
+                      event.stopPropagation();
+                      beginTimelineDrag('fadeIn', event.clientX);
+                    }}
+                    style={{
+                      ...fadeHandleStyle('in'),
+                      left: fadeInHandleLeft,
                     }}
                   />
                   <div
@@ -790,6 +950,24 @@ export function ExplorerAudioWorkbench({
                     }}
                   />
                   <div
+                    role="slider"
+                    aria-label={`Fade out handle for ${audioName}`}
+                    aria-valuemin={0}
+                    aria-valuemax={selectionDuration}
+                    aria-valuenow={boundedFadeOutSeconds}
+                    aria-valuetext={formatFadeDuration(boundedFadeOutSeconds)}
+                    tabIndex={0}
+                    onKeyDown={(event) => handleFadeHandleKeyDown('fadeOut', event)}
+                    onMouseDown={(event) => {
+                      event.stopPropagation();
+                      beginTimelineDrag('fadeOut', event.clientX);
+                    }}
+                    style={{
+                      ...fadeHandleStyle('out'),
+                      left: fadeOutHandleLeft,
+                    }}
+                  />
+                  <div
                     style={{
                       position: 'absolute',
                       top: 6,
@@ -803,71 +981,68 @@ export function ExplorerAudioWorkbench({
                   />
                 </div>
 
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-                    gap: 10,
-                  }}
-                >
-                  <div style={metricCardStyle()}>
-                    <div style={miniLabelStyle}>Selection In</div>
-                    <div style={miniValueStyle}>{formatDuration(selectionStart)}</div>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: 8,
+                      fontSize: 11,
+                      lineHeight: 1.4,
+                      color: 'var(--overlay-text-muted)',
+                    }}
+                  >
+                    <span>Edge fades live on the waveform.</span>
+                    <span>
+                      In {formatFadeDuration(boundedFadeInSeconds)} · Out{' '}
+                      {formatFadeDuration(boundedFadeOutSeconds)}
+                    </span>
                   </div>
-                  <div style={metricCardStyle()}>
-                    <div style={miniLabelStyle}>Selection Out</div>
-                    <div style={miniValueStyle}>{formatDuration(selectionEnd)}</div>
-                  </div>
-                  <div style={metricCardStyle()}>
-                    <div style={miniLabelStyle}>Gain</div>
-                    <div style={{ display: 'grid', gap: 8 }}>
-                      <input
-                        type="range"
-                        min="0"
-                        max="2"
-                        step="0.01"
-                        value={previewDeck.gainLinear}
-                        onChange={(event) => void handleGainChange(Number(event.target.value))}
-                      />
-                      <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)' }}>
-                        {previewDeck.gainLinear.toFixed(2)}x
-                      </div>
-                    </div>
-                  </div>
-                  <div style={metricCardStyle()}>
-                    <div style={miniLabelStyle}>Rate</div>
-                    <div style={{ display: 'grid', gap: 8 }}>
-                      <input
-                        type="range"
-                        min="0.5"
-                        max="2"
-                        step="0.01"
-                        value={previewDeck.rate}
-                        onChange={(event) => void handleRateChange(Number(event.target.value))}
-                      />
-                      <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)' }}>
-                        {previewDeck.rate.toFixed(2)}x
-                      </div>
-                    </div>
-                  </div>
-                </div>
 
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-                    gap: 10,
-                  }}
-                >
-                  {analysisCards.map((card) => (
-                    <div key={card.label} style={metricCardStyle()}>
-                      <div style={miniLabelStyle}>{card.label}</div>
-                      <div style={{ fontSize: 13, fontWeight: 700 }}>{card.value}</div>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                      gap: 10,
+                    }}
+                  >
+                    <div style={metricCardStyle()}>
+                      <div style={miniLabelStyle}>Gain</div>
+                      <div style={{ display: 'grid', gap: 6 }}>
+                        <input
+                          aria-label="Gain"
+                          type="range"
+                          min="0"
+                          max="2"
+                          step="0.01"
+                          value={previewDeck.gainLinear}
+                          onChange={(event) => void handleGainChange(Number(event.target.value))}
+                        />
+                        <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)' }}>
+                          {previewDeck.gainLinear.toFixed(2)}x
+                        </div>
+                      </div>
                     </div>
-                  ))}
+                    <div style={metricCardStyle()}>
+                      <div style={miniLabelStyle}>Rate</div>
+                      <div style={{ display: 'grid', gap: 6 }}>
+                        <input
+                          aria-label="Rate"
+                          type="range"
+                          min="0.5"
+                          max="2"
+                          step="0.01"
+                          value={previewDeck.rate}
+                          onChange={(event) => void handleRateChange(Number(event.target.value))}
+                        />
+                        <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)' }}>
+                          {previewDeck.rate.toFixed(2)}x
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
 
             <div
               style={{
@@ -905,42 +1080,6 @@ export function ExplorerAudioWorkbench({
                     gap: 12,
                   }}
                 >
-                  <label
-                    style={{
-                      display: 'grid',
-                      gap: 6,
-                      fontSize: 11,
-                      color: 'var(--overlay-text-muted)',
-                    }}
-                  >
-                    Fade In (s)
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      value={fadeInSeconds}
-                      onChange={(event) => setFadeInSeconds(Number(event.target.value) || 0)}
-                      style={inputStyle}
-                    />
-                  </label>
-                  <label
-                    style={{
-                      display: 'grid',
-                      gap: 6,
-                      fontSize: 11,
-                      color: 'var(--overlay-text-muted)',
-                    }}
-                  >
-                    Fade Out (s)
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      value={fadeOutSeconds}
-                      onChange={(event) => setFadeOutSeconds(Number(event.target.value) || 0)}
-                      style={inputStyle}
-                    />
-                  </label>
                   <label
                     style={{
                       display: 'grid',
@@ -1085,23 +1224,6 @@ export function ExplorerAudioWorkbench({
                   ))}
                 </div>
 
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-                    gap: 10,
-                  }}
-                >
-                  <div style={metricCardStyle()}>
-                    <div style={miniLabelStyle}>Loop In</div>
-                    <div style={miniValueStyle}>{formatDuration(selectionStart)}</div>
-                  </div>
-                  <div style={metricCardStyle()}>
-                    <div style={miniLabelStyle}>Loop Out</div>
-                    <div style={miniValueStyle}>{formatDuration(selectionEnd)}</div>
-                  </div>
-                </div>
-
                 {spectralBands.length > 0 ? (
                   <div style={{ display: 'grid', gap: 8 }}>
                     <div style={miniLabelStyle}>Spectral Profile</div>
@@ -1156,6 +1278,7 @@ export function ExplorerAudioWorkbench({
             </div>
           </div>
         </div>
+      </div>
       </div>
 
       <AppPromptDialog
@@ -1245,9 +1368,4 @@ const miniLabelStyle: CSSProperties = {
   letterSpacing: '0.08em',
   textTransform: 'uppercase',
   color: 'var(--overlay-text-muted)',
-};
-
-const miniValueStyle: CSSProperties = {
-  fontSize: 15,
-  fontWeight: 800,
 };
