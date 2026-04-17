@@ -161,6 +161,24 @@ describe('TerminalOverlay', () => {
     });
   }, 20000);
 
+  it('can nest splits around the focused pane and exposes draggable dividers', async () => {
+    render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Split Columns' }));
+    await waitFor(() => {
+      expect(mockXtermInstances).toHaveLength(2);
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Split Rows' }));
+    await waitFor(() => {
+      expect(mockXtermInstances).toHaveLength(3);
+    });
+
+    expect(screen.getByText('Pane 3')).toBeInTheDocument();
+    expect(screen.getAllByLabelText('Resize panes horizontally')).toHaveLength(1);
+    expect(screen.getAllByLabelText('Resize panes vertically')).toHaveLength(1);
+  }, 20000);
+
   it('copies a markdown snapshot of the active pane', async () => {
     render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
 
