@@ -19,11 +19,9 @@ import {
 import {
   analyzeExplorerAudioPreview,
   exportExplorerAudioTransform,
-  type ExplorerAudioDeckId,
   type ExplorerAudioPreviewAnalysis,
 } from '../runtime/audioWorkbenchBackend';
 import {
-  armAudioDeck,
   getAudioDeckState,
   loadSelectionIntoAudioDeck,
   pauseAudioDeck,
@@ -33,11 +31,8 @@ import {
   setAudioDeckLoopRegion,
   setAudioDeckRate,
   stopAudioDeck,
-  syncSelectionIntoArmedAudioDeck,
-  unloadAudioDeck,
   useAudioEngineFeed,
   useAudioEngineSnapshot,
-  useAudioEngineStore,
 } from '../store/audioEngineStore';
 import { AppConfirmDialog, AppPromptDialog } from './AppModal';
 
@@ -148,36 +143,6 @@ function metricCardStyle(): CSSProperties {
   };
 }
 
-function meterFillStyle(value: number, color: string): CSSProperties {
-  const percent = clamp(value * 100, 0, 100);
-  return {
-    width: `${percent}%`,
-    height: '100%',
-    borderRadius: 999,
-    background: color,
-    boxShadow: `0 0 16px ${color}`,
-  };
-}
-
-function deckLabel(deckId: ExplorerAudioDeckId): string {
-  return deckId === 'a' ? 'Deck A' : 'Deck B';
-}
-
-function deckCardStyle(isArmed: boolean, isPreviewDeck: boolean): CSSProperties {
-  return {
-    borderRadius: 16,
-    border: `1px solid ${isArmed ? 'rgba(100, 185, 255, 0.55)' : 'var(--overlay-explorer-chip-border)'}`,
-    background: isPreviewDeck
-      ? 'linear-gradient(180deg, rgba(18, 34, 54, 0.62), rgba(9, 16, 28, 0.84))'
-      : 'rgba(255,255,255,0.04)',
-    padding: 14,
-    display: 'grid',
-    gap: 12,
-    boxShadow: isArmed ? '0 20px 40px rgba(28, 84, 140, 0.18)' : 'none',
-    minHeight: 0,
-  };
-}
-
 export function ExplorerAudioWorkbench({
   audioPath,
   audioName,
@@ -189,9 +154,9 @@ export function ExplorerAudioWorkbench({
 
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const snapshot = useAudioEngineSnapshot();
+  const activeDeckId = 'a' as const;
 
   const [analysis, setAnalysis] = useState<ExplorerAudioPreviewAnalysis | null>(null);
-  const [previewDeckId, setPreviewDeckId] = useState<ExplorerAudioDeckId>('a');
   const [selectionStart, setSelectionStart] = useState(0);
   const [selectionEnd, setSelectionEnd] = useState(0);
   const [fadeInSeconds, setFadeInSeconds] = useState(0);
@@ -212,9 +177,8 @@ export function ExplorerAudioWorkbench({
   const [workbenchError, setWorkbenchError] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [spectrogramSource, setSpectrogramSource] = useState<string | null>(null);
-  const [showDeckB, setShowDeckB] = useState(false);
 
-  const previewDeck = getAudioDeckState(snapshot, previewDeckId);
+  const previewDeck = getAudioDeckState(snapshot, activeDeckId);
   const effectiveDuration = Math.max(
     analysis?.durationSeconds ?? 0,
     previewDeck.durationSeconds ?? 0,
@@ -231,9 +195,6 @@ export function ExplorerAudioWorkbench({
 
   useEffect(() => {
     let cancelled = false;
-    const targetDeckId = useAudioEngineStore.getState().snapshot.armedDeck;
-
-    setPreviewDeckId(targetDeckId);
     setAnalysis(null);
     setSelectionStart(0);
     setSelectionEnd(0);
@@ -247,7 +208,7 @@ export function ExplorerAudioWorkbench({
     );
     setExportState('idle');
     setExportMessage('Rust owns transport. SoX stays in the offline export lane.');
-    setWorkbenchStatus(`Loading ${deckLabel(targetDeckId)} with the current explorer selection…`);
+    setWorkbenchStatus('Loading the current explorer selection into the native audio engine…');
     setWorkbenchError(null);
     setIsAnalyzing(true);
     setSpectrogramSource(null);
@@ -256,7 +217,7 @@ export function ExplorerAudioWorkbench({
       try {
         const [nextAnalysis] = await Promise.all([
           analyzeExplorerAudioPreview(audioPath),
-          syncSelectionIntoArmedAudioDeck(audioPath),
+          loadSelectionIntoAudioDeck(activeDeckId, audioPath),
         ]);
         if (cancelled) {
           return;
@@ -265,7 +226,7 @@ export function ExplorerAudioWorkbench({
         setSelectionStart(0);
         setSelectionEnd(nextAnalysis.durationSeconds);
         setWorkbenchStatus(
-          `${deckLabel(targetDeckId)} is loaded in the native engine. Playback is running through Rust, not the webview.`,
+          'The selected file is loaded in the native engine. Playback is running through Rust, not the webview.',
         );
       } catch (error) {
         if (cancelled) {
@@ -284,7 +245,7 @@ export function ExplorerAudioWorkbench({
     return () => {
       cancelled = true;
     };
-  }, [audioPath]);
+  }, [activeDeckId, audioPath]);
 
   useEffect(() => {
     if (previewDeck.loadedPath !== audioPath) {
@@ -361,7 +322,7 @@ export function ExplorerAudioWorkbench({
       return;
     }
     const bounded = clamp(nextTime, 0, effectiveDuration);
-    void seekAudioDeck(previewDeckId, bounded).catch((error) => {
+    void seekAudioDeck(activeDeckId, bounded).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       setWorkbenchError(message);
       setWorkbenchStatus('Seek command failed.');
@@ -382,7 +343,7 @@ export function ExplorerAudioWorkbench({
     );
     setSelectionStart(boundedStart);
     setSelectionEnd(finalEnd);
-    void setAudioDeckLoopRegion(previewDeckId, boundedStart, finalEnd, true).catch((error) => {
+    void setAudioDeckLoopRegion(activeDeckId, boundedStart, finalEnd, true).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
       setWorkbenchError(message);
       setWorkbenchStatus('Loop region update failed.');
@@ -425,20 +386,20 @@ export function ExplorerAudioWorkbench({
   async function togglePreviewDeckPlayback() {
     try {
       if (previewDeck.isPlaying) {
-        await pauseAudioDeck(previewDeckId);
+        await pauseAudioDeck(activeDeckId);
         setWorkbenchError(null);
-        setWorkbenchStatus(`${deckLabel(previewDeckId)} paused.`);
+        setWorkbenchStatus('Playback paused.');
         return;
       }
       if (
         selectionEnd > selectionStart &&
         previewDeck.currentTimeSeconds >= selectionEnd
       ) {
-        await seekAudioDeck(previewDeckId, selectionStart);
+        await seekAudioDeck(activeDeckId, selectionStart);
       }
-      await playAudioDeck(previewDeckId);
+      await playAudioDeck(activeDeckId);
       setWorkbenchError(null);
-      setWorkbenchStatus(`${deckLabel(previewDeckId)} playing from the native engine.`);
+      setWorkbenchStatus('Playback running from the native engine.');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setWorkbenchError(message);
@@ -453,9 +414,9 @@ export function ExplorerAudioWorkbench({
     setSelectionStart(0);
     setSelectionEnd(effectiveDuration);
     try {
-      await setAudioDeckLoopRegion(previewDeckId, 0, effectiveDuration, false);
+      await setAudioDeckLoopRegion(activeDeckId, 0, effectiveDuration, false);
       setWorkbenchError(null);
-      setWorkbenchStatus(`Loop region cleared on ${deckLabel(previewDeckId)}.`);
+      setWorkbenchStatus('Loop region cleared.');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setWorkbenchError(message);
@@ -463,63 +424,21 @@ export function ExplorerAudioWorkbench({
     }
   }
 
-  async function handleDeckTransport(deckId: ExplorerAudioDeckId, action: 'play' | 'pause' | 'stop') {
+  async function handleStopPlayback() {
     try {
-      if (action === 'play') {
-        await playAudioDeck(deckId);
-      } else if (action === 'pause') {
-        await pauseAudioDeck(deckId);
-      } else {
-        await stopAudioDeck(deckId);
-      }
+      await stopAudioDeck(activeDeckId);
       setWorkbenchError(null);
+      setWorkbenchStatus('Playback stopped.');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setWorkbenchError(message);
-      setWorkbenchStatus(`${deckLabel(deckId)} ${action} failed.`);
+      setWorkbenchStatus('Stop command failed.');
     }
   }
 
-  async function handleArmDeck(deckId: ExplorerAudioDeckId) {
+  async function handleGainChange(value: number) {
     try {
-      await armAudioDeck(deckId);
-      setWorkbenchError(null);
-      setWorkbenchStatus(`${deckLabel(deckId)} is now armed for explorer selection sync.`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setWorkbenchError(message);
-      setWorkbenchStatus('Armed deck update failed.');
-    }
-  }
-
-  async function handleLoadSelection(deckId: ExplorerAudioDeckId) {
-    try {
-      setPreviewDeckId(deckId);
-      await loadSelectionIntoAudioDeck(deckId, audioPath);
-      setWorkbenchError(null);
-      setWorkbenchStatus(`${audioName} loaded into ${deckLabel(deckId)}.`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setWorkbenchError(message);
-      setWorkbenchStatus('Deck load failed.');
-    }
-  }
-
-  async function handleUnloadDeck(deckId: ExplorerAudioDeckId) {
-    try {
-      await unloadAudioDeck(deckId);
-      setWorkbenchError(null);
-      setWorkbenchStatus(`${deckLabel(deckId)} was cleared.`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setWorkbenchError(message);
-      setWorkbenchStatus('Deck clear failed.');
-    }
-  }
-
-  async function handleDeckGainChange(deckId: ExplorerAudioDeckId, value: number) {
-    try {
-      await setAudioDeckGain(deckId, value);
+      await setAudioDeckGain(activeDeckId, value);
       setWorkbenchError(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -528,9 +447,9 @@ export function ExplorerAudioWorkbench({
     }
   }
 
-  async function handleDeckRateChange(deckId: ExplorerAudioDeckId, value: number) {
+  async function handleRateChange(value: number) {
     try {
-      await setAudioDeckRate(deckId, value);
+      await setAudioDeckRate(activeDeckId, value);
       setWorkbenchError(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -628,218 +547,11 @@ export function ExplorerAudioWorkbench({
     }
   }
 
-  function renderDeckCard(deckId: ExplorerAudioDeckId) {
-    const deck = getAudioDeckState(snapshot, deckId);
-    const isArmed = snapshot.armedDeck === deckId;
-    const isPreviewDeck = previewDeckId === deckId;
-    return (
-      <div key={deckId} style={deckCardStyle(isArmed, isPreviewDeck)}>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 10,
-          }}
-        >
-          <div style={{ display: 'grid', gap: 4 }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                fontSize: 12,
-                fontWeight: 800,
-              }}
-            >
-              <AudioLines size={15} />
-              {deckLabel(deckId)}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--overlay-text-muted)' }}>
-              {deck.loadedName ?? 'No clip loaded'}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {isArmed ? <span style={badgeStyle}>Armed</span> : null}
-            {!isArmed && deck.loadedPath ? <span style={badgeStyle}>Pinned</span> : null}
-            {isPreviewDeck ? <span style={badgeStyle}>Preview</span> : null}
-          </div>
-        </div>
-
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(110px, max-content))',
-            gap: 8,
-          }}
-        >
-          <button type="button" style={toolbarButtonStyle()} onClick={() => void handleArmDeck(deckId)}>
-            Arm
-          </button>
-          <button type="button" style={toolbarButtonStyle()} onClick={() => void handleLoadSelection(deckId)}>
-            Load Selection
-          </button>
-          <button
-            type="button"
-            style={toolbarButtonStyle('primary')}
-            onClick={() => void handleDeckTransport(deckId, deck.isPlaying ? 'pause' : 'play')}
-          >
-            {deck.isPlaying ? <Pause size={14} /> : <Play size={14} />}
-            {deck.isPlaying ? 'Pause' : 'Play'}
-          </button>
-          <button type="button" style={toolbarButtonStyle()} onClick={() => void handleDeckTransport(deckId, 'stop')}>
-            Stop
-          </button>
-          <button type="button" style={toolbarButtonStyle('danger')} onClick={() => void handleUnloadDeck(deckId)}>
-            Clear
-          </button>
-        </div>
-
-        <div style={{ display: 'grid', gap: 10 }}>
-          <div style={{ display: 'grid', gap: 6 }}>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                fontSize: 10,
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em',
-                color: 'var(--overlay-text-muted)',
-              }}
-            >
-              <span>Position</span>
-              <span>
-                {formatDuration(deck.currentTimeSeconds)} / {formatDuration(deck.durationSeconds)}
-              </span>
-            </div>
-            <div
-              style={{
-                height: 8,
-                borderRadius: 999,
-                background: 'rgba(255,255,255,0.07)',
-                overflow: 'hidden',
-              }}
-            >
-              <div
-                style={{
-                  width:
-                    deck.durationSeconds > 0
-                      ? `${(deck.currentTimeSeconds / deck.durationSeconds) * 100}%`
-                      : '0%',
-                  height: '100%',
-                  borderRadius: 999,
-                  background:
-                    'linear-gradient(90deg, rgba(91, 183, 255, 0.88), rgba(141, 226, 255, 0.92))',
-                }}
-              />
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gap: 6 }}>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                fontSize: 10,
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em',
-                color: 'var(--overlay-text-muted)',
-              }}
-            >
-              <span>Peak / RMS</span>
-              <span>
-                {formatDb(deck.peakMeterLinear)} / {formatDb(deck.rmsMeterLinear)}
-              </span>
-            </div>
-            <div style={{ display: 'grid', gap: 5 }}>
-              <div
-                style={{
-                  height: 8,
-                  borderRadius: 999,
-                  background: 'rgba(255,255,255,0.07)',
-                  overflow: 'hidden',
-                }}
-              >
-                <div style={meterFillStyle(deck.peakMeterLinear, 'rgba(105, 199, 255, 0.92)')} />
-              </div>
-              <div
-                style={{
-                  height: 8,
-                  borderRadius: 999,
-                  background: 'rgba(255,255,255,0.07)',
-                  overflow: 'hidden',
-                }}
-              >
-                <div style={meterFillStyle(deck.rmsMeterLinear, 'rgba(124, 255, 179, 0.88)')} />
-              </div>
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-              gap: 10,
-            }}
-          >
-            <label style={{ display: 'grid', gap: 6, fontSize: 11, color: 'var(--overlay-text-muted)' }}>
-              Gain
-              <input
-                type="range"
-                min="0"
-                max="2"
-                step="0.01"
-                value={deck.gainLinear}
-                onChange={(event) => void handleDeckGainChange(deckId, Number(event.target.value))}
-              />
-            </label>
-            <label style={{ display: 'grid', gap: 6, fontSize: 11, color: 'var(--overlay-text-muted)' }}>
-              Rate
-              <input
-                type="range"
-                min="0.5"
-                max="2"
-                step="0.01"
-                value={deck.rate}
-                onChange={(event) => void handleDeckRateChange(deckId, Number(event.target.value))}
-              />
-            </label>
-          </div>
-
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-              gap: 8,
-            }}
-          >
-            <div style={metricCardStyle()}>
-              <div style={miniLabelStyle}>Loop In</div>
-              <div style={miniValueStyle}>{formatDuration(deck.loopRegion.startSeconds)}</div>
-            </div>
-            <div style={metricCardStyle()}>
-              <div style={miniLabelStyle}>Loop Out</div>
-              <div style={miniValueStyle}>
-                {formatDuration(deck.loopRegion.enabled ? deck.loopRegion.endSeconds : deck.durationSeconds)}
-              </div>
-            </div>
-          </div>
-
-          {deck.error ? (
-            <div style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--overlay-danger-text, #ff8f8f)' }}>
-              {deck.error}
-            </div>
-          ) : null}
-        </div>
-      </div>
-    );
-  }
-
   const engineStatusBadges = [
     snapshot.ready ? 'Native Engine Ready' : 'Engine Starting',
     isAnalyzing ? 'Analyzing' : null,
-    previewDeck.isLoading ? `${deckLabel(previewDeckId)} Loading` : null,
-    previewDeck.isPlaying ? `${deckLabel(previewDeckId)} Playing` : null,
+    previewDeck.isLoading ? 'Loading' : null,
+    previewDeck.isPlaying ? 'Playing' : null,
     snapshot.outputSampleRateHz ? `${snapshot.outputSampleRateHz.toLocaleString()} Hz Output` : null,
   ].filter(Boolean) as string[];
 
@@ -849,24 +561,21 @@ export function ExplorerAudioWorkbench({
         style={{
           width: '100%',
           height: '100%',
-          display: 'grid',
-          gridTemplateRows: 'minmax(0, 1fr) auto',
           background: 'var(--overlay-explorer-preview-bg)',
+          overflow: 'auto',
         }}
       >
         <div
           style={{
-            minHeight: 0,
             padding: 16,
             display: 'grid',
             gap: 14,
-            overflow: 'auto',
+            alignContent: 'start',
           }}
         >
-          <div style={{ display: 'grid', gap: 12, minHeight: 0 }}>
+          <div style={{ display: 'grid', gap: 12 }}>
             <div
               style={{
-                minHeight: 220,
                 borderRadius: 'var(--overlay-explorer-panel-radius)',
                 border: '1px solid var(--overlay-explorer-chip-border)',
                 background:
@@ -877,16 +586,16 @@ export function ExplorerAudioWorkbench({
                 boxShadow: '0 24px 48px rgba(0,0,0,0.28)',
               }}
             >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 12,
-                  flexWrap: 'wrap',
-                }}
-              >
-                <div style={{ display: 'grid', gap: 4 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    flexWrap: 'wrap'
+                  }}
+                >
+                  <div style={{ display: 'grid', gap: 4 }}>
                   <div
                     style={{
                       display: 'flex',
@@ -922,17 +631,17 @@ export function ExplorerAudioWorkbench({
                   <button
                     type="button"
                     style={toolbarButtonStyle()}
-                    onClick={() => syncPlayhead(selectionStart)}
+                    onClick={() => void handleStopPlayback()}
                   >
-                    <RotateCcw size={14} />
-                    Jump To In
+                    Stop
                   </button>
                   <button
                     type="button"
                     style={toolbarButtonStyle()}
-                    onClick={() => setShowDeckB((current) => !current)}
+                    onClick={() => syncPlayhead(selectionStart)}
                   >
-                    {showDeckB ? 'Hide Deck B' : 'Deck B'}
+                    <RotateCcw size={14} />
+                    Jump To In
                   </button>
                   <button
                     type="button"
@@ -948,42 +657,28 @@ export function ExplorerAudioWorkbench({
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'minmax(0, 1fr)',
-                  gap: 12,
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                  gap: 10,
                 }}
               >
-                {renderDeckCard('a')}
-                {showDeckB ? (
-                  renderDeckCard('b')
-                ) : (
-                  <div
-                    style={{
-                      borderRadius: 14,
-                      border: '1px dashed rgba(255,255,255,0.12)',
-                      background: 'rgba(255,255,255,0.025)',
-                      padding: 14,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 12,
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <div style={{ display: 'grid', gap: 4 }}>
-                      <div style={{ fontSize: 12, fontWeight: 800 }}>Deck B</div>
-                      <div style={{ fontSize: 11, color: 'var(--overlay-text-muted)' }}>
-                        Optional reference deck. Keep it hidden unless you need a second loaded clip.
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      style={toolbarButtonStyle()}
-                      onClick={() => setShowDeckB(true)}
-                    >
-                      Open Deck B
-                    </button>
+                <div style={metricCardStyle()}>
+                  <div style={miniLabelStyle}>Loaded File</div>
+                  <div style={{ fontSize: 14, fontWeight: 800 }}>{previewDeck.loadedName ?? audioName}</div>
+                </div>
+                <div style={metricCardStyle()}>
+                  <div style={miniLabelStyle}>Playhead</div>
+                  <div style={miniValueStyle}>{formatDuration(previewDeck.currentTimeSeconds)}</div>
+                </div>
+                <div style={metricCardStyle()}>
+                  <div style={miniLabelStyle}>Selection</div>
+                  <div style={miniValueStyle}>{formatDuration(selectionDuration)}</div>
+                </div>
+                <div style={metricCardStyle()}>
+                  <div style={miniLabelStyle}>Peak / RMS</div>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>
+                    {formatDb(previewDeck.peakMeterLinear)} / {formatDb(previewDeck.rmsMeterLinear)}
                   </div>
-                )}
+                </div>
               </div>
 
               <div style={{ display: 'grid', gap: 10 }}>
@@ -1116,12 +811,6 @@ export function ExplorerAudioWorkbench({
                   }}
                 >
                   <div style={metricCardStyle()}>
-                    <div style={miniLabelStyle}>Playhead</div>
-                    <div style={miniValueStyle}>
-                      {formatDuration(previewDeck.currentTimeSeconds)}
-                    </div>
-                  </div>
-                  <div style={metricCardStyle()}>
                     <div style={miniLabelStyle}>Selection In</div>
                     <div style={miniValueStyle}>{formatDuration(selectionStart)}</div>
                   </div>
@@ -1130,8 +819,36 @@ export function ExplorerAudioWorkbench({
                     <div style={miniValueStyle}>{formatDuration(selectionEnd)}</div>
                   </div>
                   <div style={metricCardStyle()}>
-                    <div style={miniLabelStyle}>Selection Length</div>
-                    <div style={miniValueStyle}>{formatDuration(selectionDuration)}</div>
+                    <div style={miniLabelStyle}>Gain</div>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <input
+                        type="range"
+                        min="0"
+                        max="2"
+                        step="0.01"
+                        value={previewDeck.gainLinear}
+                        onChange={(event) => void handleGainChange(Number(event.target.value))}
+                      />
+                      <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)' }}>
+                        {previewDeck.gainLinear.toFixed(2)}x
+                      </div>
+                    </div>
+                  </div>
+                  <div style={metricCardStyle()}>
+                    <div style={miniLabelStyle}>Rate</div>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <input
+                        type="range"
+                        min="0.5"
+                        max="2"
+                        step="0.01"
+                        value={previewDeck.rate}
+                        onChange={(event) => void handleRateChange(Number(event.target.value))}
+                      />
+                      <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)' }}>
+                        {previewDeck.rate.toFixed(2)}x
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -1156,7 +873,7 @@ export function ExplorerAudioWorkbench({
               style={{
                 display: 'grid',
                 gap: 14,
-                gridTemplateColumns: 'minmax(0, 1fr)',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
               }}
             >
               <div
@@ -1366,6 +1083,23 @@ export function ExplorerAudioWorkbench({
                       {badge}
                     </span>
                   ))}
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                    gap: 10,
+                  }}
+                >
+                  <div style={metricCardStyle()}>
+                    <div style={miniLabelStyle}>Loop In</div>
+                    <div style={miniValueStyle}>{formatDuration(selectionStart)}</div>
+                  </div>
+                  <div style={metricCardStyle()}>
+                    <div style={miniLabelStyle}>Loop Out</div>
+                    <div style={miniValueStyle}>{formatDuration(selectionEnd)}</div>
+                  </div>
                 </div>
 
                 {spectralBands.length > 0 ? (

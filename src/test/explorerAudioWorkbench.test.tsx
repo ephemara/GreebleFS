@@ -18,7 +18,6 @@ const {
 }));
 
 const {
-  armAudioDeckMock,
   loadSelectionIntoAudioDeckMock,
   pauseAudioDeckMock,
   playAudioDeckMock,
@@ -27,10 +26,7 @@ const {
   setAudioDeckLoopRegionMock,
   setAudioDeckRateMock,
   stopAudioDeckMock,
-  syncSelectionIntoArmedAudioDeckMock,
-  unloadAudioDeckMock,
 } = vi.hoisted(() => ({
-  armAudioDeckMock: vi.fn(),
   loadSelectionIntoAudioDeckMock: vi.fn(),
   pauseAudioDeckMock: vi.fn(),
   playAudioDeckMock: vi.fn(),
@@ -39,8 +35,6 @@ const {
   setAudioDeckLoopRegionMock: vi.fn(),
   setAudioDeckRateMock: vi.fn(),
   stopAudioDeckMock: vi.fn(),
-  syncSelectionIntoArmedAudioDeckMock: vi.fn(),
-  unloadAudioDeckMock: vi.fn(),
 }));
 
 const audioEngineSnapshot: ExplorerAudioEngineStateSnapshot = {
@@ -108,7 +102,6 @@ vi.mock('../store/audioEngineStore', () => ({
     snapshot: ExplorerAudioEngineStateSnapshot,
     deckId: 'a' | 'b',
   ) => snapshot.decks.find((deck) => deck.deckId === deckId) ?? snapshot.decks[0],
-  armAudioDeck: armAudioDeckMock,
   loadSelectionIntoAudioDeck: loadSelectionIntoAudioDeckMock,
   pauseAudioDeck: pauseAudioDeckMock,
   playAudioDeck: playAudioDeckMock,
@@ -117,15 +110,12 @@ vi.mock('../store/audioEngineStore', () => ({
   setAudioDeckLoopRegion: setAudioDeckLoopRegionMock,
   setAudioDeckRate: setAudioDeckRateMock,
   stopAudioDeck: stopAudioDeckMock,
-  syncSelectionIntoArmedAudioDeck: syncSelectionIntoArmedAudioDeckMock,
-  unloadAudioDeck: unloadAudioDeckMock,
 }));
 
 describe('ExplorerAudioWorkbench', () => {
   beforeEach(() => {
     analyzeExplorerAudioPreviewMock.mockReset();
     exportExplorerAudioTransformMock.mockReset();
-    armAudioDeckMock.mockReset();
     loadSelectionIntoAudioDeckMock.mockReset();
     pauseAudioDeckMock.mockReset();
     playAudioDeckMock.mockReset();
@@ -134,11 +124,7 @@ describe('ExplorerAudioWorkbench', () => {
     setAudioDeckLoopRegionMock.mockReset();
     setAudioDeckRateMock.mockReset();
     stopAudioDeckMock.mockReset();
-    syncSelectionIntoArmedAudioDeckMock.mockReset();
-    unloadAudioDeckMock.mockReset();
 
-    syncSelectionIntoArmedAudioDeckMock.mockResolvedValue(audioEngineSnapshot);
-    armAudioDeckMock.mockResolvedValue(audioEngineSnapshot);
     loadSelectionIntoAudioDeckMock.mockResolvedValue(audioEngineSnapshot);
     pauseAudioDeckMock.mockResolvedValue(audioEngineSnapshot);
     playAudioDeckMock.mockResolvedValue(audioEngineSnapshot);
@@ -147,7 +133,6 @@ describe('ExplorerAudioWorkbench', () => {
     setAudioDeckLoopRegionMock.mockResolvedValue(audioEngineSnapshot);
     setAudioDeckRateMock.mockResolvedValue(audioEngineSnapshot);
     stopAudioDeckMock.mockResolvedValue(audioEngineSnapshot);
-    unloadAudioDeckMock.mockResolvedValue(audioEngineSnapshot);
 
     analyzeExplorerAudioPreviewMock.mockResolvedValue({
       inputPath: '/tmp/anthem.mp3',
@@ -190,11 +175,11 @@ describe('ExplorerAudioWorkbench', () => {
     expect(screen.getByText(/44,100 Hz/i)).toBeInTheDocument();
     expect(screen.getAllByText('0:24').length).toBeGreaterThan(0);
     expect(screen.getByText('MPEG audio · 16-bit')).toBeInTheDocument();
-    expect(screen.getAllByText(/deck a/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/deck b/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/loaded file/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^deck b$/i)).not.toBeInTheDocument();
   });
 
-  it('syncs the current explorer selection into the armed native deck', async () => {
+  it('loads the current explorer selection into the single native playback lane', async () => {
     render(
       <ExplorerAudioWorkbench
         audioPath='/tmp/anthem.mp3'
@@ -205,14 +190,7 @@ describe('ExplorerAudioWorkbench', () => {
     );
 
     await waitFor(() => {
-      expect(syncSelectionIntoArmedAudioDeckMock).toHaveBeenCalledWith('/tmp/anthem.mp3');
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: /open deck b/i }));
-    fireEvent.click(screen.getAllByRole('button', { name: /load selection/i })[1]);
-
-    await waitFor(() => {
-      expect(loadSelectionIntoAudioDeckMock).toHaveBeenCalledWith('b', '/tmp/anthem.mp3');
+      expect(loadSelectionIntoAudioDeckMock).toHaveBeenCalledWith('a', '/tmp/anthem.mp3');
     });
   });
 
