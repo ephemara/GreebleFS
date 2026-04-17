@@ -1559,9 +1559,9 @@ export function SettingsPage({
       ? `${overlayFrameTelemetry.latestMs.toFixed(1)} ms p95`
       : 'p95 n/a';
     const targetLabel = withinTarget === true
-      ? 'within 60 fps target'
+      ? 'within 120 fps target'
       : withinTarget === false
-        ? 'over 60 fps budget'
+        ? 'over 120 fps budget'
         : 'target status n/a';
     return `${fpsLabel} • ${avgLabel} • ${p95Label} • ${targetLabel}`;
   }, [overlayFrameTelemetry]);

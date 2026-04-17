@@ -15,6 +15,37 @@
   - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx`
   - passed: `bunx vitest run src/test/settingsPage.behavior.test.tsx -t "lets the explorer context menu composer disable and reorder plugin menu items"`
 
+## 2026-04-16 — Explorer Polish Tranche Native Bridge Pass
+
+- The explorer polish tranche now routes its core heavy-truth workflows through Rust/Specta instead of keeping them as browser-only helpers.
+- Durable implementation shape:
+  - `src-tauri/src/fs_commands.rs` now exports native explorer metadata/search helpers for:
+    - recursive-size jobs via `fs_calculate_recursive_sizes`
+    - file checksums via `fs_calculate_checksums`
+    - item metadata/permission snapshots via `fs_get_item_properties`
+    - transient fuzzy jump filtering via `fs_fuzzy_filter_entries`
+  - `src-tauri/src/explorer_pro_commands.rs` now owns recipe-based batch rename preview/apply through `FsBatchRenameRecipe`, `fs_batch_rename_preview`, and `fs_batch_rename_apply`, including regex replacement, token expansion, and stem/extension preservation.
+  - `src-tauri/src/terminal.rs` now exposes shell-integration commands for embedded terminals:
+    - `terminal_register_shell_integration`
+    - `terminal_sync_cwd`
+    - `terminal_set_prompt_state`
+  - `src-tauri/src/specta_bindings.rs` and regenerated `src/generated/tauri.ts` now carry those explorer-polish commands/types into the typed bridge. Future frontend work should use the generated command surface instead of reintroducing raw invoke strings or browser-side checksum/rename truth.
+  - `src/runtime/explorerBackend.ts` now exposes typed wrappers for native recursive sizes, checksums, item properties, fuzzy jump filtering, batch rename preview/apply, and terminal shell integration.
+  - `src/components/FileExplorer.tsx` now uses the native bridge for:
+    - live batch rename preview/apply
+    - checksum calculation in the properties drawer
+    - permission/timestamp snapshots in the properties drawer
+    - fuzzy jump-filter result ranking
+  - `src/components/TerminalOverlay.tsx` now treats explorer-driven cwd sync as terminal shell-integration work first (`terminal_sync_cwd`) and only falls back to literal command injection if native sync fails.
+- Durable product note:
+  - The explorer still has small browser helper modules (`explorerBatchRename.ts`, `explorerChecksums.ts`, `explorerJumpFilter.ts`) because tests and fallback paths still touch them, but they are no longer the primary truth path for the flagship explorer surface.
+  - Embedded terminal auto-`cd` is currently prompt-safe by heuristic: `TerminalOverlay.tsx` marks the shell busy on submitted newline input and restores prompt state after output quiets. This is materially better than unconditional `cd` injection, but it is not yet a full PTY prompt-marker parser in Rust.
+- Validation:
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `bunx vitest run src/test/terminalOverlay.test.tsx src/test/explorerBatchRename.test.ts src/test/explorerMetadata.test.ts src/test/explorerStore.test.ts`
+  - passed: `bunx vitest run --config vitest.browser.config.ts --browser.headless src/test/browser/fileExplorer.latency.browser.test.tsx`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml batch_rename_preview_supports_regex_tokens_and_extension_preservation --lib && cargo test --manifest-path src-tauri/Cargo.toml calculate_checksums_returns_md5_and_sha256 --lib && cargo test --manifest-path src-tauri/Cargo.toml recursive_size_task_returns_directory_totals --lib`
+
 ## 2026-04-16 — Native Explorer Thumbnails + Video Hover Scrub
 
 - The explorer now has a Rust-owned rich-thumbnail lane instead of an image-only grid preview hack. Generated thumbnails can replace file icons when the operator enables explorer thumbnails.
@@ -1645,3 +1676,17 @@
 - The terminal backend no longer flushes on each write, so the remaining throughput hotspot is the shared terminal map mutex across write/read/resize paths.
 - `cargo test --manifest-path src-tauri/Cargo.toml terminal -- --nocapture` is still blocked here by the mingw linker missing `-lgcc_eh` / `-lgcc`.
 - Next terminal pass should address lock scope or instance ownership, not flush calls.
+
+## 2026-04-16 — 120 Hz Overlay Budget + Explorer Thumbnail Hover Isolation
+
+- The overlay frame telemetry contract now targets 120 Hz instead of a stale 60 Hz budget.
+- Durable implementation shape:
+  - `src/config/frameTelemetry.ts` now treats `8.33 ms` as the target frame budget and records `targetFps: 120` in persisted samples, so HUD/settings telemetry matches the current performance goal.
+  - `src/components/DevPerformanceHud.tsx` and `src/components/SettingsPage.tsx` now label overlay-frame health against the 120 FPS target instead of the old 60 FPS wording.
+  - `src/components/FileExplorer.tsx` no longer advances video hover-scrub thumbnails through parent explorer state on an interval. Hover animation now lives in a memoized `ExplorerThumbnailImage` leaf component, so only the active thumbnail animates instead of repeatedly rerendering the full explorer surface.
+  - Parent explorer state still tracks the hovered entry path so the backend can opportunistically request hover frames, but frame stepping is no longer a top-level render driver.
+- Durable product note:
+  - If a future performance pass touches explorer thumbnails, keep hover-frame animation local to the thumbnail leaf or another isolated viewport lane. Do not reintroduce interval-driven parent state for thumbnail frame stepping.
+- Validation:
+  - passed: `bunx vitest run src/test/frameTelemetry.test.ts src/test/fileExplorer.viewModes.test.tsx`
+  - passed: filtered typecheck grep for touched files via `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "FileExplorer.tsx|DevPerformanceHud.tsx|SettingsPage.tsx|frameTelemetry.test.ts|frameTelemetry.ts|fileExplorer.viewModes.test.tsx" || true`

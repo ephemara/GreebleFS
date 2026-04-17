@@ -286,6 +286,8 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<ExplorerDuplicateGroup>()
         .typ::<ExplorerDuplicateScanStatus>()
         .typ::<FsChecksumEntryInfo>()
+        .typ::<FsPermissionInfo>()
+        .typ::<FsItemPropertiesInfo>()
         .typ::<FsJumpFilterEntry>()
         .typ::<FsJumpFilterRequest>()
         .typ::<FsJumpFilterMatch>()

@@ -138,7 +138,7 @@ function asTokenScale(value: unknown): ThemeTokenScale {
     Object.entries(source).filter(([, tokenValue]) =>
       typeof tokenValue === 'string' || typeof tokenValue === 'number'
     ),
-  );
+  ) as ThemeTokenScale;
 }
 
 function normalizeDesignTokens(value: unknown): ThemeDesignTokens {
@@ -170,7 +170,7 @@ function asPrimitiveProps(value: unknown): Record<string, string | number | bool
     Object.entries(source).filter(([, propValue]) =>
       typeof propValue === 'string' || typeof propValue === 'number' || typeof propValue === 'boolean'
     ),
-  );
+  ) as Record<string, string | number | boolean>;
 }
 
 function normalizeLayoutPrimitives(value: unknown): ThemeLayoutPrimitive[] {

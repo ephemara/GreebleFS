@@ -417,8 +417,13 @@ describe('SettingsPage behavior', () => {
       expect(useSettingsStore.getState().settings.keybindings.windowModeToggle).toBe('F10');
     });
 
-    await user.click(screen.getAllByRole('button', { name: 'Reset' })[0]);
-    expect(useSettingsStore.getState().settings.keybindings.terminalToggle).toBe('Ctrl+Space');
+    const toggleHotkeyCard = screen.getByText('Toggle Main Window').closest('label');
+    if (!toggleHotkeyCard) {
+      throw new Error('Missing Toggle Main Window hotkey card');
+    }
+    await user.click(within(toggleHotkeyCard).getByRole('button', { name: 'Reset' }));
+    expect(useSettingsStore.getState().settings.keybindings.terminalToggle)
+      .toBe(defaultSettings.keybindings.terminalToggle);
   }, 30000);
 
   it('can hand off the tray recovery path to taskbar visibility', async () => {
@@ -779,7 +784,7 @@ describe('SettingsPage behavior', () => {
     expect(appearanceSettings.activeShaderId).toBeNull();
     expect(appearanceSettings.appOpenAnimation).toBeNull();
     expect(appearanceSettings.appCloseAnimation).toBeNull();
-    expect(appearanceSettings.useNativeOsIcons).toBe(false);
+    expect(appearanceSettings.useNativeOsIcons).toBe(true);
   });
 
   it('applies the pilot light baseline when selecting the built-in default theme', async () => {

@@ -28,6 +28,7 @@ export type WorkbenchInputProfile = GeneratedWorkbenchInputProfile;
 export type WorkbenchPreset = GeneratedWorkbenchPreset;
 
 type LooseRecord = Record<string, unknown>;
+type GeneratedWorkbenchPresetConstant = (typeof GENERATED_OVERLAY_WORKBENCH_PRESETS)[number];
 
 function asRecord(value: unknown): LooseRecord | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -93,6 +94,7 @@ function normalizeNavigationModel(
 ): OverlayShellNavigationModel {
   const fallback = getShellBlueprint(shellBlueprint).navigationModel;
   switch (value) {
+    case 'tabs':
     case 'cross-axis':
     case 'desktop':
     case 'tiles':
@@ -123,7 +125,18 @@ function normalizePanelBinding(
   };
 }
 
-export const BUILT_IN_WORKBENCH_PRESETS: WorkbenchPreset[] = [...GENERATED_OVERLAY_WORKBENCH_PRESETS];
+function cloneWorkbenchPreset(preset: GeneratedWorkbenchPresetConstant): WorkbenchPreset {
+  return {
+    ...preset,
+    preferredThemeIds: [...preset.preferredThemeIds],
+    panelBindings: preset.panelBindings.map(binding => ({ ...binding })),
+    windowProfile: { ...preset.windowProfile },
+    inputProfile: { ...preset.inputProfile },
+  };
+}
+
+export const BUILT_IN_WORKBENCH_PRESETS: WorkbenchPreset[] = GENERATED_OVERLAY_WORKBENCH_PRESETS
+  .map(cloneWorkbenchPreset);
 
 const builtInWorkbenchPresetMap = new Map(
   BUILT_IN_WORKBENCH_PRESETS.map(preset => [preset.id, preset] as const),
@@ -141,6 +154,8 @@ export function normalizeWorkbenchPreset(
   const shellBlueprint = normalizeShellBlueprintId(source.shellBlueprint, fallback.shellBlueprint);
   const fallbackNavigationModel = normalizeNavigationModel(undefined, shellBlueprint);
   const panelBindingsSource = Array.isArray(source.panelBindings) ? source.panelBindings : fallback.panelBindings;
+  const fallbackWindowAnchor = normalizeWindowAnchor(fallback.windowProfile.anchor);
+  const fallbackAspectRatio = fallback.windowProfile.aspectRatio ?? null;
 
   return {
     id: asString(source.id, fallback.id),
@@ -164,9 +179,9 @@ export function normalizeWorkbenchPreset(
     )),
     windowProfile: {
       mode: normalizeWindowMode(asRecord(source.windowProfile)?.mode, fallback.windowProfile.mode),
-      anchor: normalizeWindowAnchor(asRecord(source.windowProfile)?.anchor, fallback.windowProfile.anchor),
-      aspectRatio: asString(asRecord(source.windowProfile)?.aspectRatio, fallback.windowProfile.aspectRatio ?? '')
-        || fallback.windowProfile.aspectRatio,
+      anchor: normalizeWindowAnchor(asRecord(source.windowProfile)?.anchor, fallbackWindowAnchor) ?? null,
+      aspectRatio: asString(asRecord(source.windowProfile)?.aspectRatio, fallbackAspectRatio ?? '')
+        || fallbackAspectRatio,
     },
     inputProfile: {
       mode: normalizeInputMode(asRecord(source.inputProfile)?.mode, fallback.inputProfile.mode),

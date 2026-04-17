@@ -34,7 +34,6 @@ import {
   openExplorerPath,
   transferExplorerItems,
   type ExplorerDriveInfo,
-  type ExplorerFileTransferOperation,
   type ExplorerLocationListing,
 } from '../runtime/explorerBackend';
 import {

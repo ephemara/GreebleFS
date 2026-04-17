@@ -30,6 +30,7 @@ describe('CommandPalette', () => {
       <CommandPalette
         isOpen
         appearance={resolveOverlayAppearance({ activeThemeId: 'operator' })}
+        blurEnabled={false}
         actions={actions}
         shortcutLabel="Ctrl+K"
         onClose={onClose}

@@ -549,6 +549,13 @@ function XTermPane({
 
     try {
       unwrapTauriResult(await commands.terminalSpawn(id, null, settings.shell, term.rows, term.cols));
+      unwrapTauriResult(await commands.terminalRegisterShellIntegration({
+        id,
+        shellKind: null,
+        supportsAutoCd: true,
+        atPrompt: true,
+        reportedCwd: null,
+      }));
     } catch (e) {
       term.writeln('\r\n\x1b[31mFailed to spawn PTY:\x1b[0m ' + String(e));
     }
@@ -1196,6 +1203,7 @@ export function TerminalOverlay({
   const tabCounterRef = useRef(1);
   const splitCounterRef = useRef(1);
   const lastTerminalCwdSyncKeyRef = useRef<string | null>(null);
+  const promptRestoreTimersRef = useRef<Record<string, number>>({});
 
   const { initStore } = useTerminalStore(useShallow(state => ({
     initStore: state.initStore,
@@ -1222,6 +1230,9 @@ export function TerminalOverlay({
   useEffect(() => () => {
     if (actionMessageTimerRef.current !== null) {
       window.clearTimeout(actionMessageTimerRef.current);
+    }
+    for (const timer of Object.values(promptRestoreTimersRef.current)) {
+      window.clearTimeout(timer);
     }
   }, []);
 
@@ -1355,10 +1366,26 @@ export function TerminalOverlay({
     await injectCmd(command, true);
   }, [injectCmd]);
 
+  const schedulePromptRestore = useCallback((paneId: string) => {
+    const currentTimer = promptRestoreTimersRef.current[paneId];
+    if (typeof currentTimer === 'number') {
+      window.clearTimeout(currentTimer);
+    }
+    promptRestoreTimersRef.current[paneId] = window.setTimeout(() => {
+      delete promptRestoreTimersRef.current[paneId];
+      void commands.terminalSetPromptState(paneId, true, null).then(unwrapTauriResult).catch(() => {});
+    }, 120);
+  }, []);
+
   const handleTerminalInput = useCallback((paneId: string, data: string) => {
     const targetIds = resolveCommandTargets(paneId);
     if (targetIds.length === 0) {
       return;
+    }
+    if (/[\r\n]/.test(data)) {
+      for (const targetId of targetIds) {
+        void commands.terminalSetPromptState(targetId, false, null).then(unwrapTauriResult).catch(() => {});
+      }
     }
     void writeToPaneIds(targetIds, data).catch(error => console.error('terminal input failed', error));
   }, [resolveCommandTargets, writeToPaneIds]);
@@ -1401,7 +1428,8 @@ export function TerminalOverlay({
       outputLines: current.outputLines + countPayloadLines(payload),
       lastOutputAt: Date.now(),
     }));
-  }, [updatePaneTelemetry]);
+    schedulePromptRestore(paneId);
+  }, [schedulePromptRestore, updatePaneTelemetry]);
 
   const handlePaneResize = useCallback((paneId: string, rows: number, cols: number) => {
     updatePaneTelemetry(paneId, current => ({
@@ -1493,6 +1521,13 @@ export function TerminalOverlay({
         entry.xterm.rows,
         entry.xterm.cols,
       ));
+      unwrapTauriResult(await commands.terminalRegisterShellIntegration({
+        id: paneId,
+        shellKind: null,
+        supportsAutoCd: true,
+        atPrompt: true,
+        reportedCwd: null,
+      }));
       markTerminalReady(paneId);
       setTransientActionMessage(`Restarted ${paneSessions[paneId]?.label ?? 'terminal'}`);
     } catch (error) {
@@ -1505,7 +1540,7 @@ export function TerminalOverlay({
     });
   }, [clearTerminalReady, markTerminalReady, paneSessions, setTransientActionMessage, settings.shell]);
   useEffect(() => {
-    if (!isOpen || !pendingTerminalCwdSync?.path) {
+    if (!isOpen || !pendingTerminalCwdSync?.path || !activePaneId) {
       return;
     }
 
@@ -1515,9 +1550,11 @@ export function TerminalOverlay({
     }
 
     lastTerminalCwdSyncKeyRef.current = syncKey;
-    void injectCd(pendingTerminalCwdSync.path, pendingTerminalCwdSync.shell ?? undefined);
-    clearPendingTerminalCwdSync(null);
-  }, [clearPendingTerminalCwdSync, injectCd, isOpen, pendingTerminalCwdSync]);
+    void commands.terminalSyncCwd(activePaneId, pendingTerminalCwdSync.path)
+      .then(unwrapTauriResult)
+      .catch(() => injectCd(pendingTerminalCwdSync.path, pendingTerminalCwdSync.shell ?? undefined))
+      .finally(() => clearPendingTerminalCwdSync(null));
+  }, [activePaneId, clearPendingTerminalCwdSync, injectCd, isOpen, pendingTerminalCwdSync]);
 
   useEffect(() => {
     const handler = (e: Event) => {

@@ -75,7 +75,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/WorkbenchNavigationSurface.tsx`
   Runtime-swappable launcher surface for cross-axis, channel-grid, desktop, and tabbed shells.
 - `src/components/TerminalOverlay.tsx`
-  Integrated terminal shell. It now owns a tree-based pane/workspace model instead of a flat `paneIds[]` layout, renders pane geometry from that split tree, keeps PTYs mounted across workspace-tab switches, and routes pane-resize behavior through draggable split handles plus the typed terminal command bridge.
+  Integrated terminal shell. It now owns a tree-based pane/workspace model instead of a flat `paneIds[]` layout, renders pane geometry from that split tree, keeps PTYs mounted across workspace-tab switches, and routes pane-resize behavior through draggable split handles plus the typed terminal command bridge. Explorer-driven terminal cwd sync now goes through terminal shell-integration commands instead of always injecting literal `cd` text.
 - `src/components/ScreenshotsManager.tsx`
   Screenshot capture/editor/library surface. It owns monitor preview orchestration, selection editing, annotation authoring, and gallery actions, but annotated export is now delegated to Rust instead of being rasterized in the browser.
 - `src/components/pluginRuntime.tsx`
@@ -294,6 +294,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Explorer Pro metadata and long-running utilities now route through Rust instead of TS-only persistence:
   - `src-tauri/src/explorer_pro_commands.rs` owns app-managed trash + undo, batch rename, duplicate-scan lifecycle, tags, and saved searches
   - `src-tauri/src/fs_commands.rs` now also owns the durable explorer task registry used by copy/move/delete jobs plus the retry/cancel/history command surface exposed through Specta
+  - `src-tauri/src/fs_commands.rs` also owns explorer metadata helpers for recursive sizes, checksums, item-property snapshots, and fuzzy jump filtering
   - `src-tauri/src/audio_engine.rs` owns native explorer playback through a CPAL output stream, Symphonia decode, rubato resampling, deck mixing, loop/gain/rate transport state, and `AudioEngineStateEvent`
   - `src/store/audioEngineStore.ts` is the shell-side source of truth for engine snapshots, hydration, and event subscription; components should not own playback state locally
   - `src-tauri/src/audio_commands.rs` now owns offline-only audio analysis/export/batch work plus vendored SoX runtime extraction and explorer task cancellation/retry hooks
@@ -304,6 +305,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src-tauri/src/video_commands.rs` owns explorer-facing video trim export through a native `ffmpeg` subprocess. The frontend supplies trim intent and destination path, but the output mutation stays in Rust.
   - `src-tauri/src/thumbnail_commands.rs` owns rich explorer thumbnail generation and caching for image posters, code cards, shader spheres, audio waveform/spectral thumbnails, and video poster + hover-scrub frame sequences.
   - `src/runtime/explorerBackend.ts` is the only TS bridge for `fs_read_entry_thumbnail`; React should request generated thumbnails there instead of decoding files, probing media, or shelling out from components.
+  - `src/runtime/explorerBackend.ts` is also the only TS bridge for batch rename preview/apply, checksum calculation, item properties, fuzzy jump filtering, and terminal shell-integration commands used by explorer surfaces
   - local transfer UX now has a two-step contract instead of silent collision auto-rename:
     - `fs_plan_transfer_items` reports pending name collisions before paste/drag/pane transfers run
     - `fs_transfer_items` accepts explicit collision policies: `keep_both`, `replace`, and `skip`

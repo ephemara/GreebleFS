@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { OVERLAY_THEME_MANIFESTS } from '../generated/tauri';
+import { OVERLAY_THEME_MANIFESTS, type WorkbenchPreset } from '../generated/tauri';
 import { commands } from '../runtime/tauriClient';
 import {
   compileThemeEngineManifest,
@@ -269,13 +269,13 @@ describe('themeEngineBackend', () => {
         name: 'Catalog Theme',
       }),
     ];
-    const presets = [
+    const presets: WorkbenchPreset[] = [
       {
         id: 'catalog-preset',
         label: 'Catalog Preset',
         description: 'Catalog shell',
         shellBlueprint: 'classic-dock',
-        navigationModel: 'hierarchical',
+        navigationModel: 'tabs',
         windowProfile: {
           mode: 'windowed',
           anchor: 'center',

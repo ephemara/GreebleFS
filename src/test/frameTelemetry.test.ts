@@ -19,8 +19,8 @@ describe('frameTelemetry', () => {
     expect(stats?.withinTarget).toBe(false);
   });
 
-  it('marks frame windows that stay within the 60 fps budget', () => {
-    const stats = summarizeOverlayFrameWindow([15.5, 16.1, 16.2, 16.4], 64.2);
+  it('marks frame windows that stay within the 120 fps budget', () => {
+    const stats = summarizeOverlayFrameWindow([7.5, 7.8, 8.1, 8.2], 31.6);
     expect(stats).not.toBeNull();
     expect(stats?.overBudgetCount).toBe(0);
     expect(stats?.withinTarget).toBe(true);

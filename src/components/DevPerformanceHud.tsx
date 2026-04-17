@@ -191,7 +191,7 @@ export function DevPerformanceHud({
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <HudPill label={`Panel ${activePanelLabel}`} accent={accent} border={border} text={text} muted={muted} />
             <HudPill label={`Open ${openPanelCount}`} accent={accent} border={border} text={text} muted={muted} />
-            <HudPill label={frameStats?.withinTarget ? '60 FPS target' : 'Over budget'} accent={accent} border={border} text={text} muted={muted} active={frameStats?.withinTarget ?? false} />
+            <HudPill label={frameStats?.withinTarget ? '120 FPS target' : 'Over budget'} accent={accent} border={border} text={text} muted={muted} active={frameStats?.withinTarget ?? false} />
           </div>
         </div>
 

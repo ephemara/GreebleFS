@@ -129,14 +129,11 @@ import { ExplorerAudioWorkbench } from './ExplorerAudioWorkbench';
 import { ExplorerImageEditor } from './ExplorerImageEditor';
 import { ExplorerVideoEditor } from './ExplorerVideoEditor';
 import {
-  buildExplorerBatchRenamePreview,
   type ExplorerBatchRenameMode,
   type ExplorerBatchRenamePreviewRow,
 } from './explorerBatchRename';
-import { calculateExplorerChecksumsFromBase64, type ExplorerChecksumResult } from './explorerChecksums';
 import {
   appendExplorerJumpFilterCharacter,
-  filterExplorerEntriesForJump,
   isExplorerJumpFilterPrintableKey,
   removeExplorerJumpFilterCharacter,
 } from './explorerJumpFilter';
@@ -200,8 +197,10 @@ import {
 import { dispatchTerminalCommand, resolvePluginCommandTemplate } from '../config/pluginContributions';
 import {
   explorerBackendContract,
-  type ExplorerBatchRenameItem,
+  type ExplorerBatchRenamePreview,
+  type ExplorerBatchRenameRecipeInput,
   type ExplorerBackendContract,
+  type ExplorerChecksumInfo,
   type ExplorerDuplicateScan,
   type ExplorerDriveInfo as DriveInfo,
   type ExplorerEntryThumbnailData,
@@ -213,6 +212,7 @@ import {
   type ExplorerFileTransferResult as FileTransferResult,
   type ExplorerFileSearchResult as FileSearchResult,
   type ExplorerArchiveExtractionMode,
+  type ExplorerItemProperties,
   type ExplorerSavedSearch,
   type ExplorerTagMetadataSnapshot,
   queueExplorerTerminalDirectorySync,
@@ -2462,6 +2462,54 @@ function RenameInput({ state, onCommit, onCancel }: { state: RenameState; onComm
   );
 }
 
+const ExplorerThumbnailImage = React.memo(function ExplorerThumbnailImage({
+  entryName,
+  hoverScrubEnabled,
+  thumbnail,
+}: {
+  entryName: string;
+  hoverScrubEnabled: boolean;
+  thumbnail: ExplorerEntryThumbnailData;
+}) {
+  const hoverFrames = thumbnail.kind === 'video' ? thumbnail.hoverFrames : [];
+  const canAnimateHoverFrames = hoverScrubEnabled && hoverFrames.length > 1;
+  const [activeFrameIndex, setActiveFrameIndex] = useState(0);
+
+  useEffect(() => {
+    if (!canAnimateHoverFrames) {
+      setActiveFrameIndex((current) => (current === 0 ? current : 0));
+      return;
+    }
+
+    setActiveFrameIndex(0);
+    const intervalId = window.setInterval(() => {
+      setActiveFrameIndex((current) => (current + 1) % hoverFrames.length);
+    }, thumbnail.hoverFrameDelayMs ?? EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.hoverFrameDelayMs);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [canAnimateHoverFrames, hoverFrames.length, thumbnail.hoverFrameDelayMs]);
+
+  const imageSrc = canAnimateHoverFrames
+    ? hoverFrames[activeFrameIndex]?.imageDataUrl ?? thumbnail.posterDataUrl
+    : thumbnail.posterDataUrl;
+
+  return (
+    <img
+      src={imageSrc}
+      alt={`Thumbnail for ${entryName}`}
+      draggable={false}
+      style={{
+        width: '100%',
+        height: '100%',
+        objectFit: 'contain',
+        display: 'block',
+      }}
+    />
+  );
+});
+
 // ─── Trash confirm ────────────────────────────────────────────────────────────
 
 function TrashDialog({
@@ -2761,6 +2809,7 @@ function ExplorerPropertiesDialog({
   state,
   entries,
   primaryEntry,
+  itemProperties,
   recursiveSummary,
   checksumResults,
   checksumLoadingPaths,
@@ -2775,8 +2824,9 @@ function ExplorerPropertiesDialog({
   state: ExplorerPropertiesPanelSnapshot;
   entries: FileEntry[];
   primaryEntry: FileEntry | null;
+  itemProperties: Record<string, ExplorerItemProperties>;
   recursiveSummary: { totalBytes: number; fileCount: number; folderCount: number; pending: boolean } | null;
-  checksumResults: Record<string, ExplorerChecksumResult>;
+  checksumResults: Record<string, ExplorerChecksumInfo>;
   checksumLoadingPaths: Set<string>;
   checksumError: string | null;
   supportsNativeProperties: boolean;
@@ -2787,6 +2837,7 @@ function ExplorerPropertiesDialog({
   onClose: () => void;
 }) {
   const selectedCount = entries.length;
+  const primaryProperties = primaryEntry ? itemProperties[primaryEntry.path] ?? null : null;
   const tabs: Array<{ id: ExplorerPropertiesPanelTab; label: string }> = [
     { id: 'info', label: 'Info' },
     { id: 'permissions', label: 'Permissions' },
@@ -2798,9 +2849,26 @@ function ExplorerPropertiesDialog({
     if (activeTab === 'permissions') {
       return (
         <div style={{ display: 'grid', gap: 12 }}>
-          <div style={{ color: EXP.muted, fontSize: 12, lineHeight: 1.5 }}>
-            The frontend can show item identity and status here, but chmod/ACL details still come from the native shell on this platform.
-          </div>
+          {primaryProperties ? (
+            <div style={{ border: '1px solid var(--overlay-border)', borderRadius: 12, padding: 12, background: 'var(--overlay-bg-panel)', display: 'grid', gap: 8 }}>
+              <div style={{ color: EXP.text, fontWeight: 700, fontSize: 12 }}>Native Permission Snapshot</div>
+              <div style={{ color: EXP.muted, fontSize: 11 }}>
+                Mode: <span style={{ color: EXP.text, fontFamily: 'monospace' }}>{primaryProperties.permissions.display}</span>
+              </div>
+              <div style={{ color: EXP.muted, fontSize: 11 }}>
+                Read-only: <span style={{ color: EXP.text }}>{primaryProperties.permissions.readonly ? 'Yes' : 'No'}</span>
+              </div>
+              {primaryProperties.permissions.unixModeOctal && (
+                <div style={{ color: EXP.muted, fontSize: 11 }}>
+                  Unix mode: <span style={{ color: EXP.text, fontFamily: 'monospace' }}>{primaryProperties.permissions.unixModeOctal}</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ color: EXP.muted, fontSize: 12, lineHeight: 1.5 }}>
+              Loading native permission details for the current selection.
+            </div>
+          )}
           {supportsNativeProperties && primaryEntry && (
             <button type="button" onClick={() => onOpenNativeProperties(primaryEntry.path)} style={dialogSecondaryButtonStyle}>
               Open Native Properties
@@ -2879,6 +2947,13 @@ function ExplorerPropertiesDialog({
               <div>Path: <span style={{ color: EXP.text, wordBreak: 'break-all' }}>{primaryEntry.path}</span></div>
               <div>Size: <span style={{ color: EXP.text }}>{formatSize(recursiveSummary?.totalBytes ?? primaryEntry.size)}</span></div>
               <div>Modified: <span style={{ color: EXP.text }}>{formatDate(primaryEntry.modified)}</span></div>
+              {primaryProperties && (
+                <>
+                  <div>Created: <span style={{ color: EXP.text }}>{primaryProperties.createdAtMs ? new Date(primaryProperties.createdAtMs).toLocaleString() : '—'}</span></div>
+                  <div>Accessed: <span style={{ color: EXP.text }}>{primaryProperties.accessedAtMs ? new Date(primaryProperties.accessedAtMs).toLocaleString() : '—'}</span></div>
+                  <div>Permissions: <span style={{ color: EXP.text }}>{primaryProperties.permissions.display}</span></div>
+                </>
+              )}
               {recursiveSummary && (
                 <div>
                   Recursive size: <span style={{ color: EXP.text }}>{formatSize(recursiveSummary.totalBytes)}</span>
@@ -3126,15 +3201,19 @@ export function FileExplorer({
   repositoryPicker = null,
 }: FileExplorerProps) {
   const {
+    applyBatchRenameRecipe: applyExplorerBatchRenameRecipe,
+    calculateChecksums: calculateExplorerChecksums,
+    calculateRecursiveSizes: calculateExplorerRecursiveSizes,
     cancelSearchEntries: cancelExplorerSearchEntries,
     cancelDuplicateScan: cancelExplorerDuplicateScan,
-    batchRename: batchRenameExplorerPaths,
+    fuzzyFilterEntries: fuzzyFilterExplorerEntries,
     createDir: createExplorerDir,
     createFile: createExplorerFile,
     deletePath: deleteExplorerPath,
     extractArchive: extractExplorerArchive,
     getDrives: getExplorerDrives,
     getHomeDir: getExplorerHomeDir,
+    getItemProperties: getExplorerItemProperties,
     getRuntimeCachePolicy: getExplorerRuntimeCachePolicy,
     isCloudPath: isCloudExplorerPath,
     listLocation: listExplorerLocation,
@@ -3163,6 +3242,7 @@ export function FileExplorer({
     supportsSearch,
     startDuplicateScan: startExplorerDuplicateScan,
     pollDuplicateScan: pollExplorerDuplicateScan,
+    previewBatchRename: previewExplorerBatchRename,
     trashPaths: trashExplorerPaths,
     transferItems: transferExplorerItems,
     unwatchEntrySizeRoot: unwatchExplorerEntrySizeRoot,
@@ -3310,7 +3390,6 @@ export function FileExplorer({
   const [entryThumbnailLoadingPaths, setEntryThumbnailLoadingPaths] = useState<Set<string>>(() => new Set());
   const [videoHoverThumbnailLoadingPaths, setVideoHoverThumbnailLoadingPaths] = useState<Set<string>>(() => new Set());
   const [hoveredVideoThumbnailPath, setHoveredVideoThumbnailPath] = useState<string | null>(null);
-  const [hoveredVideoThumbnailFrameIndex, setHoveredVideoThumbnailFrameIndex] = useState(0);
   const [searchResults, setSearchResults] = useState<FileSearchResult[]>([]);
   const [drives,       setDrives]       = useState<DriveInfo[]>([]);
   const [drivesLoading, setDrivesLoading] = useState(true);
@@ -3360,7 +3439,9 @@ export function FileExplorer({
     startingNumber: 1,
     padding: 2,
   });
-  const [propertiesChecksums, setPropertiesChecksums] = useState<Record<string, ExplorerChecksumResult>>({});
+  const [batchRenamePreviewRows, setBatchRenamePreviewRows] = useState<ExplorerBatchRenamePreview[]>([]);
+  const [propertiesChecksums, setPropertiesChecksums] = useState<Record<string, ExplorerChecksumInfo>>({});
+  const [propertiesInfoByPath, setPropertiesInfoByPath] = useState<Record<string, ExplorerItemProperties>>({});
   const [propertiesChecksumLoadingPaths, setPropertiesChecksumLoadingPaths] = useState<Set<string>>(() => new Set());
   const [propertiesChecksumError, setPropertiesChecksumError] = useState<string | null>(null);
   const [saveSearchState, setSaveSearchState] = useState<SaveSearchState>({ visible: false, name: '' });
@@ -3380,6 +3461,8 @@ export function FileExplorer({
   const previewSaveTimer = useRef<number | null>(null);
   const searchRequestIdRef = useRef(0);
   const searchFocusRequestIdRef = useRef(0);
+  const jumpFilterRequestIdRef = useRef(0);
+  const batchRenamePreviewRequestIdRef = useRef(0);
   const isExplorerMountedRef = useRef(false);
   const directoryLoadRequestIdRef = useRef(0);
   const pendingNavigationPathRef = useRef<string | null>(null);
@@ -4067,7 +4150,6 @@ export function FileExplorer({
     setEntryThumbnailLoadingPaths(new Set());
     setVideoHoverThumbnailLoadingPaths(new Set());
     setHoveredVideoThumbnailPath(null);
-    setHoveredVideoThumbnailFrameIndex(0);
     try {
       const nextListing = await listExplorerLocationUncached(refreshPath, showHidden);
       if (!isActiveDirectoryLoadRequest()) {
@@ -4336,11 +4418,17 @@ export function FileExplorer({
       explorerSettings.sortOrder,
     ],
   );
+  const baseVisibleEntryLookup = useMemo(
+    () => new Map(baseVisibleEntries.map((entry) => [entry.path, entry])),
+    [baseVisibleEntries],
+  );
   const visibleEntries = useMemo(
     () => (jumpFilter.active && jumpFilter.query.trim().length > 0
-      ? filterExplorerEntriesForJump(baseVisibleEntries, jumpFilter.query)
+      ? jumpFilter.resultPaths
+        .map((path) => baseVisibleEntryLookup.get(path))
+        .filter((entry): entry is FileEntry => Boolean(entry))
       : baseVisibleEntries),
-    [baseVisibleEntries, jumpFilter.active, jumpFilter.query],
+    [baseVisibleEntries, baseVisibleEntryLookup, jumpFilter.active, jumpFilter.query, jumpFilter.resultPaths],
   );
   const sourceEntryCount = isSearchActive ? searchResults.length : entries.length;
   const filteredEntryCount = visibleEntries.length;
@@ -4493,7 +4581,7 @@ export function FileExplorer({
     }
 
     try {
-      const results = await measureExplorerEntrySizes(paths, true);
+      const results = await calculateExplorerRecursiveSizes(paths, true);
       startTransition(() => {
         setEntrySizes((current) => {
           const next = { ...current };
@@ -4521,7 +4609,7 @@ export function FileExplorer({
       });
     }
   }, [
-    measureExplorerEntrySizes,
+    calculateExplorerRecursiveSizes,
     propertiesPanel.tab,
     recursiveSizeCache,
     selectedEntries,
@@ -4554,12 +4642,13 @@ export function FileExplorer({
           continue;
         }
 
-        const base64 = await readExplorerFileBase64(path);
-        const checksumResult = await calculateExplorerChecksumsFromBase64(base64);
-        setPropertiesChecksums((current) => ({
-          ...current,
-          [path]: checksumResult,
-        }));
+        const [checksumResult] = await calculateExplorerChecksums([path]);
+        if (checksumResult) {
+          setPropertiesChecksums((current) => ({
+            ...current,
+            [path]: checksumResult,
+          }));
+        }
       }
     } catch (error) {
       setPropertiesChecksumError(String(error));
@@ -4572,7 +4661,7 @@ export function FileExplorer({
         visible: true,
       });
     }
-  }, [duplicateEntryLookup, propertiesPanel.tab, propertiesPanel.targetPaths, readExplorerFileBase64, setPropertiesPanel]);
+  }, [calculateExplorerChecksums, duplicateEntryLookup, propertiesPanel.tab, propertiesPanel.targetPaths, setPropertiesPanel]);
   useEffect(() => {
     if (!propertiesPanel.visible || propertiesPanel.tab !== 'checksums' || propertiesPanel.targetPaths.length !== 1) {
       return;
@@ -4603,6 +4692,49 @@ export function FileExplorer({
     propertiesPanel.tab,
     propertiesPanel.visible,
     runPropertiesChecksumCalculation,
+  ]);
+  useEffect(() => {
+    if (!propertiesPanel.visible || propertiesPanel.targetPaths.length === 0) {
+      return;
+    }
+
+    const targetPaths = propertiesPanel.targetPaths.filter((path) => !isCloudExplorerPath(path));
+    if (targetPaths.length === 0) {
+      return;
+    }
+
+    void Promise.all(
+      targetPaths.map(async (path) => {
+        if (propertiesInfoByPath[path]) {
+          return null;
+        }
+        try {
+          return await getExplorerItemProperties(path);
+        } catch (error) {
+          setError(String(error));
+          return null;
+        }
+      }),
+    ).then((results) => {
+      const nextEntries = results.filter((entry): entry is ExplorerItemProperties => Boolean(entry));
+      if (nextEntries.length === 0) {
+        return;
+      }
+      setPropertiesInfoByPath((current) => {
+        const next = { ...current };
+        for (const entry of nextEntries) {
+          next[entry.path] = entry;
+        }
+        return next;
+      });
+    });
+  }, [
+    getExplorerItemProperties,
+    isCloudExplorerPath,
+    propertiesInfoByPath,
+    propertiesPanel.targetPaths,
+    propertiesPanel.visible,
+    setError,
   ]);
   const goHome = useCallback(() => {
     getExplorerHomeDir().then(p => navigate(p)).catch(() => {});
@@ -4862,37 +4994,22 @@ export function FileExplorer({
     isCloudExplorerPath,
   ]);
 
-  const getActiveEntryThumbnailSrc = useCallback((entry: FileEntry): string | null => {
-    const thumbnail = entryThumbnailMap[entry.path];
-    if (!thumbnail) {
+  const getRenderableEntryThumbnail = useCallback((
+    entry: FileEntry,
+    minimumStageSize: number,
+  ): ExplorerEntryThumbnailData | null => {
+    if (minimumStageSize < EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.minStagePx) {
       return null;
     }
-    if (
-      thumbnail.kind === 'video'
-      && hoveredVideoThumbnailPath === entry.path
-      && thumbnail.hoverFrames.length > 0
-    ) {
-      const hoverFrame = thumbnail.hoverFrames[
-        hoveredVideoThumbnailFrameIndex % thumbnail.hoverFrames.length
-      ];
-      return hoverFrame?.imageDataUrl ?? thumbnail.posterDataUrl;
-    }
-    return thumbnail.posterDataUrl;
-  }, [
-    entryThumbnailMap,
-    hoveredVideoThumbnailFrameIndex,
-    hoveredVideoThumbnailPath,
-  ]);
+    return entryThumbnailMap[entry.path] ?? null;
+  }, [entryThumbnailMap]);
 
   const getRenderableEntryThumbnailSrc = useCallback((
     entry: FileEntry,
     minimumStageSize: number,
-  ): string | null => {
-    if (minimumStageSize < EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.minStagePx) {
-      return null;
-    }
-    return getActiveEntryThumbnailSrc(entry);
-  }, [getActiveEntryThumbnailSrc]);
+  ): string | null => getRenderableEntryThumbnail(entry, minimumStageSize)?.posterDataUrl ?? null, [
+    getRenderableEntryThumbnail,
+  ]);
 
   const queueClipboard = useCallback((action: 'copy' | 'cut', entry?: FileEntry) => {
     const entriesForAction = resolveEntriesForAction(entry);
@@ -5712,31 +5829,71 @@ export function FileExplorer({
     () => (selectedEntries.length > 0 ? selectedEntries : visibleEntries).filter((entry) => !entry.is_dir),
     [selectedEntries, visibleEntries],
   );
-  const batchRenamePreview = useMemo(
-    () => buildExplorerBatchRenamePreview(batchRenameTargets, batchRename),
+  const batchRenameRecipe = useMemo<ExplorerBatchRenameRecipeInput>(
+    () => ({
+      sourcePaths: batchRenameTargets.map((entry) => entry.path),
+      search: batchRename.findText,
+      replacement: batchRename.replaceText,
+      prefix: batchRename.prefix,
+      suffix: batchRename.suffix,
+      mode: batchRename.mode,
+      startIndex: batchRename.startingNumber,
+      indexPadding: batchRename.padding,
+    }),
     [batchRename, batchRenameTargets],
   );
+  const batchRenamePreview = useMemo(
+    () => ({ rows: batchRenamePreviewRows }),
+    [batchRenamePreviewRows],
+  );
+
+  useEffect(() => {
+    if (!batchRename.visible) {
+      return;
+    }
+
+    const requestId = batchRenamePreviewRequestIdRef.current + 1;
+    batchRenamePreviewRequestIdRef.current = requestId;
+
+    if (batchRenameRecipe.sourcePaths.length === 0) {
+      setBatchRenamePreviewRows([]);
+      return;
+    }
+
+    void previewExplorerBatchRename(batchRenameRecipe)
+      .then((rows) => {
+        if (batchRenamePreviewRequestIdRef.current !== requestId) {
+          return;
+        }
+        setBatchRenamePreviewRows(rows);
+      })
+      .catch((previewError) => {
+        if (batchRenamePreviewRequestIdRef.current !== requestId) {
+          return;
+        }
+        setError(String(previewError));
+        setBatchRenamePreviewRows([]);
+      });
+  }, [batchRename.visible, batchRenameRecipe, previewExplorerBatchRename, setError]);
 
   const commitBatchRename = useCallback(async () => {
-    const items = batchRenamePreview.rows
-      .filter(({ sourcePath, destinationPath }) => sourcePath !== destinationPath)
-      .map(({ sourcePath, destinationPath }): ExplorerBatchRenameItem => ({
-        sourcePath,
-        destinationPath,
-      }));
-    if (items.length === 0) {
+    if (batchRenameRecipe.sourcePaths.length === 0) {
       setBatchRename((current) => ({ ...current, visible: false }));
       return;
     }
     try {
-      await batchRenameExplorerPaths(items);
+      const results = await applyExplorerBatchRenameRecipe(batchRenameRecipe);
+      if (results.length === 0) {
+        setBatchRename((current) => ({ ...current, visible: false }));
+        return;
+      }
       invalidateExplorerResultCaches();
       setBatchRename((current) => ({ ...current, visible: false }));
       refresh();
     } catch (renameError) {
       setError(String(renameError));
     }
-  }, [batchRenameExplorerPaths, batchRenamePreview.rows, refresh]);
+  }, [applyExplorerBatchRenameRecipe, batchRenameRecipe, refresh, setError]);
 
   const saveCurrentSearch = useCallback(async () => {
     const name = saveSearchState.name.trim() || search.trim();
@@ -5778,14 +5935,44 @@ export function FileExplorer({
       return;
     }
 
-    const resultPaths = filterExplorerEntriesForJump(baseVisibleEntries, trimmed).map((entry) => entry.path);
-    setJumpFilter({
-      active: true,
+    const requestId = jumpFilterRequestIdRef.current + 1;
+    jumpFilterRequestIdRef.current = requestId;
+    const jumpFilterEntries = baseVisibleEntries.map((entry, index) => ({
+      path: entry.path,
+      name: entry.name,
+      isDir: entry.is_dir,
+      sortOrder: index,
+    }));
+    void fuzzyFilterExplorerEntries({
       query: trimmed,
-      resultIndex: resultPaths.length > 0 ? 0 : -1,
-      resultPaths,
-    });
-  }, [baseVisibleEntries, setJumpFilter]);
+      entries: jumpFilterEntries,
+      limit: null,
+    })
+      .then((matches) => {
+        if (jumpFilterRequestIdRef.current !== requestId) {
+          return;
+        }
+        const resultPaths = matches.map((entry) => entry.path);
+        setJumpFilter({
+          active: true,
+          query: trimmed,
+          resultIndex: resultPaths.length > 0 ? 0 : -1,
+          resultPaths,
+        });
+      })
+      .catch((jumpFilterError) => {
+        if (jumpFilterRequestIdRef.current !== requestId) {
+          return;
+        }
+        setError(String(jumpFilterError));
+        setJumpFilter({
+          active: true,
+          query: trimmed,
+          resultIndex: -1,
+          resultPaths: [],
+        });
+      });
+  }, [baseVisibleEntries, fuzzyFilterExplorerEntries, setError, setJumpFilter]);
 
   const moveJumpFilterSelection = useCallback((direction: 1 | -1) => {
     if (!jumpFilter.active || jumpFilter.resultPaths.length === 0) {
@@ -7085,7 +7272,6 @@ export function FileExplorer({
       && isVideoPreviewExtension(getEntryExtension(entry))
     ) {
       setHoveredVideoThumbnailPath(entry.path);
-      setHoveredVideoThumbnailFrameIndex(0);
     }
   }, [
     canRenderEntryThumbnail,
@@ -7105,7 +7291,6 @@ export function FileExplorer({
     }
     if (hoveredVideoThumbnailPath === entry.path) {
       setHoveredVideoThumbnailPath(null);
-      setHoveredVideoThumbnailFrameIndex(0);
     }
   }, [hoveredVideoThumbnailPath, idleEntrySurface]);
   const explorerRootStyle = useMemo<CSSProperties>(() => ({
@@ -9515,7 +9700,6 @@ export function FileExplorer({
       || !visibleEntries.some((entry) => entry.path === hoveredVideoThumbnailPath)
     ) {
       setHoveredVideoThumbnailPath(null);
-      setHoveredVideoThumbnailFrameIndex(0);
     }
   }, [
     currentPathIsCloud,
@@ -9524,37 +9708,6 @@ export function FileExplorer({
     explorerThumbnailSettings.includeVideo,
     hoveredVideoThumbnailPath,
     visibleEntries,
-  ]);
-
-  useEffect(() => {
-    if (!hoveredVideoThumbnailPath) {
-      if (hoveredVideoThumbnailFrameIndex !== 0) {
-        setHoveredVideoThumbnailFrameIndex(0);
-      }
-      return;
-    }
-
-    const hoveredThumbnail = entryThumbnailMap[hoveredVideoThumbnailPath];
-    if (hoveredThumbnail?.kind !== 'video' || hoveredThumbnail.hoverFrames.length < 2) {
-      if (hoveredVideoThumbnailFrameIndex !== 0) {
-        setHoveredVideoThumbnailFrameIndex(0);
-      }
-      return;
-    }
-
-    const intervalId = window.setInterval(() => {
-      setHoveredVideoThumbnailFrameIndex(current => (
-        (current + 1) % hoveredThumbnail.hoverFrames.length
-      ));
-    }, hoveredThumbnail.hoverFrameDelayMs ?? EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.hoverFrameDelayMs);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [
-    entryThumbnailMap,
-    hoveredVideoThumbnailFrameIndex,
-    hoveredVideoThumbnailPath,
   ]);
 
   const renderSearchMetadata = (entry: FileEntry) => {
@@ -10877,7 +11030,7 @@ export function FileExplorer({
                     const isDrop = dragOver === entry.path && entry.is_dir;
                     const isRenaming = rename.active && rename.path === entry.path;
                     const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
-                    const thumbnailSrc = getRenderableEntryThumbnailSrc(
+                    const thumbnail = getRenderableEntryThumbnail(
                       entry,
                       activeGridMetrics.iconStageSize,
                     );
@@ -10932,28 +11085,22 @@ export function FileExplorer({
                             justifyContent: 'center',
                             overflow: 'hidden',
                             flexShrink: 0,
-                            borderRadius: thumbnailSrc ? Math.max(10, Math.round(activeGridMetrics.tileRadius * 0.72)) : undefined,
-                            border: thumbnailSrc ? '1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)' : undefined,
-                            background: thumbnailSrc
+                            borderRadius: thumbnail ? Math.max(10, Math.round(activeGridMetrics.tileRadius * 0.72)) : undefined,
+                            border: thumbnail ? '1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)' : undefined,
+                            background: thumbnail
                               ? (isSel
                                   ? 'color-mix(in srgb, var(--overlay-bg-selection) 72%, var(--overlay-bg-panel))'
                                   : 'color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)')
                               : undefined,
-                            boxShadow: thumbnailSrc ? 'inset 0 1px 0 color-mix(in srgb, white 8%, transparent)' : undefined,
+                            boxShadow: thumbnail ? 'inset 0 1px 0 color-mix(in srgb, white 8%, transparent)' : undefined,
                             transition: 'width 0.18s cubic-bezier(0.22, 1, 0.36, 1), height 0.18s cubic-bezier(0.22, 1, 0.36, 1)',
                           }}
                         >
-                          {thumbnailSrc ? (
-                            <img
-                              src={thumbnailSrc}
-                              alt={`Thumbnail for ${entry.name}`}
-                              draggable={false}
-                              style={{
-                                width: '100%',
-                                height: '100%',
-                                objectFit: 'contain',
-                                display: 'block',
-                              }}
+                          {thumbnail ? (
+                            <ExplorerThumbnailImage
+                              entryName={entry.name}
+                              hoverScrubEnabled={hoveredVideoThumbnailPath === entry.path}
+                              thumbnail={thumbnail}
                             />
                           ) : (
                             <SvgIcon src={iconSrc} size={activeGridMetrics.iconSize} />
@@ -11036,7 +11183,7 @@ export function FileExplorer({
                   const isRenaming = rename.active && rename.path === entry.path;
                   const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
                   const rowThumbnailStageSize = Math.max((activeRowMetrics?.iconSize ?? 16) + 12, 28);
-                  const thumbnailSrc = getRenderableEntryThumbnailSrc(entry, rowThumbnailStageSize);
+                  const thumbnail = getRenderableEntryThumbnail(entry, rowThumbnailStageSize);
                   return (
                     <div
                       key={entry.path}
@@ -11082,25 +11229,24 @@ export function FileExplorer({
                             alignItems: 'center',
                             justifyContent: 'center',
                             overflow: 'hidden',
-                            borderRadius: thumbnailSrc ? 10 : undefined,
-                            border: thumbnailSrc
+                            borderRadius: thumbnail ? 10 : undefined,
+                            border: thumbnail
                               ? '1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)'
                               : undefined,
-                            background: thumbnailSrc
+                            background: thumbnail
                               ? 'color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)'
                               : undefined,
-                            boxShadow: thumbnailSrc
+                            boxShadow: thumbnail
                               ? 'inset 0 1px 0 color-mix(in srgb, white 8%, transparent)'
                               : undefined,
                             flexShrink: 0,
                           }}
                         >
-                          {thumbnailSrc ? (
-                            <img
-                              src={thumbnailSrc}
-                              alt={`Thumbnail for ${entry.name}`}
-                              draggable={false}
-                              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                          {thumbnail ? (
+                            <ExplorerThumbnailImage
+                              entryName={entry.name}
+                              hoverScrubEnabled={hoveredVideoThumbnailPath === entry.path}
+                              thumbnail={thumbnail}
                             />
                           ) : (
                             <SvgIcon src={iconSrc} size={activeRowMetrics?.iconSize ?? 16} />
@@ -11209,7 +11355,7 @@ export function FileExplorer({
                     const isRenaming = rename.active && rename.path === entry.path;
                     const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
                     const rowThumbnailStageSize = Math.max((activeRowMetrics?.iconSize ?? 16) + 12, 28);
-                    const thumbnailSrc = getRenderableEntryThumbnailSrc(entry, rowThumbnailStageSize);
+                    const thumbnail = getRenderableEntryThumbnail(entry, rowThumbnailStageSize);
                     const isDetailsMode = effectiveViewMode === 'details';
                     return (
                       <tr
@@ -11241,25 +11387,24 @@ export function FileExplorer({
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 overflow: 'hidden',
-                                borderRadius: thumbnailSrc ? 10 : undefined,
-                                border: thumbnailSrc
+                                borderRadius: thumbnail ? 10 : undefined,
+                                border: thumbnail
                                   ? '1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)'
                                   : undefined,
-                                background: thumbnailSrc
+                                background: thumbnail
                                   ? 'color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)'
                                   : undefined,
-                                boxShadow: thumbnailSrc
+                                boxShadow: thumbnail
                                   ? 'inset 0 1px 0 color-mix(in srgb, white 8%, transparent)'
                                   : undefined,
                                 flexShrink: 0,
                               }}
                             >
-                              {thumbnailSrc ? (
-                                <img
-                                  src={thumbnailSrc}
-                                  alt={`Thumbnail for ${entry.name}`}
-                                  draggable={false}
-                                  style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                              {thumbnail ? (
+                                <ExplorerThumbnailImage
+                                  entryName={entry.name}
+                                  hoverScrubEnabled={hoveredVideoThumbnailPath === entry.path}
+                                  thumbnail={thumbnail}
                                 />
                               ) : (
                                 <SvgIcon src={iconSrc} size={activeRowMetrics?.iconSize ?? 16} />
@@ -11428,6 +11573,7 @@ export function FileExplorer({
           state={propertiesPanel}
           entries={propertiesPanelEntries}
           primaryEntry={propertiesPanelPrimaryEntry}
+          itemProperties={propertiesInfoByPath}
           recursiveSummary={propertiesPanelRecursiveSummary}
           checksumResults={propertiesChecksums}
           checksumLoadingPaths={propertiesChecksumLoadingPaths}

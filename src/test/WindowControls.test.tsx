@@ -32,7 +32,7 @@ function restoreTauriWindowMock(): void {
     is_visible: vi.fn().mockResolvedValue(false),
     startResizeDragging: vi.fn().mockResolvedValue(undefined),
     startDragging: vi.fn().mockResolvedValue(undefined),
-  }));
+  }) as unknown as ReturnType<typeof getCurrentWindow>);
 }
 
 describe('WindowControls', () => {

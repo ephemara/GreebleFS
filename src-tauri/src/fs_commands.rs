@@ -13,6 +13,8 @@ use crate::explorer_pro_commands::FsBatchRenameItem;
 use md5::Context as Md5Context;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};

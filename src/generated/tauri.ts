@@ -45,6 +45,30 @@ async terminalKill(id: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async terminalRegisterShellIntegration(request: TerminalShellIntegrationRequest) : Promise<Result<TerminalShellIntegrationState, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("terminal_register_shell_integration", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async terminalSyncCwd(id: string, cwd: string) : Promise<Result<TerminalShellIntegrationState, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("terminal_sync_cwd", { id, cwd }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async terminalSetPromptState(id: string, atPrompt: boolean, reportedCwd: string | null) : Promise<Result<TerminalShellIntegrationState, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("terminal_set_prompt_state", { id, atPrompt, reportedCwd }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async terminalOpenExternal(request: ExternalTerminalRequest) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("terminal_open_external", { request }) };
@@ -200,6 +224,30 @@ async fsGetDrives() : Promise<Result<DriveInfo[], string>> {
 async fsMeasureEntrySizes(paths: string[], forceRefresh: boolean | null) : Promise<Result<EntryStorageInfo[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("fs_measure_entry_sizes", { paths, forceRefresh }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async fsCalculateRecursiveSizes(paths: string[], forceRefresh: boolean | null) : Promise<Result<EntryStorageInfo[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("fs_calculate_recursive_sizes", { paths, forceRefresh }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async fsCalculateChecksums(paths: string[]) : Promise<Result<FsChecksumEntryInfo[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("fs_calculate_checksums", { paths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async fsGetItemProperties(path: string) : Promise<Result<FsItemPropertiesInfo, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("fs_get_item_properties", { path }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -461,6 +509,22 @@ async fsRestoreRecentTrashAction() : Promise<Result<ExplorerTrashRestoreResult |
     else return { status: "error", error: e  as any };
 }
 },
+async fsBatchRenamePreview(recipe: FsBatchRenameRecipe) : Promise<Result<FsBatchRenamePreviewRow[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("fs_batch_rename_preview", { recipe }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async fsBatchRenameApply(recipe: FsBatchRenameRecipe) : Promise<Result<FsBatchRenameResult[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("fs_batch_rename_apply", { recipe }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async fsBatchRename(items: FsBatchRenameItem[]) : Promise<Result<FsBatchRenameResult[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("fs_batch_rename", { items }) };
@@ -611,6 +675,14 @@ async fsSearchEntries(path: string, query: string, showHidden: boolean, includeC
 async fsSearchEntriesWithDiagnostics(path: string, query: string, showHidden: boolean, includeContent: boolean, limit: number | null, requestId: number | null, requestScope: string | null) : Promise<Result<FileSearchResponse, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("fs_search_entries_with_diagnostics", { path, query, showHidden, includeContent, limit, requestId, requestScope }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async fsFuzzyFilterEntries(request: FsJumpFilterRequest) : Promise<Result<FsJumpFilterMatch[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("fs_fuzzy_filter_entries", { request }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -923,17 +995,19 @@ async domainListWorkbenchPresets() : Promise<WorkbenchPreset[]> {
 
 export const events = __makeEvents__<{
 audioEngineStateEvent: AudioEngineStateEvent,
-explorerTaskProgressEvent: ExplorerTaskProgressEvent
+explorerTaskProgressEvent: ExplorerTaskProgressEvent,
+terminalShellIntegrationStateEvent: TerminalShellIntegrationStateEvent
 }>({
 audioEngineStateEvent: "audio-engine-state-event",
-explorerTaskProgressEvent: "explorer-task-progress-event"
+explorerTaskProgressEvent: "explorer-task-progress-event",
+terminalShellIntegrationStateEvent: "terminal-shell-integration-state-event"
 })
 
 /** user-defined constants **/
 
-export const OVERLAY_WORKBENCH_PRESETS = [{"description":"Cross-axis shell","id":"xmb-media-deck","inputProfile":{"density":"immersive","directionalNavigation":true,"mode":"controller","pointerGestures":false},"label":"XMB Media Deck","navigationModel":"cross-axis","panelBindings":[{"defaultOpen":true,"order":0,"panelId":"terminal","preferredSize":null,"region":"primary"}],"preferredThemeIds":["operator"],"shellBlueprint":"xmb-cross-media","windowProfile":{"anchor":"center","aspectRatio":"16:9","mode":"fullscreen"}}] as const;
 export const YAZI_BINDINGS_MANIFEST = {"entries":[{"crateName":"yazi-actor","exportedTypes":[],"notes":["actor command internals"],"status":"internal"},{"crateName":"yazi-adapter","exportedTypes":[],"notes":["adapter and image bridge surface planned"],"status":"planned"},{"crateName":"yazi-binding","exportedTypes":[],"notes":["Lua binding internals"],"status":"internal"},{"crateName":"yazi-boot","exportedTypes":[],"notes":["boot/runtime handshake surface planned"],"status":"planned"},{"crateName":"yazi-build","exportedTypes":[],"notes":["build helper crate"],"status":"internal"},{"crateName":"yazi-cli","exportedTypes":[],"notes":["CLI-only surface"],"status":"internal"},{"crateName":"yazi-codegen","exportedTypes":[],"notes":["codegen helper crate"],"status":"internal"},{"crateName":"yazi-config","exportedTypes":[],"notes":["config/theme bridge surface planned"],"status":"planned"},{"crateName":"yazi-core","exportedTypes":[],"notes":["runtime state internals"],"status":"internal"},{"crateName":"yazi-dds","exportedTypes":[],"notes":["DDS payload bridge surface planned"],"status":"planned"},{"crateName":"yazi-emulator","exportedTypes":[],"notes":["terminal emulator bridge surface planned"],"status":"planned"},{"crateName":"yazi-ffi","exportedTypes":[],"notes":["FFI handle internals"],"status":"internal"},{"crateName":"yazi-fm","exportedTypes":[],"notes":["full TUI app crate"],"status":"internal"},{"crateName":"yazi-fs","exportedTypes":["YaziFsSortBy","YaziFsSortFallback","YaziFsErrorDto","YaziFsFolderStageDto"],"notes":["file explorer sorting and stage contracts exported"],"status":"bridged"},{"crateName":"yazi-macro","exportedTypes":[],"notes":["macro crate"],"status":"internal"},{"crateName":"yazi-packing","exportedTypes":[],"notes":["archive/package bridge surface planned"],"status":"planned"},{"crateName":"yazi-parser","exportedTypes":["YaziParserTaskSummary","YaziParserSortOpt","YaziParserHiddenOpt","YaziParserHiddenOptState"],"notes":["frontend-safe parser option DTOs exported"],"status":"bridged"},{"crateName":"yazi-plugin","exportedTypes":[],"notes":["plugin runtime bridge surface planned"],"status":"planned"},{"crateName":"yazi-proxy","exportedTypes":[],"notes":["proxy bridge surface planned"],"status":"planned"},{"crateName":"yazi-scheduler","exportedTypes":["YaziSchedulerFetchProg","YaziSchedulerFileProgCopy","YaziSchedulerFileProgCut","YaziSchedulerFileProgLink","YaziSchedulerFileProgHardlink","YaziSchedulerFileProgDelete","YaziSchedulerFileProgTrash","YaziSchedulerFileProgDownload","YaziSchedulerFileProgUpload","YaziSchedulerPluginProgEntry","YaziSchedulerPreloadProg","YaziSchedulerProcessProgBlock","YaziSchedulerProcessProgOrphan","YaziSchedulerProcessProgBg","YaziSchedulerSizeProg","YaziSchedulerTaskProg","YaziSchedulerTaskSnap"],"notes":["task progress bridge DTOs exported"],"status":"bridged"},{"crateName":"yazi-sftp","exportedTypes":[],"notes":["SFTP bridge surface planned"],"status":"planned"},{"crateName":"yazi-shared","exportedTypes":[],"notes":["shared URL/data bridge surface planned"],"status":"planned"},{"crateName":"yazi-shim","exportedTypes":[],"notes":["platform shim internals"],"status":"internal"},{"crateName":"yazi-term","exportedTypes":[],"notes":["terminal presentation bridge surface planned"],"status":"planned"},{"crateName":"yazi-tty","exportedTypes":[],"notes":["TTY internals"],"status":"internal"},{"crateName":"yazi-vfs","exportedTypes":[],"notes":["VFS service bridge surface planned"],"status":"planned"},{"crateName":"yazi-watcher","exportedTypes":[],"notes":["watcher event bridge surface planned"],"status":"planned"},{"crateName":"yazi-widgets","exportedTypes":[],"notes":["widget layout bridge surface planned"],"status":"planned"}],"version":"phase-1"} as const;
 export const OVERLAY_THEME_MANIFESTS = [{"animationProfiles":[{"durationMs":180,"easing":"ease-in-out","id":"default-motion","intensity":50,"name":"Default Motion"}],"compatibility":{"shellBlueprints":[],"tags":["default","workbench"]},"defaultAnimationProfileId":"default-motion","defaultIconPackId":"system-icons","defaultLayoutPrimitiveId":"operator-stack","defaultNavigationPatternId":"operator-tabs","defaultRenderStyleId":"default-render","designTokens":[{"id":"accent-operator","kind":"color","name":"Accent","value":"#6366f1"},{"id":"panel-spacing","kind":"spacing","name":"Panel Spacing","value":8}],"extends":null,"iconPacks":[{"id":"system-icons","name":"System Icons","style":"system"}],"id":"operator","layoutPrimitives":[{"id":"operator-stack","kind":"stack","name":"Operator Stack","props":{"gap":8}},{"id":"operator-dock","kind":"dock","name":"Operator Dock","props":{"side":"right"}}],"name":"Operator","navigationPatterns":[{"axis":"horizontal","id":"operator-tabs","kind":"tabbed","name":"Operator Tabs","props":{"defaultSurface":"terminal","focusRing":"chrome"}}],"presentation":{"chromeStyle":"floating","cornerRadius":12,"density":"comfortable","iconStyle":"vector","motionStyle":"fluid","panelSpacing":8},"renderStyles":[{"description":"Built-in workbench renderer placeholder","entryModule":"renderers/default.tsx","id":"default-render","kind":"vs-code-workbench","label":"Workbench","supportsLiveSwap":true}]},{"animationProfiles":[{"durationMs":220,"easing":"ease-out","id":"aqua-sheen","intensity":42,"name":"Aqua Sheen"}],"compatibility":{"shellBlueprints":["classic-dock"],"tags":["light","aqua","chrome"]},"defaultAnimationProfileId":"aqua-sheen","defaultIconPackId":"aqua-icons","defaultLayoutPrimitiveId":"aqua-shell","defaultNavigationPatternId":"aqua-cascade","defaultRenderStyleId":"aqua-render","designTokens":[{"id":"aqua-accent","kind":"color","name":"Accent","value":"#2a9df4"},{"id":"aqua-radius","kind":"radius","name":"Card Radius","value":12}],"extends":"operator","iconPacks":[{"id":"aqua-icons","name":"Aqua Icons","style":"vector"}],"id":"aqua-light","layoutPrimitives":[{"id":"aqua-shell","kind":"split","name":"Aqua Shell","props":{"primaryRatio":0.62}}],"name":"Aqua Light","navigationPatterns":[{"axis":"both","id":"aqua-cascade","kind":"spatial","name":"Aqua Cascade","props":{"breadcrumb":true}}],"presentation":{"chromeStyle":"floating","cornerRadius":14,"density":"comfortable","iconStyle":"vector","motionStyle":"fluid","panelSpacing":10},"renderStyles":[{"description":"Bright Aqua chrome and translucent panels.","entryModule":"renderers/aqua-light.tsx","id":"aqua-render","kind":"vs-code-workbench","label":"Aqua Glass","supportsLiveSwap":true}]},{"animationProfiles":[{"durationMs":240,"easing":"ease-out","id":"plasma-surge","intensity":62,"name":"Plasma Surge"}],"compatibility":{"shellBlueprints":["classic-dock"],"tags":["neon","plasma","cyber"]},"defaultAnimationProfileId":"plasma-surge","defaultIconPackId":"plasma-icons","defaultLayoutPrimitiveId":"plasma-grid","defaultNavigationPatternId":"plasma-trail","defaultRenderStyleId":"plasma-render","designTokens":[{"id":"plasma-accent","kind":"color","name":"Accent","value":"#59e3ff"},{"id":"plasma-motion","kind":"motion","name":"Motion","value":240}],"extends":"operator","iconPacks":[{"id":"plasma-icons","name":"Plasma Icons","style":"vector"}],"id":"plasma-flow","layoutPrimitives":[{"id":"plasma-grid","kind":"grid","name":"Plasma Grid","props":{"cellSize":140}}],"name":"Plasma Flow","navigationPatterns":[{"axis":"horizontal","id":"plasma-trail","kind":"xmb","name":"Plasma Trail","props":{"categoryDepth":2}}],"presentation":{"chromeStyle":"floating","cornerRadius":12,"density":"comfortable","iconStyle":"vector","motionStyle":"dramatic","panelSpacing":10},"renderStyles":[{"description":"Neon dark shell with crisp panels.","entryModule":"renderers/plasma-flow.tsx","id":"plasma-render","kind":"vs-code-workbench","label":"Plasma Lab","supportsLiveSwap":true}]},{"animationProfiles":[{"durationMs":300,"easing":"ease-in-out","id":"vintage-power-on","intensity":58,"name":"Power On"}],"compatibility":{"shellBlueprints":["retro-desktop"],"tags":["vintage","macintosh","crt"]},"defaultAnimationProfileId":"vintage-power-on","defaultIconPackId":"vintage-icons","defaultLayoutPrimitiveId":"vintage-window","defaultNavigationPatternId":"vintage-desktop","defaultRenderStyleId":"vintage-render","designTokens":[{"id":"vintage-accent","kind":"color","name":"Accent","value":"#506f42"},{"id":"vintage-radius","kind":"radius","name":"Bezel Radius","value":10}],"extends":"operator","iconPacks":[{"id":"vintage-icons","name":"Vintage Icons","style":"skeuomorphic"}],"id":"vintage-macintosh","layoutPrimitives":[{"id":"vintage-window","kind":"freeform","name":"Vintage Window","props":{"bezel":true}}],"name":"Vintage Macintosh","navigationPatterns":[{"axis":"vertical","id":"vintage-desktop","kind":"hierarchy","name":"Vintage Desktop","props":{"menuBar":true}}],"presentation":{"chromeStyle":"ornate","cornerRadius":10,"density":"comfortable","iconStyle":"skeuomorphic","motionStyle":"dramatic","panelSpacing":12},"renderStyles":[{"description":"Desktop chrome tuned for retro Macintosh shells.","entryModule":"renderers/vintage-macintosh.tsx","id":"vintage-render","kind":"desktop-window-manager","label":"Vintage Desktop","supportsLiveSwap":true}]},{"animationProfiles":[{"durationMs":260,"easing":"ease-out","id":"vista-bloom","intensity":54,"name":"Vista Bloom"}],"compatibility":{"shellBlueprints":["classic-dock"],"tags":["glass","aero","blue"]},"defaultAnimationProfileId":"vista-bloom","defaultIconPackId":"vista-icons","defaultLayoutPrimitiveId":"vista-glass-shell","defaultNavigationPatternId":"vista-breadcrumbs","defaultRenderStyleId":"vista-render","designTokens":[{"id":"vista-accent","kind":"color","name":"Accent","value":"#7dd3ff"},{"id":"vista-shadow","kind":"shadow","name":"Overlay Shadow","value":"0 20px 64px rgba(0, 0, 0, 0.44)"}],"extends":"github-dark","iconPacks":[{"id":"vista-icons","name":"Vista Icons","style":"skeuomorphic"}],"id":"vista-glass","layoutPrimitives":[{"id":"vista-glass-shell","kind":"dock","name":"Vista Glass Shell","props":{"chrome":"frosted"}}],"name":"Vista Glass","navigationPatterns":[{"axis":"horizontal","id":"vista-breadcrumbs","kind":"palette","name":"Vista Breadcrumbs","props":{"searchFirst":true}}],"presentation":{"chromeStyle":"floating","cornerRadius":16,"density":"comfortable","iconStyle":"skeuomorphic","motionStyle":"fluid","panelSpacing":10},"renderStyles":[{"description":"Glossy Aero-inspired render style for glass shells.","entryModule":"renderers/vista-glass.tsx","id":"vista-render","kind":"vs-code-workbench","label":"Vista Glass","supportsLiveSwap":true}]}] as const;
+export const OVERLAY_WORKBENCH_PRESETS = [{"description":"Cross-axis shell","id":"xmb-media-deck","inputProfile":{"density":"immersive","directionalNavigation":true,"mode":"controller","pointerGestures":false},"label":"XMB Media Deck","navigationModel":"cross-axis","panelBindings":[{"defaultOpen":true,"order":0,"panelId":"terminal","preferredSize":null,"region":"primary"}],"preferredThemeIds":["operator"],"shellBlueprint":"xmb-cross-media","windowProfile":{"anchor":"center","aspectRatio":"16:9","mode":"fullscreen"}}] as const;
 
 /** user-defined types **/
 
@@ -984,7 +1058,7 @@ export type ExplorerTagMutationRequest = { paths: string[]; tagNames: string[]; 
 export type ExplorerTagRecord = { id: string; label: string; color: string | null; pathCount: number }
 export type ExplorerTagSnapshot = { tags: ExplorerTagRecord[]; assignments: ExplorerPathTagAssignment[] }
 export type ExplorerTaskHistoryClearScope = "completed" | "failed" | "finished"
-export type ExplorerTaskKind = "copy" | "move" | "delete" | "trash" | "batchRename" | "duplicateScan" | "extractArchive" | "audioTransform" | "audioBatchProcess"
+export type ExplorerTaskKind = "copy" | "move" | "delete" | "trash" | "batchRename" | "duplicateScan" | "extractArchive" | "recursiveSize" | "checksum" | "audioTransform" | "audioBatchProcess"
 export type ExplorerTaskProgressEvent = { taskId: string; task: ExplorerTaskRecord }
 export type ExplorerTaskRecord = { id: string; kind: ExplorerTaskKind; status: ExplorerTaskStatus; title: string; detail: string; progressCurrent: number | null; progressTotal: number | null; startedAt: number; finishedAt: number | null; sourcePaths: string[]; destinationPath: string | null; errorMessage: string | null; canRetry: boolean; canCancel: boolean; canRevealOutput: boolean; canOpenOutput: boolean; canUndo: boolean; schedulerTask: YaziSchedulerTaskSnap | null }
 export type ExplorerTaskStatus = "running" | "succeeded" | "failed" | "cancelled"
@@ -1010,7 +1084,16 @@ export type FsArchiveExtractionMode = "openCached" | "extractHere" | "extractToN
 export type FsArchiveExtractionRequest = { archivePath: string; mode: FsArchiveExtractionMode }
 export type FsArchiveExtractionResult = { outputPath: string; extractedEntryCount: number; reusedCachedOutput: boolean }
 export type FsBatchRenameItem = { sourcePath: string; destinationPath: string }
+export type FsBatchRenameMode = "literal" | "regex"
+export type FsBatchRenamePreviewRow = { sourcePath: string; currentName: string; nextName: string; destinationPath: string; collision: boolean; validationError: string | null }
+export type FsBatchRenameRecipe = { sourcePaths: string[]; search: string; replacement: string; prefix: string; suffix: string; mode: FsBatchRenameMode; startIndex: number | null; indexPadding: number | null }
 export type FsBatchRenameResult = { sourcePath: string; destinationPath: string }
+export type FsChecksumEntryInfo = { path: string; bytes: number; isDir: boolean; md5: string | null; sha256: string | null; error: string | null }
+export type FsItemPropertiesInfo = { path: string; name: string; isDir: boolean; isSymlink: boolean; bytes: number; modifiedAtMs: number | null; createdAtMs: number | null; accessedAtMs: number | null; permissions: FsPermissionInfo }
+export type FsJumpFilterEntry = { path: string; name: string; isDir: boolean; sortOrder: number }
+export type FsJumpFilterMatch = { path: string; name: string; isDir: boolean; sortOrder: number; score: number; matchedIndices: number[] }
+export type FsJumpFilterRequest = { query: string; entries: FsJumpFilterEntry[]; limit: number | null }
+export type FsPermissionInfo = { readonly: boolean; display: string; unixMode: number | null; unixModeOctal: string | null }
 export type FsRuntimeCachePolicy = { dirListCacheTtlMs: number; searchNameIndexCacheTtlMs: number; searchContentIndexCacheTtlMs: number; entrySizeCacheTtlMs: number; entrySizeScanBudgetMs: number; searchContentIndexTotalBytesBudget: number; maxSearchContentFileBytes: number; searchMaxIndexedEntries: number }
 export type FsWriteFileContent = { kind: "text"; value: string } | { kind: "bytes"; value: number[] }
 export type LayoutBackBehavior = "overlay-first" | "history-first"
@@ -1052,6 +1135,10 @@ export type ShellBlueprint = { id: ShellBlueprintId; label: string; description:
 export type ShellBlueprintId = "classic-dock" | "xmb-cross-media" | "retro-desktop" | "tile-start" | "handheld-dual-screen"
 export type ShellNavigationModel = "tabs" | "cross-axis" | "desktop" | "tiles" | "stacked-dual-pane"
 export type ShellSurfaceStyle = "glass" | "solid" | "skeuomorphic" | "flat" | "pixel"
+export type TerminalShellIntegrationRequest = { id: string; shellKind: TerminalShellKind | null; supportsAutoCd: boolean | null; atPrompt: boolean | null; reportedCwd: string | null }
+export type TerminalShellIntegrationState = { shellKind: TerminalShellKind; supportsAutoCd: boolean; atPrompt: boolean; reportedCwd: string | null; pendingCwd: string | null; lastSyncedCwd: string | null }
+export type TerminalShellIntegrationStateEvent = { id: string; state: TerminalShellIntegrationState; appliedCwd: string | null }
+export type TerminalShellKind = "bash" | "zsh" | "fish" | "powerShell" | "cmd" | "unknown"
 export type TerminalWriteRequest = { id: string; data: string }
 export type ThemeAnimationProfile = { id: string; name: string; durationMs: number; easing: string; intensity: number }
 export type ThemeChromeStyle = "minimal" | "ornate" | "floating" | "system"

@@ -87,6 +87,7 @@ describe('createBuiltInPanelDefinitions', () => {
       onRefreshWallpapers: async () => {},
       onOpenWallpapersFolder: async () => {},
       onImportWallpaperFiles: async () => {},
+      onSetWindowMode: async () => {},
       renderPluginsManager: () => null,
     });
 
@@ -164,6 +165,7 @@ describe('createBuiltInPanelDefinitions', () => {
       onRefreshWallpapers: async () => {},
       onOpenWallpapersFolder: async () => {},
       onImportWallpaperFiles: async () => {},
+      onSetWindowMode: async () => {},
       renderPluginsManager: () => null,
     });
 

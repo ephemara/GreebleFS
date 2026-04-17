@@ -256,6 +256,13 @@ describe('FileExplorer view modes', () => {
       const payload = args as {
         path?: string;
         paths?: string[];
+        request?: {
+          path?: string;
+          maxWidth?: number;
+          maxHeight?: number;
+          includeVideoHoverScrub?: boolean | null;
+          videoHoverFrameCount?: number | null;
+        };
         targetDir?: string;
         sources?: string[];
         operation?: 'copy' | 'move';
@@ -297,6 +304,16 @@ describe('FileExplorer view modes', () => {
             throw new Error('Image is too large to thumbnail (> 64 MB)');
           }
           return 'data:image/png;base64,ZmFrZQ==';
+        case 'fs_read_entry_thumbnail':
+          if (payload?.request?.path === `${REPO_ROOT}\\broken.png`) {
+            throw new Error('Image is too large to thumbnail (> 64 MB)');
+          }
+          return {
+            kind: 'image',
+            posterDataUrl: 'data:image/png;base64,ZmFrZQ==',
+            hoverFrames: [],
+            hoverFrameDelayMs: null,
+          };
         case 'explorer_tags_list':
           return EMPTY_TAG_SNAPSHOT;
         case 'explorer_tags_set_for_paths':
@@ -543,7 +560,18 @@ describe('FileExplorer view modes', () => {
 
     vi.mocked(invoke).mockReset();
     vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
-      const payload = args as { path?: string; paths?: string[]; showHidden?: boolean } | undefined;
+      const payload = args as {
+        path?: string;
+        paths?: string[];
+        request?: {
+          path?: string;
+          maxWidth?: number;
+          maxHeight?: number;
+          includeVideoHoverScrub?: boolean | null;
+          videoHoverFrameCount?: number | null;
+        };
+        showHidden?: boolean;
+      } | undefined;
       switch (command) {
         case 'fs_get_drives':
           return [];
@@ -572,6 +600,13 @@ describe('FileExplorer view modes', () => {
           return 'data:text/plain;base64,aGVsbG8=';
         case 'fs_read_image_thumbnail':
           return 'data:image/png;base64,ZmFrZQ==';
+        case 'fs_read_entry_thumbnail':
+          return {
+            kind: 'image',
+            posterDataUrl: 'data:image/png;base64,ZmFrZQ==',
+            hoverFrames: [],
+            hoverFrameDelayMs: null,
+          };
         case 'fs_measure_entry_sizes':
           return (payload?.paths ?? []).map(path => ({
             path,
@@ -701,10 +736,14 @@ describe('FileExplorer view modes', () => {
     try {
       renderExplorer();
       await screen.findByAltText('Thumbnail for preview.png');
-      expect(vi.mocked(invoke)).toHaveBeenCalledWith('fs_read_image_thumbnail', {
-        path: `${REPO_ROOT}\\preview.png`,
-        maxWidth: 256,
-        maxHeight: 256,
+      expect(vi.mocked(invoke)).toHaveBeenCalledWith('fs_read_entry_thumbnail', {
+        request: {
+          path: `${REPO_ROOT}\\preview.png`,
+          maxWidth: 256,
+          maxHeight: 256,
+          includeVideoHoverScrub: false,
+          videoHoverFrameCount: null,
+        },
       });
     } finally {
       if (clientWidthDescriptor) {

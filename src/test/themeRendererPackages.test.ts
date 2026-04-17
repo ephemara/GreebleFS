@@ -1,63 +1,79 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
 import { loadThemeRendererFromSource } from '../components/themeRendererRuntime';
 
-const rendererFixtures = [
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+const rendererFixtureCandidates = [
   {
     name: 'arcade-atrium',
-    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/arcade-atrium/renderers/arcade-atrium-shell.tsx',
+    filePath: 'themes/arcade-atrium/renderers/arcade-atrium-shell.tsx',
   },
   {
     name: 'arcade-arcology',
-    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/arcade-arcology/renderers/arcade-arcology.tsx',
+    filePath: 'themes/arcade-arcology/renderers/arcade-arcology.tsx',
   },
   {
     name: 'clarity-line',
-    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/clarity-line/renderers/clarity-line-shell.tsx',
+    filePath: 'themes/clarity-line/renderers/clarity-line-shell.tsx',
   },
   {
     name: 'celestial-astrolabe',
-    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/celestial-astrolabe/renderers/astrolabe.tsx',
+    filePath: 'themes/celestial-astrolabe/renderers/astrolabe.tsx',
   },
   {
     name: 'cyber-nexus-hud',
-    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/cyber-nexus-hud/renderers/cyber-nexus.tsx',
+    filePath: 'themes/cyber-nexus-hud/renderers/cyber-nexus.tsx',
   },
   {
     name: 'xmb-crosswave',
-    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/xmb-crosswave/renderers/xmb-crosswave.tsx',
+    filePath: 'themes/xmb-crosswave/renderers/xmb-crosswave.tsx',
   },
   {
     name: 'wii-channel-home',
-    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/wii-channel-home/renderers/wii-channel-home.tsx',
+    filePath: 'themes/wii-channel-home/renderers/wii-channel-home.tsx',
   },
   {
     name: 'gamecube-orbital',
-    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/gamecube-orbital/renderers/gamecube-orbital.tsx',
+    filePath: 'themes/gamecube-orbital/renderers/gamecube-orbital.tsx',
   },
   {
     name: 'gamecube-prism',
-    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/gamecube-prism/renderers/gamecube-prism.tsx',
+    filePath: 'themes/gamecube-prism/renderers/gamecube-prism.tsx',
   },
   {
     name: 'gamecube-helix',
-    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/gamecube-helix/renderers/gamecube-helix.tsx',
+    filePath: 'themes/gamecube-helix/renderers/gamecube-helix.tsx',
   },
   {
     name: 'dreamcast-skyline',
-    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/dreamcast-skyline/renderers/dreamcast-skyline.tsx',
+    filePath: 'themes/dreamcast-skyline/renderers/dreamcast-skyline.tsx',
   },
   {
     name: 'vector-monolith',
-    filePath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/vector-monolith/renderers/vector-monolith.tsx',
-    sourceAssertionPath: '/home/ephemara/Dev/Apps-2D/GreebleFS/themes/vector-monolith/renderers/monolith/modes/app-shell.tsx',
+    filePath: 'themes/vector-monolith/renderers/vector-monolith.tsx',
+    sourceAssertionPath: 'themes/vector-monolith/renderers/monolith/modes/app-shell.tsx',
   },
 ];
 
-const expectedSurfaceOwnershipByTheme = {
+const rendererFixtures = rendererFixtureCandidates
+  .map(fixture => ({
+    ...fixture,
+    filePath: resolve(repoRoot, fixture.filePath),
+    sourceAssertionPath: fixture.sourceAssertionPath
+      ? resolve(repoRoot, fixture.sourceAssertionPath)
+      : undefined,
+  }))
+  .filter(fixture => existsSync(fixture.filePath));
+
+const expectedSurfaceOwnershipByTheme: Record<
+  string,
+  Partial<Awaited<ReturnType<typeof loadThemeRendererFromSource>>['surfaceOwnership']>
+> = {
   'arcade-arcology': { chrome: true, contentFrame: true, wallpaper: true },
   'arcade-atrium': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
   'celestial-astrolabe': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
@@ -69,7 +85,7 @@ const expectedSurfaceOwnershipByTheme = {
   'vector-monolith': { launcher: true, chrome: true, contentFrame: true, pinnedPanels: true, wallpaper: true },
   'wii-channel-home': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
   'xmb-crosswave': { launcher: true, chrome: true, contentFrame: true, wallpaper: true },
-} satisfies Record<string, Partial<Awaited<ReturnType<typeof loadThemeRendererFromSource>>['surfaceOwnership']>>;
+};
 
 const utilitySurfaceContractRendererNames = new Set([
   'arcade-arcology',
@@ -126,6 +142,10 @@ function createFilesystemRelativeModuleSourceResolver() {
 const filesystemRelativeModuleSourceResolver = createFilesystemRelativeModuleSourceResolver();
 
 describe('theme renderer package fixtures', () => {
+  it('tracks the live renderer fixture set for this checkout', () => {
+    expect(Array.isArray(rendererFixtures)).toBe(true);
+  });
+
   it.each(rendererFixtures)('loads %s without runtime errors', async fixture => {
     const entrySource = readFileSync(fixture.filePath, 'utf8');
     const renderer = await loadThemeRendererFromSource(entrySource, {

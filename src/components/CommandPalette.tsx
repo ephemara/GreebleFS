@@ -115,7 +115,6 @@ export function CommandPalette({
   }
 
   const accent = appearance.theme.palette.accent;
-  const border = appearance.theme.palette.border;
   const panel = appearance.theme.palette.panelBackground;
   const panelAlt = appearance.theme.palette.panelAltBackground;
   const text = appearance.theme.palette.textPrimary;

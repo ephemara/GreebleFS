@@ -1,7 +1,7 @@
 import { recordExplorerPerformanceSample } from './performanceTelemetry';
 import type { ExplorerPerformanceSample } from './performanceTelemetry';
 
-export const OVERLAY_FRAME_TARGET_MS = 1000 / 60;
+export const OVERLAY_FRAME_TARGET_MS = 1000 / 120;
 const FRAME_TELEMETRY_MIN_SAMPLES = 90;
 const FRAME_TELEMETRY_MIN_WINDOW_MS = 1_500;
 
@@ -65,7 +65,7 @@ export function recordOverlayFrameTelemetry(
       avgFrameMs: stats.avgFrameMs,
       frameCount: stats.frameCount,
       overBudgetCount: stats.overBudgetCount,
-      targetFps: 60,
+      targetFps: 120,
       targetFrameMs: roundMetric(OVERLAY_FRAME_TARGET_MS),
       withinTarget: stats.withinTarget,
       windowDurationMs: stats.windowDurationMs,

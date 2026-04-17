@@ -23,6 +23,35 @@ export type ExplorerThemeIconPackManifest = ThemeIconPackManifest;
 export type ExplorerThemeRenderStyleManifest = ThemeRenderStyleManifest;
 export type ExplorerWorkbenchPreset = WorkbenchPreset;
 
+type ExplorerThemeRenderStyleDraft = Pick<
+  ExplorerThemeRenderStyleManifest,
+  'id' | 'label' | 'kind' | 'entryModule' | 'supportsLiveSwap'
+> & Partial<Pick<ExplorerThemeRenderStyleManifest, 'description'>>;
+
+type ExplorerThemeManifestDraft = Omit<
+  Partial<ExplorerThemeManifest>,
+  | 'presentation'
+  | 'compatibility'
+  | 'designTokens'
+  | 'layoutPrimitives'
+  | 'navigationPatterns'
+  | 'animationProfiles'
+  | 'iconPacks'
+  | 'renderStyles'
+> & Pick<ExplorerThemeManifest, 'id' | 'name'> & {
+  presentation?: Partial<ExplorerThemePresentation>;
+  compatibility?: {
+    shellBlueprints?: readonly unknown[];
+    tags?: readonly unknown[];
+  };
+  designTokens?: readonly ExplorerThemeDesignToken[];
+  layoutPrimitives?: readonly ExplorerThemeLayoutPrimitive[];
+  navigationPatterns?: readonly ExplorerThemeNavigationPattern[];
+  animationProfiles?: readonly ExplorerThemeAnimationProfile[];
+  iconPacks?: readonly ExplorerThemeIconPackManifest[];
+  renderStyles?: readonly ExplorerThemeRenderStyleDraft[];
+};
+
 export interface CompiledThemeEngineManifest {
   manifest: ExplorerThemeManifest;
   designTokenLookup: Record<string, ExplorerThemeDesignToken>;
@@ -80,7 +109,8 @@ function pickDefault<T extends { id: string }>(
   return entries[0] ?? null;
 }
 
-export function compileThemeEngineManifest(manifest: ExplorerThemeManifest): CompiledThemeEngineManifest {
+export function compileThemeEngineManifest(manifestInput: ExplorerThemeManifestDraft): CompiledThemeEngineManifest {
+  const manifest = normalizeThemeManifestDraft(manifestInput);
   const designTokenLookup = createLookup(manifest.designTokens);
   const layoutPrimitiveLookup = createLookup(manifest.layoutPrimitives);
   const navigationPatternLookup = createLookup(manifest.navigationPatterns);
@@ -122,7 +152,7 @@ export function compileThemeEngineManifest(manifest: ExplorerThemeManifest): Com
 }
 
 export function normalizeThemeManifestDraft(
-  draft: Partial<ExplorerThemeManifest> & Pick<ExplorerThemeManifest, 'id' | 'name'>,
+  draft: ExplorerThemeManifestDraft,
 ): ExplorerThemeManifest {
   const presentationDefaults: ExplorerThemePresentation = {
     density: 'comfortable',
@@ -148,6 +178,12 @@ export function normalizeThemeManifestDraft(
         .map(entry => entry.trim()),
     )),
   };
+  const renderStyles: ExplorerThemeRenderStyleManifest[] = (draft.renderStyles ?? []).map(renderStyle => ({
+    ...renderStyle,
+    description: typeof renderStyle.description === 'string' && renderStyle.description.trim().length > 0
+      ? renderStyle.description
+      : null,
+  }));
 
   return {
     id: draft.id,
@@ -155,12 +191,12 @@ export function normalizeThemeManifestDraft(
     extends: draft.extends ?? null,
     presentation,
     compatibility,
-    designTokens: draft.designTokens ?? [],
-    layoutPrimitives: draft.layoutPrimitives ?? [],
-    navigationPatterns: draft.navigationPatterns ?? [],
-    animationProfiles: draft.animationProfiles ?? [],
-    iconPacks: draft.iconPacks ?? [],
-    renderStyles: draft.renderStyles ?? [],
+    designTokens: draft.designTokens ? [...draft.designTokens] : [],
+    layoutPrimitives: draft.layoutPrimitives ? [...draft.layoutPrimitives] : [],
+    navigationPatterns: draft.navigationPatterns ? [...draft.navigationPatterns] : [],
+    animationProfiles: draft.animationProfiles ? [...draft.animationProfiles] : [],
+    iconPacks: draft.iconPacks ? [...draft.iconPacks] : [],
+    renderStyles,
     defaultLayoutPrimitiveId: typeof draft.defaultLayoutPrimitiveId === 'string' && draft.defaultLayoutPrimitiveId.trim().length > 0
       ? draft.defaultLayoutPrimitiveId.trim()
       : null,

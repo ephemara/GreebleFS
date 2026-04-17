@@ -20,9 +20,12 @@ import {
   type ExplorerEntryThumbnailRequest,
   type ExplorerSavedSearchRecord,
   type ExplorerSavedSearchSaveRequest,
+  type FsBatchRenameMode,
   type FsArchiveExtractionMode,
   type FsArchiveExtractionRequest,
   type FsArchiveExtractionResult,
+  type FsBatchRenamePreviewRow,
+  type FsBatchRenameRecipe,
   type ExplorerTaskHistoryClearScope,
   type ExplorerTaskKind,
   type ExplorerTagMutationRequest,
@@ -39,9 +42,17 @@ import {
   type FileTransferDisposition,
   type FileTransferOperation,
   type FileTransferResult,
+  type FsChecksumEntryInfo,
+  type FsItemPropertiesInfo,
+  type FsJumpFilterEntry,
+  type FsJumpFilterMatch,
+  type FsJumpFilterRequest,
   type FsWriteFileContent,
   type FsBatchRenameItem,
   type FsBatchRenameResult,
+  type TerminalShellIntegrationRequest,
+  type TerminalShellIntegrationState,
+  type TerminalShellIntegrationStateEvent,
   type YaziSchedulerTaskSnap,
 } from '../generated/tauri';
 
@@ -79,10 +90,21 @@ export type ExplorerTrashAction = ExplorerTrashActionRecord;
 export type ExplorerTrashRestore = ExplorerTrashRestoreResult;
 export type ExplorerBatchRenameItem = FsBatchRenameItem;
 export type ExplorerBatchRenameResult = FsBatchRenameResult;
+export type ExplorerBatchRenameModeValue = FsBatchRenameMode;
+export type ExplorerBatchRenameRecipeInput = FsBatchRenameRecipe;
+export type ExplorerBatchRenamePreview = FsBatchRenamePreviewRow;
 export type ExplorerDuplicateScanStart = ExplorerDuplicateScanStartResponse;
 export type ExplorerDuplicateScan = ExplorerDuplicateScanStatus;
 export type ExplorerEntryThumbnailData = ExplorerEntryThumbnail;
 export type ExplorerEntryThumbnailInput = ExplorerEntryThumbnailRequest;
+export type ExplorerChecksumInfo = FsChecksumEntryInfo;
+export type ExplorerItemProperties = FsItemPropertiesInfo;
+export type ExplorerJumpFilterEntryInput = FsJumpFilterEntry;
+export type ExplorerJumpFilterInput = FsJumpFilterRequest;
+export type ExplorerJumpFilterResult = FsJumpFilterMatch;
+export type ExplorerTerminalShellIntegrationInput = TerminalShellIntegrationRequest;
+export type ExplorerTerminalShellIntegration = TerminalShellIntegrationState;
+export type ExplorerTerminalShellIntegrationEvent = TerminalShellIntegrationStateEvent;
 
 export type ExplorerLocationBreadcrumb = {
   label: string;
@@ -272,6 +294,10 @@ export type ExplorerBackendContract = {
   listLocationUncached: typeof listExplorerLocationUncached;
   getDrives: typeof getExplorerDrives;
   measureEntrySizes: typeof measureExplorerEntrySizes;
+  calculateRecursiveSizes: typeof calculateExplorerRecursiveSizes;
+  calculateChecksums: typeof calculateExplorerChecksums;
+  getItemProperties: typeof getExplorerItemProperties;
+  fuzzyFilterEntries: typeof fuzzyFilterExplorerEntries;
   getRuntimeCachePolicy: typeof getExplorerRuntimeCachePolicy;
   getHomeDir: typeof getExplorerHomeDir;
   searchEntriesWithDiagnostics: typeof searchExplorerEntriesWithDiagnostics;
@@ -303,6 +329,8 @@ export type ExplorerBackendContract = {
   trashPaths: typeof trashExplorerPaths;
   restoreRecentTrashAction: typeof restoreExplorerTrashAction;
   batchRename: typeof batchRenameExplorerPaths;
+  previewBatchRename: typeof previewBatchRenameExplorerPaths;
+  applyBatchRenameRecipe: typeof applyBatchRenameExplorerRecipe;
   startDuplicateScan: typeof startExplorerDuplicateScan;
   pollDuplicateScan: typeof pollExplorerDuplicateScan;
   cancelDuplicateScan: typeof cancelExplorerDuplicateScan;
@@ -315,6 +343,9 @@ export type ExplorerBackendContract = {
   supportsSearch: typeof supportsExplorerSearch;
   supportsNativeIntegration: typeof supportsExplorerNativeIntegration;
   supportsNativeDragOut: typeof supportsExplorerNativeDragOut;
+  registerTerminalShellIntegration: typeof registerExplorerTerminalShellIntegration;
+  syncTerminalCwd: typeof syncExplorerTerminalCwd;
+  setTerminalPromptState: typeof setExplorerTerminalPromptState;
 };
 
 export function queueExplorerTerminalDirectorySync(args: {
@@ -333,15 +364,6 @@ export function queueExplorerTerminalDirectorySync(args: {
     source: args.source ?? 'navigation',
     updatedAt: Date.now(),
   });
-
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('overlayterm:cdinject', {
-      detail: {
-        path,
-        shell: args.shell ?? undefined,
-      },
-    }));
-  }
 }
 
 export async function listExplorerLocation(
@@ -423,6 +445,40 @@ export async function measureExplorerEntrySizes(
     return [];
   }
   return unwrapTauriResult(await commands.fsMeasureEntrySizes(localPaths, forceRefresh));
+}
+
+export async function calculateExplorerRecursiveSizes(
+  paths: string[],
+  forceRefresh = false,
+): Promise<ExplorerEntryStorageInfo[]> {
+  const localPaths = paths.filter((path) => !isCloudExplorerPath(path));
+  if (localPaths.length === 0) {
+    return [];
+  }
+  return unwrapTauriResult(await commands.fsCalculateRecursiveSizes(localPaths, forceRefresh));
+}
+
+export async function calculateExplorerChecksums(
+  paths: string[],
+): Promise<ExplorerChecksumInfo[]> {
+  const localPaths = paths.filter((path) => !isCloudExplorerPath(path));
+  if (localPaths.length === 0) {
+    return [];
+  }
+  return unwrapTauriResult(await commands.fsCalculateChecksums(localPaths));
+}
+
+export async function getExplorerItemProperties(path: string): Promise<ExplorerItemProperties> {
+  if (isCloudExplorerPath(path)) {
+    throw new Error('Properties are only available for local filesystem items.');
+  }
+  return unwrapTauriResult(await commands.fsGetItemProperties(path));
+}
+
+export async function fuzzyFilterExplorerEntries(
+  request: ExplorerJumpFilterInput,
+): Promise<ExplorerJumpFilterResult[]> {
+  return unwrapTauriResult(await commands.fsFuzzyFilterEntries(request));
 }
 
 export async function getExplorerRuntimeCachePolicy(): Promise<FsRuntimeCachePolicy> {
@@ -692,6 +748,24 @@ export async function batchRenameExplorerPaths(
   return unwrapTauriResult(await commands.fsBatchRename(items));
 }
 
+export async function previewBatchRenameExplorerPaths(
+  recipe: ExplorerBatchRenameRecipeInput,
+): Promise<ExplorerBatchRenamePreview[]> {
+  if (recipe.sourcePaths.some(isCloudExplorerPath)) {
+    throw new Error('Batch rename preview is only available for local filesystem items.');
+  }
+  return unwrapTauriResult(await commands.fsBatchRenamePreview(recipe));
+}
+
+export async function applyBatchRenameExplorerRecipe(
+  recipe: ExplorerBatchRenameRecipeInput,
+): Promise<ExplorerBatchRenameResult[]> {
+  if (recipe.sourcePaths.some(isCloudExplorerPath)) {
+    throw new Error('Batch rename is only available for local filesystem items.');
+  }
+  return unwrapTauriResult(await commands.fsBatchRenameApply(recipe));
+}
+
 export async function startExplorerDuplicateScan(rootPath: string): Promise<ExplorerDuplicateScanStart> {
   if (isCloudExplorerPath(rootPath)) {
     throw new Error('Duplicate scanning is only available for local filesystem roots.');
@@ -773,6 +847,27 @@ export async function disconnectCloudAccount(accountId: string): Promise<void> {
   unwrapTauriResult(await commands.cloudDisconnectAccount(accountId));
 }
 
+export async function registerExplorerTerminalShellIntegration(
+  request: ExplorerTerminalShellIntegrationInput,
+): Promise<ExplorerTerminalShellIntegration> {
+  return unwrapTauriResult(await commands.terminalRegisterShellIntegration(request));
+}
+
+export async function syncExplorerTerminalCwd(
+  id: string,
+  cwd: string,
+): Promise<ExplorerTerminalShellIntegration> {
+  return unwrapTauriResult(await commands.terminalSyncCwd(id, cwd));
+}
+
+export async function setExplorerTerminalPromptState(
+  id: string,
+  atPrompt: boolean,
+  reportedCwd: string | null = null,
+): Promise<ExplorerTerminalShellIntegration> {
+  return unwrapTauriResult(await commands.terminalSetPromptState(id, atPrompt, reportedCwd));
+}
+
 export const explorerBackendContract: ExplorerBackendContract = {
   listDir: listExplorerDir,
   listDirUncached: listExplorerDirUncached,
@@ -780,6 +875,10 @@ export const explorerBackendContract: ExplorerBackendContract = {
   listLocationUncached: listExplorerLocationUncached,
   getDrives: getExplorerDrives,
   measureEntrySizes: measureExplorerEntrySizes,
+  calculateRecursiveSizes: calculateExplorerRecursiveSizes,
+  calculateChecksums: calculateExplorerChecksums,
+  getItemProperties: getExplorerItemProperties,
+  fuzzyFilterEntries: fuzzyFilterExplorerEntries,
   getRuntimeCachePolicy: getExplorerRuntimeCachePolicy,
   getHomeDir: getExplorerHomeDir,
   searchEntriesWithDiagnostics: searchExplorerEntriesWithDiagnostics,
@@ -811,6 +910,8 @@ export const explorerBackendContract: ExplorerBackendContract = {
   trashPaths: trashExplorerPaths,
   restoreRecentTrashAction: restoreExplorerTrashAction,
   batchRename: batchRenameExplorerPaths,
+  previewBatchRename: previewBatchRenameExplorerPaths,
+  applyBatchRenameRecipe: applyBatchRenameExplorerRecipe,
   startDuplicateScan: startExplorerDuplicateScan,
   pollDuplicateScan: pollExplorerDuplicateScan,
   cancelDuplicateScan: cancelExplorerDuplicateScan,
@@ -823,6 +924,9 @@ export const explorerBackendContract: ExplorerBackendContract = {
   supportsSearch: supportsExplorerSearch,
   supportsNativeIntegration: supportsExplorerNativeIntegration,
   supportsNativeDragOut: supportsExplorerNativeDragOut,
+  registerTerminalShellIntegration: registerExplorerTerminalShellIntegration,
+  syncTerminalCwd: syncExplorerTerminalCwd,
+  setTerminalPromptState: setExplorerTerminalPromptState,
 };
 
 export async function listenToExplorerTaskProgress(

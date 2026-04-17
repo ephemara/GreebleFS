@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { WorkbenchPreset } from '../generated/tauri';
 import { commands } from '../runtime/tauriClient';
 import {
   compileThemeEngineManifest,
@@ -13,7 +14,7 @@ describe('theme engine catalog regressions', () => {
       id: 'cross-theme-defaults',
       name: 'Cross Theme Defaults',
       compatibility: {
-        shellBlueprints: ['vista-glass', ' vista-glass ', 'aqua-light'],
+        shellBlueprints: ['classic-dock', ' classic-dock ', 'retro-desktop'],
         tags: [' glossy ', 'glossy', 'light'],
       },
       layoutPrimitives: [
@@ -35,6 +36,7 @@ describe('theme engine catalog regressions', () => {
           kind: 'vs-code-workbench',
           entryModule: 'renderers/dock.tsx',
           supportsLiveSwap: true,
+          description: null,
         },
       ],
       defaultLayoutPrimitiveId: '   ',
@@ -46,7 +48,7 @@ describe('theme engine catalog regressions', () => {
 
     const compiled = compileThemeEngineManifest(manifest);
 
-    expect(manifest.compatibility.shellBlueprints).toEqual(['vista-glass', 'aqua-light']);
+    expect(manifest.compatibility.shellBlueprints).toEqual(['classic-dock', 'retro-desktop']);
     expect(manifest.compatibility.tags).toEqual(['glossy', 'light']);
     expect(manifest.defaultLayoutPrimitiveId).toBeNull();
     expect(manifest.defaultNavigationPatternId).toBeNull();
@@ -66,13 +68,13 @@ describe('theme engine catalog regressions', () => {
       normalizeThemeManifestDraft({ id: 'vista-glass', name: 'Vista Glass' }),
       normalizeThemeManifestDraft({ id: 'aqua-light', name: 'Aqua Light' }),
     ];
-    const presets = [
+    const presets: WorkbenchPreset[] = [
       {
         id: 'glass-shell',
         label: 'Glass Shell',
         description: 'Glass-first preset',
-        shellBlueprint: 'vista-glass',
-        navigationModel: 'hierarchical',
+        shellBlueprint: 'classic-dock',
+        navigationModel: 'tabs',
         windowProfile: { mode: 'windowed', anchor: 'center', aspectRatio: '16:10' },
         inputProfile: {
           mode: 'pointer',
@@ -87,11 +89,11 @@ describe('theme engine catalog regressions', () => {
         id: 'aqua-shell',
         label: 'Aqua Shell',
         description: 'Light-first preset',
-        shellBlueprint: 'aqua-light',
-        navigationModel: 'spatial',
+        shellBlueprint: 'retro-desktop',
+        navigationModel: 'desktop',
         windowProfile: { mode: 'windowed', anchor: 'top', aspectRatio: '4:3' },
         inputProfile: {
-          mode: 'hybrid',
+          mode: 'touch',
           directionalNavigation: true,
           pointerGestures: false,
           density: 'compact',

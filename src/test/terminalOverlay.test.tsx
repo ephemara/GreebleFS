@@ -178,9 +178,9 @@ describe('TerminalOverlay', () => {
     });
 
     await waitFor(() => {
-      expect(invokeMock).toHaveBeenCalledWith('terminal_write', {
+      expect(invokeMock).toHaveBeenCalledWith('terminal_sync_cwd', {
         id: 'overlay-0',
-        data: "Set-Location -LiteralPath 'C:\\workspace\\Taloor'\"'\"'s Lab'\r",
+        cwd: "C:\\workspace\\Taloor's Lab",
       });
     });
   }, 20000);
