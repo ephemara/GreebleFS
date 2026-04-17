@@ -234,7 +234,13 @@ const EXPLORER_ENTRY_SIZE_BATCH_SETTLE_MS = 72;
 const EXPLORER_NATIVE_ICON_BATCH_SETTLE_MS = 96;
 const EXPLORER_IMAGE_TILE_THUMBNAIL_BATCH_SETTLE_MS = 88;
 
+type ExplorerDragPreviewContent = {
+  primaryLabel: string;
+  itemCount: number;
+};
+
 let transparentExplorerDragImage: HTMLCanvasElement | null = null;
+let explorerDragPreviewCanvas: HTMLCanvasElement | null = null;
 
 type ExplorerSearchCacheEntry = {
   results: FileSearchResult[];
@@ -786,8 +792,141 @@ function resolveExplorerDragIntent(event: Pick<React.DragEvent, 'altKey'>): Expl
   return event.altKey ? 'native-out' : 'internal';
 }
 
-function applyExplorerNativeFeelingDragImage(dataTransfer: DataTransfer | null | undefined): void {
+function fitExplorerDragPreviewLabel(
+  context: CanvasRenderingContext2D,
+  value: string,
+  maxWidth: number,
+): string {
+  if (context.measureText(value).width <= maxWidth) {
+    return value;
+  }
+
+  const ellipsis = '...';
+  for (let index = value.length - 1; index > 0; index -= 1) {
+    const nextValue = `${value.slice(0, index)}${ellipsis}`;
+    if (context.measureText(nextValue).width <= maxWidth) {
+      return nextValue;
+    }
+  }
+
+  return ellipsis;
+}
+
+function drawExplorerDragPreviewRoundedRect(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+): void {
+  const safeRadius = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + safeRadius, y);
+  context.lineTo(x + width - safeRadius, y);
+  context.arcTo(x + width, y, x + width, y + safeRadius, safeRadius);
+  context.lineTo(x + width, y + height - safeRadius);
+  context.arcTo(x + width, y + height, x + width - safeRadius, y + height, safeRadius);
+  context.lineTo(x + safeRadius, y + height);
+  context.arcTo(x, y + height, x, y + height - safeRadius, safeRadius);
+  context.lineTo(x, y + safeRadius);
+  context.arcTo(x, y, x + safeRadius, y, safeRadius);
+  context.closePath();
+}
+
+function renderExplorerDragPreviewCanvas(content: ExplorerDragPreviewContent): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') {
+    return null;
+  }
+
+  if (!explorerDragPreviewCanvas) {
+    explorerDragPreviewCanvas = document.createElement('canvas');
+  }
+
+  const label = content.primaryLabel.trim() || 'Item';
+  const additionalItemCount = Math.max(0, content.itemCount - 1);
+  const badgeText = additionalItemCount > 0 ? `+${additionalItemCount}` : '';
+  const paddingX = 12;
+  const previewHeight = 34;
+  const dotSize = 8;
+  const gap = 8;
+  const labelMaxWidth = 220;
+  const badgeHorizontalPadding = 7;
+  const badgeVerticalPadding = 4;
+  const devicePixelRatio = typeof window === 'undefined' ? 1 : Math.max(1, window.devicePixelRatio || 1);
+
+  const previewContext = explorerDragPreviewCanvas.getContext('2d');
+  if (!previewContext) {
+    explorerDragPreviewCanvas.width = 1;
+    explorerDragPreviewCanvas.height = 1;
+    return explorerDragPreviewCanvas;
+  }
+
+  previewContext.font = '600 13px system-ui';
+  const fittedLabel = fitExplorerDragPreviewLabel(previewContext, label, labelMaxWidth);
+  const labelWidth = Math.ceil(previewContext.measureText(fittedLabel).width);
+  const badgeWidth = badgeText
+    ? Math.ceil(previewContext.measureText(badgeText).width) + (badgeHorizontalPadding * 2)
+    : 0;
+  const previewWidth = paddingX * 2 + dotSize + gap + labelWidth + (badgeText ? gap + badgeWidth : 0);
+
+  explorerDragPreviewCanvas.width = Math.ceil(previewWidth * devicePixelRatio);
+  explorerDragPreviewCanvas.height = Math.ceil(previewHeight * devicePixelRatio);
+  explorerDragPreviewCanvas.style.width = `${previewWidth}px`;
+  explorerDragPreviewCanvas.style.height = `${previewHeight}px`;
+
+  previewContext.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  previewContext.clearRect(0, 0, previewWidth, previewHeight);
+  previewContext.font = '600 13px system-ui';
+  previewContext.textBaseline = 'middle';
+
+  previewContext.shadowColor = 'rgba(0, 0, 0, 0.35)';
+  previewContext.shadowBlur = 12;
+  previewContext.shadowOffsetY = 8;
+  drawExplorerDragPreviewRoundedRect(previewContext, 0.5, 0.5, previewWidth - 1, previewHeight - 1, 12);
+  previewContext.fillStyle = 'rgba(18, 18, 24, 0.96)';
+  previewContext.fill();
+  previewContext.shadowColor = 'transparent';
+  previewContext.shadowBlur = 0;
+  previewContext.shadowOffsetY = 0;
+  previewContext.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+  previewContext.lineWidth = 1;
+  previewContext.stroke();
+
+  previewContext.beginPath();
+  previewContext.arc(paddingX + dotSize / 2, previewHeight / 2, dotSize / 2, 0, Math.PI * 2);
+  previewContext.fillStyle = '#5aa2ff';
+  previewContext.fill();
+
+  const labelX = paddingX + dotSize + gap;
+  previewContext.fillStyle = 'rgba(255, 255, 255, 0.96)';
+  previewContext.fillText(fittedLabel, labelX, previewHeight / 2);
+
+  if (badgeText) {
+    const badgeX = labelX + labelWidth + gap;
+    const badgeHeight = 13 + (badgeVerticalPadding * 2);
+    const badgeY = (previewHeight - badgeHeight) / 2;
+    drawExplorerDragPreviewRoundedRect(previewContext, badgeX, badgeY, badgeWidth, badgeHeight, badgeHeight / 2);
+    previewContext.fillStyle = 'rgba(255, 255, 255, 0.08)';
+    previewContext.fill();
+    previewContext.fillStyle = 'rgba(255, 255, 255, 0.72)';
+    previewContext.fillText(badgeText, badgeX + badgeHorizontalPadding, previewHeight / 2);
+  }
+
+  return explorerDragPreviewCanvas;
+}
+
+function applyExplorerNativeFeelingDragImage(
+  dataTransfer: DataTransfer | null | undefined,
+  content: ExplorerDragPreviewContent,
+): void {
   if (!dataTransfer || typeof dataTransfer.setDragImage !== 'function' || typeof document === 'undefined') {
+    return;
+  }
+
+  const dragPreviewCanvas = renderExplorerDragPreviewCanvas(content);
+  if (dragPreviewCanvas) {
+    dataTransfer.setDragImage(dragPreviewCanvas, 18, 18);
     return;
   }
 
@@ -5896,7 +6035,10 @@ export function FileExplorer({
     activeDragPathsRef.current = dragPaths;
     e.currentTarget.dataset.overlayDragIntent = dragIntent;
     e.currentTarget.dataset.overlayDragHide = dragIntent === 'native-out' ? 'true' : 'false';
-    applyExplorerNativeFeelingDragImage(e.dataTransfer);
+    applyExplorerNativeFeelingDragImage(e.dataTransfer, {
+      primaryLabel: entry.name || getPathLeaf(entry.path) || 'Item',
+      itemCount: dragEntries.length,
+    });
     e.dataTransfer.setData('text/plain', dragPaths[0] ?? entry.path);
     e.dataTransfer.setData('application/x-overlayterm-paths', JSON.stringify(dragPaths));
     e.dataTransfer.setData('application/x-overlayterm-drag-intent', dragIntent);

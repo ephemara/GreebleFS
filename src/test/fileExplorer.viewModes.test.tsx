@@ -1146,6 +1146,8 @@ describe('FileExplorer view modes', () => {
       'internal',
     );
     expect(dataTransfer.setDragImage).toHaveBeenCalledTimes(1);
+    const [dragImage] = vi.mocked(dataTransfer.setDragImage).mock.calls[0] ?? [];
+    expect(dragImage).toBeInstanceOf(HTMLCanvasElement);
     expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_start_native_file_drag')).toBe(false);
   });
 

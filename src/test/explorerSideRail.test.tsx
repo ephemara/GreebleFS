@@ -205,7 +205,7 @@ describe('ExplorerSideRail', () => {
       />,
     );
 
-    expect(screen.getByText(/plain drag exports files/i)).toBeInTheDocument();
+    expect(screen.getByText(/plain drag stays inside the explorer/i)).toBeInTheDocument();
   }, 20000);
 
   it('stores collapsed section state when sections are toggled', () => {
