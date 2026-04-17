@@ -11,7 +11,7 @@ vi.mock('../runtime/explorerBackend', () => {
 });
 
 import { ExplorerSideRail } from '../components/explorer/ExplorerSideRail';
-import { createDefaultExplorerRailSnapshot } from '../components/explorer/explorerRailState';
+import { createDefaultExplorerRailSnapshot, normalizeExplorerRailSnapshot } from '../components/explorer/explorerRailState';
 import { useExplorerStore } from '../store/explorerStore';
 
 function createDataTransfer(payloads: Record<string, string>) {
@@ -20,6 +20,10 @@ function createDataTransfer(payloads: Record<string, string>) {
     setData: vi.fn(),
     dropEffect: 'copy',
   };
+}
+
+function enableAutoExpandToOpenFolder() {
+  fireEvent.click(screen.getByRole('button', { name: 'Toggle expand to open folder' }));
 }
 
 beforeEach(() => {
@@ -129,6 +133,44 @@ describe('ExplorerSideRail', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Focus' }));
     expect(onEnterFocusMode).toHaveBeenCalledTimes(1);
+  });
+
+  it('defaults to manual expansion and lets the header toggle turn on auto-follow', () => {
+    render(
+      <ExplorerSideRail
+        accent="#7c3aed"
+        brandLabel="Explorer"
+        chromeLayoutId="default"
+        sidebarWidth={240}
+        currentPath="C:\\Workspace"
+        drives={[]}
+        drivesLoading={false}
+        showHiddenFiles={false}
+        isCompactDock={false}
+        onNavigate={vi.fn()}
+        onGoHome={vi.fn()}
+        onBookmarkCreated={vi.fn()}
+        resolveDroppedSources={() => []}
+      />,
+    );
+
+    const autoToggle = screen.getByRole('button', { name: 'Toggle expand to open folder' });
+    expect(autoToggle).toHaveAttribute('aria-pressed', 'false');
+    expect(useExplorerStore.getState().rail.autoExpandToOpenFolder).toBe(false);
+
+    fireEvent.click(autoToggle);
+
+    expect(autoToggle).toHaveAttribute('aria-pressed', 'true');
+    expect(useExplorerStore.getState().rail.autoExpandToOpenFolder).toBe(true);
+  });
+
+  it('normalizes missing expand-to-open-folder state back to manual mode', () => {
+    expect(
+      normalizeExplorerRailSnapshot({
+        ...createDefaultExplorerRailSnapshot(),
+        autoExpandToOpenFolder: undefined,
+      }).autoExpandToOpenFolder,
+    ).toBe(false);
   });
 
   it('only shows the verbose drag guide when the rail is wide enough for it', () => {
@@ -313,6 +355,8 @@ describe('ExplorerSideRail', () => {
       />,
     );
 
+    enableAutoExpandToOpenFolder();
+
     expect(screen.getAllByText('Users').length).toBeGreaterThan(0);
 
     await waitFor(() => {
@@ -450,6 +494,8 @@ describe('ExplorerSideRail', () => {
       />,
     );
 
+    enableAutoExpandToOpenFolder();
+
     await waitFor(() => {
       const tree = screen.getByRole('tree', { name: 'System folder tree' });
       expect(within(tree).getByText('bob')).toBeInTheDocument();
@@ -582,6 +628,8 @@ describe('ExplorerSideRail', () => {
       />,
     );
 
+    enableAutoExpandToOpenFolder();
+
     await waitFor(() => {
       const tree = screen.getByRole('tree', { name: 'System folder tree' });
       expect(within(tree).getByText('alpha')).toBeInTheDocument();
@@ -707,6 +755,8 @@ describe('ExplorerSideRail', () => {
       />,
     );
 
+    enableAutoExpandToOpenFolder();
+
     await waitFor(() => {
       expect(screen.getByText('Users')).toBeInTheDocument();
       expect(screen.getByText('C:\\Users')).toBeInTheDocument();
@@ -756,6 +806,132 @@ describe('ExplorerSideRail', () => {
     expect(useExplorerStore.getState().rail.viewMode).toBe('tree');
     expect(screen.queryByText('600 B used')).not.toBeInTheDocument();
     expect(screen.queryByText('1000 B total')).not.toBeInTheDocument();
+  });
+
+  it('keeps navigation manual until the user expands a branch with the chevron', async () => {
+    vi.mocked(listExplorerLocation).mockImplementation(async (path: string) => {
+      if (path === 'C:\\') {
+        return {
+          kind: 'local',
+          path,
+          parentPath: null,
+          breadcrumbs: [{ label: 'C:\\', path: 'C:\\' }],
+          entries: [
+            {
+              name: 'Users',
+              path: 'C:\\Users',
+              is_dir: true,
+              size: 0,
+              modified: 0,
+              extension: '',
+              is_hidden: false,
+              is_symlink: false,
+            },
+          ],
+        };
+      }
+      return {
+        kind: 'local',
+        path,
+        parentPath: null,
+        breadcrumbs: [],
+        entries: [],
+      };
+    });
+
+    render(
+      <ExplorerSideRail
+        accent="#7c3aed"
+        brandLabel="Explorer"
+        chromeLayoutId="default"
+        sidebarWidth={260}
+        currentPath="C:\\Users"
+        drives={[
+          {
+            kind: 'local',
+            id: 'C:',
+            path: 'C:\\',
+            letter: 'C:\\',
+            label: 'System',
+            total_bytes: 1000,
+            free_bytes: 400,
+            drive_type: 'fixed',
+          },
+        ]}
+        drivesLoading={false}
+        showHiddenFiles={false}
+        isCompactDock={false}
+        onNavigate={vi.fn()}
+        onGoHome={vi.fn()}
+        onBookmarkCreated={vi.fn()}
+        resolveDroppedSources={() => []}
+      />,
+    );
+
+    expect(screen.queryByRole('tree', { name: 'System folder tree' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand System folder tree' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Users')).toBeInTheDocument();
+    });
+  });
+
+  it('marks bookmark folder ancestors differently from the active bookmarked path', () => {
+    const timestamp = Date.now();
+    const bookmarkPath = '/workspace/greeblefs';
+    useExplorerStore.getState().replaceRail({
+      ...createDefaultExplorerRailSnapshot(),
+      expandedFolderIds: ['folder-1'],
+      nodes: [
+        {
+          id: 'folder-1',
+          kind: 'folder',
+          parentId: null,
+          name: 'Workspace',
+          color: '#7c3aed',
+          categoryIds: [],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        {
+          id: 'bookmark-1',
+          kind: 'bookmark',
+          parentId: 'folder-1',
+          name: 'GreebleFS',
+          path: bookmarkPath,
+          color: '#7c3aed',
+          categoryIds: [],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          targetKind: 'directory',
+        },
+      ],
+    });
+
+    render(
+      <ExplorerSideRail
+        accent="#7c3aed"
+        brandLabel="Explorer"
+        chromeLayoutId="default"
+        sidebarWidth={260}
+        currentPath={bookmarkPath}
+        drives={[]}
+        drivesLoading={false}
+        showHiddenFiles={false}
+        isCompactDock={false}
+        onNavigate={vi.fn()}
+        onGoHome={vi.fn()}
+        onBookmarkCreated={vi.fn()}
+        resolveDroppedSources={() => []}
+      />,
+    );
+
+    const bookmarksTree = screen.getByRole('tree', { name: 'Bookmarks tree' });
+    const workspaceRow = within(bookmarksTree).getByText('Workspace').closest('[data-rail-row-state]');
+    const activeBookmarkRow = within(bookmarksTree).getByText('GreebleFS').closest('[data-rail-row-state]');
+
+    expect(workspaceRow).toHaveAttribute('data-rail-row-state', 'ancestor');
+    expect(activeBookmarkRow).toHaveAttribute('data-rail-row-state', 'active');
   });
 
   it('prefers the most specific Unix drive root so home paths do not auto-expand the system root tree', async () => {
@@ -853,6 +1029,8 @@ describe('ExplorerSideRail', () => {
         resolveDroppedSources={() => []}
       />,
     );
+
+    enableAutoExpandToOpenFolder();
 
     await waitFor(() => {
       expect(screen.getByText('Projects')).toBeInTheDocument();

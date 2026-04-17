@@ -48,6 +48,7 @@ export interface ExplorerRailSnapshot {
   activeCategoryIds: string[];
   searchQuery: string;
   viewMode: ExplorerRailViewMode;
+  autoExpandToOpenFolder: boolean;
 }
 
 export interface ExplorerBookmarkTreeNode {
@@ -95,6 +96,7 @@ export const defaultExplorerRailSnapshot: ExplorerRailSnapshot = {
   activeCategoryIds: [],
   searchQuery: '',
   viewMode: 'default',
+  autoExpandToOpenFolder: false,
 };
 
 export function createDefaultExplorerRailSnapshot(): ExplorerRailSnapshot {
@@ -107,6 +109,7 @@ export function createDefaultExplorerRailSnapshot(): ExplorerRailSnapshot {
     activeCategoryIds: [],
     searchQuery: '',
     viewMode: 'default',
+    autoExpandToOpenFolder: false,
   };
 }
 
@@ -157,6 +160,7 @@ export function normalizeExplorerRailSnapshot(value: unknown): ExplorerRailSnaps
       : [],
     searchQuery: typeof source?.searchQuery === 'string' ? source.searchQuery : '',
     viewMode: normalizeExplorerRailViewMode(source?.viewMode),
+    autoExpandToOpenFolder: source?.autoExpandToOpenFolder === true,
   };
 }
 
@@ -227,6 +231,16 @@ export function setExplorerRailViewMode(snapshot: ExplorerRailSnapshot, viewMode
   return {
     ...snapshot,
     viewMode,
+  };
+}
+
+export function setExplorerRailAutoExpandToOpenFolder(
+  snapshot: ExplorerRailSnapshot,
+  autoExpandToOpenFolder: boolean,
+): ExplorerRailSnapshot {
+  return {
+    ...snapshot,
+    autoExpandToOpenFolder,
   };
 }
 

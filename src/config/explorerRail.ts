@@ -1,6 +1,11 @@
 export type ExplorerRailSectionId = 'quick-access' | 'drives' | 'saved-searches' | 'tags' | 'bookmarks';
 
 export type ExplorerRailViewMode = 'default' | 'compact' | 'tree';
+export type ExplorerRailSectionChrome = 'carded' | 'compact' | 'tree';
+export type ExplorerRailRowChrome = 'carded' | 'compact' | 'tree';
+export type ExplorerRailHierarchyGuideStyle = 'none' | 'soft' | 'strong';
+export type ExplorerRailActiveBranchStyle = 'soft' | 'bold' | 'lane';
+export type ExplorerRailIconTone = 'muted' | 'contrast' | 'accented';
 
 export interface ExplorerRailWidthBounds {
   defaultWidth: number;
@@ -20,6 +25,14 @@ export interface ExplorerBookmarkColorOption {
   value: string;
 }
 
+export interface ExplorerRailViewModePresentation {
+  sectionChrome: ExplorerRailSectionChrome;
+  rowChrome: ExplorerRailRowChrome;
+  hierarchyGuideStyle: ExplorerRailHierarchyGuideStyle;
+  activeBranchStyle: ExplorerRailActiveBranchStyle;
+  iconTone: ExplorerRailIconTone;
+}
+
 export interface ExplorerRailViewModeDefinition {
   id: ExplorerRailViewMode;
   label: string;
@@ -30,6 +43,7 @@ export interface ExplorerRailViewModeDefinition {
   flattenDriveRows: boolean;
   hideDriveCapacity: boolean;
   treeIndentStep: number;
+  presentation: ExplorerRailViewModePresentation;
 }
 
 export const explorerRailWidthBoundsByLayout: Record<'full' | 'compact', ExplorerRailWidthBounds> = {
@@ -58,34 +72,55 @@ export const explorerRailViewModes: ExplorerRailViewModeDefinition[] = [
     id: 'default',
     label: 'Default',
     shortLabel: 'Def',
-    description: 'Balanced rail with metadata and drive details.',
+    description: 'Rich explorer rail with clearer cards, metadata, and branch emphasis.',
     useCompactChrome: false,
     hideSupportingMeta: false,
     flattenDriveRows: false,
     hideDriveCapacity: false,
     treeIndentStep: 16,
+    presentation: {
+      sectionChrome: 'carded',
+      rowChrome: 'carded',
+      hierarchyGuideStyle: 'soft',
+      activeBranchStyle: 'bold',
+      iconTone: 'muted',
+    },
   },
   {
     id: 'compact',
     label: 'Compact',
     shortLabel: 'Cmp',
-    description: 'Denser rows with metadata trimmed back.',
+    description: 'Scanner-style rail with tighter rows and reduced metadata.',
     useCompactChrome: true,
     hideSupportingMeta: true,
     flattenDriveRows: false,
     hideDriveCapacity: true,
     treeIndentStep: 12,
+    presentation: {
+      sectionChrome: 'compact',
+      rowChrome: 'compact',
+      hierarchyGuideStyle: 'none',
+      activeBranchStyle: 'bold',
+      iconTone: 'contrast',
+    },
   },
   {
     id: 'tree',
     label: 'Tree',
     shortLabel: 'Tree',
-    description: 'Navigation-first rail with flatter drive roots and tighter indentation.',
+    description: 'Hierarchy-first rail with strong branch cues and deeper path tracking.',
     useCompactChrome: true,
     hideSupportingMeta: true,
     flattenDriveRows: true,
     hideDriveCapacity: true,
     treeIndentStep: 10,
+    presentation: {
+      sectionChrome: 'tree',
+      rowChrome: 'tree',
+      hierarchyGuideStyle: 'strong',
+      activeBranchStyle: 'lane',
+      iconTone: 'accented',
+    },
   },
 ];
 

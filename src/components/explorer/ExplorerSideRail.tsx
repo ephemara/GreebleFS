@@ -31,6 +31,7 @@ import {
   planExplorerBookmarkImport,
   removeExplorerBookmarkNode,
   renameExplorerBookmarkNode,
+  setExplorerRailAutoExpandToOpenFolder,
   setExplorerBookmarkSearchQuery,
   setExplorerRailViewMode,
   toggleExplorerBookmarkCategoryFilter,
@@ -48,7 +49,7 @@ import {
   type ExplorerSavedSearch,
   type ExplorerTagMetadataSnapshot,
 } from '../../runtime/explorerBackend';
-import { loadCachedExplorerLocation } from './explorerDirectoryCache';
+import { invalidateExplorerDirectoryResultCaches, loadCachedExplorerLocation } from './explorerDirectoryCache';
 import type {
   ExplorerChromeControlDefinition,
   ExplorerChromeControlId,
@@ -113,6 +114,7 @@ interface TreeRowProps {
   accent: string;
   compactTree: boolean;
   dense: boolean;
+  viewMode: ExplorerRailViewModeDefinition;
   showSupportingMeta: boolean;
   treeIndentStep: number;
   manageMode: boolean;
@@ -137,6 +139,7 @@ interface LocalFolderTreeRowProps {
   accent: string;
   compactTree: boolean;
   dense: boolean;
+  viewMode: ExplorerRailViewModeDefinition;
   currentPath: string;
   path: string;
   depth: number;
@@ -192,6 +195,7 @@ export function ExplorerSideRail({
     () => getExplorerRailViewModeDefinition(rail.viewMode),
     [rail.viewMode],
   );
+  const autoExpandToOpenFolder = rail.autoExpandToOpenFolder === true;
   const dense = isCompactDock || sidebarWidth < EXPLORER_RAIL_DENSE_WIDTH || railViewMode.useCompactChrome;
   const ultraDense = isCompactDock || sidebarWidth < EXPLORER_RAIL_ULTRA_DENSE_WIDTH;
   const compactTree = dense || railViewMode.hideSupportingMeta;
@@ -347,13 +351,17 @@ export function ExplorerSideRail({
 
   useEffect(() => {
     const normalizedAncestors = currentPathAncestors.map((path) => normalizeLocalTreePath(path));
+    if (!autoExpandToOpenFolder) {
+      updateFolderChildrenByPath((current) => pruneLocalFolderTreeState(current, expandedFolderPaths));
+      return;
+    }
     setExpandedFolderPaths((current) => (
       areNormalizedPathListsEqual(current, normalizedAncestors)
         ? current
         : normalizedAncestors
     ));
     updateFolderChildrenByPath((current) => pruneLocalFolderTreeState(current, normalizedAncestors));
-  }, [currentPathAncestors, updateFolderChildrenByPath]);
+  }, [autoExpandToOpenFolder, currentPathAncestors, expandedFolderPaths, updateFolderChildrenByPath]);
 
   useEffect(() => {
     if (!shouldForceRefreshLocalTree) {
@@ -361,17 +369,45 @@ export function ExplorerSideRail({
     }
     lastLocalTreeRefreshRevisionRef.current = localTreeRefreshRevision;
     updateFolderChildrenByPath({});
-  }, [localTreeRefreshRevision, shouldForceRefreshLocalTree, updateFolderChildrenByPath]);
+    const refreshTargets = autoExpandToOpenFolder ? currentPathAncestors : expandedFolderPaths;
+    if (refreshTargets.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      for (const folderPath of refreshTargets) {
+        if (cancelled) {
+          return;
+        }
+        invalidateExplorerDirectoryResultCaches(folderPath);
+        await loadFolderChildren(folderPath, { forceRefresh: true });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    autoExpandToOpenFolder,
+    currentPathAncestors,
+    expandedFolderPaths,
+    loadFolderChildren,
+    localTreeRefreshRevision,
+    shouldForceRefreshLocalTree,
+    updateFolderChildrenByPath,
+  ]);
 
   useEffect(() => {
-    if (currentPathAncestors.length === 0) {
+    const folderPathsToLoad = autoExpandToOpenFolder ? currentPathAncestors : expandedFolderPaths;
+    if (folderPathsToLoad.length === 0) {
       return;
     }
 
     const forceRefresh = shouldForceRefreshLocalTree;
     let cancelled = false;
     void (async () => {
-      for (const ancestor of currentPathAncestors) {
+      for (const ancestor of folderPathsToLoad) {
         if (cancelled) {
           return;
         }
@@ -382,7 +418,7 @@ export function ExplorerSideRail({
     return () => {
       cancelled = true;
     };
-  }, [currentPathAncestors, loadFolderChildren, localTreeRefreshRevision]);
+  }, [autoExpandToOpenFolder, currentPathAncestors, expandedFolderPaths, loadFolderChildren, localTreeRefreshRevision]);
 
   const handleBookmarkDrop = (event: React.DragEvent, targetFolderId: string | null) => {
     event.preventDefault();
@@ -658,6 +694,18 @@ export function ExplorerSideRail({
               </button>
             );
           })}
+          <button
+            type="button"
+            aria-pressed={autoExpandToOpenFolder}
+            aria-label="Toggle expand to open folder"
+            title={autoExpandToOpenFolder
+              ? 'Expand to Open Folder is on. The rail follows the open path automatically.'
+              : 'Expand to Open Folder is off. Only the chevrons expand the rail tree.'}
+            onClick={() => updateRail((current) => setExplorerRailAutoExpandToOpenFolder(current, !current.autoExpandToOpenFolder))}
+            style={railViewModeButtonStyle(accent, autoExpandToOpenFolder)}
+          >
+            Auto
+          </button>
         </div>
         {persistence.message && (
           <div
@@ -709,20 +757,22 @@ export function ExplorerSideRail({
       <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: dense ? 6 : 10 }}>
         <RailSection
           title="Quick Access"
+          viewMode={railViewMode}
           collapsed={isExplorerRailSectionCollapsed(rail, 'quick-access')}
           onToggle={() => updateRail(toggleExplorerRailSection(rail, 'quick-access'))}
         >
-          <button type="button" onClick={onGoHome} style={quickLinkButtonStyle(currentPath === '', accent, dense)}>
+          <button type="button" onClick={onGoHome} style={quickLinkButtonStyle(currentPath === '', accent, dense, railViewMode)}>
             <Home size={dense ? 12 : 13} style={{ color: accent, flexShrink: 0 }} />
             <div style={{ minWidth: 0 }}>
-              <div style={quickLinkTitleStyle}>Home</div>
-              {showSupportingMeta && <div style={quickLinkMetaStyle}>Jump to your user root.</div>}
+              <div style={bookmarkTitleStyle(railViewMode, 'default')}>Home</div>
+              {showSupportingMeta && <div style={bookmarkMetaStyle(railViewMode)}>Jump to your user root.</div>}
             </div>
           </button>
         </RailSection>
 
         <RailSection
           title="Drives"
+          viewMode={railViewMode}
           collapsed={isExplorerRailSectionCollapsed(rail, 'drives')}
           onToggle={() => updateRail(toggleExplorerRailSection(rail, 'drives'))}
         >
@@ -756,32 +806,32 @@ export function ExplorerSideRail({
                   type="button"
                   onClick={() => onNavigate(drive.path)}
                   style={{
+                    ...getRailSelectableRowStyle({
+                      accent,
+                      viewMode: railViewMode,
+                      dense,
+                      state: isActive ? 'active' : 'idle',
+                    }),
                     width: '100%',
-                    padding: dense ? '5px 7px' : '8px 10px',
-                    borderRadius: 9,
-                    border: `1px solid ${isActive ? `${accent}66` : 'var(--overlay-border)'}`,
-                    background: isActive ? `${accent}17` : 'var(--overlay-explorer-chip-bg)',
-                    color: 'var(--overlay-text-primary)',
                     display: 'grid',
                     gridTemplateColumns: 'auto 1fr',
-                    gap: dense ? 6 : 10,
                     alignItems: 'center',
                     cursor: 'pointer',
                     marginBottom: 4,
                   }}
                 >
-                  <FolderTree size={dense ? 11 : 14} style={{ color: isActive ? accent : 'var(--overlay-text-muted)' }} />
+                  <FolderTree size={dense ? 11 : 14} style={{ color: resolveRailIconColor(railViewMode, accent, isActive ? 'active' : 'default') }} />
                   <div style={{ minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                      <span style={{ fontSize: dense ? 9.5 : 11, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ ...bookmarkTitleStyle(railViewMode, isActive ? 'active' : 'default'), fontSize: dense ? 9.5 : 11 }}>
                         {drive.label}
                       </span>
-                      <span style={{ fontSize: 9, color: 'var(--overlay-text-dim)', textTransform: 'uppercase' }}>
+                      <span style={{ ...bookmarkMetaStyle(railViewMode), marginTop: 0, textTransform: 'uppercase' }}>
                         {drive.provider === 'google-drive' ? 'Drive' : 'Dropbox'}
                       </span>
                     </div>
                     {showSupportingMeta && (
-                      <div style={{ marginTop: 4, fontSize: 8.5, color: 'var(--overlay-text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{ ...bookmarkMetaStyle(railViewMode), marginTop: 4 }}>
                         {drive.email}
                       </div>
                     )}
@@ -798,19 +848,16 @@ export function ExplorerSideRail({
               <div key={drive.id} style={{ marginBottom: 4 }}>
                 <div
                   style={{
+                    ...getRailSelectableRowStyle({
+                      accent,
+                      viewMode: railViewMode,
+                      dense,
+                      state: isActive ? 'active' : 'idle',
+                      flattened: railViewMode.flattenDriveRows,
+                    }),
                     width: '100%',
-                    padding: dense ? '5px 7px' : '8px 10px',
-                    borderRadius: 9,
-                    border: `1px solid ${isActive ? `${accent}66` : railViewMode.flattenDriveRows ? 'transparent' : 'var(--overlay-border)'}`,
-                    background: railViewMode.flattenDriveRows
-                      ? (isActive ? `${accent}12` : 'transparent')
-                      : isActive
-                        ? `${accent}17`
-                        : 'var(--overlay-explorer-chip-bg)',
-                    color: 'var(--overlay-text-primary)',
                     display: 'grid',
                     gridTemplateColumns: 'auto auto 1fr',
-                    gap: dense ? 6 : 10,
                     alignItems: 'center',
                   }}
                 >
@@ -818,11 +865,11 @@ export function ExplorerSideRail({
                     type="button"
                     aria-label={isExpanded ? `Collapse ${drive.label} folder tree` : `Expand ${drive.label} folder tree`}
                     onClick={() => toggleFolderExpand(normalizedDrivePath)}
-                    style={treeIconButtonStyle}
+                    style={treeIconButtonStyle(railViewMode, isExpanded || isActive)}
                   >
                     {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
                   </button>
-                  <HardDrive size={dense ? 11 : 14} style={{ color: isActive ? accent : 'var(--overlay-text-muted)' }} />
+                  <HardDrive size={dense ? 11 : 14} style={{ color: resolveRailIconColor(railViewMode, accent, isActive ? 'active' : 'default') }} />
                   <button
                     type="button"
                     onClick={() => onNavigate(drive.path)}
@@ -837,10 +884,10 @@ export function ExplorerSideRail({
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                      <span style={{ fontSize: dense ? 9.5 : 11, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ ...bookmarkTitleStyle(railViewMode, isActive ? 'active' : isExpanded ? 'ancestor' : 'default'), fontSize: dense ? 9.5 : 11 }}>
                         {drive.label}
                       </span>
-                      <span style={{ fontSize: 9, color: 'var(--overlay-text-dim)' }}>{drive.letter}</span>
+                      <span style={{ ...bookmarkMetaStyle(railViewMode), marginTop: 0 }}>{drive.letter}</span>
                     </div>
                     {showDriveCapacity && (
                       <>
@@ -862,6 +909,7 @@ export function ExplorerSideRail({
                       accent={accent}
                       compactTree={compactTree}
                       dense={dense}
+                      viewMode={railViewMode}
                       currentPath={currentPath}
                       path={normalizedDrivePath}
                       depth={0}
@@ -882,6 +930,7 @@ export function ExplorerSideRail({
 
         <RailSection
           title="Saved Searches"
+          viewMode={railViewMode}
           collapsed={isExplorerRailSectionCollapsed(rail, 'saved-searches')}
           onToggle={() => updateRail(toggleExplorerRailSection(rail, 'saved-searches'))}
         >
@@ -904,28 +953,28 @@ export function ExplorerSideRail({
                 type="button"
                 onClick={() => onOpenSavedSearch?.(savedSearch)}
                 style={{
+                  ...getRailSelectableRowStyle({
+                    accent,
+                    viewMode: railViewMode,
+                    dense,
+                    state: 'idle',
+                  }),
                   flex: 1,
                   minWidth: 0,
                   display: 'grid',
                   gridTemplateColumns: 'auto 1fr',
-                  gap: 8,
                   alignItems: 'center',
-                  padding: dense ? '5px 7px' : '7px 9px',
-                  borderRadius: 9,
-                  border: '1px solid var(--overlay-border)',
-                  background: 'var(--overlay-explorer-chip-bg)',
-                  color: 'var(--overlay-text-primary)',
                   cursor: 'pointer',
                   textAlign: 'left',
                 }}
               >
                 <Search size={dense ? 11 : 13} style={{ color: accent, flexShrink: 0 }} />
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: dense ? 9.5 : 10.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div style={{ ...bookmarkTitleStyle(railViewMode, 'default'), fontSize: dense ? 9.5 : 10.5 }}>
                     {savedSearch.name}
                   </div>
                   {showSupportingMeta && (
-                    <div style={{ marginTop: 3, fontSize: 8.5, color: 'var(--overlay-text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ ...bookmarkMetaStyle(railViewMode), marginTop: 3 }}>
                       {savedSearch.query}
                     </div>
                   )}
@@ -947,6 +996,7 @@ export function ExplorerSideRail({
 
         <RailSection
           title="Tags"
+          viewMode={railViewMode}
           collapsed={isExplorerRailSectionCollapsed(rail, 'tags')}
           onToggle={() => updateRail(toggleExplorerRailSection(rail, 'tags'))}
         >
@@ -1020,6 +1070,7 @@ export function ExplorerSideRail({
 
         <RailSection
           title="Bookmarks"
+          viewMode={railViewMode}
           collapsed={isExplorerRailSectionCollapsed(rail, 'bookmarks')}
           onToggle={() => updateRail(toggleExplorerRailSection(rail, 'bookmarks'))}
           grow
@@ -1220,6 +1271,7 @@ export function ExplorerSideRail({
                 accent={accent}
                 compactTree={compactTree}
                 dense={dense}
+                viewMode={railViewMode}
                 showSupportingMeta={showSupportingMeta}
                 treeIndentStep={railViewMode.treeIndentStep}
                 manageMode={isManageMode}
@@ -1278,6 +1330,7 @@ function BookmarkTreeRow({
   accent,
   compactTree,
   dense,
+  viewMode,
   showSupportingMeta,
   treeIndentStep,
   manageMode,
@@ -1296,7 +1349,8 @@ function BookmarkTreeRow({
   const isFolder = row.node.kind === 'folder';
   const isExpanded = isFolder ? isExplorerBookmarkFolderExpanded(rail, row.node.id) : false;
   const isDropTarget = dropTargetFolderId === row.node.id;
-  const isActive = row.node.kind === 'bookmark' && currentPath === row.node.path;
+  const isActive = row.node.kind === 'bookmark' && isSameLocalPath(currentPath, row.node.path);
+  const rowState: RailSelectableRowState = isDropTarget ? 'drop-target' : isActive ? 'active' : isFolder && isExpanded ? 'ancestor' : 'idle';
 
   return (
     <div style={{ marginTop: 4 }}>
@@ -1304,15 +1358,18 @@ function BookmarkTreeRow({
         role="treeitem"
         aria-expanded={isFolder ? isExpanded : undefined}
         aria-selected={isActive}
+        data-rail-row-state={rowState}
         style={{
+          ...getRailSelectableRowStyle({
+            accent,
+            viewMode,
+            dense,
+            state: rowState,
+            treeDepth: row.depth,
+          }),
           display: 'flex',
           alignItems: 'center',
-          gap: 6,
-          padding: dense ? '5px 6px' : '6px 8px',
           paddingLeft: (compactTree ? 6 : 8) + row.depth * treeIndentStep,
-          borderRadius: 10,
-          border: `1px solid ${isDropTarget ? `${accent}66` : isActive ? `${accent}44` : 'transparent'}`,
-          background: isDropTarget ? `${accent}14` : isActive ? `${accent}12` : 'transparent',
         }}
         onDragOver={isFolder ? (event) => onDragOverFolder(event, row.node.id) : undefined}
         onDragLeave={isFolder ? onDragLeaveFolder : undefined}
@@ -1323,12 +1380,12 @@ function BookmarkTreeRow({
             type="button"
             aria-label={isExpanded ? 'Collapse bookmark folder' : 'Expand bookmark folder'}
             onClick={() => updateRail(toggleExplorerBookmarkFolder(rail, row.node.id))}
-            style={treeIconButtonStyle}
+            style={treeIconButtonStyle(viewMode, isExpanded)}
           >
             {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
           </button>
         ) : (
-          <span style={{ width: compactTree ? 14 : 16, display: 'flex', justifyContent: 'center', color: 'var(--overlay-text-dim)' }}>
+          <span style={{ width: compactTree ? 14 : 16, display: 'flex', justifyContent: 'center', color: resolveRailIconColor(viewMode, accent, isActive ? 'active' : 'default') }}>
             <Star size={10} />
           </span>
         )}
@@ -1347,7 +1404,7 @@ function BookmarkTreeRow({
             minWidth: 0,
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
+            gap: viewMode.presentation.rowChrome === 'compact' ? 6 : 8,
             background: 'transparent',
             border: 'none',
             color: 'var(--overlay-text-primary)',
@@ -1356,32 +1413,38 @@ function BookmarkTreeRow({
             textAlign: 'left',
           }}
         >
-          <span style={{ width: 8, height: 8, borderRadius: 999, background: row.node.color ?? accent, flexShrink: 0 }} />
+          <span style={{
+            width: viewMode.presentation.rowChrome === 'tree' ? 3 : 8,
+            height: viewMode.presentation.rowChrome === 'tree' ? 18 : 8,
+            borderRadius: 999,
+            background: row.node.color ?? accent,
+            flexShrink: 0,
+          }} />
           <div style={{ minWidth: 0 }}>
-            <div style={bookmarkTitleStyle}>{row.node.name}</div>
+            <div style={bookmarkTitleStyle(viewMode, isActive ? 'active' : isExpanded ? 'ancestor' : 'default')}>{row.node.name}</div>
             {showSupportingMeta && row.node.kind === 'bookmark' && (
-              <div style={bookmarkMetaStyle}>{row.node.path}</div>
+              <div style={bookmarkMetaStyle(viewMode)}>{row.node.path}</div>
             )}
           </div>
         </button>
 
         {manageMode && isFolder && (
-          <button type="button" aria-label="Create nested bookmark folder" onClick={() => onQueueFolderCreate(row.node.id)} style={treeIconButtonStyle}>
+          <button type="button" aria-label="Create nested bookmark folder" onClick={() => onQueueFolderCreate(row.node.id)} style={treeIconButtonStyle(viewMode, false)}>
             <FolderPlus size={11} />
           </button>
         )}
         {manageMode && (
-          <button type="button" aria-label="Rename bookmark node" onClick={() => onRenameNode(row.node.id, row.node.name)} style={treeIconButtonStyle}>
+          <button type="button" aria-label="Rename bookmark node" onClick={() => onRenameNode(row.node.id, row.node.name)} style={treeIconButtonStyle(viewMode, false)}>
             <Pencil size={11} />
           </button>
         )}
         {manageMode && (
-          <button type="button" aria-label="Cycle bookmark color" onClick={() => updateRail(cycleExplorerBookmarkNodeColor(rail, row.node.id))} style={treeIconButtonStyle}>
+          <button type="button" aria-label="Cycle bookmark color" onClick={() => updateRail(cycleExplorerBookmarkNodeColor(rail, row.node.id))} style={treeIconButtonStyle(viewMode, false)}>
             <span style={{ width: 11, height: 11, borderRadius: 999, background: row.node.color ?? accent }} />
           </button>
         )}
         {manageMode && (
-          <button type="button" aria-label="Remove bookmark node" onClick={() => updateRail(removeExplorerBookmarkNode(rail, row.node.id))} style={treeIconButtonStyle}>
+          <button type="button" aria-label="Remove bookmark node" onClick={() => updateRail(removeExplorerBookmarkNode(rail, row.node.id))} style={treeIconButtonStyle(viewMode, false)}>
             <X size={11} />
           </button>
         )}
@@ -1393,6 +1456,7 @@ function BookmarkTreeRow({
           accent={accent}
           compactTree={compactTree}
           dense={dense}
+          viewMode={viewMode}
           showSupportingMeta={showSupportingMeta}
           treeIndentStep={treeIndentStep}
           manageMode={manageMode}
@@ -1415,6 +1479,7 @@ function LocalFolderTreeRow({
   accent,
   compactTree,
   dense,
+  viewMode,
   currentPath,
   path,
   depth,
@@ -1466,8 +1531,17 @@ function LocalFolderTreeRow({
         const childPath = normalizeLocalTreePath(childFolder.path);
         const childState = folderChildrenByPath[childPath];
         const isExpanded = expandedFolderPaths.includes(childPath);
-        const isActive = isSameLocalPath(childPath, currentPath);
-        const isAncestor = !isActive && isSameOrDescendantLocalPath(childPath, currentPath);
+        const normalizedCurrentPath = normalizeLocalTreePath(currentPath);
+        const isSameAsCurrentPath = getLocalPathComparisonKey(childPath) === getLocalPathComparisonKey(normalizedCurrentPath);
+        const branchRelation = getLocalPathBranchRelation(childPath, normalizedCurrentPath);
+        const isStrictDescendant = branchRelation === 'descendant';
+        const isOpenPathLeaf = isExpanded
+          && branchRelation !== 'none'
+          && childState?.status === 'ready'
+          && (childState.childFolders?.length ?? 0) === 0;
+        const isActive = isSameAsCurrentPath || isOpenPathLeaf;
+        const isAncestor = !isActive && (isStrictDescendant || isExpanded);
+        const rowState: RailSelectableRowState = isActive ? 'active' : (isAncestor || isExpanded ? 'ancestor' : 'idle');
         const canExpand = isExpanded || childState?.status !== 'ready' || (childState.childFolders?.length ?? 0) > 0;
 
         return (
@@ -1476,15 +1550,18 @@ function LocalFolderTreeRow({
               role="treeitem"
               aria-expanded={canExpand ? isExpanded : undefined}
               aria-selected={isActive}
+              data-rail-row-state={rowState}
               style={{
+                ...getRailSelectableRowStyle({
+                  accent,
+                  viewMode,
+                  dense,
+                  state: rowState,
+                  treeDepth: depth,
+                }),
                 display: 'flex',
                 alignItems: 'center',
-                gap: 6,
-                padding: dense ? '5px 6px' : '6px 8px',
                 paddingLeft: (compactTree ? 6 : 8) + depth * treeIndentStep,
-                borderRadius: 10,
-                border: `1px solid ${isActive ? `${accent}44` : 'transparent'}`,
-                background: isActive ? `${accent}12` : isAncestor ? `${accent}0d` : 'transparent',
               }}
             >
               {canExpand ? (
@@ -1492,7 +1569,7 @@ function LocalFolderTreeRow({
                   type="button"
                   aria-label={isExpanded ? `Collapse ${childFolder.name}` : `Expand ${childFolder.name}`}
                   onClick={() => onToggleExpand(childPath)}
-                  style={treeIconButtonStyle}
+                  style={treeIconButtonStyle(viewMode, isExpanded || isActive)}
                 >
                   {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
                 </button>
@@ -1508,7 +1585,7 @@ function LocalFolderTreeRow({
                   minWidth: 0,
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 8,
+                  gap: viewMode.presentation.rowChrome === 'compact' ? 6 : 8,
                   background: 'transparent',
                   border: 'none',
                   color: 'var(--overlay-text-primary)',
@@ -1518,14 +1595,14 @@ function LocalFolderTreeRow({
                 }}
               >
                 {isExpanded ? (
-                  <FolderOpen size={dense ? 11 : 13} style={{ color: isActive ? accent : 'var(--overlay-text-muted)', flexShrink: 0 }} />
+                  <FolderOpen size={dense ? 11 : 13} style={{ color: resolveRailIconColor(viewMode, accent, isActive ? 'active' : isAncestor ? 'ancestor' : 'default'), flexShrink: 0 }} />
                 ) : (
-                  <Folder size={dense ? 11 : 13} style={{ color: isActive ? accent : 'var(--overlay-text-muted)', flexShrink: 0 }} />
+                  <Folder size={dense ? 11 : 13} style={{ color: resolveRailIconColor(viewMode, accent, isActive ? 'active' : isAncestor ? 'ancestor' : 'default'), flexShrink: 0 }} />
                 )}
                 <div style={{ minWidth: 0 }}>
-                  <div style={bookmarkTitleStyle}>{childFolder.name || getPathLeaf(childPath)}</div>
+                  <div style={bookmarkTitleStyle(viewMode, isActive ? 'active' : isAncestor ? 'ancestor' : 'default')}>{childFolder.name || getPathLeaf(childPath)}</div>
                   {showSupportingMeta && (
-                    <div style={bookmarkMetaStyle}>{childPath}</div>
+                    <div style={bookmarkMetaStyle(viewMode)}>{childPath}</div>
                   )}
                 </div>
               </button>
@@ -1536,6 +1613,7 @@ function LocalFolderTreeRow({
                 accent={accent}
                 compactTree={compactTree}
                 dense={dense}
+                viewMode={viewMode}
                 currentPath={currentPath}
                 path={childPath}
                 depth={depth + 1}
@@ -1557,38 +1635,25 @@ function LocalFolderTreeRow({
 
 function RailSection({
   title,
+  viewMode,
   collapsed,
   grow = false,
   onToggle,
   children,
 }: {
   title: string;
+  viewMode: ExplorerRailViewModeDefinition;
   collapsed: boolean;
   grow?: boolean;
   onToggle: () => void;
   children: React.ReactNode;
 }) {
   return (
-    <section style={{ marginBottom: 6, display: 'flex', flexDirection: 'column', flex: grow ? 1 : undefined, minHeight: 0 }}>
+    <section style={railSectionStyle(viewMode, grow)}>
       <button
         type="button"
         onClick={onToggle}
-        style={{
-          width: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 8,
-          padding: '4px 7px',
-          background: 'transparent',
-          border: 'none',
-          cursor: 'pointer',
-          color: 'var(--overlay-text-muted)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.1em',
-          fontSize: 9.5,
-          fontWeight: 700,
-        }}
+        style={railSectionHeaderButtonStyle(viewMode)}
       >
         <span>{title}</span>
         {collapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
@@ -1658,29 +1723,38 @@ function getLocalPathComparisonKey(path: string): string {
   return isWindowsLocalPath(normalized) ? normalized.toUpperCase() : normalized;
 }
 
-function isSameLocalPath(leftPath: string, rightPath: string): boolean {
-  return getLocalPathComparisonKey(leftPath) === getLocalPathComparisonKey(rightPath);
-}
-
-function isSameOrDescendantLocalPath(candidateAncestorPath: string, candidatePath: string): boolean {
+function getLocalPathBranchRelation(
+  candidateAncestorPath: string,
+  candidatePath: string,
+): 'same' | 'descendant' | 'none' {
   const ancestor = normalizeLocalTreePath(candidateAncestorPath);
   const target = normalizeLocalTreePath(candidatePath);
   if (!ancestor || !target) {
-    return false;
+    return 'none';
   }
+
   const ancestorKey = getLocalPathComparisonKey(ancestor);
   const targetKey = getLocalPathComparisonKey(target);
   if (ancestorKey === targetKey) {
-    return true;
+    return 'same';
   }
   if (ancestor === '/') {
-    return target.startsWith('/');
+    return target.startsWith('/') ? 'descendant' : 'none';
   }
+
   const separator = isWindowsLocalPath(ancestor) ? '\\' : '/';
   const pathBoundaryPrefix = ancestorKey.endsWith(separator)
     ? ancestorKey
     : `${ancestorKey}${separator}`;
-  return targetKey.startsWith(pathBoundaryPrefix);
+  return targetKey.startsWith(pathBoundaryPrefix) ? 'descendant' : 'none';
+}
+
+function isSameLocalPath(leftPath: string, rightPath: string): boolean {
+  return getLocalPathBranchRelation(leftPath, rightPath) === 'same';
+}
+
+function isSameOrDescendantLocalPath(candidateAncestorPath: string, candidatePath: string): boolean {
+  return getLocalPathBranchRelation(candidateAncestorPath, candidatePath) !== 'none';
 }
 
 function resolveMostSpecificLocalDrivePath(
@@ -1771,6 +1845,9 @@ function pruneLocalFolderTreeState(
   return changed ? next : current;
 }
 
+type RailSelectableRowState = 'idle' | 'ancestor' | 'active' | 'drop-target';
+type RailTextEmphasis = 'default' | 'ancestor' | 'active';
+
 const dismissButtonStyle: React.CSSProperties = {
   width: 18,
   height: 18,
@@ -1809,20 +1886,6 @@ const localTreeRetryButtonStyle: React.CSSProperties = {
   flexShrink: 0,
 };
 
-const treeIconButtonStyle: React.CSSProperties = {
-  width: 20,
-  height: 20,
-  borderRadius: 'var(--overlay-explorer-control-radius)',
-  border: '1px solid var(--overlay-explorer-chip-border)',
-  background: 'var(--overlay-explorer-chip-bg)',
-  color: 'var(--overlay-text-dim)',
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  cursor: 'pointer',
-  flexShrink: 0,
-};
-
 const railMetaPillStyle: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
@@ -1852,39 +1915,6 @@ const searchInputStyle: React.CSSProperties = {
   background: 'transparent',
   color: 'var(--overlay-text-primary)',
   fontSize: 10.5,
-};
-
-const quickLinkTitleStyle: React.CSSProperties = {
-  fontSize: 'var(--overlay-explorer-breadcrumb-font-size)',
-  fontWeight: 600,
-  color: 'var(--overlay-text-primary)',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-};
-
-const quickLinkMetaStyle: React.CSSProperties = {
-  marginTop: 2,
-  fontSize: 8.5,
-  color: 'var(--overlay-text-dim)',
-};
-
-const bookmarkTitleStyle: React.CSSProperties = {
-  fontSize: 'var(--overlay-explorer-breadcrumb-font-size)',
-  fontWeight: 600,
-  color: 'var(--overlay-text-primary)',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-};
-
-const bookmarkMetaStyle: React.CSSProperties = {
-  marginTop: 2,
-  fontSize: 8.5,
-  color: 'var(--overlay-text-dim)',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
 };
 
 const draftPanelStyle: React.CSSProperties = {
@@ -1936,16 +1966,186 @@ function categoryChipStyle(active: boolean): React.CSSProperties {
   };
 }
 
-function quickLinkButtonStyle(active: boolean, accent: string, dense: boolean): React.CSSProperties {
+function railSectionStyle(viewMode: ExplorerRailViewModeDefinition, grow: boolean): React.CSSProperties {
+  const sectionChrome = viewMode.presentation.sectionChrome;
+  return {
+    marginBottom: sectionChrome === 'compact' ? 4 : 8,
+    display: 'flex',
+    flexDirection: 'column',
+    flex: grow ? 1 : undefined,
+    minHeight: 0,
+    padding: sectionChrome === 'carded' ? 6 : sectionChrome === 'tree' ? '0 0 0 8px' : 0,
+    borderRadius: sectionChrome === 'carded' ? 14 : 0,
+    border: sectionChrome === 'carded'
+      ? '1px solid var(--overlay-explorer-chip-border)'
+      : sectionChrome === 'tree'
+        ? '1px solid transparent'
+        : 'none',
+    background: sectionChrome === 'carded'
+      ? 'rgba(255,255,255,0.025)'
+      : sectionChrome === 'tree'
+        ? 'linear-gradient(180deg, rgba(255,255,255,0.025), transparent)'
+        : 'transparent',
+  };
+}
+
+function railSectionHeaderButtonStyle(viewMode: ExplorerRailViewModeDefinition): React.CSSProperties {
+  const sectionChrome = viewMode.presentation.sectionChrome;
   return {
     width: '100%',
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    padding: sectionChrome === 'compact' ? '3px 5px' : '4px 7px',
+    background: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    color: sectionChrome === 'tree' ? 'var(--overlay-text-primary)' : 'var(--overlay-text-muted)',
+    textTransform: 'uppercase',
+    letterSpacing: sectionChrome === 'tree' ? '0.14em' : '0.1em',
+    fontSize: sectionChrome === 'compact' ? 9 : 9.5,
+    fontWeight: sectionChrome === 'tree' ? 800 : 700,
+  };
+}
+
+function resolveRailIconColor(
+  viewMode: ExplorerRailViewModeDefinition,
+  accent: string,
+  emphasis: RailTextEmphasis | 'drop-target',
+): string {
+  if (emphasis === 'active' || emphasis === 'drop-target') {
+    return accent;
+  }
+  if (emphasis === 'ancestor') {
+    return viewMode.presentation.iconTone === 'accented' ? `${accent}cc` : 'var(--overlay-text-primary)';
+  }
+  if (viewMode.presentation.iconTone === 'contrast') {
+    return 'var(--overlay-text-primary)';
+  }
+  if (viewMode.presentation.iconTone === 'accented') {
+    return `${accent}aa`;
+  }
+  return 'var(--overlay-text-muted)';
+}
+
+function getRailSelectableRowStyle(args: {
+  accent: string;
+  viewMode: ExplorerRailViewModeDefinition;
+  dense: boolean;
+  state: RailSelectableRowState;
+  flattened?: boolean;
+  treeDepth?: number;
+}): React.CSSProperties {
+  const { accent, viewMode, dense, state, flattened = false, treeDepth = 0 } = args;
+  const rowChrome = viewMode.presentation.rowChrome;
+  const isActive = state === 'active';
+  const isAncestor = state === 'ancestor';
+  const isDropTarget = state === 'drop-target';
+  const paddingY = dense ? 5 : rowChrome === 'carded' ? 8 : 6;
+  const paddingX = dense ? 6 : rowChrome === 'carded' ? 9 : 8;
+  const baseBorder = rowChrome === 'compact'
+    ? 'rgba(255,255,255,0.05)'
+    : flattened || rowChrome === 'tree'
+      ? 'transparent'
+      : 'var(--overlay-explorer-chip-border)';
+  const baseBackground = rowChrome === 'carded'
+    ? 'var(--overlay-explorer-chip-bg)'
+    : rowChrome === 'compact'
+      ? 'rgba(255,255,255,0.015)'
+      : 'transparent';
+  const stateBackground = isDropTarget
+    ? `${accent}16`
+    : isActive
+      ? rowChrome === 'tree'
+        ? `linear-gradient(90deg, ${accent}26, transparent 82%)`
+        : `${accent}18`
+      : isAncestor
+        ? rowChrome === 'tree'
+          ? `linear-gradient(90deg, ${accent}12, transparent 84%)`
+          : `${accent}0d`
+        : baseBackground;
+
+  return {
+    gap: rowChrome === 'compact' ? 5 : 6,
+    padding: `${paddingY}px ${paddingX}px`,
+    borderRadius: rowChrome === 'carded' ? 12 : rowChrome === 'tree' ? 10 : 8,
+    border: `1px solid ${isDropTarget ? `${accent}77` : isActive ? `${accent}55` : baseBorder}`,
+    background: stateBackground,
+    boxShadow: viewMode.presentation.activeBranchStyle === 'lane' || rowChrome === 'tree'
+      ? `inset ${isActive ? 3 : isAncestor ? 1.5 : 0}px 0 0 ${isActive || isAncestor ? accent : 'transparent'}`
+      : viewMode.presentation.activeBranchStyle === 'bold' && isActive
+        ? `inset 0 0 0 1px ${accent}44`
+        : 'none',
+    position: 'relative',
+    marginLeft: rowChrome === 'tree' ? Math.max(treeDepth - 1, 0) * 2 : 0,
+  };
+}
+
+function treeIconButtonStyle(viewMode: ExplorerRailViewModeDefinition, active: boolean): React.CSSProperties {
+  return {
+    width: 20,
+    height: 20,
+    borderRadius: viewMode.presentation.rowChrome === 'tree' ? 999 : 'var(--overlay-explorer-control-radius)',
+    border: `1px solid ${active ? 'var(--overlay-explorer-chip-active-border)' : 'var(--overlay-explorer-chip-border)'}`,
+    background: active
+      ? 'var(--overlay-explorer-chip-active-bg)'
+      : viewMode.presentation.rowChrome === 'tree'
+        ? 'rgba(255,255,255,0.025)'
+        : 'var(--overlay-explorer-chip-bg)',
+    color: active ? 'var(--overlay-text-primary)' : 'var(--overlay-text-dim)',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    flexShrink: 0,
+  };
+}
+
+function bookmarkTitleStyle(viewMode: ExplorerRailViewModeDefinition, emphasis: RailTextEmphasis): React.CSSProperties {
+  return {
+    fontSize: 'var(--overlay-explorer-breadcrumb-font-size)',
+    fontWeight: emphasis === 'active' ? 800 : emphasis === 'ancestor' ? 700 : viewMode.presentation.rowChrome === 'compact' ? 600 : 650,
+    color: emphasis === 'active'
+      ? 'var(--overlay-text-primary)'
+      : emphasis === 'ancestor' && viewMode.presentation.rowChrome === 'tree'
+        ? 'rgba(255,255,255,0.92)'
+        : 'var(--overlay-text-primary)',
+    letterSpacing: viewMode.presentation.rowChrome === 'compact' ? '0.01em' : 'normal',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  };
+}
+
+function bookmarkMetaStyle(viewMode: ExplorerRailViewModeDefinition): React.CSSProperties {
+  return {
+    marginTop: 2,
+    fontSize: viewMode.presentation.rowChrome === 'compact' ? 8 : 8.5,
+    color: viewMode.presentation.rowChrome === 'tree' ? 'rgba(255,255,255,0.58)' : 'var(--overlay-text-dim)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  };
+}
+
+function quickLinkButtonStyle(
+  active: boolean,
+  accent: string,
+  dense: boolean,
+  viewMode: ExplorerRailViewModeDefinition,
+): React.CSSProperties {
+  return {
+    ...getRailSelectableRowStyle({
+      accent,
+      viewMode,
+      dense,
+      state: active ? 'active' : 'idle',
+    }),
+    width: '100%',
+    display: 'flex',
+    alignItems: 'center',
     gap: 7,
-    padding: dense ? '5px 7px' : '8px 10px',
-    borderRadius: 'var(--overlay-explorer-control-radius)',
-    border: `1px solid ${active ? `${accent}55` : 'var(--overlay-explorer-chip-border)'}`,
-    background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
     color: 'var(--overlay-text-primary)',
     cursor: 'pointer',
     textAlign: 'left',

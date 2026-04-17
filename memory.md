@@ -1,5 +1,21 @@
 # GreebleFS Memory
 
+## 2026-04-16 — Explorer Side Rail Mode Redesign + Expand-To-Open Toggle
+
+- The explorer side rail no longer treats `default`, `compact`, and `tree` as minor density variants. The three persisted rail modes now drive meaningfully different section and row presentation, and the rail ships with Windows-style manual expansion by default.
+- Durable implementation shape:
+  - `src/config/explorerRail.ts` now carries a richer presentation contract per rail mode, including section chrome style, row chrome style, hierarchy-guide strength, active-branch emphasis, and icon tone. The persisted mode ids stay `default`, `compact`, and `tree`.
+  - `src/components/explorer/explorerRailState.ts` now persists `autoExpandToOpenFolder`, defaulting missing or legacy state to `false`, so the new manual-vs-auto expansion behavior rides the existing rail snapshot instead of inventing a second settings lane.
+  - `src/components/explorer/ExplorerSideRail.tsx` now renders an `Auto` toggle beside the three rail-mode buttons. Off means manual Windows-style behavior: row click navigates and only the chevron expands. On means the rail follows the open path and auto-expands the active branch chain.
+  - `ExplorerSideRail.tsx` also now resolves row and section chrome from the mode contract instead of relying only on shared static styling. `default` is carded and richer, `compact` is denser and flatter, and `tree` pushes the strongest hierarchy cues and branch lanes.
+  - Local-tree refresh passes now explicitly invalidate the shared directory cache for the refreshed branch targets before reloading, so the auto-follow branch refresh path keeps the side rail in sync after explorer refresh/mutation.
+  - Bookmark folders now expose an explicit ancestor row state when expanded, which makes grouped bookmarks read more like hierarchy instead of a flat list of identical pills.
+- Durable product note:
+  - The local side rail tree is no longer implicitly auto-following by default. Manual chevron expansion is the baseline model; auto-follow is now an explicit operator choice.
+  - Future rail work should extend the mode contract in `src/config/explorerRail.ts` instead of scattering one-off presentation branches through `ExplorerSideRail.tsx`.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerSideRail.test.tsx`
+
 ## 2026-04-16 — Native Dual-Deck Explorer Audio Engine
 
 - Explorer audio preview no longer routes through the webview media stack. The preview pane is now a React transport UI over a native Rust engine.
