@@ -1000,6 +1000,85 @@ describe('FileExplorer view modes', () => {
     expect(screen.queryByText('notes.txt')).not.toBeInTheDocument();
   });
 
+  it.each(['icons-l', 'list'] as const)(
+    'keeps folder icons closed during single-click navigation in %s view',
+    async (viewMode) => {
+      const alphaPath = `${REPO_ROOT}\\alpha`;
+      const childEntries = [{
+        name: 'child.txt',
+        path: `${alphaPath}\\child.txt`,
+        is_dir: false,
+        size: 42,
+        modified: 0,
+        extension: 'txt',
+        is_hidden: false,
+        is_symlink: false,
+      }];
+      const deferredListing = createDeferred<typeof childEntries>();
+      const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+      if (!baseInvokeImplementation) {
+        throw new Error('Missing default invoke mock implementation');
+      }
+
+      vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
+        const payload = args as { path?: string } | undefined;
+        if (command === 'fs_list_dir' || command === 'fs_list_dir_uncached') {
+          return payload?.path === alphaPath ? deferredListing.promise : ENTRIES;
+        }
+        return baseInvokeImplementation(command, args as Parameters<typeof invoke>[1]);
+      });
+
+      useSettingsStore.getState().updateExplorer({
+        viewMode,
+        gridZoom: 0.67,
+        folderClickMode: 'single',
+      });
+
+      renderExplorer();
+      await screen.findByText('alpha');
+
+      expect(getEntryIconSrc('alpha')).not.toContain('folder_open');
+
+      fireEvent.click(screen.getByText('alpha'));
+
+      expect(vi.mocked(invoke).mock.calls.some(([command, args]) => (
+        (command === 'fs_list_dir' || command === 'fs_list_dir_uncached')
+        && (args as { path?: string } | undefined)?.path === alphaPath
+      ))).toBe(true);
+      expect(getEntryIconSrc('alpha')).not.toContain('folder_open');
+
+      deferredListing.resolve(childEntries);
+
+      await waitFor(() => {
+        expect(screen.getByText('child.txt')).toBeInTheDocument();
+      });
+    },
+  );
+
+  it.each(['icons-l', 'list'] as const)(
+    'shows the primed open-folder icon on first click in double-click mode for %s view',
+    async (viewMode) => {
+      useSettingsStore.getState().updateExplorer({
+        viewMode,
+        gridZoom: 0.67,
+        folderClickMode: 'double',
+      });
+
+      renderExplorer();
+      await screen.findByText('alpha');
+
+      expect(getEntryIconSrc('alpha')).not.toContain('folder_open');
+
+      fireEvent.click(screen.getByText('alpha'));
+
+      expect(vi.mocked(invoke).mock.calls.some(([command, args]) => (
+        (command === 'fs_list_dir' || command === 'fs_list_dir_uncached')
+        && (args as { path?: string } | undefined)?.path === `${REPO_ROOT}\\alpha`
+      ))).toBe(false);
+      expect(getEntryIconSrc('alpha')).toContain('folder_open');
+    },
+  );
+
   it('keeps managed theme icons ahead of native icon fallback for mapped explorer entries', async () => {
     useSettingsStore.getState().updateAppearance({ useNativeOsIcons: true });
     useSettingsStore.getState().updateExplorer({

@@ -169,7 +169,10 @@ import {
   useExplorerTaskProgressFeed,
 } from '../store/explorerTaskStore';
 import { useSettingsStore } from '../store/settingsStore';
-import { shouldOpenExplorerEntryOnTrigger } from './fileExplorerClickBehavior';
+import {
+  shouldOpenExplorerEntryOnTrigger,
+  shouldShowExplorerFolderOpenIcon,
+} from './fileExplorerClickBehavior';
 import { resolveExplorerSearchScope } from './fileExplorerSearchScope';
 import type { DocumentPreviewKind } from './documentPreview';
 import {
@@ -4973,6 +4976,20 @@ export function FileExplorer({
     useNativeOsIcons,
   ]);
 
+  const getExplorerEntryIconSrc = useCallback((
+    entry: FileEntry,
+    isSelected: boolean,
+    isDropTarget: boolean,
+  ): string => getRenderableIconSrc(
+    entry,
+    shouldShowExplorerFolderOpenIcon({
+      isDirectory: entry.is_dir,
+      isSelected,
+      isDropTarget,
+      folderClickMode,
+    }),
+  ), [folderClickMode, getRenderableIconSrc]);
+
   const canRenderEntryThumbnail = useCallback((entry: FileEntry): boolean => {
     if (entry.is_dir || currentPathIsCloud || isCloudExplorerPath(entry.path)) {
       return false;
@@ -9766,7 +9783,7 @@ export function FileExplorer({
     const isSel = selected.has(entry.path);
     const isDrop = dragOver === entry.path && entry.is_dir;
     const isRenaming = rename.active && rename.path === entry.path;
-    const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
+    const iconSrc = getExplorerEntryIconSrc(entry, isSel, isDrop);
     const tableThumbnailStageSize = densityStop.table
       ? Math.max(densityStop.table.iconSize + 10, 28)
       : 0;
@@ -10236,7 +10253,7 @@ export function FileExplorer({
             const isSel = selected.has(node.entry.path);
             const isDrop = dragOver === node.entry.path && node.entry.is_dir;
             const isRenaming = rename.active && rename.path === node.entry.path;
-            const iconSrc = getRenderableIconSrc(node.entry, isSel || isDrop);
+            const iconSrc = getExplorerEntryIconSrc(node.entry, isSel, isDrop);
             const highlightBackground = node.emphasis === 'anchor'
               ? 'linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.04))'
               : 'var(--overlay-explorer-chip-bg)';
@@ -10362,7 +10379,7 @@ export function FileExplorer({
     const isSel = selected.has(entry.path);
     const isDrop = dragOver === entry.path && entry.is_dir;
     const isRenaming = rename.active && rename.path === entry.path;
-    const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
+    const iconSrc = getExplorerEntryIconSrc(entry, isSel, isDrop);
     const thumbnailSrc = getRenderableEntryThumbnailSrc(entry, 42);
     return (
       <div
@@ -11024,7 +11041,7 @@ export function FileExplorer({
                     const isSel = selected.has(entry.path);
                     const isDrop = dragOver === entry.path && entry.is_dir;
                     const isRenaming = rename.active && rename.path === entry.path;
-                    const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
+                    const iconSrc = getExplorerEntryIconSrc(entry, isSel, isDrop);
                     const thumbnail = getRenderableEntryThumbnail(
                       entry,
                       activeGridMetrics.iconStageSize,
@@ -11176,7 +11193,7 @@ export function FileExplorer({
                   const isSel = selected.has(entry.path);
                   const isDrop = dragOver === entry.path && entry.is_dir;
                   const isRenaming = rename.active && rename.path === entry.path;
-                  const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
+                  const iconSrc = getExplorerEntryIconSrc(entry, isSel, isDrop);
                   const rowThumbnailStageSize = Math.max((activeRowMetrics?.iconSize ?? 16) + 12, 28);
                   const thumbnail = getRenderableEntryThumbnail(entry, rowThumbnailStageSize);
                   return (
@@ -11348,7 +11365,7 @@ export function FileExplorer({
                     const isSel = selected.has(entry.path);
                     const isDrop = dragOver === entry.path && entry.is_dir;
                     const isRenaming = rename.active && rename.path === entry.path;
-                    const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
+                    const iconSrc = getExplorerEntryIconSrc(entry, isSel, isDrop);
                     const rowThumbnailStageSize = Math.max((activeRowMetrics?.iconSize ?? 16) + 12, 28);
                     const thumbnail = getRenderableEntryThumbnail(entry, rowThumbnailStageSize);
                     const isDetailsMode = effectiveViewMode === 'details';

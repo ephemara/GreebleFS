@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { shouldOpenExplorerEntryOnTrigger } from '../components/fileExplorerClickBehavior';
+import {
+  shouldOpenExplorerEntryOnTrigger,
+  shouldShowExplorerFolderOpenIcon,
+} from '../components/fileExplorerClickBehavior';
 
 describe('shouldOpenExplorerEntryOnTrigger', () => {
   it('opens folders on a plain single click when single-click mode is enabled', () => {
@@ -50,5 +53,37 @@ describe('shouldOpenExplorerEntryOnTrigger', () => {
       plainClick: true,
       folderClickMode: 'double',
     })).toBe(true);
+  });
+
+  it('only shows the open-folder icon for selected folders in double-click mode', () => {
+    expect(shouldShowExplorerFolderOpenIcon({
+      isDirectory: true,
+      isSelected: true,
+      isDropTarget: false,
+      folderClickMode: 'double',
+    })).toBe(true);
+
+    expect(shouldShowExplorerFolderOpenIcon({
+      isDirectory: true,
+      isSelected: true,
+      isDropTarget: false,
+      folderClickMode: 'single',
+    })).toBe(false);
+  });
+
+  it('keeps drag targets open regardless of click mode', () => {
+    expect(shouldShowExplorerFolderOpenIcon({
+      isDirectory: true,
+      isSelected: false,
+      isDropTarget: true,
+      folderClickMode: 'single',
+    })).toBe(true);
+
+    expect(shouldShowExplorerFolderOpenIcon({
+      isDirectory: false,
+      isSelected: false,
+      isDropTarget: true,
+      folderClickMode: 'double',
+    })).toBe(false);
   });
 });

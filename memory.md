@@ -1,5 +1,17 @@
 # GreebleFS Memory
 
+## 2026-04-17 — Folder Open Icon Follows Click Mode
+
+- The explorer folder icon no longer flips to the open variant on single-click navigation. Open-folder rendering now follows the folder click mode so single-click feels immediate while double-click still gets primed selection feedback.
+- Durable implementation shape:
+  - `src/components/fileExplorerClickBehavior.ts` now owns both activation gating and folder-open icon gating via `shouldShowExplorerFolderOpenIcon(...)`.
+  - `src/components/FileExplorer.tsx` uses a shared `getExplorerEntryIconSrc(...)` helper across adaptive grid, list, table/details, constellation, and timeline render paths so the folder open state stays consistent everywhere.
+  - `src/test/fileExplorer.viewModes.test.tsx` now covers single-click navigation staying visually closed while the folder listing is still pending, plus double-click-mode priming in both grid and list views.
+- Durable product note:
+  - If future explorer work changes folder activation semantics, update both the trigger helper and the icon-state helper together. The visual open state should be treated as a deliberate feedback contract, not a generic selection side effect.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorerClickBehavior.test.ts src/test/fileExplorer.viewModes.test.tsx`
+
 ## 2026-04-17 — Native Explorer Video Engine
 
 - Explorer video preview no longer routes runtime playback through the desktop webview `<video>` element. The preview pane is now a React transport shell over a native Rust video engine.
