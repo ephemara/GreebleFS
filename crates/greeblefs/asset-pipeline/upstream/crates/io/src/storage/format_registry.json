@@ -1,0 +1,151 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OptiMatrix Format Registry",
+  "description": "Data-driven configuration for import/export format support",
+  "version": "1.0.0",
+  "formats": {
+    "gltf": {
+      "name": "glTF 2.0",
+      "extensions": [".gltf", ".glb"],
+      "mime_types": ["model/gltf+json", "model/gltf-binary"],
+      "capabilities": {
+        "import": true,
+        "export": true,
+        "supports_meshes": true,
+        "supports_materials": true,
+        "supports_textures": true,
+        "supports_animations": true,
+        "supports_scenes": true
+      },
+      "metadata_mapping": {
+        "extras": "extras",
+        "name": "name",
+        "extensions": "extensions"
+      }
+    },
+    "obj": {
+      "name": "Wavefront OBJ",
+      "extensions": [".obj"],
+      "mime_types": ["model/obj"],
+      "capabilities": {
+        "import": true,
+        "export": true,
+        "supports_meshes": true,
+        "supports_materials": true,
+        "supports_textures": false,
+        "supports_animations": false,
+        "supports_scenes": false
+      },
+      "companion_files": [".mtl"],
+      "metadata_mapping": {
+        "object_name": "name",
+        "group": "tags"
+      }
+    },
+    "fbx": {
+      "name": "Autodesk FBX",
+      "extensions": [".fbx"],
+      "mime_types": ["application/octet-stream"],
+      "capabilities": {
+        "import": true,
+        "export": false,
+        "supports_meshes": true,
+        "supports_materials": true,
+        "supports_textures": true,
+        "supports_animations": true,
+        "supports_scenes": true
+      },
+      "note": "FBX uses JSON schema for data-driven parsing (no C++ SDK dependency)",
+      "schema_path": "fbx_schema.json"
+    },
+    "usd": {
+      "name": "Universal Scene Description",
+      "extensions": [".usd", ".usda", ".usdc", ".usdz"],
+      "mime_types": ["model/vnd.usd+zip"],
+      "capabilities": {
+        "import": true,
+        "export": false,
+        "supports_meshes": true,
+        "supports_materials": true,
+        "supports_textures": true,
+        "supports_animations": true,
+        "supports_scenes": true
+      },
+      "note": "USD uses JSON schema for data-driven parsing",
+      "schema_path": "usd_schema.json"
+    },
+    "pbr_material": {
+      "name": "PBR Material Definition",
+      "extensions": [".pbr.json"],
+      "mime_types": ["application/json"],
+      "capabilities": {
+        "import": true,
+        "export": true,
+        "supports_meshes": false,
+        "supports_materials": true,
+        "supports_textures": false,
+        "supports_animations": false,
+        "supports_scenes": false
+      },
+      "schema_path": "pbr_material_schema.json"
+    },
+    "substance": {
+      "name": "Substance Material",
+      "extensions": [".sbsar", ".sbs"],
+      "mime_types": ["application/octet-stream"],
+      "capabilities": {
+        "import": true,
+        "export": false,
+        "supports_meshes": false,
+        "supports_materials": true,
+        "supports_textures": true,
+        "supports_animations": false,
+        "supports_scenes": false
+      },
+      "note": "Substance materials parsed via metadata extraction",
+      "schema_path": "substance_schema.json"
+    },
+    "png": {
+      "name": "Portable Network Graphics",
+      "extensions": [".png"],
+      "mime_types": ["image/png"],
+      "capabilities": {
+        "import": true,
+        "export": true,
+        "supports_meshes": false,
+        "supports_materials": false,
+        "supports_textures": true,
+        "supports_animations": false,
+        "supports_scenes": false
+      }
+    },
+    "exr": {
+      "name": "OpenEXR",
+      "extensions": [".exr"],
+      "mime_types": ["image/x-exr"],
+      "capabilities": {
+        "import": true,
+        "export": true,
+        "supports_meshes": false,
+        "supports_materials": false,
+        "supports_textures": true,
+        "supports_animations": false,
+        "supports_scenes": false
+      }
+    }
+  },
+  "auto_detection": {
+    "enabled": true,
+    "priority": ["extension", "magic_bytes", "mime_type"],
+    "magic_bytes": {
+      "gltf_binary": [103, 108, 84, 70],
+      "png": [137, 80, 78, 71],
+      "fbx_binary": [75, 97, 121, 100]
+    }
+  },
+  "batch_import": {
+    "enabled": true,
+    "max_concurrent": 8,
+    "progress_reporting": true
+  }
+}

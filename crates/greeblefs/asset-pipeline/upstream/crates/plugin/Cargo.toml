@@ -1,0 +1,39 @@
+[package]
+name = "k-os-plugin"
+version = "0.1.0"
+edition = "2021"
+description = "K_OS Dynamic Plugin System - Dynamic library loading with API versioning, sandboxing, and resource limits"
+
+[lib]
+name = "k_os_plugin"
+path = "src/lib.rs"
+
+[dependencies]
+# === DYNAMIC LIBRARY LOADING ===
+libloading = "0.8"
+
+# === ERROR HANDLING ===
+thiserror = "2.0"
+
+# === SERIALIZATION ===
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# === CONCURRENCY ===
+parking_lot = "0.12"
+
+# === LOGGING ===
+log = "0.4"
+
+# === VERSIONING ===
+semver = "1.0"
+
+# === RESOURCE LIMITS ===
+# For tracking memory and CPU usage
+sysinfo = "0.32"
+
+[dev-dependencies]
+# === TESTING ===
+proptest = "1.5"
+env_logger = "0.11"
+tempfile = "3.13"

@@ -1,0 +1,19 @@
+[package]
+name = "k-os-renderer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+crossbeam-channel = "0.5"
+glam = { version = "0.30", features = ["serde", "bytemuck"] }
+k-os-gpu-pipeline = { path = "../gpu-pipeline" }
+ k-os-eval = { path = "../eval" }
+ k-os-kain = { path = "../kain" }
+ k-os-mesh-processing = { path = "../mesh-processing" }
+k-os-scene = { path = "../scene" }
+naga = { version = "26", features = ["spv-in", "wgsl-out"] }
+parking_lot = "0.12"
+pollster = "0.4.0"
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"
+wgpu = "26"

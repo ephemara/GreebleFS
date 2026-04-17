@@ -1,0 +1,51 @@
+[package]
+name = "k-os-bevy"
+version = "0.1.0"
+description = "K-OS host runtime and viewport shell"
+authors = ["K-OS Team"]
+edition = "2021"
+default-run = "bevy"
+
+[[bin]]
+name = "bevy"
+path = "src/main.rs"
+
+[dependencies]
+# === K-OS ENGINE (All heavy compute lives here) ===
+k-os-brushes = { path = "../../crates/brushes" }
+k-os-material = { path = "../../crates/material" }
+k-os-gpu-pipeline = { path = "../../crates/gpu-pipeline" }
+k-os-workspace-registry = { path = "../../crates/workspace-registry" }
+k-os-mesh = { path = "../../crates/mesh" }
+k-os-sculpt = { path = "../../crates/sculpt" }
+k-os-ui = { path = "../../crates/ui" }
+k-os-game-runtime = { path = "../../crates/game-runtime" }
+k-os-game-framework = { path = "../../crates/game-framework" }
+k-os-game-play = { path = "../../crates/game-play" }
+k-os-game-ai = { path = "../../crates/game-ai" }
+k-os-game-camera = { path = "../../crates/game-camera" }
+k-os-game-input = { path = "../../crates/game-input" }
+k-os-game-sequencer = { path = "../../crates/game-sequencer" }
+
+# === BEVY CORE ===
+bevy = { version = "0.17", default-features = true, features = ["file_watcher"] }
+bevy_panorbit_camera = { version = "0.33", features = ["bevy_egui"] }
+bevy_egui = "0.38"
+bevy_hanabi = "0.17"
+bevy_tweening = "0.14"
+bevy-inspector-egui = "0.35"
+
+# === SHARED DEPS ===
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+log = "0.4"
+env_logger = "0.11"
+glam = { version = "0.30", features = ["serde", "bytemuck"] }
+bytemuck = { version = "1.20", features = ["derive"] }
+wgpu = "26"
+base64 = "0.22"
+rand = "0.8"
+image = "0.25"
+
+# Note: Profile settings are inherited from workspace root Cargo.toml

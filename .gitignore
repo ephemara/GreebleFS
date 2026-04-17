@@ -2,6 +2,7 @@
 
 # --- Node / npm / React / Frontend ---
 node_modules/
+*repo-map.md
 node_modules-linux/
 node_modules-win32/
 node_modules-darwin/
@@ -108,3 +109,4 @@ public/icons/folder_public_open.svg
 public/icons/folder_public.svg
 public/icons/folder_scripts_open.svg
 public/icons/folder_scripts.svg
+src/repomix-output.xml

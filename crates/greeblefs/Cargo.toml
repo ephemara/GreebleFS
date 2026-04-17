@@ -1,0 +1,3 @@
+[workspace]
+members = ["gpu-runtime", "asset-pipeline", "shell-patterns"]
+resolver = "2"
