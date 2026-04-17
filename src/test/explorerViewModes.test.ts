@@ -12,9 +12,9 @@ import {
 } from '../config/explorerViewModes';
 
 describe('explorerViewModes', () => {
-  it('maps legacy view modes into richer explorer presets', () => {
+  it('maps legacy grid mode and preserves first-class row presets', () => {
     expect(normalizeExplorerViewMode('grid')).toBe('icons-l');
-    expect(normalizeExplorerViewMode('list')).toBe('details');
+    expect(normalizeExplorerViewMode('list')).toBe('list');
     expect(normalizeExplorerViewMode('columns')).toBe('columns');
   });
 
@@ -22,6 +22,8 @@ describe('explorerViewModes', () => {
     expect(stepExplorerViewMode('icons-l', 'larger')).toBe('icons-xl');
     expect(stepExplorerViewMode('icons-l', 'smaller')).toBe('icons-m');
     expect(stepExplorerViewMode('icons-m', 'smaller')).toBe('icons-s');
+    expect(stepExplorerViewMode('details', 'larger')).toBe('list');
+    expect(stepExplorerViewMode('list', 'larger')).toBe('columns');
     expect(stepExplorerViewMode('details', 'smaller')).toBe('details');
   });
 

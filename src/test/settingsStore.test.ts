@@ -246,6 +246,12 @@ describe('useSettingsStore.updateExplorer()', () => {
     expect(useSettingsStore.getState().settings.explorer.gridZoom).toBe(defaultSettings.explorer.gridZoom);
   });
 
+  it('preserves the first-class list view mode', () => {
+    const store = useSettingsStore.getState();
+    store.updateExplorer({ viewMode: 'list' });
+    expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('list');
+  });
+
   it('stores custom grid zoom between icon presets', () => {
     const store = useSettingsStore.getState();
     store.updateExplorer({ viewMode: 'icons-m', gridZoom: 0.18 });
@@ -773,7 +779,7 @@ describe('mergeSettingsWithDefaults()', () => {
     expect(merged.explorer.folderClickMode).toBe(defaultSettings.explorer.folderClickMode);
   });
 
-  it('maps legacy explorer grid/list modes into the richer layout presets', () => {
+  it('maps legacy explorer grid mode and preserves persisted row layout presets', () => {
     const mergedGrid = mergeSettingsWithDefaults({
       explorer: {
         viewMode: 'grid',
@@ -787,7 +793,7 @@ describe('mergeSettingsWithDefaults()', () => {
 
     expect(mergedGrid.explorer.viewMode).toBe('icons-l');
     expect(mergedGrid.explorer.gridZoom).toBe(defaultSettings.explorer.gridZoom);
-    expect(mergedList.explorer.viewMode).toBe('details');
+    expect(mergedList.explorer.viewMode).toBe('list');
   });
 
   it('fills in new experimental explorer fields for older persisted settings', () => {

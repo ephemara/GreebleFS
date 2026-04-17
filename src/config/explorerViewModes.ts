@@ -187,9 +187,6 @@ export function normalizeExplorerViewMode(value: unknown): ExplorerViewMode {
   if (value === 'grid') {
     return 'icons-l';
   }
-  if (value === 'list') {
-    return 'details';
-  }
   return isExplorerViewMode(value) ? value : defaultExplorerViewMode;
 }
 

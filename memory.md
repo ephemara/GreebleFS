@@ -1,5 +1,16 @@
 # GreebleFS Memory
 
+## 2026-04-16 — Explorer Ctrl-Wheel Reverse View Fix
+
+- Explorer `Ctrl/Cmd + wheel` view stepping was not actually blocked by the wheel listener. The regression lived in mode normalization: the settings layer still rewrote `viewMode: 'list'` into `'details'`.
+- Durable implementation shape:
+  - `src/config/explorerViewModes.ts` now treats `list` as a first-class persisted explorer view mode instead of a legacy alias.
+  - That change restores the normal reverse zoom chain for one-notch wheel gestures: `details -> list -> columns -> icons-s -> icons-m -> icons-l -> icons-xl`.
+  - `src/test/fileExplorer.viewModes.test.tsx` now covers the real user path by dispatching a `Ctrl+wheel` event from a row element while the explorer is in `details`, proving that the first reverse step persists as `list`.
+  - `src/test/settingsStore.test.ts` and `src/test/explorerViewModes.test.ts` now assert that persisted `list` stays `list`.
+- Durable product note:
+  - Do not overload `normalizeExplorerViewMode()` with legacy migration rules once a mode id becomes part of the live runtime contract. Runtime normalization and one-time legacy migration should stay separate or wheel/menu state machines will silently collapse valid modes.
+
 ## 2026-04-16 — Comprehensive Rust Cargo Test Suite
 
 - `scripts/run-cargo-tests.mjs` is no longer a four-manifest hardcoded helper. It now discovers Rust packages from the repo’s cargo topology, runs them through a shared target-dir cache per workspace, and keeps host-native skips explicit instead of silently omitting big parts of the tree.

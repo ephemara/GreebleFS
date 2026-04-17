@@ -205,6 +205,15 @@ function dispatchLayoutWheel(anchorText: string, deltaY: number) {
   }));
 }
 
+function dispatchLayoutWheelOnElement(element: Element, deltaY: number) {
+  element.dispatchEvent(new WheelEvent('wheel', {
+    bubbles: true,
+    cancelable: true,
+    ctrlKey: true,
+    deltaY,
+  }));
+}
+
 function dispatchLayoutWheelOnFileArea(deltaY: number) {
   const fileArea = document.querySelector('[data-overlay-explorer-plane="file-area"]') as HTMLElement | null;
   if (!fileArea) {
@@ -807,6 +816,19 @@ describe('FileExplorer view modes', () => {
     await waitFor(() => {
       expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('icons-l');
       expect(useSettingsStore.getState().settings.explorer.gridZoom).toBeGreaterThan(0);
+    });
+  });
+
+  it('steps back out of details mode when ctrl-wheel originates from a row element', async () => {
+    useSettingsStore.getState().updateExplorer({ viewMode: 'details' });
+
+    renderExplorer();
+    const entry = await screen.findByText('notes.txt');
+
+    dispatchLayoutWheelOnElement(entry, -120);
+
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe('list');
     });
   });
 
