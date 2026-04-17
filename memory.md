@@ -1,5 +1,20 @@
 # GreebleFS Memory
 
+## 2026-04-17 — AIFF Preview Support + Compact Audio Workbench Summary
+
+- AIFF preview/edit support is now wired through the existing audio preview and transport contracts without introducing a browser `<audio>` fallback.
+- Durable implementation shape:
+  - `src/config/filePreview.ts` now includes `.aif` and `.aiff` in the direct audio playback allowlist, which keeps the explorer preview routing aligned with the existing MIME map and with the native audio workbench.
+  - The Rust audio backend already supported AIFF through Symphonia and the batch/edit registries, so the frontend allowlist was the missing gate.
+  - `src/components/ExplorerAudioWorkbench.tsx` now uses a compact summary strip for the high-value metadata at the top of the panel instead of the larger analysis card grid.
+  - The waveform buckets, spectral bars, and playhead marker are memoized subsurfaces. The playhead line is updated through an imperative RAF-driven transform path, and seek commands are throttled to one RAF commit per frame so scrubbing does not flood the native bridge.
+- Durable product note:
+  - Keep audio metadata summary chips compact and top-loaded. `Hz`, `RMS`, encoding, and similar analysis fields should stay small and shallow, not occupy full analysis cards.
+  - Keep the playhead visual on an imperative/RAF path instead of tying it to parent React state. That is the part of the audio workbench most likely to regress under shell-level rerender churn.
+  - If new audio formats are added later, update the central preview allowlist in `src/config/filePreview.ts` and the backend registry together so preview/edit support stays consistent.
+- Validation:
+  - passed: `bunx vitest run src/test/filePreview.test.ts src/test/explorerAudioWorkbench.test.tsx`
+
 ## 2026-04-17 — Folder Open Icon Follows Click Mode
 
 - The explorer folder icon no longer flips to the open variant on single-click navigation. Open-folder rendering now follows the folder click mode so single-click feels immediate while double-click still gets primed selection feedback.

@@ -1,5 +1,16 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import {
+  forwardRef,
+  memo,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+} from 'react';
 import {
   AlertTriangle,
   AudioLines,
@@ -47,6 +58,13 @@ type ExplorerAudioWorkbenchProps = {
 type ExportDialogMode = 'clip' | 'normalized' | 'convert' | 'overwrite' | null;
 type TimelineDragMode = 'playhead' | 'selectionStart' | 'selectionEnd' | 'fadeIn' | 'fadeOut';
 type ExportState = 'idle' | 'running' | 'saved' | 'error';
+type AudioWorkbenchSummaryTone = 'default' | 'accent';
+
+type AudioWorkbenchSummaryItem = {
+  label: string;
+  value: string;
+  tone?: AudioWorkbenchSummaryTone;
+};
 
 const MINIMUM_SELECTION_SECONDS = 0.05;
 const FADE_KEYBOARD_STEP_SECONDS = 0.1;
@@ -155,6 +173,32 @@ function metricCardStyle(): CSSProperties {
   };
 }
 
+function summaryChipStyle(tone: AudioWorkbenchSummaryTone = 'default'): CSSProperties {
+  const isAccent = tone === 'accent';
+  return {
+    borderRadius: 14,
+    border: isAccent
+      ? '1px solid rgba(123, 205, 255, 0.28)'
+      : '1px solid var(--overlay-explorer-chip-border)',
+    background: isAccent ? 'rgba(123, 205, 255, 0.08)' : 'rgba(255,255,255,0.04)',
+    padding: '7px 10px',
+    display: 'grid',
+    gap: 2,
+    minWidth: 0,
+    flex: '0 1 170px',
+  };
+}
+
+const summaryValueStyle: CSSProperties = {
+  fontSize: 12,
+  fontWeight: 700,
+  lineHeight: 1.2,
+  color: 'var(--overlay-text-primary)',
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+};
+
 function fadeOverlayStyle(kind: 'in' | 'out'): CSSProperties {
   const isFadeIn = kind === 'in';
   return {
@@ -197,6 +241,230 @@ function fadeHandleStyle(kind: 'in' | 'out'): CSSProperties {
   };
 }
 
+type AudioWorkbenchPlayheadMarkerHandle = {
+  setPreviewSeconds: (seconds: number) => void;
+  clearPreview: () => void;
+};
+
+type AudioWorkbenchPlayheadMarkerProps = {
+  currentTimeSeconds: number;
+  durationSeconds: number;
+  isPlaying: boolean;
+  playbackRate: number;
+};
+
+type AudioWorkbenchWaveformBarsProps = {
+  waveformBuckets: ExplorerAudioPreviewAnalysis['waveformBuckets'];
+  isAnalyzing: boolean;
+};
+
+type AudioWorkbenchSpectralBarsProps = {
+  spectralBands: number[];
+};
+
+const AudioWorkbenchWaveformBars = memo(function AudioWorkbenchWaveformBars({
+  waveformBuckets,
+  isAnalyzing,
+}: AudioWorkbenchWaveformBarsProps) {
+  if (waveformBuckets.length === 0) {
+    return (
+      <div
+        style={{
+          display: 'grid',
+          placeItems: 'center',
+          width: '100%',
+          color: 'var(--overlay-text-muted)',
+          fontSize: 12,
+          minHeight: 108,
+        }}
+      >
+        {isAnalyzing ? 'Building waveform…' : 'Waveform unavailable'}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {waveformBuckets.map((bucket) => (
+        <div
+          key={bucket.index}
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minWidth: 2,
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              height: `${Math.max(8, bucket.peakLevel * 100)}%`,
+              borderRadius: 999,
+              background:
+                'linear-gradient(180deg, rgba(123, 205, 255, 0.9), rgba(66, 151, 255, 0.28))',
+              opacity: bucket.rmsLevel > 0.05 ? 1 : 0.55,
+            }}
+          />
+        </div>
+      ))}
+    </>
+  );
+});
+
+const AudioWorkbenchSpectralBars = memo(function AudioWorkbenchSpectralBars({
+  spectralBands,
+}: AudioWorkbenchSpectralBarsProps) {
+  if (spectralBands.length === 0) {
+    return null;
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      <div style={miniLabelStyle}>Spectral Profile</div>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'end',
+          gap: 4,
+          height: 92,
+          padding: '8px 10px',
+          borderRadius: 14,
+          border: '1px solid rgba(255,255,255,0.1)',
+          background: 'rgba(3, 7, 14, 0.72)',
+        }}
+      >
+        {spectralBands.map((band, index) => (
+          <div
+            key={`${index}-${band}`}
+            style={{
+              flex: 1,
+              height: `${Math.max(6, band * 100)}%`,
+              borderRadius: 999,
+              background:
+                'linear-gradient(180deg, rgba(255, 224, 134, 0.95), rgba(94, 149, 255, 0.34))',
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+});
+
+const AudioWorkbenchPlayheadMarker = memo(
+  forwardRef<AudioWorkbenchPlayheadMarkerHandle, AudioWorkbenchPlayheadMarkerProps>(
+    function AudioWorkbenchPlayheadMarker(
+      { currentTimeSeconds, durationSeconds, isPlaying, playbackRate },
+      ref,
+    ) {
+      const playheadRef = useRef<HTMLDivElement | null>(null);
+      const previewSecondsRef = useRef<number | null>(null);
+      const playbackBaseSecondsRef = useRef(currentTimeSeconds);
+      const playbackBaseTimestampRef = useRef(0);
+      const playbackFrameRef = useRef<number | null>(null);
+
+      function paint(seconds: number) {
+        const node = playheadRef.current;
+        if (!node || durationSeconds <= 0) {
+          return;
+        }
+        const bounded = clamp(seconds, 0, durationSeconds);
+        node.style.transform = `translate3d(${(bounded / durationSeconds) * 100}%, 0, 0)`;
+      }
+
+      useImperativeHandle(
+        ref,
+        () => ({
+          setPreviewSeconds(seconds: number) {
+            if (durationSeconds <= 0) {
+              return;
+            }
+            const bounded = clamp(seconds, 0, durationSeconds);
+            previewSecondsRef.current = bounded;
+            paint(bounded);
+          },
+          clearPreview() {
+            previewSecondsRef.current = null;
+            paint(currentTimeSeconds);
+          },
+        }),
+        [currentTimeSeconds, durationSeconds],
+      );
+
+      useLayoutEffect(() => {
+        const bounded = clamp(currentTimeSeconds, 0, durationSeconds);
+        playbackBaseSecondsRef.current = bounded;
+        playbackBaseTimestampRef.current = performance.now();
+        const previewSeconds = previewSecondsRef.current;
+        if (previewSeconds == null) {
+          paint(bounded);
+        } else if (Math.abs(previewSeconds - bounded) < 0.02) {
+          previewSecondsRef.current = null;
+          paint(bounded);
+        } else {
+          paint(previewSeconds);
+        }
+      }, [currentTimeSeconds, durationSeconds]);
+
+      useEffect(() => {
+        if (!isPlaying || durationSeconds <= 0) {
+          paint(previewSecondsRef.current ?? playbackBaseSecondsRef.current);
+          return undefined;
+        }
+
+        const tick = (now: number) => {
+          const previewSeconds = previewSecondsRef.current;
+          const nextSeconds =
+            previewSeconds != null
+              ? previewSeconds
+              : clamp(
+                  playbackBaseSecondsRef.current +
+                    ((now - playbackBaseTimestampRef.current) / 1000) * playbackRate,
+                  0,
+                  durationSeconds,
+                );
+          paint(nextSeconds);
+          playbackFrameRef.current = window.requestAnimationFrame(tick);
+        };
+
+        playbackFrameRef.current = window.requestAnimationFrame(tick);
+        return () => {
+          if (playbackFrameRef.current != null) {
+            window.cancelAnimationFrame(playbackFrameRef.current);
+            playbackFrameRef.current = null;
+          }
+        };
+      }, [durationSeconds, isPlaying, playbackRate]);
+
+      return (
+        <div
+          ref={playheadRef}
+          style={{
+            position: 'absolute',
+            inset: '6px 0',
+            width: '100%',
+            pointerEvents: 'none',
+            transform: 'translate3d(0%, 0, 0)',
+            willChange: 'transform',
+            zIndex: 5,
+          }}
+        >
+          <div
+            style={{
+              width: 2,
+              height: '100%',
+              marginLeft: -1,
+              borderRadius: 999,
+              background: 'rgba(255,255,255,0.92)',
+              boxShadow: '0 0 12px rgba(255,255,255,0.35)',
+            }}
+          />
+        </div>
+      );
+    },
+  ),
+);
+
 export function ExplorerAudioWorkbench({
   audioPath,
   audioName,
@@ -231,6 +499,9 @@ export function ExplorerAudioWorkbench({
   const [workbenchError, setWorkbenchError] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [spectrogramSource, setSpectrogramSource] = useState<string | null>(null);
+  const seekFrameRef = useRef<number | null>(null);
+  const pendingSeekSecondsRef = useRef(0);
+  const playheadMarkerRef = useRef<AudioWorkbenchPlayheadMarkerHandle | null>(null);
 
   const previewDeck = getAudioDeckState(snapshot, activeDeckId);
   const effectiveDuration = Math.max(
@@ -250,13 +521,15 @@ export function ExplorerAudioWorkbench({
     selectionDuration > 0 ? `${(boundedFadeOutSeconds / selectionDuration) * 100}%` : '0%';
   const fadeInHandleLeft = `calc(${selectionLeft} + ${fadeInWidth})`;
   const fadeOutHandleLeft = `calc(${selectionLeft} + ${selectionWidth} - ${fadeOutWidth})`;
-  const playheadLeft =
-    effectiveDuration > 0
-      ? `${(previewDeck.currentTimeSeconds / effectiveDuration) * 100}%`
-      : '0%';
 
   useEffect(() => {
     let cancelled = false;
+    if (seekFrameRef.current != null) {
+      window.cancelAnimationFrame(seekFrameRef.current);
+      seekFrameRef.current = null;
+    }
+    pendingSeekSecondsRef.current = 0;
+    playheadMarkerRef.current?.clearPreview();
     setAnalysis(null);
     setSelectionStart(0);
     setSelectionEnd(0);
@@ -342,7 +615,7 @@ export function ExplorerAudioWorkbench({
   const waveformBuckets = analysis?.waveformBuckets ?? [];
   const spectralBands = analysis?.spectralBands ?? [];
 
-  const analysisCards = useMemo(
+  const summaryItems = useMemo<AudioWorkbenchSummaryItem[]>(
     () => [
       {
         label: 'Loaded File',
@@ -359,6 +632,7 @@ export function ExplorerAudioWorkbench({
           : snapshot.outputSampleRateHz
             ? `${snapshot.outputSampleRateHz.toLocaleString()} Hz`
             : 'n/a',
+        tone: 'accent',
       },
       {
         label: 'Channels',
@@ -374,8 +648,7 @@ export function ExplorerAudioWorkbench({
             .filter(Boolean)
             .join(' · ') || 'n/a',
       },
-      { label: 'Peak', value: formatDb(analysis?.peakLevel) },
-      { label: 'RMS', value: formatDb(analysis?.rmsLevel) },
+      { label: 'Peak / RMS', value: `${formatDb(analysis?.peakLevel)} / ${formatDb(analysis?.rmsLevel)}` },
       {
         label: 'Headroom',
         value:
@@ -385,18 +658,43 @@ export function ExplorerAudioWorkbench({
       },
       { label: 'File Size', value: formatSize(audioSize) },
     ],
-    [analysis, audioName, audioSize, effectiveDuration, previewDeck.loadedName, snapshot.outputSampleRateHz],
+    [
+      analysis,
+      audioName,
+      audioSize,
+      effectiveDuration,
+      previewDeck.loadedName,
+      snapshot.outputSampleRateHz,
+    ],
   );
+
+  useEffect(() => {
+    return () => {
+      if (seekFrameRef.current != null) {
+        window.cancelAnimationFrame(seekFrameRef.current);
+        seekFrameRef.current = null;
+      }
+    };
+  }, []);
 
   function syncPlayhead(nextTime: number) {
     if (effectiveDuration <= 0) {
       return;
     }
     const bounded = clamp(nextTime, 0, effectiveDuration);
-    void seekAudioDeck(activeDeckId, bounded).catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      setWorkbenchError(message);
-      setWorkbenchStatus('Seek command failed.');
+    pendingSeekSecondsRef.current = bounded;
+    playheadMarkerRef.current?.setPreviewSeconds(bounded);
+    if (seekFrameRef.current != null) {
+      return;
+    }
+    seekFrameRef.current = window.requestAnimationFrame(() => {
+      seekFrameRef.current = null;
+      const pendingSeconds = pendingSeekSecondsRef.current;
+      void seekAudioDeck(activeDeckId, pendingSeconds).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        setWorkbenchError(message);
+        setWorkbenchStatus('Seek command failed.');
+      });
     });
   }
 
@@ -476,6 +774,7 @@ export function ExplorerAudioWorkbench({
     try {
       if (previewDeck.isPlaying) {
         await pauseAudioDeck(activeDeckId);
+        playheadMarkerRef.current?.clearPreview();
         setWorkbenchError(null);
         setWorkbenchStatus('Playback paused.');
         return;
@@ -554,6 +853,7 @@ export function ExplorerAudioWorkbench({
   async function handleStopPlayback() {
     try {
       await stopAudioDeck(activeDeckId);
+      playheadMarkerRef.current?.clearPreview();
       setWorkbenchError(null);
       setWorkbenchStatus('Playback stopped.');
     } catch (error) {
@@ -787,27 +1087,17 @@ export function ExplorerAudioWorkbench({
                   border: '1px solid var(--overlay-explorer-chip-border)',
                   background: 'rgba(255,255,255,0.03)',
                   padding: 10,
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                  display: 'flex',
+                  flexWrap: 'wrap',
                   gap: 8,
+                  alignItems: 'stretch',
                 }}
               >
-                {analysisCards.map((card) => (
-                  <div key={card.label} style={metricCardStyle()}>
-                    <div style={miniLabelStyle}>{card.label}</div>
-                    <div
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 800,
-                        lineHeight: 1.2,
-                        color: 'var(--overlay-text-primary)',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                      title={card.value}
-                    >
-                      {card.value}
+                {summaryItems.map((item) => (
+                  <div key={item.label} style={summaryChipStyle(item.tone)}>
+                    <div style={miniLabelStyle}>{item.label}</div>
+                    <div style={summaryValueStyle} title={item.value}>
+                      {item.value}
                     </div>
                   </div>
                 ))}
@@ -833,43 +1123,10 @@ export function ExplorerAudioWorkbench({
                     padding: '18px 12px',
                   }}
                 >
-                  {waveformBuckets.length > 0 ? (
-                    waveformBuckets.map((bucket) => (
-                      <div
-                        key={bucket.index}
-                        style={{
-                          flex: 1,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          minWidth: 2,
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: '100%',
-                            height: `${Math.max(8, bucket.peakLevel * 100)}%`,
-                            borderRadius: 999,
-                            background:
-                              'linear-gradient(180deg, rgba(123, 205, 255, 0.9), rgba(66, 151, 255, 0.28))',
-                            opacity: bucket.rmsLevel > 0.05 ? 1 : 0.55,
-                          }}
-                        />
-                      </div>
-                    ))
-                  ) : (
-                    <div
-                      style={{
-                        display: 'grid',
-                        placeItems: 'center',
-                        width: '100%',
-                        color: 'var(--overlay-text-muted)',
-                        fontSize: 12,
-                      }}
-                    >
-                      {isAnalyzing ? 'Building waveform…' : 'Waveform unavailable'}
-                    </div>
-                  )}
+                  <AudioWorkbenchWaveformBars
+                    waveformBuckets={waveformBuckets}
+                    isAnalyzing={isAnalyzing}
+                  />
                   <div
                     style={{
                       position: 'absolute',
@@ -971,17 +1228,12 @@ export function ExplorerAudioWorkbench({
                       left: fadeOutHandleLeft,
                     }}
                   />
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: 6,
-                      bottom: 6,
-                      left: playheadLeft,
-                      width: 2,
-                      background: 'rgba(255,255,255,0.92)',
-                      boxShadow: '0 0 12px rgba(255,255,255,0.35)',
-                      pointerEvents: 'none',
-                    }}
+                  <AudioWorkbenchPlayheadMarker
+                    ref={playheadMarkerRef}
+                    currentTimeSeconds={previewDeck.currentTimeSeconds}
+                    durationSeconds={effectiveDuration}
+                    isPlaying={previewDeck.isPlaying}
+                    playbackRate={previewDeck.rate}
                   />
                 </div>
 
@@ -1228,36 +1480,7 @@ export function ExplorerAudioWorkbench({
                   ))}
                 </div>
 
-                {spectralBands.length > 0 ? (
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    <div style={miniLabelStyle}>Spectral Profile</div>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'end',
-                        gap: 4,
-                        height: 92,
-                        padding: '8px 10px',
-                        borderRadius: 14,
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        background: 'rgba(3, 7, 14, 0.72)',
-                      }}
-                    >
-                      {spectralBands.map((band, index) => (
-                        <div
-                          key={`${index}-${band}`}
-                          style={{
-                            flex: 1,
-                            height: `${Math.max(6, band * 100)}%`,
-                            borderRadius: 999,
-                            background:
-                              'linear-gradient(180deg, rgba(255, 224, 134, 0.95), rgba(94, 149, 255, 0.34))',
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
+                <AudioWorkbenchSpectralBars spectralBands={spectralBands} />
 
                 {spectrogramSource ? (
                   <div style={{ display: 'grid', gap: 8 }}>

@@ -74,6 +74,8 @@ const DIRECT_AUDIO_PLAYBACK_EXTENSION_SET = new Set<string>([
   "mp3",
   "wav",
   "wave",
+  "aif",
+  "aiff",
   "ogg",
   "oga",
   "opus",

@@ -50,6 +50,8 @@ describe("filePreview config", () => {
     );
     expect(getExplorerAudioExportFormatDefinition("txt")).toBeNull();
     expect(isDirectAudioPreviewExtension("mp3")).toBe(true);
+    expect(isDirectAudioPreviewExtension("aif")).toBe(true);
+    expect(isDirectAudioPreviewExtension(".aiff")).toBe(true);
     expect(isDirectAudioPreviewExtension("wma")).toBe(false);
   });
 
