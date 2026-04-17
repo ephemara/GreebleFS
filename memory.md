@@ -1,5 +1,40 @@
 # GreebleFS Memory
 
+## 2026-04-16 — Comprehensive Rust Cargo Test Suite
+
+- `scripts/run-cargo-tests.mjs` is no longer a four-manifest hardcoded helper. It now discovers Rust packages from the repo’s cargo topology, runs them through a shared target-dir cache per workspace, and keeps host-native skips explicit instead of silently omitting big parts of the tree.
+- Durable implementation shape:
+  - `scripts/rust-cargo-test-suite.config.mjs` is the suite manifest. It defines the Rust workspaces the repo cares about and the host-platform skip rules for native-only crates.
+  - The suite now walks both the root Rust surface and the vendored Yazi workspace, so `test:rust` covers `src-tauri`, top-level shared crates, `crates/yazi-specta`, and the embedded `crates/fileexplorer/crates/*` packages.
+  - Linux skips are now explicit for `file-opening-macos`, `file-opening-windows`, and `sd-desktop-macos` rather than implicit through an under-scoped manifest list. Those packages still require native macOS/Windows hosts for real execution coverage.
+  - The suite supports `--list`, `--no-run`, `--workspace <id>`, and passthrough cargo args after `--`, which makes it useful both as the default repo gate and as a targeted debugging tool.
+  - The vendored Yazi workspace needed test-hardening to be runnable here:
+    - `yazi-codegen` test targets now pull `mlua` with `vendored` enabled so integration tests do not depend on a system `lua55.pc`.
+    - `yazi-widgets` now mirrors the rest of the Yazi crates with a `vendored-lua` default feature.
+    - `yazi-watcher` tests were fixed for the newer `PathDyn` API and now serialize their global-state tests through a crate-level test mutex so reporter/watched tests do not race each other.
+- Durable product note:
+  - `bun run test:rust` is now the correct Rust entrypoint for repo-wide coverage on the current host.
+  - Full host coverage is platform-scoped by design. Linux can prove the Linux-capable Rust surface; macOS- and Windows-only crates still need their native hosts.
+  - The `src-tauri` backend still has a known long-running search/cache test cluster. The repo-wide full execution pass reaches that lane and can spend multiple minutes there without surfacing new assertion failures. For fast backend iteration, use targeted filters before defaulting to the full `greeblefs` suite.
+- Validation:
+  - passed: `node scripts/run-cargo-tests.mjs --list`
+  - passed: `node scripts/run-cargo-tests.mjs --no-run`
+  - passed: `cargo test --manifest-path crates/fileexplorer/crates/yazi-codegen/Cargo.toml --no-run`
+  - passed: `cargo test --manifest-path crates/fileexplorer/crates/yazi-watcher/Cargo.toml`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml external_path_invalidation_refreshes_parent_directory_listing_cache -- --nocapture`
+  - partial but informative: `node scripts/run-cargo-tests.mjs` progressed through the full crate set and reached the existing long-running `src-tauri` search/cache block on warm caches without any new assertion failures after the watcher fixes.
+
+## 2026-04-16 — Explorer Drag Preview Cleanup
+
+- Explorer file drags no longer rely on the browser/webview's default row snapshot. That path was producing oversized, column-bloated drag ghosts during in-app explorer transfers.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now draws a compact canvas-backed drag chip and feeds it through `dataTransfer.setDragImage(...)` for explorer entry drags.
+  - The drag chip is intentionally minimal: accent dot, truncated primary label, and an optional `+N` badge for multi-selection drags. The same canvas is reused across drags instead of recreating a fresh element every time.
+  - The old 1x1 transparent canvas still exists only as a fallback when the richer drag-preview canvas cannot be rendered.
+  - Explorer drag intent semantics remain unchanged for now: plain drag stays internal, `Alt/Option` requests native drag-out. The stale rail helper copy was corrected to match that actual contract.
+- Durable product note:
+  - If drag visuals regress again, check `applyExplorerNativeFeelingDragImage()` before changing row rendering or selection styling. The drag preview is now a separate explicit surface instead of an accidental browser snapshot of the source row.
+
 ## 2026-04-16 — Terminal Split Tree + Resizable Workspace Panes
 
 - The integrated terminal is no longer a flat `paneIds[]` list that reflows an entire tab whenever one split changes. Terminal workspaces now behave like targeted split trees with draggable dividers.

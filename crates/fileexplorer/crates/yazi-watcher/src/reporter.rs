@@ -68,26 +68,22 @@ impl Reporter {
 
 #[cfg(test)]
 mod tests {
-	use std::sync::OnceLock;
-
 	use tokio::sync::mpsc;
 	use yazi_shared::url::UrlBuf;
 
 	use super::*;
 	use crate::Watchee;
 
-	fn init_watcher_tests() {
-		static INIT: OnceLock<()> = OnceLock::new();
-
-		yazi_shared::init_tests();
-		INIT.get_or_init(crate::init);
+	fn init_watcher_tests() -> std::sync::MutexGuard<'static, ()> {
+		let guard = crate::lock_test_runtime();
 		WATCHED.write().clear();
 		LINKED.write().clear();
+		guard
 	}
 
 	#[tokio::test]
 	async fn report_remote_emits_parent_and_child_for_watched_roots() {
-		init_watcher_tests();
+		let _guard = init_watcher_tests();
 
 		let parent: UrlBuf = "sftp://demo//vault".parse().expect("valid parent url");
 		let child: UrlBuf = "sftp://demo:2:1//vault/file.txt".parse().expect("valid child url");
@@ -107,7 +103,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn report_remote_ignores_unwatched_roots() {
-		init_watcher_tests();
+		let _guard = init_watcher_tests();
 
 		let child: UrlBuf = "sftp://demo:2:1//vault/file.txt".parse().expect("valid child url");
 		let (_local_tx, mut local_rx) = mpsc::unbounded_channel();

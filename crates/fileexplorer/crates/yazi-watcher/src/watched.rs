@@ -63,21 +63,20 @@ impl Watched {
 
 #[cfg(test)]
 mod tests {
-	use std::sync::OnceLock;
-
 	use super::*;
+	use crate::WATCHED;
 	use yazi_shared::url::UrlBuf;
 
-	fn init_watcher_tests() {
-		static INIT: OnceLock<()> = OnceLock::new();
-
-		yazi_shared::init_tests();
-		INIT.get_or_init(crate::init);
+	fn init_watcher_tests() -> std::sync::MutexGuard<'static, ()> {
+		let guard = crate::lock_test_runtime();
+		WATCHED.write().clear();
+		crate::local::LINKED.write().clear();
+		guard
 	}
 
 	#[tokio::test]
 	async fn contains_url_matches_primary_and_alt_local_watchers() {
-		init_watcher_tests();
+		let _guard = init_watcher_tests();
 
 		let path = std::env::temp_dir().join("yazi-watcher-watched-primary");
 		let mut watched = Watched::default();
@@ -95,7 +94,7 @@ mod tests {
 
 	#[test]
 	fn find_by_cache_decodes_sftp_cache_paths_for_watched_roots() {
-		init_watcher_tests();
+		let _guard = init_watcher_tests();
 
 		let mut watched = Watched::default();
 		let remote: UrlBuf = "sftp://demo//vault".parse().expect("valid remote url");
