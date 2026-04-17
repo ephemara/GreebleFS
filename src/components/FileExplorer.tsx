@@ -70,8 +70,8 @@ import {
   resolveExplorerModeProfileChromeLayoutId,
   type ExplorerModeProfileDefinition,
 } from '../config/explorerModeProfiles';
-import { getFolderIconSrc } from '../config/folderIcons';
-import { getBuiltInIconTheme, resolveFileIconSrc, resolveIconSrc } from '../config/iconTheme';
+import { getFolderIconSrc, resolveFolderIcon } from '../config/folderIcons';
+import { getBuiltInIconTheme, resolveFileIcon, resolveFileIconSrc, resolveIconSrc } from '../config/iconTheme';
 import type { ExplorerLayoutMode } from '../config/layoutProfiles';
 import {
   getAdjacentExplorerGridMode,
@@ -963,6 +963,19 @@ function getIconSrc(
     return getFolderIconSrc(entry.path, open, { ...folderConfig, iconTheme });
   }
   return resolveFileIconSrc(entry.name, getEntryExtension(entry), iconTheme);
+}
+
+function shouldPreferManagedExplorerIcon(
+  entry: FileEntry,
+  folderConfig: Parameters<typeof getFolderIconSrc>[2] | undefined,
+  iconTheme = getBuiltInIconTheme(),
+): boolean {
+  if (entry.is_dir) {
+    const resolution = resolveFolderIcon(entry.path, { ...folderConfig, iconTheme });
+    return Boolean(resolution.matchedRule) || resolution.icon !== iconTheme.folder;
+  }
+
+  return resolveFileIcon(entry.name, getEntryExtension(entry), iconTheme).matchKind !== 'default';
 }
 
 function getNativeIconRequest(entry: FileEntry): OverlayNativeIconRequest {
@@ -4197,7 +4210,27 @@ export function FileExplorer({
     }
   }, [refresh, resolveAudioBatchTargets]);
 
+  const shouldUseManagedIconSrc = useCallback((entry: FileEntry) => (
+    shouldPreferManagedExplorerIcon(entry, {
+      rules: explorerSettings.folderIconRules,
+      defaultIcon: explorerSettings.defaultFolderIcon,
+    }, themeIconTheme)
+  ), [
+    explorerSettings.defaultFolderIcon,
+    explorerSettings.folderIconRules,
+    themeIconTheme,
+  ]);
+
   const getRenderableIconSrc = useCallback((entry: FileEntry, open = false) => {
+    const managedIconSrc = getIconSrc(entry, open, {
+      rules: explorerSettings.folderIconRules,
+      defaultIcon: explorerSettings.defaultFolderIcon,
+    }, themeIconTheme);
+
+    if (!useNativeOsIcons || shouldUseManagedIconSrc(entry)) {
+      return managedIconSrc;
+    }
+
     if (useNativeOsIcons) {
       const nativeIconSrc = nativeIconMap[getNativeIconCacheKey(entry.path, DEFAULT_NATIVE_ICON_SIZE)];
       if (nativeIconSrc) {
@@ -4205,14 +4238,12 @@ export function FileExplorer({
       }
     }
 
-    return getIconSrc(entry, open, {
-      rules: explorerSettings.folderIconRules,
-      defaultIcon: explorerSettings.defaultFolderIcon,
-    }, themeIconTheme);
+    return managedIconSrc;
   }, [
     explorerSettings.defaultFolderIcon,
     explorerSettings.folderIconRules,
     nativeIconMap,
+    shouldUseManagedIconSrc,
     themeIconTheme,
     useNativeOsIcons,
   ]);
@@ -8369,6 +8400,7 @@ export function FileExplorer({
     }
 
     const pendingEntries = virtualizedEntries
+      .filter(entry => !shouldUseManagedIconSrc(entry))
       .map(entry => ({
         entry,
         key: getNativeIconCacheKey(entry.path, DEFAULT_NATIVE_ICON_SIZE),
@@ -8477,7 +8509,7 @@ export function FileExplorer({
       disposed = true;
       window.clearTimeout(batchTimer);
     };
-  }, [loading, nativeIconLoadingKeys, nativeIconMap, recordExplorerMetric, useNativeOsIcons, virtualizedEntries]);
+  }, [loading, nativeIconLoadingKeys, nativeIconMap, recordExplorerMetric, shouldUseManagedIconSrc, useNativeOsIcons, virtualizedEntries]);
 
   useEffect(() => {
     if (

@@ -123,6 +123,25 @@ async function removeLegacyFolderIcons() {
 async function main() {
   const syncSummary = await syncCanonicalIcons();
   const removedCount = await removeLegacyFolderIcons();
+
+  if (syncSummary.copiedCount === 0 && syncSummary.totalCount > 0) {
+    const sourceDirectoryStatus = await Promise.all(
+      sourceDirectories.map(async sourceDir => ({
+        sourceDir,
+        exists: await pathExists(sourceDir),
+      })),
+    );
+
+    const formattedSourceDirectoryStatus = sourceDirectoryStatus
+      .map(({ sourceDir, exists }) => `${sourceDir} [${exists ? 'present' : 'missing'}]`)
+      .join(', ');
+
+    throw new Error(
+      `Canonical icon sync did not find any real source icons. Checked: ${formattedSourceDirectoryStatus}. ` +
+      'Install `material-icon-theme` or provide `vscode-icon-theme/icons` before running dev/build so the explorer does not fall back to placeholder file/folder art.',
+    );
+  }
+
   console.log(
     `Synced ${syncSummary.totalCount} canonical icons (${syncSummary.copiedCount} copied, ${syncSummary.fallbackCount} generated) and removed ${removedCount} legacy folder icons.`,
   );

@@ -32,6 +32,11 @@ export interface OverlayResolvedIconTheme {
   folderNamesExpanded: Record<string, string>;
 }
 
+export interface OverlayFileIconResolution {
+  iconId: string;
+  matchKind: 'fileName' | 'extension' | 'default';
+}
+
 const ICON_BASE = '/icons/';
 
 function normalizeIconId(value: string): string {
@@ -176,12 +181,37 @@ export function resolveFileIconId(
   extension: string,
   iconTheme?: OverlayResolvedIconTheme,
 ): string {
+  return resolveFileIcon(entryName, extension, iconTheme).iconId;
+}
+
+export function resolveFileIcon(
+  entryName: string,
+  extension: string,
+  iconTheme?: OverlayResolvedIconTheme,
+): OverlayFileIconResolution {
   const theme = iconTheme ?? BUILT_IN_ICON_THEME;
   const normalizedName = entryName.trim().toLowerCase();
   const normalizedExtension = extension.trim().replace(/^\./, '').toLowerCase();
-  return theme.fileNames[normalizedName]
-    ?? theme.fileExtensions[normalizedExtension]
-    ?? theme.file;
+  const fileNameMatch = theme.fileNames[normalizedName];
+  if (fileNameMatch) {
+    return {
+      iconId: fileNameMatch,
+      matchKind: 'fileName',
+    };
+  }
+
+  const extensionMatch = theme.fileExtensions[normalizedExtension];
+  if (extensionMatch) {
+    return {
+      iconId: extensionMatch,
+      matchKind: 'extension',
+    };
+  }
+
+  return {
+    iconId: theme.file,
+    matchKind: 'default',
+  };
 }
 
 export function resolveFileIconSrc(
@@ -190,6 +220,6 @@ export function resolveFileIconSrc(
   iconTheme?: OverlayResolvedIconTheme,
 ): string {
   const theme = iconTheme ?? BUILT_IN_ICON_THEME;
-  const iconId = resolveFileIconId(entryName, extension, theme);
+  const iconId = resolveFileIcon(entryName, extension, theme).iconId;
   return resolveIconSrc(iconId, theme) ?? `${ICON_BASE}${theme.file}.svg`;
 }

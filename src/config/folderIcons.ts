@@ -41,6 +41,11 @@ export interface FolderIconResolverConfig {
   iconTheme?: OverlayResolvedIconTheme;
 }
 
+export interface FolderIconResolution {
+  icon: FolderIconValue;
+  matchedRule: FolderIconRule | null;
+}
+
 function titleCase(value: string): string {
   return value
     .split(/\s+/g)
@@ -262,21 +267,33 @@ function findMatchingRule(folderPath: string, rules: readonly FolderIconRule[]):
   return null;
 }
 
-export function resolveFolderIconPair(folderPath: string, config: FolderIconResolverConfig = {}): GeneratedFolderIconPair {
+export function resolveFolderIcon(
+  folderPath: string,
+  config: FolderIconResolverConfig = {},
+): FolderIconResolution {
   const rules = getEffectiveRules(config.rules, config.iconTheme);
   const defaultIcon = config.defaultIcon ?? DEFAULT_FOLDER_ICON_VALUE;
   const matchedRule = findMatchingRule(folderPath.trim(), rules);
 
   if (matchedRule) {
-    return getIconPair(matchedRule.icon, config.iconTheme);
+    return {
+      icon: matchedRule.icon,
+      matchedRule,
+    };
   }
 
-  return getIconPair(defaultIcon, config.iconTheme);
+  return {
+    icon: defaultIcon,
+    matchedRule: null,
+  };
+}
+
+export function resolveFolderIconPair(folderPath: string, config: FolderIconResolverConfig = {}): GeneratedFolderIconPair {
+  const resolution = resolveFolderIcon(folderPath, config);
+  return getIconPair(resolution.icon, config.iconTheme);
 }
 
 export function getFolderIconSrc(folderPath: string, open = false, config: FolderIconResolverConfig = {}): string {
-  const rules = getEffectiveRules(config.rules, config.iconTheme);
-  const matchedRule = findMatchingRule(folderPath.trim(), rules);
-  const icon = matchedRule?.icon ?? config.defaultIcon ?? DEFAULT_FOLDER_ICON_VALUE;
-  return getNamedFolderIconSrc(icon, open, config.iconTheme);
+  const resolution = resolveFolderIcon(folderPath, config);
+  return getNamedFolderIconSrc(resolution.icon, open, config.iconTheme);
 }

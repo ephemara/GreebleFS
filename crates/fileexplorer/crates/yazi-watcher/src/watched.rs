@@ -102,9 +102,9 @@ mod tests {
 		watched.insert(Watchee::Remote(remote.clone().into()));
 
 		let cache = Xdg::cache_dir().join("sftp-demo").join(".%2Fvault");
-		assert_eq!(watched.find_by_cache(cache.as_path()), Some(remote));
+		assert_eq!(watched.find_by_cache(PathDyn::Os(cache.as_path())), Some(remote));
 
 		let other_cache = Xdg::cache_dir().join("sftp-demo").join(".%2Fother");
-		assert_eq!(watched.find_by_cache(other_cache.as_path()), None);
+		assert_eq!(watched.find_by_cache(PathDyn::Os(other_cache.as_path())), None);
 	}
 }

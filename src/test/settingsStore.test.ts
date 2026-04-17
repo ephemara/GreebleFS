@@ -88,7 +88,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.appearance.activeShaderId).toBeNull();
     expect(settings.appearance.shaderControlValues).toEqual({});
     expect(settings.appearance.uiFontFamily).toBe('system-ui, sans-serif');
-    expect(settings.appearance.useNativeOsIcons).toBe(true);
+    expect(settings.appearance.useNativeOsIcons).toBe(false);
     expect(settings.appearance.animations).toBe(true);
     expect(settings.appearance.panelTransparency).toBe(0);
     expect(settings.appearance.appBlur).toBe(false);
@@ -547,7 +547,7 @@ describe('useSettingsStore.applyThemeSelection()', () => {
     expect(settings.appearance.activeWallpaperId).toBeNull();
     expect(settings.appearance.activeShaderId).toBeNull();
     expect(settings.appearance.uiFontFamily).toBe(defaultSettings.appearance.uiFontFamily);
-    expect(settings.appearance.useNativeOsIcons).toBe(true);
+    expect(settings.appearance.useNativeOsIcons).toBe(false);
     expect(settings.appearance.panelTransparency).toBe(0);
     expect(settings.appearance.appZoom).toBe(1);
     expect(settings.appearance.appBlur).toBe(false);

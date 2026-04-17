@@ -218,6 +218,21 @@ function dispatchLayoutWheelOnFileArea(deltaY: number) {
   }));
 }
 
+function getEntryIconSrc(entryName: string): string {
+  const entryLabel = screen.getByText(entryName);
+  const entryRow = entryLabel.closest('tr, [draggable="true"]') as HTMLElement | null;
+  if (!entryRow) {
+    throw new Error(`Explorer row not found for ${entryName}`);
+  }
+
+  const icon = entryRow.querySelector('img');
+  if (!(icon instanceof HTMLImageElement)) {
+    throw new Error(`Explorer icon not found for ${entryName}`);
+  }
+
+  return icon.getAttribute('src') ?? '';
+}
+
 describe('FileExplorer view modes', () => {
   beforeEach(() => {
     resetOverlayTermStorage(window.localStorage);
@@ -914,6 +929,45 @@ describe('FileExplorer view modes', () => {
       expect(screen.getByText('child.txt')).toBeInTheDocument();
     });
     expect(screen.queryByText('notes.txt')).not.toBeInTheDocument();
+  });
+
+  it('keeps managed theme icons ahead of native icon fallback for mapped explorer entries', async () => {
+    useSettingsStore.getState().updateAppearance({ useNativeOsIcons: true });
+    useSettingsStore.getState().updateExplorer({
+      folderIconRules: [
+        {
+          id: 'alpha-folder',
+          label: 'Alpha Folder',
+          matchers: ['alpha'],
+          icon: 'folder_src',
+        },
+      ],
+    });
+
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error('Missing default invoke mock implementation');
+    }
+
+    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
+      if (command === 'fs_resolve_native_icons') {
+        const payload = args as { requests?: Array<{ path: string }> } | undefined;
+        return (payload?.requests ?? []).map(({ path }) => ({
+          path,
+          src: 'data:image/png;base64,bmF0aXZlLWljb24=',
+        }));
+      }
+
+      return baseInvokeImplementation(command, args as Parameters<typeof invoke>[1]);
+    });
+
+    renderExplorer();
+    await screen.findByText('alpha');
+
+    expect(getEntryIconSrc('alpha')).toContain('/icons/folder_src.svg');
+    expect(getEntryIconSrc('preview.png')).toContain('/icons/image.svg');
+    expect(getEntryIconSrc('notes.txt')).toContain('/icons/txt.svg');
+    expect(vi.mocked(invoke).mock.calls.some(([command]) => command === 'fs_resolve_native_icons')).toBe(false);
   });
 
   it('keeps ctrl-wheel scaling responsive after the explorer remounts its layout shell', async () => {

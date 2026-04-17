@@ -79,6 +79,21 @@ import {
 import { useSettingsStore } from '../store/settingsStore';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
+import {
+  collectTerminalPaneGeometry,
+  collectTerminalPaneIds,
+  countTerminalPanes,
+  createTerminalPaneLayout,
+  describeTerminalPaneLayout,
+  getImmediatePaneSplitDirection,
+  removeTerminalPaneFromLayout,
+  splitTerminalPaneLayout,
+  updateTerminalPaneSplitRatio,
+  type TerminalPaneFrame,
+  type TerminalPaneLayoutNode,
+  type TerminalPaneSplitHandle,
+  type TerminalSplitDirection,
+} from './terminalPaneLayout';
 
 export type ThemeId = 'operator' | 'dracula' | 'nord' | 'monokai' | 'github-dark' | 'catppuccin';
 
@@ -234,7 +249,6 @@ void ensureFont;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type TerminalSplitDirection = 'columns' | 'rows';
 interface TerminalPaneSession {
   id: string;
   label: string;
@@ -243,9 +257,9 @@ interface TerminalPaneSession {
 interface Tab {
   id: string;
   label: string;
-  paneIds: string[];
+  layout: TerminalPaneLayoutNode;
   activePaneId: string;
-  splitDirection: TerminalSplitDirection;
+  lastSplitDirection: TerminalSplitDirection;
   broadcastInput: boolean;
   createdAt: number;
 }
@@ -468,6 +482,8 @@ function XTermPane({
   const mountedRef   = useRef(false);
   const bufferedOutputRef = useRef('');
   const outputFrameRef = useRef<number | null>(null);
+  const fitFrameRef = useRef<number | null>(null);
+  const lastResizeRef = useRef<{ rows: number; cols: number } | null>(null);
   const settings = useSettingsStore(s => s.settings.terminal);
   const onReadyRef = useRef(onReady);
   const onFocusRef = useRef(onFocus);
@@ -509,7 +525,26 @@ function XTermPane({
     term.loadAddon(fit);
     term.loadAddon(webLinks);
     term.open(containerRef.current);
-    fit.fit();
+
+    const scheduleFit = () => {
+      if (fitFrameRef.current !== null) {
+        return;
+      }
+
+      fitFrameRef.current = window.requestAnimationFrame(() => {
+        fitFrameRef.current = null;
+        if (
+          !containerRef.current ||
+          !containerRef.current.isConnected ||
+          containerRef.current.offsetParent === null
+        ) {
+          return;
+        }
+        fit.fit();
+      });
+    };
+
+    scheduleFit();
 
     try {
       unwrapTauriResult(await commands.terminalSpawn(id, null, settings.shell, term.rows, term.cols));
@@ -546,11 +581,18 @@ function XTermPane({
       onDataRef.current?.(id, data);
     });
     term.onResize(({ rows: r, cols: c }) => {
+      if (
+        lastResizeRef.current?.rows === r &&
+        lastResizeRef.current?.cols === c
+      ) {
+        return;
+      }
+      lastResizeRef.current = { rows: r, cols: c };
       onResizeRef.current?.(id, r, c);
       void commands.terminalResize(id, r, c).then(unwrapTauriResult).catch(() => {});
     });
 
-    const ro = new ResizeObserver(() => fit.fit());
+    const ro = new ResizeObserver(() => scheduleFit());
     ro.observe(containerRef.current!);
 
     const focusTarget = containerRef.current;
@@ -561,6 +603,10 @@ function XTermPane({
       xterm: term, fitAddon: fit,
       unlisten: () => {
         flushBufferedOutput();
+        if (fitFrameRef.current !== null) {
+          window.cancelAnimationFrame(fitFrameRef.current);
+          fitFrameRef.current = null;
+        }
         if (outputFrameRef.current !== null) {
           window.cancelAnimationFrame(outputFrameRef.current);
           outputFrameRef.current = null;
@@ -1120,9 +1166,9 @@ export function TerminalOverlay({
   const [tabs, setTabs] = useState<Tab[]>(() => [{
     id: INITIAL_TAB_ID,
     label: initialShellLabel,
-    paneIds: [INITIAL_PANE_ID],
+    layout: createTerminalPaneLayout(INITIAL_PANE_ID),
     activePaneId: INITIAL_PANE_ID,
-    splitDirection: 'columns',
+    lastSplitDirection: 'columns',
     broadcastInput: false,
     createdAt: Date.now(),
   }]);
@@ -1147,6 +1193,7 @@ export function TerminalOverlay({
   const actionMessageTimerRef = useRef<number | null>(null);
   const paneCounterRef = useRef(1);
   const tabCounterRef = useRef(1);
+  const splitCounterRef = useRef(1);
 
   const { initStore } = useTerminalStore(useShallow(state => ({
     initStore: state.initStore,
@@ -1194,13 +1241,18 @@ export function TerminalOverlay({
     () => tabs.find(tab => tab.id === activeTabId) ?? tabs[0] ?? null,
     [tabs, activeTabId],
   );
-  const activePaneId = activeTab?.activePaneId ?? activeTab?.paneIds[0] ?? INITIAL_PANE_ID;
+  const paneIdsByTab = useMemo(
+    () => new Map(tabs.map(tab => [tab.id, collectTerminalPaneIds(tab.layout)])),
+    [tabs],
+  );
+  const activeTabPaneIds = activeTab ? (paneIdsByTab.get(activeTab.id) ?? []) : [];
+  const activePaneId = activeTab?.activePaneId ?? activeTabPaneIds[0] ?? INITIAL_PANE_ID;
   const activePane = paneSessions[activePaneId] ?? null;
-  const totalPaneCount = tabs.reduce((sum, tab) => sum + tab.paneIds.length, 0);
+  const totalPaneCount = tabs.reduce((sum, tab) => sum + countTerminalPanes(tab.layout), 0);
 
   const findTabForPane = useCallback((paneId: string) => (
-    tabs.find(tab => tab.paneIds.includes(paneId)) ?? null
-  ), [tabs]);
+    tabs.find(tab => (paneIdsByTab.get(tab.id) ?? []).includes(paneId)) ?? null
+  ), [paneIdsByTab, tabs]);
 
   const isPaneReady = useCallback((paneId: string) => (
     readyTerminalIds.includes(paneId) || xtermRegistry.has(paneId)
@@ -1270,8 +1322,9 @@ export function TerminalOverlay({
     if (!tab) {
       return paneId ? [paneId] : [];
     }
-    return tab.broadcastInput ? tab.paneIds : [paneId ?? tab.activePaneId];
-  }, [activeTab, findTabForPane]);
+    const paneIds = paneIdsByTab.get(tab.id) ?? [];
+    return tab.broadcastInput ? paneIds : [paneId ?? tab.activePaneId];
+  }, [activeTab, findTabForPane, paneIdsByTab]);
 
   const injectCmd = useCallback(async (command: string, run = false, paneId?: string) => {
     const targetIds = resolveCommandTargets(paneId);
@@ -1392,7 +1445,7 @@ export function TerminalOverlay({
       `# ${tab.label} · ${pane.label}`,
       '',
       `- Shell: ${settings.shell}`,
-      `- Layout: ${tab.splitDirection === 'columns' ? 'columns' : 'rows'}`,
+      `- Layout: ${describeTerminalPaneLayout(tab.layout)}`,
       `- Broadcast input: ${tab.broadcastInput ? 'enabled' : 'disabled'}`,
       `- Viewport: ${metrics.cols && metrics.rows ? `${metrics.cols} x ${metrics.rows}` : 'unknown'}`,
       `- Captured: ${new Date().toLocaleString()}`,
@@ -1485,9 +1538,9 @@ export function TerminalOverlay({
     const nextTabs = [...tabs, {
       id: tabId,
       label: `${getShellDisplayLabel(settings.shell)} (${tabs.length + 1})`,
-      paneIds: [pane.id],
+      layout: createTerminalPaneLayout(pane.id),
       activePaneId: pane.id,
-      splitDirection: 'columns' as const,
+      lastSplitDirection: 'columns' as const,
       broadcastInput: false,
       createdAt: Date.now(),
     }];
@@ -1499,35 +1552,46 @@ export function TerminalOverlay({
     setTransientActionMessage(`Opened ${nextTabs[nextTabs.length - 1].label}`);
   }, [createPaneSession, settings.shell, tabs, setTransientActionMessage]);
 
-  const splitActiveTab = useCallback((direction: TerminalSplitDirection) => {
+  const splitActivePane = useCallback((direction: TerminalSplitDirection, targetPaneId = activePaneId) => {
     if (!activeTab) {
       return;
     }
 
-    const pane = createPaneSession(`Pane ${activeTab.paneIds.length + 1}`);
+    const pane = createPaneSession(`Pane ${activeTabPaneIds.length + 1}`);
+    const splitResult = splitTerminalPaneLayout(
+      activeTab.layout,
+      targetPaneId,
+      direction,
+      pane.id,
+      () => `terminal-split-${splitCounterRef.current++}`,
+    );
+    if (!splitResult.inserted) {
+      return;
+    }
+
     setPaneSessions(prev => ({ ...prev, [pane.id]: pane }));
     paneTelemetryRef.current[pane.id] = createPaneTelemetry();
     setTabs(prev => prev.map(tab => (
       tab.id === activeTab.id
         ? {
             ...tab,
-            paneIds: [...tab.paneIds, pane.id],
+            layout: splitResult.layout,
             activePaneId: pane.id,
-            splitDirection: direction,
+            lastSplitDirection: direction,
           }
         : tab
     )));
     setTransientActionMessage(direction === 'columns' ? 'Added a side-by-side split' : 'Added a stacked split');
-  }, [activeTab, createPaneSession, setTransientActionMessage]);
+  }, [activePaneId, activeTab, activeTabPaneIds.length, createPaneSession, setTransientActionMessage]);
 
   const duplicateActivePane = useCallback(() => {
     if (!activeTab) {
       return;
     }
-    const nextDirection = activeTab.splitDirection;
-    splitActiveTab(nextDirection);
+    const nextDirection = activeTab.lastSplitDirection;
+    splitActivePane(nextDirection, activePaneId);
     setTransientActionMessage(`Forked a fresh ${nextDirection === 'columns' ? 'side-by-side' : 'stacked'} pane`);
-  }, [activeTab, splitActiveTab, setTransientActionMessage]);
+  }, [activePaneId, activeTab, splitActivePane, setTransientActionMessage]);
 
   const toggleBroadcastActiveTab = useCallback(() => {
     if (!activeTab) {
@@ -1544,29 +1608,34 @@ export function TerminalOverlay({
 
   const closePane = useCallback((paneId: string) => {
     const tab = findTabForPane(paneId);
-    if (!tab || tab.paneIds.length <= 1) {
+    const paneIds = tab ? (paneIdsByTab.get(tab.id) ?? []) : [];
+    if (!tab || paneIds.length <= 1) {
+      return;
+    }
+
+    const removal = removeTerminalPaneFromLayout(tab.layout, paneId);
+    const nextLayout = removal.layout;
+    if (!removal.removed || !nextLayout) {
       return;
     }
 
     destroyXterm(paneId);
     removePaneSession(paneId);
 
-    const paneIndex = tab.paneIds.indexOf(paneId);
     setTabs(prev => prev.map(current => {
       if (current.id !== tab.id) {
         return current;
       }
-      const nextPaneIds = current.paneIds.filter(id => id !== paneId);
       return {
         ...current,
-        paneIds: nextPaneIds,
+        layout: nextLayout,
         activePaneId: current.activePaneId === paneId
-          ? nextPaneIds[Math.max(0, paneIndex - 1)] ?? nextPaneIds[0]
+          ? (removal.fallbackPaneId ?? collectTerminalPaneIds(nextLayout)[0] ?? current.activePaneId)
           : current.activePaneId,
       };
     }));
     setTransientActionMessage(`Closed ${paneSessions[paneId]?.label ?? 'pane'}`);
-  }, [findTabForPane, paneSessions, removePaneSession, setTransientActionMessage]);
+  }, [findTabForPane, paneIdsByTab, paneSessions, removePaneSession, setTransientActionMessage]);
 
   const closeTab = useCallback((tabId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1581,7 +1650,7 @@ export function TerminalOverlay({
     }
 
     const tab = tabs[tabIndex];
-    tab.paneIds.forEach(paneId => {
+    (paneIdsByTab.get(tab.id) ?? []).forEach(paneId => {
       destroyXterm(paneId);
       removePaneSession(paneId);
     });
@@ -1593,7 +1662,7 @@ export function TerminalOverlay({
       setActiveTabId(fallback.id);
     }
     setTransientActionMessage(`Closed ${tab.label}`);
-  }, [activeTabId, onClose, removePaneSession, setTransientActionMessage, tabs]);
+  }, [activeTabId, onClose, paneIdsByTab, removePaneSession, setTransientActionMessage, tabs]);
 
   const startRename = useCallback((id: string, label: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1621,25 +1690,244 @@ export function TerminalOverlay({
   }, [activePanel, setSidebarVisibility, sidebarOpen]);
 
   const slideClass = isOpen ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0';
+  const workspaceCanvasRef = useRef<HTMLDivElement>(null);
+  const activePaneSplitDirection = useMemo(
+    () => activeTab ? getImmediatePaneSplitDirection(activeTab.layout, activePaneId) : null,
+    [activePaneId, activeTab],
+  );
   const activeTerminalReady = isPaneReady(activePaneId);
-  const activeTabReadyCount = activeTab?.paneIds.filter(isPaneReady).length ?? 0;
+  const activeTabReadyCount = activeTabPaneIds.filter(isPaneReady).length;
   const activeTabLabel = activeTab?.label ?? 'terminal';
+  const geometryByTab = useMemo(
+    () => new Map(tabs.map(tab => [tab.id, collectTerminalPaneGeometry(tab.layout)])),
+    [tabs],
+  );
+  const updateTabSplitRatio = useCallback((tabId: string, splitId: string, ratio: number) => {
+    setTabs(prev => prev.map(tab => (
+      tab.id === tabId
+        ? { ...tab, layout: updateTerminalPaneSplitRatio(tab.layout, splitId, ratio) }
+        : tab
+    )));
+  }, []);
+  const startSplitResize = useCallback((
+    event: React.PointerEvent<HTMLDivElement>,
+    tabId: string,
+    handle: TerminalPaneSplitHandle,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const workspaceRect = workspaceCanvasRef.current?.getBoundingClientRect();
+    if (!workspaceRect) {
+      return;
+    }
+
+    const rect = {
+      left: workspaceRect.left + handle.containerX * workspaceRect.width,
+      top: workspaceRect.top + handle.containerY * workspaceRect.height,
+      width: handle.containerWidth * workspaceRect.width,
+      height: handle.containerHeight * workspaceRect.height,
+    };
+    const axisSize = handle.direction === 'columns' ? rect.width : rect.height;
+    if (axisSize <= 0) {
+      return;
+    }
+
+    const minPaneSize = handle.direction === 'columns' ? 220 : 140;
+    const edgeLimit = axisSize <= minPaneSize * 2 ? 0.5 : minPaneSize / axisSize;
+    const clampRatio = (nextRatio: number) => Math.min(1 - edgeLimit, Math.max(edgeLimit, nextRatio));
+
+    const updateFromPointer = (clientX: number, clientY: number) => {
+      const rawRatio = handle.direction === 'columns'
+        ? (clientX - rect.left) / rect.width
+        : (clientY - rect.top) / rect.height;
+      updateTabSplitRatio(tabId, handle.splitId, clampRatio(rawRatio));
+    };
+
+    const previousUserSelect = document.body.style.userSelect;
+    const previousCursor = document.body.style.cursor;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = handle.direction === 'columns' ? 'col-resize' : 'row-resize';
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      updateFromPointer(moveEvent.clientX, moveEvent.clientY);
+    };
+    const handlePointerUp = () => {
+      document.body.style.userSelect = previousUserSelect;
+      document.body.style.cursor = previousCursor;
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp, { once: true });
+  }, [updateTabSplitRatio]);
+  const renderPaneSurface = useCallback((tabId: string, paneId: string, frame: TerminalPaneFrame): React.ReactNode => {
+    const pane = paneSessions[paneId];
+    if (!pane) {
+      return null;
+    }
+
+    const ownerTab = tabs.find(candidate => candidate.id === tabId) ?? activeTab;
+    const ownerPaneIds = ownerTab ? (paneIdsByTab.get(ownerTab.id) ?? []) : [];
+    const ready = isPaneReady(paneId);
+    const isActivePane = activePaneId === paneId;
+
+    return (
+      <div
+        key={paneId}
+        className="flex min-h-0 min-w-0 overflow-hidden rounded-xl border"
+        style={{
+          position: 'absolute',
+          left: `${frame.x * 100}%`,
+          top: `${frame.y * 100}%`,
+          width: `${frame.width * 100}%`,
+          height: `${frame.height * 100}%`,
+          borderColor: isActivePane ? `${theme.accent}66` : 'var(--overlay-workbench-terminal-border)',
+          background: 'var(--overlay-workbench-terminal-pane-bg)',
+          boxShadow: isActivePane ? `0 0 0 1px ${theme.accent}18 inset` : 'none',
+          borderRadius: 'var(--overlay-workbench-panel-radius)',
+        }}
+      >
+        <div className="flex flex-1 min-h-0 min-w-0 flex-col">
+          <div
+            className="group flex items-center gap-2 border-b px-2 shrink-0"
+            style={{
+              minHeight: 30,
+              borderColor: 'var(--overlay-workbench-terminal-border)',
+              background: isActivePane ? `${theme.accent}0a` : 'transparent',
+            }}
+            onMouseDown={() => focusPane(tabId, paneId)}
+          >
+            <div
+              className="shrink-0 rounded-full"
+              style={{
+                width: 6,
+                height: 6,
+                background: ready ? appearance.theme.palette.success : theme.textMuted,
+                opacity: ready ? 1 : 0.4,
+              }}
+            />
+            <span className="truncate text-[10px] font-medium flex-1" style={{ color: isActivePane ? theme.text : theme.textMuted }}>
+              {pane.label}
+            </span>
+            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+              <button
+                type="button"
+                onClick={() => splitActivePane('columns', paneId)}
+                className="flex items-center justify-center rounded transition-all hover:bg-white/10"
+                style={{ width: 22, height: 22, color: theme.textMuted }}
+                title="Split pane right"
+                aria-label={`Split ${pane.label} right`}
+              >
+                <SplitSquareHorizontal size={11} />
+              </button>
+              <button
+                type="button"
+                onClick={() => splitActivePane('rows', paneId)}
+                className="flex items-center justify-center rounded transition-all hover:bg-white/10"
+                style={{ width: 22, height: 22, color: theme.textMuted }}
+                title="Split pane down"
+                aria-label={`Split ${pane.label} down`}
+              >
+                <SplitSquareVertical size={11} />
+              </button>
+              <button
+                type="button"
+                onClick={() => { void copyPaneOutput(paneId); }}
+                className="flex items-center justify-center rounded transition-all hover:bg-white/10"
+                style={{ width: 22, height: 22, color: theme.textMuted }}
+                title="Copy output"
+                aria-label={`Copy ${pane.label} output`}
+              >
+                <Copy size={11} />
+              </button>
+              <button
+                type="button"
+                onClick={() => { void restartPane(paneId); }}
+                className="flex items-center justify-center rounded transition-all hover:bg-white/10"
+                style={{ width: 22, height: 22, color: theme.textMuted }}
+                title="Restart pane"
+                aria-label={`Restart ${pane.label}`}
+              >
+                <RotateCcw size={11} />
+              </button>
+              {ownerPaneIds.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => closePane(paneId)}
+                  className="flex items-center justify-center rounded transition-all hover:bg-red-500/10 hover:text-red-400"
+                  style={{ width: 22, height: 22, color: theme.textMuted }}
+                  title="Close pane"
+                  aria-label={`Close ${pane.label}`}
+                >
+                  <X size={11} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="relative flex-1 min-h-0 min-w-0" onMouseDown={() => focusPane(tabId, paneId)}>
+            {hasMountedRef.current && (
+              <XTermPane
+                key={paneId}
+                id={paneId}
+                visible={tabId === activeTabId}
+                active={isActivePane && tabId === activeTabId}
+                theme={theme}
+                onReady={markTerminalReady}
+                onFocus={(id) => {
+                  const owner = findTabForPane(id);
+                  if (owner) {
+                    focusPane(owner.id, id);
+                  }
+                }}
+                onData={handleTerminalInput}
+                onOutput={handleTerminalOutput}
+                onResize={handlePaneResize}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }, [
+    activePaneId,
+    activeTab,
+    activeTabId,
+    appearance.theme.palette.success,
+    closePane,
+    copyPaneOutput,
+    findTabForPane,
+    focusPane,
+    handlePaneResize,
+    handleTerminalInput,
+    handleTerminalOutput,
+    isPaneReady,
+    markTerminalReady,
+    paneIdsByTab,
+    paneSessions,
+    restartPane,
+    splitActivePane,
+    tabs,
+    theme,
+  ]);
   const terminalToolbarActions = useMemo<TerminalToolbarAction[]>(() => ([
     {
       id: 'split-columns',
       label: 'Split Columns',
       title: 'Add a pane to the right',
       icon: SplitSquareHorizontal,
-      onClick: () => splitActiveTab('columns'),
-      tone: activeTab?.splitDirection === 'columns' && (activeTab?.paneIds.length ?? 1) > 1 ? 'accent' : 'default',
+      onClick: () => splitActivePane('columns', activePaneId),
+      tone: activePaneSplitDirection === 'columns' ? 'accent' : 'default',
     },
     {
       id: 'split-rows',
       label: 'Split Rows',
       title: 'Add a pane below',
       icon: SplitSquareVertical,
-      onClick: () => splitActiveTab('rows'),
-      tone: activeTab?.splitDirection === 'rows' && (activeTab?.paneIds.length ?? 1) > 1 ? 'accent' : 'default',
+      onClick: () => splitActivePane('rows', activePaneId),
+      tone: activePaneSplitDirection === 'rows' ? 'accent' : 'default',
     },
     {
       id: 'fork-pane',
@@ -1693,23 +1981,22 @@ export function TerminalOverlay({
     },
   ]), [
     activePaneId,
+    activePaneSplitDirection,
     activeTab?.broadcastInput,
-    activeTab?.splitDirection,
     activeTerminalReady,
     clearPane,
     copyPaneOutput,
     copyPaneSnapshot,
     duplicateActivePane,
     restartPane,
-    splitActiveTab,
+    splitActivePane,
     toggleBroadcastActiveTab,
   ]);
   const terminalToolbarDetail = terminalActionMessage
     ?? (activeTerminalReady
-      ? `${activeTabReadyCount}/${activeTab?.paneIds.length ?? 0} panes live · ${activeTab?.broadcastInput ? 'broadcasting input' : 'focused input'}`
+      ? `${activeTabReadyCount}/${activeTabPaneIds.length} panes live · ${activeTab?.broadcastInput ? 'broadcasting input' : 'focused input'}`
       : `${activeTabLabel} starting...`);
   const sidebarToggleLabel = sidebarOpen ? 'Hide Sidebar' : 'Show Sidebar';
-
 
   const sidebarPanelNode = sidebarOpen && activePanel ? (
     <div
@@ -1749,112 +2036,62 @@ export function TerminalOverlay({
 
   const workspaceArea = (
     <div className="flex-1 min-w-0 min-h-0 flex flex-col" style={{ background: theme.bgTerm }}>
-
       <div className="flex-1 min-h-0 min-w-0 p-3">
-        {activeTab && (
-          <div
-            className="flex min-h-full min-w-0 gap-3"
-            style={{ flexDirection: activeTab.splitDirection === 'columns' ? 'row' : 'column' }}
-          >
-            {activeTab.paneIds.map(paneId => {
-              const pane = paneSessions[paneId];
-              if (!pane) {
-                return null;
-              }
-              const ready = isPaneReady(paneId);
-              const isActivePane = activePaneId === paneId;
-              return (
-                <div
-                  key={paneId}
-                  className="flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border"
-                  style={{
-                    borderColor: isActivePane ? `${theme.accent}66` : 'var(--overlay-workbench-terminal-border)',
-                    background: 'var(--overlay-workbench-terminal-pane-bg)',
-                    boxShadow: isActivePane ? `0 0 0 1px ${theme.accent}18 inset` : 'none',
-                    borderRadius: 'var(--overlay-workbench-panel-radius)',
-                  }}
-                >
-                  <div className="flex flex-1 min-h-0 min-w-0 flex-col">
+        <div ref={workspaceCanvasRef} className="relative min-h-full min-w-0">
+          {tabs.map(tab => {
+            const geometry = geometryByTab.get(tab.id);
+            if (!geometry) {
+              return null;
+            }
+            const isActiveTabLayer = tab.id === activeTabId;
+            return (
+              <div
+                key={tab.id}
+                className="absolute inset-0"
+                style={{
+                  opacity: isActiveTabLayer ? 1 : 0,
+                  visibility: isActiveTabLayer ? 'visible' : 'hidden',
+                  pointerEvents: isActiveTabLayer ? 'auto' : 'none',
+                }}
+              >
+                {geometry.frames.map(frame => renderPaneSurface(tab.id, frame.paneId, frame))}
+                {geometry.handles.map(handle => {
+                  const isColumnSplit = handle.direction === 'columns';
+                  return (
                     <div
-                      className="group flex items-center gap-2 border-b px-2 shrink-0"
+                      key={handle.splitId}
+                      role="separator"
+                      aria-orientation={isColumnSplit ? 'vertical' : 'horizontal'}
+                      aria-label={isColumnSplit ? 'Resize panes horizontally' : 'Resize panes vertically'}
+                      className="group absolute flex items-center justify-center"
                       style={{
-                        minHeight: 30,
-                        borderColor: 'var(--overlay-workbench-terminal-border)',
-                        background: isActivePane ? `${theme.accent}0a` : 'transparent',
+                        left: isColumnSplit ? `calc(${handle.x * 100}% - 5px)` : `${handle.x * 100}%`,
+                        top: isColumnSplit ? `${handle.y * 100}%` : `calc(${handle.y * 100}% - 5px)`,
+                        width: isColumnSplit ? 10 : `${handle.width * 100}%`,
+                        height: isColumnSplit ? `${handle.height * 100}%` : 10,
+                        cursor: isColumnSplit ? 'col-resize' : 'row-resize',
+                        touchAction: 'none',
+                        zIndex: 5,
                       }}
-                      onMouseDown={() => focusPane(activeTab.id, paneId)}
+                      onPointerDown={event => startSplitResize(event, tab.id, handle)}
                     >
                       <div
-                        className="shrink-0 rounded-full"
                         style={{
-                          width: 6, height: 6,
-                          background: ready ? appearance.theme.palette.success : theme.textMuted,
-                          opacity: ready ? 1 : 0.4,
+                          width: isColumnSplit ? 2 : 52,
+                          height: isColumnSplit ? 52 : 2,
+                          borderRadius: 999,
+                          background: `${theme.textMuted}55`,
+                          boxShadow: `0 0 0 1px ${theme.border} inset`,
                         }}
+                        className="transition-colors group-hover:bg-white/40"
                       />
-                      <span className="truncate text-[10px] font-medium flex-1" style={{ color: isActivePane ? theme.text : theme.textMuted }}>
-                        {pane.label}
-                      </span>
-                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => { void copyPaneOutput(paneId); }}
-                          className="flex items-center justify-center rounded transition-all hover:bg-white/10"
-                          style={{ width: 22, height: 22, color: theme.textMuted }}
-                          title="Copy output"
-                        >
-                          <Copy size={11} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => { void restartPane(paneId); }}
-                          className="flex items-center justify-center rounded transition-all hover:bg-white/10"
-                          style={{ width: 22, height: 22, color: theme.textMuted }}
-                          title="Restart pane"
-                        >
-                          <RotateCcw size={11} />
-                        </button>
-                        {activeTab.paneIds.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => closePane(paneId)}
-                            className="flex items-center justify-center rounded transition-all hover:bg-red-500/10 hover:text-red-400"
-                            style={{ width: 22, height: 22, color: theme.textMuted }}
-                            title="Close pane"
-                          >
-                            <X size={11} />
-                          </button>
-                        )}
-                      </div>
                     </div>
-
-                    <div className="relative flex-1 min-h-0 min-w-0" onMouseDown={() => focusPane(activeTab.id, paneId)}>
-                      {hasMountedRef.current && (
-                        <XTermPane
-                          key={paneId}
-                          id={paneId}
-                          visible={activeTab.id === activeTabId}
-                          active={isActivePane && activeTab.id === activeTabId}
-                          theme={theme}
-                          onReady={markTerminalReady}
-                          onFocus={(id) => {
-                            const owner = findTabForPane(id);
-                            if (owner) {
-                              focusPane(owner.id, id);
-                            }
-                          }}
-                          onData={handleTerminalInput}
-                          onOutput={handleTerminalOutput}
-                          onResize={handlePaneResize}
-                        />
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -1867,6 +2104,7 @@ export function TerminalOverlay({
     >
       {tabs.map(tab => {
         const isActive = tab.id === activeTabId;
+        const paneIds = paneIdsByTab.get(tab.id) ?? [];
         return (
           <div
             key={tab.id}
@@ -1904,7 +2142,7 @@ export function TerminalOverlay({
                     {tab.label}
                   </div>
                   <div className="text-[8px] uppercase tracking-[0.16em]" style={{ color: theme.textMuted }}>
-                    {tab.paneIds.length} pane{tab.paneIds.length === 1 ? '' : 's'}{tab.broadcastInput ? ' · BCAST' : ''}
+                    {paneIds.length} pane{paneIds.length === 1 ? '' : 's'}{tab.broadcastInput ? ' · BCAST' : ''}
                   </div>
                 </>
               )}

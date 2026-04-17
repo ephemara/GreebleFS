@@ -1873,7 +1873,7 @@ export function SettingsPage({
       key: 'appearance',
       label: 'Appearance',
       subtitle: 'Theme, opacity, panel transparency, blur, and zoom.',
-      summary: `${effectiveTheme.name} · ${settings.appearance.useNativeOsIcons ? 'OS Icons' : 'Theme Icons'} · ${formatOverlayVisualControlValue('opacity', settings.appearance.appOpacity)} OP · ${formatOverlayVisualControlValue('panelTransparency', settings.appearance.panelTransparency)} PT · ${formatOverlayVisualControlValue('zoom', settings.appearance.appZoom)} ZM · ${formatOverlayVisualControlValue('blurStrength', settings.appearance.appBlurStrength)} BL`,
+      summary: `${effectiveTheme.name} · ${settings.appearance.useNativeOsIcons ? 'Theme + OS Fallback' : 'Theme Icons'} · ${formatOverlayVisualControlValue('opacity', settings.appearance.appOpacity)} OP · ${formatOverlayVisualControlValue('panelTransparency', settings.appearance.panelTransparency)} PT · ${formatOverlayVisualControlValue('zoom', settings.appearance.appZoom)} ZM · ${formatOverlayVisualControlValue('blurStrength', settings.appearance.appBlurStrength)} BL`,
       detail: 'Tune the shell look and feel, from engine-driven recipes and palette tokens to blur, transparency, and UI typography.',
       icon: <Palette size={14} />,
     },
@@ -2388,9 +2388,9 @@ export function SettingsPage({
 
               <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
                 <div>
-                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Native OS Icons</div>
+                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">OS Icon Fallback</div>
                   <p className="mt-1 text-[11px] opacity-40">
-                    Use {platformLabel}&apos;s current file and folder icons in the explorer when available. Theme icons stay in place as the fallback layer.
+                    Keep theme icons primary for mapped file types and semantic folders, and use {platformLabel}&apos;s native icons only when the active icon theme has no specific match.
                   </p>
                 </div>
                 <input
