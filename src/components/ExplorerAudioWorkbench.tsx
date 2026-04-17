@@ -345,6 +345,10 @@ export function ExplorerAudioWorkbench({
   const analysisCards = useMemo(
     () => [
       {
+        label: 'Loaded File',
+        value: previewDeck.loadedName ?? audioName,
+      },
+      {
         label: 'Duration',
         value: formatDuration(analysis?.durationSeconds ?? effectiveDuration),
       },
@@ -381,7 +385,7 @@ export function ExplorerAudioWorkbench({
       },
       { label: 'File Size', value: formatSize(audioSize) },
     ],
-    [analysis, audioSize, effectiveDuration, snapshot.outputSampleRateHz],
+    [analysis, audioName, audioSize, effectiveDuration, previewDeck.loadedName, snapshot.outputSampleRateHz],
   );
 
   function syncPlayhead(nextTime: number) {

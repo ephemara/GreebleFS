@@ -41,7 +41,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/ExplorerVideoEditor.tsx`
   Shell-owned wrapper for the embedded preview-pane video surface. It owns playback chrome, trim handles, timeline state, export prompting, the automatic preview-proxy fallback path for webview codec failures, and the non-destructive MP4 trim workflow.
 - `src/components/ExplorerAudioWorkbench.tsx`
-  Shell-owned wrapper for the embedded preview-pane audio surface. It is now a native dual-deck transport UI over the Rust audio engine, with shared waveform selection, deck arming/loading, loop/gain/rate control, analysis cards, offline export actions, and spectrogram rendering.
+  Shell-owned wrapper for the embedded preview-pane audio surface. It is now a native dual-deck transport UI over the Rust audio engine, with shared waveform selection, DAW-style fade edge handles embedded in the waveform, deck arming/loading, loop/gain/rate control, analysis cards, offline export actions, and spectrogram rendering.
 - `src/components/explorer/ExplorerWorkspace.tsx`
   Explorer-local workspace shell that wraps `FileExplorer` instances with explorer tabs, slot-based `1-Up` / `2-Up` / `4-Up` pane layouts, pane focus, and adaptive split sizing.
 - `src/components/explorer/ExplorerSideRail.tsx`

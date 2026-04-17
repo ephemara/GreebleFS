@@ -87,6 +87,20 @@ const audioEngineSnapshot: ExplorerAudioEngineStateSnapshot = {
   ],
 };
 
+const waveformTimelineRect = {
+  left: 0,
+  top: 0,
+  width: 240,
+  height: 120,
+  right: 240,
+  bottom: 120,
+  x: 0,
+  y: 0,
+  toJSON() {
+    return this;
+  },
+} as DOMRect;
+
 vi.mock('../runtime/audioWorkbenchBackend', () => ({
   analyzeExplorerAudioPreview: analyzeExplorerAudioPreviewMock,
   exportExplorerAudioTransform: exportExplorerAudioTransformMock,
@@ -156,6 +170,7 @@ describe('ExplorerAudioWorkbench', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.clearAllMocks();
   });
 
@@ -269,6 +284,62 @@ describe('ExplorerAudioWorkbench', () => {
           inputPath: '/tmp/anthem.mp3',
           outputPath: '/tmp/anthem.clip.wav',
           outputFormat: 'wav',
+          mode: 'exportClip',
+        }),
+      );
+    });
+  });
+
+  it('lets the waveform fade handles drive export fade settings', async () => {
+    exportExplorerAudioTransformMock.mockResolvedValue({
+      taskId: 'audio-transform-3',
+      outputPath: '/tmp/anthem.clip.wav',
+      spectrogramPath: null,
+      durationSeconds: 24,
+      outputFormat: 'wav',
+      overwrittenOriginal: false,
+      soxBinary: '/tmp/sox',
+    });
+
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(
+      waveformTimelineRect,
+    );
+
+    render(
+      <ExplorerAudioWorkbench
+        audioPath='/tmp/anthem.mp3'
+        audioName='anthem.mp3'
+        audioExtension='mp3'
+        audioSize={6 * 1024 * 1024}
+      />,
+    );
+
+    await screen.findByText(/loaded in the native engine/i);
+
+    fireEvent.mouseDown(screen.getByRole('slider', { name: /fade in handle/i }), {
+      clientX: 60,
+    });
+    fireEvent.mouseUp(window);
+    fireEvent.mouseDown(screen.getByRole('slider', { name: /fade out handle/i }), {
+      clientX: 180,
+    });
+    fireEvent.mouseUp(window);
+
+    fireEvent.click(screen.getByRole('button', { name: /export clip/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: /run sox export/i }),
+    );
+
+    await waitFor(() => {
+      expect(exportExplorerAudioTransformMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          inputPath: '/tmp/anthem.mp3',
+          trimStartSeconds: 0,
+          trimEndSeconds: 24,
+          fadeInSeconds: 6,
+          fadeOutSeconds: 6,
           mode: 'exportClip',
         }),
       );

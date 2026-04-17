@@ -1,5 +1,17 @@
 # GreebleFS Memory
 
+## 2026-04-17 — Audio Workbench Waveform Fade Handles
+
+- Explorer audio fades no longer live as separate transform inputs. The workbench now exposes small DAW-style fade-in/out handles directly on the waveform strip.
+- Durable implementation shape:
+  - `src/components/ExplorerAudioWorkbench.tsx` now renders tiny waveform-edge fade grips, clamps fade lengths against the current selection, and exports the clamped fade values instead of stale raw state.
+  - The waveform fade overlays are intentionally narrow so they do not interfere with the main selection scrubbers.
+  - `src/test/explorerAudioWorkbench.test.tsx` now covers dragging both fade handles and verifies the resulting export payload.
+- Durable product note:
+  - Keep fade controls on the waveform as edge affordances. Do not reintroduce separate fade buttons or number fields in the transform panel unless the waveform interaction model changes again.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerAudioWorkbench.test.tsx`
+
 ## 2026-04-17 — Explorer Plugin Context Menu Render Guard
 
 - The explorer and settings context-menu composer no longer trust plugin-contributed context-menu items blindly during render. Malformed plugin data now gets dropped or normalized instead of crashing `FileExplorer.tsx` inside the plugin-context-menu `useMemo`.
