@@ -22,6 +22,7 @@ export type HotkeyBindingKey =
   | 'focusExplorerAddressBar'
   | 'focusExplorerPreview'
   | 'openInTerminal'
+  | 'calculateRecursiveSize'
   | 'revealInExplorer'
   | 'openAsAdmin'
   | 'goUpDirectory'
@@ -224,6 +225,13 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     label: 'Open in Terminal',
     description: 'Open the selected folder in a terminal.',
     defaultValue: 'Ctrl+Enter',
+    scope: 'local',
+  },
+  {
+    key: 'calculateRecursiveSize',
+    label: 'Calculate Recursive Size',
+    description: 'Measure folder sizes for the current selection or visible entries.',
+    defaultValue: 'Alt+S',
     scope: 'local',
   },
   {

@@ -128,6 +128,18 @@ import { AppPromptDialog } from './AppModal';
 import { ExplorerAudioWorkbench } from './ExplorerAudioWorkbench';
 import { ExplorerImageEditor } from './ExplorerImageEditor';
 import { ExplorerVideoEditor } from './ExplorerVideoEditor';
+import {
+  buildExplorerBatchRenamePreview,
+  type ExplorerBatchRenameMode,
+  type ExplorerBatchRenamePreviewRow,
+} from './explorerBatchRename';
+import { calculateExplorerChecksumsFromBase64, type ExplorerChecksumResult } from './explorerChecksums';
+import {
+  appendExplorerJumpFilterCharacter,
+  filterExplorerEntriesForJump,
+  isExplorerJumpFilterPrintableKey,
+  removeExplorerJumpFilterCharacter,
+} from './explorerJumpFilter';
 import { ExplorerSideRail } from './explorer/ExplorerSideRail';
 import { ExplorerChromeSurface } from './explorer/ExplorerChromeSurface';
 import {
@@ -152,6 +164,9 @@ import {
   useExplorerStore,
   type ExplorerDocumentViewMode,
   type ExplorerInstanceId,
+  type ExplorerPropertiesPanelSnapshot,
+  type ExplorerPropertiesPanelTab,
+  type ExplorerRecursiveSizeCacheEntry,
 } from '../store/explorerStore';
 import {
   useExplorerTaskProgressFeed,
@@ -161,7 +176,6 @@ import { shouldOpenExplorerEntryOnTrigger } from './fileExplorerClickBehavior';
 import { resolveExplorerSearchScope } from './fileExplorerSearchScope';
 import type { DocumentPreviewKind } from './documentPreview';
 import {
-  EXPLORER_IMAGE_TILE_PREVIEW_CONFIG,
   getAudioPreviewMimeType,
   getModelPreviewFormat,
   getMonacoLanguage,
@@ -173,6 +187,10 @@ import {
   isVideoPreviewExtension,
   type ModelPreviewFormat,
 } from '../config/filePreview';
+import {
+  EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG,
+  canRenderExplorerThumbnail,
+} from '../config/explorerThumbnails';
 import {
   clampSearchFocusLine,
   createEditorSearchFocus,
@@ -186,6 +204,7 @@ import {
   type ExplorerBackendContract,
   type ExplorerDuplicateScan,
   type ExplorerDriveInfo as DriveInfo,
+  type ExplorerEntryThumbnailData,
   type ExplorerEntryStorageInfo as EntryStorageInfo,
   type ExplorerFileEntry as FileEntry,
   type ExplorerFileTransferCollision,
@@ -196,6 +215,7 @@ import {
   type ExplorerArchiveExtractionMode,
   type ExplorerSavedSearch,
   type ExplorerTagMetadataSnapshot,
+  queueExplorerTerminalDirectorySync,
 } from '../runtime/explorerBackend';
 import { runExplorerAudioBatchProcess } from '../runtime/audioWorkbenchBackend';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
@@ -341,6 +361,7 @@ interface ContextMenuState { visible: boolean; x: number; y: number; entry: File
 interface RenameState    { active: boolean; path: string; name: string; }
 interface BatchRenameState {
   visible: boolean;
+  mode: ExplorerBatchRenameMode;
   findText: string;
   replaceText: string;
   prefix: string;
@@ -2647,38 +2668,271 @@ function BatchRenameDialog({
   onCancel,
 }: {
   state: BatchRenameState;
-  preview: Array<{ entry: FileEntry; nextName: string }>;
+  preview: ExplorerBatchRenamePreviewRow[];
   onChange: (updates: Partial<BatchRenameState>) => void;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const previewCount = preview.length;
+  const collisionCount = preview.filter((row) => row.collision).length;
+  const validationError = preview.find((row) => row.validationError)?.validationError ?? null;
+  const canCommit = previewCount > 0 && !validationError && collisionCount === 0;
+
   return (
-    <div style={{ position:'fixed', inset:0, zIndex:10000, background:'rgba(0,0,0,0.72)', display:'flex', alignItems:'center', justifyContent:'center' }}>
-      <div style={{ width:'min(920px, 94vw)', maxHeight:'82vh', display:'flex', flexDirection:'column', background:'var(--overlay-explorer-preview-bg)', border:'1px solid var(--overlay-explorer-preview-border)', borderRadius:'var(--overlay-explorer-panel-radius)', padding:20, boxShadow:'0 24px 64px rgba(0,0,0,0.9)' }}>
-        <div style={{ color:EXP.text, fontWeight:700, fontSize:14, marginBottom:12 }}>Batch Rename</div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, minmax(0, 1fr))', gap:10 }}>
-          <input value={state.findText} onChange={(event) => onChange({ findText: event.target.value })} placeholder="Find text" style={dialogInputStyle} />
+    <div style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: 'min(1040px, 96vw)', maxHeight: '86vh', display: 'flex', flexDirection: 'column', background: 'var(--overlay-explorer-preview-bg)', border: '1px solid var(--overlay-explorer-preview-border)', borderRadius: 'var(--overlay-explorer-panel-radius)', padding: 20, boxShadow: '0 24px 64px rgba(0,0,0,0.9)' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+          <div>
+            <div style={{ color: EXP.text, fontWeight: 700, fontSize: 14 }}>Batch Rename</div>
+            <div style={{ marginTop: 4, color: EXP.muted, fontSize: 11 }}>
+              {state.mode === 'regex'
+                ? 'Regex mode supports capture groups like $1 and ${name}. Tokens: {{date}}, {{index}}, {{parent}}.'
+                : 'Literal mode replaces plain text in the filename stem and still expands tokens after replacement.'}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => onChange({ mode: state.mode === 'regex' ? 'literal' : 'regex' })}
+              style={state.mode === 'regex' ? dialogSecondaryButtonStyle : dialogSecondaryButtonStyle}
+              title="Toggle regex mode"
+            >
+              {state.mode === 'regex' ? 'Regex On' : 'Regex Off'}
+            </button>
+            <button type="button" onClick={onCancel} style={dialogSecondaryButtonStyle}>Close</button>
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+          <input value={state.findText} onChange={(event) => onChange({ findText: event.target.value })} placeholder={state.mode === 'regex' ? 'Find pattern' : 'Find text'} style={dialogInputStyle} />
           <input value={state.replaceText} onChange={(event) => onChange({ replaceText: event.target.value })} placeholder="Replace with" style={dialogInputStyle} />
           <input value={state.prefix} onChange={(event) => onChange({ prefix: event.target.value })} placeholder="Prefix" style={dialogInputStyle} />
           <input value={state.suffix} onChange={(event) => onChange({ suffix: event.target.value })} placeholder="Suffix" style={dialogInputStyle} />
           <input value={state.startingNumber} onChange={(event) => onChange({ startingNumber: Number(event.target.value) || 1 })} placeholder="Start #" type="number" style={dialogInputStyle} />
           <input value={state.padding} onChange={(event) => onChange({ padding: Number(event.target.value) || 1 })} placeholder="Pad width" type="number" style={dialogInputStyle} />
         </div>
-        <div style={{ marginTop:14, border:'1px solid var(--overlay-border)', borderRadius:12, overflow:'hidden', minHeight:0, flex:1 }}>
-          <OverlayScrollArea style={{ maxHeight:'46vh' }}>
-            <div style={{ display:'grid', gap:1, background:'var(--overlay-border)' }}>
-              {preview.map(({ entry, nextName }) => (
-                <div key={entry.path} style={{ display:'grid', gridTemplateColumns:'minmax(0, 1fr) minmax(0, 1fr)', gap:12, background:'var(--overlay-bg-panel)', padding:'9px 12px' }}>
-                  <span style={{ color:EXP.muted, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{entry.name}</span>
-                  <span style={{ color:EXP.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{nextName}</span>
+        <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', color: EXP.muted, fontSize: 11 }}>
+          <span>Capture groups: {state.mode === 'regex' ? '$1..$99, ${name}' : 'literal text'}</span>
+          <span>Tokens: <code style={{ color: EXP.text }}>{'{{date}}'}</code>, <code style={{ color: EXP.text }}>{'{{index}}'}</code>, <code style={{ color: EXP.text }}>{'{{parent}}'}</code></span>
+          {previewCount > 0 && <span>{previewCount} files</span>}
+          {collisionCount > 0 && <span style={{ color: 'rgba(248,113,113,0.95)' }}>{collisionCount} collision{collisionCount === 1 ? '' : 's'}</span>}
+          {validationError && <span style={{ color: 'rgba(248,113,113,0.95)' }}>{validationError}</span>}
+        </div>
+        <div style={{ marginTop: 14, border: '1px solid var(--overlay-border)', borderRadius: 12, overflow: 'hidden', minHeight: 0, flex: 1 }}>
+          <OverlayScrollArea style={{ maxHeight: '50vh' }}>
+            <div style={{ display: 'grid', gap: 1, background: 'var(--overlay-border)' }}>
+              {preview.map((row) => (
+                <div key={row.sourcePath} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) auto', gap: 12, background: 'var(--overlay-bg-panel)', padding: '9px 12px', alignItems: 'center' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ color: EXP.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.currentName}</div>
+                    <div style={{ marginTop: 2, color: EXP.muted2, fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.sourcePath}</div>
+                  </div>
+                  <div style={{ minWidth: 0, color: EXP.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.nextName}</div>
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    {row.collision && <span style={{ color: 'rgba(248,113,113,0.95)', fontSize: 10, fontWeight: 700 }}>Collision</span>}
+                    {row.validationError && <span style={{ color: 'rgba(248,113,113,0.95)', fontSize: 10, fontWeight: 700 }}>{row.validationError}</span>}
+                  </div>
                 </div>
               ))}
             </div>
           </OverlayScrollArea>
         </div>
-        <div style={{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:14 }}>
-          <button onClick={onCancel} style={{ background:'var(--overlay-explorer-chip-bg)', border:'1px solid var(--overlay-explorer-chip-border)', borderRadius:'var(--overlay-explorer-control-radius)', color:EXP.text, padding:'6px 14px', fontSize:12, cursor:'pointer' }}>Cancel</button>
-          <button onClick={onConfirm} style={{ background:'var(--overlay-explorer-chip-active-bg)', border:'1px solid var(--overlay-explorer-chip-active-border)', borderRadius:'var(--overlay-explorer-control-radius)', color:'var(--overlay-explorer-chip-active-text)', padding:'6px 14px', fontSize:12, cursor:'pointer', fontWeight:600 }}>Rename</button>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+          <button onClick={onCancel} style={dialogSecondaryButtonStyle}>Cancel</button>
+          <button onClick={onConfirm} disabled={!canCommit} style={{
+            background: canCommit ? 'var(--overlay-explorer-chip-active-bg)' : 'rgba(255,255,255,0.08)',
+            border: '1px solid var(--overlay-explorer-chip-active-border)',
+            borderRadius: 'var(--overlay-explorer-control-radius)',
+            color: canCommit ? 'var(--overlay-explorer-chip-active-text)' : EXP.muted,
+            padding: '6px 14px',
+            fontSize: 12,
+            cursor: canCommit ? 'pointer' : 'not-allowed',
+            fontWeight: 600,
+            opacity: canCommit ? 1 : 0.7,
+          }}>
+            Rename
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExplorerPropertiesDialog({
+  state,
+  entries,
+  primaryEntry,
+  recursiveSummary,
+  checksumResults,
+  checksumLoadingPaths,
+  checksumError,
+  supportsNativeProperties,
+  onTabChange,
+  onCalculateChecksums,
+  onCalculateRecursiveSize,
+  onOpenNativeProperties,
+  onClose,
+}: {
+  state: ExplorerPropertiesPanelSnapshot;
+  entries: FileEntry[];
+  primaryEntry: FileEntry | null;
+  recursiveSummary: { totalBytes: number; fileCount: number; folderCount: number; pending: boolean } | null;
+  checksumResults: Record<string, ExplorerChecksumResult>;
+  checksumLoadingPaths: Set<string>;
+  checksumError: string | null;
+  supportsNativeProperties: boolean;
+  onTabChange: (tab: ExplorerPropertiesPanelTab) => void;
+  onCalculateChecksums: () => void;
+  onCalculateRecursiveSize: () => void;
+  onOpenNativeProperties: (path: string) => void;
+  onClose: () => void;
+}) {
+  const selectedCount = entries.length;
+  const tabs: Array<{ id: ExplorerPropertiesPanelTab; label: string }> = [
+    { id: 'info', label: 'Info' },
+    { id: 'permissions', label: 'Permissions' },
+    { id: 'checksums', label: 'Checksums' },
+  ];
+  const activeTab = state.tab;
+
+  const panelBody = (() => {
+    if (activeTab === 'permissions') {
+      return (
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div style={{ color: EXP.muted, fontSize: 12, lineHeight: 1.5 }}>
+            The frontend can show item identity and status here, but chmod/ACL details still come from the native shell on this platform.
+          </div>
+          {supportsNativeProperties && primaryEntry && (
+            <button type="button" onClick={() => onOpenNativeProperties(primaryEntry.path)} style={dialogSecondaryButtonStyle}>
+              Open Native Properties
+            </button>
+          )}
+          <div style={{ border: '1px solid var(--overlay-border)', borderRadius: 12, padding: 12, background: 'var(--overlay-bg-panel)', display: 'grid', gap: 8 }}>
+            <div style={{ color: EXP.text, fontWeight: 700, fontSize: 12 }}>Selection</div>
+            <div style={{ color: EXP.muted, fontSize: 11 }}>{selectedCount} item{selectedCount === 1 ? '' : 's'} selected</div>
+            <div style={{ color: EXP.muted, fontSize: 11 }}>
+              {entries.map((entry) => entry.path).join('\n')}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (activeTab === 'checksums') {
+      return (
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            <button type="button" onClick={onCalculateChecksums} style={dialogSecondaryButtonStyle}>
+              Calculate
+            </button>
+            <div style={{ color: EXP.muted, fontSize: 11 }}>
+              Compute MD5 and SHA-256 on demand. Single files under 100MB auto-start when you open this tab.
+            </div>
+          </div>
+          {checksumError && <div style={{ color: 'rgba(248,113,113,0.95)', fontSize: 11 }}>{checksumError}</div>}
+          <div style={{ display: 'grid', gap: 8 }}>
+            {entries.map((entry) => {
+              const checksum = checksumResults[entry.path];
+              const loading = checksumLoadingPaths.has(entry.path);
+              return (
+                <div key={entry.path} style={{ border: '1px solid var(--overlay-border)', borderRadius: 12, padding: 12, background: 'var(--overlay-bg-panel)', display: 'grid', gap: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ color: EXP.text, fontSize: 12, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.name}</div>
+                      <div style={{ color: EXP.muted, fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.path}</div>
+                    </div>
+                    <div style={{ color: loading ? EXP.text : EXP.muted, fontSize: 11 }}>{loading ? 'Calculating…' : 'Ready'}</div>
+                  </div>
+                  <div style={{ display: 'grid', gap: 6, fontSize: 11 }}>
+                    <div style={{ color: EXP.muted }}>MD5: <span style={{ color: EXP.text, fontFamily: 'monospace' }}>{checksum?.md5 ?? '—'}</span></div>
+                    <div style={{ color: EXP.muted }}>SHA-256: <span style={{ color: EXP.text, fontFamily: 'monospace' }}>{checksum?.sha256 ?? '—'}</span></div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ display: 'grid', gap: 8, border: '1px solid var(--overlay-border)', borderRadius: 12, padding: 12, background: 'var(--overlay-bg-panel)' }}>
+          <div style={{ color: EXP.text, fontWeight: 700, fontSize: 12 }}>
+            {selectedCount === 1 ? primaryEntry?.name ?? 'Selection' : `${selectedCount} items`}
+          </div>
+          <div style={{ color: EXP.muted, fontSize: 11, wordBreak: 'break-all' }}>
+            {entries.map((entry) => entry.path).join('\n')}
+          </div>
+        </div>
+        {primaryEntry && (
+          <div style={{ display: 'grid', gap: 8, border: '1px solid var(--overlay-border)', borderRadius: 12, padding: 12, background: 'var(--overlay-bg-panel)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <div>
+                <div style={{ color: EXP.text, fontSize: 12, fontWeight: 700 }}>{primaryEntry.name}</div>
+                <div style={{ color: EXP.muted, fontSize: 10 }}>{primaryEntry.is_dir ? 'Folder' : 'File'}</div>
+              </div>
+              <button type="button" onClick={onCalculateRecursiveSize} style={dialogSecondaryButtonStyle}>
+                Calculate Recursive Size
+              </button>
+            </div>
+            <div style={{ display: 'grid', gap: 4, color: EXP.muted, fontSize: 11 }}>
+              <div>Path: <span style={{ color: EXP.text, wordBreak: 'break-all' }}>{primaryEntry.path}</span></div>
+              <div>Size: <span style={{ color: EXP.text }}>{formatSize(recursiveSummary?.totalBytes ?? primaryEntry.size)}</span></div>
+              <div>Modified: <span style={{ color: EXP.text }}>{formatDate(primaryEntry.modified)}</span></div>
+              {recursiveSummary && (
+                <div>
+                  Recursive size: <span style={{ color: EXP.text }}>{formatSize(recursiveSummary.totalBytes)}</span>
+                  <span style={{ color: EXP.muted2 }}> · {recursiveSummary.fileCount} files · {recursiveSummary.folderCount} folders</span>
+                  {recursiveSummary.pending && <span style={{ color: EXP.muted2 }}> · updating…</span>}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  })();
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: 'min(1020px, 96vw)', maxHeight: '86vh', display: 'flex', flexDirection: 'column', background: 'var(--overlay-explorer-preview-bg)', border: '1px solid var(--overlay-explorer-preview-border)', borderRadius: 'var(--overlay-explorer-panel-radius)', padding: 20, boxShadow: '0 24px 64px rgba(0,0,0,0.9)' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+          <div>
+            <div style={{ color: EXP.text, fontWeight: 700, fontSize: 14 }}>Properties</div>
+            <div style={{ marginTop: 4, color: EXP.muted, fontSize: 11 }}>
+              {selectedCount} item{selectedCount === 1 ? '' : 's'} in the drawer
+              {state.loading ? ' · updating…' : ''}
+            </div>
+          </div>
+          <button type="button" onClick={onClose} style={dialogSecondaryButtonStyle}>Close</button>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => onTabChange(tab.id)}
+              style={{
+                background: activeTab === tab.id ? 'var(--overlay-explorer-chip-active-bg)' : 'var(--overlay-explorer-chip-bg)',
+                border: activeTab === tab.id ? '1px solid var(--overlay-explorer-chip-active-border)' : '1px solid var(--overlay-explorer-chip-border)',
+                borderRadius: 'var(--overlay-explorer-control-radius)',
+                color: activeTab === tab.id ? 'var(--overlay-explorer-chip-active-text)' : EXP.text,
+                padding: '6px 12px',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ minHeight: 0, flex: 1 }}>
+          <OverlayScrollArea style={{ maxHeight: '68vh' }}>
+            <div style={{ display: 'grid', gap: 12 }}>
+              {panelBody}
+            </div>
+          </OverlayScrollArea>
         </div>
       </div>
     </div>
@@ -2891,7 +3145,7 @@ export function FileExplorer({
     openWithDialog: openExplorerPathWithDialog,
     openPathAsAdmin: openExplorerPathAsAdmin,
     readFileBase64: readExplorerFileBase64,
-    readImageThumbnail: readExplorerImageThumbnail,
+    readEntryThumbnail: readExplorerEntryThumbnail,
     readTextFile: readExplorerTextFile,
     renamePath: renameExplorerPath,
     revealPath: revealExplorerPath,
@@ -2942,10 +3196,16 @@ export function FileExplorer({
     updateExplorerSessionForInstance,
     updateExplorerRail,
     clipboard,
+    jumpFilter,
+    propertiesPanel,
+    recursiveSizeCache,
     openChromeEditSession,
     registerChromeEditSurface,
     setClipboard,
     setChromeEditDraggingControl,
+    setJumpFilter,
+    setPropertiesPanel,
+    setRecursiveSizeCacheEntry,
     unregisterChromeEditSurface,
     updateChromeEditDraft,
   } = useExplorerStore(useShallow(state => ({
@@ -2955,10 +3215,16 @@ export function FileExplorer({
     updateExplorerSessionForInstance: state.updateSessionForInstance,
     updateExplorerRail: state.updateRail,
     clipboard: state.clipboard,
+    jumpFilter: state.jumpFilter,
+    propertiesPanel: state.propertiesPanel,
+    recursiveSizeCache: state.recursiveSizeCache,
     openChromeEditSession: state.openChromeEditSession,
     registerChromeEditSurface: state.registerChromeEditSurface,
     setClipboard: state.setClipboard,
     setChromeEditDraggingControl: state.setChromeEditDraggingControl,
+    setJumpFilter: state.setJumpFilter,
+    setPropertiesPanel: state.setPropertiesPanel,
+    setRecursiveSizeCacheEntry: state.setRecursiveSizeCacheEntry,
     unregisterChromeEditSurface: state.unregisterChromeEditSurface,
     updateChromeEditDraft: state.updateChromeEditDraft,
   })));
@@ -3001,6 +3267,7 @@ export function FileExplorer({
   const useNativeOsIcons = appearanceSettings.useNativeOsIcons;
   const explorerBlurEnabled = appearanceSettings.appBlur !== false;
   const showHidden = explorerSettings.showHiddenFiles;
+  const explorerThumbnailSettings = explorerSettings.thumbnails;
   const viewMode = explorerSettings.viewMode;
   const gridZoom = explorerSettings.gridZoom;
   const experimentalViewMode = explorerSettings.experimentalViewMode;
@@ -3039,8 +3306,11 @@ export function FileExplorer({
   const [entrySizeLoadingPaths, setEntrySizeLoadingPaths] = useState<Set<string>>(() => new Set());
   const [nativeIconMap, setNativeIconMap] = useState<Record<string, string | null>>({});
   const [nativeIconLoadingKeys, setNativeIconLoadingKeys] = useState<Set<string>>(() => new Set());
-  const [imageThumbnailMap, setImageThumbnailMap] = useState<Record<string, string | null>>({});
-  const [imageThumbnailLoadingPaths, setImageThumbnailLoadingPaths] = useState<Set<string>>(() => new Set());
+  const [entryThumbnailMap, setEntryThumbnailMap] = useState<Record<string, ExplorerEntryThumbnailData | null>>({});
+  const [entryThumbnailLoadingPaths, setEntryThumbnailLoadingPaths] = useState<Set<string>>(() => new Set());
+  const [videoHoverThumbnailLoadingPaths, setVideoHoverThumbnailLoadingPaths] = useState<Set<string>>(() => new Set());
+  const [hoveredVideoThumbnailPath, setHoveredVideoThumbnailPath] = useState<string | null>(null);
+  const [hoveredVideoThumbnailFrameIndex, setHoveredVideoThumbnailFrameIndex] = useState(0);
   const [searchResults, setSearchResults] = useState<FileSearchResult[]>([]);
   const [drives,       setDrives]       = useState<DriveInfo[]>([]);
   const [drivesLoading, setDrivesLoading] = useState(true);
@@ -3082,6 +3352,7 @@ export function FileExplorer({
   });
   const [batchRename, setBatchRename] = useState<BatchRenameState>({
     visible: false,
+    mode: 'literal',
     findText: '',
     replaceText: '',
     prefix: '',
@@ -3089,6 +3360,9 @@ export function FileExplorer({
     startingNumber: 1,
     padding: 2,
   });
+  const [propertiesChecksums, setPropertiesChecksums] = useState<Record<string, ExplorerChecksumResult>>({});
+  const [propertiesChecksumLoadingPaths, setPropertiesChecksumLoadingPaths] = useState<Set<string>>(() => new Set());
+  const [propertiesChecksumError, setPropertiesChecksumError] = useState<string | null>(null);
   const [saveSearchState, setSaveSearchState] = useState<SaveSearchState>({ visible: false, name: '' });
   const [duplicateFinder, setDuplicateFinder] = useState<DuplicateFinderState>({
     visible: false,
@@ -3155,6 +3429,22 @@ export function FileExplorer({
   });
   const currentPathIsCloud = currentPath.length > 0 && isCloudExplorerPath(currentPath);
   const isExperimentalViewEligible = !isCompactDock && search.trim().length === 0;
+
+  useEffect(() => {
+    setJumpFilter(null);
+  }, [currentPath, setJumpFilter]);
+
+  useEffect(() => {
+    if (!currentPath || currentPathIsCloud) {
+      return;
+    }
+
+    queueExplorerTerminalDirectorySync({
+      path: currentPath,
+      shell: useSettingsStore.getState().settings.terminal.shell,
+      source: 'navigation',
+    });
+  }, [currentPath, currentPathIsCloud]);
 
   const setExplorerViewportNode = useCallback((node: HTMLDivElement | null) => {
     explorerViewportRef.current = node;
@@ -3760,7 +4050,7 @@ export function FileExplorer({
       return changed ? next : current;
     });
     setEntrySizeLoadingPaths(new Set());
-    setImageThumbnailMap(current => {
+    setEntryThumbnailMap(current => {
       if (entriesToInvalidate.length === 0) {
         return current;
       }
@@ -3774,7 +4064,10 @@ export function FileExplorer({
       }
       return changed ? next : current;
     });
-    setImageThumbnailLoadingPaths(new Set());
+    setEntryThumbnailLoadingPaths(new Set());
+    setVideoHoverThumbnailLoadingPaths(new Set());
+    setHoveredVideoThumbnailPath(null);
+    setHoveredVideoThumbnailFrameIndex(0);
     try {
       const nextListing = await listExplorerLocationUncached(refreshPath, showHidden);
       if (!isActiveDirectoryLoadRequest()) {
@@ -4035,13 +4328,19 @@ export function FileExplorer({
     }),
     [activeTagFilterIds, entries, isSearchActive, pathTagIdsByPath, searchResults],
   );
-  const visibleEntries = useMemo(
+  const baseVisibleEntries = useMemo(
     () => sortExplorerEntries(filteredEntries, explorerSettings.sortBy, explorerSettings.sortOrder),
     [
       filteredEntries,
       explorerSettings.sortBy,
       explorerSettings.sortOrder,
     ],
+  );
+  const visibleEntries = useMemo(
+    () => (jumpFilter.active && jumpFilter.query.trim().length > 0
+      ? filterExplorerEntriesForJump(baseVisibleEntries, jumpFilter.query)
+      : baseVisibleEntries),
+    [baseVisibleEntries, jumpFilter.active, jumpFilter.query],
   );
   const sourceEntryCount = isSearchActive ? searchResults.length : entries.length;
   const filteredEntryCount = visibleEntries.length;
@@ -4117,6 +4416,20 @@ export function FileExplorer({
     const totalBytes = selectedSizeEntries.reduce((sum, value) => sum + value.bytes, 0);
     return { totalBytes, count: selectedSizeEntries.length };
   }, [entrySizes, selectedEntries]);
+  const propertiesPanelRecursiveSummary = useMemo(() => {
+    const cacheEntries = propertiesPanel.targetPaths
+      .map((path) => recursiveSizeCache[path])
+      .filter((value): value is ExplorerRecursiveSizeCacheEntry => Boolean(value));
+    if (cacheEntries.length === 0) {
+      return null;
+    }
+
+    const totalBytes = cacheEntries.reduce((sum, value) => sum + value.bytes, 0);
+    const fileCount = cacheEntries.reduce((sum, value) => sum + value.fileCount, 0);
+    const folderCount = cacheEntries.reduce((sum, value) => sum + value.folderCount, 0);
+    const pending = cacheEntries.some((value) => value.pending);
+    return { totalBytes, fileCount, folderCount, pending };
+  }, [propertiesPanel.targetPaths, recursiveSizeCache]);
   const droppedSourceLookup = useMemo(() => {
     const lookup = new Map<string, { path: string; name: string; isDirectory: boolean }>();
     for (const entry of [...entries, ...searchResults]) {
@@ -4144,6 +4457,153 @@ export function FileExplorer({
     }
     return lookup;
   }, [duplicateFinder.status?.groups, entries, searchResults]);
+  const propertiesPanelEntries = useMemo(
+    () => propertiesPanel.targetPaths
+      .map((path) => duplicateEntryLookup.get(path))
+      .filter((entry): entry is FileEntry => Boolean(entry)),
+    [duplicateEntryLookup, propertiesPanel.targetPaths],
+  );
+  const propertiesPanelPrimaryEntry = propertiesPanelEntries[0] ?? null;
+  const runRecursiveSizeCalculation = useCallback(async (targetPaths?: string[]) => {
+    const paths = (targetPaths ?? (
+      selectedEntries.length > 0
+        ? selectedEntries.map((entry) => entry.path)
+        : visibleEntries.filter((entry) => entry.is_dir).map((entry) => entry.path)
+    )).map((path) => path.trim()).filter(Boolean);
+    if (paths.length === 0) {
+      return;
+    }
+
+    const activeTab = propertiesPanel.tab;
+    setPropertiesPanel({
+      loading: true,
+      targetPaths: paths,
+      tab: activeTab,
+      visible: true,
+    });
+    for (const path of paths) {
+      const existing = recursiveSizeCache[path];
+      setRecursiveSizeCacheEntry(path, {
+        bytes: existing?.bytes ?? 0,
+        fileCount: existing?.fileCount ?? 0,
+        folderCount: existing?.folderCount ?? 0,
+        pending: true,
+        updatedAt: Date.now(),
+      });
+    }
+
+    try {
+      const results = await measureExplorerEntrySizes(paths, true);
+      startTransition(() => {
+        setEntrySizes((current) => {
+          const next = { ...current };
+          for (const result of results) {
+            next[result.path] = result;
+            setRecursiveSizeCacheEntry(result.path, {
+              bytes: result.bytes,
+              fileCount: result.is_dir ? 0 : 1,
+              folderCount: result.is_dir ? 1 : 0,
+              pending: false,
+              updatedAt: Date.now(),
+            });
+          }
+          return next;
+        });
+      });
+    } catch (error) {
+      setError(String(error));
+    } finally {
+      setPropertiesPanel({
+        loading: false,
+        targetPaths: paths,
+        tab: activeTab,
+        visible: true,
+      });
+    }
+  }, [
+    measureExplorerEntrySizes,
+    propertiesPanel.tab,
+    recursiveSizeCache,
+    selectedEntries,
+    setEntrySizes,
+    setPropertiesPanel,
+    setRecursiveSizeCacheEntry,
+    setError,
+    visibleEntries,
+  ]);
+  const runPropertiesChecksumCalculation = useCallback(async (targetPaths?: string[]) => {
+    const paths = (targetPaths ?? propertiesPanel.targetPaths).map((path) => path.trim()).filter(Boolean);
+    if (paths.length === 0) {
+      return;
+    }
+
+    const activeTab = propertiesPanel.tab;
+    setPropertiesChecksumError(null);
+    setPropertiesChecksumLoadingPaths(new Set(paths));
+    setPropertiesPanel({
+      loading: true,
+      targetPaths: paths,
+      tab: activeTab,
+      visible: true,
+    });
+
+    try {
+      for (const path of paths) {
+        const entry = duplicateEntryLookup.get(path);
+        if (entry?.is_dir) {
+          continue;
+        }
+
+        const base64 = await readExplorerFileBase64(path);
+        const checksumResult = await calculateExplorerChecksumsFromBase64(base64);
+        setPropertiesChecksums((current) => ({
+          ...current,
+          [path]: checksumResult,
+        }));
+      }
+    } catch (error) {
+      setPropertiesChecksumError(String(error));
+    } finally {
+      setPropertiesChecksumLoadingPaths(new Set());
+      setPropertiesPanel({
+        loading: false,
+        targetPaths: paths,
+        tab: activeTab,
+        visible: true,
+      });
+    }
+  }, [duplicateEntryLookup, propertiesPanel.tab, propertiesPanel.targetPaths, readExplorerFileBase64, setPropertiesPanel]);
+  useEffect(() => {
+    if (!propertiesPanel.visible || propertiesPanel.tab !== 'checksums' || propertiesPanel.targetPaths.length !== 1) {
+      return;
+    }
+
+    const targetPath = propertiesPanel.targetPaths[0];
+    if (!targetPath || propertiesChecksumLoadingPaths.has(targetPath) || propertiesChecksums[targetPath]) {
+      return;
+    }
+
+    const targetEntry = duplicateEntryLookup.get(targetPath);
+    if (!targetEntry || targetEntry.is_dir) {
+      return;
+    }
+
+    const measuredSize = entrySizes[targetPath]?.bytes ?? targetEntry.size;
+    if (typeof measuredSize === 'number' && measuredSize > 100 * 1024 * 1024) {
+      return;
+    }
+
+    void runPropertiesChecksumCalculation([targetPath]);
+  }, [
+    duplicateEntryLookup,
+    entrySizes,
+    propertiesChecksumLoadingPaths,
+    propertiesChecksums,
+    propertiesPanel.targetPaths,
+    propertiesPanel.tab,
+    propertiesPanel.visible,
+    runPropertiesChecksumCalculation,
+  ]);
   const goHome = useCallback(() => {
     getExplorerHomeDir().then(p => navigate(p)).catch(() => {});
   }, [navigate]);
@@ -4387,15 +4847,52 @@ export function FileExplorer({
     useNativeOsIcons,
   ]);
 
-  const getGridEntryThumbnailSrc = useCallback((entry: FileEntry): string | null => {
-    if (entry.is_dir || currentPathIsCloud) {
+  const canRenderEntryThumbnail = useCallback((entry: FileEntry): boolean => {
+    if (entry.is_dir || currentPathIsCloud || isCloudExplorerPath(entry.path)) {
+      return false;
+    }
+    return canRenderExplorerThumbnail(
+      getEntryExtension(entry),
+      entry.size,
+      explorerThumbnailSettings,
+    );
+  }, [
+    currentPathIsCloud,
+    explorerThumbnailSettings,
+    isCloudExplorerPath,
+  ]);
+
+  const getActiveEntryThumbnailSrc = useCallback((entry: FileEntry): string | null => {
+    const thumbnail = entryThumbnailMap[entry.path];
+    if (!thumbnail) {
       return null;
     }
-    if (!isImagePreviewExtension(getEntryExtension(entry))) {
+    if (
+      thumbnail.kind === 'video'
+      && hoveredVideoThumbnailPath === entry.path
+      && thumbnail.hoverFrames.length > 0
+    ) {
+      const hoverFrame = thumbnail.hoverFrames[
+        hoveredVideoThumbnailFrameIndex % thumbnail.hoverFrames.length
+      ];
+      return hoverFrame?.imageDataUrl ?? thumbnail.posterDataUrl;
+    }
+    return thumbnail.posterDataUrl;
+  }, [
+    entryThumbnailMap,
+    hoveredVideoThumbnailFrameIndex,
+    hoveredVideoThumbnailPath,
+  ]);
+
+  const getRenderableEntryThumbnailSrc = useCallback((
+    entry: FileEntry,
+    minimumStageSize: number,
+  ): string | null => {
+    if (minimumStageSize < EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.minStagePx) {
       return null;
     }
-    return imageThumbnailMap[entry.path] ?? null;
-  }, [currentPathIsCloud, imageThumbnailMap]);
+    return getActiveEntryThumbnailSrc(entry);
+  }, [getActiveEntryThumbnailSrc]);
 
   const queueClipboard = useCallback((action: 'copy' | 'cut', entry?: FileEntry) => {
     const entriesForAction = resolveEntriesForAction(entry);
@@ -4418,9 +4915,35 @@ export function FileExplorer({
     await openExplorerPathWithDialog(path).catch(error => setError(String(error)));
   }, [openExplorerPathWithDialog]);
 
-  const showNativeProperties = useCallback(async (path: string) => {
+  const openNativeProperties = useCallback(async (path: string) => {
     await showExplorerPathProperties(path).catch(error => setError(String(error)));
   }, [showExplorerPathProperties]);
+
+  const openExplorerPropertiesPanel = useCallback((paths: string[], tab: ExplorerPropertiesPanelTab = 'info') => {
+    const nextPaths = paths.map((path) => path.trim()).filter(Boolean);
+    if (nextPaths.length === 0) {
+      return;
+    }
+
+    setPropertiesChecksums({});
+    setPropertiesChecksumLoadingPaths(new Set());
+    setPropertiesChecksumError(null);
+    setPropertiesPanel({
+      loading: false,
+      targetPaths: nextPaths,
+      tab,
+      visible: true,
+    });
+  }, [setPropertiesPanel]);
+
+  const openExplorerPropertiesForSelection = useCallback(() => {
+    const nextPaths = selectedEntries.length > 0
+      ? selectedEntries.map((entry) => entry.path)
+      : currentPath
+        ? [currentPath]
+        : [];
+    openExplorerPropertiesPanel(nextPaths);
+  }, [currentPath, openExplorerPropertiesPanel, selectedEntries]);
 
   const transferIntoDirectory = useCallback(async (
     targetDir: string,
@@ -5185,36 +5708,20 @@ export function FileExplorer({
     return { totalBytes, fileCount, folderCount };
   }, [entrySizes, visibleEntries]);
 
-  const batchRenamePreview = useMemo(() => {
-    const renameTargets = (selectedEntries.length > 0 ? selectedEntries : visibleEntries)
-      .filter((entry) => !entry.is_dir);
-    return renameTargets.map((entry, index) => {
-      const extensionMatch = entry.name.match(/(\.[^.]+)$/);
-      const extension = extensionMatch?.[1] ?? '';
-      const stem = extension ? entry.name.slice(0, -extension.length) : entry.name;
-      const replacedStem = batchRename.findText
-        ? stem.split(batchRename.findText).join(batchRename.replaceText)
-        : stem;
-      const numbering = String(batchRename.startingNumber + index).padStart(
-        Math.max(1, batchRename.padding),
-        '0',
-      );
-      const nextName = `${batchRename.prefix}${replacedStem}${batchRename.suffix}${numbering}${extension}`;
-      const separator = entry.path.includes('\\') ? '\\' : '/';
-      const parentPath = entry.path.replace(/[/\\][^/\\]+$/, '');
-      return {
-        entry,
-        nextName,
-        destinationPath: `${parentPath}${separator}${nextName}`,
-      };
-    });
-  }, [batchRename, selectedEntries, visibleEntries]);
+  const batchRenameTargets = useMemo(
+    () => (selectedEntries.length > 0 ? selectedEntries : visibleEntries).filter((entry) => !entry.is_dir),
+    [selectedEntries, visibleEntries],
+  );
+  const batchRenamePreview = useMemo(
+    () => buildExplorerBatchRenamePreview(batchRenameTargets, batchRename),
+    [batchRename, batchRenameTargets],
+  );
 
   const commitBatchRename = useCallback(async () => {
-    const items = batchRenamePreview
-      .filter(({ entry, destinationPath }) => entry.path !== destinationPath)
-      .map(({ entry, destinationPath }): ExplorerBatchRenameItem => ({
-        sourcePath: entry.path,
+    const items = batchRenamePreview.rows
+      .filter(({ sourcePath, destinationPath }) => sourcePath !== destinationPath)
+      .map(({ sourcePath, destinationPath }): ExplorerBatchRenameItem => ({
+        sourcePath,
         destinationPath,
       }));
     if (items.length === 0) {
@@ -5229,7 +5736,7 @@ export function FileExplorer({
     } catch (renameError) {
       setError(String(renameError));
     }
-  }, [batchRenameExplorerPaths, batchRenamePreview, refresh]);
+  }, [batchRenameExplorerPaths, batchRenamePreview.rows, refresh]);
 
   const saveCurrentSearch = useCallback(async () => {
     const name = saveSearchState.name.trim() || search.trim();
@@ -5263,6 +5770,49 @@ export function FileExplorer({
     setSearchIncludeContent(savedSearch.includeContent);
     setActiveTagFilterIds(savedSearch.tagFilterIds);
   }, [currentPath, navigate]);
+
+  const updateJumpFilterQuery = useCallback((nextQuery: string) => {
+    const trimmed = nextQuery.trim();
+    if (!trimmed) {
+      setJumpFilter(null);
+      return;
+    }
+
+    const resultPaths = filterExplorerEntriesForJump(baseVisibleEntries, trimmed).map((entry) => entry.path);
+    setJumpFilter({
+      active: true,
+      query: trimmed,
+      resultIndex: resultPaths.length > 0 ? 0 : -1,
+      resultPaths,
+    });
+  }, [baseVisibleEntries, setJumpFilter]);
+
+  const moveJumpFilterSelection = useCallback((direction: 1 | -1) => {
+    if (!jumpFilter.active || jumpFilter.resultPaths.length === 0) {
+      return;
+    }
+
+    const nextIndex = jumpFilter.resultIndex < 0
+      ? 0
+      : (jumpFilter.resultIndex + direction + jumpFilter.resultPaths.length) % jumpFilter.resultPaths.length;
+    const nextPath = jumpFilter.resultPaths[nextIndex];
+    if (!nextPath) {
+      return;
+    }
+
+    setJumpFilter({
+      active: true,
+      query: jumpFilter.query,
+      resultIndex: nextIndex,
+      resultPaths: jumpFilter.resultPaths,
+    });
+    setSelected(new Set([nextPath]));
+    lastSelected.current = nextPath;
+
+    const nextElement = Array.from(mainRef.current?.querySelectorAll<HTMLElement>('[data-entry-path]') ?? [])
+      .find((element) => element.dataset.entryPath === nextPath);
+    nextElement?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [jumpFilter.active, jumpFilter.query, jumpFilter.resultIndex, jumpFilter.resultPaths, setJumpFilter]);
 
   const startDuplicateFinder = useCallback(async () => {
     if (!currentPath || currentPathIsCloud) {
@@ -5510,9 +6060,7 @@ export function FileExplorer({
             ? [{ ...sharedItem, label: revealPathLabel, action: () => revealExplorerPath(entry.path).catch(e => setError(String(e))) }]
             : [];
         case 'properties':
-          return supportsNativeProperties && canUseNativeIntegration
-            ? [{ ...sharedItem, label: propertiesLabel, action: () => showNativeProperties(entry.path) }]
-            : [];
+          return [{ ...sharedItem, label: propertiesLabel, action: () => openExplorerPropertiesPanel([entry.path]) }];
         case 'copy-path':
           return [{ ...sharedItem, label: 'Copy Path', action: () => copyToSysClipboard(entry.path) }];
         case 'copy':
@@ -5634,7 +6182,7 @@ export function FileExplorer({
       ...audioBatchItems,
       ...pluginItems,
     ]);
-  }, [bookmarkPathSet, copyToSysClipboard, duplicate, executePluginContextMenuItem, explorerRail, explorerSettings.contextMenuItemOverrides, finalizeContextMenuItems, handleArchiveAction, handleAudioBatchAction, handleBookmarkCreated, isCloudExplorerPath, onOpenInFilesystemAquarium, onOpenInTerminal, openAsAdmin, openEntry, openTagDialog, openTrashDialog, openWithSystemPicker, propertiesLabel, queueClipboard, requestTransferDestination, resolveAudioBatchTargets, resolvedPluginContextMenuItems, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties, updateExplorerRail]);
+  }, [bookmarkPathSet, copyToSysClipboard, duplicate, executePluginContextMenuItem, explorerRail, explorerSettings.contextMenuItemOverrides, finalizeContextMenuItems, handleArchiveAction, handleAudioBatchAction, handleBookmarkCreated, isCloudExplorerPath, onOpenInFilesystemAquarium, onOpenInTerminal, openAsAdmin, openEntry, openExplorerPropertiesPanel, openTagDialog, openTrashDialog, openWithSystemPicker, propertiesLabel, queueClipboard, requestTransferDestination, resolveAudioBatchTargets, resolvedPluginContextMenuItems, revealExplorerPath, revealPathLabel, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties, updateExplorerRail]);
 
   const buildEmptyCtxItems = useCallback((): CtxItem[] => {
     const canUseNativeIntegration = supportsNativeIntegration(currentPath);
@@ -5677,9 +6225,7 @@ export function FileExplorer({
             ? [{ ...sharedItem, label: 'Open With...', action: () => openWithSystemPicker(currentPath) }]
             : [];
         case 'properties':
-          return supportsNativeProperties && canUseNativeIntegration
-            ? [{ ...sharedItem, label: propertiesLabel, action: () => showNativeProperties(currentPath) }]
-            : [];
+          return [{ ...sharedItem, label: propertiesLabel, action: () => openExplorerPropertiesPanel([currentPath]) }];
         case 'refresh':
           return [{ ...sharedItem, label: 'Refresh', action: () => refresh() }];
         default:
@@ -5708,12 +6254,13 @@ export function FileExplorer({
       ...builtInItems,
       ...pluginItems,
     ]);
-  }, [clipboard, currentPath, executePluginContextMenuItem, finalizeContextMenuItems, isCloudExplorerPath, onOpenInFilesystemAquarium, openAsAdmin, openWithSystemPicker, paste, propertiesLabel, refresh, resolvedPluginContextMenuItems, revealExplorerPath, revealPathLabel, showNativeProperties, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties]);
+  }, [clipboard, currentPath, executePluginContextMenuItem, finalizeContextMenuItems, isCloudExplorerPath, onOpenInFilesystemAquarium, openAsAdmin, openExplorerPropertiesPanel, openWithSystemPicker, paste, propertiesLabel, refresh, resolvedPluginContextMenuItems, revealExplorerPath, revealPathLabel, supportsNativeIntegration, supportsNativeOpenWith, supportsNativeProperties]);
 
   // ── Right-click ──
   const onRightClick = (e: React.MouseEvent, entry: FileEntry) => {
     e.preventDefault(); e.stopPropagation();
     // Don't lose multi-selection if right-clicking already-selected item
+    setJumpFilter(null);
     if (!selected.has(entry.path)) setSelected(new Set([entry.path]));
     setCtxMenu({ visible:true, x:e.clientX, y:e.clientY, entry });
   };
@@ -5722,6 +6269,7 @@ export function FileExplorer({
   const onEntryClick = (e: React.MouseEvent, entry: FileEntry) => {
     e.stopPropagation();
     mainRef.current?.focus();
+    setJumpFilter(null);
     if (repositoryPicker?.active && !repositoryPicker.allowMultiple) {
       setSelected(new Set([entry.path]));
       lastSelected.current = entry.path;
@@ -5787,7 +6335,13 @@ export function FileExplorer({
   // ── Keyboard ──
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if (rename.active || newItem.visible || addressEditing) return;
+      if (rename.active || newItem.visible || addressEditing || propertiesPanel.visible) {
+        if (propertiesPanel.visible && e.key === 'Escape') {
+          e.preventDefault();
+          setPropertiesPanel(null);
+        }
+        return;
+      }
       if (isEditableKeyboardTarget(e.target)) return;
 
       const isExplorerFocus = document.activeElement === mainRef.current;
@@ -5801,6 +6355,58 @@ export function FileExplorer({
         }
         return 0;
       })();
+
+      if (matchesKeybinding(e, keybindings.calculateRecursiveSize) && isExplorerFocus) {
+        e.preventDefault();
+        void runRecursiveSizeCalculation();
+        return;
+      }
+
+      if (jumpFilter.active && e.key === 'Escape') {
+        e.preventDefault();
+        setJumpFilter(null);
+        return;
+      }
+
+      if (isExplorerFocus && isExplorerJumpFilterPrintableKey(e)) {
+        e.preventDefault();
+        updateJumpFilterQuery(appendExplorerJumpFilterCharacter(jumpFilter.query, e.key));
+        return;
+      }
+
+      if (jumpFilter.active && e.key === 'Backspace') {
+        e.preventDefault();
+        const nextQuery = removeExplorerJumpFilterCharacter(jumpFilter.query);
+        if (!nextQuery) {
+          setJumpFilter(null);
+        } else {
+          updateJumpFilterQuery(nextQuery);
+        }
+        return;
+      }
+
+      if (jumpFilter.active && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        e.preventDefault();
+        moveJumpFilterSelection(e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 1);
+        return;
+      }
+
+      if (jumpFilter.active && e.key === 'Enter') {
+        e.preventDefault();
+        const activeJumpPath = jumpFilter.resultPaths[jumpFilter.resultIndex] ?? jumpFilter.resultPaths[0] ?? null;
+        const targetEntry = (
+          (activeJumpPath ? visibleEntries.find((entry) => entry.path === activeJumpPath) ?? null : null)
+          ?? selectedEntry
+          ?? visibleEntries[0]
+          ?? null
+        );
+        if (targetEntry) {
+          setSelected(new Set([targetEntry.path]));
+          lastSelected.current = targetEntry.path;
+          void openEntry(targetEntry);
+        }
+        return;
+      }
 
       if (matchesKeybinding(e, keybindings.searchExplorer)) {
         e.preventDefault();
@@ -5982,7 +6588,7 @@ export function FileExplorer({
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [addressEditing, beginAddressEdit, clearExplorerSelection, duplicate, experimentalDensity, experimentalViewMode, explorerTheme.preferredExperimentalViewMode, focusExplorerAddressBar, focusExplorerList, focusExplorerPreview, goBack, goForward, goHome, isCompactDock, isSearchActive, keybindings, newItem.visible, paste, queueClipboard, refresh, rename.active, selectAllVisibleEntries, selected, selectedEntries, showExperimentalHud, showHidden, updateExplorerSettings, viewMode, visibleEntries, toggleSearchScope, cycleSortKey, toggleSortOrder]);
+  }, [addressEditing, beginAddressEdit, clearExplorerSelection, duplicate, experimentalDensity, experimentalViewMode, explorerTheme.preferredExperimentalViewMode, focusExplorerAddressBar, focusExplorerList, focusExplorerPreview, goBack, goForward, goHome, isCompactDock, isSearchActive, keybindings, moveJumpFilterSelection, newItem.visible, paste, queueClipboard, refresh, rename.active, selectAllVisibleEntries, selected, selectedEntries, showExperimentalHud, showHidden, updateExplorerSettings, viewMode, visibleEntries, toggleSearchScope, cycleSortKey, toggleSortOrder]);
 
   // ── Breadcrumbs ──
   const crumbs: { label:string; path:string }[] = locationBreadcrumbs;
@@ -6460,6 +7066,46 @@ export function FileExplorer({
     () => getExplorerHoverSurface(explorerTheme),
     [explorerTheme],
   );
+  const handleEntryPointerEnter = useCallback((
+    entry: FileEntry,
+    target: HTMLElement,
+    isSelected: boolean,
+    isDropTarget: boolean,
+  ) => {
+    if (!isSelected && !isDropTarget) {
+      applyExplorerEntrySurface(target, hoverEntrySurface);
+    }
+    if (
+      explorerThumbnailSettings.enabled
+      && explorerThumbnailSettings.includeVideo
+      && explorerThumbnailSettings.enableVideoHoverScrub
+      && canRenderEntryThumbnail(entry)
+      && isVideoPreviewExtension(getEntryExtension(entry))
+    ) {
+      setHoveredVideoThumbnailPath(entry.path);
+      setHoveredVideoThumbnailFrameIndex(0);
+    }
+  }, [
+    canRenderEntryThumbnail,
+    explorerThumbnailSettings.enableVideoHoverScrub,
+    explorerThumbnailSettings.enabled,
+    explorerThumbnailSettings.includeVideo,
+    hoverEntrySurface,
+  ]);
+  const handleEntryPointerLeave = useCallback((
+    entry: FileEntry,
+    target: HTMLElement,
+    isSelected: boolean,
+    isDropTarget: boolean,
+  ) => {
+    if (!isSelected && !isDropTarget) {
+      applyExplorerEntrySurface(target, idleEntrySurface);
+    }
+    if (hoveredVideoThumbnailPath === entry.path) {
+      setHoveredVideoThumbnailPath(null);
+      setHoveredVideoThumbnailFrameIndex(0);
+    }
+  }, [hoveredVideoThumbnailPath, idleEntrySurface]);
   const explorerRootStyle = useMemo<CSSProperties>(() => ({
     ...(explorerTheme.cssVars as CSSProperties),
     flex: 1,
@@ -7031,10 +7677,10 @@ export function FileExplorer({
       render: () => (
         <button
           type="button"
-          onClick={() => setBatchRename((current) => ({ ...current, visible: true }))}
-          disabled={batchRenameTargetCount === 0}
+          onClick={() => setBatchRename((current) => ({ ...current, visible: true, mode: current.mode ?? 'literal' }))}
+          disabled={batchRenameTargets.length === 0}
           title="Batch rename visible or selected files"
-          style={toolbarChipButtonStyle(batchRenameTargetCount === 0)}
+          style={toolbarChipButtonStyle(batchRenameTargets.length === 0)}
         >
           <Edit3 size={11} />
           <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Batch Rename</span>
@@ -7081,6 +7727,23 @@ export function FileExplorer({
         >
           <Sparkles size={11} />
           <span style={{ display: isCompactDock ? 'none' : 'inline' }}>Duplicates</span>
+        </button>
+      ),
+    },
+    {
+      id: 'openPropertiesPanel',
+      label: 'Open Properties',
+      surfaces: ['explorerToolbar'],
+      isVisible: () => Boolean(currentPath),
+      render: () => (
+        <button
+          type="button"
+          onClick={openExplorerPropertiesForSelection}
+          title={`Open the in-app ${propertiesLabel.toLowerCase()} panel`}
+          style={toolbarChipButtonStyle(!currentPath)}
+        >
+          <Info size={11} />
+          <span style={{ display: isCompactDock ? 'none' : 'inline' }}>{propertiesLabel}</span>
         </button>
       ),
     },
@@ -8657,25 +9320,25 @@ export function FileExplorer({
     if (
       loading
       || currentPathIsCloud
-      || virtualWindow.kind !== 'grid'
-      || !activeGridMetrics
-      || activeGridMetrics.iconStageSize < EXPLORER_IMAGE_TILE_PREVIEW_CONFIG.minStagePx
+      || (
+        (
+          virtualWindow.kind === 'grid'
+            ? activeGridMetrics?.iconStageSize ?? 0
+            : Math.max((activeRowMetrics?.iconSize ?? 16) + 12, 28)
+        ) < EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.minStagePx
+      )
       || virtualizedEntries.length === 0
     ) {
       return;
     }
 
     const pendingEntries = virtualizedEntries
-      .filter((entry) => {
-        if (entry.is_dir || isCloudExplorerPath(entry.path)) {
-          return false;
-        }
-        if (!isImagePreviewExtension(getEntryExtension(entry))) {
-          return false;
-        }
-        return imageThumbnailMap[entry.path] === undefined && !imageThumbnailLoadingPaths.has(entry.path);
-      })
-      .slice(0, EXPLORER_IMAGE_TILE_PREVIEW_CONFIG.batchSize);
+      .filter((entry) => (
+        canRenderEntryThumbnail(entry)
+        && entryThumbnailMap[entry.path] === undefined
+        && !entryThumbnailLoadingPaths.has(entry.path)
+      ))
+      .slice(0, EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.batchSize);
 
     if (pendingEntries.length === 0) {
       return;
@@ -8683,7 +9346,7 @@ export function FileExplorer({
 
     const pendingPaths = pendingEntries.map(entry => entry.path);
     const batchTimer = window.setTimeout(() => {
-      setImageThumbnailLoadingPaths(current => {
+      setEntryThumbnailLoadingPaths(current => {
         const next = new Set(current);
         let changed = false;
         for (const path of pendingPaths) {
@@ -8698,14 +9361,16 @@ export function FileExplorer({
       void Promise.all(
         pendingEntries.map(async (entry) => {
           try {
-            const src = await readExplorerImageThumbnail(
-              entry.path,
-              EXPLORER_IMAGE_TILE_PREVIEW_CONFIG.maxDimensionPx,
-              EXPLORER_IMAGE_TILE_PREVIEW_CONFIG.maxDimensionPx,
-            );
-            return { path: entry.path, src };
+            const thumbnail = await readExplorerEntryThumbnail({
+              path: entry.path,
+              maxWidth: EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
+              maxHeight: EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
+              includeVideoHoverScrub: false,
+              videoHoverFrameCount: null,
+            });
+            return { path: entry.path, thumbnail };
           } catch {
-            return { path: entry.path, src: null };
+            return { path: entry.path, thumbnail: null };
           }
         }),
       ).then(results => {
@@ -8714,16 +9379,16 @@ export function FileExplorer({
         }
 
         startTransition(() => {
-          setImageThumbnailMap(current => {
+          setEntryThumbnailMap(current => {
             const next = { ...current };
             for (const result of results) {
-              next[result.path] = result.src;
+              next[result.path] = result.thumbnail;
             }
             return next;
           });
         });
 
-        setImageThumbnailLoadingPaths(current => {
+        setEntryThumbnailLoadingPaths(current => {
           const next = new Set(current);
           for (const path of pendingPaths) {
             next.delete(path);
@@ -8738,12 +9403,156 @@ export function FileExplorer({
     };
   }, [
     activeGridMetrics,
+    activeRowMetrics,
+    canRenderEntryThumbnail,
     currentPathIsCloud,
-    imageThumbnailMap,
+    entryThumbnailLoadingPaths,
+    entryThumbnailMap,
     loading,
-    readExplorerImageThumbnail,
+    readExplorerEntryThumbnail,
     virtualWindow.kind,
     virtualizedEntries,
+  ]);
+
+  useEffect(() => {
+    if (
+      !hoveredVideoThumbnailPath
+      || currentPathIsCloud
+      || !explorerThumbnailSettings.enabled
+      || !explorerThumbnailSettings.includeVideo
+      || !explorerThumbnailSettings.enableVideoHoverScrub
+    ) {
+      return;
+    }
+
+    const hoveredEntry = visibleEntries.find(
+      (entry) => entry.path === hoveredVideoThumbnailPath,
+    );
+    if (!hoveredEntry || !isVideoPreviewExtension(getEntryExtension(hoveredEntry))) {
+      return;
+    }
+
+    const existingThumbnail = entryThumbnailMap[hoveredVideoThumbnailPath];
+    if ((existingThumbnail?.hoverFrames.length ?? 0) >= 2) {
+      return;
+    }
+    if (videoHoverThumbnailLoadingPaths.has(hoveredVideoThumbnailPath)) {
+      return;
+    }
+
+    let cancelled = false;
+    const targetPath = hoveredVideoThumbnailPath;
+    setVideoHoverThumbnailLoadingPaths(current => {
+      const next = new Set(current);
+      next.add(targetPath);
+      return next;
+    });
+
+    void readExplorerEntryThumbnail({
+      path: targetPath,
+      maxWidth: EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
+      maxHeight: EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.maxDimensionPx,
+      includeVideoHoverScrub: true,
+      videoHoverFrameCount: explorerThumbnailSettings.videoHoverScrubFrameCount,
+    }).then((thumbnail) => {
+      if (cancelled || !isExplorerMountedRef.current) {
+        return;
+      }
+      startTransition(() => {
+        setEntryThumbnailMap(current => ({
+          ...current,
+          [targetPath]: thumbnail,
+        }));
+      });
+    }).catch(() => {
+      if (cancelled || !isExplorerMountedRef.current) {
+        return;
+      }
+      startTransition(() => {
+        setEntryThumbnailMap(current => ({
+          ...current,
+          [targetPath]: current[targetPath] ?? null,
+        }));
+      });
+    }).finally(() => {
+      if (cancelled || !isExplorerMountedRef.current) {
+        return;
+      }
+      setVideoHoverThumbnailLoadingPaths(current => {
+        const next = new Set(current);
+        next.delete(targetPath);
+        return next.size === current.size ? current : next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentPathIsCloud,
+    entryThumbnailMap,
+    explorerThumbnailSettings.enableVideoHoverScrub,
+    explorerThumbnailSettings.enabled,
+    explorerThumbnailSettings.includeVideo,
+    explorerThumbnailSettings.videoHoverScrubFrameCount,
+    hoveredVideoThumbnailPath,
+    readExplorerEntryThumbnail,
+    videoHoverThumbnailLoadingPaths,
+    visibleEntries,
+  ]);
+
+  useEffect(() => {
+    if (!hoveredVideoThumbnailPath) {
+      return;
+    }
+    if (
+      currentPathIsCloud
+      || !explorerThumbnailSettings.enabled
+      || !explorerThumbnailSettings.includeVideo
+      || !explorerThumbnailSettings.enableVideoHoverScrub
+      || !visibleEntries.some((entry) => entry.path === hoveredVideoThumbnailPath)
+    ) {
+      setHoveredVideoThumbnailPath(null);
+      setHoveredVideoThumbnailFrameIndex(0);
+    }
+  }, [
+    currentPathIsCloud,
+    explorerThumbnailSettings.enableVideoHoverScrub,
+    explorerThumbnailSettings.enabled,
+    explorerThumbnailSettings.includeVideo,
+    hoveredVideoThumbnailPath,
+    visibleEntries,
+  ]);
+
+  useEffect(() => {
+    if (!hoveredVideoThumbnailPath) {
+      if (hoveredVideoThumbnailFrameIndex !== 0) {
+        setHoveredVideoThumbnailFrameIndex(0);
+      }
+      return;
+    }
+
+    const hoveredThumbnail = entryThumbnailMap[hoveredVideoThumbnailPath];
+    if (hoveredThumbnail?.kind !== 'video' || hoveredThumbnail.hoverFrames.length < 2) {
+      if (hoveredVideoThumbnailFrameIndex !== 0) {
+        setHoveredVideoThumbnailFrameIndex(0);
+      }
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setHoveredVideoThumbnailFrameIndex(current => (
+        (current + 1) % hoveredThumbnail.hoverFrames.length
+      ));
+    }, hoveredThumbnail.hoverFrameDelayMs ?? EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.hoverFrameDelayMs);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [
+    entryThumbnailMap,
+    hoveredVideoThumbnailFrameIndex,
+    hoveredVideoThumbnailPath,
   ]);
 
   const renderSearchMetadata = (entry: FileEntry) => {
@@ -8808,6 +9617,12 @@ export function FileExplorer({
     const isDrop = dragOver === entry.path && entry.is_dir;
     const isRenaming = rename.active && rename.path === entry.path;
     const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
+    const tableThumbnailStageSize = densityStop.table
+      ? Math.max(densityStop.table.iconSize + 10, 28)
+      : 0;
+    const tableThumbnailSrc = densityStop.table
+      ? getRenderableEntryThumbnailSrc(entry, tableThumbnailStageSize)
+      : null;
 
     if (densityStop.presentation === 'table' && densityStop.table) {
       return (
@@ -8841,21 +9656,46 @@ export function FileExplorer({
             userSelect: 'none',
             boxShadow: isDrop ? dropEntrySurface.boxShadow : isSel ? selectedEntrySurface.boxShadow : 'none',
             transform: isDrop ? dropEntrySurface.transform : isSel ? selectedEntrySurface.transform : 'translateY(0)',
-          }}
+          }}  
           onMouseEnter={e => {
-            if (!isSel && !isDrop) {
-              applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, hoverEntrySurface);
-            }
+            handleEntryPointerEnter(entry, e.currentTarget as HTMLDivElement, isSel, isDrop);
           }}
           onMouseLeave={e => {
-            if (!isSel && !isDrop) {
-              applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, idleEntrySurface);
-            }
+            handleEntryPointerLeave(entry, e.currentTarget as HTMLDivElement, isSel, isDrop);
           }}
         >
           <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: densityStop.table.iconSize + 10, display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
-              <SvgIcon src={iconSrc} size={densityStop.table.iconSize} />
+            <div
+              style={{
+                width: tableThumbnailStageSize,
+                height: tableThumbnailStageSize,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                overflow: 'hidden',
+                borderRadius: tableThumbnailSrc ? 10 : undefined,
+                border: tableThumbnailSrc
+                  ? '1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)'
+                  : undefined,
+                background: tableThumbnailSrc
+                  ? 'color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)'
+                  : undefined,
+                boxShadow: tableThumbnailSrc
+                  ? 'inset 0 1px 0 color-mix(in srgb, white 8%, transparent)'
+                  : undefined,
+              }}
+            >
+              {tableThumbnailSrc ? (
+                <img
+                  src={tableThumbnailSrc}
+                  alt={`Thumbnail for ${entry.name}`}
+                  draggable={false}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                />
+              ) : (
+                <SvgIcon src={iconSrc} size={densityStop.table.iconSize} />
+              )}
             </div>
             <div style={{ minWidth: 0, flex: 1 }}>
               {isRenaming
@@ -8898,6 +9738,7 @@ export function FileExplorer({
     const iconStageSize = Math.round(densityStop.grid.iconStageSize * dominantScale);
     const iconSize = Math.round(densityStop.grid.iconSize * dominantScale);
     const isCards = densityStop.presentation === 'cards';
+    const gridThumbnailSrc = getRenderableEntryThumbnailSrc(entry, iconStageSize);
 
     return (
       <div
@@ -8938,14 +9779,10 @@ export function FileExplorer({
           transform: isDrop ? dropEntrySurface.transform : isSel ? selectedEntrySurface.transform : 'translateY(0)',
         }}
         onMouseEnter={e => {
-          if (!isSel && !isDrop) {
-            applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, hoverEntrySurface);
-          }
+          handleEntryPointerEnter(entry, e.currentTarget as HTMLDivElement, isSel, isDrop);
         }}
         onMouseLeave={e => {
-          if (!isSel && !isDrop) {
-            applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, idleEntrySurface);
-          }
+          handleEntryPointerLeave(entry, e.currentTarget as HTMLDivElement, isSel, isDrop);
         }}
       >
         <div
@@ -8957,11 +9794,29 @@ export function FileExplorer({
             alignItems: 'center',
             justifyContent: 'center',
             borderRadius: isCards ? 16 : 12,
-            background: 'rgba(255,255,255,0.04)',
+            background: gridThumbnailSrc
+              ? 'color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)'
+              : 'rgba(255,255,255,0.04)',
             flexShrink: 0,
+            overflow: 'hidden',
+            border: gridThumbnailSrc
+              ? '1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)'
+              : undefined,
+            boxShadow: gridThumbnailSrc
+              ? 'inset 0 1px 0 color-mix(in srgb, white 8%, transparent)'
+              : undefined,
           }}
         >
-          <SvgIcon src={iconSrc} size={iconSize} />
+          {gridThumbnailSrc ? (
+            <img
+              src={gridThumbnailSrc}
+              alt={`Thumbnail for ${entry.name}`}
+              draggable={false}
+              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+            />
+          ) : (
+            <SvgIcon src={iconSrc} size={iconSize} />
+          )}
         </div>
         <div style={{ minWidth: 0, width: '100%', textAlign: isCards ? 'left' : 'center' }}>
           {isRenaming
@@ -9283,14 +10138,14 @@ export function FileExplorer({
                   gap: 10,
                 }}
                 onMouseEnter={e => {
+                  handleEntryPointerEnter(node.entry, e.currentTarget as HTMLDivElement, isSel, isDrop);
                   if (!isSel && !isDrop) {
-                    applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, hoverEntrySurface);
                     e.currentTarget.style.transform = `translate(-50%, -50%) ${hoverEntrySurface.transform}`;
                   }
                 }}
                 onMouseLeave={e => {
+                  handleEntryPointerLeave(node.entry, e.currentTarget as HTMLDivElement, isSel, isDrop);
                   if (!isSel && !isDrop) {
-                    applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, idleEntrySurface);
                     e.currentTarget.style.transform = `translate(-50%, -50%) ${idleEntrySurface.transform}`;
                     e.currentTarget.style.background = highlightBackground;
                     e.currentTarget.style.borderColor = node.emphasis === 'anchor'
@@ -9312,9 +10167,22 @@ export function FileExplorer({
                     alignItems: 'center',
                     justifyContent: 'center',
                     background: 'rgba(255,255,255,0.06)',
+                    overflow: 'hidden',
                   }}
                 >
-                  <SvgIcon src={iconSrc} size={Math.max(14, node.size - 12)} />
+                  {(() => {
+                    const thumbnailSrc = getRenderableEntryThumbnailSrc(node.entry, node.size);
+                    return thumbnailSrc ? (
+                      <img
+                        src={thumbnailSrc}
+                        alt={`Thumbnail for ${node.entry.name}`}
+                        draggable={false}
+                        style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                      />
+                    ) : (
+                      <SvgIcon src={iconSrc} size={Math.max(14, node.size - 12)} />
+                    );
+                  })()}
                 </div>
                 {node.labelVisible && (
                   <div style={{ minWidth: 0, flex: 1 }}>
@@ -9345,6 +10213,7 @@ export function FileExplorer({
     const isDrop = dragOver === entry.path && entry.is_dir;
     const isRenaming = rename.active && rename.path === entry.path;
     const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
+    const thumbnailSrc = getRenderableEntryThumbnailSrc(entry, 42);
     return (
       <div
         key={entry.path}
@@ -9373,13 +10242,11 @@ export function FileExplorer({
           minHeight: 92,
         }}
         onMouseEnter={e => {
-          if (!isSel && !isDrop) {
-            applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, hoverEntrySurface);
-          }
+          handleEntryPointerEnter(entry, e.currentTarget as HTMLDivElement, isSel, isDrop);
         }}
         onMouseLeave={e => {
+          handleEntryPointerLeave(entry, e.currentTarget as HTMLDivElement, isSel, isDrop);
           if (!isSel && !isDrop) {
-            applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, idleEntrySurface);
             e.currentTarget.style.background = 'var(--overlay-explorer-chip-bg)';
             e.currentTarget.style.borderColor = 'var(--overlay-explorer-chip-border)';
             e.currentTarget.style.boxShadow = '0 10px 24px rgba(0,0,0,0.12)';
@@ -9395,9 +10262,19 @@ export function FileExplorer({
             alignItems: 'center',
             justifyContent: 'center',
             background: 'rgba(255,255,255,0.05)',
+            overflow: 'hidden',
           }}
         >
-          <SvgIcon src={iconSrc} size={24} />
+          {thumbnailSrc ? (
+            <img
+              src={thumbnailSrc}
+              alt={`Thumbnail for ${entry.name}`}
+              draggable={false}
+              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+            />
+          ) : (
+            <SvgIcon src={iconSrc} size={24} />
+          )}
         </div>
         <div style={{ minWidth: 0 }}>
           {isRenaming
@@ -9998,7 +10875,10 @@ export function FileExplorer({
                     const isDrop = dragOver === entry.path && entry.is_dir;
                     const isRenaming = rename.active && rename.path === entry.path;
                     const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
-                    const thumbnailSrc = getGridEntryThumbnailSrc(entry);
+                    const thumbnailSrc = getRenderableEntryThumbnailSrc(
+                      entry,
+                      activeGridMetrics.iconStageSize,
+                    );
                     return (
                       <div
                         key={entry.path}
@@ -10035,14 +10915,10 @@ export function FileExplorer({
                           transition: 'background 0.14s ease, border-color 0.14s ease, transform 0.14s ease, border-radius 0.18s cubic-bezier(0.22, 1, 0.36, 1), padding 0.18s cubic-bezier(0.22, 1, 0.36, 1)',
                         }}
                         onMouseEnter={e => {
-                          if (!isSel && !isDrop) {
-                            applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, hoverEntrySurface);
-                          }
+                          handleEntryPointerEnter(entry, e.currentTarget as HTMLDivElement, isSel, isDrop);
                         }}
                         onMouseLeave={e => {
-                          if (!isSel && !isDrop) {
-                            applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, idleEntrySurface);
-                          }
+                          handleEntryPointerLeave(entry, e.currentTarget as HTMLDivElement, isSel, isDrop);
                         }}
                       >
                         <div
@@ -10157,10 +11033,13 @@ export function FileExplorer({
                   const isDrop = dragOver === entry.path && entry.is_dir;
                   const isRenaming = rename.active && rename.path === entry.path;
                   const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
+                  const rowThumbnailStageSize = Math.max((activeRowMetrics?.iconSize ?? 16) + 12, 28);
+                  const thumbnailSrc = getRenderableEntryThumbnailSrc(entry, rowThumbnailStageSize);
                   return (
                     <div
                       key={entry.path}
                       draggable
+                      data-entry-path={entry.path}
                       data-overlay-drag-source="file"
                       onDragStart={e => onDragStart(e, entry)}
                       onDragEnd={onDragEnd}
@@ -10188,11 +11067,43 @@ export function FileExplorer({
                         boxShadow: isDrop ? dropEntrySurface.boxShadow : isSel ? selectedEntrySurface.boxShadow : idleEntrySurface.boxShadow,
                         transform: isDrop ? dropEntrySurface.transform : isSel ? selectedEntrySurface.transform : idleEntrySurface.transform,
                       }}
-                      onMouseEnter={e => { if (!isSel && !isDrop) applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, hoverEntrySurface); }}
-                      onMouseLeave={e => { if (!isSel && !isDrop) applyExplorerEntrySurface(e.currentTarget as HTMLDivElement, idleEntrySurface); }}
+                      onMouseEnter={e => { handleEntryPointerEnter(entry, e.currentTarget as HTMLDivElement, isSel, isDrop); }}
+                      onMouseLeave={e => { handleEntryPointerLeave(entry, e.currentTarget as HTMLDivElement, isSel, isDrop); }}
                     >
                       <div style={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <SvgIcon src={iconSrc} size={activeRowMetrics?.iconSize ?? 16} />
+                        <div
+                          style={{
+                            width: rowThumbnailStageSize,
+                            height: rowThumbnailStageSize,
+                            minWidth: rowThumbnailStageSize,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            overflow: 'hidden',
+                            borderRadius: thumbnailSrc ? 10 : undefined,
+                            border: thumbnailSrc
+                              ? '1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)'
+                              : undefined,
+                            background: thumbnailSrc
+                              ? 'color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)'
+                              : undefined,
+                            boxShadow: thumbnailSrc
+                              ? 'inset 0 1px 0 color-mix(in srgb, white 8%, transparent)'
+                              : undefined,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {thumbnailSrc ? (
+                            <img
+                              src={thumbnailSrc}
+                              alt={`Thumbnail for ${entry.name}`}
+                              draggable={false}
+                              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                            />
+                          ) : (
+                            <SvgIcon src={iconSrc} size={activeRowMetrics?.iconSize ?? 16} />
+                          )}
+                        </div>
                         <div style={{ minWidth: 0, flex: 1 }}>
                           {isRenaming
                             ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active: false, path: '', name: '' })} />
@@ -10295,12 +11206,15 @@ export function FileExplorer({
                     const isDrop = dragOver === entry.path && entry.is_dir;
                     const isRenaming = rename.active && rename.path === entry.path;
                     const iconSrc = getRenderableIconSrc(entry, isSel || isDrop);
+                    const rowThumbnailStageSize = Math.max((activeRowMetrics?.iconSize ?? 16) + 12, 28);
+                    const thumbnailSrc = getRenderableEntryThumbnailSrc(entry, rowThumbnailStageSize);
                     const isDetailsMode = effectiveViewMode === 'details';
                     return (
                       <tr
                         key={entry.path}
-                        draggable
-                        data-overlay-drag-source="file"
+                      draggable
+                      data-entry-path={entry.path}
+                      data-overlay-drag-source="file"
                         onDragStart={e => onDragStart(e, entry)}
                         onDragEnd={onDragEnd}
                         onDragOver={entry.is_dir ? e => onDragOver(e, entry.path) : undefined}
@@ -10311,12 +11225,44 @@ export function FileExplorer({
                         onContextMenu={e => onRightClick(e, entry)}
                         title={getSearchTooltip(entry)}
                         style={{ background: isDrop ? dropEntrySurface.background : isSel ? selectedEntrySurface.background : idleEntrySurface.background, cursor: 'pointer', opacity: entry.is_hidden ? 0.5 : 1, userSelect: 'none', borderBottom: '1px solid var(--overlay-explorer-toolbar-border)', height: virtualWindow.rowHeight, boxShadow: isDrop ? dropEntrySurface.boxShadow : isSel ? selectedEntrySurface.boxShadow : idleEntrySurface.boxShadow, transform: isDrop ? dropEntrySurface.transform : isSel ? selectedEntrySurface.transform : idleEntrySurface.transform }}
-                        onMouseEnter={e => { if (!isSel && !isDrop) applyExplorerEntrySurface(e.currentTarget as HTMLTableRowElement, hoverEntrySurface); }}
-                        onMouseLeave={e => { if (!isSel && !isDrop) applyExplorerEntrySurface(e.currentTarget as HTMLTableRowElement, idleEntrySurface); }}
+                        onMouseEnter={e => { handleEntryPointerEnter(entry, e.currentTarget as HTMLTableRowElement, isSel, isDrop); }}
+                        onMouseLeave={e => { handleEntryPointerLeave(entry, e.currentTarget as HTMLTableRowElement, isSel, isDrop); }}
                       >
                         <td style={{ padding: isDetailsMode ? '6px 12px' : '4px 12px', verticalAlign: 'top', overflow: 'hidden' }}>
                           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
-                            <SvgIcon src={iconSrc} size={activeRowMetrics?.iconSize ?? 16} />
+                            <div
+                              style={{
+                                width: rowThumbnailStageSize,
+                                height: rowThumbnailStageSize,
+                                minWidth: rowThumbnailStageSize,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                overflow: 'hidden',
+                                borderRadius: thumbnailSrc ? 10 : undefined,
+                                border: thumbnailSrc
+                                  ? '1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)'
+                                  : undefined,
+                                background: thumbnailSrc
+                                  ? 'color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)'
+                                  : undefined,
+                                boxShadow: thumbnailSrc
+                                  ? 'inset 0 1px 0 color-mix(in srgb, white 8%, transparent)'
+                                  : undefined,
+                                flexShrink: 0,
+                              }}
+                            >
+                              {thumbnailSrc ? (
+                                <img
+                                  src={thumbnailSrc}
+                                  alt={`Thumbnail for ${entry.name}`}
+                                  draggable={false}
+                                  style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                                />
+                              ) : (
+                                <SvgIcon src={iconSrc} size={activeRowMetrics?.iconSize ?? 16} />
+                              )}
+                            </div>
                             <div style={{ minWidth: 0, flex: 1 }}>
                               {isRenaming
                                 ? <RenameInput state={rename} onCommit={commitRename} onCancel={() => setRename({ active: false, path: '', name: '' })} />
@@ -10434,7 +11380,7 @@ export function FileExplorer({
       {batchRename.visible && (
         <BatchRenameDialog
           state={batchRename}
-          preview={batchRenamePreview}
+          preview={batchRenamePreview.rows}
           onChange={(updates) => setBatchRename((current) => ({ ...current, ...updates }))}
           onConfirm={() => { void commitBatchRename(); }}
           onCancel={() => setBatchRename((current) => ({ ...current, visible: false }))}
@@ -10473,6 +11419,82 @@ export function FileExplorer({
             }
           }}
         />
+      )}
+
+      {propertiesPanel.visible && (
+        <ExplorerPropertiesDialog
+          state={propertiesPanel}
+          entries={propertiesPanelEntries}
+          primaryEntry={propertiesPanelPrimaryEntry}
+          recursiveSummary={propertiesPanelRecursiveSummary}
+          checksumResults={propertiesChecksums}
+          checksumLoadingPaths={propertiesChecksumLoadingPaths}
+          checksumError={propertiesChecksumError}
+          supportsNativeProperties={supportsNativeProperties}
+          onTabChange={(tab) => setPropertiesPanel({
+            loading: propertiesPanel.loading,
+            targetPaths: propertiesPanel.targetPaths,
+            tab,
+            visible: true,
+          })}
+          onCalculateChecksums={() => { void runPropertiesChecksumCalculation(); }}
+          onCalculateRecursiveSize={() => { void runRecursiveSizeCalculation(); }}
+          onOpenNativeProperties={openNativeProperties}
+          onClose={() => setPropertiesPanel(null)}
+        />
+      )}
+
+      {jumpFilter.active && jumpFilter.query && (
+        <div
+          style={{
+            position: 'fixed',
+            right: 24,
+            bottom: 24,
+            zIndex: 10001,
+            pointerEvents: 'none',
+          }}
+        >
+          <div
+            style={{
+              pointerEvents: 'auto',
+              display: 'grid',
+              gap: 6,
+              minWidth: 240,
+              maxWidth: 360,
+              padding: '10px 12px',
+              borderRadius: 16,
+              border: '1px solid var(--overlay-explorer-toolbar-border)',
+              background: 'color-mix(in srgb, var(--overlay-explorer-preview-bg) 92%, transparent)',
+              boxShadow: '0 14px 36px rgba(0,0,0,0.35)',
+              backdropFilter: 'blur(18px)',
+              WebkitBackdropFilter: 'blur(18px)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <div style={{ color: EXP.text, fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                Jump Filter
+              </div>
+              <button
+                type="button"
+                onClick={() => setJumpFilter(null)}
+                style={dialogSecondaryButtonStyle}
+              >
+                Clear
+              </button>
+            </div>
+            <div style={{ color: EXP.text, fontSize: 13, fontWeight: 600, wordBreak: 'break-all' }}>
+              {jumpFilter.query}
+            </div>
+            <div style={{ color: EXP.muted, fontSize: 11 }}>
+              {jumpFilter.resultPaths.length === 0
+                ? 'No matching entries'
+                : `${jumpFilter.resultPaths.length} match${jumpFilter.resultPaths.length === 1 ? '' : 'es'} · item ${Math.max(0, jumpFilter.resultIndex) + 1} focused`}
+            </div>
+            <div style={{ color: EXP.muted2, fontSize: 10 }}>
+              Type to filter, Backspace to edit, arrows to move, Enter to open, Esc to clear.
+            </div>
+          </div>
+        </div>
       )}
 
       <style>{`@keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }`}</style>

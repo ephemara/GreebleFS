@@ -93,6 +93,37 @@ export interface ExplorerSessionSnapshot {
   sourcesRailPinnedOpen: boolean;
 }
 
+export type ExplorerPropertiesPanelTab = 'info' | 'permissions' | 'checksums';
+
+export interface ExplorerJumpFilterSnapshot {
+  active: boolean;
+  query: string;
+  resultIndex: number;
+  resultPaths: string[];
+}
+
+export interface ExplorerPropertiesPanelSnapshot {
+  loading: boolean;
+  targetPaths: string[];
+  tab: ExplorerPropertiesPanelTab;
+  visible: boolean;
+}
+
+export interface ExplorerPendingTerminalCwdSync {
+  path: string;
+  shell: string | null;
+  source: 'navigation' | 'open-terminal';
+  updatedAt: number;
+}
+
+export interface ExplorerRecursiveSizeCacheEntry {
+  bytes: number;
+  fileCount: number;
+  folderCount: number;
+  pending: boolean;
+  updatedAt: number;
+}
+
 export interface ExplorerPersistenceNotice {
   status: 'ready' | 'legacy-imported' | 'backup-restored' | 'corrupted-reset' | 'restored-backup' | 'save-error';
   message: string | null;
@@ -200,6 +231,10 @@ interface ExplorerStoreState {
   session: ExplorerSessionSnapshot;
   workspace: ExplorerWorkspaceSnapshot;
   rail: ExplorerRailSnapshot;
+  jumpFilter: ExplorerJumpFilterSnapshot;
+  propertiesPanel: ExplorerPropertiesPanelSnapshot;
+  pendingTerminalCwdSync: ExplorerPendingTerminalCwdSync | null;
+  recursiveSizeCache: Record<string, ExplorerRecursiveSizeCacheEntry>;
   clipboard: ExplorerClipboardSnapshot | null;
   persistence: ExplorerPersistenceNotice;
   chromeEditSession: ExplorerChromeEditSession | null;
@@ -228,6 +263,10 @@ interface ExplorerStoreState {
   replaceRail: (nextRail: ExplorerRailSnapshot) => void;
   restoreRailBackup: () => void;
   clearPersistenceNotice: () => void;
+  setJumpFilter: (updates: Partial<ExplorerJumpFilterSnapshot> | null) => void;
+  setPropertiesPanel: (updates: Partial<ExplorerPropertiesPanelSnapshot> | null) => void;
+  setPendingTerminalCwdSync: (nextSync: ExplorerPendingTerminalCwdSync | null) => void;
+  setRecursiveSizeCacheEntry: (path: string, entry: ExplorerRecursiveSizeCacheEntry | null) => void;
   openChromeEditSession: (args: {
     themeId: string;
     layoutId: ExplorerChromeLayoutId;
@@ -661,11 +700,25 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
 
   installFlushListeners();
 
-  return {
+  return { 
     sessions: hydratedState.sessions,
     session: hydratedState.session,
     workspace: hydratedState.workspace,
     rail: hydratedState.rail,
+    jumpFilter: {
+      active: false,
+      query: '',
+      resultIndex: -1,
+      resultPaths: [],
+    },
+    propertiesPanel: {
+      loading: false,
+      targetPaths: [],
+      tab: 'info',
+      visible: false,
+    },
+    pendingTerminalCwdSync: null,
+    recursiveSizeCache: {},
     clipboard: hydratedState.clipboard,
     persistence: hydratedState.persistence,
     chromeEditSession: null,
@@ -919,6 +972,65 @@ export const useExplorerStore = create<ExplorerStoreState>((set, get) => {
     },
     setClipboard: (clipboard) => {
       set({ clipboard });
+    },
+    setJumpFilter: (updates) => {
+      if (updates === null) {
+        set({
+          jumpFilter: {
+            active: false,
+            query: '',
+            resultIndex: -1,
+            resultPaths: [],
+          },
+        });
+        return;
+      }
+
+      set((state) => ({
+        jumpFilter: {
+          ...state.jumpFilter,
+          ...updates,
+        },
+      }));
+    },
+    setPropertiesPanel: (updates) => {
+      if (updates === null) {
+        set({
+          propertiesPanel: {
+            loading: false,
+            targetPaths: [],
+            tab: 'info',
+            visible: false,
+          },
+        });
+        return;
+      }
+
+      set((state) => ({
+        propertiesPanel: {
+          ...state.propertiesPanel,
+          ...updates,
+        },
+      }));
+    },
+    setPendingTerminalCwdSync: (nextSync) => {
+      set({ pendingTerminalCwdSync: nextSync });
+    },
+    setRecursiveSizeCacheEntry: (path, entry) => {
+      const normalizedPath = path.trim();
+      if (!normalizedPath) {
+        return;
+      }
+
+      set((state) => {
+        const nextCache = { ...state.recursiveSizeCache };
+        if (entry === null) {
+          delete nextCache[normalizedPath];
+        } else {
+          nextCache[normalizedPath] = entry;
+        }
+        return { recursiveSizeCache: nextCache };
+      });
     },
     updateRail: (updates) => {
       set((state) => ({

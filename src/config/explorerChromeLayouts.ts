@@ -32,6 +32,7 @@ export type BuiltInExplorerChromeControlId =
   | 'toggleSearchContent'
   | 'saveSearch'
   | 'batchRename'
+  | 'openPropertiesPanel'
   | 'tagSelection'
   | 'duplicateScan'
   | 'undoTrash'

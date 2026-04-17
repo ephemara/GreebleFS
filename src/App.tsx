@@ -140,7 +140,12 @@ import {
   type PluginPanelOpenRequest,
 } from './runtime/pluginPanelRequests';
 import { openFileOperationsWindow } from './runtime/fileOperationsWindow';
-import { listExplorerDir, openExplorerPath, writeExplorerFile } from './runtime/explorerBackend';
+import {
+  listExplorerDir,
+  openExplorerPath,
+  queueExplorerTerminalDirectorySync,
+  writeExplorerFile,
+} from './runtime/explorerBackend';
 import { commands, unwrapTauriResult } from './runtime/tauriClient';
 import { useFolderPluginRuntime } from './runtime/useFolderPluginRuntime';
 import {
@@ -2361,15 +2366,11 @@ function App() {
         },
       },
     });
-    // Small delay so the terminal tab renders before we inject the cd
-    setTimeout(() => {
-      window.dispatchEvent(new CustomEvent('overlayterm:cdinject', {
-        detail: {
-          path,
-          shell: settings.shell,
-        },
-      }));
-    }, 80);
+    queueExplorerTerminalDirectorySync({
+      path,
+      shell: settings.shell,
+      source: 'open-terminal',
+    });
   }, [
     hideOverlay,
     settings.externalTerminalArgs,
@@ -4064,19 +4065,20 @@ function App() {
     && !activeThemeRenderer?.error
     && !themeRendererRuntimeError
     && themeRendererApiSupported;
+  const themeRenderer = canRenderThemeRenderer ? activeThemeRenderer : null;
   const themeRendererControlsWallpaper = Boolean(
-    canRenderThemeRenderer
-      && (activeThemeRenderer.capabilities.wallpaperScene || activeThemeRenderer.surfaceOwnership.wallpaper),
+    themeRenderer
+      && (themeRenderer.capabilities.wallpaperScene || themeRenderer.surfaceOwnership.wallpaper),
   );
   const shellBody = canRenderThemeRenderer
     ? (
       <ThemeRendererBoundary
-        renderer={activeThemeRenderer}
+        renderer={themeRenderer!}
         fallback={defaultShellBody}
         onError={error => setThemeRendererRuntimeError(String(error))}
         render={RendererComponent => (
           <RendererComponent
-            renderer={activeThemeRenderer}
+            renderer={themeRenderer!}
             host={themeRendererHost}
           />
         )}

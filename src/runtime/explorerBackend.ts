@@ -1,6 +1,7 @@
 import type { FileSearchResponse } from '../config/searchTelemetry';
 import type { FsRuntimeCachePolicy } from '../config/runtimeCachePolicy';
 import { commands, events, unwrapTauriResult } from './tauriClient';
+import { useExplorerStore } from '../store/explorerStore';
 import {
   type CloudAccountStatus,
   type CloudAccountSummary,
@@ -15,6 +16,8 @@ import {
   type EntryStorageInfo,
   type ExplorerDuplicateScanStartResponse,
   type ExplorerDuplicateScanStatus,
+  type ExplorerEntryThumbnail,
+  type ExplorerEntryThumbnailRequest,
   type ExplorerSavedSearchRecord,
   type ExplorerSavedSearchSaveRequest,
   type FsArchiveExtractionMode,
@@ -78,6 +81,8 @@ export type ExplorerBatchRenameItem = FsBatchRenameItem;
 export type ExplorerBatchRenameResult = FsBatchRenameResult;
 export type ExplorerDuplicateScanStart = ExplorerDuplicateScanStartResponse;
 export type ExplorerDuplicateScan = ExplorerDuplicateScanStatus;
+export type ExplorerEntryThumbnailData = ExplorerEntryThumbnail;
+export type ExplorerEntryThumbnailInput = ExplorerEntryThumbnailRequest;
 
 export type ExplorerLocationBreadcrumb = {
   label: string;
@@ -292,6 +297,7 @@ export type ExplorerBackendContract = {
   readTextFile: typeof readExplorerTextFile;
   readFileBase64: typeof readExplorerFileBase64;
   readImageThumbnail: typeof readExplorerImageThumbnail;
+  readEntryThumbnail: typeof readExplorerEntryThumbnail;
   renamePath: typeof renameExplorerPath;
   deletePath: typeof deleteExplorerPath;
   trashPaths: typeof trashExplorerPaths;
@@ -310,6 +316,33 @@ export type ExplorerBackendContract = {
   supportsNativeIntegration: typeof supportsExplorerNativeIntegration;
   supportsNativeDragOut: typeof supportsExplorerNativeDragOut;
 };
+
+export function queueExplorerTerminalDirectorySync(args: {
+  path: string;
+  shell?: string | null;
+  source?: 'navigation' | 'open-terminal';
+}): void {
+  const path = args.path.trim();
+  if (!path) {
+    return;
+  }
+
+  useExplorerStore.getState().setPendingTerminalCwdSync({
+    path,
+    shell: args.shell ?? null,
+    source: args.source ?? 'navigation',
+    updatedAt: Date.now(),
+  });
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('overlayterm:cdinject', {
+      detail: {
+        path,
+        shell: args.shell ?? undefined,
+      },
+    }));
+  }
+}
 
 export async function listExplorerLocation(
   path: string,
@@ -613,6 +646,15 @@ export async function readExplorerImageThumbnail(
   return unwrapTauriResult(await commands.fsReadImageThumbnail(path, maxWidth, maxHeight));
 }
 
+export async function readExplorerEntryThumbnail(
+  request: ExplorerEntryThumbnailInput,
+): Promise<ExplorerEntryThumbnailData> {
+  if (isCloudExplorerPath(request.path)) {
+    throw new Error('Generated thumbnails are not available for cloud filesystem items yet.');
+  }
+  return unwrapTauriResult(await commands.fsReadEntryThumbnail(request));
+}
+
 export async function renameExplorerPath(oldPath: string, newPath: string): Promise<void> {
   if (isCloudExplorerPath(oldPath) || isCloudExplorerPath(newPath)) {
     if (!isCloudExplorerPath(oldPath) || !isCloudExplorerPath(newPath)) {
@@ -763,6 +805,7 @@ export const explorerBackendContract: ExplorerBackendContract = {
   readTextFile: readExplorerTextFile,
   readFileBase64: readExplorerFileBase64,
   readImageThumbnail: readExplorerImageThumbnail,
+  readEntryThumbnail: readExplorerEntryThumbnail,
   renamePath: renameExplorerPath,
   deletePath: deleteExplorerPath,
   trashPaths: trashExplorerPaths,

@@ -69,6 +69,7 @@ import {
   type PythonRuntimeStatus,
 } from '../config/python';
 import { detectClientPlatform, type RuntimePlatform } from '../config/platform';
+import { useExplorerStore } from '../store/explorerStore';
 import { useTerminalStore, type Bookmark } from '../store/terminalStore';
 import { buildTerminalCdCommand } from './terminalCommandUtils';
 import {
@@ -1194,10 +1195,13 @@ export function TerminalOverlay({
   const paneCounterRef = useRef(1);
   const tabCounterRef = useRef(1);
   const splitCounterRef = useRef(1);
+  const lastTerminalCwdSyncKeyRef = useRef<string | null>(null);
 
   const { initStore } = useTerminalStore(useShallow(state => ({
     initStore: state.initStore,
   })));
+  const pendingTerminalCwdSync = useExplorerStore(useShallow(state => state.pendingTerminalCwdSync));
+  const clearPendingTerminalCwdSync = useExplorerStore(useShallow(state => state.setPendingTerminalCwdSync));
   useEffect(() => { initStore(); }, [initStore]);
 
   const hasMountedRef = useRef(false);
@@ -1501,13 +1505,19 @@ export function TerminalOverlay({
     });
   }, [clearTerminalReady, markTerminalReady, paneSessions, setTransientActionMessage, settings.shell]);
   useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ path: string; shell?: string }>).detail;
-      if (detail?.path) void injectCd(detail.path, detail.shell);
-    };
-    window.addEventListener('overlayterm:cdinject', handler);
-    return () => window.removeEventListener('overlayterm:cdinject', handler);
-  }, [injectCd]);
+    if (!isOpen || !pendingTerminalCwdSync?.path) {
+      return;
+    }
+
+    const syncKey = `${pendingTerminalCwdSync.source}:${pendingTerminalCwdSync.path}:${pendingTerminalCwdSync.shell ?? ''}`;
+    if (lastTerminalCwdSyncKeyRef.current === syncKey) {
+      return;
+    }
+
+    lastTerminalCwdSyncKeyRef.current = syncKey;
+    void injectCd(pendingTerminalCwdSync.path, pendingTerminalCwdSync.shell ?? undefined);
+    clearPendingTerminalCwdSync(null);
+  }, [clearPendingTerminalCwdSync, injectCd, isOpen, pendingTerminalCwdSync]);
 
   useEffect(() => {
     const handler = (e: Event) => {
