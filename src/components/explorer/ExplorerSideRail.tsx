@@ -579,7 +579,7 @@ export function ExplorerSideRail({
           </span>
           {showVerboseDragGuide && (
             <span style={railMetaPillStyle}>
-              Plain drag stays inside the explorer. Hold Alt/Option when dragging out to the OS.
+              Plain drag exports files. Hold Shift to keep drag inside the explorer.
             </span>
           )}
         </>

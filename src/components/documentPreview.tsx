@@ -1,3 +1,4 @@
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
@@ -29,21 +30,106 @@ export function renderDocumentPreviewHtml(kind: DocumentPreviewKind, content: st
     ? marked.parse(content, { async: false })
     : content;
 
+  if (kind === 'html') {
+    return DOMPurify.sanitize(rendered, {
+      USE_PROFILES: { html: true },
+      WHOLE_DOCUMENT: true,
+      FORBID_TAGS: ['script', 'iframe'],
+    });
+  }
+
   return DOMPurify.sanitize(rendered, {
     USE_PROFILES: { html: true },
     FORBID_TAGS: ['script', 'style', 'iframe'],
-    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'style'],
+    FORBID_ATTR: ['style'],
   });
+}
+
+function getDocumentPreviewAssetUrl(filePath: string): string {
+  if (typeof window === 'undefined') {
+    return filePath;
+  }
+
+  try {
+    return convertFileSrc(filePath);
+  } catch {
+    const normalized = filePath.replace(/\\/g, '/');
+    return normalized.startsWith('/')
+      ? `file://${encodeURI(normalized)}`
+      : `file:///${encodeURI(normalized)}`;
+  }
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+export function renderHtmlDocumentPreviewSrcDoc(
+  content: string,
+  sourcePath?: string,
+): string {
+  const sanitizedDocument = renderDocumentPreviewHtml('html', content).trim();
+  const baseHref = sourcePath ? getDocumentPreviewAssetUrl(sourcePath) : '';
+  const headPrefix = [
+    '<meta charset="utf-8" />',
+    '<meta name="viewport" content="width=device-width, initial-scale=1" />',
+    baseHref ? `<base href="${escapeHtmlAttribute(baseHref)}" />` : '',
+  ]
+    .filter(Boolean)
+    .join('');
+
+  if (/<head(?:\s[^>]*)?>/i.test(sanitizedDocument)) {
+    return sanitizedDocument.replace(
+      /<head(?:\s[^>]*)?>/i,
+      (match) => `${match}${headPrefix}`,
+    );
+  }
+
+  return `<!doctype html><html><head>${headPrefix}</head><body>${sanitizedDocument}</body></html>`;
 }
 
 export function TextDocumentPreview({
   kind,
   content,
+  sourcePath,
 }: {
   kind: DocumentPreviewKind;
   content: string;
+  sourcePath?: string;
 }) {
+  const htmlDocumentSrcDoc = useMemo(
+    () => (kind === 'html' ? renderHtmlDocumentPreviewSrcDoc(content, sourcePath) : ''),
+    [content, kind, sourcePath],
+  );
   const html = useMemo(() => renderDocumentPreviewHtml(kind, content), [content, kind]);
+
+  if (kind === 'html') {
+    return (
+      <div
+        style={{
+          height: '100%',
+          background: '#11151d',
+        }}
+      >
+        <iframe
+          title="HTML document preview"
+          sandbox=""
+          srcDoc={htmlDocumentSrcDoc}
+          style={{
+            display: 'block',
+            width: '100%',
+            height: '100%',
+            border: 'none',
+            background: '#ffffff',
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div

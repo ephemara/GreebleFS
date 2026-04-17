@@ -4051,6 +4051,19 @@ export function SettingsPage({
                   />
                 </label>
                 <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                  <div className="pr-4">
+                    <div>Double-Click Empty Space to Go Up/Back</div>
+                    <p className="mt-1 text-[10px] opacity-45">
+                      Navigates to the parent directory when double-clicking on empty space in the file area.
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={settings.explorer.doubleClickEmptyToGoBack}
+                    onChange={event => updateExplorer({ doubleClickEmptyToGoBack: event.target.checked })}
+                  />
+                </label>
+                <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
                   <span>Confirm Delete</span>
                   <input
                     type="checkbox"

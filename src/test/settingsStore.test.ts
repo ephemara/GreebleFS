@@ -72,6 +72,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.explorer.experimentalViewMode).toBe('off');
     expect(settings.explorer.experimentalDensity).toBe(defaultSettings.explorer.experimentalDensity);
     expect(settings.explorer.folderClickMode).toBe('double');
+    expect(settings.explorer.doubleClickEmptyToGoBack).toBe(false);
     expect(settings.explorer.thumbnails).toEqual(defaultExplorerThumbnailSettings);
     expect(settings.explorer.modeProfileOverridesByThemeId).toEqual({});
     expect(settings.explorer.chromeLayoutOverridesByThemeId).toEqual({});

@@ -281,7 +281,11 @@ impl AudioEngineSharedState {
             armed_deck: self.armed_deck(),
             output_sample_rate_hz: Some(self.device_sample_rate_hz),
             output_channels: Some(self.output_channels),
-            decks: self.decks.iter().map(|deck| self.deck_snapshot(deck)).collect(),
+            decks: self
+                .decks
+                .iter()
+                .map(|deck| self.deck_snapshot(deck))
+                .collect(),
         }
     }
 
@@ -482,8 +486,11 @@ where
         .map_err(|error| format!("Failed to build audio output stream: {error}"))
 }
 
-fn write_output_data<T>(output: &mut [T], output_channels: usize, shared: &Arc<AudioEngineSharedState>)
-where
+fn write_output_data<T>(
+    output: &mut [T],
+    output_channels: usize,
+    shared: &Arc<AudioEngineSharedState>,
+) where
     T: Sample + FromSample<f32>,
 {
     let mut contexts = [
@@ -582,8 +589,8 @@ impl<'a> DeckRenderContext<'a> {
                 / fade_frames as f64)
                 .clamp(0.0, 1.0) as f32;
             let tail_sample = interpolated_clip_sample(clip, output_channel, self.position_frames);
-            let head_position = self.loop_start_frames
-                + (self.position_frames - (loop_end - fade_frames as f64));
+            let head_position =
+                self.loop_start_frames + (self.position_frames - (loop_end - fade_frames as f64));
             let head_sample = interpolated_clip_sample(clip, output_channel, head_position);
             (tail_sample * (1.0 - alpha)) + (head_sample * alpha)
         } else {
@@ -732,8 +739,12 @@ fn decode_audio_clip_for_device(
 }
 
 fn decode_audio_file(input_path: &Path) -> Result<DecodedAudioData, String> {
-    let file = File::open(input_path)
-        .map_err(|error| format!("Failed to open audio file '{}': {error}", input_path.display()))?;
+    let file = File::open(input_path).map_err(|error| {
+        format!(
+            "Failed to open audio file '{}': {error}",
+            input_path.display()
+        )
+    })?;
     let media_source_stream = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(extension) = input_path.extension().and_then(|value| value.to_str()) {
@@ -756,13 +767,21 @@ fn decode_audio_file(input_path: &Path) -> Result<DecodedAudioData, String> {
     let track = select_audio_track(format.as_ref())?;
     let track_id = track.id;
     let codec_params = track.codec_params.clone();
-    let sample_rate_hz = codec_params
-        .sample_rate
-        .ok_or_else(|| format!("Audio file '{}' is missing a sample rate.", input_path.display()))?;
+    let sample_rate_hz = codec_params.sample_rate.ok_or_else(|| {
+        format!(
+            "Audio file '{}' is missing a sample rate.",
+            input_path.display()
+        )
+    })?;
     let channels = codec_params
         .channels
         .map(|channels| channels.count())
-        .ok_or_else(|| format!("Audio file '{}' is missing channel metadata.", input_path.display()))?;
+        .ok_or_else(|| {
+            format!(
+                "Audio file '{}' is missing channel metadata.",
+                input_path.display()
+            )
+        })?;
     let mut decoder = get_codecs()
         .make(&codec_params, &DecoderOptions::default())
         .map_err(|error| {
@@ -794,7 +813,8 @@ fn decode_audio_file(input_path: &Path) -> Result<DecodedAudioData, String> {
                 input_path.display()
             )
         })?;
-        let mut sample_buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
+        let mut sample_buffer =
+            SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
         sample_buffer.copy_interleaved_ref(decoded);
         interleaved_samples.extend_from_slice(sample_buffer.samples());
     }
@@ -847,9 +867,12 @@ fn resample_audio_data(
     let output_frames = resampler.process_all_needed_output_len(decoded.frames);
     let mut output_samples = vec![0.0f32; output_frames * decoded.channels];
     let resampled_frames = {
-        let mut output =
-            InterleavedSlice::new_mut(output_samples.as_mut_slice(), decoded.channels, output_frames)
-                .map_err(|error| format!("Failed to allocate resampled audio buffer: {error}"))?;
+        let mut output = InterleavedSlice::new_mut(
+            output_samples.as_mut_slice(),
+            decoded.channels,
+            output_frames,
+        )
+        .map_err(|error| format!("Failed to allocate resampled audio buffer: {error}"))?;
         let (_, written_frames) = resampler
             .process_all_into_buffer(&input, &mut output, decoded.frames, None)
             .map_err(|error| format!("Failed to resample audio: {error}"))?;
@@ -952,8 +975,8 @@ fn detect_silence_regions(
         return Vec::new();
     }
 
-    let window_size = ((sample_rate_hz as f64 * DEFAULT_SILENCE_WINDOW_SECONDS).round() as usize)
-        .max(1);
+    let window_size =
+        ((sample_rate_hz as f64 * DEFAULT_SILENCE_WINDOW_SECONDS).round() as usize).max(1);
     let min_region_windows =
         ((DEFAULT_MIN_SILENCE_SECONDS / DEFAULT_SILENCE_WINDOW_SECONDS).ceil() as usize).max(1);
     let threshold = DEFAULT_SILENCE_FLOOR_LINEAR.max(peak_level * 0.01);
@@ -1031,7 +1054,8 @@ fn estimate_bpm(mono: &[f32], sample_rate_hz: u32) -> Option<f64> {
         let start = frame_index * hop_size;
         let end = (start + frame_size).min(mono.len());
         let frame = &mono[start..end];
-        let energy = frame.iter().map(|sample| sample.abs() as f64).sum::<f64>() / frame.len() as f64;
+        let energy =
+            frame.iter().map(|sample| sample.abs() as f64).sum::<f64>() / frame.len() as f64;
         let onset = (energy - previous_energy).max(0.0);
         onset_envelope.push(onset);
         previous_energy = energy;
@@ -1041,7 +1065,9 @@ fn estimate_bpm(mono: &[f32], sample_rate_hz: u32) -> Option<f64> {
     if max_onset <= f64::EPSILON {
         return None;
     }
-    onset_envelope.iter_mut().for_each(|value| *value /= max_onset);
+    onset_envelope
+        .iter_mut()
+        .for_each(|value| *value /= max_onset);
 
     let envelope_rate_hz = sample_rate_hz as f64 / hop_size as f64;
     let min_lag = (envelope_rate_hz * 60.0 / DEFAULT_BPM_MAX).floor() as usize;
@@ -1237,7 +1263,10 @@ fn apply_loaded_clip(
     Ok(shared.snapshot())
 }
 
-fn begin_deck_load(shared: &Arc<AudioEngineSharedState>, deck_id: AudioDeckId) -> Result<u64, String> {
+fn begin_deck_load(
+    shared: &Arc<AudioEngineSharedState>,
+    deck_id: AudioDeckId,
+) -> Result<u64, String> {
     let deck = shared.deck(deck_id);
     let generation = deck.load_generation.fetch_add(1, Ordering::Relaxed) + 1;
     deck.is_loading.store(true, Ordering::Relaxed);
@@ -1441,7 +1470,8 @@ pub fn audio_engine_seek(
         .clip
         .load_full()
         .ok_or_else(|| "Load an audio file before seeking.".to_string())?;
-    let target_frames = normalize_seek_seconds(request.position_seconds) * shared.device_sample_rate_hz as f64;
+    let target_frames =
+        normalize_seek_seconds(request.position_seconds) * shared.device_sample_rate_hz as f64;
     let bounded_frames = target_frames.clamp(0.0, clip.frames as f64);
     set_atomic_f64(&deck.position_frames, bounded_frames);
     let snapshot = shared.snapshot();
@@ -1463,8 +1493,8 @@ pub fn audio_engine_set_loop_region(
         .ok_or_else(|| "Load an audio file before setting a loop region.".to_string())?;
     let (start_seconds, end_seconds) =
         clamp_loop_duration(request.start_seconds, request.end_seconds)?;
-    let start_frames = (start_seconds * shared.device_sample_rate_hz as f64)
-        .clamp(0.0, clip.frames as f64);
+    let start_frames =
+        (start_seconds * shared.device_sample_rate_hz as f64).clamp(0.0, clip.frames as f64);
     let end_frames = (end_seconds * shared.device_sample_rate_hz as f64)
         .clamp(start_frames + 1.0, clip.frames as f64);
     set_atomic_f64(&deck.loop_start_frames, start_frames);

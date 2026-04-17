@@ -209,6 +209,25 @@ describe('SettingsPage behavior', () => {
     expect(invokeMock).toHaveBeenCalledWith('fs_get_home_dir');
   }, 30000);
 
+  it('toggles empty-space double-click navigation setting', async () => {
+    const user = userEvent.setup();
+    renderSettingsPage();
+
+    await user.click(findSectionButton('Explorer'));
+
+    const toggle = screen.getByRole('checkbox', {
+      name: /double-click empty space to go up\/back/i,
+    });
+
+    expect(useSettingsStore.getState().settings.explorer.doubleClickEmptyToGoBack).toBe(false);
+
+    await user.click(toggle);
+    expect(useSettingsStore.getState().settings.explorer.doubleClickEmptyToGoBack).toBe(true);
+
+    await user.click(toggle);
+    expect(useSettingsStore.getState().settings.explorer.doubleClickEmptyToGoBack).toBe(false);
+  });
+
   it('lets the explorer context menu composer disable and reorder plugin menu items', async () => {
     const user = userEvent.setup();
     renderSettingsPage({

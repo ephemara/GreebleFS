@@ -143,6 +143,7 @@ export interface ExplorerSettings {
   experimentalViewMode: ExplorerExperimentalViewMode;
   experimentalDensity: number;
   folderClickMode: ExplorerFolderClickMode;
+  doubleClickEmptyToGoBack: boolean;
   confirmDelete: boolean;
   defaultFolderIcon: FolderIconValue;
   folderIconRules: FolderIconRule[];
@@ -341,6 +342,7 @@ function normalizeExplorerSettings(
       ? normalizeAdaptiveSemanticDensity(updates?.experimentalDensity)
       : base.experimentalDensity,
     folderClickMode: normalizeExplorerFolderClickMode(updates?.folderClickMode ?? base.folderClickMode),
+    doubleClickEmptyToGoBack: updates?.doubleClickEmptyToGoBack ?? base.doubleClickEmptyToGoBack,
     thumbnails: hasExplicitThumbnailSettings
       ? normalizeExplorerThumbnailSettings(updates?.thumbnails)
       : base.thumbnails,
@@ -645,6 +647,7 @@ export const defaultSettings: Settings = {
     experimentalViewMode: 'off',
     experimentalDensity: DEFAULT_ADAPTIVE_SEMANTIC_DENSITY,
     folderClickMode: 'double',
+    doubleClickEmptyToGoBack: false,
     confirmDelete: true,
     defaultFolderIcon: DEFAULT_FOLDER_ICON_VALUE,
     folderIconRules: createDefaultFolderIconRules(),
@@ -796,6 +799,7 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
         imported?.explorer?.experimentalDensity ?? base.explorer.experimentalDensity,
       ),
       folderClickMode: normalizeExplorerFolderClickMode(imported?.explorer?.folderClickMode ?? base.explorer.folderClickMode),
+      doubleClickEmptyToGoBack: imported?.explorer?.doubleClickEmptyToGoBack ?? base.explorer.doubleClickEmptyToGoBack,
       thumbnails: normalizeExplorerThumbnailSettings(
         imported?.explorer?.thumbnails ?? base.explorer.thumbnails,
       ),

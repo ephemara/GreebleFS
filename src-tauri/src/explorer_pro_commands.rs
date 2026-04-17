@@ -8,8 +8,8 @@ use crate::fs_commands::{
 use chrono::Local;
 use ignore::WalkBuilder;
 use md5::Context as Md5Context;
-use serde::{Deserialize, Serialize};
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -503,12 +503,7 @@ fn batch_rename_token_date() -> String {
     Local::now().format("%Y-%m-%d").to_string()
 }
 
-fn batch_rename_expand_tokens(
-    template: &str,
-    index: u64,
-    parent: &str,
-    padding: u32,
-) -> String {
+fn batch_rename_expand_tokens(template: &str, index: u64, parent: &str, padding: u32) -> String {
     let index_text = if padding == 0 {
         index.to_string()
     } else {
@@ -522,10 +517,7 @@ fn batch_rename_expand_tokens(
     rendered
 }
 
-fn batch_rename_expand_capture_template(
-    template: &str,
-    captures: &regex::Captures<'_>,
-) -> String {
+fn batch_rename_expand_capture_template(template: &str, captures: &regex::Captures<'_>) -> String {
     let mut rendered = String::with_capacity(template.len());
     let mut chars = template.chars().peekable();
 
@@ -578,28 +570,25 @@ fn batch_rename_expand_capture_template(
     rendered
 }
 
-fn batch_rename_apply_pattern(
-    stem: &str,
-    recipe: &FsBatchRenameRecipe,
-) -> Result<String, String> {
+fn batch_rename_apply_pattern(stem: &str, recipe: &FsBatchRenameRecipe) -> Result<String, String> {
     let search = recipe.search.clone();
     if search.trim().is_empty() {
         return Ok(stem.to_string());
     }
 
     let compiled = match recipe.mode {
-        FsBatchRenameMode::Literal => {
-            Regex::new(&regex::escape(&search)).map_err(|error| {
-                format!("Failed to prepare literal rename matcher: {error}")
-            })?
+        FsBatchRenameMode::Literal => Regex::new(&regex::escape(&search))
+            .map_err(|error| format!("Failed to prepare literal rename matcher: {error}"))?,
+        FsBatchRenameMode::Regex => {
+            Regex::new(&search).map_err(|error| format!("Invalid rename regex: {error}"))?
         }
-        FsBatchRenameMode::Regex => Regex::new(&search)
-            .map_err(|error| format!("Invalid rename regex: {error}"))?,
     };
 
     let replaced = match recipe.mode {
         FsBatchRenameMode::Literal => compiled
-            .replace_all(stem, |_captures: &regex::Captures<'_>| recipe.replacement.clone())
+            .replace_all(stem, |_captures: &regex::Captures<'_>| {
+                recipe.replacement.clone()
+            })
             .to_string(),
         FsBatchRenameMode::Regex => compiled
             .replace_all(stem, |captures: &regex::Captures<'_>| {
@@ -680,9 +669,8 @@ fn batch_rename_preview_rows(
         };
 
         if next_name.trim().is_empty() {
-            validation_error.get_or_insert_with(|| {
-                "Batch rename produced an empty file name.".to_string()
-            });
+            validation_error
+                .get_or_insert_with(|| "Batch rename produced an empty file name.".to_string());
         }
 
         if next_name.contains('/') || next_name.contains('\\') {
@@ -716,8 +704,11 @@ fn batch_rename_preview_rows(
         let destination_exists = Path::new(&row.destination_path).exists();
         let destination_is_source = source_set.contains(&row.destination_path);
         let source_equals_destination = row.source_path == row.destination_path;
-        let is_duplicate_destination =
-            destination_counts.get(&row.destination_path).copied().unwrap_or(0) > 1;
+        let is_duplicate_destination = destination_counts
+            .get(&row.destination_path)
+            .copied()
+            .unwrap_or(0)
+            > 1;
 
         if source_equals_destination {
             row.collision = true;
@@ -928,9 +919,7 @@ fn duplicate_scan_walker(root: &Path) -> ignore::Walk {
     // Use the shared ignore walker so duplicate scans respect repo ignore rules
     // and do not waste time descending into generated or dependency trees.
     let mut builder = WalkBuilder::new(root);
-    builder
-        .standard_filters(true)
-        .require_git(false);
+    builder.standard_filters(true).require_git(false);
     builder.build()
 }
 
@@ -1581,10 +1570,7 @@ pub async fn fs_batch_rename_apply(
     recipe: FsBatchRenameRecipe,
 ) -> Result<Vec<FsBatchRenameResult>, String> {
     let preview = batch_rename_preview_rows(&recipe)?;
-    if let Some(error) = preview
-        .iter()
-        .find_map(|row| row.validation_error.clone())
-    {
+    if let Some(error) = preview.iter().find_map(|row| row.validation_error.clone()) {
         return Err(error);
     }
     if preview.iter().any(|row| row.collision) {
@@ -1668,10 +1654,9 @@ pub async fn fs_find_duplicates_cancel(scan_id: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        batch_rename_preview_rows, collect_duplicate_candidates,
-        ensure_batch_rename_is_valid, ExplorerDuplicateScanProgress,
-        ExplorerSavedSearchSaveRequest, FsBatchRenameItem, FsBatchRenameMode,
-        FsBatchRenameRecipe, fs_batch_rename_apply,
+        batch_rename_preview_rows, collect_duplicate_candidates, ensure_batch_rename_is_valid,
+        fs_batch_rename_apply, ExplorerDuplicateScanProgress, ExplorerSavedSearchSaveRequest,
+        FsBatchRenameItem, FsBatchRenameMode, FsBatchRenameRecipe,
     };
     use std::collections::HashMap;
     use std::fs;
@@ -1796,13 +1781,11 @@ mod tests {
         })
         .expect("preview rows");
 
-        assert!(
-            rows[0]
-                .validation_error
-                .as_deref()
-                .unwrap()
-                .contains("Invalid rename regex")
-        );
+        assert!(rows[0]
+            .validation_error
+            .as_deref()
+            .unwrap()
+            .contains("Invalid rename regex"));
     }
 
     #[tokio::test]

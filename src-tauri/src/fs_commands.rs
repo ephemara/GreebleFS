@@ -12,6 +12,7 @@ use crate::entry_size_cache::{
 use crate::explorer_pro_commands::FsBatchRenameItem;
 use md5::Context as Md5Context;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Read;
@@ -23,7 +24,6 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use tauri_specta::Event;
 use uuid::Uuid;
-use sha2::{Digest, Sha256};
 use yazi_fs::{
     cha::{Cha, ChaType},
     provider::{local::Local, DirReader, FileHolder, Provider},
@@ -5908,9 +5908,10 @@ mod tests {
         fs::write(root.join("a.bin"), vec![0_u8; 32]).unwrap();
         fs::write(nested.join("b.bin"), vec![0_u8; 64]).unwrap();
 
-        let results = fs_calculate_recursive_sizes(vec![root.to_string_lossy().into_owned()], Some(true))
-            .await
-            .expect("fs_calculate_recursive_sizes failed");
+        let results =
+            fs_calculate_recursive_sizes(vec![root.to_string_lossy().into_owned()], Some(true))
+                .await
+                .expect("fs_calculate_recursive_sizes failed");
 
         assert_eq!(results.len(), 1);
         let entry = &results[0];

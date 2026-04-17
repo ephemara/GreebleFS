@@ -634,7 +634,6 @@ fn compute_waveform_buckets(
     (peak, rms, buckets)
 }
 
-
 fn sanitize_audio_temp_stem(value: &str) -> String {
     let sanitized: String = value
         .chars()
@@ -1688,9 +1687,7 @@ fn execute_audio_batch_process(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn audio_analyze_preview(
-    input_path: String,
-) -> Result<AudioPreviewAnalysis, String> {
+pub async fn audio_analyze_preview(input_path: String) -> Result<AudioPreviewAnalysis, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let trimmed = input_path.trim();
         if trimmed.is_empty() {
@@ -1764,7 +1761,6 @@ pub async fn audio_batch_process(
     .await
     .map_err(|error| format!("Audio batch task failed to join: {error}"))?
 }
-
 
 fn paths_match(left: &Path, right: &Path) -> bool {
     let canonical_left = fs::canonicalize(left).ok();
@@ -1874,17 +1870,8 @@ exit 0
         assert_eq!(
             args,
             vec![
-                "trim",
-                "0.123457",
-                "1.864198",
-                "pitch",
-                "350.250",
-                "gain",
-                "-n",
-                "fade",
-                "0.015000",
-                "1.864198",
-                "0.125000",
+                "trim", "0.123457", "1.864198", "pitch", "350.250", "gain", "-n", "fade",
+                "0.015000", "1.864198", "0.125000",
             ]
         );
     }
@@ -1946,6 +1933,11 @@ exit 0
         assert_eq!(plan.final_output_format, "mp3");
         assert_eq!(plan.final_output_path, output_path);
         assert!(plan.ffmpeg_output_path.is_some());
-        assert_ne!(plan.sox_output_path.extension().and_then(|value| value.to_str()), Some("mp3"));
+        assert_ne!(
+            plan.sox_output_path
+                .extension()
+                .and_then(|value| value.to_str()),
+            Some("mp3")
+        );
     }
 }

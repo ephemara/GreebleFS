@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   shouldOpenExplorerEntryOnTrigger,
+  shouldNavigateUpOnEmptyExplorerDoubleClick,
   shouldShowExplorerFolderOpenIcon,
 } from '../components/fileExplorerClickBehavior';
 
@@ -84,6 +85,47 @@ describe('shouldOpenExplorerEntryOnTrigger', () => {
       isSelected: false,
       isDropTarget: true,
       folderClickMode: 'double',
+    })).toBe(false);
+  });
+
+  it('only navigates up on empty-space double click when toggle enabled', () => {
+    const viewport = document.createElement('div');
+    const emptyWrapper = document.createElement('div');
+    const child = document.createElement('div');
+    const row = document.createElement('div');
+    row.setAttribute('data-overlay-drag-source', 'file');
+    const button = document.createElement('button');
+    viewport.append(emptyWrapper, row, button);
+    emptyWrapper.appendChild(child);
+
+    expect(shouldNavigateUpOnEmptyExplorerDoubleClick({
+      enabled: true,
+      target: viewport,
+      currentTarget: viewport,
+    })).toBe(true);
+
+    expect(shouldNavigateUpOnEmptyExplorerDoubleClick({
+      enabled: false,
+      target: viewport,
+      currentTarget: viewport,
+    })).toBe(false);
+
+    expect(shouldNavigateUpOnEmptyExplorerDoubleClick({
+      enabled: true,
+      target: child,
+      currentTarget: viewport,
+    })).toBe(true);
+
+    expect(shouldNavigateUpOnEmptyExplorerDoubleClick({
+      enabled: true,
+      target: row,
+      currentTarget: viewport,
+    })).toBe(false);
+
+    expect(shouldNavigateUpOnEmptyExplorerDoubleClick({
+      enabled: true,
+      target: button,
+      currentTarget: viewport,
     })).toBe(false);
   });
 });

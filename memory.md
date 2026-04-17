@@ -1,5 +1,18 @@
 # GreebleFS Memory
 
+## 2026-04-17 — Explorer Drag-Out Contract Restored
+
+- Explorer file drags now default back to the native Tauri drag-out bridge, and `Shift` is the explicit modifier for an explorer-only internal drag.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now resolves drag intent as `native-out` by default and falls back to `internal` only when `Shift` is held or when native drag-out is unsupported for the dragged paths.
+  - Explorer drag sources no longer opt into the overlay-hide path during ordinary file drags, so native drag-out and in-app folder drops no longer share the same shell teardown behavior.
+  - `src/components/explorer/ExplorerSideRail.tsx` now advertises the restored contract directly: plain drag exports files; `Shift` keeps the drag inside the explorer.
+  - `src/test/fileExplorer.viewModes.test.tsx` and `src/test/explorerSideRail.test.tsx` now lock the contract: plain drag starts `fs_start_native_file_drag`, `Shift` keeps drag internal, and in-app drops still complete through the explorer transfer path.
+- Durable product note:
+  - Repo memory had drifted into two contradictory drag contracts. Current truth is: plain drag exports through the native bridge, `Shift` forces internal-only drag.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx src/test/explorerSideRail.test.tsx`
+
 ## 2026-04-17 — Text Thumbnail Legibility Pass
 
 - Explorer text/code thumbnails are now deliberately more legible at small icon sizes instead of trying to cram too many tiny lines into the preview canvas.

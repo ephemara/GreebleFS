@@ -1,6 +1,11 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { TextDocumentPreview, getDocumentPreviewKind, renderDocumentPreviewHtml } from '../components/documentPreview';
+import {
+  TextDocumentPreview,
+  getDocumentPreviewKind,
+  renderDocumentPreviewHtml,
+  renderHtmlDocumentPreviewSrcDoc,
+} from '../components/documentPreview';
 
 describe('documentPreview', () => {
   it('detects markdown and html previewable documents', () => {
@@ -16,20 +21,31 @@ describe('documentPreview', () => {
     expect(html).not.toContain('<script>');
   });
 
-  it('sanitizes unsafe html attributes from previews', () => {
+  it('builds sandboxed html preview documents with a local asset base', () => {
+    const srcDoc = renderHtmlDocumentPreviewSrcDoc(
+      `<html><head><style>body { color: red; }</style><script>alert(1)</script></head><body><h1>Hello</h1><img src="./poster.png" onerror="alert(1)" /><button onclick="alert(2)">Click</button></body></html>`,
+      'C:\\workspace\\repo\\pages\\index.html',
+    );
+
+    expect(srcDoc).toContain('<base href="asset://localhost/');
+    expect(srcDoc).toContain('<style>body { color: red; }</style>');
+    expect(srcDoc).not.toContain('<script>');
+    expect(srcDoc).toContain('<img src="./poster.png">');
+    expect(srcDoc).toContain('<button>Click</button>');
+  });
+
+  it('renders html previews inside an iframe instead of injecting them into the shell dom', () => {
     render(
       <TextDocumentPreview
         kind="html"
-        content={`<h1>Hello</h1><img src="x" onerror="alert(1)" /><button onclick="alert(2)">Click</button>`}
+        content={`<html><body><h1>Hello</h1></body></html>`}
+        sourcePath="C:\\workspace\\repo\\pages\\index.html"
       />,
     );
 
-    expect(screen.getByText('Hello')).toBeInTheDocument();
-    const button = screen.getByText('Click');
-    expect(button).toBeInTheDocument();
-    expect(button).not.toHaveAttribute('onclick');
-
-    const image = screen.getByRole('img');
-    expect(image).not.toHaveAttribute('onerror');
+    expect(screen.queryByText('Hello')).toBeNull();
+    const frame = screen.getByTitle('HTML document preview');
+    expect(frame).toHaveAttribute('srcdoc');
+    expect(frame.getAttribute('srcdoc')).toContain('<base href="asset://localhost/');
   });
 });

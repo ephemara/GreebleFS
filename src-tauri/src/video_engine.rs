@@ -305,23 +305,19 @@ fn advance_video_engine_transport(shared: &Arc<VideoEngineSharedState>) -> Resul
     }
 
     let mut changed = false;
-    let maybe_audio_deck = audio_snapshot
-        .as_ref()
-        .and_then(|snapshot| {
-            snapshot
-                .decks
-                .iter()
-                .find(|deck| deck.deck_id == VIDEO_AUDIO_DECK_ID)
-        });
+    let maybe_audio_deck = audio_snapshot.as_ref().and_then(|snapshot| {
+        snapshot
+            .decks
+            .iter()
+            .find(|deck| deck.deck_id == VIDEO_AUDIO_DECK_ID)
+    });
 
     if let Some(audio_deck) = maybe_audio_deck {
         let audio_loaded_matches =
             audio_deck.loaded_path.as_deref() == state.loaded_path.as_deref();
         if audio_loaded_matches {
-            let next_time_seconds = clamp_video_position(
-                audio_deck.current_time_seconds,
-                state.duration_seconds,
-            );
+            let next_time_seconds =
+                clamp_video_position(audio_deck.current_time_seconds, state.duration_seconds);
             if (state.current_time_seconds - next_time_seconds).abs() > 0.02 {
                 state.current_time_seconds = next_time_seconds;
                 changed = true;
@@ -344,13 +340,15 @@ fn advance_video_engine_transport(shared: &Arc<VideoEngineSharedState>) -> Resul
                 0.0
             }
         };
-        let mut next_time_seconds =
-            state.silent_playback_started_time_seconds + elapsed_seconds;
-        if state.loop_region.enabled && state.loop_region.end_seconds > state.loop_region.start_seconds {
-            let loop_duration =
-                (state.loop_region.end_seconds - state.loop_region.start_seconds).max(MINIMUM_VIDEO_LOOP_DURATION_SECONDS);
+        let mut next_time_seconds = state.silent_playback_started_time_seconds + elapsed_seconds;
+        if state.loop_region.enabled
+            && state.loop_region.end_seconds > state.loop_region.start_seconds
+        {
+            let loop_duration = (state.loop_region.end_seconds - state.loop_region.start_seconds)
+                .max(MINIMUM_VIDEO_LOOP_DURATION_SECONDS);
             if next_time_seconds >= state.loop_region.end_seconds {
-                let overshoot = (next_time_seconds - state.loop_region.start_seconds) % loop_duration;
+                let overshoot =
+                    (next_time_seconds - state.loop_region.start_seconds) % loop_duration;
                 next_time_seconds = state.loop_region.start_seconds + overshoot;
             }
         } else if next_time_seconds >= state.duration_seconds {
@@ -375,17 +373,22 @@ fn advance_video_engine_transport(shared: &Arc<VideoEngineSharedState>) -> Resul
 }
 
 fn update_preview_frame_for_current_time(state: &mut VideoEngineMutableState) -> bool {
-    let Some(next_frame_index) =
-        sequence_frame_index_for_time(state.current_time_seconds, state.duration_seconds, state.frame_sequence.len())
-    else {
+    let Some(next_frame_index) = sequence_frame_index_for_time(
+        state.current_time_seconds,
+        state.duration_seconds,
+        state.frame_sequence.len(),
+    ) else {
         return false;
     };
     let next_frame_path = state
         .frame_sequence
         .get(next_frame_index)
         .map(|path| path.to_string_lossy().to_string());
-    let next_timestamp_seconds =
-        timestamp_for_sequence_index(next_frame_index, state.duration_seconds, state.frame_sequence.len());
+    let next_timestamp_seconds = timestamp_for_sequence_index(
+        next_frame_index,
+        state.duration_seconds,
+        state.frame_sequence.len(),
+    );
     if state.preview_frame_path != next_frame_path
         || state.preview_frame_timestamp_seconds != next_timestamp_seconds
     {
@@ -447,14 +450,22 @@ pub(crate) fn validate_video_source_path(input_path: &str) -> Result<PathBuf, St
 
 pub(crate) fn resolve_video_ffmpeg_binary() -> String {
     resolve_video_binary_from_env(
-        &["GREEBLEFS_VIDEO_FFMPEG_BINARY", "GREEBLEFS_FFMPEG_BINARY", "FFMPEG_BIN"],
+        &[
+            "GREEBLEFS_VIDEO_FFMPEG_BINARY",
+            "GREEBLEFS_FFMPEG_BINARY",
+            "FFMPEG_BIN",
+        ],
         DEFAULT_VIDEO_FFMPEG_BINARY,
     )
 }
 
 pub(crate) fn resolve_video_ffprobe_binary() -> String {
     resolve_video_binary_from_env(
-        &["GREEBLEFS_VIDEO_FFPROBE_BINARY", "GREEBLEFS_FFPROBE_BINARY", "FFPROBE_BIN"],
+        &[
+            "GREEBLEFS_VIDEO_FFPROBE_BINARY",
+            "GREEBLEFS_FFPROBE_BINARY",
+            "FFPROBE_BIN",
+        ],
         DEFAULT_VIDEO_FFPROBE_BINARY,
     )
 }
@@ -587,7 +598,10 @@ fn parse_ffprobe_duration_seconds(value: &str) -> Option<f64> {
     if trimmed.is_empty() {
         return None;
     }
-    trimmed.parse::<f64>().ok().filter(|seconds| seconds.is_finite())
+    trimmed
+        .parse::<f64>()
+        .ok()
+        .filter(|seconds| seconds.is_finite())
 }
 
 fn parse_ffprobe_frame_rate(value: &str) -> Option<f64> {
@@ -615,11 +629,10 @@ fn ensure_video_frame_sequence(
     let sequence_directory = video_frame_sequence_directory(app, input_path, metadata)?;
     let mut frame_paths = list_video_frame_sequence_paths(&sequence_directory)?;
     if frame_paths.is_empty() {
-        let sequence_fps = resolve_preview_sequence_frame_rate(
-            metadata.duration_seconds,
-            metadata.frame_rate,
-        );
-        let max_frames = resolve_preview_sequence_frame_count(metadata.duration_seconds, sequence_fps);
+        let sequence_fps =
+            resolve_preview_sequence_frame_rate(metadata.duration_seconds, metadata.frame_rate);
+        let max_frames =
+            resolve_preview_sequence_frame_count(metadata.duration_seconds, sequence_fps);
         generate_video_frame_sequence(input_path, &sequence_directory, sequence_fps, max_frames)?;
         frame_paths = list_video_frame_sequence_paths(&sequence_directory)?;
     }
@@ -680,7 +693,13 @@ fn video_frame_sequence_digest(
     hasher.update(metadata.width_px.to_le_bytes());
     hasher.update(metadata.height_px.to_le_bytes());
     hasher.update(metadata.duration_seconds.to_bits().to_le_bytes());
-    hasher.update(metadata.frame_rate.unwrap_or_default().to_bits().to_le_bytes());
+    hasher.update(
+        metadata
+            .frame_rate
+            .unwrap_or_default()
+            .to_bits()
+            .to_le_bytes(),
+    );
     hasher.update(VIDEO_FRAME_SEQUENCE_MAX_WIDTH.to_le_bytes());
     hasher.update(VIDEO_FRAME_SEQUENCE_MAX_HEIGHT.to_le_bytes());
     hasher.update(VIDEO_FRAME_SEQUENCE_MAX_FRAMES.to_le_bytes());
@@ -720,7 +739,11 @@ fn resolve_preview_sequence_frame_rate(
         .clamp(VIDEO_FRAME_SEQUENCE_MIN_FPS, VIDEO_FRAME_SEQUENCE_MAX_FPS);
     source_frame_rate
         .filter(|value| value.is_finite() && *value > 0.0)
-        .map(|value| value.min(count_limited_fps).clamp(VIDEO_FRAME_SEQUENCE_MIN_FPS, VIDEO_FRAME_SEQUENCE_MAX_FPS))
+        .map(|value| {
+            value
+                .min(count_limited_fps)
+                .clamp(VIDEO_FRAME_SEQUENCE_MIN_FPS, VIDEO_FRAME_SEQUENCE_MAX_FPS)
+        })
         .unwrap_or(count_limited_fps)
 }
 

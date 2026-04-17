@@ -45,3 +45,48 @@ export function shouldShowExplorerFolderOpenIcon({
 
   return folderClickMode === 'double' && isSelected;
 }
+
+export function shouldNavigateUpOnEmptyExplorerDoubleClick({
+  enabled,
+  target,
+  currentTarget,
+}: {
+  enabled: boolean;
+  target: EventTarget | null;
+  currentTarget: EventTarget | null;
+}): boolean {
+  if (!enabled) {
+    return false;
+  }
+
+  if (!(currentTarget instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (!(target instanceof Node) || !currentTarget.contains(target)) {
+    return false;
+  }
+
+  if (!(target instanceof Element)) {
+    return true;
+  }
+
+  const blockedAncestor = target.closest(
+    [
+      '[data-entry-path]',
+      '[data-overlay-drag-source="file"]',
+      'button',
+      'input',
+      'textarea',
+      'select',
+      'a',
+      '[contenteditable="true"]',
+      '[role="button"]',
+      '[role="menu"]',
+      '[role="menuitem"]',
+      '[data-no-empty-double-click]',
+    ].join(', '),
+  );
+
+  return blockedAncestor == null || !currentTarget.contains(blockedAncestor);
+}

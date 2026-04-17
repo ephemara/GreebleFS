@@ -1,166 +1,21 @@
-import { convertFileSrc } from '@tauri-apps/api/core';
-import {
-  forwardRef,
-  memo,
-  useEffect,
-  useImperativeHandle,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type KeyboardEvent as ReactKeyboardEvent,
-} from 'react';
-import {
-  AlertTriangle,
-  AudioLines,
-  Pause,
-  Play,
-  RotateCcw,
-  Save,
-  Scissors,
-  Sparkles,
-  Waves,
-} from 'lucide-react';
-import { matchesKeybinding } from '../config/hotkeys';
-import {
-  DEFAULT_EXPLORER_AUDIO_EXPORT_FORMAT_ID,
-  EXPLORER_AUDIO_EXPORT_FORMATS,
-  getExplorerAudioExportFormatDefinition,
-} from '../config/filePreview';
-import {
-  analyzeExplorerAudioPreview,
-  exportExplorerAudioTransform,
-  type ExplorerAudioPreviewAnalysis,
-} from '../runtime/audioWorkbenchBackend';
-import {
-  getAudioDeckState,
-  loadSelectionIntoAudioDeck,
-  pauseAudioDeck,
-  playAudioDeck,
-  seekAudioDeck,
-  setAudioDeckGain,
-  setAudioDeckLoopRegion,
-  setAudioDeckRate,
-  stopAudioDeck,
-  useAudioEngineFeed,
-  useAudioEngineSnapshot,
-} from '../store/audioEngineStore';
-import { useSettingsStore } from '../store/settingsStore';
-import { AppConfirmDialog, AppPromptDialog } from './AppModal';
+import re
 
-type ExplorerAudioWorkbenchProps = {
-  audioPath: string;
-  audioName: string;
-  audioExtension: string;
-  audioSize: number;
-  onExported?: (outputPath: string) => Promise<void> | void;
-};
+with open('src/components/ExplorerAudioWorkbench.tsx', 'r') as f:
+    content = f.read()
 
-type ExportDialogMode = 'clip' | 'normalized' | 'convert' | 'overwrite' | null;
-type TimelineDragMode = 'playhead' | 'selectionStart' | 'selectionEnd' | 'fadeIn' | 'fadeOut';
-type ExportState = 'idle' | 'running' | 'saved' | 'error';
-type AudioWorkbenchSummaryTone = 'default' | 'accent';
+# We want to replace the UI components and styles defined before ExplorerAudioWorkbench.
+# Find where toolbarButtonStyle starts
+start_styles = content.find("function toolbarButtonStyle(")
+# Find where AudioWorkbenchWaveformBars starts
+start_waveform = content.find("type AudioWorkbenchWaveformBarsProps = {")
+# Find where ExplorerAudioWorkbench starts
+start_component = content.find("export function ExplorerAudioWorkbench({")
 
-type AudioWorkbenchSummaryItem = {
-  label: string;
-  value: string;
-  tone?: AudioWorkbenchSummaryTone;
-};
+# Extract everything up to start_styles
+part1 = content[:start_styles]
 
-const MINIMUM_SELECTION_SECONDS = 0.05;
-const FADE_KEYBOARD_STEP_SECONDS = 0.1;
-const FINE_TRIM_NUDGE_SECONDS = 0.01;
-const SILENCE_REGION_PREVIEW_LIMIT = 6;
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
-
-function formatDuration(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) {
-    return '0:00';
-  }
-  const totalSeconds = Math.floor(seconds);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const remainingSeconds = totalSeconds % 60;
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-  }
-  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-}
-
-function formatDb(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value) || value <= 0) {
-    return 'n/a';
-  }
-  return `${(20 * Math.log10(value)).toFixed(1)} dB`;
-}
-
-function formatFadeDuration(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) {
-    return '0.00s';
-  }
-  if (seconds >= 60) {
-    return formatDuration(seconds);
-  }
-  return `${seconds.toFixed(seconds < 10 ? 2 : 1)}s`;
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
-}
-
-function formatPreciseSeconds(seconds: number): string {
-  if (!Number.isFinite(seconds)) {
-    return '0.000';
-  }
-  return seconds.toFixed(3);
-}
-
-function formatBpm(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value) || value <= 0) {
-    return 'n/a';
-  }
-  return `${value.toFixed(value >= 100 ? 0 : 1)} BPM`;
-}
-
-function formatPitchShift(cents: number): string {
-  if (!Number.isFinite(cents) || Math.abs(cents) < 0.5) {
-    return 'Neutral';
-  }
-  const semitones = cents / 100;
-  return `${semitones > 0 ? '+' : ''}${semitones.toFixed(2)} st`;
-}
-
-function isEditableKeyboardTarget(target: EventTarget | null): boolean {
-  const element = target instanceof HTMLElement ? target : null;
-  if (!element) {
-    return false;
-  }
-
-  return element.isContentEditable
-    || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName)
-    || Boolean(element.closest('.monaco-editor'));
-}
-
-function buildAudioOutputPath(
-  sourcePath: string,
-  suffix: string,
-  extension: string,
-): string {
-  const match = sourcePath.match(/^(.*[/\\])?([^/\\]+)$/);
-  const parentPath = match?.[1] ?? '';
-  const leafName = match?.[2] ?? sourcePath;
-  const stem = leafName.replace(/\.[^.]+$/, '');
-  return `${parentPath}${stem}.${suffix}.${extension}`;
-}
-
-
+# Define new styles and subcomponents
+new_styles_and_subcomponents = """
 function toolbarButtonStyle(emphasis: 'default' | 'primary' | 'danger' | 'ghost' = 'default'): CSSProperties {
   const base = {
     appearance: 'none' as const,
@@ -355,123 +210,17 @@ const AudioWorkbenchPlayheadMarker = memo(
   ),
 );
 
-export function ExplorerAudioWorkbench({
-  audioPath,
-  audioName,
-  audioExtension,
-  audioSize,
-  onExported,
-}: ExplorerAudioWorkbenchProps) {
-  useAudioEngineFeed();
+"""
 
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const timelineRef = useRef<HTMLDivElement | null>(null);
-  const snapshot = useAudioEngineSnapshot();
-  const keybindings = useSettingsStore((state) => state.settings.keybindings);
-  const activeDeckId = 'a' as const;
+# Find return statement of ExplorerAudioWorkbench
+start_return = content.find("  return (", start_component)
+# Find the end of the file or just the end of the component return
+end_of_component = content.find("export function isAudioPreviewExtension", start_return) # wait, it's end of file
 
-  const [analysis, setAnalysis] = useState<ExplorerAudioPreviewAnalysis | null>(null);
-  const [selectionStart, setSelectionStart] = useState(0);
-  const [selectionEnd, setSelectionEnd] = useState(0);
-  const [fadeInSeconds, setFadeInSeconds] = useState(0);
-  const [fadeOutSeconds, setFadeOutSeconds] = useState(0);
-  const [pitchShiftCents, setPitchShiftCents] = useState(0);
-  const [generateSpectrogram, setGenerateSpectrogram] = useState(true);
-  const [convertFormat, setConvertFormat] = useState<'mp3' | 'wav' | 'flac' | 'ogg'>(
-    DEFAULT_EXPLORER_AUDIO_EXPORT_FORMAT_ID,
-  );
-  const [exportDialogMode, setExportDialogMode] = useState<ExportDialogMode>(null);
-  const [exportPathInput, setExportPathInput] = useState('');
-  const [exportState, setExportState] = useState<ExportState>('idle');
-  const [exportMessage, setExportMessage] = useState(
-    'Rust owns transport. SoX stays in the offline export lane.',
-  );
-  const [workbenchStatus, setWorkbenchStatus] = useState(
-    'Preparing native audio engine…',
-  );
-  const [workbenchError, setWorkbenchError] = useState<string | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [spectrogramSource, setSpectrogramSource] = useState<string | null>(null);
-  const seekFrameRef = useRef<number | null>(null);
-  const pendingSeekSecondsRef = useRef(0);
-  const playheadMarkerRef = useRef<AudioWorkbenchPlayheadMarkerHandle | null>(null);
+# Extract the logic inside the component before the return
+logic_part = content[start_component:start_return]
 
-  const previewDeck = getAudioDeckState(snapshot, activeDeckId);
-  const effectiveDuration = Math.max(
-    analysis?.durationSeconds ?? 0,
-    previewDeck.durationSeconds ?? 0,
-  );
-  const selectionDuration = Math.max(0, selectionEnd - selectionStart);
-  const boundedFadeInSeconds = clamp(fadeInSeconds, 0, selectionDuration);
-  const boundedFadeOutSeconds = clamp(fadeOutSeconds, 0, selectionDuration);
-  const selectionLeft =
-    effectiveDuration > 0 ? `${(selectionStart / effectiveDuration) * 100}%` : '0%';
-  const selectionWidth =
-    effectiveDuration > 0 ? `${(selectionDuration / effectiveDuration) * 100}%` : '0%';
-  const fadeInWidth =
-    selectionDuration > 0 ? `${(boundedFadeInSeconds / selectionDuration) * 100}%` : '0%';
-  const fadeOutWidth =
-    selectionDuration > 0 ? `${(boundedFadeOutSeconds / selectionDuration) * 100}%` : '0%';
-  const fadeInHandleLeft = `calc(${selectionLeft} + ${fadeInWidth})`;
-  const fadeOutHandleLeft = `calc(${selectionLeft} + ${selectionWidth} - ${fadeOutWidth})`;
-
-  useEffect(() => {
-    let cancelled = false;
-    if (seekFrameRef.current != null) {
-      window.cancelAnimationFrame(seekFrameRef.current);
-      seekFrameRef.current = null;
-    }
-    pendingSeekSecondsRef.current = 0;
-    playheadMarkerRef.current?.clearPreview();
-    setAnalysis(null);
-    setSelectionStart(0);
-    setSelectionEnd(0);
-    setFadeInSeconds(0);
-    setFadeOutSeconds(0);
-    setPitchShiftCents(0);
-    setGenerateSpectrogram(true);
-    setConvertFormat(DEFAULT_EXPLORER_AUDIO_EXPORT_FORMAT_ID);
-    setExportDialogMode(null);
-    setExportPathInput(
-      buildAudioOutputPath(audioPath, 'clip', DEFAULT_EXPLORER_AUDIO_EXPORT_FORMAT_ID),
-    );
-    setExportState('idle');
-    setExportMessage('Rust owns transport. SoX stays in the offline export lane.');
-    setWorkbenchStatus('Loading the current explorer selection into the native audio engine…');
-    setWorkbenchError(null);
-    setIsAnalyzing(true);
-    setSpectrogramSource(null);
-
-    void (async () => {
-      try {
-        const [nextAnalysis] = await Promise.all([
-          analyzeExplorerAudioPreview(audioPath),
-          loadSelectionIntoAudioDeck(activeDeckId, audioPath),
-        ]);
-        if (cancelled) {
-          return;
-        }
-        setAnalysis(nextAnalysis);
-        setSelectionStart(0);
-        setSelectionEnd(nextAnalysis.durationSeconds);
-        setWorkbenchStatus(
-          'The selected file is loaded in the native engine. Playback is running through Rust, not the webview.',
-        );
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-        const message = error instanceof Error ? error.message : String(error);
-        setWorkbenchError(message);
-        setWorkbenchStatus('Audio analysis or native deck load failed.');
-      } finally {
-        if (!cancelled) {
-          setIsAnalyzing(false);
-        }
-      }
-    })();
-
-    return (
+new_return_statement = """  return (
     <>
       <style>{`
         .pro-slider { -webkit-appearance: none; width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; outline: none; }
@@ -786,3 +535,7 @@ export function ExplorerAudioWorkbench({
     </>
   );
 }
+"""
+
+with open('src/components/ExplorerAudioWorkbench.tsx', 'w') as f:
+    f.write(part1 + new_styles_and_subcomponents + logic_part + new_return_statement)

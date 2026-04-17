@@ -393,10 +393,7 @@ fn should_generate_video_preview_proxy(input_path: &Path) -> bool {
         .and_then(|value| value.to_str())
         .map(|value| value.trim().trim_start_matches('.').to_ascii_lowercase());
 
-    !matches!(
-        extension.as_deref(),
-        Some("mp4" | "m4v" | "ogv" | "webm")
-    )
+    !matches!(extension.as_deref(), Some("mp4" | "m4v" | "ogv" | "webm"))
 }
 
 fn direct_video_preview_mime_type(input_path: &Path) -> Option<String> {
@@ -482,10 +479,18 @@ mod tests {
 
     #[test]
     fn preview_proxy_generation_prefers_safe_webview_containers_only() {
-        assert!(!should_generate_video_preview_proxy(Path::new("/tmp/demo.mp4")));
-        assert!(!should_generate_video_preview_proxy(Path::new("/tmp/demo.webm")));
-        assert!(should_generate_video_preview_proxy(Path::new("/tmp/demo.mov")));
-        assert!(should_generate_video_preview_proxy(Path::new("/tmp/demo.mkv")));
+        assert!(!should_generate_video_preview_proxy(Path::new(
+            "/tmp/demo.mp4"
+        )));
+        assert!(!should_generate_video_preview_proxy(Path::new(
+            "/tmp/demo.webm"
+        )));
+        assert!(should_generate_video_preview_proxy(Path::new(
+            "/tmp/demo.mov"
+        )));
+        assert!(should_generate_video_preview_proxy(Path::new(
+            "/tmp/demo.mkv"
+        )));
     }
 
     #[test]

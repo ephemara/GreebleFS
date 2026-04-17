@@ -2,12 +2,12 @@
 // Terminal PTY implementation for ULTACODE
 
 use portable_pty::{Child, CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
 use std::sync::{Arc, Mutex};
-use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
 #[cfg(target_os = "windows")]
@@ -361,19 +361,20 @@ impl TerminalManager {
         request: &TerminalShellIntegrationRequest,
     ) -> Result<TerminalShellIntegrationState, String> {
         let mut states = self.shell_states.lock().unwrap();
-        let state = states
-            .entry(request.id.clone())
-            .or_insert_with(|| TerminalShellIntegrationState {
-                shell_kind: request
-                    .shell_kind
-                    .clone()
-                    .unwrap_or(TerminalShellKind::Unknown),
-                supports_auto_cd: request.supports_auto_cd.unwrap_or(true),
-                at_prompt: request.at_prompt.unwrap_or(true),
-                reported_cwd: request.reported_cwd.clone(),
-                pending_cwd: None,
-                last_synced_cwd: None,
-            });
+        let state =
+            states
+                .entry(request.id.clone())
+                .or_insert_with(|| TerminalShellIntegrationState {
+                    shell_kind: request
+                        .shell_kind
+                        .clone()
+                        .unwrap_or(TerminalShellKind::Unknown),
+                    supports_auto_cd: request.supports_auto_cd.unwrap_or(true),
+                    at_prompt: request.at_prompt.unwrap_or(true),
+                    reported_cwd: request.reported_cwd.clone(),
+                    pending_cwd: None,
+                    last_synced_cwd: None,
+                });
 
         if let Some(shell_kind) = &request.shell_kind {
             state.shell_kind = shell_kind.clone();
@@ -509,9 +510,9 @@ fn terminal_auto_cd_command(shell_kind: &TerminalShellKind, cwd: &str) -> Option
             "Set-Location -LiteralPath '{}'\r\n",
             cwd.replace('\'', "''")
         )),
-        TerminalShellKind::Fish
-        | TerminalShellKind::Zsh
-        | TerminalShellKind::Bash => Some(format!("builtin cd -- {}\n", shell_quote_single(cwd))),
+        TerminalShellKind::Fish | TerminalShellKind::Zsh | TerminalShellKind::Bash => {
+            Some(format!("builtin cd -- {}\n", shell_quote_single(cwd)))
+        }
         TerminalShellKind::Unknown => Some(format!("cd -- {}\n", shell_quote_single(cwd))),
     }
 }
