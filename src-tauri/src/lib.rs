@@ -16,6 +16,7 @@ pub mod startup_commands;
 pub mod terminal;
 pub mod thumbnail_commands;
 pub mod video_commands;
+pub mod video_engine;
 pub mod wayland_dock;
 pub mod window_commands;
 
@@ -62,6 +63,7 @@ pub fn run() {
             app.manage(TerminalManager::new());
             app.manage(CloudRuntimeState::default());
             app.manage(AudioEngineManager::default());
+            app.manage(video_engine::VideoEngineManager::default());
             initialize_entry_size_cache(app.handle())?;
             app.manage(EntrySizeWatcherState::default());
             app.manage(PluginWatcherState::default());

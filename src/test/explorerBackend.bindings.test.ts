@@ -101,8 +101,18 @@ describe('explorer backend task bindings', () => {
     expect(typeof commands.fsCancelExplorerTask).toBe('function');
     expect(typeof commands.fsOpenArchive).toBe('function');
     expect(typeof commands.fsExtractArchive).toBe('function');
+    expect(typeof events.videoEngineStateEvent.listen).toBe('function');
+    expect(typeof events.videoEngineStateEvent.emit).toBe('function');
     expect(typeof commands.videoResolvePreviewSource).toBe('function');
     expect(typeof commands.videoCreatePreviewProxy).toBe('function');
+    expect(typeof commands.videoEnginePrepare).toBe('function');
+    expect(typeof commands.videoEngineGetState).toBe('function');
+    expect(typeof commands.videoEngineLoadSource).toBe('function');
+    expect(typeof commands.videoEnginePlay).toBe('function');
+    expect(typeof commands.videoEnginePause).toBe('function');
+    expect(typeof commands.videoEngineStop).toBe('function');
+    expect(typeof commands.videoEngineSeek).toBe('function');
+    expect(typeof commands.videoEngineSetLoopRegion).toBe('function');
     expect(typeof listExplorerTasks).toBe('function');
     expect(typeof clearExplorerTaskHistory).toBe('function');
     expect(typeof retryExplorerTask).toBe('function');

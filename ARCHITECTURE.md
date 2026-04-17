@@ -39,7 +39,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/ExplorerImageEditor.tsx`
   Shell-owned wrapper for the embedded preview-pane image editor. It provides GreebleFS-native toolbar/status chrome, save/reset wiring, resize adaptation, and the static-preview fallback for unsupported image formats.
 - `src/components/ExplorerVideoEditor.tsx`
-  Shell-owned wrapper for the embedded preview-pane video surface. It owns playback chrome, trim handles, timeline state, export prompting, the automatic preview-proxy fallback path for webview codec failures, and the non-destructive MP4 trim workflow.
+  Shell-owned wrapper for the embedded preview-pane video surface. It is now a native transport UI over the Rust video engine, with timeline trim handles, frame-sequence preview rendering, loop-aware transport controls, and the non-destructive MP4 trim export workflow.
 - `src/components/ExplorerAudioWorkbench.tsx`
   Shell-owned wrapper for the embedded preview-pane audio surface. It is now a native dual-deck transport UI over the Rust audio engine, with shared waveform selection, DAW-style fade edge handles embedded in the waveform, deck arming/loading, loop/gain/rate control, analysis cards, offline export actions, and spectrogram rendering.
 - `src/components/explorer/ExplorerWorkspace.tsx`
@@ -95,7 +95,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/runtime/imageEditorRuntime.ts`
   Runtime seam for the embedded preview-pane image editor. It loads the local editor package through the `@img-editor-runtime` alias so the shell can consume the editor at runtime without importing the package internals into the main app typecheck.
 - `src/runtime/videoEditorBackend.ts`
-  TS bridge for the preview-pane video preview/trim flow. It resolves direct preview sources, requests ffmpeg-backed preview proxies when the webview cannot decode the source cleanly, and routes trim exports through the generated Tauri command surface instead of letting React invoke ffmpeg directly.
+  TS bridge for the offline preview-pane video trim/export helpers. It now remains an ffmpeg-backed mutation lane, while realtime transport moved to the native video engine bridge and store.
+- `src/runtime/videoEngineBackend.ts`
+  TS bridge for the native preview-pane video engine. It exposes engine prepare/load/play/pause/stop/seek/loop commands plus the live `VideoEngineStateEvent` subscription.
 - `src/runtime/audioWorkbenchBackend.ts`
   TS bridge for explorer audio analysis, native engine transport commands/events, and offline export/batch work. React should talk to this bridge and `src/store/audioEngineStore.ts` instead of browser media APIs or raw invoke strings.
 - `src/config/explorerArchives.ts`
@@ -110,6 +112,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Explorer-local task-center store. It hydrates durable task history from the Rust backend, subscribes to live explorer task progress events, and owns the open/close state plus retry/cancel/clear helpers used by the explorer toolbar badge and command palette.
 - `src/store/settingsStore.ts`
   Persisted layout/profile settings, wallpaper/shader/animation overrides, app-vs-dock theme selection, the native `windowMode` presentation toggle, and machine-level developer-mode behavior.
+- `src/store/videoEngineStore.ts`
+  Shell-side source of truth for the native video engine snapshot, hydration, event subscription, and transport helper wrappers used by `ExplorerVideoEditor.tsx`.
 
 ## Theme / Workbench Architecture
 
@@ -284,7 +288,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - image editing stays in `ExplorerImageEditor.tsx` through the local package seam
   - audio playback/editing now lives in `ExplorerAudioWorkbench.tsx`, but transport truth lives in `src-tauri/src/audio_engine.rs` and flows through `src/store/audioEngineStore.ts`
   - the browser `<audio>` lane and preview-proxy workaround are no longer the explorer playback path; the preview pane now talks to a CPAL + Symphonia native engine and only uses SoX for offline mutation
-  - video playback + trim/export lives in `ExplorerVideoEditor.tsx`; direct playback still starts in the webview, but codec fallback and export mutation stay in `src-tauri/src/video_commands.rs` through generated preview-source/proxy commands
+  - video playback/editing now lives in `ExplorerVideoEditor.tsx`, but transport truth lives in `src-tauri/src/video_engine.rs` and flows through `src/store/videoEngineStore.ts`
+  - the browser `<video>` lane is no longer the explorer playback path; the preview pane now talks to a native Rust video engine and renders ffmpeg-generated frame-sequence previews instead of delegating runtime playback to the desktop webview
 - Local archive handling is now a first-class explorer workflow instead of a pure OS-shell fallback:
   - `src/config/explorerArchives.ts` defines the supported local archive suffix registry (`zip`/`cbz`/`jar`/`apk`, `7z`, `tar`, `tar.gz`, `tar.bz2`, `tar.xz`, `gz`, `bz2`, `xz`) plus the default extracted-folder naming rules
   - `src-tauri/src/archive_ops.rs` owns the actual Rust extraction logic, including cache-backed archive opening and collision-safe extraction into the current folder
@@ -297,12 +302,17 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src-tauri/src/fs_commands.rs` also owns explorer metadata helpers for recursive sizes, checksums, item-property snapshots, and fuzzy jump filtering
   - `src-tauri/src/audio_engine.rs` owns native explorer playback through a CPAL output stream, Symphonia decode, rubato resampling, deck mixing, loop/gain/rate transport state, and `AudioEngineStateEvent`
   - `src/store/audioEngineStore.ts` is the shell-side source of truth for engine snapshots, hydration, and event subscription; components should not own playback state locally
+  - `src-tauri/src/video_engine.rs` owns native explorer video transport state, ffprobe metadata probing, ffmpeg frame-sequence preview caching, loop-aware play/pause/seek state, and `VideoEngineStateEvent`
+  - `src/store/videoEngineStore.ts` is the shell-side source of truth for video-engine snapshots, hydration, and event subscription; components should not own video transport state locally
   - `src-tauri/src/audio_commands.rs` now owns offline-only audio analysis/export/batch work plus vendored SoX runtime extraction and explorer task cancellation/retry hooks
   - the audio lane is intentionally split:
     - native playback and deck transport live in Rust without the webview media stack
     - SoX stays as the offline trim/fade/normalize/convert/spectrogram utility
     - `ffmpeg` remains the codec bridge for formats the vendored SoX bundle cannot read/write on a given platform (for example Linux `mp3`)
-  - `src-tauri/src/video_commands.rs` owns explorer-facing video trim export through a native `ffmpeg` subprocess. The frontend supplies trim intent and destination path, but the output mutation stays in Rust.
+  - the video lane is intentionally split:
+    - native transport and preview-frame state live in Rust without the webview media stack
+    - `src-tauri/src/video_commands.rs` keeps ffmpeg-backed trim export and compatibility preview-proxy helpers as the offline mutation lane
+    - `src/runtime/videoEngineBackend.ts` + `src/store/videoEngineStore.ts` are the only TS entry points for realtime video transport
   - `src-tauri/src/thumbnail_commands.rs` owns rich explorer thumbnail generation and caching for image posters, code cards, shader spheres, audio waveform/spectral thumbnails, and video poster + hover-scrub frame sequences.
   - `src/runtime/explorerBackend.ts` is the only TS bridge for `fs_read_entry_thumbnail`; React should request generated thumbnails there instead of decoding files, probing media, or shelling out from components.
   - `src/runtime/explorerBackend.ts` is also the only TS bridge for batch rename preview/apply, checksum calculation, item properties, fuzzy jump filtering, and terminal shell-integration commands used by explorer surfaces

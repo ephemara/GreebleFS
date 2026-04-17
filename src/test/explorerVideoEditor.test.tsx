@@ -1,37 +1,131 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ExplorerVideoEditor, buildTrimmedVideoOutputPath } from '../components/ExplorerVideoEditor';
+import type { VideoEngineStateSnapshot } from '../generated/tauri';
+import {
+  ExplorerVideoEditor,
+  buildTrimmedVideoOutputPath,
+} from '../components/ExplorerVideoEditor';
 
 const {
-  createExplorerVideoPreviewProxyMock,
   exportExplorerVideoTrimMock,
-  resolveExplorerVideoPreviewSourceMock,
+  loadVideoSourceMock,
+  pauseVideoMock,
+  playVideoMock,
+  seekVideoMock,
+  setVideoLoopRegionMock,
+  stopVideoMock,
+  useVideoEngineFeedMock,
+  useVideoEngineSnapshotMock,
 } = vi.hoisted(() => ({
   exportExplorerVideoTrimMock: vi.fn(),
-  createExplorerVideoPreviewProxyMock: vi.fn(),
-  resolveExplorerVideoPreviewSourceMock: vi.fn(),
+  loadVideoSourceMock: vi.fn(),
+  pauseVideoMock: vi.fn(),
+  playVideoMock: vi.fn(),
+  seekVideoMock: vi.fn(),
+  setVideoLoopRegionMock: vi.fn(),
+  stopVideoMock: vi.fn(),
+  useVideoEngineFeedMock: vi.fn(),
+  useVideoEngineSnapshotMock: vi.fn(),
+}));
+
+vi.mock('@tauri-apps/api/core', () => ({
+  convertFileSrc: (path: string) => `asset://localhost/${path}`,
 }));
 
 vi.mock('../runtime/videoEditorBackend', () => ({
-  createExplorerVideoPreviewProxy: createExplorerVideoPreviewProxyMock,
   exportExplorerVideoTrim: exportExplorerVideoTrimMock,
-  resolveExplorerVideoPreviewSource: resolveExplorerVideoPreviewSourceMock,
 }));
 
+vi.mock('../store/videoEngineStore', () => ({
+  loadVideoSource: loadVideoSourceMock,
+  pauseVideo: pauseVideoMock,
+  playVideo: playVideoMock,
+  seekVideo: seekVideoMock,
+  setVideoLoopRegion: setVideoLoopRegionMock,
+  stopVideo: stopVideoMock,
+  useVideoEngineFeed: useVideoEngineFeedMock,
+  useVideoEngineSnapshot: useVideoEngineSnapshotMock,
+}));
+
+const LOADED_VIDEO_SNAPSHOT: VideoEngineStateSnapshot = {
+  ready: true,
+  engineError: null,
+  loadedPath: '/tmp/demo.mov',
+  loadedName: 'demo.mov',
+  durationSeconds: 18.75,
+  widthPx: 1280,
+  heightPx: 720,
+  frameRate: 24,
+  currentTimeSeconds: 0,
+  isPlaying: false,
+  isLoading: false,
+  previewFramePath: '/tmp/demo-frame-00001.png',
+  previewFrameTimestampSeconds: 0,
+  cachedFrameCount: 24,
+  playbackBackend: 'ffmpegFrameSequence',
+  loopRegion: {
+    startSeconds: 0,
+    endSeconds: 18.75,
+    enabled: true,
+  },
+  audioTransportReady: true,
+  audioTransportError: null,
+};
+
 describe('ExplorerVideoEditor', () => {
+  let videoEngineSnapshot = LOADED_VIDEO_SNAPSHOT;
+
   beforeEach(() => {
+    videoEngineSnapshot = { ...LOADED_VIDEO_SNAPSHOT };
     exportExplorerVideoTrimMock.mockReset();
-    createExplorerVideoPreviewProxyMock.mockReset();
-    resolveExplorerVideoPreviewSourceMock.mockReset();
-    resolveExplorerVideoPreviewSourceMock.mockResolvedValue({
-      sourcePath: '/tmp/demo.mov',
-      sourceKind: 'direct',
-      mimeType: 'video/quicktime',
-      generatedFromPath: null,
+    loadVideoSourceMock.mockReset();
+    pauseVideoMock.mockReset();
+    playVideoMock.mockReset();
+    seekVideoMock.mockReset();
+    setVideoLoopRegionMock.mockReset();
+    stopVideoMock.mockReset();
+    useVideoEngineFeedMock.mockReset();
+    useVideoEngineSnapshotMock.mockImplementation(() => videoEngineSnapshot);
+    loadVideoSourceMock.mockImplementation(async () => {
+      videoEngineSnapshot = { ...LOADED_VIDEO_SNAPSHOT };
+      return videoEngineSnapshot;
     });
-    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
-    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
-    vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
+    playVideoMock.mockImplementation(async () => {
+      videoEngineSnapshot = { ...videoEngineSnapshot, isPlaying: true };
+      return videoEngineSnapshot;
+    });
+    pauseVideoMock.mockImplementation(async () => {
+      videoEngineSnapshot = { ...videoEngineSnapshot, isPlaying: false };
+      return videoEngineSnapshot;
+    });
+    seekVideoMock.mockImplementation(async (positionSeconds: number) => {
+      videoEngineSnapshot = {
+        ...videoEngineSnapshot,
+        currentTimeSeconds: positionSeconds,
+      };
+      return videoEngineSnapshot;
+    });
+    setVideoLoopRegionMock.mockImplementation(
+      async (startSeconds: number, endSeconds: number, enabled: boolean) => {
+        videoEngineSnapshot = {
+          ...videoEngineSnapshot,
+          loopRegion: {
+            startSeconds,
+            endSeconds,
+            enabled,
+          },
+        };
+        return videoEngineSnapshot;
+      },
+    );
+    stopVideoMock.mockImplementation(async () => {
+      videoEngineSnapshot = {
+        ...videoEngineSnapshot,
+        currentTimeSeconds: 0,
+        isPlaying: false,
+      };
+      return videoEngineSnapshot;
+    });
   });
 
   afterEach(() => {
@@ -40,11 +134,13 @@ describe('ExplorerVideoEditor', () => {
 
   it('builds a sibling trimmed mp4 output path', () => {
     expect(buildTrimmedVideoOutputPath('/tmp/demo.mov')).toBe('/tmp/demo.trimmed.mp4');
-    expect(buildTrimmedVideoOutputPath('C:\\clips\\demo.webm')).toBe('C:\\clips\\demo.trimmed.mp4');
+    expect(buildTrimmedVideoOutputPath('C:\\clips\\demo.webm')).toBe(
+      'C:\\clips\\demo.trimmed.mp4',
+    );
     expect(buildTrimmedVideoOutputPath('/tmp/demo')).toBe('/tmp/demo.trimmed.mp4');
   });
 
-  it('exports trimmed clips back through the native video backend', async () => {
+  it('loads the selected video into the native video engine and exports trims through Rust', async () => {
     const onExported = vi.fn();
     exportExplorerVideoTrimMock.mockResolvedValue({
       outputPath: '/tmp/custom-cut.mp4',
@@ -67,22 +163,16 @@ describe('ExplorerVideoEditor', () => {
     );
 
     await waitFor(() => {
-      expect(resolveExplorerVideoPreviewSourceMock).toHaveBeenCalledWith('/tmp/demo.mov');
+      expect(loadVideoSourceMock).toHaveBeenCalledWith('/tmp/demo.mov');
     });
 
-    const player = screen.getByLabelText(/video preview player for demo\.mov/i);
-    Object.defineProperty(player, 'duration', {
-      configurable: true,
-      value: 18.75,
-    });
-    Object.defineProperty(player, 'currentTime', {
-      configurable: true,
-      writable: true,
-      value: 0,
+    await waitFor(() => {
+      expect(setVideoLoopRegionMock).toHaveBeenCalledWith(0, 18.75, true);
     });
 
-    fireEvent.loadedMetadata(player);
-    await screen.findByText(/ready to scrub, trim, and export/i);
+    expect(
+      await screen.findByText(/native preview ready\. rust owns transport and timing\./i),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /export trim/i }));
 
@@ -102,18 +192,13 @@ describe('ExplorerVideoEditor', () => {
     });
 
     expect(onExported).toHaveBeenCalledWith('/tmp/custom-cut.mp4');
-    expect(await screen.findByText(/saved 18\.75s trim to \/tmp\/custom-cut\.mp4/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/saved 18\.75s trim to \/tmp\/custom-cut\.mp4/i),
+    ).toBeInTheDocument();
   });
 
-  it('falls back to a generated preview proxy when direct playback fails', async () => {
-    createExplorerVideoPreviewProxyMock.mockResolvedValue({
-      sourcePath: '/tmp/demo.preview.mp4',
-      sourceKind: 'proxy',
-      mimeType: 'video/mp4',
-      generatedFromPath: '/tmp/demo.mov',
-    });
-
-    render(
+  it('routes playback, loop, and transport controls through the native store', async () => {
+    const { rerender } = render(
       <ExplorerVideoEditor
         videoPath="/tmp/demo.mov"
         videoName="demo.mov"
@@ -124,19 +209,45 @@ describe('ExplorerVideoEditor', () => {
       />,
     );
 
-    const player = screen.getByLabelText(/video preview player for demo\.mov/i);
-    fireEvent.error(player);
-
     await waitFor(() => {
-      expect(createExplorerVideoPreviewProxyMock).toHaveBeenCalledWith('/tmp/demo.mov');
+      expect(loadVideoSourceMock).toHaveBeenCalledWith('/tmp/demo.mov');
     });
 
+    fireEvent.click(screen.getByRole('button', { name: /^play$/i }));
     await waitFor(() => {
-      const source = player.querySelector('source');
-      expect(source?.getAttribute('src')).toBe('asset://localhost//tmp/demo.preview.mp4');
-      expect(source?.getAttribute('type')).toBe('video/mp4');
+      expect(playVideoMock).toHaveBeenCalledTimes(1);
     });
 
-    expect(await screen.findByText(/preview proxy ready/i)).toBeInTheDocument();
+    videoEngineSnapshot = { ...videoEngineSnapshot, isPlaying: true };
+    rerender(
+      <ExplorerVideoEditor
+        videoPath="/tmp/demo.mov"
+        videoName="demo.mov"
+        videoSource="asset://localhost/tmp/demo.mov"
+        videoExtension="mov"
+        videoMimeType="video/quicktime"
+        videoSize={32 * 1024 * 1024}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^pause$/i }));
+    await waitFor(() => {
+      expect(pauseVideoMock).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /loop on/i }));
+    await waitFor(() => {
+      expect(setVideoLoopRegionMock).toHaveBeenLastCalledWith(0, 18.75, false);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /\+1\.0s/i }));
+    await waitFor(() => {
+      expect(seekVideoMock).toHaveBeenCalledWith(1);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /reset/i }));
+    await waitFor(() => {
+      expect(stopVideoMock).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -1,3 +1,7 @@
+use crate::video_engine::{
+    resolve_video_ffmpeg_binary, resolve_video_runtime_root, sanitize_video_runtime_stem,
+    validate_video_source_path,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -5,9 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::UNIX_EPOCH;
 use tauri::AppHandle;
-use tauri::Manager;
 
-const DEFAULT_FFMPEG_BINARY: &str = "ffmpeg";
 const VIDEO_PREVIEW_PROXY_EXTENSION: &str = "mp4";
 const VIDEO_PREVIEW_PROXY_AUDIO_BITRATE: &str = "160k";
 const VIDEO_PREVIEW_PROXY_CRF: &str = "23";
@@ -68,7 +70,7 @@ pub async fn video_create_preview_proxy(
     input_path: String,
 ) -> Result<ResolvedVideoPreviewSource, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let input = normalize_video_input_path(&input_path)?;
+        let input = validate_video_source_path(&input_path)?;
         let proxy_path = video_preview_proxy_path(&app, &input)?;
 
         if !can_reuse_video_preview_proxy(&input, &proxy_path) {
@@ -91,7 +93,7 @@ pub async fn video_create_preview_proxy(
 pub async fn video_resolve_preview_source(
     input_path: String,
 ) -> Result<ResolvedVideoPreviewSource, String> {
-    let input = normalize_video_input_path(&input_path)?;
+    let input = validate_video_source_path(&input_path)?;
     Ok(ResolvedVideoPreviewSource {
         source_path: path_to_string(&input),
         source_kind: VideoPreviewSourceKind::Direct,
@@ -102,7 +104,7 @@ pub async fn video_resolve_preview_source(
 
 fn run_video_trim_export(request: VideoTrimExportRequest) -> Result<VideoTrimExportResult, String> {
     let normalized_request = normalize_trim_export_request(request)?;
-    let ffmpeg_binary = resolve_ffmpeg_binary();
+    let ffmpeg_binary = resolve_video_ffmpeg_binary();
 
     let mut command = Command::new(&ffmpeg_binary);
     command.args(["-hide_banner", "-loglevel", "error"]);
@@ -235,36 +237,6 @@ fn normalize_trim_export_request(
     })
 }
 
-fn resolve_ffmpeg_binary() -> String {
-    std::env::var("FFMPEG_BIN")
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| DEFAULT_FFMPEG_BINARY.to_string())
-}
-
-fn normalize_video_input_path(input_path: &str) -> Result<PathBuf, String> {
-    let trimmed = input_path.trim();
-    if trimmed.is_empty() {
-        return Err("Input video path cannot be empty.".to_string());
-    }
-    let input = PathBuf::from(trimmed);
-    if !input.exists() {
-        return Err(format!("Input video does not exist: {}", input.display()));
-    }
-    if !input.is_file() {
-        return Err(format!("Input path is not a file: {}", input.display()));
-    }
-    Ok(input)
-}
-
-fn resolve_video_runtime_root(app: &AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_local_data_dir()
-        .map(|path| path.join("video-workbench"))
-        .map_err(|error| format!("Failed to resolve app local data directory: {error}"))
-}
-
 fn resolve_video_temp_root(app: &AppHandle) -> Result<PathBuf, String> {
     let root = resolve_video_runtime_root(app)?.join("temp");
     fs::create_dir_all(&root).map_err(|error| {
@@ -304,7 +276,7 @@ fn video_preview_proxy_path(app: &AppHandle, input_path: &Path) -> Result<PathBu
     hasher.update(modified_nanos.to_le_bytes());
     let digest = format!("{:x}", hasher.finalize());
     let digest_prefix = &digest[..16];
-    let stem = sanitize_proxy_file_stem(
+    let stem = sanitize_video_runtime_stem(
         input_path
             .file_stem()
             .and_then(|value| value.to_str())
@@ -314,25 +286,6 @@ fn video_preview_proxy_path(app: &AppHandle, input_path: &Path) -> Result<PathBu
     Ok(temp_root.join(format!(
         "{stem}.{digest_prefix}.preview.{VIDEO_PREVIEW_PROXY_EXTENSION}"
     )))
-}
-
-fn sanitize_proxy_file_stem(value: &str) -> String {
-    let sanitized: String = value
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() || character == '-' || character == '_' {
-                character
-            } else {
-                '-'
-            }
-        })
-        .collect();
-    let collapsed = sanitized.trim_matches('-');
-    if collapsed.is_empty() {
-        "video".to_string()
-    } else {
-        collapsed.to_string()
-    }
 }
 
 fn can_reuse_video_preview_proxy(input_path: &Path, proxy_path: &Path) -> bool {
@@ -355,7 +308,7 @@ fn can_reuse_video_preview_proxy(input_path: &Path, proxy_path: &Path) -> bool {
 }
 
 fn generate_video_preview_proxy(input_path: &Path, proxy_path: &Path) -> Result<(), String> {
-    let ffmpeg_binary = resolve_ffmpeg_binary();
+    let ffmpeg_binary = resolve_video_ffmpeg_binary();
     if let Some(parent) = proxy_path.parent() {
         fs::create_dir_all(parent).map_err(|error| {
             format!(
@@ -459,9 +412,9 @@ fn paths_match(left: &Path, right: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        direct_video_preview_mime_type, normalize_trim_export_request, sanitize_proxy_file_stem,
-        VideoTrimExportRequest,
+        direct_video_preview_mime_type, normalize_trim_export_request, VideoTrimExportRequest,
     };
+    use crate::video_engine::sanitize_video_runtime_stem;
     use std::path::Path;
 
     #[test]
@@ -495,9 +448,9 @@ mod tests {
     }
 
     #[test]
-    fn sanitize_proxy_file_stem_preserves_safe_characters() {
-        assert_eq!(sanitize_proxy_file_stem("Demo Clip 01"), "Demo-Clip-01");
-        assert_eq!(sanitize_proxy_file_stem("___"), "___");
-        assert_eq!(sanitize_proxy_file_stem("..."), "video");
+    fn sanitize_video_runtime_stem_preserves_safe_characters() {
+        assert_eq!(sanitize_video_runtime_stem("Demo Clip 01"), "Demo-Clip-01");
+        assert_eq!(sanitize_video_runtime_stem("___"), "___");
+        assert_eq!(sanitize_video_runtime_stem("..."), "video");
     }
 }

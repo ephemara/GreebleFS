@@ -56,6 +56,11 @@ use crate::video_commands::{
     ResolvedVideoPreviewSource, VideoPreviewSourceKind, VideoTrimExportRequest,
     VideoTrimExportResult,
 };
+use crate::video_engine::{
+    VideoEngineLoadSourceRequest, VideoEngineLoopRegion, VideoEngineLoopRegionRequest,
+    VideoEngineSeekRequest, VideoEngineStateEvent, VideoEngineStateSnapshot,
+    VideoPlaybackBackend,
+};
 use crate::wayland_dock::{WaylandDockAnchor, WaylandDockHostStatus};
 use overlay_contracts::{
     ExplorerLayoutMode, LayoutBackBehavior, LayoutBarPosition, LayoutBehaviorConfig,
@@ -200,6 +205,14 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::video_commands::video_create_preview_proxy,
             crate::video_commands::video_export_trim,
             crate::video_commands::video_resolve_preview_source,
+            crate::video_engine::video_engine_prepare,
+            crate::video_engine::video_engine_get_state,
+            crate::video_engine::video_engine_load_source,
+            crate::video_engine::video_engine_play,
+            crate::video_engine::video_engine_pause,
+            crate::video_engine::video_engine_stop,
+            crate::video_engine::video_engine_seek,
+            crate::video_engine::video_engine_set_loop_region,
             crate::startup_commands::startup_get_launch_at_startup,
             crate::startup_commands::startup_get_linux_display_backend_status,
             crate::startup_commands::startup_set_launch_at_startup,
@@ -218,6 +231,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .events(collect_events![
             crate::fs_commands::ExplorerTaskProgressEvent,
             crate::audio_engine::AudioEngineStateEvent,
+            crate::video_engine::VideoEngineStateEvent,
             crate::terminal::TerminalShellIntegrationStateEvent
         ])
         .typ::<ShellBlueprint>()
@@ -325,6 +339,13 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<ResolvedVideoPreviewSource>()
         .typ::<VideoTrimExportRequest>()
         .typ::<VideoTrimExportResult>()
+        .typ::<VideoPlaybackBackend>()
+        .typ::<VideoEngineLoopRegion>()
+        .typ::<VideoEngineStateSnapshot>()
+        .typ::<VideoEngineStateEvent>()
+        .typ::<VideoEngineLoadSourceRequest>()
+        .typ::<VideoEngineSeekRequest>()
+        .typ::<VideoEngineLoopRegionRequest>()
         .typ::<LinuxDisplayBackend>()
         .typ::<LinuxDisplayBackendPreference>()
         .typ::<LinuxDisplayBackendStatus>()
