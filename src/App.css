@@ -57,6 +57,8 @@ html, body, #root {
   scrollbar-color: color-mix(in srgb, var(--overlay-border-strong) 72%, transparent) transparent;
   scrollbar-gutter: stable both-edges;
   overflow-anchor: none;
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
 .overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar {

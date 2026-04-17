@@ -25,7 +25,7 @@ use symphonia::default::{get_codecs, get_probe};
 use tauri::{AppHandle, Manager};
 use tauri_specta::Event;
 
-use crate::audio_commands::{AudioPreviewAnalysis, AudioWaveformBucket};
+use crate::audio_commands::{AudioPreviewAnalysis, AudioSilenceRegion, AudioWaveformBucket};
 
 const AUDIO_ENGINE_EVENT_INTERVAL_MS: u64 = 50;
 const LOOP_CROSSFADE_FRAMES: usize = 128;
@@ -33,6 +33,11 @@ const MIN_LOOP_DURATION_SECONDS: f64 = 0.05;
 const DEFAULT_GAIN_LINEAR: f64 = 1.0;
 const DEFAULT_RATE: f64 = 1.0;
 const DEFAULT_ANALYSIS_WAVEFORM_BUCKET_COUNT: usize = 160;
+const DEFAULT_SILENCE_WINDOW_SECONDS: f64 = 0.05;
+const DEFAULT_MIN_SILENCE_SECONDS: f64 = 0.18;
+const DEFAULT_SILENCE_FLOOR_LINEAR: f64 = 0.0015;
+const DEFAULT_BPM_MIN: f64 = 60.0;
+const DEFAULT_BPM_MAX: f64 = 200.0;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -676,6 +681,9 @@ pub fn analyze_audio_file_native(input_path: &Path) -> Result<AudioPreviewAnalys
     let (peak_level, rms_level, waveform_buckets) =
         analyze_decoded_waveform(&decoded.samples, DEFAULT_ANALYSIS_WAVEFORM_BUCKET_COUNT);
     let spectral_bands = compute_spectral_bands(&decoded, 24);
+    let mono = mix_to_mono(&decoded.samples, decoded.channels);
+    let silence_regions = detect_silence_regions(&mono, decoded.sample_rate_hz, peak_level);
+    let estimated_bpm = estimate_bpm(&mono, decoded.sample_rate_hz);
     Ok(AudioPreviewAnalysis {
         input_path: input_path.to_string_lossy().to_string(),
         duration_seconds: decoded.duration_seconds(),
@@ -693,6 +701,8 @@ pub fn analyze_audio_file_native(input_path: &Path) -> Result<AudioPreviewAnalys
         headroom_db: headroom_from_peak(peak_level),
         waveform_buckets,
         spectral_bands,
+        estimated_bpm,
+        silence_regions,
     })
 }
 
@@ -933,6 +943,139 @@ fn compute_spectral_bands(decoded: &DecodedAudioData, band_count: usize) -> Vec<
     bands
 }
 
+fn detect_silence_regions(
+    mono: &[f32],
+    sample_rate_hz: u32,
+    peak_level: f64,
+) -> Vec<AudioSilenceRegion> {
+    if mono.is_empty() || sample_rate_hz == 0 {
+        return Vec::new();
+    }
+
+    let window_size = ((sample_rate_hz as f64 * DEFAULT_SILENCE_WINDOW_SECONDS).round() as usize)
+        .max(1);
+    let min_region_windows =
+        ((DEFAULT_MIN_SILENCE_SECONDS / DEFAULT_SILENCE_WINDOW_SECONDS).ceil() as usize).max(1);
+    let threshold = DEFAULT_SILENCE_FLOOR_LINEAR.max(peak_level * 0.01);
+
+    let mut regions = Vec::new();
+    let mut current_start_window: Option<usize> = None;
+
+    for (window_index, chunk) in mono.chunks(window_size).enumerate() {
+        let rms = ((chunk
+            .iter()
+            .map(|sample| {
+                let value = *sample as f64;
+                value * value
+            })
+            .sum::<f64>())
+            / chunk.len().max(1) as f64)
+            .sqrt();
+
+        if rms <= threshold {
+            current_start_window.get_or_insert(window_index);
+            continue;
+        }
+
+        if let Some(start_window) = current_start_window.take() {
+            let end_window = window_index;
+            if end_window.saturating_sub(start_window) >= min_region_windows {
+                let start_seconds = start_window as f64 * DEFAULT_SILENCE_WINDOW_SECONDS;
+                let end_seconds = (end_window as f64 * DEFAULT_SILENCE_WINDOW_SECONDS)
+                    .min(mono.len() as f64 / sample_rate_hz as f64);
+                if end_seconds > start_seconds {
+                    regions.push(AudioSilenceRegion {
+                        start_seconds,
+                        end_seconds,
+                        duration_seconds: end_seconds - start_seconds,
+                    });
+                }
+            }
+        }
+    }
+
+    if let Some(start_window) = current_start_window {
+        let total_windows = mono.len().div_ceil(window_size);
+        if total_windows.saturating_sub(start_window) >= min_region_windows {
+            let start_seconds = start_window as f64 * DEFAULT_SILENCE_WINDOW_SECONDS;
+            let end_seconds = mono.len() as f64 / sample_rate_hz as f64;
+            if end_seconds > start_seconds {
+                regions.push(AudioSilenceRegion {
+                    start_seconds,
+                    end_seconds,
+                    duration_seconds: end_seconds - start_seconds,
+                });
+            }
+        }
+    }
+
+    regions
+}
+
+fn estimate_bpm(mono: &[f32], sample_rate_hz: u32) -> Option<f64> {
+    if mono.is_empty() || sample_rate_hz == 0 {
+        return None;
+    }
+
+    let frame_size = 1024usize.min(mono.len()).max(256);
+    let hop_size = (frame_size / 2).max(128);
+    let frames = mono.len().saturating_sub(frame_size) / hop_size + 1;
+    if frames < 8 {
+        return None;
+    }
+
+    let mut onset_envelope = Vec::with_capacity(frames);
+    let mut previous_energy = 0.0f64;
+
+    for frame_index in 0..frames {
+        let start = frame_index * hop_size;
+        let end = (start + frame_size).min(mono.len());
+        let frame = &mono[start..end];
+        let energy = frame.iter().map(|sample| sample.abs() as f64).sum::<f64>() / frame.len() as f64;
+        let onset = (energy - previous_energy).max(0.0);
+        onset_envelope.push(onset);
+        previous_energy = energy;
+    }
+
+    let max_onset = onset_envelope.iter().copied().fold(0.0f64, f64::max);
+    if max_onset <= f64::EPSILON {
+        return None;
+    }
+    onset_envelope.iter_mut().for_each(|value| *value /= max_onset);
+
+    let envelope_rate_hz = sample_rate_hz as f64 / hop_size as f64;
+    let min_lag = (envelope_rate_hz * 60.0 / DEFAULT_BPM_MAX).floor() as usize;
+    let max_lag = (envelope_rate_hz * 60.0 / DEFAULT_BPM_MIN).ceil() as usize;
+    if min_lag == 0 || max_lag <= min_lag || onset_envelope.len() <= max_lag {
+        return None;
+    }
+
+    let mut best_lag = 0usize;
+    let mut best_score = 0.0f64;
+
+    for lag in min_lag..=max_lag {
+        let mut score = 0.0f64;
+        for index in lag..onset_envelope.len() {
+            score += onset_envelope[index] * onset_envelope[index - lag];
+        }
+        if score > best_score {
+            best_score = score;
+            best_lag = lag;
+        }
+    }
+
+    if best_lag == 0 || best_score <= 0.0 {
+        return None;
+    }
+
+    let bpm = 60.0 * envelope_rate_hz / best_lag as f64;
+    if bpm.is_finite() && (DEFAULT_BPM_MIN..=DEFAULT_BPM_MAX * 2.0).contains(&bpm) {
+        Some((bpm * 10.0).round() / 10.0)
+    } else {
+        None
+    }
+}
+
 fn mix_to_mono(interleaved: &[f32], channels: usize) -> Vec<f32> {
     if channels <= 1 {
         return interleaved.to_vec();
@@ -976,6 +1119,44 @@ fn validate_audio_file_path(input_path: &str) -> Result<PathBuf, String> {
         return Err(format!("Input audio does not exist: {}", path.display()));
     }
     Ok(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detect_silence_regions_finds_head_and_tail_silence() {
+        let sample_rate_hz = 1000u32;
+        let mut mono = vec![0.0f32; 250];
+        mono.extend(std::iter::repeat_n(0.8f32, 500));
+        mono.extend(std::iter::repeat_n(0.0f32, 300));
+
+        let regions = detect_silence_regions(&mono, sample_rate_hz, 0.8);
+
+        assert_eq!(regions.len(), 2);
+        assert!(regions[0].start_seconds <= 0.01);
+        assert!(regions[0].duration_seconds >= 0.2);
+        assert!(regions[1].start_seconds >= 0.7);
+    }
+
+    #[test]
+    fn estimate_bpm_detects_regular_pulse_train() {
+        let sample_rate_hz = 48_000u32;
+        let duration_seconds = 8usize;
+        let mut mono = vec![0.0f32; sample_rate_hz as usize * duration_seconds];
+        let pulse_spacing_samples = (sample_rate_hz as f64 * 0.5) as usize;
+        let pulse_width = (sample_rate_hz as f64 * 0.02) as usize;
+
+        for pulse_start in (0..mono.len()).step_by(pulse_spacing_samples) {
+            for sample_index in pulse_start..(pulse_start + pulse_width).min(mono.len()) {
+                mono[sample_index] = 1.0;
+            }
+        }
+
+        let bpm = estimate_bpm(&mono, sample_rate_hz).expect("detect bpm");
+        assert!((bpm - 120.0).abs() <= 3.0);
+    }
 }
 
 fn normalize_seek_seconds(value: f64) -> f64 {

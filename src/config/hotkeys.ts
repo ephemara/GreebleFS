@@ -36,6 +36,12 @@ export type HotkeyBindingKey =
   | 'selectAllExplorer'
   | 'clearExplorerSelection'
   | 'searchExplorer'
+  | 'audioWorkbenchPlayPause'
+  | 'audioWorkbenchJumpToSelectionStart'
+  | 'audioWorkbenchJumpToSelectionEnd'
+  | 'audioWorkbenchPreviousSilence'
+  | 'audioWorkbenchNextSilence'
+  | 'audioWorkbenchExportClip'
   | 'closeTab'
   | 'find'
   | 'replace'
@@ -327,6 +333,48 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     scope: 'local',
   },
   {
+    key: 'audioWorkbenchPlayPause',
+    label: 'Audio Workbench Play/Pause',
+    description: 'Toggle native audio playback in the audio workbench.',
+    defaultValue: 'Space',
+    scope: 'local',
+  },
+  {
+    key: 'audioWorkbenchJumpToSelectionStart',
+    label: 'Audio Workbench Jump To In',
+    description: 'Move the playhead to the current trim in-point.',
+    defaultValue: 'I',
+    scope: 'local',
+  },
+  {
+    key: 'audioWorkbenchJumpToSelectionEnd',
+    label: 'Audio Workbench Jump To Out',
+    description: 'Move the playhead to the current trim out-point.',
+    defaultValue: 'O',
+    scope: 'local',
+  },
+  {
+    key: 'audioWorkbenchPreviousSilence',
+    label: 'Audio Workbench Previous Silence',
+    description: 'Jump to the previous detected silence region.',
+    defaultValue: 'Shift+ArrowLeft',
+    scope: 'local',
+  },
+  {
+    key: 'audioWorkbenchNextSilence',
+    label: 'Audio Workbench Next Silence',
+    description: 'Jump to the next detected silence region.',
+    defaultValue: 'Shift+ArrowRight',
+    scope: 'local',
+  },
+  {
+    key: 'audioWorkbenchExportClip',
+    label: 'Audio Workbench Export Clip',
+    description: 'Open the clip export flow from the audio workbench.',
+    defaultValue: 'Ctrl+Shift+S',
+    scope: 'local',
+  },
+  {
     key: 'closeTab',
     label: 'Close Tab',
     description: 'Reserved for tab close actions.',
@@ -412,6 +460,9 @@ function normalizeGestureToken(token: string): string {
 }
 
 function normalizeKeyToken(token: string): string {
+  if (token === ' ') {
+    return 'space';
+  }
   const normalized = normalizeGestureToken(token);
   switch (normalized) {
     case 'esc':

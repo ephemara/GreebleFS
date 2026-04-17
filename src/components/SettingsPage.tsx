@@ -3309,6 +3309,31 @@ export function SettingsPage({
                       value={settings.keybindings[definition.key]}
                       onCommit={value => updateKeybindings({ [definition.key]: value })}
                     />
+                ))}
+              </div>
+            </div>
+            <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Audio Workbench Hotkeys</div>
+              <p className="mt-1 text-[11px] opacity-40">
+                Power-user bindings for the explorer audio editor: transport, trim navigation, silence review, and fast clip export all route through the same settings-backed shortcut system.
+              </p>
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                {hotkeyBindingDefinitions
+                  .filter(definition => [
+                    'audioWorkbenchPlayPause',
+                    'audioWorkbenchJumpToSelectionStart',
+                    'audioWorkbenchJumpToSelectionEnd',
+                    'audioWorkbenchPreviousSilence',
+                    'audioWorkbenchNextSilence',
+                    'audioWorkbenchExportClip',
+                  ].includes(definition.key))
+                  .map(definition => (
+                    <ShortcutField
+                      key={definition.key}
+                      bindingKey={definition.key}
+                      value={settings.keybindings[definition.key]}
+                      onCommit={value => updateKeybindings({ [definition.key]: value })}
+                    />
                   ))}
               </div>
             </div>

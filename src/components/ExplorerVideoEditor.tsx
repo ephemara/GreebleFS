@@ -431,13 +431,13 @@ export function ExplorerVideoEditor({
     if (compatibilityPreviewStatus === 'ready') {
       setStatusMessage(
         compatibilityPreviewSource?.sourceKind === 'proxy'
-          ? 'Preview ready via FFmpeg proxy.'
-          : 'Native preview ready.',
+          ? 'Preview ready via FFmpeg proxy. Rust owns transport and timing.'
+          : 'Native preview ready. Rust owns transport and timing.',
       );
       return;
     }
     if (framePreviewLoaded) {
-      setStatusMessage('Native frame preview ready.');
+      setStatusMessage('Native frame preview ready. Rust owns transport and timing.');
       return;
     }
     if (compatibilityPreviewError) {
@@ -643,6 +643,9 @@ export function ExplorerVideoEditor({
           style={{
             minHeight: 0,
             position: 'relative',
+            display: 'grid',
+            placeItems: 'center',
+            padding: 'clamp(12px, 2vw, 18px)',
             borderRadius: 'var(--overlay-explorer-panel-radius)',
             border: '1px solid var(--overlay-explorer-chip-border)',
             background:
@@ -652,10 +655,78 @@ export function ExplorerVideoEditor({
           }}
         >
           <div
-            aria-label={`Native video preview frame for ${videoName}`}
-            style={previewSurfaceStyle(previewImageUrl)}
-          />
-          {!previewImageUrl ? (
+            style={{
+              position: 'relative',
+              width: '100%',
+              height: '100%',
+              minHeight: 0,
+              maxWidth: '100%',
+              maxHeight: '100%',
+              aspectRatio: previewAspectRatio,
+            }}
+          >
+            <div
+              aria-hidden
+              style={{
+                ...previewSurfaceStyle(null),
+                position: 'absolute',
+                inset: 0,
+              }}
+            />
+            {previewImageUrl ? (
+              <img
+                key={previewImageUrl}
+                src={previewImageUrl}
+                alt=""
+                aria-label={`Native video preview frame for ${videoName}`}
+                onLoad={() => setFramePreviewLoaded(true)}
+                onError={() => {
+                  console.error('ExplorerVideoEditor: failed to load native frame preview', {
+                    videoPath,
+                    previewImageUrl,
+                  });
+                  setFramePreviewLoaded(false);
+                }}
+                style={previewMediaStyle(compatibilityPreviewStatus === 'ready' ? 0 : 1)}
+              />
+            ) : null}
+            {compatibilityPreviewUrl ? (
+              <video
+                key={compatibilityPreviewUrl}
+                ref={previewVideoRef}
+                src={compatibilityPreviewUrl}
+                aria-label={`Compatibility video preview for ${videoName}`}
+                muted
+                playsInline
+                preload="metadata"
+                onLoadedMetadata={(event) => {
+                  const previewVideo = event.currentTarget;
+                  previewVideo.muted = true;
+                  previewVideo.defaultMuted = true;
+                  previewVideo.loop = false;
+                  setCompatibilityPreviewStatus('ready');
+                  setCompatibilityPreviewError(null);
+                }}
+                onError={() => {
+                  console.error('ExplorerVideoEditor: compatibility preview source failed', {
+                    videoPath,
+                    sourceKind: compatibilityPreviewSource?.sourceKind ?? 'unknown',
+                    compatibilityPreviewUrl,
+                  });
+                  if (compatibilityPreviewSource?.sourceKind === 'proxy') {
+                    setCompatibilityPreviewStatus('error');
+                    setCompatibilityPreviewError(
+                      'FFmpeg compatibility proxy could not be rendered by the webview.',
+                    );
+                    return;
+                  }
+                  void requestPreviewProxy('compatibility-preview-error');
+                }}
+                style={previewMediaStyle(compatibilityPreviewStatus === 'ready' ? 1 : 0)}
+              />
+            ) : null}
+          </div>
+          {!previewImageUrl && compatibilityPreviewStatus !== 'ready' ? (
             <div
               style={{
                 position: 'absolute',
@@ -1007,14 +1078,30 @@ export function ExplorerVideoEditor({
               gap: 4,
               fontSize: 11,
               lineHeight: 1.5,
-              color:
-                playbackError || exportState === 'error'
-                  ? 'var(--overlay-danger)'
-                  : 'var(--overlay-text-muted)',
             }}
           >
-            <div>{playbackStatusMessage}</div>
-            <div>{exportMessage}</div>
+            <div
+              style={{
+                color:
+                  playbackError || snapshot.engineError
+                    ? 'var(--overlay-danger)'
+                    : 'var(--overlay-text-muted)',
+              }}
+            >
+              {playbackStatusMessage}
+            </div>
+            {previewNoticeMessage ? (
+              <div style={{ color: 'var(--overlay-text-dim)' }}>{previewNoticeMessage}</div>
+            ) : null}
+            <div
+              style={{
+                color: exportState === 'error'
+                  ? 'var(--overlay-danger)'
+                  : 'var(--overlay-text-muted)',
+              }}
+            >
+              {exportMessage}
+            </div>
           </div>
         </div>
       </div>

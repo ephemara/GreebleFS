@@ -330,12 +330,6 @@ function readViewportMetrics(viewport: HTMLDivElement): ViewportMetrics {
   };
 }
 
-function areViewportMetricsEqual(left: ViewportMetrics, right: ViewportMetrics): boolean {
-  return left.scrollTop === right.scrollTop
-    && left.clientHeight === right.clientHeight
-    && left.clientWidth === right.clientWidth;
-}
-
 function getExplorerPerformanceNow(): number {
   return typeof performance !== 'undefined' && typeof performance.now === 'function'
     ? performance.now()
@@ -3496,6 +3490,7 @@ export function FileExplorer({
 
   const mainRef = useRef<HTMLDivElement>(null);
   const explorerViewportRef = useRef<HTMLDivElement | null>(null);
+  const explorerViewportScrollTopRef = useRef(0);
   const modeProfileMenuAnchorRef = useRef<HTMLDivElement>(null);
   const layoutMenuAnchorRef = useRef<HTMLDivElement>(null);
   const experimentalMenuAnchorRef = useRef<HTMLDivElement>(null);
@@ -3531,32 +3526,47 @@ export function FileExplorer({
     });
   }, [currentPath, currentPathIsCloud]);
 
-  const syncExplorerViewportMetrics = useCallback((viewport?: HTMLDivElement | null) => {
+  const syncExplorerViewportSize = useCallback((viewport?: HTMLDivElement | null) => {
     const target = viewport ?? explorerViewportRef.current;
     if (!target) {
       return;
     }
     const nextMetrics = readViewportMetrics(target);
     setExplorerViewportMetrics((current) => (
-      areViewportMetricsEqual(current, nextMetrics) ? current : nextMetrics
+      current.clientHeight === nextMetrics.clientHeight && current.clientWidth === nextMetrics.clientWidth
+        ? current
+        : {
+            ...current,
+            clientHeight: nextMetrics.clientHeight,
+            clientWidth: nextMetrics.clientWidth,
+          }
     ));
   }, []);
 
-  const setExplorerViewportScrollTop = useCallback((scrollTop: number) => {
-    const viewport = explorerViewportRef.current;
-    if (!viewport) {
-      setExplorerViewportMetrics((current) => (
-        current.scrollTop === scrollTop
-          ? current
-          : { ...current, scrollTop }
-      ));
+  const commitExplorerViewportScrollTop = useCallback((scrollTop: number) => {
+    explorerViewportScrollTopRef.current = scrollTop;
+    setExplorerViewportMetrics((current) => (
+      current.scrollTop === scrollTop
+        ? current
+        : { ...current, scrollTop }
+    ));
+  }, []);
+
+  const syncExplorerViewportScrollTop = useCallback((viewport?: HTMLDivElement | null) => {
+    const target = viewport ?? explorerViewportRef.current;
+    if (!target) {
       return;
     }
-    if (Math.abs(viewport.scrollTop - scrollTop) > 0.5) {
+    commitExplorerViewportScrollTop(target.scrollTop);
+  }, [commitExplorerViewportScrollTop]);
+
+  const setExplorerViewportScrollTop = useCallback((scrollTop: number) => {
+    const viewport = explorerViewportRef.current;
+    if (viewport && Math.abs(viewport.scrollTop - scrollTop) > 0.5) {
       viewport.scrollTop = scrollTop;
     }
-    syncExplorerViewportMetrics(viewport);
-  }, [syncExplorerViewportMetrics]);
+    commitExplorerViewportScrollTop(scrollTop);
+  }, [commitExplorerViewportScrollTop]);
 
   const resetExplorerViewport = useCallback(() => {
     layoutWheelDeltaAccumulatorRef.current = 0;
@@ -7399,6 +7409,8 @@ export function FileExplorer({
     flex: 1,
     display: 'flex',
     flexDirection: 'column',
+    minHeight: 0,
+    minWidth: 0,
     overflow: 'hidden',
     background: 'var(--overlay-explorer-content-bg)',
   }), []);
@@ -7406,6 +7418,8 @@ export function FileExplorer({
     flex: 1,
     display: 'flex',
     flexDirection: effectiveShellLayout.previewPlacement === 'leading' ? 'row-reverse' : 'row',
+    minHeight: 0,
+    minWidth: 0,
     overflow: 'hidden',
     background: 'var(--overlay-explorer-content-bg)',
   }), [effectiveShellLayout.previewPlacement]);
@@ -8988,34 +9002,37 @@ export function FileExplorer({
     }
 
     let rafId = 0;
-    const updateMetrics = () => {
+    const updateScrollTop = () => {
       rafId = 0;
-      syncExplorerViewportMetrics(viewport);
+      syncExplorerViewportScrollTop(viewport);
     };
 
-    const scheduleMetricsUpdate = () => {
+    const scheduleScrollUpdate = () => {
       if (rafId !== 0) {
         return;
       }
-      rafId = window.requestAnimationFrame(updateMetrics);
+      rafId = window.requestAnimationFrame(updateScrollTop);
     };
 
     const resizeObserver = typeof ResizeObserver !== 'undefined'
-      ? new ResizeObserver(scheduleMetricsUpdate)
+      ? new ResizeObserver(() => {
+        syncExplorerViewportSize(viewport);
+      })
       : null;
 
     resizeObserver?.observe(viewport);
-    viewport.addEventListener('scroll', scheduleMetricsUpdate, { passive: true });
-    scheduleMetricsUpdate();
+    viewport.addEventListener('scroll', scheduleScrollUpdate, { passive: true });
+    syncExplorerViewportSize(viewport);
+    syncExplorerViewportScrollTop(viewport);
 
     return () => {
-      viewport.removeEventListener('scroll', scheduleMetricsUpdate);
+      viewport.removeEventListener('scroll', scheduleScrollUpdate);
       resizeObserver?.disconnect();
       if (rafId !== 0) {
         window.cancelAnimationFrame(rafId);
       }
     };
-  }, [syncExplorerViewportMetrics]);
+  }, [syncExplorerViewportScrollTop, syncExplorerViewportSize]);
 
   const handleExplorerLayoutWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
     if (isCompactDock || !(event.ctrlKey || event.metaKey)) {
@@ -9158,14 +9175,15 @@ export function FileExplorer({
         Math.floor((availableWidth + activeGridMetrics.gap) / (activeGridMetrics.minWidth + activeGridMetrics.gap)),
       );
       const rowHeight = isSearchActive ? activeGridMetrics.searchRowHeight : activeGridMetrics.rowHeight;
+      const rowAdvance = rowHeight + activeGridMetrics.gap;
       const totalRows = Math.ceil(visibleEntries.length / columns);
-      const contentHeight = totalRows * rowHeight;
+      const contentHeight = totalRows * rowHeight + Math.max(0, totalRows - 1) * activeGridMetrics.gap;
       const maxScrollTop = Math.max(0, contentHeight - virtualizedViewportHeight);
       const clampedScrollTop = Math.min(virtualizedScrollTop, maxScrollTop);
-      const startRow = Math.max(0, Math.floor(clampedScrollTop / rowHeight) - EXPLORER_GRID_OVERSCAN_ROWS);
+      const startRow = Math.max(0, Math.floor(clampedScrollTop / rowAdvance) - EXPLORER_GRID_OVERSCAN_ROWS);
       const endRow = Math.min(
         totalRows,
-        Math.ceil((clampedScrollTop + virtualizedViewportHeight) / rowHeight) + EXPLORER_GRID_OVERSCAN_ROWS,
+        Math.ceil((clampedScrollTop + virtualizedViewportHeight) / rowAdvance) + EXPLORER_GRID_OVERSCAN_ROWS,
       );
       const safeEndRow = Math.max(startRow, endRow);
       const startIndex = Math.min(visibleEntries.length, startRow * columns);
@@ -9181,8 +9199,8 @@ export function FileExplorer({
         endRow: safeEndRow,
         startIndex,
         endIndex,
-        topSpacer: startRow * rowHeight,
-        bottomSpacer: Math.max(0, totalRows - safeEndRow) * rowHeight,
+        topSpacer: startRow * rowAdvance,
+        bottomSpacer: Math.max(0, totalRows - safeEndRow) * rowAdvance,
       };
     }
 
@@ -9265,15 +9283,15 @@ export function FileExplorer({
       return;
     }
 
-    const nextScrollTop = Math.min(explorerViewportMetrics.scrollTop, maxViewportScrollTop);
-    if (layoutChanged || nextScrollTop !== explorerViewportMetrics.scrollTop) {
+    const currentScrollTop = explorerViewportScrollTopRef.current;
+    const nextScrollTop = Math.min(currentScrollTop, maxViewportScrollTop);
+    if (layoutChanged || nextScrollTop !== currentScrollTop) {
       setExplorerViewportScrollTop(nextScrollTop);
     }
   }, [
     currentPath,
     effectiveExperimentalViewMode,
     effectiveViewMode,
-    explorerViewportMetrics.scrollTop,
     gridZoom,
     maxViewportScrollTop,
     resetExplorerViewport,
@@ -9813,17 +9831,18 @@ export function FileExplorer({
               : 'minmax(0, 2fr) minmax(120px, 0.85fr) minmax(96px, 0.7fr)',
             alignItems: 'center',
             gap: 12,
-            minHeight: densityStop.table.rowHeight,
+            height: densityStop.table.rowHeight,
             padding: densityStop.table.showRichMeta ? '8px 14px' : '6px 14px',
             borderBottom: '1px solid var(--overlay-explorer-toolbar-border)',
             borderRadius: 10,
             background: isDrop ? dropEntrySurface.background : isSel ? selectedEntrySurface.background : 'var(--overlay-explorer-chip-bg)',
             border: `1px solid ${isDrop ? dropEntrySurface.borderColor : isSel ? selectedEntrySurface.borderColor : 'var(--overlay-explorer-chip-border)'}`,
             cursor: 'pointer',
+            boxSizing: 'border-box',
             userSelect: 'none',
             boxShadow: isDrop ? dropEntrySurface.boxShadow : isSel ? selectedEntrySurface.boxShadow : 'none',
             transform: isDrop ? dropEntrySurface.transform : isSel ? selectedEntrySurface.transform : 'translateY(0)',
-          }}  
+          }}
           onMouseEnter={e => {
             handleEntryPointerEnter(entry, e.currentTarget as HTMLDivElement, isSel, isDrop);
           }}
@@ -11119,6 +11138,7 @@ export function FileExplorer({
                   padding: '0 12px',
                   borderBottom: '1px solid var(--overlay-explorer-toolbar-border)',
                   background: 'var(--overlay-explorer-item-selected-bg)',
+                  boxSizing: 'border-box',
                 }}
               >
                 <SvgIcon
@@ -11172,7 +11192,7 @@ export function FileExplorer({
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         gap: 12,
-                        minHeight: virtualWindow.rowHeight,
+                        height: virtualWindow.rowHeight,
                         padding: '0 12px',
                         borderBottomWidth: 1,
                         borderBottomStyle: 'solid',
@@ -11181,6 +11201,7 @@ export function FileExplorer({
                         cursor: 'pointer',
                         opacity: entry.is_hidden ? 0.5 : 1,
                         userSelect: 'none',
+                        boxSizing: 'border-box',
                         boxShadow: isDrop ? dropEntrySurface.boxShadow : isSel ? selectedEntrySurface.boxShadow : idleEntrySurface.boxShadow,
                         transform: isDrop ? dropEntrySurface.transform : isSel ? selectedEntrySurface.transform : idleEntrySurface.transform,
                       }}
@@ -11250,7 +11271,7 @@ export function FileExplorer({
             {effectiveExperimentalViewMode === 'off' && newItem.visible && virtualWindow.kind === 'list' && effectiveViewModeDefinition.presentation === 'table' && (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <tbody>
-                  <tr style={{ background: 'var(--overlay-explorer-item-selected-bg)', borderBottom: '1px solid var(--overlay-explorer-toolbar-border)', height: activeRowMetrics?.newItemHeight ?? 42 }}>
+                  <tr style={{ background: 'var(--overlay-explorer-item-selected-bg)', borderBottom: '1px solid var(--overlay-explorer-toolbar-border)', height: activeRowMetrics?.newItemHeight ?? 42, boxSizing: 'border-box' }}>
                     <td style={{ padding: '4px 12px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <SvgIcon src={newItem.kind === 'folder' ? getIconSrc({ name: 'folder', path: currentPath, is_dir: true, size: 0, modified: 0, extension: '', is_hidden: false, is_symlink: false }, false, {
@@ -11340,7 +11361,7 @@ export function FileExplorer({
                         onDoubleClick={() => onEntryDoubleClick(entry)}
                         onContextMenu={e => onRightClick(e, entry)}
                         title={getSearchTooltip(entry)}
-                        style={{ background: isDrop ? dropEntrySurface.background : isSel ? selectedEntrySurface.background : idleEntrySurface.background, cursor: 'pointer', opacity: entry.is_hidden ? 0.5 : 1, userSelect: 'none', borderBottom: '1px solid var(--overlay-explorer-toolbar-border)', height: virtualWindow.rowHeight, boxShadow: isDrop ? dropEntrySurface.boxShadow : isSel ? selectedEntrySurface.boxShadow : idleEntrySurface.boxShadow, transform: isDrop ? dropEntrySurface.transform : isSel ? selectedEntrySurface.transform : idleEntrySurface.transform }}
+                        style={{ background: isDrop ? dropEntrySurface.background : isSel ? selectedEntrySurface.background : idleEntrySurface.background, cursor: 'pointer', opacity: entry.is_hidden ? 0.5 : 1, userSelect: 'none', borderBottom: '1px solid var(--overlay-explorer-toolbar-border)', height: virtualWindow.rowHeight, boxSizing: 'border-box', boxShadow: isDrop ? dropEntrySurface.boxShadow : isSel ? selectedEntrySurface.boxShadow : idleEntrySurface.boxShadow, transform: isDrop ? dropEntrySurface.transform : isSel ? selectedEntrySurface.transform : idleEntrySurface.transform }}
                         onMouseEnter={e => { handleEntryPointerEnter(entry, e.currentTarget as HTMLTableRowElement, isSel, isDrop); }}
                         onMouseLeave={e => { handleEntryPointerLeave(entry, e.currentTarget as HTMLTableRowElement, isSel, isDrop); }}
                       >

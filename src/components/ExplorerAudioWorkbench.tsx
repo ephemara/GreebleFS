@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type KeyboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import {
   AlertTriangle,
@@ -22,6 +22,7 @@ import {
   Sparkles,
   Waves,
 } from 'lucide-react';
+import { matchesKeybinding } from '../config/hotkeys';
 import {
   DEFAULT_EXPLORER_AUDIO_EXPORT_FORMAT_ID,
   EXPLORER_AUDIO_EXPORT_FORMATS,
@@ -45,6 +46,7 @@ import {
   useAudioEngineFeed,
   useAudioEngineSnapshot,
 } from '../store/audioEngineStore';
+import { useSettingsStore } from '../store/settingsStore';
 import { AppConfirmDialog, AppPromptDialog } from './AppModal';
 
 type ExplorerAudioWorkbenchProps = {
@@ -68,6 +70,8 @@ type AudioWorkbenchSummaryItem = {
 
 const MINIMUM_SELECTION_SECONDS = 0.05;
 const FADE_KEYBOARD_STEP_SECONDS = 0.1;
+const FINE_TRIM_NUDGE_SECONDS = 0.01;
+const SILENCE_REGION_PREVIEW_LIMIT = 6;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -109,6 +113,39 @@ function formatSize(bytes: number): string {
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
   return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+}
+
+function formatPreciseSeconds(seconds: number): string {
+  if (!Number.isFinite(seconds)) {
+    return '0.000';
+  }
+  return seconds.toFixed(3);
+}
+
+function formatBpm(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value) || value <= 0) {
+    return 'n/a';
+  }
+  return `${value.toFixed(value >= 100 ? 0 : 1)} BPM`;
+}
+
+function formatPitchShift(cents: number): string {
+  if (!Number.isFinite(cents) || Math.abs(cents) < 0.5) {
+    return 'Neutral';
+  }
+  const semitones = cents / 100;
+  return `${semitones > 0 ? '+' : ''}${semitones.toFixed(2)} st`;
+}
+
+function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+  const element = target instanceof HTMLElement ? target : null;
+  if (!element) {
+    return false;
+  }
+
+  return element.isContentEditable
+    || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName)
+    || Boolean(element.closest('.monaco-editor'));
 }
 
 function buildAudioOutputPath(
@@ -474,8 +511,10 @@ export function ExplorerAudioWorkbench({
 }: ExplorerAudioWorkbenchProps) {
   useAudioEngineFeed();
 
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const snapshot = useAudioEngineSnapshot();
+  const keybindings = useSettingsStore((state) => state.settings.keybindings);
   const activeDeckId = 'a' as const;
 
   const [analysis, setAnalysis] = useState<ExplorerAudioPreviewAnalysis | null>(null);
@@ -483,6 +522,7 @@ export function ExplorerAudioWorkbench({
   const [selectionEnd, setSelectionEnd] = useState(0);
   const [fadeInSeconds, setFadeInSeconds] = useState(0);
   const [fadeOutSeconds, setFadeOutSeconds] = useState(0);
+  const [pitchShiftCents, setPitchShiftCents] = useState(0);
   const [generateSpectrogram, setGenerateSpectrogram] = useState(true);
   const [convertFormat, setConvertFormat] = useState<'mp3' | 'wav' | 'flac' | 'ogg'>(
     DEFAULT_EXPLORER_AUDIO_EXPORT_FORMAT_ID,
@@ -535,6 +575,7 @@ export function ExplorerAudioWorkbench({
     setSelectionEnd(0);
     setFadeInSeconds(0);
     setFadeOutSeconds(0);
+    setPitchShiftCents(0);
     setGenerateSpectrogram(true);
     setConvertFormat(DEFAULT_EXPLORER_AUDIO_EXPORT_FORMAT_ID);
     setExportDialogMode(null);
@@ -614,6 +655,26 @@ export function ExplorerAudioWorkbench({
 
   const waveformBuckets = analysis?.waveformBuckets ?? [];
   const spectralBands = analysis?.spectralBands ?? [];
+  const silenceRegions = analysis?.silenceRegions ?? [];
+  const estimatedBpm = analysis?.estimatedBpm ?? null;
+  const leadingSilenceRegion =
+    silenceRegions.find((region) => region.startSeconds <= FINE_TRIM_NUDGE_SECONDS) ?? null;
+  const trailingSilenceRegion =
+    [...silenceRegions]
+      .reverse()
+      .find(
+        (region) =>
+          effectiveDuration > 0
+          && Math.abs(region.endSeconds - effectiveDuration) <= FINE_TRIM_NUDGE_SECONDS,
+      ) ?? null;
+  const detectedContentRange = useMemo(() => {
+    const nextStart = leadingSilenceRegion?.endSeconds ?? 0;
+    const nextEnd = trailingSilenceRegion?.startSeconds ?? effectiveDuration;
+    if (nextEnd - nextStart < MINIMUM_SELECTION_SECONDS) {
+      return null;
+    }
+    return { start: nextStart, end: nextEnd };
+  }, [effectiveDuration, leadingSilenceRegion, trailingSilenceRegion]);
 
   const summaryItems = useMemo<AudioWorkbenchSummaryItem[]>(
     () => [
@@ -648,6 +709,18 @@ export function ExplorerAudioWorkbench({
             .filter(Boolean)
             .join(' · ') || 'n/a',
       },
+      {
+        label: 'Estimated BPM',
+        value: formatBpm(estimatedBpm),
+        tone: estimatedBpm ? 'accent' : 'default',
+      },
+      {
+        label: 'Silence',
+        value:
+          silenceRegions.length > 0
+            ? `${silenceRegions.length} region${silenceRegions.length === 1 ? '' : 's'}`
+            : 'No long gaps',
+      },
       { label: 'Peak / RMS', value: `${formatDb(analysis?.peakLevel)} / ${formatDb(analysis?.rmsLevel)}` },
       {
         label: 'Headroom',
@@ -656,14 +729,21 @@ export function ExplorerAudioWorkbench({
             ? `${analysis.headroomDb.toFixed(1)} dB`
             : 'n/a',
       },
+      {
+        label: 'Pitch Shift',
+        value: formatPitchShift(pitchShiftCents),
+      },
       { label: 'File Size', value: formatSize(audioSize) },
     ],
     [
       analysis,
       audioName,
       audioSize,
+      estimatedBpm,
       effectiveDuration,
+      pitchShiftCents,
       previewDeck.loadedName,
+      silenceRegions.length,
       snapshot.outputSampleRateHz,
     ],
   );
@@ -797,7 +877,7 @@ export function ExplorerAudioWorkbench({
 
   function handleFadeHandleKeyDown(
     mode: 'fadeIn' | 'fadeOut',
-    event: KeyboardEvent<HTMLDivElement>,
+    event: ReactKeyboardEvent<HTMLDivElement>,
   ) {
     if (selectionDuration <= 0) {
       return;
@@ -885,6 +965,147 @@ export function ExplorerAudioWorkbench({
     }
   }
 
+  function updateSelectionStartFromInput(value: number) {
+    updateSelection(value, selectionEnd);
+    setWorkbenchStatus('Selection in-point updated.');
+  }
+
+  function updateSelectionEndFromInput(value: number) {
+    updateSelection(selectionStart, value);
+    setWorkbenchStatus('Selection out-point updated.');
+  }
+
+  function updateSelectionDurationFromInput(value: number) {
+    if (!Number.isFinite(value) || value <= 0) {
+      return;
+    }
+    updateSelection(selectionStart, selectionStart + value);
+    setWorkbenchStatus('Selection duration updated.');
+  }
+
+  function nudgeSelectionBoundary(boundary: 'start' | 'end', deltaSeconds: number) {
+    if (boundary === 'start') {
+      updateSelection(selectionStart + deltaSeconds, selectionEnd);
+      setWorkbenchStatus('Selection in-point nudged.');
+      return;
+    }
+    updateSelection(selectionStart, selectionEnd + deltaSeconds);
+    setWorkbenchStatus('Selection out-point nudged.');
+  }
+
+  function selectSilenceRegion(startSeconds: number, endSeconds: number) {
+    updateSelection(startSeconds, endSeconds);
+    syncPlayhead(startSeconds);
+    setWorkbenchStatus('Silence region loaded into the trim selection.');
+  }
+
+  function jumpToAdjacentSilence(direction: 'previous' | 'next') {
+    const currentTime = previewDeck.currentTimeSeconds;
+    const nextRegion =
+      direction === 'previous'
+        ? [...silenceRegions]
+            .reverse()
+            .find((region) => region.endSeconds < currentTime - FINE_TRIM_NUDGE_SECONDS)
+        : silenceRegions.find((region) => region.startSeconds > currentTime + FINE_TRIM_NUDGE_SECONDS);
+    if (!nextRegion) {
+      setWorkbenchStatus(
+        direction === 'previous'
+          ? 'No earlier silence region was detected.'
+          : 'No later silence region was detected.',
+      );
+      return;
+    }
+    syncPlayhead(nextRegion.startSeconds);
+    setWorkbenchStatus(
+      direction === 'previous'
+        ? 'Jumped to the previous silence region.'
+        : 'Jumped to the next silence region.',
+    );
+  }
+
+  function trimLeadingSilence() {
+    if (!leadingSilenceRegion) {
+      setWorkbenchStatus('No leading silence region was detected.');
+      return;
+    }
+    updateSelection(leadingSilenceRegion.endSeconds, selectionEnd);
+    setWorkbenchStatus('Trim in-point snapped to the end of the leading silence.');
+  }
+
+  function trimTrailingSilence() {
+    if (!trailingSilenceRegion) {
+      setWorkbenchStatus('No trailing silence region was detected.');
+      return;
+    }
+    updateSelection(selectionStart, trailingSilenceRegion.startSeconds);
+    setWorkbenchStatus('Trim out-point snapped to the start of the trailing silence.');
+  }
+
+  function trimDetectedContent() {
+    if (!detectedContentRange) {
+      setWorkbenchStatus('Detected content range is not available for this file.');
+      return;
+    }
+    updateSelection(detectedContentRange.start, detectedContentRange.end);
+    syncPlayhead(detectedContentRange.start);
+    setWorkbenchStatus('Trim bounds snapped to the detected audible content.');
+  }
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const root = rootRef.current;
+      const activeElement = document.activeElement;
+      const target = event.target instanceof Node ? event.target : null;
+      const hasWorkbenchFocus = Boolean(
+        root
+        && (
+          (target && root.contains(target))
+          || (activeElement instanceof Node
+            && (root.contains(activeElement) || activeElement === document.body))
+        ),
+      );
+
+      if (!hasWorkbenchFocus || isEditableKeyboardTarget(event.target)) {
+        return;
+      }
+
+      if (matchesKeybinding(event, keybindings.audioWorkbenchPlayPause)) {
+        event.preventDefault();
+        void togglePreviewDeckPlayback();
+        return;
+      }
+      if (matchesKeybinding(event, keybindings.audioWorkbenchJumpToSelectionStart)) {
+        event.preventDefault();
+        syncPlayhead(selectionStart);
+        return;
+      }
+      if (matchesKeybinding(event, keybindings.audioWorkbenchJumpToSelectionEnd)) {
+        event.preventDefault();
+        syncPlayhead(selectionEnd);
+        return;
+      }
+      if (matchesKeybinding(event, keybindings.audioWorkbenchPreviousSilence)) {
+        event.preventDefault();
+        jumpToAdjacentSilence('previous');
+        return;
+      }
+      if (matchesKeybinding(event, keybindings.audioWorkbenchNextSilence)) {
+        event.preventDefault();
+        jumpToAdjacentSilence('next');
+        return;
+      }
+      if (matchesKeybinding(event, keybindings.audioWorkbenchExportClip)) {
+        event.preventDefault();
+        openExportDialog('clip');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [keybindings, selectionStart, selectionEnd, silenceRegions, previewDeck.currentTimeSeconds]);
+
   function openExportDialog(mode: Exclude<ExportDialogMode, null>) {
     const suffix =
       mode === 'clip'
@@ -928,6 +1149,7 @@ export function ExplorerAudioWorkbench({
         trimEndSeconds: selectionEnd,
         fadeInSeconds: boundedFadeInSeconds,
         fadeOutSeconds: boundedFadeOutSeconds,
+        pitchShiftCents,
         normalize: mode === 'normalized' ? true : null,
         outputFormat: nextOutputFormat,
         generateSpectrogram,
@@ -958,6 +1180,7 @@ export function ExplorerAudioWorkbench({
         trimEndSeconds: selectionEnd,
         fadeInSeconds: boundedFadeInSeconds,
         fadeOutSeconds: boundedFadeOutSeconds,
+        pitchShiftCents,
         normalize: true,
         outputFormat: audioExtension || 'wav',
         generateSpectrogram,
@@ -985,6 +1208,8 @@ export function ExplorerAudioWorkbench({
   return (
     <>
       <div
+        ref={rootRef}
+        tabIndex={-1}
         style={{
           width: '100%',
           height: '100%',
@@ -1069,6 +1294,13 @@ export function ExplorerAudioWorkbench({
                   >
                     <RotateCcw size={14} />
                     Jump To In
+                  </button>
+                  <button
+                    type="button"
+                    style={toolbarButtonStyle()}
+                    onClick={() => syncPlayhead(selectionEnd)}
+                  >
+                    Jump To Out
                   </button>
                   <button
                     type="button"
@@ -1296,6 +1528,47 @@ export function ExplorerAudioWorkbench({
                         </div>
                       </div>
                     </div>
+                    <div style={metricCardStyle()}>
+                      <div style={miniLabelStyle}>Pitch Shift</div>
+                      <div style={{ display: 'grid', gap: 8 }}>
+                        <input
+                          aria-label="Pitch Shift"
+                          type="range"
+                          min="-1200"
+                          max="1200"
+                          step="1"
+                          value={pitchShiftCents}
+                          onChange={(event) => setPitchShiftCents(Number(event.target.value))}
+                        />
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'minmax(0, 1fr) 96px',
+                            gap: 8,
+                            alignItems: 'center',
+                          }}
+                        >
+                          <div style={{ fontSize: 12, color: 'var(--overlay-text-muted)' }}>
+                            {formatPitchShift(pitchShiftCents)}
+                          </div>
+                          <input
+                            aria-label="Pitch Shift Cents"
+                            type="number"
+                            step="1"
+                            min="-1200"
+                            max="1200"
+                            value={Math.round(pitchShiftCents)}
+                            onChange={(event) => {
+                              const nextValue = Number(event.target.value);
+                              if (Number.isFinite(nextValue)) {
+                                setPitchShiftCents(clamp(nextValue, -1200, 1200));
+                              }
+                            }}
+                            style={{ ...inputStyle, padding: '8px 10px' }}
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1305,8 +1578,142 @@ export function ExplorerAudioWorkbench({
                 display: 'grid',
                 gap: 14,
                 gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-              }}
-            >
+                }}
+              >
+              <div
+                style={{
+                  borderRadius: 'var(--overlay-explorer-panel-radius)',
+                  border: '1px solid var(--overlay-explorer-chip-border)',
+                  background: 'rgba(255,255,255,0.04)',
+                  padding: 16,
+                  display: 'grid',
+                  gap: 12,
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    fontSize: 12,
+                    fontWeight: 800,
+                  }}
+                >
+                  <Scissors size={15} />
+                  Precision Trim
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                    gap: 10,
+                  }}
+                >
+                  <label style={{ display: 'grid', gap: 6, fontSize: 11, color: 'var(--overlay-text-muted)' }}>
+                    In
+                    <input
+                      aria-label="Trim In"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      value={formatPreciseSeconds(selectionStart)}
+                      onChange={(event) => {
+                        const nextValue = Number(event.target.value);
+                        if (Number.isFinite(nextValue)) {
+                          updateSelectionStartFromInput(nextValue);
+                        }
+                      }}
+                      style={inputStyle}
+                    />
+                  </label>
+                  <label style={{ display: 'grid', gap: 6, fontSize: 11, color: 'var(--overlay-text-muted)' }}>
+                    Out
+                    <input
+                      aria-label="Trim Out"
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      value={formatPreciseSeconds(selectionEnd)}
+                      onChange={(event) => {
+                        const nextValue = Number(event.target.value);
+                        if (Number.isFinite(nextValue)) {
+                          updateSelectionEndFromInput(nextValue);
+                        }
+                      }}
+                      style={inputStyle}
+                    />
+                  </label>
+                  <label style={{ display: 'grid', gap: 6, fontSize: 11, color: 'var(--overlay-text-muted)' }}>
+                    Length
+                    <input
+                      aria-label="Selection Length"
+                      type="number"
+                      step="0.001"
+                      min={MINIMUM_SELECTION_SECONDS.toString()}
+                      value={formatPreciseSeconds(selectionDuration)}
+                      onChange={(event) => {
+                        const nextValue = Number(event.target.value);
+                        if (Number.isFinite(nextValue)) {
+                          updateSelectionDurationFromInput(nextValue);
+                        }
+                      }}
+                      style={inputStyle}
+                    />
+                  </label>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  <button
+                    type="button"
+                    style={toolbarButtonStyle()}
+                    onClick={() => nudgeSelectionBoundary('start', -FINE_TRIM_NUDGE_SECONDS)}
+                  >
+                    In -10ms
+                  </button>
+                  <button
+                    type="button"
+                    style={toolbarButtonStyle()}
+                    onClick={() => nudgeSelectionBoundary('start', FINE_TRIM_NUDGE_SECONDS)}
+                  >
+                    In +10ms
+                  </button>
+                  <button
+                    type="button"
+                    style={toolbarButtonStyle()}
+                    onClick={() => nudgeSelectionBoundary('end', -FINE_TRIM_NUDGE_SECONDS)}
+                  >
+                    Out -10ms
+                  </button>
+                  <button
+                    type="button"
+                    style={toolbarButtonStyle()}
+                    onClick={() => nudgeSelectionBoundary('end', FINE_TRIM_NUDGE_SECONDS)}
+                  >
+                    Out +10ms
+                  </button>
+                  <button
+                    type="button"
+                    style={toolbarButtonStyle()}
+                    onClick={trimLeadingSilence}
+                  >
+                    Trim Head Silence
+                  </button>
+                  <button
+                    type="button"
+                    style={toolbarButtonStyle()}
+                    onClick={trimTrailingSilence}
+                  >
+                    Trim Tail Silence
+                  </button>
+                  <button
+                    type="button"
+                    style={toolbarButtonStyle('primary')}
+                    onClick={trimDetectedContent}
+                  >
+                    Trim To Content
+                  </button>
+                </div>
+              </div>
+
               <div
                 style={{
                   borderRadius: 'var(--overlay-explorer-panel-radius)',
@@ -1472,6 +1879,97 @@ export function ExplorerAudioWorkbench({
                 >
                   {exportMessage}
                 </div>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <div style={miniLabelStyle}>Detection</div>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                      gap: 8,
+                    }}
+                  >
+                    <div style={metricCardStyle()}>
+                      <div style={miniLabelStyle}>Estimated BPM</div>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>
+                        {formatBpm(estimatedBpm)}
+                      </div>
+                    </div>
+                    <div style={metricCardStyle()}>
+                      <div style={miniLabelStyle}>Silence Regions</div>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>
+                        {silenceRegions.length}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    <button
+                      type="button"
+                      style={toolbarButtonStyle()}
+                      onClick={() => jumpToAdjacentSilence('previous')}
+                    >
+                      Previous Silence
+                    </button>
+                    <button
+                      type="button"
+                      style={toolbarButtonStyle()}
+                      onClick={() => jumpToAdjacentSilence('next')}
+                    >
+                      Next Silence
+                    </button>
+                    {leadingSilenceRegion ? (
+                      <button
+                        type="button"
+                        style={toolbarButtonStyle()}
+                        onClick={() =>
+                          selectSilenceRegion(
+                            leadingSilenceRegion.startSeconds,
+                            leadingSilenceRegion.endSeconds,
+                          )}
+                      >
+                        Select Head Silence
+                      </button>
+                    ) : null}
+                    {trailingSilenceRegion ? (
+                      <button
+                        type="button"
+                        style={toolbarButtonStyle()}
+                        onClick={() =>
+                          selectSilenceRegion(
+                            trailingSilenceRegion.startSeconds,
+                            trailingSilenceRegion.endSeconds,
+                          )}
+                      >
+                        Select Tail Silence
+                      </button>
+                    ) : null}
+                  </div>
+                  {silenceRegions.length > 0 ? (
+                    <div style={{ display: 'grid', gap: 6 }}>
+                      {silenceRegions.slice(0, SILENCE_REGION_PREVIEW_LIMIT).map((region, index) => (
+                        <button
+                          key={`${region.startSeconds}-${region.endSeconds}-${index}`}
+                          type="button"
+                          style={{
+                            ...toolbarButtonStyle(),
+                            justifyContent: 'space-between',
+                            width: '100%',
+                          }}
+                          onClick={() => selectSilenceRegion(region.startSeconds, region.endSeconds)}
+                        >
+                          <span>Silence {index + 1}</span>
+                          <span>
+                            {formatPreciseSeconds(region.startSeconds)}s - {formatPreciseSeconds(region.endSeconds)}s
+                            {' '}· {formatFadeDuration(region.durationSeconds)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11, color: 'var(--overlay-text-muted)' }}>
+                      No sustained silence regions crossed the current detection threshold.
+                    </div>
+                  )}
+                </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {engineStatusBadges.map((badge) => (
                     <span key={badge} style={badgeStyle}>
@@ -1523,7 +2021,7 @@ export function ExplorerAudioWorkbench({
         }
         description={
           exportDialogMode === 'convert'
-            ? `SoX will write a ${convertFormat.toUpperCase()} export using the current trim, fade, and spectrogram settings.`
+            ? `SoX will write a ${convertFormat.toUpperCase()} export using the current trim, pitch, fade, and spectrogram settings.`
             : 'Choose the output path for the new audio export.'
         }
         value={exportPathInput}
@@ -1546,7 +2044,7 @@ export function ExplorerAudioWorkbench({
         title='Overwrite Original Audio'
         tone='danger'
         confirmLabel='Overwrite Original'
-        description={`This will rewrite ${audioName} in place using the current trim, fade, normalize, and spectrogram settings.`}
+        description={`This will rewrite ${audioName} in place using the current trim, pitch, fade, normalize, and spectrogram settings.`}
         onCancel={() => setExportDialogMode(null)}
         onConfirm={() => {
           void submitOverwriteOriginal();

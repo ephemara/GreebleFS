@@ -49,6 +49,12 @@ describe('hotkey config helpers', () => {
     expect(defaults.focusExplorerAddressBar).toBe('Ctrl+L');
     expect(defaults.toggleExplorerLayout).toBe('Ctrl+Shift+L');
     expect(defaults.searchExplorer).toBe('Ctrl+F');
+    expect(defaults.audioWorkbenchPlayPause).toBe('Space');
+    expect(defaults.audioWorkbenchJumpToSelectionStart).toBe('I');
+    expect(defaults.audioWorkbenchJumpToSelectionEnd).toBe('O');
+    expect(defaults.audioWorkbenchPreviousSilence).toBe('Shift+ArrowLeft');
+    expect(defaults.audioWorkbenchNextSilence).toBe('Shift+ArrowRight');
+    expect(defaults.audioWorkbenchExportClip).toBe('Ctrl+Shift+S');
     expect(defaults.find).toBe('');
     expect(defaults.toggleHiddenFiles).toBe('Ctrl+H');
     expect(defaults.replace).toBe('');
@@ -102,6 +108,11 @@ describe('hotkey config helpers', () => {
     expect(matchesKeybinding(
       { key: 'Left', ctrlKey: false, metaKey: false, altKey: true, shiftKey: false },
       'Alt+Left',
+    )).toBe(true);
+
+    expect(matchesKeybinding(
+      { key: ' ', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false },
+      'Space',
     )).toBe(true);
   });
 });

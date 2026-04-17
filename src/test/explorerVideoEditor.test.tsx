@@ -7,20 +7,24 @@ import {
 } from '../components/ExplorerVideoEditor';
 
 const {
+  createExplorerVideoPreviewProxyMock,
   exportExplorerVideoTrimMock,
   loadVideoSourceMock,
   pauseVideoMock,
   playVideoMock,
+  resolveExplorerVideoPreviewSourceMock,
   seekVideoMock,
   setVideoLoopRegionMock,
   stopVideoMock,
   useVideoEngineFeedMock,
   useVideoEngineSnapshotMock,
 } = vi.hoisted(() => ({
+  createExplorerVideoPreviewProxyMock: vi.fn(),
   exportExplorerVideoTrimMock: vi.fn(),
   loadVideoSourceMock: vi.fn(),
   pauseVideoMock: vi.fn(),
   playVideoMock: vi.fn(),
+  resolveExplorerVideoPreviewSourceMock: vi.fn(),
   seekVideoMock: vi.fn(),
   setVideoLoopRegionMock: vi.fn(),
   stopVideoMock: vi.fn(),
@@ -33,7 +37,9 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 vi.mock('../runtime/videoEditorBackend', () => ({
+  createExplorerVideoPreviewProxy: createExplorerVideoPreviewProxyMock,
   exportExplorerVideoTrim: exportExplorerVideoTrimMock,
+  resolveExplorerVideoPreviewSource: resolveExplorerVideoPreviewSourceMock,
 }));
 
 vi.mock('../store/videoEngineStore', () => ({
@@ -77,18 +83,34 @@ describe('ExplorerVideoEditor', () => {
 
   beforeEach(() => {
     videoEngineSnapshot = { ...LOADED_VIDEO_SNAPSHOT };
+    createExplorerVideoPreviewProxyMock.mockReset();
     exportExplorerVideoTrimMock.mockReset();
     loadVideoSourceMock.mockReset();
     pauseVideoMock.mockReset();
     playVideoMock.mockReset();
+    resolveExplorerVideoPreviewSourceMock.mockReset();
     seekVideoMock.mockReset();
     setVideoLoopRegionMock.mockReset();
     stopVideoMock.mockReset();
     useVideoEngineFeedMock.mockReset();
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     useVideoEngineSnapshotMock.mockImplementation(() => videoEngineSnapshot);
     loadVideoSourceMock.mockImplementation(async () => {
       videoEngineSnapshot = { ...LOADED_VIDEO_SNAPSHOT };
       return videoEngineSnapshot;
+    });
+    resolveExplorerVideoPreviewSourceMock.mockResolvedValue({
+      sourcePath: '/tmp/demo.preview.mp4',
+      sourceKind: 'proxy',
+      mimeType: 'video/mp4',
+      generatedFromPath: '/tmp/demo.mov',
+    });
+    createExplorerVideoPreviewProxyMock.mockResolvedValue({
+      sourcePath: '/tmp/demo.preview.mp4',
+      sourceKind: 'proxy',
+      mimeType: 'video/mp4',
+      generatedFromPath: '/tmp/demo.mov',
     });
     playVideoMock.mockImplementation(async () => {
       videoEngineSnapshot = { ...videoEngineSnapshot, isPlaying: true };
@@ -167,11 +189,19 @@ describe('ExplorerVideoEditor', () => {
     });
 
     await waitFor(() => {
+      expect(resolveExplorerVideoPreviewSourceMock).toHaveBeenCalledWith('/tmp/demo.mov');
+    });
+
+    await waitFor(() => {
       expect(setVideoLoopRegionMock).toHaveBeenCalledWith(0, 18.75, true);
     });
 
+    fireEvent.loadedMetadata(
+      screen.getByLabelText(/compatibility video preview for demo\.mov/i),
+    );
+
     expect(
-      await screen.findByText(/native preview ready\. rust owns transport and timing\./i),
+      await screen.findByText(/preview ready via ffmpeg proxy\. rust owns transport and timing\./i),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /export trim/i }));
@@ -213,6 +243,10 @@ describe('ExplorerVideoEditor', () => {
       expect(loadVideoSourceMock).toHaveBeenCalledWith('/tmp/demo.mov');
     });
 
+    fireEvent.loadedMetadata(
+      screen.getByLabelText(/compatibility video preview for demo\.mov/i),
+    );
+
     fireEvent.click(screen.getByRole('button', { name: /^play$/i }));
     await waitFor(() => {
       expect(playVideoMock).toHaveBeenCalledTimes(1);
@@ -248,6 +282,36 @@ describe('ExplorerVideoEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: /reset/i }));
     await waitFor(() => {
       expect(stopVideoMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('falls back to an ffmpeg preview proxy when the direct webview preview fails', async () => {
+    resolveExplorerVideoPreviewSourceMock.mockResolvedValueOnce({
+      sourcePath: '/tmp/demo.mov',
+      sourceKind: 'direct',
+      mimeType: 'video/quicktime',
+      generatedFromPath: null,
+    });
+
+    render(
+      <ExplorerVideoEditor
+        videoPath="/tmp/demo.mov"
+        videoName="demo.mov"
+        videoSource="asset://localhost/tmp/demo.mov"
+        videoExtension="mov"
+        videoMimeType="video/quicktime"
+        videoSize={32 * 1024 * 1024}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(resolveExplorerVideoPreviewSourceMock).toHaveBeenCalledWith('/tmp/demo.mov');
+    });
+
+    fireEvent.error(screen.getByLabelText(/compatibility video preview for demo\.mov/i));
+
+    await waitFor(() => {
+      expect(createExplorerVideoPreviewProxyMock).toHaveBeenCalledWith('/tmp/demo.mov');
     });
   });
 });

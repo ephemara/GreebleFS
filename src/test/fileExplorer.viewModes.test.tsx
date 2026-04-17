@@ -866,6 +866,86 @@ describe('FileExplorer view modes', () => {
     expect(getExplorerViewport('alpha')).toHaveClass('overlay-scroll-area__viewport--explorer-file-list');
   });
 
+  it.each(['icons-l', 'list'] as const)(
+    'keeps the final item reachable at the bottom of a 5000-item %s viewport',
+    async (viewMode) => {
+      const clientWidthDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
+      const clientHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+      Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+        configurable: true,
+        get() {
+          return 1280;
+        },
+      });
+      Object.defineProperty(HTMLElement.prototype, 'clientHeight', {
+        configurable: true,
+        get() {
+          return 900;
+        },
+      });
+
+      const longEntries = Array.from({ length: 5000 }, (_, index) => ({
+        name: `item-${index.toString().padStart(4, '0')}.txt`,
+        path: `${REPO_ROOT}\\\\item-${index.toString().padStart(4, '0')}.txt`,
+        is_dir: false,
+        size: index + 1,
+        modified: index,
+        extension: 'txt',
+        is_hidden: false,
+        is_symlink: false,
+      }));
+      const longEntriesByPath = new Map(longEntries.map((entry) => [entry.path, entry] as const));
+
+      const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+      if (!baseInvokeImplementation) {
+        throw new Error('Missing default invoke mock implementation');
+      }
+
+      vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
+        const payload = args as { path?: string; paths?: string[] } | undefined;
+        if (command === 'fs_list_dir' || command === 'fs_list_dir_uncached') {
+          return payload?.path === REPO_ROOT ? longEntries : [];
+        }
+        if (command === 'fs_measure_entry_sizes') {
+          return (payload?.paths ?? []).map((path) => ({
+            path,
+            bytes: longEntriesByPath.get(path)?.size ?? 0,
+            is_dir: longEntriesByPath.get(path)?.is_dir ?? false,
+            is_complete: true,
+          }));
+        }
+        return baseInvokeImplementation(command, args as Parameters<typeof invoke>[1]);
+      });
+
+      useSettingsStore.getState().updateAppearance({ useNativeOsIcons: false });
+      useSettingsStore.getState().updateExplorer({ viewMode, gridZoom: 0.67 });
+
+      try {
+        renderExplorer();
+        await screen.findByText('item-0000.txt');
+
+        const viewport = getExplorerViewport('item-0000.txt');
+        viewport.scrollTop = 1_000_000;
+        fireEvent.scroll(viewport);
+
+        await waitFor(() => {
+          expect(screen.getByText('item-4999.txt')).toBeInTheDocument();
+        });
+      } finally {
+        if (clientWidthDescriptor) {
+          Object.defineProperty(HTMLElement.prototype, 'clientWidth', clientWidthDescriptor);
+        } else {
+          Reflect.deleteProperty(HTMLElement.prototype, 'clientWidth');
+        }
+        if (clientHeightDescriptor) {
+          Object.defineProperty(HTMLElement.prototype, 'clientHeight', clientHeightDescriptor);
+        } else {
+          Reflect.deleteProperty(HTMLElement.prototype, 'clientHeight');
+        }
+      }
+    },
+  );
+
   it('steps back out of details mode when ctrl-wheel originates from a row element', async () => {
     useSettingsStore.getState().updateExplorer({ viewMode: 'details' });
 

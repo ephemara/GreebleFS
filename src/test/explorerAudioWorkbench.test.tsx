@@ -166,6 +166,11 @@ describe('ExplorerAudioWorkbench', () => {
         rmsLevel: 0.12 + index * 0.004,
       })),
       spectralBands: Array.from({ length: 24 }, (_, index) => 1 - index / 24),
+      estimatedBpm: 128,
+      silenceRegions: [
+        { startSeconds: 0, endSeconds: 0.4, durationSeconds: 0.4 },
+        { startSeconds: 23.2, endSeconds: 24, durationSeconds: 0.8 },
+      ],
     });
   });
 
@@ -191,6 +196,8 @@ describe('ExplorerAudioWorkbench', () => {
     expect(screen.getAllByText('0:24').length).toBeGreaterThan(0);
     expect(screen.getByText('MPEG audio · 16-bit')).toBeInTheDocument();
     expect(screen.getByText(/loaded file/i)).toBeInTheDocument();
+    expect(screen.getAllByText('128 BPM').length).toBeGreaterThan(0);
+    expect(screen.getByText('2 regions')).toBeInTheDocument();
     expect(screen.queryByText(/^deck b$/i)).not.toBeInTheDocument();
   });
 
@@ -344,5 +351,68 @@ describe('ExplorerAudioWorkbench', () => {
         }),
       );
     });
+  });
+
+  it('includes pitch shifting in audio exports', async () => {
+    exportExplorerAudioTransformMock.mockResolvedValue({
+      taskId: 'audio-transform-4',
+      outputPath: '/tmp/anthem.clip.wav',
+      spectrogramPath: null,
+      durationSeconds: 24,
+      outputFormat: 'wav',
+      overwrittenOriginal: false,
+      soxBinary: '/tmp/sox',
+    });
+
+    render(
+      <ExplorerAudioWorkbench
+        audioPath='/tmp/anthem.mp3'
+        audioName='anthem.mp3'
+        audioExtension='mp3'
+        audioSize={6 * 1024 * 1024}
+      />,
+    );
+
+    await screen.findByText(/loaded in the native engine/i);
+    fireEvent.change(screen.getByLabelText(/pitch shift cents/i), {
+      target: { value: '250' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /export clip/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: /run sox export/i }),
+    );
+
+    await waitFor(() => {
+      expect(exportExplorerAudioTransformMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          inputPath: '/tmp/anthem.mp3',
+          pitchShiftCents: 250,
+          mode: 'exportClip',
+        }),
+      );
+    });
+  });
+
+  it('supports audio workbench transport and export hotkeys', async () => {
+    render(
+      <ExplorerAudioWorkbench
+        audioPath='/tmp/anthem.mp3'
+        audioName='anthem.mp3'
+        audioExtension='mp3'
+        audioSize={6 * 1024 * 1024}
+      />,
+    );
+
+    await screen.findByText(/loaded in the native engine/i);
+
+    fireEvent.keyDown(window, { key: ' ' });
+    await waitFor(() => {
+      expect(playAudioDeckMock).toHaveBeenCalledWith('a');
+    });
+
+    fireEvent.keyDown(window, { key: 'S', ctrlKey: true, shiftKey: true });
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 });

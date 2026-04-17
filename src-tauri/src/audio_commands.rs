@@ -35,6 +35,14 @@ pub struct AudioWaveformBucket {
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+pub struct AudioSilenceRegion {
+    pub start_seconds: f64,
+    pub end_seconds: f64,
+    pub duration_seconds: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
 pub struct AudioPreviewAnalysis {
     pub input_path: String,
     pub duration_seconds: f64,
@@ -49,6 +57,8 @@ pub struct AudioPreviewAnalysis {
     pub headroom_db: Option<f64>,
     pub waveform_buckets: Vec<AudioWaveformBucket>,
     pub spectral_bands: Vec<f64>,
+    pub estimated_bpm: Option<f64>,
+    pub silence_regions: Vec<AudioSilenceRegion>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -71,6 +81,7 @@ pub struct AudioTransformRequest {
     pub trim_end_seconds: Option<f64>,
     pub fade_in_seconds: Option<f64>,
     pub fade_out_seconds: Option<f64>,
+    pub pitch_shift_cents: Option<f64>,
     pub normalize: Option<bool>,
     pub output_format: Option<String>,
     pub generate_spectrogram: Option<bool>,
@@ -139,6 +150,7 @@ struct NormalizedAudioTransformRequest {
     trim_end_seconds: Option<f64>,
     fade_in_seconds: Option<f64>,
     fade_out_seconds: Option<f64>,
+    pitch_shift_cents: Option<f64>,
     normalize: bool,
     output_format: String,
     generate_spectrogram: bool,
@@ -198,6 +210,14 @@ fn normalize_audio_format(value: &str) -> String {
         "vorbis" => "ogg".to_string(),
         other => other.to_string(),
     }
+}
+
+fn format_audio_seconds(value: f64) -> String {
+    format!("{value:.6}")
+}
+
+fn format_pitch_cents(value: f64) -> String {
+    format!("{value:.3}")
 }
 
 fn input_audio_extension(input_path: &Path) -> Option<String> {
@@ -886,6 +906,13 @@ fn normalize_audio_transform_request(
     let fade_out_seconds = request
         .fade_out_seconds
         .filter(|value| value.is_finite() && *value >= 0.0);
+    let pitch_shift_cents = request.pitch_shift_cents.and_then(|value| {
+        if value.is_finite() && value.abs() <= 2400.0 {
+            Some(value)
+        } else {
+            None
+        }
+    });
     let mode = request.mode.clone();
     let overwrite_original = matches!(mode, AudioTransformMode::OverwriteOriginal);
     let source_extension = input_audio_extension(&input_path);
@@ -937,6 +964,7 @@ fn normalize_audio_transform_request(
         trim_end_seconds,
         fade_in_seconds,
         fade_out_seconds,
+        pitch_shift_cents,
         normalize: request
             .normalize
             .unwrap_or(matches!(mode, AudioTransformMode::ExportNormalized)),
@@ -1008,6 +1036,7 @@ fn build_audio_transform_registration(
                 trim_end_seconds: request.trim_end_seconds,
                 fade_in_seconds: request.fade_in_seconds,
                 fade_out_seconds: request.fade_out_seconds,
+                pitch_shift_cents: request.pitch_shift_cents,
                 normalize: Some(request.normalize),
                 output_format: Some(request.output_format.clone()),
                 generate_spectrogram: Some(request.generate_spectrogram),
@@ -1138,10 +1167,18 @@ fn append_transform_effects(command: &mut Command, request: &NormalizedAudioTran
             .trim_end_seconds
             .map(|end| end - start)
             .filter(|value| *value > 0.0);
-        command.arg("trim").arg(format!("{start:.3}"));
+        command.arg("trim").arg(format_audio_seconds(start));
         if let Some(length) = length {
-            command.arg(format!("{length:.3}"));
+            command.arg(format_audio_seconds(length));
         }
+    }
+    if let Some(pitch_shift_cents) = request
+        .pitch_shift_cents
+        .filter(|value| value.abs() > f64::EPSILON)
+    {
+        command
+            .arg("pitch")
+            .arg(format_pitch_cents(pitch_shift_cents));
     }
     if request.normalize {
         command.arg("gain").arg("-n");
@@ -1155,13 +1192,13 @@ fn append_transform_effects(command: &mut Command, request: &NormalizedAudioTran
         let stop = if duration > 0.0 { duration } else { 0.0 };
         command
             .arg("fade")
-            .arg(format!("{fade_in:.3}"))
+            .arg(format_audio_seconds(fade_in))
             .arg(if stop > 0.0 {
-                format!("{stop:.3}")
+                format_audio_seconds(stop)
             } else {
                 "0".to_string()
             })
-            .arg(format!("{fade_out:.3}"));
+            .arg(format_audio_seconds(fade_out));
     }
 }
 
@@ -1790,6 +1827,7 @@ exit 0
             trim_end_seconds: Some(1.0),
             fade_in_seconds: None,
             fade_out_seconds: None,
+            pitch_shift_cents: None,
             normalize: None,
             output_format: Some("wav".to_string()),
             generate_spectrogram: None,
@@ -1805,6 +1843,50 @@ exit 0
         assert_eq!(peak, 1.0);
         assert!(rms > 0.0);
         assert!(!buckets.is_empty());
+    }
+
+    #[test]
+    fn append_transform_effects_emits_precise_trim_pitch_and_fade_arguments() {
+        let mut command = Command::new("sox");
+        let request = NormalizedAudioTransformRequest {
+            input_path: PathBuf::from("/tmp/input.wav"),
+            final_output_path: PathBuf::from("/tmp/output.wav"),
+            overwrite_existing: true,
+            mode: AudioTransformMode::ExportClip,
+            trim_start_seconds: Some(0.1234567),
+            trim_end_seconds: Some(1.9876543),
+            fade_in_seconds: Some(0.015),
+            fade_out_seconds: Some(0.125),
+            pitch_shift_cents: Some(350.25),
+            normalize: true,
+            output_format: "wav".to_string(),
+            generate_spectrogram: false,
+            overwrite_original: false,
+        };
+
+        append_transform_effects(&mut command, &request);
+
+        let args = command
+            .get_args()
+            .map(|value| value.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            args,
+            vec![
+                "trim",
+                "0.123457",
+                "1.864198",
+                "pitch",
+                "350.250",
+                "gain",
+                "-n",
+                "fade",
+                "0.015000",
+                "1.864198",
+                "0.125000",
+            ]
+        );
     }
 
     #[test]
@@ -1851,6 +1933,7 @@ exit 0
             trim_end_seconds: None,
             fade_in_seconds: None,
             fade_out_seconds: None,
+            pitch_shift_cents: None,
             normalize: false,
             output_format: "mp3".to_string(),
             generate_spectrogram: false,

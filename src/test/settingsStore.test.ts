@@ -125,6 +125,12 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.keybindings.windowModeToggle).toBe('F11');
     expect(settings.keybindings.zenFocusModeToggle).toBe('Ctrl+Alt+Z');
     expect(settings.keybindings.commandPalette).toBe('Ctrl+Shift+P');
+    expect(settings.keybindings.audioWorkbenchPlayPause).toBe('Space');
+    expect(settings.keybindings.audioWorkbenchJumpToSelectionStart).toBe('I');
+    expect(settings.keybindings.audioWorkbenchJumpToSelectionEnd).toBe('O');
+    expect(settings.keybindings.audioWorkbenchPreviousSilence).toBe('Shift+ArrowLeft');
+    expect(settings.keybindings.audioWorkbenchNextSilence).toBe('Shift+ArrowRight');
+    expect(settings.keybindings.audioWorkbenchExportClip).toBe('Ctrl+Shift+S');
   });
 
   it('has the correct default screenshot settings', () => {

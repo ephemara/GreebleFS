@@ -11,7 +11,7 @@ use crate::audio_engine::{
 };
 use crate::audio_commands::{
     AudioBatchProcessRequest, AudioBatchProcessResult, AudioPreviewAnalysis,
-    AudioTransformRequest, AudioTransformResult, AudioWaveformBucket,
+    AudioSilenceRegion, AudioTransformRequest, AudioTransformResult, AudioWaveformBucket,
 };
 use crate::cloud_commands::{
     CloudAccountSummary, CloudAccountsSnapshot, CloudAuthSession, CloudAuthStatus, CloudBreadcrumb,
@@ -254,6 +254,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<FsArchiveExtractionRequest>()
         .typ::<FsArchiveExtractionResult>()
         .typ::<AudioWaveformBucket>()
+        .typ::<AudioSilenceRegion>()
         .typ::<AudioPreviewAnalysis>()
         .typ::<AudioTransformRequest>()
         .typ::<AudioTransformResult>()
