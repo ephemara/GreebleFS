@@ -1,5 +1,24 @@
 # GreebleFS Memory
 
+## 2026-04-16 — Terminal Split Tree + Resizable Workspace Panes
+
+- The integrated terminal is no longer a flat `paneIds[]` list that reflows an entire tab whenever one split changes. Terminal workspaces now behave like targeted split trees with draggable dividers.
+- Durable implementation shape:
+  - `src/components/terminalPaneLayout.ts` is the new terminal layout contract. It owns the split-tree data model, per-pane leaf collection, split insertion/removal, ratio updates, active-pane direction lookup, and normalized geometry generation for pane cards plus resize handles.
+  - `src/components/TerminalOverlay.tsx` now stores each workspace tab as a tree-backed layout with an `activePaneId` and `lastSplitDirection` instead of a single `splitDirection` plus `paneIds[]`.
+  - Split actions now target the focused pane leaf. Splitting a pane wraps just that leaf in a new split node, so horizontal and vertical splits can be nested instead of flipping the whole workspace into one orientation.
+  - Terminal panes are now rendered from absolute geometry derived from the split tree rather than by recursively moving the pane components through different parent containers. That keeps each pane's React identity stable while its rectangle moves, which prevents the old remount/restart behavior when new panes were added.
+  - Workspace tabs now stay mounted even when inactive, so tab switches no longer tear down PTYs as a side effect of React unmounting the inactive tab's pane tree.
+  - `XTermPane` now coalesces fit passes through `requestAnimationFrame` and skips duplicate `terminal_resize` writes when rows/cols did not actually change, which reduces prompt redraw spam during split/resize churn on Linux, macOS, and Windows shells.
+  - Pane headers now expose local split-right/split-down actions, and resize handles are first-class separators instead of an implicit equal-width layout.
+- Durable product note:
+  - Terminal pane composition is now tree-owned. Future split/resize/tab work should extend `src/components/terminalPaneLayout.ts` and the geometry-driven render path instead of reintroducing flat `paneIds[]` layout state in `TerminalOverlay.tsx`.
+  - If a terminal behavior seems to affect the wrong panes, check whether the bug is in the split-tree helpers, the geometry projection, or the broadcast-input targeting before touching the PTY backend.
+- Validation:
+  - passed: `bunx vitest run src/test/terminalOverlay.test.tsx src/test/terminalPaneLayout.test.ts`
+  - blocked by unrelated repo issue: `npx tsc --noEmit --skipLibCheck --jsx react-jsx --module esnext --target es2022 --moduleResolution bundler --allowSyntheticDefaultImports --types vitest/globals,@testing-library/jest-dom src/vite-env.d.ts src/components/TerminalOverlay.tsx src/components/terminalPaneLayout.ts src/test/terminalOverlay.test.tsx src/test/terminalPaneLayout.test.ts`
+  - note: the targeted compile still resolves the existing unrelated `@img-editor-runtime` alias failure from `src/runtime/imageEditorRuntime.ts`, so the useful proof for this pass is the green terminal-focused vitest suite rather than a clean isolated `tsc` exit.
+
 ## 2026-04-16 — Explorer Side Rail Mode Redesign + Expand-To-Open Toggle
 
 - The explorer side rail no longer treats `default`, `compact`, and `tree` as minor density variants. The three persisted rail modes now drive meaningfully different section and row presentation, and the rail ships with Windows-style manual expansion by default.
@@ -1213,7 +1232,6 @@
   - `bun run test:unit` still does not complete cleanly within a 45s timeout and reports unrelated failures in `terminalOverlay`, `app.dockMode`, `pluginRuntime`, and `animationRuntime`
   - JSDOM still logs repeated `HTMLCanvasElement.getContext()` not-implemented warnings in this workspace without the optional `canvas` package
 
-
 ## 2026-04-09 — Shader Runtime Performance Pass
 
 - Targeted the shell shader path because the sluggishness was coming from the built-in shader surfaces doing React-driven animation every frame.
@@ -1513,7 +1531,6 @@
   - theme ids are unique across the current package set
 
 - GitManager badge polling now skips hidden documents during steady-state refresh, and visibility restoration triggers an immediate resync instead of waiting for the next 30s tick.
-
 
 ## 2026-04-14 — GitManager Visibility Restore Bound Pass
 

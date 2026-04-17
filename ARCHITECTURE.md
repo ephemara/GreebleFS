@@ -74,6 +74,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Wallpaper directory resolution, fit-mode contract, and wallpaper runtime config.
 - `src/components/WorkbenchNavigationSurface.tsx`
   Runtime-swappable launcher surface for cross-axis, channel-grid, desktop, and tabbed shells.
+- `src/components/TerminalOverlay.tsx`
+  Integrated terminal shell. It now owns a tree-based pane/workspace model instead of a flat `paneIds[]` layout, renders pane geometry from that split tree, keeps PTYs mounted across workspace-tab switches, and routes pane-resize behavior through draggable split handles plus the typed terminal command bridge.
 - `src/components/ScreenshotsManager.tsx`
   Screenshot capture/editor/library surface. It owns monitor preview orchestration, selection editing, annotation authoring, and gallery actions, but annotated export is now delegated to Rust instead of being rasterized in the browser.
 - `src/components/pluginRuntime.tsx`
@@ -379,7 +381,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Cloud provider credentials now have two sources:
   - saved from `Settings > Cloud Accounts`, which stores the provider client ID in app-local data and the optional client secret in the OS keychain
   - runtime environment variables (`GREEBLE_GOOGLE_DRIVE_CLIENT_ID`, `GREEBLE_GOOGLE_DRIVE_CLIENT_SECRET`, `GREEBLE_DROPBOX_CLIENT_ID`, `GREEBLE_DROPBOX_CLIENT_SECRET`)
-  Saved Settings credentials take precedence over env vars until they are cleared.
+    Saved Settings credentials take precedence over env vars until they are cleared.
 - Dropbox OAuth no longer uses a random localhost callback. The app now expects the Dropbox app console to allow the fixed redirect URI `http://localhost:53682/callback`; if Dropbox sign-in times out, check that exact callback registration before touching the browser-launch code.
 - Repo-wide `npx tsc --noEmit` is currently red on several pre-existing generated-contract and test typing issues unrelated to the workbench/explorer theme system. The narrowed command above now only leaves `src/runtime/useFolderPluginRuntime.ts` as an unrelated pre-existing failure.
 - A current narrowed file-operations/explorer typecheck also still trips an unrelated screenshot typing issue in `src/components/ScreenshotsManager.tsx`: `SelectionHandle` includes `"move"` but the resize-handle consumer only accepts edge handles. Treat that as pre-existing unless the task is on screenshot selection editing.
