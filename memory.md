@@ -218,6 +218,19 @@
   - terminal sidebar posture is now a persisted shell preference, not a per-mount accident. Future terminal chrome work should route visibility state through terminal settings rather than adding new local toggle state in `TerminalOverlay.tsx`.
 - Validation:
   - passed: `bunx vitest run src/test/terminalOverlay.test.tsx src/test/settingsStore.test.ts src/test/settingsPage.behavior.test.tsx -t "lets the embedded terminal tuck the sidebar away and persist that choice|stores terminal sidebar visibility independently from other terminal settings|switches the terminal between application and dock presentation and persists the windowed size"`
+
+## 2026-04-17 — Explorer Viewport Ref Commit-Phase Crash Fix
+
+- The FileExplorer runtime error came from a callback ref update path, not from the navigation refresh logic itself. `OverlayScrollArea` detached the viewport ref during commit, and `FileExplorer` was using that callback to call `setState` while React was still mutating the tree.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now passes the viewport `useRef` object directly into `OverlayScrollArea` instead of routing through a callback setter.
+  - The explorer viewport metrics observer now binds from `useLayoutEffect` against the committed DOM node captured in the ref, so scroll/resize tracking still works without any commit-phase state writes.
+  - `src/test/fileExplorer.viewModes.test.tsx` now unmounts the StrictMode explorer render inside the existing boot-path regression, so the detach path is covered instead of only the mount path.
+- Durable product note:
+  - Do not use callback refs as a disguised state pipeline for explorer viewport bookkeeping. If the code needs to observe the DOM node, keep the node in a ref and attach observers from an effect after commit.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx src/test/overlayScrollArea.test.tsx -t "does not trip the boot navigation mount path under StrictMode|maps vertical wheel delta to horizontal scrolling in horizontal mode|ignores wheel translation when horizontal intent is already dominant|does not remap wheel events in vertical mode"`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx src/test/overlayScrollArea.test.tsx`
   - passed: filtered typecheck for touched terminal/settings surfaces via `bunx tsc --noEmit --pretty false 2>&1 | rg "TerminalOverlay|settingsStore|SettingsPage|terminalOverlay|settingsPage.behavior" || true`
   - note: the broader `src/test/settingsPage.behavior.test.tsx` file still has an existing unrelated failure in `syncs startup registration, desktop visibility toggles, and commits hotkey edits`
 
