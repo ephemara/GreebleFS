@@ -1,0 +1,23 @@
+bundle_name = "greeblefs"
+bundle_version = 1
+created_for = "GreebleFS"
+source_workspace = "bevydcc"
+strategy = "Curated extraction bundle with preserved upstream provenance and per-category import crates."
+
+[[category]]
+id = "gpu-runtime"
+path = "gpu-runtime"
+priority = "high"
+focus = "wgpu upload paths, buffer reuse, render services, render graph, WebGPU portability"
+
+[[category]]
+id = "asset-pipeline"
+path = "asset-pipeline"
+priority = "high"
+focus = "metadata-first processing, thumbnail pipelines, content hashing, registry-driven import policy"
+
+[[category]]
+id = "shell-patterns"
+path = "shell-patterns"
+priority = "medium"
+focus = "host routing, panel and surface composition, diagnostics, asset-browser reference patterns"

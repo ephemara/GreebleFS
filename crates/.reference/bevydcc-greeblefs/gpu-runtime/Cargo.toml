@@ -1,0 +1,22 @@
+[package]
+name = "greeblefs-gpu-runtime-bundle"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "UNLICENSED"
+description = "Curated bevydcc GPU runtime extraction bundle prepared for GreebleFS adoption."
+
+[lib]
+path = "src/lib.rs"
+
+[package.metadata.greeblefs-curation]
+bundle = "gpu-runtime"
+focus = "wgpu buffer reuse, staging uploads, render scheduling, and preview rendering"
+lift_priority = "high"
+upstream_crates = ["gpu-pipeline", "renderer", "wasm"]
+highlight_files = [
+  "crates/gpu-pipeline/src/buffer_pool.rs",
+  "crates/gpu-pipeline/src/staging.rs",
+  "crates/renderer/src/service.rs",
+  "crates/renderer/src/render_graph.rs",
+]

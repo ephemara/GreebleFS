@@ -1,0 +1,20 @@
+[package]
+name = "k-os-workspace-registry"
+version = "0.1.0"
+edition = "2021"
+description = "Workspace-wide data-driven crate registry generated from Cargo metadata and existing K_OS manifests"
+
+[lib]
+name = "k_os_workspace_registry"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[build-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+syn = { version = "2.0", features = ["full"] }
+quote = "1.0"
