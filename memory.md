@@ -1,5 +1,19 @@
 # GreebleFS Memory
 
+## 2026-04-17 — Text Thumbnail Legibility Pass
+
+- Explorer text/code thumbnails are now deliberately more legible at small icon sizes instead of trying to cram too many tiny lines into the preview canvas.
+- Durable implementation shape:
+  - `src-tauri/src/thumbnail_commands.rs` now renders text thumbnails as a simpler preview card with fewer sampled lines, larger type, a dedicated preview panel, a single softer text shadow, and a lighter content gutter instead of the old dense 10-line composition.
+  - Thumbnail cache variants were version-bumped to `code-v2`, `shader-v2`, and `audio-v2` so the new rendering ships immediately instead of reusing stale cached posters.
+  - `src-tauri/src/thumbnail_commands.rs` also gained a small helper that filters blank preview lines and expands tabs before render.
+- Durable product note:
+  - For icon-sized previews, prioritize structure and contrast over raw text density. A few strong preview lines beat a tiny unreadable wall of content.
+  - If thumbnail composition changes again, bump the cache variant alongside the renderer so the app does not keep serving old cached posters.
+- Validation:
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml --lib thumbnail`
+  - passed: `bunx vitest run src/test/explorerThumbnails.test.ts`
+
 ## 2026-04-17 — AIFF Preview Support + Compact Audio Workbench Summary
 
 - AIFF preview/edit support is now wired through the existing audio preview and transport contracts without introducing a browser `<audio>` fallback.
