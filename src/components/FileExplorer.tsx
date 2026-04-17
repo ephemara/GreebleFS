@@ -9,7 +9,7 @@
  */
 
 import React, {
-  Suspense, startTransition, useState, useEffect, useRef, useCallback, useMemo, useId, type CSSProperties,
+  Suspense, startTransition, useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, useId, type CSSProperties,
 } from 'react';
 import { convertFileSrc, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -8382,7 +8382,7 @@ export function FileExplorer({
     gridZoom: number;
   } | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const previousLayout = lastViewportLayoutRef.current;
     const pathChanged = previousLayout != null && previousLayout.currentPath !== currentPath;
     const layoutChanged = previousLayout != null && (
@@ -9687,6 +9687,7 @@ export function FileExplorer({
         >
           <OverlayScrollArea
             style={{ flex: 1, minHeight: 0 }}
+            viewportClassName="overlay-scroll-area__viewport--explorer-file-list"
             viewportStyle={{ padding: 0 }}
             viewportRef={setExplorerViewportNode}
           >

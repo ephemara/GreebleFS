@@ -819,6 +819,13 @@ describe('FileExplorer view modes', () => {
     });
   });
 
+  it('uses the dedicated explorer viewport class for visible file-list scrollbars', async () => {
+    renderExplorer();
+    await screen.findByText('alpha');
+
+    expect(getExplorerViewport('alpha')).toHaveClass('overlay-scroll-area__viewport--explorer-file-list');
+  });
+
   it('steps back out of details mode when ctrl-wheel originates from a row element', async () => {
     useSettingsStore.getState().updateExplorer({ viewMode: 'details' });
 

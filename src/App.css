@@ -52,6 +52,39 @@ html, body, #root {
   overflow: auto;
 }
 
+.overlay-scroll-area__viewport--explorer-file-list {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--overlay-border-strong) 72%, transparent) transparent;
+  scrollbar-gutter: stable both-edges;
+  overflow-anchor: none;
+}
+
+.overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--overlay-border-strong) 72%, transparent);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+.overlay-scroll-area__viewport--explorer-file-list:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--overlay-accent) 46%, var(--overlay-border-strong));
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+.overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .overlay-scroll-area__content {
   flex: 0 0 auto;
   min-width: 0;

@@ -1,5 +1,18 @@
 # GreebleFS Memory
 
+## 2026-04-16 — Explorer File-List Scrollbar Visibility + Bottom-Zoom Clamp Timing
+
+- The flagship explorer file list no longer inherits the app-wide "hide every scrollbar" rule. The main file-area viewport now opts into a dedicated visible scrollbar so operators can read list scale and position while browsing.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now marks the primary file-list `OverlayScrollArea` viewport with `overlay-scroll-area__viewport--explorer-file-list` instead of relying only on the generic hidden-scrollbar viewport class.
+  - `src/App.css` now gives that explorer-specific viewport a thin native scrollbar, stable gutter reservation, and `overflow-anchor: none` so the scrollbar stays visible without re-enabling scrollbars across every other overlay panel.
+  - The file-list layout clamp in `FileExplorer.tsx` now runs in `useLayoutEffect` instead of `useEffect`, so zoom-driven row/grid size changes clamp `scrollTop` before paint. That removes the visible bottom-edge jitter that happened when operators `Ctrl/Cmd + wheel`-zoomed while already pinned near the end of a long folder.
+- Durable product note:
+  - Visible explorer scrollbars are now intentional product chrome, not an accidental regression from the shared overlay scroll-area rules.
+  - If bottom-edge zoom jitter returns, check pre-paint clamp timing and scroll anchoring on the file-list viewport before touching the wheel-step state machine.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx src/test/overlayScrollArea.test.tsx`
+
 ## 2026-04-16 — Explorer Ctrl-Wheel Reverse View Fix
 
 - Explorer `Ctrl/Cmd + wheel` view stepping was not actually blocked by the wheel listener. The regression lived in mode normalization: the settings layer still rewrote `viewMode: 'list'` into `'details'`.
