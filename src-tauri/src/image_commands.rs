@@ -214,7 +214,8 @@ impl ImageEditorManager {
             IMAGE_EDITOR_PREVIEW_MAX_DIMENSION,
             IMAGE_EDITOR_PREVIEW_MAX_DIMENSION,
         );
-        let preview_data_url = png_bytes_to_data_url(&encode_image_bytes(&preview_image, "image/png")?);
+        let preview_data_url =
+            png_bytes_to_data_url(&encode_image_bytes(&preview_image, "image/png")?);
         let source_width = original_image.width();
         let source_height = original_image.height();
 
@@ -248,7 +249,8 @@ impl ImageEditorManager {
             IMAGE_EDITOR_PREVIEW_MAX_DIMENSION,
         );
         let rendered_image = apply_image_adjustments(&preview_source, &effective_state);
-        let preview_data_url = png_bytes_to_data_url(&encode_image_bytes(&rendered_image, "image/png")?);
+        let preview_data_url =
+            png_bytes_to_data_url(&encode_image_bytes(&rendered_image, "image/png")?);
 
         Ok(ImageEditorPreviewResult {
             session_id: request.session_id,
@@ -329,7 +331,11 @@ impl ImageEditorManager {
 
 fn image_filter_preset_definitions() -> Vec<ImageFilterPresetDefinition> {
     [
-        (ImageFilterPresetId::Original, "Original", ImageAdjustmentState::default()),
+        (
+            ImageFilterPresetId::Original,
+            "Original",
+            ImageAdjustmentState::default(),
+        ),
         (
             ImageFilterPresetId::Mono,
             "Mono",
@@ -447,10 +453,16 @@ fn normalize_image_editor_source_path(input_path: &str) -> Result<PathBuf, Strin
     }
     let path = PathBuf::from(trimmed);
     if !path.exists() {
-        return Err(format!("Image editor input does not exist: {}", path.display()));
+        return Err(format!(
+            "Image editor input does not exist: {}",
+            path.display()
+        ));
     }
     if !path.is_file() {
-        return Err(format!("Image editor input is not a file: {}", path.display()));
+        return Err(format!(
+            "Image editor input is not a file: {}",
+            path.display()
+        ));
     }
     Ok(path)
 }
@@ -621,9 +633,10 @@ fn normalize_channel(value: f32) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_image_adjustments, compose_effective_adjustment_state, image_filter_preset_definitions,
-        normalize_content_type, ImageAdjustmentState, ImageEditorExportRequest, ImageEditorManager,
-        ImageEditorPreviewRequest, ImageEditorSessionCreateRequest, ImageFilterPresetId,
+        apply_image_adjustments, compose_effective_adjustment_state,
+        image_filter_preset_definitions, normalize_content_type, ImageAdjustmentState,
+        ImageEditorExportRequest, ImageEditorManager, ImageEditorPreviewRequest,
+        ImageEditorSessionCreateRequest, ImageFilterPresetId,
     };
     use image::{DynamicImage, Rgba, RgbaImage};
     use tempfile::tempdir;
@@ -675,7 +688,10 @@ mod tests {
             .expect("create session");
 
         assert_eq!(bootstrap.output_content_type, "image/png");
-        assert_eq!(bootstrap.presets.len(), image_filter_preset_definitions().len());
+        assert_eq!(
+            bootstrap.presets.len(),
+            image_filter_preset_definitions().len()
+        );
 
         let preview = manager
             .render_preview(ImageEditorPreviewRequest {
@@ -688,7 +704,9 @@ mod tests {
             })
             .expect("render preview");
 
-        assert!(preview.preview_data_url.starts_with("data:image/png;base64,"));
+        assert!(preview
+            .preview_data_url
+            .starts_with("data:image/png;base64,"));
 
         let export = manager
             .export_baked_image(ImageEditorExportRequest {

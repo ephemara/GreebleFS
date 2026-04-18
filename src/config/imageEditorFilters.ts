@@ -1,111 +1,47 @@
-import type {
-  ExplorerImageAdjustmentState,
-  ExplorerImageFilterPresetId,
-} from '../runtime/imageEditorBackend';
+export type ImageEditorFilterKey =
+  | 'brightness'
+  | 'contrast'
+  | 'saturate'
+  | 'grayscale'
+  | 'sepia'
+  | 'invert'
+  | 'hue-rotate'
+  | 'blur';
 
-export type ImageEditorAdjustmentKey = keyof ExplorerImageAdjustmentState;
-
-export interface ImageEditorAdjustmentDefinition {
-  key: ImageEditorAdjustmentKey;
+export interface ImageEditorFilterDefinition {
+  key: ImageEditorFilterKey;
   label: string;
+  cssFunction: string;
   min: number;
   max: number;
   step: number;
-  formatValue: (value: number) => string;
+  default: number;
+  unit: string;
 }
 
-export const IMAGE_EDITOR_BASE_IMAGE_CUSTOM_DATA = {
-  hostRole: 'greeblefs-explorer-base-image',
-} as const;
+export type ExplorerImageFiltersState = Record<ImageEditorFilterKey, number>;
 
-export const imageEditorAdjustmentDefinitions: ImageEditorAdjustmentDefinition[] = [
-  {
-    key: 'brightness',
-    label: 'Brightness',
-    min: -100,
-    max: 100,
-    step: 1,
-    formatValue: value => `${Math.round(value)}`,
-  },
-  {
-    key: 'contrast',
-    label: 'Contrast',
-    min: -100,
-    max: 100,
-    step: 1,
-    formatValue: value => `${Math.round(value)}`,
-  },
-  {
-    key: 'saturation',
-    label: 'Saturation',
-    min: -100,
-    max: 100,
-    step: 1,
-    formatValue: value => `${Math.round(value)}`,
-  },
-  {
-    key: 'temperature',
-    label: 'Temperature',
-    min: -100,
-    max: 100,
-    step: 1,
-    formatValue: value => `${Math.round(value)}`,
-  },
-  {
-    key: 'highlights',
-    label: 'Highlights',
-    min: -100,
-    max: 100,
-    step: 1,
-    formatValue: value => `${Math.round(value)}`,
-  },
-  {
-    key: 'shadows',
-    label: 'Shadows',
-    min: -100,
-    max: 100,
-    step: 1,
-    formatValue: value => `${Math.round(value)}`,
-  },
-  {
-    key: 'vignette',
-    label: 'Vignette',
-    min: 0,
-    max: 100,
-    step: 1,
-    formatValue: value => `${Math.round(value)}`,
-  },
+export const imageEditorFilterDefinitions: ImageEditorFilterDefinition[] = [
+  { key: 'brightness', label: 'Brightness', cssFunction: 'brightness', min: 0, max: 200, step: 1, default: 100, unit: '%' },
+  { key: 'contrast', label: 'Contrast', cssFunction: 'contrast', min: 0, max: 200, step: 1, default: 100, unit: '%' },
+  { key: 'saturate', label: 'Saturation', cssFunction: 'saturate', min: 0, max: 200, step: 1, default: 100, unit: '%' },
+  { key: 'hue-rotate', label: 'Hue', cssFunction: 'hue-rotate', min: 0, max: 360, step: 1, default: 0, unit: 'deg' },
+  { key: 'grayscale', label: 'Grayscale', cssFunction: 'grayscale', min: 0, max: 100, step: 1, default: 0, unit: '%' },
+  { key: 'sepia', label: 'Sepia', cssFunction: 'sepia', min: 0, max: 100, step: 1, default: 0, unit: '%' },
+  { key: 'invert', label: 'Invert', cssFunction: 'invert', min: 0, max: 100, step: 1, default: 0, unit: '%' },
+  { key: 'blur', label: 'Blur', cssFunction: 'blur', min: 0, max: 20, step: 1, default: 0, unit: 'px' },
 ];
 
-export const IMAGE_EDITOR_ADJUSTMENT_DEFAULTS: ExplorerImageAdjustmentState =
-  imageEditorAdjustmentDefinitions.reduce((result, definition) => {
-    result[definition.key] = 0;
+export function createDefaultImageFiltersState(): ExplorerImageFiltersState {
+  return imageEditorFilterDefinitions.reduce((result, definition) => {
+    result[definition.key] = definition.default;
     return result;
-  }, {} as ExplorerImageAdjustmentState);
-
-export function createDefaultImageAdjustmentState(): ExplorerImageAdjustmentState {
-  return { ...IMAGE_EDITOR_ADJUSTMENT_DEFAULTS };
+  }, {} as ExplorerImageFiltersState);
 }
 
-export function findImageAdjustmentDefinition(
-  key: ImageEditorAdjustmentKey,
-): ImageEditorAdjustmentDefinition {
-  return (
-    imageEditorAdjustmentDefinitions.find(definition => definition.key === key)
-    ?? imageEditorAdjustmentDefinitions[0]
-  );
+export function buildCSSFilterString(state: ExplorerImageFiltersState): string {
+  if (!state) return 'none';
+  return imageEditorFilterDefinitions
+    .map(def => `${def.cssFunction}(${state[def.key]}${def.unit})`)
+    .join(' ');
 }
-
-export const imageEditorAdjustmentRailOrder: ImageEditorAdjustmentKey[] =
-  imageEditorAdjustmentDefinitions.map(definition => definition.key);
-
-export const IMAGE_EDITOR_PRESET_CYCLE_ORDER: ExplorerImageFilterPresetId[] = [
-  'original',
-  'mono',
-  'noir',
-  'fade',
-  'chrome',
-  'warm',
-  'cool',
-  'vivid',
-];

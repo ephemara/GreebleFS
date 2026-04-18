@@ -86,7 +86,8 @@ export type BuiltInExplorerChromeControlId =
   | 'statusSearchSummary'
   | 'statusTaskBadge'
   | 'statusClipboardQueue'
-  | 'statusPreviewLoading';
+  | 'statusPreviewLoading'
+  | 'statusViewToggles';
 
 export type ExplorerChromeControlId = BuiltInExplorerChromeControlId | `plugin:${string}`;
 

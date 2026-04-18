@@ -937,9 +937,7 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
 function resolveExplorerDragIntent(
   event: Pick<React.DragEvent, "shiftKey">,
 ): ExplorerDragIntent {
-  // Default (no modifier) = internal in-app move/copy so folder drop targets work.
-  // Shift+drag = native-out to drag files into other OS applications.
-  return event.shiftKey ? "native-out" : "internal";
+  return event.shiftKey ? "internal" : "native-out";
 }
 
 function fitExplorerDragPreviewLabel(
@@ -5211,6 +5209,7 @@ export function FileExplorer({
   const [savedSearches, setSavedSearches] = useState<ExplorerSavedSearch[]>([]);
   const [activeTagFilterIds, setActiveTagFilterIds] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState<string | null>(null); // path being dragged over
+  const dragOverRef = useRef<string | null>(null);
   const [windowDropState, setWindowDropState] = useState<{
     active: boolean;
     count: number;
@@ -7374,11 +7373,26 @@ export function FileExplorer({
       .onDragDropEvent(async (event) => {
         if (disposed) return;
 
+        // Detect internal drags (initiated from the explorer via fsStartNativeFileDrag).
+        // When an internal native drag re-enters/drops on the same window, Tauri fires
+        // onDragDropEvent instead of React onDrop.  We need to route the drop to the
+        // specific folder the cursor is hovering over, not just currentPath.
+        const internalDragPaths = activeDragPathsRef.current;
+        const payloadPaths = (event.payload as any).paths || [];
+        const isInternalDrag =
+          internalDragPaths.length > 0 &&
+          payloadPaths.length === internalDragPaths.length &&
+          payloadPaths.every((p: string) => internalDragPaths.includes(p));
+
         if (event.payload.type === "enter") {
-          setWindowDropState({
-            active: true,
-            count: event.payload.paths.length,
-          });
+          // Suppress the "Import Files" banner for internal drags — it's only
+          // relevant for files dragged in from other OS applications.
+          if (!isInternalDrag) {
+            setWindowDropState({
+              active: true,
+              count: payloadPaths.length,
+            });
+          }
           return;
         }
 
@@ -7390,12 +7404,30 @@ export function FileExplorer({
         if (event.payload.type === "drop") {
           setWindowDropState({ active: false, count: 0 });
           if (!currentPath) return;
+
+          // For internal drags, resolve the target from the folder currently being
+          // hovered (tracked via dragOverRef).  "__main__" or null means the drop
+          // landed on empty space in the current directory.
+          let targetDir = currentPath;
+          let operation: "move" | "copy" = "copy";
+
+          if (isInternalDrag) {
+            const hoveredTarget = dragOverRef.current;
+            if (hoveredTarget && hoveredTarget !== "__main__") {
+              targetDir = hoveredTarget;
+            }
+            operation = "move";
+            activeDragPathsRef.current = [];
+            dragOverRef.current = null;
+            setDragOver(null);
+          }
+
           try {
             await executeTransferRequest(
               {
-                targetDir: currentPath,
-                sources: event.payload.paths,
-                operation: "copy",
+                targetDir,
+                sources: payloadPaths,
+                operation,
               },
               {
                 onSuccess: () => refresh(),
@@ -9661,6 +9693,7 @@ export function FileExplorer({
     delete e.currentTarget.dataset.overlayDragHide;
     activeDragPathsRef.current = [];
     setDragOver(null);
+    dragOverRef.current = null;
   };
 
   const onDragOver = (e: React.DragEvent, targetPath: string) => {
@@ -9671,6 +9704,7 @@ export function FileExplorer({
       runtimePlatform,
     );
     setDragOver(targetPath);
+    dragOverRef.current = targetPath;
   };
 
   const onDragLeave = (e: React.DragEvent, targetPath: string) => {
@@ -9678,13 +9712,18 @@ export function FileExplorer({
       return;
     }
     e.stopPropagation();
-    setDragOver((current) => (current === targetPath ? null : current));
+    setDragOver((current) => {
+      const next = current === targetPath ? null : current;
+      dragOverRef.current = next;
+      return next;
+    });
   };
 
   const onDrop = async (e: React.DragEvent, targetDir: string) => {
     e.preventDefault();
     e.stopPropagation();
     setDragOver(null);
+    dragOverRef.current = null;
     const payload = e.dataTransfer.getData("application/x-overlayterm-paths");
     let sources: string[] = [];
     if (payload) {
@@ -15101,6 +15140,7 @@ export function FileExplorer({
                   runtimePlatform,
                 );
                 setDragOver("__main__");
+                dragOverRef.current = "__main__";
               }}
               onDragLeave={(e) => onDragLeave(e, "__main__")}
               onDrop={(e) => onDrop(e, currentPath)}

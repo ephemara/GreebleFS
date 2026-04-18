@@ -521,7 +521,12 @@ fn sox_has_format_support(runtime: &SoxRuntime, format: &str) -> Result<bool, St
         .arg(&normalized_format)
         .output()
         .map_err(|error| format!("Failed to launch SoX format help command: {error}"))?;
-    let supported = output.status.success();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{stdout}\n{stderr}");
+    // SoX v14.4.2 returns exit code 1 for --help-format even on success on some platforms.
+    // If the format is recognized, the output always contains "Format:" (e.g., "Format: wav").
+    let supported = output.status.success() || combined.contains("Format:");
     sox_format_support_cache()
         .lock()
         .map_err(|_| "SoX format support cache lock was poisoned.".to_string())?
