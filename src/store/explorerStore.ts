@@ -85,6 +85,7 @@ export interface ExplorerSessionSnapshot {
   sidebarWidth: number | null;
   previewWidth: number | null;
   previewEnabled: boolean;
+  previewSplitMode: 'inline' | 'pane';
   shellLayoutId: ExplorerShellLayoutId;
   search: string;
   searchIncludeContent: boolean;
@@ -92,6 +93,8 @@ export interface ExplorerSessionSnapshot {
   sourcesVisible: boolean;
   sourcesRailPinnedOpen: boolean;
 }
+
+export type ExplorerPreviewSplitMode = ExplorerSessionSnapshot['previewSplitMode'];
 
 export type ExplorerPropertiesPanelTab = 'info' | 'permissions' | 'checksums';
 
@@ -165,6 +168,7 @@ export const defaultExplorerSession: ExplorerSessionSnapshot = {
   sidebarWidth: null,
   previewWidth: null,
   previewEnabled: true,
+  previewSplitMode: 'inline',
   shellLayoutId: 'balanced',
   search: '',
   searchIncludeContent: true,
@@ -307,6 +311,7 @@ export function normalizeExplorerSessionSnapshot(value: unknown): ExplorerSessio
     previewEnabled: typeof source?.previewEnabled === 'boolean'
       ? source.previewEnabled
       : defaultExplorerSession.previewEnabled,
+    previewSplitMode: source?.previewSplitMode === 'pane' ? 'pane' : 'inline',
     shellLayoutId: getExplorerShellLayoutDefinition(source?.shellLayoutId).id,
     search: typeof source?.search === 'string' ? source.search : '',
     searchIncludeContent: typeof source?.searchIncludeContent === 'boolean' ? source.searchIncludeContent : true,

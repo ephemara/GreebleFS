@@ -53,6 +53,7 @@ import {
   LayoutGrid,
   List,
   Save,
+  SquareSplitHorizontal,
   Tags,
   Undo2,
   AlertTriangle,
@@ -91,6 +92,7 @@ import {
   EXPLORER_PREVIEW_WIDTH_BOUNDS,
   getExplorerShellLayoutDefinition,
   getExplorerShellLayoutWidthSuggestion,
+  type ExplorerPreviewPlacement,
   type ExplorerShellLayoutDefinition,
 } from "../config/explorerShellLayouts";
 import {
@@ -211,6 +213,7 @@ import {
   useExplorerStore,
   type ExplorerDocumentViewMode,
   type ExplorerInstanceId,
+  type ExplorerPreviewSplitMode,
   type ExplorerPropertiesPanelSnapshot,
   type ExplorerPropertiesPanelTab,
   type ExplorerRecursiveSizeCacheEntry,
@@ -2631,6 +2634,8 @@ function EditorFallback({ label }: { label: string }) {
 function PreviewPanel({
   preview,
   width,
+  placement,
+  presentationMode,
   onClose,
   onWidthChange,
   onTextChange,
@@ -2639,6 +2644,7 @@ function PreviewPanel({
   onPdfChromeStateChange,
   onRegisterCloseGuard,
   onCopyPath,
+  onTogglePresentationMode,
   viewMode,
   onViewModeChange,
   explorerTheme,
@@ -2652,6 +2658,8 @@ function PreviewPanel({
 }: {
   preview: PreviewState;
   width: number;
+  placement: ExplorerPreviewPlacement;
+  presentationMode: ExplorerPreviewSplitMode;
   onClose: () => void;
   onWidthChange: (width: number) => void;
   onTextChange: (path: string, content: string) => void;
@@ -2665,6 +2673,7 @@ function PreviewPanel({
   ) => void;
   onRegisterCloseGuard?: (guard: PreviewCloseGuard | null) => void;
   onCopyPath: (path: string) => void;
+  onTogglePresentationMode: () => void;
   viewMode: ExplorerDocumentViewMode;
   onViewModeChange: (mode: ExplorerDocumentViewMode) => void;
   explorerTheme: ResolvedExplorerThemeRecipe;
@@ -2685,6 +2694,7 @@ function PreviewPanel({
   const [pdfWorkbenchChromeState, setPdfWorkbenchChromeState] =
     useState<ExplorerPdfWorkbenchChromeState | null>(null);
   const [pdfPageInputValue, setPdfPageInputValue] = useState("1");
+  const dragHandleSide = placement === "leading" ? "right" : "left";
   const onMouseDown = (e: React.MouseEvent) => {
     dragging.current = true;
     startX.current = e.clientX;
@@ -2695,7 +2705,10 @@ function PreviewPanel({
   useEffect(() => {
     const move = (e: MouseEvent) => {
       if (!dragging.current) return;
-      const delta = startX.current - e.clientX; // dragging left grows the panel
+      const delta =
+        placement === "leading"
+          ? e.clientX - startX.current
+          : startX.current - e.clientX;
       onWidthChange(
         Math.max(
           EXPLORER_PREVIEW_WIDTH_BOUNDS.min,
@@ -2712,7 +2725,7 @@ function PreviewPanel({
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
     };
-  }, [onWidthChange]);
+  }, [onWidthChange, placement]);
 
   useEffect(() => {
     setCopiedPath(null);
@@ -2784,6 +2797,10 @@ function PreviewPanel({
             : EXP.green
         : EXP.green;
   const copyPathLabel = copiedPath === preview.path ? "Copied" : "Copy Path";
+  const previewSplitToggleTitle =
+    presentationMode === "pane"
+      ? "Show inline preview"
+      : "Split preview into pane";
   const supportsRenderedPreview =
     preview.type === "text" && preview.renderKind !== "none";
   const supportsPreviewModeToggle = supportsRenderedPreview || isPdfPreview;
@@ -3231,6 +3248,40 @@ function PreviewPanel({
         ),
       },
       {
+        id: "previewSplitToggle",
+        label: "Preview Split Toggle",
+        surfaces: ["previewHeader"],
+        isVisible: () => preview.type !== "none",
+        render: () => (
+          <button
+            type="button"
+            onClick={onTogglePresentationMode}
+            aria-label={previewSplitToggleTitle}
+            aria-pressed={presentationMode === "pane"}
+            title={previewSplitToggleTitle}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              background:
+                presentationMode === "pane"
+                  ? "var(--overlay-explorer-chip-active-bg)"
+                  : "var(--overlay-explorer-chip-bg)",
+              border: "1px solid var(--overlay-explorer-chip-border)",
+              borderRadius: "var(--overlay-explorer-control-radius)",
+              cursor: "pointer",
+              color: presentationMode === "pane" ? EXP.text : EXP.muted,
+              padding: "4px 8px",
+              fontSize: 10,
+              fontWeight: 700,
+            }}
+          >
+            <SquareSplitHorizontal size={11} />
+            Pane
+          </button>
+        ),
+      },
+      {
         id: "previewClose",
         label: "Preview Close",
         surfaces: ["previewHeader"],
@@ -3259,6 +3310,7 @@ function PreviewPanel({
       onClose,
       onCopyPath,
       onPdfChromeStateChange,
+      onTogglePresentationMode,
       onViewModeChange,
       pdfActivePageNumber,
       pdfPageCount,
@@ -3266,9 +3318,12 @@ function PreviewPanel({
       pdfWorkbenchChromeState,
       pdfWorkbenchController,
       pdfZoomPercent,
+      placement,
       previewChipButtonStyle,
       previewChipInputStyle,
       preview,
+      presentationMode,
+      previewSplitToggleTitle,
       previewStateColor,
       previewStateLabel,
       previewTitle,
@@ -3308,49 +3363,70 @@ function PreviewPanel({
         ?.render(placement) ?? null,
     [previewChromeControlRegistryById],
   );
+  const previewGlassBlurStyle: CSSProperties = {
+    backdropFilter:
+      blurEnabled && explorerTheme.previewStyle === "glass"
+        ? "blur(18px)"
+        : "none",
+    WebkitBackdropFilter:
+      blurEnabled && explorerTheme.previewStyle === "glass"
+        ? "blur(18px)"
+        : "none",
+  };
+  const previewShellBaseStyle: CSSProperties = {
+    width,
+    background: "var(--overlay-explorer-preview-bg)",
+    display: "flex",
+    flexDirection: "column",
+    flexShrink: 0,
+    overflow: "hidden",
+    position: "relative",
+  };
   const previewShellStyle: CSSProperties =
-    explorerTheme.previewStyle === "attached"
+    presentationMode === "pane"
       ? {
-          width,
-          background: "var(--overlay-explorer-preview-bg)",
-          borderLeft: "1px solid var(--overlay-explorer-preview-border)",
-          display: "flex",
-          flexDirection: "column",
-          flexShrink: 0,
-          overflow: "hidden",
-          position: "relative",
-        }
-      : {
-          width,
-          margin: "var(--overlay-explorer-chrome-inset)",
-          marginLeft: 0,
-          background: "var(--overlay-explorer-preview-bg)",
+          ...previewShellBaseStyle,
           border: "1px solid var(--overlay-explorer-preview-border)",
           borderRadius: "var(--overlay-explorer-panel-radius)",
           boxShadow: "var(--overlay-explorer-toolbar-shadow)",
-          backdropFilter:
-            blurEnabled && explorerTheme.previewStyle === "glass"
-              ? "blur(18px)"
-              : "none",
-          WebkitBackdropFilter:
-            blurEnabled && explorerTheme.previewStyle === "glass"
-              ? "blur(18px)"
-              : "none",
-          display: "flex",
-          flexDirection: "column",
-          flexShrink: 0,
-          overflow: "hidden",
-          position: "relative",
-        };
+          ...previewGlassBlurStyle,
+        }
+      : explorerTheme.previewStyle === "attached"
+        ? {
+            ...previewShellBaseStyle,
+            ...(placement === "leading"
+              ? {
+                  borderRight:
+                    "1px solid var(--overlay-explorer-preview-border)",
+                }
+              : {
+                  borderLeft:
+                    "1px solid var(--overlay-explorer-preview-border)",
+                }),
+          }
+        : {
+            ...previewShellBaseStyle,
+            margin: "var(--overlay-explorer-chrome-inset)",
+            ...(placement === "leading" ? { marginRight: 0 } : { marginLeft: 0 }),
+            border: "1px solid var(--overlay-explorer-preview-border)",
+            borderRadius: "var(--overlay-explorer-panel-radius)",
+            boxShadow: "var(--overlay-explorer-toolbar-shadow)",
+            ...previewGlassBlurStyle,
+          };
 
   return (
-    <div data-overlay-explorer-plane="preview" style={previewShellStyle}>
+    <div
+      data-overlay-explorer-plane="preview"
+      data-overlay-explorer-preview-split-mode={presentationMode}
+      style={previewShellStyle}
+    >
       {/* Drag handle */}
       <div
         onMouseDown={onMouseDown}
+        data-overlay-explorer-preview-resize-handle="true"
         style={{
           position: "absolute",
-          left: 0,
+          [dragHandleSide]: 0,
           top: 0,
           bottom: 0,
           width: 4,
@@ -3366,7 +3442,10 @@ function PreviewPanel({
       {/* Header */}
       <div
         style={{
-          padding: "8px 12px 8px 16px",
+          padding:
+            dragHandleSide === "left"
+              ? "8px 12px 8px 16px"
+              : "8px 16px 8px 12px",
           borderBottom: "1px solid var(--overlay-explorer-preview-border)",
           background: "var(--overlay-explorer-preview-header-bg)",
           flexShrink: 0,
@@ -5433,6 +5512,11 @@ export function FileExplorer({
       state.sessions[instanceId]?.previewEnabled ??
       defaultExplorerSession.previewEnabled,
   );
+  const storedPreviewSplitMode = useExplorerStore(
+    (state) =>
+      state.sessions[instanceId]?.previewSplitMode ??
+      defaultExplorerSession.previewSplitMode,
+  );
   const storedShellLayoutId = useExplorerStore(
     (state) =>
       state.sessions[instanceId]?.shellLayoutId ??
@@ -5558,6 +5642,8 @@ export function FileExplorer({
   const [previewEnabled, setPreviewEnabled] = useState(
     () => initialSession.previewEnabled,
   );
+  const [previewSplitMode, setPreviewSplitMode] =
+    useState<ExplorerPreviewSplitMode>(() => initialSession.previewSplitMode);
   const [sourcesVisible, setSourcesVisible] = useState(
     () => initialSession.sourcesVisible,
   );
@@ -5853,6 +5939,10 @@ export function FileExplorer({
   }, [storedPreviewEnabled]);
 
   useEffect(() => {
+    setPreviewSplitMode(storedPreviewSplitMode);
+  }, [storedPreviewSplitMode]);
+
+  useEffect(() => {
     setSidebarWidth((current) =>
       Math.max(
         sidebarBounds.minWidth,
@@ -6032,6 +6122,7 @@ export function FileExplorer({
       sidebarWidth,
       previewWidth,
       previewEnabled,
+      previewSplitMode,
       search,
       searchIncludeContent,
       documentViewMode,
@@ -6044,6 +6135,7 @@ export function FileExplorer({
     historyIdx,
     documentViewMode,
     previewEnabled,
+    previewSplitMode,
     previewWidth,
     search,
     searchIncludeContent,
@@ -10709,6 +10801,8 @@ export function FileExplorer({
   }, [applyModeProfilePreset]);
   const hasPreview =
     !isCompactDock && previewEnabled && preview.type !== "none";
+  const previewSplitIsPane = hasPreview && previewSplitMode === "pane";
+  const previewPlacement = effectiveShellLayout.previewPlacement;
   const previewModeLabel =
     preview.type === "text"
       ? documentViewMode === "edit"
@@ -11005,15 +11099,37 @@ export function FileExplorer({
       flex: 1,
       display: "flex",
       flexDirection:
-        effectiveShellLayout.previewPlacement === "leading"
+        previewPlacement === "leading"
           ? "row-reverse"
           : "row",
       minHeight: 0,
       minWidth: 0,
       overflow: "hidden",
       background: "var(--overlay-explorer-content-bg)",
+      gap: previewSplitIsPane ? 10 : 0,
+      padding: previewSplitIsPane ? "10px" : 0,
+      boxSizing: "border-box",
     }),
-    [effectiveShellLayout.previewPlacement],
+    [previewPlacement, previewSplitIsPane],
+  );
+  const contentPaneShellStyle = useMemo<CSSProperties>(
+    () => ({
+      flex: 1,
+      minHeight: 0,
+      minWidth: 0,
+      display: "flex",
+      flexDirection: "column",
+      overflow: "hidden",
+      background: "var(--overlay-explorer-content-bg)",
+      ...(previewSplitIsPane
+        ? {
+            border: "1px solid var(--overlay-explorer-toolbar-border)",
+            borderRadius: "var(--overlay-explorer-panel-radius)",
+            boxShadow: "var(--overlay-explorer-toolbar-shadow)",
+          }
+        : {}),
+    }),
+    [previewSplitIsPane],
   );
   const batchRenameTargetCount = useMemo(
     () =>
@@ -15776,63 +15892,70 @@ export function FileExplorer({
         {/* File area + preview */}
         <div
           data-overlay-explorer-plane="file-area"
+          data-overlay-explorer-preview-split-mode={
+            previewSplitIsPane ? "pane" : "inline"
+          }
           style={fileAreaStyle}
           onWheel={handleExplorerLayoutWheel}
         >
-          <OverlayScrollArea
-            style={{ flex: 1, minHeight: 0 }}
-            viewportClassName="overlay-scroll-area__viewport--explorer-file-list"
-            viewportStyle={{ padding: 0 }}
-            viewportRef={explorerViewportRef}
+          <div
+            data-overlay-explorer-plane="content-shell"
+            style={contentPaneShellStyle}
           >
-            <div
-              ref={mainRef}
-              data-overlay-explorer-plane="content-viewport"
-              tabIndex={0}
-              aria-busy={loading ? true : undefined}
-              style={{
-                minHeight: "100%",
-                outline: "none",
-                background: "var(--overlay-explorer-content-bg)",
-                position: "relative",
-              }}
-              onClick={() => mainRef.current?.focus()}
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = resolveExplorerDropOperation(
-                  e,
-                  runtimePlatform,
-                );
-                setDragOver("__main__");
-                dragOverRef.current = "__main__";
-              }}
-              onDragLeave={(e) => onDragLeave(e, "__main__")}
-              onDrop={(e) => onDrop(e, currentPath)}
-              onContextMenu={(e) => {
-                if (e.target !== e.currentTarget) return;
-                e.preventDefault();
-                e.stopPropagation();
-                setCtxMenu({
-                  visible: true,
-                  x: e.clientX,
-                  y: e.clientY,
-                  entry: null,
-                });
-              }}
-              onDoubleClick={(e) => {
-                if (
-                  !shouldNavigateUpOnEmptyExplorerDoubleClick({
-                    enabled: doubleClickEmptyToGoBack,
-                    target: e.target,
-                    currentTarget: e.currentTarget,
-                  })
-                ) {
-                  return;
-                }
-
-                goUp();
-              }}
+            <OverlayScrollArea
+              style={{ flex: 1, minHeight: 0 }}
+              viewportClassName="overlay-scroll-area__viewport--explorer-file-list"
+              viewportStyle={{ padding: 0 }}
+              viewportRef={explorerViewportRef}
             >
+              <div
+                ref={mainRef}
+                data-overlay-explorer-plane="content-viewport"
+                tabIndex={0}
+                aria-busy={loading ? true : undefined}
+                style={{
+                  minHeight: "100%",
+                  outline: "none",
+                  background: "var(--overlay-explorer-content-bg)",
+                  position: "relative",
+                }}
+                onClick={() => mainRef.current?.focus()}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = resolveExplorerDropOperation(
+                    e,
+                    runtimePlatform,
+                  );
+                  setDragOver("__main__");
+                  dragOverRef.current = "__main__";
+                }}
+                onDragLeave={(e) => onDragLeave(e, "__main__")}
+                onDrop={(e) => onDrop(e, currentPath)}
+                onContextMenu={(e) => {
+                  if (e.target !== e.currentTarget) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setCtxMenu({
+                    visible: true,
+                    x: e.clientX,
+                    y: e.clientY,
+                    entry: null,
+                  });
+                }}
+                onDoubleClick={(e) => {
+                  if (
+                    !shouldNavigateUpOnEmptyExplorerDoubleClick({
+                      enabled: doubleClickEmptyToGoBack,
+                      target: e.target,
+                      currentTarget: e.currentTarget,
+                    })
+                  ) {
+                    return;
+                  }
+
+                  goUp();
+                }}
+              >
               {windowDropState.active && (
                 <div
                   style={{
@@ -17041,14 +17164,17 @@ export function FileExplorer({
                     </tbody>
                   </table>
                 )}
-            </div>
-          </OverlayScrollArea>
+              </div>
+            </OverlayScrollArea>
+          </div>
 
           {/* Side pane */}
           {hasPreview && (
             <PreviewPanel
               preview={preview}
               width={previewWidth}
+              placement={previewPlacement}
+              presentationMode={previewSplitMode}
               onWidthChange={setPreviewWidth}
               onTextChange={updatePreviewTextContent}
               onRefreshPreviewEntry={refresh}
@@ -17056,6 +17182,11 @@ export function FileExplorer({
               onPdfChromeStateChange={handlePdfPreviewChromeStateChange}
               onRegisterCloseGuard={registerPreviewCloseGuard}
               onCopyPath={copyToSysClipboard}
+              onTogglePresentationMode={() =>
+                setPreviewSplitMode((current) =>
+                  current === "pane" ? "inline" : "pane",
+                )
+              }
               viewMode={documentViewMode}
               onViewModeChange={setDocumentViewMode}
               explorerTheme={explorerTheme}

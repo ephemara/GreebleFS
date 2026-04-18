@@ -1,5 +1,21 @@
 # GreebleFS Memory
 
+## 2026-04-18 — Explorer Preview Split Mode Stays Local To FileExplorer
+
+- The explorer preview can now be promoted into a pane-styled sibling surface without creating a second workspace pane or reusing the top-level `1-Up` / `2-Up` / `4-Up` system.
+- Durable implementation shape:
+  - `src/store/explorerStore.ts` now persists per-session `previewSplitMode: 'inline' | 'pane'` alongside the existing preview/session chrome state, so split presentation survives explorer remounts and pane-tab copies without touching workspace layout truth.
+  - `src/config/explorerChromeLayouts.ts` now includes `previewSplitToggle` in the preview-header control registry, which means themes and chrome overrides can move/reorder/hide the new split button the same way they already handle `previewModeToggle`, `previewCopyPath`, and `previewClose`.
+  - `src/components/FileExplorer.tsx` still owns the only preview source of truth. Pane mode is just a local presentation switch: the content viewport gets a pane shell, the preview panel gets pane shell styling plus a correctly sided resize handle, and selection changes keep driving the same live preview state.
+  - `src/components/explorer/ExplorerWorkspace.tsx` and workspace layout snapshots were intentionally left alone. Top-level explorer panes remain whole `FileExplorer` instances; preview split is not a hidden workspace pane type.
+- Durable product note:
+  - If future work asks for pinned or independent preview panes, that is a deeper architecture change than this feature. Current truth is a live-synced preview lane rendered inside one explorer instance.
+  - Preview shell controls that affect presentation should stay in the preview-header chrome registry so theme/layout override systems keep working. Do not hardcode one-off preview buttons outside that registry.
+- Validation:
+  - passed: `bunx vitest run src/test/ExplorerWorkspace.test.tsx src/test/fileExplorer.viewModes.test.tsx --reporter=dot`
+  - passed: filtered typecheck via `bunx tsc --noEmit --pretty false 2>&1 | rg "src/components/FileExplorer.tsx|src/store/explorerStore.ts|src/config/explorerChromeLayouts.ts|src/test/fileExplorer.viewModes.test.tsx" || true`
+  - note: repo-wide `bunx tsc --noEmit --pretty false` still reports unrelated pre-existing errors in `src/components/ExplorerAudioWorkbench.tsx` and `src/runtime/vstBackend.ts`
+
 ## 2026-04-18 — Explorer Font Preview Loading Stability
 
 - The font preview panel could briefly show the previously loaded font while hopping to the next file because the component kept rendering the old "ready" state until the next font load completed.

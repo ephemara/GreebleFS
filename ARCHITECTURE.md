@@ -35,7 +35,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/panels/panelRegistry.tsx`
   Built-in panel registration and prop wiring.
 - `src/components/FileExplorer.tsx`
-  Main explorer shell, navigation, preview, standard layout modes, experimental explorer runtimes, the embedded preview-pane image/video editor paths, and the dock-owned layout contract used when the app switches into overlay mode.
+  Main explorer shell, navigation, preview, standard layout modes, experimental explorer runtimes, the embedded preview-pane image/video editor paths, the explorer-local preview split mode that can promote the live preview lane into a pane-styled sibling without creating another workspace pane, and the dock-owned layout contract used when the app switches into overlay mode.
 - `src/components/ExplorerImageEditor.tsx`
   Shell-owned wrapper for the embedded preview-pane image editor. It provides GreebleFS-native toolbar/status chrome, save/reset wiring, resize adaptation, and the static-preview fallback for unsupported image formats.
 - `src/components/ExplorerVideoEditor.tsx`
@@ -45,7 +45,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/ExplorerPdfWorkbench.tsx`
   Shell-owned wrapper for the embedded preview-pane PDF surface. It keeps the explorer preview-pane contract, renders one active page at a time, exposes page/zoom/fit/edit/save chrome, authors page-space overlay annotations plus AcroForm edits in React, and defers document truth/render/save back to the typed Rust PDF bridge.
 - `src/components/explorer/ExplorerWorkspace.tsx`
-  Explorer-local workspace shell that wraps `FileExplorer` instances with explorer tabs, slot-based `1-Up` / `2-Up` / `4-Up` pane layouts, pane focus, and adaptive split sizing.
+  Explorer-local workspace shell that wraps `FileExplorer` instances with explorer tabs, slot-based `1-Up` / `2-Up` / `4-Up` pane layouts, pane focus, and adaptive split sizing. This layer still owns top-level multi-pane explorer topology; the newer preview split stays inside a single `FileExplorer` instance instead of routing through workspace panes.
 - `src/components/explorer/ExplorerSideRail.tsx`
   Explorer rail, drives, bookmarks, saved searches, and tag-filter browsing.
 - `src/config/appearance.ts`

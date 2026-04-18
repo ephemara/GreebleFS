@@ -11,6 +11,12 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 
+const { pdfPreviewMockState } = vi.hoisted(() => ({
+  pdfPreviewMockState: {
+    closeGuardResult: true,
+  },
+}));
+
 vi.mock("../components/ExplorerImageEditor", () => ({
   ExplorerImageEditor: ({ imageName }: { imageName: string }) => (
     <div data-testid="mock-explorer-image-editor">{imageName}</div>
@@ -90,7 +96,7 @@ vi.mock("../components/ExplorerPdfWorkbench", () => ({
         error: null,
       });
       onControllerChange?.(controller);
-      onRegisterCloseGuard?.(async () => true);
+      onRegisterCloseGuard?.(async () => pdfPreviewMockState.closeGuardResult);
       return () => {
         onControllerChange?.(null);
         onRegisterCloseGuard?.(null);
@@ -314,6 +320,46 @@ function getPreviewPane() {
   return previewPane;
 }
 
+function queryPreviewPane() {
+  return document.querySelector(
+    '[data-overlay-explorer-plane="preview"]',
+  ) as HTMLElement | null;
+}
+
+function getPreviewSplitToggleButton() {
+  const control = getChromeControl("previewSplitToggle");
+  if (!control) {
+    throw new Error("Preview split toggle control not found");
+  }
+  return within(control).getByRole("button");
+}
+
+function getPreviewCloseButton() {
+  const control = getChromeControl("previewClose");
+  if (!control) {
+    throw new Error("Preview close control not found");
+  }
+  return within(control).getByRole("button");
+}
+
+function getToolbarPreviewToggleButton() {
+  const control = getChromeControl("togglePreview");
+  if (!control) {
+    throw new Error("Toolbar preview toggle control not found");
+  }
+  return within(control).getByRole("button");
+}
+
+function getPreviewResizeHandle() {
+  const handle = getPreviewPane().querySelector(
+    '[data-overlay-explorer-preview-resize-handle="true"]',
+  ) as HTMLElement | null;
+  if (!handle) {
+    throw new Error("Preview resize handle not found");
+  }
+  return handle;
+}
+
 function dispatchLayoutWheel(anchorText: string, deltaY: number) {
   const viewport = getExplorerViewport(anchorText);
   viewport.dispatchEvent(
@@ -380,6 +426,7 @@ function getEntryIconSrc(entryName: string): string {
 
 describe("FileExplorer view modes", () => {
   beforeEach(() => {
+    pdfPreviewMockState.closeGuardResult = true;
     resetOverlayTermStorage(window.localStorage);
     useSettingsStore.getState().resetToDefaults();
     useExplorerStore.getState().resetSession();
@@ -685,6 +732,211 @@ describe("FileExplorer view modes", () => {
         .mocked(invoke)
         .mock.calls.some(([command]) => command === "fs_read_text_file"),
     ).toBe(false);
+  });
+
+  it("only shows the preview split toggle when a preview is active", async () => {
+    renderExplorer();
+    await screen.findByText("notes.txt");
+
+    expect(getChromeControl("previewSplitToggle")).toBeNull();
+
+    fireEvent.click(screen.getByText("notes.txt"));
+
+    await screen.findByRole("button", { name: /copy path/i });
+    expect(getChromeControl("previewSplitToggle")).not.toBeNull();
+    expect(getPreviewPane()).toHaveAttribute(
+      "data-overlay-explorer-preview-split-mode",
+      "inline",
+    );
+  });
+
+  it("splits the preview into a local pane without mutating workspace layout and keeps it live-synced", async () => {
+    renderExplorer();
+    await screen.findByText("preview.png");
+
+    fireEvent.click(screen.getByText("preview.png"));
+
+    expect(
+      await screen.findByTestId("mock-explorer-image-editor"),
+    ).toHaveTextContent("preview.png");
+
+    fireEvent.click(getPreviewSplitToggleButton());
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.previewSplitMode).toBe(
+        "pane",
+      );
+      expect(useExplorerStore.getState().workspace.layoutMode).toBe("single");
+      expect(
+        document.querySelectorAll('[data-overlay-explorer-plane="file-area"]'),
+      ).toHaveLength(1);
+      expect(getPreviewPane()).toHaveAttribute(
+        "data-overlay-explorer-preview-split-mode",
+        "pane",
+      );
+    });
+
+    fireEvent.click(screen.getByText("notes.txt"));
+
+    expect(await screen.findByTestId("monaco-editor")).toHaveTextContent(
+      "hello from preview",
+    );
+    expect(useExplorerStore.getState().session.previewSplitMode).toBe("pane");
+    expect(useExplorerStore.getState().workspace.layoutMode).toBe("single");
+  });
+
+  it("preserves preview width drag resize behavior while split mode is active", async () => {
+    renderExplorer();
+    await screen.findByText("preview.png");
+
+    fireEvent.click(screen.getByText("preview.png"));
+    expect(
+      await screen.findByTestId("mock-explorer-image-editor"),
+    ).toHaveTextContent("preview.png");
+
+    fireEvent.click(getPreviewSplitToggleButton());
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.previewSplitMode).toBe(
+        "pane",
+      );
+    });
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.previewWidth).not.toBeNull();
+    });
+
+    const initialWidth = useExplorerStore.getState().session.previewWidth ?? 0;
+
+    fireEvent.mouseDown(getPreviewResizeHandle(), { clientX: 600 });
+    fireEvent.mouseMove(window, { clientX: 520 });
+    fireEvent.mouseUp(window);
+
+    let resizedWidth = initialWidth;
+    await waitFor(() => {
+      resizedWidth = useExplorerStore.getState().session.previewWidth ?? 0;
+      expect(resizedWidth).toBeGreaterThan(initialWidth);
+    });
+
+    fireEvent.click(screen.getByText("anthem.mp3"));
+
+    expect(
+      await screen.findByTestId("mock-explorer-audio-workbench"),
+    ).toHaveTextContent("anthem.mp3");
+    expect(useExplorerStore.getState().session.previewWidth).toBe(
+      resizedWidth,
+    );
+    expect(getPreviewPane()).toHaveAttribute(
+      "data-overlay-explorer-preview-split-mode",
+      "pane",
+    );
+  });
+
+  it("keeps split pdf previews open when the close guard blocks destructive close flows", async () => {
+    const pdfEntry = {
+      name: "forms.pdf",
+      path: `${REPO_ROOT}\\\\forms.pdf`,
+      is_dir: false,
+      size: 512 * 1024,
+      modified: 0,
+      extension: "pdf",
+      is_hidden: false,
+      is_symlink: false,
+    } as const;
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    pdfPreviewMockState.closeGuardResult = false;
+    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+        return [...ENTRIES, pdfEntry];
+      }
+      if (command === "pdf_open_preview_document") {
+        return {
+          sessionId: "pdf-session-1",
+          path: pdfEntry.path,
+          name: pdfEntry.name,
+          pageCount: 2,
+          pages: [
+            { pageIndex: 0, widthPoints: 612, heightPoints: 792 },
+            { pageIndex: 1, widthPoints: 612, heightPoints: 792 },
+          ],
+          formFields: [],
+        };
+      }
+      if (command === "pdf_close_preview_document") {
+        return null;
+      }
+      return baseInvokeImplementation(command, args as never);
+    });
+
+    renderExplorer();
+    await screen.findByText("forms.pdf");
+
+    fireEvent.click(screen.getByText("forms.pdf"));
+    expect(
+      await screen.findByTestId("mock-explorer-pdf-workbench"),
+    ).toHaveTextContent("forms.pdf");
+
+    fireEvent.click(getPreviewSplitToggleButton());
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.previewSplitMode).toBe(
+        "pane",
+      );
+    });
+
+    fireEvent.click(getPreviewCloseButton());
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-explorer-pdf-workbench")).toHaveTextContent(
+        "forms.pdf",
+      );
+      expect(useExplorerStore.getState().workspace.layoutMode).toBe("single");
+    });
+
+    fireEvent.click(getToolbarPreviewToggleButton());
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.previewEnabled).toBe(true);
+      expect(screen.getByTestId("mock-explorer-pdf-workbench")).toHaveTextContent(
+        "forms.pdf",
+      );
+    });
+  });
+
+  it("closes split previews cleanly and reopens them in the remembered pane mode", async () => {
+    renderExplorer();
+    await screen.findByText("preview.png");
+
+    fireEvent.click(screen.getByText("preview.png"));
+    expect(
+      await screen.findByTestId("mock-explorer-image-editor"),
+    ).toHaveTextContent("preview.png");
+
+    fireEvent.click(getPreviewSplitToggleButton());
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.previewSplitMode).toBe(
+        "pane",
+      );
+    });
+
+    fireEvent.click(getPreviewCloseButton());
+
+    await waitFor(() => {
+      expect(queryPreviewPane()).toBeNull();
+      expect(getChromeControl("previewSplitToggle")).toBeNull();
+    });
+
+    expect(useExplorerStore.getState().workspace.layoutMode).toBe("single");
+
+    fireEvent.click(screen.getByText("preview.png"));
+    expect(
+      await screen.findByTestId("mock-explorer-image-editor"),
+    ).toHaveTextContent("preview.png");
+    expect(getPreviewPane()).toHaveAttribute(
+      "data-overlay-explorer-preview-split-mode",
+      "pane",
+    );
   });
 
   it("switches text files back to Monaco with a loading fallback while text content resolves", async () => {

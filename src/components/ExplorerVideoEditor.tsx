@@ -328,8 +328,11 @@ export function ExplorerVideoEditor({
           setPlaySrc(convertFileSrc(res.data.sourcePath));
         }
       } catch (err: any) {
+        // Fallback to native `<video>` src playback if the backend proxy fails
+        // so that we don't block natively supported formats (MP4, WebM, etc.)
         if (isMounted) {
-          setProxyError(err.message || 'Failed to resolve video stream');
+          console.warn('[VideoEditor] Backend resolve failed, falling back to direct url:', err);
+          setPlaySrc(nativeUrl);
         }
       } finally {
         if (isMounted) setIsProxying(false);
@@ -337,7 +340,7 @@ export function ExplorerVideoEditor({
     })();
 
     return () => { isMounted = false; };
-  }, [videoPath]);
+  }, [videoPath, nativeUrl]);
 
   // RAF loop for smooth playhead update while playing
   const tickPlayhead = useCallback(() => {
