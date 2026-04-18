@@ -5,7 +5,6 @@ import {
   Highlighter,
   Loader,
   MousePointer2,
-  PenLine,
   Save,
   Square,
   Signature,

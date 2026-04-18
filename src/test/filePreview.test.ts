@@ -12,6 +12,7 @@ import {
   isEditableTextExtension,
   isExecutableExtension,
   isImagePreviewExtension,
+  isPdfPreviewExtension,
   isVideoPreviewExtension,
 } from "../config/filePreview";
 
@@ -62,6 +63,13 @@ describe("filePreview config", () => {
     expect(getVideoPreviewMimeType("mov")).toBe("video/quicktime");
     expect(getVideoPreviewMimeType("webm")).toBe("video/webm");
     expect(getVideoPreviewMimeType("txt")).toBeNull();
+  });
+
+  it("routes pdf files into pdf preview instead of editable text mode", () => {
+    expect(isPdfPreviewExtension("pdf")).toBe(true);
+    expect(isPdfPreviewExtension(".pdf")).toBe(true);
+    expect(isPdfPreviewExtension("txt")).toBe(false);
+    expect(isEditableTextExtension("pdf", 1024)).toBe(false);
   });
 
   it("maps supported 3d extensions to model formats", () => {

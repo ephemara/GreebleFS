@@ -36,6 +36,11 @@ export type HotkeyBindingKey =
   | 'selectAllExplorer'
   | 'clearExplorerSelection'
   | 'searchExplorer'
+  | 'pdfWorkbenchPreviousPage'
+  | 'pdfWorkbenchNextPage'
+  | 'pdfWorkbenchZoomIn'
+  | 'pdfWorkbenchZoomOut'
+  | 'pdfWorkbenchToggleEditMode'
   | 'audioWorkbenchPlayPause'
   | 'audioWorkbenchJumpToSelectionStart'
   | 'audioWorkbenchJumpToSelectionEnd'
@@ -333,6 +338,41 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     label: 'Search Explorer',
     description: 'Focus the explorer search/address bar.',
     defaultValue: 'Ctrl+F',
+    scope: 'local',
+  },
+  {
+    key: 'pdfWorkbenchPreviousPage',
+    label: 'PDF Workbench Previous Page',
+    description: 'Jump to the previous page in the explorer PDF workbench.',
+    defaultValue: 'PageUp',
+    scope: 'local',
+  },
+  {
+    key: 'pdfWorkbenchNextPage',
+    label: 'PDF Workbench Next Page',
+    description: 'Jump to the next page in the explorer PDF workbench.',
+    defaultValue: 'PageDown',
+    scope: 'local',
+  },
+  {
+    key: 'pdfWorkbenchZoomIn',
+    label: 'PDF Workbench Zoom In',
+    description: 'Increase the active PDF preview zoom level.',
+    defaultValue: 'Ctrl+=',
+    scope: 'local',
+  },
+  {
+    key: 'pdfWorkbenchZoomOut',
+    label: 'PDF Workbench Zoom Out',
+    description: 'Decrease the active PDF preview zoom level.',
+    defaultValue: 'Ctrl+-',
+    scope: 'local',
+  },
+  {
+    key: 'pdfWorkbenchToggleEditMode',
+    label: 'PDF Workbench Toggle Edit Mode',
+    description: 'Toggle between preview and edit mode for the explorer PDF workbench.',
+    defaultValue: 'E',
     scope: 'local',
   },
   {

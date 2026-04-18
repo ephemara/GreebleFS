@@ -168,6 +168,11 @@ import { ExplorerImageEditor } from "./ExplorerImageEditor";
 import { ExplorerVideoEditor } from "./ExplorerVideoEditor";
 import { ExplorerArchivePreview } from "./ExplorerArchivePreview";
 import { ExplorerFontPreview } from "./ExplorerFontPreview";
+import {
+  ExplorerPdfWorkbench,
+  type ExplorerPdfWorkbenchChromeState,
+  type ExplorerPdfWorkbenchController,
+} from "./ExplorerPdfWorkbench";
 import { ExplorerSqlitePreview } from "./ExplorerSqlitePreview";
 import {
   type ExplorerBatchRenameMode,
@@ -228,6 +233,7 @@ import {
   isExecutableExtension,
   isImagePreviewExtension,
   isFontPreviewExtension,
+  isPdfPreviewExtension,
   isSqlitePreviewExtension,
   isVideoPreviewExtension,
   type ModelPreviewFormat,
@@ -269,6 +275,10 @@ import {
   queueExplorerTerminalDirectorySync,
 } from "../runtime/explorerBackend";
 import { runExplorerAudioBatchProcess } from "../runtime/audioWorkbenchBackend";
+import {
+  openExplorerPdfPreviewDocument,
+  type ExplorerPdfPreviewDocument,
+} from "../runtime/pdfPreviewBackend";
 import { commands, unwrapTauriResult } from "../runtime/tauriClient";
 import {
   moveExplorerChromeControlInResolvedSurfaces,
@@ -495,6 +505,13 @@ type PreviewState =
       size: number;
     }
   | {
+      type: "pdf";
+      path: string;
+      name: string;
+      size: number;
+      document: ExplorerPdfPreviewDocument;
+    }
+  | {
       type: "text";
       path: string;
       name: string;
@@ -528,6 +545,7 @@ type PreviewState =
       label: string;
       detail?: string;
     };
+type PreviewCloseGuard = () => Promise<boolean>;
 interface NewItemState {
   visible: boolean;
   kind: "file" | "folder";
@@ -2602,6 +2620,9 @@ function PreviewPanel({
   onWidthChange,
   onTextChange,
   onRefreshPreviewEntry,
+  onPdfDocumentChange,
+  onPdfChromeStateChange,
+  onRegisterCloseGuard,
   onCopyPath,
   viewMode,
   onViewModeChange,
@@ -2618,6 +2639,14 @@ function PreviewPanel({
   onWidthChange: (width: number) => void;
   onTextChange: (path: string, content: string) => void;
   onRefreshPreviewEntry: () => void | Promise<void>;
+  onPdfDocumentChange: (
+    path: string,
+    document: ExplorerPdfPreviewDocument,
+  ) => void;
+  onPdfChromeStateChange?: (
+    state: ExplorerPdfWorkbenchChromeState | null,
+  ) => void;
+  onRegisterCloseGuard?: (guard: PreviewCloseGuard | null) => void;
   onCopyPath: (path: string) => void;
   viewMode: ExplorerDocumentViewMode;
   onViewModeChange: (mode: ExplorerDocumentViewMode) => void;
@@ -2632,6 +2661,11 @@ function PreviewPanel({
   const startX = useRef(0);
   const startW = useRef(width);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  const [pdfWorkbenchController, setPdfWorkbenchController] =
+    useState<ExplorerPdfWorkbenchController | null>(null);
+  const [pdfWorkbenchChromeState, setPdfWorkbenchChromeState] =
+    useState<ExplorerPdfWorkbenchChromeState | null>(null);
+  const [pdfPageInputValue, setPdfPageInputValue] = useState("1");
   const onMouseDown = (e: React.MouseEvent) => {
     dragging.current = true;
     startX.current = e.clientX;
@@ -2665,7 +2699,39 @@ function PreviewPanel({
     setCopiedPath(null);
   }, [preview.path]);
 
+  useEffect(() => {
+    if (preview.type !== "pdf") {
+      setPdfWorkbenchController(null);
+      setPdfWorkbenchChromeState(null);
+      setPdfPageInputValue("1");
+      onPdfChromeStateChange?.(null);
+      onRegisterCloseGuard?.(null);
+      return;
+    }
+
+    setPdfWorkbenchController(null);
+    setPdfWorkbenchChromeState(null);
+    setPdfPageInputValue("1");
+  }, [onPdfChromeStateChange, onRegisterCloseGuard, preview.path, preview.type]);
+
+  useEffect(() => {
+    if (preview.type !== "pdf" || !pdfWorkbenchChromeState) {
+      return;
+    }
+    setPdfPageInputValue(String(pdfWorkbenchChromeState.activePageIndex + 1));
+  }, [pdfWorkbenchChromeState, preview.type]);
+
   const previewTitle = preview.type === "none" ? "Preview" : preview.name;
+  const isPdfPreview = preview.type === "pdf";
+  const pdfPageCount = isPdfPreview
+    ? (pdfWorkbenchChromeState?.pageCount ?? preview.document.pageCount)
+    : 0;
+  const pdfActivePageNumber = isPdfPreview
+    ? (pdfWorkbenchChromeState?.activePageIndex ?? 0) + 1
+    : 0;
+  const pdfZoomPercent = isPdfPreview
+    ? Math.round((pdfWorkbenchChromeState?.zoomScale ?? 1) * 100)
+    : null;
   const previewStateLabel =
     preview.type === "text"
       ? preview.isSaving
@@ -2673,12 +2739,35 @@ function PreviewPanel({
         : preview.isDirty
           ? "Unsaved"
           : "Saved"
+      : preview.type === "pdf"
+        ? pdfWorkbenchChromeState?.isSaving
+          ? "Saving?"
+          : pdfWorkbenchChromeState?.error
+            ? "Error"
+            : pdfWorkbenchChromeState?.isDirty
+              ? "Unsaved"
+              : "Saved"
       : preview.type === "fallback"
         ? "Unavailable"
         : null;
+  const previewStateColor =
+    preview.type === "text"
+      ? preview.isSaving
+        ? EXP.yellow
+        : preview.isDirty
+          ? EXP.red
+          : EXP.green
+      : preview.type === "pdf"
+        ? pdfWorkbenchChromeState?.isSaving
+          ? EXP.yellow
+          : pdfWorkbenchChromeState?.error || pdfWorkbenchChromeState?.isDirty
+            ? EXP.red
+            : EXP.green
+        : EXP.green;
   const copyPathLabel = copiedPath === preview.path ? "Copied" : "Copy Path";
   const supportsRenderedPreview =
     preview.type === "text" && preview.renderKind !== "none";
+  const supportsPreviewModeToggle = supportsRenderedPreview || isPdfPreview;
   const previewHeaderRowStyle = useMemo<CSSProperties>(
     () => ({
       display: "flex",
@@ -2689,6 +2778,73 @@ function PreviewPanel({
       flexWrap: "wrap",
     }),
     [],
+  );
+  const previewChipButtonStyle = useCallback(
+    (active = false, disabled = false): CSSProperties => ({
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 4,
+      border: "none",
+      borderRadius: "var(--overlay-explorer-control-radius)",
+      cursor: disabled ? "default" : "pointer",
+      padding: "4px 8px",
+      fontSize: 10,
+      fontWeight: 700,
+      color: disabled
+        ? EXP.muted2
+        : active
+          ? EXP.text
+          : EXP.muted,
+      background: active
+        ? "var(--overlay-explorer-chip-active-bg)"
+        : "transparent",
+      opacity: disabled ? 0.6 : 1,
+    }),
+    [],
+  );
+  const previewChipInputStyle = useMemo<CSSProperties>(
+    () => ({
+      width: 42,
+      border: "1px solid var(--overlay-explorer-chip-border)",
+      borderRadius: "var(--overlay-explorer-control-radius)",
+      background: "rgba(15, 23, 42, 0.64)",
+      color: EXP.text,
+      padding: "4px 6px",
+      fontSize: 10,
+      fontWeight: 700,
+      textAlign: "center",
+      outline: "none",
+    }),
+    [],
+  );
+  const commitPdfPageInput = useCallback(() => {
+    if (!isPdfPreview || !pdfWorkbenchController) {
+      return;
+    }
+
+    const parsedPageNumber = Number.parseInt(pdfPageInputValue, 10);
+    if (!Number.isFinite(parsedPageNumber)) {
+      setPdfPageInputValue(String(pdfActivePageNumber));
+      return;
+    }
+
+    const clampedPageNumber = Math.max(1, Math.min(pdfPageCount, parsedPageNumber));
+    pdfWorkbenchController.goToPage(clampedPageNumber - 1);
+    setPdfPageInputValue(String(clampedPageNumber));
+  }, [
+    isPdfPreview,
+    pdfActivePageNumber,
+    pdfPageCount,
+    pdfPageInputValue,
+    pdfWorkbenchController,
+  ]);
+  const handlePdfWorkbenchChromeStateChange = useCallback(
+    (state: ExplorerPdfWorkbenchChromeState) => {
+      setPdfWorkbenchChromeState(state);
+      onPdfChromeStateChange?.(state);
+    },
+    [onPdfChromeStateChange],
   );
   const getPreviewHeaderZoneStyle = useCallback(
     (zoneId: ExplorerChromeZoneId): CSSProperties => {
@@ -2784,12 +2940,7 @@ function PreviewPanel({
               style={{
                 fontSize: 9,
                 fontWeight: 700,
-                color:
-                  preview.type === "text" && preview.isSaving
-                    ? EXP.yellow
-                    : preview.type === "text" && preview.isDirty
-                      ? EXP.red
-                      : EXP.green,
+                color: previewStateColor,
                 padding: "3px 7px",
                 borderRadius: 999,
                 border: "1px solid var(--overlay-explorer-chip-border)",
@@ -2804,50 +2955,204 @@ function PreviewPanel({
         id: "previewModeToggle",
         label: "Preview Mode Toggle",
         surfaces: ["previewHeader"],
-        isVisible: () => supportsRenderedPreview,
-        render: () => (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-              padding: 2,
-              borderRadius: "var(--overlay-explorer-control-radius)",
-              border: "1px solid var(--overlay-explorer-chip-border)",
-              background: "var(--overlay-explorer-chip-bg)",
-            }}
-          >
-            {(
-              [
-                { id: "edit", label: "Edit" },
-                { id: "preview", label: "Preview" },
-              ] as const
-            ).map((option) => {
-              const active = viewMode === option.id;
-              return (
+        isVisible: () => supportsPreviewModeToggle,
+        render: () => {
+          if (preview.type === "pdf") {
+            const pdfIsEditMode = pdfWorkbenchChromeState?.isEditMode ?? false;
+            const pdfIsSaving = pdfWorkbenchChromeState?.isSaving ?? false;
+            const pdfIsDirty = pdfWorkbenchChromeState?.isDirty ?? false;
+            const pdfFitMode = pdfWorkbenchChromeState?.fitMode ?? "fitWidth";
+            const hasPdfController = Boolean(pdfWorkbenchController);
+            const canGoPrevious = hasPdfController && pdfActivePageNumber > 1;
+            const canGoNext =
+              hasPdfController && pdfActivePageNumber < pdfPageCount;
+
+            return (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: 2,
+                  borderRadius: "var(--overlay-explorer-control-radius)",
+                  border: "1px solid var(--overlay-explorer-chip-border)",
+                  background: "var(--overlay-explorer-chip-bg)",
+                  flexWrap: "wrap",
+                }}
+              >
                 <button
-                  key={option.id}
                   type="button"
-                  onClick={() => onViewModeChange(option.id)}
+                  onClick={() => pdfWorkbenchController?.goToPreviousPage()}
+                  disabled={!canGoPrevious}
+                  style={previewChipButtonStyle(false, !canGoPrevious)}
+                  title="Previous page"
+                >
+                  <ChevronLeft size={11} />
+                </button>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={pdfPageInputValue}
+                  onChange={(event) =>
+                    setPdfPageInputValue(
+                      event.currentTarget.value.replace(/[^\d]/g, ""),
+                    )
+                  }
+                  onBlur={commitPdfPageInput}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      commitPdfPageInput();
+                    }
+                  }}
+                  aria-label="PDF page number"
+                  style={previewChipInputStyle}
+                />
+                <span style={{ fontSize: 10, color: EXP.muted }}>
+                  / {pdfPageCount}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => pdfWorkbenchController?.goToNextPage()}
+                  disabled={!canGoNext}
+                  style={previewChipButtonStyle(false, !canGoNext)}
+                  title="Next page"
+                >
+                  <ChevronRight size={11} />
+                </button>
+                <span
+                  aria-hidden="true"
                   style={{
-                    border: "none",
-                    borderRadius: "var(--overlay-explorer-control-radius)",
-                    cursor: "pointer",
-                    padding: "4px 8px",
+                    width: 1,
+                    alignSelf: "stretch",
+                    background: "var(--overlay-explorer-chip-border)",
+                    opacity: 0.6,
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => pdfWorkbenchController?.zoomOut()}
+                  disabled={!hasPdfController}
+                  style={previewChipButtonStyle(false, !hasPdfController)}
+                  title="Zoom out"
+                >
+                  -
+                </button>
+                <span
+                  style={{
+                    minWidth: 48,
+                    textAlign: "center",
                     fontSize: 10,
-                    fontWeight: 700,
-                    color: active ? EXP.text : EXP.muted,
-                    background: active
-                      ? "var(--overlay-explorer-chip-active-bg)"
-                      : "transparent",
+                    color: EXP.text,
+                    fontVariantNumeric: "tabular-nums",
                   }}
                 >
-                  {option.label}
+                  {pdfZoomPercent != null ? `${pdfZoomPercent}%` : "?"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => pdfWorkbenchController?.zoomIn()}
+                  disabled={!hasPdfController}
+                  style={previewChipButtonStyle(false, !hasPdfController)}
+                  title="Zoom in"
+                >
+                  +
                 </button>
-              );
-            })}
-          </div>
-        ),
+                <button
+                  type="button"
+                  onClick={() => pdfWorkbenchController?.setFitMode("fitWidth")}
+                  disabled={!hasPdfController}
+                  style={previewChipButtonStyle(
+                    pdfFitMode === "fitWidth",
+                    !hasPdfController,
+                  )}
+                >
+                  Fit W
+                </button>
+                <button
+                  type="button"
+                  onClick={() => pdfWorkbenchController?.setFitMode("fitPage")}
+                  disabled={!hasPdfController}
+                  style={previewChipButtonStyle(
+                    pdfFitMode === "fitPage",
+                    !hasPdfController,
+                  )}
+                >
+                  Fit P
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (pdfIsEditMode) {
+                      pdfWorkbenchController?.toggleEditMode();
+                    }
+                  }}
+                  disabled={!hasPdfController}
+                  style={previewChipButtonStyle(!pdfIsEditMode, !hasPdfController)}
+                >
+                  Preview
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!pdfIsEditMode) {
+                      pdfWorkbenchController?.toggleEditMode();
+                    }
+                  }}
+                  disabled={!hasPdfController}
+                  style={previewChipButtonStyle(pdfIsEditMode, !hasPdfController)}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void pdfWorkbenchController?.save()}
+                  disabled={!hasPdfController || !pdfIsDirty || pdfIsSaving}
+                  style={previewChipButtonStyle(
+                    pdfIsDirty && !pdfIsSaving,
+                    !hasPdfController || !pdfIsDirty || pdfIsSaving,
+                  )}
+                >
+                  <Save size={11} />
+                  Save
+                </button>
+              </div>
+            );
+          }
+
+          return (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                padding: 2,
+                borderRadius: "var(--overlay-explorer-control-radius)",
+                border: "1px solid var(--overlay-explorer-chip-border)",
+                background: "var(--overlay-explorer-chip-bg)",
+              }}
+            >
+              {(
+                [
+                  { id: "edit", label: "Edit" },
+                  { id: "preview", label: "Preview" },
+                ] as const
+              ).map((option) => {
+                const active = viewMode === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => onViewModeChange(option.id)}
+                    style={previewChipButtonStyle(active)}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          );
+        },
       },
       {
         id: "previewCopyPath",
@@ -2903,13 +3208,26 @@ function PreviewPanel({
     ],
     [
       copyPathLabel,
+      commitPdfPageInput,
+      isPdfPreview,
       onClose,
       onCopyPath,
+      onPdfChromeStateChange,
       onViewModeChange,
+      pdfActivePageNumber,
+      pdfPageCount,
+      pdfPageInputValue,
+      pdfWorkbenchChromeState,
+      pdfWorkbenchController,
+      pdfZoomPercent,
+      previewChipButtonStyle,
+      previewChipInputStyle,
       preview,
+      previewStateColor,
       previewStateLabel,
       previewTitle,
       supportsRenderedPreview,
+      supportsPreviewModeToggle,
       viewMode,
     ],
   );
@@ -3063,6 +3381,21 @@ function PreviewPanel({
             fontExtension={preview.extension}
           />
         )}
+        {preview.type === "pdf" && (
+          <ExplorerPdfWorkbench
+            document={preview.document}
+            onSaved={async (output) => {
+              onPdfDocumentChange(preview.path, output.document);
+              await onRefreshPreviewEntry();
+            }}
+            onDocumentChange={(document) =>
+              onPdfDocumentChange(preview.path, document)
+            }
+            onChromeStateChange={handlePdfWorkbenchChromeStateChange}
+            onControllerChange={setPdfWorkbenchController}
+            onRegisterCloseGuard={onRegisterCloseGuard}
+          />
+        )}
         {preview.type === "sqlite" && (
           <ExplorerSqlitePreview
             dbPath={preview.path}
@@ -3100,6 +3433,10 @@ function PreviewPanel({
                 wordWrap: "on",
                 padding: { top: 8 },
                 overviewRulerLanes: 0,
+                lineDecorationsWidth: 0,
+                lineNumbersMinChars: 3,
+                folding: false,
+                glyphMargin: false,
               }}
             />
           )}
@@ -5208,6 +5545,8 @@ export function FileExplorer({
   const [transferConflictPolicy, setTransferConflictPolicy] =
     useState<ExplorerFileTransferCollisionPolicy>("keep_both");
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [pdfPreviewChromeState, setPdfPreviewChromeState] =
+    useState<ExplorerPdfWorkbenchChromeState | null>(null);
   const [newItem, setNewItem] = useState<NewItemState>({
     visible: false,
     kind: "folder",
@@ -5269,6 +5608,7 @@ export function FileExplorer({
   }>({ active: false, count: 0 });
   const lastSelected = useRef<string | null>(null);
   const previewRef = useRef(preview);
+  const previewCloseGuardRef = useRef<PreviewCloseGuard | null>(null);
   const previewSaveTimer = useRef<number | null>(null);
   const searchRequestIdRef = useRef(0);
   const searchFocusRequestIdRef = useRef(0);
@@ -5495,6 +5835,12 @@ export function FileExplorer({
   useEffect(() => {
     previewRef.current = preview;
   }, [preview]);
+
+  useEffect(() => {
+    if (preview.type !== "pdf") {
+      setPdfPreviewChromeState(null);
+    }
+  }, [preview.path, preview.type]);
 
   useEffect(() => {
     if (!showModeProfileMenu && !showLayoutMenu && !showExperimentalMenu) {
@@ -7608,12 +7954,57 @@ export function FileExplorer({
     [queuePreviewSave],
   );
 
-  const closePreview = useCallback(async () => {
+  const registerPreviewCloseGuard = useCallback(
+    (guard: PreviewCloseGuard | null) => {
+      previewCloseGuardRef.current = guard;
+    },
+    [],
+  );
+
+  const requestCurrentPreviewClose = useCallback(async (): Promise<boolean> => {
+    const currentGuard = previewCloseGuardRef.current;
+    if (!currentGuard) {
+      return true;
+    }
+
+    return await currentGuard();
+  }, []);
+
+  const updatePdfPreviewDocument = useCallback(
+    (path: string, document: ExplorerPdfPreviewDocument) => {
+      setPreview((prev) =>
+        prev.type === "pdf" && prev.path === path
+          ? { ...prev, document }
+          : prev,
+      );
+    },
+    [],
+  );
+
+  const handlePdfPreviewChromeStateChange = useCallback(
+    (state: ExplorerPdfWorkbenchChromeState | null) => {
+      setPdfPreviewChromeState(state);
+      if (state) {
+        setDocumentViewMode(state.isEditMode ? "edit" : "preview");
+      }
+    },
+    [],
+  );
+
+  const closePreview = useCallback(async (): Promise<boolean> => {
+    const shouldClose = await requestCurrentPreviewClose();
+    if (!shouldClose) {
+      return false;
+    }
+
     previewLoadRequestIdRef.current += 1;
+    previewCloseGuardRef.current = null;
     await flushPreviewTextSave();
     setPreview({ type: "none", path: "" });
     setPreviewLoading(false);
-  }, [flushPreviewTextSave]);
+    setPdfPreviewChromeState(null);
+    return true;
+  }, [flushPreviewTextSave, requestCurrentPreviewClose]);
 
   useEffect(() => {
     if (isCompactDock) {
@@ -7634,7 +8025,11 @@ export function FileExplorer({
 
   useEffect(() => {
     if (!previewEnabled) {
-      void closePreview();
+      void closePreview().then((didClose) => {
+        if (!didClose && isExplorerMountedRef.current) {
+          setPreviewEnabled(true);
+        }
+      });
     }
   }, [closePreview, previewEnabled]);
 
@@ -7670,10 +8065,12 @@ export function FileExplorer({
     ],
   );
 
-  const togglePreviewEnabled = useCallback(() => {
+  const togglePreviewEnabled = useCallback(async () => {
     if (previewEnabled) {
-      setPreviewEnabled(false);
-      void closePreview();
+      const didClose = await closePreview();
+      if (didClose) {
+        setPreviewEnabled(false);
+      }
       return;
     }
 
@@ -7713,6 +8110,15 @@ export function FileExplorer({
       ) {
         await flushPreviewTextSave();
         if (!isCurrentPreviewRequest()) {
+          return;
+        }
+      }
+      if (
+        currentPreview.type === "pdf" &&
+        currentPreview.path !== entry.path
+      ) {
+        const shouldCloseCurrentPreview = await requestCurrentPreviewClose();
+        if (!shouldCloseCurrentPreview || !isCurrentPreviewRequest()) {
           return;
         }
       }
@@ -7855,6 +8261,69 @@ export function FileExplorer({
         return;
       }
 
+      if (isPdfPreviewExtension(ext)) {
+        setDocumentViewMode("preview");
+        if (
+          currentPreview.type === "pdf" &&
+          currentPreview.path === entry.path
+        ) {
+          if (isCurrentPreviewRequest()) {
+            setPreview((prev) =>
+              prev.type === "pdf" && prev.path === entry.path
+                ? {
+                    ...prev,
+                    name: entry.name,
+                    size: entry.size,
+                  }
+                : prev,
+            );
+            setPreviewLoading(false);
+          }
+          return;
+        }
+
+        if (isCurrentPreviewRequest()) {
+          setPreviewLoading(true);
+          setPreview({
+            type: "fallback",
+            path: entry.path,
+            name: entry.name,
+            label: "Loading PDF…",
+            detail: "Opening PDF preview session…",
+          });
+        }
+
+        try {
+          const document = await openExplorerPdfPreviewDocument(entry.path);
+          if (!isCurrentPreviewRequest()) {
+            return;
+          }
+          setPreview({
+            type: "pdf",
+            path: entry.path,
+            name: entry.name,
+            size: entry.size,
+            document,
+          });
+        } catch (error) {
+          if (!isCurrentPreviewRequest()) {
+            return;
+          }
+          setPreview({
+            type: "fallback",
+            path: entry.path,
+            name: entry.name,
+            label: "PDF preview unavailable",
+            detail: String(error),
+          });
+        } finally {
+          if (isCurrentPreviewRequest()) {
+            setPreviewLoading(false);
+          }
+        }
+        return;
+      }
+
       if (isEditableTextEntry(entry)) {
         const renderKind = getDocumentPreviewKind(entry.path);
         setDocumentViewMode(renderKind === "html" ? "preview" : "edit");
@@ -7938,7 +8407,12 @@ export function FileExplorer({
         setPreviewLoading(false);
       }
     },
-    [flushPreviewTextSave, isCompactDock, previewEnabled],
+    [
+      flushPreviewTextSave,
+      isCompactDock,
+      previewEnabled,
+      requestCurrentPreviewClose,
+    ],
   );
 
   const openEntry = useCallback(
@@ -7971,6 +8445,7 @@ export function FileExplorer({
         canInlinePreview &&
         (getModelPreviewFormat(ext) ||
           isImagePreviewExtension(ext) ||
+          isPdfPreviewExtension(ext) ||
           isAudioPreviewExtension(ext) ||
           isVideoPreviewExtension(ext))
       ) {
@@ -10164,6 +10639,10 @@ export function FileExplorer({
         : preview.renderKind === "markdown"
           ? "Text preview (markdown)"
           : "Text preview"
+      : preview.type === "pdf"
+        ? pdfPreviewChromeState?.isEditMode
+          ? "PDF editor"
+          : "PDF preview"
       : preview.type === "audio"
         ? "Audio preview"
         : preview.type === "image"
@@ -16494,6 +16973,9 @@ export function FileExplorer({
               onWidthChange={setPreviewWidth}
               onTextChange={updatePreviewTextContent}
               onRefreshPreviewEntry={() => refresh()}
+              onPdfDocumentChange={updatePdfPreviewDocument}
+              onPdfChromeStateChange={handlePdfPreviewChromeStateChange}
+              onRegisterCloseGuard={registerPreviewCloseGuard}
               onCopyPath={copyToSysClipboard}
               viewMode={documentViewMode}
               onViewModeChange={setDocumentViewMode}

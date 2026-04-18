@@ -29,6 +29,73 @@ vi.mock("../components/ExplorerAudioWorkbench", () => ({
   ),
 }));
 
+vi.mock("../components/ExplorerPdfWorkbench", () => ({
+  ExplorerPdfWorkbench: ({
+    document,
+    onChromeStateChange,
+    onControllerChange,
+    onRegisterCloseGuard,
+  }: {
+    document: { name: string; pageCount: number };
+    onChromeStateChange?: (state: {
+      activePageIndex: number;
+      pageCount: number;
+      zoomScale: number;
+      fitMode: "none" | "fitWidth" | "fitPage";
+      isEditMode: boolean;
+      isDirty: boolean;
+      isSaving: boolean;
+      error: string | null;
+    }) => void;
+    onControllerChange?: (controller: {
+      goToPreviousPage: () => void;
+      goToNextPage: () => void;
+      goToPage: (pageIndex: number) => void;
+      zoomIn: () => void;
+      zoomOut: () => void;
+      setFitMode: (mode: "none" | "fitWidth" | "fitPage") => void;
+      toggleEditMode: () => void;
+      save: () => Promise<boolean>;
+    } | null) => void;
+    onRegisterCloseGuard?: (guard: (() => Promise<boolean>) | null) => void;
+  }) => {
+    React.useEffect(() => {
+      onChromeStateChange?.({
+        activePageIndex: 1,
+        pageCount: document.pageCount,
+        zoomScale: 1.25,
+        fitMode: "fitWidth",
+        isEditMode: true,
+        isDirty: true,
+        isSaving: false,
+        error: null,
+      });
+      onControllerChange?.({
+        goToPreviousPage: () => {},
+        goToNextPage: () => {},
+        goToPage: () => {},
+        zoomIn: () => {},
+        zoomOut: () => {},
+        setFitMode: () => {},
+        toggleEditMode: () => {},
+        save: async () => true,
+      });
+      onRegisterCloseGuard?.(async () => true);
+      return () => {
+        onControllerChange?.(null);
+        onRegisterCloseGuard?.(null);
+      };
+    }, [
+      document.pageCount,
+      onChromeStateChange,
+      onControllerChange,
+      onRegisterCloseGuard,
+    ]);
+
+    return <div data-testid="mock-explorer-pdf-workbench">{document.name}</div>;
+  },
+}));
+
 import {
   FileExplorer,
   invalidateExplorerResultCaches,
@@ -110,8 +177,8 @@ const ENTRIES = [
     is_hidden: false,
     is_symlink: false,
   },
-  {
-    name: "large.txt",
+	{
+		name: "large.txt",
     path: `${REPO_ROOT}\\large.txt`,
     is_dir: false,
     size: 24 * 1024 * 1024,
@@ -351,8 +418,22 @@ describe("FileExplorer view modes", () => {
             if (payload?.path === `${REPO_ROOT}\\broken.png`) {
               throw new Error("Image is too large to thumbnail (> 64 MB)");
             }
-            return "data:image/png;base64,ZmFrZQ==";
-          case "fs_read_entry_thumbnail":
+					return "data:image/png;base64,ZmFrZQ==";
+				case "pdf_open_preview_document":
+					return {
+						sessionId: "pdf-session-1",
+						path: `${REPO_ROOT}\\\\forms.pdf`,
+						name: "forms.pdf",
+						pageCount: 2,
+						pages: [
+							{ pageIndex: 0, widthPoints: 612, heightPoints: 792 },
+							{ pageIndex: 1, widthPoints: 612, heightPoints: 792 },
+						],
+						formFields: [],
+					};
+				case "pdf_close_preview_document":
+					return null;
+				case "fs_read_entry_thumbnail":
             if (payload?.request?.path === `${REPO_ROOT}\\broken.png`) {
               throw new Error("Image is too large to thumbnail (> 64 MB)");
             }
@@ -897,6 +978,72 @@ describe("FileExplorer view modes", () => {
         .mocked(invoke)
         .mock.calls.some(([command]) => command === "fs_read_text_file"),
     ).toBe(false);
+  });
+
+  it("routes pdf files into the inline pdf workbench and surfaces pdf chrome state", async () => {
+    const pdfEntry = {
+      name: "forms.pdf",
+      path: `${REPO_ROOT}\\\\forms.pdf`,
+      is_dir: false,
+      size: 512 * 1024,
+      modified: 0,
+      extension: "pdf",
+      is_hidden: false,
+      is_symlink: false,
+    } as const;
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+        return [...ENTRIES, pdfEntry];
+      }
+      if (command === "pdf_open_preview_document") {
+        return {
+          sessionId: "pdf-session-1",
+          path: pdfEntry.path,
+          name: pdfEntry.name,
+          pageCount: 2,
+          pages: [
+            { pageIndex: 0, widthPoints: 612, heightPoints: 792 },
+            { pageIndex: 1, widthPoints: 612, heightPoints: 792 },
+          ],
+          formFields: [],
+        };
+      }
+      if (command === "pdf_close_preview_document") {
+        return null;
+      }
+      return baseInvokeImplementation(command, args);
+    });
+
+    renderExplorer();
+    await screen.findByText("forms.pdf");
+
+    fireEvent.click(screen.getByText("forms.pdf"));
+
+    expect(
+      await screen.findByTestId("mock-explorer-pdf-workbench"),
+    ).toHaveTextContent("forms.pdf");
+    expect(
+      await screen.findByRole("button", { name: /^save$/i }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: /^fit w$/i }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: /^fit p$/i }),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.documentViewMode).toBe("edit");
+    });
+    expect(
+      vi
+        .mocked(invoke)
+        .mock.calls.some(([command]) => command === "pdf_open_preview_document"),
+    ).toBe(true);
   });
 
   it("renders grid thumbnails for visible image entries in icon layouts", async () => {

@@ -433,7 +433,7 @@ fn build_pdf_preview_document(
         });
     }
 
-    let mut lopdf_document = Document::load(source_path)
+    let lopdf_document = Document::load(source_path)
         .map_err(|error| format!("Failed to load PDF document '{}': {error}", source_path.display()))?;
     ensure_pdf_edit_supported(&lopdf_document, source_path)?;
     let page_context = build_pdf_page_context(&lopdf_document, &pages)?;

@@ -1,5 +1,21 @@
 # GreebleFS Memory
 
+## 2026-04-18 — Inline PDF Preview + Edit Workbench
+
+- The explorer preview pane now has a dedicated PDF lane instead of falling back to text/unavailable states for `.pdf`.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now routes `.pdf` files into a `pdf` preview state, wires preview-close guards so dirty PDF sessions can block silent preview switches, and surfaces PDF page/zoom/fit/edit/save controls through the existing preview-header chrome slot instead of inventing a new chrome-layout schema.
+  - `src/components/ExplorerPdfWorkbench.tsx` is the shell-owned PDF workbench. It renders one active page at a time, consumes settings-backed hotkeys, maps AcroForm widgets into page-space DOM overlays, authors overlay annotations in React, and exposes controller/chrome callbacks back to the explorer shell.
+  - `src/config/hotkeys.ts` and `src/components/SettingsPage.tsx` now include a dedicated PDF workbench shortcut cluster for page travel, zoom, and preview/edit mode, while save continues to use the shared `saveFile` binding.
+  - `src/test/filePreview.test.ts`, `src/test/hotkeys.test.ts`, `src/test/settingsStore.test.ts`, and `src/test/fileExplorer.viewModes.test.tsx` now lock the PDF lane routing plus the PDF hotkey defaults/settings contract.
+- Durable product note:
+  - Keep PDF document truth in Rust. The React workbench should stay a page-space authoring shell over typed session commands, not become a browser-side PDF parser/editor.
+  - Reuse the existing preview-header chrome layout slot for PDF controls unless the whole preview chrome architecture changes. That keeps PDF support additive instead of forking the explorer chrome registry.
+- Validation:
+  - passed: `bun run test:unit src/test/filePreview.test.ts src/test/hotkeys.test.ts src/test/settingsStore.test.ts src/test/fileExplorer.viewModes.test.tsx`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
+  - note: repo-wide `bunx tsc --noEmit` still fails on unrelated pre-existing explorer audio / VST typing issues outside the PDF lane.
+
 ## 2026-04-18 — Linux Wayland Startup Recovery / Local State Reset Script
 
 - The Linux desktop startup invisibility issue was traced back to persisted `windowMode=overlay` state on Wayland. When that state combines with the separate Wayland dock host, the main window can render briefly and then hide itself during presentation handoff, leaving the app effectively invisible.

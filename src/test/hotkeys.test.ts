@@ -49,6 +49,11 @@ describe('hotkey config helpers', () => {
     expect(defaults.focusExplorerAddressBar).toBe('Ctrl+L');
     expect(defaults.toggleExplorerLayout).toBe('Ctrl+Shift+L');
     expect(defaults.searchExplorer).toBe('Ctrl+F');
+    expect(defaults.pdfWorkbenchPreviousPage).toBe('PageUp');
+    expect(defaults.pdfWorkbenchNextPage).toBe('PageDown');
+    expect(defaults.pdfWorkbenchZoomIn).toBe('Ctrl+=');
+    expect(defaults.pdfWorkbenchZoomOut).toBe('Ctrl+-');
+    expect(defaults.pdfWorkbenchToggleEditMode).toBe('E');
     expect(defaults.audioWorkbenchPlayPause).toBe('Space');
     expect(defaults.audioWorkbenchJumpToSelectionStart).toBe('I');
     expect(defaults.audioWorkbenchJumpToSelectionEnd).toBe('O');

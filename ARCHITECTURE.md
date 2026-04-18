@@ -42,6 +42,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Shell-owned wrapper for the embedded preview-pane video surface. It mounts a real media-element preview that is driven by the Rust video engine/store, resolves direct-safe sources or ffmpeg-generated MP4 proxies through the typed backend, and exposes loop-aware transport plus non-destructive trim export.
 - `src/components/ExplorerAudioWorkbench.tsx`
   Shell-owned wrapper for the embedded preview-pane audio surface. It is now a native dual-deck transport UI over the Rust audio engine, with a compact summary strip for high-value metadata, shared waveform selection, DAW-style fade edge handles embedded in the waveform, memoized waveform/spectral subsurfaces, a RAF-driven playhead marker, deck arming/loading, loop/gain/rate control, offline export actions, and spectrogram rendering.
+- `src/components/ExplorerPdfWorkbench.tsx`
+  Shell-owned wrapper for the embedded preview-pane PDF surface. It keeps the explorer preview-pane contract, renders one active page at a time, exposes page/zoom/fit/edit/save chrome, authors page-space overlay annotations plus AcroForm edits in React, and defers document truth/render/save back to the typed Rust PDF bridge.
 - `src/components/explorer/ExplorerWorkspace.tsx`
   Explorer-local workspace shell that wraps `FileExplorer` instances with explorer tabs, slot-based `1-Up` / `2-Up` / `4-Up` pane layouts, pane focus, and adaptive split sizing.
 - `src/components/explorer/ExplorerSideRail.tsx`
@@ -104,6 +106,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   TS bridge for the native preview-pane video engine. It exposes engine prepare/load/play/pause/stop/seek/loop commands plus the live `VideoEngineStateEvent` subscription.
 - `src/runtime/audioWorkbenchBackend.ts`
   TS bridge for explorer audio analysis, native engine transport commands/events, and offline export/batch work. React should talk to this bridge and `src/store/audioEngineStore.ts` instead of browser media APIs or raw invoke strings.
+- `src/runtime/pdfPreviewBackend.ts`
+  TS bridge for explorer PDF preview sessions. It owns typed open/render/save/close calls for the inline PDF workbench so React components do not scatter raw `invoke()` strings or local PDF truth.
 - `src/config/explorerArchives.ts`
   Data-driven archive registry for the explorer. It is the TS-side source of truth for which local archive suffixes should route through native extraction/opening and how archive folder labels are derived.
 - `src/config/filePreview.ts`
@@ -297,6 +301,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - the browser `<audio>` lane and preview-proxy workaround are no longer the explorer playback path; the preview pane now talks to a CPAL + Symphonia native engine and only uses SoX for offline mutation
   - video playback/editing now lives in `ExplorerVideoEditor.tsx`, but transport truth lives in `src-tauri/src/video_engine.rs` and flows through `src/store/videoEngineStore.ts`
   - video preview now uses a real `<video>` paint surface again, but the transport/timeline truth still lives in Rust; `src-tauri/src/video_commands.rs` probes the file, allows direct playback only for safe codec/container pairs, and generates MP4 preview proxies for hostile formats
+  - PDF preview/editing now lives in `ExplorerPdfWorkbench.tsx`, but document truth/render/save live in `src-tauri/src/pdf_commands.rs` and flow through `src/runtime/pdfPreviewBackend.ts`
+  - the PDF lane is intentionally split: Rust owns session truth, page raster, AcroForm extraction, and save/writeback; React only owns page-space overlay UI and preview-pane chrome state
 - Local archive handling is now a first-class explorer workflow instead of a pure OS-shell fallback:
   - `src/config/explorerArchives.ts` defines the supported local archive suffix registry (`zip`/`cbz`/`jar`/`apk`, `7z`, `tar`, `tar.gz`, `tar.bz2`, `tar.xz`, `gz`, `bz2`, `xz`) plus the default extracted-folder naming rules
   - `src-tauri/src/archive_ops.rs` owns the actual Rust extraction logic, including cache-backed archive opening and collision-safe extraction into the current folder
@@ -312,6 +318,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src-tauri/src/video_engine.rs` owns explorer video transport state, source validation, metadata probing, deck-`B` audio linkage/fallback, loop-aware play/pause/seek state, and `VideoEngineStateEvent`
   - `src-tauri/src/video_commands.rs` owns `ffprobe`/`ffmpeg` preview-source resolution, preview-proxy generation, and MP4 trim export for the explorer video lane
   - `src/store/videoEngineStore.ts` is the shell-side source of truth for video-engine snapshots, hydration, and event subscription; components should not own video transport state locally
+  - `src-tauri/src/pdf_commands.rs` owns explorer PDF preview sessions, Pdfium page raster, AcroForm field extraction, overlay-annotation writeback, and overwrite-in-place save semantics for the inline PDF lane
   - `src-tauri/src/audio_commands.rs` now owns offline-only audio analysis/export/batch work plus vendored SoX runtime extraction and explorer task cancellation/retry hooks
   - the audio lane is intentionally split:
     - native playback and deck transport live in Rust without the webview media stack
@@ -395,8 +402,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `npx vitest run --environment node src/test/workbenchTheme.test.ts src/test/explorerTheme.test.ts src/test/themePackageExplorerRecipe.test.ts`
 - `npx tsc --noEmit --skipLibCheck --jsx react-jsx --module esnext --target es2022 --moduleResolution bundler --allowSyntheticDefaultImports --types vitest/globals,@testing-library/jest-dom src/vite-env.d.ts src/config/workbenchTheme.ts src/config/explorerTheme.ts src/config/appearance.ts src/components/CommandPalette.tsx src/components/TerminalOverlay.tsx src/components/SettingsPage.tsx src/components/explorer/ExplorerSideRail.tsx src/components/FileExplorer.tsx src/App.tsx src/test/workbenchTheme.test.ts src/test/explorerTheme.test.ts src/test/themePackageExplorerRecipe.test.ts src/test/themePackages.test.ts src/test/explorerSideRail.test.tsx`
 - `bun run test:unit`
+- `bun run test:unit src/test/filePreview.test.ts src/test/hotkeys.test.ts src/test/settingsStore.test.ts src/test/fileExplorer.viewModes.test.tsx`
 - `bun run test:browser`
 - `bun run build`
+- `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
 - `bash ./install.sh`
 - `bash ./install.sh --launch`
 - `bun run release:linux:install`
@@ -409,6 +418,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
     Saved Settings credentials take precedence over env vars until they are cleared.
 - Dropbox OAuth no longer uses a random localhost callback. The app now expects the Dropbox app console to allow the fixed redirect URI `http://localhost:53682/callback`; if Dropbox sign-in times out, check that exact callback registration before touching the browser-launch code.
 - Repo-wide `npx tsc --noEmit` is currently red on several pre-existing generated-contract and test typing issues unrelated to the workbench/explorer theme system. The narrowed command above now only leaves `src/runtime/useFolderPluginRuntime.ts` as an unrelated pre-existing failure.
+- Repo-wide `bunx tsc --noEmit` is also currently red on pre-existing explorer audio and VST typing issues outside the PDF lane (`src/components/ExplorerAudioWorkbench.tsx`, `src/runtime/vstBackend.ts`). Use targeted Vitest coverage plus `cargo check` when validating PDF work until those unrelated strict-mode failures are cleaned up.
 - Explorer rich thumbnails are native and cache-backed. `src-tauri/src/thumbnail_commands.rs` writes generated posters and video hover frames under the app-local `explorer-thumbnails` cache. If thumbnails look stale, inspect cache-key inputs and the app-local cache before trying to patch React rendering.
 - If the video timeline starts asking for an audio file while editing a normal video, inspect `src-tauri/src/video_engine.rs` before touching UI copy. That symptom usually means the video engine failed to link deck `B` to the selected file’s embedded audio track; it is not a real request to import standalone audio.
 - A current narrowed file-operations/explorer typecheck also still trips an unrelated screenshot typing issue in `src/components/ScreenshotsManager.tsx`: `SelectionHandle` includes `"move"` but the resize-handle consumer only accepts edge handles. Treat that as pre-existing unless the task is on screenshot selection editing.
