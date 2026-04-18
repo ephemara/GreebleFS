@@ -3,18 +3,11 @@ import re
 with open('src/components/ExplorerAudioWorkbench.tsx', 'r') as f:
     content = f.read()
 
-# We want to replace the UI components and styles defined before ExplorerAudioWorkbench.
-# Find where toolbarButtonStyle starts
 start_styles = content.find("function toolbarButtonStyle(")
-# Find where AudioWorkbenchWaveformBars starts
-start_waveform = content.find("type AudioWorkbenchWaveformBarsProps = {")
-# Find where ExplorerAudioWorkbench starts
 start_component = content.find("export function ExplorerAudioWorkbench({")
 
-# Extract everything up to start_styles
 part1 = content[:start_styles]
 
-# Define new styles and subcomponents
 new_styles_and_subcomponents = """
 function toolbarButtonStyle(emphasis: 'default' | 'primary' | 'danger' | 'ghost' = 'default'): CSSProperties {
   const base = {
@@ -212,15 +205,19 @@ const AudioWorkbenchPlayheadMarker = memo(
 
 """
 
-# Find return statement of ExplorerAudioWorkbench
-start_return = content.find("  return (", start_component)
-# Find the end of the file or just the end of the component return
-end_of_component = content.find("export function isAudioPreviewExtension", start_return) # wait, it's end of file
+start_return = content.find("  const engineStatusBadges = [", start_component)
 
-# Extract the logic inside the component before the return
 logic_part = content[start_component:start_return]
 
-new_return_statement = """  return (
+new_return_statement = """  const engineStatusBadges = [
+    snapshot.ready ? 'Native Engine Ready' : 'Engine Starting',
+    isAnalyzing ? 'Analyzing' : null,
+    previewDeck.isLoading ? 'Loading' : null,
+    previewDeck.isPlaying ? 'Playing' : null,
+    snapshot.outputSampleRateHz ? `${snapshot.outputSampleRateHz.toLocaleString()} Hz Output` : null,
+  ].filter(Boolean) as string[];
+
+  return (
     <>
       <style>{`
         .pro-slider { -webkit-appearance: none; width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; outline: none; }

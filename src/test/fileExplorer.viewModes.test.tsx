@@ -1126,6 +1126,31 @@ describe("FileExplorer view modes", () => {
     );
   });
 
+  it("switches between icon and list view from footer toggles", async () => {
+    useSettingsStore.getState().updateExplorer({ viewMode: "details" });
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /switch explorer to icon view/i }),
+    );
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
+        "icons-l",
+      );
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /switch explorer to list view/i }),
+    );
+    await waitFor(() => {
+      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
+        "list",
+      );
+    });
+  });
+
   it.each(["icons-l", "list"] as const)(
     "keeps the final item reachable at the bottom of a 5000-item %s viewport",
     async (viewMode) => {

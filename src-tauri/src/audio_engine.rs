@@ -1,5 +1,4 @@
 use std::fs::File;
-use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
@@ -16,7 +15,6 @@ use rustfft::FftPlanner;
 use serde::{Deserialize, Serialize};
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::DecoderOptions;
-use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::{FormatOptions, Track};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
@@ -794,29 +792,27 @@ fn decode_audio_file(input_path: &Path) -> Result<DecodedAudioData, String> {
     loop {
         let packet = match format.next_packet() {
             Ok(packet) => packet,
-            Err(SymphoniaError::IoError(error)) if error.kind() == ErrorKind::UnexpectedEof => {
-                break;
-            }
-            Err(error) => {
-                return Err(format!(
-                    "Failed to read packet from '{}': {error}",
-                    input_path.display()
-                ));
-            }
+            Err(_) => break, // EOF or IO error, stop reading packets but keep what we have
         };
         if packet.track_id() != track_id {
             continue;
         }
-        let decoded = decoder.decode(&packet).map_err(|error| {
-            format!(
-                "Failed to decode audio packet from '{}': {error}",
-                input_path.display()
-            )
-        })?;
-        let mut sample_buffer =
-            SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
-        sample_buffer.copy_interleaved_ref(decoded);
-        interleaved_samples.extend_from_slice(sample_buffer.samples());
+        match decoder.decode(&packet) {
+            Ok(decoded) => {
+                let mut sample_buffer =
+                    SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
+                sample_buffer.copy_interleaved_ref(decoded);
+                interleaved_samples.extend_from_slice(sample_buffer.samples());
+            }
+            Err(symphonia::core::errors::Error::DecodeError(_)) => {
+                // A recoverable decode error (e.g., bad frame in MP3). Ignore and continue.
+                continue;
+            }
+            Err(_) => {
+                // A fatal error, stop decoding.
+                break;
+            }
+        }
     }
     let frames = interleaved_samples.len() / channels.max(1);
     Ok(DecodedAudioData {

@@ -7,24 +7,20 @@ import {
 } from '../components/ExplorerVideoEditor';
 
 const {
-  createExplorerVideoPreviewProxyMock,
   exportExplorerVideoTrimMock,
   loadVideoSourceMock,
   pauseVideoMock,
   playVideoMock,
-  resolveExplorerVideoPreviewSourceMock,
   seekVideoMock,
   setVideoLoopRegionMock,
   stopVideoMock,
   useVideoEngineFeedMock,
   useVideoEngineSnapshotMock,
 } = vi.hoisted(() => ({
-  createExplorerVideoPreviewProxyMock: vi.fn(),
   exportExplorerVideoTrimMock: vi.fn(),
   loadVideoSourceMock: vi.fn(),
   pauseVideoMock: vi.fn(),
   playVideoMock: vi.fn(),
-  resolveExplorerVideoPreviewSourceMock: vi.fn(),
   seekVideoMock: vi.fn(),
   setVideoLoopRegionMock: vi.fn(),
   stopVideoMock: vi.fn(),
@@ -37,9 +33,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 vi.mock('../runtime/videoEditorBackend', () => ({
-  createExplorerVideoPreviewProxy: createExplorerVideoPreviewProxyMock,
   exportExplorerVideoTrim: exportExplorerVideoTrimMock,
-  resolveExplorerVideoPreviewSource: resolveExplorerVideoPreviewSourceMock,
 }));
 
 vi.mock('../store/videoEngineStore', () => ({
@@ -62,6 +56,7 @@ const LOADED_VIDEO_SNAPSHOT: VideoEngineStateSnapshot = {
   widthPx: 1280,
   heightPx: 720,
   frameRate: 24,
+  hasAudioTrack: true,
   currentTimeSeconds: 0,
   isPlaying: false,
   isLoading: false,
@@ -83,34 +78,18 @@ describe('ExplorerVideoEditor', () => {
 
   beforeEach(() => {
     videoEngineSnapshot = { ...LOADED_VIDEO_SNAPSHOT };
-    createExplorerVideoPreviewProxyMock.mockReset();
     exportExplorerVideoTrimMock.mockReset();
     loadVideoSourceMock.mockReset();
     pauseVideoMock.mockReset();
     playVideoMock.mockReset();
-    resolveExplorerVideoPreviewSourceMock.mockReset();
     seekVideoMock.mockReset();
     setVideoLoopRegionMock.mockReset();
     stopVideoMock.mockReset();
     useVideoEngineFeedMock.mockReset();
-    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
-    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     useVideoEngineSnapshotMock.mockImplementation(() => videoEngineSnapshot);
     loadVideoSourceMock.mockImplementation(async () => {
       videoEngineSnapshot = { ...LOADED_VIDEO_SNAPSHOT };
       return videoEngineSnapshot;
-    });
-    resolveExplorerVideoPreviewSourceMock.mockResolvedValue({
-      sourcePath: '/tmp/demo.preview.mp4',
-      sourceKind: 'proxy',
-      mimeType: 'video/mp4',
-      generatedFromPath: '/tmp/demo.mov',
-    });
-    createExplorerVideoPreviewProxyMock.mockResolvedValue({
-      sourcePath: '/tmp/demo.preview.mp4',
-      sourceKind: 'proxy',
-      mimeType: 'video/mp4',
-      generatedFromPath: '/tmp/demo.mov',
     });
     playVideoMock.mockImplementation(async () => {
       videoEngineSnapshot = { ...videoEngineSnapshot, isPlaying: true };
@@ -189,19 +168,13 @@ describe('ExplorerVideoEditor', () => {
     });
 
     await waitFor(() => {
-      expect(resolveExplorerVideoPreviewSourceMock).toHaveBeenCalledWith('/tmp/demo.mov');
-    });
-
-    await waitFor(() => {
       expect(setVideoLoopRegionMock).toHaveBeenCalledWith(0, 18.75, true);
     });
 
-    fireEvent.loadedMetadata(
-      screen.getByLabelText(/compatibility video preview for demo\.mov/i),
-    );
+    fireEvent.load(screen.getByLabelText(/native video preview frame for demo\.mov/i));
 
     expect(
-      await screen.findByText(/preview ready via ffmpeg proxy\. rust owns transport and timing\./i),
+      await screen.findByText(/native preview ready\. rust owns transport and timing\./i),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /export trim/i }));
@@ -243,9 +216,7 @@ describe('ExplorerVideoEditor', () => {
       expect(loadVideoSourceMock).toHaveBeenCalledWith('/tmp/demo.mov');
     });
 
-    fireEvent.loadedMetadata(
-      screen.getByLabelText(/compatibility video preview for demo\.mov/i),
-    );
+    fireEvent.load(screen.getByLabelText(/native video preview frame for demo\.mov/i));
 
     fireEvent.click(screen.getByRole('button', { name: /^play$/i }));
     await waitFor(() => {
@@ -285,14 +256,7 @@ describe('ExplorerVideoEditor', () => {
     });
   });
 
-  it('falls back to an ffmpeg preview proxy when the direct webview preview fails', async () => {
-    resolveExplorerVideoPreviewSourceMock.mockResolvedValueOnce({
-      sourcePath: '/tmp/demo.mov',
-      sourceKind: 'direct',
-      mimeType: 'video/quicktime',
-      generatedFromPath: null,
-    });
-
+  it('keeps playback on the native frame lane and surfaces render failures directly', async () => {
     render(
       <ExplorerVideoEditor
         videoPath="/tmp/demo.mov"
@@ -305,13 +269,46 @@ describe('ExplorerVideoEditor', () => {
     );
 
     await waitFor(() => {
-      expect(resolveExplorerVideoPreviewSourceMock).toHaveBeenCalledWith('/tmp/demo.mov');
+      expect(loadVideoSourceMock).toHaveBeenCalledWith('/tmp/demo.mov');
     });
 
-    fireEvent.error(screen.getByLabelText(/compatibility video preview for demo\.mov/i));
+    const previewFrame = screen.getByLabelText(/native video preview frame for demo\.mov/i);
+    fireEvent.error(previewFrame);
 
-    await waitFor(() => {
-      expect(createExplorerVideoPreviewProxyMock).toHaveBeenCalledWith('/tmp/demo.mov');
-    });
+    const previewFailureMessages = await screen.findAllByText(
+      /preview surface could not render it/i,
+    );
+    expect(previewFailureMessages.length).toBeGreaterThan(0);
+    expect(
+      screen.queryByLabelText(/compatibility video preview for demo\.mov/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows audio fallback state without leaking audio-workbench copy into the timeline', async () => {
+    videoEngineSnapshot = {
+      ...LOADED_VIDEO_SNAPSHOT,
+      audioTransportReady: false,
+      audioTransportError: 'Native soundtrack preview could not load this video track.',
+    };
+    loadVideoSourceMock.mockImplementation(async () => videoEngineSnapshot);
+
+    render(
+      <ExplorerVideoEditor
+        videoPath="/tmp/demo.mov"
+        videoName="demo.mov"
+        videoSource="asset://localhost/tmp/demo.mov"
+        videoExtension="mov"
+        videoMimeType="video/quicktime"
+        videoSize={32 * 1024 * 1024}
+      />,
+    );
+
+    fireEvent.load(screen.getByLabelText(/native video preview frame for demo\.mov/i));
+
+    expect(await screen.findByText(/native soundtrack preview could not load this video track\./i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /audio fallback/i })).toBeDisabled();
+    expect(
+      screen.queryByText(/load an audio file before setting a loop region/i),
+    ).not.toBeInTheDocument();
   });
 });

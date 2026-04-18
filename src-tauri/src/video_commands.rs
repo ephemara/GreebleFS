@@ -441,11 +441,145 @@ fn paths_match(left: &Path, right: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        direct_video_preview_mime_type, normalize_trim_export_request,
+        direct_video_preview_mime_type, normalize_trim_export_request, run_video_trim_export,
         should_generate_video_preview_proxy, VideoTrimExportRequest,
     };
-    use crate::video_engine::sanitize_video_runtime_stem;
-    use std::path::Path;
+    use crate::video_engine::{
+        resolve_video_ffmpeg_binary, resolve_video_ffprobe_binary, sanitize_video_runtime_stem,
+    };
+    use serde::Deserialize;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+    use tempfile::tempdir;
+
+    #[derive(Debug, Deserialize)]
+    struct TestFfprobeResponse {
+        streams: Vec<TestFfprobeStream>,
+        format: Option<TestFfprobeFormat>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct TestFfprobeStream {
+        codec_type: Option<String>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct TestFfprobeFormat {
+        duration: Option<String>,
+    }
+
+    fn ensure_video_toolchain_available() -> Option<(String, String)> {
+        let ffmpeg_binary = resolve_video_ffmpeg_binary();
+        let ffprobe_binary = resolve_video_ffprobe_binary();
+
+        let ffmpeg_ready = Command::new(&ffmpeg_binary)
+            .arg("-version")
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false);
+        let ffprobe_ready = Command::new(&ffprobe_binary)
+            .arg("-version")
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false);
+
+        if ffmpeg_ready && ffprobe_ready {
+            Some((ffmpeg_binary, ffprobe_binary))
+        } else {
+            eprintln!(
+                "Skipping real trim export test because ffmpeg ({ffmpeg_binary}) or ffprobe ({ffprobe_binary}) was unavailable."
+            );
+            None
+        }
+    }
+
+    fn generate_test_video_fixture(
+        ffmpeg_binary: &str,
+        output_path: &Path,
+        with_audio_track: bool,
+    ) {
+        let extension = output_path
+            .extension()
+            .and_then(|value| value.to_str())
+            .expect("fixture extension")
+            .to_ascii_lowercase();
+
+        let mut command = Command::new(ffmpeg_binary);
+        command.args(["-hide_banner", "-loglevel", "error", "-y"]);
+        command.args(["-f", "lavfi", "-i", "testsrc=size=320x180:rate=24"]);
+        if with_audio_track {
+            command.args(["-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000"]);
+        }
+        command.args(["-t", "1.5", "-shortest"]);
+
+        match extension.as_str() {
+            "mp4" | "mov" | "mkv" => {
+                command.args(["-c:v", "libx264", "-pix_fmt", "yuv420p"]);
+                if with_audio_track {
+                    command.args(["-c:a", "aac", "-b:a", "128k"]);
+                } else {
+                    command.arg("-an");
+                }
+            }
+            "webm" => {
+                command.args(["-c:v", "libvpx", "-pix_fmt", "yuv420p"]);
+                if with_audio_track {
+                    command.args(["-c:a", "libvorbis", "-b:a", "96k"]);
+                } else {
+                    command.arg("-an");
+                }
+            }
+            "avi" => {
+                command.args(["-c:v", "mpeg4", "-qscale:v", "4"]);
+                if with_audio_track {
+                    command.args(["-c:a", "pcm_s16le"]);
+                } else {
+                    command.arg("-an");
+                }
+            }
+            other => panic!("unsupported fixture extension: {other}"),
+        }
+
+        command.arg(output_path);
+
+        let output = command.output().expect("launch ffmpeg for fixture");
+        if !output.status.success() {
+            panic!(
+                "failed to generate video fixture '{}': {}",
+                output_path.display(),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    fn probe_media_summary(ffprobe_binary: &str, input_path: &Path) -> TestFfprobeResponse {
+        let output = Command::new(ffprobe_binary)
+            .args([
+                "-v",
+                "error",
+                "-show_streams",
+                "-show_format",
+                "-print_format",
+                "json",
+                &input_path.to_string_lossy(),
+            ])
+            .output()
+            .expect("launch ffprobe");
+
+        if !output.status.success() {
+            panic!(
+                "ffprobe failed for '{}': {}",
+                input_path.display(),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        serde_json::from_slice(&output.stdout).expect("parse ffprobe json")
+    }
+
+    fn build_fixture_path(root: &Path, file_name: &str) -> PathBuf {
+        root.join(file_name)
+    }
 
     #[test]
     fn normalize_trim_export_request_rejects_same_input_and_output() {
@@ -498,5 +632,60 @@ mod tests {
         assert_eq!(sanitize_video_runtime_stem("Demo Clip 01"), "Demo-Clip-01");
         assert_eq!(sanitize_video_runtime_stem("___"), "___");
         assert_eq!(sanitize_video_runtime_stem("..."), "video");
+    }
+
+    #[test]
+    fn trim_export_transcodes_common_containers_into_seekable_mp4_outputs() {
+        let Some((ffmpeg_binary, ffprobe_binary)) = ensure_video_toolchain_available() else {
+            return;
+        };
+
+        let temp_directory = tempdir().expect("video trim tempdir");
+        for extension in ["mp4", "mov", "webm", "mkv", "avi"] {
+            let input_path =
+                build_fixture_path(temp_directory.path(), &format!("trim-source.{extension}"));
+            let output_path =
+                build_fixture_path(temp_directory.path(), &format!("trim-output-{extension}.mp4"));
+
+            generate_test_video_fixture(&ffmpeg_binary, &input_path, true);
+
+            let result = run_video_trim_export(VideoTrimExportRequest {
+                input_path: input_path.to_string_lossy().to_string(),
+                output_path: output_path.to_string_lossy().to_string(),
+                start_time_seconds: 0.2,
+                end_time_seconds: 1.1,
+                overwrite_existing: true,
+            })
+            .unwrap_or_else(|error| {
+                panic!(
+                    "trim export should succeed for '{}' but failed: {error}",
+                    input_path.display()
+                )
+            });
+
+            assert_eq!(result.output_path, output_path.to_string_lossy());
+            assert!(output_path.exists(), "{}", output_path.display());
+
+            let probe = probe_media_summary(&ffprobe_binary, &output_path);
+            let duration_seconds = probe
+                .format
+                .as_ref()
+                .and_then(|format| format.duration.as_deref())
+                .and_then(|value| value.parse::<f64>().ok())
+                .unwrap_or_default();
+            let codec_types = probe
+                .streams
+                .iter()
+                .filter_map(|stream| stream.codec_type.as_deref())
+                .collect::<Vec<_>>();
+
+            assert!(
+                duration_seconds > 0.5 && duration_seconds < 1.5,
+                "{}",
+                output_path.display()
+            );
+            assert!(codec_types.contains(&"video"), "{}", output_path.display());
+            assert!(codec_types.contains(&"audio"), "{}", output_path.display());
+        }
     }
 }

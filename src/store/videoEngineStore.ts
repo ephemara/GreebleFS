@@ -38,6 +38,7 @@ const DEFAULT_VIDEO_ENGINE_SNAPSHOT: ExplorerVideoEngineStateSnapshot = {
   widthPx: null,
   heightPx: null,
   frameRate: null,
+  hasAudioTrack: false,
   currentTimeSeconds: 0,
   isPlaying: false,
   isLoading: false,

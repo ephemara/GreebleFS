@@ -403,6 +403,9 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       statusViewSummary: {
         explorerStatusBar: { zone: 'start', order: 40, shrink: 1, collapsePriority: 20, overflowEligible: true },
       },
+      statusViewToggles: {
+        explorerStatusBar: { zone: 'end', order: 5 },
+      },
       statusPreviewSummary: {
         explorerStatusBar: { zone: 'center', order: 10, shrink: 1, collapsePriority: 30, overflowEligible: true },
       },
@@ -612,6 +615,9 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       },
       statusViewSummary: {
         explorerStatusBar: { zone: 'center', order: 10, shrink: 1, collapsePriority: 20, overflowEligible: true },
+      },
+      statusViewToggles: {
+        explorerStatusBar: { zone: 'end', order: 5 },
       },
       statusPreviewSummary: {
         explorerStatusBar: { zone: 'center', order: 20, shrink: 1, collapsePriority: 30, overflowEligible: true },

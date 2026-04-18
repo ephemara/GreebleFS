@@ -1,4 +1,6 @@
-import { convertFileSrc } from '@tauri-apps/api/core';
+import os
+
+part1 = """import { convertFileSrc } from '@tauri-apps/api/core';
 import {
   forwardRef,
   memo,
@@ -12,9 +14,15 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import {
+  AlertTriangle,
   AudioLines,
   Pause,
   Play,
+  RotateCcw,
+  Save,
+  Scissors,
+  Sparkles,
+  Waves,
 } from 'lucide-react';
 import { matchesKeybinding } from '../config/hotkeys';
 import {
@@ -53,11 +61,19 @@ type ExplorerAudioWorkbenchProps = {
 
 type ExportDialogMode = 'clip' | 'normalized' | 'convert' | 'overwrite' | null;
 type TimelineDragMode = 'playhead' | 'selectionStart' | 'selectionEnd' | 'fadeIn' | 'fadeOut';
+type ExportState = 'idle' | 'running' | 'saved' | 'error';
+type AudioWorkbenchSummaryTone = 'default' | 'accent';
 
+type AudioWorkbenchSummaryItem = {
+  label: string;
+  value: string;
+  tone?: AudioWorkbenchSummaryTone;
+};
 
 const MINIMUM_SELECTION_SECONDS = 0.05;
 const FADE_KEYBOARD_STEP_SECONDS = 0.1;
 const FINE_TRIM_NUDGE_SECONDS = 0.01;
+const SILENCE_REGION_PREVIEW_LIMIT = 6;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -130,6 +146,9 @@ function buildAudioOutputPath(
   return `${parentPath}${stem}.${suffix}.${extension}`;
 }
 
+"""
+
+part2 = """
 function toolbarButtonStyle(emphasis: 'default' | 'primary' | 'danger' | 'ghost' = 'default'): CSSProperties {
   const base = {
     appearance: 'none' as const,
@@ -324,6 +343,9 @@ const AudioWorkbenchPlayheadMarker = memo(
   ),
 );
 
+"""
+
+part3 = """
 export function ExplorerAudioWorkbench({
   audioPath,
   audioName,
@@ -351,11 +373,12 @@ export function ExplorerAudioWorkbench({
   );
   const [exportDialogMode, setExportDialogMode] = useState<ExportDialogMode>(null);
   const [exportPathInput, setExportPathInput] = useState('');
-    const [exportMessage, setExportMessage] = useState(
-    'Ready for playback and export.',
+  const [exportState, setExportState] = useState<ExportState>('idle');
+  const [exportMessage, setExportMessage] = useState(
+    'Rust owns transport. SoX stays in the offline export lane.',
   );
   const [workbenchStatus, setWorkbenchStatus] = useState(
-    'Preparing audio environment…',
+    'Preparing native audio engine…',
   );
   const [workbenchError, setWorkbenchError] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -403,8 +426,9 @@ export function ExplorerAudioWorkbench({
     setExportPathInput(
       buildAudioOutputPath(audioPath, 'clip', DEFAULT_EXPLORER_AUDIO_EXPORT_FORMAT_ID),
     );
-        setExportMessage('Ready for playback and export.');
-    setWorkbenchStatus('Loading the current selection…');
+    setExportState('idle');
+    setExportMessage('Rust owns transport. SoX stays in the offline export lane.');
+    setWorkbenchStatus('Loading the current explorer selection into the native audio engine…');
     setWorkbenchError(null);
     setIsAnalyzing(true);
     setSpectrogramSource(null);
@@ -422,7 +446,7 @@ export function ExplorerAudioWorkbench({
         setSelectionStart(0);
         setSelectionEnd(nextAnalysis.durationSeconds);
         setWorkbenchStatus(
-          'Audio loaded and ready for playback.',
+          'The selected file is loaded in the native engine. Playback is running through Rust, not the webview.',
         );
       } catch (error) {
         if (cancelled) {
@@ -430,7 +454,7 @@ export function ExplorerAudioWorkbench({
         }
         const message = error instanceof Error ? error.message : String(error);
         setWorkbenchError(message);
-        setWorkbenchStatus('Audio analysis or deck load failed.');
+        setWorkbenchStatus('Audio analysis or native deck load failed.');
       } finally {
         if (!cancelled) {
           setIsAnalyzing(false);
@@ -615,7 +639,7 @@ export function ExplorerAudioWorkbench({
       }
       await playAudioDeck(activeDeckId);
       setWorkbenchError(null);
-      setWorkbenchStatus('Playback started.');
+      setWorkbenchStatus('Playback running from the native engine.');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setWorkbenchError(message);
@@ -739,6 +763,12 @@ export function ExplorerAudioWorkbench({
     }
     updateSelection(selectionStart, selectionEnd + deltaSeconds);
     setWorkbenchStatus('Selection out-point nudged.');
+  }
+
+  function selectSilenceRegion(startSeconds: number, endSeconds: number) {
+    updateSelection(startSeconds, endSeconds);
+    syncPlayhead(startSeconds);
+    setWorkbenchStatus('Silence region loaded into the trim selection.');
   }
 
   function jumpToAdjacentSilence(direction: 'previous' | 'next') {
@@ -865,7 +895,8 @@ export function ExplorerAudioWorkbench({
 
   async function submitExport(mode: Exclude<ExportDialogMode, null>) {
     if (effectiveDuration <= 0) {
-            setExportMessage('Load a valid audio file before exporting.');
+      setExportState('error');
+      setExportMessage('Load a valid audio file before exporting.');
       return;
     }
     const nextOutputFormat =
@@ -873,7 +904,8 @@ export function ExplorerAudioWorkbench({
         ? getExplorerAudioExportFormatDefinition(convertFormat)?.extension ?? convertFormat
         : DEFAULT_EXPLORER_AUDIO_EXPORT_FORMAT_ID;
     setExportDialogMode(null);
-        setExportMessage('Processing audio export…');
+    setExportState('running');
+    setExportMessage('Running SoX transform…');
     try {
       const result = await exportExplorerAudioTransform({
         inputPath: audioPath,
@@ -894,19 +926,22 @@ export function ExplorerAudioWorkbench({
         outputFormat: nextOutputFormat,
         generateSpectrogram,
       });
-            setExportMessage(`Saved audio output to ${result.outputPath}`);
+      setExportState('saved');
+      setExportMessage(`Saved audio output to ${result.outputPath}`);
       setSpectrogramSource(
         result.spectrogramPath ? convertFileSrc(result.spectrogramPath) : null,
       );
       await onExported?.(result.outputPath);
     } catch (error) {
-            setExportMessage(error instanceof Error ? error.message : String(error));
+      setExportState('error');
+      setExportMessage(error instanceof Error ? error.message : String(error));
     }
   }
 
   async function submitOverwriteOriginal() {
     setExportDialogMode(null);
-        setExportMessage('Overwriting original audio…');
+    setExportState('running');
+    setExportMessage('Overwriting original audio with SoX…');
     try {
       const result = await exportExplorerAudioTransform({
         inputPath: audioPath,
@@ -922,15 +957,25 @@ export function ExplorerAudioWorkbench({
         outputFormat: audioExtension || 'wav',
         generateSpectrogram,
       });
-            setExportMessage(`Overwrote ${audioName} in place.`);
+      setExportState('saved');
+      setExportMessage(`Overwrote ${audioName} in place.`);
       setSpectrogramSource(
         result.spectrogramPath ? convertFileSrc(result.spectrogramPath) : null,
       );
       await onExported?.(result.outputPath);
     } catch (error) {
-            setExportMessage(error instanceof Error ? error.message : String(error));
+      setExportState('error');
+      setExportMessage(error instanceof Error ? error.message : String(error));
     }
   }
+
+  const engineStatusBadges = [
+    snapshot.ready ? 'Native Engine Ready' : 'Engine Starting',
+    isAnalyzing ? 'Analyzing' : null,
+    previewDeck.isLoading ? 'Loading' : null,
+    previewDeck.isPlaying ? 'Playing' : null,
+    snapshot.outputSampleRateHz ? `${snapshot.outputSampleRateHz.toLocaleString()} Hz Output` : null,
+  ].filter(Boolean) as string[];
 
   return (
     <>
@@ -1205,7 +1250,7 @@ export function ExplorerAudioWorkbench({
         }
         description={
           exportDialogMode === 'convert'
-            ? `This will write a ${convertFormat.toUpperCase()} export using the current trim, pitch, fade, and spectrogram settings.`
+            ? `SoX will write a ${convertFormat.toUpperCase()} export using the current trim, pitch, fade, and spectrogram settings.`
             : 'Choose the output path for the new audio export.'
         }
         value={exportPathInput}
@@ -1220,7 +1265,7 @@ export function ExplorerAudioWorkbench({
             void submitExport(exportDialogMode);
           }
         }}
-        submitLabel='Export Audio'
+        submitLabel='Run SoX Export'
       />
 
       <AppConfirmDialog
@@ -1247,3 +1292,7 @@ export function ExplorerAudioWorkbench({
     </>
   );
 }
+"""
+
+with open('src/components/ExplorerAudioWorkbench.tsx', 'w') as f:
+    f.write(part1 + part2 + part3)

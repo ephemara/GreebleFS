@@ -50,6 +50,8 @@ import {
   FilePlus,
   FolderPlus,
   CopyPlus,
+  LayoutGrid,
+  List,
   Save,
   Tags,
   Undo2,
@@ -12251,6 +12253,61 @@ export function FileExplorer({
               : ""}
           </span>
         ),
+      },
+      {
+        id: "statusViewToggles",
+        label: "Status View Toggles",
+        surfaces: ["explorerStatusBar"],
+        isVisible: () => !isCompactDock,
+        render: () => {
+          const iconViewActive =
+            selectedViewModeDefinition.presentation === "grid";
+          const listViewActive = themedViewMode === "list";
+
+          const buildStatusViewButtonStyle = (active: boolean): CSSProperties => ({
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 24,
+            height: 24,
+            borderRadius: 7,
+            border: `1px solid ${active ? accent : "var(--overlay-explorer-chip-border)"}`,
+            background: active
+              ? "var(--overlay-explorer-chip-active-bg)"
+              : "var(--overlay-explorer-chip-bg)",
+            color: active ? EXP.text : EXP.muted,
+            cursor: "pointer",
+            transition:
+              "background 0.14s ease, border-color 0.14s ease, color 0.14s ease",
+          });
+
+          return (
+            <div
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            >
+              <button
+                type="button"
+                aria-label="Switch explorer to icon view"
+                aria-pressed={iconViewActive}
+                title="Icon view"
+                onClick={() => updateExplorerSettings({ viewMode: "icons-l" })}
+                style={buildStatusViewButtonStyle(iconViewActive)}
+              >
+                <LayoutGrid size={13} />
+              </button>
+              <button
+                type="button"
+                aria-label="Switch explorer to list view"
+                aria-pressed={listViewActive}
+                title="List view"
+                onClick={() => updateExplorerSettings({ viewMode: "list" })}
+                style={buildStatusViewButtonStyle(listViewActive)}
+              >
+                <List size={13} />
+              </button>
+            </div>
+          );
+        },
       },
       {
         id: "statusPreviewSummary",

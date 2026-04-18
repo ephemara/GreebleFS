@@ -2,7 +2,7 @@ use crate::audio_engine::{
     audio_engine_get_state, audio_engine_load_deck, audio_engine_pause, audio_engine_play,
     audio_engine_seek, audio_engine_set_loop_region, audio_engine_stop, AudioDeckId,
     AudioEngineDeckRequest, AudioEngineLoadDeckRequest, AudioEngineLoopRegionRequest,
-    AudioEngineSeekRequest,
+    AudioEngineSeekRequest, AudioEngineStateSnapshot,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -53,6 +53,7 @@ pub struct VideoEngineStateSnapshot {
     pub width_px: Option<u32>,
     pub height_px: Option<u32>,
     pub frame_rate: Option<f64>,
+    pub has_audio_track: bool,
     pub current_time_seconds: f64,
     pub is_playing: bool,
     pub is_loading: bool,
@@ -117,6 +118,7 @@ struct VideoEngineMutableState {
     width_px: Option<u32>,
     height_px: Option<u32>,
     frame_rate: Option<f64>,
+    has_audio_track: bool,
     current_time_seconds: f64,
     is_playing: bool,
     is_loading: bool,
@@ -140,6 +142,7 @@ struct PreparedVideoSource {
     width_px: u32,
     height_px: u32,
     frame_rate: Option<f64>,
+    has_audio_track: bool,
     frame_sequence_paths: Vec<PathBuf>,
 }
 
@@ -149,6 +152,7 @@ struct ProbedVideoMetadata {
     width_px: u32,
     height_px: u32,
     frame_rate: Option<f64>,
+    has_audio_track: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -182,6 +186,7 @@ impl Default for VideoEngineMutableState {
             width_px: None,
             height_px: None,
             frame_rate: None,
+            has_audio_track: false,
             current_time_seconds: 0.0,
             is_playing: false,
             is_loading: false,
@@ -235,6 +240,7 @@ fn build_snapshot(state: &VideoEngineMutableState) -> VideoEngineStateSnapshot {
         width_px: state.width_px,
         height_px: state.height_px,
         frame_rate: state.frame_rate,
+        has_audio_track: state.has_audio_track,
         current_time_seconds: state.current_time_seconds,
         is_playing: state.is_playing,
         is_loading: state.is_loading,
@@ -529,6 +535,7 @@ fn prepare_video_source(app: &AppHandle, input_path: &Path) -> Result<PreparedVi
         width_px: metadata.width_px,
         height_px: metadata.height_px,
         frame_rate: metadata.frame_rate,
+        has_audio_track: metadata.has_audio_track,
         frame_sequence_paths,
     })
 }
@@ -590,7 +597,56 @@ fn probe_video_metadata(input_path: &Path) -> Result<ProbedVideoMetadata, String
             .avg_frame_rate
             .as_deref()
             .and_then(parse_ffprobe_frame_rate),
+        has_audio_track: response
+            .streams
+            .iter()
+            .any(|stream| stream.codec_type.as_deref() == Some("audio")),
     })
+}
+
+fn resolve_video_audio_transport_status(
+    audio_load_result: &Result<AudioEngineStateSnapshot, String>,
+    input_path: &Path,
+    has_audio_track: bool,
+) -> (bool, Option<String>) {
+    if !has_audio_track {
+        return (false, None);
+    }
+
+    match audio_load_result {
+        Ok(snapshot) => {
+            let input_path_string = input_path.to_string_lossy();
+            let maybe_video_deck = snapshot
+                .decks
+                .iter()
+                .find(|deck| deck.deck_id == VIDEO_AUDIO_DECK_ID);
+            let Some(video_deck) = maybe_video_deck else {
+                return (
+                    false,
+                    Some(
+                        "Native soundtrack preview is unavailable because the shared audio deck state was missing."
+                            .to_string(),
+                    ),
+                );
+            };
+
+            let deck_loaded_matches =
+                video_deck.loaded_path.as_deref() == Some(input_path_string.as_ref());
+            if deck_loaded_matches && video_deck.error.is_none() {
+                return (true, None);
+            }
+
+            let error_message = video_deck.error.clone().unwrap_or_else(|| {
+                "Native soundtrack preview could not load this video's audio track. Silent timing fallback is active."
+                    .to_string()
+            });
+            (false, Some(error_message))
+        }
+        Err(error) => (
+            false,
+            Some(format!("Native soundtrack preview failed to start: {error}")),
+        ),
+    }
 }
 
 fn parse_ffprobe_duration_seconds(value: &str) -> Option<f64> {
@@ -870,6 +926,7 @@ pub async fn video_engine_load_source(
         state.width_px = None;
         state.height_px = None;
         state.frame_rate = None;
+        state.has_audio_track = false;
         state.current_time_seconds = 0.0;
         state.is_playing = false;
         state.is_loading = true;
@@ -898,14 +955,30 @@ pub async fn video_engine_load_source(
     .await
     .map_err(|error| format!("Video source preparation task failed to join: {error}"))??;
 
-    let audio_transport_result = audio_engine_load_deck(
-        app.clone(),
-        AudioEngineLoadDeckRequest {
-            deck_id: VIDEO_AUDIO_DECK_ID,
-            input_path: prepared_source.input_path.to_string_lossy().to_string(),
-        },
-    )
-    .await;
+    let audio_transport_result = if prepared_source.has_audio_track {
+        Some(
+            audio_engine_load_deck(
+                app.clone(),
+                AudioEngineLoadDeckRequest {
+                    deck_id: VIDEO_AUDIO_DECK_ID,
+                    input_path: prepared_source.input_path.to_string_lossy().to_string(),
+                },
+            )
+            .await,
+        )
+    } else {
+        None
+    };
+    let (audio_transport_ready, audio_transport_error) = audio_transport_result
+        .as_ref()
+        .map(|result| {
+            resolve_video_audio_transport_status(
+                result,
+                prepared_source.input_path.as_path(),
+                prepared_source.has_audio_track,
+            )
+        })
+        .unwrap_or((false, None));
 
     let snapshot = {
         let mut state = shared
@@ -923,6 +996,7 @@ pub async fn video_engine_load_source(
         state.width_px = Some(prepared_source.width_px);
         state.height_px = Some(prepared_source.height_px);
         state.frame_rate = prepared_source.frame_rate;
+        state.has_audio_track = prepared_source.has_audio_track;
         state.current_time_seconds = 0.0;
         state.is_playing = false;
         state.is_loading = false;
@@ -933,8 +1007,8 @@ pub async fn video_engine_load_source(
             end_seconds: prepared_source.duration_seconds,
             enabled: false,
         };
-        state.audio_transport_ready = audio_transport_result.is_ok();
-        state.audio_transport_error = audio_transport_result.err();
+        state.audio_transport_ready = audio_transport_ready;
+        state.audio_transport_error = audio_transport_error;
         update_preview_frame_for_current_time(&mut state);
         build_snapshot(&state)
     };
@@ -1140,9 +1214,152 @@ pub fn video_engine_set_loop_region(
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_ffprobe_duration_seconds, parse_ffprobe_frame_rate,
+        generate_video_frame_sequence, parse_ffprobe_duration_seconds, parse_ffprobe_frame_rate,
+        probe_video_metadata, resolve_video_audio_transport_status, resolve_video_ffmpeg_binary,
+        resolve_video_ffprobe_binary,
         resolve_preview_sequence_frame_count, resolve_preview_sequence_frame_rate,
+        VIDEO_AUDIO_DECK_ID,
     };
+    use crate::audio_engine::{
+        AudioDeckId, AudioDeckState, AudioEngineLoopRegion, AudioEngineStateSnapshot,
+    };
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+    use tempfile::tempdir;
+
+    fn build_test_audio_deck_state(
+        deck_id: AudioDeckId,
+        loaded_path: Option<&str>,
+        error: Option<&str>,
+    ) -> AudioDeckState {
+        AudioDeckState {
+            deck_id,
+            loaded_path: loaded_path.map(ToOwned::to_owned),
+            loaded_name: loaded_path.and_then(|path| {
+                Path::new(path)
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .map(ToOwned::to_owned)
+            }),
+            duration_seconds: 12.0,
+            current_time_seconds: 0.0,
+            gain_linear: 1.0,
+            rate: 1.0,
+            is_playing: false,
+            is_loading: false,
+            is_buffering: false,
+            peak_meter_linear: 0.0,
+            rms_meter_linear: 0.0,
+            loop_region: AudioEngineLoopRegion {
+                start_seconds: 0.0,
+                end_seconds: 0.0,
+                enabled: false,
+            },
+            error: error.map(ToOwned::to_owned),
+        }
+    }
+
+    fn build_test_audio_snapshot(deck_b: AudioDeckState) -> AudioEngineStateSnapshot {
+        AudioEngineStateSnapshot {
+            ready: true,
+            engine_error: None,
+            armed_deck: AudioDeckId::A,
+            output_sample_rate_hz: Some(48_000),
+            output_channels: Some(2),
+            decks: vec![
+                build_test_audio_deck_state(AudioDeckId::A, None, None),
+                deck_b,
+            ],
+        }
+    }
+
+    fn ensure_video_toolchain_available() -> Option<(String, String)> {
+        let ffmpeg_binary = resolve_video_ffmpeg_binary();
+        let ffprobe_binary = resolve_video_ffprobe_binary();
+
+        let ffmpeg_ready = Command::new(&ffmpeg_binary)
+            .arg("-version")
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false);
+        let ffprobe_ready = Command::new(&ffprobe_binary)
+            .arg("-version")
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false);
+
+        if ffmpeg_ready && ffprobe_ready {
+            Some((ffmpeg_binary, ffprobe_binary))
+        } else {
+            eprintln!(
+                "Skipping real video toolchain test because ffmpeg ({ffmpeg_binary}) or ffprobe ({ffprobe_binary}) was unavailable."
+            );
+            None
+        }
+    }
+
+    fn generate_test_video_fixture(
+        ffmpeg_binary: &str,
+        output_path: &Path,
+        with_audio_track: bool,
+    ) {
+        let extension = output_path
+            .extension()
+            .and_then(|value| value.to_str())
+            .expect("fixture extension")
+            .to_ascii_lowercase();
+
+        let mut command = Command::new(ffmpeg_binary);
+        command.args(["-hide_banner", "-loglevel", "error", "-y"]);
+        command.args(["-f", "lavfi", "-i", "testsrc=size=320x180:rate=24"]);
+        if with_audio_track {
+            command.args(["-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000"]);
+        }
+        command.args(["-t", "1.5", "-shortest"]);
+
+        match extension.as_str() {
+            "mp4" | "mov" | "mkv" => {
+                command.args(["-c:v", "libx264", "-pix_fmt", "yuv420p"]);
+                if with_audio_track {
+                    command.args(["-c:a", "aac", "-b:a", "128k"]);
+                } else {
+                    command.arg("-an");
+                }
+            }
+            "webm" => {
+                command.args(["-c:v", "libvpx", "-pix_fmt", "yuv420p"]);
+                if with_audio_track {
+                    command.args(["-c:a", "libvorbis", "-b:a", "96k"]);
+                } else {
+                    command.arg("-an");
+                }
+            }
+            "avi" => {
+                command.args(["-c:v", "mpeg4", "-qscale:v", "4"]);
+                if with_audio_track {
+                    command.args(["-c:a", "pcm_s16le"]);
+                } else {
+                    command.arg("-an");
+                }
+            }
+            other => panic!("unsupported fixture extension: {other}"),
+        }
+
+        command.arg(output_path);
+
+        let output = command.output().expect("launch ffmpeg for fixture");
+        if !output.status.success() {
+            panic!(
+                "failed to generate video fixture '{}': {}",
+                output_path.display(),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    fn build_fixture_path(root: &Path, file_name: &str) -> PathBuf {
+        root.join(file_name)
+    }
 
     #[test]
     fn parse_ffprobe_frame_rate_supports_rational_values() {
@@ -1170,5 +1387,124 @@ mod tests {
         let fps = resolve_preview_sequence_frame_rate(4.0, Some(24.0));
         assert!(fps >= 10.0);
         assert!(resolve_preview_sequence_frame_count(4.0, fps) <= 180);
+    }
+
+    #[test]
+    fn audio_transport_status_requires_the_video_audio_deck_to_load_the_selected_path() {
+        let input_path = Path::new("/tmp/demo.mov");
+        let snapshot = build_test_audio_snapshot(build_test_audio_deck_state(
+            VIDEO_AUDIO_DECK_ID,
+            Some("/tmp/demo.mov"),
+            None,
+        ));
+
+        let (ready, error) =
+            resolve_video_audio_transport_status(&Ok(snapshot), input_path, true);
+
+        assert!(ready);
+        assert_eq!(error, None);
+    }
+
+    #[test]
+    fn audio_transport_status_surfaces_audio_decode_failures_without_marking_transport_ready() {
+        let input_path = Path::new("/tmp/demo.mov");
+        let snapshot = build_test_audio_snapshot(build_test_audio_deck_state(
+            VIDEO_AUDIO_DECK_ID,
+            None,
+            Some("No supported audio tracks were found in the selected file."),
+        ));
+
+        let (ready, error) =
+            resolve_video_audio_transport_status(&Ok(snapshot), input_path, true);
+
+        assert!(!ready);
+        assert_eq!(
+            error.as_deref(),
+            Some("No supported audio tracks were found in the selected file.")
+        );
+    }
+
+    #[test]
+    fn audio_transport_status_stays_silent_when_the_video_has_no_audio_track() {
+        let input_path = Path::new("/tmp/demo.mov");
+        let snapshot = build_test_audio_snapshot(build_test_audio_deck_state(
+            VIDEO_AUDIO_DECK_ID,
+            None,
+            Some("this error should be ignored when no track exists"),
+        ));
+
+        let (ready, error) =
+            resolve_video_audio_transport_status(&Ok(snapshot), input_path, false);
+
+        assert!(!ready);
+        assert_eq!(error, None);
+    }
+
+    #[test]
+    fn probe_video_metadata_reads_common_container_formats_and_audio_presence() {
+        let Some((ffmpeg_binary, _ffprobe_binary)) = ensure_video_toolchain_available() else {
+            return;
+        };
+
+        let temp_directory = tempdir().expect("video fixture tempdir");
+        for extension in ["mp4", "mov", "webm", "mkv", "avi"] {
+            let fixture_path = build_fixture_path(
+                temp_directory.path(),
+                &format!("metadata-fixture.{extension}"),
+            );
+            generate_test_video_fixture(&ffmpeg_binary, &fixture_path, true);
+
+            let metadata = probe_video_metadata(&fixture_path)
+                .unwrap_or_else(|error| panic!("expected metadata for {}: {error}", fixture_path.display()));
+
+            assert!(metadata.duration_seconds > 1.0, "{}", fixture_path.display());
+            assert_eq!(metadata.width_px, 320, "{}", fixture_path.display());
+            assert_eq!(metadata.height_px, 180, "{}", fixture_path.display());
+            assert!(metadata.frame_rate.unwrap_or_default() >= 20.0, "{}", fixture_path.display());
+            assert!(metadata.has_audio_track, "{}", fixture_path.display());
+        }
+
+        let silent_fixture_path = build_fixture_path(temp_directory.path(), "metadata-silent.mp4");
+        generate_test_video_fixture(&ffmpeg_binary, &silent_fixture_path, false);
+
+        let silent_metadata = probe_video_metadata(&silent_fixture_path)
+            .unwrap_or_else(|error| panic!("expected metadata for {}: {error}", silent_fixture_path.display()));
+
+        assert!(!silent_metadata.has_audio_track);
+    }
+
+    #[test]
+    fn generate_video_frame_sequence_decodes_common_container_formats_into_png_frames() {
+        let Some((ffmpeg_binary, _ffprobe_binary)) = ensure_video_toolchain_available() else {
+            return;
+        };
+
+        let temp_directory = tempdir().expect("video sequence tempdir");
+        for extension in ["mp4", "mov", "webm", "mkv", "avi"] {
+            let fixture_path = build_fixture_path(
+                temp_directory.path(),
+                &format!("sequence-fixture.{extension}"),
+            );
+            let frame_directory =
+                build_fixture_path(temp_directory.path(), &format!("frames-{extension}"));
+            std::fs::create_dir_all(&frame_directory).expect("frame directory");
+            generate_test_video_fixture(&ffmpeg_binary, &fixture_path, true);
+
+            generate_video_frame_sequence(&fixture_path, &frame_directory, 4.0, 6)
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "expected preview frame generation for {}: {error}",
+                        fixture_path.display()
+                    )
+                });
+
+            let frame_count = std::fs::read_dir(&frame_directory)
+                .expect("read frame directory")
+                .filter_map(Result::ok)
+                .filter(|entry| entry.path().extension().and_then(|value| value.to_str()) == Some("png"))
+                .count();
+
+            assert!(frame_count > 0, "{}", fixture_path.display());
+        }
     }
 }

@@ -13,10 +13,7 @@ import {
   VolumeX,
 } from 'lucide-react';
 import {
-  createExplorerVideoPreviewProxy,
   exportExplorerVideoTrim,
-  resolveExplorerVideoPreviewSource,
-  type ExplorerVideoPreviewSource,
 } from '../runtime/videoEditorBackend';
 import {
   loadVideoSource,
@@ -41,7 +38,6 @@ type ExplorerVideoEditorProps = {
 };
 
 type VideoExportState = 'idle' | 'exporting' | 'saved' | 'error';
-type VideoCompatibilityPreviewStatus = 'idle' | 'loading' | 'ready' | 'error';
 type TimelineDragMode = 'playhead' | 'trimStart' | 'trimEnd';
 
 const MINIMUM_TRIM_DURATION_SECONDS = 0.1;
@@ -139,13 +135,12 @@ function toolbarButtonStyle(
   };
 }
 
-function previewSurfaceStyle(previewImageUrl: string | null): CSSProperties {
+function previewSurfaceStyle(): CSSProperties {
   return {
     width: '100%',
     height: '100%',
-    background: previewImageUrl
-      ? `radial-gradient(circle at top, rgba(255,255,255,0.08), transparent 52%), rgba(0,0,0,0.76) center / contain no-repeat url("${previewImageUrl}")`
-      : 'radial-gradient(circle at top, rgba(255,255,255,0.08), transparent 52%), rgba(0,0,0,0.76)',
+    background:
+      'radial-gradient(circle at top, rgba(255,255,255,0.08), transparent 52%), rgba(0,0,0,0.76)',
   };
 }
 
@@ -165,35 +160,28 @@ function previewMediaStyle(opacity: number): CSSProperties {
 export function ExplorerVideoEditor({
   videoPath,
   videoName,
-  videoSource,
+  videoSource: _videoSource,
   videoExtension,
-  videoMimeType,
+  videoMimeType: _videoMimeType,
   videoSize,
   onExported,
 }: ExplorerVideoEditorProps) {
   useVideoEngineFeed();
 
   const snapshot = useVideoEngineSnapshot();
-  const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const durationRef = useRef(0);
   const trimStartRef = useRef(0);
   const trimEndRef = useRef(0);
   const loadRequestTokenRef = useRef(0);
-  const previewProxyRequestedRef = useRef(false);
 
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(0);
   const [loopSelection, setLoopSelection] = useState(true);
   const [statusMessage, setStatusMessage] = useState('Preparing native video engine…');
   const [playbackError, setPlaybackError] = useState<string | null>(null);
-  const [compatibilityPreviewSource, setCompatibilityPreviewSource] =
-    useState<ExplorerVideoPreviewSource | null>(null);
-  const [compatibilityPreviewUrl, setCompatibilityPreviewUrl] = useState<string | null>(null);
-  const [compatibilityPreviewStatus, setCompatibilityPreviewStatus] =
-    useState<VideoCompatibilityPreviewStatus>('idle');
-  const [compatibilityPreviewError, setCompatibilityPreviewError] = useState<string | null>(null);
   const [framePreviewLoaded, setFramePreviewLoaded] = useState(false);
+  const [framePreviewError, setFramePreviewError] = useState<string | null>(null);
   const [backendStreamReady, setBackendStreamReady] = useState(false);
   const [exportState, setExportState] = useState<VideoExportState>('idle');
   const [exportMessage, setExportMessage] = useState(
@@ -230,6 +218,12 @@ export function ExplorerVideoEditor({
   }, [trimEnd]);
 
   useEffect(() => {
+    if (previewImageUrl) {
+      setFramePreviewError(null);
+    }
+  }, [previewImageUrl]);
+
+  useEffect(() => {
     let cancelled = false;
     const requestToken = loadRequestTokenRef.current + 1;
     loadRequestTokenRef.current = requestToken;
@@ -239,12 +233,8 @@ export function ExplorerVideoEditor({
     setLoopSelection(true);
     setPlaybackError(null);
     setBackendStreamReady(false);
-    setCompatibilityPreviewSource(null);
-    setCompatibilityPreviewUrl(null);
-    setCompatibilityPreviewStatus('idle');
-    setCompatibilityPreviewError(null);
     setFramePreviewLoaded(false);
-    previewProxyRequestedRef.current = false;
+    setFramePreviewError(null);
     setExportState('idle');
     setExportMessage(
       'Trim export writes a sibling MP4 so the source file stays untouched.',
@@ -262,7 +252,7 @@ export function ExplorerVideoEditor({
         setTrimEnd(nextSnapshot.durationSeconds);
         setPlaybackError(null);
         setBackendStreamReady(nextSnapshot.ready && nextSnapshot.durationSeconds > 0);
-        setStatusMessage('Native engine ready. Waiting for preview surface…');
+        setStatusMessage('Native engine ready. Waiting for preview frames…');
         if (nextSnapshot.durationSeconds > 0) {
           await setVideoLoopRegion(0, nextSnapshot.durationSeconds, true);
         }
@@ -280,137 +270,12 @@ export function ExplorerVideoEditor({
       }
     }
 
-    async function resolveCompatibilityPreview(): Promise<void> {
-      try {
-        const resolvedSource = await resolveExplorerVideoPreviewSource(videoPath);
-        if (cancelled || loadRequestTokenRef.current !== requestToken) {
-          return;
-        }
-        setCompatibilityPreviewSource(resolvedSource);
-        setCompatibilityPreviewUrl(buildFilePreviewUrl(resolvedSource.sourcePath));
-        setCompatibilityPreviewStatus('loading');
-        setCompatibilityPreviewError(null);
-      } catch (error) {
-        if (cancelled || loadRequestTokenRef.current !== requestToken) {
-          return;
-        }
-        const message = error instanceof Error ? error.message : String(error);
-        console.error('ExplorerVideoEditor: failed to resolve compatibility preview source', {
-          videoPath,
-          error,
-        });
-        if (videoSource) {
-          setCompatibilityPreviewSource({
-            sourcePath: videoPath,
-            sourceKind: 'direct',
-            mimeType: videoMimeType,
-            generatedFromPath: null,
-          });
-          setCompatibilityPreviewUrl(videoSource);
-          setCompatibilityPreviewStatus('loading');
-          setCompatibilityPreviewError(
-            `Preview source resolution failed. Falling back to the provided asset URL. ${message}`,
-          );
-          return;
-        }
-        setCompatibilityPreviewStatus('error');
-        setCompatibilityPreviewError(message);
-      }
-    }
-
     void loadNativeVideoSource();
-    void resolveCompatibilityPreview();
 
     return () => {
       cancelled = true;
     };
-  }, [videoMimeType, videoPath, videoSource]);
-
-  async function requestPreviewProxy(reason: string): Promise<void> {
-    if (
-      previewProxyRequestedRef.current
-      || compatibilityPreviewSource?.sourceKind === 'proxy'
-    ) {
-      return;
-    }
-    const requestToken = loadRequestTokenRef.current;
-    previewProxyRequestedRef.current = true;
-    setCompatibilityPreviewStatus('loading');
-    try {
-      console.warn('ExplorerVideoEditor: falling back to FFmpeg preview proxy', {
-        videoPath,
-        reason,
-        sourceKind: compatibilityPreviewSource?.sourceKind ?? 'unknown',
-      });
-      const proxySource = await createExplorerVideoPreviewProxy(videoPath);
-      if (loadRequestTokenRef.current !== requestToken) {
-        return;
-      }
-      setCompatibilityPreviewSource(proxySource);
-      setCompatibilityPreviewUrl(buildFilePreviewUrl(proxySource.sourcePath));
-      setCompatibilityPreviewStatus('loading');
-      setCompatibilityPreviewError(null);
-    } catch (error) {
-      if (loadRequestTokenRef.current !== requestToken) {
-        return;
-      }
-      const message = error instanceof Error ? error.message : String(error);
-      console.error('ExplorerVideoEditor: failed to create FFmpeg preview proxy', {
-        videoPath,
-        reason,
-        error,
-      });
-      setCompatibilityPreviewStatus('error');
-      setCompatibilityPreviewError(message);
-    }
-  }
-
-  useEffect(() => {
-    const previewVideo = previewVideoRef.current;
-    if (!previewVideo || compatibilityPreviewStatus !== 'ready') {
-      return;
-    }
-
-    const targetTime = clamp(currentTime, 0, duration || 0);
-    if (
-      Number.isFinite(previewVideo.currentTime)
-      && Math.abs(previewVideo.currentTime - targetTime) > (isPlaying ? 0.24 : 0.05)
-    ) {
-      try {
-        previewVideo.currentTime = targetTime;
-      } catch (error) {
-        console.error('ExplorerVideoEditor: failed to sync compatibility preview time', {
-          videoPath,
-          targetTime,
-          error,
-        });
-      }
-    }
-
-    if (isPlaying) {
-      const playPromise = previewVideo.play();
-      if (playPromise && typeof playPromise.catch === 'function') {
-        void playPromise.catch((error) => {
-          console.error('ExplorerVideoEditor: compatibility preview could not start', {
-            videoPath,
-            sourceKind: compatibilityPreviewSource?.sourceKind ?? 'unknown',
-            error,
-          });
-          void requestPreviewProxy('playback-start-failed');
-        });
-      }
-      return;
-    }
-
-    previewVideo.pause();
-  }, [
-    compatibilityPreviewSource?.sourceKind,
-    compatibilityPreviewStatus,
-    currentTime,
-    duration,
-    isPlaying,
-    videoPath,
-  ]);
+  }, [videoPath]);
 
   useEffect(() => {
     if (playbackError || snapshot.engineError) {
@@ -424,32 +289,25 @@ export function ExplorerVideoEditor({
       setStatusMessage('Preparing native video engine…');
       return;
     }
-    if (compatibilityPreviewStatus === 'loading') {
-      setStatusMessage('Native engine ready. Waiting for preview surface metadata…');
-      return;
-    }
-    if (compatibilityPreviewStatus === 'ready') {
-      setStatusMessage(
-        compatibilityPreviewSource?.sourceKind === 'proxy'
-          ? 'Preview ready via FFmpeg proxy. Rust owns transport and timing.'
-          : 'Native preview ready. Rust owns transport and timing.',
-      );
+    if (framePreviewError) {
+      setStatusMessage('Native preview frames could not be rendered by the preview surface.');
       return;
     }
     if (framePreviewLoaded) {
-      setStatusMessage('Native frame preview ready. Rust owns transport and timing.');
+      setStatusMessage('Native preview ready. Rust owns transport and timing.');
       return;
     }
-    if (compatibilityPreviewError) {
-      setStatusMessage('Compatibility preview failed. Falling back to frame rendering.');
+    if (previewImageUrl) {
+      setStatusMessage('Native engine ready. Waiting for the first preview frame to paint…');
+      return;
     }
+    setStatusMessage('Native engine ready. Waiting for preview frame generation…');
   }, [
     backendStreamReady,
-    compatibilityPreviewError,
-    compatibilityPreviewSource?.sourceKind,
-    compatibilityPreviewStatus,
     framePreviewLoaded,
+    framePreviewError,
     playbackError,
+    previewImageUrl,
     snapshot.engineError,
     snapshot.isLoading,
   ]);
@@ -612,21 +470,23 @@ export function ExplorerVideoEditor({
   const playheadLeft = duration > 0 ? `${(currentTime / duration) * 100}%` : '0%';
   const transportLabel = snapshot.audioTransportReady
     ? 'Native Preview + Audio'
-    : 'Native Preview';
+    : snapshot.hasAudioTrack
+      ? 'Native Preview + Silent Fallback'
+      : 'Native Preview';
   const previewNoticeMessage =
-    compatibilityPreviewSource?.sourceKind === 'proxy'
-      ? 'FFmpeg compatibility proxy is active for the webview preview surface.'
-      : compatibilityPreviewError && framePreviewLoaded
-        ? compatibilityPreviewError
-        : null;
+    snapshot.audioTransportReady
+      ? null
+      : snapshot.hasAudioTrack
+        ? snapshot.audioTransportError
+          ?? 'Native soundtrack preview is unavailable. Silent timing fallback is active.'
+        : 'This video has no embedded audio track. Silent timing playback is expected.';
   const playbackStatusMessage =
     playbackError ??
     snapshot.engineError ??
+    framePreviewError ??
     (snapshot.isLoading
       ? 'Generating native preview frames…'
-      : snapshot.audioTransportReady
-        ? statusMessage
-        : `${statusMessage} Silent timing fallback is active.`);
+      : statusMessage);
 
   return (
     <div
@@ -668,7 +528,7 @@ export function ExplorerVideoEditor({
             <div
               aria-hidden
               style={{
-                ...previewSurfaceStyle(null),
+                ...previewSurfaceStyle(),
                 position: 'absolute',
                 inset: 0,
               }}
@@ -679,54 +539,25 @@ export function ExplorerVideoEditor({
                 src={previewImageUrl}
                 alt=""
                 aria-label={`Native video preview frame for ${videoName}`}
-                onLoad={() => setFramePreviewLoaded(true)}
+                onLoad={() => {
+                  setFramePreviewLoaded(true);
+                  setFramePreviewError(null);
+                }}
                 onError={() => {
                   console.error('ExplorerVideoEditor: failed to load native frame preview', {
                     videoPath,
                     previewImageUrl,
                   });
                   setFramePreviewLoaded(false);
+                  setFramePreviewError(
+                    'The native frame sequence was generated, but the preview surface could not render it.',
+                  );
                 }}
-                style={previewMediaStyle(compatibilityPreviewStatus === 'ready' ? 0 : 1)}
-              />
-            ) : null}
-            {compatibilityPreviewUrl ? (
-              <video
-                key={compatibilityPreviewUrl}
-                ref={previewVideoRef}
-                src={compatibilityPreviewUrl}
-                aria-label={`Compatibility video preview for ${videoName}`}
-                muted
-                playsInline
-                preload="metadata"
-                onLoadedMetadata={(event) => {
-                  const previewVideo = event.currentTarget;
-                  previewVideo.muted = true;
-                  previewVideo.defaultMuted = true;
-                  previewVideo.loop = false;
-                  setCompatibilityPreviewStatus('ready');
-                  setCompatibilityPreviewError(null);
-                }}
-                onError={() => {
-                  console.error('ExplorerVideoEditor: compatibility preview source failed', {
-                    videoPath,
-                    sourceKind: compatibilityPreviewSource?.sourceKind ?? 'unknown',
-                    compatibilityPreviewUrl,
-                  });
-                  if (compatibilityPreviewSource?.sourceKind === 'proxy') {
-                    setCompatibilityPreviewStatus('error');
-                    setCompatibilityPreviewError(
-                      'FFmpeg compatibility proxy could not be rendered by the webview.',
-                    );
-                    return;
-                  }
-                  void requestPreviewProxy('compatibility-preview-error');
-                }}
-                style={previewMediaStyle(compatibilityPreviewStatus === 'ready' ? 1 : 0)}
+                style={previewMediaStyle(1)}
               />
             ) : null}
           </div>
-          {!previewImageUrl && compatibilityPreviewStatus !== 'ready' ? (
+          {!previewImageUrl || framePreviewError ? (
             <div
               style={{
                 position: 'absolute',
@@ -755,9 +586,11 @@ export function ExplorerVideoEditor({
                   Native Video Runtime
                 </div>
                 <div style={{ fontSize: 11, lineHeight: 1.5 }}>
-                  {snapshot.isLoading
-                    ? 'Preparing frame sequence preview…'
-                    : 'No preview frame is available yet for this selection.'}
+                  {framePreviewError
+                    ? framePreviewError
+                    : snapshot.isLoading
+                      ? 'Preparing frame sequence preview…'
+                      : 'No preview frame is available yet for this selection.'}
                 </div>
               </div>
             </div>
@@ -859,7 +692,11 @@ export function ExplorerVideoEditor({
               </button>
               <button type="button" disabled style={toolbarButtonStyle(false, 'primary')}>
                 {snapshot.audioTransportReady ? <Volume2 size={13} /> : <VolumeX size={13} />}
-                {snapshot.audioTransportReady ? 'Audio Linked' : 'Silent Timing'}
+                {snapshot.audioTransportReady
+                  ? 'Audio Linked'
+                  : snapshot.hasAudioTrack
+                    ? 'Audio Fallback'
+                    : 'No Audio Track'}
               </button>
               <button
                 type="button"
