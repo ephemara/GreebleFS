@@ -9,9 +9,10 @@ use crate::audio_commands::{
 };
 use crate::audio_engine::{
     AudioDeckId, AudioDeckState, AudioEngineDeckRequest, AudioEngineGainRequest,
-    AudioEngineLoadDeckRequest, AudioEngineLoopRegion, AudioEngineLoopRegionRequest,
-    AudioEngineRateRequest, AudioEngineSeekRequest, AudioEngineSetArmedDeckRequest,
-    AudioEngineStateEvent, AudioEngineStateSnapshot, AudioEngineSyncSelectionRequest,
+    AudioEngineLoadDeckRequest, AudioEngineLoadPluginRequest, AudioEngineLoopRegion,
+    AudioEngineLoopRegionRequest, AudioEngineRateRequest, AudioEngineSeekRequest,
+    AudioEngineSetArmedDeckRequest, AudioEngineStateEvent, AudioEngineStateSnapshot,
+    AudioEngineSyncSelectionRequest, VstParameterState,
 };
 use crate::cloud_commands::{
     CloudAccountSummary, CloudAccountsSnapshot, CloudAuthSession, CloudAuthStatus, CloudBreadcrumb,
@@ -57,6 +58,10 @@ use crate::terminal::{
     ExternalTerminalRequest, TerminalShellIntegrationRequest, TerminalShellIntegrationState,
     TerminalShellIntegrationStateEvent, TerminalShellKind, TerminalWriteRequest,
 };
+use crate::telemetry::{
+    TelemetryCaptureMode, TelemetryConfig, TelemetryPayloadMode, TelemetryRecord,
+    TelemetryRecordEvent, TelemetrySessionStatus, TelemetrySupportBundleResult,
+};
 use crate::video_commands::{
     ResolvedVideoPreviewSource, VideoPreviewSourceKind, VideoTrimExportRequest,
     VideoTrimExportResult,
@@ -65,6 +70,7 @@ use crate::video_engine::{
     VideoEngineLoadSourceRequest, VideoEngineLoopRegion, VideoEngineLoopRegionRequest,
     VideoEngineSeekRequest, VideoEngineStateEvent, VideoEngineStateSnapshot, VideoPlaybackBackend,
 };
+use crate::vst_commands::{VstPluginEntry, VstScanPath, VstScanPathKind};
 use crate::wayland_dock::{WaylandDockAnchor, WaylandDockHostStatus};
 use overlay_contracts::{
     ExplorerLayoutMode, LayoutBackBehavior, LayoutBarPosition, LayoutBehaviorConfig,
@@ -149,6 +155,8 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::audio_engine::audio_engine_set_loop_region,
             crate::audio_engine::audio_engine_set_gain,
             crate::audio_engine::audio_engine_set_rate,
+            crate::audio_engine::audio_engine_load_plugin,
+            crate::audio_engine::audio_engine_clear_deck_plugin,
             crate::audio_engine::audio_engine_sync_selection_to_armed_deck,
             crate::fs_commands::fs_open_with_dialog,
             crate::fs_commands::fs_open_as_admin,
@@ -206,6 +214,8 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::plugin_commands::plugin_run_backend,
             crate::plugin_commands::plugin_watch_directory,
             crate::plugin_commands::plugin_unwatch_directory,
+            crate::vst_commands::vst_get_default_scan_paths,
+            crate::vst_commands::vst_scan_plugins,
             crate::image_commands::image_editor_create_session,
             crate::image_commands::image_editor_render_preview,
             crate::image_commands::image_editor_export,
@@ -235,12 +245,19 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::domain_commands::domain_list_shell_blueprints,
             crate::domain_commands::domain_list_theme_manifests,
             crate::domain_commands::domain_list_workbench_presets,
+            crate::telemetry::telemetry_configure,
+            crate::telemetry::telemetry_get_status,
+            crate::telemetry::telemetry_get_recent_records,
+            crate::telemetry::telemetry_record_frontend_batch,
+            crate::telemetry::telemetry_export_support_bundle,
+            crate::telemetry::telemetry_clear_sessions,
         ])
         .events(collect_events![
             crate::fs_commands::ExplorerTaskProgressEvent,
             crate::audio_engine::AudioEngineStateEvent,
             crate::video_engine::VideoEngineStateEvent,
-            crate::terminal::TerminalShellIntegrationStateEvent
+            crate::terminal::TerminalShellIntegrationStateEvent,
+            crate::telemetry::TelemetryRecordEvent
         ])
         .typ::<ShellBlueprint>()
         .typ::<overlay_contracts::ThemeTokenKind>()
@@ -257,6 +274,12 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<CloudAuthStatus>()
         .typ::<CloudBreadcrumb>()
         .typ::<CloudDirectoryListing>()
+        .typ::<TelemetryCaptureMode>()
+        .typ::<TelemetryPayloadMode>()
+        .typ::<TelemetryConfig>()
+        .typ::<TelemetryRecord>()
+        .typ::<TelemetrySessionStatus>()
+        .typ::<TelemetrySupportBundleResult>()
         .typ::<FileEntry>()
         .typ::<FsArchiveExtractionMode>()
         .typ::<FsArchiveExtractionRequest>()
@@ -274,6 +297,8 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<AudioEngineStateSnapshot>()
         .typ::<AudioEngineStateEvent>()
         .typ::<AudioEngineLoadDeckRequest>()
+        .typ::<AudioEngineLoadPluginRequest>()
+        .typ::<VstParameterState>()
         .typ::<AudioEngineDeckRequest>()
         .typ::<AudioEngineSeekRequest>()
         .typ::<AudioEngineLoopRegionRequest>()
@@ -369,6 +394,9 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<LinuxDisplayBackendStatus>()
         .typ::<WaylandDockAnchor>()
         .typ::<WaylandDockHostStatus>()
+        .typ::<VstScanPath>()
+        .typ::<VstScanPathKind>()
+        .typ::<VstPluginEntry>()
         .typ::<ThemeDensity>()
         .typ::<ThemeChromeStyle>()
         .typ::<ThemeIconStyle>()

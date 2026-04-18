@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
+use crate::telemetry::{finish_native_span, start_native_span};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -927,13 +928,37 @@ pub async fn terminal_spawn(
     rows: Option<u16>,
     cols: Option<u16>,
 ) -> Result<(), String> {
+    let span = start_native_span(
+        &app,
+        "rust",
+        "terminal_spawn",
+        std::collections::BTreeMap::from([
+            ("terminalId".to_string(), id.clone()),
+            (
+                "workingDir".to_string(),
+                working_dir.clone().unwrap_or_default(),
+            ),
+            ("rows".to_string(), rows.unwrap_or(24).to_string()),
+            ("cols".to_string(), cols.unwrap_or(80).to_string()),
+        ]),
+    );
     let rows = rows.unwrap_or(24);
     let cols = cols.unwrap_or(80);
 
-    terminal_manager.spawn(&id, working_dir, shell, rows, cols)?;
-    terminal_manager.start_reader_thread(id, app);
-
-    Ok(())
+    let result = terminal_manager.spawn(&id, working_dir, shell, rows, cols);
+    if result.is_ok() {
+        terminal_manager.start_reader_thread(id, app.clone());
+    }
+    let status = if result.is_ok() { "ok" } else { "error" };
+    let error = result.as_ref().err().cloned();
+    finish_native_span(
+        &app,
+        span,
+        status,
+        std::collections::BTreeMap::new(),
+        error,
+    );
+    result
 }
 
 #[tauri::command]

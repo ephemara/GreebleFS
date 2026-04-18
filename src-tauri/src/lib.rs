@@ -14,10 +14,12 @@ pub mod python_commands;
 pub mod screenshot_commands;
 pub mod specta_bindings;
 pub mod startup_commands;
+pub mod telemetry;
 pub mod terminal;
 pub mod thumbnail_commands;
 pub mod video_commands;
 pub mod video_engine;
+pub mod vst_commands;
 pub mod wayland_dock;
 pub mod window_commands;
 
@@ -32,6 +34,7 @@ use tauri::{
     Emitter, Manager,
 };
 use terminal::TerminalManager;
+use telemetry::{finish_native_span, start_native_span, TelemetryManager};
 use window_commands::{MAIN_TRAY_ICON_ID, MAIN_WINDOW_LABEL};
 
 fn toggle_overlay(app: &tauri::AppHandle) {
@@ -66,6 +69,13 @@ pub fn run() {
             app.manage(AudioEngineManager::default());
             app.manage(image_commands::ImageEditorManager::default());
             app.manage(video_engine::VideoEngineManager::default());
+            app.manage(TelemetryManager::default());
+            let startup_span = start_native_span(
+                &app.handle(),
+                "startup",
+                "tauri.setup",
+                std::collections::BTreeMap::new(),
+            );
             initialize_entry_size_cache(app.handle())?;
             app.manage(EntrySizeWatcherState::default());
             app.manage(PluginWatcherState::default());
@@ -126,6 +136,14 @@ pub fn run() {
             }
 
             tray_builder.build(app)?;
+
+            finish_native_span(
+                &app.handle(),
+                startup_span,
+                "ok",
+                std::collections::BTreeMap::new(),
+                None,
+            );
 
             Ok(())
         })

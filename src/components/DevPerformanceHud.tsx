@@ -28,6 +28,7 @@ interface DevPerformanceHudProps {
   activePanelLabel: string;
   openPanelCount: number;
   frameStats: OverlayFrameTelemetryStats | null;
+  sourceTraceEnabled: boolean;
 }
 
 const EMPTY_SNAPSHOT: DevPerformanceHudSnapshot = {
@@ -51,6 +52,7 @@ export function DevPerformanceHud({
   activePanelLabel,
   openPanelCount,
   frameStats,
+  sourceTraceEnabled,
 }: DevPerformanceHudProps) {
   const snapshot = useDevPerformanceHudSnapshot(enabled, activePanelLabel);
 
@@ -191,6 +193,7 @@ export function DevPerformanceHud({
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <HudPill label={`Panel ${activePanelLabel}`} accent={accent} border={border} text={text} muted={muted} />
             <HudPill label={`Open ${openPanelCount}`} accent={accent} border={border} text={text} muted={muted} />
+            <HudPill label={sourceTraceEnabled ? 'Source Trace armed' : 'Source Trace idle'} accent={accent} border={border} text={text} muted={muted} active={sourceTraceEnabled} />
             <HudPill label={frameStats?.withinTarget ? '120 FPS target' : 'Over budget'} accent={accent} border={border} text={text} muted={muted} active={frameStats?.withinTarget ?? false} />
           </div>
         </div>

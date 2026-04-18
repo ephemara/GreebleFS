@@ -21,6 +21,8 @@ import {
   syncExplorerSelectionToArmedDeck,
   unloadExplorerAudioDeck,
   loadExplorerAudioDeck,
+  loadExplorerAudioDeckPlugin,
+  clearExplorerAudioDeckPlugin,
 } from '../runtime/audioWorkbenchBackend';
 
 type AudioEngineStoreStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -57,6 +59,8 @@ const EMPTY_DECK_STATE = (deckId: ExplorerAudioDeckId): ExplorerAudioDeckState =
     enabled: false,
   },
   error: null,
+  activePluginPath: null,
+  vstParameters: [],
 });
 
 const DEFAULT_AUDIO_ENGINE_SNAPSHOT: ExplorerAudioEngineStateSnapshot = {
@@ -255,4 +259,19 @@ export async function setAudioDeckRate(
   rate: number,
 ): Promise<ExplorerAudioEngineStateSnapshot> {
   return commitAudioSnapshot(await setExplorerAudioDeckRate({ deckId, rate }));
+}
+
+/** Load a VST3 plugin onto a deck (stores path, future: interrogates parameters). */
+export async function loadAudioDeckPlugin(
+  deckId: ExplorerAudioDeckId,
+  pluginPath: string,
+): Promise<ExplorerAudioEngineStateSnapshot> {
+  return commitAudioSnapshot(await loadExplorerAudioDeckPlugin({ deckId, pluginPath }));
+}
+
+/** Remove the currently loaded VST3 plugin from a deck. */
+export async function clearAudioDeckPlugin(
+  deckId: ExplorerAudioDeckId,
+): Promise<ExplorerAudioEngineStateSnapshot> {
+  return commitAudioSnapshot(await clearExplorerAudioDeckPlugin({ deckId }));
 }

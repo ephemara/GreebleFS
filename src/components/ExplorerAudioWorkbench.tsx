@@ -39,6 +39,8 @@ import {
   stopAudioDeck,
   useAudioEngineFeed,
   useAudioEngineSnapshot,
+  loadAudioDeckPlugin,
+  clearAudioDeckPlugin,
 } from '../store/audioEngineStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { AppConfirmDialog, AppPromptDialog } from './AppModal';
@@ -890,6 +892,8 @@ export function ExplorerAudioWorkbench({
         fadeInSeconds: boundedFadeInSeconds,
         fadeOutSeconds: boundedFadeOutSeconds,
         pitchShiftCents,
+        gainLinear: previewDeck.gainLinear,
+        rateMultiplier: previewDeck.rate,
         normalize: mode === 'normalized' ? true : null,
         outputFormat: nextOutputFormat,
         generateSpectrogram,
@@ -918,7 +922,9 @@ export function ExplorerAudioWorkbench({
         fadeInSeconds: boundedFadeInSeconds,
         fadeOutSeconds: boundedFadeOutSeconds,
         pitchShiftCents,
-        normalize: true,
+        gainLinear: previewDeck.gainLinear,
+        rateMultiplier: previewDeck.rate,
+        normalize: null,
         outputFormat: audioExtension || 'wav',
         generateSpectrogram,
       });
@@ -1117,6 +1123,9 @@ export function ExplorerAudioWorkbench({
                   <input type="number" className="pro-input" style={{ width: 70 }} min="-1200" max="1200" value={Math.round(pitchShiftCents)} onChange={(event) => { const nextValue = Number(event.target.value); if (Number.isFinite(nextValue)) setPitchShiftCents(clamp(nextValue, -1200, 1200)); }} />
                 </div>
               </div>
+              <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-start' }}>
+                <button type="button" style={toolbarButtonStyle('danger')} onClick={() => setExportDialogMode('overwrite')}>Save Edits to File</button>
+              </div>
             </div>
 
             <div className="pro-panel">
@@ -1167,9 +1176,142 @@ export function ExplorerAudioWorkbench({
                 <button type="button" style={toolbarButtonStyle('primary')} onClick={() => openExportDialog('clip')}>Export Clip</button>
                 <button type="button" style={toolbarButtonStyle('primary')} onClick={() => openExportDialog('normalized')}>Export Normalized</button>
                 <button type="button" style={toolbarButtonStyle('primary')} onClick={() => openExportDialog('convert')}>Convert</button>
-                <button type="button" style={toolbarButtonStyle('danger')} onClick={() => setExportDialogMode('overwrite')}>Overwrite Original</button>
               </div>
             </div>
+
+            <div className="pro-panel">
+              <div className="pro-panel-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>Plugin Rack (VST3)</span>
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontWeight: 400, letterSpacing: '0.04em' }}>HEADLESS</span>
+              </div>
+
+              {/* Plugin slot display */}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                <div style={{
+                  flex: 1,
+                  padding: '5px 8px',
+                  background: previewDeck.activePluginPath ? 'rgba(99,102,241,0.12)' : 'rgba(0,0,0,0.2)',
+                  border: `1px solid ${previewDeck.activePluginPath ? 'rgba(99,102,241,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                  borderRadius: 4,
+                  fontSize: 11,
+                  color: previewDeck.activePluginPath ? 'rgba(200,200,255,0.95)' : 'rgba(255,255,255,0.35)',
+                  textOverflow: 'ellipsis',
+                  overflow: 'hidden',
+                  whiteSpace: 'nowrap',
+                  transition: 'border-color 0.15s, background 0.15s',
+                }}>
+                  {previewDeck.activePluginPath
+                    ? `⬡ ${previewDeck.activePluginPath.split(/[/\\]/).pop()}`
+                    : '— No plugin loaded —'}
+                </div>
+
+                <button
+                  id="audio-workbench-load-vst-btn"
+                  type="button"
+                  style={toolbarButtonStyle()}
+                  onClick={async () => {
+                    try {
+                      // Use the Tauri core path picker via dynamic import so it tree-shakes on web
+                      const { open } = await import('@tauri-apps/plugin-fs').catch(() => ({ open: null as any }));
+                      // Fallback: if plugin-fs doesn't expose open use prompt
+                      let picked: string | null = null;
+                      if (typeof open === 'function') {
+                        picked = await (open as any)({
+                          title: 'Select a VST3 Plugin',
+                          filters: [{ name: 'VST3 Plugin', extensions: ['vst3', 'so', 'dll', 'dylib'] }],
+                          multiple: false,
+                          directory: false,
+                        }) as string | null;
+                      } else {
+                        // Fallback for environments without dialog plugin
+                        const { invoke } = await import('@tauri-apps/api/core');
+                        picked = await invoke<string | null>('fs_open_with_dialog', {}).catch(() => null);
+                      }
+                      if (picked) {
+                        await loadAudioDeckPlugin(previewDeck.deckId, picked);
+                        setWorkbenchStatus(`Plugin loaded: ${picked.split(/[/\\]/).pop()}`);
+                      }
+                    } catch (err: any) {
+                      setWorkbenchStatus(`Plugin load failed: ${err?.message ?? err}`);
+                    }
+                  }}
+                >
+                  Load .vst3…
+                </button>
+
+                {previewDeck.activePluginPath && (
+                  <button
+                    id="audio-workbench-clear-vst-btn"
+                    type="button"
+                    style={toolbarButtonStyle('danger')}
+                    onClick={async () => {
+                      await clearAudioDeckPlugin(previewDeck.deckId);
+                      setWorkbenchStatus('Plugin cleared.');
+                    }}
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Auto-generated parameter sliders */}
+              {previewDeck.vstParameters && previewDeck.vstParameters.length > 0 ? (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+                  gap: 10,
+                  maxHeight: 280,
+                  overflowY: 'auto',
+                  paddingRight: 2,
+                }}>
+                  {previewDeck.vstParameters.map((param) => (
+                    <div
+                      key={param.id}
+                      style={{
+                        background: 'rgba(0,0,0,0.18)',
+                        border: '1px solid rgba(255,255,255,0.07)',
+                        borderRadius: 5,
+                        padding: '6px 8px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 4,
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)', fontWeight: 500, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '70%' }}>
+                          {param.title || param.shortTitle}
+                        </span>
+                        <span style={{ fontSize: 10, color: 'rgba(160,160,220,0.8)', fontFamily: 'monospace', flexShrink: 0 }}>
+                          {(param.valueNormalized * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                      <input
+                        id={`vst-param-${previewDeck.deckId}-${param.id}`}
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.001}
+                        defaultValue={param.valueNormalized}
+                        style={{ width: '100%', accentColor: 'hsl(245 80% 60%)' }}
+                        onChange={() => { /* param automation wired in next phase */ }}
+                      />
+                      {param.units ? (
+                        <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', textAlign: 'right' }}>{param.units}</span>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : previewDeck.activePluginPath ? (
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', padding: '6px 0', fontStyle: 'italic' }}>
+                  No parameters exposed — plugin may not support headless parameter query yet.
+                </div>
+              ) : (
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.22)', padding: '4px 0', fontStyle: 'italic' }}>
+                  Load a .vst3 plugin above to auto-generate its parameter controls.
+                </div>
+              )}
+            </div>
+
           </div>
 
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', display: 'flex', gap: 16, flexWrap: 'wrap', paddingBottom: 20 }}>

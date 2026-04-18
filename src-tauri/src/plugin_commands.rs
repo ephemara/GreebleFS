@@ -6,6 +6,7 @@ use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, State};
+use crate::telemetry::{finish_native_span, start_native_span};
 
 pub const PLUGIN_WATCH_EVENT: &str = "overlay://plugins-changed";
 
@@ -36,15 +37,41 @@ pub struct PluginWatcherState {
 #[tauri::command]
 #[specta::specta]
 pub async fn plugin_run_backend(
+    app: AppHandle,
     plugins_root: String,
     plugin_id: String,
     entry: String,
     args: Vec<String>,
 ) -> Result<PluginBackendResult, String> {
+    let span = start_native_span(
+        &app,
+        "plugin",
+        "plugin_run_backend",
+        std::collections::BTreeMap::from([
+            ("pluginId".to_string(), plugin_id.clone()),
+            ("entry".to_string(), entry.clone()),
+            ("argCount".to_string(), args.len().to_string()),
+        ]),
+    );
     let backend_entry = resolve_backend_entry(&plugins_root, &plugin_id, &entry)?;
-    tokio::task::spawn_blocking(move || run_backend_command(&backend_entry, &args))
+    let result = tokio::task::spawn_blocking(move || run_backend_command(&backend_entry, &args))
         .await
-        .map_err(|e| format!("Plugin backend task failed to join: {e}"))?
+        .map_err(|e| format!("Plugin backend task failed to join: {e}"))?;
+    let status = if result.is_ok() { "ok" } else { "error" };
+    let error = result.as_ref().err().cloned();
+    let exit_status = result
+        .as_ref()
+        .ok()
+        .map(|value| value.status.to_string())
+        .unwrap_or_default();
+    finish_native_span(
+        &app,
+        span,
+        status,
+        std::collections::BTreeMap::from([("exitStatus".to_string(), exit_status)]),
+        error,
+    );
+    result
 }
 
 #[tauri::command]

@@ -1,6 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
 import * as tauriBindings from '../generated/tauri';
 import type { Result } from '../generated/tauri';
+import {
+  finishTelemetrySpan,
+  recordFrontendTelemetry,
+  startTelemetrySpan,
+  summarizeTelemetryValue,
+  type TelemetryMetadata,
+} from './telemetry';
 
 export type {
   LinuxDisplayBackendPreference,
@@ -14,7 +21,87 @@ export interface WaylandDockHostStatus {
 
 export type WaylandDockAnchor = 'top' | 'bottom';
 
-export const commands = {
+const TELEMETRY_COMMANDS = new Set([
+  'telemetryConfigure',
+  'telemetryGetStatus',
+  'telemetryGetRecentRecords',
+  'telemetryExportSupportBundle',
+  'telemetryClearSessions',
+]);
+
+function summarizeArgs(args: unknown[]): TelemetryMetadata {
+  const metadata: TelemetryMetadata = {
+    argCount: args.length,
+  };
+
+  args.forEach((arg, index) => {
+    metadata[`arg${index}`] = summarizeTelemetryValue(arg, `arg${index}`);
+  });
+
+  return metadata;
+}
+
+function wrapCommand<TArgs extends unknown[], TResult>(
+  name: string,
+  fn: (...args: TArgs) => Promise<TResult>,
+): (...args: TArgs) => Promise<TResult> {
+  if (TELEMETRY_COMMANDS.has(name)) {
+    return fn;
+  }
+
+  return async (...args: TArgs): Promise<TResult> => {
+    const span = startTelemetrySpan({
+      name,
+      layer: 'tauri-bridge',
+      kind: 'command',
+      metadata: summarizeArgs(args),
+    });
+
+    try {
+      const result = await fn(...args);
+      finishTelemetrySpan(span, {
+        status: 'ok',
+        metadata: {
+          result: summarizeTelemetryValue(result, 'result'),
+        },
+      });
+      return result;
+    } catch (error) {
+      finishTelemetrySpan(span, {
+        status: 'error',
+        error,
+      });
+      throw error;
+    }
+  };
+}
+
+function wrapEvents<TEvents extends Record<string, { listen: (listener: (event: { payload: unknown }) => void) => Promise<() => void> }>>(
+  source: TEvents,
+): TEvents {
+  return Object.fromEntries(
+    Object.entries(source).map(([name, eventApi]) => [
+      name,
+      {
+        ...eventApi,
+        listen: async (listener: (event: { payload: unknown }) => void) => eventApi.listen((event: { payload: unknown }) => {
+          recordFrontendTelemetry({
+            layer: 'tauri-bridge',
+            kind: 'event',
+            name,
+            status: 'ok',
+            metadata: {
+              payload: summarizeTelemetryValue(event.payload, 'payload'),
+            },
+          });
+          listener(event);
+        }),
+      },
+    ]),
+  ) as TEvents;
+}
+
+const baseCommands = {
   ...tauriBindings.commands,
   windowGetWaylandDockHostStatus: () => invoke<WaylandDockHostStatus>('window_get_wayland_dock_host_status'),
   windowApplyWaylandDockLayout: (
@@ -29,7 +116,12 @@ export const commands = {
     height,
   }),
 };
-export const events = tauriBindings.events;
+
+export const commands = Object.fromEntries(
+  Object.entries(baseCommands).map(([name, fn]) => [name, wrapCommand(name, fn as (...args: unknown[]) => Promise<unknown>)]),
+) as typeof baseCommands;
+
+export const events = wrapEvents(tauriBindings.events);
 
 export function unwrapTauriResult<T>(result: Result<T, string>): T {
   if (result.status === 'ok') {

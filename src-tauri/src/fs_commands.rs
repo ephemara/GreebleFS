@@ -10,6 +10,7 @@ use crate::entry_size_cache::{
     normalize_cache_path, upsert_entry_size_cache, PersistedEntrySize,
 };
 use crate::explorer_pro_commands::FsBatchRenameItem;
+use crate::telemetry::{finish_native_span, start_native_span};
 use md5::Context as Md5Context;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -2382,35 +2383,134 @@ pub fn fs_get_runtime_cache_policy() -> FsRuntimeCachePolicy {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn fs_list_dir(path: String, show_hidden: bool) -> Result<Vec<FileEntry>, String> {
-    list_dir(PathBuf::from(path), show_hidden, false).await
+pub async fn fs_list_dir(
+    app: AppHandle,
+    path: String,
+    show_hidden: bool,
+) -> Result<Vec<FileEntry>, String> {
+    let span = start_native_span(
+        &app,
+        "rust",
+        "fs_list_dir",
+        HashMap::from([
+            ("path".to_string(), path.clone()),
+            ("showHidden".to_string(), show_hidden.to_string()),
+            ("cached".to_string(), "true".to_string()),
+        ])
+        .into_iter()
+        .collect(),
+    );
+    let result = list_dir(PathBuf::from(path), show_hidden, false).await;
+    let status = if result.is_ok() { "ok" } else { "error" };
+    let error = result.as_ref().err().cloned();
+    let entry_count = result
+        .as_ref()
+        .ok()
+        .map(|entries| entries.len().to_string())
+        .unwrap_or_else(|| "0".to_string());
+    finish_native_span(
+        &app,
+        span,
+        status,
+        HashMap::from([("entryCount".to_string(), entry_count)])
+            .into_iter()
+            .collect(),
+        error,
+    );
+    result
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn fs_list_dir_uncached(
+    app: AppHandle,
     path: String,
     show_hidden: bool,
 ) -> Result<Vec<FileEntry>, String> {
-    list_dir(PathBuf::from(path), show_hidden, true).await
+    let span = start_native_span(
+        &app,
+        "rust",
+        "fs_list_dir_uncached",
+        HashMap::from([
+            ("path".to_string(), path.clone()),
+            ("showHidden".to_string(), show_hidden.to_string()),
+            ("cached".to_string(), "false".to_string()),
+        ])
+        .into_iter()
+        .collect(),
+    );
+    let result = list_dir(PathBuf::from(path), show_hidden, true).await;
+    let status = if result.is_ok() { "ok" } else { "error" };
+    let error = result.as_ref().err().cloned();
+    let entry_count = result
+        .as_ref()
+        .ok()
+        .map(|entries| entries.len().to_string())
+        .unwrap_or_else(|| "0".to_string());
+    finish_native_span(
+        &app,
+        span,
+        status,
+        HashMap::from([("entryCount".to_string(), entry_count)])
+            .into_iter()
+            .collect(),
+        error,
+    );
+    result
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn fs_measure_entry_sizes(
+    app: AppHandle,
     paths: Vec<String>,
     force_refresh: Option<bool>,
 ) -> Result<Vec<EntryStorageInfo>, String> {
+    let path_count = paths.len();
+    let span = start_native_span(
+        &app,
+        "rust",
+        "fs_measure_entry_sizes",
+        HashMap::from([
+            ("pathCount".to_string(), path_count.to_string()),
+            (
+                "forceRefresh".to_string(),
+                force_refresh.unwrap_or(false).to_string(),
+            ),
+        ])
+        .into_iter()
+        .collect(),
+    );
     let deduped_paths = paths
         .into_iter()
         .filter(|path| !path.trim().is_empty())
         .collect::<Vec<_>>();
 
-    tauri::async_runtime::spawn_blocking(move || {
+    let result = tauri::async_runtime::spawn_blocking(move || {
         measure_entry_sizes_blocking(deduped_paths, force_refresh.unwrap_or(false))
     })
     .await
-    .map_err(|error| format!("Failed to measure entry sizes: {error}"))
+    .map_err(|error| format!("Failed to measure entry sizes: {error}"));
+    let status = if result.is_ok() { "ok" } else { "error" };
+    let error = result.as_ref().err().cloned();
+    let output_count = result
+        .as_ref()
+        .ok()
+        .map(|entries| entries.len().to_string())
+        .unwrap_or_else(|| "0".to_string());
+    finish_native_span(
+        &app,
+        span,
+        status,
+        HashMap::from([
+            ("pathCount".to_string(), path_count.to_string()),
+            ("resultCount".to_string(), output_count),
+        ])
+        .into_iter()
+        .collect(),
+        error,
+    );
+    result
 }
 
 #[tauri::command]
@@ -3468,6 +3568,7 @@ pub fn fs_cancel_search_entries(
 #[tauri::command]
 #[specta::specta]
 pub async fn fs_search_entries(
+    app: AppHandle,
     path: String,
     query: String,
     show_hidden: bool,
@@ -3476,7 +3577,21 @@ pub async fn fs_search_entries(
     request_id: Option<u64>,
     request_scope: Option<String>,
 ) -> Result<Vec<FileSearchResult>, String> {
-    Ok(execute_search_entries_command(
+    let span = start_native_span(
+        &app,
+        "rust",
+        "fs_search_entries",
+        HashMap::from([
+            ("path".to_string(), path.clone()),
+            ("queryLength".to_string(), query.len().to_string()),
+            ("showHidden".to_string(), show_hidden.to_string()),
+            ("includeContent".to_string(), include_content.to_string()),
+            ("limit".to_string(), limit.unwrap_or_default().to_string()),
+        ])
+        .into_iter()
+        .collect(),
+    );
+    let result = execute_search_entries_command(
         path,
         query,
         show_hidden,
@@ -3485,13 +3600,30 @@ pub async fn fs_search_entries(
         request_id,
         request_scope,
     )
-    .await?
-    .results)
+    .await;
+    let status = if result.is_ok() { "ok" } else { "error" };
+    let error = result.as_ref().err().cloned();
+    let result_count = result
+        .as_ref()
+        .ok()
+        .map(|response| response.results.len().to_string())
+        .unwrap_or_else(|| "0".to_string());
+    finish_native_span(
+        &app,
+        span,
+        status,
+        HashMap::from([("resultCount".to_string(), result_count)])
+            .into_iter()
+            .collect(),
+        error,
+    );
+    Ok(result?.results)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn fs_search_entries_with_diagnostics(
+    app: AppHandle,
     path: String,
     query: String,
     show_hidden: bool,
@@ -3500,7 +3632,21 @@ pub async fn fs_search_entries_with_diagnostics(
     request_id: Option<u64>,
     request_scope: Option<String>,
 ) -> Result<FileSearchResponse, String> {
-    execute_search_entries_command(
+    let span = start_native_span(
+        &app,
+        "rust",
+        "fs_search_entries_with_diagnostics",
+        HashMap::from([
+            ("path".to_string(), path.clone()),
+            ("queryLength".to_string(), query.len().to_string()),
+            ("showHidden".to_string(), show_hidden.to_string()),
+            ("includeContent".to_string(), include_content.to_string()),
+            ("limit".to_string(), limit.unwrap_or_default().to_string()),
+        ])
+        .into_iter()
+        .collect(),
+    );
+    let result = execute_search_entries_command(
         path,
         query,
         show_hidden,
@@ -3509,7 +3655,24 @@ pub async fn fs_search_entries_with_diagnostics(
         request_id,
         request_scope,
     )
-    .await
+    .await;
+    let status = if result.is_ok() { "ok" } else { "error" };
+    let error = result.as_ref().err().cloned();
+    let result_count = result
+        .as_ref()
+        .ok()
+        .map(|response| response.results.len().to_string())
+        .unwrap_or_else(|| "0".to_string());
+    finish_native_span(
+        &app,
+        span,
+        status,
+        HashMap::from([("resultCount".to_string(), result_count)])
+            .into_iter()
+            .collect(),
+        error,
+    );
+    result
 }
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]

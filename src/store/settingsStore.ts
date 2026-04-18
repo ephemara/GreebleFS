@@ -189,6 +189,17 @@ export interface SystemSettings {
   showInTaskbar: boolean;
   developerMode: boolean;
   devTelemetryHudVisible: boolean;
+  sourceTraceModeEnabled: boolean;
+  developerTelemetryEnabled: boolean;
+  developerTelemetryCaptureMode: DeveloperTelemetryCaptureMode;
+  developerTelemetryWriteToFile: boolean;
+  developerTelemetryShowInspector: boolean;
+  developerTelemetryPayloadMode: DeveloperTelemetryPayloadMode;
+  developerTelemetryMaxFileSizeMb: number;
+  consumerDiagnosticsEnabled: boolean;
+  consumerDiagnosticsIncludePluginRuntime: boolean;
+  consumerDiagnosticsIncludeRendererRuntime: boolean;
+  consumerDiagnosticsIncludePerfSamples: boolean;
   linuxDisplayBackendPreference: LinuxDisplayBackendPreference;
 }
 
@@ -203,6 +214,8 @@ export interface ScreenshotSettings {
 export type KeybindingSettings = HotkeyBindingSettings;
 export type DockThemeMode = 'follow-app' | 'override';
 export type LinuxDisplayBackendPreference = 'auto' | 'wayland' | 'x11';
+export type DeveloperTelemetryCaptureMode = 'raw' | 'sampled' | 'perf-only';
+export type DeveloperTelemetryPayloadMode = 'metadata-only' | 'metadata+small-payloads';
 
 export interface PolyGeminiSettings {
   serverUrl: string;
@@ -282,6 +295,22 @@ export function normalizeDockThemeMode(value: unknown): DockThemeMode {
 
 export function normalizeLinuxDisplayBackendPreference(value: unknown): LinuxDisplayBackendPreference {
   return value === 'wayland' || value === 'x11' ? value : 'auto';
+}
+
+export function normalizeDeveloperTelemetryCaptureMode(value: unknown): DeveloperTelemetryCaptureMode {
+  return value === 'sampled' || value === 'perf-only' ? value : 'raw';
+}
+
+export function normalizeDeveloperTelemetryPayloadMode(value: unknown): DeveloperTelemetryPayloadMode {
+  return value === 'metadata-only' ? value : 'metadata+small-payloads';
+}
+
+function normalizeTelemetryFileSizeMb(value: unknown, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.max(1, Math.min(512, Math.round(value)));
 }
 
 export function normalizeExplorerFolderClickMode(value: unknown): ExplorerFolderClickMode {
@@ -452,6 +481,27 @@ export function normalizeSystemSettings(
     showInTaskbar: Boolean(merged.showInTaskbar),
     developerMode: Boolean(merged.developerMode),
     devTelemetryHudVisible: merged.devTelemetryHudVisible !== false,
+    sourceTraceModeEnabled: Boolean(merged.sourceTraceModeEnabled),
+    developerTelemetryEnabled: Boolean(merged.developerTelemetryEnabled),
+    developerTelemetryCaptureMode: normalizeDeveloperTelemetryCaptureMode(
+      merged.developerTelemetryCaptureMode,
+    ),
+    developerTelemetryWriteToFile: merged.developerTelemetryWriteToFile !== false,
+    developerTelemetryShowInspector: merged.developerTelemetryShowInspector !== false,
+    developerTelemetryPayloadMode: normalizeDeveloperTelemetryPayloadMode(
+      merged.developerTelemetryPayloadMode,
+    ),
+    developerTelemetryMaxFileSizeMb: normalizeTelemetryFileSizeMb(
+      merged.developerTelemetryMaxFileSizeMb,
+      base.developerTelemetryMaxFileSizeMb,
+    ),
+    consumerDiagnosticsEnabled: Boolean(merged.consumerDiagnosticsEnabled),
+    consumerDiagnosticsIncludePluginRuntime:
+      merged.consumerDiagnosticsIncludePluginRuntime !== false,
+    consumerDiagnosticsIncludeRendererRuntime:
+      merged.consumerDiagnosticsIncludeRendererRuntime !== false,
+    consumerDiagnosticsIncludePerfSamples:
+      merged.consumerDiagnosticsIncludePerfSamples !== false,
     linuxDisplayBackendPreference: normalizeLinuxDisplayBackendPreference(
       merged.linuxDisplayBackendPreference,
     ),
@@ -691,6 +741,17 @@ export const defaultSettings: Settings = {
     showInTaskbar: true,
     developerMode: false,
     devTelemetryHudVisible: true,
+    sourceTraceModeEnabled: false,
+    developerTelemetryEnabled: false,
+    developerTelemetryCaptureMode: 'raw',
+    developerTelemetryWriteToFile: true,
+    developerTelemetryShowInspector: true,
+    developerTelemetryPayloadMode: 'metadata+small-payloads',
+    developerTelemetryMaxFileSizeMb: 64,
+    consumerDiagnosticsEnabled: false,
+    consumerDiagnosticsIncludePluginRuntime: true,
+    consumerDiagnosticsIncludeRendererRuntime: true,
+    consumerDiagnosticsIncludePerfSamples: true,
     linuxDisplayBackendPreference: 'auto',
   },
   screenshots: {

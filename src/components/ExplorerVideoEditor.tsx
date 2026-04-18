@@ -1,34 +1,93 @@
+/**
+ * ExplorerVideoEditor — pure-frontend video editor for the GreebleFS preview pane.
+ *
+ * Architecture: zero Rust/Tauri engine calls. Uses browser <video> + convertFileSrc
+ * for instant, reliable playback. All editing is non-destructive CSS/canvas-side.
+ *
+ * Features:
+ *  - Dual-track timeline with draggable trim handles (in/out points)
+ *  - Scrubbing playhead
+ *  - Frame-accurate step (±1 frame, ±1s)
+ *  - Inspector panel: Transform, Color grading, Audio tabs
+ *  - Viewer: zoom scroll + drag-to-pan + crop overlay (CSS clip-path)
+ *  - WebAudio-based local audio extraction to WAV
+ *  - Loop-within-trim-region playback
+ *  - All chrome uses GreebleFS theme CSS variables
+ */
+
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { fetchFile } from '@ffmpeg/util';
 import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
+import {
+  AudioWaveform,
   Clapperboard,
+  Download,
+  Film,
+  Maximize2,
+  Music,
   Pause,
   Play,
   RotateCcw,
-  Save,
   Scissors,
   SkipBack,
   SkipForward,
+  Sliders,
   Volume2,
   VolumeX,
+  Loader2,
 } from 'lucide-react';
-import {
-  createExplorerVideoPreviewProxy,
-  exportExplorerVideoTrim,
-  resolveExplorerVideoPreviewSource,
-  type ExplorerVideoPreviewSource,
-} from '../runtime/videoEditorBackend';
-import {
-  loadVideoSource,
-  pauseVideo,
-  playVideo,
-  seekVideo,
-  setVideoLoopRegion,
-  stopVideo,
-  useVideoEngineFeed,
-  useVideoEngineSnapshot,
-} from '../store/videoEngineStore';
-import { AppPromptDialog } from './AppModal';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type InspectorTab = 'transform' | 'color' | 'audio';
+
+interface VideoTransform {
+  scaleX: number; // %
+  scaleY: number; // %
+  posX: number;   // px
+  posY: number;   // px
+  cropLeft: number;   // %
+  cropRight: number;
+  cropTop: number;
+  cropBottom: number;
+}
+
+interface VideoColor {
+  brightness: number; // 0–200, default 100
+  contrast: number;   // 0–200, default 100
+  saturation: number; // 0–300, default 100
+  hue: number;        // -180–180
+  sepia: number;      // 0–100
+}
+
+const DEFAULT_TRANSFORM: VideoTransform = {
+  scaleX: 100,
+  scaleY: 100,
+  posX: 0,
+  posY: 0,
+  cropLeft: 0,
+  cropRight: 0,
+  cropTop: 0,
+  cropBottom: 0,
+};
+
+const DEFAULT_COLOR: VideoColor = {
+  brightness: 100,
+  contrast: 100,
+  saturation: 100,
+  hue: 0,
+  sepia: 0,
+};
+
+// ─── Props ────────────────────────────────────────────────────────────────────
 
 type ExplorerVideoEditorProps = {
   videoPath: string;
@@ -40,1041 +99,1079 @@ type ExplorerVideoEditorProps = {
   onExported?: (outputPath: string) => Promise<void> | void;
 };
 
-type VideoExportState = 'idle' | 'exporting' | 'saved' | 'error';
-type TimelineDragMode = 'playhead' | 'trimStart' | 'trimEnd';
+// ─── Utilities ────────────────────────────────────────────────────────────────
 
-const MINIMUM_TRIM_DURATION_SECONDS = 0.1;
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.min(Math.max(v, lo), hi);
 }
 
-function formatTimelineTimestamp(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) {
-    return '00:00:00:00';
-  }
-  const wholeSeconds = Math.floor(seconds);
-  const hours = Math.floor(wholeSeconds / 3600);
-  const minutes = Math.floor((wholeSeconds % 3600) / 60);
-  const remainingSeconds = wholeSeconds % 60;
-  const centiseconds = Math.floor((seconds - wholeSeconds) * 100);
-  return [hours, minutes, remainingSeconds, centiseconds]
-    .map((value) => value.toString().padStart(2, '0'))
-    .join(':');
+function formatTimecode(secs: number): string {
+  if (!Number.isFinite(secs) || secs < 0) return '00:00:00:00';
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = Math.floor(secs % 60);
+  const f = Math.floor((secs % 1) * 30);
+  return [h, m, s, f].map((n) => n.toString().padStart(2, '0')).join(':');
 }
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-  if (bytes < 1024 ** 4) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
-  return `${(bytes / 1024 ** 4).toFixed(2)} TB`;
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 }
 
-function getVideoPlaybackErrorLabel(videoError: MediaError | null): string {
-  switch (videoError?.code) {
-    case 1:
-      return 'Video playback was aborted before the preview started.';
-    case 2:
-      return 'The preview media request failed before playback could begin.';
-    case 3:
-      return 'The desktop preview surface could not decode this video stream.';
-    case 4:
-      return 'This preview source is not supported by the current desktop media surface.';
-    default:
-      return 'The preview surface could not play this video source.';
+/** Convert AudioBuffer → WAV Blob without any server or ffmpeg dependency */
+function audioBufferToWav(buf: AudioBuffer): Blob {
+  const numCh = buf.numberOfChannels;
+  const length = buf.length * numCh * 2 + 44;
+  const ab = new ArrayBuffer(length);
+  const view = new DataView(ab);
+  const channels: Float32Array[] = [];
+  let pos = 0;
+
+  const u16 = (d: number) => { view.setUint16(pos, d, true); pos += 2; };
+  const u32 = (d: number) => { view.setUint32(pos, d, true); pos += 4; };
+
+  u32(0x46464952); u32(length - 8); u32(0x45564157);
+  u32(0x20746d66); u32(16);
+  u16(1); u16(numCh);
+  u32(buf.sampleRate);
+  u32(buf.sampleRate * 2 * numCh);
+  u16(numCh * 2); u16(16);
+  u32(0x61746164); u32(length - pos - 4);
+
+  for (let i = 0; i < numCh; i++) channels.push(buf.getChannelData(i));
+
+  let offset = 0;
+  while (pos < length) {
+    for (let i = 0; i < numCh; i++) {
+      const s = clamp(channels[i]![offset]!, -1, 1);
+      const int = (s < 0 ? s * 32768 : s * 32767) | 0;
+      view.setInt16(pos, int, true);
+      pos += 2;
+    }
+    offset++;
   }
+  return new Blob([ab], { type: 'audio/wav' });
 }
 
-function buildFilePreviewUrl(sourcePath: string): string {
-  try {
-    return convertFileSrc(sourcePath);
-  } catch {
-    const normalized = sourcePath.replace(/\\/g, '/');
-    return normalized.startsWith('/')
-      ? `file://${encodeURI(normalized)}`
-      : `file:///${encodeURI(normalized)}`;
-  }
+// ─── Sub-component: control slider ───────────────────────────────────────────
+
+interface ControlSliderProps {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  reset: number;
+  onChange: (v: number) => void;
 }
 
-export function buildTrimmedVideoOutputPath(sourcePath: string): string {
-  const match = sourcePath.match(/^(.*[/\\])?([^/\\]+)$/);
-  const parentPath = match?.[1] ?? '';
-  const leafName = match?.[2] ?? sourcePath;
-  const stem = leafName.replace(/\.[^.]+$/, '');
-  return `${parentPath}${stem}.trimmed.mp4`;
+function ControlSlider({ label, value, min, max, reset, onChange }: ControlSliderProps) {
+  const [local, setLocal] = useState(value);
+
+  useEffect(() => { setLocal(value); }, [value]);
+
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = parseFloat(e.target.value);
+    setLocal(v);
+    onChange(v);
+  }, [onChange]);
+
+  const handleNumChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = parseFloat(e.target.value) || 0;
+    setLocal(v);
+    onChange(v);
+  }, [onChange]);
+
+  const handleReset = useCallback(() => {
+    setLocal(reset);
+    onChange(reset);
+  }, [reset, onChange]);
+
+  const pct = ((local - min) / (max - min)) * 100;
+
+  return (
+    <div style={{ marginBottom: 10, userSelect: 'none' }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 4,
+      }}>
+        <span
+          title="Double-click to reset"
+          onDoubleClick={handleReset}
+          style={{
+            fontSize: 10,
+            color: 'var(--overlay-text-muted)',
+            cursor: 'pointer',
+            letterSpacing: '0.05em',
+          }}
+        >
+          {label}
+        </span>
+        <input
+          type="number"
+          value={local.toFixed(1)}
+          onChange={handleNumChange}
+          style={{
+            width: 52,
+            background: 'rgba(0,0,0,0.35)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 5,
+            color: 'var(--overlay-text-primary)',
+            fontSize: 10,
+            padding: '2px 4px',
+            textAlign: 'right',
+            fontFamily: 'monospace',
+            outline: 'none',
+          }}
+        />
+      </div>
+      <div style={{ position: 'relative', height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          height: '100%',
+          width: `${clamp(pct, 0, 100)}%`,
+          background: 'var(--overlay-accent, rgba(99,179,237,0.9))',
+          borderRadius: 3,
+          pointerEvents: 'none',
+        }} />
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={(max - min) / 300}
+          value={local}
+          onChange={handleChange}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            opacity: 0,
+            cursor: 'pointer',
+            margin: 0,
+          }}
+        />
+      </div>
+    </div>
+  );
 }
 
-function buildTimelineTicks(duration: number): number[] {
-  if (!Number.isFinite(duration) || duration <= 0) {
-    return [];
-  }
-  const targetTickCount = 8;
-  const candidateSteps = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800];
-  const minimumStep = duration / targetTickCount;
-  const step = candidateSteps.find((candidate) => candidate >= minimumStep) ?? 3600;
-  const ticks: number[] = [];
-  for (let current = 0; current <= duration; current += step) {
-    ticks.push(current);
-  }
-  if (ticks[ticks.length - 1] !== duration) {
-    ticks.push(duration);
-  }
-  return ticks;
-}
-
-function toolbarButtonStyle(
-  active = false,
-  emphasis: 'default' | 'primary' = 'default',
-): CSSProperties {
-  return {
-    appearance: 'none',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
-    padding: '8px 11px',
-    borderRadius: 10,
-    border: `1px solid ${
-      active || emphasis === 'primary'
-        ? 'rgba(255,255,255,0.22)'
-        : 'rgba(255,255,255,0.10)'
-    }`,
-    background:
-      emphasis === 'primary'
-        ? 'linear-gradient(135deg, rgba(255,255,255,0.18), rgba(255,255,255,0.08))'
-        : active
-          ? 'rgba(255,255,255,0.12)'
-          : 'rgba(255,255,255,0.05)',
-    color: 'var(--overlay-text-primary)',
-    cursor: 'pointer',
-    fontSize: 11,
-    fontWeight: 700,
-    boxShadow: '0 10px 24px rgba(0, 0, 0, 0.22)',
-  };
-}
-
-function previewSurfaceStyle(): CSSProperties {
-  return {
-    width: '100%',
-    height: '100%',
-    background:
-      'radial-gradient(circle at top, rgba(255,255,255,0.08), transparent 52%), rgba(0,0,0,0.76)',
-  };
-}
+// ─── Main component ───────────────────────────────────────────────────────────
 
 export function ExplorerVideoEditor({
   videoPath,
   videoName,
   videoSource,
   videoExtension,
-  videoMimeType,
+  videoMimeType: _videoMimeType,
   videoSize,
-  onExported,
 }: ExplorerVideoEditorProps) {
-  useVideoEngineFeed();
+  // Resolve native-file URL via convertFileSrc (Tauri) or use source directly
+  const nativeUrl = useMemo(() => {
+    try {
+      return convertFileSrc(videoPath);
+    } catch {
+      return videoSource;
+    }
+  }, [videoPath, videoSource]);
 
-  const snapshot = useVideoEngineSnapshot();
+  // ── Playback state ──
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const timelineRef = useRef<HTMLDivElement | null>(null);
-  const durationRef = useRef(0);
-  const trimStartRef = useRef(0);
-  const trimEndRef = useRef(0);
-  const requestTokenRef = useRef(0);
+  const rafRef = useRef<number>(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState(1);
 
+  // ── Trim state ──
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(0);
-  const [loopSelection, setLoopSelection] = useState(true);
-  const [playbackError, setPlaybackError] = useState<string | null>(null);
-  const [previewSource, setPreviewSource] = useState<ExplorerVideoPreviewSource | null>(null);
-  const [playbackSource, setPlaybackSource] = useState(videoSource);
-  const [playbackMimeType, setPlaybackMimeType] = useState(videoMimeType);
-  const [previewSurfaceReady, setPreviewSurfaceReady] = useState(false);
-  const [isResolvingPreview, setIsResolvingPreview] = useState(false);
-  const [isGeneratingProxy, setIsGeneratingProxy] = useState(false);
-  const [exportState, setExportState] = useState<VideoExportState>('idle');
-  const [exportMessage, setExportMessage] = useState(
-    'Trim export writes a sibling MP4 so the source file stays untouched.',
-  );
-  const [exportDialogOpen, setExportDialogOpen] = useState(false);
-  const [exportPathInput, setExportPathInput] = useState(() =>
-    buildTrimmedVideoOutputPath(videoPath),
-  );
+  const [loopTrim, setLoopTrim] = useState(true);
 
-  const isCurrentVideoLoaded = snapshot.loadedPath === videoPath;
-  const duration = isCurrentVideoLoaded ? snapshot.durationSeconds : 0;
-  const currentTime = isCurrentVideoLoaded ? snapshot.currentTimeSeconds : 0;
-  const isPlaying = isCurrentVideoLoaded && snapshot.isPlaying;
-  const previewAspectRatio =
-    isCurrentVideoLoaded && snapshot.widthPx && snapshot.heightPx
-      ? `${snapshot.widthPx} / ${snapshot.heightPx}`
-      : undefined;
-  const previewSourceKind = previewSource?.sourceKind ?? 'direct';
+  // ── Transcoding Fallback State ──
+  const [playSrc, setPlaySrc] = useState(nativeUrl);
+  const [isTranscoding, setIsTranscoding] = useState(false);
+  const [transcodeProgress, setTranscodeProgress] = useState('');
+  const [transcodeError, setTranscodeError] = useState('');
+  const ffmpegRef = useRef<FFmpeg | null>(null);
 
+  // ── Inspector state ──
+  const [activeTab, setActiveTab] = useState<InspectorTab>('transform');
+  const [transform, setTransform] = useState<VideoTransform>(DEFAULT_TRANSFORM);
+  const [color, setColor] = useState<VideoColor>(DEFAULT_COLOR);
+  const [isExtractingAudio, setIsExtractingAudio] = useState(false);
+  const [audioExtractMsg, setAudioExtractMsg] = useState('');
+
+  // Reset on file change
   useEffect(() => {
-    durationRef.current = duration;
-  }, [duration]);
-
-  useEffect(() => {
-    trimStartRef.current = trimStart;
-  }, [trimStart]);
-
-  useEffect(() => {
-    trimEndRef.current = trimEnd;
-  }, [trimEnd]);
-
-  async function ensurePlaybackProxy(): Promise<void> {
-    if (isGeneratingProxy || previewSourceKind === 'proxy') {
-      return;
-    }
-
-    const requestToken = requestTokenRef.current;
-    setIsGeneratingProxy(true);
-    setPreviewSurfaceReady(false);
-    setPlaybackError(null);
-
-    try {
-      const proxy = await createExplorerVideoPreviewProxy(videoPath);
-      if (requestTokenRef.current !== requestToken) {
-        return;
-      }
-      setPreviewSource(proxy);
-      setPlaybackSource(buildFilePreviewUrl(proxy.sourcePath));
-      setPlaybackMimeType(proxy.mimeType ?? 'video/mp4');
-      setPlaybackError(null);
-    } catch (error) {
-      if (requestTokenRef.current !== requestToken) {
-        return;
-      }
-      setPlaybackError(error instanceof Error ? error.message : String(error));
-    } finally {
-      if (requestTokenRef.current === requestToken) {
-        setIsGeneratingProxy(false);
-      }
-    }
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-    const requestToken = requestTokenRef.current + 1;
-    requestTokenRef.current = requestToken;
-
+    setPlaySrc(nativeUrl);
+    setIsTranscoding(false);
+    setTranscodeProgress('');
+    setTranscodeError('');
+    setIsPlaying(false);
+    setCurrentTime(0);
+    setDuration(0);
     setTrimStart(0);
     setTrimEnd(0);
-    setLoopSelection(true);
-    setPlaybackError(null);
-    setPreviewSource(null);
-    setPlaybackSource(videoSource);
-    setPlaybackMimeType(videoMimeType);
-    setPreviewSurfaceReady(false);
-    setIsResolvingPreview(true);
-    setIsGeneratingProxy(false);
-    setExportState('idle');
-    setExportMessage(
-      'Trim export writes a sibling MP4 so the source file stays untouched.',
-    );
-    setExportPathInput(buildTrimmedVideoOutputPath(videoPath));
+    setTransform(DEFAULT_TRANSFORM);
+    setColor(DEFAULT_COLOR);
+    setAudioExtractMsg('');
+    cancelAnimationFrame(rafRef.current);
+  }, [videoPath, nativeUrl]);
 
-    async function loadNativeVideoSource(): Promise<void> {
-      try {
-        const nextSnapshot = await loadVideoSource(videoPath);
-        if (cancelled || requestTokenRef.current !== requestToken) {
-          return;
-        }
-        setTrimStart(0);
-        setTrimEnd(nextSnapshot.durationSeconds);
-        setPlaybackError(null);
-        if (nextSnapshot.durationSeconds > 0) {
-          await setVideoLoopRegion(0, nextSnapshot.durationSeconds, true);
-        }
-      } catch (error) {
-        if (cancelled || requestTokenRef.current !== requestToken) {
-          return;
-        }
-        console.error('ExplorerVideoEditor: failed to load native video source', {
-          videoPath,
-          error,
+  // Transcoding fallback
+  const handleVideoError = useCallback(async () => {
+    // Only attempt once
+    if (playSrc !== nativeUrl || isTranscoding || transcodeError) return;
+    
+    setIsTranscoding(true);
+    setTranscodeProgress('Initializing transcoder...');
+    try {
+      let ffmpeg = ffmpegRef.current;
+      if (!ffmpeg) {
+        ffmpeg = new FFmpeg();
+        ffmpeg.on('log', ({ message }) => console.log('[ffmpeg]', message));
+        ffmpeg.on('progress', ({ progress }) => {
+          if (progress > 0 && progress < 1) {
+            setTranscodeProgress(`Transcoding to MP4... ${Math.round(progress * 100)}%`);
+          }
         });
-        setPlaybackError(error instanceof Error ? error.message : String(error));
-      }
-    }
-
-    async function resolvePreviewSource(): Promise<void> {
-      try {
-        const resolvedSource = await resolveExplorerVideoPreviewSource(videoPath);
-        if (cancelled || requestTokenRef.current !== requestToken) {
-          return;
-        }
-        setPreviewSource(resolvedSource);
-        setPlaybackSource(buildFilePreviewUrl(resolvedSource.sourcePath));
-        setPlaybackMimeType(resolvedSource.mimeType ?? videoMimeType);
-      } catch (error) {
-        console.error('ExplorerVideoEditor: failed to resolve preview source', {
-          videoPath,
-          error,
+        await ffmpeg.load({
+          coreURL: '/ffmpeg-st/ffmpeg-core.js',
+          wasmURL: '/ffmpeg-st/ffmpeg-core.wasm'
         });
-      } finally {
-        if (!cancelled && requestTokenRef.current === requestToken) {
-          setIsResolvingPreview(false);
-        }
+        ffmpegRef.current = ffmpeg;
       }
+
+      setTranscodeProgress('Reading file...');
+      const inputName = `input.${videoExtension || 'mp4'}`;
+      await ffmpeg.writeFile(inputName, await fetchFile(nativeUrl));
+
+      setTranscodeProgress('Transcoding to MP4... 0%');
+      await ffmpeg.exec([
+        '-i', inputName,
+        '-c:v', 'libx264',
+        '-preset', 'ultrafast',
+        '-crf', '28',
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        'output.mp4'
+      ]);
+
+      const data = await ffmpeg.readFile('output.mp4');
+      const blob = new Blob([(data as Uint8Array).buffer], { type: 'video/mp4' });
+      const url = URL.createObjectURL(blob);
+      setPlaySrc(url);
+    } catch (err: any) {
+      console.error('[VideoEditor] Transcode failed', err);
+      setTranscodeError('Failed to load or transcode video format.');
+    } finally {
+      setIsTranscoding(false);
     }
+  }, [nativeUrl, playSrc, isTranscoding, transcodeError, videoExtension]);
 
-    void loadNativeVideoSource();
-    void resolvePreviewSource();
-
-    return () => {
-      cancelled = true;
-      videoRef.current?.pause();
-    };
-  }, [videoMimeType, videoPath, videoSource]);
+  // RAF loop for smooth playhead update while playing
+  const tickPlayhead = useCallback(() => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    const t = vid.currentTime;
+    setCurrentTime(t);
+    if (loopTrim && trimEnd > 0 && t >= trimEnd) {
+      vid.currentTime = trimStart;
+      setCurrentTime(trimStart);
+    }
+    rafRef.current = requestAnimationFrame(tickPlayhead);
+  }, [loopTrim, trimEnd, trimStart]);
 
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) {
-      return;
-    }
-    setPreviewSurfaceReady(false);
-    video.pause();
-    video.load();
-  }, [playbackMimeType, playbackSource]);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) {
-      return;
-    }
-
-    if (!isCurrentVideoLoaded) {
-      video.pause();
-      return;
-    }
-
-    video.muted = snapshot.audioTransportReady;
-
-    const driftThreshold = isPlaying ? 0.25 : 0.02;
-    if (
-      Number.isFinite(currentTime) &&
-      Math.abs(video.currentTime - currentTime) > driftThreshold
-    ) {
-      video.currentTime = currentTime;
-    }
-
+    const vid = videoRef.current;
+    if (!vid) return;
     if (isPlaying) {
-      if (video.paused) {
-        void video.play().catch((error) => {
-          console.error('ExplorerVideoEditor: preview surface failed to play', {
-            videoPath,
-            error,
-          });
-          setPlaybackError(error instanceof Error ? error.message : String(error));
-          if (previewSourceKind === 'direct') {
-            void ensurePlaybackProxy();
+      const p = vid.play();
+      if (p) {
+        p.catch((err) => {
+          if (err.name !== 'AbortError') {
+            console.error('[VideoEditor] play() failed', err);
+            setIsPlaying(false);
           }
         });
       }
-      return;
+      rafRef.current = requestAnimationFrame(tickPlayhead);
+    } else {
+      vid.pause();
+      cancelAnimationFrame(rafRef.current);
     }
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [isPlaying, tickPlayhead]);
 
-    if (!video.paused) {
-      video.pause();
-    }
-  }, [
-    currentTime,
-    isCurrentVideoLoaded,
-    isPlaying,
-    previewSourceKind,
-    snapshot.audioTransportReady,
-    videoPath,
-  ]);
+  const handleLoadedMetadata = useCallback(() => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    setDuration(vid.duration);
+    setTrimEnd(vid.duration);
+  }, []);
 
-  async function applyLoopRegion(
-    nextTrimStart: number,
-    nextTrimEnd: number,
-    enabled: boolean,
-  ): Promise<void> {
-    if (durationRef.current <= 0) {
-      return;
-    }
-    try {
-      await setVideoLoopRegion(nextTrimStart, nextTrimEnd, enabled);
-      setPlaybackError(null);
-    } catch (error) {
-      setPlaybackError(error instanceof Error ? error.message : String(error));
-    }
-  }
+  // ── Transport controls ──
+  const togglePlay = useCallback(() => {
+    if (duration <= 0) return;
+    setIsPlaying((prev) => !prev);
+  }, [duration]);
 
-  async function syncCurrentTime(nextTime: number): Promise<void> {
-    const boundedTime = clamp(nextTime, 0, durationRef.current || 0);
-    try {
-      await seekVideo(boundedTime);
-      setPlaybackError(null);
-    } catch (error) {
-      setPlaybackError(error instanceof Error ? error.message : String(error));
-    }
-  }
+  const stepFrame = useCallback((frames: number) => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    vid.currentTime = clamp(vid.currentTime + frames * (1 / 30), 0, duration);
+    setCurrentTime(vid.currentTime);
+  }, [duration]);
 
-  function updateTrimRange(nextStart: number, nextEnd: number): void {
-    const boundedEnd = clamp(nextEnd, 0, durationRef.current || 0);
-    const boundedStart = clamp(
-      nextStart,
-      0,
-      Math.max(0, boundedEnd - MINIMUM_TRIM_DURATION_SECONDS),
-    );
-    const finalEnd = clamp(
-      boundedEnd,
-      Math.min(durationRef.current || 0, boundedStart + MINIMUM_TRIM_DURATION_SECONDS),
-      durationRef.current || 0,
-    );
+  const seekTo = useCallback((t: number) => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    const bounded = clamp(t, 0, duration);
+    vid.currentTime = bounded;
+    setCurrentTime(bounded);
+  }, [duration]);
 
-    setTrimStart(boundedStart);
-    setTrimEnd(finalEnd);
-    void applyLoopRegion(boundedStart, finalEnd, loopSelection);
+  // ── Timeline drag helpers ──
+  const timelineRef = useRef<HTMLDivElement | null>(null);
+  const trimStartRef = useRef(0);
+  const trimEndRef = useRef(duration);
 
-    if (currentTime < boundedStart || currentTime > finalEnd) {
-      void syncCurrentTime(clamp(currentTime, boundedStart, finalEnd));
-    }
-  }
+  useEffect(() => { trimStartRef.current = trimStart; }, [trimStart]);
+  useEffect(() => { trimEndRef.current = trimEnd <= 0 ? duration : trimEnd; }, [trimEnd, duration]);
 
-  function resolveTimeFromClientX(clientX: number): number {
-    const timeline = timelineRef.current;
-    if (!timeline || durationRef.current <= 0) {
-      return 0;
-    }
-    const rect = timeline.getBoundingClientRect();
-    const ratio = clamp((clientX - rect.left) / rect.width, 0, 1);
-    return ratio * durationRef.current;
-  }
+  const clientXToTime = useCallback((clientX: number): number => {
+    const el = timelineRef.current;
+    if (!el || duration <= 0) return 0;
+    const rect = el.getBoundingClientRect();
+    return clamp((clientX - rect.left) / rect.width, 0, 1) * duration;
+  }, [duration]);
 
-  function beginTimelineDrag(mode: TimelineDragMode, clientX: number): void {
-    const applyTime = (nextTime: number) => {
-      if (mode === 'playhead') {
-        void syncCurrentTime(nextTime);
-        return;
+  type DragTarget = 'playhead' | 'trimStart' | 'trimEnd';
+
+  const beginDrag = useCallback((target: DragTarget, startX: number) => {
+    const move = (e: MouseEvent) => {
+      const t = clientXToTime(e.clientX);
+      if (target === 'playhead') {
+        seekTo(t);
+      } else if (target === 'trimStart') {
+        const newStart = clamp(t, 0, trimEndRef.current - 0.1);
+        setTrimStart(newStart);
+        seekTo(newStart);
+      } else {
+        const newEnd = clamp(t, trimStartRef.current + 0.1, duration);
+        setTrimEnd(newEnd);
+        seekTo(newEnd);
       }
-      if (mode === 'trimStart') {
-        updateTrimRange(nextTime, trimEndRef.current);
-        return;
-      }
-      updateTrimRange(trimStartRef.current, nextTime);
     };
-
-    applyTime(resolveTimeFromClientX(clientX));
-
-    const handlePointerMove = (event: MouseEvent) => {
-      applyTime(resolveTimeFromClientX(event.clientX));
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
     };
-    const handlePointerUp = () => {
-      window.removeEventListener('mousemove', handlePointerMove);
-      window.removeEventListener('mouseup', handlePointerUp);
+    move({ clientX: startX } as MouseEvent);
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  }, [clientXToTime, duration, seekTo]);
+
+  // ── Viewer: zoom + pan ──
+  const viewerRef = useRef<HTMLDivElement | null>(null);
+
+  const handleViewerWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const speed = 0.18;
+    setTransform((prev) => {
+      const next = clamp(prev.scaleX - e.deltaY * speed, 10, 500);
+      return { ...prev, scaleX: next, scaleY: next };
+    });
+  }, []);
+
+  const handleViewerMouseDown = useCallback((e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('.vt-handle')) return;
+    e.preventDefault();
+    const sx = e.clientX;
+    const sy = e.clientY;
+    const sp = { ...transform };
+    const move = (me: MouseEvent) => {
+      setTransform((prev) => ({ ...prev, posX: sp.posX + (me.clientX - sx), posY: sp.posY + (me.clientY - sy) }));
     };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  }, [transform]);
 
-    window.addEventListener('mousemove', handlePointerMove);
-    window.addEventListener('mouseup', handlePointerUp);
-  }
-
-  async function togglePlayback(): Promise<void> {
-    if (duration <= 0) {
-      return;
-    }
+  // ── Audio extraction ──
+  const extractAudio = useCallback(async () => {
+    setIsExtractingAudio(true);
+    setAudioExtractMsg('Decoding via WebAudio…');
     try {
-      if (isPlaying) {
-        await pauseVideo();
-        return;
-      }
-      if (currentTime >= trimEndRef.current && trimEndRef.current > trimStartRef.current) {
-        await seekVideo(trimStartRef.current);
-      }
-      await playVideo();
-      setPlaybackError(null);
-    } catch (error) {
-      setPlaybackError(error instanceof Error ? error.message : String(error));
+      const resp = await fetch(nativeUrl);
+      const arrayBuf = await resp.arrayBuffer();
+      const ctx = new AudioContext();
+      const audioBuf = await ctx.decodeAudioData(arrayBuf);
+      const wav = audioBufferToWav(audioBuf);
+      const url = URL.createObjectURL(wav);
+      const a = document.createElement('a');
+      a.href = url;
+      const stem = videoName.replace(/\.[^.]+$/, '');
+      a.download = `${stem}_audio.wav`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setAudioExtractMsg(`Extracted: ${stem}_audio.wav`);
+    } catch (err) {
+      console.error('[VideoEditor] audio extract failed', err);
+      setAudioExtractMsg('Extraction failed. File may be unsupported or inaccessible.');
+    } finally {
+      setIsExtractingAudio(false);
     }
-  }
+  }, [nativeUrl, videoName]);
 
-  async function resetTransport(): Promise<void> {
-    setTrimStart(0);
-    setTrimEnd(duration);
-    setLoopSelection(true);
-    try {
-      await setVideoLoopRegion(0, duration, true);
-      await stopVideo();
-      setPlaybackError(null);
-    } catch (error) {
-      setPlaybackError(error instanceof Error ? error.message : String(error));
-    }
-  }
+  // ── Computed style values ──
+  const videoFilter = useMemo(() => (
+    `brightness(${color.brightness}%) contrast(${color.contrast}%) saturate(${color.saturation}%) hue-rotate(${color.hue}deg) sepia(${color.sepia}%)`
+  ), [color]);
 
-  async function submitExport(): Promise<void> {
-    if (duration <= 0 || trimEnd <= trimStart) {
-      setExportState('error');
-      setExportMessage(
-        'Load a valid video and choose a non-zero trim range before exporting.',
-      );
-      return;
-    }
+  const videoClipPath = useMemo(() => (
+    `inset(${transform.cropTop}% ${transform.cropRight}% ${transform.cropBottom}% ${transform.cropLeft}%)`
+  ), [transform]);
 
-    setExportDialogOpen(false);
-    setExportState('exporting');
-    setExportMessage('Exporting trimmed MP4…');
+  const wrapperTransform = useMemo(() => (
+    `translate(${transform.posX}px, ${transform.posY}px) scale(${transform.scaleX / 100}, ${transform.scaleY / 100})`
+  ), [transform]);
 
-    try {
-      const result = await exportExplorerVideoTrim({
-        inputPath: videoPath,
-        outputPath: exportPathInput.trim(),
-        startTimeSeconds: trimStart,
-        endTimeSeconds: trimEnd,
-        overwriteExisting: true,
-      });
-      setExportState('saved');
-      setExportMessage(
-        `Saved ${result.durationSeconds.toFixed(2)}s trim to ${result.outputPath}`,
-      );
-      await onExported?.(result.outputPath);
-    } catch (error) {
-      setExportState('error');
-      setExportMessage(String(error));
-    }
-  }
-
-  const selectionDuration = Math.max(0, trimEnd - trimStart);
-  const timelineTicks = buildTimelineTicks(duration);
   const selectionLeft = duration > 0 ? `${(trimStart / duration) * 100}%` : '0%';
-  const selectionWidth =
-    duration > 0 ? `${(selectionDuration / duration) * 100}%` : '0%';
+  const selectionWidth = duration > 0 ? `${((trimEnd - trimStart) / duration) * 100}%` : '0%';
   const playheadLeft = duration > 0 ? `${(currentTime / duration) * 100}%` : '0%';
-  const transportLabel =
-    previewSourceKind === 'proxy'
-      ? snapshot.audioTransportReady
-        ? 'Proxy Preview + Audio'
-        : snapshot.hasAudioTrack
-          ? 'Proxy Preview + Media Audio'
-          : 'Proxy Preview'
-      : snapshot.audioTransportReady
-        ? 'Direct Preview + Audio'
-        : snapshot.hasAudioTrack
-          ? 'Direct Preview + Media Audio'
-          : 'Direct Preview';
-  const previewNoticeMessage = snapshot.audioTransportReady
-    ? null
-    : snapshot.hasAudioTrack
-      ? snapshot.audioTransportError ??
-        'The Rust audio deck could not lock onto this clip. The preview surface will carry audio when it can.'
-      : 'This video has no embedded audio track.';
-  const playbackStatusMessage =
-    playbackError ??
-    snapshot.engineError ??
-    (snapshot.isLoading
-      ? 'Loading video metadata and transport state…'
-      : isGeneratingProxy
-        ? 'Generating a compatibility MP4 preview…'
-        : isResolvingPreview
-          ? 'Resolving the best preview source…'
-          : !previewSource
-            ? 'Using the direct file preview surface.'
-            : !previewSurfaceReady
-              ? previewSourceKind === 'proxy'
-                ? 'Compatibility preview ready. Waiting for the first frame…'
-                : 'Preview source ready. Waiting for the first frame…'
-              : previewSourceKind === 'proxy'
-                ? 'Compatibility preview ready. Rust transport is driving the proxy surface.'
-                : 'Preview ready. Rust transport is driving the media surface.');
+  const selectionDuration = Math.max(0, trimEnd - trimStart);
+
+  // ── Prop helpers ──
+  const setTransformProp = useCallback(<K extends keyof VideoTransform>(k: K, v: number) => {
+    setTransform((prev) => ({ ...prev, [k]: v }));
+  }, []);
+
+  const setColorProp = useCallback(<K extends keyof VideoColor>(k: K, v: number) => {
+    setColor((prev) => ({ ...prev, [k]: v }));
+  }, []);
+
+  const resetTransform = useCallback(() => setTransform(DEFAULT_TRANSFORM), []);
+  const resetColor = useCallback(() => setColor(DEFAULT_COLOR), []);
+
+  // ── Layout CSS vars ──
+  const root: CSSProperties = {
+    width: '100%',
+    height: '100%',
+    display: 'grid',
+    gridTemplateColumns: '1fr 220px',
+    gridTemplateRows: 'minmax(0,1fr) auto',
+    background: 'var(--overlay-explorer-preview-bg)',
+    overflow: 'hidden',
+    fontFamily: 'var(--overlay-font-family, system-ui)',
+    color: 'var(--overlay-text-primary)',
+  };
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div
-      style={{
-        width: '100%',
-        height: '100%',
-        display: 'grid',
-        gridTemplateRows: 'minmax(0, 1fr) auto',
-        background: 'var(--overlay-explorer-preview-bg)',
-      }}
-    >
-      <div style={{ minHeight: 0, padding: 16, display: 'grid', gap: 14 }}>
+    <div style={root}>
+
+      {/* ── LEFT: viewer + timeline ── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gridColumn: 1, gridRow: '1 / 3', minHeight: 0, overflow: 'hidden' }}>
+
+        {/* Viewer */}
         <div
+          ref={viewerRef}
+          onWheel={handleViewerWheel}
+          onMouseDown={handleViewerMouseDown}
           style={{
-            minHeight: 0,
+            flex: 1,
             position: 'relative',
-            display: 'grid',
-            placeItems: 'center',
-            padding: 'clamp(12px, 2vw, 18px)',
-            borderRadius: 'var(--overlay-explorer-panel-radius)',
-            border: '1px solid var(--overlay-explorer-chip-border)',
-            background:
-              'linear-gradient(180deg, rgba(10, 12, 18, 0.94), rgba(5, 7, 11, 0.98))',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             overflow: 'hidden',
-            boxShadow: '0 24px 48px rgba(0,0,0,0.28)',
+            background: 'radial-gradient(circle at 50% 30%, rgba(255,255,255,0.04), transparent 70%), rgba(0,0,0,0.82)',
+            cursor: 'grab',
           }}
         >
+          {/* Checkerboard mask (shows crop/transparent areas) */}
+          <div style={{
+            position: 'absolute',
+            inset: 0,
+            opacity: 0.08,
+            backgroundImage:
+              'linear-gradient(45deg,#666 25%,transparent 25%),' +
+              'linear-gradient(-45deg,#666 25%,transparent 25%),' +
+              'linear-gradient(45deg,transparent 75%,#666 75%),' +
+              'linear-gradient(-45deg,transparent 75%,#666 75%)',
+            backgroundSize: '18px 18px',
+            backgroundPosition: '0 0,0 9px,9px -9px,-9px 0',
+            pointerEvents: 'none',
+          }} />
+
           <div
             style={{
               position: 'relative',
-              width: '100%',
-              height: '100%',
-              minHeight: 0,
               maxWidth: '100%',
               maxHeight: '100%',
-              aspectRatio: previewAspectRatio,
+              transform: wrapperTransform,
+              transformOrigin: 'center',
             }}
           >
-            <div
-              aria-hidden
-              style={{
-                ...previewSurfaceStyle(),
-                position: 'absolute',
-                inset: 0,
-              }}
-            />
             <video
               ref={videoRef}
-              key={playbackSource}
+              src={playSrc}
               preload="metadata"
               playsInline
-              muted={snapshot.audioTransportReady}
-              aria-label={`Video preview player for ${videoName}`}
-              style={{
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                height: '100%',
-                objectFit: 'contain',
-                background: 'transparent',
-              }}
-              onLoadedData={() => {
-                setPreviewSurfaceReady(true);
-                setPlaybackError(null);
-              }}
-              onError={(event) => {
-                const nextErrorLabel = getVideoPlaybackErrorLabel(event.currentTarget.error);
-                setPreviewSurfaceReady(false);
-                setPlaybackError(nextErrorLabel);
-                if (previewSourceKind === 'direct') {
-                  void ensurePlaybackProxy();
+              muted={isMuted}
+              aria-label={`Video preview: ${videoName}`}
+              onError={handleVideoError}
+              onLoadedMetadata={handleLoadedMetadata}
+              onEnded={() => {
+                if (loopTrim) {
+                  seekTo(trimStart);
+                } else {
+                  setIsPlaying(false);
                 }
               }}
-            >
-              <source src={playbackSource} type={playbackMimeType ?? undefined} />
-              This video preview is not supported by the current desktop media surface.
-            </video>
+              style={{
+                display: 'block',
+                maxWidth: '100%',
+                maxHeight: '100%',
+                filter: videoFilter,
+                clipPath: videoClipPath,
+              }}
+            />
+            {/* Transform overlay border */}
+            {activeTab === 'transform' && (
+              <div
+                className="vt-handle"
+                style={{
+                  position: 'absolute',
+                  top: `${transform.cropTop}%`,
+                  bottom: `${transform.cropBottom}%`,
+                  left: `${transform.cropLeft}%`,
+                  right: `${transform.cropRight}%`,
+                  border: '1px solid rgba(99,179,237,0.7)',
+                  pointerEvents: 'none',
+                  boxShadow: '0 0 0 1px rgba(99,179,237,0.15)',
+                }}
+              />
+            )}
           </div>
-          {!previewSurfaceReady ? (
+
+          {/* No-video overlay */}
+          {duration === 0 && (
+            <div style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'grid',
+              placeItems: 'center',
+              color: 'var(--overlay-text-muted)',
+              pointerEvents: 'none',
+              background: 'rgba(0,0,0,0.4)',
+              zIndex: 10,
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                {isTranscoding ? (
+                  <Loader2 className="animate-spin" size={28} style={{ opacity: 0.6 }} />
+                ) : transcodeError ? (
+                  <Film size={28} style={{ opacity: 0.2, color: 'var(--overlay-error, #f87171)' }} />
+                ) : (
+                  <Film size={28} style={{ opacity: 0.4 }} />
+                )}
+                <span style={{ fontSize: 11, opacity: 0.7, maxWidth: 200, textAlign: 'center', lineHeight: 1.4 }}>
+                  {isTranscoding ? transcodeProgress : transcodeError ? transcodeError : 'Loading video…'}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Transport bar */}
+        <div style={{
+          height: 46,
+          padding: '0 12px',
+          borderTop: '1px solid var(--overlay-explorer-preview-border)',
+          background: 'rgba(255,255,255,0.025)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexShrink: 0,
+          gap: 8,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <TBtn onClick={() => stepFrame(-1)} title="−1 frame"><SkipBack size={13} /></TBtn>
+            <TBtn onClick={togglePlay} active title={isPlaying ? 'Pause' : 'Play'} style={{ padding: '5px 9px' }}>
+              {isPlaying ? <Pause size={14} /> : <Play size={14} />}
+            </TBtn>
+            <TBtn onClick={() => stepFrame(1)} title="+1 frame"><SkipForward size={13} /></TBtn>
+            <TBtn onClick={() => seekTo(trimStart)} title="Go to trim in"><SkipBack size={11} />In</TBtn>
+            <TBtn onClick={() => seekTo(trimEnd)} title="Go to trim out">Out<SkipForward size={11} /></TBtn>
+            <TBtn
+              active={loopTrim}
+              onClick={() => setLoopTrim((v) => !v)}
+              title="Loop within trim region"
+            >
+              <Scissors size={11} />
+              {loopTrim ? 'Loop On' : 'Loop Off'}
+            </TBtn>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              type="button"
+              onClick={() => setIsMuted((v) => !v)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--overlay-text-muted)', padding: 4 }}
+            >
+              {isMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+            </button>
+            <input
+              type="range"
+              min={0} max={1} step={0.02}
+              value={isMuted ? 0 : volume}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                setVolume(v);
+                setIsMuted(v === 0);
+                if (videoRef.current) videoRef.current.volume = v;
+              }}
+              style={{ width: 56, accentColor: 'var(--overlay-accent, #63b3ed)', cursor: 'pointer' }}
+            />
+            <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--overlay-text-muted)', minWidth: 90, textAlign: 'right' }}>
+              {formatTimecode(currentTime)}
+              <span style={{ opacity: 0.4 }}> / {formatTimecode(duration)}</span>
+            </span>
+          </div>
+        </div>
+
+        {/* Timeline */}
+        <div style={{
+          padding: '6px 10px 8px',
+          borderTop: '1px solid var(--overlay-explorer-preview-border)',
+          background: 'rgba(0,0,0,0.25)',
+          flexShrink: 0,
+        }}>
+          {/* Timecode ticks */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'var(--overlay-text-muted)', fontFamily: 'monospace', marginBottom: 3 }}>
+            {buildTicks(duration).map((t) => (
+              <span key={t}>{formatTimecode(t)}</span>
+            ))}
+          </div>
+
+          {/* Main track area */}
+          <div
+            ref={timelineRef}
+            role="slider"
+            aria-label={`Playhead for ${videoName}`}
+            aria-valuemin={0}
+            aria-valuemax={duration}
+            aria-valuenow={currentTime}
+            onMouseDown={(e) => beginDrag('playhead', e.clientX)}
+            style={{
+              position: 'relative',
+              height: 52,
+              borderRadius: 8,
+              background: 'linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%)',
+              border: '1px solid rgba(255,255,255,0.09)',
+              overflow: 'hidden',
+              cursor: 'text',
+            }}
+          >
+            {/* Sub-tick grid */}
+            <div style={{
+              position: 'absolute', inset: 0, pointerEvents: 'none',
+              background: 'repeating-linear-gradient(90deg, rgba(255,255,255,0.04) 0px, rgba(255,255,255,0.04) 1px, transparent 1px, transparent 48px)',
+            }} />
+
+            {/* Trim selection */}
+            <div style={{
+              position: 'absolute',
+              top: 8, bottom: 10,
+              left: selectionLeft,
+              width: selectionWidth,
+              borderRadius: 6,
+              background: 'linear-gradient(135deg, rgba(53,214,144,0.28), rgba(74,169,255,0.22))',
+              border: '1px solid rgba(94,255,184,0.28)',
+              pointerEvents: 'none',
+            }} />
+
+            {/* Track label: V1 */}
+            <div style={{ position: 'absolute', left: 5, top: '50%', transform: 'translateY(-50%)', fontSize: 9, fontWeight: 700, color: 'rgba(99,179,237,0.5)', pointerEvents: 'none', letterSpacing: '0.05em' }}>V1</div>
+
+            {/* Trim start handle */}
+            <div
+              className="vt-handle"
+              aria-label="Trim start"
+              onMouseDown={(e) => { e.stopPropagation(); beginDrag('trimStart', e.clientX); }}
+              style={{
+                position: 'absolute',
+                top: 5, bottom: 5,
+                left: selectionLeft,
+                width: 12,
+                transform: 'translateX(-50%)',
+                borderRadius: 6,
+                background: 'linear-gradient(180deg, rgba(255,255,255,0.92), rgba(164,255,215,0.82))',
+                boxShadow: '0 0 0 1px rgba(0,0,0,0.3)',
+                cursor: 'ew-resize',
+                zIndex: 3,
+              }}
+            />
+
+            {/* Trim end handle */}
+            <div
+              className="vt-handle"
+              aria-label="Trim end"
+              onMouseDown={(e) => { e.stopPropagation(); beginDrag('trimEnd', e.clientX); }}
+              style={{
+                position: 'absolute',
+                top: 5, bottom: 5,
+                left: `calc(${selectionLeft} + ${selectionWidth})`,
+                width: 12,
+                transform: 'translateX(-50%)',
+                borderRadius: 6,
+                background: 'linear-gradient(180deg, rgba(255,255,255,0.92), rgba(164,255,215,0.82))',
+                boxShadow: '0 0 0 1px rgba(0,0,0,0.3)',
+                cursor: 'ew-resize',
+                zIndex: 3,
+              }}
+            />
+
+            {/* Playhead */}
             <div
               style={{
                 position: 'absolute',
-                inset: 0,
-                display: 'grid',
-                placeItems: 'center',
-                padding: 24,
-                textAlign: 'center',
-                color: 'var(--overlay-text-muted)',
-                background: 'linear-gradient(180deg, rgba(8, 10, 16, 0.1), rgba(8, 10, 16, 0.45))',
+                top: 4, bottom: 4,
+                left: playheadLeft,
+                width: 2,
+                transform: 'translateX(-50%)',
+                background: 'rgba(255,255,255,0.94)',
+                boxShadow: '0 0 8px rgba(255,255,255,0.3)',
+                borderRadius: 2,
+                zIndex: 4,
+                pointerEvents: 'none',
               }}
             >
-              <div style={{ display: 'grid', gap: 8 }}>
-                <div
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 8,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: 'var(--overlay-text-primary)',
-                  }}
-                >
-                  <Clapperboard size={14} />
-                  Native Video Runtime
-                </div>
-                <div style={{ fontSize: 11, lineHeight: 1.5 }}>
-                  {playbackError ??
-                    (isGeneratingProxy
-                      ? 'Generating a compatibility preview for this clip…'
-                      : isResolvingPreview
-                        ? 'Resolving the best preview source…'
-                        : snapshot.isLoading
-                          ? 'Preparing metadata and transport state…'
-                          : 'Waiting for the preview surface to paint the first frame.')}
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </div>
-
-        <div
-          style={{
-            display: 'grid',
-            gap: 12,
-            padding: 14,
-            borderRadius: 'var(--overlay-explorer-panel-radius)',
-            border: '1px solid var(--overlay-explorer-chip-border)',
-            background: 'rgba(255,255,255,0.04)',
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 10,
-              flexWrap: 'wrap',
-            }}
-          >
-            <div style={{ display: 'grid', gap: 4 }}>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: 'var(--overlay-text-primary)',
-                }}
-              >
-                <Clapperboard size={14} />
-                Video Timeline
-              </div>
-              <div
-                style={{
-                  fontSize: 10,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  color: 'var(--overlay-text-muted)',
-                }}
-              >
-                {videoExtension.toUpperCase()} · {formatSize(videoSize)} · {transportLabel} ·
-                Selection {formatTimelineTimestamp(selectionDuration)}
-              </div>
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                flexWrap: 'wrap',
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  void syncCurrentTime(trimStart);
-                }}
-                style={toolbarButtonStyle()}
-              >
-                <SkipBack size={13} />
-                Start
-              </button>
-              <button type="button" onClick={() => void togglePlayback()} style={toolbarButtonStyle(true)}>
-                {isPlaying ? <Pause size={13} /> : <Play size={13} />}
-                {isPlaying ? 'Pause' : 'Play'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  void syncCurrentTime(trimEnd);
-                }}
-                style={toolbarButtonStyle()}
-              >
-                <SkipForward size={13} />
-                End
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const nextEnabled = !loopSelection;
-                  setLoopSelection(nextEnabled);
-                  void applyLoopRegion(trimStartRef.current, trimEndRef.current, nextEnabled);
-                }}
-                style={toolbarButtonStyle(loopSelection)}
-              >
-                <Scissors size={13} />
-                {loopSelection ? 'Loop On' : 'Loop Off'}
-              </button>
-              <button type="button" onClick={() => void resetTransport()} style={toolbarButtonStyle()}>
-                <RotateCcw size={13} />
-                Reset
-              </button>
-              <button
-                type="button"
-                disabled={isGeneratingProxy || previewSourceKind === 'proxy'}
-                onClick={() => {
-                  void ensurePlaybackProxy();
-                }}
-                style={toolbarButtonStyle(previewSourceKind === 'proxy', 'primary')}
-              >
-                <Clapperboard size={13} />
-                {previewSourceKind === 'proxy'
-                  ? 'Proxy Ready'
-                  : isGeneratingProxy
-                    ? 'Proxying…'
-                    : 'Make Proxy'}
-              </button>
-              <button type="button" disabled style={toolbarButtonStyle(false, 'primary')}>
-                {snapshot.audioTransportReady ? <Volume2 size={13} /> : <VolumeX size={13} />}
-                {snapshot.audioTransportReady
-                  ? 'Audio Linked'
-                  : snapshot.hasAudioTrack
-                    ? 'Media Audio'
-                    : 'No Audio Track'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setExportDialogOpen(true)}
-                style={toolbarButtonStyle(false, 'primary')}
-              >
-                <Save size={13} />
-                Export Trim
-              </button>
+              <div style={{
+                position: 'absolute',
+                top: -2,
+                left: '50%',
+                transform: 'translate(-50%, -50%) rotate(45deg)',
+                width: 8, height: 8,
+                borderRadius: 2,
+                background: 'rgba(255,255,255,0.94)',
+              }} />
             </div>
           </div>
 
-          <div style={{ display: 'grid', gap: 8 }}>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                gap: 10,
-                fontSize: 10,
-                color: 'var(--overlay-text-muted)',
-                fontFamily: 'monospace',
-              }}
-            >
-              {timelineTicks.map((tick) => (
-                <span key={tick}>{formatTimelineTimestamp(tick)}</span>
-              ))}
-            </div>
-            <div
-              ref={timelineRef}
-              role="slider"
-              aria-label={`Video timeline for ${videoName}`}
-              aria-valuemin={0}
-              aria-valuemax={duration}
-              aria-valuenow={currentTime}
-              onMouseDown={(event) => beginTimelineDrag('playhead', event.clientX)}
-              style={{
-                position: 'relative',
-                height: 82,
-                borderRadius: 14,
-                border: '1px solid rgba(255,255,255,0.12)',
-                background:
-                  'linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02))',
-                overflow: 'hidden',
-                cursor: 'pointer',
-              }}
-            >
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  background:
-                    'repeating-linear-gradient(90deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 48px)',
-                }}
-              />
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 12,
-                  bottom: 18,
-                  left: selectionLeft,
-                  width: selectionWidth,
-                  borderRadius: 12,
-                  background:
-                    'linear-gradient(135deg, rgba(53, 214, 144, 0.34), rgba(74, 169, 255, 0.28))',
-                  border: '1px solid rgba(94, 255, 184, 0.34)',
-                  boxShadow: '0 18px 28px rgba(20, 112, 86, 0.22)',
-                }}
-              />
-              <div
-                role="button"
-                aria-label={`Trim start handle for ${videoName}`}
-                onMouseDown={(event) => {
-                  event.stopPropagation();
-                  beginTimelineDrag('trimStart', event.clientX);
-                }}
-                style={{
-                  position: 'absolute',
-                  top: 8,
-                  bottom: 14,
-                  left: selectionLeft,
-                  width: 14,
-                  transform: 'translateX(-50%)',
-                  borderRadius: 10,
-                  background:
-                    'linear-gradient(180deg, rgba(255,255,255,0.9), rgba(164,255,215,0.8))',
-                  boxShadow: '0 0 0 2px rgba(20, 40, 28, 0.35)',
-                }}
-              />
-              <div
-                role="button"
-                aria-label={`Trim end handle for ${videoName}`}
-                onMouseDown={(event) => {
-                  event.stopPropagation();
-                  beginTimelineDrag('trimEnd', event.clientX);
-                }}
-                style={{
-                  position: 'absolute',
-                  top: 8,
-                  bottom: 14,
-                  left: `calc(${selectionLeft} + ${selectionWidth})`,
-                  width: 14,
-                  transform: 'translateX(-50%)',
-                  borderRadius: 10,
-                  background:
-                    'linear-gradient(180deg, rgba(255,255,255,0.9), rgba(164,255,215,0.8))',
-                  boxShadow: '0 0 0 2px rgba(20, 40, 28, 0.35)',
-                }}
-              />
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 8,
-                  bottom: 8,
-                  left: playheadLeft,
-                  width: 2,
-                  transform: 'translateX(-50%)',
-                  background: 'rgba(255,255,255,0.96)',
-                  boxShadow: '0 0 16px rgba(255,255,255,0.34)',
-                }}
-              >
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: -2,
-                    left: '50%',
-                    width: 12,
-                    height: 12,
-                    transform: 'translate(-50%, -50%) rotate(45deg)',
-                    borderRadius: 3,
-                    background: 'rgba(255,255,255,0.96)',
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
-            <button
-              type="button"
-              onClick={() => updateTrimRange(currentTime, trimEnd)}
-              style={toolbarButtonStyle()}
-            >
-              Set In
-            </button>
-            <button
-              type="button"
-              onClick={() => updateTrimRange(trimStart, currentTime)}
-              style={toolbarButtonStyle()}
-            >
-              Set Out
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                void syncCurrentTime(Math.max(0, currentTime - 1));
-              }}
-              style={toolbarButtonStyle()}
-            >
-              -1.0s
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                void syncCurrentTime(Math.min(duration, currentTime + 1));
-              }}
-              style={toolbarButtonStyle()}
-            >
-              +1.0s
-            </button>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
-            {[
-              { label: 'Current', value: formatTimelineTimestamp(currentTime) },
-              { label: 'Trim Start', value: formatTimelineTimestamp(trimStart) },
-              { label: 'Trim End', value: formatTimelineTimestamp(trimEnd) },
-              { label: 'Duration', value: formatTimelineTimestamp(duration) },
-            ].map((item) => (
-              <div
-                key={item.label}
-                style={{
-                  padding: '10px 12px',
-                  borderRadius: 12,
-                  background: 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 9,
-                    letterSpacing: '0.08em',
-                    textTransform: 'uppercase',
-                    color: 'var(--overlay-text-dim)',
-                  }}
-                >
-                  {item.label}
-                </div>
-                <div
-                  style={{
-                    marginTop: 4,
-                    fontFamily: 'monospace',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: 'var(--overlay-text-primary)',
-                  }}
-                >
-                  {item.value}
-                </div>
+          {/* Timecode readout row */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 4, marginTop: 5 }}>
+            {([
+              { label: 'Current', value: formatTimecode(currentTime) },
+              { label: 'In', value: formatTimecode(trimStart) },
+              { label: 'Out', value: formatTimecode(trimEnd) },
+              { label: 'Sel', value: formatTimecode(selectionDuration) },
+            ] as const).map((item) => (
+              <div key={item.label} style={{
+                padding: '4px 6px',
+                borderRadius: 5,
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.07)',
+              }}>
+                <div style={{ fontSize: 8, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--overlay-text-muted)' }}>{item.label}</div>
+                <div style={{ marginTop: 1, fontFamily: 'monospace', fontSize: 9, fontWeight: 700, color: 'var(--overlay-text-primary)' }}>{item.value}</div>
               </div>
             ))}
           </div>
 
-          <div
-            style={{
-              display: 'grid',
-              gap: 4,
-              fontSize: 11,
-              lineHeight: 1.5,
-            }}
-          >
-            <div
-              style={{
-                color:
-                  playbackError || snapshot.engineError
-                    ? 'var(--overlay-danger)'
-                    : 'var(--overlay-text-muted)',
-              }}
-            >
-              {playbackStatusMessage}
-            </div>
-            {previewNoticeMessage ? (
-              <div style={{ color: 'var(--overlay-text-dim)' }}>{previewNoticeMessage}</div>
-            ) : null}
-            <div
-              style={{
-                color:
-                  exportState === 'error'
-                    ? 'var(--overlay-danger)'
-                    : 'var(--overlay-text-muted)',
-              }}
-            >
-              {exportMessage}
-            </div>
+          {/* In/Out set buttons + step buttons */}
+          <div style={{ display: 'flex', gap: 4, marginTop: 5 }}>
+            <TBtn onClick={() => setTrimStart(currentTime)} style={{ flex: 1 }} title="Set In to current position">Set In</TBtn>
+            <TBtn onClick={() => setTrimEnd(currentTime)} style={{ flex: 1 }} title="Set Out to current position">Set Out</TBtn>
+            <TBtn onClick={() => seekTo(Math.max(0, currentTime - 1))} title="−1 second">−1s</TBtn>
+            <TBtn onClick={() => seekTo(Math.min(duration, currentTime + 1))} title="+1 second">+1s</TBtn>
+            <TBtn onClick={resetTransform} title="Reset transform and color"><RotateCcw size={10} />Reset</TBtn>
+          </div>
+
+          {/* File meta */}
+          <div style={{ marginTop: 5, fontSize: 9, color: 'var(--overlay-text-muted)', letterSpacing: '0.05em', opacity: 0.7 }}>
+            {videoExtension.toUpperCase()} · {formatSize(videoSize)} · {videoName}
           </div>
         </div>
       </div>
 
-      <AppPromptDialog
-        open={exportDialogOpen}
-        title="Export Trimmed Video"
-        description="Write a sibling MP4 using the native ffmpeg export path."
-        value={exportPathInput}
-        placeholder={buildTrimmedVideoOutputPath(videoPath)}
-        submitLabel={exportState === 'exporting' ? 'Exporting…' : 'Export Trim'}
-        cancelLabel="Cancel"
-        onChange={setExportPathInput}
-        onSubmit={() => {
-          void submitExport();
-        }}
-        onCancel={() => setExportDialogOpen(false)}
-      />
+      {/* ── RIGHT: Inspector ── */}
+      <div style={{
+        gridColumn: 2,
+        gridRow: '1 / 3',
+        display: 'flex',
+        flexDirection: 'column',
+        borderLeft: '1px solid var(--overlay-explorer-preview-border)',
+        background: 'rgba(0,0,0,0.18)',
+        overflow: 'hidden',
+      }}>
+        {/* Inspector header */}
+        <div style={{
+          padding: '7px 10px 0',
+          flexShrink: 0,
+          borderBottom: '1px solid rgba(255,255,255,0.07)',
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--overlay-text-muted)', textTransform: 'uppercase', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
+            <Clapperboard size={11} />
+            Inspector
+          </div>
+          <div style={{ display: 'flex', gap: 0,  marginBottom: 0 }}>
+            {([
+              { id: 'transform' as InspectorTab, label: 'Video', icon: <Maximize2 size={10} /> },
+              { id: 'color' as InspectorTab, label: 'Color', icon: <Sliders size={10} /> },
+              { id: 'audio' as InspectorTab, label: 'Audio', icon: <Music size={10} /> },
+            ]).map(({ id, label, icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setActiveTab(id)}
+                style={{
+                  flex: 1,
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: activeTab === id ? '2px solid var(--overlay-accent, #63b3ed)' : '2px solid transparent',
+                  color: activeTab === id ? 'var(--overlay-text-primary)' : 'var(--overlay-text-muted)',
+                  cursor: 'pointer',
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  padding: '4px 2px 6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 3,
+                  transition: 'color 0.15s',
+                }}
+              >
+                {icon}{label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Inspector body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: 10 }}>
+
+          {activeTab === 'transform' && (
+            <div>
+              <InspectorSection label="Transform" icon={<Maximize2 size={11} />}>
+                <ControlSlider label="Scale X" value={transform.scaleX} min={10} max={500} reset={100} onChange={(v) => setTransformProp('scaleX', v)} />
+                <ControlSlider label="Scale Y" value={transform.scaleY} min={10} max={500} reset={100} onChange={(v) => setTransformProp('scaleY', v)} />
+                <ControlSlider label="Position X" value={transform.posX} min={-600} max={600} reset={0} onChange={(v) => setTransformProp('posX', v)} />
+                <ControlSlider label="Position Y" value={transform.posY} min={-600} max={600} reset={0} onChange={(v) => setTransformProp('posY', v)} />
+              </InspectorSection>
+              <InspectorDivider />
+              <InspectorSection label="Crop" icon={<Scissors size={11} />}>
+                <ControlSlider label="Crop Left" value={transform.cropLeft} min={0} max={100} reset={0} onChange={(v) => setTransformProp('cropLeft', v)} />
+                <ControlSlider label="Crop Right" value={transform.cropRight} min={0} max={100} reset={0} onChange={(v) => setTransformProp('cropRight', v)} />
+                <ControlSlider label="Crop Top" value={transform.cropTop} min={0} max={100} reset={0} onChange={(v) => setTransformProp('cropTop', v)} />
+                <ControlSlider label="Crop Bottom" value={transform.cropBottom} min={0} max={100} reset={0} onChange={(v) => setTransformProp('cropBottom', v)} />
+              </InspectorSection>
+              <button type="button" onClick={resetTransform} style={resetBtnStyle}>
+                <RotateCcw size={10} /> Reset Transform
+              </button>
+            </div>
+          )}
+
+          {activeTab === 'color' && (
+            <div>
+              <InspectorSection label="Color" icon={<Sliders size={11} />}>
+                <ControlSlider label="Brightness" value={color.brightness} min={0} max={200} reset={100} onChange={(v) => setColorProp('brightness', v)} />
+                <ControlSlider label="Contrast" value={color.contrast} min={0} max={200} reset={100} onChange={(v) => setColorProp('contrast', v)} />
+                <ControlSlider label="Saturation" value={color.saturation} min={0} max={300} reset={100} onChange={(v) => setColorProp('saturation', v)} />
+                <ControlSlider label="Hue Rotate" value={color.hue} min={-180} max={180} reset={0} onChange={(v) => setColorProp('hue', v)} />
+                <ControlSlider label="Sepia" value={color.sepia} min={0} max={100} reset={0} onChange={(v) => setColorProp('sepia', v)} />
+              </InspectorSection>
+              <button type="button" onClick={resetColor} style={resetBtnStyle}>
+                <RotateCcw size={10} /> Reset Color
+              </button>
+            </div>
+          )}
+
+          {activeTab === 'audio' && (
+            <div>
+              <InspectorSection label="Audio Mix" icon={<Volume2 size={11} />}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => setIsMuted((v) => !v)}
+                    style={{
+                      padding: '6px',
+                      borderRadius: 8,
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      background: isMuted ? 'rgba(248,113,113,0.12)' : 'rgba(255,255,255,0.05)',
+                      color: isMuted ? '#f87171' : 'var(--overlay-text-muted)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {isMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+                  </button>
+                  <span style={{ fontSize: 10, color: 'var(--overlay-text-muted)' }}>
+                    {isMuted ? 'Muted' : 'Playback Audio'}
+                  </span>
+                </div>
+                <ControlSlider
+                  label="Volume"
+                  value={isMuted ? 0 : volume * 100}
+                  min={0} max={100} reset={100}
+                  onChange={(v) => {
+                    const frac = v / 100;
+                    setVolume(frac);
+                    setIsMuted(frac === 0);
+                    if (videoRef.current) videoRef.current.volume = frac;
+                  }}
+                />
+              </InspectorSection>
+              <InspectorDivider />
+              <InspectorSection label="Extract Audio" icon={<AudioWaveform size={11} />}>
+                <p style={{ fontSize: 10, color: 'var(--overlay-text-muted)', lineHeight: 1.5, marginBottom: 8 }}>
+                  Decode audio locally via WebAudio and download as a WAV file. No server or ffmpeg needed.
+                </p>
+                <button
+                  type="button"
+                  disabled={isExtractingAudio}
+                  onClick={extractAudio}
+                  style={{
+                    width: '100%',
+                    padding: '7px 10px',
+                    borderRadius: 8,
+                    border: '1px solid rgba(99,179,237,0.3)',
+                    background: isExtractingAudio ? 'rgba(255,255,255,0.04)' : 'rgba(99,179,237,0.1)',
+                    color: isExtractingAudio ? 'var(--overlay-text-muted)' : 'rgba(147,210,255,0.9)',
+                    cursor: isExtractingAudio ? 'not-allowed' : 'pointer',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: '0.04em',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 5,
+                    transition: 'background 0.15s',
+                  }}
+                >
+                  <Download size={11} />
+                  {isExtractingAudio ? 'Extracting…' : 'Extract Audio (.WAV)'}
+                </button>
+                {audioExtractMsg && (
+                  <div style={{ marginTop: 6, fontSize: 9.5, color: 'var(--overlay-text-muted)', lineHeight: 1.4, wordBreak: 'break-all' }}>
+                    {audioExtractMsg}
+                  </div>
+                )}
+              </InspectorSection>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
+}
+
+// ─── Helper sub-components ────────────────────────────────────────────────────
+
+function InspectorSection({ label, icon, children }: { label: string; icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 5,
+        fontSize: 9, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
+        color: 'var(--overlay-text-muted)', marginBottom: 8,
+      }}>
+        {icon} {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function InspectorDivider() {
+  return <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '10px 0' }} />;
+}
+
+const resetBtnStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 4,
+  marginTop: 4,
+  padding: '5px 8px',
+  borderRadius: 7,
+  border: '1px solid rgba(255,255,255,0.08)',
+  background: 'rgba(255,255,255,0.04)',
+  color: 'var(--overlay-text-muted)',
+  fontSize: 9,
+  cursor: 'pointer',
+  letterSpacing: '0.04em',
+};
+
+function TBtn({
+  children,
+  onClick,
+  title,
+  active,
+  style,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  title?: string;
+  active?: boolean;
+  style?: CSSProperties;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 3,
+        padding: '4px 7px',
+        borderRadius: 7,
+        border: `1px solid ${active ? 'rgba(99,179,237,0.35)' : 'rgba(255,255,255,0.09)'}`,
+        background: active ? 'rgba(99,179,237,0.14)' : 'rgba(255,255,255,0.04)',
+        color: active ? 'rgba(147,210,255,0.9)' : 'var(--overlay-text-muted)',
+        fontSize: 10,
+        fontWeight: 600,
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+        transition: 'background 0.12s, border-color 0.12s',
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function buildTicks(duration: number): number[] {
+  if (!Number.isFinite(duration) || duration <= 0) return [0];
+  const steps = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800];
+  const minStep = duration / 6;
+  const step = steps.find((s) => s >= minStep) ?? 3600;
+  const ticks: number[] = [];
+  for (let t = 0; t <= duration; t += step) ticks.push(parseFloat(t.toFixed(4)));
+  if (ticks[ticks.length - 1] !== duration) ticks.push(duration);
+  return ticks;
+}
+
+// Keep legacy export alias so any other code referencing buildTrimmedVideoOutputPath still works
+export function buildTrimmedVideoOutputPath(sourcePath: string): string {
+  const match = sourcePath.match(/^(.*[/\\])?([^/\\]+)$/);
+  const parentPath = match?.[1] ?? '';
+  const leafName = match?.[2] ?? sourcePath;
+  const stem = leafName.replace(/\.[^.]+$/, '');
+  return `${parentPath}${stem}.trimmed.mp4`;
 }

@@ -6,6 +6,7 @@ import type {
   AudioEngineDeckRequest,
   AudioEngineGainRequest,
   AudioEngineLoadDeckRequest,
+  AudioEngineLoadPluginRequest,
   AudioEngineLoopRegionRequest,
   AudioEngineRateRequest,
   AudioEngineSeekRequest,
@@ -129,4 +130,16 @@ export async function listenToExplorerAudioEngineState(
   return events.audioEngineStateEvent.listen(
     (event: { payload: ExplorerAudioEngineStateEvent }) => listener(event.payload),
   );
+}
+
+export async function loadExplorerAudioDeckPlugin(
+  request: AudioEngineLoadPluginRequest,
+): Promise<ExplorerAudioEngineStateSnapshot> {
+  return unwrapTauriResult(await commands.audioEngineLoadPlugin(request));
+}
+
+export async function clearExplorerAudioDeckPlugin(
+  request: AudioEngineDeckRequest,
+): Promise<ExplorerAudioEngineStateSnapshot> {
+  return unwrapTauriResult(await commands.audioEngineClearDeckPlugin(request));
 }

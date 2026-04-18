@@ -3,8 +3,8 @@ use crate::video_engine::{
     sanitize_video_runtime_stem, validate_video_source_path,
 };
 use rust_ffmpeg::{
-    Codec, CodecOptions, Duration as FFmpegDuration, FFmpegBuilder, Input, LogLevel as FFmpegLogLevel,
-    Output, PixelFormat,
+    Codec, CodecOptions, Duration as FFmpegDuration, FFmpegBuilder, Input,
+    LogLevel as FFmpegLogLevel, Output, PixelFormat,
 };
 use rust_ffprobe::{FFprobeBuilder, LogLevel as FFprobeLogLevel, ProbeResult, StreamInfo};
 use serde::{Deserialize, Serialize};
@@ -83,7 +83,8 @@ pub async fn video_create_preview_proxy(
 ) -> Result<ResolvedVideoPreviewSource, String> {
     let input = validate_video_source_path(&input_path)?;
     let compatibility = resolve_video_preview_compatibility(&input).await?;
-    let proxy_path = ensure_video_preview_proxy(&app, &input, compatibility.has_audio_track).await?;
+    let proxy_path =
+        ensure_video_preview_proxy(&app, &input, compatibility.has_audio_track).await?;
 
     Ok(ResolvedVideoPreviewSource {
         source_path: path_to_string(&proxy_path),
@@ -111,7 +112,8 @@ pub async fn video_resolve_preview_source(
         });
     }
 
-    let proxy_path = ensure_video_preview_proxy(&app, &input, compatibility.has_audio_track).await?;
+    let proxy_path =
+        ensure_video_preview_proxy(&app, &input, compatibility.has_audio_track).await?;
     Ok(ResolvedVideoPreviewSource {
         source_path: path_to_string(&proxy_path),
         source_kind: VideoPreviewSourceKind::Proxy,
@@ -131,7 +133,9 @@ async fn run_video_trim_export(
         normalized_request.end_time_seconds - normalized_request.start_time_seconds;
 
     let trim_input = Input::new(normalized_request.input_path.clone())
-        .seek(ffmpeg_duration_from_seconds(normalized_request.start_time_seconds))
+        .seek(ffmpeg_duration_from_seconds(
+            normalized_request.start_time_seconds,
+        ))
         .duration(ffmpeg_duration_from_seconds(clip_duration_seconds));
 
     let trim_output = build_trim_export_output(
@@ -346,7 +350,9 @@ fn build_preview_proxy_output(proxy_path: &Path, has_audio_track: bool) -> Outpu
         .faststart();
 
     if has_audio_track {
-        output.audio_codec_opts(CodecOptions::new(Codec::aac()).bitrate(VIDEO_PREVIEW_PROXY_AUDIO_BITRATE))
+        output.audio_codec_opts(
+            CodecOptions::new(Codec::aac()).bitrate(VIDEO_PREVIEW_PROXY_AUDIO_BITRATE),
+        )
     } else {
         output.no_audio()
     }
@@ -382,15 +388,21 @@ async fn resolve_video_preview_compatibility(
     let direct_playback_supported = match extension.as_deref() {
         Some("mp4" | "m4v") => {
             is_mp4_video_stream_supported(video_stream)
-                && audio_stream.map(is_mp4_audio_stream_supported).unwrap_or(true)
+                && audio_stream
+                    .map(is_mp4_audio_stream_supported)
+                    .unwrap_or(true)
         }
         Some("webm") => {
             is_webm_video_stream_supported(video_stream)
-                && audio_stream.map(is_webm_audio_stream_supported).unwrap_or(true)
+                && audio_stream
+                    .map(is_webm_audio_stream_supported)
+                    .unwrap_or(true)
         }
         Some("ogv") => {
             is_ogv_video_stream_supported(video_stream)
-                && audio_stream.map(is_ogv_audio_stream_supported).unwrap_or(true)
+                && audio_stream
+                    .map(is_ogv_audio_stream_supported)
+                    .unwrap_or(true)
         }
         _ => false,
     };
@@ -772,8 +784,10 @@ mod tests {
         for extension in ["mov", "mkv", "avi"] {
             let input_path =
                 build_fixture_path(temp_directory.path(), &format!("proxy-source.{extension}"));
-            let output_path =
-                build_fixture_path(temp_directory.path(), &format!("proxy-output-{extension}.mp4"));
+            let output_path = build_fixture_path(
+                temp_directory.path(),
+                &format!("proxy-output-{extension}.mp4"),
+            );
 
             generate_test_video_fixture(&ffmpeg_binary, &input_path, true);
 
@@ -815,8 +829,10 @@ mod tests {
         for extension in ["mp4", "mov", "webm", "mkv", "avi"] {
             let input_path =
                 build_fixture_path(temp_directory.path(), &format!("trim-source.{extension}"));
-            let output_path =
-                build_fixture_path(temp_directory.path(), &format!("trim-output-{extension}.mp4"));
+            let output_path = build_fixture_path(
+                temp_directory.path(),
+                &format!("trim-output-{extension}.mp4"),
+            );
 
             generate_test_video_fixture(&ffmpeg_binary, &input_path, true);
 

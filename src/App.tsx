@@ -146,6 +146,8 @@ import {
   queueExplorerTerminalDirectorySync,
   writeExplorerFile,
 } from './runtime/explorerBackend';
+import { installFrontendTelemetryObservers } from './runtime/telemetry';
+import { buildTelemetryConfigFromSettings, configureTelemetry } from './runtime/telemetryBackend';
 import { commands, unwrapTauriResult } from './runtime/tauriClient';
 import { useFolderPluginRuntime } from './runtime/useFolderPluginRuntime';
 import {
@@ -931,6 +933,29 @@ function App() {
 
   // ── Boot store ──
   useEffect(() => { initTerminalStore(); }, [initTerminalStore]);
+
+  useEffect(() => {
+    installFrontendTelemetryObservers();
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri()) {
+      return;
+    }
+
+    void configureTelemetry(buildTelemetryConfigFromSettings());
+  }, [
+    systemSettings.consumerDiagnosticsEnabled,
+    systemSettings.consumerDiagnosticsIncludePerfSamples,
+    systemSettings.consumerDiagnosticsIncludePluginRuntime,
+    systemSettings.consumerDiagnosticsIncludeRendererRuntime,
+    systemSettings.developerTelemetryCaptureMode,
+    systemSettings.developerTelemetryEnabled,
+    systemSettings.developerTelemetryMaxFileSizeMb,
+    systemSettings.developerTelemetryPayloadMode,
+    systemSettings.developerTelemetryShowInspector,
+    systemSettings.developerTelemetryWriteToFile,
+  ]);
 
   useEffect(() => {
     if (!FRAME_PROBE_OUTPUT_PATH || !isTauri()) {
@@ -2127,8 +2152,11 @@ function App() {
       event.stopPropagation();
 
       const currentSystemSettings = useSettingsStore.getState().settings.system;
+      const nextHudVisible = !currentSystemSettings.devTelemetryHudVisible;
       useSettingsStore.getState().updateSystem({
-        devTelemetryHudVisible: !currentSystemSettings.devTelemetryHudVisible,
+        devTelemetryHudVisible: nextHudVisible,
+        sourceTraceModeEnabled: nextHudVisible,
+        ...(nextHudVisible ? { developerTelemetryEnabled: true } : {}),
       });
     };
 
@@ -4280,6 +4308,7 @@ function App() {
         activePanelLabel={activePanelId ?? 'none'}
         openPanelCount={openPanelIds.length}
         frameStats={latestOverlayFrameStats}
+        sourceTraceEnabled={systemSettings.sourceTraceModeEnabled}
       />
       <CommandPalette
         isOpen={isCommandPaletteOpen}

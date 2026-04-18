@@ -236,13 +236,31 @@ export interface OverlayRegisteredFontContribution extends OverlayFontOption {
 }
 
 const builtInOverlayFontCatalog: OverlayFontOption[] = [
+  // UI Sans
   { id: 'inter', name: 'Inter', family: 'Inter, system-ui, sans-serif' },
   { id: 'geist', name: 'Geist', family: 'Geist, Inter, system-ui, sans-serif' },
   { id: 'space-grotesk', name: 'Space Grotesk', family: '"Space Grotesk", Inter, system-ui, sans-serif' },
+  { id: 'system-ui', name: 'System UI', family: 'system-ui, sans-serif' },
+
+  // Programming Mono
   { id: 'jetbrains-mono', name: 'JetBrains Mono', family: '"JetBrains Mono", "Cascadia Code", monospace' },
   { id: 'fira-code', name: 'Fira Code', family: '"Fira Code", "Cascadia Code", monospace' },
   { id: 'ibm-plex-mono', name: 'IBM Plex Mono', family: '"IBM Plex Mono", "Cascadia Code", monospace' },
-  { id: 'system-ui', name: 'System UI', family: 'system-ui, sans-serif' },
+
+  // Stylistic & Industrial Mono
+  { id: 'azeret-mono', name: 'Azeret Mono', family: '"Azeret Mono", monospace' },
+  { id: 'martian-mono', name: 'Martian Mono', family: '"Martian Mono", monospace' },
+  { id: 'b612-mono', name: 'B612 Mono', family: '"B612 Mono", monospace' },
+  { id: 'fragment-mono', name: 'Fragment Mono', family: '"Fragment Mono", monospace' },
+  { id: 'sometype-mono', name: 'Sometype Mono', family: '"Sometype Mono", monospace' },
+  { id: 'syne-mono', name: 'Syne Mono', family: '"Syne Mono", monospace' },
+  { id: 'major-mono-display', name: 'Major Mono Display', family: '"Major Mono Display", monospace' },
+
+  // Retro & Technical
+  { id: 'vt323', name: 'VT323', family: '"VT323", monospace' },
+  { id: 'micro-5', name: 'Micro 5', family: '"Micro 5", monospace' },
+  { id: 'silkscreen', name: 'Silkscreen', family: '"Silkscreen", monospace' },
+  { id: 'courier-prime', name: 'Courier Prime', family: '"Courier Prime", monospace' },
 ];
 
 export const overlayFontCatalog: OverlayFontOption[] = [...builtInOverlayFontCatalog];

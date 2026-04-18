@@ -115,6 +115,17 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.system.hideAppInTray).toBe(true);
     expect(settings.system.showInTaskbar).toBe(true);
     expect(settings.system.devTelemetryHudVisible).toBe(true);
+    expect(settings.system.sourceTraceModeEnabled).toBe(false);
+    expect(settings.system.developerTelemetryEnabled).toBe(false);
+    expect(settings.system.developerTelemetryCaptureMode).toBe('raw');
+    expect(settings.system.developerTelemetryWriteToFile).toBe(true);
+    expect(settings.system.developerTelemetryShowInspector).toBe(true);
+    expect(settings.system.developerTelemetryPayloadMode).toBe('metadata+small-payloads');
+    expect(settings.system.developerTelemetryMaxFileSizeMb).toBe(64);
+    expect(settings.system.consumerDiagnosticsEnabled).toBe(false);
+    expect(settings.system.consumerDiagnosticsIncludePluginRuntime).toBe(true);
+    expect(settings.system.consumerDiagnosticsIncludeRendererRuntime).toBe(true);
+    expect(settings.system.consumerDiagnosticsIncludePerfSamples).toBe(true);
     expect(settings.system.linuxDisplayBackendPreference).toBe('auto');
   });
 

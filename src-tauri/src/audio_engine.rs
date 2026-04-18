@@ -69,6 +69,21 @@ pub struct AudioDeckState {
     pub rms_meter_linear: f64,
     pub loop_region: AudioEngineLoopRegion,
     pub error: Option<String>,
+    pub active_plugin_path: Option<String>,
+    pub vst_parameters: Vec<VstParameterState>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct VstParameterState {
+    pub id: u32,
+    pub title: String,
+    pub short_title: String,
+    pub units: String,
+    pub default_normalized: f64,
+    pub min: f64,
+    pub max: f64,
+    pub value_normalized: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -93,6 +108,13 @@ pub struct AudioEngineStateEvent {
 pub struct AudioEngineLoadDeckRequest {
     pub deck_id: AudioDeckId,
     pub input_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioEngineLoadPluginRequest {
+    pub deck_id: AudioDeckId,
+    pub plugin_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -187,6 +209,7 @@ struct AudioDeckMetadata {
     duration_seconds: f64,
     is_buffering: bool,
     error: Option<String>,
+    active_plugin_path: Option<String>,
 }
 
 struct AudioClip {
@@ -315,6 +338,8 @@ impl AudioEngineSharedState {
             rms_meter_linear: atomic_f64(&deck.rms_meter_linear),
             loop_region,
             error: metadata.error,
+            active_plugin_path: metadata.active_plugin_path,
+            vst_parameters: Vec::new(),
         }
     }
 }
@@ -370,6 +395,8 @@ fn default_audio_engine_state_snapshot() -> AudioEngineStateSnapshot {
                     enabled: false,
                 },
                 error: None,
+                active_plugin_path: None,
+                vst_parameters: Vec::new(),
             },
             AudioDeckState {
                 deck_id: AudioDeckId::B,
@@ -390,6 +417,8 @@ fn default_audio_engine_state_snapshot() -> AudioEngineStateSnapshot {
                     enabled: false,
                 },
                 error: None,
+                active_plugin_path: None,
+                vst_parameters: Vec::new(),
             },
         ],
     }
@@ -1532,6 +1561,44 @@ pub fn audio_engine_set_rate(
         &shared.deck(request.deck_id).playback_rate,
         request.rate.clamp(0.25, 4.0),
     );
+    let snapshot = shared.snapshot();
+    shared.emit_state();
+    Ok(snapshot)
+}
+
+// ── VST Plugin Loading ────────────────────────────────────────────────────────
+
+#[tauri::command]
+#[specta::specta]
+pub fn audio_engine_load_plugin(
+    app: AppHandle,
+    request: AudioEngineLoadPluginRequest,
+) -> Result<AudioEngineStateSnapshot, String> {
+    let shared = ensure_audio_engine_shared(&app)?;
+    // Store the plugin path on the deck metadata so the frontend knows what is loaded.
+    // Full IEditController parameter interrogation via vst-host will run here in a follow-up.
+    {
+        let mut meta = shared.deck(request.deck_id).metadata.lock()
+            .map_err(|e| format!("lock error: {e}"))?;
+        meta.active_plugin_path = Some(request.plugin_path.clone());
+    }
+    let snapshot = shared.snapshot();
+    shared.emit_state();
+    Ok(snapshot)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn audio_engine_clear_deck_plugin(
+    app: AppHandle,
+    request: AudioEngineDeckRequest,
+) -> Result<AudioEngineStateSnapshot, String> {
+    let shared = ensure_audio_engine_shared(&app)?;
+    {
+        let mut meta = shared.deck(request.deck_id).metadata.lock()
+            .map_err(|e| format!("lock error: {e}"))?;
+        meta.active_plugin_path = None;
+    }
     let snapshot = shared.snapshot();
     shared.emit_state();
     Ok(snapshot)

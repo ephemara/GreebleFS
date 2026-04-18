@@ -122,6 +122,12 @@ import {
   type LinuxDisplayBackendPreference,
   type LinuxDisplayBackendStatus,
 } from '../runtime/tauriClient';
+import {
+  clearTelemetrySessions,
+  exportTelemetrySupportBundle,
+  getTelemetryStatus,
+  type OverlayTelemetrySessionStatus,
+} from '../runtime/telemetryBackend';
 
 function ThemeBadge({ label, active = false }: { label: string; active?: boolean }) {
   return (
@@ -956,6 +962,11 @@ export function SettingsPage({
   const [linuxDisplayBackendSyncPending, setLinuxDisplayBackendSyncPending] = useState(false);
   const [linuxDisplayBackendSyncError, setLinuxDisplayBackendSyncError] = useState<string | null>(null);
   const [linuxDisplayBackendStatus, setLinuxDisplayBackendStatus] = useState<LinuxDisplayBackendStatus | null>(null);
+  const [telemetryStatus, setTelemetryStatus] = useState<OverlayTelemetrySessionStatus | null>(null);
+  const [telemetryStatusPending, setTelemetryStatusPending] = useState(false);
+  const [telemetryStatusError, setTelemetryStatusError] = useState<string | null>(null);
+  const [telemetryNotice, setTelemetryNotice] = useState<string | null>(null);
+  const [telemetryActionPending, setTelemetryActionPending] = useState<'export' | 'clear' | null>(null);
   const [overviewNotice, setOverviewNotice] = useState<string | null>(null);
   const [overviewError, setOverviewError] = useState<string | null>(null);
   const [cloudSnapshot, setCloudSnapshot] = useState<ExplorerCloudAccountsSnapshot>(EMPTY_CLOUD_ACCOUNTS_SNAPSHOT);
@@ -1790,6 +1801,89 @@ export function SettingsPage({
       cancelled = true;
     };
   }, [platform, updateSystem]);
+
+  useEffect(() => {
+    if (activeSection !== 'system') {
+      return;
+    }
+
+    let cancelled = false;
+    setTelemetryStatusPending(true);
+    setTelemetryStatusError(null);
+
+    getTelemetryStatus()
+      .then(status => {
+        if (!cancelled) {
+          setTelemetryStatus(status);
+        }
+      })
+      .catch(error => {
+        if (!cancelled) {
+          setTelemetryStatus(null);
+          setTelemetryStatusError(String(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setTelemetryStatusPending(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeSection,
+    settings.system.consumerDiagnosticsEnabled,
+    settings.system.developerTelemetryCaptureMode,
+    settings.system.developerTelemetryEnabled,
+    settings.system.developerTelemetryMaxFileSizeMb,
+    settings.system.developerTelemetryPayloadMode,
+    settings.system.developerTelemetryWriteToFile,
+  ]);
+
+  const refreshTelemetryStatus = useCallback(async () => {
+    setTelemetryStatusPending(true);
+    setTelemetryStatusError(null);
+    try {
+      setTelemetryStatus(await getTelemetryStatus());
+    } catch (error) {
+      setTelemetryStatus(null);
+      setTelemetryStatusError(String(error));
+    } finally {
+      setTelemetryStatusPending(false);
+    }
+  }, []);
+
+  const handleTelemetryExport = useCallback(async () => {
+    setTelemetryActionPending('export');
+    setTelemetryNotice(null);
+    setTelemetryStatusError(null);
+    try {
+      const result = await exportTelemetrySupportBundle();
+      setTelemetryNotice(`Support bundle written to ${result.export_path}`);
+      await refreshTelemetryStatus();
+    } catch (error) {
+      setTelemetryStatusError(String(error));
+    } finally {
+      setTelemetryActionPending(null);
+    }
+  }, [refreshTelemetryStatus]);
+
+  const handleTelemetryClear = useCallback(async () => {
+    setTelemetryActionPending('clear');
+    setTelemetryNotice(null);
+    setTelemetryStatusError(null);
+    try {
+      await clearTelemetrySessions();
+      setTelemetryNotice('Telemetry sessions cleared.');
+      await refreshTelemetryStatus();
+    } catch (error) {
+      setTelemetryStatusError(String(error));
+    } finally {
+      setTelemetryActionPending(null);
+    }
+  }, [refreshTelemetryStatus]);
 
   const setHideAppInTray = useCallback((enabled: boolean) => {
     updateSystem({
@@ -3774,6 +3868,155 @@ export function SettingsPage({
                   onChange={event => updateSystem({ developerMode: event.target.checked })}
                 />
               </label>
+              <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                <div className="pr-4">
+                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Developer Telemetry</div>
+                  <p className="mt-1 text-[11px] opacity-40">
+                    Records frontend, bridge, native, and plugin/runtime spans into structured session traces for deep debugging in dev and installed builds.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={settings.system.developerTelemetryEnabled}
+                  onChange={event => updateSystem({ developerTelemetryEnabled: event.target.checked })}
+                />
+              </label>
+              <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                <div className="pr-4">
+                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Source Trace Mode</div>
+                  <p className="mt-1 text-[11px] opacity-40">
+                    Dev-only extra trace depth with source-aware stacks and callsites. Pressing {formatHotkeyLabel(settings.keybindings.toggleDeveloperTelemetryHud)} also arms this automatically when the HUD opens.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={settings.system.sourceTraceModeEnabled}
+                  onChange={event => updateSystem({ sourceTraceModeEnabled: event.target.checked })}
+                />
+              </label>
+              <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                <div className="pr-4">
+                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Consumer Diagnostics</div>
+                  <p className="mt-1 text-[11px] opacity-40">
+                    Keeps local diagnostic traces available for support bundles when themes, plugins, or renderers misbehave in production.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={settings.system.consumerDiagnosticsEnabled}
+                  onChange={event => updateSystem({ consumerDiagnosticsEnabled: event.target.checked })}
+                />
+              </label>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Capture Mode</div>
+                  <p className="mt-1 opacity-40">Raw keeps the deepest trace. Sampled trims noise. Perf-only records timing without full action detail.</p>
+                  <select
+                    aria-label="Telemetry Capture Mode"
+                    value={settings.system.developerTelemetryCaptureMode}
+                    onChange={event => updateSystem({
+                      developerTelemetryCaptureMode: event.target.value as typeof settings.system.developerTelemetryCaptureMode,
+                    })}
+                    className="mt-3 w-full rounded border bg-transparent px-2 py-2 text-[11px]"
+                    style={{ borderColor: border, color: text }}
+                  >
+                    <option value="raw">Raw</option>
+                    <option value="sampled">Sampled</option>
+                    <option value="perf-only">Perf Only</option>
+                  </select>
+                </label>
+                <label className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Payload Detail</div>
+                  <p className="mt-1 opacity-40">Metadata-only avoids noisy args. Small payload mode preserves compact command details for debugging.</p>
+                  <select
+                    aria-label="Telemetry Payload Detail"
+                    value={settings.system.developerTelemetryPayloadMode}
+                    onChange={event => updateSystem({
+                      developerTelemetryPayloadMode: event.target.value as typeof settings.system.developerTelemetryPayloadMode,
+                    })}
+                    className="mt-3 w-full rounded border bg-transparent px-2 py-2 text-[11px]"
+                    style={{ borderColor: border, color: text }}
+                  >
+                    <option value="metadata-only">Metadata Only</option>
+                    <option value="metadata+small-payloads">Metadata + Small Payloads</option>
+                  </select>
+                </label>
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <label className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Max Session File</div>
+                  <p className="mt-1 opacity-40">Hard cap before the native writer rolls to the next session file.</p>
+                  <input
+                    type="number"
+                    min={8}
+                    max={512}
+                    step={1}
+                    value={settings.system.developerTelemetryMaxFileSizeMb}
+                    onChange={event => updateSystem({
+                      developerTelemetryMaxFileSizeMb: Number(event.target.value),
+                    })}
+                    className="mt-3 w-full rounded border bg-transparent px-2 py-2 text-[11px]"
+                    style={{ borderColor: border, color: text }}
+                  />
+                </label>
+                <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                  <div className="pr-4">
+                    <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Write Trace Files</div>
+                    <p className="mt-1 opacity-40">Persist session JSONL traces to disk for later inspection and bundle export.</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={settings.system.developerTelemetryWriteToFile}
+                    onChange={event => updateSystem({ developerTelemetryWriteToFile: event.target.checked })}
+                  />
+                </label>
+                <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                  <div className="pr-4">
+                    <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Show Inspector Surface</div>
+                    <p className="mt-1 opacity-40">Keeps the live telemetry inspector lane available for future dev HUD and diagnostics UI.</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={settings.system.developerTelemetryShowInspector}
+                    onChange={event => updateSystem({ developerTelemetryShowInspector: event.target.checked })}
+                  />
+                </label>
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                  <div className="pr-4">
+                    <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Plugin Runtime Diagnostics</div>
+                    <p className="mt-1 opacity-40">Include plugin attribution and execution context in consumer bundles.</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={settings.system.consumerDiagnosticsIncludePluginRuntime}
+                    onChange={event => updateSystem({ consumerDiagnosticsIncludePluginRuntime: event.target.checked })}
+                  />
+                </label>
+                <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                  <div className="pr-4">
+                    <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Renderer Diagnostics</div>
+                    <p className="mt-1 opacity-40">Include renderer/theme execution context in exported support bundles.</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={settings.system.consumerDiagnosticsIncludeRendererRuntime}
+                    onChange={event => updateSystem({ consumerDiagnosticsIncludeRendererRuntime: event.target.checked })}
+                  />
+                </label>
+                <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                  <div className="pr-4">
+                    <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Perf Samples In Bundles</div>
+                    <p className="mt-1 opacity-40">Keep performance timing summaries alongside trace files for support triage.</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={settings.system.consumerDiagnosticsIncludePerfSamples}
+                    onChange={event => updateSystem({ consumerDiagnosticsIncludePerfSamples: event.target.checked })}
+                  />
+                </label>
+              </div>
               {platform === 'linux' && (
                 <label className="flex items-center justify-between gap-4 rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
                   <div className="min-w-0">
@@ -3808,12 +4051,61 @@ export function SettingsPage({
                   </select>
                 </label>
               )}
+              <div className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Telemetry Session</div>
+                    <p className="mt-1 opacity-40">
+                      {telemetryStatusPending
+                        ? 'Refreshing telemetry session status...'
+                        : telemetryStatusError
+                          ? `Telemetry unavailable: ${telemetryStatusError}`
+                          : telemetryStatus == null
+                            ? 'No telemetry session has been created yet.'
+                            : `Enabled ${telemetryStatus.config.developer_telemetry_enabled || telemetryStatus.config.consumer_diagnostics_enabled ? 'yes' : 'no'} · records ${telemetryStatus.recent_record_count} · session ${telemetryStatus.session_id} · file ${telemetryStatus.current_file_path ?? 'not started'}`}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void refreshTelemetryStatus()}
+                      className="rounded border px-3 py-2 transition-colors"
+                      style={{ borderColor: border }}
+                    >
+                      Refresh
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleTelemetryExport()}
+                      disabled={telemetryActionPending != null}
+                      className="rounded border px-3 py-2 transition-colors disabled:opacity-50"
+                      style={{ borderColor: border }}
+                    >
+                      {telemetryActionPending === 'export' ? 'Exporting...' : 'Export Support Bundle'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleTelemetryClear()}
+                      disabled={telemetryActionPending != null}
+                      className="rounded border px-3 py-2 transition-colors disabled:opacity-50"
+                      style={{ borderColor: border, color: '#fca5a5' }}
+                    >
+                      {telemetryActionPending === 'clear' ? 'Clearing...' : 'Clear Sessions'}
+                    </button>
+                  </div>
+                </div>
+                {telemetryNotice ? (
+                  <div className="mt-3 rounded border px-3 py-2" style={{ borderColor: border, color: text }}>
+                    {telemetryNotice}
+                  </div>
+                ) : null}
+              </div>
               <div className="rounded border px-3 py-2 text-[11px]" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: startupSyncError ? '#fda4af' : muted }}>
                 {startupSyncPending
                   ? 'Updating OS startup registration...'
                   : startupSyncError
                     ? `Startup registration failed: ${startupSyncError}`
-                  : `Current status: startup ${settings.system.launchAtStartup ? 'enabled' : 'disabled'} · tray ${systemPresentationState.trayVisible ? 'enabled' : 'disabled'} · ${platform === 'macos' ? 'Dock' : 'taskbar'} ${systemPresentationState.taskbarVisible ? 'enabled' : 'disabled'} · recovery path ${systemPresentationState.recoveryPath === 'tray' ? (platform === 'macos' ? 'Dock' : 'tray') : platform === 'macos' ? 'Dock' : 'taskbar'} · developer mode ${settings.system.developerMode ? 'enabled' : 'disabled'}${platform === 'linux' && linuxDisplayBackendStatusSummary ? ` · ${linuxDisplayBackendStatusSummary}` : ''}`}
+                  : `Current status: startup ${settings.system.launchAtStartup ? 'enabled' : 'disabled'} · tray ${systemPresentationState.trayVisible ? 'enabled' : 'disabled'} · ${platform === 'macos' ? 'Dock' : 'taskbar'} ${systemPresentationState.taskbarVisible ? 'enabled' : 'disabled'} · recovery path ${systemPresentationState.recoveryPath === 'tray' ? (platform === 'macos' ? 'Dock' : 'tray') : platform === 'macos' ? 'Dock' : 'taskbar'} · developer mode ${settings.system.developerMode ? 'enabled' : 'disabled'} · deep telemetry ${settings.system.developerTelemetryEnabled ? 'enabled' : 'disabled'} · source trace ${settings.system.sourceTraceModeEnabled ? 'enabled' : 'disabled'} · consumer diagnostics ${settings.system.consumerDiagnosticsEnabled ? 'enabled' : 'disabled'}${platform === 'linux' && linuxDisplayBackendStatusSummary ? ` · ${linuxDisplayBackendStatusSummary}` : ''}`}
               </div>
             </div>
           </section>
