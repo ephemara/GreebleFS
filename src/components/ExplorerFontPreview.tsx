@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { Loader, Type } from "lucide-react";
+import { commands } from "../runtime/tauriClient";
 
 const PANGRAMS = [
   "The quick brown fox jumps over the lazy dog.",
@@ -52,31 +53,36 @@ export function ExplorerFontPreview({
       };
     }
 
-    try {
-      const fontFace = new FontFace(fontFamilyId, `url("${fontSource}")`);
+    const loadFont = async () => {
+      try {
+        const result = await commands.fsReadFileBase64(fontPath);
+        if (!active) return;
+        
+        let base64Data: string;
+        if (result.status === "ok") {
+          base64Data = result.data;
+        } else {
+          throw new Error(result.error);
+        }
 
-      fontFace
-        .load()
-        .then((resolvedFontFace) => {
-          if (!active) {
-            return;
-          }
-          document.fonts.add(resolvedFontFace);
-          loadedFontFace = resolvedFontFace;
-          setFontLoaded(true);
-        })
-        .catch((error) => {
-          console.error("Failed to load font preview:", error);
-          if (active) {
-            setFontError(true);
-          }
-        });
-    } catch (error) {
-      console.error("Failed to initialize font preview:", error);
-      if (active) {
-        setFontError(true);
+        const dataUrl = `data:font/${fontExtension};base64,${base64Data}`;
+        const fontFace = new FontFace(fontFamilyId, `url("${dataUrl}")`);
+        
+        const resolvedFontFace = await fontFace.load();
+        if (!active) return;
+
+        document.fonts.add(resolvedFontFace);
+        loadedFontFace = resolvedFontFace;
+        setFontLoaded(true);
+      } catch (error) {
+        console.error("Failed to load font preview via base64:", error);
+        if (active) {
+          setFontError(true);
+        }
       }
-    }
+    };
+
+    void loadFont();
 
     return () => {
       active = false;

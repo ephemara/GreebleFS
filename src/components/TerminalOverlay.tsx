@@ -742,7 +742,6 @@ function XTermPane({
     }
 
     entry.xterm.options = {
-      ...entry.xterm.options,
       theme: createXtermColorTheme(theme),
       fontFamily: settings.fontFamily || 'JetBrains Mono, Fira Code, monospace',
       fontSize: settings.fontSize || 13,

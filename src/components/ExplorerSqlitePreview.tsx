@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Database, Table, Loader, ChevronLeft, ChevronRight, AlertCircle } from "lucide-react";
-import { sqliteGetInfo, sqliteQueryTable, type SqliteDbInfo, type SqliteTablePreview } from "../generated/tauri";
+import { commands, type SqliteDbInfo, type SqliteTablePreview } from "../generated/tauri";
 
 export interface ExplorerSqlitePreviewProps {
   dbPath: string;
@@ -20,7 +20,7 @@ export function ExplorerSqlitePreview({ dbPath, dbName }: ExplorerSqlitePreviewP
 
   useEffect(() => {
     let active = true;
-    sqliteGetInfo(dbPath).then(res => {
+    commands.sqliteGetInfo(dbPath).then(res => {
       if (!active) return;
       if (res.status === "ok") {
         setInfo(res.data);
@@ -39,7 +39,7 @@ export function ExplorerSqlitePreview({ dbPath, dbName }: ExplorerSqlitePreviewP
     if (!activeTable) return;
     let active = true;
     setLoadingData(true);
-    sqliteQueryTable(dbPath, activeTable, PAGE_SIZE, page * PAGE_SIZE).then(res => {
+    commands.sqliteQueryTable(dbPath, activeTable, PAGE_SIZE, page * PAGE_SIZE).then(res => {
       if (!active) return;
       setLoadingData(false);
       if (res.status === "ok") {
