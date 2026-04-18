@@ -236,6 +236,10 @@ export interface LayoutSettings {
   zenFocusMode: boolean;
 }
 
+export interface AudioSettings {
+  vst3AdditionalFolders: string[];
+}
+
 export interface LayoutPanelState {
   openPanelIds: string[];
   activePanelId: string | null;
@@ -253,6 +257,7 @@ export interface Settings {
   keybindings: KeybindingSettings;
   polygemini: PolyGeminiSettings;
   layout: LayoutSettings;
+  audio: AudioSettings;
 }
 
 export const SETTINGS_STORAGE_KEY = 'ultacode-settings';
@@ -646,6 +651,18 @@ function normalizeScreenshotSettings(
   };
 }
 
+export function normalizeAudioSettings(
+  base: AudioSettings,
+  updates?: Partial<AudioSettings>,
+): AudioSettings {
+  const merged = { ...base, ...updates };
+  return {
+    vst3AdditionalFolders: Array.isArray(merged.vst3AdditionalFolders)
+      ? merged.vst3AdditionalFolders.filter((s): s is string => typeof s === 'string')
+      : base.vst3AdditionalFolders,
+  };
+}
+
 export const defaultSettings: Settings = {
   editor: {
     fontSize: 14,
@@ -775,6 +792,9 @@ export const defaultSettings: Settings = {
     configPath: '',
     panelStateByProfile: {},
     zenFocusMode: false,
+  },
+  audio: {
+    vst3AdditionalFolders: [],
   },
 };
 
@@ -936,6 +956,7 @@ interface SettingsState {
   updateKeybindings: (updates: Partial<KeybindingSettings>) => void;
   updatePolyGemini: (updates: Partial<PolyGeminiSettings>) => void;
   updateLayout: (updates: Partial<LayoutSettings>) => void;
+  updateAudio: (updates: Partial<AudioSettings>) => void;
   
   // Bulk operations
   resetToDefaults: () => void;
@@ -1169,6 +1190,13 @@ export const useSettingsStore = create<SettingsState>()(
         settings: {
           ...state.settings,
           layout: normalizeLayoutSettings(state.settings.layout, updates),
+        },
+      })),
+
+      updateAudio: (updates) => set((state) => ({
+        settings: {
+          ...state.settings,
+          audio: normalizeAudioSettings(state.settings.audio, updates),
         },
       })),
       

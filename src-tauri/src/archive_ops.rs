@@ -162,6 +162,45 @@ pub fn extract_archive(
     }
 }
 
+pub fn inspect_archive(path: &Path) -> Result<Vec<String>, String> {
+    validate_archive_path(path)?;
+    let format = detect_archive_format(path).ok_or_else(|| unsupported_archive_error(path))?;
+
+    match format {
+        ArchiveFormat::Zip => inspect_zip_archive(path),
+        ArchiveFormat::SevenZip => inspect_seven_zip_archive(path),
+        ArchiveFormat::Tar => inspect_tar_archive(
+            File::open(path)
+                .map(BufReader::new)
+                .map_err(|error| format!("Failed to open archive {}: {error}", path.display()))?,
+        ),
+        ArchiveFormat::TarGz => inspect_tar_archive(
+            GzDecoder::new(
+                File::open(path)
+                    .map(BufReader::new)
+                    .map_err(|error| format!("Failed to open archive {}: {error}", path.display()))?,
+            ),
+        ),
+        ArchiveFormat::TarBz2 => inspect_tar_archive(
+            BzDecoder::new(
+                File::open(path)
+                    .map(BufReader::new)
+                    .map_err(|error| format!("Failed to open archive {}: {error}", path.display()))?,
+            ),
+        ),
+        ArchiveFormat::TarXz => inspect_tar_archive(
+            XzDecoder::new(
+                File::open(path)
+                    .map(BufReader::new)
+                    .map_err(|error| format!("Failed to open archive {}: {error}", path.display()))?,
+            ),
+        ),
+        ArchiveFormat::Gzip => Ok(vec![single_stream_output_name(path, ".gz")]),
+        ArchiveFormat::Bzip2 => Ok(vec![single_stream_output_name(path, ".bz2")]),
+        ArchiveFormat::Xz => Ok(vec![single_stream_output_name(path, ".xz")]),
+    }
+}
+
 fn extract_archive_to_directory(
     archive_path: &Path,
     format: ArchiveFormat,
@@ -474,6 +513,53 @@ fn extract_seven_zip_archive(archive_path: &Path, destination_root: &Path) -> Re
     })?;
 
     Ok(extracted_entry_count)
+}
+
+fn inspect_zip_archive(archive_path: &Path) -> Result<Vec<String>, String> {
+    let archive_file = File::open(archive_path)
+        .map(BufReader::new)
+        .map_err(|error| format!("Failed to open archive {}: {error}", archive_path.display()))?;
+    let mut archive = ZipArchive::new(archive_file)
+        .map_err(|error| format!("Failed to read zip archive {}: {error}", archive_path.display()))?;
+    
+    let mut entries = Vec::new();
+    for index in 0..archive.len() {
+        if let Ok(entry) = archive.by_index(index) {
+            if let Some(path) = entry.enclosed_name() {
+                entries.push(path.to_string_lossy().into_owned());
+            }
+        }
+    }
+    Ok(entries)
+}
+
+fn inspect_tar_archive<R: Read>(reader: R) -> Result<Vec<String>, String> {
+    let mut archive = Archive::new(reader);
+    let mut entries = Vec::new();
+    if let Ok(tar_entries) = archive.entries() {
+        for entry_result in tar_entries {
+            if let Ok(entry) = entry_result {
+                if let Ok(path) = entry.path() {
+                    entries.push(path.to_string_lossy().into_owned());
+                }
+            }
+        }
+    }
+    Ok(entries)
+}
+
+fn inspect_seven_zip_archive(archive_path: &Path) -> Result<Vec<String>, String> {
+    let archive = sevenz_rust::Archive::open(archive_path).map_err(|error| {
+        format!(
+            "Failed to read 7z archive {}: {error}",
+            archive_path.display()
+        )
+    })?;
+    let mut entries = Vec::new();
+    for entry in &archive.files {
+        entries.push(entry.name().to_string());
+    }
+    Ok(entries)
 }
 
 fn validate_archive_path(path: &Path) -> Result<(), String> {

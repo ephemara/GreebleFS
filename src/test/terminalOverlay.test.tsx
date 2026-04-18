@@ -32,6 +32,7 @@ vi.mock('@xterm/xterm', () => ({
     dispose = vi.fn();
     loadAddon = vi.fn();
     open = vi.fn();
+    scrollToBottom = vi.fn();
     writeln = vi.fn();
     onData = vi.fn((handler: (data: string) => void) => {
       this.dataHandler = handler;
@@ -39,7 +40,9 @@ vi.mock('@xterm/xterm', () => ({
     onResize = vi.fn();
     buffer = {
       active: {
+        baseY: 0,
         length: 2,
+        viewportY: 0,
         getLine: (index: number) => {
           const lines = ['PS M:\\OverlayTerm> dir', 'src  src-tauri  package.json'];
           return index < lines.length ? new MockXtermLine(lines[index]) : undefined;

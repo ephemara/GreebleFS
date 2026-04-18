@@ -3995,6 +3995,15 @@ pub async fn fs_open_archive(path: String) -> Result<FsArchiveExtractionResult, 
 
 #[tauri::command]
 #[specta::specta]
+pub async fn fs_inspect_archive(path: String) -> Result<Vec<String>, String> {
+    let target = PathBuf::from(path);
+    tauri::async_runtime::spawn_blocking(move || archive_ops::inspect_archive(&target))
+        .await
+        .map_err(|error| format!("Archive inspect task join failure: {error}"))?
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn fs_extract_archive(
     request: FsArchiveExtractionRequest,
 ) -> Result<FsArchiveExtractionResult, String> {

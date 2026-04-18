@@ -307,6 +307,7 @@ export type ExplorerBackendContract = {
   planItemTransfer: typeof planExplorerItemTransfer;
   openPath: typeof openExplorerPath;
   openArchive: typeof openExplorerArchive;
+  inspectArchive: typeof inspectExplorerArchive;
   openWithDialog: typeof openExplorerPathWithDialog;
   revealPath: typeof revealExplorerPath;
   showPathProperties: typeof showExplorerPathProperties;
@@ -556,6 +557,10 @@ export async function openExplorerArchive(path: string): Promise<ExplorerArchive
     throw new Error('Archive extraction is only available for local filesystem items.');
   }
   return unwrapTauriResult(await commands.fsOpenArchive(path));
+}
+
+export async function inspectExplorerArchive(path: string): Promise<string[]> {
+  return unwrapTauriResult(await commands.fsInspectArchive(path));
 }
 
 export async function openExplorerPathWithDialog(path: string): Promise<void> {
@@ -888,6 +893,7 @@ export const explorerBackendContract: ExplorerBackendContract = {
   planItemTransfer: planExplorerItemTransfer,
   openPath: openExplorerPath,
   openArchive: openExplorerArchive,
+  inspectArchive: inspectExplorerArchive,
   openWithDialog: openExplorerPathWithDialog,
   revealPath: revealExplorerPath,
   showPathProperties: showExplorerPathProperties,

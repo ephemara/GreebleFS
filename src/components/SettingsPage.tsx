@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, Camera, FolderOpen, GitBranch, HardDrive, Image, LayoutGrid, MonitorPlay, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Type, VolumeX } from 'lucide-react';
+import { ArrowDown, ArrowUp, Camera, FolderOpen, GitBranch, HardDrive, Image, LayoutGrid, MonitorPlay, Music, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Type, VolumeX } from 'lucide-react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useShallow } from 'zustand/react/shallow';
 import type { LoadedOverlayAnimation } from './animationRuntime';
@@ -697,6 +697,7 @@ type SettingsSectionKey =
   | 'layouts'
   | 'hotkeys'
   | 'system'
+  | 'audio'
   | 'theme-json';
 
 function SettingsRailButton({
@@ -929,6 +930,7 @@ export function SettingsPage({
     updateKeybindings,
     updateScreenshots,
     updateSystem,
+    updateAudio,
     resetToDefaults,
   } = useSettingsStore(useShallow(state => ({
     settings: state.settings,
@@ -941,6 +943,7 @@ export function SettingsPage({
     updateKeybindings: state.updateKeybindings,
     updateScreenshots: state.updateScreenshots,
     updateSystem: state.updateSystem,
+    updateAudio: state.updateAudio,
     resetToDefaults: state.resetToDefaults,
   })));
   const systemPresentationState = useMemo(
@@ -2057,6 +2060,14 @@ export function SettingsPage({
       ].join(' · '),
       detail: `Handle machine-level behavior like login launch and the ${systemPresentationState.recoveryPath === 'tray' ? 'tray' : platform === 'macos' ? 'Dock' : 'taskbar'} recovery path in one place.`,
       icon: <Settings2 size={14} />,
+    },
+    {
+      key: 'audio',
+      label: 'Audio',
+      subtitle: 'Audio pathing and VST3 integration.',
+      summary: `${settings.audio.vst3AdditionalFolders.length} user folders`,
+      detail: 'Configure scan paths for audio integrations and DAW-like plugin discovery.',
+      icon: <Music size={14} />,
     },
     {
       key: 'theme-json',
@@ -4862,6 +4873,64 @@ export function SettingsPage({
                   </button>
                 </div>
               </section>
+            )}
+
+            {activeSection === 'audio' && (
+              <div className="mx-auto max-w-4xl space-y-6 pt-2 pb-6">
+                <SectionTitle
+                  icon={<Music size={14} />}
+                  title="Audio Integration"
+                  subtitle={activeSectionMeta.detail}
+                />
+                <OverviewCard
+                  title="VST3 Discovery Paths"
+                  subtitle="Platform standard fallback scans are automatic. Add arbitrary extra paths here."
+                  badges={[]}
+                >
+                  <div className="space-y-2">
+                    {settings.audio.vst3AdditionalFolders.map((folder, i) => (
+                      <div key={folder} className="flex items-center gap-2 rounded border px-3 py-2 text-[11px]" style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
+                        <div className="flex-1 truncate opacity-80">{folder}</div>
+                        <button
+                          type="button"
+                          className="shrink-0 p-1 font-semibold uppercase tracking-[0.14em]"
+                          style={{ color: '#ef4444' }}
+                          onClick={() => {
+                            const clone = [...settings.audio.vst3AdditionalFolders];
+                            clone.splice(i, 1);
+                            updateAudio({ vst3AdditionalFolders: clone });
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                    {settings.audio.vst3AdditionalFolders.length === 0 && (
+                      <div className="py-2 text-[11px] font-style-italic opacity-40">No additional scan paths configured. Default OS paths will still be scanned.</div>
+                    )}
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        className="rounded border px-4 py-2 text-[10px] uppercase font-semibold tracking-[0.1em] transition-opacity hover:opacity-80"
+                        style={{ borderColor: 'rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)' }}
+                        onClick={async () => {
+                          const { open } = await import('@tauri-apps/plugin-fs').catch(() => ({ open: null as any }));
+                          if (open) {
+                            const picked = await open({ directory: true, multiple: true }) as string[] | null;
+                            if (picked && picked.length > 0) {
+                              const newFolders = [...settings.audio.vst3AdditionalFolders];
+                              picked.forEach(p => { if (!newFolders.includes(p)) newFolders.push(p); });
+                              updateAudio({ vst3AdditionalFolders: newFolders });
+                            }
+                          }
+                        }}
+                      >
+                        Add Folder…
+                      </button>
+                    </div>
+                  </div>
+                </OverviewCard>
+              </div>
             )}
 
             {activeSection === 'screenshots' && (

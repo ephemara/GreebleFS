@@ -26,7 +26,14 @@ import {
   analyzeExplorerAudioPreview,
   exportExplorerAudioTransform,
   type ExplorerAudioPreviewAnalysis,
+  type ExplorerAudioBatchInput,
+  type ExplorerAudioBatchOutput,
 } from '../runtime/audioWorkbenchBackend';
+import {
+  getExplorerVstDefaultScanPaths,
+  scanExplorerVstPlugins,
+  type ExplorerVstPluginEntry,
+} from '../runtime/vstBackend';
 import {
   getAudioDeckState,
   loadSelectionIntoAudioDeck,
@@ -74,7 +81,7 @@ function formatDuration(seconds: number): string {
   if (hours > 0) {
     return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   }
-  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  return `${minutes}:${minutes.toString().padStart(2, '0')}`;
 }
 
 function formatDb(value: number | null | undefined): string {
@@ -338,7 +345,7 @@ export function ExplorerAudioWorkbench({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const snapshot = useAudioEngineSnapshot();
-  const keybindings = useSettingsStore((state) => state.settings.keybindings);
+  const settings = useSettingsStore((state) => state.settings);
   const activeDeckId = 'a' as const;
 
   const [analysis, setAnalysis] = useState<ExplorerAudioPreviewAnalysis | null>(null);
@@ -347,6 +354,35 @@ export function ExplorerAudioWorkbench({
   const [fadeInSeconds, setFadeInSeconds] = useState(0);
   const [fadeOutSeconds, setFadeOutSeconds] = useState(0);
   const [pitchShiftCents, setPitchShiftCents] = useState(0);
+  const [transformPending, setTransformPending] = useState(false);
+  const [conversionFormat, setConversionFormat] = useState('wav');
+  
+  // VST Discovery State
+  const [discoveredPlugins, setDiscoveredPlugins] = useState<ExplorerVstPluginEntry[]>([]);
+  const [isScanningVst, setIsScanningVst] = useState(false);
+  
+  useEffect(() => {
+    let active = true;
+    const runScan = async () => {
+      setIsScanningVst(true);
+      try {
+        const defaults = await getExplorerVstDefaultScanPaths();
+        const validDefaults = defaults.filter(p => p.exists).map(p => p.path);
+        const allPaths = [...validDefaults, ...settings.audio.vst3AdditionalFolders];
+        const plugins = await scanExplorerVstPlugins(allPaths);
+        if (active) {
+          setDiscoveredPlugins(plugins);
+        }
+      } catch (err: any) {
+        console.error('Failed to scan VST3 plugins:', err);
+      } finally {
+        if (active) setIsScanningVst(false);
+      }
+    };
+    runScan();
+    return () => { active = false; };
+  }, [settings.audio.vst3AdditionalFolders]);
+
   const [generateSpectrogram, setGenerateSpectrogram] = useState(true);
   const [convertFormat, setConvertFormat] = useState<'mp3' | 'wav' | 'flac' | 'ogg'>(
     DEFAULT_EXPLORER_AUDIO_EXPORT_FORMAT_ID,
@@ -1205,39 +1241,68 @@ export function ExplorerAudioWorkbench({
                     : '— No plugin loaded —'}
                 </div>
 
-                <button
-                  id="audio-workbench-load-vst-btn"
-                  type="button"
-                  style={toolbarButtonStyle()}
-                  onClick={async () => {
-                    try {
-                      // Use the Tauri core path picker via dynamic import so it tree-shakes on web
-                      const { open } = await import('@tauri-apps/plugin-fs').catch(() => ({ open: null as any }));
-                      // Fallback: if plugin-fs doesn't expose open use prompt
-                      let picked: string | null = null;
-                      if (typeof open === 'function') {
-                        picked = await (open as any)({
-                          title: 'Select a VST3 Plugin',
-                          filters: [{ name: 'VST3 Plugin', extensions: ['vst3', 'so', 'dll', 'dylib'] }],
-                          multiple: false,
-                          directory: false,
-                        }) as string | null;
-                      } else {
-                        // Fallback for environments without dialog plugin
-                        const { invoke } = await import('@tauri-apps/api/core');
-                        picked = await invoke<string | null>('fs_open_with_dialog', {}).catch(() => null);
+                <div style={{ flex: 1, display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <select
+                    className="vst-plugin-dropdown"
+                    value={previewDeck.activePluginPath || ''}
+                    onChange={async (e) => {
+                      const path = e.target.value;
+                      if (!path) return;
+                      try {
+                        await loadAudioDeckPlugin(previewDeck.deckId, path);
+                        setWorkbenchStatus(`Plugin loaded: ${path.split(/[/\\]/).pop()}`);
+                      } catch (err: any) {
+                        setWorkbenchStatus(`Plugin load failed: ${err?.message ?? err}`);
                       }
-                      if (picked) {
-                        await loadAudioDeckPlugin(previewDeck.deckId, picked);
-                        setWorkbenchStatus(`Plugin loaded: ${picked.split(/[/\\]/).pop()}`);
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '4px 6px',
+                      background: 'rgba(0,0,0,0.2)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: 4,
+                      fontSize: 11,
+                      color: previewDeck.activePluginPath ? '#fff' : 'rgba(255,255,255,0.4)',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="" disabled>
+                      {isScanningVst ? 'Scanning for plugins...' : 'Select a VST3 plugin...'}
+                    </option>
+                    {discoveredPlugins.map(plugin => (
+                      <option key={plugin.path} value={plugin.path}>
+                        {plugin.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    type="button"
+                    title="Rescan VST3 Folders"
+                    onClick={async () => {
+                      setIsScanningVst(true);
+                      try {
+                        const defaults = await getExplorerVstDefaultScanPaths();
+                        const validDefaults = defaults.filter(p => p.exists).map(p => p.path);
+                        const plugins = await scanExplorerVstPlugins([...validDefaults, ...settings.audio.vst3AdditionalFolders]);
+                        setDiscoveredPlugins(plugins);
+                        setWorkbenchStatus(`Scanned ${plugins.length} VST3 plugins.`);
+                      } finally {
+                        setIsScanningVst(false);
                       }
-                    } catch (err: any) {
-                      setWorkbenchStatus(`Plugin load failed: ${err?.message ?? err}`);
-                    }
-                  }}
-                >
-                  Load .vst3…
-                </button>
+                    }}
+                    style={{
+                      padding: '4px 6px',
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: 4,
+                      color: 'rgba(255,255,255,0.6)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    ↻
+                  </button>
+                </div>
 
                 {previewDeck.activePluginPath && (
                   <button
@@ -1252,6 +1317,30 @@ export function ExplorerAudioWorkbench({
                     ✕
                   </button>
                 )}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -4, paddingBottom: 8 }}>
+                 <button
+                   type="button"
+                   style={{ background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.3)', fontSize: 10, cursor: 'pointer', textDecoration: 'underline' }}
+                   onClick={async () => {
+                      const { open } = await import('@tauri-apps/plugin-fs').catch(() => ({ open: null as any }));
+                      if (open) {
+                        const picked = await (open as any)({
+                          title: 'Select a VST3 Plugin',
+                          filters: [{ name: 'VST3 Plugin', extensions: ['vst3', 'so', 'dll', 'dylib'] }],
+                          multiple: false,
+                          directory: false,
+                        }) as string | null;
+                        if (picked) {
+                          await loadAudioDeckPlugin(previewDeck.deckId, picked);
+                          setWorkbenchStatus(`Plugin loaded: ${picked.split(/[/\\]/).pop()}`);
+                        }
+                      }
+                   }}
+                 >
+                   Browse files...
+                 </button>
               </div>
 
               {/* Auto-generated parameter sliders */}

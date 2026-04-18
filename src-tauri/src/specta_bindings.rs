@@ -139,6 +139,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::fs_commands::fs_read_text_file,
             crate::fs_commands::fs_open_file,
             crate::fs_commands::fs_open_archive,
+            crate::fs_commands::fs_inspect_archive,
             crate::fs_commands::fs_extract_archive,
             crate::audio_commands::audio_analyze_preview,
             crate::audio_commands::audio_export_transform,

@@ -69,6 +69,8 @@ import {
 import {
   getExplorerArchiveExtractToFolderLabel,
   isExplorerArchiveEntry,
+  getExplorerArchiveDescriptor,
+  type ExplorerArchiveFormatDescriptor,
 } from "../config/explorerArchives";
 import type {
   OverlayPluginContextMenuContribution,
@@ -164,6 +166,7 @@ import { AppPromptDialog } from "./AppModal";
 import { ExplorerAudioWorkbench } from "./ExplorerAudioWorkbench";
 import { ExplorerImageEditor } from "./ExplorerImageEditor";
 import { ExplorerVideoEditor } from "./ExplorerVideoEditor";
+import { ExplorerArchivePreview } from "./ExplorerArchivePreview";
 import {
   type ExplorerBatchRenameMode,
   type ExplorerBatchRenamePreviewRow,
@@ -492,6 +495,13 @@ type PreviewState =
       format: ModelPreviewFormat;
       name: string;
       size: number;
+    }
+  | {
+      type: "archive";
+      path: string;
+      name: string;
+      size: number;
+      descriptor: ExplorerArchiveFormatDescriptor;
     }
   | {
       type: "fallback";
@@ -2582,6 +2592,7 @@ function PreviewPanel({
   chromeLayoutId,
   chromeOverride,
   chromeEditMode,
+  onExtractArchive,
 }: {
   preview: PreviewState;
   width: number;
@@ -2597,6 +2608,7 @@ function PreviewPanel({
   chromeLayoutId: ExplorerChromeLayoutId;
   chromeOverride?: ExplorerChromeOverrideSnapshot | null;
   chromeEditMode?: ExplorerChromeEditModeState;
+  onExtractArchive: (mode: ExplorerArchiveExtractionMode) => void;
 }) {
   const dragging = useRef(false);
   const startX = useRef(0);
@@ -3014,6 +3026,15 @@ function PreviewPanel({
             videoMimeType={preview.mimeType}
             videoSize={preview.size}
             onExported={onRefreshPreviewEntry}
+          />
+        )}
+        {preview.type === "archive" && (
+          <ExplorerArchivePreview
+            archivePath={preview.path}
+            archiveName={preview.name}
+            archiveSize={preview.size}
+            descriptor={preview.descriptor}
+            onExtract={onExtractArchive}
           />
         )}
         {preview.type === "text" &&
@@ -7681,6 +7702,26 @@ export function FileExplorer({
         return;
       }
 
+      if (isExplorerArchiveEntry(entry)) {
+        if (isCurrentPreviewRequest()) {
+          const descriptor = getExplorerArchiveDescriptor(entry);
+          if (descriptor) {
+            setPreview({
+              type: "archive",
+              path: entry.path,
+              name: entry.name,
+              size: entry.size,
+              descriptor,
+            });
+            setPreviewLoading(false);
+          } else {
+            setPreview({ type: "none", path: "" });
+            setPreviewLoading(false);
+          }
+        }
+        return;
+      }
+
       if (isAudioPreviewExtension(ext)) {
         if (isCurrentPreviewRequest()) {
           setPreview({
@@ -7848,7 +7889,12 @@ export function FileExplorer({
       }
 
       if (isExplorerArchiveEntry(entry)) {
-        await handleArchiveAction(entry, "openCached");
+        const canInlinePreview = previewEnabled && !isCompactDock;
+        if (canInlinePreview) {
+          await previewEntry(entry, null);
+        } else {
+          await handleArchiveAction(entry, "openCached");
+        }
         return;
       }
 
@@ -16635,6 +16681,23 @@ export function FileExplorer({
               chromeLayoutId={effectiveChromeLayoutId}
               chromeOverride={explorerChromeOverride}
               chromeEditMode={explorerChromeEditMode}
+              onExtractArchive={(mode) => {
+                if (preview.type === "archive") {
+                  void handleArchiveAction(
+                    {
+                      path: preview.path,
+                      name: preview.name,
+                      size: preview.size,
+                      is_dir: false,
+                      modified: Date.now(),
+                      extension: getEntryExtension({ name: preview.name, extension: "", is_dir: false }),
+                      is_hidden: false,
+                      is_symlink: false,
+                    },
+                    mode
+                  );
+                }
+              }}
               onClose={() => {
                 void closePreview();
               }}

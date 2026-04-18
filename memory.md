@@ -1,5 +1,20 @@
 # GreebleFS Memory
 
+## 2026-04-18 — Terminal Split Drag Uses Imperative Preview Geometry
+
+- Embedded terminal pane-resize drag no longer drives the entire terminal shell through React state updates on every pointer move.
+- Durable implementation shape:
+  - `src/components/TerminalOverlay.tsx` now keeps split-drag preview geometry in refs and applies pane/handle positions directly to the mounted DOM nodes with a RAF-batched imperative path.
+  - React state still owns the durable pane-tree layout, but the terminal only commits the final split ratio back into `tabs` on `pointerup`.
+  - A small `useLayoutEffect` replay keeps the preview geometry pinned if any unrelated rerender happens while a drag is in flight.
+  - The xterm boot path now fits the pane before spawning the PTY, so new panes start with the real mounted row/column geometry instead of the default `24x80` placeholder.
+  - Follow-up fits preserve bottom lock when the viewport was already pinned near the prompt, which prevents split growth from leaving a dead gutter of blank rows under the active shell.
+- Durable product note:
+  - Keep xterm panes mounted and visually stable during split drag. If resize churn comes back, inspect the terminal split-handle path first and avoid reintroducing `setTabs(...)` on `pointermove`.
+  - If terminal content looks like it is drifting inside an otherwise stable pane frame, check xterm fit timing and viewport bottom-lock behavior before blaming React reconciliation.
+- Validation:
+  - passed: `bunx vitest run src/test/terminalOverlay.test.tsx`
+
 ## 2026-04-17 — MoGraph Toolkit Bridged Into Authored Animation Runtime
 
 - The imported Cinema 4D-style MoGraph folder under `src/animation/` is now sanitized for GreebleFS and exposed through the authored shell animation runtime instead of remaining as website-only raw material.

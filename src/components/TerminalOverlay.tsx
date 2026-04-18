@@ -14,6 +14,7 @@
 import React, {
   useState,
   useEffect,
+  useLayoutEffect,
   useRef,
   useCallback,
   useMemo,
@@ -329,6 +330,41 @@ interface TerminalOverlayProps {
 interface XTermEntry { xterm: XTerm; fitAddon: FitAddon; unlisten: () => void; }
 const xtermRegistry = new Map<string, XTermEntry>();
 
+function getTerminalPaneDomKey(tabId: string, nodeId: string): string {
+  return `${tabId}::${nodeId}`;
+}
+
+function applyTerminalPaneFrameToElement(
+  element: HTMLElement,
+  frame: TerminalPaneFrame,
+): void {
+  element.style.left = `${frame.x * 100}%`;
+  element.style.top = `${frame.y * 100}%`;
+  element.style.width = `${frame.width * 100}%`;
+  element.style.height = `${frame.height * 100}%`;
+}
+
+function applyTerminalSplitHandleToElement(
+  element: HTMLElement,
+  handle: TerminalPaneSplitHandle,
+): void {
+  const isColumnSplit = handle.direction === 'columns';
+  element.style.left = isColumnSplit ? `calc(${handle.x * 100}% - 5px)` : `${handle.x * 100}%`;
+  element.style.top = isColumnSplit ? `${handle.y * 100}%` : `calc(${handle.y * 100}% - 5px)`;
+  element.style.width = isColumnSplit ? '10px' : `${handle.width * 100}%`;
+  element.style.height = isColumnSplit ? `${handle.height * 100}%` : '10px';
+  element.style.cursor = isColumnSplit ? 'col-resize' : 'row-resize';
+}
+
+function shouldKeepTerminalViewportPinnedToBottom(term: XTerm): boolean {
+  const viewportY = term.buffer.active.viewportY;
+  const baseY = term.buffer.active.baseY;
+  if (!Number.isFinite(viewportY) || !Number.isFinite(baseY)) {
+    return true;
+  }
+  return Math.abs(baseY - viewportY) <= 1;
+}
+
 function destroyXterm(id: string) {
   const e = xtermRegistry.get(id);
   if (!e) return;
@@ -527,25 +563,33 @@ function XTermPane({
     term.loadAddon(webLinks);
     term.open(containerRef.current);
 
-    const scheduleFit = () => {
+    const runFit = (preserveBottomLock: boolean) => {
+      if (
+        !containerRef.current ||
+        !containerRef.current.isConnected ||
+        containerRef.current.offsetParent === null
+      ) {
+        return;
+      }
+      const keepViewportPinned = preserveBottomLock && shouldKeepTerminalViewportPinnedToBottom(term);
+      fit.fit();
+      if (keepViewportPinned) {
+        term.scrollToBottom();
+      }
+    };
+
+    const scheduleFit = (preserveBottomLock = true) => {
       if (fitFrameRef.current !== null) {
         return;
       }
 
       fitFrameRef.current = window.requestAnimationFrame(() => {
         fitFrameRef.current = null;
-        if (
-          !containerRef.current ||
-          !containerRef.current.isConnected ||
-          containerRef.current.offsetParent === null
-        ) {
-          return;
-        }
-        fit.fit();
+        runFit(preserveBottomLock);
       });
     };
 
-    scheduleFit();
+    runFit(false);
 
     try {
       unwrapTauriResult(await commands.terminalSpawn(id, null, settings.shell, term.rows, term.cols));
@@ -640,7 +684,13 @@ function XTermPane({
     if (visible && active) {
       const entry = xtermRegistry.get(id);
       if (entry) {
-        requestAnimationFrame(() => entry.fitAddon.fit());
+        requestAnimationFrame(() => {
+          const keepViewportPinned = shouldKeepTerminalViewportPinnedToBottom(entry.xterm);
+          entry.fitAddon.fit();
+          if (keepViewportPinned) {
+            entry.xterm.scrollToBottom();
+          }
+        });
         requestAnimationFrame(() => entry.xterm.focus());
       }
     }
@@ -1204,6 +1254,12 @@ export function TerminalOverlay({
   const splitCounterRef = useRef(1);
   const lastTerminalCwdSyncKeyRef = useRef<string | null>(null);
   const promptRestoreTimersRef = useRef<Record<string, number>>({});
+  // Keep split-drag geometry off React's pointer-move hot path so mounted xterm
+  // panes stay stable while their containing surfaces resize.
+  const paneSurfaceElementsRef = useRef(new Map<string, HTMLDivElement>());
+  const splitHandleElementsRef = useRef(new Map<string, HTMLDivElement>());
+  const splitResizePreviewRef = useRef<{ tabId: string; layout: TerminalPaneLayoutNode } | null>(null);
+  const splitResizePreviewFrameRef = useRef<number | null>(null);
 
   const { initStore } = useTerminalStore(useShallow(state => ({
     initStore: state.initStore,
@@ -1234,6 +1290,11 @@ export function TerminalOverlay({
     for (const timer of Object.values(promptRestoreTimersRef.current)) {
       window.clearTimeout(timer);
     }
+    if (splitResizePreviewFrameRef.current !== null) {
+      window.cancelAnimationFrame(splitResizePreviewFrameRef.current);
+      splitResizePreviewFrameRef.current = null;
+    }
+    splitResizePreviewRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -1749,13 +1810,64 @@ export function TerminalOverlay({
     () => new Map(tabs.map(tab => [tab.id, collectTerminalPaneGeometry(tab.layout)])),
     [tabs],
   );
-  const updateTabSplitRatio = useCallback((tabId: string, splitId: string, ratio: number) => {
+  const commitTabLayout = useCallback((tabId: string, layout: TerminalPaneLayoutNode) => {
     setTabs(prev => prev.map(tab => (
       tab.id === tabId
-        ? { ...tab, layout: updateTerminalPaneSplitRatio(tab.layout, splitId, ratio) }
+        ? { ...tab, layout }
         : tab
     )));
   }, []);
+  const setPaneSurfaceElement = useCallback((tabId: string, paneId: string, element: HTMLDivElement | null) => {
+    const key = getTerminalPaneDomKey(tabId, paneId);
+    if (element) {
+      paneSurfaceElementsRef.current.set(key, element);
+      return;
+    }
+    paneSurfaceElementsRef.current.delete(key);
+  }, []);
+  const setSplitHandleElement = useCallback((tabId: string, splitId: string, element: HTMLDivElement | null) => {
+    const key = getTerminalPaneDomKey(tabId, splitId);
+    if (element) {
+      splitHandleElementsRef.current.set(key, element);
+      return;
+    }
+    splitHandleElementsRef.current.delete(key);
+  }, []);
+  const applyTabGeometryPreview = useCallback((tabId: string, layout: TerminalPaneLayoutNode) => {
+    const geometry = collectTerminalPaneGeometry(layout);
+    geometry.frames.forEach((frame) => {
+      const element = paneSurfaceElementsRef.current.get(getTerminalPaneDomKey(tabId, frame.paneId));
+      if (element) {
+        applyTerminalPaneFrameToElement(element, frame);
+      }
+    });
+    geometry.handles.forEach((handle) => {
+      const element = splitHandleElementsRef.current.get(getTerminalPaneDomKey(tabId, handle.splitId));
+      if (element) {
+        applyTerminalSplitHandleToElement(element, handle);
+      }
+    });
+  }, []);
+  const scheduleTabGeometryPreview = useCallback((tabId: string, layout: TerminalPaneLayoutNode) => {
+    splitResizePreviewRef.current = { tabId, layout };
+    if (splitResizePreviewFrameRef.current !== null) {
+      return;
+    }
+    splitResizePreviewFrameRef.current = window.requestAnimationFrame(() => {
+      splitResizePreviewFrameRef.current = null;
+      const preview = splitResizePreviewRef.current;
+      if (!preview) {
+        return;
+      }
+      applyTabGeometryPreview(preview.tabId, preview.layout);
+    });
+  }, [applyTabGeometryPreview]);
+  useLayoutEffect(() => {
+    const preview = splitResizePreviewRef.current;
+    if (preview) {
+      applyTabGeometryPreview(preview.tabId, preview.layout);
+    }
+  });
   const startSplitResize = useCallback((
     event: React.PointerEvent<HTMLDivElement>,
     tabId: string,
@@ -1779,16 +1891,24 @@ export function TerminalOverlay({
     if (axisSize <= 0) {
       return;
     }
+    const tab = tabs.find(candidate => candidate.id === tabId);
+    if (!tab) {
+      return;
+    }
 
     const minPaneSize = handle.direction === 'columns' ? 220 : 140;
     const edgeLimit = axisSize <= minPaneSize * 2 ? 0.5 : minPaneSize / axisSize;
     const clampRatio = (nextRatio: number) => Math.min(1 - edgeLimit, Math.max(edgeLimit, nextRatio));
+    let nextLayout = tab.layout;
+    let hasPreviewLayout = false;
 
     const updateFromPointer = (clientX: number, clientY: number) => {
       const rawRatio = handle.direction === 'columns'
         ? (clientX - rect.left) / rect.width
         : (clientY - rect.top) / rect.height;
-      updateTabSplitRatio(tabId, handle.splitId, clampRatio(rawRatio));
+      nextLayout = updateTerminalPaneSplitRatio(tab.layout, handle.splitId, clampRatio(rawRatio));
+      hasPreviewLayout = true;
+      scheduleTabGeometryPreview(tabId, nextLayout);
     };
 
     const previousUserSelect = document.body.style.userSelect;
@@ -1804,11 +1924,19 @@ export function TerminalOverlay({
       document.body.style.cursor = previousCursor;
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
+      if (splitResizePreviewFrameRef.current !== null) {
+        window.cancelAnimationFrame(splitResizePreviewFrameRef.current);
+        splitResizePreviewFrameRef.current = null;
+      }
+      splitResizePreviewRef.current = null;
+      if (hasPreviewLayout) {
+        commitTabLayout(tabId, nextLayout);
+      }
     };
 
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp, { once: true });
-  }, [updateTabSplitRatio]);
+  }, [commitTabLayout, scheduleTabGeometryPreview, tabs]);
   const renderPaneSurface = useCallback((tabId: string, paneId: string, frame: TerminalPaneFrame): React.ReactNode => {
     const pane = paneSessions[paneId];
     if (!pane) {
@@ -1823,6 +1951,7 @@ export function TerminalOverlay({
     return (
       <div
         key={paneId}
+        ref={element => setPaneSurfaceElement(tabId, paneId, element)}
         className="flex min-h-0 min-w-0 overflow-hidden rounded-xl border"
         style={{
           position: 'absolute',
@@ -1956,6 +2085,7 @@ export function TerminalOverlay({
     paneSessions,
     restartPane,
     splitActivePane,
+    setPaneSurfaceElement,
     tabs,
     theme,
   ]);
@@ -2107,6 +2237,7 @@ export function TerminalOverlay({
                   return (
                     <div
                       key={handle.splitId}
+                      ref={element => setSplitHandleElement(tab.id, handle.splitId, element)}
                       role="separator"
                       aria-orientation={isColumnSplit ? 'vertical' : 'horizontal'}
                       aria-label={isColumnSplit ? 'Resize panes horizontally' : 'Resize panes vertically'}

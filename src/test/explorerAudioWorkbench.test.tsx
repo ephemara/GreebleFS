@@ -63,6 +63,8 @@ const audioEngineSnapshot: ExplorerAudioEngineStateSnapshot = {
         enabled: false,
       },
       error: null,
+      activePluginPath: null,
+      vstParameters: [],
     },
     {
       deckId: 'b',
@@ -83,6 +85,8 @@ const audioEngineSnapshot: ExplorerAudioEngineStateSnapshot = {
         enabled: false,
       },
       error: null,
+      activePluginPath: null,
+      vstParameters: [],
     },
   ],
 };

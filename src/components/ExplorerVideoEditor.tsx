@@ -16,8 +16,7 @@
  */
 
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile } from '@ffmpeg/util';
+import { commands } from '../generated/tauri';
 import {
   useCallback,
   useEffect,
@@ -272,7 +271,7 @@ export function ExplorerVideoEditor({
   videoMimeType: _videoMimeType,
   videoSize,
 }: ExplorerVideoEditorProps) {
-  // Resolve native-file URL via convertFileSrc (Tauri) or use source directly
+  // Resolve fallback static native-file URL (mostly used for audio extraction)
   const nativeUrl = useMemo(() => {
     try {
       return convertFileSrc(videoPath);
@@ -281,7 +280,10 @@ export function ExplorerVideoEditor({
     }
   }, [videoPath, videoSource]);
 
-  // ── Playback state ──
+  // ── Proxy resolution state ──
+  const [playSrc, setPlaySrc] = useState<string | undefined>(undefined);
+  const [isProxying, setIsProxying] = useState(true);
+  const [proxyError, setProxyError] = useState('');
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const rafRef = useRef<number>(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -295,13 +297,6 @@ export function ExplorerVideoEditor({
   const [trimEnd, setTrimEnd] = useState(0);
   const [loopTrim, setLoopTrim] = useState(true);
 
-  // ── Transcoding Fallback State ──
-  const [playSrc, setPlaySrc] = useState(nativeUrl);
-  const [isTranscoding, setIsTranscoding] = useState(false);
-  const [transcodeProgress, setTranscodeProgress] = useState('');
-  const [transcodeError, setTranscodeError] = useState('');
-  const ffmpegRef = useRef<FFmpeg | null>(null);
-
   // ── Inspector state ──
   const [activeTab, setActiveTab] = useState<InspectorTab>('transform');
   const [transform, setTransform] = useState<VideoTransform>(DEFAULT_TRANSFORM);
@@ -309,12 +304,12 @@ export function ExplorerVideoEditor({
   const [isExtractingAudio, setIsExtractingAudio] = useState(false);
   const [audioExtractMsg, setAudioExtractMsg] = useState('');
 
-  // Reset on file change
+  // Reset on file change and resolve source
   useEffect(() => {
-    setPlaySrc(nativeUrl);
-    setIsTranscoding(false);
-    setTranscodeProgress('');
-    setTranscodeError('');
+    let isMounted = true;
+    setPlaySrc(undefined);
+    setIsProxying(true);
+    setProxyError('');
     setIsPlaying(false);
     setCurrentTime(0);
     setDuration(0);
@@ -324,58 +319,25 @@ export function ExplorerVideoEditor({
     setColor(DEFAULT_COLOR);
     setAudioExtractMsg('');
     cancelAnimationFrame(rafRef.current);
-  }, [videoPath, nativeUrl]);
 
-  // Transcoding fallback
-  const handleVideoError = useCallback(async () => {
-    // Only attempt once
-    if (playSrc !== nativeUrl || isTranscoding || transcodeError) return;
-    
-    setIsTranscoding(true);
-    setTranscodeProgress('Initializing transcoder...');
-    try {
-      let ffmpeg = ffmpegRef.current;
-      if (!ffmpeg) {
-        ffmpeg = new FFmpeg();
-        ffmpeg.on('log', ({ message }) => console.log('[ffmpeg]', message));
-        ffmpeg.on('progress', ({ progress }) => {
-          if (progress > 0 && progress < 1) {
-            setTranscodeProgress(`Transcoding to MP4... ${Math.round(progress * 100)}%`);
-          }
-        });
-        await ffmpeg.load({
-          coreURL: '/ffmpeg-st/ffmpeg-core.js',
-          wasmURL: '/ffmpeg-st/ffmpeg-core.wasm'
-        });
-        ffmpegRef.current = ffmpeg;
+    (async () => {
+      try {
+        const res = await commands.videoResolvePreviewSource(videoPath);
+        if (res.status === 'error') throw new Error(res.error);
+        if (isMounted) {
+          setPlaySrc(convertFileSrc(res.data.sourcePath));
+        }
+      } catch (err: any) {
+        if (isMounted) {
+          setProxyError(err.message || 'Failed to resolve video stream');
+        }
+      } finally {
+        if (isMounted) setIsProxying(false);
       }
+    })();
 
-      setTranscodeProgress('Reading file...');
-      const inputName = `input.${videoExtension || 'mp4'}`;
-      await ffmpeg.writeFile(inputName, await fetchFile(nativeUrl));
-
-      setTranscodeProgress('Transcoding to MP4... 0%');
-      await ffmpeg.exec([
-        '-i', inputName,
-        '-c:v', 'libx264',
-        '-preset', 'ultrafast',
-        '-crf', '28',
-        '-c:a', 'aac',
-        '-b:a', '128k',
-        'output.mp4'
-      ]);
-
-      const data = await ffmpeg.readFile('output.mp4');
-      const blob = new Blob([(data as Uint8Array).buffer], { type: 'video/mp4' });
-      const url = URL.createObjectURL(blob);
-      setPlaySrc(url);
-    } catch (err: any) {
-      console.error('[VideoEditor] Transcode failed', err);
-      setTranscodeError('Failed to load or transcode video format.');
-    } finally {
-      setIsTranscoding(false);
-    }
-  }, [nativeUrl, playSrc, isTranscoding, transcodeError, videoExtension]);
+    return () => { isMounted = false; };
+  }, [videoPath]);
 
   // RAF loop for smooth playhead update while playing
   const tickPlayhead = useCallback(() => {
@@ -633,7 +595,9 @@ export function ExplorerVideoEditor({
               playsInline
               muted={isMuted}
               aria-label={`Video preview: ${videoName}`}
-              onError={handleVideoError}
+              onError={() => {
+                if (playSrc) setProxyError('Video playback failed in player');
+              }}
               onLoadedMetadata={handleLoadedMetadata}
               onEnded={() => {
                 if (loopTrim) {
@@ -669,7 +633,7 @@ export function ExplorerVideoEditor({
           </div>
 
           {/* No-video overlay */}
-          {duration === 0 && (
+          {(!playSrc || duration === 0) && (
             <div style={{
               position: 'absolute',
               inset: 0,
@@ -681,15 +645,15 @@ export function ExplorerVideoEditor({
               zIndex: 10,
             }}>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-                {isTranscoding ? (
+                {isProxying ? (
                   <Loader2 className="animate-spin" size={28} style={{ opacity: 0.6 }} />
-                ) : transcodeError ? (
+                ) : proxyError ? (
                   <Film size={28} style={{ opacity: 0.2, color: 'var(--overlay-error, #f87171)' }} />
                 ) : (
                   <Film size={28} style={{ opacity: 0.4 }} />
                 )}
                 <span style={{ fontSize: 11, opacity: 0.7, maxWidth: 200, textAlign: 'center', lineHeight: 1.4 }}>
-                  {isTranscoding ? transcodeProgress : transcodeError ? transcodeError : 'Loading video…'}
+                  {isProxying ? 'Resolving native video...' : proxyError ? proxyError : 'Loading video…'}
                 </span>
               </div>
             </div>
