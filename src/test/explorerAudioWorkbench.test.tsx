@@ -194,14 +194,12 @@ describe('ExplorerAudioWorkbench', () => {
     );
 
     expect(
-      await screen.findByText(/loaded in the native engine/i),
+      await screen.findByText(/audio loaded and ready for playback/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/44,100 Hz/i)).toBeInTheDocument();
-    expect(screen.getAllByText('0:24').length).toBeGreaterThan(0);
-    expect(screen.getByText('MPEG audio · 16-bit')).toBeInTheDocument();
-    expect(screen.getByText(/loaded file/i)).toBeInTheDocument();
-    expect(screen.getAllByText('128 BPM').length).toBeGreaterThan(0);
-    expect(screen.getByText('2 regions')).toBeInTheDocument();
+    expect(screen.getByText(/0:24/i)).toBeInTheDocument();
+    expect(screen.getByText(/128 BPM/i)).toBeInTheDocument();
+    expect(screen.getByText(/silence regions: 2/i)).toBeInTheDocument();
     expect(screen.queryByText(/^deck b$/i)).not.toBeInTheDocument();
   });
 
@@ -240,8 +238,8 @@ describe('ExplorerAudioWorkbench', () => {
       />,
     );
 
-    await screen.findByText(/loaded in the native engine/i);
-    fireEvent.click(screen.getByRole('button', { name: /overwrite original/i }));
+    await screen.findByText(/audio loaded and ready for playback/i);
+    fireEvent.click(screen.getByRole('button', { name: /save edits to file/i }));
 
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(
@@ -279,14 +277,14 @@ describe('ExplorerAudioWorkbench', () => {
       />,
     );
 
-    await screen.findByText(/loaded in the native engine/i);
+    await screen.findByText(/audio loaded and ready for playback/i);
     fireEvent.click(screen.getByRole('button', { name: /export clip/i }));
 
     const dialog = await screen.findByRole('dialog');
     const input = within(dialog).getByDisplayValue('/tmp/anthem.clip.wav');
     fireEvent.change(input, { target: { value: '/tmp/anthem.clip.wav' } });
     fireEvent.click(
-      within(dialog).getByRole('button', { name: /run sox export/i }),
+      within(dialog).getByRole('button', { name: /export audio/i }),
     );
 
     await waitFor(() => {
@@ -325,7 +323,7 @@ describe('ExplorerAudioWorkbench', () => {
       />,
     );
 
-    await screen.findByText(/loaded in the native engine/i);
+    await screen.findByText(/audio loaded and ready for playback/i);
 
     fireEvent.mouseDown(screen.getByRole('slider', { name: /fade in handle/i }), {
       clientX: 60,
@@ -340,7 +338,7 @@ describe('ExplorerAudioWorkbench', () => {
 
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(
-      within(dialog).getByRole('button', { name: /run sox export/i }),
+      within(dialog).getByRole('button', { name: /export audio/i }),
     );
 
     await waitFor(() => {
@@ -377,7 +375,7 @@ describe('ExplorerAudioWorkbench', () => {
       />,
     );
 
-    await screen.findByText(/loaded in the native engine/i);
+    await screen.findByText(/audio loaded and ready for playback/i);
     fireEvent.change(screen.getByLabelText(/pitch shift cents/i), {
       target: { value: '250' },
     });
@@ -385,7 +383,7 @@ describe('ExplorerAudioWorkbench', () => {
 
     const dialog = await screen.findByRole('dialog');
     fireEvent.click(
-      within(dialog).getByRole('button', { name: /run sox export/i }),
+      within(dialog).getByRole('button', { name: /export audio/i }),
     );
 
     await waitFor(() => {
@@ -409,7 +407,7 @@ describe('ExplorerAudioWorkbench', () => {
       />,
     );
 
-    await screen.findByText(/loaded in the native engine/i);
+    await screen.findByText(/audio loaded and ready for playback/i);
 
     fireEvent.keyDown(window, { key: ' ' });
     await waitFor(() => {

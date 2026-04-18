@@ -167,6 +167,7 @@ import { ExplorerAudioWorkbench } from "./ExplorerAudioWorkbench";
 import { ExplorerImageEditor } from "./ExplorerImageEditor";
 import { ExplorerVideoEditor } from "./ExplorerVideoEditor";
 import { ExplorerArchivePreview } from "./ExplorerArchivePreview";
+import { ExplorerFolderPreview } from "./ExplorerFolderPreview";
 import { ExplorerFontPreview } from "./ExplorerFontPreview";
 import {
   ExplorerPdfWorkbench,
@@ -531,6 +532,11 @@ type PreviewState =
       format: ModelPreviewFormat;
       name: string;
       size: number;
+    }
+  | {
+      type: "folder";
+      path: string;
+      name: string;
     }
   | {
       type: "archive";
@@ -2632,6 +2638,7 @@ function PreviewPanel({
   chromeLayoutId,
   chromeOverride,
   chromeEditMode,
+  showHiddenFiles,
   onExtractArchive,
 }: {
   preview: PreviewState;
@@ -2656,6 +2663,7 @@ function PreviewPanel({
   chromeLayoutId: ExplorerChromeLayoutId;
   chromeOverride?: ExplorerChromeOverrideSnapshot | null;
   chromeEditMode?: ExplorerChromeEditModeState;
+  showHiddenFiles: boolean;
   onExtractArchive: (mode: ExplorerArchiveExtractionMode) => void;
 }) {
   const dragging = useRef(false);
@@ -3399,6 +3407,13 @@ function PreviewPanel({
             archiveSize={preview.size}
             descriptor={preview.descriptor}
             onExtract={onExtractArchive}
+          />
+        )}
+        {preview.type === "folder" && (
+          <ExplorerFolderPreview
+            folderPath={preview.path}
+            folderName={preview.name}
+            showHiddenFiles={showHiddenFiles}
           />
         )}
         {preview.type === "font" && (
@@ -8118,14 +8133,6 @@ export function FileExplorer({
         return;
       }
 
-      if (entry.is_dir) {
-        if (isCurrentPreviewRequest()) {
-          setPreview({ type: "none", path: "" });
-          setPreviewLoading(false);
-        }
-        return;
-      }
-
       const currentPreview = previewRef.current;
       if (
         currentPreview.type === "text" &&
@@ -8144,6 +8151,18 @@ export function FileExplorer({
         if (!shouldCloseCurrentPreview || !isCurrentPreviewRequest()) {
           return;
         }
+      }
+
+      if (entry.is_dir) {
+        if (isCurrentPreviewRequest()) {
+          setPreview({
+            type: "folder",
+            path: entry.path,
+            name: entry.name,
+          });
+          setPreviewLoading(false);
+        }
+        return;
       }
 
       const ext = getEntryExtension(entry);
@@ -9800,7 +9819,7 @@ export function FileExplorer({
       void openEntry(entry);
       return;
     }
-    if (previewEnabled && !isCompactDock && plainClick && !entry.is_dir) {
+    if (previewEnabled && !isCompactDock && plainClick) {
       void previewEntry(entry, getSearchFocusTarget(entry));
     }
   };
@@ -10668,6 +10687,8 @@ export function FileExplorer({
           : "PDF preview"
       : preview.type === "audio"
         ? "Audio preview"
+        : preview.type === "folder"
+          ? "Folder preview"
         : preview.type === "image"
           ? "Image preview"
           : preview.type === "model3d"
@@ -17007,6 +17028,7 @@ export function FileExplorer({
               chromeLayoutId={effectiveChromeLayoutId}
               chromeOverride={explorerChromeOverride}
               chromeEditMode={explorerChromeEditMode}
+              showHiddenFiles={showHidden}
               onExtractArchive={(mode) => {
                 if (preview.type === "archive") {
                   void handleArchiveAction(

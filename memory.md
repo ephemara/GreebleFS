@@ -1,5 +1,37 @@
 # GreebleFS Memory
 
+## 2026-04-18 — PDF Preview Render Status Feedback Loop
+
+- The PDF workbench could get stuck flashing `Rendering PDF page…` even after the page image was visible.
+- Root cause:
+  - `ExplorerPdfWorkbench` only mounted the footer/status strip while `isRendering` or `error` was truthy.
+  - That footer lives outside the viewport flex child, so toggling it changed the measured viewport height.
+  - The workbench render effect depends on `viewportSize`, so the status strip itself became part of a resize -> render -> resize feedback loop.
+  - Separate from that, the `ResizeObserver` callback was always writing a fresh `{ width, height }` object even when the measured size had not changed, so duplicate observer notifications could still retrigger page renders.
+- Durable fix shape:
+  - `src/components/ExplorerPdfWorkbench.tsx` now keeps the footer/status strip mounted at a stable height and only changes its message/content, so render state no longer changes the viewport box model.
+  - The viewport container now uses `scrollbar-gutter: stable both-edges` to avoid fit-width oscillation when vertical scrollbars appear.
+  - The `ResizeObserver` state write now dedupes identical width/height pairs before updating React state.
+  - `src/test/explorerPdfWorkbench.test.tsx` now locks two invariants: the PDF footer stays mounted before the first page render finishes, and duplicate resize notifications do not trigger a second page render.
+- Durable product note:
+  - In preview surfaces that render from measured viewport size, status chrome must not mount/unmount in a way that changes the measured box. Keep the layout stable and vary content, not structure.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerPdfWorkbench.test.tsx src/test/fileExplorer.viewModes.test.tsx`
+  - passed: filtered typecheck via `bunx tsc --noEmit --pretty false 2>&1 | rg "ExplorerPdfWorkbench.tsx|explorerPdfWorkbench.test.tsx" || true`
+
+## 2026-04-18 — Explorer Folder Preview Mirrors Archive Contents Pattern
+
+- Clicking a folder in double-click navigation mode now opens a real preview-pane folder inspector instead of leaving the preview empty.
+- Durable implementation shape:
+  - `src/components/ExplorerFolderPreview.tsx` is new shell-owned folder preview surface. It mirrors archive-preview structure: header summary plus scrollable contents list, but it fetches live directory entries through the typed explorer backend and respects the current hidden-files setting.
+  - `src/components/FileExplorer.tsx` now treats directory selection as a first-class `preview.type === 'folder'` lane, renders the folder preview component in the existing preview pane, and allows plain-click preview for folders in the same click path already used for files.
+  - Folder preview stays in the shell/render lane. No new Rust truth was needed because existing `fs_list_dir_uncached` / typed explorer runtime already own directory listing truth.
+- Durable product note:
+  - Folder preview should stay a lightweight inspector over existing directory-list truth, not a second recursive explorer runtime inside the preview pane.
+  - If this lane grows richer later, prefer reusing explorer backend listing contracts and theme chrome rather than inventing a special folder-only native API without evidence.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "shows folder contents in preview pane when a folder is single-clicked in double-click mode"`
+
 ## 2026-04-18 — PDF Preview Callback Stability Regression
 
 - The inline PDF lane hit a React `Maximum update depth exceeded` failure plus intermittent `PDF preview session was not found` errors when opening a PDF.

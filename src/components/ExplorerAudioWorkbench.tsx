@@ -81,7 +81,7 @@ function formatDuration(seconds: number): string {
   if (hours > 0) {
     return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
   }
-  return `${minutes}:${minutes.toString().padStart(2, '0')}`;
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 }
 
 function formatDb(value: number | null | undefined): string {
@@ -1014,7 +1014,7 @@ export function ExplorerAudioWorkbench({
             <div>
               <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{audioName}</div>
               <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
-                {audioExtension.toUpperCase()} • {formatSize(audioSize)} • {formatDuration(analysis?.durationSeconds ?? effectiveDuration)} • {analysis?.sampleRateHz ? `${analysis.sampleRateHz} Hz` : 'Unknown Hz'} • {formatBpm(estimatedBpm)}
+                {audioExtension.toUpperCase()} • {formatSize(audioSize)} • {formatDuration(analysis?.durationSeconds ?? effectiveDuration)} • {analysis?.sampleRateHz ? `${analysis.sampleRateHz.toLocaleString()} Hz` : 'Unknown Hz'} • {formatBpm(estimatedBpm)}
               </div>
             </div>
           </div>
@@ -1157,7 +1157,7 @@ export function ExplorerAudioWorkbench({
                 <label className="pro-label">Pitch Shift ({formatPitchShift(pitchShiftCents)})</label>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input type="range" className="pro-slider" min="-1200" max="1200" step="1" value={pitchShiftCents} onChange={(event) => setPitchShiftCents(Number(event.target.value))} />
-                  <input type="number" className="pro-input" style={{ width: 70 }} min="-1200" max="1200" value={Math.round(pitchShiftCents)} onChange={(event) => { const nextValue = Number(event.target.value); if (Number.isFinite(nextValue)) setPitchShiftCents(clamp(nextValue, -1200, 1200)); }} />
+                  <input aria-label="Pitch shift cents" type="number" className="pro-input" style={{ width: 70 }} min="-1200" max="1200" value={Math.round(pitchShiftCents)} onChange={(event) => { const nextValue = Number(event.target.value); if (Number.isFinite(nextValue)) setPitchShiftCents(clamp(nextValue, -1200, 1200)); }} />
                 </div>
               </div>
               <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-start' }}>

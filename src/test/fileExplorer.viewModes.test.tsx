@@ -345,7 +345,14 @@ function dispatchLayoutWheelOnFileArea(deltaY: number) {
 }
 
 function getEntryIconSrc(entryName: string): string {
-  const entryLabel = screen.getByText(entryName);
+  const entryLabel = screen
+    .getAllByText(entryName)
+    .find((candidate) =>
+      candidate.closest('[data-overlay-explorer-plane="file-area"]'),
+    );
+  if (!entryLabel) {
+    throw new Error(`Explorer label not found for ${entryName}`);
+  }
   const entryRow = entryLabel.closest(
     'tr, [draggable="true"]',
   ) as HTMLElement | null;
@@ -990,6 +997,56 @@ describe("FileExplorer view modes", () => {
         .mocked(invoke)
         .mock.calls.some(([command]) => command === "fs_read_text_file"),
     ).toBe(false);
+  });
+
+  it("shows folder contents in preview pane when a folder is single-clicked in double-click mode", async () => {
+    const folderEntries = [
+      {
+        name: "shots",
+        path: `${REPO_ROOT}\\alpha\\shots`,
+        is_dir: true,
+        size: 0,
+        modified: 1713400000000,
+        extension: "",
+        is_hidden: false,
+        is_symlink: false,
+      },
+      {
+        name: "readme.md",
+        path: `${REPO_ROOT}\\alpha\\readme.md`,
+        is_dir: false,
+        size: 1024,
+        modified: 1713400000000,
+        extension: "md",
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ] as const;
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
+      const payload = args as { path?: string; showHidden?: boolean } | undefined;
+      if (
+        (command === "fs_list_dir" || command === "fs_list_dir_uncached") &&
+        payload?.path === `${REPO_ROOT}\\alpha`
+      ) {
+        return folderEntries;
+      }
+      return baseInvokeImplementation(command, args as never);
+    });
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    fireEvent.click(screen.getByText("alpha"));
+
+    expect(await screen.findByText("Folder Contents")).toBeInTheDocument();
+    expect(await screen.findByText("shots")).toBeInTheDocument();
+    expect(await screen.findByText("readme.md")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /copy path/i })).toBeInTheDocument();
   });
 
   it("routes pdf files into the inline pdf workbench and surfaces pdf chrome state", async () => {
@@ -1663,7 +1720,7 @@ describe("FileExplorer view modes", () => {
   );
 
   it.each(["icons-l", "list"] as const)(
-    "shows the primed open-folder icon on first click in double-click mode for %s view",
+    "shows the primed open-folder icon and loads folder preview on first click in double-click mode for %s view",
     async (viewMode) => {
       useSettingsStore.getState().updateExplorer({
         viewMode,
@@ -1688,7 +1745,7 @@ describe("FileExplorer view modes", () => {
               (args as { path?: string } | undefined)?.path ===
                 `${REPO_ROOT}\\alpha`,
           ),
-      ).toBe(false);
+      ).toBe(true);
       expect(getEntryIconSrc("alpha")).toContain("folder_open");
     },
   );
