@@ -8,7 +8,7 @@ members = [
   "crates/macos",
   "crates/overlay-contracts",
   "crates/overlay-theme",
-  "crates/yazi-specta", "crates/vst-host",
+  "crates/yazi-specta", "crates/vst-host", ".playground/terminal-shadow-probe",
 ]
 resolver = "2"
 
