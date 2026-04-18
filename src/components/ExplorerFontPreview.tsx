@@ -65,10 +65,17 @@ export function ExplorerFontPreview({
           throw new Error(result.error);
         }
 
-        const dataUrl = `data:font/${fontExtension};base64,${base64Data}`;
-        const fontFace = new FontFace(fontFamilyId, `url("${dataUrl}")`);
-        
+        const rawBase64 = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
+        const binaryString = window.atob(rawBase64);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        const fontFace = new FontFace(fontFamilyId, bytes.buffer);
         const resolvedFontFace = await fontFace.load();
+        
         if (!active) return;
 
         document.fonts.add(resolvedFontFace);

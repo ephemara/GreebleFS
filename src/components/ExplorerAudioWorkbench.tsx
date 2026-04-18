@@ -346,6 +346,7 @@ export function ExplorerAudioWorkbench({
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const snapshot = useAudioEngineSnapshot();
   const settings = useSettingsStore((state) => state.settings);
+  const keybindings = settings.keybindings;
   const activeDeckId = 'a' as const;
 
   const [analysis, setAnalysis] = useState<ExplorerAudioPreviewAnalysis | null>(null);
