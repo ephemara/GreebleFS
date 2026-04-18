@@ -102,6 +102,7 @@ import {
   buildTerminalViewportContentFilter,
   type TerminalRendererMode,
 } from './terminal/TerminalViewportFx';
+import { shouldLoadTerminalWebglRenderer } from './terminal/terminalRendererSupport';
 
 export type ThemeId = 'operator' | 'dracula' | 'nord' | 'monokai' | 'github-dark' | 'catppuccin';
 
@@ -551,6 +552,7 @@ function XTermPane({
   const onOutputRef = useRef(onOutput);
   const onResizeRef = useRef(onResize);
   const rendererPreference = workbenchTheme.terminalRenderer;
+  const allowTransparency = rendererPreference === 'dom' && workbenchTheme.terminalStyle === 'glass';
   const viewportContentFilter = useMemo(
     () => buildTerminalViewportContentFilter(workbenchTheme.terminalFx, rendererMode, active, outputActive),
     [active, outputActive, rendererMode, workbenchTheme.terminalFx],
@@ -570,10 +572,12 @@ function XTermPane({
   }, []);
 
   const attachWebglRenderer = useCallback((term: XTerm) => {
-    if (rendererPreference === 'dom') {
+    if (!shouldLoadTerminalWebglRenderer(rendererPreference)) {
+      disposeWebglRenderer();
       setRendererMode('dom');
       return;
     }
+
     if (webglAddonRef.current) {
       setRendererMode('webgl');
       return;
@@ -594,7 +598,17 @@ function XTermPane({
     }
   }, [disposeWebglRenderer, rendererPreference]);
 
+  const rendererModeRef = useRef<TerminalRendererMode>('dom');
+
+  useEffect(() => {
+    rendererModeRef.current = rendererMode;
+  }, [rendererMode]);
+
   const markOutputActive = useCallback(() => {
+    if (rendererModeRef.current === 'webgl') {
+      return;
+    }
+
     setOutputActive(true);
     if (outputActiveTimeoutRef.current !== null) {
       window.clearTimeout(outputActiveTimeoutRef.current);
@@ -618,7 +632,7 @@ function XTermPane({
       cursorBlink:       settings.cursorBlink  ?? true,
       cursorStyle:       settings.cursorStyle   || 'bar',
       scrollback:        settings.scrollback    || 10000,
-      allowTransparency: workbenchTheme.terminalStyle === 'glass',
+      allowTransparency,
       convertEol:        true,
       scrollOnUserInput: true,
     });
@@ -744,7 +758,7 @@ function XTermPane({
     onResizeRef.current?.(id, term.rows, term.cols);
     onReadyRef.current?.(id);
     term.focus();
-  }, [attachWebglRenderer, disposeWebglRenderer, id, markOutputActive, settings, theme, workbenchTheme.terminalStyle]);
+  }, [allowTransparency, attachWebglRenderer, disposeWebglRenderer, id, markOutputActive, settings, theme, workbenchTheme.terminalStyle]);
 
   useEffect(() => {
     if (visible) {
@@ -766,6 +780,7 @@ function XTermPane({
       cursorBlink: settings.cursorBlink ?? true,
       cursorStyle: settings.cursorStyle || 'bar',
       scrollback: settings.scrollback || 10000,
+      allowTransparency,
     };
     webglAddonRef.current?.clearTextureAtlas();
 
@@ -792,7 +807,7 @@ function XTermPane({
       return;
     }
 
-    if (rendererPreference === 'dom') {
+    if (!shouldLoadTerminalWebglRenderer(rendererPreference)) {
       disposeWebglRenderer();
       setRendererMode('dom');
       return;

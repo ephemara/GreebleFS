@@ -101,6 +101,16 @@
   - passed: `bunx vitest run src/test/workbenchTheme.test.ts src/test/terminalOverlay.test.tsx`
   - passed: filtered typecheck via `bunx tsc --noEmit --pretty false 2>&1 | rg "src/components/TerminalOverlay|src/components/terminal/TerminalViewportFx|src/config/workbenchTheme|src/config/pilotThemeContract|src/test/terminalOverlay.test|src/test/workbenchTheme.test" || true`
 
+## 2026-04-18 — Terminal WebGL Auto-Selection Hardened For Linux
+
+- The embedded terminal WebGL path now avoids loading the addon when the browser-probed `webgl2` context looks software-backed or unavailable. That keeps `auto` from choosing a renderer that is technically present but operationally slow on the current webview/driver stack.
+- The WebGL probe now retries without `failIfMajorPerformanceCaveat` after the strict probe path, so a GPU-backed browser context that is merely caveated still gets the WebGL renderer instead of getting stuck on the slow fallback path.
+- `TerminalOverlay.tsx` also stopped carrying the expensive FX overlay in the WebGL hot path and now keeps xterm opaque when WebGL is active. The remaining FX overlay is DOM-only.
+- Durable product note:
+  - For embedded terminals on Linux, treat WebGL as a capability that must be proven by the webview and GPU stack, not assumed because the machine has an RTX card. If the browser probe says software or the compositor path is pathological, prefer the DOM renderer and keep the pane surface opaque.
+- Validation:
+  - passed: `bunx vitest run src/test/terminalRendererSupport.test.ts src/test/terminalOverlay.test.tsx src/test/workbenchTheme.test.ts`
+
 ## 2026-04-18 — Terminal Split Drag Uses Imperative Preview Geometry
 
 - Embedded terminal pane-resize drag no longer drives the entire terminal shell through React state updates on every pointer move.

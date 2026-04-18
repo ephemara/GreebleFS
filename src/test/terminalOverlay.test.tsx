@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/appearance';
+import { resetTerminalWebglSupportCacheForTests } from '../components/terminal/terminalRendererSupport';
 import { useExplorerStore } from '../store/explorerStore';
 
 const { mockWebglAddonInstances, mockXtermInstances } = vi.hoisted(() => ({
@@ -13,11 +14,13 @@ const { mockWebglAddonInstances, mockXtermInstances } = vi.hoisted(() => ({
   }[],
   mockXtermInstances: [] as {
     clear: ReturnType<typeof vi.fn>;
+    bootOptions: Record<string, unknown>;
     loadAddon: ReturnType<typeof vi.fn>;
+    options: Record<string, unknown>;
     reset: ReturnType<typeof vi.fn>;
     emitData: (data: string) => void;
   }[],
-}));
+})); 
 
 class MockXtermLine {
   constructor(private readonly text: string) {}
@@ -31,6 +34,7 @@ vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     rows = 24;
     cols = 80;
+    bootOptions: Record<string, unknown> = {};
     options: Record<string, unknown> = {};
     selection = '';
     private dataHandler: ((data: string) => void) | null = null;
@@ -58,7 +62,9 @@ vi.mock('@xterm/xterm', () => ({
       },
     };
 
-    constructor() {
+    constructor(initialOptions: Record<string, unknown> = {}) {
+      this.bootOptions = initialOptions;
+      this.options = initialOptions;
       mockXtermInstances.push(this);
     }
 
@@ -112,6 +118,7 @@ describe('TerminalOverlay', () => {
   beforeEach(() => {
     mockWebglAddonInstances.length = 0;
     mockXtermInstances.length = 0;
+    resetTerminalWebglSupportCacheForTests();
     vi.mocked(invoke).mockReset();
     vi.mocked(invoke).mockResolvedValue(null);
     useSettingsStore.getState().resetToDefaults();
@@ -123,6 +130,12 @@ describe('TerminalOverlay', () => {
         observe() {}
         disconnect() {}
       },
+    });
+
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockReturnValue(null),
     });
 
     Object.defineProperty(navigator, 'clipboard', {
@@ -290,7 +303,45 @@ describe('TerminalOverlay', () => {
     });
   }, 20000);
 
-  it('boots the pane with the WebGL renderer and theme-owned terminal fx when requested', async () => {
+  it('boots the pane with the WebGL renderer when hardware support is available and suppresses viewport fx on the hot path', async () => {
+    const hardwareRenderer = 'NVIDIA Corporation Quadro RTX 3000/PCIe/SSE2';
+    const debugRendererInfo = {
+      UNMASKED_VENDOR_WEBGL: 0x9245,
+      UNMASKED_RENDERER_WEBGL: 0x9246,
+    };
+    const getContextMock = vi.fn((kind: string) => {
+      if (kind !== 'webgl2') {
+        return null;
+      }
+
+      return {
+        getExtension: (name: string) => {
+          if (name === 'WEBGL_debug_renderer_info') {
+            return debugRendererInfo;
+          }
+          if (name === 'WEBGL_lose_context') {
+            return { loseContext: vi.fn() };
+          }
+          return null;
+        },
+        getParameter: (parameter: number) => {
+          if (parameter === debugRendererInfo.UNMASKED_VENDOR_WEBGL) {
+            return 'NVIDIA Corporation';
+          }
+          if (parameter === debugRendererInfo.UNMASKED_RENDERER_WEBGL) {
+            return hardwareRenderer;
+          }
+          return null;
+        },
+      };
+    });
+
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+      configurable: true,
+      writable: true,
+      value: getContextMock,
+    });
+
     const appearance = resolveOverlayAppearance({
       customThemes: [
         normalizeThemeDefinition({
@@ -314,9 +365,14 @@ describe('TerminalOverlay', () => {
       expect(mockWebglAddonInstances).toHaveLength(1);
     });
 
+    expect(getContextMock).toHaveBeenCalledWith('webgl2', expect.objectContaining({
+      failIfMajorPerformanceCaveat: true,
+      powerPreference: 'high-performance',
+    }));
     expect(mockXtermInstances[0]?.loadAddon).toHaveBeenCalledWith(mockWebglAddonInstances[0]);
+    expect(mockXtermInstances[0]?.bootOptions.allowTransparency).toBe(false);
     expect(screen.getByTestId('terminal-pane-viewport-overlay-0')).toHaveAttribute('data-terminal-renderer-mode', 'webgl');
-    expect(screen.getByTestId('terminal-pane-fx-overlay-0')).toHaveAttribute('data-terminal-fx-preset', 'crt');
+    expect(screen.queryByTestId('terminal-pane-fx-overlay-0')).not.toBeInTheDocument();
   }, 20000);
 
   it('lets the embedded terminal tuck the sidebar away and persist that choice', async () => {

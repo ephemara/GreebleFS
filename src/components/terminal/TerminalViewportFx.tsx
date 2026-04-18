@@ -51,29 +51,28 @@ export function TerminalViewportFx({
   terminalFx,
   theme,
 }: TerminalViewportFxProps) {
-  if (!terminalFx.enabled || terminalFx.opacity <= 0.001) {
+  if (!terminalFx.enabled || terminalFx.opacity <= 0.001 || rendererMode === 'webgl' || outputActive) {
     return null;
   }
 
   const activityMix = active ? 1 : 0.78;
   const fxOpacity = terminalFx.opacity * activityMix;
-  const simplifyEffects = outputActive || rendererMode === 'webgl';
   const scanlineColor = multiplyColorAlpha(theme.text, terminalFx.scanlineOpacity * fxOpacity);
   const noiseColor = multiplyColorAlpha(theme.text, terminalFx.noiseOpacity * fxOpacity * 0.72);
   const vignetteColor = multiplyColorAlpha('#000000', terminalFx.vignetteOpacity * fxOpacity);
   const tintTopColor = multiplyColorAlpha(
     terminalFx.tintColor,
-    terminalFx.tintOpacity * fxOpacity * (simplifyEffects ? 0.28 : 0.5),
+    terminalFx.tintOpacity * fxOpacity * 0.5,
   );
   const tintBottomColor = multiplyColorAlpha(
     terminalFx.tintColor,
-    terminalFx.tintOpacity * fxOpacity * (simplifyEffects ? 0.58 : 1),
+    terminalFx.tintOpacity * fxOpacity,
   );
   const glowColor = multiplyColorAlpha(
     terminalFx.tintColor,
-    terminalFx.glowOpacity * fxOpacity * (simplifyEffects ? 0.28 : 0.42),
+    terminalFx.glowOpacity * fxOpacity * 0.42,
   );
-  const borderGlowColor = multiplyColorAlpha(theme.border, (simplifyEffects ? 0.22 : 0.48) * fxOpacity);
+  const borderGlowColor = multiplyColorAlpha(theme.border, 0.48 * fxOpacity);
   const curvatureShade = multiplyColorAlpha('#000000', terminalFx.curvature * fxOpacity * 0.18);
   const curvatureScale = 1 - terminalFx.curvature * 0.022;
 
@@ -89,7 +88,7 @@ export function TerminalViewportFx({
         className="absolute inset-0"
         style={{
           backgroundImage: `repeating-linear-gradient(180deg, ${scanlineColor} 0 1px, transparent 1px 4px)`,
-          opacity: terminalFx.scanlineOpacity > 0.001 ? (simplifyEffects ? 0.42 : 1) : 0,
+          opacity: terminalFx.scanlineOpacity > 0.001 ? 1 : 0,
         }}
       />
       <div
@@ -98,32 +97,28 @@ export function TerminalViewportFx({
           backgroundImage: `radial-gradient(140% 118% at 50% 48%, transparent 44%, ${vignetteColor} 100%), linear-gradient(180deg, ${tintTopColor} 0%, transparent 34%, ${tintBottomColor} 100%)`,
         }}
       />
-      {!simplifyEffects && (
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage: `radial-gradient(circle at 17% 23%, ${noiseColor} 0 1px, transparent 1.2px), radial-gradient(circle at 83% 31%, ${noiseColor} 0 1px, transparent 1.2px), radial-gradient(circle at 61% 69%, ${noiseColor} 0 1px, transparent 1.2px), radial-gradient(circle at 31% 78%, ${noiseColor} 0 1px, transparent 1.2px)`,
-            backgroundSize: '19px 19px, 27px 27px, 31px 31px, 23px 23px',
-            opacity: terminalFx.noiseOpacity > 0.001 ? 1 : 0,
-          }}
-        />
-      )}
-      {!simplifyEffects && (
-        <div
-          className="absolute inset-[2px]"
-          style={{
-            borderRadius: 'inherit',
-            backgroundImage: `radial-gradient(125% 76% at 50% -8%, ${curvatureShade} 0%, transparent 52%), radial-gradient(125% 76% at 50% 108%, ${curvatureShade} 0%, transparent 52%)`,
-            transform: terminalFx.curvature > 0.001 ? `scaleY(${curvatureScale.toFixed(4)})` : undefined,
-            transformOrigin: 'center center',
-          }}
-        />
-      )}
+      <div
+        className="absolute inset-0"
+        style={{
+          backgroundImage: `radial-gradient(circle at 17% 23%, ${noiseColor} 0 1px, transparent 1.2px), radial-gradient(circle at 83% 31%, ${noiseColor} 0 1px, transparent 1.2px), radial-gradient(circle at 61% 69%, ${noiseColor} 0 1px, transparent 1.2px), radial-gradient(circle at 31% 78%, ${noiseColor} 0 1px, transparent 1.2px)`,
+          backgroundSize: '19px 19px, 27px 27px, 31px 31px, 23px 23px',
+          opacity: terminalFx.noiseOpacity > 0.001 ? 1 : 0,
+        }}
+      />
+      <div
+        className="absolute inset-[2px]"
+        style={{
+          borderRadius: 'inherit',
+          backgroundImage: `radial-gradient(125% 76% at 50% -8%, ${curvatureShade} 0%, transparent 52%), radial-gradient(125% 76% at 50% 108%, ${curvatureShade} 0%, transparent 52%)`,
+          transform: terminalFx.curvature > 0.001 ? `scaleY(${curvatureScale.toFixed(4)})` : undefined,
+          transformOrigin: 'center center',
+        }}
+      />
       <div
         className="absolute inset-0"
         style={{
           borderRadius: 'inherit',
-          boxShadow: `inset 0 0 ${Math.round((simplifyEffects ? 10 : 18) + terminalFx.glowOpacity * (simplifyEffects ? 14 : 24))}px ${glowColor}, inset 0 0 0 1px ${borderGlowColor}`,
+          boxShadow: `inset 0 0 ${Math.round(18 + terminalFx.glowOpacity * 24)}px ${glowColor}, inset 0 0 0 1px ${borderGlowColor}`,
           opacity: 0.96,
         }}
       />
