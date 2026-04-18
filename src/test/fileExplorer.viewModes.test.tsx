@@ -1031,9 +1031,16 @@ describe("FileExplorer view modes", () => {
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
       "details",
     );
-    expect(screen.getAllByText(/constellation view/i).length).toBeGreaterThan(
-      0,
-    );
+    expect(
+      screen.getByRole("button", {
+        name: /experimental view modes: constellation view/i,
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(
+        /cluster files by relationship and navigate the orbit field\./i,
+      ),
+    ).toBeNull();
   });
 
   it("activates timeline surface without mutating the saved normal layout mode", async () => {
@@ -1055,7 +1062,16 @@ describe("FileExplorer view modes", () => {
     expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
       "columns",
     );
-    expect(screen.getAllByText(/timeline surface/i).length).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("button", {
+        name: /experimental view modes: timeline surface/i,
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(
+        /browse folders and files as time-banded activity surfaces\./i,
+      ),
+    ).toBeNull();
     expect(screen.getAllByText(/undated/i).length).toBeGreaterThan(0);
   });
 
