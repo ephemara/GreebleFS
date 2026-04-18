@@ -167,6 +167,7 @@ import { ExplorerAudioWorkbench } from "./ExplorerAudioWorkbench";
 import { ExplorerImageEditor } from "./ExplorerImageEditor";
 import { ExplorerVideoEditor } from "./ExplorerVideoEditor";
 import { ExplorerArchivePreview } from "./ExplorerArchivePreview";
+import { ExplorerFontPreview } from "./ExplorerFontPreview";
 import {
   type ExplorerBatchRenameMode,
   type ExplorerBatchRenamePreviewRow,
@@ -225,6 +226,7 @@ import {
   isEditableTextExtension,
   isExecutableExtension,
   isImagePreviewExtension,
+  isFontPreviewExtension,
   isVideoPreviewExtension,
   type ModelPreviewFormat,
 } from "../config/filePreview";
@@ -474,6 +476,14 @@ type PreviewState =
       source: string;
       extension: string;
       mimeType: string | null;
+      size: number;
+    }
+  | {
+      type: "font";
+      path: string;
+      name: string;
+      source: string;
+      extension: string;
       size: number;
     }
   | {
@@ -3035,6 +3045,14 @@ function PreviewPanel({
             archiveSize={preview.size}
             descriptor={preview.descriptor}
             onExtract={onExtractArchive}
+          />
+        )}
+        {preview.type === "font" && (
+          <ExplorerFontPreview
+            fontPath={preview.path}
+            fontName={preview.name}
+            fontSource={preview.source}
+            fontExtension={preview.extension}
           />
         )}
         {preview.type === "text" &&
@@ -7791,6 +7809,21 @@ export function FileExplorer({
           if (isCurrentPreviewRequest()) {
             setPreviewLoading(false);
           }
+        }
+        return;
+      }
+
+      if (isFontPreviewExtension(ext)) {
+        if (isCurrentPreviewRequest()) {
+          setPreview({
+            type: "font",
+            path: entry.path,
+            name: entry.name,
+            source: getPreviewAssetUrl(entry.path),
+            extension: ext,
+            size: entry.size,
+          });
+          setPreviewLoading(false);
         }
         return;
       }

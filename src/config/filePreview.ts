@@ -229,8 +229,21 @@ const VIDEO_PREVIEW_EXTENSION_SET = new Set<string>(
 const EXECUTABLE_EXTENSION_SET = new Set<string>(EXECUTABLE_EXTENSIONS);
 const EDITABLE_TEXT_EXTENSION_SET = new Set<string>(EDITABLE_TEXT_EXTENSIONS);
 
+const FONT_PREVIEW_EXTENSIONS = [
+  "ttf",
+  "otf",
+  "woff",
+  "woff2",
+] as const;
+
+const FONT_PREVIEW_EXTENSION_SET = new Set<string>(FONT_PREVIEW_EXTENSIONS);
+
 export function isImagePreviewExtension(extension: string): boolean {
   return IMAGE_PREVIEW_EXTENSION_SET.has(normalizeExtension(extension));
+}
+
+export function isFontPreviewExtension(extension: string): boolean {
+  return FONT_PREVIEW_EXTENSION_SET.has(normalizeExtension(extension));
 }
 
 export function isExecutableExtension(extension: string): boolean {
@@ -310,6 +323,9 @@ export function isEditableTextExtension(
     return false;
   }
   if (isVideoPreviewExtension(normalizedExtension)) {
+    return false;
+  }
+  if (isFontPreviewExtension(normalizedExtension)) {
     return false;
   }
   if (getModelPreviewFormat(normalizedExtension)) {
