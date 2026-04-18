@@ -301,13 +301,10 @@ impl PdfPreviewManager {
                 .sessions
                 .lock()
                 .map_err(|_| "PDF preview session map was poisoned.".to_string())?;
-            let session = sessions
-                .get(&request.session_id)
-                .ok_or_else(|| format!("PDF preview session was not found: {}", request.session_id))?;
-            (
-                session.source_path.clone(),
-                session.document.page_count,
-            )
+            let session = sessions.get(&request.session_id).ok_or_else(|| {
+                format!("PDF preview session was not found: {}", request.session_id)
+            })?;
+            (session.source_path.clone(), session.document.page_count)
         };
 
         if request.page_index >= page_count {
@@ -339,10 +336,13 @@ impl PdfPreviewManager {
                 .sessions
                 .lock()
                 .map_err(|_| "PDF preview session map was poisoned.".to_string())?;
-            let session = sessions
-                .get(&request.session_id)
-                .ok_or_else(|| format!("PDF preview session was not found: {}", request.session_id))?;
-            (session.source_path.clone(), session.document.session_id.clone())
+            let session = sessions.get(&request.session_id).ok_or_else(|| {
+                format!("PDF preview session was not found: {}", request.session_id)
+            })?;
+            (
+                session.source_path.clone(),
+                session.document.session_id.clone(),
+            )
         };
 
         save_pdf_preview_edits_to_file(&source_path, &request)?;
@@ -433,8 +433,12 @@ fn build_pdf_preview_document(
         });
     }
 
-    let lopdf_document = Document::load(source_path)
-        .map_err(|error| format!("Failed to load PDF document '{}': {error}", source_path.display()))?;
+    let lopdf_document = Document::load(source_path).map_err(|error| {
+        format!(
+            "Failed to load PDF document '{}': {error}",
+            source_path.display()
+        )
+    })?;
     ensure_pdf_edit_supported(&lopdf_document, source_path)?;
     let page_context = build_pdf_page_context(&lopdf_document, &pages)?;
     let form_fields = extract_pdf_form_fields(&lopdf_document, &page_context)?;
@@ -457,19 +461,27 @@ fn save_pdf_preview_edits_to_file(
     source_path: &Path,
     request: &PdfSaveEditsRequest,
 ) -> Result<(), String> {
-    let mut document = Document::load(source_path)
-        .map_err(|error| format!("Failed to load PDF document '{}': {error}", source_path.display()))?;
+    let mut document = Document::load(source_path).map_err(|error| {
+        format!(
+            "Failed to load PDF document '{}': {error}",
+            source_path.display()
+        )
+    })?;
     ensure_pdf_edit_supported(&document, source_path)?;
-    let page_descriptors = collect_lopdf_page_descriptors(&source_path.to_string_lossy(), &document)?;
+    let page_descriptors =
+        collect_lopdf_page_descriptors(&source_path.to_string_lossy(), &document)?;
     let page_context = build_pdf_page_context(&document, &page_descriptors)?;
 
     set_need_appearances(&mut document)?;
     apply_pdf_form_updates(&mut document, &request.form_updates)?;
     replace_pdf_overlay_annotations(&mut document, &page_context, &request.page_overlays)?;
 
-    document
-        .save(source_path)
-        .map_err(|error| format!("Failed to save PDF document '{}': {error}", source_path.display()))?;
+    document.save(source_path).map_err(|error| {
+        format!(
+            "Failed to save PDF document '{}': {error}",
+            source_path.display()
+        )
+    })?;
     Ok(())
 }
 
@@ -489,15 +501,20 @@ fn render_pdf_preview_page(
             request.page_index
         )
     })?;
-    let page = pdfium_document
-        .pages()
-        .get(page_index)
-        .map_err(|error| format!("Failed to load PDF page {}: {error}", request.page_index + 1))?;
+    let page = pdfium_document.pages().get(page_index).map_err(|error| {
+        format!(
+            "Failed to load PDF page {}: {error}",
+            request.page_index + 1
+        )
+    })?;
 
     let render_config = build_pdf_render_config(&request);
-    let rendered_page = page
-        .render_with_config(&render_config)
-        .map_err(|error| format!("Failed to render PDF page {}: {error}", request.page_index + 1))?;
+    let rendered_page = page.render_with_config(&render_config).map_err(|error| {
+        format!(
+            "Failed to render PDF page {}: {error}",
+            request.page_index + 1
+        )
+    })?;
     let rendered_image = rendered_page.as_image();
     let image_data_url = png_data_url_from_dynamic_image(&rendered_image)?;
 
@@ -546,9 +563,7 @@ fn build_pdf_render_config(request: &PdfPageRenderRequest) -> PdfRenderConfig {
         .render_annotations(true);
 
     match request.fit_mode {
-        PdfPageRenderFitMode::FitWidth => {
-            base.set_target_width(request.viewport_width_px as i32)
-        }
+        PdfPageRenderFitMode::FitWidth => base.set_target_width(request.viewport_width_px as i32),
         PdfPageRenderFitMode::FitPage => base.scale_page_to_display_size(
             request.viewport_width_px as i32,
             request.viewport_height_px as i32,
@@ -564,10 +579,16 @@ fn normalize_pdf_source_path(input_path: &str) -> Result<PathBuf, String> {
     }
     let path = PathBuf::from(trimmed);
     if !path.exists() {
-        return Err(format!("PDF preview input does not exist: {}", path.display()));
+        return Err(format!(
+            "PDF preview input does not exist: {}",
+            path.display()
+        ));
     }
     if !path.is_file() {
-        return Err(format!("PDF preview input is not a file: {}", path.display()));
+        return Err(format!(
+            "PDF preview input is not a file: {}",
+            path.display()
+        ));
     }
     Ok(path)
 }
@@ -730,9 +751,12 @@ fn collect_pdf_form_field_descriptors(
     inherited_context: &PdfFieldContext,
     descriptors: &mut Vec<PdfFormFieldDescriptor>,
 ) -> Result<(), String> {
-    let field_dictionary = document
-        .get_dictionary(field_object_id)
-        .map_err(|error| format!("Failed to inspect PDF form field {:?}: {error}", field_object_id))?;
+    let field_dictionary = document.get_dictionary(field_object_id).map_err(|error| {
+        format!(
+            "Failed to inspect PDF form field {:?}: {error}",
+            field_object_id
+        )
+    })?;
 
     let field_type = field_dictionary
         .get(b"FT")
@@ -747,10 +771,7 @@ fn collect_pdf_form_field_descriptors(
         .unwrap_or(inherited_context.flags);
     let field_name = combine_pdf_field_name(
         inherited_context.field_name.clone(),
-        field_dictionary
-            .get(b"T")
-            .ok()
-            .and_then(object_text_string),
+        field_dictionary.get(b"T").ok().and_then(object_text_string),
     );
     let field_value = field_dictionary
         .get(b"V")
@@ -765,8 +786,12 @@ fn collect_pdf_form_field_descriptors(
         value: field_value.clone(),
     };
 
-    let is_widget =
-        field_dictionary.get(b"Subtype").ok().and_then(object_name_string).as_deref() == Some("Widget");
+    let is_widget = field_dictionary
+        .get(b"Subtype")
+        .ok()
+        .and_then(object_name_string)
+        .as_deref()
+        == Some("Widget");
     if is_widget {
         if let Some(descriptor) = build_pdf_form_field_descriptor(
             document,
@@ -787,8 +812,12 @@ fn collect_pdf_form_field_descriptors(
             let kid_dictionary = document
                 .get_dictionary(kid_id)
                 .map_err(|error| format!("Failed to inspect PDF form kid {:?}: {error}", kid_id))?;
-            let kid_is_widget =
-                kid_dictionary.get(b"Subtype").ok().and_then(object_name_string).as_deref() == Some("Widget");
+            let kid_is_widget = kid_dictionary
+                .get(b"Subtype")
+                .ok()
+                .and_then(object_name_string)
+                .as_deref()
+                == Some("Widget");
             if kid_is_widget {
                 if let Some(descriptor) = build_pdf_form_field_descriptor(
                     document,
@@ -835,7 +864,9 @@ fn build_pdf_form_field_descriptor(
         return Ok(None);
     };
 
-    let Some(page_index) = resolve_pdf_widget_page_index(document, page_context, widget_object_id, widget_dictionary) else {
+    let Some(page_index) =
+        resolve_pdf_widget_page_index(document, page_context, widget_object_id, widget_dictionary)
+    else {
         return Ok(None);
     };
     let page_height = page_context
@@ -852,7 +883,12 @@ fn build_pdf_form_field_descriptor(
         .clone()
         .unwrap_or_else(|| format!("Field {}", object_id_to_string(widget_object_id)));
     let group_name = if field_name.contains('.') {
-        field_name.split('.').rev().skip(1).last().map(str::to_string)
+        field_name
+            .split('.')
+            .rev()
+            .skip(1)
+            .last()
+            .map(str::to_string)
     } else {
         None
     };
@@ -919,7 +955,12 @@ fn build_pdf_form_field_descriptor(
             let options = widget_dictionary
                 .get(b"Opt")
                 .ok()
-                .or_else(|| document.get_dictionary(widget_object_id).ok().and_then(|dict| dict.get(b"Opt").ok()))
+                .or_else(|| {
+                    document
+                        .get_dictionary(widget_object_id)
+                        .ok()
+                        .and_then(|dict| dict.get(b"Opt").ok())
+                })
                 .map(|object| parse_pdf_choice_options(document, object))
                 .transpose()?
                 .unwrap_or_default();
@@ -962,7 +1003,10 @@ fn resolve_pdf_widget_page_index(
         .ok()
         .and_then(|object| object.as_reference().ok())
     {
-        if let Some(page_index) = page_context.page_index_by_object_id.get(&page_object_id).copied()
+        if let Some(page_index) = page_context
+            .page_index_by_object_id
+            .get(&page_object_id)
+            .copied()
         {
             return Some(page_index);
         }
@@ -981,7 +1025,11 @@ fn resolve_pdf_widget_page_index(
         .ok()
         .and_then(|object| object.as_reference().ok())
     {
-        if let Some(page_index) = page_context.page_index_by_annotation_id.get(&parent_id).copied() {
+        if let Some(page_index) = page_context
+            .page_index_by_annotation_id
+            .get(&parent_id)
+            .copied()
+        {
             return Some(page_index);
         }
     }
@@ -989,7 +1037,12 @@ fn resolve_pdf_widget_page_index(
     document
         .get_object_page(widget_object_id)
         .ok()
-        .and_then(|page_object_id| page_context.page_index_by_object_id.get(&page_object_id).copied())
+        .and_then(|page_object_id| {
+            page_context
+                .page_index_by_object_id
+                .get(&page_object_id)
+                .copied()
+        })
 }
 
 fn parse_pdf_widget_rect(
@@ -1043,7 +1096,10 @@ fn parse_pdf_choice_options(
     let mut options = Vec::new();
     for option_entry in option_entries {
         if let Ok(option_pair) = option_entry.as_array() {
-            let value = option_pair.first().and_then(object_text_or_name_string).unwrap_or_default();
+            let value = option_pair
+                .first()
+                .and_then(object_text_or_name_string)
+                .unwrap_or_default();
             let label = option_pair
                 .get(1)
                 .and_then(object_text_or_name_string)
@@ -1087,19 +1143,30 @@ fn resolve_object_dictionary<'a>(
 ) -> Result<&'a Dictionary, String> {
     match object {
         Object::Dictionary(dictionary) => Ok(dictionary),
-        Object::Reference(object_id) => document
-            .get_dictionary(*object_id)
-            .map_err(|error| format!("Failed to resolve PDF dictionary reference {:?}: {error}", object_id)),
+        Object::Reference(object_id) => document.get_dictionary(*object_id).map_err(|error| {
+            format!(
+                "Failed to resolve PDF dictionary reference {:?}: {error}",
+                object_id
+            )
+        }),
         _ => Err("Expected PDF dictionary object.".to_string()),
     }
 }
 
-fn resolve_object_array<'a>(document: &'a Document, object: &'a Object) -> Result<&'a Vec<Object>, String> {
+fn resolve_object_array<'a>(
+    document: &'a Document,
+    object: &'a Object,
+) -> Result<&'a Vec<Object>, String> {
     match object {
         Object::Array(array) => Ok(array),
         Object::Reference(object_id) => document
             .get_object(*object_id)
-            .map_err(|error| format!("Failed to resolve PDF array reference {:?}: {error}", object_id))?
+            .map_err(|error| {
+                format!(
+                    "Failed to resolve PDF array reference {:?}: {error}",
+                    object_id
+                )
+            })?
             .as_array()
             .map_err(|error| format!("Resolved PDF object was not an array: {error}")),
         _ => Err("Expected PDF array object.".to_string()),
@@ -1148,7 +1215,9 @@ fn parse_object_id(value: &str) -> Result<ObjectId, String> {
         .next()
         .ok_or_else(|| format!("PDF object generation was missing: {value}"))?
         .parse::<u16>()
-        .map_err(|error| format!("Failed to parse PDF object generation from '{value}': {error}"))?;
+        .map_err(|error| {
+            format!("Failed to parse PDF object generation from '{value}': {error}")
+        })?;
     if segments.next().is_some() {
         return Err(format!("PDF object id had too many segments: {value}"));
     }
@@ -1193,7 +1262,11 @@ fn apply_pdf_form_updates(
 
         match field_type.as_str() {
             "Tx" => {
-                set_pdf_field_string_value(document, owner_object_id, update.string_value.clone().unwrap_or_default())?;
+                set_pdf_field_string_value(
+                    document,
+                    owner_object_id,
+                    update.string_value.clone().unwrap_or_default(),
+                )?;
             }
             "Ch" => {
                 let selected_value = update
@@ -1228,10 +1301,16 @@ fn apply_pdf_form_updates(
     Ok(())
 }
 
-fn resolve_pdf_field_owner_id(document: &Document, widget_object_id: ObjectId) -> Result<ObjectId, String> {
-    let widget_dictionary = document
-        .get_dictionary(widget_object_id)
-        .map_err(|error| format!("Failed to inspect PDF widget {:?}: {error}", widget_object_id))?;
+fn resolve_pdf_field_owner_id(
+    document: &Document,
+    widget_object_id: ObjectId,
+) -> Result<ObjectId, String> {
+    let widget_dictionary = document.get_dictionary(widget_object_id).map_err(|error| {
+        format!(
+            "Failed to inspect PDF widget {:?}: {error}",
+            widget_object_id
+        )
+    })?;
 
     if widget_dictionary.get(b"FT").is_ok() {
         return Ok(widget_object_id);
@@ -1239,12 +1318,25 @@ fn resolve_pdf_field_owner_id(document: &Document, widget_object_id: ObjectId) -
 
     widget_dictionary
         .get(b"Parent")
-        .map_err(|error| format!("PDF widget {:?} is missing Parent: {error}", widget_object_id))?
+        .map_err(|error| {
+            format!(
+                "PDF widget {:?} is missing Parent: {error}",
+                widget_object_id
+            )
+        })?
         .as_reference()
-        .map_err(|error| format!("PDF widget {:?} parent reference was invalid: {error}", widget_object_id))
+        .map_err(|error| {
+            format!(
+                "PDF widget {:?} parent reference was invalid: {error}",
+                widget_object_id
+            )
+        })
 }
 
-fn resolve_pdf_field_type(document: &Document, object_id: ObjectId) -> Result<Option<String>, String> {
+fn resolve_pdf_field_type(
+    document: &Document,
+    object_id: ObjectId,
+) -> Result<Option<String>, String> {
     let dictionary = document
         .get_dictionary(object_id)
         .map_err(|error| format!("Failed to inspect PDF field {:?}: {error}", object_id))?;
@@ -1252,7 +1344,11 @@ fn resolve_pdf_field_type(document: &Document, object_id: ObjectId) -> Result<Op
         return Ok(Some(field_type));
     }
 
-    if let Some(parent_id) = dictionary.get(b"Parent").ok().and_then(|object| object.as_reference().ok()) {
+    if let Some(parent_id) = dictionary
+        .get(b"Parent")
+        .ok()
+        .and_then(|object| object.as_reference().ok())
+    {
         return resolve_pdf_field_type(document, parent_id);
     }
 
@@ -1272,7 +1368,11 @@ fn resolve_pdf_field_flags(document: &Document, object_id: ObjectId) -> Result<u
         return Ok(flags);
     }
 
-    if let Some(parent_id) = dictionary.get(b"Parent").ok().and_then(|object| object.as_reference().ok()) {
+    if let Some(parent_id) = dictionary
+        .get(b"Parent")
+        .ok()
+        .and_then(|object| object.as_reference().ok())
+    {
         return resolve_pdf_field_flags(document, parent_id);
     }
 
@@ -1298,21 +1398,38 @@ fn apply_pdf_checkbox_update(
     is_checked: bool,
 ) -> Result<(), String> {
     let export_value = {
-        let widget_dictionary = document
-            .get_dictionary(widget_object_id)
-            .map_err(|error| format!("Failed to inspect PDF checkbox widget {:?}: {error}", widget_object_id))?;
+        let widget_dictionary = document.get_dictionary(widget_object_id).map_err(|error| {
+            format!(
+                "Failed to inspect PDF checkbox widget {:?}: {error}",
+                widget_object_id
+            )
+        })?;
         resolve_pdf_widget_export_value(widget_dictionary).unwrap_or_else(|| "Yes".to_string())
     };
-    let state_name = if is_checked { export_value } else { "Off".to_string() };
+    let state_name = if is_checked {
+        export_value
+    } else {
+        "Off".to_string()
+    };
 
     let owner_dictionary = document
         .get_dictionary_mut(owner_object_id)
-        .map_err(|error| format!("Failed to inspect PDF checkbox field {:?}: {error}", owner_object_id))?;
+        .map_err(|error| {
+            format!(
+                "Failed to inspect PDF checkbox field {:?}: {error}",
+                owner_object_id
+            )
+        })?;
     owner_dictionary.set("V", Object::Name(state_name.as_bytes().to_vec()));
 
     let widget_dictionary = document
         .get_dictionary_mut(widget_object_id)
-        .map_err(|error| format!("Failed to inspect PDF checkbox widget {:?}: {error}", widget_object_id))?;
+        .map_err(|error| {
+            format!(
+                "Failed to inspect PDF checkbox widget {:?}: {error}",
+                widget_object_id
+            )
+        })?;
     widget_dictionary.set("AS", Object::Name(state_name.into_bytes()));
     Ok(())
 }
@@ -1323,21 +1440,25 @@ fn apply_pdf_radio_update(
     selected_widget_object_id: ObjectId,
 ) -> Result<(), String> {
     let selected_name = {
-        let widget_dictionary = document
-            .get_dictionary(selected_widget_object_id)
-            .map_err(|error| {
-                format!(
-                    "Failed to inspect PDF radio widget {:?}: {error}",
-                    selected_widget_object_id
-                )
-            })?;
+        let widget_dictionary =
+            document
+                .get_dictionary(selected_widget_object_id)
+                .map_err(|error| {
+                    format!(
+                        "Failed to inspect PDF radio widget {:?}: {error}",
+                        selected_widget_object_id
+                    )
+                })?;
         resolve_pdf_widget_export_value(widget_dictionary).unwrap_or_else(|| "Yes".to_string())
     };
 
     let sibling_widget_ids = {
-        let owner_dictionary = document
-            .get_dictionary(owner_object_id)
-            .map_err(|error| format!("Failed to inspect PDF radio field {:?}: {error}", owner_object_id))?;
+        let owner_dictionary = document.get_dictionary(owner_object_id).map_err(|error| {
+            format!(
+                "Failed to inspect PDF radio field {:?}: {error}",
+                owner_object_id
+            )
+        })?;
         owner_dictionary
             .get(b"Kids")
             .ok()
@@ -1353,9 +1474,15 @@ fn apply_pdf_radio_update(
 
     for sibling_widget_id in sibling_widget_ids {
         let sibling_export_value = {
-            let sibling_dictionary = document
-                .get_dictionary(sibling_widget_id)
-                .map_err(|error| format!("Failed to inspect PDF radio widget {:?}: {error}", sibling_widget_id))?;
+            let sibling_dictionary =
+                document
+                    .get_dictionary(sibling_widget_id)
+                    .map_err(|error| {
+                        format!(
+                            "Failed to inspect PDF radio widget {:?}: {error}",
+                            sibling_widget_id
+                        )
+                    })?;
             resolve_pdf_widget_export_value(sibling_dictionary).unwrap_or_else(|| "Off".to_string())
         };
         let state_name = if sibling_widget_id == selected_widget_object_id {
@@ -1365,21 +1492,36 @@ fn apply_pdf_radio_update(
         } else {
             "Off".to_string()
         };
-        let sibling_dictionary = document
-            .get_dictionary_mut(sibling_widget_id)
-            .map_err(|error| format!("Failed to inspect PDF radio widget {:?}: {error}", sibling_widget_id))?;
+        let sibling_dictionary =
+            document
+                .get_dictionary_mut(sibling_widget_id)
+                .map_err(|error| {
+                    format!(
+                        "Failed to inspect PDF radio widget {:?}: {error}",
+                        sibling_widget_id
+                    )
+                })?;
         sibling_dictionary.set("AS", Object::Name(state_name.into_bytes()));
     }
 
     let owner_dictionary = document
         .get_dictionary_mut(owner_object_id)
-        .map_err(|error| format!("Failed to inspect PDF radio field {:?}: {error}", owner_object_id))?;
+        .map_err(|error| {
+            format!(
+                "Failed to inspect PDF radio field {:?}: {error}",
+                owner_object_id
+            )
+        })?;
     owner_dictionary.set("V", Object::Name(selected_name.into_bytes()));
     Ok(())
 }
 
 fn resolve_pdf_widget_export_value(widget_dictionary: &Dictionary) -> Option<String> {
-    if let Some(state_name) = widget_dictionary.get(b"AS").ok().and_then(object_name_string) {
+    if let Some(state_name) = widget_dictionary
+        .get(b"AS")
+        .ok()
+        .and_then(object_name_string)
+    {
         if state_name != "Off" {
             return Some(state_name);
         }
@@ -1412,12 +1554,22 @@ fn replace_pdf_overlay_annotations(
             .page_object_ids
             .get(page_overlay.page_index as usize)
             .copied()
-            .ok_or_else(|| format!("PDF overlay page index {} is invalid.", page_overlay.page_index))?;
+            .ok_or_else(|| {
+                format!(
+                    "PDF overlay page index {} is invalid.",
+                    page_overlay.page_index
+                )
+            })?;
         let page_height = page_context
             .page_height_by_index
             .get(&page_overlay.page_index)
             .copied()
-            .ok_or_else(|| format!("Missing PDF page height for page index {}.", page_overlay.page_index))?;
+            .ok_or_else(|| {
+                format!(
+                    "Missing PDF page height for page index {}.",
+                    page_overlay.page_index
+                )
+            })?;
 
         let mut new_annotation_refs = Vec::new();
         for annotation in &page_overlay.annotations {
@@ -1432,9 +1584,9 @@ fn replace_pdf_overlay_annotations(
         }
 
         let mut combined_annotations = {
-            let page_dictionary = document
-                .get_dictionary(page_object_id)
-                .map_err(|error| format!("Failed to inspect PDF page {:?}: {error}", page_object_id))?;
+            let page_dictionary = document.get_dictionary(page_object_id).map_err(|error| {
+                format!("Failed to inspect PDF page {:?}: {error}", page_object_id)
+            })?;
             page_dictionary
                 .get(b"Annots")
                 .ok()
@@ -1459,9 +1611,9 @@ fn remove_existing_pdf_overlay_annotations(
 ) -> Result<(), String> {
     for page_object_id in &page_context.page_object_ids {
         let annotation_objects = {
-            let page_dictionary = document
-                .get_dictionary(*page_object_id)
-                .map_err(|error| format!("Failed to inspect PDF page {:?}: {error}", page_object_id))?;
+            let page_dictionary = document.get_dictionary(*page_object_id).map_err(|error| {
+                format!("Failed to inspect PDF page {:?}: {error}", page_object_id)
+            })?;
             page_dictionary
                 .get(b"Annots")
                 .ok()
@@ -1473,7 +1625,9 @@ fn remove_existing_pdf_overlay_annotations(
         let filtered_annotations = annotation_objects
             .into_iter()
             .filter(|annotation_object| match annotation_object.as_reference() {
-                Ok(annotation_object_id) => !pdf_annotation_is_greeble_overlay(document, annotation_object_id),
+                Ok(annotation_object_id) => {
+                    !pdf_annotation_is_greeble_overlay(document, annotation_object_id)
+                }
                 Err(_) => true,
             })
             .collect::<Vec<_>>();
@@ -1676,8 +1830,14 @@ fn pdf_arrow_ink_paths(annotation: &PdfOverlayAnnotation, page_height: f32) -> V
         ]
     };
 
-    let start = points.first().cloned().unwrap_or(PdfPoint { x: 0.0, y: 0.0 });
-    let end = points.last().cloned().unwrap_or(PdfPoint { x: 0.0, y: 0.0 });
+    let start = points
+        .first()
+        .cloned()
+        .unwrap_or(PdfPoint { x: 0.0, y: 0.0 });
+    let end = points
+        .last()
+        .cloned()
+        .unwrap_or(PdfPoint { x: 0.0, y: 0.0 });
     let dx = end.x - start.x;
     let dy = end.y - start.y;
     let length = (dx * dx + dy * dy).sqrt().max(1.0);
@@ -1695,8 +1855,14 @@ fn pdf_arrow_ink_paths(annotation: &PdfOverlayAnnotation, page_height: f32) -> V
 
     vec![
         Object::Array(pdf_point_path_to_object_array(&points, page_height)),
-        Object::Array(pdf_point_path_to_object_array(&[end.clone(), left_head], page_height)),
-        Object::Array(pdf_point_path_to_object_array(&[end, right_head], page_height)),
+        Object::Array(pdf_point_path_to_object_array(
+            &[end.clone(), left_head],
+            page_height,
+        )),
+        Object::Array(pdf_point_path_to_object_array(
+            &[end, right_head],
+            page_height,
+        )),
     ]
 }
 
@@ -1713,4 +1879,307 @@ fn pdf_modification_timestamp() -> String {
         .map(|duration| duration.as_secs())
         .unwrap_or_default();
     format!("D:{epoch_seconds}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lopdf::Stream;
+    use tempfile::tempdir;
+
+    #[derive(Clone, Copy)]
+    struct TestPdfOptions {
+        with_xfa: bool,
+        with_fake_encrypt: bool,
+    }
+
+    impl TestPdfOptions {
+        const fn plain() -> Self {
+            Self {
+                with_xfa: false,
+                with_fake_encrypt: false,
+            }
+        }
+
+        const fn with_xfa() -> Self {
+            Self {
+                with_xfa: true,
+                with_fake_encrypt: false,
+            }
+        }
+
+        const fn with_fake_encrypt() -> Self {
+            Self {
+                with_xfa: false,
+                with_fake_encrypt: true,
+            }
+        }
+    }
+
+    #[test]
+    fn pdf_preview_open_render_and_save_roundtrip() {
+        let temp_dir = tempdir().expect("temp dir");
+        let pdf_path = temp_dir.path().join("roundtrip.pdf");
+        let widget_id = write_test_pdf(&pdf_path, TestPdfOptions::plain()).expect("write test pdf");
+
+        let manager = PdfPreviewManager::default();
+        let preview_document = manager
+            .open_preview_document(pdf_path.to_string_lossy().into_owned())
+            .expect("open preview document");
+        assert_eq!(preview_document.page_count, 1);
+        assert_eq!(preview_document.form_fields.len(), 1);
+
+        let field_descriptor = &preview_document.form_fields[0];
+        assert_eq!(field_descriptor.kind, PdfFormFieldKind::Text);
+        assert_eq!(field_descriptor.string_value.as_deref(), Some("Before"));
+
+        let render_request = PdfPageRenderRequest {
+            session_id: preview_document.session_id.clone(),
+            page_index: 0,
+            zoom_scale: 1.0,
+            fit_mode: PdfPageRenderFitMode::None,
+            viewport_width_px: 800,
+            viewport_height_px: 1000,
+        };
+        let render_result = manager
+            .render_preview_page(render_request.clone())
+            .expect("render preview page");
+        assert!(render_result
+            .image_data_url
+            .starts_with("data:image/png;base64,"));
+        assert!(render_result.rendered_width_px > 0);
+        assert!(render_result.rendered_height_px > 0);
+
+        let save_result = manager
+            .save_preview_edits(PdfSaveEditsRequest {
+                session_id: preview_document.session_id.clone(),
+                form_updates: vec![PdfFormValueUpdate {
+                    field_id: field_descriptor.field_id.clone(),
+                    string_value: Some("After".to_string()),
+                    bool_value: None,
+                    selected_values: Vec::new(),
+                }],
+                page_overlays: vec![PdfPageOverlayEdits {
+                    page_index: 0,
+                    annotations: vec![PdfOverlayAnnotation {
+                        id: "rect-1".to_string(),
+                        kind: PdfOverlayAnnotationKind::Rect,
+                        bounds: PdfPageRect {
+                            x: 64.0,
+                            y: 64.0,
+                            width: 96.0,
+                            height: 42.0,
+                        },
+                        points: Vec::new(),
+                        text: None,
+                        color: PdfColorValue {
+                            red: 245,
+                            green: 158,
+                            blue: 11,
+                            alpha: 255,
+                        },
+                        stroke_width: Some(3.0),
+                        opacity: Some(0.85),
+                    }],
+                }],
+            })
+            .expect("save preview edits");
+
+        assert_eq!(save_result.document.page_count, 1);
+        assert_eq!(save_result.document.form_fields.len(), 1);
+        assert_eq!(
+            save_result.document.form_fields[0].string_value.as_deref(),
+            Some("After")
+        );
+
+        let rerender_result = manager
+            .render_preview_page(render_request)
+            .expect("rerender preview page after save");
+        assert!(rerender_result
+            .image_data_url
+            .starts_with("data:image/png;base64,"));
+
+        let reopened = Document::load(&pdf_path).expect("reload saved pdf");
+        let field_dictionary = reopened
+            .get_dictionary(widget_id)
+            .expect("field dictionary should exist");
+        let field_value = field_dictionary
+            .get(b"V")
+            .expect("field value should exist")
+            .as_string()
+            .expect("field value should be string")
+            .into_owned();
+        assert_eq!(field_value, "After");
+
+        let (_, page_object_id) = reopened
+            .get_pages()
+            .into_iter()
+            .next()
+            .expect("page should exist");
+        let page_dictionary = reopened
+            .get_dictionary(page_object_id)
+            .expect("page dictionary should exist");
+        let page_annotations = page_dictionary
+            .get(b"Annots")
+            .expect("page annotations should exist")
+            .as_array()
+            .expect("annotations should be an array");
+        assert!(
+            page_annotations.iter().any(|annotation_object| {
+                annotation_object
+                    .as_reference()
+                    .ok()
+                    .and_then(|annotation_id| reopened.get_dictionary(annotation_id).ok())
+                    .and_then(|annotation_dictionary| annotation_dictionary.get(b"NM").ok())
+                    .and_then(object_text_string)
+                    .map(|name| name.starts_with(PDF_PREVIEW_OVERLAY_NAME_PREFIX))
+                    .unwrap_or(false)
+            }),
+            "saved PDF should contain a GreebleFS overlay annotation",
+        );
+    }
+
+    #[test]
+    fn pdf_preview_save_rejects_xfa_documents() {
+        let temp_dir = tempdir().expect("temp dir");
+        let pdf_path = temp_dir.path().join("xfa.pdf");
+        write_test_pdf(&pdf_path, TestPdfOptions::with_xfa()).expect("write xfa pdf");
+
+        let error = save_pdf_preview_edits_to_file(
+            &pdf_path,
+            &PdfSaveEditsRequest {
+                session_id: "test-session".to_string(),
+                form_updates: Vec::new(),
+                page_overlays: Vec::new(),
+            },
+        )
+        .expect_err("xfa document should be rejected");
+
+        assert!(error.contains("does not support XFA forms"));
+    }
+
+    #[test]
+    fn pdf_preview_save_rejects_password_locked_documents() {
+        let temp_dir = tempdir().expect("temp dir");
+        let pdf_path = temp_dir.path().join("encrypted.pdf");
+        write_test_pdf(&pdf_path, TestPdfOptions::with_fake_encrypt())
+            .expect("write encrypted pdf");
+
+        let error = save_pdf_preview_edits_to_file(
+            &pdf_path,
+            &PdfSaveEditsRequest {
+                session_id: "test-session".to_string(),
+                form_updates: Vec::new(),
+                page_overlays: Vec::new(),
+            },
+        )
+        .expect_err("encrypted document should be rejected");
+
+        assert!(error.contains("password-locked files"));
+    }
+
+    fn write_test_pdf(path: &Path, options: TestPdfOptions) -> Result<ObjectId, String> {
+        let mut document = Document::with_version("1.7");
+        let pages_id = document.new_object_id();
+        let page_id = document.new_object_id();
+        let widget_id = document.new_object_id();
+        let acro_form_id = document.new_object_id();
+        let catalog_id = document.new_object_id();
+        let font_id = document.add_object(dictionary! {
+            "Type" => "Font",
+            "Subtype" => "Type1",
+            "BaseFont" => "Helvetica",
+        });
+        let content_id = document.add_object(Stream::new(
+            dictionary! {},
+            b"BT /Helv 18 Tf 72 180 Td (Hello PDF) Tj ET".to_vec(),
+        ));
+
+        let mut widget_dictionary = dictionary! {
+            "Type" => "Annot",
+            "Subtype" => "Widget",
+            "FT" => "Tx",
+            "T" => Object::string_literal("customer_name"),
+            "V" => Object::string_literal("Before"),
+            "Rect" => Object::Array(vec![50.into(), 200.into(), 250.into(), 230.into()]),
+            "P" => page_id,
+            "DA" => Object::string_literal("/Helv 12 Tf 0 g"),
+            "F" => 4,
+        };
+        widget_dictionary.set("MK", Object::Dictionary(dictionary! {}));
+
+        let resources_dictionary = dictionary! {
+            "Font" => Object::Dictionary(dictionary! {
+                "Helv" => font_id,
+            }),
+        };
+        let page_dictionary = dictionary! {
+            "Type" => "Page",
+            "Parent" => pages_id,
+            "MediaBox" => Object::Array(vec![0.into(), 0.into(), 300.into(), 300.into()]),
+            "Resources" => Object::Dictionary(resources_dictionary),
+            "Contents" => content_id,
+            "Annots" => Object::Array(vec![Object::Reference(widget_id)]),
+        };
+        let pages_dictionary = dictionary! {
+            "Type" => "Pages",
+            "Kids" => Object::Array(vec![Object::Reference(page_id)]),
+            "Count" => 1,
+        };
+
+        let mut acro_form_dictionary = dictionary! {
+            "Fields" => Object::Array(vec![Object::Reference(widget_id)]),
+            "DA" => Object::string_literal("/Helv 12 Tf 0 g"),
+            "DR" => Object::Dictionary(dictionary! {
+                "Font" => Object::Dictionary(dictionary! {
+                    "Helv" => font_id,
+                }),
+            }),
+        };
+        if options.with_xfa {
+            acro_form_dictionary.set("XFA", Object::string_literal("<xfa/>"));
+        }
+
+        let catalog_dictionary = dictionary! {
+            "Type" => "Catalog",
+            "Pages" => pages_id,
+            "AcroForm" => acro_form_id,
+        };
+
+        document
+            .objects
+            .insert(page_id, Object::Dictionary(page_dictionary));
+        document
+            .objects
+            .insert(pages_id, Object::Dictionary(pages_dictionary));
+        document
+            .objects
+            .insert(widget_id, Object::Dictionary(widget_dictionary));
+        document
+            .objects
+            .insert(acro_form_id, Object::Dictionary(acro_form_dictionary));
+        document
+            .objects
+            .insert(catalog_id, Object::Dictionary(catalog_dictionary));
+        document.trailer.set("Root", catalog_id);
+
+        if options.with_fake_encrypt {
+            let encrypt_id = document.add_object(dictionary! {
+                "Filter" => "Standard",
+                "V" => 1,
+                "R" => 2,
+                "O" => Object::string_literal("owner"),
+                "U" => Object::string_literal("user"),
+                "P" => -4,
+            });
+            document.trailer.set("Encrypt", encrypt_id);
+        }
+
+        document.compress();
+        document
+            .save(path)
+            .map_err(|error| format!("Failed to write test PDF '{}': {error}", path.display()))?;
+
+        Ok(widget_id)
+    }
 }

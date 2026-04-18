@@ -14,6 +14,8 @@
 - Validation:
   - passed: `bun run test:unit src/test/filePreview.test.ts src/test/hotkeys.test.ts src/test/settingsStore.test.ts src/test/fileExplorer.viewModes.test.tsx`
   - passed: `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
+  - added: native PDF module tests in `src-tauri/src/pdf_commands.rs` now generate temp PDFs for open/render/save roundtrip coverage plus XFA and encrypted-edit rejection coverage
+  - note: `cargo test --manifest-path src-tauri/Cargo.toml pdf_preview_ -- --nocapture` is currently blocked by unrelated pre-existing test compile failures in `src-tauri/src/fs_commands.rs`, `src-tauri/src/plugin_commands.rs`, and `src-tauri/src/video_engine.rs`, so the useful backend signal for this pass remains the green non-test `cargo check`
   - note: repo-wide `bunx tsc --noEmit` still fails on unrelated pre-existing explorer audio / VST typing issues outside the PDF lane.
 
 ## 2026-04-18 — Linux Wayland Startup Recovery / Local State Reset Script
