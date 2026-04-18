@@ -59,9 +59,11 @@
   - The xterm boot path still fits before PTY spawn, but it now also applies the theme recipe to the mounted instance after boot so font/theme changes and WebGL atlas refresh stay in sync without remounting panes.
   - `src/config/workbenchTheme.ts` now owns `terminalRenderer` plus a resolved `terminalFx` recipe (`preset`, scanlines, noise, vignette, glow, tint, curvature, saturation, contrast). Theme packages and built-in themes can drive terminal presentation through `theme.workbench`, just like the rest of the shell.
   - `src/components/terminal/TerminalViewportFx.tsx` is the leaf FX surface for pane-local terminal atmosphere. It adds scanline/noise/vignette/glow/tint layers and content filtering on top of the xterm viewport without moving terminal parsing/emulation out of xterm.
+  - Performance correction: live WebGL panes no longer run under the expensive viewport filter/drop-shadow path, and the FX layer now collapses to a lighter overlay while terminal output is hot. The earlier all-layers-all-the-time version was compositor-heavy enough to tank terminal throughput.
   - `src/config/pilotThemeContract.ts` seeds the built-in pilot baseline with a subtle terminal FX profile, so the default terminal no longer looks like a raw xterm drop-in.
 - Durable product note:
   - Terminal rendering strategy in this repo is now: xterm for emulation/input/selection, WebGL addon for fast paint when available, theme-owned FX overlay for shell identity. Do not jump straight to a bespoke glyph-atlas renderer unless the product explicitly decides to own terminal emulation/grid truth too.
+  - Keep live terminal paint paths brutally simple. If FPS falls apart again, inspect CSS `filter`, `mix-blend-mode`, and per-frame overlay composition before blaming xterm or the PTY bridge.
   - If terminal visuals regress after a theme switch, inspect `ResolvedWorkbenchThemeRecipe.terminalRenderer`, `ResolvedWorkbenchThemeRecipe.terminalFx`, and the pane-local `TerminalViewportFx` layer before touching the PTY bridge.
 - Validation:
   - passed: `bunx vitest run src/test/workbenchTheme.test.ts src/test/terminalOverlay.test.tsx`

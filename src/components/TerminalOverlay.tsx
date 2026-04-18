@@ -537,10 +537,12 @@ function XTermPane({
   const mountedRef   = useRef(false);
   const bufferedOutputRef = useRef('');
   const outputFrameRef = useRef<number | null>(null);
+  const outputActiveTimeoutRef = useRef<number | null>(null);
   const fitFrameRef = useRef<number | null>(null);
   const lastResizeRef = useRef<{ rows: number; cols: number } | null>(null);
   const webglAddonRef = useRef<WebglAddon | null>(null);
   const webglContextLossDisposableRef = useRef<{ dispose: () => void } | null>(null);
+  const [outputActive, setOutputActive] = useState(false);
   const [rendererMode, setRendererMode] = useState<TerminalRendererMode>('dom');
   const settings = useSettingsStore(s => s.settings.terminal);
   const onReadyRef = useRef(onReady);
@@ -550,8 +552,8 @@ function XTermPane({
   const onResizeRef = useRef(onResize);
   const rendererPreference = workbenchTheme.terminalRenderer;
   const viewportContentFilter = useMemo(
-    () => buildTerminalViewportContentFilter(workbenchTheme.terminalFx, rendererMode, active),
-    [active, rendererMode, workbenchTheme.terminalFx],
+    () => buildTerminalViewportContentFilter(workbenchTheme.terminalFx, rendererMode, active, outputActive),
+    [active, outputActive, rendererMode, workbenchTheme.terminalFx],
   );
 
   useEffect(() => { onReadyRef.current = onReady; }, [onReady]);
@@ -591,6 +593,17 @@ function XTermPane({
       setRendererMode('dom');
     }
   }, [disposeWebglRenderer, rendererPreference]);
+
+  const markOutputActive = useCallback(() => {
+    setOutputActive(true);
+    if (outputActiveTimeoutRef.current !== null) {
+      window.clearTimeout(outputActiveTimeoutRef.current);
+    }
+    outputActiveTimeoutRef.current = window.setTimeout(() => {
+      outputActiveTimeoutRef.current = null;
+      setOutputActive(false);
+    }, 140);
+  }, []);
 
   const boot = useCallback(async () => {
     if (!containerRef.current || mountedRef.current) return;
@@ -666,6 +679,7 @@ function XTermPane({
       }
 
       bufferedOutputRef.current = '';
+      markOutputActive();
       term.write(chunk);
       onOutputRef.current?.(id, chunk);
     };
@@ -717,6 +731,10 @@ function XTermPane({
           window.cancelAnimationFrame(outputFrameRef.current);
           outputFrameRef.current = null;
         }
+        if (outputActiveTimeoutRef.current !== null) {
+          window.clearTimeout(outputActiveTimeoutRef.current);
+          outputActiveTimeoutRef.current = null;
+        }
         disposeWebglRenderer();
         unlisten();
         ro.disconnect();
@@ -726,7 +744,7 @@ function XTermPane({
     onResizeRef.current?.(id, term.rows, term.cols);
     onReadyRef.current?.(id);
     term.focus();
-  }, [attachWebglRenderer, disposeWebglRenderer, id, settings, theme, workbenchTheme.terminalStyle]);
+  }, [attachWebglRenderer, disposeWebglRenderer, id, markOutputActive, settings, theme, workbenchTheme.terminalStyle]);
 
   useEffect(() => {
     if (visible) {
@@ -828,6 +846,7 @@ function XTermPane({
       />
       <TerminalViewportFx
         active={active}
+        outputActive={outputActive}
         paneId={id}
         rendererMode={rendererMode}
         terminalFx={workbenchTheme.terminalFx}
