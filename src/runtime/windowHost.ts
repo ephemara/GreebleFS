@@ -39,6 +39,20 @@ export function hasSeparateWaylandDockHost(args: {
     && args.waylandDockHostEnabled;
 }
 
+export function shouldForceMainWindowStartupMode(args: {
+  runtimePlatform: string;
+  linuxDisplayServer: 'unknown' | 'wayland' | 'x11';
+  useSeparateWaylandDockHost: boolean;
+  windowMode: TerminalWindowMode;
+  hostRole: WindowHostRole;
+}): boolean {
+  return args.runtimePlatform === 'linux'
+    && args.linuxDisplayServer === 'wayland'
+    && args.useSeparateWaylandDockHost
+    && args.hostRole === MAIN_WINDOW_HOST_LABEL
+    && args.windowMode === 'overlay';
+}
+
 export function resolvePresentationHostLabel(args: {
   windowMode: TerminalWindowMode;
   useSeparateWaylandDockHost: boolean;

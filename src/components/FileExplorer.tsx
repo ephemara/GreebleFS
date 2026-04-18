@@ -168,6 +168,7 @@ import { ExplorerImageEditor } from "./ExplorerImageEditor";
 import { ExplorerVideoEditor } from "./ExplorerVideoEditor";
 import { ExplorerArchivePreview } from "./ExplorerArchivePreview";
 import { ExplorerFontPreview } from "./ExplorerFontPreview";
+import { ExplorerSqlitePreview } from "./ExplorerSqlitePreview";
 import {
   type ExplorerBatchRenameMode,
   type ExplorerBatchRenamePreviewRow,
@@ -227,6 +228,7 @@ import {
   isExecutableExtension,
   isImagePreviewExtension,
   isFontPreviewExtension,
+  isSqlitePreviewExtension,
   isVideoPreviewExtension,
   type ModelPreviewFormat,
 } from "../config/filePreview";
@@ -484,6 +486,12 @@ type PreviewState =
       name: string;
       source: string;
       extension: string;
+      size: number;
+    }
+  | {
+      type: "sqlite";
+      path: string;
+      name: string;
       size: number;
     }
   | {
@@ -3053,6 +3061,12 @@ function PreviewPanel({
             fontName={preview.name}
             fontSource={preview.source}
             fontExtension={preview.extension}
+          />
+        )}
+        {preview.type === "sqlite" && (
+          <ExplorerSqlitePreview
+            dbPath={preview.path}
+            dbName={preview.name}
           />
         )}
         {preview.type === "text" &&
@@ -7821,6 +7835,19 @@ export function FileExplorer({
             name: entry.name,
             source: getPreviewAssetUrl(entry.path),
             extension: ext,
+            size: entry.size,
+          });
+          setPreviewLoading(false);
+        }
+        return;
+      }
+
+      if (isSqlitePreviewExtension(ext)) {
+        if (isCurrentPreviewRequest()) {
+          setPreview({
+            type: "sqlite",
+            path: entry.path,
+            name: entry.name,
             size: entry.size,
           });
           setPreviewLoading(false);

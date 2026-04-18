@@ -45,6 +45,12 @@ use crate::linux_graphics::{
     LinuxDisplayBackend, LinuxDisplayBackendPreference, LinuxDisplayBackendStatus,
 };
 use crate::plugin_commands::{PluginBackendResult, PluginDirectoryWatchEvent};
+use crate::pdf_commands::{
+    PdfColorValue, PdfFormFieldDescriptor, PdfFormFieldKind, PdfFormFieldOptionDescriptor,
+    PdfFormValueUpdate, PdfOverlayAnnotation, PdfOverlayAnnotationKind, PdfPageOverlayEdits,
+    PdfPageRect, PdfPageRenderFitMode, PdfPageRenderRequest, PdfPageRenderResult, PdfPoint,
+    PdfPreviewDocument, PdfPreviewPageDescriptor, PdfSaveEditsRequest, PdfSaveEditsResult,
+};
 use crate::python_commands::{
     PythonActionResponse, PythonBoilerplateFiles, PythonCommandResult, PythonExecutionMode,
     PythonExecutionRequest, PythonInterpreterDescriptor, PythonPackageInstallRequest,
@@ -54,6 +60,7 @@ use crate::screenshot_commands::{
     SavedScreenshot, ScreenshotAnnotatedExportResult, ScreenshotAnnotation, ScreenshotPreview,
     ScreenshotRegion,
 };
+use crate::sqlite_commands::{SqliteDbInfo, SqliteTableInfo, SqliteTablePreview};
 use crate::terminal::{
     ExternalTerminalRequest, TerminalShellIntegrationRequest, TerminalShellIntegrationState,
     TerminalShellIntegrationStateEvent, TerminalShellKind, TerminalWriteRequest,
@@ -128,6 +135,8 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::cloud_commands::cloud_rename_path,
             crate::cloud_commands::cloud_delete_path,
             crate::cloud_commands::cloud_transfer_items,
+            crate::sqlite_commands::sqlite_get_info,
+            crate::sqlite_commands::sqlite_query_table,
             crate::fs_commands::fs_list_dir,
             crate::fs_commands::fs_get_drives,
             crate::fs_commands::fs_measure_entry_sizes,
@@ -221,6 +230,10 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::image_commands::image_editor_render_preview,
             crate::image_commands::image_editor_export,
             crate::image_commands::image_editor_close_session,
+            crate::pdf_commands::pdf_open_preview_document,
+            crate::pdf_commands::pdf_render_preview_page,
+            crate::pdf_commands::pdf_save_preview_edits,
+            crate::pdf_commands::pdf_close_preview_document,
             crate::video_commands::video_create_preview_proxy,
             crate::video_commands::video_export_trim,
             crate::video_commands::video_resolve_preview_source,
@@ -275,6 +288,9 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<CloudAuthStatus>()
         .typ::<CloudBreadcrumb>()
         .typ::<CloudDirectoryListing>()
+        .typ::<SqliteDbInfo>()
+        .typ::<SqliteTableInfo>()
+        .typ::<SqliteTablePreview>()
         .typ::<TelemetryCaptureMode>()
         .typ::<TelemetryPayloadMode>()
         .typ::<TelemetryConfig>()
@@ -325,6 +341,23 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<ImageEditorPreviewResult>()
         .typ::<ImageEditorExportRequest>()
         .typ::<ImageEditorExportResult>()
+        .typ::<PdfPreviewDocument>()
+        .typ::<PdfPreviewPageDescriptor>()
+        .typ::<PdfPageRenderFitMode>()
+        .typ::<PdfPageRenderRequest>()
+        .typ::<PdfPageRenderResult>()
+        .typ::<PdfFormFieldKind>()
+        .typ::<PdfFormFieldOptionDescriptor>()
+        .typ::<PdfPageRect>()
+        .typ::<PdfPoint>()
+        .typ::<PdfColorValue>()
+        .typ::<PdfFormFieldDescriptor>()
+        .typ::<PdfOverlayAnnotationKind>()
+        .typ::<PdfOverlayAnnotation>()
+        .typ::<PdfPageOverlayEdits>()
+        .typ::<PdfFormValueUpdate>()
+        .typ::<PdfSaveEditsRequest>()
+        .typ::<PdfSaveEditsResult>()
         .typ::<ExplorerTagRecord>()
         .typ::<ExplorerPathTagAssignment>()
         .typ::<ExplorerTagSnapshot>()

@@ -10,9 +10,11 @@ pub mod fs_commands;
 pub mod image_commands;
 mod linux_graphics;
 pub mod plugin_commands;
+pub mod pdf_commands;
 pub mod python_commands;
 pub mod screenshot_commands;
 pub mod specta_bindings;
+pub mod sqlite_commands;
 pub mod startup_commands;
 pub mod telemetry;
 pub mod terminal;
@@ -68,6 +70,7 @@ pub fn run() {
             app.manage(CloudRuntimeState::default());
             app.manage(AudioEngineManager::default());
             app.manage(image_commands::ImageEditorManager::default());
+            app.manage(pdf_commands::PdfPreviewManager::default());
             app.manage(video_engine::VideoEngineManager::default());
             app.manage(TelemetryManager::default());
             let startup_span = start_native_span(

@@ -237,6 +237,15 @@ const FONT_PREVIEW_EXTENSIONS = [
 ] as const;
 
 const FONT_PREVIEW_EXTENSION_SET = new Set<string>(FONT_PREVIEW_EXTENSIONS);
+const PDF_PREVIEW_EXTENSION_SET = new Set<string>(["pdf"]);
+
+const SQLITE_PREVIEW_EXTENSIONS = [
+  "sqlite",
+  "sqlite3",
+  "db",
+] as const;
+
+const SQLITE_PREVIEW_EXTENSION_SET = new Set<string>(SQLITE_PREVIEW_EXTENSIONS);
 
 export function isImagePreviewExtension(extension: string): boolean {
   return IMAGE_PREVIEW_EXTENSION_SET.has(normalizeExtension(extension));
@@ -244,6 +253,14 @@ export function isImagePreviewExtension(extension: string): boolean {
 
 export function isFontPreviewExtension(extension: string): boolean {
   return FONT_PREVIEW_EXTENSION_SET.has(normalizeExtension(extension));
+}
+
+export function isPdfPreviewExtension(extension: string): boolean {
+  return PDF_PREVIEW_EXTENSION_SET.has(normalizeExtension(extension));
+}
+
+export function isSqlitePreviewExtension(extension: string): boolean {
+  return SQLITE_PREVIEW_EXTENSION_SET.has(normalizeExtension(extension));
 }
 
 export function isExecutableExtension(extension: string): boolean {
@@ -326,6 +343,9 @@ export function isEditableTextExtension(
     return false;
   }
   if (isFontPreviewExtension(normalizedExtension)) {
+    return false;
+  }
+  if (isPdfPreviewExtension(normalizedExtension)) {
     return false;
   }
   if (getModelPreviewFormat(normalizedExtension)) {

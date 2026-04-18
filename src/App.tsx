@@ -159,6 +159,7 @@ import {
   hasSeparateWaylandDockHost,
   isWindowHostResponsibleForMode,
   resolvePresentationHostLabel,
+  shouldForceMainWindowStartupMode,
   shouldRegisterGlobalShortcutForHost,
   type WindowHostRole,
 } from './runtime/windowHost';
@@ -629,6 +630,13 @@ function App() {
     windowMode,
     useSeparateWaylandDockHost: usesSeparateWaylandDockHost,
   });
+  const shouldForceWindowedStartupMode = shouldForceMainWindowStartupMode({
+    runtimePlatform,
+    linuxDisplayServer,
+    useSeparateWaylandDockHost: usesSeparateWaylandDockHost,
+    windowMode,
+    hostRole: currentWindowHostRole,
+  });
   const isCurrentWindowPresentationHost = isWindowHostResponsibleForMode({
     hostRole: currentWindowHostRole,
     windowMode,
@@ -1016,6 +1024,22 @@ function App() {
       cancelled = true;
     };
   }, [currentWindowHostRole, runtimePlatform, updateSystem]);
+
+  useEffect(() => {
+    if (!isTauri() || !shouldForceWindowedStartupMode) {
+      return;
+    }
+
+    const persistedWindowMode = useSettingsStore.getState().settings.terminal.windowMode;
+    if (persistedWindowMode !== 'overlay') {
+      return;
+    }
+
+    console.warn(
+      'GreebleFS: forcing Linux Wayland startup back to windowed mode because the separate dock host can strand the main window during launch.',
+    );
+    updateTerminal({ windowMode: 'windowed' });
+  }, [shouldForceWindowedStartupMode, updateTerminal]);
 
   useEffect(() => {
     if (!isTauri()) {

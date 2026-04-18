@@ -1,5 +1,15 @@
 # GreebleFS Memory
 
+## 2026-04-18 — Linux Wayland Startup Recovery / Local State Reset Script
+
+- The Linux desktop startup invisibility issue was traced back to persisted `windowMode=overlay` state on Wayland. When that state combines with the separate Wayland dock host, the main window can render briefly and then hide itself during presentation handoff, leaving the app effectively invisible.
+- Durable recovery shape:
+  - `src/runtime/windowHost.ts` now exposes `shouldForceMainWindowStartupMode(...)`, a narrow policy helper for detecting the bad startup combination: Linux + Wayland + separate dock host + main host + persisted overlay mode.
+  - `src/App.tsx` now applies a startup failsafe for that combination and immediately coerces startup back to `windowed` mode before the main window gets stranded behind dock-host handoff.
+  - `reset-local-settings.sh` in the repo root now provides an operator-friendly local-state reset path. It backs up the current GreebleFS/OverlayTerm config and data directories under `~/.local/state/greeblefs-reset/<timestamp>/` before clearing them, so state reset is recoverable instead of destructive.
+- Durable operator note:
+  - if the app starts flashing the dev HUD and then disappears on KDE/Wayland, check the persisted localstore first; recurring `windowMode=overlay` drift is a strong signal that the app is re-entering the unsafe Wayland dock-host startup path.
+
 ## 2026-04-18 — Terminal WebGL Renderer + Theme-Owned FX Overlay
 
 - Embedded terminals now have a first-class GPU renderer lane and a theme-owned post-FX contract instead of hardcoding all terminal presentation inside `TerminalOverlay.tsx`.
