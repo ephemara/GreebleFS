@@ -61,6 +61,103 @@ describe('animationRuntime', () => {
     expect(loaded.close).toBeTruthy();
   });
 
+  it('lets authored animation modules use the host MoGraph toolkit', async () => {
+    const loaded = await loadAnimationFromSource(
+      `
+        import React from 'react';
+        import {
+          Cloner,
+          Field,
+          FieldTarget,
+          FloatOnHover,
+          MagneticButton,
+          MOTION_LIBRARY,
+          ParticleUI,
+          PulseGlow,
+          ScaleOnHover,
+          StaggerChildren,
+          childVariants,
+          defineAnimation,
+        } from 'overlayterm-animation';
+
+        function ToolkitOverlay() {
+          return React.createElement(
+            Field,
+            { type: 'spherical', radius: 180, strength: 0.8 },
+            React.createElement(
+              StaggerChildren,
+              { staggerDelay: 0.04 },
+              React.createElement(
+                Cloner,
+                {
+                  count: 3,
+                  layout: 'circle',
+                  radius: 24,
+                  motion: MOTION_LIBRARY.FLOAT.id,
+                },
+                React.createElement(
+                  FieldTarget,
+                  null,
+                  React.createElement(
+                    FloatOnHover,
+                    { distance: 3 },
+                    React.createElement(
+                      ScaleOnHover,
+                      { scale: 1.02 },
+                      React.createElement(
+                        MagneticButton,
+                        {
+                          className: 'unit-mograph-button',
+                          style: childVariants.visible,
+                        },
+                        React.createElement(
+                          PulseGlow,
+                          { intensity: 0.12 },
+                          React.createElement('span', null, 'mograph'),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+
+        export default defineAnimation({
+          name: 'MoGraph Toolkit Motion',
+          open: {
+            renderOverlay: ToolkitOverlay,
+            resolveShellStyle: context => ({
+              opacity: context.baseOpacity * context.progress,
+              transition: 'none',
+            }),
+          },
+          close: {
+            renderOverlay: () =>
+              React.createElement(
+                ParticleUI,
+                { particleCount: 6, mode: 'flow', interactive: false },
+                React.createElement('div', null, 'close'),
+              ),
+          },
+        });
+      `,
+      {
+        name: 'mograph-toolkit-motion.tsx',
+        path: 'animations/mograph-toolkit-motion.tsx',
+        is_dir: false,
+        modified: 78,
+        extension: 'tsx',
+      },
+    );
+
+    expect(loaded.error).toBeNull();
+    expect(loaded.name).toBe('MoGraph Toolkit Motion');
+    expect(loaded.open?.renderOverlay).toBeTypeOf('function');
+    expect(loaded.close?.renderOverlay).toBeTypeOf('function');
+  });
+
   it('loads every bundled animation module from disk', async () => {
     const animationDirectory = resolve('animations');
     const entries = await readdir(animationDirectory, { withFileTypes: true });

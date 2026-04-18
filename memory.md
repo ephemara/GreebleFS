@@ -1,5 +1,21 @@
 # GreebleFS Memory
 
+## 2026-04-17 — MoGraph Toolkit Bridged Into Authored Animation Runtime
+
+- The imported Cinema 4D-style MoGraph folder under `src/animation/` is now sanitized for GreebleFS and exposed through the authored shell animation runtime instead of remaining as website-only raw material.
+- Durable implementation shape:
+  - `src/animation/` no longer depends on the website’s `@/shared/icons` surface or broken alias paths. The strict-TS breakpoints were removed, local imports were normalized, and the small library now compiles cleanly inside GreebleFS.
+  - `src/animation/lib/ProceduralMotion.ts` now exposes a `resolveMotionModifier(...)` path and a lowercase-id lookup so `Cloner` can resolve motion entries by either catalog key or public motion id. The imported examples had drifted from the actual lookup contract.
+  - `src/animation/runtimeExports.ts` is the host-owned adapter seam for runtime-authored animations. It centralizes the MoGraph/tooling exports that are safe to hand to authored modules.
+  - `src/components/animationRuntime.tsx` now extends the `overlayterm-animation` runtime module with the sanitized toolkit, so authored files in `animations/` can import `Cloner`, `Field`, `ParticleUI`, subtle Framer-motion wrappers, `useAnimation`, `AnimationTimeline`, `MOTION_LIBRARY`, `applyMotion`, and `bakeAnimation` through the same stable runtime import they already use for `defineAnimation`.
+  - `animations/README.md` now documents the expanded runtime import surface, and `src/test/animationRuntime.test.ts` locks the bridge by loading a custom authored animation that imports and uses the toolkit from `overlayterm-animation`.
+- Durable product note:
+  - Treat `src/animation/` as host-owned reusable motion infrastructure, not as a second app shell or a random website dump. Runtime-authored shell animations should consume it through `overlayterm-animation`, not by reaching into app-relative paths.
+  - If more imported animation utilities are added later, extend `src/animation/runtimeExports.ts` instead of scattering new `allowedModules` exports directly through `animationRuntime.tsx`.
+- Validation:
+  - passed: filtered typecheck via `bunx tsc --noEmit --pretty false 2>&1 | rg "src/animation|src/components/animationRuntime|src/test/animationRuntime|overlayterm-animation"`
+  - passed: `bunx vitest run src/test/animationRuntime.test.ts src/test/animationRuntime.edge.test.ts src/test/animationRuntime.boundary.test.tsx`
+
 ## 2026-04-17 — Explorer Drag-Out Contract Restored
 
 - Explorer file drags now default back to the native Tauri drag-out bridge, and `Shift` is the explicit modifier for an explorer-only internal drag.

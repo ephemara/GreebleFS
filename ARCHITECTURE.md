@@ -80,6 +80,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Screenshot capture/editor/library surface. It owns monitor preview orchestration, selection editing, annotation authoring, and gallery actions, but annotated export is now delegated to Rust instead of being rasterized in the browser.
 - `src/components/pluginRuntime.tsx`
   Packaged frontend plugin runtime loader. It owns the allowlisted module graph for frontend plugins, including package-local relative imports and the host-provided `overlayterm-plugin` bridge helpers.
+- `src/components/animationRuntime.tsx`
+  Authored shell-motion runtime loader. It normalizes built-in and folder-authored animation modules, renders shell overlay layers with failure isolation, and now exposes the sanitized `src/animation/` MoGraph toolkit through the `overlayterm-animation` runtime import so authored shell motion can reuse host-owned cloners, fields, particle/fluid helpers, subtle motion wrappers, and timeline utilities without importing app internals directly.
 - `src/runtime/moduleRuntime.ts`
   Shared runtime-authored module bridge. It compiles authored TS/TSX module graphs for plugins, theme renderers, wallpapers, shaders, and animations, and now routes serializable compile work through the frontend worker host before falling back to the main thread.
 - `src/runtime/workerHost.ts`

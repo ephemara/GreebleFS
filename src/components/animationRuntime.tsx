@@ -4,6 +4,7 @@ import * as TauriEvent from '@tauri-apps/api/event';
 import * as TauriWindow from '@tauri-apps/api/window';
 import * as TauriFs from '@tauri-apps/plugin-fs';
 import * as LucideReact from 'lucide-react';
+import { overlayAnimationRuntimeToolkit } from '../animation/runtimeExports';
 import type { OverlayThemeDefinition } from '../config/appearance';
 import { animationSystemConfig } from '../config/animations';
 import {
@@ -318,6 +319,7 @@ function executeAnimationModule(code: string): unknown {
       clamp01,
       lerp,
       useAnimationContextRef,
+      ...overlayAnimationRuntimeToolkit,
     },
   };
 

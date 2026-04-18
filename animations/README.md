@@ -17,6 +17,14 @@ Runtime imports:
 - `@tauri-apps/plugin-fs`
 - `overlayterm-animation`
 
+`overlayterm-animation` exports the authoring helpers plus the host-safe MoGraph toolkit:
+
+- `defineAnimation`, `clamp01`, `lerp`, `useAnimationContextRef`
+- `Cloner`, `Effector`, `Field`, `FieldTarget`, `ParticleUI`, `FluidUI`
+- `MagneticButton`, `FloatOnHover`, `PulseGlow`, `ParallaxCard`, `ScaleOnHover`, `StaggerChildren`, `childVariants`
+- `useAnimation`, `AnimationTimeline`
+- `MOTION_LIBRARY`, `applyMotion`, `bakeAnimation`
+
 Recommended export shape:
 
 ```tsx
@@ -42,4 +50,4 @@ export default defineAnimation({
 ```
 
 If a module throws or fails to transpile, OverlayTerm keeps running and the load
-error appears in the Appearance > Window Motion section.
+error appears in Settings > Animations.
