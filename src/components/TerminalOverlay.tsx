@@ -18,6 +18,7 @@ import React, {
   useRef,
   useCallback,
   useMemo,
+  memo,
   type ComponentType,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
@@ -99,7 +100,6 @@ import {
 } from './terminalPaneLayout';
 import {
   TerminalViewportFx,
-  buildTerminalViewportContentFilter,
   type TerminalRendererMode,
 } from './terminal/TerminalViewportFx';
 import { shouldLoadTerminalWebglRenderer } from './terminal/terminalRendererSupport';
@@ -521,7 +521,7 @@ interface XTermPaneProps {
   onResize?: (id: string, rows: number, cols: number) => void;
 }
 
-function XTermPane({
+const XTermPane = memo(function XTermPane({
   id,
   visible,
   active,
@@ -538,12 +538,10 @@ function XTermPane({
   const mountedRef   = useRef(false);
   const bufferedOutputRef = useRef('');
   const outputFrameRef = useRef<number | null>(null);
-  const outputActiveTimeoutRef = useRef<number | null>(null);
   const fitFrameRef = useRef<number | null>(null);
   const lastResizeRef = useRef<{ rows: number; cols: number } | null>(null);
   const webglAddonRef = useRef<WebglAddon | null>(null);
   const webglContextLossDisposableRef = useRef<{ dispose: () => void } | null>(null);
-  const [outputActive, setOutputActive] = useState(false);
   const [rendererMode, setRendererMode] = useState<TerminalRendererMode>('dom');
   const settings = useSettingsStore(s => s.settings.terminal);
   const onReadyRef = useRef(onReady);
@@ -552,11 +550,7 @@ function XTermPane({
   const onOutputRef = useRef(onOutput);
   const onResizeRef = useRef(onResize);
   const rendererPreference = workbenchTheme.terminalRenderer;
-  const allowTransparency = rendererPreference === 'dom' && workbenchTheme.terminalStyle === 'glass';
-  const viewportContentFilter = useMemo(
-    () => buildTerminalViewportContentFilter(workbenchTheme.terminalFx, rendererMode, active, outputActive),
-    [active, outputActive, rendererMode, workbenchTheme.terminalFx],
-  );
+  const allowTransparency = false;
 
   useEffect(() => { onReadyRef.current = onReady; }, [onReady]);
   useEffect(() => { onFocusRef.current = onFocus; }, [onFocus]);
@@ -597,27 +591,6 @@ function XTermPane({
       setRendererMode('dom');
     }
   }, [disposeWebglRenderer, rendererPreference]);
-
-  const rendererModeRef = useRef<TerminalRendererMode>('dom');
-
-  useEffect(() => {
-    rendererModeRef.current = rendererMode;
-  }, [rendererMode]);
-
-  const markOutputActive = useCallback(() => {
-    if (rendererModeRef.current === 'webgl') {
-      return;
-    }
-
-    setOutputActive(true);
-    if (outputActiveTimeoutRef.current !== null) {
-      window.clearTimeout(outputActiveTimeoutRef.current);
-    }
-    outputActiveTimeoutRef.current = window.setTimeout(() => {
-      outputActiveTimeoutRef.current = null;
-      setOutputActive(false);
-    }, 140);
-  }, []);
 
   const boot = useCallback(async () => {
     if (!containerRef.current || mountedRef.current) return;
@@ -693,7 +666,6 @@ function XTermPane({
       }
 
       bufferedOutputRef.current = '';
-      markOutputActive();
       term.write(chunk);
       onOutputRef.current?.(id, chunk);
     };
@@ -745,10 +717,6 @@ function XTermPane({
           window.cancelAnimationFrame(outputFrameRef.current);
           outputFrameRef.current = null;
         }
-        if (outputActiveTimeoutRef.current !== null) {
-          window.clearTimeout(outputActiveTimeoutRef.current);
-          outputActiveTimeoutRef.current = null;
-        }
         disposeWebglRenderer();
         unlisten();
         ro.disconnect();
@@ -758,7 +726,7 @@ function XTermPane({
     onResizeRef.current?.(id, term.rows, term.cols);
     onReadyRef.current?.(id);
     term.focus();
-  }, [allowTransparency, attachWebglRenderer, disposeWebglRenderer, id, markOutputActive, settings, theme, workbenchTheme.terminalStyle]);
+  }, [attachWebglRenderer, disposeWebglRenderer, id, settings, theme]);
 
   useEffect(() => {
     if (visible) {
@@ -856,12 +824,10 @@ function XTermPane({
         style={{
           padding: '6px 8px',
           boxSizing: 'border-box',
-          filter: viewportContentFilter,
         }}
       />
       <TerminalViewportFx
         active={active}
-        outputActive={outputActive}
         paneId={id}
         rendererMode={rendererMode}
         terminalFx={workbenchTheme.terminalFx}
@@ -869,7 +835,9 @@ function XTermPane({
       />
     </div>
   );
-}
+});
+
+XTermPane.displayName = 'XTermPane';
 
 // ─── Bookmark chip ────────────────────────────────────────────────────────────
 
@@ -1524,6 +1492,13 @@ export function TerminalOverlay({
       requestAnimationFrame(() => entry.xterm.focus());
     }
   }, [markPaneFocused]);
+
+  const handlePaneFocus = useCallback((paneId: string) => {
+    const owner = findTabForPane(paneId);
+    if (owner) {
+      focusPane(owner.id, paneId);
+    }
+  }, [findTabForPane, focusPane]);
 
   const removePaneSession = useCallback((paneId: string) => {
     clearTerminalReady(paneId);
@@ -2210,12 +2185,7 @@ export function TerminalOverlay({
                 theme={theme}
                 workbenchTheme={appearance.workbenchTheme}
                 onReady={markTerminalReady}
-                onFocus={(id) => {
-                  const owner = findTabForPane(id);
-                  if (owner) {
-                    focusPane(owner.id, id);
-                  }
-                }}
+                onFocus={handlePaneFocus}
                 onData={handleTerminalInput}
                 onOutput={handleTerminalOutput}
                 onResize={handlePaneResize}
@@ -2234,6 +2204,7 @@ export function TerminalOverlay({
     closePane,
     copyPaneOutput,
     findTabForPane,
+    handlePaneFocus,
     focusPane,
     handlePaneResize,
     handleTerminalInput,

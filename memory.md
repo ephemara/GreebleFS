@@ -1,5 +1,18 @@
 # GreebleFS Memory
 
+## 2026-04-18 — Terminal Xterm Hot Path Simplification
+
+- We pivoted back to xterm as the terminal engine because it already covers selection, hyperlink detection, IME, mouse reporting, and the other parity work a native rewrite would have to relearn.
+- Durable implementation shape:
+  - `src/components/TerminalOverlay.tsx` now keeps the pane surface memoized and imperative, with xterm still handling emulation/input/rendering and the overlay shell handling pane chrome plus lifecycle.
+  - `src/components/terminal/TerminalViewportFx.tsx` is now an idle-only decorative layer for inactive DOM panes. The active viewport no longer carries the expensive overlay/filter stack.
+  - Terminal panes are rendered opaque by default so the compositor does not have to blend a translucent live terminal surface on every frame.
+- Durable product note:
+  - For embedded terminals in this repo, the fastest working path is xterm plus a brutally simple hot path. Keep fancy styling out of the active viewport and keep cwd sync / broadcast input on the typed bridge.
+- Validation:
+  - passed: `bunx vitest run src/test/terminalOverlay.test.tsx src/test/workbenchTheme.test.ts`
+  - passed: filtered typecheck via `bunx tsc --noEmit --pretty false 2>&1 | rg "src/components/TerminalOverlay.tsx|src/components/terminal/TerminalViewportFx.tsx|src/test/terminalOverlay.test.tsx|src/config/workbenchTheme.ts|src/config/pilotThemeContract.ts|src/test/workbenchTheme.test.tsx" || true`
+
 ## 2026-04-18 — Explorer Preview Split Mode Stays Local To FileExplorer
 
 - The explorer preview can now be promoted into a pane-styled sibling surface without creating a second workspace pane or reusing the top-level `1-Up` / `2-Up` / `4-Up` system.

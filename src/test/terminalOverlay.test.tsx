@@ -149,6 +149,7 @@ describe('TerminalOverlay', () => {
   it('copies the active terminal buffer to the clipboard', async () => {
     render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
 
+    expect(screen.queryByTestId('terminal-pane-fx-overlay-0')).not.toBeInTheDocument();
     const copyButton = await screen.findByRole('button', { name: 'Copy Output' });
     await waitFor(() => expect(copyButton).toBeEnabled());
 
@@ -303,7 +304,7 @@ describe('TerminalOverlay', () => {
     });
   }, 20000);
 
-  it('boots the pane with the WebGL renderer when hardware support is available and suppresses viewport fx on the hot path', async () => {
+  it('boots the pane with the WebGL renderer when hardware support is available and keeps the hot pane free of viewport fx', async () => {
     const hardwareRenderer = 'NVIDIA Corporation Quadro RTX 3000/PCIe/SSE2';
     const debugRendererInfo = {
       UNMASKED_VENDOR_WEBGL: 0x9245,

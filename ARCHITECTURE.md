@@ -77,9 +77,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/WorkbenchNavigationSurface.tsx`
   Runtime-swappable launcher surface for cross-axis, channel-grid, desktop, and tabbed shells.
 - `src/components/TerminalOverlay.tsx`
-  Integrated terminal shell. It now owns a tree-based pane/workspace model instead of a flat `paneIds[]` layout, renders pane geometry from that split tree, keeps PTYs mounted across workspace-tab switches, routes pane-resize behavior through draggable split handles plus the typed terminal command bridge, and only loads the xterm WebGL renderer after a hardware WebGL probe passes. Explorer-driven terminal cwd sync now goes through terminal shell-integration commands instead of always injecting literal `cd` text.
+  Integrated terminal shell. It owns the tree-based pane/workspace model, keeps PTYs mounted across workspace-tab switches, routes pane-resize behavior through draggable split handles plus the typed terminal command bridge, and keeps the terminal surface memoized and imperative so the hot path stays out of React churn. xterm remains the engine, WebGL is only loaded after a hardware probe passes, and explorer-driven cwd sync still goes through terminal shell-integration commands instead of literal `cd` injection.
 - `src/components/terminal/TerminalViewportFx.tsx`
-  Pane-local terminal presentation leaf. It applies theme-owned scanline/noise/vignette/glow/tint/curvature overlays and content filtering above the mounted xterm viewport in DOM mode while keeping pointer/input ownership in the pane shell. WebGL panes intentionally skip the overlay so the hot render path stays simple.
+  Pane-local terminal presentation leaf. It is now an idle-only decorative layer for inactive DOM panes and avoids live viewport filtering or compositor-heavy effects on the active terminal surface.
 - `src/components/terminal/terminalRendererSupport.ts`
   Small runtime probe for terminal WebGL support. It first tries a strict `webgl2` context, then retries without the major-performance-caveat gate if needed, and still rejects software renderers so `auto` mode does not opt into a slow or fallback-backed GPU path.
 - `src/components/ScreenshotsManager.tsx`
