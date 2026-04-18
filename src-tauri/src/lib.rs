@@ -7,6 +7,7 @@ pub mod domain_commands;
 pub mod entry_size_cache;
 pub mod explorer_pro_commands;
 pub mod fs_commands;
+pub mod image_commands;
 mod linux_graphics;
 pub mod plugin_commands;
 pub mod python_commands;
@@ -63,6 +64,7 @@ pub fn run() {
             app.manage(TerminalManager::new());
             app.manage(CloudRuntimeState::default());
             app.manage(AudioEngineManager::default());
+            app.manage(image_commands::ImageEditorManager::default());
             app.manage(video_engine::VideoEngineManager::default());
             initialize_entry_size_cache(app.handle())?;
             app.manage(EntrySizeWatcherState::default());

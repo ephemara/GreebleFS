@@ -31,7 +31,7 @@ const VIDEO_AUDIO_DECK_ID: AudioDeckId = AudioDeckId::B;
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub enum VideoPlaybackBackend {
-    FfmpegFrameSequence,
+    WebviewMediaElement,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, specta::Type)]
@@ -179,7 +179,7 @@ impl Default for VideoEngineMutableState {
         Self {
             ready: false,
             engine_error: None,
-            playback_backend: VideoPlaybackBackend::FfmpegFrameSequence,
+            playback_backend: VideoPlaybackBackend::WebviewMediaElement,
             loaded_path: None,
             loaded_name: None,
             duration_seconds: 0.0,
@@ -521,9 +521,8 @@ fn resolve_video_frame_sequence_root(app: &AppHandle) -> Result<PathBuf, String>
     Ok(root)
 }
 
-fn prepare_video_source(app: &AppHandle, input_path: &Path) -> Result<PreparedVideoSource, String> {
+fn prepare_video_source(input_path: &Path) -> Result<PreparedVideoSource, String> {
     let metadata = probe_video_metadata(input_path)?;
-    let frame_sequence_paths = ensure_video_frame_sequence(app, input_path, &metadata)?;
     Ok(PreparedVideoSource {
         input_path: input_path.to_path_buf(),
         loaded_name: input_path
@@ -536,7 +535,7 @@ fn prepare_video_source(app: &AppHandle, input_path: &Path) -> Result<PreparedVi
         height_px: metadata.height_px,
         frame_rate: metadata.frame_rate,
         has_audio_track: metadata.has_audio_track,
-        frame_sequence_paths,
+        frame_sequence_paths: Vec::new(),
     })
 }
 
@@ -947,11 +946,8 @@ pub async fn video_engine_load_source(
     };
     shared.emit_state();
 
-    let app_for_prepare = app.clone();
     let input_path_for_prepare = input_path.clone();
-    let prepared_source = tauri::async_runtime::spawn_blocking(move || {
-        prepare_video_source(&app_for_prepare, &input_path_for_prepare)
-    })
+    let prepared_source = tauri::async_runtime::spawn_blocking(move || prepare_video_source(&input_path_for_prepare))
     .await
     .map_err(|error| format!("Video source preparation task failed to join: {error}"))??;
 

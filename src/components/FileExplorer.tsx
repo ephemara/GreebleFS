@@ -937,7 +937,9 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
 function resolveExplorerDragIntent(
   event: Pick<React.DragEvent, "shiftKey">,
 ): ExplorerDragIntent {
-  return event.shiftKey ? "internal" : "native-out";
+  // Default (no modifier) = internal in-app move/copy so folder drop targets work.
+  // Shift+drag = native-out to drag files into other OS applications.
+  return event.shiftKey ? "native-out" : "internal";
 }
 
 function fitExplorerDragPreviewLabel(

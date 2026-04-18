@@ -80,6 +80,8 @@ cpal = "0.17.3"
 rubato = "2.0.0"
 rustfft = "6.4.1"
 symphonia = { version = "0.5.5", features = ["all", "opt-simd"] }
+rust_ffmpeg = { path = "../crates/ffmpeg-suite-rs/rust_ffmpeg" }
+rust_ffprobe = { path = "../crates/ffmpeg-suite-rs/rust_ffprobe" }
 
 [dev-dependencies]
 tokio  = { version = "1", features = ["full"] }

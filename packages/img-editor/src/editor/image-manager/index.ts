@@ -67,6 +67,13 @@ export type exportCanvasAsImageFileOptions = {
   exportAsBlob?: boolean
 }
 
+export type ReplaceManagedImageSourceOptions = {
+  source: string,
+  matchCustomData?: Record<string, unknown>,
+  withoutSave?: boolean,
+  withoutSelection?: boolean
+}
+
 type JsPDFModule = {
   jsPDF: typeof jsPDF
 }
@@ -452,6 +459,97 @@ export default class ImageManager {
           withoutAdding,
           customData
         }
+      })
+
+      historyManager.resumeHistory()
+      return null
+    }
+  }
+
+  public async replaceManagedImageSource(
+    options: ReplaceManagedImageSourceOptions
+  ): Promise<SuccessulImageImportResult | null> {
+    const {
+      source,
+      matchCustomData = {},
+      withoutSave = true,
+      withoutSelection = true
+    } = options
+
+    const {
+      canvas,
+      historyManager,
+      errorManager
+    } = this.editor
+
+    const target = canvas.getObjects().find((object) => {
+      if (!(object instanceof FabricImage)) return false
+
+      const customData = (object.customData ?? null) as Record<string, unknown> | null
+      if (!customData) return false
+
+      return Object.entries(matchCustomData).every(([key, value]) => customData[key] === value)
+    })
+
+    if (!(target instanceof FabricImage)) {
+      errorManager.emitError({
+        origin: 'ImageManager',
+        method: 'replaceManagedImageSource',
+        code: 'MANAGED_IMAGE_NOT_FOUND',
+        message: 'Failed to find the managed image object that should receive the new source.',
+        data: { matchCustomData }
+      })
+
+      return null
+    }
+
+    historyManager.suspendHistory()
+
+    try {
+      const renderedWidth = target.getScaledWidth()
+      const renderedHeight = target.getScaledHeight()
+
+      await target.setSrc(source, { crossOrigin: 'anonymous' })
+
+      if (target.width && target.height) {
+        target.set({
+          scaleX: renderedWidth / target.width,
+          scaleY: renderedHeight / target.height
+        })
+      }
+
+      target.setCoords()
+
+      if (!withoutSelection) {
+        canvas.setActiveObject(target)
+      }
+
+      canvas.renderAll()
+      historyManager.resumeHistory()
+
+      if (!withoutSave) {
+        historyManager.saveState()
+      }
+
+      const result = {
+        image: target,
+        format: String(target.format ?? ''),
+        contentType: String(target.contentType ?? ''),
+        scale: 'managed-source-replace',
+        withoutSave,
+        source,
+        withoutSelection
+      }
+
+      canvas.fire('editor:image-source-replaced', result)
+      return result
+    } catch (error) {
+      errorManager.emitError({
+        origin: 'ImageManager',
+        method: 'replaceManagedImageSource',
+        code: 'MANAGED_IMAGE_SOURCE_REPLACE_FAILED',
+        message: `Failed to replace the managed image source: ${(error as Error).message}`,
+        data: { source, matchCustomData }
       })
 
       historyManager.resumeHistory()

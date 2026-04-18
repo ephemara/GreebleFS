@@ -1,20 +1,27 @@
 use crate::video_engine::{
-    resolve_video_ffmpeg_binary, resolve_video_runtime_root, sanitize_video_runtime_stem,
-    validate_video_source_path,
+    resolve_video_ffmpeg_binary, resolve_video_ffprobe_binary, resolve_video_runtime_root,
+    sanitize_video_runtime_stem, validate_video_source_path,
 };
+use rust_ffmpeg::{
+    Codec, CodecOptions, Duration as FFmpegDuration, FFmpegBuilder, Input, LogLevel as FFmpegLogLevel,
+    Output, PixelFormat,
+};
+use rust_ffprobe::{FFprobeBuilder, LogLevel as FFprobeLogLevel, ProbeResult, StreamInfo};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::UNIX_EPOCH;
+use std::time::{Duration as StdDuration, UNIX_EPOCH};
 use tauri::AppHandle;
 
 const VIDEO_PREVIEW_PROXY_EXTENSION: &str = "mp4";
 const VIDEO_PREVIEW_PROXY_AUDIO_BITRATE: &str = "160k";
-const VIDEO_PREVIEW_PROXY_CRF: &str = "23";
+const VIDEO_PREVIEW_PROXY_CRF: u8 = 23;
 const VIDEO_PREVIEW_PROXY_PRESET: &str = "veryfast";
 const VIDEO_PREVIEW_PROXY_MIME_TYPE: &str = "video/mp4";
+const VIDEO_TRIM_AUDIO_BITRATE: &str = "192k";
+const VIDEO_TRIM_CRF: u8 = 18;
+const VIDEO_TRIM_PRESET: &str = "veryfast";
 const VIDEO_TRIM_SCALE_FILTER: &str = "scale=trunc(iw/2)*2:trunc(ih/2)*2";
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -53,14 +60,19 @@ pub struct VideoTrimExportResult {
     pub ffmpeg_binary: String,
 }
 
+#[derive(Debug, Clone)]
+struct VideoPreviewCompatibility {
+    direct_playback_supported: bool,
+    has_audio_track: bool,
+    mime_type: Option<String>,
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn video_export_trim(
     request: VideoTrimExportRequest,
 ) -> Result<VideoTrimExportResult, String> {
-    tauri::async_runtime::spawn_blocking(move || run_video_trim_export(request))
-        .await
-        .map_err(|error| format!("Video trim export task failed to join: {error}"))?
+    run_video_trim_export(request).await
 }
 
 #[tauri::command]
@@ -69,23 +81,16 @@ pub async fn video_create_preview_proxy(
     app: AppHandle,
     input_path: String,
 ) -> Result<ResolvedVideoPreviewSource, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let input = validate_video_source_path(&input_path)?;
-        let proxy_path = video_preview_proxy_path(&app, &input)?;
+    let input = validate_video_source_path(&input_path)?;
+    let compatibility = resolve_video_preview_compatibility(&input).await?;
+    let proxy_path = ensure_video_preview_proxy(&app, &input, compatibility.has_audio_track).await?;
 
-        if !can_reuse_video_preview_proxy(&input, &proxy_path) {
-            generate_video_preview_proxy(&input, &proxy_path)?;
-        }
-
-        Ok(ResolvedVideoPreviewSource {
-            source_path: path_to_string(&proxy_path),
-            source_kind: VideoPreviewSourceKind::Proxy,
-            mime_type: Some(VIDEO_PREVIEW_PROXY_MIME_TYPE.to_string()),
-            generated_from_path: Some(path_to_string(&input)),
-        })
+    Ok(ResolvedVideoPreviewSource {
+        source_path: path_to_string(&proxy_path),
+        source_kind: VideoPreviewSourceKind::Proxy,
+        mime_type: Some(VIDEO_PREVIEW_PROXY_MIME_TYPE.to_string()),
+        generated_from_path: Some(path_to_string(&input)),
     })
-    .await
-    .map_err(|error| format!("Video preview proxy task failed to join: {error}"))?
 }
 
 #[tauri::command]
@@ -94,104 +99,67 @@ pub async fn video_resolve_preview_source(
     app: AppHandle,
     input_path: String,
 ) -> Result<ResolvedVideoPreviewSource, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let input = validate_video_source_path(&input_path)?;
-        if should_generate_video_preview_proxy(&input) {
-            let proxy_path = video_preview_proxy_path(&app, &input)?;
+    let input = validate_video_source_path(&input_path)?;
+    let compatibility = resolve_video_preview_compatibility(&input).await?;
 
-            if !can_reuse_video_preview_proxy(&input, &proxy_path) {
-                generate_video_preview_proxy(&input, &proxy_path)?;
-            }
-
-            return Ok(ResolvedVideoPreviewSource {
-                source_path: path_to_string(&proxy_path),
-                source_kind: VideoPreviewSourceKind::Proxy,
-                mime_type: Some(VIDEO_PREVIEW_PROXY_MIME_TYPE.to_string()),
-                generated_from_path: Some(path_to_string(&input)),
-            });
-        }
-
-        Ok(ResolvedVideoPreviewSource {
+    if compatibility.direct_playback_supported {
+        return Ok(ResolvedVideoPreviewSource {
             source_path: path_to_string(&input),
             source_kind: VideoPreviewSourceKind::Direct,
-            mime_type: direct_video_preview_mime_type(&input),
+            mime_type: compatibility.mime_type,
             generated_from_path: None,
-        })
+        });
+    }
+
+    let proxy_path = ensure_video_preview_proxy(&app, &input, compatibility.has_audio_track).await?;
+    Ok(ResolvedVideoPreviewSource {
+        source_path: path_to_string(&proxy_path),
+        source_kind: VideoPreviewSourceKind::Proxy,
+        mime_type: Some(VIDEO_PREVIEW_PROXY_MIME_TYPE.to_string()),
+        generated_from_path: Some(path_to_string(&input)),
     })
-    .await
-    .map_err(|error| format!("Video preview source task failed to join: {error}"))?
 }
 
-fn run_video_trim_export(request: VideoTrimExportRequest) -> Result<VideoTrimExportResult, String> {
+async fn run_video_trim_export(
+    request: VideoTrimExportRequest,
+) -> Result<VideoTrimExportResult, String> {
     let normalized_request = normalize_trim_export_request(request)?;
+    let input_path = PathBuf::from(&normalized_request.input_path);
+    let compatibility = resolve_video_preview_compatibility(&input_path).await?;
     let ffmpeg_binary = resolve_video_ffmpeg_binary();
+    let clip_duration_seconds =
+        normalized_request.end_time_seconds - normalized_request.start_time_seconds;
 
-    let mut command = Command::new(&ffmpeg_binary);
-    command.args(["-hide_banner", "-loglevel", "error"]);
-    command.arg(if normalized_request.overwrite_existing {
-        "-y"
+    let trim_input = Input::new(normalized_request.input_path.clone())
+        .seek(ffmpeg_duration_from_seconds(normalized_request.start_time_seconds))
+        .duration(ffmpeg_duration_from_seconds(clip_duration_seconds));
+
+    let trim_output = build_trim_export_output(
+        Path::new(&normalized_request.output_path),
+        compatibility.has_audio_track,
+    );
+
+    let builder = FFmpegBuilder::with_executable(ffmpeg_binary.clone())
+        .log_level(FFmpegLogLevel::Error)
+        .input(trim_input)
+        .raw_args(["-vf", VIDEO_TRIM_SCALE_FILTER]);
+    let builder = if normalized_request.overwrite_existing {
+        builder.overwrite()
     } else {
-        "-n"
-    });
-    command.args(["-i", &normalized_request.input_path]);
-    command.args([
-        "-ss",
-        &format_ffmpeg_seconds(normalized_request.start_time_seconds),
-    ]);
-    command.args([
-        "-to",
-        &format_ffmpeg_seconds(normalized_request.end_time_seconds),
-    ]);
-    command.args([
-        "-vf",
-        VIDEO_TRIM_SCALE_FILTER,
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "18",
-        "-pix_fmt",
-        "yuv420p",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
-        "-movflags",
-        "+faststart",
-        &normalized_request.output_path,
-    ]);
+        builder.no_overwrite()
+    };
 
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
-
-    let output = command
-        .output()
-        .map_err(|error| format!("Failed to launch ffmpeg at '{ffmpeg_binary}': {error}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let message = if !stderr.is_empty() {
-            stderr
-        } else if !stdout.is_empty() {
-            stdout
-        } else {
-            format!("ffmpeg exited with status {}", output.status)
-        };
-        return Err(format!("Video trim export failed: {message}"));
-    }
+    builder
+        .output(trim_output)
+        .run()
+        .await
+        .map_err(|error| format!("Video trim export failed: {error}"))?;
 
     Ok(VideoTrimExportResult {
         output_path: normalized_request.output_path,
         start_time_seconds: normalized_request.start_time_seconds,
         end_time_seconds: normalized_request.end_time_seconds,
-        duration_seconds: normalized_request.end_time_seconds
-            - normalized_request.start_time_seconds,
+        duration_seconds: clip_duration_seconds,
         ffmpeg_binary,
     })
 }
@@ -327,8 +295,23 @@ fn can_reuse_video_preview_proxy(input_path: &Path, proxy_path: &Path) -> bool {
     }
 }
 
-fn generate_video_preview_proxy(input_path: &Path, proxy_path: &Path) -> Result<(), String> {
-    let ffmpeg_binary = resolve_video_ffmpeg_binary();
+async fn ensure_video_preview_proxy(
+    app: &AppHandle,
+    input_path: &Path,
+    has_audio_track: bool,
+) -> Result<PathBuf, String> {
+    let proxy_path = video_preview_proxy_path(app, input_path)?;
+    if !can_reuse_video_preview_proxy(input_path, &proxy_path) {
+        generate_video_preview_proxy(input_path, &proxy_path, has_audio_track).await?;
+    }
+    Ok(proxy_path)
+}
+
+async fn generate_video_preview_proxy(
+    input_path: &Path,
+    proxy_path: &Path,
+    has_audio_track: bool,
+) -> Result<(), String> {
     if let Some(parent) = proxy_path.parent() {
         fs::create_dir_all(parent).map_err(|error| {
             format!(
@@ -338,69 +321,169 @@ fn generate_video_preview_proxy(input_path: &Path, proxy_path: &Path) -> Result<
         })?;
     }
 
-    let mut command = Command::new(&ffmpeg_binary);
-    command.args(["-hide_banner", "-loglevel", "error", "-y"]);
-    command.args(["-i", &path_to_string(input_path)]);
-    command.args([
-        "-vf",
-        VIDEO_TRIM_SCALE_FILTER,
-        "-c:v",
-        "libx264",
-        "-preset",
-        VIDEO_PREVIEW_PROXY_PRESET,
-        "-crf",
-        VIDEO_PREVIEW_PROXY_CRF,
-        "-pix_fmt",
-        "yuv420p",
-        "-c:a",
-        "aac",
-        "-b:a",
-        VIDEO_PREVIEW_PROXY_AUDIO_BITRATE,
-        "-movflags",
-        "+faststart",
-        &path_to_string(proxy_path),
-    ]);
-
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
-
-    let output = command
-        .output()
-        .map_err(|error| format!("Failed to launch ffmpeg at '{ffmpeg_binary}': {error}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let message = if !stderr.is_empty() {
-            stderr
-        } else if !stdout.is_empty() {
-            stdout
-        } else {
-            format!("ffmpeg exited with status {}", output.status)
-        };
-        return Err(format!("Video preview proxy generation failed: {message}"));
-    }
+    FFmpegBuilder::with_executable(resolve_video_ffmpeg_binary())
+        .log_level(FFmpegLogLevel::Error)
+        .overwrite()
+        .input_path(path_to_string(input_path))
+        .raw_args(["-vf", VIDEO_TRIM_SCALE_FILTER])
+        .output(build_preview_proxy_output(proxy_path, has_audio_track))
+        .run()
+        .await
+        .map_err(|error| format!("Video preview proxy generation failed: {error}"))?;
 
     Ok(())
 }
 
-fn should_generate_video_preview_proxy(input_path: &Path) -> bool {
-    let extension = input_path
+fn build_preview_proxy_output(proxy_path: &Path, has_audio_track: bool) -> Output {
+    let output = Output::new(path_to_string(proxy_path))
+        .format("mp4")
+        .video_codec_opts(
+            CodecOptions::new(Codec::new("libx264"))
+                .quality(VIDEO_PREVIEW_PROXY_CRF)
+                .pixel_format(PixelFormat::yuv420p()),
+        )
+        .preset(VIDEO_PREVIEW_PROXY_PRESET)
+        .faststart();
+
+    if has_audio_track {
+        output.audio_codec_opts(CodecOptions::new(Codec::aac()).bitrate(VIDEO_PREVIEW_PROXY_AUDIO_BITRATE))
+    } else {
+        output.no_audio()
+    }
+}
+
+fn build_trim_export_output(output_path: &Path, has_audio_track: bool) -> Output {
+    let output = Output::new(path_to_string(output_path))
+        .format("mp4")
+        .video_codec_opts(
+            CodecOptions::new(Codec::new("libx264"))
+                .quality(VIDEO_TRIM_CRF)
+                .pixel_format(PixelFormat::yuv420p()),
+        )
+        .preset(VIDEO_TRIM_PRESET)
+        .faststart();
+
+    if has_audio_track {
+        output.audio_codec_opts(CodecOptions::new(Codec::aac()).bitrate(VIDEO_TRIM_AUDIO_BITRATE))
+    } else {
+        output.no_audio()
+    }
+}
+
+async fn resolve_video_preview_compatibility(
+    input_path: &Path,
+) -> Result<VideoPreviewCompatibility, String> {
+    let probe = probe_video_media(input_path).await?;
+    let video_stream = probe
+        .primary_video_stream()
+        .ok_or_else(|| format!("No video stream was found in '{}'.", input_path.display()))?;
+    let audio_stream = probe.primary_audio_stream();
+    let extension = lowercase_extension(input_path);
+    let direct_playback_supported = match extension.as_deref() {
+        Some("mp4" | "m4v") => {
+            is_mp4_video_stream_supported(video_stream)
+                && audio_stream.map(is_mp4_audio_stream_supported).unwrap_or(true)
+        }
+        Some("webm") => {
+            is_webm_video_stream_supported(video_stream)
+                && audio_stream.map(is_webm_audio_stream_supported).unwrap_or(true)
+        }
+        Some("ogv") => {
+            is_ogv_video_stream_supported(video_stream)
+                && audio_stream.map(is_ogv_audio_stream_supported).unwrap_or(true)
+        }
+        _ => false,
+    };
+
+    Ok(VideoPreviewCompatibility {
+        direct_playback_supported,
+        has_audio_track: audio_stream.is_some(),
+        mime_type: direct_video_preview_mime_type(input_path),
+    })
+}
+
+async fn probe_video_media(input_path: &Path) -> Result<ProbeResult, String> {
+    FFprobeBuilder::with_executable(resolve_video_ffprobe_binary())
+        .input(path_to_string(input_path))
+        .show_format()
+        .show_streams()
+        .log_level(FFprobeLogLevel::Error)
+        .run()
+        .await
+        .map_err(|error| format!("Video probe failed for '{}': {error}", input_path.display()))
+}
+
+fn is_mp4_video_stream_supported(video_stream: &StreamInfo) -> bool {
+    let Some(codec_name) = lowercase_codec_name(video_stream) else {
+        return false;
+    };
+    if !matches!(codec_name.as_str(), "h264" | "avc1") {
+        return false;
+    }
+
+    match lowercase_optional(video_stream.pix_fmt.as_deref()) {
+        Some(pixel_format) => {
+            pixel_format.contains("420") || pixel_format == "nv12" || pixel_format == "yuvj420p"
+        }
+        None => true,
+    }
+}
+
+fn is_mp4_audio_stream_supported(audio_stream: &StreamInfo) -> bool {
+    matches!(
+        lowercase_codec_name(audio_stream).as_deref(),
+        Some("aac" | "mp3" | "mp4a")
+    )
+}
+
+fn is_webm_video_stream_supported(video_stream: &StreamInfo) -> bool {
+    matches!(
+        lowercase_codec_name(video_stream).as_deref(),
+        Some("vp8" | "vp9")
+    )
+}
+
+fn is_webm_audio_stream_supported(audio_stream: &StreamInfo) -> bool {
+    matches!(
+        lowercase_codec_name(audio_stream).as_deref(),
+        Some("opus" | "vorbis")
+    )
+}
+
+fn is_ogv_video_stream_supported(video_stream: &StreamInfo) -> bool {
+    matches!(
+        lowercase_codec_name(video_stream).as_deref(),
+        Some("theora")
+    )
+}
+
+fn is_ogv_audio_stream_supported(audio_stream: &StreamInfo) -> bool {
+    matches!(
+        lowercase_codec_name(audio_stream).as_deref(),
+        Some("opus" | "vorbis")
+    )
+}
+
+fn lowercase_extension(input_path: &Path) -> Option<String> {
+    input_path
         .extension()
         .and_then(|value| value.to_str())
-        .map(|value| value.trim().trim_start_matches('.').to_ascii_lowercase());
+        .map(|value| value.trim().trim_start_matches('.').to_ascii_lowercase())
+}
 
-    !matches!(extension.as_deref(), Some("mp4" | "m4v" | "ogv" | "webm"))
+fn lowercase_codec_name(stream: &StreamInfo) -> Option<String> {
+    lowercase_optional(stream.codec_name.as_deref())
+}
+
+fn lowercase_optional(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_ascii_lowercase)
 }
 
 fn direct_video_preview_mime_type(input_path: &Path) -> Option<String> {
-    let extension = input_path
-        .extension()
-        .and_then(|value| value.to_str())
-        .map(|value| value.trim().trim_start_matches('.').to_ascii_lowercase())?;
+    let extension = lowercase_extension(input_path)?;
     let mime_type = match extension.as_str() {
         "3g2" => "video/3gpp2",
         "3gp" => "video/3gpp",
@@ -421,8 +504,8 @@ fn direct_video_preview_mime_type(input_path: &Path) -> Option<String> {
     Some(mime_type.to_string())
 }
 
-fn format_ffmpeg_seconds(seconds: f64) -> String {
-    format!("{seconds:.3}")
+fn ffmpeg_duration_from_seconds(seconds: f64) -> FFmpegDuration {
+    StdDuration::from_secs_f64(seconds.max(0.0)).into()
 }
 
 fn path_to_string(path: &Path) -> String {
@@ -441,8 +524,9 @@ fn paths_match(left: &Path, right: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        direct_video_preview_mime_type, normalize_trim_export_request, run_video_trim_export,
-        should_generate_video_preview_proxy, VideoTrimExportRequest,
+        build_preview_proxy_output, direct_video_preview_mime_type, generate_video_preview_proxy,
+        normalize_trim_export_request, resolve_video_preview_compatibility, run_video_trim_export,
+        VideoTrimExportRequest,
     };
     use crate::video_engine::{
         resolve_video_ffmpeg_binary, resolve_video_ffprobe_binary, sanitize_video_runtime_stem,
@@ -461,6 +545,7 @@ mod tests {
     #[derive(Debug, Deserialize)]
     struct TestFfprobeStream {
         codec_type: Option<String>,
+        codec_name: Option<String>,
     }
 
     #[derive(Debug, Deserialize)]
@@ -487,7 +572,7 @@ mod tests {
             Some((ffmpeg_binary, ffprobe_binary))
         } else {
             eprintln!(
-                "Skipping real trim export test because ffmpeg ({ffmpeg_binary}) or ffprobe ({ffprobe_binary}) was unavailable."
+                "Skipping real video toolchain test because ffmpeg ({ffmpeg_binary}) or ffprobe ({ffprobe_binary}) was unavailable."
             );
             None
         }
@@ -513,7 +598,15 @@ mod tests {
         command.args(["-t", "1.5", "-shortest"]);
 
         match extension.as_str() {
-            "mp4" | "mov" | "mkv" => {
+            "mp4" => {
+                command.args(["-c:v", "libx264", "-pix_fmt", "yuv420p"]);
+                if with_audio_track {
+                    command.args(["-c:a", "aac", "-b:a", "128k"]);
+                } else {
+                    command.arg("-an");
+                }
+            }
+            "mov" | "mkv" => {
                 command.args(["-c:v", "libx264", "-pix_fmt", "yuv420p"]);
                 if with_audio_track {
                     command.args(["-c:a", "aac", "-b:a", "128k"]);
@@ -522,9 +615,9 @@ mod tests {
                 }
             }
             "webm" => {
-                command.args(["-c:v", "libvpx", "-pix_fmt", "yuv420p"]);
+                command.args(["-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p"]);
                 if with_audio_track {
-                    command.args(["-c:a", "libvorbis", "-b:a", "96k"]);
+                    command.args(["-c:a", "libopus", "-b:a", "96k"]);
                 } else {
                     command.arg("-an");
                 }
@@ -612,30 +705,108 @@ mod tests {
     }
 
     #[test]
-    fn preview_proxy_generation_prefers_safe_webview_containers_only() {
-        assert!(!should_generate_video_preview_proxy(Path::new(
-            "/tmp/demo.mp4"
-        )));
-        assert!(!should_generate_video_preview_proxy(Path::new(
-            "/tmp/demo.webm"
-        )));
-        assert!(should_generate_video_preview_proxy(Path::new(
-            "/tmp/demo.mov"
-        )));
-        assert!(should_generate_video_preview_proxy(Path::new(
-            "/tmp/demo.mkv"
-        )));
-    }
-
-    #[test]
     fn sanitize_video_runtime_stem_preserves_safe_characters() {
         assert_eq!(sanitize_video_runtime_stem("Demo Clip 01"), "Demo-Clip-01");
         assert_eq!(sanitize_video_runtime_stem("___"), "___");
         assert_eq!(sanitize_video_runtime_stem("..."), "video");
     }
 
-    #[test]
-    fn trim_export_transcodes_common_containers_into_seekable_mp4_outputs() {
+    #[tokio::test]
+    async fn preview_compatibility_prefers_direct_playback_only_for_web_safe_codec_pairs() {
+        let Some((ffmpeg_binary, _ffprobe_binary)) = ensure_video_toolchain_available() else {
+            return;
+        };
+
+        let temp_directory = tempdir().expect("video compatibility tempdir");
+        let mp4_path = build_fixture_path(temp_directory.path(), "direct.mp4");
+        let webm_path = build_fixture_path(temp_directory.path(), "direct.webm");
+        let mov_path = build_fixture_path(temp_directory.path(), "proxy.mov");
+        let mkv_path = build_fixture_path(temp_directory.path(), "proxy.mkv");
+        let avi_path = build_fixture_path(temp_directory.path(), "proxy.avi");
+
+        generate_test_video_fixture(&ffmpeg_binary, &mp4_path, true);
+        generate_test_video_fixture(&ffmpeg_binary, &webm_path, true);
+        generate_test_video_fixture(&ffmpeg_binary, &mov_path, true);
+        generate_test_video_fixture(&ffmpeg_binary, &mkv_path, true);
+        generate_test_video_fixture(&ffmpeg_binary, &avi_path, true);
+
+        assert!(
+            resolve_video_preview_compatibility(&mp4_path)
+                .await
+                .expect("mp4 compatibility")
+                .direct_playback_supported
+        );
+        assert!(
+            resolve_video_preview_compatibility(&webm_path)
+                .await
+                .expect("webm compatibility")
+                .direct_playback_supported
+        );
+        assert!(
+            !resolve_video_preview_compatibility(&mov_path)
+                .await
+                .expect("mov compatibility")
+                .direct_playback_supported
+        );
+        assert!(
+            !resolve_video_preview_compatibility(&mkv_path)
+                .await
+                .expect("mkv compatibility")
+                .direct_playback_supported
+        );
+        assert!(
+            !resolve_video_preview_compatibility(&avi_path)
+                .await
+                .expect("avi compatibility")
+                .direct_playback_supported
+        );
+    }
+
+    #[tokio::test]
+    async fn preview_proxy_generation_transcodes_common_container_formats_into_mp4_outputs() {
+        let Some((ffmpeg_binary, ffprobe_binary)) = ensure_video_toolchain_available() else {
+            return;
+        };
+
+        let temp_directory = tempdir().expect("video proxy tempdir");
+        for extension in ["mov", "mkv", "avi"] {
+            let input_path =
+                build_fixture_path(temp_directory.path(), &format!("proxy-source.{extension}"));
+            let output_path =
+                build_fixture_path(temp_directory.path(), &format!("proxy-output-{extension}.mp4"));
+
+            generate_test_video_fixture(&ffmpeg_binary, &input_path, true);
+
+            generate_video_preview_proxy(&input_path, &output_path, true)
+                .await
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "proxy generation should succeed for '{}' but failed: {error}",
+                        input_path.display()
+                    )
+                });
+
+            let probe = probe_media_summary(&ffprobe_binary, &output_path);
+            let codec_types = probe
+                .streams
+                .iter()
+                .filter_map(|stream| stream.codec_type.as_deref())
+                .collect::<Vec<_>>();
+            let codec_names = probe
+                .streams
+                .iter()
+                .filter_map(|stream| stream.codec_name.as_deref())
+                .collect::<Vec<_>>();
+
+            assert!(codec_types.contains(&"video"), "{}", output_path.display());
+            assert!(codec_types.contains(&"audio"), "{}", output_path.display());
+            assert!(codec_names.contains(&"h264"), "{}", output_path.display());
+            assert!(codec_names.contains(&"aac"), "{}", output_path.display());
+        }
+    }
+
+    #[tokio::test]
+    async fn trim_export_transcodes_common_containers_into_seekable_mp4_outputs() {
         let Some((ffmpeg_binary, ffprobe_binary)) = ensure_video_toolchain_available() else {
             return;
         };
@@ -656,6 +827,7 @@ mod tests {
                 end_time_seconds: 1.1,
                 overwrite_existing: true,
             })
+            .await
             .unwrap_or_else(|error| {
                 panic!(
                     "trim export should succeed for '{}' but failed: {error}",
@@ -678,6 +850,11 @@ mod tests {
                 .iter()
                 .filter_map(|stream| stream.codec_type.as_deref())
                 .collect::<Vec<_>>();
+            let codec_names = probe
+                .streams
+                .iter()
+                .filter_map(|stream| stream.codec_name.as_deref())
+                .collect::<Vec<_>>();
 
             assert!(
                 duration_seconds > 0.5 && duration_seconds < 1.5,
@@ -686,6 +863,16 @@ mod tests {
             );
             assert!(codec_types.contains(&"video"), "{}", output_path.display());
             assert!(codec_types.contains(&"audio"), "{}", output_path.display());
+            assert!(codec_names.contains(&"h264"), "{}", output_path.display());
+            assert!(codec_names.contains(&"aac"), "{}", output_path.display());
         }
+    }
+
+    #[test]
+    fn preview_proxy_output_is_always_written_as_mp4() {
+        let output = build_preview_proxy_output(Path::new("/tmp/proxy.mp4"), true);
+        let args = output.build_args();
+        assert!(args.contains(&"-f".to_string()));
+        assert!(args.contains(&"mp4".to_string()));
     }
 }

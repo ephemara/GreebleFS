@@ -55,6 +55,9 @@ describe('hotkey config helpers', () => {
     expect(defaults.audioWorkbenchPreviousSilence).toBe('Shift+ArrowLeft');
     expect(defaults.audioWorkbenchNextSilence).toBe('Shift+ArrowRight');
     expect(defaults.audioWorkbenchExportClip).toBe('Ctrl+Shift+S');
+    expect(defaults.imageEditorUndo).toBe('Ctrl+Z');
+    expect(defaults.imageEditorRedo).toBe('Ctrl+Shift+Z');
+    expect(defaults.imageEditorReset).toBe('Escape');
     expect(defaults.find).toBe('');
     expect(defaults.toggleHiddenFiles).toBe('Ctrl+H');
     expect(defaults.replace).toBe('');

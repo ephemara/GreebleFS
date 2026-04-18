@@ -23,6 +23,17 @@ declare module '@img-editor-runtime' {
         contentType: string;
         fileName: string;
       } | null>;
+      replaceManagedImageSource: (options: {
+        source: string;
+        matchCustomData?: Record<string, unknown>;
+        withoutSave?: boolean;
+        withoutSelection?: boolean;
+      }) => Promise<{
+        image: unknown;
+        format: string;
+        contentType: string;
+        fileName?: string;
+      } | null>;
     };
     textManager: {
       addText: () => unknown;
@@ -70,6 +81,7 @@ declare module '@img-editor-runtime' {
       source: string;
       scale?: 'scale-montage' | 'image-contain' | 'image-cover';
       withoutSave?: boolean;
+      customData?: Record<string, unknown>;
     };
   };
 

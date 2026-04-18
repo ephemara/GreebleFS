@@ -35,6 +35,11 @@ use crate::fs_commands::{
     FsJumpFilterMatch, FsJumpFilterRequest, FsPermissionInfo, FsRuntimeCachePolicy,
     FsWriteFileContent,
 };
+use crate::image_commands::{
+    ImageAdjustmentState, ImageEditorExportRequest, ImageEditorExportResult,
+    ImageEditorPreviewRequest, ImageEditorPreviewResult, ImageEditorSessionBootstrap,
+    ImageEditorSessionCreateRequest, ImageFilterPresetDefinition, ImageFilterPresetId,
+};
 use crate::linux_graphics::{
     LinuxDisplayBackend, LinuxDisplayBackendPreference, LinuxDisplayBackendStatus,
 };
@@ -201,6 +206,10 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::plugin_commands::plugin_run_backend,
             crate::plugin_commands::plugin_watch_directory,
             crate::plugin_commands::plugin_unwatch_directory,
+            crate::image_commands::image_editor_create_session,
+            crate::image_commands::image_editor_render_preview,
+            crate::image_commands::image_editor_export,
+            crate::image_commands::image_editor_close_session,
             crate::video_commands::video_create_preview_proxy,
             crate::video_commands::video_export_trim,
             crate::video_commands::video_resolve_preview_source,
@@ -281,6 +290,15 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<ExplorerTaskRecord>()
         .typ::<FsRuntimeCachePolicy>()
         .typ::<FsWriteFileContent>()
+        .typ::<ImageAdjustmentState>()
+        .typ::<ImageFilterPresetId>()
+        .typ::<ImageFilterPresetDefinition>()
+        .typ::<ImageEditorSessionCreateRequest>()
+        .typ::<ImageEditorSessionBootstrap>()
+        .typ::<ImageEditorPreviewRequest>()
+        .typ::<ImageEditorPreviewResult>()
+        .typ::<ImageEditorExportRequest>()
+        .typ::<ImageEditorExportResult>()
         .typ::<ExplorerTagRecord>()
         .typ::<ExplorerPathTagAssignment>()
         .typ::<ExplorerTagSnapshot>()

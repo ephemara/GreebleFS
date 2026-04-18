@@ -42,6 +42,9 @@ export type HotkeyBindingKey =
   | 'audioWorkbenchPreviousSilence'
   | 'audioWorkbenchNextSilence'
   | 'audioWorkbenchExportClip'
+  | 'imageEditorUndo'
+  | 'imageEditorRedo'
+  | 'imageEditorReset'
   | 'closeTab'
   | 'find'
   | 'replace'
@@ -372,6 +375,27 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     label: 'Audio Workbench Export Clip',
     description: 'Open the clip export flow from the audio workbench.',
     defaultValue: 'Ctrl+Shift+S',
+    scope: 'local',
+  },
+  {
+    key: 'imageEditorUndo',
+    label: 'Image Editor Undo',
+    description: 'Undo the last canvas edit inside the explorer image editor.',
+    defaultValue: 'Ctrl+Z',
+    scope: 'local',
+  },
+  {
+    key: 'imageEditorRedo',
+    label: 'Image Editor Redo',
+    description: 'Redo the last undone canvas edit inside the explorer image editor.',
+    defaultValue: 'Ctrl+Shift+Z',
+    scope: 'local',
+  },
+  {
+    key: 'imageEditorReset',
+    label: 'Image Editor Reset',
+    description: 'Restore the image editor to the last saved base grade and overlay state.',
+    defaultValue: 'Escape',
     scope: 'local',
   },
   {
