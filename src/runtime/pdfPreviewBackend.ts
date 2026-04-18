@@ -37,6 +37,8 @@ export type ExplorerPdfColorValue = PdfColorValue;
 export type ExplorerPdfSaveEditsInput = PdfSaveEditsRequest;
 export type ExplorerPdfSaveEditsOutput = PdfSaveEditsResult;
 
+const pendingExplorerPdfSessionCloseTimeouts = new Map<string, number>();
+
 export async function openExplorerPdfPreviewDocument(
   inputPath: string,
 ): Promise<ExplorerPdfPreviewDocument> {
@@ -57,4 +59,34 @@ export async function saveExplorerPdfPreviewEdits(
 
 export async function closeExplorerPdfPreviewDocument(sessionId: string): Promise<void> {
   await unwrapTauriResult(await commands.pdfClosePreviewDocument(sessionId));
+}
+
+export function scheduleExplorerPdfPreviewDocumentClose(
+  sessionId: string,
+  delayMs = 0,
+): void {
+  if (!sessionId.trim()) {
+    return;
+  }
+
+  cancelPendingExplorerPdfPreviewDocumentClose(sessionId);
+  const timeoutId = window.setTimeout(() => {
+    pendingExplorerPdfSessionCloseTimeouts.delete(sessionId);
+    void closeExplorerPdfPreviewDocument(sessionId).catch((error) => {
+      if (String(error).includes('PDF preview session was not found')) {
+        return;
+      }
+      console.warn('Failed to close PDF preview session:', error);
+    });
+  }, delayMs);
+  pendingExplorerPdfSessionCloseTimeouts.set(sessionId, timeoutId);
+}
+
+export function cancelPendingExplorerPdfPreviewDocumentClose(sessionId: string): void {
+  const pendingTimeoutId = pendingExplorerPdfSessionCloseTimeouts.get(sessionId);
+  if (pendingTimeoutId == null) {
+    return;
+  }
+  window.clearTimeout(pendingTimeoutId);
+  pendingExplorerPdfSessionCloseTimeouts.delete(sessionId);
 }

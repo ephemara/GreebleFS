@@ -402,10 +402,9 @@ impl PdfPreviewManager {
             .sessions
             .lock()
             .map_err(|_| "PDF preview session map was poisoned.".to_string())?;
-        let session = sessions
-            .get_mut(session_id)
-            .ok_or_else(|| format!("PDF preview session was not found: {session_id}"))?;
-        session.render_cache.insert(cache_key, render_result);
+        if let Some(session) = sessions.get_mut(session_id) {
+            session.render_cache.insert(cache_key, render_result);
+        }
         Ok(())
     }
 }

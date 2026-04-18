@@ -10,13 +10,18 @@
   - Together, that created a parent/child passive-effect ping-pong that could also close PDF sessions mid-render and surface false `session was not found` errors.
 - Durable fix shape:
   - `src/components/FileExplorer.tsx` now passes stable PDF workbench callbacks, including a direct stable `refresh` prop instead of an inline `() => refresh()` wrapper.
-  - `src/components/ExplorerPdfWorkbench.tsx` now separates registration updates from unmount cleanup for controller and close-guard wiring, and uses a stable `toggleEditMode` callback in the controller path.
+  - `src/components/ExplorerPdfWorkbench.tsx` now separates registration updates from unmount cleanup for controller and close-guard wiring, uses a stable `toggleEditMode` callback in the controller path, and defers native PDF session close through the runtime seam so React StrictMode cleanup does not kill a just-opened session during the dev-only mount/unmount/remount cycle.
+  - `src/runtime/pdfPreviewBackend.ts` now owns cancellable delayed PDF-session close helpers. That seam exists specifically so frontend lifecycle churn can cancel a pending native close before it fires.
+  - `src-tauri/src/pdf_commands.rs` now treats render-cache insertion after a session close as a no-op instead of surfacing `PDF preview session was not found` from a stale render completion.
   - `src/test/fileExplorer.viewModes.test.tsx` now uses a stricter PDF workbench mock whose controller depends on `onSaved`, so future unstable save callbacks will trip the explorer test instead of only failing at runtime.
+  - `src/test/pdfPreviewBackend.test.ts` now locks the deferred-close contract directly with fake timers.
 - Durable product note:
   - Treat the `PreviewPanel` -> `ExplorerPdfWorkbench` boundary as a stability boundary. If the workbench controller depends on a callback prop, keep that prop memoized or routed through a stable runtime seam. Do not reintroduce inline callback wrappers on the PDF preview lane.
+  - React StrictMode is enabled in `src/main.tsx`. Native preview sessions that are torn down from effect cleanup must tolerate the dev-only cleanup/remount cycle or use a cancellable delayed close path.
 - Validation:
-  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx`
-  - passed: filtered typecheck via `bunx tsc --noEmit --pretty false 2>&1 | rg "src/components/FileExplorer.tsx|src/test/fileExplorer.viewModes.test.tsx" || true`
+  - passed: `bunx vitest run src/test/pdfPreviewBackend.test.ts src/test/fileExplorer.viewModes.test.tsx`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
+  - passed: filtered typecheck via `bunx tsc --noEmit --pretty false 2>&1 | rg "src/components/ExplorerPdfWorkbench.tsx|src/runtime/pdfPreviewBackend.ts|src/test/pdfPreviewBackend.test.ts|src/test/fileExplorer.viewModes.test.tsx" || true`
 
 ## 2026-04-18 — Inline PDF Preview + Edit Workbench
 

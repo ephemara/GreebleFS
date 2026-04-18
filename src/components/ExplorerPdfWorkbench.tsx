@@ -21,8 +21,9 @@ import {
 } from 'react';
 import { matchesKeybinding } from '../config/hotkeys';
 import {
-  closeExplorerPdfPreviewDocument,
+  cancelPendingExplorerPdfPreviewDocumentClose,
   renderExplorerPdfPreviewPage,
+  scheduleExplorerPdfPreviewDocumentClose,
   saveExplorerPdfPreviewEdits,
   type ExplorerPdfColorValue,
   type ExplorerPdfFormFieldDescriptor,
@@ -327,15 +328,14 @@ export function ExplorerPdfWorkbench({
   }, []);
 
   useEffect(() => {
+    const sessionId = pdfDocument.sessionId;
+    cancelPendingExplorerPdfPreviewDocumentClose(sessionId);
     rootRef.current?.focus();
-  }, [pdfDocument.sessionId]);
 
-  useEffect(() => {
     return () => {
-      const sessionId = pdfDocument.sessionId;
       pendingCloseResolutionRef.current?.resolve(false);
       pendingCloseResolutionRef.current = null;
-      void closeExplorerPdfPreviewDocument(sessionId);
+      scheduleExplorerPdfPreviewDocumentClose(sessionId);
     };
   }, [pdfDocument.sessionId]);
 
