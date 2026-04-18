@@ -226,6 +226,14 @@ export function deleteSpreadsheetSheet(
   document.workbook.removeSheet(sheetId);
 }
 
+export function clearSpreadsheetSheet(
+  document: SpreadsheetWorkbookDocument,
+  sheetName: string,
+): void {
+  const sheetId = document.workbook.getSheetId(sheetName);
+  document.workbook.clearSheet(sheetId);
+}
+
 export function normalizeSpreadsheetSheetName(
   requestedName: string,
   existingNames: string[] = [],
