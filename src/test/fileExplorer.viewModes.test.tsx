@@ -1001,8 +1001,15 @@ describe("FileExplorer view modes", () => {
       "columns",
     );
     expect(
-      screen.getAllByText(/adaptive semantic grid/i).length,
-    ).toBeGreaterThan(0);
+      screen.getByRole("button", {
+        name: /experimental view modes: adaptive semantic grid/i,
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(
+        /larger semantic tiles that favor browsing and recognition\./i,
+      ),
+    ).toBeNull();
   });
 
   it("activates constellation view without mutating the saved normal layout mode", async () => {
