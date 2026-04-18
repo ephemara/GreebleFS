@@ -317,9 +317,16 @@ export function ExplorerPdfWorkbench({
       if (!rect) {
         return;
       }
-      setViewportSize({
-        width: Math.max(0, Math.floor(rect.width)),
-        height: Math.max(0, Math.floor(rect.height)),
+      const nextWidth = Math.max(0, Math.floor(rect.width));
+      const nextHeight = Math.max(0, Math.floor(rect.height));
+      setViewportSize((currentSize) => {
+        if (currentSize.width === nextWidth && currentSize.height === nextHeight) {
+          return currentSize;
+        }
+        return {
+          width: nextWidth,
+          height: nextHeight,
+        };
       });
     });
 
@@ -346,6 +353,12 @@ export function ExplorerPdfWorkbench({
     [activePageIndex, pdfDocument.formFields],
   );
   const activePageOverlays = pageOverlaysByIndex[activePageIndex] ?? [];
+  const footerStatusMessage = error
+    ? error
+    : isRendering
+      ? 'Rendering PDF page…'
+      : 'Ready';
+  const footerStatusColor = error ? '#fca5a5' : 'rgba(255,255,255,0.56)';
   const pageScaleX =
     activePage && renderedWidthPx > 0
       ? renderedWidthPx / activePage.widthPoints
@@ -1198,6 +1211,7 @@ export function ExplorerPdfWorkbench({
           position: 'relative',
           flex: 1,
           overflow: 'auto',
+          scrollbarGutter: 'stable both-edges',
           padding: PDF_WORKBENCH_PADDING_PX,
           display: 'grid',
           placeItems: 'center',
@@ -1412,32 +1426,36 @@ export function ExplorerPdfWorkbench({
         )}
       </div>
 
-      {(error || isRendering) && (
-        <div
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 10,
+          minHeight: 34,
+          padding: '8px 14px',
+          borderTop: '1px solid rgba(255,255,255,0.08)',
+          fontSize: 11,
+          color: footerStatusColor,
+          background: 'rgba(2,6,23,0.48)',
+          boxSizing: 'border-box',
+          flexShrink: 0,
+        }}
+      >
+        <span
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 10,
-            padding: '8px 14px',
-            borderTop: '1px solid rgba(255,255,255,0.08)',
-            fontSize: 11,
-            color: error ? '#fca5a5' : 'rgba(255,255,255,0.56)',
-            background: 'rgba(2,6,23,0.48)',
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
           }}
         >
-          <span>
-            {error
-              ? error
-              : isRendering
-                ? 'Rendering PDF page…'
-                : 'Ready'}
-          </span>
-          <span>
-            {activePageFormFields.length} forms · {activePageOverlays.length} annotations
-          </span>
-        </div>
-      )}
+          {footerStatusMessage}
+        </span>
+        <span style={{ flexShrink: 0 }}>
+          {activePageFormFields.length} forms · {activePageOverlays.length} annotations
+        </span>
+      </div>
 
       <AppPromptDialog
         open={Boolean(textPromptState)}
