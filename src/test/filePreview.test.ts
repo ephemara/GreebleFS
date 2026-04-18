@@ -13,6 +13,7 @@ import {
   isExecutableExtension,
   isImagePreviewExtension,
   isPdfPreviewExtension,
+  isSpreadsheetPreviewExtension,
   isVideoPreviewExtension,
 } from "../config/filePreview";
 
@@ -70,6 +71,15 @@ describe("filePreview config", () => {
     expect(isPdfPreviewExtension(".pdf")).toBe(true);
     expect(isPdfPreviewExtension("txt")).toBe(false);
     expect(isEditableTextExtension("pdf", 1024)).toBe(false);
+  });
+
+  it("routes spreadsheet files into the spreadsheet workbench instead of editable text mode", () => {
+    expect(isSpreadsheetPreviewExtension("xlsx")).toBe(true);
+    expect(isSpreadsheetPreviewExtension(".csv")).toBe(true);
+    expect(isSpreadsheetPreviewExtension("txt")).toBe(false);
+    expect(isEditableTextExtension("xlsx", 1024)).toBe(false);
+    expect(isEditableTextExtension("csv", 1024)).toBe(false);
+    expect(isEditableTextExtension("tsv", 1024)).toBe(false);
   });
 
   it("maps supported 3d extensions to model formats", () => {

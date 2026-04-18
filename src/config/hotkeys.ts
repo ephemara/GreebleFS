@@ -41,6 +41,10 @@ export type HotkeyBindingKey =
   | 'pdfWorkbenchZoomIn'
   | 'pdfWorkbenchZoomOut'
   | 'pdfWorkbenchToggleEditMode'
+  | 'spreadsheetWorkbenchPreviousSheet'
+  | 'spreadsheetWorkbenchNextSheet'
+  | 'spreadsheetWorkbenchNewSheet'
+  | 'spreadsheetWorkbenchFocusFormulaBar'
   | 'audioWorkbenchPlayPause'
   | 'audioWorkbenchJumpToSelectionStart'
   | 'audioWorkbenchJumpToSelectionEnd'
@@ -373,6 +377,34 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     label: 'PDF Workbench Toggle Edit Mode',
     description: 'Toggle between preview and edit mode for the explorer PDF workbench.',
     defaultValue: 'E',
+    scope: 'local',
+  },
+  {
+    key: 'spreadsheetWorkbenchPreviousSheet',
+    label: 'Spreadsheet Previous Sheet',
+    description: 'Move to the previous sheet in the spreadsheet workbench.',
+    defaultValue: 'Ctrl+PageUp',
+    scope: 'local',
+  },
+  {
+    key: 'spreadsheetWorkbenchNextSheet',
+    label: 'Spreadsheet Next Sheet',
+    description: 'Move to the next sheet in the spreadsheet workbench.',
+    defaultValue: 'Ctrl+PageDown',
+    scope: 'local',
+  },
+  {
+    key: 'spreadsheetWorkbenchNewSheet',
+    label: 'Spreadsheet New Sheet',
+    description: 'Create a new sheet in the spreadsheet workbench.',
+    defaultValue: 'Shift+F11',
+    scope: 'local',
+  },
+  {
+    key: 'spreadsheetWorkbenchFocusFormulaBar',
+    label: 'Spreadsheet Focus Formula Bar',
+    description: 'Jump focus to the active spreadsheet formula bar.',
+    defaultValue: 'F2',
     scope: 'local',
   },
   {

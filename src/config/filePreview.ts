@@ -1,3 +1,5 @@
+import { isSpreadsheetPreviewExtension } from "./spreadsheet";
+
 export type ModelPreviewFormat = "fbx" | "glb" | "gltf" | "obj" | "stl";
 export type ExplorerAudioExportFormatId = "mp3" | "wav" | "flac" | "ogg";
 
@@ -334,6 +336,9 @@ export function isEditableTextExtension(
     isImagePreviewExtension(normalizedExtension) ||
     isExecutableExtension(normalizedExtension)
   ) {
+    return false;
+  }
+  if (isSpreadsheetPreviewExtension(normalizedExtension)) {
     return false;
   }
   if (isAudioPreviewExtension(normalizedExtension)) {
