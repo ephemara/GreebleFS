@@ -16,27 +16,47 @@ export interface ExplorerFontPreviewProps {
   fontExtension: string;
 }
 
+function hashFontPath(fontPath: string): string {
+  let hash = 0x811c9dc5;
+
+  for (let index = 0; index < fontPath.length; index += 1) {
+    hash ^= fontPath.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+
+  return (hash >>> 0).toString(36);
+}
+
+export function createPreviewFontFamilyId(fontPath: string): string {
+  const fontFileName = fontPath.split(/[\\/]/).pop() ?? fontPath;
+  const fontStem = fontFileName.replace(/\.[^.]+$/, "");
+  const normalizedStem = fontStem.replace(/[^a-zA-Z0-9]+/g, "").slice(0, 24) || "font";
+
+  return `PreviewFont_${normalizedStem}_${hashFontPath(fontPath)}`;
+}
+
 export function ExplorerFontPreview({
   fontPath,
   fontName,
   fontSource,
   fontExtension,
 }: ExplorerFontPreviewProps) {
-  const [fontLoaded, setFontLoaded] = useState(false);
+  const [loadedFontKey, setLoadedFontKey] = useState<string | null>(null);
   const [fontError, setFontError] = useState(false);
   const [testText, setTestText] = useState(PANGRAMS[0]);
   const [fontSize, setFontSize] = useState(32);
+  const fontPreviewKey = useMemo(() => `${fontPath}::${fontSource}`, [fontPath, fontSource]);
 
   // Derive a reliable font-family identifier from the file path
   const fontFamilyId = useMemo(
-    () => `PreviewFont_${fontPath.replace(/[^a-zA-Z0-9]/g, "")}`,
+    () => createPreviewFontFamilyId(fontPath),
     [fontPath]
   );
 
   useEffect(() => {
     let active = true;
     let loadedFontFace: FontFace | null = null;
-    setFontLoaded(false);
+    setLoadedFontKey(null);
     setFontError(false);
 
     const canUseBrowserFontApi =
@@ -80,11 +100,13 @@ export function ExplorerFontPreview({
 
         document.fonts.add(resolvedFontFace);
         loadedFontFace = resolvedFontFace;
-        setFontLoaded(true);
+        setLoadedFontKey(fontPreviewKey);
+        setFontError(false);
       } catch (error) {
         console.error("Failed to load font preview via base64:", error);
         if (active) {
           setFontError(true);
+          setLoadedFontKey(null);
         }
       }
     };
@@ -97,7 +119,7 @@ export function ExplorerFontPreview({
         document.fonts.delete(loadedFontFace);
       }
     };
-  }, [fontFamilyId, fontSource]);
+  }, [fontFamilyId, fontPreviewKey]);
 
   if (fontError) {
     return (
@@ -113,6 +135,7 @@ export function ExplorerFontPreview({
           textAlign: "center",
           padding: 24,
         }}
+        role="alert"
       >
         <div style={{ display: "grid", gap: 8 }}>
           <div style={{ fontWeight: 700 }}>Failed to load font preview</div>
@@ -122,10 +145,23 @@ export function ExplorerFontPreview({
     );
   }
 
-  if (!fontLoaded) {
+  if (loadedFontKey !== fontPreviewKey) {
     return (
-      <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", background: "var(--overlay-explorer-preview-bg)" }}>
-        <Loader size={18} style={{ animation: "spin 1s linear infinite", color: "var(--overlay-text-muted)" }} />
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "grid",
+          placeItems: "center",
+          background: "var(--overlay-explorer-preview-bg)",
+        }}
+        aria-label="Loading font preview"
+        role="status"
+      >
+        <Loader
+          size={18}
+          style={{ animation: "spin 1s linear infinite", color: "var(--overlay-text-muted)" }}
+        />
       </div>
     );
   }

@@ -1,5 +1,16 @@
 # GreebleFS Memory
 
+## 2026-04-18 — Explorer Font Preview Loading Stability
+
+- The font preview panel could briefly show the previously loaded font while hopping to the next file because the component kept rendering the old "ready" state until the next font load completed.
+- Durable fix shape:
+  - `src/components/ExplorerFontPreview.tsx` now treats readiness as a path-specific key instead of a boolean that can lag one render behind the selected file.
+  - The preview family name now comes from a stable hash-based helper so similarly named font files do not collide in the browser font cache.
+  - The loading and error states now have explicit accessibility roles, which makes the preview transition easier to reason about in tests and in the UI.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerFontPreview.test.tsx`
+  - passed: filtered typecheck via `bunx tsc --noEmit --pretty false 2>&1 | rg "ExplorerFontPreview.tsx|explorerFontPreview.test.tsx" || true`
+
 ## 2026-04-18 — PDF Preview Render Status Feedback Loop
 
 - The PDF workbench could get stuck flashing `Rendering PDF page…` even after the page image was visible.
