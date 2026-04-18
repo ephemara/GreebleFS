@@ -906,6 +906,7 @@ function mergeSettings(base: Settings, imported?: LegacyImportedSettings): Setti
     keybindings: normalizeKeybindingSettings({ ...base.keybindings, ...imported?.keybindings }),
     polygemini: { ...base.polygemini, ...imported?.polygemini },
     layout: normalizeLayoutSettings(base.layout, (imported as Partial<Settings> | undefined)?.layout),
+    audio: normalizeAudioSettings(base.audio, (imported as Partial<Settings> | undefined)?.audio),
   };
 }
 

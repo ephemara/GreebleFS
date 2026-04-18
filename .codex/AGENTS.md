@@ -1,5 +1,3 @@
-# AGENTS.md
-
 ## GreebleFS, OverlayTerm, and `greeble`
 
 This repository has naming drift.
@@ -475,8 +473,6 @@ If you remember nothing else, remember this:
 - themes/layouts/plugins are core architecture, not garnish
 
 Protect that shape every time you touch the repo.
-
-
 
 ## Auto-generated signatures
 <!-- Updated by gen-context.js -->

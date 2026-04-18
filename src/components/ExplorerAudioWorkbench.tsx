@@ -368,7 +368,7 @@ export function ExplorerAudioWorkbench({
       try {
         const defaults = await getExplorerVstDefaultScanPaths();
         const validDefaults = defaults.filter(p => p.exists).map(p => p.path);
-        const allPaths = [...validDefaults, ...settings.audio.vst3AdditionalFolders];
+        const allPaths = [...validDefaults, ...(settings.audio?.vst3AdditionalFolders ?? [])];
         const plugins = await scanExplorerVstPlugins(allPaths);
         if (active) {
           setDiscoveredPlugins(plugins);
@@ -381,7 +381,7 @@ export function ExplorerAudioWorkbench({
     };
     runScan();
     return () => { active = false; };
-  }, [settings.audio.vst3AdditionalFolders]);
+  }, [settings.audio?.vst3AdditionalFolders]);
 
   const [generateSpectrogram, setGenerateSpectrogram] = useState(true);
   const [convertFormat, setConvertFormat] = useState<'mp3' | 'wav' | 'flac' | 'ogg'>(
@@ -1284,7 +1284,7 @@ export function ExplorerAudioWorkbench({
                       try {
                         const defaults = await getExplorerVstDefaultScanPaths();
                         const validDefaults = defaults.filter(p => p.exists).map(p => p.path);
-                        const plugins = await scanExplorerVstPlugins([...validDefaults, ...settings.audio.vst3AdditionalFolders]);
+                        const plugins = await scanExplorerVstPlugins([...validDefaults, ...(settings.audio?.vst3AdditionalFolders ?? [])]);
                         setDiscoveredPlugins(plugins);
                         setWorkbenchStatus(`Scanned ${plugins.length} VST3 plugins.`);
                       } finally {
