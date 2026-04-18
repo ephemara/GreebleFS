@@ -3405,6 +3405,7 @@ export function SettingsPage({
                     'pasteSelection',
                     'toggleHiddenFiles',
                     'toggleExplorerLayout',
+                    'togglePreviewTerminal',
                     'searchExplorer',
                   ].includes(definition.key))
                   .map(definition => (

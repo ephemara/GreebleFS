@@ -137,6 +137,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.keybindings.windowModeToggle).toBe('F11');
     expect(settings.keybindings.zenFocusModeToggle).toBe('Ctrl+Alt+Z');
     expect(settings.keybindings.commandPalette).toBe('Ctrl+Shift+P');
+    expect(settings.keybindings.togglePreviewTerminal).toBe('Ctrl+Alt+T');
     expect(settings.keybindings.pdfWorkbenchPreviousPage).toBe('PageUp');
     expect(settings.keybindings.pdfWorkbenchNextPage).toBe('PageDown');
     expect(settings.keybindings.pdfWorkbenchZoomIn).toBe('Ctrl+=');

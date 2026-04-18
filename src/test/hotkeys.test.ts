@@ -44,6 +44,7 @@ describe('hotkey config helpers', () => {
     expect(defaults.selectAllExplorer).toBe('Ctrl+A');
     expect(defaults.clearExplorerSelection).toBe('Ctrl+Shift+A');
     expect(defaults.openInTerminal).toBe('Ctrl+Enter');
+    expect(defaults.togglePreviewTerminal).toBe('Ctrl+Alt+T');
     expect(defaults.revealInExplorer).toBe('Ctrl+Alt+R');
     expect(defaults.openAsAdmin).toBe('Ctrl+Alt+Enter');
     expect(defaults.focusExplorerAddressBar).toBe('Ctrl+L');

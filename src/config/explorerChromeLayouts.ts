@@ -77,6 +77,7 @@ export type BuiltInExplorerChromeControlId =
   | 'previewModeToggle'
   | 'previewSplitToggle'
   | 'previewCopyPath'
+  | 'previewTerminalToggle'
   | 'previewClose'
   | 'statusItemCount'
   | 'statusSelectionSummary'
@@ -393,6 +394,9 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       previewCopyPath: {
         previewHeader: { zone: 'end', order: 30 },
       },
+      previewTerminalToggle: {
+        previewHeader: { zone: 'end', order: 35 },
+      },
       previewClose: {
         previewHeader: { zone: 'end', order: 40 },
       },
@@ -608,6 +612,9 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       },
       previewCopyPath: {
         previewHeader: { zone: 'end', order: 40 },
+      },
+      previewTerminalToggle: {
+        previewHeader: { zone: 'end', order: 45 },
       },
       previewClose: {
         previewHeader: { zone: 'end', order: 50 },

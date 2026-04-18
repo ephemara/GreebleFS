@@ -11,9 +11,19 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 
-const { pdfPreviewMockState } = vi.hoisted(() => ({
+const { pdfPreviewMockState, previewTerminalMockState } = vi.hoisted(() => ({
   pdfPreviewMockState: {
     closeGuardResult: true,
+  },
+  previewTerminalMockState: {
+    mountCount: 0,
+    reportedAlphaCwd: "C:\\workspace\\repo\\alpha",
+    lastProps: null as null | {
+      consumeExplorerCwdSync?: boolean;
+      terminalIdNamespace?: string;
+      workingDirectory?: string | null;
+      onReportedWorkingDirectoryChange?: (cwd: string) => void;
+    },
   },
 }));
 
@@ -111,6 +121,51 @@ vi.mock("../components/ExplorerPdfWorkbench", () => ({
     ]);
 
     return <div data-testid="mock-explorer-pdf-workbench">{document.name}</div>;
+  },
+}));
+
+vi.mock("../components/TerminalOverlay", () => ({
+  default: ({
+    consumeExplorerCwdSync,
+    onReportedWorkingDirectoryChange,
+    terminalIdNamespace,
+    workingDirectory,
+  }: {
+    consumeExplorerCwdSync?: boolean;
+    onReportedWorkingDirectoryChange?: (cwd: string) => void;
+    terminalIdNamespace?: string;
+    workingDirectory?: string | null;
+  }) => {
+    React.useEffect(() => {
+      previewTerminalMockState.mountCount += 1;
+    }, []);
+
+    previewTerminalMockState.lastProps = {
+      consumeExplorerCwdSync,
+      onReportedWorkingDirectoryChange,
+      terminalIdNamespace,
+      workingDirectory,
+    };
+
+    return (
+      <div
+        data-testid="mock-preview-terminal"
+        data-terminal-namespace={terminalIdNamespace ?? ""}
+        data-working-directory={workingDirectory ?? ""}
+      >
+        <div>{workingDirectory ?? "no-working-directory"}</div>
+        <button
+          type="button"
+          onClick={() =>
+            onReportedWorkingDirectoryChange?.(
+              previewTerminalMockState.reportedAlphaCwd,
+            )
+          }
+        >
+          Report Alpha Cwd
+        </button>
+      </div>
+    );
   },
 }));
 
@@ -334,6 +389,16 @@ function getPreviewSplitToggleButton() {
   return within(control).getByRole("button");
 }
 
+function getPreviewTerminalToggleButton() {
+  const control = getChromeControl("previewTerminalToggle");
+  if (!control) {
+    throw new Error("Preview terminal toggle control not found");
+  }
+  return within(control).getByRole("button", {
+    name: "Toggle preview terminal",
+  });
+}
+
 function getPreviewCloseButton() {
   const control = getChromeControl("previewClose");
   if (!control) {
@@ -427,6 +492,8 @@ function getEntryIconSrc(entryName: string): string {
 describe("FileExplorer view modes", () => {
   beforeEach(() => {
     pdfPreviewMockState.closeGuardResult = true;
+    previewTerminalMockState.mountCount = 0;
+    previewTerminalMockState.lastProps = null;
     resetOverlayTermStorage(window.localStorage);
     useSettingsStore.getState().resetToDefaults();
     useExplorerStore.getState().resetSession();
@@ -748,6 +815,129 @@ describe("FileExplorer view modes", () => {
       "data-overlay-explorer-preview-split-mode",
       "inline",
     );
+  });
+
+  it("shows an icon-only preview terminal toggle, swaps surfaces, and keeps the terminal session mounted", async () => {
+    renderExplorer();
+    await screen.findByText("index.html");
+
+    fireEvent.click(screen.getByText("index.html"));
+
+    await screen.findByRole("button", { name: /copy path/i });
+    expect(getChromeControl("previewState")).not.toBeNull();
+    expect(getChromeControl("previewCopyPath")).not.toBeNull();
+    expect(getChromeControl("previewSplitToggle")).not.toBeNull();
+    expect(getChromeControl("previewClose")).not.toBeNull();
+    expect(getPreviewPane()).toHaveAttribute(
+      "data-overlay-explorer-preview-surface-mode",
+      "content",
+    );
+
+    fireEvent.click(getPreviewTerminalToggleButton());
+
+    await waitFor(() => {
+      expect(getPreviewPane()).toHaveAttribute(
+        "data-overlay-explorer-preview-surface-mode",
+        "terminal",
+      );
+      expect(screen.getByTestId("mock-preview-terminal")).toHaveAttribute(
+        "data-working-directory",
+        REPO_ROOT,
+      );
+      expect(previewTerminalMockState.mountCount).toBe(1);
+    });
+
+    expect(
+      within(
+        getChromeControl("previewIdentity") as HTMLElement,
+      ).getByText("Terminal"),
+    ).toBeInTheDocument();
+    expect(getChromeControl("previewState")).toBeNull();
+    expect(getChromeControl("previewModeToggle")).toBeNull();
+    expect(getChromeControl("previewCopyPath")).toBeNull();
+    expect(getChromeControl("previewSplitToggle")).not.toBeNull();
+    expect(getChromeControl("previewClose")).not.toBeNull();
+    expect(previewTerminalMockState.lastProps?.consumeExplorerCwdSync).toBe(
+      false,
+    );
+
+    fireEvent.click(getPreviewTerminalToggleButton());
+
+    await waitFor(() => {
+      expect(getPreviewPane()).toHaveAttribute(
+        "data-overlay-explorer-preview-surface-mode",
+        "content",
+      );
+      expect(previewTerminalMockState.mountCount).toBe(1);
+      expect(getChromeControl("previewCopyPath")).not.toBeNull();
+    });
+  });
+
+  it("toggles the preview terminal from the explorer hotkey", async () => {
+    renderExplorer();
+    await screen.findByText("notes.txt");
+
+    fireEvent.click(screen.getByText("notes.txt"));
+    await screen.findByRole("button", { name: /copy path/i });
+
+    fireEvent.keyDown(window, { key: "t", ctrlKey: true, altKey: true });
+
+    await waitFor(() => {
+      expect(getPreviewPane()).toHaveAttribute(
+        "data-overlay-explorer-preview-surface-mode",
+        "terminal",
+      );
+    });
+  });
+
+  it("navigates the explorer when the preview terminal reports a new working directory", async () => {
+    const alphaEntries = [
+      {
+        name: "inside-alpha.txt",
+        path: `${REPO_ROOT}\\alpha\\inside-alpha.txt`,
+        is_dir: false,
+        size: 64,
+        modified: 0,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ];
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
+      const payload = args as { path?: string } | undefined;
+      if (
+        (command === "fs_list_dir" || command === "fs_list_dir_uncached") &&
+        payload?.path === `${REPO_ROOT}\\alpha`
+      ) {
+        return alphaEntries;
+      }
+      return baseInvokeImplementation(command, args as never);
+    });
+
+    renderExplorer();
+    await screen.findByText("notes.txt");
+
+    fireEvent.click(screen.getByText("notes.txt"));
+    await screen.findByRole("button", { name: /copy path/i });
+    fireEvent.click(getPreviewTerminalToggleButton());
+
+    await screen.findByTestId("mock-preview-terminal");
+    await userEvent.click(screen.getByRole("button", { name: "Report Alpha Cwd" }));
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.currentPath).toBe(
+        `${REPO_ROOT}\\alpha`,
+      );
+      expect(screen.getByText("inside-alpha.txt")).toBeInTheDocument();
+      expect(previewTerminalMockState.lastProps?.workingDirectory).toBe(
+        `${REPO_ROOT}\\alpha`,
+      );
+    });
   });
 
   it("splits the preview into a local pane without mutating workspace layout and keeps it live-synced", async () => {

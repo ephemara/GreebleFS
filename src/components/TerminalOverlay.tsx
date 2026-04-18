@@ -59,6 +59,7 @@ import {
   type OverlayThemeDefinition,
   type ResolvedOverlayAppearance,
 } from '../config/appearance';
+import type { TerminalShellIntegrationStateEvent } from '../generated/tauri';
 import type { ResolvedWorkbenchThemeRecipe } from '../config/workbenchTheme';
 import {
   buildManagedPythonReplCommand,
@@ -292,8 +293,15 @@ interface TerminalPaneTelemetry {
 type SidebarPanel = 'dirs' | 'cmds' | 'python' | null;
 type SidebarPanelId = Exclude<SidebarPanel, null>;
 
-const INITIAL_TAB_ID = 'terminal-tab-0';
-const INITIAL_PANE_ID = 'overlay-0';
+function getTerminalTabId(terminalIdNamespace: string, index: number): string {
+  return terminalIdNamespace === 'overlay'
+    ? `terminal-tab-${index}`
+    : `${terminalIdNamespace}-tab-${index}`;
+}
+
+function getTerminalPaneId(terminalIdNamespace: string, index: number): string {
+  return `${terminalIdNamespace}-${index}`;
+}
 
 function createPaneTelemetry(): TerminalPaneTelemetry {
   return {
@@ -339,6 +347,10 @@ interface TerminalOverlayProps {
   embedded?: boolean;
   appearance?: ResolvedOverlayAppearance;
   pluginCommands?: OverlayPluginCommandContribution[];
+  terminalIdNamespace?: string;
+  workingDirectory?: string | null;
+  consumeExplorerCwdSync?: boolean;
+  onReportedWorkingDirectoryChange?: (cwd: string) => void;
 }
 
 // ─── XTerm registry ───────────────────────────────────────────────────────────
@@ -514,6 +526,7 @@ interface XTermPaneProps {
   active: boolean;
   theme: Theme;
   workbenchTheme: ResolvedWorkbenchThemeRecipe;
+  workingDirectory?: string | null;
   onReady?: (id: string) => void;
   onFocus?: (id: string) => void;
   onData?: (id: string, data: string) => void;
@@ -527,6 +540,7 @@ const XTermPane = memo(function XTermPane({
   active,
   theme,
   workbenchTheme,
+  workingDirectory = null,
   onReady,
   onFocus,
   onData,
@@ -646,7 +660,13 @@ const XTermPane = memo(function XTermPane({
     runFit(false);
 
     try {
-      unwrapTauriResult(await commands.terminalSpawn(id, null, settings.shell, term.rows, term.cols));
+      unwrapTauriResult(await commands.terminalSpawn(
+        id,
+        workingDirectory,
+        settings.shell,
+        term.rows,
+        term.cols,
+      ));
       unwrapTauriResult(await commands.terminalRegisterShellIntegration({
         id,
         shellKind: null,
@@ -726,7 +746,7 @@ const XTermPane = memo(function XTermPane({
     onResizeRef.current?.(id, term.rows, term.cols);
     onReadyRef.current?.(id);
     term.focus();
-  }, [attachWebglRenderer, disposeWebglRenderer, id, settings, theme]);
+  }, [attachWebglRenderer, disposeWebglRenderer, id, settings, theme, workingDirectory]);
 
   useEffect(() => {
     if (visible) {
@@ -1302,6 +1322,10 @@ export function TerminalOverlay({
   embedded = false,
   appearance: appearanceProp,
   pluginCommands = [],
+  terminalIdNamespace = 'overlay',
+  workingDirectory = null,
+  consumeExplorerCwdSync = true,
+  onReportedWorkingDirectoryChange,
 }: TerminalOverlayProps) {
   const { settings, appearanceSettings, keybindings, updateTerminal } = useSettingsStore(useShallow(state => ({
     settings: state.settings.terminal,
@@ -1339,6 +1363,13 @@ export function TerminalOverlay({
   );
   const uiFont = appearance.fonts.ui;
   const blurEnabled = appearanceSettings.appBlur !== false;
+  const terminalIdNamespaceRef = useRef(terminalIdNamespace);
+  const initialTabIdRef = useRef(getTerminalTabId(terminalIdNamespaceRef.current, 0));
+  const initialPaneIdRef = useRef(getTerminalPaneId(terminalIdNamespaceRef.current, 0));
+  const normalizedWorkingDirectory = useMemo(() => {
+    const trimmed = workingDirectory?.trim();
+    return trimmed && trimmed.length > 0 ? trimmed : null;
+  }, [workingDirectory]);
 
   useEffect(() => {
     ensureFontFamilyLoaded(uiFont);
@@ -1347,22 +1378,22 @@ export function TerminalOverlay({
 
   const initialShellLabel = useMemo(() => getShellDisplayLabel(settings.shell), [settings.shell]);
   const [tabs, setTabs] = useState<Tab[]>(() => [{
-    id: INITIAL_TAB_ID,
+    id: initialTabIdRef.current,
     label: initialShellLabel,
-    layout: createTerminalPaneLayout(INITIAL_PANE_ID),
-    activePaneId: INITIAL_PANE_ID,
+    layout: createTerminalPaneLayout(initialPaneIdRef.current),
+    activePaneId: initialPaneIdRef.current,
     lastSplitDirection: 'columns',
     broadcastInput: false,
     createdAt: Date.now(),
   }]);
   const [paneSessions, setPaneSessions] = useState<Record<string, TerminalPaneSession>>(() => ({
-    [INITIAL_PANE_ID]: {
-      id: INITIAL_PANE_ID,
+    [initialPaneIdRef.current]: {
+      id: initialPaneIdRef.current,
       label: 'Pane 1',
       createdAt: Date.now(),
     },
   }));
-  const [activeTabId, setActiveTabId] = useState(INITIAL_TAB_ID);
+  const [activeTabId, setActiveTabId] = useState(initialTabIdRef.current);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
 
@@ -1371,13 +1402,15 @@ export function TerminalOverlay({
   const [readyTerminalIds, setReadyTerminalIds] = useState<string[]>([]);
   const [terminalActionMessage, setTerminalActionMessage] = useState<string | null>(null);
   const paneTelemetryRef = useRef<Record<string, TerminalPaneTelemetry>>({
-    [INITIAL_PANE_ID]: createPaneTelemetry(),
+    [initialPaneIdRef.current]: createPaneTelemetry(),
   });
   const actionMessageTimerRef = useRef<number | null>(null);
   const paneCounterRef = useRef(1);
   const tabCounterRef = useRef(1);
   const splitCounterRef = useRef(1);
-  const lastTerminalCwdSyncKeyRef = useRef<string | null>(null);
+  const lastExplorerQueueCwdSyncKeyRef = useRef<string | null>(null);
+  const lastDirectWorkingDirectorySyncKeyRef = useRef<string | null>(null);
+  const lastObservedWorkingDirectoryRef = useRef<string | null>(normalizedWorkingDirectory);
   const promptRestoreTimersRef = useRef<Record<string, number>>({});
   // Keep split-drag geometry off React's pointer-move hot path so mounted xterm
   // panes stay stable while their containing surfaces resize.
@@ -1447,7 +1480,7 @@ export function TerminalOverlay({
     [tabs],
   );
   const activeTabPaneIds = activeTab ? (paneIdsByTab.get(activeTab.id) ?? []) : [];
-  const activePaneId = activeTab?.activePaneId ?? activeTabPaneIds[0] ?? INITIAL_PANE_ID;
+  const activePaneId = activeTab?.activePaneId ?? activeTabPaneIds[0] ?? initialPaneIdRef.current;
   const activePane = paneSessions[activePaneId] ?? null;
   const totalPaneCount = tabs.reduce((sum, tab) => sum + countTerminalPanes(tab.layout), 0);
 
@@ -1547,12 +1580,12 @@ export function TerminalOverlay({
     }
   }, [resolveCommandTargets, writeToPaneIds]);
 
-  const injectCd = useCallback(async (path: string, shell?: string) => {
+  const injectCd = useCallback(async (path: string, shell?: string, paneId?: string) => {
     const command = buildTerminalCdCommand(path, shell ?? settings.shell);
     if (!command) {
       return;
     }
-    await injectCmd(command, true);
+    await injectCmd(command, true, paneId);
   }, [injectCmd, settings.shell]);
 
   const launchManagedRepl = useCallback(async (command: string) => {
@@ -1709,7 +1742,7 @@ export function TerminalOverlay({
       entry.xterm.reset();
       unwrapTauriResult(await commands.terminalSpawn(
         paneId,
-        null,
+        normalizedWorkingDirectory,
         settings.shell,
         entry.xterm.rows,
         entry.xterm.cols,
@@ -1721,6 +1754,7 @@ export function TerminalOverlay({
         atPrompt: true,
         reportedCwd: null,
       }));
+      lastObservedWorkingDirectoryRef.current = normalizedWorkingDirectory;
       markTerminalReady(paneId);
       setTransientActionMessage(`Restarted ${paneSessions[paneId]?.label ?? 'terminal'}`);
     } catch (error) {
@@ -1731,23 +1765,123 @@ export function TerminalOverlay({
       entry.fitAddon.fit();
       entry.xterm.focus();
     });
-  }, [clearTerminalReady, markTerminalReady, paneSessions, setTransientActionMessage, settings.shell]);
+  }, [
+    clearTerminalReady,
+    markTerminalReady,
+    normalizedWorkingDirectory,
+    paneSessions,
+    setTransientActionMessage,
+    settings.shell,
+  ]);
   useEffect(() => {
-    if (!isOpen || !pendingTerminalCwdSync?.path || !activePaneId) {
+    if (
+      consumeExplorerCwdSync === false
+      || !isOpen
+      || !pendingTerminalCwdSync?.path
+      || !activePaneId
+    ) {
       return;
     }
 
     const syncKey = `${pendingTerminalCwdSync.source}:${pendingTerminalCwdSync.path}:${pendingTerminalCwdSync.shell ?? ''}`;
-    if (lastTerminalCwdSyncKeyRef.current === syncKey) {
+    if (lastExplorerQueueCwdSyncKeyRef.current === syncKey) {
       return;
     }
 
-    lastTerminalCwdSyncKeyRef.current = syncKey;
+    lastExplorerQueueCwdSyncKeyRef.current = syncKey;
     void commands.terminalSyncCwd(activePaneId, pendingTerminalCwdSync.path)
       .then(unwrapTauriResult)
-      .catch(() => injectCd(pendingTerminalCwdSync.path, pendingTerminalCwdSync.shell ?? undefined))
+      .then(() => {
+        lastObservedWorkingDirectoryRef.current = pendingTerminalCwdSync.path;
+      })
+      .catch(() => injectCd(
+        pendingTerminalCwdSync.path,
+        pendingTerminalCwdSync.shell ?? undefined,
+        activePaneId,
+      ))
       .finally(() => clearPendingTerminalCwdSync(null));
-  }, [activePaneId, clearPendingTerminalCwdSync, injectCd, isOpen, pendingTerminalCwdSync]);
+  }, [
+    activePaneId,
+    clearPendingTerminalCwdSync,
+    consumeExplorerCwdSync,
+    injectCd,
+    isOpen,
+    pendingTerminalCwdSync,
+  ]);
+
+  useEffect(() => {
+    if (
+      consumeExplorerCwdSync !== false
+      || !isOpen
+      || !activePaneId
+      || !normalizedWorkingDirectory
+      || !isPaneReady(activePaneId)
+    ) {
+      return;
+    }
+
+    const syncKey = `${activePaneId}:${normalizedWorkingDirectory}`;
+    if (lastDirectWorkingDirectorySyncKeyRef.current === syncKey) {
+      return;
+    }
+
+    lastDirectWorkingDirectorySyncKeyRef.current = syncKey;
+    void commands.terminalSyncCwd(activePaneId, normalizedWorkingDirectory)
+      .then(unwrapTauriResult)
+      .then(() => {
+        lastObservedWorkingDirectoryRef.current = normalizedWorkingDirectory;
+      })
+      .catch(() => injectCd(normalizedWorkingDirectory, undefined, activePaneId));
+  }, [
+    activePaneId,
+    consumeExplorerCwdSync,
+    injectCd,
+    isOpen,
+    isPaneReady,
+    normalizedWorkingDirectory,
+  ]);
+
+  useEffect(() => {
+    if (!onReportedWorkingDirectoryChange) {
+      return;
+    }
+
+    let cancelled = false;
+    let unlistenShellIntegration: (() => void) | null = null;
+
+    void listen<TerminalShellIntegrationStateEvent>(
+      'terminal-shell-integration-state-event',
+      (event) => {
+        const payload = event.payload as TerminalShellIntegrationStateEvent;
+        if (!payload || payload.id !== activePaneId || !payload.state.atPrompt) {
+          return;
+        }
+
+        const reportedWorkingDirectory = payload.state.reportedCwd?.trim();
+        if (!reportedWorkingDirectory) {
+          return;
+        }
+
+        if (lastObservedWorkingDirectoryRef.current === reportedWorkingDirectory) {
+          return;
+        }
+
+        lastObservedWorkingDirectoryRef.current = reportedWorkingDirectory;
+        onReportedWorkingDirectoryChange(reportedWorkingDirectory);
+      },
+    ).then((unlisten) => {
+      if (cancelled) {
+        unlisten();
+        return;
+      }
+      unlistenShellIntegration = unlisten;
+    }).catch(() => {});
+
+    return () => {
+      cancelled = true;
+      unlistenShellIntegration?.();
+    };
+  }, [activePaneId, onReportedWorkingDirectoryChange]);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -1762,7 +1896,7 @@ export function TerminalOverlay({
   }, [injectCmd]);
 
   const createPaneSession = useCallback((label: string): TerminalPaneSession => {
-    const id = `overlay-${paneCounterRef.current}`;
+    const id = getTerminalPaneId(terminalIdNamespaceRef.current, paneCounterRef.current);
     paneCounterRef.current += 1;
     return {
       id,
@@ -1773,7 +1907,7 @@ export function TerminalOverlay({
 
   const newTab = useCallback(() => {
     const pane = createPaneSession('Pane 1');
-    const tabId = `terminal-tab-${tabCounterRef.current}`;
+    const tabId = getTerminalTabId(terminalIdNamespaceRef.current, tabCounterRef.current);
     tabCounterRef.current += 1;
     const nextTabs = [...tabs, {
       id: tabId,
@@ -2184,6 +2318,7 @@ export function TerminalOverlay({
                 active={isActivePane && tabId === activeTabId}
                 theme={theme}
                 workbenchTheme={appearance.workbenchTheme}
+                workingDirectory={normalizedWorkingDirectory}
                 onReady={markTerminalReady}
                 onFocus={handlePaneFocus}
                 onData={handleTerminalInput}
@@ -2213,6 +2348,7 @@ export function TerminalOverlay({
     markTerminalReady,
     paneIdsByTab,
     paneSessions,
+    normalizedWorkingDirectory,
     restartPane,
     splitActivePane,
     setPaneSurfaceElement,

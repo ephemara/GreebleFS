@@ -22,6 +22,7 @@ export type HotkeyBindingKey =
   | 'focusExplorerList'
   | 'focusExplorerAddressBar'
   | 'focusExplorerPreview'
+  | 'togglePreviewTerminal'
   | 'openInTerminal'
   | 'calculateRecursiveSize'
   | 'revealInExplorer'
@@ -244,6 +245,13 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     label: 'Focus Explorer Preview',
     description: 'Focus the explorer preview panel.',
     defaultValue: 'Ctrl+2',
+    scope: 'local',
+  },
+  {
+    key: 'togglePreviewTerminal',
+    label: 'Toggle Preview Terminal',
+    description: 'Show or hide the embedded preview-pane terminal in the active explorer.',
+    defaultValue: 'Ctrl+Alt+T',
     scope: 'local',
   },
   {

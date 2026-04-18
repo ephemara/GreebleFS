@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/appearance';
 import { resetTerminalWebglSupportCacheForTests } from '../components/terminal/terminalRendererSupport';
 import { useExplorerStore } from '../store/explorerStore';
@@ -121,6 +122,8 @@ describe('TerminalOverlay', () => {
     resetTerminalWebglSupportCacheForTests();
     vi.mocked(invoke).mockReset();
     vi.mocked(invoke).mockResolvedValue(null);
+    vi.mocked(listen).mockReset();
+    vi.mocked(listen).mockResolvedValue(() => {});
     useSettingsStore.getState().resetToDefaults();
 
     Object.defineProperty(window, 'ResizeObserver', {
@@ -231,6 +234,178 @@ describe('TerminalOverlay', () => {
         id: 'overlay-0',
         cwd: "C:\\workspace\\Taloor's Lab",
       });
+    });
+  }, 20000);
+
+  it('spawns and restarts preview-scoped panes with namespaced ids and working directories', async () => {
+    const invokeMock = vi.mocked(invoke);
+    const previewWorkingDirectory = 'C:\\workspace\\repo';
+
+    render(
+      <TerminalOverlay
+        isOpen
+        onClose={() => {}}
+        embedded
+        terminalIdNamespace="preview-pane"
+        workingDirectory={previewWorkingDirectory}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('terminal_spawn', expect.objectContaining({
+        id: 'preview-pane-0',
+        workingDir: previewWorkingDirectory,
+      }));
+    });
+
+    await userEvent.click(await screen.findByTitle('Restart the active pane session'));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('terminal_kill', { id: 'preview-pane-0' });
+      expect(invokeMock).toHaveBeenCalledWith('terminal_spawn', expect.objectContaining({
+        id: 'preview-pane-0',
+        workingDir: previewWorkingDirectory,
+      }));
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Split Columns' }));
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('terminal_spawn', expect.objectContaining({
+        id: 'preview-pane-1',
+        workingDir: previewWorkingDirectory,
+      }));
+    });
+  }, 20000);
+
+  it('syncs the active pane directly from the provided working directory when explorer queue sync is disabled', async () => {
+    const invokeMock = vi.mocked(invoke);
+    const previewWorkingDirectory = 'C:\\workspace\\repo';
+    const nextWorkingDirectory = 'C:\\workspace\\repo\\alpha';
+    const { rerender } = render(
+      <TerminalOverlay
+        isOpen
+        onClose={() => {}}
+        embedded
+        terminalIdNamespace="preview-pane"
+        workingDirectory={previewWorkingDirectory}
+        consumeExplorerCwdSync={false}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('terminal_spawn', expect.objectContaining({
+        id: 'preview-pane-0',
+        workingDir: previewWorkingDirectory,
+      }));
+    });
+
+    invokeMock.mockClear();
+
+    rerender(
+      <TerminalOverlay
+        isOpen
+        onClose={() => {}}
+        embedded
+        terminalIdNamespace="preview-pane"
+        workingDirectory={nextWorkingDirectory}
+        consumeExplorerCwdSync={false}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('terminal_sync_cwd', {
+        id: 'preview-pane-0',
+        cwd: nextWorkingDirectory,
+      });
+    });
+  }, 20000);
+
+  it('reports shell integration cwd changes only for the active pane prompt and dedupes repeats', async () => {
+    const eventHandlers = new Map<string, (event: { payload: unknown }) => void>();
+    vi.mocked(listen).mockImplementation(async (eventName, handler) => {
+      eventHandlers.set(String(eventName), handler as (event: { payload: unknown }) => void);
+      return () => {
+        eventHandlers.delete(String(eventName));
+      };
+    });
+
+    const onReportedWorkingDirectoryChange = vi.fn();
+    render(
+      <TerminalOverlay
+        isOpen
+        onClose={() => {}}
+        embedded
+        terminalIdNamespace="preview-pane"
+        workingDirectory={'C:\\workspace\\repo'}
+        consumeExplorerCwdSync={false}
+        onReportedWorkingDirectoryChange={onReportedWorkingDirectoryChange}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(eventHandlers.has('terminal-output-preview-pane-0')).toBe(true);
+      expect(eventHandlers.has('terminal-shell-integration-state-event')).toBe(true);
+    });
+
+    const shellIntegrationHandler = eventHandlers.get('terminal-shell-integration-state-event');
+    if (!shellIntegrationHandler) {
+      throw new Error('Missing shell integration handler');
+    }
+
+    const createShellIntegrationPayload = (
+      id: string,
+      atPrompt: boolean,
+      reportedCwd: string | null,
+    ) => ({
+      payload: {
+        id,
+        appliedCwd: null,
+        state: {
+          atPrompt,
+          pendingCwd: null,
+          lastSyncedCwd: null,
+          reportedCwd,
+          shellKind: 'unknown',
+          supportsAutoCd: true,
+        },
+      },
+    });
+
+    shellIntegrationHandler(
+      createShellIntegrationPayload(
+        'preview-pane-1',
+        true,
+        'C:\\workspace\\repo\\beta',
+      ),
+    );
+    shellIntegrationHandler(
+      createShellIntegrationPayload(
+        'preview-pane-0',
+        false,
+        'C:\\workspace\\repo\\beta',
+      ),
+    );
+    shellIntegrationHandler(
+      createShellIntegrationPayload(
+        'preview-pane-0',
+        true,
+        'C:\\workspace\\repo\\beta',
+      ),
+    );
+    shellIntegrationHandler(
+      createShellIntegrationPayload(
+        'preview-pane-0',
+        true,
+        'C:\\workspace\\repo\\beta',
+      ),
+    );
+
+    await waitFor(() => {
+      expect(onReportedWorkingDirectoryChange).toHaveBeenCalledTimes(1);
+      expect(onReportedWorkingDirectoryChange).toHaveBeenCalledWith(
+        'C:\\workspace\\repo\\beta',
+      );
     });
   }, 20000);
 

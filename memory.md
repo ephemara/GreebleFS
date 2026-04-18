@@ -1,5 +1,21 @@
 # GreebleFS Memory
 
+## 2026-04-18 — Preview Pane Terminal + Reverse `cd` Sync
+
+- The explorer preview pane can now host a live embedded terminal without leaving the current file-browser surface.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now owns a local `previewSurfaceMode` (`content` vs `terminal`) plus a sticky `previewTerminalMounted` flag so the preview terminal session stays alive when the user flips back to file preview content.
+  - The preview header chrome is still driven by `src/config/explorerChromeLayouts.ts`. A new `previewTerminalToggle` control sits in the preview-header end zone, which keeps the feature compatible with theme/layout overrides instead of hardcoding a stray button outside the chrome registry.
+  - In terminal mode, the preview header switches identity to `Terminal`, hides file-preview-only controls, and shows the terminal cwd while keeping split-mode and close controls available.
+  - `src/components/TerminalOverlay.tsx` now supports namespaced pane ids plus direct `workingDirectory` input. That lets the preview terminal reuse the existing terminal surface without colliding with the main terminal tab/session ids.
+  - The preview-terminal path uses `consumeExplorerCwdSync={false}` so it follows the explorer’s current folder directly instead of consuming the global explorer-to-terminal cwd queue that still belongs to the standalone terminal.
+  - Shell integration events from the active preview pane now bubble back through `onReportedWorkingDirectoryChange(...)`; `FileExplorer` normalizes that cwd and routes it through the existing `navigate(...)` path so typing `cd` in the preview terminal moves the explorer itself.
+- Durable product note:
+  - The preview terminal is shell-owned presentation inside one explorer instance, not a second explorer or a second global terminal surface. Keep its lifetime scoped to the preview pane and keep its navigation truth routed back through normal explorer navigation.
+  - If future work adds more embedded terminal surfaces, keep using terminal id namespaces plus explicit cwd-sync policy flags. Do not let multiple terminal mounts compete for the same global explorer cwd queue.
+- Validation:
+  - passed: `bunx vitest run src/test/terminalOverlay.test.tsx src/test/fileExplorer.viewModes.test.tsx src/test/hotkeys.test.ts src/test/settingsStore.test.ts`
+
 ## 2026-04-18 — Spreadsheet Viewer/Editor Workbench
 
 - Spreadsheet files now route to a dedicated preview/editor lane instead of the Monaco text editor.
