@@ -49,6 +49,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import {
   ensureFontFamilyLoaded,
@@ -96,6 +97,11 @@ import {
   type TerminalPaneSplitHandle,
   type TerminalSplitDirection,
 } from './terminalPaneLayout';
+import {
+  TerminalViewportFx,
+  buildTerminalViewportContentFilter,
+  type TerminalRendererMode,
+} from './terminal/TerminalViewportFx';
 
 export type ThemeId = 'operator' | 'dracula' | 'nord' | 'monokai' | 'github-dark' | 'catppuccin';
 
@@ -137,6 +143,15 @@ function themeFromAppearance(
     textMuted: theme.palette.textMuted,
     border: workbenchTheme.surfaces.terminalBorder,
     xt: theme.xterm,
+  };
+}
+
+function createXtermColorTheme(theme: Theme): XTerm['options']['theme'] {
+  return {
+    ...theme.xt,
+    cursorAccent: theme.bgTerm,
+    selectionBackground: theme.accent + '44',
+    selectionForeground: '#ffffff',
   };
 }
 
@@ -497,6 +512,7 @@ interface XTermPaneProps {
   visible: boolean;
   active: boolean;
   theme: Theme;
+  workbenchTheme: ResolvedWorkbenchThemeRecipe;
   onReady?: (id: string) => void;
   onFocus?: (id: string) => void;
   onData?: (id: string, data: string) => void;
@@ -509,24 +525,34 @@ function XTermPane({
   visible,
   active,
   theme,
+  workbenchTheme,
   onReady,
   onFocus,
   onData,
   onOutput,
   onResize,
 }: XTermPaneProps) {
+  const viewportRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mountedRef   = useRef(false);
   const bufferedOutputRef = useRef('');
   const outputFrameRef = useRef<number | null>(null);
   const fitFrameRef = useRef<number | null>(null);
   const lastResizeRef = useRef<{ rows: number; cols: number } | null>(null);
+  const webglAddonRef = useRef<WebglAddon | null>(null);
+  const webglContextLossDisposableRef = useRef<{ dispose: () => void } | null>(null);
+  const [rendererMode, setRendererMode] = useState<TerminalRendererMode>('dom');
   const settings = useSettingsStore(s => s.settings.terminal);
   const onReadyRef = useRef(onReady);
   const onFocusRef = useRef(onFocus);
   const onDataRef = useRef(onData);
   const onOutputRef = useRef(onOutput);
   const onResizeRef = useRef(onResize);
+  const rendererPreference = workbenchTheme.terminalRenderer;
+  const viewportContentFilter = useMemo(
+    () => buildTerminalViewportContentFilter(workbenchTheme.terminalFx, rendererMode, active),
+    [active, rendererMode, workbenchTheme.terminalFx],
+  );
 
   useEffect(() => { onReadyRef.current = onReady; }, [onReady]);
   useEffect(() => { onFocusRef.current = onFocus; }, [onFocus]);
@@ -534,17 +560,44 @@ function XTermPane({
   useEffect(() => { onOutputRef.current = onOutput; }, [onOutput]);
   useEffect(() => { onResizeRef.current = onResize; }, [onResize]);
 
+  const disposeWebglRenderer = useCallback(() => {
+    webglContextLossDisposableRef.current?.dispose();
+    webglContextLossDisposableRef.current = null;
+    webglAddonRef.current?.dispose();
+    webglAddonRef.current = null;
+  }, []);
+
+  const attachWebglRenderer = useCallback((term: XTerm) => {
+    if (rendererPreference === 'dom') {
+      setRendererMode('dom');
+      return;
+    }
+    if (webglAddonRef.current) {
+      setRendererMode('webgl');
+      return;
+    }
+
+    try {
+      const addon = new WebglAddon();
+      webglContextLossDisposableRef.current = addon.onContextLoss(() => {
+        disposeWebglRenderer();
+        setRendererMode('dom');
+      });
+      term.loadAddon(addon);
+      webglAddonRef.current = addon;
+      setRendererMode('webgl');
+    } catch {
+      disposeWebglRenderer();
+      setRendererMode('dom');
+    }
+  }, [disposeWebglRenderer, rendererPreference]);
+
   const boot = useCallback(async () => {
     if (!containerRef.current || mountedRef.current) return;
     mountedRef.current = true;
 
     const term = new XTerm({
-      theme: {
-        ...theme.xt,
-        cursorAccent: theme.bgTerm,
-        selectionBackground: theme.accent + '44',
-        selectionForeground: '#ffffff',
-      },
+      theme: createXtermColorTheme(theme),
       fontFamily:        settings.fontFamily || 'JetBrains Mono, Fira Code, monospace',
       fontSize:          settings.fontSize   || 13,
       lineHeight:        1.35,
@@ -552,7 +605,7 @@ function XTermPane({
       cursorBlink:       settings.cursorBlink  ?? true,
       cursorStyle:       settings.cursorStyle   || 'bar',
       scrollback:        settings.scrollback    || 10000,
-      allowTransparency: false,
+      allowTransparency: workbenchTheme.terminalStyle === 'glass',
       convertEol:        true,
       scrollOnUserInput: true,
     });
@@ -562,6 +615,7 @@ function XTermPane({
     term.loadAddon(fit);
     term.loadAddon(webLinks);
     term.open(containerRef.current);
+    attachWebglRenderer(term);
 
     const runFit = (preserveBottomLock: boolean) => {
       if (
@@ -647,7 +701,7 @@ function XTermPane({
     const ro = new ResizeObserver(() => scheduleFit());
     ro.observe(containerRef.current!);
 
-    const focusTarget = containerRef.current;
+    const focusTarget = viewportRef.current ?? containerRef.current;
     const handlePointerDown = () => onFocusRef.current?.(id);
     focusTarget?.addEventListener('pointerdown', handlePointerDown);
 
@@ -663,6 +717,7 @@ function XTermPane({
           window.cancelAnimationFrame(outputFrameRef.current);
           outputFrameRef.current = null;
         }
+        disposeWebglRenderer();
         unlisten();
         ro.disconnect();
         focusTarget?.removeEventListener('pointerdown', handlePointerDown);
@@ -671,7 +726,7 @@ function XTermPane({
     onResizeRef.current?.(id, term.rows, term.cols);
     onReadyRef.current?.(id);
     term.focus();
-  }, [id, settings, theme]);
+  }, [attachWebglRenderer, disposeWebglRenderer, id, settings, theme, workbenchTheme.terminalStyle]);
 
   useEffect(() => {
     if (visible) {
@@ -679,6 +734,58 @@ function XTermPane({
       return () => cancelAnimationFrame(raf);
     }
   }, [visible, boot]);
+
+  useEffect(() => {
+    const entry = xtermRegistry.get(id);
+    if (!entry) {
+      return;
+    }
+
+    entry.xterm.options = {
+      ...entry.xterm.options,
+      theme: createXtermColorTheme(theme),
+      fontFamily: settings.fontFamily || 'JetBrains Mono, Fira Code, monospace',
+      fontSize: settings.fontSize || 13,
+      cursorBlink: settings.cursorBlink ?? true,
+      cursorStyle: settings.cursorStyle || 'bar',
+      scrollback: settings.scrollback || 10000,
+    };
+    webglAddonRef.current?.clearTextureAtlas();
+
+    requestAnimationFrame(() => {
+      const keepViewportPinned = shouldKeepTerminalViewportPinnedToBottom(entry.xterm);
+      entry.fitAddon.fit();
+      if (keepViewportPinned) {
+        entry.xterm.scrollToBottom();
+      }
+    });
+  }, [
+    id,
+    settings.cursorBlink,
+    settings.cursorStyle,
+    settings.fontFamily,
+    settings.fontSize,
+    settings.scrollback,
+    theme,
+  ]);
+
+  useEffect(() => {
+    const entry = xtermRegistry.get(id);
+    if (!entry) {
+      return;
+    }
+
+    if (rendererPreference === 'dom') {
+      disposeWebglRenderer();
+      setRendererMode('dom');
+      return;
+    }
+
+    if (!webglAddonRef.current) {
+      attachWebglRenderer(entry.xterm);
+      requestAnimationFrame(() => entry.fitAddon.fit());
+    }
+  }, [attachWebglRenderer, disposeWebglRenderer, id, rendererPreference]);
 
   useEffect(() => {
     if (visible && active) {
@@ -703,14 +810,31 @@ function XTermPane({
 
   return (
     <div
-      ref={containerRef}
+      ref={viewportRef}
+      data-terminal-renderer-mode={rendererMode}
+      data-testid={`terminal-pane-viewport-${id}`}
       style={{
         display: visible ? 'block' : 'none',
-        padding: '6px 8px',
-        boxSizing: 'border-box',
       }}
       className="absolute inset-0"
-    />
+    >
+      <div
+        ref={containerRef}
+        className="absolute inset-0"
+        style={{
+          padding: '6px 8px',
+          boxSizing: 'border-box',
+          filter: viewportContentFilter,
+        }}
+      />
+      <TerminalViewportFx
+        active={active}
+        paneId={id}
+        rendererMode={rendererMode}
+        terminalFx={workbenchTheme.terminalFx}
+        theme={theme}
+      />
+    </div>
   );
 }
 
@@ -2051,6 +2175,7 @@ export function TerminalOverlay({
                 visible={tabId === activeTabId}
                 active={isActivePane && tabId === activeTabId}
                 theme={theme}
+                workbenchTheme={appearance.workbenchTheme}
                 onReady={markTerminalReady}
                 onFocus={(id) => {
                   const owner = findTabForPane(id);
@@ -2071,6 +2196,7 @@ export function TerminalOverlay({
     activePaneId,
     activeTab,
     activeTabId,
+    appearance.workbenchTheme,
     appearance.theme.palette.success,
     closePane,
     copyPaneOutput,

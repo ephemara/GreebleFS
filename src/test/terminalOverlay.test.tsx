@@ -2,11 +2,18 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
+import { normalizeThemeDefinition, resolveOverlayAppearance } from '../config/appearance';
 import { useExplorerStore } from '../store/explorerStore';
 
-const { mockXtermInstances } = vi.hoisted(() => ({
+const { mockWebglAddonInstances, mockXtermInstances } = vi.hoisted(() => ({
+  mockWebglAddonInstances: [] as {
+    clearTextureAtlas: ReturnType<typeof vi.fn>;
+    dispose: ReturnType<typeof vi.fn>;
+    triggerContextLoss: () => void;
+  }[],
   mockXtermInstances: [] as {
     clear: ReturnType<typeof vi.fn>;
+    loadAddon: ReturnType<typeof vi.fn>;
     reset: ReturnType<typeof vi.fn>;
     emitData: (data: string) => void;
   }[],
@@ -24,6 +31,7 @@ vi.mock('@xterm/xterm', () => ({
   Terminal: class {
     rows = 24;
     cols = 80;
+    options: Record<string, unknown> = {};
     selection = '';
     private dataHandler: ((data: string) => void) | null = null;
     clear = vi.fn();
@@ -74,11 +82,35 @@ vi.mock('@xterm/addon-web-links', () => ({
   WebLinksAddon: class {},
 }));
 
+vi.mock('@xterm/addon-webgl', () => ({
+  WebglAddon: class {
+    private contextLossHandler: (() => void) | null = null;
+    clearTextureAtlas = vi.fn();
+    dispose = vi.fn();
+
+    constructor() {
+      mockWebglAddonInstances.push(this);
+    }
+
+    onContextLoss(handler: () => void) {
+      this.contextLossHandler = handler;
+      return {
+        dispose: vi.fn(),
+      };
+    }
+
+    triggerContextLoss(): void {
+      this.contextLossHandler?.();
+    }
+  },
+}));
+
 import TerminalOverlay from '../components/TerminalOverlay';
 import { useSettingsStore } from '../store/settingsStore';
 
 describe('TerminalOverlay', () => {
   beforeEach(() => {
+    mockWebglAddonInstances.length = 0;
     mockXtermInstances.length = 0;
     vi.mocked(invoke).mockReset();
     vi.mocked(invoke).mockResolvedValue(null);
@@ -256,6 +288,35 @@ describe('TerminalOverlay', () => {
       id: 'overlay-0',
       data: "'C:\\Python Runtime\\env\\Scripts\\python.exe'\r",
     });
+  }, 20000);
+
+  it('boots the pane with the WebGL renderer and theme-owned terminal fx when requested', async () => {
+    const appearance = resolveOverlayAppearance({
+      customThemes: [
+        normalizeThemeDefinition({
+          id: 'crt-shell',
+          name: 'CRT Shell',
+          workbench: {
+            terminalRenderer: 'webgl',
+            terminalFx: {
+              preset: 'crt',
+              tintColor: '#7df9ff',
+            },
+          },
+        }),
+      ],
+      activeThemeId: 'crt-shell',
+    });
+
+    render(<TerminalOverlay isOpen onClose={() => {}} embedded appearance={appearance} />);
+
+    await waitFor(() => {
+      expect(mockWebglAddonInstances).toHaveLength(1);
+    });
+
+    expect(mockXtermInstances[0]?.loadAddon).toHaveBeenCalledWith(mockWebglAddonInstances[0]);
+    expect(screen.getByTestId('terminal-pane-viewport-overlay-0')).toHaveAttribute('data-terminal-renderer-mode', 'webgl');
+    expect(screen.getByTestId('terminal-pane-fx-overlay-0')).toHaveAttribute('data-terminal-fx-preset', 'crt');
   }, 20000);
 
   it('lets the embedded terminal tuck the sidebar away and persist that choice', async () => {

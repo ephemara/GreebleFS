@@ -40,6 +40,10 @@ describe('workbench theme recipe', () => {
             metrics: {
               commandPaletteWidth: 804,
             },
+            terminalFx: {
+              preset: 'crt',
+              tintColor: '#7df9ff',
+            },
           },
         }),
       ],
@@ -48,7 +52,10 @@ describe('workbench theme recipe', () => {
 
     expect(appearance.cssVars['--overlay-workbench-command-palette-width']).toBe('804px');
     expect(appearance.cssVars['--overlay-workbench-chrome-bg']).toBeTruthy();
+    expect(appearance.cssVars['--overlay-workbench-terminal-fx-tint-color']).toBe('#7df9ff');
     expect(appearance.workbenchTheme.settingsStyle).toBe('floating');
+    expect(appearance.workbenchTheme.terminalFx.preset).toBe('crt');
+    expect(appearance.workbenchTheme.terminalRenderer).toBe('auto');
   });
 
   it('derives workbench defaults from generic engine manifests even without an explicit preset', () => {

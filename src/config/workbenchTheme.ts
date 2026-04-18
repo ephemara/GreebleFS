@@ -12,6 +12,8 @@ export type OverlayWorkbenchThemePreset = 'workbench' | 'xmb' | 'channel-grid' |
 export type OverlayWorkbenchChromeStyle = 'solid' | 'glass' | 'floating' | 'minimal';
 export type OverlayWorkbenchPanelStyle = 'solid' | 'glass' | 'floating';
 export type OverlayWorkbenchTabStyle = 'underline' | 'capsule' | 'segment';
+export type OverlayWorkbenchTerminalRenderer = 'auto' | 'dom' | 'webgl';
+export type OverlayWorkbenchTerminalFxPreset = 'off' | 'subtle' | 'crt' | 'broadcast';
 
 export interface OverlayWorkbenchThemeMetrics {
   chromeHeight?: number;
@@ -66,6 +68,36 @@ export interface OverlayWorkbenchThemeTypography {
   labelLetterSpacing?: string;
 }
 
+export interface OverlayWorkbenchTerminalFxRecipe {
+  enabled?: boolean;
+  preset?: OverlayWorkbenchTerminalFxPreset;
+  opacity?: number;
+  scanlineOpacity?: number;
+  noiseOpacity?: number;
+  vignetteOpacity?: number;
+  glowOpacity?: number;
+  tintOpacity?: number;
+  tintColor?: string;
+  curvature?: number;
+  saturation?: number;
+  contrast?: number;
+}
+
+export interface ResolvedWorkbenchTerminalFxRecipe {
+  enabled: boolean;
+  preset: OverlayWorkbenchTerminalFxPreset;
+  opacity: number;
+  scanlineOpacity: number;
+  noiseOpacity: number;
+  vignetteOpacity: number;
+  glowOpacity: number;
+  tintOpacity: number;
+  tintColor: string;
+  curvature: number;
+  saturation: number;
+  contrast: number;
+}
+
 export interface OverlayWorkbenchThemeRecipe {
   preset?: OverlayWorkbenchThemePreset;
   brandLabel?: string;
@@ -76,6 +108,8 @@ export interface OverlayWorkbenchThemeRecipe {
   panelStyle?: OverlayWorkbenchPanelStyle;
   commandPaletteStyle?: OverlayWorkbenchPanelStyle;
   terminalStyle?: OverlayWorkbenchPanelStyle;
+  terminalRenderer?: OverlayWorkbenchTerminalRenderer;
+  terminalFx?: OverlayWorkbenchTerminalFxRecipe;
   settingsStyle?: OverlayWorkbenchPanelStyle;
   tabStyle?: OverlayWorkbenchTabStyle;
   metrics?: OverlayWorkbenchThemeMetrics;
@@ -94,6 +128,8 @@ export interface ResolvedWorkbenchThemeRecipe {
   panelStyle: OverlayWorkbenchPanelStyle;
   commandPaletteStyle: OverlayWorkbenchPanelStyle;
   terminalStyle: OverlayWorkbenchPanelStyle;
+  terminalRenderer: OverlayWorkbenchTerminalRenderer;
+  terminalFx: ResolvedWorkbenchTerminalFxRecipe;
   settingsStyle: OverlayWorkbenchPanelStyle;
   tabStyle: OverlayWorkbenchTabStyle;
   metrics: Required<OverlayWorkbenchThemeMetrics>;
@@ -155,6 +191,65 @@ const defaultTypography: Required<OverlayWorkbenchThemeTypography> = {
   labelLetterSpacing: '0.08em',
 };
 
+const defaultTerminalFxByPreset: Record<OverlayWorkbenchTerminalFxPreset, ResolvedWorkbenchTerminalFxRecipe> = {
+  off: {
+    enabled: false,
+    preset: 'off',
+    opacity: 0,
+    scanlineOpacity: 0,
+    noiseOpacity: 0,
+    vignetteOpacity: 0,
+    glowOpacity: 0,
+    tintOpacity: 0,
+    tintColor: 'var(--overlay-accent)',
+    curvature: 0,
+    saturation: 0,
+    contrast: 0,
+  },
+  subtle: {
+    enabled: true,
+    preset: 'subtle',
+    opacity: 1,
+    scanlineOpacity: 0.06,
+    noiseOpacity: 0.03,
+    vignetteOpacity: 0.14,
+    glowOpacity: 0.1,
+    tintOpacity: 0.05,
+    tintColor: 'var(--overlay-accent)',
+    curvature: 0.08,
+    saturation: 0.08,
+    contrast: 0.12,
+  },
+  crt: {
+    enabled: true,
+    preset: 'crt',
+    opacity: 1,
+    scanlineOpacity: 0.13,
+    noiseOpacity: 0.055,
+    vignetteOpacity: 0.22,
+    glowOpacity: 0.2,
+    tintOpacity: 0.08,
+    tintColor: 'var(--overlay-accent)',
+    curvature: 0.18,
+    saturation: 0.16,
+    contrast: 0.2,
+  },
+  broadcast: {
+    enabled: true,
+    preset: 'broadcast',
+    opacity: 1,
+    scanlineOpacity: 0.17,
+    noiseOpacity: 0.07,
+    vignetteOpacity: 0.26,
+    glowOpacity: 0.24,
+    tintOpacity: 0.12,
+    tintColor: 'var(--overlay-accent)',
+    curvature: 0.22,
+    saturation: 0.14,
+    contrast: 0.28,
+  },
+};
+
 function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -165,6 +260,18 @@ function asFiniteNumber(value: unknown): number | undefined {
 
 function asTrimmedString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function asTerminalRenderer(value: unknown): OverlayWorkbenchTerminalRenderer | undefined {
+  return value === 'auto' || value === 'dom' || value === 'webgl'
+    ? value
+    : undefined;
+}
+
+function asTerminalFxPreset(value: unknown): OverlayWorkbenchTerminalFxPreset | undefined {
+  return value === 'off' || value === 'subtle' || value === 'crt' || value === 'broadcast'
+    ? value
+    : undefined;
 }
 
 function normalizeCssVarRecord(value: Record<string, unknown> | undefined): Record<string, string> {
@@ -188,6 +295,45 @@ function compactObject<T extends object>(input: T | undefined): Partial<T> {
   ) as Partial<T>;
 }
 
+function resolveWorkbenchTerminalFxRecipe(
+  presetFx: OverlayWorkbenchTerminalFxRecipe | undefined,
+  engineFx: OverlayWorkbenchTerminalFxRecipe | undefined,
+  userFx: OverlayWorkbenchTerminalFxRecipe | undefined,
+): ResolvedWorkbenchTerminalFxRecipe {
+  const preset = asTerminalFxPreset(userFx?.preset)
+    ?? asTerminalFxPreset(engineFx?.preset)
+    ?? asTerminalFxPreset(presetFx?.preset)
+    ?? 'subtle';
+  const presetDefaults = defaultTerminalFxByPreset[preset];
+  const merged = {
+    ...presetDefaults,
+    ...compactObject(presetFx),
+    ...compactObject(engineFx),
+    ...compactObject(userFx),
+    preset,
+    enabled: userFx?.enabled ?? engineFx?.enabled ?? presetFx?.enabled ?? presetDefaults.enabled,
+    tintColor: userFx?.tintColor?.trim()
+      ?? engineFx?.tintColor?.trim()
+      ?? presetFx?.tintColor?.trim()
+      ?? presetDefaults.tintColor,
+  };
+
+  return {
+    enabled: merged.enabled,
+    preset,
+    opacity: clampNumber(merged.opacity, 0, 1),
+    scanlineOpacity: clampNumber(merged.scanlineOpacity, 0, 1),
+    noiseOpacity: clampNumber(merged.noiseOpacity, 0, 1),
+    vignetteOpacity: clampNumber(merged.vignetteOpacity, 0, 1),
+    glowOpacity: clampNumber(merged.glowOpacity, 0, 1),
+    tintOpacity: clampNumber(merged.tintOpacity, 0, 1),
+    tintColor: merged.tintColor,
+    curvature: clampNumber(merged.curvature, 0, 1),
+    saturation: clampNumber(merged.saturation, 0, 1),
+    contrast: clampNumber(merged.contrast, 0, 1),
+  };
+}
+
 export function normalizeWorkbenchThemeRecipe(
   recipe?: OverlayWorkbenchThemeRecipe,
   fallback?: OverlayWorkbenchThemeRecipe,
@@ -208,6 +354,10 @@ export function normalizeWorkbenchThemeRecipe(
     ...(fallback?.typography ?? {}),
     ...(recipe?.typography ?? {}),
   };
+  const mergedTerminalFx = {
+    ...(fallback?.terminalFx ?? {}),
+    ...(recipe?.terminalFx ?? {}),
+  };
 
   return {
     preset: recipe?.preset ?? fallback?.preset,
@@ -219,6 +369,21 @@ export function normalizeWorkbenchThemeRecipe(
     panelStyle: recipe?.panelStyle ?? fallback?.panelStyle,
     commandPaletteStyle: recipe?.commandPaletteStyle ?? fallback?.commandPaletteStyle,
     terminalStyle: recipe?.terminalStyle ?? fallback?.terminalStyle,
+    terminalRenderer: asTerminalRenderer(recipe?.terminalRenderer) ?? asTerminalRenderer(fallback?.terminalRenderer),
+    terminalFx: {
+      enabled: typeof mergedTerminalFx.enabled === 'boolean' ? mergedTerminalFx.enabled : undefined,
+      preset: asTerminalFxPreset(mergedTerminalFx.preset),
+      opacity: asFiniteNumber(mergedTerminalFx.opacity),
+      scanlineOpacity: asFiniteNumber(mergedTerminalFx.scanlineOpacity),
+      noiseOpacity: asFiniteNumber(mergedTerminalFx.noiseOpacity),
+      vignetteOpacity: asFiniteNumber(mergedTerminalFx.vignetteOpacity),
+      glowOpacity: asFiniteNumber(mergedTerminalFx.glowOpacity),
+      tintOpacity: asFiniteNumber(mergedTerminalFx.tintOpacity),
+      tintColor: asTrimmedString(mergedTerminalFx.tintColor),
+      curvature: asFiniteNumber(mergedTerminalFx.curvature),
+      saturation: asFiniteNumber(mergedTerminalFx.saturation),
+      contrast: asFiniteNumber(mergedTerminalFx.contrast),
+    },
     settingsStyle: recipe?.settingsStyle ?? fallback?.settingsStyle,
     tabStyle: recipe?.tabStyle ?? fallback?.tabStyle,
     metrics: {
@@ -304,6 +469,14 @@ function getPresetRecipe(preset: OverlayWorkbenchThemePreset): OverlayWorkbenchT
         panelStyle: 'glass',
         commandPaletteStyle: 'glass',
         terminalStyle: 'glass',
+        terminalRenderer: 'auto',
+        terminalFx: {
+          preset: 'subtle',
+          glowOpacity: 0.12,
+          tintOpacity: 0.06,
+          saturation: 0.12,
+          contrast: 0.16,
+        },
         settingsStyle: 'glass',
         tabStyle: 'capsule',
         metrics: {
@@ -355,6 +528,18 @@ function getPresetRecipe(preset: OverlayWorkbenchThemePreset): OverlayWorkbenchT
         panelStyle: 'floating',
         commandPaletteStyle: 'floating',
         terminalStyle: 'solid',
+        terminalRenderer: 'auto',
+        terminalFx: {
+          preset: 'subtle',
+          scanlineOpacity: 0.04,
+          noiseOpacity: 0.022,
+          vignetteOpacity: 0.1,
+          glowOpacity: 0.08,
+          tintOpacity: 0.03,
+          curvature: 0.05,
+          saturation: 0.05,
+          contrast: 0.08,
+        },
         settingsStyle: 'floating',
         tabStyle: 'capsule',
         metrics: {
@@ -406,6 +591,10 @@ function getPresetRecipe(preset: OverlayWorkbenchThemePreset): OverlayWorkbenchT
         panelStyle: 'solid',
         commandPaletteStyle: 'solid',
         terminalStyle: 'solid',
+        terminalRenderer: 'auto',
+        terminalFx: {
+          preset: 'off',
+        },
         settingsStyle: 'solid',
         tabStyle: 'underline',
       };
@@ -417,6 +606,10 @@ function getPresetRecipe(preset: OverlayWorkbenchThemePreset): OverlayWorkbenchT
         panelStyle: 'solid',
         commandPaletteStyle: 'solid',
         terminalStyle: 'solid',
+        terminalRenderer: 'auto',
+        terminalFx: {
+          preset: 'subtle',
+        },
         settingsStyle: 'solid',
         tabStyle: 'underline',
       };
@@ -664,6 +857,10 @@ function formatLength(value: number): string {
   return `${Math.round(value)}px`;
 }
 
+function formatUnitlessNumber(value: number): string {
+  return (Math.round(value * 1000) / 1000).toString();
+}
+
 export function resolveWorkbenchThemeRecipe(
   theme: OverlayThemeDefinition,
 ): ResolvedWorkbenchThemeRecipe {
@@ -696,6 +893,15 @@ export function resolveWorkbenchThemeRecipe(
     ...compactObject(engineRecipe.typography),
     ...compactObject(userRecipe?.typography),
   };
+  const terminalRenderer = asTerminalRenderer(userRecipe?.terminalRenderer)
+    ?? asTerminalRenderer(engineRecipe.terminalRenderer)
+    ?? asTerminalRenderer(presetRecipe.terminalRenderer)
+    ?? 'auto';
+  const terminalFx = resolveWorkbenchTerminalFxRecipe(
+    presetRecipe.terminalFx,
+    engineRecipe.terminalFx,
+    userRecipe?.terminalFx,
+  );
   const cssVars = {
     '--overlay-workbench-shell-bg': surfaces.shellBackground,
     '--overlay-workbench-chrome-bg': surfaces.chromeBackground,
@@ -726,6 +932,17 @@ export function resolveWorkbenchThemeRecipe(
     '--overlay-workbench-terminal-pane-bg': surfaces.terminalPaneBackground,
     '--overlay-workbench-terminal-border': surfaces.terminalBorder,
     '--overlay-workbench-terminal-status-bg': surfaces.terminalStatusBackground,
+    '--overlay-workbench-terminal-renderer': terminalRenderer,
+    '--overlay-workbench-terminal-fx-opacity': formatUnitlessNumber(terminalFx.opacity),
+    '--overlay-workbench-terminal-fx-scanline-opacity': formatUnitlessNumber(terminalFx.scanlineOpacity),
+    '--overlay-workbench-terminal-fx-noise-opacity': formatUnitlessNumber(terminalFx.noiseOpacity),
+    '--overlay-workbench-terminal-fx-vignette-opacity': formatUnitlessNumber(terminalFx.vignetteOpacity),
+    '--overlay-workbench-terminal-fx-glow-opacity': formatUnitlessNumber(terminalFx.glowOpacity),
+    '--overlay-workbench-terminal-fx-tint-opacity': formatUnitlessNumber(terminalFx.tintOpacity),
+    '--overlay-workbench-terminal-fx-tint-color': terminalFx.tintColor,
+    '--overlay-workbench-terminal-fx-curvature': formatUnitlessNumber(terminalFx.curvature),
+    '--overlay-workbench-terminal-fx-saturation': formatUnitlessNumber(terminalFx.saturation),
+    '--overlay-workbench-terminal-fx-contrast': formatUnitlessNumber(terminalFx.contrast),
     '--overlay-workbench-chrome-height': formatLength(metrics.chromeHeight),
     '--overlay-workbench-control-radius': formatLength(metrics.controlRadius),
     '--overlay-workbench-panel-radius': formatLength(metrics.panelRadius),
@@ -754,6 +971,8 @@ export function resolveWorkbenchThemeRecipe(
     panelStyle: userRecipe?.panelStyle ?? engineRecipe.panelStyle ?? presetRecipe.panelStyle ?? 'solid',
     commandPaletteStyle: userRecipe?.commandPaletteStyle ?? engineRecipe.commandPaletteStyle ?? presetRecipe.commandPaletteStyle ?? 'solid',
     terminalStyle: userRecipe?.terminalStyle ?? engineRecipe.terminalStyle ?? presetRecipe.terminalStyle ?? 'solid',
+    terminalRenderer,
+    terminalFx,
     settingsStyle: userRecipe?.settingsStyle ?? engineRecipe.settingsStyle ?? presetRecipe.settingsStyle ?? 'solid',
     tabStyle: userRecipe?.tabStyle ?? engineRecipe.tabStyle ?? presetRecipe.tabStyle ?? 'underline',
     metrics: {

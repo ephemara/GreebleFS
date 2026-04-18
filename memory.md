@@ -1,5 +1,21 @@
 # GreebleFS Memory
 
+## 2026-04-18 — Terminal WebGL Renderer + Theme-Owned FX Overlay
+
+- Embedded terminals now have a first-class GPU renderer lane and a theme-owned post-FX contract instead of hardcoding all terminal presentation inside `TerminalOverlay.tsx`.
+- Durable implementation shape:
+  - `package.json` now includes `@xterm/addon-webgl`, and `src/components/TerminalOverlay.tsx` loads the addon for each pane when the resolved workbench theme requests `terminalRenderer: 'webgl'` or `'auto'`.
+  - The xterm boot path still fits before PTY spawn, but it now also applies the theme recipe to the mounted instance after boot so font/theme changes and WebGL atlas refresh stay in sync without remounting panes.
+  - `src/config/workbenchTheme.ts` now owns `terminalRenderer` plus a resolved `terminalFx` recipe (`preset`, scanlines, noise, vignette, glow, tint, curvature, saturation, contrast). Theme packages and built-in themes can drive terminal presentation through `theme.workbench`, just like the rest of the shell.
+  - `src/components/terminal/TerminalViewportFx.tsx` is the leaf FX surface for pane-local terminal atmosphere. It adds scanline/noise/vignette/glow/tint layers and content filtering on top of the xterm viewport without moving terminal parsing/emulation out of xterm.
+  - `src/config/pilotThemeContract.ts` seeds the built-in pilot baseline with a subtle terminal FX profile, so the default terminal no longer looks like a raw xterm drop-in.
+- Durable product note:
+  - Terminal rendering strategy in this repo is now: xterm for emulation/input/selection, WebGL addon for fast paint when available, theme-owned FX overlay for shell identity. Do not jump straight to a bespoke glyph-atlas renderer unless the product explicitly decides to own terminal emulation/grid truth too.
+  - If terminal visuals regress after a theme switch, inspect `ResolvedWorkbenchThemeRecipe.terminalRenderer`, `ResolvedWorkbenchThemeRecipe.terminalFx`, and the pane-local `TerminalViewportFx` layer before touching the PTY bridge.
+- Validation:
+  - passed: `bunx vitest run src/test/workbenchTheme.test.ts src/test/terminalOverlay.test.tsx`
+  - passed: filtered typecheck via `bunx tsc --noEmit --pretty false 2>&1 | rg "src/components/TerminalOverlay|src/components/terminal/TerminalViewportFx|src/config/workbenchTheme|src/config/pilotThemeContract|src/test/terminalOverlay.test|src/test/workbenchTheme.test" || true`
+
 ## 2026-04-18 — Terminal Split Drag Uses Imperative Preview Geometry
 
 - Embedded terminal pane-resize drag no longer drives the entire terminal shell through React state updates on every pointer move.

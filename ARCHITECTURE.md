@@ -75,7 +75,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/WorkbenchNavigationSurface.tsx`
   Runtime-swappable launcher surface for cross-axis, channel-grid, desktop, and tabbed shells.
 - `src/components/TerminalOverlay.tsx`
-  Integrated terminal shell. It now owns a tree-based pane/workspace model instead of a flat `paneIds[]` layout, renders pane geometry from that split tree, keeps PTYs mounted across workspace-tab switches, and routes pane-resize behavior through draggable split handles plus the typed terminal command bridge. Explorer-driven terminal cwd sync now goes through terminal shell-integration commands instead of always injecting literal `cd` text.
+  Integrated terminal shell. It now owns a tree-based pane/workspace model instead of a flat `paneIds[]` layout, renders pane geometry from that split tree, keeps PTYs mounted across workspace-tab switches, routes pane-resize behavior through draggable split handles plus the typed terminal command bridge, and can load the xterm WebGL renderer plus theme-owned pane FX without moving terminal emulation out of xterm. Explorer-driven terminal cwd sync now goes through terminal shell-integration commands instead of always injecting literal `cd` text.
+- `src/components/terminal/TerminalViewportFx.tsx`
+  Pane-local terminal presentation leaf. It applies theme-owned scanline/noise/vignette/glow/tint/curvature overlays and content filtering above the mounted xterm viewport while keeping pointer/input ownership in the pane shell.
 - `src/components/ScreenshotsManager.tsx`
   Screenshot capture/editor/library surface. It owns monitor preview orchestration, selection editing, annotation authoring, and gallery actions, but annotated export is now delegated to Rust instead of being rasterized in the browser.
 - `src/components/pluginRuntime.tsx`
@@ -139,6 +141,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - top bar chrome
   - command palette chrome
   - terminal shell chrome
+  - terminal renderer mode and pane FX recipe
   - settings shell chrome
   - shared tabs and button treatment
   - shell insets, radii, and panel spacing
