@@ -321,14 +321,23 @@ export function ExplorerSpreadsheetWorkbench({
       return;
     }
 
-    const clamped = clampSpreadsheetCell(selectedCellRef.current, activeSheetDimensions);
+    const clamped = clampSpreadsheetCell(selectedCellRef.current, {
+      width: viewColumnCount,
+      height: viewRowCount,
+    });
     if (
       clamped.col !== selectedCellRef.current.col ||
       clamped.row !== selectedCellRef.current.row
     ) {
       selectSpreadsheetCell(clamped);
     }
-  }, [activeSheetDimensions, activeSheetId, currentWorkbook, workbookVersion]);
+  }, [
+    activeSheetId,
+    currentWorkbook,
+    viewColumnCount,
+    viewRowCount,
+    workbookVersion,
+  ]);
 
   useEffect(() => {
     if (!currentWorkbook || activeSheetId == null) {
@@ -352,8 +361,15 @@ export function ExplorerSpreadsheetWorkbench({
   }, [activeSheetName, sheetNames]);
 
   const selectSpreadsheetCell = useCallback(
-    (cell: SpreadsheetCellAddress, focusGrid = false) => {
-      const nextCell = clampSpreadsheetCell(cell, activeSheetDimensions);
+    (
+      cell: SpreadsheetCellAddress,
+      focusGrid = false,
+      bounds: { width: number; height: number } = {
+        width: viewColumnCount,
+        height: viewRowCount,
+      },
+    ) => {
+      const nextCell = clampSpreadsheetCell(cell, bounds);
       selectedCellRef.current = nextCell;
       setSelectedCell(nextCell);
       setGridSelection(createSpreadsheetSelection(nextCell));
@@ -361,7 +377,7 @@ export function ExplorerSpreadsheetWorkbench({
         dataEditorRef.current?.focus();
       }
     },
-    [activeSheetDimensions],
+    [viewColumnCount, viewRowCount],
   );
 
   const queueSpreadsheetSave = useCallback(() => {
@@ -453,7 +469,7 @@ export function ExplorerSpreadsheetWorkbench({
 
     if (saveInFlightRef.current) {
       await saveInFlightRef.current;
-      return revisionRef.current === savedRevisionRef.current;
+      return true;
     }
 
     const saveRevision = revisionRef.current;
@@ -472,8 +488,6 @@ export function ExplorerSpreadsheetWorkbench({
         await onRefreshPreviewEntry?.();
         return true;
       } catch (error) {
-        const message = String(error);
-        setLoadError(message);
         setOperationMessage("Save failed");
         setOperationTone("error");
         return false;
@@ -648,8 +662,9 @@ export function ExplorerSpreadsheetWorkbench({
       setActiveSheetName(nextSheetName);
       const nextSheetId = document.workbook.getSheetId(nextSheetName);
       const nextDimensions = document.workbook.getSheetDimensions(nextSheetId);
-      const nextCell = clampSpreadsheetCell(selectedCellRef.current, nextDimensions);
-      selectSpreadsheetCell(nextCell);
+      const nextBounds = getSpreadsheetViewportBounds(nextDimensions);
+      const nextCell = clampSpreadsheetCell(selectedCellRef.current, nextBounds);
+      selectSpreadsheetCell(nextCell, false, nextBounds);
       focusSpreadsheetGrid();
     },
     [focusSpreadsheetGrid, selectSpreadsheetCell, sheetNames],
@@ -872,8 +887,13 @@ export function ExplorerSpreadsheetWorkbench({
   );
 
   const handleReload = useCallback(() => {
+    if (isDirty || isSaving) {
+      setOperationMessage("Save or discard changes before reloading");
+      setOperationTone("warning");
+      return;
+    }
     setReloadToken((current) => current + 1);
-  }, []);
+  }, [isDirty, isSaving]);
 
   const handleSaveClick = useCallback(() => {
     void flushSpreadsheetSave();
@@ -1048,8 +1068,9 @@ export function ExplorerSpreadsheetWorkbench({
                   if (document) {
                     const nextSheetId = document.workbook.getSheetId(sheetName);
                     const nextDimensions = document.workbook.getSheetDimensions(nextSheetId);
-                    const nextCell = clampSpreadsheetCell(selectedCellRef.current, nextDimensions);
-                    selectSpreadsheetCell(nextCell);
+                    const nextBounds = getSpreadsheetViewportBounds(nextDimensions);
+                    const nextCell = clampSpreadsheetCell(selectedCellRef.current, nextBounds);
+                    selectSpreadsheetCell(nextCell, false, nextBounds);
                   }
                   focusSpreadsheetGrid();
                 }}
@@ -1342,6 +1363,16 @@ function clampSpreadsheetCell(
   return {
     col: Math.max(0, Math.min(cell.col, Math.max(0, dimensions.width - 1))),
     row: Math.max(0, Math.min(cell.row, Math.max(0, dimensions.height - 1))),
+  };
+}
+
+function getSpreadsheetViewportBounds(dimensions: { width: number; height: number }): {
+  width: number;
+  height: number;
+} {
+  return {
+    width: Math.max(dimensions.width + 6, SPREADSHEET_MIN_COLUMNS),
+    height: Math.max(dimensions.height + 24, SPREADSHEET_MIN_ROWS),
   };
 }
 
