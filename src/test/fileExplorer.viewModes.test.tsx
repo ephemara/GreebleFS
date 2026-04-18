@@ -32,11 +32,13 @@ vi.mock("../components/ExplorerAudioWorkbench", () => ({
 vi.mock("../components/ExplorerPdfWorkbench", () => ({
   ExplorerPdfWorkbench: ({
     document,
+    onSaved,
     onChromeStateChange,
     onControllerChange,
     onRegisterCloseGuard,
   }: {
     document: { name: string; pageCount: number };
+    onSaved?: () => Promise<void> | void;
     onChromeStateChange?: (state: {
       activePageIndex: number;
       pageCount: number;
@@ -59,6 +61,23 @@ vi.mock("../components/ExplorerPdfWorkbench", () => ({
     } | null) => void;
     onRegisterCloseGuard?: (guard: (() => Promise<boolean>) | null) => void;
   }) => {
+    const controller = React.useMemo(
+      () => ({
+        goToPreviousPage: () => {},
+        goToNextPage: () => {},
+        goToPage: () => {},
+        zoomIn: () => {},
+        zoomOut: () => {},
+        setFitMode: () => {},
+        toggleEditMode: () => {},
+        save: async () => {
+          await onSaved?.();
+          return true;
+        },
+      }),
+      [onSaved],
+    );
+
     React.useEffect(() => {
       onChromeStateChange?.({
         activePageIndex: 1,
@@ -70,23 +89,16 @@ vi.mock("../components/ExplorerPdfWorkbench", () => ({
         isSaving: false,
         error: null,
       });
-      onControllerChange?.({
-        goToPreviousPage: () => {},
-        goToNextPage: () => {},
-        goToPage: () => {},
-        zoomIn: () => {},
-        zoomOut: () => {},
-        setFitMode: () => {},
-        toggleEditMode: () => {},
-        save: async () => true,
-      });
+      onControllerChange?.(controller);
       onRegisterCloseGuard?.(async () => true);
       return () => {
         onControllerChange?.(null);
         onRegisterCloseGuard?.(null);
       };
     }, [
+      controller,
       document.pageCount,
+      onSaved,
       onChromeStateChange,
       onControllerChange,
       onRegisterCloseGuard,
@@ -1016,7 +1028,7 @@ describe("FileExplorer view modes", () => {
       if (command === "pdf_close_preview_document") {
         return null;
       }
-      return baseInvokeImplementation(command, args);
+      return baseInvokeImplementation(command, args as never);
     });
 
     renderExplorer();

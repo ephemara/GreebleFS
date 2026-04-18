@@ -278,6 +278,7 @@ import { runExplorerAudioBatchProcess } from "../runtime/audioWorkbenchBackend";
 import {
   openExplorerPdfPreviewDocument,
   type ExplorerPdfPreviewDocument,
+  type ExplorerPdfSaveEditsOutput,
 } from "../runtime/pdfPreviewBackend";
 import { commands, unwrapTauriResult } from "../runtime/tauriClient";
 import {
@@ -2846,6 +2847,33 @@ function PreviewPanel({
     },
     [onPdfChromeStateChange],
   );
+  const handlePdfWorkbenchControllerChange = useCallback(
+    (controller: ExplorerPdfWorkbenchController | null) => {
+      setPdfWorkbenchController((current) =>
+        current === controller ? current : controller,
+      );
+    },
+    [],
+  );
+  const handlePdfWorkbenchDocumentChange = useCallback(
+    (document: ExplorerPdfPreviewDocument) => {
+      if (preview.type !== "pdf") {
+        return;
+      }
+      onPdfDocumentChange(preview.path, document);
+    },
+    [onPdfDocumentChange, preview.path, preview.type],
+  );
+  const handlePdfWorkbenchSaved = useCallback(
+    async (output: ExplorerPdfSaveEditsOutput) => {
+      if (preview.type !== "pdf") {
+        return;
+      }
+      onPdfDocumentChange(preview.path, output.document);
+      await onRefreshPreviewEntry();
+    },
+    [onPdfDocumentChange, onRefreshPreviewEntry, preview.path, preview.type],
+  );
   const getPreviewHeaderZoneStyle = useCallback(
     (zoneId: ExplorerChromeZoneId): CSSProperties => {
       switch (zoneId) {
@@ -3384,15 +3412,10 @@ function PreviewPanel({
         {preview.type === "pdf" && (
           <ExplorerPdfWorkbench
             document={preview.document}
-            onSaved={async (output) => {
-              onPdfDocumentChange(preview.path, output.document);
-              await onRefreshPreviewEntry();
-            }}
-            onDocumentChange={(document) =>
-              onPdfDocumentChange(preview.path, document)
-            }
+            onSaved={handlePdfWorkbenchSaved}
+            onDocumentChange={handlePdfWorkbenchDocumentChange}
             onChromeStateChange={handlePdfWorkbenchChromeStateChange}
-            onControllerChange={setPdfWorkbenchController}
+            onControllerChange={handlePdfWorkbenchControllerChange}
             onRegisterCloseGuard={onRegisterCloseGuard}
           />
         )}
@@ -16972,7 +16995,7 @@ export function FileExplorer({
               width={previewWidth}
               onWidthChange={setPreviewWidth}
               onTextChange={updatePreviewTextContent}
-              onRefreshPreviewEntry={() => refresh()}
+              onRefreshPreviewEntry={refresh}
               onPdfDocumentChange={updatePdfPreviewDocument}
               onPdfChromeStateChange={handlePdfPreviewChromeStateChange}
               onRegisterCloseGuard={registerPreviewCloseGuard}

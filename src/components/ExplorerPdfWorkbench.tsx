@@ -373,14 +373,18 @@ export function ExplorerPdfWorkbench({
     onChromeStateChange?.(chromeState);
   }, [chromeState, onChromeStateChange]);
 
+  const clearTransientStageState = useCallback(() => {
+    setSelectedAnnotationId(null);
+    setPointerDraft(null);
+    setTextPromptState(null);
+  }, []);
+
   const goToPage = useCallback(
     (pageIndex: number) => {
       setActivePageIndex(clamp(pageIndex, 0, Math.max(0, pdfDocument.pageCount - 1)));
-      setSelectedAnnotationId(null);
-      setPointerDraft(null);
-      setTextPromptState(null);
+      clearTransientStageState();
     },
-    [pdfDocument.pageCount],
+    [clearTransientStageState, pdfDocument.pageCount],
   );
 
   const goToPreviousPage = useCallback(() => {
@@ -498,8 +502,18 @@ export function ExplorerPdfWorkbench({
 
   useEffect(() => {
     onRegisterCloseGuard?.(requestCloseGuard);
-    return () => onRegisterCloseGuard?.(null);
   }, [onRegisterCloseGuard, requestCloseGuard]);
+
+  useEffect(
+    () => () => {
+      onRegisterCloseGuard?.(null);
+    },
+    [onRegisterCloseGuard],
+  );
+
+  const toggleEditMode = useCallback(() => {
+    setIsEditMode((current) => !current);
+  }, []);
 
   const controller = useMemo<ExplorerPdfWorkbenchController>(
     () => ({
@@ -509,16 +523,30 @@ export function ExplorerPdfWorkbench({
       zoomIn,
       zoomOut,
       setFitMode,
-      toggleEditMode: () => setIsEditMode((current) => !current),
+      toggleEditMode,
       save: savePdfEdits,
     }),
-    [goToNextPage, goToPage, goToPreviousPage, savePdfEdits, zoomIn, zoomOut],
+    [
+      goToNextPage,
+      goToPage,
+      goToPreviousPage,
+      savePdfEdits,
+      toggleEditMode,
+      zoomIn,
+      zoomOut,
+    ],
   );
 
   useEffect(() => {
     onControllerChange?.(controller);
-    return () => onControllerChange?.(null);
   }, [controller, onControllerChange]);
+
+  useEffect(
+    () => () => {
+      onControllerChange?.(null);
+    },
+    [onControllerChange],
+  );
 
   useEffect(() => {
     if (!activePage || viewportSize.width <= 0 || viewportSize.height <= 0) {
@@ -822,7 +850,7 @@ export function ExplorerPdfWorkbench({
       }
       if (matchesKeybinding(event.nativeEvent, keybindings.pdfWorkbenchToggleEditMode)) {
         event.preventDefault();
-        setIsEditMode((current) => !current);
+        toggleEditMode();
         return;
       }
 
@@ -860,6 +888,7 @@ export function ExplorerPdfWorkbench({
       savePdfEdits,
       selectedAnnotationId,
       showDirtyExitDialog,
+      toggleEditMode,
       zoomIn,
       zoomOut,
     ],
