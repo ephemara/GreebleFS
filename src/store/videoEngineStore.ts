@@ -42,9 +42,6 @@ const DEFAULT_VIDEO_ENGINE_SNAPSHOT: ExplorerVideoEngineStateSnapshot = {
   currentTimeSeconds: 0,
   isPlaying: false,
   isLoading: false,
-  previewFramePath: null,
-  previewFrameTimestampSeconds: null,
-  cachedFrameCount: 0,
   playbackBackend: 'webviewMediaElement',
   loopRegion: {
     startSeconds: 0,

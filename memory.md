@@ -70,27 +70,25 @@
 - Validation:
   - passed: `bunx vitest run src/test/fileExplorerClickBehavior.test.ts src/test/fileExplorer.viewModes.test.tsx`
 
-## 2026-04-17 — Native Explorer Video Engine
+## 2026-04-17 — Explorer Video Playback Uses Rust Transport + Direct/Proxy Media Preview
 
-- Explorer video preview no longer routes runtime playback through the desktop webview `<video>` element. The preview pane is now a React transport shell over a native Rust video engine.
+- Explorer video playback/editing now uses a Rust-owned transport model with a real media-element preview surface instead of the old frame-preview contract.
 - Durable implementation shape:
-  - `src-tauri/src/video_engine.rs` is the new native video runtime. It owns video-source validation, ffprobe metadata probing, ffmpeg-backed frame-sequence caching under the app-local `video-workbench` directory, loop-aware play/pause/seek state, and the live `VideoEngineStateEvent` feed exported through Specta.
-  - The first native video pass intentionally reuses the existing audio engine's deck `B` for audio playback when the selected video contains a decodable audio track. When that handoff fails or no audio track is available, the video engine falls back to silent native timing while still keeping transport truth in Rust.
-  - `src-tauri/src/video_engine.rs` now tracks `hasAudioTrack` separately from `audioTransportReady` and only marks the audio transport as linked when audio deck `B` actually loaded the selected video path. That prevents the editor from leaking audio-workbench-only loop errors like `Load an audio file before setting a loop region.` into ordinary video edits.
-  - `src/runtime/videoEngineBackend.ts` now exposes explicit video-engine commands and event subscription helpers, and `src/store/videoEngineStore.ts` is the shell-side source of truth for hydration, subscriptions, and transport helper wrappers.
-  - `src/components/ExplorerVideoEditor.tsx` now fully stays on the native frame lane. The compatibility preview proxy / browser `<video>` surface is no longer mounted in the editor, so Linux preview no longer depends on the desktop webview's media support.
-  - `src-tauri/src/video_commands.rs` still owns offline ffmpeg trim export and compatibility preview-proxy helpers, but realtime transport is no longer supposed to depend on those proxy commands.
+  - `src-tauri/src/video_engine.rs` owns source validation, metadata probing, loop-aware play/pause/seek state, deck-`B` audio linkage, silent-timing fallback, and the live `VideoEngineStateEvent` feed exported through Specta.
+  - The video engine contract no longer exposes preview-frame fields or generates ffmpeg frame-sequence caches during normal source load. The realtime lane is transport truth in Rust plus a synced preview surface in the editor.
+  - `src-tauri/src/video_commands.rs` now uses the vendored `ffmpeg-suite-rs` crates (`rust_ffprobe` and `rust_ffmpeg`) for preview-source resolution, MP4 preview-proxy generation, and trim export.
+  - Direct preview is intentionally conservative: safe webview pairs play directly, and hostile formats fall back to an H.264/AAC MP4 preview proxy. Current tested matrix covers `mp4`, `mov`, `webm`, `mkv`, and `avi`.
+  - `src/components/ExplorerVideoEditor.tsx` mounts a real `<video>` element again, syncs it to `src/store/videoEngineStore.ts`, auto-falls back to a generated proxy on media-surface failure, and no longer leaks the old `Load an audio file...` copy when deck `B` fails to link.
+  - `src/generated/tauri.ts` and `src/store/videoEngineStore.ts` now model the trimmed transport contract: playback backend, duration, size, loop region, and audio-link status, without dead preview-frame fields.
 - Durable product note:
-  - video playback should stay native. Do not reintroduce HTML media elements as the primary explorer video path.
+  - Keep Rust as transport truth, the media element as the paint surface, and `ffmpeg` as the codec bridge for proxy/export work.
+  - Do not reintroduce frame-sequence generation into the normal video load path. If a future native renderer is added, it should replace the paint surface cleanly without changing transport semantics.
   - Treat `audioTransportReady` as `video audio actually linked into deck B`, not as a synonym for `audio load command returned Ok(...)`. The audio engine can return a successful snapshot that still carries a deck-level decode error.
-  - This is a bounded native pass, not the final renderer. Preview currently uses ffmpeg-generated frame sequences plus native transport truth; a later pass can replace that preview surface with a richer native frame pipeline without changing the TS contract.
-  - The local host currently has ffmpeg/ffprobe and libav dev packages available, but not the `gstreamer-1.0` pkg-config development files. That is why this pass shipped the native engine on top of ffprobe/ffmpeg helpers instead of pulling in `gstreamer-rs` immediately.
 - Validation:
   - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
-  - passed: `cargo check --manifest-path src-tauri/Cargo.toml`
-  - passed: `bunx vitest run src/test/explorerVideoEditor.test.tsx src/test/explorerBackend.bindings.test.ts`
   - passed: `cargo test --manifest-path src-tauri/Cargo.toml video_ -- --nocapture`
-  - passed: real-format backend matrix now synthesizes and verifies `mp4`, `mov`, `webm`, `mkv`, and `avi` inputs for metadata probing, preview-frame generation, and MP4 trim export on the current Linux host
+  - passed: `bun run test:unit -- src/test/explorerVideoEditor.test.tsx`
+  - passed: `bun run build`
 
 ## 2026-04-17 — Shell Zen Focus Mode
 

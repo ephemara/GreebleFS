@@ -66,9 +66,6 @@ const LOADED_VIDEO_SNAPSHOT: VideoEngineStateSnapshot = {
   currentTimeSeconds: 0,
   isPlaying: false,
   isLoading: false,
-  previewFramePath: null,
-  previewFrameTimestampSeconds: null,
-  cachedFrameCount: 0,
   playbackBackend: 'webviewMediaElement',
   loopRegion: {
     startSeconds: 0,

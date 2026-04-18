@@ -7,9 +7,9 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-documentation.workspace = true
-keywords.workspace = true
-categories.workspace = true
+documentation = "https://docs.rs/ffmpeg_common"
+keywords = ["ffmpeg", "ffprobe", "ffplay", "multimedia", "video"]
+categories = ["multimedia", "api-bindings"]
 
 [dependencies]
 thiserror = { workspace = true }

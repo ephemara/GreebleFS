@@ -5,25 +5,18 @@ use crate::audio_engine::{
     AudioEngineSeekRequest, AudioEngineStateSnapshot,
 };
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 use tauri_specta::Event;
 
 const DEFAULT_VIDEO_FFMPEG_BINARY: &str = "ffmpeg";
 const DEFAULT_VIDEO_FFPROBE_BINARY: &str = "ffprobe";
 const VIDEO_ENGINE_RUNTIME_DIR: &str = "video-workbench";
-const VIDEO_FRAME_SEQUENCE_MAX_WIDTH: u32 = 1280;
-const VIDEO_FRAME_SEQUENCE_MAX_HEIGHT: u32 = 720;
-const VIDEO_FRAME_SEQUENCE_MAX_FRAMES: u32 = 180;
-const VIDEO_FRAME_SEQUENCE_MIN_FPS: f64 = 1.0;
-const VIDEO_FRAME_SEQUENCE_MAX_FPS: f64 = 12.0;
 const VIDEO_ENGINE_TICK_INTERVAL_MS: u64 = 50;
 const MINIMUM_VIDEO_LOOP_DURATION_SECONDS: f64 = 0.1;
 const VIDEO_AUDIO_DECK_ID: AudioDeckId = AudioDeckId::B;
@@ -57,9 +50,6 @@ pub struct VideoEngineStateSnapshot {
     pub current_time_seconds: f64,
     pub is_playing: bool,
     pub is_loading: bool,
-    pub preview_frame_path: Option<String>,
-    pub preview_frame_timestamp_seconds: Option<f64>,
-    pub cached_frame_count: u32,
     pub playback_backend: VideoPlaybackBackend,
     pub loop_region: VideoEngineLoopRegion,
     pub audio_transport_ready: bool,
@@ -122,13 +112,9 @@ struct VideoEngineMutableState {
     current_time_seconds: f64,
     is_playing: bool,
     is_loading: bool,
-    preview_frame_path: Option<String>,
-    preview_frame_timestamp_seconds: Option<f64>,
-    cached_frame_count: u32,
     loop_region: VideoEngineLoopRegion,
     audio_transport_ready: bool,
     audio_transport_error: Option<String>,
-    frame_sequence: Vec<PathBuf>,
     loaded_generation: u64,
     silent_playback_started_at: Option<Instant>,
     silent_playback_started_time_seconds: f64,
@@ -143,7 +129,6 @@ struct PreparedVideoSource {
     height_px: u32,
     frame_rate: Option<f64>,
     has_audio_track: bool,
-    frame_sequence_paths: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -190,9 +175,6 @@ impl Default for VideoEngineMutableState {
             current_time_seconds: 0.0,
             is_playing: false,
             is_loading: false,
-            preview_frame_path: None,
-            preview_frame_timestamp_seconds: None,
-            cached_frame_count: 0,
             loop_region: VideoEngineLoopRegion {
                 start_seconds: 0.0,
                 end_seconds: 0.0,
@@ -200,7 +182,6 @@ impl Default for VideoEngineMutableState {
             },
             audio_transport_ready: false,
             audio_transport_error: None,
-            frame_sequence: Vec::new(),
             loaded_generation: 0,
             silent_playback_started_at: None,
             silent_playback_started_time_seconds: 0.0,
@@ -244,9 +225,6 @@ fn build_snapshot(state: &VideoEngineMutableState) -> VideoEngineStateSnapshot {
         current_time_seconds: state.current_time_seconds,
         is_playing: state.is_playing,
         is_loading: state.is_loading,
-        preview_frame_path: state.preview_frame_path.clone(),
-        preview_frame_timestamp_seconds: state.preview_frame_timestamp_seconds,
-        cached_frame_count: state.cached_frame_count,
         playback_backend: state.playback_backend,
         loop_region: state.loop_region.clone(),
         audio_transport_ready: state.audio_transport_ready,
@@ -371,38 +349,7 @@ fn advance_video_engine_transport(shared: &Arc<VideoEngineSharedState>) -> Resul
         state.silent_playback_started_at = None;
     }
 
-    if update_preview_frame_for_current_time(&mut state) {
-        changed = true;
-    }
-
     Ok(changed)
-}
-
-fn update_preview_frame_for_current_time(state: &mut VideoEngineMutableState) -> bool {
-    let Some(next_frame_index) = sequence_frame_index_for_time(
-        state.current_time_seconds,
-        state.duration_seconds,
-        state.frame_sequence.len(),
-    ) else {
-        return false;
-    };
-    let next_frame_path = state
-        .frame_sequence
-        .get(next_frame_index)
-        .map(|path| path.to_string_lossy().to_string());
-    let next_timestamp_seconds = timestamp_for_sequence_index(
-        next_frame_index,
-        state.duration_seconds,
-        state.frame_sequence.len(),
-    );
-    if state.preview_frame_path != next_frame_path
-        || state.preview_frame_timestamp_seconds != next_timestamp_seconds
-    {
-        state.preview_frame_path = next_frame_path;
-        state.preview_frame_timestamp_seconds = next_timestamp_seconds;
-        return true;
-    }
-    false
 }
 
 fn clamp_video_position(position_seconds: f64, duration_seconds: f64) -> f64 {
@@ -410,36 +357,6 @@ fn clamp_video_position(position_seconds: f64, duration_seconds: f64) -> f64 {
         return 0.0;
     }
     position_seconds.clamp(0.0, duration_seconds.max(0.0))
-}
-
-fn sequence_frame_index_for_time(
-    time_seconds: f64,
-    duration_seconds: f64,
-    frame_count: usize,
-) -> Option<usize> {
-    if frame_count == 0 {
-        return None;
-    }
-    if frame_count == 1 || duration_seconds <= 0.0 {
-        return Some(0);
-    }
-    let ratio = clamp_video_position(time_seconds, duration_seconds) / duration_seconds;
-    let index = (ratio * (frame_count.saturating_sub(1)) as f64).round() as usize;
-    Some(index.min(frame_count.saturating_sub(1)))
-}
-
-fn timestamp_for_sequence_index(
-    index: usize,
-    duration_seconds: f64,
-    frame_count: usize,
-) -> Option<f64> {
-    if frame_count == 0 {
-        return None;
-    }
-    if frame_count == 1 || duration_seconds <= 0.0 {
-        return Some(0.0);
-    }
-    Some((index as f64 / (frame_count.saturating_sub(1)) as f64) * duration_seconds)
 }
 
 pub(crate) fn validate_video_source_path(input_path: &str) -> Result<PathBuf, String> {
@@ -510,17 +427,6 @@ pub(crate) fn resolve_video_runtime_root(app: &AppHandle) -> Result<PathBuf, Str
         .map_err(|error| format!("Failed to resolve app local data directory: {error}"))
 }
 
-fn resolve_video_frame_sequence_root(app: &AppHandle) -> Result<PathBuf, String> {
-    let root = resolve_video_runtime_root(app)?.join("frame-sequences");
-    fs::create_dir_all(&root).map_err(|error| {
-        format!(
-            "Failed to create video frame sequence directory '{}': {error}",
-            root.display()
-        )
-    })?;
-    Ok(root)
-}
-
 fn prepare_video_source(input_path: &Path) -> Result<PreparedVideoSource, String> {
     let metadata = probe_video_metadata(input_path)?;
     Ok(PreparedVideoSource {
@@ -535,7 +441,6 @@ fn prepare_video_source(input_path: &Path) -> Result<PreparedVideoSource, String
         height_px: metadata.height_px,
         frame_rate: metadata.frame_rate,
         has_audio_track: metadata.has_audio_track,
-        frame_sequence_paths: Vec::new(),
     })
 }
 
@@ -643,7 +548,9 @@ fn resolve_video_audio_transport_status(
         }
         Err(error) => (
             false,
-            Some(format!("Native soundtrack preview failed to start: {error}")),
+            Some(format!(
+                "Native soundtrack preview failed to start: {error}"
+            )),
         ),
     }
 }
@@ -674,184 +581,6 @@ fn parse_ffprobe_frame_rate(value: &str) -> Option<f64> {
         return rate.is_finite().then_some(rate);
     }
     trimmed.parse::<f64>().ok().filter(|rate| rate.is_finite())
-}
-
-fn ensure_video_frame_sequence(
-    app: &AppHandle,
-    input_path: &Path,
-    metadata: &ProbedVideoMetadata,
-) -> Result<Vec<PathBuf>, String> {
-    let sequence_directory = video_frame_sequence_directory(app, input_path, metadata)?;
-    let mut frame_paths = list_video_frame_sequence_paths(&sequence_directory)?;
-    if frame_paths.is_empty() {
-        let sequence_fps =
-            resolve_preview_sequence_frame_rate(metadata.duration_seconds, metadata.frame_rate);
-        let max_frames =
-            resolve_preview_sequence_frame_count(metadata.duration_seconds, sequence_fps);
-        generate_video_frame_sequence(input_path, &sequence_directory, sequence_fps, max_frames)?;
-        frame_paths = list_video_frame_sequence_paths(&sequence_directory)?;
-    }
-
-    if frame_paths.is_empty() {
-        return Err(format!(
-            "Video frame sequence generation produced no preview frames for '{}'.",
-            input_path.display()
-        ));
-    }
-
-    Ok(frame_paths)
-}
-
-fn video_frame_sequence_directory(
-    app: &AppHandle,
-    input_path: &Path,
-    metadata: &ProbedVideoMetadata,
-) -> Result<PathBuf, String> {
-    let sequence_root = resolve_video_frame_sequence_root(app)?;
-    let digest = video_frame_sequence_digest(input_path, metadata)?;
-    let stem = sanitize_video_runtime_stem(
-        input_path
-            .file_stem()
-            .and_then(|value| value.to_str())
-            .unwrap_or("video"),
-    );
-    let directory = sequence_root.join(format!("{stem}.{}", &digest[..16]));
-    fs::create_dir_all(&directory).map_err(|error| {
-        format!(
-            "Failed to create video frame sequence directory '{}': {error}",
-            directory.display()
-        )
-    })?;
-    Ok(directory)
-}
-
-fn video_frame_sequence_digest(
-    input_path: &Path,
-    metadata: &ProbedVideoMetadata,
-) -> Result<String, String> {
-    let source_metadata = fs::metadata(input_path).map_err(|error| {
-        format!(
-            "Failed to read video metadata '{}': {error}",
-            input_path.display()
-        )
-    })?;
-    let modified_nanos = source_metadata
-        .modified()
-        .ok()
-        .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
-        .map(|value| value.as_nanos())
-        .unwrap_or_default();
-    let mut hasher = Sha256::new();
-    hasher.update(input_path.to_string_lossy().as_bytes());
-    hasher.update(source_metadata.len().to_le_bytes());
-    hasher.update(modified_nanos.to_le_bytes());
-    hasher.update(metadata.width_px.to_le_bytes());
-    hasher.update(metadata.height_px.to_le_bytes());
-    hasher.update(metadata.duration_seconds.to_bits().to_le_bytes());
-    hasher.update(
-        metadata
-            .frame_rate
-            .unwrap_or_default()
-            .to_bits()
-            .to_le_bytes(),
-    );
-    hasher.update(VIDEO_FRAME_SEQUENCE_MAX_WIDTH.to_le_bytes());
-    hasher.update(VIDEO_FRAME_SEQUENCE_MAX_HEIGHT.to_le_bytes());
-    hasher.update(VIDEO_FRAME_SEQUENCE_MAX_FRAMES.to_le_bytes());
-    Ok(format!("{:x}", hasher.finalize()))
-}
-
-fn list_video_frame_sequence_paths(sequence_directory: &Path) -> Result<Vec<PathBuf>, String> {
-    let mut frame_paths = fs::read_dir(sequence_directory)
-        .map_err(|error| {
-            format!(
-                "Failed to read video frame sequence directory '{}': {error}",
-                sequence_directory.display()
-            )
-        })?
-        .filter_map(|entry| entry.ok().map(|dir_entry| dir_entry.path()))
-        .filter(|path| {
-            path.is_file()
-                && path
-                    .extension()
-                    .and_then(|value| value.to_str())
-                    .map(|value| value.eq_ignore_ascii_case("png"))
-                    .unwrap_or(false)
-        })
-        .collect::<Vec<_>>();
-    frame_paths.sort();
-    Ok(frame_paths)
-}
-
-fn resolve_preview_sequence_frame_rate(
-    duration_seconds: f64,
-    source_frame_rate: Option<f64>,
-) -> f64 {
-    if !duration_seconds.is_finite() || duration_seconds <= 0.0 {
-        return VIDEO_FRAME_SEQUENCE_MIN_FPS;
-    }
-    let count_limited_fps = (VIDEO_FRAME_SEQUENCE_MAX_FRAMES as f64 / duration_seconds)
-        .clamp(VIDEO_FRAME_SEQUENCE_MIN_FPS, VIDEO_FRAME_SEQUENCE_MAX_FPS);
-    source_frame_rate
-        .filter(|value| value.is_finite() && *value > 0.0)
-        .map(|value| {
-            value
-                .min(count_limited_fps)
-                .clamp(VIDEO_FRAME_SEQUENCE_MIN_FPS, VIDEO_FRAME_SEQUENCE_MAX_FPS)
-        })
-        .unwrap_or(count_limited_fps)
-}
-
-fn resolve_preview_sequence_frame_count(duration_seconds: f64, sequence_fps: f64) -> u32 {
-    if !duration_seconds.is_finite() || duration_seconds <= 0.0 {
-        return 1;
-    }
-    (duration_seconds * sequence_fps)
-        .ceil()
-        .max(2.0)
-        .min(VIDEO_FRAME_SEQUENCE_MAX_FRAMES as f64) as u32
-}
-
-fn generate_video_frame_sequence(
-    input_path: &Path,
-    sequence_directory: &Path,
-    sequence_fps: f64,
-    max_frames: u32,
-) -> Result<(), String> {
-    let ffmpeg_binary = resolve_video_ffmpeg_binary();
-    let frame_pattern = sequence_directory.join("frame-%05d.png");
-    let filter = format!(
-        "fps={sequence_fps:.6},scale={VIDEO_FRAME_SEQUENCE_MAX_WIDTH}:{VIDEO_FRAME_SEQUENCE_MAX_HEIGHT}:force_original_aspect_ratio=decrease"
-    );
-    let output = Command::new(&ffmpeg_binary)
-        .args([
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-i",
-            &input_path.to_string_lossy(),
-            "-vf",
-            &filter,
-            "-frames:v",
-            &max_frames.to_string(),
-            &frame_pattern.to_string_lossy(),
-        ])
-        .output()
-        .map_err(|error| format!("Failed to launch ffmpeg at '{ffmpeg_binary}': {error}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let message = if !stderr.is_empty() {
-            stderr
-        } else if !stdout.is_empty() {
-            stdout
-        } else {
-            format!("ffmpeg exited with status {}", output.status)
-        };
-        return Err(format!("Video frame sequence generation failed: {message}"));
-    }
-    Ok(())
 }
 
 fn clamp_loop_region(
@@ -929,9 +658,6 @@ pub async fn video_engine_load_source(
         state.current_time_seconds = 0.0;
         state.is_playing = false;
         state.is_loading = true;
-        state.preview_frame_path = None;
-        state.preview_frame_timestamp_seconds = None;
-        state.cached_frame_count = 0;
         state.loop_region = VideoEngineLoopRegion {
             start_seconds: 0.0,
             end_seconds: 0.0,
@@ -939,7 +665,6 @@ pub async fn video_engine_load_source(
         };
         state.audio_transport_ready = false;
         state.audio_transport_error = None;
-        state.frame_sequence.clear();
         state.silent_playback_started_at = None;
         state.silent_playback_started_time_seconds = 0.0;
         state.loaded_generation
@@ -947,9 +672,10 @@ pub async fn video_engine_load_source(
     shared.emit_state();
 
     let input_path_for_prepare = input_path.clone();
-    let prepared_source = tauri::async_runtime::spawn_blocking(move || prepare_video_source(&input_path_for_prepare))
-    .await
-    .map_err(|error| format!("Video source preparation task failed to join: {error}"))??;
+    let prepared_source =
+        tauri::async_runtime::spawn_blocking(move || prepare_video_source(&input_path_for_prepare))
+            .await
+            .map_err(|error| format!("Video source preparation task failed to join: {error}"))??;
 
     let audio_transport_result = if prepared_source.has_audio_track {
         Some(
@@ -996,8 +722,6 @@ pub async fn video_engine_load_source(
         state.current_time_seconds = 0.0;
         state.is_playing = false;
         state.is_loading = false;
-        state.frame_sequence = prepared_source.frame_sequence_paths;
-        state.cached_frame_count = state.frame_sequence.len() as u32;
         state.loop_region = VideoEngineLoopRegion {
             start_seconds: 0.0,
             end_seconds: prepared_source.duration_seconds,
@@ -1005,7 +729,6 @@ pub async fn video_engine_load_source(
         };
         state.audio_transport_ready = audio_transport_ready;
         state.audio_transport_error = audio_transport_error;
-        update_preview_frame_for_current_time(&mut state);
         build_snapshot(&state)
     };
 
@@ -1101,7 +824,6 @@ pub fn video_engine_stop(app: AppHandle) -> Result<VideoEngineStateSnapshot, Str
         } else {
             0.0
         };
-        update_preview_frame_for_current_time(&mut state);
         if state.audio_transport_ready {
             audio_engine_stop(
                 app.clone(),
@@ -1139,7 +861,6 @@ pub fn video_engine_seek(
             None
         };
         state.silent_playback_started_time_seconds = state.current_time_seconds;
-        update_preview_frame_for_current_time(&mut state);
         if state.audio_transport_ready {
             audio_engine_seek(
                 app.clone(),
@@ -1182,7 +903,6 @@ pub fn video_engine_set_loop_region(
         };
         if request.enabled && state.current_time_seconds >= end_seconds {
             state.current_time_seconds = start_seconds;
-            update_preview_frame_for_current_time(&mut state);
         }
         state.silent_playback_started_at = if state.is_playing {
             Some(Instant::now())
@@ -1210,11 +930,9 @@ pub fn video_engine_set_loop_region(
 #[cfg(test)]
 mod tests {
     use super::{
-        generate_video_frame_sequence, parse_ffprobe_duration_seconds, parse_ffprobe_frame_rate,
-        probe_video_metadata, resolve_video_audio_transport_status, resolve_video_ffmpeg_binary,
-        resolve_video_ffprobe_binary,
-        resolve_preview_sequence_frame_count, resolve_preview_sequence_frame_rate,
-        VIDEO_AUDIO_DECK_ID,
+        parse_ffprobe_duration_seconds, parse_ffprobe_frame_rate, probe_video_metadata,
+        resolve_video_audio_transport_status, resolve_video_ffmpeg_binary,
+        resolve_video_ffprobe_binary, VIDEO_AUDIO_DECK_ID,
     };
     use crate::audio_engine::{
         AudioDeckId, AudioDeckState, AudioEngineLoopRegion, AudioEngineStateSnapshot,
@@ -1372,20 +1090,6 @@ mod tests {
     }
 
     #[test]
-    fn preview_sequence_frame_rate_clamps_for_long_clips() {
-        let fps = resolve_preview_sequence_frame_rate(120.0, Some(29.97));
-        assert!(fps <= 2.0);
-        assert_eq!(resolve_preview_sequence_frame_count(120.0, fps), 180);
-    }
-
-    #[test]
-    fn preview_sequence_frame_rate_keeps_short_clips_smooth() {
-        let fps = resolve_preview_sequence_frame_rate(4.0, Some(24.0));
-        assert!(fps >= 10.0);
-        assert!(resolve_preview_sequence_frame_count(4.0, fps) <= 180);
-    }
-
-    #[test]
     fn audio_transport_status_requires_the_video_audio_deck_to_load_the_selected_path() {
         let input_path = Path::new("/tmp/demo.mov");
         let snapshot = build_test_audio_snapshot(build_test_audio_deck_state(
@@ -1394,8 +1098,7 @@ mod tests {
             None,
         ));
 
-        let (ready, error) =
-            resolve_video_audio_transport_status(&Ok(snapshot), input_path, true);
+        let (ready, error) = resolve_video_audio_transport_status(&Ok(snapshot), input_path, true);
 
         assert!(ready);
         assert_eq!(error, None);
@@ -1410,8 +1113,7 @@ mod tests {
             Some("No supported audio tracks were found in the selected file."),
         ));
 
-        let (ready, error) =
-            resolve_video_audio_transport_status(&Ok(snapshot), input_path, true);
+        let (ready, error) = resolve_video_audio_transport_status(&Ok(snapshot), input_path, true);
 
         assert!(!ready);
         assert_eq!(
@@ -1429,8 +1131,7 @@ mod tests {
             Some("this error should be ignored when no track exists"),
         ));
 
-        let (ready, error) =
-            resolve_video_audio_transport_status(&Ok(snapshot), input_path, false);
+        let (ready, error) = resolve_video_audio_transport_status(&Ok(snapshot), input_path, false);
 
         assert!(!ready);
         assert_eq!(error, None);
@@ -1450,57 +1151,35 @@ mod tests {
             );
             generate_test_video_fixture(&ffmpeg_binary, &fixture_path, true);
 
-            let metadata = probe_video_metadata(&fixture_path)
-                .unwrap_or_else(|error| panic!("expected metadata for {}: {error}", fixture_path.display()));
+            let metadata = probe_video_metadata(&fixture_path).unwrap_or_else(|error| {
+                panic!("expected metadata for {}: {error}", fixture_path.display())
+            });
 
-            assert!(metadata.duration_seconds > 1.0, "{}", fixture_path.display());
+            assert!(
+                metadata.duration_seconds > 1.0,
+                "{}",
+                fixture_path.display()
+            );
             assert_eq!(metadata.width_px, 320, "{}", fixture_path.display());
             assert_eq!(metadata.height_px, 180, "{}", fixture_path.display());
-            assert!(metadata.frame_rate.unwrap_or_default() >= 20.0, "{}", fixture_path.display());
+            assert!(
+                metadata.frame_rate.unwrap_or_default() >= 20.0,
+                "{}",
+                fixture_path.display()
+            );
             assert!(metadata.has_audio_track, "{}", fixture_path.display());
         }
 
         let silent_fixture_path = build_fixture_path(temp_directory.path(), "metadata-silent.mp4");
         generate_test_video_fixture(&ffmpeg_binary, &silent_fixture_path, false);
 
-        let silent_metadata = probe_video_metadata(&silent_fixture_path)
-            .unwrap_or_else(|error| panic!("expected metadata for {}: {error}", silent_fixture_path.display()));
+        let silent_metadata = probe_video_metadata(&silent_fixture_path).unwrap_or_else(|error| {
+            panic!(
+                "expected metadata for {}: {error}",
+                silent_fixture_path.display()
+            )
+        });
 
         assert!(!silent_metadata.has_audio_track);
-    }
-
-    #[test]
-    fn generate_video_frame_sequence_decodes_common_container_formats_into_png_frames() {
-        let Some((ffmpeg_binary, _ffprobe_binary)) = ensure_video_toolchain_available() else {
-            return;
-        };
-
-        let temp_directory = tempdir().expect("video sequence tempdir");
-        for extension in ["mp4", "mov", "webm", "mkv", "avi"] {
-            let fixture_path = build_fixture_path(
-                temp_directory.path(),
-                &format!("sequence-fixture.{extension}"),
-            );
-            let frame_directory =
-                build_fixture_path(temp_directory.path(), &format!("frames-{extension}"));
-            std::fs::create_dir_all(&frame_directory).expect("frame directory");
-            generate_test_video_fixture(&ffmpeg_binary, &fixture_path, true);
-
-            generate_video_frame_sequence(&fixture_path, &frame_directory, 4.0, 6)
-                .unwrap_or_else(|error| {
-                    panic!(
-                        "expected preview frame generation for {}: {error}",
-                        fixture_path.display()
-                    )
-                });
-
-            let frame_count = std::fs::read_dir(&frame_directory)
-                .expect("read frame directory")
-                .filter_map(Result::ok)
-                .filter(|entry| entry.path().extension().and_then(|value| value.to_str()) == Some("png"))
-                .count();
-
-            assert!(frame_count > 0, "{}", fixture_path.display());
-        }
     }
 }
