@@ -1,5 +1,23 @@
 # GreebleFS Memory
 
+## 2026-04-18 — PDF Preview Callback Stability Regression
+
+- The inline PDF lane hit a React `Maximum update depth exceeded` failure plus intermittent `PDF preview session was not found` errors when opening a PDF.
+- Root cause:
+  - `PreviewPanel` was passing fresh inline PDF callbacks on each render, especially the save/refresh handoff.
+  - `ExplorerPdfWorkbench` builds its controller from callbacks that include save behavior, so unstable parent callbacks kept rebuilding the controller.
+  - The workbench was also clearing controller and close-guard registrations from effect cleanups tied to dependency churn instead of only on unmount.
+  - Together, that created a parent/child passive-effect ping-pong that could also close PDF sessions mid-render and surface false `session was not found` errors.
+- Durable fix shape:
+  - `src/components/FileExplorer.tsx` now passes stable PDF workbench callbacks, including a direct stable `refresh` prop instead of an inline `() => refresh()` wrapper.
+  - `src/components/ExplorerPdfWorkbench.tsx` now separates registration updates from unmount cleanup for controller and close-guard wiring, and uses a stable `toggleEditMode` callback in the controller path.
+  - `src/test/fileExplorer.viewModes.test.tsx` now uses a stricter PDF workbench mock whose controller depends on `onSaved`, so future unstable save callbacks will trip the explorer test instead of only failing at runtime.
+- Durable product note:
+  - Treat the `PreviewPanel` -> `ExplorerPdfWorkbench` boundary as a stability boundary. If the workbench controller depends on a callback prop, keep that prop memoized or routed through a stable runtime seam. Do not reintroduce inline callback wrappers on the PDF preview lane.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx`
+  - passed: filtered typecheck via `bunx tsc --noEmit --pretty false 2>&1 | rg "src/components/FileExplorer.tsx|src/test/fileExplorer.viewModes.test.tsx" || true`
+
 ## 2026-04-18 — Inline PDF Preview + Edit Workbench
 
 - The explorer preview pane now has a dedicated PDF lane instead of falling back to text/unavailable states for `.pdf`.
