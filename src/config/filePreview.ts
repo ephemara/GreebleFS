@@ -1,4 +1,9 @@
-import { isSpreadsheetPreviewExtension } from "./spreadsheet";
+import {
+  getSpreadsheetFileKind,
+  isSpreadsheetPreviewExtension,
+} from "./spreadsheet";
+
+export { getSpreadsheetFileKind, isSpreadsheetPreviewExtension };
 
 export type ModelPreviewFormat = "fbx" | "glb" | "gltf" | "obj" | "stl";
 export type ExplorerAudioExportFormatId = "mp3" | "wav" | "flac" | "ogg";

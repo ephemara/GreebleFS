@@ -171,6 +171,7 @@ import { ExplorerVideoEditor } from "./ExplorerVideoEditor";
 import { ExplorerArchivePreview } from "./ExplorerArchivePreview";
 import { ExplorerFolderPreview } from "./ExplorerFolderPreview";
 import { ExplorerFontPreview } from "./ExplorerFontPreview";
+import { ExplorerSpreadsheetWorkbench } from "./ExplorerSpreadsheetWorkbench";
 import {
   ExplorerPdfWorkbench,
   type ExplorerPdfWorkbenchChromeState,
@@ -193,6 +194,7 @@ import {
   type ConstellationOrbitBand,
 } from "./explorer/constellationLayout";
 import { ExplorerTaskStatusBadge } from "./explorer/ExplorerTaskStatusBadge";
+import TerminalOverlay from "./TerminalOverlay";
 import {
   invalidateExplorerDirectoryResultCaches,
   loadCachedExplorerLocation,
@@ -231,6 +233,7 @@ import {
   getAudioPreviewMimeType,
   getModelPreviewFormat,
   getMonacoLanguage,
+  getSpreadsheetFileKind,
   getVideoPreviewMimeType,
   isAudioPreviewExtension,
   isEditableTextExtension,
@@ -239,6 +242,7 @@ import {
   isFontPreviewExtension,
   isPdfPreviewExtension,
   isSqlitePreviewExtension,
+  isSpreadsheetPreviewExtension,
   isVideoPreviewExtension,
   type ModelPreviewFormat,
 } from "../config/filePreview";
@@ -478,6 +482,14 @@ type PreviewState =
   | { type: "none"; path: string }
   | { type: "image"; path: string; name: string; content: string }
   | {
+      type: "spreadsheet";
+      path: string;
+      name: string;
+      extension: string;
+      size: number;
+      fileKind: "workbook" | "tabular";
+    }
+  | {
       type: "audio";
       path: string;
       name: string;
@@ -556,6 +568,11 @@ type PreviewState =
       detail?: string;
     };
 type PreviewCloseGuard = () => Promise<boolean>;
+type PreviewSurfaceMode = "content" | "terminal";
+type SpreadsheetWorkbenchStatus = {
+  isDirty: boolean;
+  isSaving: boolean;
+};
 interface NewItemState {
   visible: boolean;
   kind: "file" | "folder";
@@ -891,6 +908,13 @@ const EXT_TYPE_LABEL: Record<string, string> = {
   mdx: "Markdown",
   txt: "Text",
   pdf: "PDF",
+  csv: "CSV",
+  tsv: "TSV",
+  xls: "Spreadsheet",
+  xlsx: "Spreadsheet",
+  xlsm: "Spreadsheet",
+  xlsb: "Spreadsheet",
+  ods: "Spreadsheet",
   glsl: "GLSL",
   hlsl: "HLSL",
   wgsl: "WGSL",
@@ -953,7 +977,6 @@ const EXT_TYPE_LABEL: Record<string, string> = {
   sql: "SQL",
   db: "Database",
   sqlite: "Database",
-  csv: "CSV",
   log: "Log",
   lock: "Lockfile",
   kain: "Kain",
@@ -2636,6 +2659,11 @@ function PreviewPanel({
   width,
   placement,
   presentationMode,
+  previewSurfaceMode,
+  previewTerminalMounted,
+  previewTerminalWorkingDirectory,
+  previewTerminalReportedWorkingDirectory,
+  previewTerminalNamespace,
   onClose,
   onWidthChange,
   onTextChange,
@@ -2645,6 +2673,8 @@ function PreviewPanel({
   onRegisterCloseGuard,
   onCopyPath,
   onTogglePresentationMode,
+  onTogglePreviewTerminal,
+  onPreviewTerminalReportedWorkingDirectoryChange,
   viewMode,
   onViewModeChange,
   explorerTheme,
@@ -2660,6 +2690,11 @@ function PreviewPanel({
   width: number;
   placement: ExplorerPreviewPlacement;
   presentationMode: ExplorerPreviewSplitMode;
+  previewSurfaceMode: PreviewSurfaceMode;
+  previewTerminalMounted: boolean;
+  previewTerminalWorkingDirectory: string | null;
+  previewTerminalReportedWorkingDirectory: string | null;
+  previewTerminalNamespace: string;
   onClose: () => void;
   onWidthChange: (width: number) => void;
   onTextChange: (path: string, content: string) => void;
@@ -2674,6 +2709,8 @@ function PreviewPanel({
   onRegisterCloseGuard?: (guard: PreviewCloseGuard | null) => void;
   onCopyPath: (path: string) => void;
   onTogglePresentationMode: () => void;
+  onTogglePreviewTerminal: () => void;
+  onPreviewTerminalReportedWorkingDirectoryChange: (cwd: string) => void;
   viewMode: ExplorerDocumentViewMode;
   onViewModeChange: (mode: ExplorerDocumentViewMode) => void;
   explorerTheme: ResolvedExplorerThemeRecipe;
@@ -2693,6 +2730,8 @@ function PreviewPanel({
     useState<ExplorerPdfWorkbenchController | null>(null);
   const [pdfWorkbenchChromeState, setPdfWorkbenchChromeState] =
     useState<ExplorerPdfWorkbenchChromeState | null>(null);
+  const [spreadsheetWorkbenchStatus, setSpreadsheetWorkbenchStatus] =
+    useState<SpreadsheetWorkbenchStatus | null>(null);
   const [pdfPageInputValue, setPdfPageInputValue] = useState("1");
   const dragHandleSide = placement === "leading" ? "right" : "left";
   const onMouseDown = (e: React.MouseEvent) => {
@@ -2753,8 +2792,13 @@ function PreviewPanel({
     setPdfPageInputValue(String(pdfWorkbenchChromeState.activePageIndex + 1));
   }, [pdfWorkbenchChromeState, preview.type]);
 
+  useEffect(() => {
+    setSpreadsheetWorkbenchStatus(null);
+  }, [preview.path, preview.type]);
+
   const previewTitle = preview.type === "none" ? "Preview" : preview.name;
   const isPdfPreview = preview.type === "pdf";
+  const isSpreadsheetPreview = preview.type === "spreadsheet";
   const pdfPageCount = isPdfPreview
     ? (pdfWorkbenchChromeState?.pageCount ?? preview.document.pageCount)
     : 0;
@@ -2779,6 +2823,14 @@ function PreviewPanel({
             : pdfWorkbenchChromeState?.isDirty
               ? "Unsaved"
               : "Saved"
+      : isSpreadsheetPreview
+        ? spreadsheetWorkbenchStatus
+          ? spreadsheetWorkbenchStatus.isSaving
+            ? "Saving?"
+            : spreadsheetWorkbenchStatus.isDirty
+              ? "Unsaved"
+              : "Saved"
+          : null
       : preview.type === "fallback"
         ? "Unavailable"
         : null;
@@ -2795,12 +2847,26 @@ function PreviewPanel({
           : pdfWorkbenchChromeState?.error || pdfWorkbenchChromeState?.isDirty
             ? EXP.red
             : EXP.green
+      : isSpreadsheetPreview
+        ? spreadsheetWorkbenchStatus?.isSaving
+          ? EXP.yellow
+          : spreadsheetWorkbenchStatus?.isDirty
+            ? EXP.red
+            : EXP.green
         : EXP.green;
   const copyPathLabel = copiedPath === preview.path ? "Copied" : "Copy Path";
   const previewSplitToggleTitle =
     presentationMode === "pane"
       ? "Show inline preview"
       : "Split preview into pane";
+  const isPreviewTerminalMode = previewSurfaceMode === "terminal";
+  const previewTerminalDisplayPath =
+    previewTerminalReportedWorkingDirectory?.trim() ||
+    previewTerminalWorkingDirectory ||
+    "";
+  const previewTerminalToggleTitle = isPreviewTerminalMode
+    ? "Show file preview"
+    : "Show preview terminal";
   const supportsRenderedPreview =
     preview.type === "text" && preview.renderKind !== "none";
   const supportsPreviewModeToggle = supportsRenderedPreview || isPdfPreview;
@@ -2971,11 +3037,17 @@ function PreviewPanel({
                 whiteSpace: "nowrap",
               }}
             >
-              {previewTitle}
+              {isPreviewTerminalMode ? "Terminal" : previewTitle}
             </div>
-            {preview.type !== "none" && (
+            {(isPreviewTerminalMode
+              ? Boolean(previewTerminalDisplayPath)
+              : preview.type !== "none") && (
               <div
-                title={preview.path}
+                title={
+                  isPreviewTerminalMode
+                    ? previewTerminalDisplayPath
+                    : preview.path
+                }
                 style={{
                   marginTop: 2,
                   fontSize: 9,
@@ -2986,7 +3058,9 @@ function PreviewPanel({
                   fontFamily: "monospace",
                 }}
               >
-                {preview.path}
+                {isPreviewTerminalMode
+                  ? previewTerminalDisplayPath
+                  : preview.path}
               </div>
             )}
           </div>
@@ -2996,7 +3070,7 @@ function PreviewPanel({
         id: "previewState",
         label: "Preview State",
         surfaces: ["previewHeader"],
-        isVisible: () => Boolean(previewStateLabel),
+        isVisible: () => !isPreviewTerminalMode && Boolean(previewStateLabel),
         render: () =>
           previewStateLabel ? (
             <span
@@ -3018,7 +3092,8 @@ function PreviewPanel({
         id: "previewModeToggle",
         label: "Preview Mode Toggle",
         surfaces: ["previewHeader"],
-        isVisible: () => supportsPreviewModeToggle,
+        isVisible: () =>
+          !isPreviewTerminalMode && supportsPreviewModeToggle,
         render: () => {
           if (preview.type === "pdf") {
             const pdfIsEditMode = pdfWorkbenchChromeState?.isEditMode ?? false;
@@ -3221,7 +3296,7 @@ function PreviewPanel({
         id: "previewCopyPath",
         label: "Preview Copy Path",
         surfaces: ["previewHeader"],
-        isVisible: () => preview.type !== "none",
+        isVisible: () => !isPreviewTerminalMode && preview.type !== "none",
         render: () => (
           <button
             type="button"
@@ -3282,6 +3357,39 @@ function PreviewPanel({
         ),
       },
       {
+        id: "previewTerminalToggle",
+        label: "Preview Terminal Toggle",
+        surfaces: ["previewHeader"],
+        isVisible: () =>
+          preview.type !== "none" && Boolean(previewTerminalWorkingDirectory),
+        render: () => (
+          <button
+            type="button"
+            onClick={onTogglePreviewTerminal}
+            aria-label="Toggle preview terminal"
+            aria-pressed={isPreviewTerminalMode}
+            title={previewTerminalToggleTitle}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: isPreviewTerminalMode
+                ? "var(--overlay-explorer-chip-active-bg)"
+                : "var(--overlay-explorer-chip-bg)",
+              border: "1px solid var(--overlay-explorer-chip-border)",
+              borderRadius: "var(--overlay-explorer-control-radius)",
+              cursor: "pointer",
+              color: isPreviewTerminalMode ? EXP.text : EXP.muted,
+              width: 28,
+              height: 28,
+              padding: 0,
+            }}
+          >
+            <Terminal size={12} />
+          </button>
+        ),
+      },
+      {
         id: "previewClose",
         label: "Preview Close",
         surfaces: ["previewHeader"],
@@ -3307,10 +3415,11 @@ function PreviewPanel({
       copyPathLabel,
       commitPdfPageInput,
       isPdfPreview,
+      isPreviewTerminalMode,
       onClose,
       onCopyPath,
-      onPdfChromeStateChange,
       onTogglePresentationMode,
+      onTogglePreviewTerminal,
       onViewModeChange,
       pdfActivePageNumber,
       pdfPageCount,
@@ -3326,6 +3435,10 @@ function PreviewPanel({
       previewSplitToggleTitle,
       previewStateColor,
       previewStateLabel,
+      previewSurfaceMode,
+      previewTerminalDisplayPath,
+      previewTerminalToggleTitle,
+      previewTerminalWorkingDirectory,
       previewTitle,
       supportsRenderedPreview,
       supportsPreviewModeToggle,
@@ -3522,6 +3635,17 @@ function PreviewPanel({
             onChromeStateChange={handlePdfWorkbenchChromeStateChange}
             onControllerChange={handlePdfWorkbenchControllerChange}
             onRegisterCloseGuard={onRegisterCloseGuard}
+          />
+        )}
+        {preview.type === "spreadsheet" && (
+          <ExplorerSpreadsheetWorkbench
+            path={preview.path}
+            name={preview.name}
+            sourceExtension={preview.extension}
+            fileKind={preview.fileKind}
+            onRefreshPreviewEntry={onRefreshPreviewEntry}
+            onRegisterCloseGuard={onRegisterCloseGuard}
+            onStatusChange={setSpreadsheetWorkbenchStatus}
           />
         )}
         {preview.type === "sqlite" && (
@@ -8469,6 +8593,21 @@ export function FileExplorer({
         return;
       }
 
+      if (isSpreadsheetPreviewExtension(ext)) {
+        if (isCurrentPreviewRequest()) {
+          setPreview({
+            type: "spreadsheet",
+            path: entry.path,
+            name: entry.name,
+            extension: ext,
+            size: entry.size,
+            fileKind: getSpreadsheetFileKind(ext) ?? "workbook",
+          });
+          setPreviewLoading(false);
+        }
+        return;
+      }
+
       if (isEditableTextEntry(entry)) {
         const renderKind = getDocumentPreviewKind(entry.path);
         setDocumentViewMode(renderKind === "html" ? "preview" : "edit");
@@ -8590,6 +8729,7 @@ export function FileExplorer({
         canInlinePreview &&
         (getModelPreviewFormat(ext) ||
           isImagePreviewExtension(ext) ||
+          isSpreadsheetPreviewExtension(ext) ||
           isPdfPreviewExtension(ext) ||
           isAudioPreviewExtension(ext) ||
           isVideoPreviewExtension(ext))
@@ -10814,6 +10954,10 @@ export function FileExplorer({
         ? pdfPreviewChromeState?.isEditMode
           ? "PDF editor"
           : "PDF preview"
+      : preview.type === "spreadsheet"
+        ? preview.fileKind === "tabular"
+          ? "Tabular spreadsheet"
+          : "Spreadsheet workbook"
       : preview.type === "audio"
         ? "Audio preview"
         : preview.type === "folder"

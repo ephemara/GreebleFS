@@ -1,5 +1,21 @@
 # GreebleFS Memory
 
+## 2026-04-18 — Spreadsheet Viewer/Editor Workbench
+
+- Spreadsheet files now route to a dedicated preview/editor lane instead of the Monaco text editor.
+- Durable implementation shape:
+  - `src/config/spreadsheet.ts` classifies spreadsheet extensions into workbook vs tabular file kinds and keeps the preview/export gates data-driven.
+  - `src/config/filePreview.ts` excludes spreadsheet extensions from editable text routing so workbook files do not fall through to the plain text editor.
+  - `src/components/FileExplorer.tsx` now resolves `preview.type === 'spreadsheet'` and mounts `ExplorerSpreadsheetWorkbench` in the preview pane.
+  - `src/components/ExplorerSpreadsheetWorkbench.tsx` provides the grid UI, sheet tabs, formula bar, clipboard/edit operations, save/reload, and dirty/close-guard state on top of `@glideapps/glide-data-grid`.
+  - `src/runtime/spreadsheetWorkbook.ts` is the SheetJS + HyperFormula bridge for workbook import/export, clipboard serialization, sheet mutation, and cell formatting.
+  - `src-tauri/src/fs_commands.rs` treats `tsv` as searchable text so the explorer search path still covers tabular files.
+- Validation:
+  - passed: `bunx vitest run src/test/filePreview.test.ts src/test/hotkeys.test.ts src/test/settingsStore.test.ts src/test/spreadsheetWorkbook.test.ts`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
+  - passed: filtered typecheck for the touched spreadsheet files
+  - note: repo-wide `bunx tsc --noEmit --pretty false` still has unrelated existing failures in `src/components/ExplorerAudioWorkbench.tsx` and `src/runtime/vstBackend.ts`
+
 ## 2026-04-18 — Terminal Xterm Hot Path Simplification
 
 - We pivoted back to xterm as the terminal engine because it already covers selection, hyperlink detection, IME, mouse reporting, and the other parity work a native rewrite would have to relearn.

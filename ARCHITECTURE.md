@@ -44,6 +44,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Shell-owned wrapper for the embedded preview-pane audio surface. It is now a native dual-deck transport UI over the Rust audio engine, with a compact summary strip for high-value metadata, shared waveform selection, DAW-style fade edge handles embedded in the waveform, memoized waveform/spectral subsurfaces, a RAF-driven playhead marker, deck arming/loading, loop/gain/rate control, offline export actions, and spectrogram rendering.
 - `src/components/ExplorerPdfWorkbench.tsx`
   Shell-owned wrapper for the embedded preview-pane PDF surface. It keeps the explorer preview-pane contract, renders one active page at a time, exposes page/zoom/fit/edit/save chrome, authors page-space overlay annotations plus AcroForm edits in React, and defers document truth/render/save back to the typed Rust PDF bridge.
+- `src/components/ExplorerSpreadsheetWorkbench.tsx`
+  Shell-owned wrapper for the embedded spreadsheet preview/editor surface. It renders workbook and tabular spreadsheet sessions with `@glideapps/glide-data-grid`, keeps sheet tabs/formula bar/selection state in React, and delegates workbook truth plus import/export to the typed runtime.
 - `src/components/explorer/ExplorerWorkspace.tsx`
   Explorer-local workspace shell that wraps `FileExplorer` instances with explorer tabs, slot-based `1-Up` / `2-Up` / `4-Up` pane layouts, pane focus, and adaptive split sizing. This layer still owns top-level multi-pane explorer topology; the newer preview split stays inside a single `FileExplorer` instance instead of routing through workspace panes.
 - `src/components/explorer/ExplorerSideRail.tsx`
@@ -110,10 +112,14 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   TS bridge for explorer audio analysis, native engine transport commands/events, and offline export/batch work. React should talk to this bridge and `src/store/audioEngineStore.ts` instead of browser media APIs or raw invoke strings.
 - `src/runtime/pdfPreviewBackend.ts`
   TS bridge for explorer PDF preview sessions. It owns typed open/render/save/close calls for the inline PDF workbench so React components do not scatter raw `invoke()` strings or local PDF truth.
+- `src/runtime/spreadsheetWorkbook.ts`
+  SheetJS + HyperFormula bridge for spreadsheet import/export, clipboard serialization, sheet mutation, and workbook/tabular save paths.
 - `src/config/explorerArchives.ts`
   Data-driven archive registry for the explorer. It is the TS-side source of truth for which local archive suffixes should route through native extraction/opening and how archive folder labels are derived.
 - `src/config/filePreview.ts`
-  Data-driven preview/edit gate for explorer media and text surfaces. It centralizes preview MIME mapping and direct-playback allowlists, including the audio formats that should stay routed through the native audio workbench.
+  Data-driven preview/edit gate for explorer media, text, and spreadsheet surfaces. It centralizes preview MIME mapping, direct-playback allowlists, and the spreadsheet exclusion that keeps workbook files out of the plain text editor.
+- `src/config/spreadsheet.ts`
+  Data-driven spreadsheet extension router and file-kind helper shared by the preview shell, save/export path, and search routing.
 - `src/config/explorerThumbnails.ts`
   Data-driven explorer thumbnail policy for generated image/code/shader/audio/video thumbnails, hover-scrub frame counts, and batch sizing limits.
 - `src/windows/FileOperationsWindowApp.tsx`

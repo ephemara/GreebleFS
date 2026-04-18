@@ -21,6 +21,12 @@ export interface SpreadsheetWorkbookDocument {
   sourceExtension: string;
 }
 
+type SpreadsheetCellErrorValue = {
+  value: string;
+  type: string;
+  message: string;
+};
+
 const EXCEL_ERROR_LABEL_BY_CODE: Record<number, string> = {
   0x00: "#NULL!",
   0x07: "#DIV/0!",
@@ -86,7 +92,7 @@ export function getSpreadsheetSheetId(
   sheetName: string,
 ): number | null {
   try {
-    return document.workbook.getSheetId(sheetName);
+    return document.workbook.getSheetId(sheetName) ?? null;
   } catch {
     return null;
   }
@@ -104,7 +110,7 @@ export function formatSpreadsheetCellDisplay(
   detailedType: CellValueDetailedType,
 ): string {
   if (isSpreadsheetDetailedCellError(value)) {
-    return value.value;
+    return (value as SpreadsheetCellErrorValue).value;
   }
 
   if (value == null) {
@@ -190,6 +196,9 @@ export function exportSpreadsheetWorkbook(
   activeSheetName: string,
 ): string | number[] {
   const sheetId = document.workbook.getSheetId(activeSheetName);
+  if (sheetId == null) {
+    throw new Error(`Unknown spreadsheet sheet: ${activeSheetName}`);
+  }
   if (document.fileKind === "tabular") {
     return exportSpreadsheetTabularSheet(document.workbook, sheetId, document.sourceExtension);
   }
@@ -203,6 +212,9 @@ export function renameSpreadsheetSheet(
   nextName: string,
 ): string {
   const sheetId = document.workbook.getSheetId(sheetName);
+  if (sheetId == null) {
+    throw new Error(`Unknown spreadsheet sheet: ${sheetName}`);
+  }
   const normalizedName = normalizeSpreadsheetSheetName(nextName, document.workbook.getSheetNames());
   document.workbook.renameSheet(sheetId, normalizedName);
   return normalizedName;
@@ -223,6 +235,9 @@ export function deleteSpreadsheetSheet(
   sheetName: string,
 ): void {
   const sheetId = document.workbook.getSheetId(sheetName);
+  if (sheetId == null) {
+    throw new Error(`Unknown spreadsheet sheet: ${sheetName}`);
+  }
   document.workbook.removeSheet(sheetId);
 }
 
@@ -231,6 +246,9 @@ export function clearSpreadsheetSheet(
   sheetName: string,
 ): void {
   const sheetId = document.workbook.getSheetId(sheetName);
+  if (sheetId == null) {
+    throw new Error(`Unknown spreadsheet sheet: ${sheetName}`);
+  }
   document.workbook.clearSheet(sheetId);
 }
 
@@ -327,6 +345,9 @@ function exportSpreadsheetWorkbookBytes(
 
   for (const sheetName of sheetNames) {
     const sheetId = workbook.getSheetId(sheetName);
+    if (sheetId == null) {
+      continue;
+    }
     const worksheet = buildWorksheetFromHyperFormula(workbook, sheetId, "raw");
     const exportedSheetName = normalizeSpreadsheetSheetName(
       sheetName,
@@ -401,11 +422,12 @@ function convertSerializedCellToWorksheetCell(
   if (typeof rawValue === "string" && rawValue.startsWith("=")) {
     const formula = rawValue.slice(1);
     if (isSpreadsheetDetailedCellError(value)) {
+      const errorValue = value as SpreadsheetCellErrorValue;
       return {
         f: formula,
         t: "e",
-        v: spreadsheetErrorCodeFromLabel(value.value),
-        w: value.value,
+        v: spreadsheetErrorCodeFromLabel(errorValue.value),
+        w: errorValue.value,
       };
     }
 
@@ -426,10 +448,11 @@ function convertSerializedCellToWorksheetCell(
   }
 
   if (isSpreadsheetDetailedCellError(value)) {
+    const errorValue = value as SpreadsheetCellErrorValue;
     return {
       t: "e",
-      v: spreadsheetErrorCodeFromLabel(value.value),
-      w: value.value,
+      v: spreadsheetErrorCodeFromLabel(errorValue.value),
+      w: errorValue.value,
     };
   }
 
@@ -441,10 +464,11 @@ function convertValueToWorksheetCell(
   detailedType: CellValueDetailedType,
 ): XLSX.CellObject | string | number | boolean | Date | null {
   if (isSpreadsheetDetailedCellError(value)) {
+    const errorValue = value as SpreadsheetCellErrorValue;
     return {
       t: "e",
-      v: spreadsheetErrorCodeFromLabel(value.value),
-      w: value.value,
+      v: spreadsheetErrorCodeFromLabel(errorValue.value),
+      w: errorValue.value,
     };
   }
 
@@ -563,9 +587,7 @@ function getSpreadsheetNumberFormat(detailedType: CellValueDetailedType): string
   }
 }
 
-function isSpreadsheetDetailedCellError(
-  value: CellValue,
-): value is { value: string; type: string; message: string } {
+function isSpreadsheetDetailedCellError(value: CellValue): boolean {
   return Boolean(
     value &&
       typeof value === "object" &&

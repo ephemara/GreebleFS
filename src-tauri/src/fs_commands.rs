@@ -2826,7 +2826,7 @@ fn is_hidden_name(name: &str) -> bool {
 
 fn is_searchable_text_file(path: &Path) -> bool {
     const EXTENSIONS: &[&str] = &[
-        "txt", "md", "mdx", "log", "json", "yaml", "yml", "toml", "xml", "ini", "cfg", "csv", "ts",
+        "txt", "md", "mdx", "log", "json", "yaml", "yml", "toml", "xml", "ini", "cfg", "csv", "ts", "tsv",
         "tsx", "js", "jsx", "mjs", "cjs", "rs", "py", "go", "c", "h", "cpp", "hpp", "cc", "cxx",
         "cs", "java", "kt", "kts", "rb", "php", "swift", "dart", "lua", "zig", "html", "htm",
         "css", "scss", "sass", "less", "sh", "bash", "zsh", "ps1", "bat", "cmd", "env", "glsl",

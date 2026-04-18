@@ -78,6 +78,12 @@ type ExplorerSpreadsheetWorkbenchProps = {
   fileKind: SpreadsheetFileKind;
   onRefreshPreviewEntry?: () => void | Promise<void>;
   onRegisterCloseGuard?: (guard: (() => Promise<boolean>) | null) => void;
+  onStatusChange?: (state: SpreadsheetWorkbenchStatus | null) => void;
+};
+
+type SpreadsheetWorkbenchStatus = {
+  isDirty: boolean;
+  isSaving: boolean;
 };
 
 const SPREADSHEET_MIN_COLUMNS = 26;
@@ -128,6 +134,7 @@ export function ExplorerSpreadsheetWorkbench({
   fileKind,
   onRefreshPreviewEntry,
   onRegisterCloseGuard,
+  onStatusChange,
 }: ExplorerSpreadsheetWorkbenchProps) {
   const keybindings = useSettingsStore((state) => state.settings.keybindings);
   const dataEditorRef = useRef<DataEditorRef | null>(null);
@@ -315,6 +322,24 @@ export function ExplorerSpreadsheetWorkbench({
   useEffect(() => {
     selectedCellRef.current = selectedCell;
   }, [selectedCell]);
+
+  useEffect(() => {
+    if (isLoading || loadError || !spreadsheetDocument) {
+      onStatusChange?.(null);
+      return;
+    }
+
+    onStatusChange?.({
+      isDirty,
+      isSaving,
+    });
+  }, [isDirty, isSaving, isLoading, loadError, onStatusChange, spreadsheetDocument]);
+
+  useEffect(() => {
+    return () => {
+      onStatusChange?.(null);
+    };
+  }, [onStatusChange]);
 
   useEffect(() => {
     if (!currentWorkbook || activeSheetId == null) {
@@ -661,6 +686,9 @@ export function ExplorerSpreadsheetWorkbench({
       activeSheetNameRef.current = nextSheetName;
       setActiveSheetName(nextSheetName);
       const nextSheetId = document.workbook.getSheetId(nextSheetName);
+      if (nextSheetId == null) {
+        return;
+      }
       const nextDimensions = document.workbook.getSheetDimensions(nextSheetId);
       const nextBounds = getSpreadsheetViewportBounds(nextDimensions);
       const nextCell = clampSpreadsheetCell(selectedCellRef.current, nextBounds);
@@ -928,6 +956,16 @@ export function ExplorerSpreadsheetWorkbench({
   );
 
   const activeSpreadsheetMessage = operationMessage ?? (isDirty ? "Unsaved changes" : "Saved");
+  const activeSpreadsheetMessageTone =
+    operationTone === "error"
+      ? "#fca5a5"
+      : operationTone === "warning"
+        ? "#fbbf24"
+        : isSaving
+          ? "#f59e0b"
+          : isDirty
+            ? "#f97316"
+            : "#34d399";
 
   if (isLoading) {
     return (
@@ -950,7 +988,7 @@ export function ExplorerSpreadsheetWorkbench({
           detail={loadError ?? "Unable to build a spreadsheet session for this file."}
           actions={
             <>
-              <button type="button" onClick={handleReload} style={spreadsheetSecondaryButtonStyle}>
+        <button type="button" onClick={handleReload} style={spreadsheetSecondaryButtonStyle()}>
                 <RefreshCcw size={14} />
                 Retry
               </button>
@@ -973,7 +1011,7 @@ export function ExplorerSpreadsheetWorkbench({
         color: "var(--overlay-text-primary)",
       }}
     >
-      <div style={spreadsheetHeaderStyle}>
+      <div style={spreadsheetHeaderStyle()}>
         <div style={spreadsheetHeaderIdentityStyle}>
           <Table2 size={15} />
           <div style={{ minWidth: 0 }}>
@@ -996,7 +1034,7 @@ export function ExplorerSpreadsheetWorkbench({
             <Save size={14} />
             Save
           </button>
-          <button type="button" onClick={handleReload} style={spreadsheetSecondaryButtonStyle}>
+          <button type="button" onClick={handleReload} style={spreadsheetSecondaryButtonStyle()}>
             <RefreshCcw size={14} />
             Reload
           </button>
@@ -1067,6 +1105,10 @@ export function ExplorerSpreadsheetWorkbench({
                   const document = spreadsheetDocumentRef.current;
                   if (document) {
                     const nextSheetId = document.workbook.getSheetId(sheetName);
+                    if (nextSheetId == null) {
+                      focusSpreadsheetGrid();
+                      return;
+                    }
                     const nextDimensions = document.workbook.getSheetDimensions(nextSheetId);
                     const nextBounds = getSpreadsheetViewportBounds(nextDimensions);
                     const nextCell = clampSpreadsheetCell(selectedCellRef.current, nextBounds);
@@ -1127,9 +1169,9 @@ export function ExplorerSpreadsheetWorkbench({
         <span>
           {activeSheetLabel} · {activeCellLabel}
         </span>
-        <span style={{ color: isSaving ? "#f59e0b" : isDirty ? "#f97316" : "#34d399" }}>
-          {isSaving ? "Saving..." : isDirty ? "Pending save" : "Saved"}
-        </span>
+          <span style={{ color: activeSpreadsheetMessageTone }}>
+            {isSaving ? "Saving..." : isDirty ? "Pending save" : "Saved"}
+          </span>
       </div>
 
       {showCloseDialog && (
@@ -1150,7 +1192,7 @@ export function ExplorerSpreadsheetWorkbench({
                   }
                   resolveCloseDialog(false);
                 }}
-                style={spreadsheetSecondaryButtonStyle}
+                style={spreadsheetSecondaryButtonStyle()}
               >
                 Cancel
               </button>
@@ -1164,7 +1206,7 @@ export function ExplorerSpreadsheetWorkbench({
                   setIsDirty(false);
                   resolveCloseDialog(true);
                 }}
-                style={spreadsheetSecondaryButtonStyle}
+                style={spreadsheetSecondaryButtonStyle()}
               >
                 Discard
               </button>
