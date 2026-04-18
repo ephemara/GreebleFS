@@ -774,7 +774,7 @@ function getExplorerEntryStateSurface(
     const dropShadow =
       explorerTheme.selectionStyle === "glow"
         ? "var(--overlay-explorer-item-focus-shadow)"
-        : "0 16px 34px rgba(0, 0, 0, 0.22)";
+        : "var(--overlay-explorer-toolbar-shadow)";
     return {
       background: "var(--overlay-explorer-item-drop-bg)",
       borderColor: "var(--overlay-explorer-item-drop-border)",
@@ -1104,6 +1104,14 @@ function renderExplorerDragPreviewCanvas(
   previewContext.font = "600 13px system-ui";
   previewContext.textBaseline = "middle";
 
+  // Read drag preview theme tokens from CSS vars at paint time
+  const dragPreviewStyles = typeof document !== "undefined"
+    ? getComputedStyle(document.documentElement)
+    : null;
+  const dragPreviewBg = dragPreviewStyles?.getPropertyValue("--overlay-explorer-drag-preview-bg").trim() || "rgba(18,18,24,0.96)";
+  const dragPreviewBorder = dragPreviewStyles?.getPropertyValue("--overlay-explorer-drag-preview-border").trim() || "rgba(255,255,255,0.14)";
+  const dragPreviewDot = dragPreviewStyles?.getPropertyValue("--overlay-explorer-drag-preview-dot").trim() || "#5aa2ff";
+
   previewContext.shadowColor = "rgba(0, 0, 0, 0.35)";
   previewContext.shadowBlur = 12;
   previewContext.shadowOffsetY = 8;
@@ -1115,12 +1123,12 @@ function renderExplorerDragPreviewCanvas(
     previewHeight - 1,
     12,
   );
-  previewContext.fillStyle = "rgba(18, 18, 24, 0.96)";
+  previewContext.fillStyle = dragPreviewBg;
   previewContext.fill();
   previewContext.shadowColor = "transparent";
   previewContext.shadowBlur = 0;
   previewContext.shadowOffsetY = 0;
-  previewContext.strokeStyle = "rgba(255, 255, 255, 0.14)";
+  previewContext.strokeStyle = dragPreviewBorder;
   previewContext.lineWidth = 1;
   previewContext.stroke();
 
@@ -1132,7 +1140,7 @@ function renderExplorerDragPreviewCanvas(
     0,
     Math.PI * 2,
   );
-  previewContext.fillStyle = "#5aa2ff";
+  previewContext.fillStyle = dragPreviewDot;
   previewContext.fill();
 
   const labelX = paddingX + dotSize + gap;
@@ -2053,7 +2061,7 @@ function ContextMenu({
         background: "var(--overlay-explorer-preview-bg)",
         border: "1px solid var(--overlay-explorer-preview-border)",
         borderRadius: "var(--overlay-explorer-panel-radius)",
-        boxShadow: "0 16px 48px rgba(0,0,0,0.8)",
+        boxShadow: "var(--overlay-explorer-ctx-menu-shadow)",
         minWidth: 210,
         padding: "4px 0",
         fontFamily: "Inter,system-ui,sans-serif",
@@ -2087,7 +2095,7 @@ function ContextMenu({
             }}
             onMouseEnter={(e) =>
               (e.currentTarget.style.background = item.danger
-                ? "rgba(248,113,113,0.1)"
+                ? "var(--overlay-explorer-danger-soft-bg)"
                 : "var(--overlay-explorer-chip-active-bg)")
             }
             onMouseLeave={(e) =>
@@ -2608,7 +2616,7 @@ function EditorFallback({ label }: { label: string }) {
         height: "100%",
         display: "grid",
         placeItems: "center",
-        background: "#0f131a",
+        background: "var(--overlay-explorer-code-bg)",
         color: EXP.muted,
         fontSize: 11,
       }}
@@ -2819,7 +2827,7 @@ function PreviewPanel({
       width: 42,
       border: "1px solid var(--overlay-explorer-chip-border)",
       borderRadius: "var(--overlay-explorer-control-radius)",
-      background: "rgba(15, 23, 42, 0.64)",
+      background: "var(--overlay-bg-scrim)",
       color: EXP.text,
       padding: "4px 6px",
       fontSize: 10,
@@ -3748,7 +3756,7 @@ function TrashDialog({
         position: "fixed",
         inset: 0,
         zIndex: 10000,
-        background: "rgba(0,0,0,0.7)",
+        background: "var(--overlay-explorer-modal-scrim)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -3761,7 +3769,7 @@ function TrashDialog({
           borderRadius: "var(--overlay-explorer-panel-radius)",
           padding: 24,
           minWidth: 320,
-          boxShadow: "0 24px 64px rgba(0,0,0,0.9)",
+          boxShadow: "var(--overlay-explorer-modal-shadow)",
         }}
       >
         <div
@@ -3807,8 +3815,8 @@ function TrashDialog({
           <button
             onClick={onDeletePermanently}
             style={{
-              background: "rgba(248,113,113,0.12)",
-              border: "1px solid rgba(248,113,113,0.28)",
+              background: "var(--overlay-explorer-danger-soft-bg)",
+              border: "1px solid var(--overlay-explorer-danger-soft-border)",
               borderRadius: "var(--overlay-explorer-control-radius)",
               color: EXP.red,
               padding: "6px 14px",
@@ -3887,7 +3895,7 @@ function TransferConflictDialog({
         position: "fixed",
         inset: 0,
         zIndex: 10000,
-        background: "rgba(0,0,0,0.72)",
+        background: "var(--overlay-explorer-modal-scrim)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -3903,7 +3911,7 @@ function TransferConflictDialog({
           border: "1px solid var(--overlay-explorer-preview-border)",
           borderRadius: "var(--overlay-explorer-panel-radius)",
           padding: 20,
-          boxShadow: "0 24px 64px rgba(0,0,0,0.9)",
+          boxShadow: "var(--overlay-explorer-modal-shadow)",
         }}
       >
         <div
@@ -4112,7 +4120,7 @@ function SaveSearchDialog({
         position: "fixed",
         inset: 0,
         zIndex: 10000,
-        background: "rgba(0,0,0,0.7)",
+        background: "var(--overlay-explorer-modal-scrim)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -4125,7 +4133,7 @@ function SaveSearchDialog({
           borderRadius: "var(--overlay-explorer-panel-radius)",
           padding: 24,
           minWidth: 360,
-          boxShadow: "0 24px 64px rgba(0,0,0,0.9)",
+          boxShadow: "var(--overlay-explorer-modal-shadow)",
         }}
       >
         <div
@@ -4228,7 +4236,7 @@ function BatchRenameDialog({
         position: "fixed",
         inset: 0,
         zIndex: 10000,
-        background: "rgba(0,0,0,0.72)",
+        background: "var(--overlay-explorer-modal-scrim)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -4244,7 +4252,7 @@ function BatchRenameDialog({
           border: "1px solid var(--overlay-explorer-preview-border)",
           borderRadius: "var(--overlay-explorer-panel-radius)",
           padding: 20,
-          boxShadow: "0 24px 64px rgba(0,0,0,0.9)",
+          boxShadow: "var(--overlay-explorer-modal-shadow)",
         }}
       >
         <div
@@ -4362,12 +4370,12 @@ function BatchRenameDialog({
           </span>
           {previewCount > 0 && <span>{previewCount} files</span>}
           {collisionCount > 0 && (
-            <span style={{ color: "rgba(248,113,113,0.95)" }}>
+            <span style={{ color: "var(--overlay-explorer-danger-text)" }}>
               {collisionCount} collision{collisionCount === 1 ? "" : "s"}
             </span>
           )}
           {validationError && (
-            <span style={{ color: "rgba(248,113,113,0.95)" }}>
+            <span style={{ color: "var(--overlay-explorer-danger-text)" }}>
               {validationError}
             </span>
           )}
@@ -4441,7 +4449,7 @@ function BatchRenameDialog({
                     {row.collision && (
                       <span
                         style={{
-                          color: "rgba(248,113,113,0.95)",
+                          color: "var(--overlay-explorer-danger-text)",
                           fontSize: 10,
                           fontWeight: 700,
                         }}
@@ -4452,7 +4460,7 @@ function BatchRenameDialog({
                     {row.validationError && (
                       <span
                         style={{
-                          color: "rgba(248,113,113,0.95)",
+                          color: "var(--overlay-explorer-danger-text)",
                           fontSize: 10,
                           fontWeight: 700,
                         }}
@@ -4652,7 +4660,7 @@ function ExplorerPropertiesDialog({
             </div>
           </div>
           {checksumError && (
-            <div style={{ color: "rgba(248,113,113,0.95)", fontSize: 11 }}>
+            <div style={{ color: "var(--overlay-explorer-danger-text)", fontSize: 11 }}>
               {checksumError}
             </div>
           )}
@@ -4885,7 +4893,7 @@ function ExplorerPropertiesDialog({
         position: "fixed",
         inset: 0,
         zIndex: 10000,
-        background: "rgba(0,0,0,0.72)",
+        background: "var(--overlay-explorer-modal-scrim)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -4901,7 +4909,7 @@ function ExplorerPropertiesDialog({
           border: "1px solid var(--overlay-explorer-preview-border)",
           borderRadius: "var(--overlay-explorer-panel-radius)",
           padding: 20,
-          boxShadow: "0 24px 64px rgba(0,0,0,0.9)",
+          boxShadow: "var(--overlay-explorer-modal-shadow)",
         }}
       >
         <div
@@ -5000,7 +5008,7 @@ function DuplicateFinderDialog({
         position: "fixed",
         inset: 0,
         zIndex: 10000,
-        background: "rgba(0,0,0,0.72)",
+        background: "var(--overlay-explorer-modal-scrim)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -5016,7 +5024,7 @@ function DuplicateFinderDialog({
           border: "1px solid var(--overlay-explorer-preview-border)",
           borderRadius: "var(--overlay-explorer-panel-radius)",
           padding: 20,
-          boxShadow: "0 24px 64px rgba(0,0,0,0.9)",
+          boxShadow: "var(--overlay-explorer-modal-shadow)",
         }}
       >
         <div
@@ -5190,8 +5198,8 @@ const dialogSecondaryButtonStyle: CSSProperties = {
 };
 
 const dialogDangerButtonStyle: CSSProperties = {
-  background: "rgba(248,113,113,0.12)",
-  border: "1px solid rgba(248,113,113,0.28)",
+  background: "var(--overlay-explorer-danger-soft-bg)",
+  border: "1px solid var(--overlay-explorer-danger-soft-border)",
   borderRadius: "var(--overlay-explorer-control-radius)",
   color: EXP.red,
   padding: "6px 12px",
@@ -11963,8 +11971,8 @@ export function FileExplorer({
                     padding: "8px 10px",
                     borderRadius: 10,
                     border: `1px solid ${accent}55`,
-                    background: "rgba(15,18,24,0.94)",
-                    boxShadow: "0 12px 30px rgba(0,0,0,0.32)",
+                    background: "var(--overlay-explorer-popup-bg)",
+                    boxShadow: "var(--overlay-explorer-popup-shadow)",
                     backdropFilter: explorerBlurEnabled ? "blur(10px)" : "none",
                     WebkitBackdropFilter: explorerBlurEnabled
                       ? "blur(10px)"
@@ -12003,7 +12011,7 @@ export function FileExplorer({
                       marginTop: 8,
                       height: 5,
                       borderRadius: 999,
-                      background: "rgba(255,255,255,0.08)",
+                      background: "var(--overlay-explorer-popup-item-hover-bg)",
                       overflow: "hidden",
                     }}
                   >
@@ -12032,7 +12040,7 @@ export function FileExplorer({
                   borderRadius: "var(--overlay-explorer-panel-radius)",
                   border: "1px solid var(--overlay-explorer-toolbar-border)",
                   background: "var(--overlay-explorer-toolbar-bg)",
-                  boxShadow: "0 18px 42px rgba(0,0,0,0.42)",
+                  boxShadow: "var(--overlay-explorer-popup-shadow-lg)",
                   padding: 8,
                 }}
               >
@@ -12296,7 +12304,7 @@ export function FileExplorer({
                   borderRadius: "var(--overlay-explorer-panel-radius)",
                   border: "1px solid var(--overlay-explorer-toolbar-border)",
                   background: "var(--overlay-explorer-toolbar-bg)",
-                  boxShadow: "0 18px 42px rgba(0,0,0,0.42)",
+                  boxShadow: "var(--overlay-explorer-popup-shadow-lg)",
                   padding: 8,
                 }}
               >
@@ -12538,8 +12546,8 @@ export function FileExplorer({
                   padding: "8px 10px",
                   borderRadius: 10,
                   border: `1px solid ${accent}55`,
-                  background: "rgba(15,18,24,0.94)",
-                  boxShadow: "0 12px 30px rgba(0,0,0,0.32)",
+                  background: "var(--overlay-explorer-popup-bg)",
+                  boxShadow: "var(--overlay-explorer-popup-shadow)",
                   backdropFilter: explorerBlurEnabled ? "blur(10px)" : "none",
                   WebkitBackdropFilter: explorerBlurEnabled
                     ? "blur(10px)"
@@ -12577,7 +12585,7 @@ export function FileExplorer({
                     marginTop: 8,
                     height: 5,
                     borderRadius: 999,
-                    background: "rgba(255,255,255,0.08)",
+                    background: "var(--overlay-explorer-popup-item-hover-bg)",
                     overflow: "hidden",
                   }}
                 >
@@ -12606,7 +12614,7 @@ export function FileExplorer({
                   borderRadius: "var(--overlay-explorer-panel-radius)",
                   border: "1px solid var(--overlay-explorer-toolbar-border)",
                   background: "var(--overlay-explorer-toolbar-bg)",
-                  boxShadow: "0 18px 42px rgba(0,0,0,0.42)",
+                  boxShadow: "var(--overlay-explorer-popup-shadow-lg)",
                   padding: 8,
                 }}
               >
@@ -15000,8 +15008,8 @@ export function FileExplorer({
               width: 184,
               maxWidth: "calc(100% - 64px)",
               borderRadius: 18,
-              border: "1px solid rgba(255,255,255,0.08)",
-              background: "rgba(10, 12, 18, 0.76)",
+              border: "1px solid var(--overlay-explorer-drag-preview-border)",
+              background: "var(--overlay-explorer-popup-bg)",
               backdropFilter: explorerBlurEnabled ? "blur(12px)" : "none",
               WebkitBackdropFilter: explorerBlurEnabled ? "blur(12px)" : "none",
               padding: "14px 16px",
@@ -15709,7 +15717,7 @@ export function FileExplorer({
                 background: canConfirmRepositorySelection
                   ? accent
                   : "var(--overlay-explorer-chip-bg)",
-                color: canConfirmRepositorySelection ? "#fff" : EXP.muted,
+                color: canConfirmRepositorySelection ? "var(--overlay-accent-contrast)" : EXP.muted,
                 cursor: canConfirmRepositorySelection ? "pointer" : "default",
                 fontSize: 11,
                 fontWeight: 700,
@@ -15741,8 +15749,8 @@ export function FileExplorer({
         {error && (
           <div
             style={{
-              background: "rgba(248,113,113,0.12)",
-              borderBottom: `1px solid rgba(248,113,113,0.3)`,
+              background: "var(--overlay-explorer-danger-soft-bg)",
+              borderBottom: `1px solid var(--overlay-explorer-danger-soft-border)`,
               padding: "6px 14px",
               display: "flex",
               alignItems: "center",
@@ -17272,7 +17280,7 @@ export function FileExplorer({
               border: "1px solid var(--overlay-explorer-toolbar-border)",
               background:
                 "color-mix(in srgb, var(--overlay-explorer-preview-bg) 92%, transparent)",
-              boxShadow: "0 14px 36px rgba(0,0,0,0.35)",
+              boxShadow: "var(--overlay-explorer-hud-shadow)",
               backdropFilter: "blur(18px)",
               WebkitBackdropFilter: "blur(18px)",
             }}
