@@ -25,9 +25,11 @@
 - Durable implementation shape:
   - `src/components/ExplorerFolderPreview.tsx` is new shell-owned folder preview surface. It mirrors archive-preview structure: header summary plus scrollable contents list, but it fetches live directory entries through the typed explorer backend and respects the current hidden-files setting.
   - `src/components/FileExplorer.tsx` now treats directory selection as a first-class `preview.type === 'folder'` lane, renders the folder preview component in the existing preview pane, and allows plain-click preview for folders in the same click path already used for files.
-  - Folder preview stays in the shell/render lane. No new Rust truth was needed because existing `fs_list_dir_uncached` / typed explorer runtime already own directory listing truth.
+  - Folder preview rows are now actionable explorer controls, not static labels. Clicking a folder row navigates the main explorer into that folder and keeps the preview pane synced to that new folder; clicking a file row navigates into its parent folder, selects it in the main explorer, and opens its real inline preview/editor.
+- Folder preview stays in the shell/render lane. No new Rust truth was needed because existing `fs_list_dir_uncached` / typed explorer runtime already own directory listing truth.
 - Durable product note:
   - Folder preview should stay a lightweight inspector over existing directory-list truth, not a second recursive explorer runtime inside the preview pane.
+  - Treat folder preview actions as first-class explorer navigation affordances. If future work adds richer folder-preview gestures, route them back through the real explorer navigation/selection/preview path instead of building a disconnected mini file manager inside the pane.
   - If this lane grows richer later, prefer reusing explorer backend listing contracts and theme chrome rather than inventing a special folder-only native API without evidence.
 - Validation:
   - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "shows folder contents in preview pane when a folder is single-clicked in double-click mode"`

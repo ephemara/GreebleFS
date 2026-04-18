@@ -9,6 +9,7 @@ export interface ExplorerFolderPreviewProps {
   folderPath: string;
   folderName: string;
   showHiddenFiles: boolean;
+  onOpenEntry: (entry: ExplorerFileEntry) => void;
 }
 
 const FOLDER_PREVIEW_ENTRY_LIMIT = 500;
@@ -45,6 +46,7 @@ export function ExplorerFolderPreview({
   folderPath,
   folderName,
   showHiddenFiles,
+  onOpenEntry,
 }: ExplorerFolderPreviewProps) {
   const [entries, setEntries] = useState<ExplorerFileEntry[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -258,8 +260,20 @@ export function ExplorerFolderPreview({
               const modifiedLabel = formatModifiedLabel(entry.modified);
               const parentLabel = getEntryParentLabel(entry.path);
               return (
-                <div
+                <button
+                  type="button"
                   key={entry.path}
+                  onClick={() => onOpenEntry(entry)}
+                  aria-label={
+                    entry.is_dir
+                      ? `Open folder ${entry.name}`
+                      : `Open file ${entry.name}`
+                  }
+                  title={
+                    entry.is_dir
+                      ? `Open folder ${entry.name}`
+                      : `Open file ${entry.name}`
+                  }
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -267,6 +281,20 @@ export function ExplorerFolderPreview({
                     padding: "8px 16px",
                     borderBottom: "1px solid var(--overlay-border)",
                     fontSize: 12,
+                    width: "100%",
+                    borderLeft: "none",
+                    borderRight: "none",
+                    borderTop: "none",
+                    background: "transparent",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                  onMouseEnter={(event) => {
+                    event.currentTarget.style.background =
+                      "var(--overlay-explorer-item-hover-bg)";
+                  }}
+                  onMouseLeave={(event) => {
+                    event.currentTarget.style.background = "transparent";
                   }}
                 >
                   <div
@@ -358,7 +386,7 @@ export function ExplorerFolderPreview({
                     )}
                     <span>{entry.is_dir ? "Folder" : formatSize(entry.size)}</span>
                   </div>
-                </div>
+                </button>
               );
             })}
             {isTruncated && (

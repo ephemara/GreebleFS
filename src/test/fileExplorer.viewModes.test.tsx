@@ -304,6 +304,16 @@ function getExplorerViewport(anchorText: string) {
   return viewport;
 }
 
+function getPreviewPane() {
+  const previewPane = document.querySelector(
+    '[data-overlay-explorer-plane="preview"]',
+  ) as HTMLElement | null;
+  if (!previewPane) {
+    throw new Error("Explorer preview pane not found");
+  }
+  return previewPane;
+}
+
 function dispatchLayoutWheel(anchorText: string, deltaY: number) {
   const viewport = getExplorerViewport(anchorText);
   viewport.dispatchEvent(
@@ -1047,6 +1057,92 @@ describe("FileExplorer view modes", () => {
     expect(await screen.findByText("shots")).toBeInTheDocument();
     expect(await screen.findByText("readme.md")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /copy path/i })).toBeInTheDocument();
+  });
+
+  it("lets folder preview rows drive explorer navigation and file opening", async () => {
+    const alphaPath = `${REPO_ROOT}\\alpha`;
+    const shotsPath = `${alphaPath}\\shots`;
+    const alphaEntries = [
+      {
+        name: "shots",
+        path: shotsPath,
+        is_dir: true,
+        size: 0,
+        modified: 1713400000000,
+        extension: "",
+        is_hidden: false,
+        is_symlink: false,
+      },
+      {
+        name: "child.txt",
+        path: `${alphaPath}\\child.txt`,
+        is_dir: false,
+        size: 512,
+        modified: 1713400000000,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ] as const;
+    const shotsEntries = [
+      {
+        name: "take01.txt",
+        path: `${shotsPath}\\take01.txt`,
+        is_dir: false,
+        size: 256,
+        modified: 1713400000000,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ] as const;
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
+      const payload = args as { path?: string } | undefined;
+      if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+        if (payload?.path === alphaPath) {
+          return alphaEntries;
+        }
+        if (payload?.path === shotsPath) {
+          return shotsEntries;
+        }
+      }
+      if (command === "fs_read_text_file" && payload?.path === `${shotsPath}\\take01.txt`) {
+        return "hello from nested preview";
+      }
+      return baseInvokeImplementation(command, args as never);
+    });
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    fireEvent.click(screen.getByText("alpha"));
+
+    const previewPane = getPreviewPane();
+    await within(previewPane).findByRole("button", { name: /open folder shots/i });
+
+    fireEvent.click(
+      within(previewPane).getByRole("button", { name: /open folder shots/i }),
+    );
+
+    await screen.findByText("take01.txt");
+    await within(getPreviewPane()).findByRole("button", {
+      name: /open file take01\.txt/i,
+    });
+
+    fireEvent.click(
+      within(getPreviewPane()).getByRole("button", {
+        name: /open file take01\.txt/i,
+      }),
+    );
+
+    expect(await screen.findByTestId("monaco-editor")).toHaveTextContent(
+      "hello from nested preview",
+    );
   });
 
   it("routes pdf files into the inline pdf workbench and surfaces pdf chrome state", async () => {

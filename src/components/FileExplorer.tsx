@@ -2639,6 +2639,7 @@ function PreviewPanel({
   chromeOverride,
   chromeEditMode,
   showHiddenFiles,
+  onOpenFolderPreviewEntry,
   onExtractArchive,
 }: {
   preview: PreviewState;
@@ -2664,6 +2665,7 @@ function PreviewPanel({
   chromeOverride?: ExplorerChromeOverrideSnapshot | null;
   chromeEditMode?: ExplorerChromeEditModeState;
   showHiddenFiles: boolean;
+  onOpenFolderPreviewEntry: (entry: FileEntry) => void;
   onExtractArchive: (mode: ExplorerArchiveExtractionMode) => void;
 }) {
   const dragging = useRef(false);
@@ -3414,6 +3416,7 @@ function PreviewPanel({
             folderPath={preview.path}
             folderName={preview.name}
             showHiddenFiles={showHiddenFiles}
+            onOpenEntry={onOpenFolderPreviewEntry}
           />
         )}
         {preview.type === "font" && (
@@ -8511,6 +8514,30 @@ export function FileExplorer({
       previewEnabled,
       previewEntry,
     ],
+  );
+
+  const openFolderPreviewEntry = useCallback(
+    async (entry: FileEntry) => {
+      if (entry.is_dir) {
+        await navigate(entry.path);
+        await previewEntry(entry, null);
+        return;
+      }
+
+      const parentPath = getPathParent(entry.path);
+      if (parentPath && parentPath !== currentPath) {
+        await navigate(parentPath);
+      }
+
+      if (!isExplorerMountedRef.current) {
+        return;
+      }
+
+      setSelected(new Set([entry.path]));
+      lastSelected.current = entry.path;
+      await previewEntry(entry, getSearchFocusTarget(entry));
+    },
+    [currentPath, getSearchFocusTarget, navigate, previewEntry],
   );
 
   // ── Duplicate ──
@@ -17029,6 +17056,7 @@ export function FileExplorer({
               chromeOverride={explorerChromeOverride}
               chromeEditMode={explorerChromeEditMode}
               showHiddenFiles={showHidden}
+              onOpenFolderPreviewEntry={openFolderPreviewEntry}
               onExtractArchive={(mode) => {
                 if (preview.type === "archive") {
                   void handleArchiveAction(
