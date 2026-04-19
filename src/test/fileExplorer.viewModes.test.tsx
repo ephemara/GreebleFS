@@ -10,6 +10,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 const {
   pdfPreviewMockState,
@@ -600,10 +601,13 @@ function getEntryIconSrc(entryName: string): string {
 
 describe("FileExplorer view modes", () => {
   beforeEach(() => {
+    const currentWindow = getCurrentWindow();
     pdfPreviewMockState.closeGuardResult = true;
     previewTerminalMockState.mountCount = 0;
     previewTerminalMockState.lastProps = null;
     shaderWorkbenchMockState.lastSelectionLabel = "";
+    vi.mocked(currentWindow.onDragDropEvent).mockClear();
+    vi.mocked(currentWindow.scaleFactor).mockClear();
     resetOverlayTermStorage(window.localStorage);
     useSettingsStore.getState().resetToDefaults();
     useExplorerStore.getState().resetSession();
@@ -2951,6 +2955,93 @@ describe("FileExplorer view modes", () => {
       expect(transferCalls[0]?.[1]).toMatchObject({
         targetDir: `${REPO_ROOT}\\alpha`,
         sources: [`${REPO_ROOT}\\notes.txt`, `${REPO_ROOT}\\preview.png`],
+        operation: "move",
+      });
+    });
+  });
+
+  it("moves native same-window drags into the hovered folder via the Tauri drag-drop listener", async () => {
+    const currentWindow = getCurrentWindow();
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    const dataTransfer = createDataTransfer();
+    const dragSource = screen
+      .getByText("notes.txt")
+      .closest('[data-overlay-drag-source="file"]');
+    const folderTarget = screen
+      .getByText("alpha")
+      .closest('[data-overlay-drag-source="file"]');
+    if (
+      !(dragSource instanceof HTMLElement) ||
+      !(folderTarget instanceof HTMLElement)
+    ) {
+      throw new Error("Expected draggable explorer entries");
+    }
+
+    fireEvent(dragSource, createEvent.dragStart(dragSource, { dataTransfer }));
+
+    await waitFor(() => {
+      expect(vi.mocked(currentWindow.onDragDropEvent).mock.calls.length).toBeGreaterThan(0);
+    });
+
+    const nativeDragHandler =
+      vi.mocked(currentWindow.onDragDropEvent).mock.calls.at(-1)?.[0];
+    if (!nativeDragHandler) {
+      throw new Error("Expected native drag-drop listener");
+    }
+    const expectedTargetDir = folderTarget.getAttribute(
+      "data-overlay-drop-target-path",
+    );
+    if (!expectedTargetDir) {
+      throw new Error("Expected folder drop target path");
+    }
+
+    const position = {
+      x: 64,
+      y: 32,
+      toLogical: vi.fn().mockReturnValue({ x: 64, y: 32 }),
+    };
+    const originalElementFromPoint = document.elementFromPoint;
+    const mockElementFromPoint = vi.fn(() => folderTarget);
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: mockElementFromPoint,
+    });
+
+    try {
+      await nativeDragHandler({
+        payload: {
+          type: "over",
+          position,
+        },
+      } as never);
+      await nativeDragHandler({
+        payload: {
+          type: "drop",
+          paths: [`${REPO_ROOT}\\\\notes.txt`],
+          position,
+        },
+      } as never);
+    } finally {
+      if (originalElementFromPoint) {
+        Object.defineProperty(document, "elementFromPoint", {
+          configurable: true,
+          value: originalElementFromPoint,
+        });
+      } else {
+        Reflect.deleteProperty(document, "elementFromPoint");
+      }
+    }
+
+    await waitFor(() => {
+      const transferCalls = vi
+        .mocked(invoke)
+        .mock.calls.filter(([command]) => command === "fs_transfer_items");
+      expect(transferCalls).toHaveLength(1);
+      expect(transferCalls[0]?.[1]).toMatchObject({
+        targetDir: expectedTargetDir,
+        sources: [`${REPO_ROOT}\\\\notes.txt`],
         operation: "move",
       });
     });

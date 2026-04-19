@@ -129,6 +129,7 @@ import {
   stepExplorerGridZoom,
   stepExplorerViewMode,
   type ExplorerViewModeDefinition,
+  type ExplorerViewPresentation,
 } from "../config/explorerViewModes";
 import { matchesKeybinding } from "../config/hotkeys";
 import {
@@ -913,6 +914,114 @@ function shouldIgnoreExplorerDragLeave(event: React.DragEvent): boolean {
   return (
     elementAtPointer instanceof Node && currentTarget.contains(elementAtPointer)
   );
+}
+
+const EXPLORER_MAIN_DROP_TARGET = "__main__";
+const EXPLORER_DROP_TARGET_ATTRIBUTE = "data-overlay-drop-target-path";
+
+type NativeDragDropPositionLike = {
+  x: number;
+  y: number;
+  toLogical?: (scaleFactor: number) => { x: number; y: number };
+};
+
+type ExplorerSelectionNavigationDirection =
+  | "up"
+  | "down"
+  | "left"
+  | "right";
+
+function resolveExplorerDropTargetPathFromPoint(
+  position: NativeDragDropPositionLike,
+  scaleFactor: number,
+): string | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  const safeScaleFactor =
+    Number.isFinite(scaleFactor) && scaleFactor > 0 ? scaleFactor : 1;
+  const logicalPosition =
+    typeof position.toLogical === "function"
+      ? position.toLogical(safeScaleFactor)
+      : {
+          x: position.x / safeScaleFactor,
+          y: position.y / safeScaleFactor,
+        };
+  const elementAtPointer = document.elementFromPoint(
+    logicalPosition.x,
+    logicalPosition.y,
+  );
+  if (!(elementAtPointer instanceof Element)) {
+    return null;
+  }
+
+  const dropTarget = elementAtPointer.closest(
+    `[${EXPLORER_DROP_TARGET_ATTRIBUTE}]`,
+  );
+  return dropTarget?.getAttribute(EXPLORER_DROP_TARGET_ATTRIBUTE) ?? null;
+}
+
+function matchesExplorerSelectionNavigationKeybinding(
+  event: Pick<
+    KeyboardEvent,
+    "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey"
+  >,
+  binding: string,
+): boolean {
+  return (
+    matchesKeybinding(event, binding) ||
+    (event.shiftKey &&
+      matchesKeybinding(
+        {
+          key: event.key,
+          ctrlKey: event.ctrlKey,
+          metaKey: event.metaKey,
+          altKey: event.altKey,
+          shiftKey: false,
+        },
+        binding,
+      ))
+  );
+}
+
+function resolveExplorerDirectionalSelectionIndex(args: {
+  currentIndex: number;
+  totalEntries: number;
+  direction: ExplorerSelectionNavigationDirection;
+  presentation: ExplorerViewPresentation;
+  gridColumnCount: number;
+}): number {
+  if (args.totalEntries <= 0) {
+    return -1;
+  }
+
+  const maxIndex = args.totalEntries - 1;
+  const safeCurrentIndex = Math.max(0, Math.min(args.currentIndex, maxIndex));
+
+  if (args.presentation !== "grid") {
+    if (args.direction === "up") {
+      return Math.max(0, safeCurrentIndex - 1);
+    }
+    if (args.direction === "down") {
+      return Math.min(maxIndex, safeCurrentIndex + 1);
+    }
+    return safeCurrentIndex;
+  }
+
+  const gridStep = Math.max(1, args.gridColumnCount);
+  switch (args.direction) {
+    case "up":
+      return Math.max(0, safeCurrentIndex - gridStep);
+    case "down":
+      return Math.min(maxIndex, safeCurrentIndex + gridStep);
+    case "left":
+      return Math.max(0, safeCurrentIndex - 1);
+    case "right":
+      return Math.min(maxIndex, safeCurrentIndex + 1);
+    default:
+      return safeCurrentIndex;
+  }
 }
 
 const EXT_TYPE_LABEL: Record<string, string> = {
@@ -6399,10 +6508,18 @@ export function FileExplorer({
     active: boolean;
     count: number;
   }>({ active: false, count: 0 });
+  // `lastSelected` tracks the actively focused entry for keyboard traversal.
+  // Range extension keeps its own anchor so repeated Shift+Arrow movement grows
+  // from the original anchor instead of snapping to the first selected row.
   const lastSelected = useRef<string | null>(null);
+  const selectionRangeAnchorPathRef = useRef<string | null>(null);
   const previewRef = useRef(preview);
   const previewCloseGuardRef = useRef<PreviewCloseGuard | null>(null);
   const previewSaveTimer = useRef<number | null>(null);
+  const setExplorerDragOverTarget = useCallback((targetPath: string | null) => {
+    dragOverRef.current = targetPath;
+    setDragOver(targetPath);
+  }, []);
   const shaderPreviewSelectionMemoryRef = useRef<
     Map<string, ExplorerShaderSelectionMemory>
   >(new Map());
@@ -8060,6 +8177,7 @@ export function FileExplorer({
   );
   const activeDragPathsRef = useRef<string[]>([]);
   const nativeDragPathsRef = useRef<string[]>([]);
+  const nativeSameWindowDragPathsRef = useRef<string[]>([]);
   const isProcessElevatedRef = useRef(false);
   const lastObservedFileTransferNonceRef = useRef<string | null>(null);
   const selectedDirectoryEntries = useMemo(
@@ -8581,6 +8699,46 @@ export function FileExplorer({
     const win = getCurrentWindow();
     let disposed = false;
     let unlisten: (() => void) | null = null;
+    let cachedScaleFactor: number | null = null;
+
+    const getFallbackScaleFactor = () =>
+      typeof window !== "undefined" &&
+      Number.isFinite(window.devicePixelRatio) &&
+      window.devicePixelRatio > 0
+        ? window.devicePixelRatio
+        : 1;
+
+    const getWindowScaleFactor = async () => {
+      if (
+        cachedScaleFactor !== null &&
+        Number.isFinite(cachedScaleFactor) &&
+        cachedScaleFactor > 0
+      ) {
+        return cachedScaleFactor;
+      }
+
+      try {
+        cachedScaleFactor = await win.scaleFactor();
+      } catch {
+        cachedScaleFactor = getFallbackScaleFactor();
+      }
+
+      return cachedScaleFactor;
+    };
+
+    const resolveNativeDropTargetPath = async (
+      position: unknown,
+    ): Promise<string | null> => {
+      if (!position || typeof position !== "object") {
+        return null;
+      }
+
+      const scaleFactor = await getWindowScaleFactor();
+      return resolveExplorerDropTargetPathFromPoint(
+        position as NativeDragDropPositionLike,
+        scaleFactor,
+      );
+    };
 
     win
       .onDragDropEvent(async (event) => {
@@ -8593,19 +8751,45 @@ export function FileExplorer({
         const internalDragPaths =
           activeDragPathsRef.current.length > 0
             ? activeDragPathsRef.current
-            : nativeDragPathsRef.current;
+            : nativeDragPathsRef.current.length > 0
+              ? nativeDragPathsRef.current
+              : nativeSameWindowDragPathsRef.current;
         const payloadPaths = (event.payload as any).paths || [];
-        const normalizePath = (p: string) => p.replace(/[\\/]+$/, "");
+        const normalizePath = (p: string) => {
+          const collapsed = p.replace(/[\\/]+/g, "/").replace(/\/$/, "");
+          return runtimePlatform === "windows"
+            ? collapsed.toLowerCase()
+            : collapsed;
+        };
         const normalizedInternal = internalDragPaths.map(normalizePath);
         const normalizedPayload = payloadPaths.map(normalizePath);
+        const payloadMatchesInternal =
+          normalizedInternal.length > 0 &&
+          normalizedPayload.length === normalizedInternal.length &&
+          normalizedPayload.every((p: string) => normalizedInternal.includes(p));
+        const hasPendingNativeSameWindowDrag =
+          nativeSameWindowDragPathsRef.current.length > 0;
+
+        if (
+          hasPendingNativeSameWindowDrag &&
+          normalizedPayload.length > 0 &&
+          !payloadMatchesInternal
+        ) {
+          nativeSameWindowDragPathsRef.current = [];
+        }
 
         const isInternalDrag =
+          nativeSameWindowDragPathsRef.current.length > 0 ||
           nativeDragPathsRef.current.length > 0 ||
           (normalizedInternal.length > 0 &&
-            normalizedPayload.length === normalizedInternal.length &&
-            normalizedPayload.every((p: string) =>
-              normalizedInternal.includes(p),
-            ));
+            (normalizedPayload.length === 0 || payloadMatchesInternal));
+
+        if (event.payload.type === "enter" || event.payload.type === "over") {
+          const hoveredTarget =
+            (await resolveNativeDropTargetPath((event.payload as any).position)) ??
+            null;
+          setExplorerDragOverTarget(hoveredTarget);
+        }
 
         if (event.payload.type === "enter") {
           // Suppress the "Import Files" banner for internal drags — it's only
@@ -8621,29 +8805,39 @@ export function FileExplorer({
 
         if (event.payload.type === "leave") {
           setWindowDropState({ active: false, count: 0 });
+          setExplorerDragOverTarget(null);
+          return;
+        }
+
+        if (event.payload.type === "over") {
           return;
         }
 
         if (event.payload.type === "drop") {
           setWindowDropState({ active: false, count: 0 });
+          const hoveredTarget =
+            (await resolveNativeDropTargetPath((event.payload as any).position)) ??
+            dragOverRef.current;
+          setExplorerDragOverTarget(null);
           if (!currentPath) return;
 
           // For internal drags, resolve the target from the folder currently being
-          // hovered (tracked via dragOverRef).  "__main__" or null means the drop
-          // landed on empty space in the current directory.
+          // hovered. "__main__" or null means the drop landed on empty space in the
+          // current directory.
           let targetDir = currentPath;
-          let operation: "move" | "copy" = "copy";
+          const operation: "move" | "copy" = isInternalDrag ? "move" : "copy";
+
+          if (
+            hoveredTarget &&
+            hoveredTarget !== EXPLORER_MAIN_DROP_TARGET
+          ) {
+            targetDir = hoveredTarget;
+          }
 
           if (isInternalDrag) {
-            const hoveredTarget = dragOverRef.current;
-            if (hoveredTarget && hoveredTarget !== "__main__") {
-              targetDir = hoveredTarget;
-            }
-            operation = "move";
             activeDragPathsRef.current = [];
             nativeDragPathsRef.current = [];
-            dragOverRef.current = null;
-            setDragOver(null);
+            nativeSameWindowDragPathsRef.current = [];
           }
 
           try {
@@ -8676,7 +8870,7 @@ export function FileExplorer({
       disposed = true;
       unlisten?.();
     };
-  }, [currentPath, executeTransferRequest, refresh]);
+  }, [currentPath, executeTransferRequest, refresh, setExplorerDragOverTarget]);
 
   // ── Open ──
   const getSearchFocusTarget = useCallback(
@@ -11452,6 +11646,8 @@ export function FileExplorer({
         ? "internal"
         : requestedDragIntent;
     activeDragPathsRef.current = dragPaths;
+    nativeSameWindowDragPathsRef.current =
+      dragIntent === "native-out" ? dragPaths : [];
     e.currentTarget.dataset.overlayDragIntent = dragIntent;
     // Keep explorer surface alive during native drag so in-app folder drops do not
     // collapse overlay shell before the drop target resolves.
@@ -11505,11 +11701,14 @@ export function FileExplorer({
   };
 
   const onDragEnd = (e: React.DragEvent<HTMLElement>) => {
+    const dragIntent = e.currentTarget.dataset.overlayDragIntent;
     delete e.currentTarget.dataset.overlayDragIntent;
     delete e.currentTarget.dataset.overlayDragHide;
     activeDragPathsRef.current = [];
-    setDragOver(null);
-    dragOverRef.current = null;
+    if (dragIntent !== "native-out") {
+      nativeSameWindowDragPathsRef.current = [];
+    }
+    setExplorerDragOverTarget(null);
   };
 
   const onDragOver = (e: React.DragEvent, targetPath: string) => {
@@ -11519,8 +11718,7 @@ export function FileExplorer({
       e,
       runtimePlatform,
     );
-    setDragOver(targetPath);
-    dragOverRef.current = targetPath;
+    setExplorerDragOverTarget(targetPath);
   };
 
   const onDragLeave = (e: React.DragEvent, targetPath: string) => {
@@ -11538,8 +11736,7 @@ export function FileExplorer({
   const onDrop = async (e: React.DragEvent, targetDir: string) => {
     e.preventDefault();
     e.stopPropagation();
-    setDragOver(null);
-    dragOverRef.current = null;
+    setExplorerDragOverTarget(null);
     const payload = e.dataTransfer.getData("application/x-overlayterm-paths");
     let sources: string[] = [];
     if (payload) {
@@ -11558,6 +11755,9 @@ export function FileExplorer({
     if (sources.length === 0 && nativeDragPathsRef.current.length > 0) {
       sources = [...nativeDragPathsRef.current];
     }
+    if (sources.length === 0 && nativeSameWindowDragPathsRef.current.length > 0) {
+      sources = [...nativeSameWindowDragPathsRef.current];
+    }
     if (sources.length === 0) return;
     try {
       const results = await executeTransferRequest(
@@ -11573,6 +11773,7 @@ export function FileExplorer({
       if (results !== null) {
         activeDragPathsRef.current = [];
         nativeDragPathsRef.current = [];
+        nativeSameWindowDragPathsRef.current = [];
       }
     } catch (e) {
       setError(String(e));
@@ -12582,6 +12783,7 @@ export function FileExplorer({
                         )}
                         <button
                           type="button"
+                          data-overlay-drop-target-path={c.path}
                           onClick={(e) => {
                             e.stopPropagation();
                             navigate(c.path);
@@ -15618,6 +15820,7 @@ export function FileExplorer({
           key={entry.path}
           draggable
           data-overlay-drag-source="file"
+          data-overlay-drop-target-path={entry.is_dir ? entry.path : undefined}
           onDragStart={(e) => onDragStart(e, entry)}
           onDragEnd={onDragEnd}
           onDragOver={
@@ -15829,6 +16032,7 @@ export function FileExplorer({
         key={entry.path}
         draggable
         data-overlay-drag-source="file"
+        data-overlay-drop-target-path={entry.is_dir ? entry.path : undefined}
         onDragStart={(e) => onDragStart(e, entry)}
         onDragEnd={onDragEnd}
         onDragOver={entry.is_dir ? (e) => onDragOver(e, entry.path) : undefined}
@@ -16240,6 +16444,9 @@ export function FileExplorer({
         data-overlay-constellation-node={node.entry.path}
         data-overlay-constellation-emphasis={node.emphasis}
         data-overlay-drag-source="file"
+        data-overlay-drop-target-path={
+          node.entry.is_dir ? node.entry.path : undefined
+        }
         onPointerDown={(event) => event.stopPropagation()}
         onDragStart={(e) => onDragStart(e, node.entry)}
         onDragEnd={onDragEnd}
@@ -16605,6 +16812,7 @@ export function FileExplorer({
         key={entry.path}
         draggable
         data-overlay-drag-source="file"
+        data-overlay-drop-target-path={entry.is_dir ? entry.path : undefined}
         onDragStart={(e) => onDragStart(e, entry)}
         onDragEnd={onDragEnd}
         onDragOver={entry.is_dir ? (e) => onDragOver(e, entry.path) : undefined}
@@ -17154,6 +17362,7 @@ export function FileExplorer({
               <div
                 ref={mainRef}
                 data-overlay-explorer-plane="content-viewport"
+                data-overlay-drop-target-path={EXPLORER_MAIN_DROP_TARGET}
                 tabIndex={0}
                 aria-busy={loading ? true : undefined}
                 style={{
@@ -17169,10 +17378,9 @@ export function FileExplorer({
                     e,
                     runtimePlatform,
                   );
-                  setDragOver("__main__");
-                  dragOverRef.current = "__main__";
+                  setExplorerDragOverTarget(EXPLORER_MAIN_DROP_TARGET);
                 }}
-                onDragLeave={(e) => onDragLeave(e, "__main__")}
+                onDragLeave={(e) => onDragLeave(e, EXPLORER_MAIN_DROP_TARGET)}
                 onDrop={(e) => onDrop(e, currentPath)}
                 onContextMenu={(e) => {
                   if (e.target !== e.currentTarget) return;
@@ -17462,6 +17670,9 @@ export function FileExplorer({
                               key={entry.path}
                               draggable
                               data-overlay-drag-source="file"
+                              data-overlay-drop-target-path={
+                                entry.is_dir ? entry.path : undefined
+                              }
                               onDragStart={(e) => onDragStart(e, entry)}
                               onDragEnd={onDragEnd}
                               onDragOver={
@@ -17754,6 +17965,9 @@ export function FileExplorer({
                             draggable
                             data-entry-path={entry.path}
                             data-overlay-drag-source="file"
+                            data-overlay-drop-target-path={
+                              entry.is_dir ? entry.path : undefined
+                            }
                             onDragStart={(e) => onDragStart(e, entry)}
                             onDragEnd={onDragEnd}
                             onDragOver={
@@ -18178,6 +18392,9 @@ export function FileExplorer({
                               draggable
                               data-entry-path={entry.path}
                               data-overlay-drag-source="file"
+                              data-overlay-drop-target-path={
+                                entry.is_dir ? entry.path : undefined
+                              }
                               onDragStart={(e) => onDragStart(e, entry)}
                               onDragEnd={onDragEnd}
                               onDragOver={
