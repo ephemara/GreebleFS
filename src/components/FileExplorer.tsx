@@ -1057,9 +1057,9 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
 }
 
 function resolveExplorerDragIntent(
-  event: Pick<React.DragEvent, "shiftKey">,
+  event: Pick<React.DragEvent, "shiftKey" | "altKey" | "ctrlKey">,
 ): ExplorerDragIntent {
-  return event.shiftKey ? "internal" : "native-out";
+  return event.shiftKey || event.altKey ? "native-out" : "internal";
 }
 
 function fitExplorerDragPreviewLabel(
@@ -7800,6 +7800,7 @@ export function FileExplorer({
     [droppedSourceLookup],
   );
   const activeDragPathsRef = useRef<string[]>([]);
+  const nativeDragPathsRef = useRef<string[]>([]);
   const isProcessElevatedRef = useRef(false);
   const lastObservedFileTransferNonceRef = useRef<string | null>(null);
   const selectedDirectoryEntries = useMemo(
@@ -8330,12 +8331,18 @@ export function FileExplorer({
         // When an internal native drag re-enters/drops on the same window, Tauri fires
         // onDragDropEvent instead of React onDrop.  We need to route the drop to the
         // specific folder the cursor is hovering over, not just currentPath.
-        const internalDragPaths = activeDragPathsRef.current;
+        const internalDragPaths = activeDragPathsRef.current.length > 0
+          ? activeDragPathsRef.current
+          : nativeDragPathsRef.current;
         const payloadPaths = (event.payload as any).paths || [];
+        const normalizePath = (p: string) => p.replace(/[\\/]+$/, "");
+        const normalizedInternal = internalDragPaths.map(normalizePath);
+        const normalizedPayload = payloadPaths.map(normalizePath);
+
         const isInternalDrag =
-          internalDragPaths.length > 0 &&
-          payloadPaths.length === internalDragPaths.length &&
-          payloadPaths.every((p: string) => internalDragPaths.includes(p));
+          normalizedInternal.length > 0 &&
+          normalizedPayload.length === normalizedInternal.length &&
+          normalizedPayload.every((p: string) => normalizedInternal.includes(p));
 
         if (event.payload.type === "enter") {
           // Suppress the "Import Files" banner for internal drags — it's only
@@ -8371,6 +8378,7 @@ export function FileExplorer({
             }
             operation = "move";
             activeDragPathsRef.current = [];
+            nativeDragPathsRef.current = [];
             dragOverRef.current = null;
             setDragOver(null);
           }
@@ -11208,12 +11216,15 @@ export function FileExplorer({
             "GreebleFS is running as Administrator, so Windows may block dragging files into normal Explorer/Desktop windows. Run GreebleFS without elevation for drag-out support.",
           );
         }
+        nativeDragPathsRef.current = dragPaths;
         void commands
           .fsStartNativeFileDrag(dragPaths)
           .then((result) => {
+            nativeDragPathsRef.current = [];
             unwrapTauriResult(result);
           })
           .catch((error) => {
+            nativeDragPathsRef.current = [];
             const fallback = formatExplorerNativeDragError(error);
             if (runtimePlatform === "windows" && isProcessElevatedRef.current) {
               setError(
@@ -11280,6 +11291,9 @@ export function FileExplorer({
     if (sources.length === 0 && activeDragPathsRef.current.length > 0) {
       sources = [...activeDragPathsRef.current];
     }
+    if (sources.length === 0 && nativeDragPathsRef.current.length > 0) {
+      sources = [...nativeDragPathsRef.current];
+    }
     if (sources.length === 0) return;
     try {
       const results = await executeTransferRequest(
@@ -11294,6 +11308,7 @@ export function FileExplorer({
       );
       if (results !== null) {
         activeDragPathsRef.current = [];
+        nativeDragPathsRef.current = [];
       }
     } catch (e) {
       setError(String(e));
