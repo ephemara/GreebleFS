@@ -1,5 +1,18 @@
 # GreebleFS Memory
 
+# 2026-04-19 — Explorer Preview Shell Stays Mounted In Idle State
+
+- Explorer preview mode now treats the preview pane as a persistent shell, not a conditional side effect of an active selection.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now keeps the preview panel mounted whenever preview mode is enabled outside compact dock mode, even when no file or folder is selected.
+  - The empty preview surface now renders a friendly idle card that tells the user the preview is ready and invites them to select any file or folder.
+  - The preview panel header close button now turns preview mode off, so the shell can still be dismissed cleanly instead of leaving a dead empty pane behind.
+- Durable product note:
+  - Treat preview mode as a visible workspace state with an explicit idle presentation. Do not regress back to a hidden preview pane that only appears after the first selection.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "honors the preview toggle before opening previewable files|shows a friendly empty preview state while preview mode is enabled|only shows the preview split toggle when a preview is active" --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false`
+
 # 2026-04-19 — Explorer Image Editor Now Has Live Preview Pan/Zoom
 
 - The shell-owned image editor preview now behaves like an actual viewport instead of a static poster frame.

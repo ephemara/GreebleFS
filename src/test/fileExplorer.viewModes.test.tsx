@@ -11,7 +11,11 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 
-const { pdfPreviewMockState, previewTerminalMockState, shaderWorkbenchMockState } = vi.hoisted(() => ({
+const {
+  pdfPreviewMockState,
+  previewTerminalMockState,
+  shaderWorkbenchMockState,
+} = vi.hoisted(() => ({
   pdfPreviewMockState: {
     closeGuardResult: true,
   },
@@ -68,16 +72,18 @@ vi.mock("../components/ExplorerPdfWorkbench", () => ({
       isSaving: boolean;
       error: string | null;
     }) => void;
-    onControllerChange?: (controller: {
-      goToPreviousPage: () => void;
-      goToNextPage: () => void;
-      goToPage: (pageIndex: number) => void;
-      zoomIn: () => void;
-      zoomOut: () => void;
-      setFitMode: (mode: "none" | "fitWidth" | "fitPage") => void;
-      toggleEditMode: () => void;
-      save: () => Promise<boolean>;
-    } | null) => void;
+    onControllerChange?: (
+      controller: {
+        goToPreviousPage: () => void;
+        goToNextPage: () => void;
+        goToPage: (pageIndex: number) => void;
+        zoomIn: () => void;
+        zoomOut: () => void;
+        setFitMode: (mode: "none" | "fitWidth" | "fitPage") => void;
+        toggleEditMode: () => void;
+        save: () => Promise<boolean>;
+      } | null,
+    ) => void;
     onRegisterCloseGuard?: (guard: (() => Promise<boolean>) | null) => void;
   }) => {
     const controller = React.useMemo(
@@ -165,7 +171,15 @@ vi.mock("../components/ExplorerShaderWorkbench", () => ({
       <div data-testid="mock-explorer-shader-workbench">
         <div>{name}</div>
         <div>{`${format}:${selectedScene}:${selectionLabel}`}</div>
-        <div>{isReadOnly ? "readonly" : isDirty ? "dirty" : isSaving ? "saving" : "clean"}</div>
+        <div>
+          {isReadOnly
+            ? "readonly"
+            : isDirty
+              ? "dirty"
+              : isSaving
+                ? "saving"
+                : "clean"}
+        </div>
         <button
           type="button"
           onClick={() =>
@@ -188,7 +202,10 @@ vi.mock("../components/ExplorerShaderWorkbench", () => ({
         >
           Select Shader Vertex
         </button>
-        <button type="button" onClick={() => onSourceChange(path, "// dirty shader edit")}>
+        <button
+          type="button"
+          onClick={() => onSourceChange(path, "// dirty shader edit")}
+        >
           Dirty Shader
         </button>
       </div>
@@ -322,8 +339,8 @@ const ENTRIES = [
     is_hidden: false,
     is_symlink: false,
   },
-	{
-		name: "large.txt",
+  {
+    name: "large.txt",
     path: `${REPO_ROOT}\\large.txt`,
     is_dir: false,
     size: 24 * 1024 * 1024,
@@ -660,31 +677,31 @@ describe("FileExplorer view modes", () => {
             if (payload?.path === `${REPO_ROOT}\\broken.png`) {
               throw new Error("Image is too large to thumbnail (> 64 MB)");
             }
-					return "data:image/png;base64,ZmFrZQ==";
-				case "pdf_open_preview_document":
-					return {
-						sessionId: "pdf-session-1",
-						path: `${REPO_ROOT}\\\\forms.pdf`,
-						name: "forms.pdf",
-						pageCount: 2,
-						pages: [
-							{ pageIndex: 0, widthPoints: 612, heightPoints: 792 },
-							{ pageIndex: 1, widthPoints: 612, heightPoints: 792 },
-						],
-						formFields: [],
-					};
-				case "pdf_close_preview_document":
-					return null;
-				case "fs_read_entry_thumbnail":
+            return "data:image/png;base64,ZmFrZQ==";
+          case "pdf_open_preview_document":
+            return {
+              sessionId: "pdf-session-1",
+              path: `${REPO_ROOT}\\\\forms.pdf`,
+              name: "forms.pdf",
+              pageCount: 2,
+              pages: [
+                { pageIndex: 0, widthPoints: 612, heightPoints: 792 },
+                { pageIndex: 1, widthPoints: 612, heightPoints: 792 },
+              ],
+              formFields: [],
+            };
+          case "pdf_close_preview_document":
+            return null;
+          case "fs_read_entry_thumbnail":
             if (payload?.request?.path === `${REPO_ROOT}\\broken.png`) {
               throw new Error("Image is too large to thumbnail (> 64 MB)");
             }
-						return {
-							kind: "image",
-							posterDataUrl: "data:image/png;base64,ZmFrZQ==",
-							hoverFrames: [],
-							hoverFrameDelayMs: null,
-						};
+            return {
+              kind: "image",
+              posterDataUrl: "data:image/png;base64,ZmFrZQ==",
+              hoverFrames: [],
+              hoverFrameDelayMs: null,
+            };
           case "shader_preview_inspect":
             if (payload?.path === `${REPO_ROOT}\\aaa_surface.wgsl`) {
               return {
@@ -699,11 +716,20 @@ describe("FileExplorer view modes", () => {
                 selectedStage: "vertex",
                 selectedEntryPoint: "shade_vs",
                 entryPoints: [
-                  { name: "shade_vs", stage: "vertex", supportsLivePreview: true },
-                  { name: "shade", stage: "fragment", supportsLivePreview: true },
+                  {
+                    name: "shade_vs",
+                    stage: "vertex",
+                    supportsLivePreview: true,
+                  },
+                  {
+                    name: "shade",
+                    stage: "fragment",
+                    supportsLivePreview: true,
+                  },
                 ],
                 diagnostics: [],
-                normalizedWgsl: "@fragment fn shade() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }",
+                normalizedWgsl:
+                  "@fragment fn shade() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }",
                 supportsLivePreview: true,
                 previewAbi: "GreebleFS Shader Preview ABI v1",
               };
@@ -714,22 +740,29 @@ describe("FileExplorer view modes", () => {
                 name: "aab_lighting.hlsl",
                 format: "hlsl",
                 editableSource:
-                  "[shader(\"fragment\")] float4 shade() : SV_Target { return float4(1,1,1,1); }",
+                  '[shader("fragment")] float4 shade() : SV_Target { return float4(1,1,1,1); }',
                 inspectionSource:
-                  "[shader(\"fragment\")] float4 shade() : SV_Target { return float4(1,1,1,1); }",
+                  '[shader("fragment")] float4 shade() : SV_Target { return float4(1,1,1,1); }',
                 isReadOnly: false,
                 selectedStage: "fragment",
                 selectedEntryPoint: "shade",
                 entryPoints: [
-                  { name: "shade", stage: "fragment", supportsLivePreview: true },
+                  {
+                    name: "shade",
+                    stage: "fragment",
+                    supportsLivePreview: true,
+                  },
                 ],
                 diagnostics: [],
-                normalizedWgsl: "@fragment fn shade() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }",
+                normalizedWgsl:
+                  "@fragment fn shade() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }",
                 supportsLivePreview: true,
                 previewAbi: "GreebleFS Shader Preview ABI v1",
               };
             }
-            throw new Error(`Unexpected shader preview inspect path: ${payload?.path}`);
+            throw new Error(
+              `Unexpected shader preview inspect path: ${payload?.path}`,
+            );
           case "shader_preview_compile":
             return {
               format: payload?.request?.format ?? "wgsl",
@@ -737,14 +770,30 @@ describe("FileExplorer view modes", () => {
               entryPoints:
                 payload?.request?.path === `${REPO_ROOT}\\aaa_surface.wgsl`
                   ? [
-                      { name: "shade_vs", stage: "vertex", supportsLivePreview: true },
-                      { name: "shade", stage: "fragment", supportsLivePreview: true },
+                      {
+                        name: "shade_vs",
+                        stage: "vertex",
+                        supportsLivePreview: true,
+                      },
+                      {
+                        name: "shade",
+                        stage: "fragment",
+                        supportsLivePreview: true,
+                      },
                     ]
-                  : [{ name: "shade", stage: "fragment", supportsLivePreview: true }],
+                  : [
+                      {
+                        name: "shade",
+                        stage: "fragment",
+                        supportsLivePreview: true,
+                      },
+                    ],
               selectedStage: payload?.request?.selectedStage ?? "fragment",
-              selectedEntryPoint: payload?.request?.selectedEntryPoint ?? "shade",
+              selectedEntryPoint:
+                payload?.request?.selectedEntryPoint ?? "shade",
               diagnostics: [],
-              normalizedWgsl: "@fragment fn shade() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }",
+              normalizedWgsl:
+                "@fragment fn shade() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }",
               supportsLivePreview: true,
               previewAbi: "GreebleFS Shader Preview ABI v1",
             };
@@ -963,6 +1012,34 @@ describe("FileExplorer view modes", () => {
     ).toBe(false);
   });
 
+  it("shows a friendly empty preview state while preview mode is enabled", async () => {
+    renderExplorer();
+    await screen.findByText("notes.txt");
+
+    const previewPane = getPreviewPane();
+    expect(previewPane).toHaveAttribute(
+      "data-overlay-explorer-preview-surface-mode",
+      "content",
+    );
+    expect(
+      within(previewPane).getByText(/preview is standing by/i),
+    ).toBeInTheDocument();
+    expect(
+      within(previewPane).getByText(
+        /select any file or folder to bring it into view here/i,
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(getPreviewCloseButton());
+
+    await waitFor(() => {
+      expect(queryPreviewPane()).toBeNull();
+      expect(useExplorerStore.getState().session.previewEnabled).toBe(false);
+    });
+
+    expect(getChromeControl("previewModeToggle")).toBeNull();
+    expect(getChromeControl("previewSplitToggle")).toBeNull();
+  });
+
   it("only shows the preview split toggle when a preview is active", async () => {
     renderExplorer();
     await screen.findByText("notes.txt");
@@ -1010,9 +1087,9 @@ describe("FileExplorer view modes", () => {
     });
 
     expect(
-      within(
-        getChromeControl("previewIdentity") as HTMLElement,
-      ).getByText("Terminal"),
+      within(getChromeControl("previewIdentity") as HTMLElement).getByText(
+        "Terminal",
+      ),
     ).toBeInTheDocument();
     expect(getChromeControl("previewState")).toBeNull();
     expect(getChromeControl("previewModeToggle")).toBeNull();
@@ -1070,16 +1147,18 @@ describe("FileExplorer view modes", () => {
       throw new Error("Missing default invoke mock implementation");
     }
 
-    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
-      const payload = args as { path?: string } | undefined;
-      if (
-        (command === "fs_list_dir" || command === "fs_list_dir_uncached") &&
-        payload?.path === `${REPO_ROOT}\\alpha`
-      ) {
-        return alphaEntries;
-      }
-      return baseInvokeImplementation(command, args as never);
-    });
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        const payload = args as { path?: string } | undefined;
+        if (
+          (command === "fs_list_dir" || command === "fs_list_dir_uncached") &&
+          payload?.path === `${REPO_ROOT}\\alpha`
+        ) {
+          return alphaEntries;
+        }
+        return baseInvokeImplementation(command, args as never);
+      },
+    );
 
     renderExplorer();
     await screen.findByText("notes.txt");
@@ -1089,7 +1168,9 @@ describe("FileExplorer view modes", () => {
     fireEvent.click(getPreviewTerminalToggleButton());
 
     await screen.findByTestId("mock-preview-terminal");
-    await userEvent.click(screen.getByRole("button", { name: "Report Alpha Cwd" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Report Alpha Cwd" }),
+    );
 
     await waitFor(() => {
       expect(useExplorerStore.getState().session.currentPath).toBe(
@@ -1115,9 +1196,7 @@ describe("FileExplorer view modes", () => {
     fireEvent.click(getPreviewSplitToggleButton());
 
     await waitFor(() => {
-      expect(useExplorerStore.getState().session.previewSplitMode).toBe(
-        "pane",
-      );
+      expect(useExplorerStore.getState().session.previewSplitMode).toBe("pane");
       expect(useExplorerStore.getState().workspace.layoutMode).toBe("single");
       expect(
         document.querySelectorAll('[data-overlay-explorer-plane="file-area"]'),
@@ -1148,9 +1227,7 @@ describe("FileExplorer view modes", () => {
 
     fireEvent.click(getPreviewSplitToggleButton());
     await waitFor(() => {
-      expect(useExplorerStore.getState().session.previewSplitMode).toBe(
-        "pane",
-      );
+      expect(useExplorerStore.getState().session.previewSplitMode).toBe("pane");
     });
     await waitFor(() => {
       expect(useExplorerStore.getState().session.previewWidth).not.toBeNull();
@@ -1173,9 +1250,7 @@ describe("FileExplorer view modes", () => {
     expect(
       await screen.findByTestId("mock-explorer-audio-workbench"),
     ).toHaveTextContent("anthem.mp3");
-    expect(useExplorerStore.getState().session.previewWidth).toBe(
-      resizedWidth,
-    );
+    expect(useExplorerStore.getState().session.previewWidth).toBe(resizedWidth);
     expect(getPreviewPane()).toHaveAttribute(
       "data-overlay-explorer-preview-split-mode",
       "pane",
@@ -1199,28 +1274,30 @@ describe("FileExplorer view modes", () => {
     }
 
     pdfPreviewMockState.closeGuardResult = false;
-    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
-      if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
-        return [...ENTRIES, pdfEntry];
-      }
-      if (command === "pdf_open_preview_document") {
-        return {
-          sessionId: "pdf-session-1",
-          path: pdfEntry.path,
-          name: pdfEntry.name,
-          pageCount: 2,
-          pages: [
-            { pageIndex: 0, widthPoints: 612, heightPoints: 792 },
-            { pageIndex: 1, widthPoints: 612, heightPoints: 792 },
-          ],
-          formFields: [],
-        };
-      }
-      if (command === "pdf_close_preview_document") {
-        return null;
-      }
-      return baseInvokeImplementation(command, args as never);
-    });
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+          return [...ENTRIES, pdfEntry];
+        }
+        if (command === "pdf_open_preview_document") {
+          return {
+            sessionId: "pdf-session-1",
+            path: pdfEntry.path,
+            name: pdfEntry.name,
+            pageCount: 2,
+            pages: [
+              { pageIndex: 0, widthPoints: 612, heightPoints: 792 },
+              { pageIndex: 1, widthPoints: 612, heightPoints: 792 },
+            ],
+            formFields: [],
+          };
+        }
+        if (command === "pdf_close_preview_document") {
+          return null;
+        }
+        return baseInvokeImplementation(command, args as never);
+      },
+    );
 
     renderExplorer();
     await screen.findByText("forms.pdf");
@@ -1232,17 +1309,15 @@ describe("FileExplorer view modes", () => {
 
     fireEvent.click(getPreviewSplitToggleButton());
     await waitFor(() => {
-      expect(useExplorerStore.getState().session.previewSplitMode).toBe(
-        "pane",
-      );
+      expect(useExplorerStore.getState().session.previewSplitMode).toBe("pane");
     });
 
     fireEvent.click(getPreviewCloseButton());
 
     await waitFor(() => {
-      expect(screen.getByTestId("mock-explorer-pdf-workbench")).toHaveTextContent(
-        "forms.pdf",
-      );
+      expect(
+        screen.getByTestId("mock-explorer-pdf-workbench"),
+      ).toHaveTextContent("forms.pdf");
       expect(useExplorerStore.getState().workspace.layoutMode).toBe("single");
     });
 
@@ -1250,9 +1325,9 @@ describe("FileExplorer view modes", () => {
 
     await waitFor(() => {
       expect(useExplorerStore.getState().session.previewEnabled).toBe(true);
-      expect(screen.getByTestId("mock-explorer-pdf-workbench")).toHaveTextContent(
-        "forms.pdf",
-      );
+      expect(
+        screen.getByTestId("mock-explorer-pdf-workbench"),
+      ).toHaveTextContent("forms.pdf");
     });
   });
 
@@ -1267,9 +1342,7 @@ describe("FileExplorer view modes", () => {
 
     fireEvent.click(getPreviewSplitToggleButton());
     await waitFor(() => {
-      expect(useExplorerStore.getState().session.previewSplitMode).toBe(
-        "pane",
-      );
+      expect(useExplorerStore.getState().session.previewSplitMode).toBe("pane");
     });
 
     fireEvent.click(getPreviewCloseButton());
@@ -1343,9 +1416,13 @@ describe("FileExplorer view modes", () => {
     fireEvent.click(screen.getByText("index.html"));
 
     await waitFor(() => {
-      expect(useExplorerStore.getState().session.documentViewMode).toBe("preview");
+      expect(useExplorerStore.getState().session.documentViewMode).toBe(
+        "preview",
+      );
     });
-    expect(await screen.findByTitle("HTML document preview")).toBeInTheDocument();
+    expect(
+      await screen.findByTitle("HTML document preview"),
+    ).toBeInTheDocument();
     expect(screen.queryByTestId("monaco-editor")).toBeNull();
   });
 
@@ -1630,11 +1707,31 @@ describe("FileExplorer view modes", () => {
 
     const previewModeToggle = getChromeControl("previewModeToggle");
     expect(previewModeToggle).not.toBeNull();
-    expect(within(previewModeToggle as HTMLElement).getByRole("button", { name: "Preview" })).toBeInTheDocument();
-    expect(within(previewModeToggle as HTMLElement).getByRole("button", { name: "Edit" })).toBeInTheDocument();
-    expect(within(previewModeToggle as HTMLElement).getByRole("button", { name: "Sphere" })).toBeInTheDocument();
-    expect(within(previewModeToggle as HTMLElement).getByRole("button", { name: "Fullscreen" })).toBeInTheDocument();
-    expect(within(previewModeToggle as HTMLElement).getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(
+      within(previewModeToggle as HTMLElement).getByRole("button", {
+        name: "Preview",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(previewModeToggle as HTMLElement).getByRole("button", {
+        name: "Edit",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(previewModeToggle as HTMLElement).getByRole("button", {
+        name: "Sphere",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(previewModeToggle as HTMLElement).getByRole("button", {
+        name: "Fullscreen",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(previewModeToggle as HTMLElement).getByRole("button", {
+        name: "Save",
+      }),
+    ).toBeDisabled();
   });
 
   it("remembers shader stage selection per file and enables save only after dirty edits", async () => {
@@ -1652,10 +1749,14 @@ describe("FileExplorer view modes", () => {
       }),
     );
     await waitFor(() => {
-      expect(shaderWorkbenchMockState.lastSelectionLabel).toBe("fragment:shade");
+      expect(shaderWorkbenchMockState.lastSelectionLabel).toBe(
+        "fragment:shade",
+      );
     });
 
-    const previewModeToggle = getChromeControl("previewModeToggle") as HTMLElement;
+    const previewModeToggle = getChromeControl(
+      "previewModeToggle",
+    ) as HTMLElement;
     const saveButton = within(previewModeToggle).getByRole("button", {
       name: "Save",
     });
@@ -1687,7 +1788,9 @@ describe("FileExplorer view modes", () => {
 
     fireEvent.click(screen.getByText("aaa_surface.wgsl"));
     await waitFor(() => {
-      expect(shaderWorkbenchMockState.lastSelectionLabel).toBe("fragment:shade");
+      expect(shaderWorkbenchMockState.lastSelectionLabel).toBe(
+        "fragment:shade",
+      );
     });
   });
 
@@ -1719,16 +1822,20 @@ describe("FileExplorer view modes", () => {
       throw new Error("Missing default invoke mock implementation");
     }
 
-    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
-      const payload = args as { path?: string; showHidden?: boolean } | undefined;
-      if (
-        (command === "fs_list_dir" || command === "fs_list_dir_uncached") &&
-        payload?.path === `${REPO_ROOT}\\alpha`
-      ) {
-        return folderEntries;
-      }
-      return baseInvokeImplementation(command, args as never);
-    });
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        const payload = args as
+          | { path?: string; showHidden?: boolean }
+          | undefined;
+        if (
+          (command === "fs_list_dir" || command === "fs_list_dir_uncached") &&
+          payload?.path === `${REPO_ROOT}\\alpha`
+        ) {
+          return folderEntries;
+        }
+        return baseInvokeImplementation(command, args as never);
+      },
+    );
 
     renderExplorer();
     await screen.findByText("alpha");
@@ -1738,7 +1845,9 @@ describe("FileExplorer view modes", () => {
     expect(await screen.findByText("Folder Contents")).toBeInTheDocument();
     expect(await screen.findByText("shots")).toBeInTheDocument();
     expect(await screen.findByText("readme.md")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /copy path/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /copy path/i }),
+    ).toBeInTheDocument();
   });
 
   it("lets folder preview rows drive explorer navigation and file opening", async () => {
@@ -1783,21 +1892,26 @@ describe("FileExplorer view modes", () => {
       throw new Error("Missing default invoke mock implementation");
     }
 
-    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
-      const payload = args as { path?: string } | undefined;
-      if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
-        if (payload?.path === alphaPath) {
-          return alphaEntries;
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        const payload = args as { path?: string } | undefined;
+        if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+          if (payload?.path === alphaPath) {
+            return alphaEntries;
+          }
+          if (payload?.path === shotsPath) {
+            return shotsEntries;
+          }
         }
-        if (payload?.path === shotsPath) {
-          return shotsEntries;
+        if (
+          command === "fs_read_text_file" &&
+          payload?.path === `${shotsPath}\\take01.txt`
+        ) {
+          return "hello from nested preview";
         }
-      }
-      if (command === "fs_read_text_file" && payload?.path === `${shotsPath}\\take01.txt`) {
-        return "hello from nested preview";
-      }
-      return baseInvokeImplementation(command, args as never);
-    });
+        return baseInvokeImplementation(command, args as never);
+      },
+    );
 
     renderExplorer();
     await screen.findByText("alpha");
@@ -1805,7 +1919,9 @@ describe("FileExplorer view modes", () => {
     fireEvent.click(screen.getByText("alpha"));
 
     const previewPane = getPreviewPane();
-    await within(previewPane).findByRole("button", { name: /open folder shots/i });
+    await within(previewPane).findByRole("button", {
+      name: /open folder shots/i,
+    });
 
     fireEvent.click(
       within(previewPane).getByRole("button", { name: /open folder shots/i }),
@@ -1843,28 +1959,30 @@ describe("FileExplorer view modes", () => {
       throw new Error("Missing default invoke mock implementation");
     }
 
-    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
-      if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
-        return [...ENTRIES, pdfEntry];
-      }
-      if (command === "pdf_open_preview_document") {
-        return {
-          sessionId: "pdf-session-1",
-          path: pdfEntry.path,
-          name: pdfEntry.name,
-          pageCount: 2,
-          pages: [
-            { pageIndex: 0, widthPoints: 612, heightPoints: 792 },
-            { pageIndex: 1, widthPoints: 612, heightPoints: 792 },
-          ],
-          formFields: [],
-        };
-      }
-      if (command === "pdf_close_preview_document") {
-        return null;
-      }
-      return baseInvokeImplementation(command, args as never);
-    });
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+          return [...ENTRIES, pdfEntry];
+        }
+        if (command === "pdf_open_preview_document") {
+          return {
+            sessionId: "pdf-session-1",
+            path: pdfEntry.path,
+            name: pdfEntry.name,
+            pageCount: 2,
+            pages: [
+              { pageIndex: 0, widthPoints: 612, heightPoints: 792 },
+              { pageIndex: 1, widthPoints: 612, heightPoints: 792 },
+            ],
+            formFields: [],
+          };
+        }
+        if (command === "pdf_close_preview_document") {
+          return null;
+        }
+        return baseInvokeImplementation(command, args as never);
+      },
+    );
 
     renderExplorer();
     await screen.findByText("forms.pdf");
@@ -1889,7 +2007,9 @@ describe("FileExplorer view modes", () => {
     expect(
       vi
         .mocked(invoke)
-        .mock.calls.some(([command]) => command === "pdf_open_preview_document"),
+        .mock.calls.some(
+          ([command]) => command === "pdf_open_preview_document",
+        ),
     ).toBe(true);
   });
 

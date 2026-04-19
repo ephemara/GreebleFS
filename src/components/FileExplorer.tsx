@@ -916,114 +916,265 @@ function shouldIgnoreExplorerDragLeave(event: React.DragEvent): boolean {
 const EXT_TYPE_LABEL: Record<string, string> = {
   // Rust / Systems
   rs: "Rust",
-  c: "C", h: "C Header",
-  cpp: "C++", cc: "C++", cxx: "C++", hpp: "C++ Header", hxx: "C++ Header",
-  zig: "Zig", d: "D", nim: "Nim", odin: "Odin", v: "V",
+  c: "C",
+  h: "C Header",
+  cpp: "C++",
+  cc: "C++",
+  cxx: "C++",
+  hpp: "C++ Header",
+  hxx: "C++ Header",
+  zig: "Zig",
+  d: "D",
+  nim: "Nim",
+  odin: "Odin",
+  v: "V",
   // JVM / managed
-  java: "Java", kt: "Kotlin", kts: "Kotlin",
-  cs: "C#", fs: "F#", fsi: "F#", fsx: "F# Script", vb: "VB.NET",
-  scala: "Scala", groovy: "Groovy",
-  clj: "Clojure", cljs: "ClojureScript", cljc: "Clojure",
+  java: "Java",
+  kt: "Kotlin",
+  kts: "Kotlin",
+  cs: "C#",
+  fs: "F#",
+  fsi: "F#",
+  fsx: "F# Script",
+  vb: "VB.NET",
+  scala: "Scala",
+  groovy: "Groovy",
+  clj: "Clojure",
+  cljs: "ClojureScript",
+  cljc: "Clojure",
   // Scripting
-  py: "Python", pyw: "Python",
-  rb: "Ruby", rbw: "Ruby",
+  py: "Python",
+  pyw: "Python",
+  rb: "Ruby",
+  rbw: "Ruby",
   php: "PHP",
-  pl: "Perl", pm: "Perl",
-  lua: "Lua", tcl: "Tcl",
+  pl: "Perl",
+  pm: "Perl",
+  lua: "Lua",
+  tcl: "Tcl",
   r: "R",
   // TypeScript / JavaScript
-  ts: "TypeScript", tsx: "TypeScript", mts: "TypeScript", cts: "TypeScript",
-  js: "JavaScript", jsx: "JavaScript", mjs: "JavaScript", cjs: "JavaScript",
+  ts: "TypeScript",
+  tsx: "TypeScript",
+  mts: "TypeScript",
+  cts: "TypeScript",
+  js: "JavaScript",
+  jsx: "JavaScript",
+  mjs: "JavaScript",
+  cjs: "JavaScript",
   // Web
-  vue: "Vue", svelte: "Svelte", astro: "Astro",
-  html: "HTML", htm: "HTML",
-  css: "CSS", scss: "SCSS", sass: "Sass", less: "Less",
+  vue: "Vue",
+  svelte: "Svelte",
+  astro: "Astro",
+  html: "HTML",
+  htm: "HTML",
+  css: "CSS",
+  scss: "SCSS",
+  sass: "Sass",
+  less: "Less",
   // Shell
-  sh: "Shell", bash: "Shell", zsh: "Shell", fish: "Shell", ksh: "Shell",
-  ps1: "PowerShell", bat: "Batch", cmd: "Command",
+  sh: "Shell",
+  bash: "Shell",
+  zsh: "Shell",
+  fish: "Shell",
+  ksh: "Shell",
+  ps1: "PowerShell",
+  bat: "Batch",
+  cmd: "Command",
   // Functional
-  hs: "Haskell", lhs: "Haskell",
-  ml: "OCaml", mli: "OCaml",
-  ex: "Elixir", exs: "Elixir",
-  erl: "Erlang", hrl: "Erlang",
-  elm: "Elm", purs: "PureScript",
-  lisp: "Lisp", el: "Emacs Lisp", scm: "Scheme", rkt: "Racket",
-  f: "Fortran", f90: "Fortran", f95: "Fortran",
+  hs: "Haskell",
+  lhs: "Haskell",
+  ml: "OCaml",
+  mli: "OCaml",
+  ex: "Elixir",
+  exs: "Elixir",
+  erl: "Erlang",
+  hrl: "Erlang",
+  elm: "Elm",
+  purs: "PureScript",
+  lisp: "Lisp",
+  el: "Emacs Lisp",
+  scm: "Scheme",
+  rkt: "Racket",
+  f: "Fortran",
+  f90: "Fortran",
+  f95: "Fortran",
   // Go / Swift / Dart
-  go: "Go", swift: "Swift", dart: "Dart",
+  go: "Go",
+  swift: "Swift",
+  dart: "Dart",
   // Shader
-  glsl: "GLSL", hlsl: "HLSL", wgsl: "WGSL",
-  vert: "Shader", frag: "Shader", comp: "Compute Shader", metal: "Metal",
+  glsl: "GLSL",
+  hlsl: "HLSL",
+  wgsl: "WGSL",
+  vert: "Shader",
+  frag: "Shader",
+  comp: "Compute Shader",
+  metal: "Metal",
   // Data / config
-  json: "JSON", jsonc: "JSON", json5: "JSON5", jsonl: "JSON Lines",
-  toml: "TOML", yaml: "YAML", yml: "YAML",
-  xml: "XML", ini: "Config", cfg: "Config", conf: "Config",
-  env: "Env", properties: "Properties",
-  hcl: "HCL", tf: "Terraform", tfvars: "Terraform",
-  nix: "Nix", dhall: "Dhall", ron: "RON", kdl: "KDL", pkl: "Pkl",
-  graphql: "GraphQL", gql: "GraphQL",
-  proto: "Protobuf", fbs: "FlatBuffers", capnp: "Cap'n Proto",
+  json: "JSON",
+  jsonc: "JSON",
+  json5: "JSON5",
+  jsonl: "JSON Lines",
+  toml: "TOML",
+  yaml: "YAML",
+  yml: "YAML",
+  xml: "XML",
+  ini: "Config",
+  cfg: "Config",
+  conf: "Config",
+  env: "Env",
+  properties: "Properties",
+  hcl: "HCL",
+  tf: "Terraform",
+  tfvars: "Terraform",
+  nix: "Nix",
+  dhall: "Dhall",
+  ron: "RON",
+  kdl: "KDL",
+  pkl: "Pkl",
+  graphql: "GraphQL",
+  gql: "GraphQL",
+  proto: "Protobuf",
+  fbs: "FlatBuffers",
+  capnp: "Cap'n Proto",
   // Docs / markup
-  md: "Markdown", mdx: "MDX", markdown: "Markdown",
-  rst: "reStructuredText", adoc: "AsciiDoc",
-  tex: "LaTeX", latex: "LaTeX",
-  txt: "Text", log: "Log",
+  md: "Markdown",
+  mdx: "MDX",
+  markdown: "Markdown",
+  rst: "reStructuredText",
+  adoc: "AsciiDoc",
+  tex: "LaTeX",
+  latex: "LaTeX",
+  txt: "Text",
+  log: "Log",
   // DB
-  sql: "SQL", psql: "PostgreSQL", cql: "CQL",
-  db: "Database", sqlite: "SQLite", sqlite3: "SQLite",
+  sql: "SQL",
+  psql: "PostgreSQL",
+  cql: "CQL",
+  db: "Database",
+  sqlite: "SQLite",
+  sqlite3: "SQLite",
   // PDF
   pdf: "PDF",
   // Spreadsheet
-  csv: "CSV", tsv: "TSV",
-  xls: "Spreadsheet", xlsx: "Spreadsheet", xlsm: "Spreadsheet",
-  xlsb: "Spreadsheet", ods: "Spreadsheet",
+  csv: "CSV",
+  tsv: "TSV",
+  xls: "Spreadsheet",
+  xlsx: "Spreadsheet",
+  xlsm: "Spreadsheet",
+  xlsb: "Spreadsheet",
+  ods: "Spreadsheet",
   // Word processor / rich text
-  docx: "Word Document", doc: "Word Document",
-  rtf: "Rich Text", odt: "OpenDocument Text",
-  pptx: "PowerPoint", ppt: "PowerPoint", odp: "OpenDocument Presentation",
+  docx: "Word Document",
+  doc: "Word Document",
+  rtf: "Rich Text",
+  odt: "OpenDocument Text",
+  pptx: "PowerPoint",
+  ppt: "PowerPoint",
+  odp: "OpenDocument Presentation",
   epub: "E-Book",
   // Font
-  ttf: "Font", otf: "Font", woff: "Font", woff2: "Font",
+  ttf: "Font",
+  otf: "Font",
+  woff: "Font",
+  woff2: "Font",
   // 3D
-  fbx: "3D Model", obj: "3D Model", glb: "3D Model", gltf: "3D Model", stl: "3D Model",
-  uasset: "UE Asset", uproject: "UE Project",
+  fbx: "3D Model",
+  obj: "3D Model",
+  glb: "3D Model",
+  gltf: "3D Model",
+  stl: "3D Model",
+  uasset: "UE Asset",
+  uproject: "UE Project",
   // Image
-  jpg: "Image", jpeg: "Image", png: "Image", gif: "Image",
-  webp: "Image", bmp: "Image", ico: "Image",
-  svg: "Vector", tiff: "Image", tif: "Image", avif: "Image",
-  heic: "Image", heif: "Image", jxl: "Image",
-  psd: "Photoshop", ai: "Illustrator", xcf: "GIMP",
+  jpg: "Image",
+  jpeg: "Image",
+  png: "Image",
+  gif: "Image",
+  webp: "Image",
+  bmp: "Image",
+  ico: "Image",
+  svg: "Vector",
+  tiff: "Image",
+  tif: "Image",
+  avif: "Image",
+  heic: "Image",
+  heif: "Image",
+  jxl: "Image",
+  psd: "Photoshop",
+  ai: "Illustrator",
+  xcf: "GIMP",
   // Video
-  mp4: "Video", mkv: "Video", avi: "Video", mov: "Video",
-  wmv: "Video", flv: "Video", webm: "Video",
+  mp4: "Video",
+  mkv: "Video",
+  avi: "Video",
+  mov: "Video",
+  wmv: "Video",
+  flv: "Video",
+  webm: "Video",
   // Audio
-  mp3: "Audio", wav: "Audio", flac: "Audio", ogg: "Audio",
-  m4a: "Audio", aac: "Audio", opus: "Audio", aiff: "Audio",
+  mp3: "Audio",
+  wav: "Audio",
+  flac: "Audio",
+  ogg: "Audio",
+  m4a: "Audio",
+  aac: "Audio",
+  opus: "Audio",
+  aiff: "Audio",
   // Archive
-  zip: "Archive", rar: "Archive", "7z": "Archive",
-  tar: "Archive", gz: "Archive", bz2: "Archive", xz: "Archive",
-  zst: "Archive", lz4: "Archive",
-  deb: "Debian Package", rpm: "RPM Package",
-  dmg: "Disk Image", iso: "Disk Image",
+  zip: "Archive",
+  rar: "Archive",
+  "7z": "Archive",
+  tar: "Archive",
+  gz: "Archive",
+  bz2: "Archive",
+  xz: "Archive",
+  zst: "Archive",
+  lz4: "Archive",
+  deb: "Debian Package",
+  rpm: "RPM Package",
+  dmg: "Disk Image",
+  iso: "Disk Image",
   // Binary
-  exe: "Executable", msi: "Installer",
-  dll: "Library", so: "Library", dylib: "Library",
+  exe: "Executable",
+  msi: "Installer",
+  dll: "Library",
+  so: "Library",
+  dylib: "Library",
   // Blockchain / emerging
-  sol: "Solidity", move: "Move", cairo: "Cairo", vyper: "Vyper",
+  sol: "Solidity",
+  move: "Move",
+  cairo: "Cairo",
+  vyper: "Vyper",
   // Subtitles
-  srt: "Subtitles", vtt: "WebVTT", ass: "Subtitles", ssa: "Subtitles",
+  srt: "Subtitles",
+  vtt: "WebVTT",
+  ass: "Subtitles",
+  ssa: "Subtitles",
   // Misc
   lock: "Lockfile",
-  diff: "Diff", patch: "Patch",
-  pem: "Certificate", crt: "Certificate", cer: "Certificate",
-  pub: "Public Key", asc: "PGP Key",
+  diff: "Diff",
+  patch: "Patch",
+  pem: "Certificate",
+  crt: "Certificate",
+  cer: "Certificate",
+  pub: "Public Key",
+  asc: "PGP Key",
   wat: "WebAssembly",
-  jl: "Julia", coffee: "CoffeeScript", cr: "Crystal",
+  jl: "Julia",
+  coffee: "CoffeeScript",
+  cr: "Crystal",
   // GIS
-  geojson: "GeoJSON", gpx: "GPS Track", kml: "KML", kmz: "KMZ",
-  shp: "Shapefile", prj: "Projection",
+  geojson: "GeoJSON",
+  gpx: "GPS Track",
+  kml: "KML",
+  kmz: "KMZ",
+  shp: "Shapefile",
+  prj: "Projection",
   // Project-specific
-  kain: "Kain", ink: "Ink",
+  kain: "Kain",
+  ink: "Ink",
 };
 
 const FILENAME_TYPE_LABEL: Record<string, string> = {
@@ -1174,12 +1325,22 @@ function renderExplorerDragPreviewCanvas(
   previewContext.textBaseline = "middle";
 
   // Read drag preview theme tokens from CSS vars at paint time
-  const dragPreviewStyles = typeof document !== "undefined"
-    ? getComputedStyle(document.documentElement)
-    : null;
-  const dragPreviewBg = dragPreviewStyles?.getPropertyValue("--overlay-explorer-drag-preview-bg").trim() || "rgba(18,18,24,0.96)";
-  const dragPreviewBorder = dragPreviewStyles?.getPropertyValue("--overlay-explorer-drag-preview-border").trim() || "rgba(255,255,255,0.14)";
-  const dragPreviewDot = dragPreviewStyles?.getPropertyValue("--overlay-explorer-drag-preview-dot").trim() || "#5aa2ff";
+  const dragPreviewStyles =
+    typeof document !== "undefined"
+      ? getComputedStyle(document.documentElement)
+      : null;
+  const dragPreviewBg =
+    dragPreviewStyles
+      ?.getPropertyValue("--overlay-explorer-drag-preview-bg")
+      .trim() || "rgba(18,18,24,0.96)";
+  const dragPreviewBorder =
+    dragPreviewStyles
+      ?.getPropertyValue("--overlay-explorer-drag-preview-border")
+      .trim() || "rgba(255,255,255,0.14)";
+  const dragPreviewDot =
+    dragPreviewStyles
+      ?.getPropertyValue("--overlay-explorer-drag-preview-dot")
+      .trim() || "#5aa2ff";
 
   previewContext.shadowColor = "rgba(0, 0, 0, 0.35)";
   previewContext.shadowBlur = 12;
@@ -2842,7 +3003,12 @@ function PreviewPanel({
     setPdfWorkbenchController(null);
     setPdfWorkbenchChromeState(null);
     setPdfPageInputValue("1");
-  }, [onPdfChromeStateChange, onRegisterCloseGuard, preview.path, preview.type]);
+  }, [
+    onPdfChromeStateChange,
+    onRegisterCloseGuard,
+    preview.path,
+    preview.type,
+  ]);
 
   useEffect(() => {
     if (preview.type !== "pdf" || !pdfWorkbenchChromeState) {
@@ -2883,25 +3049,25 @@ function PreviewPanel({
             : preview.isDirty
               ? "Unsaved"
               : "Saved"
-      : preview.type === "pdf"
-        ? pdfWorkbenchChromeState?.isSaving
-          ? "Saving?"
-          : pdfWorkbenchChromeState?.error
-            ? "Error"
-            : pdfWorkbenchChromeState?.isDirty
-              ? "Unsaved"
-              : "Saved"
-      : isSpreadsheetPreview
-        ? spreadsheetWorkbenchStatus
-          ? spreadsheetWorkbenchStatus.isSaving
+        : preview.type === "pdf"
+          ? pdfWorkbenchChromeState?.isSaving
             ? "Saving?"
-            : spreadsheetWorkbenchStatus.isDirty
-              ? "Unsaved"
-              : "Saved"
-          : null
-      : preview.type === "fallback"
-        ? "Unavailable"
-        : null;
+            : pdfWorkbenchChromeState?.error
+              ? "Error"
+              : pdfWorkbenchChromeState?.isDirty
+                ? "Unsaved"
+                : "Saved"
+          : isSpreadsheetPreview
+            ? spreadsheetWorkbenchStatus
+              ? spreadsheetWorkbenchStatus.isSaving
+                ? "Saving?"
+                : spreadsheetWorkbenchStatus.isDirty
+                  ? "Unsaved"
+                  : "Saved"
+              : null
+            : preview.type === "fallback"
+              ? "Unavailable"
+              : null;
   const previewStateColor =
     preview.type === "text"
       ? preview.isSaving
@@ -2915,19 +3081,19 @@ function PreviewPanel({
           : preview.error || preview.isDirty
             ? EXP.red
             : EXP.green
-      : preview.type === "pdf"
-        ? pdfWorkbenchChromeState?.isSaving
-          ? EXP.yellow
-          : pdfWorkbenchChromeState?.error || pdfWorkbenchChromeState?.isDirty
-            ? EXP.red
-            : EXP.green
-      : isSpreadsheetPreview
-        ? spreadsheetWorkbenchStatus?.isSaving
-          ? EXP.yellow
-          : spreadsheetWorkbenchStatus?.isDirty
-            ? EXP.red
-            : EXP.green
-        : EXP.green;
+        : preview.type === "pdf"
+          ? pdfWorkbenchChromeState?.isSaving
+            ? EXP.yellow
+            : pdfWorkbenchChromeState?.error || pdfWorkbenchChromeState?.isDirty
+              ? EXP.red
+              : EXP.green
+          : isSpreadsheetPreview
+            ? spreadsheetWorkbenchStatus?.isSaving
+              ? EXP.yellow
+              : spreadsheetWorkbenchStatus?.isDirty
+                ? EXP.red
+                : EXP.green
+            : EXP.green;
   const copyPathLabel = copiedPath === preview.path ? "Copied" : "Copy Path";
   const previewSplitToggleTitle =
     presentationMode === "pane"
@@ -2968,11 +3134,7 @@ function PreviewPanel({
       padding: "4px 8px",
       fontSize: 10,
       fontWeight: 700,
-      color: disabled
-        ? EXP.muted2
-        : active
-          ? EXP.text
-          : EXP.muted,
+      color: disabled ? EXP.muted2 : active ? EXP.text : EXP.muted,
       background: active
         ? "var(--overlay-explorer-chip-active-bg)"
         : "transparent",
@@ -3006,7 +3168,10 @@ function PreviewPanel({
       return;
     }
 
-    const clampedPageNumber = Math.max(1, Math.min(pdfPageCount, parsedPageNumber));
+    const clampedPageNumber = Math.max(
+      1,
+      Math.min(pdfPageCount, parsedPageNumber),
+    );
     pdfWorkbenchController.goToPage(clampedPageNumber - 1);
     setPdfPageInputValue(String(clampedPageNumber));
   }, [
@@ -3167,8 +3332,7 @@ function PreviewPanel({
         id: "previewModeToggle",
         label: "Preview Mode Toggle",
         surfaces: ["previewHeader"],
-        isVisible: () =>
-          !isPreviewTerminalMode && supportsPreviewModeToggle,
+        isVisible: () => !isPreviewTerminalMode && supportsPreviewModeToggle,
         render: () => {
           if (preview.type === "shader") {
             const canSave = !preview.isReadOnly;
@@ -3377,7 +3541,10 @@ function PreviewPanel({
                     }
                   }}
                   disabled={!hasPdfController}
-                  style={previewChipButtonStyle(!pdfIsEditMode, !hasPdfController)}
+                  style={previewChipButtonStyle(
+                    !pdfIsEditMode,
+                    !hasPdfController,
+                  )}
                 >
                   Preview
                 </button>
@@ -3389,7 +3556,10 @@ function PreviewPanel({
                     }
                   }}
                   disabled={!hasPdfController}
-                  style={previewChipButtonStyle(pdfIsEditMode, !hasPdfController)}
+                  style={previewChipButtonStyle(
+                    pdfIsEditMode,
+                    !hasPdfController,
+                  )}
                 >
                   Edit
                 </button>
@@ -3671,25 +3841,34 @@ function PreviewPanel({
         : {
             ...previewShellBaseStyle,
             margin: "var(--overlay-explorer-chrome-inset)",
-            ...(placement === "leading" ? { marginRight: 0 } : { marginLeft: 0 }),
+            ...(placement === "leading"
+              ? { marginRight: 0 }
+              : { marginLeft: 0 }),
             border: "1px solid var(--overlay-explorer-preview-border)",
             borderRadius: "var(--overlay-explorer-panel-radius)",
             boxShadow: "var(--overlay-explorer-toolbar-shadow)",
             ...previewGlassBlurStyle,
           };
   const getPreviewSurfaceLayerStyle = useCallback(
-    (surfaceMode: PreviewSurfaceMode): CSSProperties => ({
-      position: "absolute",
-      inset: 0,
-      overflow: "hidden",
-      opacity: previewSurfaceMode === surfaceMode ? 1 : 0,
-      visibility:
-        previewSurfaceMode === surfaceMode ? "visible" : "hidden",
-      pointerEvents:
-        previewSurfaceMode === surfaceMode ? "auto" : "none",
-      transition: "opacity 140ms ease",
-    }),
-    [previewSurfaceMode],
+    (surfaceMode: PreviewSurfaceMode): CSSProperties => {
+      const isContentSurface = surfaceMode === "content";
+      const isVisible = isContentSurface
+        ? preview.type === "none" || previewSurfaceMode === surfaceMode
+        : preview.type !== "none" &&
+          previewTerminalMounted &&
+          previewSurfaceMode === surfaceMode;
+
+      return {
+        position: "absolute",
+        inset: 0,
+        overflow: "hidden",
+        opacity: isVisible ? 1 : 0,
+        visibility: isVisible ? "visible" : "hidden",
+        pointerEvents: isVisible ? "auto" : "none",
+        transition: "opacity 140ms ease",
+      };
+    },
+    [preview.type, previewSurfaceMode, previewTerminalMounted],
   );
 
   return (
@@ -3744,198 +3923,199 @@ function PreviewPanel({
           data-overlay-explorer-preview-surface="content"
           style={getPreviewSurfaceLayerStyle("content")}
         >
-        {preview.type === "image" && preview.content && (
-          <ExplorerImageEditor
-            imagePath={preview.path}
-            imageName={preview.name}
-            imageSource={preview.content}
-            onSaved={onRefreshPreviewEntry}
-          />
-        )}
-        {preview.type === "audio" && (
-          <ExplorerAudioWorkbench
-            audioPath={preview.path}
-            audioName={preview.name}
-            audioExtension={preview.extension}
-            audioSize={preview.size}
-            onExported={onRefreshPreviewEntry}
-          />
-        )}
-        {preview.type === "video" && (
-          <ExplorerVideoEditor
-            videoPath={preview.path}
-            videoName={preview.name}
-            videoSource={preview.source}
-            videoExtension={preview.extension}
-            videoMimeType={preview.mimeType}
-            videoSize={preview.size}
-            onExported={onRefreshPreviewEntry}
-          />
-        )}
-        {preview.type === "archive" && (
-          <ExplorerArchivePreview
-            archivePath={preview.path}
-            archiveName={preview.name}
-            archiveSize={preview.size}
-            descriptor={preview.descriptor}
-            onExtract={onExtractArchive}
-          />
-        )}
-        {preview.type === "folder" && (
-          <ExplorerFolderPreview
-            folderPath={preview.path}
-            folderName={preview.name}
-            showHiddenFiles={showHiddenFiles}
-            onOpenEntry={onOpenFolderPreviewEntry}
-          />
-        )}
-        {preview.type === "font" && (
-          <ExplorerFontPreview
-            fontPath={preview.path}
-            fontName={preview.name}
-            fontSource={preview.source}
-            fontExtension={preview.extension}
-          />
-        )}
-        {preview.type === "pdf" && (
-          <ExplorerPdfWorkbench
-            document={preview.document}
-            onSaved={handlePdfWorkbenchSaved}
-            onDocumentChange={handlePdfWorkbenchDocumentChange}
-            onChromeStateChange={handlePdfWorkbenchChromeStateChange}
-            onControllerChange={handlePdfWorkbenchControllerChange}
-            onRegisterCloseGuard={onRegisterCloseGuard}
-          />
-        )}
-        {preview.type === "spreadsheet" && (
-          <ExplorerSpreadsheetWorkbench
-            path={preview.path}
-            name={preview.name}
-            sourceExtension={preview.extension}
-            fileKind={preview.fileKind}
-            onRefreshPreviewEntry={onRefreshPreviewEntry}
-            onRegisterCloseGuard={onRegisterCloseGuard}
-            onStatusChange={setSpreadsheetWorkbenchStatus}
-          />
-        )}
-        {preview.type === "sqlite" && (
-          <ExplorerSqlitePreview
-            dbPath={preview.path}
-            dbName={preview.name}
-          />
-        )}
-        {preview.type === "docx" && (
-          <ExplorerDocxWorkbench
-            path={preview.path}
-            name={preview.name}
-            extension={preview.extension}
-            onRefreshPreviewEntry={onRefreshPreviewEntry}
-          />
-        )}
-        {preview.type === "shader" && (
-          <ExplorerShaderWorkbench
-            path={preview.path}
-            name={preview.name}
-            format={preview.format}
-            editableSource={preview.editableSource}
-            inspectionSource={preview.inspectionSource}
-            isReadOnly={preview.isReadOnly}
-            normalizedWgsl={preview.normalizedWgsl}
-            diagnostics={preview.diagnostics}
-            entryPoints={preview.entryPoints}
-            selectedScene={preview.selectedScene}
-            selectedStage={preview.selectedStage}
-            selectedEntryPoint={preview.selectedEntryPoint}
-            isDirty={preview.isDirty}
-            isSaving={preview.isSaving}
-            error={preview.error}
-            viewMode={viewMode}
-            onSourceChange={onShaderSourceChange}
-            onSelectionChange={onShaderSelectionChange}
-            onCompileResult={onShaderCompileResult}
-            onRegisterCloseGuard={onRegisterCloseGuard}
-          />
-        )}
-        {preview.type === "text" &&
-          viewMode === "preview" &&
-          supportsRenderedPreview && (
+          {preview.type === "none" && <PreviewIdleState />}
+          {preview.type === "image" && preview.content && (
+            <ExplorerImageEditor
+              imagePath={preview.path}
+              imageName={preview.name}
+              imageSource={preview.content}
+              onSaved={onRefreshPreviewEntry}
+            />
+          )}
+          {preview.type === "audio" && (
+            <ExplorerAudioWorkbench
+              audioPath={preview.path}
+              audioName={preview.name}
+              audioExtension={preview.extension}
+              audioSize={preview.size}
+              onExported={onRefreshPreviewEntry}
+            />
+          )}
+          {preview.type === "video" && (
+            <ExplorerVideoEditor
+              videoPath={preview.path}
+              videoName={preview.name}
+              videoSource={preview.source}
+              videoExtension={preview.extension}
+              videoMimeType={preview.mimeType}
+              videoSize={preview.size}
+              onExported={onRefreshPreviewEntry}
+            />
+          )}
+          {preview.type === "archive" && (
+            <ExplorerArchivePreview
+              archivePath={preview.path}
+              archiveName={preview.name}
+              archiveSize={preview.size}
+              descriptor={preview.descriptor}
+              onExtract={onExtractArchive}
+            />
+          )}
+          {preview.type === "folder" && (
+            <ExplorerFolderPreview
+              folderPath={preview.path}
+              folderName={preview.name}
+              showHiddenFiles={showHiddenFiles}
+              onOpenEntry={onOpenFolderPreviewEntry}
+            />
+          )}
+          {preview.type === "font" && (
+            <ExplorerFontPreview
+              fontPath={preview.path}
+              fontName={preview.name}
+              fontSource={preview.source}
+              fontExtension={preview.extension}
+            />
+          )}
+          {preview.type === "pdf" && (
+            <ExplorerPdfWorkbench
+              document={preview.document}
+              onSaved={handlePdfWorkbenchSaved}
+              onDocumentChange={handlePdfWorkbenchDocumentChange}
+              onChromeStateChange={handlePdfWorkbenchChromeStateChange}
+              onControllerChange={handlePdfWorkbenchControllerChange}
+              onRegisterCloseGuard={onRegisterCloseGuard}
+            />
+          )}
+          {preview.type === "spreadsheet" && (
+            <ExplorerSpreadsheetWorkbench
+              path={preview.path}
+              name={preview.name}
+              sourceExtension={preview.extension}
+              fileKind={preview.fileKind}
+              onRefreshPreviewEntry={onRefreshPreviewEntry}
+              onRegisterCloseGuard={onRegisterCloseGuard}
+              onStatusChange={setSpreadsheetWorkbenchStatus}
+            />
+          )}
+          {preview.type === "sqlite" && (
+            <ExplorerSqlitePreview
+              dbPath={preview.path}
+              dbName={preview.name}
+            />
+          )}
+          {preview.type === "docx" && (
+            <ExplorerDocxWorkbench
+              path={preview.path}
+              name={preview.name}
+              extension={preview.extension}
+              onRefreshPreviewEntry={onRefreshPreviewEntry}
+            />
+          )}
+          {preview.type === "shader" && (
+            <ExplorerShaderWorkbench
+              path={preview.path}
+              name={preview.name}
+              format={preview.format}
+              editableSource={preview.editableSource}
+              inspectionSource={preview.inspectionSource}
+              isReadOnly={preview.isReadOnly}
+              normalizedWgsl={preview.normalizedWgsl}
+              diagnostics={preview.diagnostics}
+              entryPoints={preview.entryPoints}
+              selectedScene={preview.selectedScene}
+              selectedStage={preview.selectedStage}
+              selectedEntryPoint={preview.selectedEntryPoint}
+              isDirty={preview.isDirty}
+              isSaving={preview.isSaving}
+              error={preview.error}
+              viewMode={viewMode}
+              onSourceChange={onShaderSourceChange}
+              onSelectionChange={onShaderSelectionChange}
+              onCompileResult={onShaderCompileResult}
+              onRegisterCloseGuard={onRegisterCloseGuard}
+            />
+          )}
+          {preview.type === "text" &&
+            viewMode === "preview" &&
+            supportsRenderedPreview && (
+              <Suspense
+                fallback={
+                  <DocumentPreviewFallback label="Loading rendered preview…" />
+                }
+              >
+                <LazyTextDocumentPreview
+                  kind={preview.renderKind}
+                  content={preview.content}
+                  sourcePath={preview.path}
+                />
+              </Suspense>
+            )}
+          {preview.type === "text" &&
+            (!supportsRenderedPreview || viewMode === "edit") && (
+              <SearchAwareCodeView
+                value={preview.content || ""}
+                language={preview.language || "plaintext"}
+                readOnly={false}
+                focusTarget={preview.focusTarget}
+                onChange={(value) => onTextChange(preview.path, value)}
+                options={{
+                  minimap: { enabled: false },
+                  scrollBeyondLastLine: false,
+                  fontSize: 12,
+                  lineNumbers: "on",
+                  wordWrap: "on",
+                  padding: { top: 8 },
+                  overviewRulerLanes: 0,
+                  lineDecorationsWidth: 0,
+                  lineNumbersMinChars: 3,
+                  folding: false,
+                  glyphMargin: false,
+                }}
+              />
+            )}
+          {preview.type === "model3d" && (
             <Suspense
               fallback={
-                <DocumentPreviewFallback label="Loading rendered preview…" />
+                <ModelPreviewFallback
+                  entryName={preview.name}
+                  format={preview.format}
+                />
               }
             >
-              <LazyTextDocumentPreview
-                kind={preview.renderKind}
-                content={preview.content}
+              <LazyModelPreview
+                entryName={preview.name}
+                format={preview.format}
                 sourcePath={preview.path}
+                sourceBytes={preview.size}
               />
             </Suspense>
           )}
-        {preview.type === "text" &&
-          (!supportsRenderedPreview || viewMode === "edit") && (
-            <SearchAwareCodeView
-              value={preview.content || ""}
-              language={preview.language || "plaintext"}
-              readOnly={false}
-              focusTarget={preview.focusTarget}
-              onChange={(value) => onTextChange(preview.path, value)}
-              options={{
-                minimap: { enabled: false },
-                scrollBeyondLastLine: false,
-                fontSize: 12,
-                lineNumbers: "on",
-                wordWrap: "on",
-                padding: { top: 8 },
-                overviewRulerLanes: 0,
-                lineDecorationsWidth: 0,
-                lineNumbersMinChars: 3,
-                folding: false,
-                glyphMargin: false,
+          {preview.type === "fallback" && (
+            <div
+              style={{
+                width: "100%",
+                height: "100%",
+                display: "grid",
+                placeItems: "center",
+                padding: 24,
+                textAlign: "center",
+                color: EXP.muted,
+                background: "var(--overlay-explorer-preview-bg)",
               }}
-            />
-          )}
-        {preview.type === "model3d" && (
-          <Suspense
-            fallback={
-              <ModelPreviewFallback
-                entryName={preview.name}
-                format={preview.format}
-              />
-            }
-          >
-            <LazyModelPreview
-              entryName={preview.name}
-              format={preview.format}
-              sourcePath={preview.path}
-              sourceBytes={preview.size}
-            />
-          </Suspense>
-        )}
-        {preview.type === "fallback" && (
-          <div
-            style={{
-              width: "100%",
-              height: "100%",
-              display: "grid",
-              placeItems: "center",
-              padding: 24,
-              textAlign: "center",
-              color: EXP.muted,
-              background: "var(--overlay-explorer-preview-bg)",
-            }}
-          >
-            <div style={{ display: "grid", gap: 8, maxWidth: 360 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: EXP.text }}>
-                {preview.label}
-              </div>
-              <div style={{ fontSize: 11, lineHeight: 1.5 }}>
-                {preview.detail}
+            >
+              <div style={{ display: "grid", gap: 8, maxWidth: 360 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: EXP.text }}>
+                  {preview.label}
+                </div>
+                <div style={{ fontSize: 11, lineHeight: 1.5 }}>
+                  {preview.detail}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
         </div>
-        {previewTerminalMounted && (
+        {previewTerminalMounted && preview.type !== "none" && (
           <div
             data-overlay-explorer-preview-surface="terminal"
             style={getPreviewSurfaceLayerStyle("terminal")}
@@ -4007,7 +4187,8 @@ function PreviewPanel({
           }}
         >
           <span>
-            {preview.entryPoints.length} entry points · {preview.diagnostics.length} diagnostics
+            {preview.entryPoints.length} entry points ·{" "}
+            {preview.diagnostics.length} diagnostics
             {preview.selectedStage && preview.selectedEntryPoint
               ? ` · ${preview.selectedStage}:${preview.selectedEntryPoint}`
               : ""}
@@ -4055,6 +4236,69 @@ function DocumentPreviewFallback({ label }: { label: string }) {
       }}
     >
       {label}
+    </div>
+  );
+}
+
+function PreviewIdleState() {
+  return (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "grid",
+        placeItems: "center",
+        padding: 24,
+        background: "var(--overlay-explorer-preview-bg)",
+        color: EXP.muted,
+      }}
+    >
+      <div
+        role="status"
+        aria-live="polite"
+        style={{
+          maxWidth: 420,
+          display: "grid",
+          gap: 14,
+          justifyItems: "center",
+          textAlign: "center",
+          padding: "26px 28px",
+          borderRadius: "var(--overlay-explorer-panel-radius)",
+          border: "1px solid var(--overlay-explorer-preview-border)",
+          background: "var(--overlay-bg-scrim)",
+          boxShadow: "var(--overlay-explorer-toolbar-shadow)",
+        }}
+      >
+        <div
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: 999,
+            display: "grid",
+            placeItems: "center",
+            background: "var(--overlay-explorer-chip-bg)",
+            border: "1px solid var(--overlay-explorer-chip-border)",
+            color: EXP.accent,
+          }}
+        >
+          <Eye size={18} />
+        </div>
+        <div style={{ display: "grid", gap: 6 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: EXP.text }}>
+            Preview is standing by
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              lineHeight: 1.5,
+              color: EXP.muted,
+              maxWidth: 320,
+            }}
+          >
+            Select any file or folder to bring it into view here.
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -5129,7 +5373,12 @@ function ExplorerPropertiesDialog({
             </div>
           </div>
           {checksumError && (
-            <div style={{ color: "var(--overlay-explorer-danger-text)", fontSize: 11 }}>
+            <div
+              style={{
+                color: "var(--overlay-explorer-danger-text)",
+                fontSize: 11,
+              }}
+            >
               {checksumError}
             </div>
           )}
@@ -6146,8 +6395,7 @@ export function FileExplorer({
     Map<string, ExplorerShaderSelectionMemory>
   >(new Map());
   const lastPreviewTerminalShellReportedCwdRef = useRef<string | null>(null);
-  const lastPreviewTerminalExplorerAppliedCwdRef =
-    useRef<string | null>(null);
+  const lastPreviewTerminalExplorerAppliedCwdRef = useRef<string | null>(null);
   const searchRequestIdRef = useRef(0);
   const searchFocusRequestIdRef = useRef(0);
   const jumpFilterRequestIdRef = useRef(0);
@@ -6213,15 +6461,14 @@ export function FileExplorer({
   const currentPathIsCloud =
     currentPath.length > 0 && isCloudExplorerPath(currentPath);
   const previewTerminalNamespace = useMemo(
-    () =>
-      `preview-${String(instanceId).replace(/[^a-zA-Z0-9_-]/g, "-")}`,
+    () => `preview-${String(instanceId).replace(/[^a-zA-Z0-9_-]/g, "-")}`,
     [instanceId],
   );
   const previewTerminalWorkingDirectory = currentPathIsCloud
     ? null
     : currentPath;
-  const hasPreview =
-    !isCompactDock && previewEnabled && preview.type !== "none";
+  const previewPanelVisible = !isCompactDock && previewEnabled;
+  const hasPreview = previewPanelVisible && preview.type !== "none";
   const isExperimentalViewEligible =
     !isCompactDock && search.trim().length === 0;
 
@@ -8331,9 +8578,10 @@ export function FileExplorer({
         // When an internal native drag re-enters/drops on the same window, Tauri fires
         // onDragDropEvent instead of React onDrop.  We need to route the drop to the
         // specific folder the cursor is hovering over, not just currentPath.
-        const internalDragPaths = activeDragPathsRef.current.length > 0
-          ? activeDragPathsRef.current
-          : nativeDragPathsRef.current;
+        const internalDragPaths =
+          activeDragPathsRef.current.length > 0
+            ? activeDragPathsRef.current
+            : nativeDragPathsRef.current;
         const payloadPaths = (event.payload as any).paths || [];
         const normalizePath = (p: string) => p.replace(/[\\/]+$/, "");
         const normalizedInternal = internalDragPaths.map(normalizePath);
@@ -8342,8 +8590,10 @@ export function FileExplorer({
         const isInternalDrag =
           nativeDragPathsRef.current.length > 0 ||
           (normalizedInternal.length > 0 &&
-          normalizedPayload.length === normalizedInternal.length &&
-          normalizedPayload.every((p: string) => normalizedInternal.includes(p)));
+            normalizedPayload.length === normalizedInternal.length &&
+            normalizedPayload.every((p: string) =>
+              normalizedInternal.includes(p),
+            ));
 
         if (event.payload.type === "enter") {
           // Suppress the "Import Files" banner for internal drags — it's only
@@ -8583,11 +8833,12 @@ export function FileExplorer({
 
   const updateShaderPreviewSelection = useCallback(
     (path: string, selection: Partial<ExplorerShaderSelectionMemory>) => {
-      const currentSelection =
-        shaderPreviewSelectionMemoryRef.current.get(path) ?? {
-          selectedStage: null,
-          selectedEntryPoint: null,
-        };
+      const currentSelection = shaderPreviewSelectionMemoryRef.current.get(
+        path,
+      ) ?? {
+        selectedStage: null,
+        selectedEntryPoint: null,
+      };
       const nextSelection = {
         selectedStage:
           selection.selectedStage !== undefined
@@ -8717,7 +8968,9 @@ export function FileExplorer({
       }
 
       setPreviewTerminalReportedWorkingDirectory(trimmedCwd);
-      if (lastPreviewTerminalShellReportedCwdRef.current === normalizedReportedCwd) {
+      if (
+        lastPreviewTerminalShellReportedCwdRef.current === normalizedReportedCwd
+      ) {
         return;
       }
       lastPreviewTerminalShellReportedCwdRef.current = normalizedReportedCwd;
@@ -8870,10 +9123,7 @@ export function FileExplorer({
           return;
         }
       }
-      if (
-        currentPreview.type === "pdf" &&
-        currentPreview.path !== entry.path
-      ) {
+      if (currentPreview.type === "pdf" && currentPreview.path !== entry.path) {
         const shouldCloseCurrentPreview = await requestCurrentPreviewClose();
         if (!shouldCloseCurrentPreview || !isCurrentPreviewRequest()) {
           return;
@@ -9147,7 +9397,9 @@ export function FileExplorer({
         }
 
         try {
-          const document = await inspectExplorerShaderPreviewDocument(entry.path);
+          const document = await inspectExplorerShaderPreviewDocument(
+            entry.path,
+          );
           if (!isCurrentPreviewRequest()) {
             return;
           }
@@ -11605,7 +11857,7 @@ export function FileExplorer({
   const enterFocusedSourcesMode = useCallback(() => {
     applyModeProfilePreset(getExplorerModeProfileDefinition("focus"));
   }, [applyModeProfilePreset]);
-  const previewSplitIsPane = hasPreview && previewSplitMode === "pane";
+  const previewSplitIsPane = previewPanelVisible && previewSplitMode === "pane";
   const previewPlacement = effectiveShellLayout.previewPlacement;
   const previewModeLabel =
     preview.type === "text"
@@ -11620,23 +11872,23 @@ export function FileExplorer({
           : preview.selectedScene === "fullscreen"
             ? "Shader preview (fullscreen)"
             : "Shader preview (sphere)"
-      : preview.type === "pdf"
-        ? pdfPreviewChromeState?.isEditMode
-          ? "PDF editor"
-          : "PDF preview"
-      : preview.type === "spreadsheet"
-        ? preview.fileKind === "tabular"
-          ? "Tabular spreadsheet"
-          : "Spreadsheet workbook"
-      : preview.type === "audio"
-        ? "Audio preview"
-        : preview.type === "folder"
-          ? "Folder preview"
-        : preview.type === "image"
-          ? "Image preview"
-          : preview.type === "model3d"
-            ? "3D preview"
-            : "Preview";
+        : preview.type === "pdf"
+          ? pdfPreviewChromeState?.isEditMode
+            ? "PDF editor"
+            : "PDF preview"
+          : preview.type === "spreadsheet"
+            ? preview.fileKind === "tabular"
+              ? "Tabular spreadsheet"
+              : "Spreadsheet workbook"
+            : preview.type === "audio"
+              ? "Audio preview"
+              : preview.type === "folder"
+                ? "Folder preview"
+                : preview.type === "image"
+                  ? "Image preview"
+                  : preview.type === "model3d"
+                    ? "3D preview"
+                    : "Preview";
   const searchModeLabel = searchIncludeContent
     ? "Recursive search + text"
     : "Recursive search (names only)";
@@ -11912,10 +12164,7 @@ export function FileExplorer({
     () => ({
       flex: 1,
       display: "flex",
-      flexDirection:
-        previewPlacement === "leading"
-          ? "row-reverse"
-          : "row",
+      flexDirection: previewPlacement === "leading" ? "row-reverse" : "row",
       minHeight: 0,
       minWidth: 0,
       overflow: "hidden",
@@ -13899,7 +14148,9 @@ export function FileExplorer({
             selectedViewModeDefinition.presentation === "grid";
           const listViewActive = themedViewMode === "list";
 
-          const buildStatusViewButtonStyle = (active: boolean): CSSProperties => ({
+          const buildStatusViewButtonStyle = (
+            active: boolean,
+          ): CSSProperties => ({
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
@@ -16647,7 +16898,9 @@ export function FileExplorer({
                 background: canConfirmRepositorySelection
                   ? accent
                   : "var(--overlay-explorer-chip-bg)",
-                color: canConfirmRepositorySelection ? "var(--overlay-accent-contrast)" : EXP.muted,
+                color: canConfirmRepositorySelection
+                  ? "var(--overlay-accent-contrast)"
+                  : EXP.muted,
                 cursor: canConfirmRepositorySelection ? "pointer" : "default",
                 fontSize: 11,
                 fontWeight: 700,
@@ -16770,665 +17023,389 @@ export function FileExplorer({
                   goUp();
                 }}
               >
-              {windowDropState.active && (
-                <div
-                  style={{
-                    position: "sticky",
-                    top: 12,
-                    zIndex: 5,
-                    margin: "0 auto 12px",
-                    width: "min(420px, calc(100% - 24px))",
-                    border: `1px solid ${accent}`,
-                    borderRadius: 10,
-                    background: `linear-gradient(180deg, ${accent}20, rgba(16,18,26,0.92))`,
-                    boxShadow: "0 18px 48px rgba(0,0,0,0.35)",
-                    padding: "14px 16px",
-                    textAlign: "center",
-                  }}
-                >
+                {windowDropState.active && (
                   <div
                     style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      letterSpacing: "0.14em",
-                      textTransform: "uppercase",
-                      color: accent,
-                    }}
-                  >
-                    Import Files
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 6,
-                      fontSize: 13,
-                      fontWeight: 600,
-                      color: EXP.text,
-                    }}
-                  >
-                    Drop {windowDropState.count} item
-                    {windowDropState.count === 1 ? "" : "s"} to copy into this
-                    folder
-                  </div>
-                  <div style={{ marginTop: 4, fontSize: 11, color: EXP.muted }}>
-                    External files are handled through the Rust transfer
-                    pipeline.
-                  </div>
-                </div>
-              )}
-
-              {showBlockingExplorerLoadingState && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    height: 120,
-                    gap: 10,
-                    color: EXP.muted,
-                  }}
-                >
-                  <Loader
-                    size={16}
-                    style={{ animation: "spin 1s linear infinite" }}
-                  />
-                  <span style={{ fontSize: 12 }}>Loading…</span>
-                </div>
-              )}
-
-              {!loading && searchLoading && isSearchActive && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    height: 120,
-                    gap: 10,
-                    color: EXP.muted,
-                  }}
-                >
-                  <Loader
-                    size={16}
-                    style={{ animation: "spin 1s linear infinite" }}
-                  />
-                  <span style={{ fontSize: 12 }}>Searching recursively…</span>
-                </div>
-              )}
-
-              {!loading && !searchLoading && visibleEntries.length === 0 && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    height: 120,
-                    color: EXP.muted,
-                    fontSize: 12,
-                    textAlign: "center",
-                    padding: "0 16px",
-                  }}
-                >
-                  {isSearchActive ? (
-                    <span>
-                      No results for "{search.trim()}"<br />
-                      <span style={{ color: EXP.muted2, fontSize: 11 }}>
-                        {searchIncludeContent
-                          ? "Recursive text search is on."
-                          : "Names-only search is on."}
-                      </span>
-                    </span>
-                  ) : (
-                    "Empty folder"
-                  )}
-                </div>
-              )}
-
-              {shouldRenderExplorerContent &&
-                effectiveExperimentalViewMode === "adaptive-semantic-grid" &&
-                adaptiveDensityStop && (
-                  <div style={{ minHeight: 0, padding: "14px 0 20px" }}>
-                    {renderExperimentalInlineNewItem(
-                      adaptiveDensityStop.presentation === "table"
-                        ? (adaptiveDensityStop.table?.iconSize ?? 18)
-                        : (adaptiveDensityStop.grid?.iconSize ?? 34),
-                    )}
-
-                    {experimentalSemanticBands.map(renderAdaptiveSemanticBand)}
-                  </div>
-                )}
-
-              {shouldRenderExplorerContent &&
-                effectiveExperimentalViewMode === "constellation" && (
-                  <div style={{ minHeight: 0, padding: "14px 0 24px" }}>
-                    {renderExperimentalInlineNewItem(26)}
-                    {constellationOrbitBands.map(renderConstellationOrbitBand)}
-                  </div>
-                )}
-
-              {shouldRenderExplorerContent &&
-                effectiveExperimentalViewMode === "timeline-surface" && (
-                  <div style={{ minHeight: 0, padding: "14px 0 24px" }}>
-                    {renderExperimentalInlineNewItem(22)}
-                    {timelineSurfaceBands.map(renderTimelineSurfaceBand)}
-                  </div>
-                )}
-
-              {/* Grid view */}
-              {effectiveExperimentalViewMode === "off" &&
-                newItem.visible &&
-                virtualWindow.kind === "grid" &&
-                activeGridMetrics && (
-                  <div
-                    style={{
-                      padding: `0 ${activeGridMetrics.padding}px ${activeGridMetrics.padding}px`,
-                      boxSizing: "border-box",
+                      position: "sticky",
+                      top: 12,
+                      zIndex: 5,
+                      margin: "0 auto 12px",
+                      width: "min(420px, calc(100% - 24px))",
+                      border: `1px solid ${accent}`,
+                      borderRadius: 10,
+                      background: `linear-gradient(180deg, ${accent}20, rgba(16,18,26,0.92))`,
+                      boxShadow: "0 18px 48px rgba(0,0,0,0.35)",
+                      padding: "14px 16px",
+                      textAlign: "center",
                     }}
                   >
                     <div
                       style={{
-                        background: "var(--overlay-explorer-item-selected-bg)",
-                        border:
-                          "1px solid var(--overlay-explorer-item-selected-border)",
-                        borderRadius: activeGridMetrics.tileRadius,
-                        padding:
-                          activeGridMetrics.iconSize <= 46
-                            ? "8px 6px 6px"
-                            : "10px 8px 8px",
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        gap: 8,
-                        height: activeGridMetrics.newItemHeight,
-                        boxSizing: "border-box",
-                        transition:
-                          "border-radius 0.18s cubic-bezier(0.22, 1, 0.36, 1), padding 0.18s cubic-bezier(0.22, 1, 0.36, 1)",
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: "0.14em",
+                        textTransform: "uppercase",
+                        color: accent,
                       }}
                     >
-                      <SvgIcon
-                        src={
-                          newItem.kind === "folder"
-                            ? (resolveIconSrc(
-                                themeIconTheme.folder,
-                                themeIconTheme,
-                              ) ?? "/icons/folder.svg")
-                            : resolveFileIconSrc(
-                                "new-file.txt",
-                                "txt",
-                                themeIconTheme,
-                              )
-                        }
-                        size={activeGridMetrics.iconSize}
-                      />
-                      <input
-                        autoFocus
-                        value={newItemName}
-                        onChange={(e) => setNewItemName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") commitNew();
-                          if (e.key === "Escape")
-                            setNewItem({ visible: false, kind: "folder" });
-                        }}
-                        onBlur={commitNew}
-                        placeholder={
-                          newItem.kind === "folder" ? "folder name" : "name.ext"
-                        }
-                        style={{
-                          background: "var(--overlay-explorer-input-bg)",
-                          border:
-                            "1px solid var(--overlay-explorer-input-border)",
-                          borderRadius:
-                            "var(--overlay-explorer-control-radius)",
-                          color: EXP.text,
-                          fontSize: 11,
-                          padding: "2px 6px",
-                          outline: "none",
-                          width: "100%",
-                          boxSizing: "border-box" as const,
-                        }}
-                      />
+                      Import Files
                     </div>
-                  </div>
-                )}
-
-              {effectiveExperimentalViewMode === "off" &&
-                shouldRenderExplorerContent &&
-                virtualWindow.kind === "grid" &&
-                activeGridMetrics && (
-                  <div style={{ minHeight: 0 }}>
-                    <div style={{ height: virtualWindow.topSpacer }} />
                     <div
                       style={{
-                        display: "grid",
-                        gridTemplateColumns: `repeat(${virtualWindow.columns}, minmax(0, 1fr))`,
-                        gridAutoRows: `${virtualWindow.rowHeight}px`,
-                        gap: activeGridMetrics.gap,
-                        padding: `0 ${activeGridMetrics.padding}px`,
-                        alignItems: "stretch",
-                        transition: "gap 0.14s ease, padding 0.14s ease",
+                        marginTop: 6,
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: EXP.text,
                       }}
                     >
-                      {virtualizedEntries.map((entry) => {
-                        const isSel = selected.has(entry.path);
-                        const isDrop = dragOver === entry.path && entry.is_dir;
-                        const isRenaming =
-                          rename.active && rename.path === entry.path;
-                        const iconSrc = getExplorerEntryIconSrc(
-                          entry,
-                          isSel,
-                          isDrop,
-                        );
-                        const thumbnail = getRenderableEntryThumbnail(
-                          entry,
-                          activeGridMetrics.iconStageSize,
-                        );
-                        return (
-                          <div
-                            key={entry.path}
-                            draggable
-                            data-overlay-drag-source="file"
-                            onDragStart={(e) => onDragStart(e, entry)}
-                            onDragEnd={onDragEnd}
-                            onDragOver={
-                              entry.is_dir
-                                ? (e) => onDragOver(e, entry.path)
-                                : undefined
-                            }
-                            onDragLeave={(e) => onDragLeave(e, entry.path)}
-                            onDrop={
-                              entry.is_dir
-                                ? (e) => onDrop(e, entry.path)
-                                : undefined
-                            }
-                            onClick={(e) => onEntryClick(e, entry)}
-                            onDoubleClick={() => onEntryDoubleClick(entry)}
-                            onContextMenu={(e) => onRightClick(e, entry)}
-                            title={getSearchTooltip(entry)}
-                            style={{
-                              background: isDrop
-                                ? dropEntrySurface.background
-                                : isSel
-                                  ? selectedEntrySurface.background
-                                  : idleEntrySurface.background,
-                              border: `1px solid ${isDrop ? dropEntrySurface.borderColor : isSel ? selectedEntrySurface.borderColor : idleEntrySurface.borderColor}`,
-                              borderRadius: activeGridMetrics.tileRadius,
-                              padding:
-                                activeGridMetrics.iconSize <= 46
-                                  ? "8px 6px 6px"
-                                  : "10px 8px 8px",
-                              cursor: "pointer",
-                              display: "flex",
-                              flexDirection: "column",
-                              alignItems: "center",
-                              justifyContent: "flex-start",
-                              gap: 8,
-                              height: "100%",
-                              minHeight: 0,
-                              boxSizing: "border-box",
-                              overflow: "hidden",
-                              opacity: entry.is_hidden ? 0.5 : 1,
-                              userSelect: "none",
-                              boxShadow: isDrop
-                                ? dropEntrySurface.boxShadow
-                                : isSel
-                                  ? selectedEntrySurface.boxShadow
-                                  : idleEntrySurface.boxShadow,
-                              transform: isDrop
-                                ? dropEntrySurface.transform
-                                : isSel
-                                  ? selectedEntrySurface.transform
-                                  : idleEntrySurface.transform,
-                              transition:
-                                "background 0.14s ease, border-color 0.14s ease, transform 0.14s ease, border-radius 0.18s cubic-bezier(0.22, 1, 0.36, 1), padding 0.18s cubic-bezier(0.22, 1, 0.36, 1)",
-                            }}
-                            onMouseEnter={(e) => {
-                              handleEntryPointerEnter(
-                                entry,
-                                e.currentTarget as HTMLDivElement,
-                                isSel,
-                                isDrop,
-                              );
-                            }}
-                            onMouseLeave={(e) => {
-                              handleEntryPointerLeave(
-                                entry,
-                                e.currentTarget as HTMLDivElement,
-                                isSel,
-                                isDrop,
-                              );
-                            }}
-                          >
-                            <div
-                              style={{
-                                width: activeGridMetrics.iconStageSize,
-                                height: activeGridMetrics.iconStageSize,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                overflow: "hidden",
-                                flexShrink: 0,
-                                borderRadius: thumbnail
-                                  ? Math.max(
-                                      10,
-                                      Math.round(
-                                        activeGridMetrics.tileRadius * 0.72,
-                                      ),
-                                    )
-                                  : undefined,
-                                border: thumbnail
-                                  ? "1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)"
-                                  : undefined,
-                                background: thumbnail
-                                  ? isSel
-                                    ? "color-mix(in srgb, var(--overlay-bg-selection) 72%, var(--overlay-bg-panel))"
-                                    : "color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)"
-                                  : undefined,
-                                boxShadow: thumbnail
-                                  ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
-                                  : undefined,
-                                transition:
-                                  "width 0.18s cubic-bezier(0.22, 1, 0.36, 1), height 0.18s cubic-bezier(0.22, 1, 0.36, 1)",
-                              }}
-                            >
-                              {thumbnail ? (
-                                <ExplorerThumbnailImage
-                                  entryName={entry.name}
-                                  hoverScrubEnabled={
-                                    hoveredVideoThumbnailPath === entry.path
-                                  }
-                                  thumbnail={thumbnail}
-                                />
-                              ) : (
-                                <SvgIcon
-                                  src={iconSrc}
-                                  size={activeGridMetrics.iconSize}
-                                />
-                              )}
-                            </div>
-                            {isRenaming ? (
-                              <RenameInput
-                                state={rename}
-                                onCommit={commitRename}
-                                onCancel={() =>
-                                  setRename({
-                                    active: false,
-                                    path: "",
-                                    name: "",
-                                  })
-                                }
-                              />
-                            ) : (
-                              <span
-                                style={{
-                                  fontSize:
-                                    "var(--overlay-explorer-entry-title-size)",
-                                  textAlign:
-                                    explorerTheme.labelMode === "inline"
-                                      ? "left"
-                                      : "center",
-                                  color: EXP.text,
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  display: "-webkit-box",
-                                  WebkitLineClamp: activeGridMetrics.nameLines,
-                                  WebkitBoxOrient: "vertical",
-                                  width: "100%",
-                                  lineHeight: 1.28,
-                                  fontWeight:
-                                    "var(--overlay-explorer-entry-title-weight)",
-                                  letterSpacing:
-                                    "var(--overlay-explorer-label-spacing)",
-                                }}
-                              >
-                                {entry.name}
-                              </span>
-                            )}
-                            <span
-                              style={{
-                                fontSize:
-                                  "var(--overlay-explorer-entry-meta-size)",
-                                textAlign:
-                                  explorerTheme.labelMode === "inline"
-                                    ? "left"
-                                    : "center",
-                                color: EXP.muted2,
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                                width: "100%",
-                                marginTop: -2,
-                              }}
-                            >
-                              {getEntryStorageLabel(entry)}
-                            </span>
-                            {renderSearchMetadata(entry)}
-                          </div>
-                        );
-                      })}
+                      Drop {windowDropState.count} item
+                      {windowDropState.count === 1 ? "" : "s"} to copy into this
+                      folder
                     </div>
-                    <div style={{ height: virtualWindow.bottomSpacer }} />
+                    <div
+                      style={{ marginTop: 4, fontSize: 11, color: EXP.muted }}
+                    >
+                      External files are handled through the Rust transfer
+                      pipeline.
+                    </div>
                   </div>
                 )}
 
-              {effectiveExperimentalViewMode === "off" &&
-                newItem.visible &&
-                virtualWindow.kind === "list" &&
-                effectiveViewModeDefinition.presentation === "list" && (
+                {showBlockingExplorerLoadingState && (
                   <div
                     style={{
-                      height: activeRowMetrics?.newItemHeight ?? 42,
                       display: "flex",
                       alignItems: "center",
+                      justifyContent: "center",
+                      height: 120,
                       gap: 10,
-                      padding: "0 12px",
-                      borderBottom:
-                        "1px solid var(--overlay-explorer-toolbar-border)",
-                      background: "var(--overlay-explorer-item-selected-bg)",
-                      boxSizing: "border-box",
+                      color: EXP.muted,
                     }}
                   >
-                    <SvgIcon
-                      src={
-                        newItem.kind === "folder"
-                          ? getIconSrc(
-                              {
-                                name: "folder",
-                                path: currentPath,
-                                is_dir: true,
-                                size: 0,
-                                modified: 0,
-                                extension: "",
-                                is_hidden: false,
-                                is_symlink: false,
-                              },
-                              false,
-                              {
-                                rules: explorerSettings.folderIconRules,
-                                defaultIcon: explorerSettings.defaultFolderIcon,
-                              },
-                              themeIconTheme,
-                            )
-                          : resolveFileIconSrc(
-                              "new-file.txt",
-                              "txt",
-                              themeIconTheme,
-                            )
-                      }
-                      size={activeRowMetrics?.iconSize ?? 16}
+                    <Loader
+                      size={16}
+                      style={{ animation: "spin 1s linear infinite" }}
                     />
-                    <input
-                      autoFocus
-                      value={newItemName}
-                      onChange={(e) => setNewItemName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") commitNew();
-                        if (e.key === "Escape")
-                          setNewItem({ visible: false, kind: "folder" });
-                      }}
-                      onBlur={commitNew}
-                      placeholder={
-                        newItem.kind === "folder"
-                          ? "folder name"
-                          : "notes.md / app.py"
-                      }
-                      style={{
-                        background: "var(--overlay-explorer-input-bg)",
-                        border:
-                          "1px solid var(--overlay-explorer-input-border)",
-                        borderRadius: "var(--overlay-explorer-control-radius)",
-                        color: EXP.text,
-                        fontSize: 12,
-                        padding: "2px 6px",
-                        outline: "none",
-                        flex: 1,
-                      }}
-                    />
+                    <span style={{ fontSize: 12 }}>Loading…</span>
                   </div>
                 )}
 
-              {effectiveExperimentalViewMode === "off" &&
-                shouldRenderExplorerContent &&
-                virtualWindow.kind === "list" &&
-                effectiveViewModeDefinition.presentation === "list" && (
-                  <div style={{ minHeight: 0 }}>
-                    <div style={{ height: virtualWindow.topSpacer }} />
-                    {virtualizedEntries.map((entry) => {
-                      const isSel = selected.has(entry.path);
-                      const isDrop = dragOver === entry.path && entry.is_dir;
-                      const isRenaming =
-                        rename.active && rename.path === entry.path;
-                      const iconSrc = getExplorerEntryIconSrc(
-                        entry,
-                        isSel,
-                        isDrop,
-                      );
-                      const rowThumbnailStageSize = Math.max(
-                        (activeRowMetrics?.iconSize ?? 16) + 12,
-                        28,
-                      );
-                      const thumbnail = getRenderableEntryThumbnail(
-                        entry,
-                        rowThumbnailStageSize,
-                      );
-                      return (
-                        <div
-                          key={entry.path}
-                          draggable
-                          data-entry-path={entry.path}
-                          data-overlay-drag-source="file"
-                          onDragStart={(e) => onDragStart(e, entry)}
-                          onDragEnd={onDragEnd}
-                          onDragOver={
-                            entry.is_dir
-                              ? (e) => onDragOver(e, entry.path)
-                              : undefined
+                {!loading && searchLoading && isSearchActive && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      height: 120,
+                      gap: 10,
+                      color: EXP.muted,
+                    }}
+                  >
+                    <Loader
+                      size={16}
+                      style={{ animation: "spin 1s linear infinite" }}
+                    />
+                    <span style={{ fontSize: 12 }}>Searching recursively…</span>
+                  </div>
+                )}
+
+                {!loading && !searchLoading && visibleEntries.length === 0 && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      height: 120,
+                      color: EXP.muted,
+                      fontSize: 12,
+                      textAlign: "center",
+                      padding: "0 16px",
+                    }}
+                  >
+                    {isSearchActive ? (
+                      <span>
+                        No results for "{search.trim()}"<br />
+                        <span style={{ color: EXP.muted2, fontSize: 11 }}>
+                          {searchIncludeContent
+                            ? "Recursive text search is on."
+                            : "Names-only search is on."}
+                        </span>
+                      </span>
+                    ) : (
+                      "Empty folder"
+                    )}
+                  </div>
+                )}
+
+                {shouldRenderExplorerContent &&
+                  effectiveExperimentalViewMode === "adaptive-semantic-grid" &&
+                  adaptiveDensityStop && (
+                    <div style={{ minHeight: 0, padding: "14px 0 20px" }}>
+                      {renderExperimentalInlineNewItem(
+                        adaptiveDensityStop.presentation === "table"
+                          ? (adaptiveDensityStop.table?.iconSize ?? 18)
+                          : (adaptiveDensityStop.grid?.iconSize ?? 34),
+                      )}
+
+                      {experimentalSemanticBands.map(
+                        renderAdaptiveSemanticBand,
+                      )}
+                    </div>
+                  )}
+
+                {shouldRenderExplorerContent &&
+                  effectiveExperimentalViewMode === "constellation" && (
+                    <div style={{ minHeight: 0, padding: "14px 0 24px" }}>
+                      {renderExperimentalInlineNewItem(26)}
+                      {constellationOrbitBands.map(
+                        renderConstellationOrbitBand,
+                      )}
+                    </div>
+                  )}
+
+                {shouldRenderExplorerContent &&
+                  effectiveExperimentalViewMode === "timeline-surface" && (
+                    <div style={{ minHeight: 0, padding: "14px 0 24px" }}>
+                      {renderExperimentalInlineNewItem(22)}
+                      {timelineSurfaceBands.map(renderTimelineSurfaceBand)}
+                    </div>
+                  )}
+
+                {/* Grid view */}
+                {effectiveExperimentalViewMode === "off" &&
+                  newItem.visible &&
+                  virtualWindow.kind === "grid" &&
+                  activeGridMetrics && (
+                    <div
+                      style={{
+                        padding: `0 ${activeGridMetrics.padding}px ${activeGridMetrics.padding}px`,
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      <div
+                        style={{
+                          background:
+                            "var(--overlay-explorer-item-selected-bg)",
+                          border:
+                            "1px solid var(--overlay-explorer-item-selected-border)",
+                          borderRadius: activeGridMetrics.tileRadius,
+                          padding:
+                            activeGridMetrics.iconSize <= 46
+                              ? "8px 6px 6px"
+                              : "10px 8px 8px",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          gap: 8,
+                          height: activeGridMetrics.newItemHeight,
+                          boxSizing: "border-box",
+                          transition:
+                            "border-radius 0.18s cubic-bezier(0.22, 1, 0.36, 1), padding 0.18s cubic-bezier(0.22, 1, 0.36, 1)",
+                        }}
+                      >
+                        <SvgIcon
+                          src={
+                            newItem.kind === "folder"
+                              ? (resolveIconSrc(
+                                  themeIconTheme.folder,
+                                  themeIconTheme,
+                                ) ?? "/icons/folder.svg")
+                              : resolveFileIconSrc(
+                                  "new-file.txt",
+                                  "txt",
+                                  themeIconTheme,
+                                )
                           }
-                          onDragLeave={(e) => onDragLeave(e, entry.path)}
-                          onDrop={
-                            entry.is_dir
-                              ? (e) => onDrop(e, entry.path)
-                              : undefined
+                          size={activeGridMetrics.iconSize}
+                        />
+                        <input
+                          autoFocus
+                          value={newItemName}
+                          onChange={(e) => setNewItemName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") commitNew();
+                            if (e.key === "Escape")
+                              setNewItem({ visible: false, kind: "folder" });
+                          }}
+                          onBlur={commitNew}
+                          placeholder={
+                            newItem.kind === "folder"
+                              ? "folder name"
+                              : "name.ext"
                           }
-                          onClick={(e) => onEntryClick(e, entry)}
-                          onDoubleClick={() => onEntryDoubleClick(entry)}
-                          onContextMenu={(e) => onRightClick(e, entry)}
-                          title={getSearchTooltip(entry)}
                           style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            gap: 12,
-                            height: virtualWindow.rowHeight,
-                            padding: "0 12px",
-                            borderBottomWidth: 1,
-                            borderBottomStyle: "solid",
-                            borderBottomColor: isDrop
-                              ? dropEntrySurface.borderColor
-                              : isSel
-                                ? selectedEntrySurface.borderColor
-                                : "var(--overlay-explorer-toolbar-border)",
-                            background: isDrop
-                              ? dropEntrySurface.background
-                              : isSel
-                                ? selectedEntrySurface.background
-                                : idleEntrySurface.background,
-                            cursor: "pointer",
-                            opacity: entry.is_hidden ? 0.5 : 1,
-                            userSelect: "none",
-                            boxSizing: "border-box",
-                            boxShadow: isDrop
-                              ? dropEntrySurface.boxShadow
-                              : isSel
-                                ? selectedEntrySurface.boxShadow
-                                : idleEntrySurface.boxShadow,
-                            transform: isDrop
-                              ? dropEntrySurface.transform
-                              : isSel
-                                ? selectedEntrySurface.transform
-                                : idleEntrySurface.transform,
+                            background: "var(--overlay-explorer-input-bg)",
+                            border:
+                              "1px solid var(--overlay-explorer-input-border)",
+                            borderRadius:
+                              "var(--overlay-explorer-control-radius)",
+                            color: EXP.text,
+                            fontSize: 11,
+                            padding: "2px 6px",
+                            outline: "none",
+                            width: "100%",
+                            boxSizing: "border-box" as const,
                           }}
-                          onMouseEnter={(e) => {
-                            handleEntryPointerEnter(
-                              entry,
-                              e.currentTarget as HTMLDivElement,
-                              isSel,
-                              isDrop,
-                            );
-                          }}
-                          onMouseLeave={(e) => {
-                            handleEntryPointerLeave(
-                              entry,
-                              e.currentTarget as HTMLDivElement,
-                              isSel,
-                              isDrop,
-                            );
-                          }}
-                        >
-                          <div
-                            style={{
-                              minWidth: 0,
-                              flex: 1,
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 10,
-                            }}
-                          >
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                {effectiveExperimentalViewMode === "off" &&
+                  shouldRenderExplorerContent &&
+                  virtualWindow.kind === "grid" &&
+                  activeGridMetrics && (
+                    <div style={{ minHeight: 0 }}>
+                      <div style={{ height: virtualWindow.topSpacer }} />
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: `repeat(${virtualWindow.columns}, minmax(0, 1fr))`,
+                          gridAutoRows: `${virtualWindow.rowHeight}px`,
+                          gap: activeGridMetrics.gap,
+                          padding: `0 ${activeGridMetrics.padding}px`,
+                          alignItems: "stretch",
+                          transition: "gap 0.14s ease, padding 0.14s ease",
+                        }}
+                      >
+                        {virtualizedEntries.map((entry) => {
+                          const isSel = selected.has(entry.path);
+                          const isDrop =
+                            dragOver === entry.path && entry.is_dir;
+                          const isRenaming =
+                            rename.active && rename.path === entry.path;
+                          const iconSrc = getExplorerEntryIconSrc(
+                            entry,
+                            isSel,
+                            isDrop,
+                          );
+                          const thumbnail = getRenderableEntryThumbnail(
+                            entry,
+                            activeGridMetrics.iconStageSize,
+                          );
+                          return (
                             <div
+                              key={entry.path}
+                              draggable
+                              data-overlay-drag-source="file"
+                              onDragStart={(e) => onDragStart(e, entry)}
+                              onDragEnd={onDragEnd}
+                              onDragOver={
+                                entry.is_dir
+                                  ? (e) => onDragOver(e, entry.path)
+                                  : undefined
+                              }
+                              onDragLeave={(e) => onDragLeave(e, entry.path)}
+                              onDrop={
+                                entry.is_dir
+                                  ? (e) => onDrop(e, entry.path)
+                                  : undefined
+                              }
+                              onClick={(e) => onEntryClick(e, entry)}
+                              onDoubleClick={() => onEntryDoubleClick(entry)}
+                              onContextMenu={(e) => onRightClick(e, entry)}
+                              title={getSearchTooltip(entry)}
                               style={{
-                                width: rowThumbnailStageSize,
-                                height: rowThumbnailStageSize,
-                                minWidth: rowThumbnailStageSize,
+                                background: isDrop
+                                  ? dropEntrySurface.background
+                                  : isSel
+                                    ? selectedEntrySurface.background
+                                    : idleEntrySurface.background,
+                                border: `1px solid ${isDrop ? dropEntrySurface.borderColor : isSel ? selectedEntrySurface.borderColor : idleEntrySurface.borderColor}`,
+                                borderRadius: activeGridMetrics.tileRadius,
+                                padding:
+                                  activeGridMetrics.iconSize <= 46
+                                    ? "8px 6px 6px"
+                                    : "10px 8px 8px",
+                                cursor: "pointer",
                                 display: "flex",
+                                flexDirection: "column",
                                 alignItems: "center",
-                                justifyContent: "center",
+                                justifyContent: "flex-start",
+                                gap: 8,
+                                height: "100%",
+                                minHeight: 0,
+                                boxSizing: "border-box",
                                 overflow: "hidden",
-                                borderRadius: thumbnail ? 10 : undefined,
-                                border: thumbnail
-                                  ? "1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)"
-                                  : undefined,
-                                background: thumbnail
-                                  ? "color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)"
-                                  : undefined,
-                                boxShadow: thumbnail
-                                  ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
-                                  : undefined,
-                                flexShrink: 0,
+                                opacity: entry.is_hidden ? 0.5 : 1,
+                                userSelect: "none",
+                                boxShadow: isDrop
+                                  ? dropEntrySurface.boxShadow
+                                  : isSel
+                                    ? selectedEntrySurface.boxShadow
+                                    : idleEntrySurface.boxShadow,
+                                transform: isDrop
+                                  ? dropEntrySurface.transform
+                                  : isSel
+                                    ? selectedEntrySurface.transform
+                                    : idleEntrySurface.transform,
+                                transition:
+                                  "background 0.14s ease, border-color 0.14s ease, transform 0.14s ease, border-radius 0.18s cubic-bezier(0.22, 1, 0.36, 1), padding 0.18s cubic-bezier(0.22, 1, 0.36, 1)",
+                              }}
+                              onMouseEnter={(e) => {
+                                handleEntryPointerEnter(
+                                  entry,
+                                  e.currentTarget as HTMLDivElement,
+                                  isSel,
+                                  isDrop,
+                                );
+                              }}
+                              onMouseLeave={(e) => {
+                                handleEntryPointerLeave(
+                                  entry,
+                                  e.currentTarget as HTMLDivElement,
+                                  isSel,
+                                  isDrop,
+                                );
                               }}
                             >
-                              {thumbnail ? (
-                                <ExplorerThumbnailImage
-                                  entryName={entry.name}
-                                  hoverScrubEnabled={
-                                    hoveredVideoThumbnailPath === entry.path
-                                  }
-                                  thumbnail={thumbnail}
-                                />
-                              ) : (
-                                <SvgIcon
-                                  src={iconSrc}
-                                  size={activeRowMetrics?.iconSize ?? 16}
-                                />
-                              )}
-                            </div>
-                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div
+                                style={{
+                                  width: activeGridMetrics.iconStageSize,
+                                  height: activeGridMetrics.iconStageSize,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  overflow: "hidden",
+                                  flexShrink: 0,
+                                  borderRadius: thumbnail
+                                    ? Math.max(
+                                        10,
+                                        Math.round(
+                                          activeGridMetrics.tileRadius * 0.72,
+                                        ),
+                                      )
+                                    : undefined,
+                                  border: thumbnail
+                                    ? "1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)"
+                                    : undefined,
+                                  background: thumbnail
+                                    ? isSel
+                                      ? "color-mix(in srgb, var(--overlay-bg-selection) 72%, var(--overlay-bg-panel))"
+                                      : "color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)"
+                                    : undefined,
+                                  boxShadow: thumbnail
+                                    ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
+                                    : undefined,
+                                  transition:
+                                    "width 0.18s cubic-bezier(0.22, 1, 0.36, 1), height 0.18s cubic-bezier(0.22, 1, 0.36, 1)",
+                                }}
+                              >
+                                {thumbnail ? (
+                                  <ExplorerThumbnailImage
+                                    entryName={entry.name}
+                                    hoverScrubEnabled={
+                                      hoveredVideoThumbnailPath === entry.path
+                                    }
+                                    thumbnail={thumbnail}
+                                  />
+                                ) : (
+                                  <SvgIcon
+                                    src={iconSrc}
+                                    size={activeGridMetrics.iconSize}
+                                  />
+                                )}
+                              </div>
                               {isRenaming ? (
                                 <RenameInput
                                   state={rename}
@@ -17442,274 +17419,143 @@ export function FileExplorer({
                                   }
                                 />
                               ) : (
-                                <div
+                                <span
                                   style={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 8,
-                                    minWidth: 0,
+                                    fontSize:
+                                      "var(--overlay-explorer-entry-title-size)",
+                                    textAlign:
+                                      explorerTheme.labelMode === "inline"
+                                        ? "left"
+                                        : "center",
+                                    color: EXP.text,
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    display: "-webkit-box",
+                                    WebkitLineClamp:
+                                      activeGridMetrics.nameLines,
+                                    WebkitBoxOrient: "vertical",
+                                    width: "100%",
+                                    lineHeight: 1.28,
+                                    fontWeight:
+                                      "var(--overlay-explorer-entry-title-weight)",
+                                    letterSpacing:
+                                      "var(--overlay-explorer-label-spacing)",
                                   }}
                                 >
-                                  <span
-                                    style={{
-                                      color: isSel
-                                        ? EXP.text
-                                        : entry.is_dir
-                                          ? EXP.yellow
-                                          : EXP.text,
-                                      fontWeight: entry.is_dir ? 600 : 450,
-                                      overflow: "hidden",
-                                      textOverflow: "ellipsis",
-                                      whiteSpace: "nowrap",
-                                      minWidth: 0,
-                                    }}
-                                  >
-                                    {entry.name}
-                                  </span>
-                                  {entry.is_symlink && (
-                                    <span
-                                      style={{
-                                        fontSize: 9,
-                                        color: EXP.muted,
-                                        background:
-                                          "var(--overlay-explorer-chip-bg)",
-                                        borderRadius:
-                                          "var(--overlay-explorer-control-radius)",
-                                        padding: "1px 4px",
-                                        flexShrink: 0,
-                                      }}
-                                    >
-                                      symlink
-                                    </span>
-                                  )}
-                                </div>
+                                  {entry.name}
+                                </span>
                               )}
-                              <div
+                              <span
                                 style={{
-                                  marginTop: 2,
-                                  fontSize: 10,
+                                  fontSize:
+                                    "var(--overlay-explorer-entry-meta-size)",
+                                  textAlign:
+                                    explorerTheme.labelMode === "inline"
+                                      ? "left"
+                                      : "center",
                                   color: EXP.muted2,
                                   overflow: "hidden",
                                   textOverflow: "ellipsis",
                                   whiteSpace: "nowrap",
+                                  width: "100%",
+                                  marginTop: -2,
                                 }}
                               >
-                                {renderEntryInlineMeta(entry)}
-                              </div>
+                                {getEntryStorageLabel(entry)}
+                              </span>
                               {renderSearchMetadata(entry)}
                             </div>
-                          </div>
-                          <div
-                            style={{
-                              flexShrink: 0,
-                              fontSize: 10,
-                              color: EXP.muted,
-                              whiteSpace: "nowrap",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.06em",
-                            }}
-                          >
-                            {getEntryTypeLabel(entry)}
-                          </div>
-                        </div>
-                      );
-                    })}
-                    <div style={{ height: virtualWindow.bottomSpacer }} />
-                  </div>
-                )}
+                          );
+                        })}
+                      </div>
+                      <div style={{ height: virtualWindow.bottomSpacer }} />
+                    </div>
+                  )}
 
-              {effectiveExperimentalViewMode === "off" &&
-                newItem.visible &&
-                virtualWindow.kind === "list" &&
-                effectiveViewModeDefinition.presentation === "table" && (
-                  <table
-                    style={{
-                      width: "100%",
-                      borderCollapse: "collapse",
-                      fontSize: 12,
-                    }}
-                  >
-                    <tbody>
-                      <tr
-                        style={{
-                          background:
-                            "var(--overlay-explorer-item-selected-bg)",
-                          borderBottom:
-                            "1px solid var(--overlay-explorer-toolbar-border)",
-                          height: activeRowMetrics?.newItemHeight ?? 42,
-                          boxSizing: "border-box",
+                {effectiveExperimentalViewMode === "off" &&
+                  newItem.visible &&
+                  virtualWindow.kind === "list" &&
+                  effectiveViewModeDefinition.presentation === "list" && (
+                    <div
+                      style={{
+                        height: activeRowMetrics?.newItemHeight ?? 42,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "0 12px",
+                        borderBottom:
+                          "1px solid var(--overlay-explorer-toolbar-border)",
+                        background: "var(--overlay-explorer-item-selected-bg)",
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      <SvgIcon
+                        src={
+                          newItem.kind === "folder"
+                            ? getIconSrc(
+                                {
+                                  name: "folder",
+                                  path: currentPath,
+                                  is_dir: true,
+                                  size: 0,
+                                  modified: 0,
+                                  extension: "",
+                                  is_hidden: false,
+                                  is_symlink: false,
+                                },
+                                false,
+                                {
+                                  rules: explorerSettings.folderIconRules,
+                                  defaultIcon:
+                                    explorerSettings.defaultFolderIcon,
+                                },
+                                themeIconTheme,
+                              )
+                            : resolveFileIconSrc(
+                                "new-file.txt",
+                                "txt",
+                                themeIconTheme,
+                              )
+                        }
+                        size={activeRowMetrics?.iconSize ?? 16}
+                      />
+                      <input
+                        autoFocus
+                        value={newItemName}
+                        onChange={(e) => setNewItemName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") commitNew();
+                          if (e.key === "Escape")
+                            setNewItem({ visible: false, kind: "folder" });
                         }}
-                      >
-                        <td style={{ padding: "4px 12px" }}>
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 8,
-                            }}
-                          >
-                            <SvgIcon
-                              src={
-                                newItem.kind === "folder"
-                                  ? getIconSrc(
-                                      {
-                                        name: "folder",
-                                        path: currentPath,
-                                        is_dir: true,
-                                        size: 0,
-                                        modified: 0,
-                                        extension: "",
-                                        is_hidden: false,
-                                        is_symlink: false,
-                                      },
-                                      false,
-                                      {
-                                        rules: explorerSettings.folderIconRules,
-                                        defaultIcon:
-                                          explorerSettings.defaultFolderIcon,
-                                      },
-                                      themeIconTheme,
-                                    )
-                                  : resolveFileIconSrc(
-                                      "new-file.txt",
-                                      "txt",
-                                      themeIconTheme,
-                                    )
-                              }
-                              size={activeRowMetrics?.iconSize ?? 16}
-                            />
-                            <input
-                              autoFocus
-                              value={newItemName}
-                              onChange={(e) => setNewItemName(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") commitNew();
-                                if (e.key === "Escape")
-                                  setNewItem({
-                                    visible: false,
-                                    kind: "folder",
-                                  });
-                              }}
-                              onBlur={commitNew}
-                              placeholder={
-                                newItem.kind === "folder"
-                                  ? "folder name"
-                                  : "notes.md / app.py"
-                              }
-                              style={{
-                                background: "var(--overlay-explorer-input-bg)",
-                                border:
-                                  "1px solid var(--overlay-explorer-input-border)",
-                                borderRadius:
-                                  "var(--overlay-explorer-control-radius)",
-                                color: EXP.text,
-                                fontSize: 12,
-                                padding: "2px 6px",
-                                outline: "none",
-                                flex: 1,
-                              }}
-                            />
-                          </div>
-                        </td>
-                        <td />
-                        <td />
-                        <td />
-                      </tr>
-                    </tbody>
-                  </table>
-                )}
+                        onBlur={commitNew}
+                        placeholder={
+                          newItem.kind === "folder"
+                            ? "folder name"
+                            : "notes.md / app.py"
+                        }
+                        style={{
+                          background: "var(--overlay-explorer-input-bg)",
+                          border:
+                            "1px solid var(--overlay-explorer-input-border)",
+                          borderRadius:
+                            "var(--overlay-explorer-control-radius)",
+                          color: EXP.text,
+                          fontSize: 12,
+                          padding: "2px 6px",
+                          outline: "none",
+                          flex: 1,
+                        }}
+                      />
+                    </div>
+                  )}
 
-              {effectiveExperimentalViewMode === "off" &&
-                shouldRenderExplorerContent &&
-                virtualWindow.kind === "list" &&
-                effectiveViewModeDefinition.presentation === "table" && (
-                  <table
-                    style={{
-                      width: "100%",
-                      borderCollapse: "collapse",
-                      fontSize: 12,
-                      tableLayout: "fixed",
-                    }}
-                  >
-                    <thead>
-                      <tr
-                        style={{
-                          background: "var(--overlay-explorer-toolbar-bg)",
-                          position: "sticky",
-                          top: 0,
-                          zIndex: 2,
-                        }}
-                      >
-                        {[
-                          { key: "name", label: "Name" },
-                          { key: "size", label: "Size" },
-                          { key: "date", label: "Modified" },
-                          { key: "type", label: "Type" },
-                        ].map((column) => (
-                          <th
-                            key={column.key}
-                            style={{
-                              padding: "6px 12px",
-                              textAlign: "left",
-                              color: EXP.muted,
-                              fontWeight: 600,
-                              fontSize: 10,
-                              letterSpacing: "0.06em",
-                              textTransform: "uppercase",
-                              borderBottom:
-                                "1px solid var(--overlay-explorer-toolbar-border)",
-                            }}
-                          >
-                            <button
-                              type="button"
-                              onClick={() =>
-                                toggleSort(column.key as ExplorerSortKey)
-                              }
-                              style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: 6,
-                                background: "none",
-                                border: "none",
-                                padding: 0,
-                                color:
-                                  explorerSettings.sortBy === column.key
-                                    ? EXP.text
-                                    : EXP.muted,
-                                cursor: "pointer",
-                                fontSize: 10,
-                                fontWeight: 600,
-                                letterSpacing: "0.06em",
-                                textTransform: "uppercase",
-                              }}
-                            >
-                              <span>{column.label}</span>
-                              <span
-                                style={{
-                                  color:
-                                    explorerSettings.sortBy === column.key
-                                      ? accent
-                                      : EXP.muted2,
-                                }}
-                              >
-                                {explorerSettings.sortBy === column.key
-                                  ? explorerSettings.sortOrder === "asc"
-                                    ? "↑"
-                                    : "↓"
-                                  : "·"}
-                              </span>
-                            </button>
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr style={{ height: virtualWindow.topSpacer }}>
-                        <td
-                          colSpan={4}
-                          style={{ padding: 0, border: "none" }}
-                        />
-                      </tr>
+                {effectiveExperimentalViewMode === "off" &&
+                  shouldRenderExplorerContent &&
+                  virtualWindow.kind === "list" &&
+                  effectiveViewModeDefinition.presentation === "list" && (
+                    <div style={{ minHeight: 0 }}>
+                      <div style={{ height: virtualWindow.topSpacer }} />
                       {virtualizedEntries.map((entry) => {
                         const isSel = selected.has(entry.path);
                         const isDrop = dragOver === entry.path && entry.is_dir;
@@ -17728,9 +17574,8 @@ export function FileExplorer({
                           entry,
                           rowThumbnailStageSize,
                         );
-                        const isDetailsMode = effectiveViewMode === "details";
                         return (
-                          <tr
+                          <div
                             key={entry.path}
                             draggable
                             data-entry-path={entry.path}
@@ -17753,6 +17598,19 @@ export function FileExplorer({
                             onContextMenu={(e) => onRightClick(e, entry)}
                             title={getSearchTooltip(entry)}
                             style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 12,
+                              height: virtualWindow.rowHeight,
+                              padding: "0 12px",
+                              borderBottomWidth: 1,
+                              borderBottomStyle: "solid",
+                              borderBottomColor: isDrop
+                                ? dropEntrySurface.borderColor
+                                : isSel
+                                  ? selectedEntrySurface.borderColor
+                                  : "var(--overlay-explorer-toolbar-border)",
                               background: isDrop
                                 ? dropEntrySurface.background
                                 : isSel
@@ -17761,9 +17619,6 @@ export function FileExplorer({
                               cursor: "pointer",
                               opacity: entry.is_hidden ? 0.5 : 1,
                               userSelect: "none",
-                              borderBottom:
-                                "1px solid var(--overlay-explorer-toolbar-border)",
-                              height: virtualWindow.rowHeight,
                               boxSizing: "border-box",
                               boxShadow: isDrop
                                 ? dropEntrySurface.boxShadow
@@ -17779,7 +17634,7 @@ export function FileExplorer({
                             onMouseEnter={(e) => {
                               handleEntryPointerEnter(
                                 entry,
-                                e.currentTarget as HTMLTableRowElement,
+                                e.currentTarget as HTMLDivElement,
                                 isSel,
                                 isDrop,
                               );
@@ -17787,203 +17642,618 @@ export function FileExplorer({
                             onMouseLeave={(e) => {
                               handleEntryPointerLeave(
                                 entry,
-                                e.currentTarget as HTMLTableRowElement,
+                                e.currentTarget as HTMLDivElement,
                                 isSel,
                                 isDrop,
                               );
                             }}
                           >
-                            <td
+                            <div
                               style={{
-                                padding: isDetailsMode
-                                  ? "6px 12px"
-                                  : "4px 12px",
-                                verticalAlign: "top",
-                                overflow: "hidden",
+                                minWidth: 0,
+                                flex: 1,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 10,
                               }}
                             >
                               <div
                                 style={{
+                                  width: rowThumbnailStageSize,
+                                  height: rowThumbnailStageSize,
+                                  minWidth: rowThumbnailStageSize,
                                   display: "flex",
-                                  alignItems: "flex-start",
-                                  gap: 8,
-                                  minWidth: 0,
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  overflow: "hidden",
+                                  borderRadius: thumbnail ? 10 : undefined,
+                                  border: thumbnail
+                                    ? "1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)"
+                                    : undefined,
+                                  background: thumbnail
+                                    ? "color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)"
+                                    : undefined,
+                                  boxShadow: thumbnail
+                                    ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
+                                    : undefined,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {thumbnail ? (
+                                  <ExplorerThumbnailImage
+                                    entryName={entry.name}
+                                    hoverScrubEnabled={
+                                      hoveredVideoThumbnailPath === entry.path
+                                    }
+                                    thumbnail={thumbnail}
+                                  />
+                                ) : (
+                                  <SvgIcon
+                                    src={iconSrc}
+                                    size={activeRowMetrics?.iconSize ?? 16}
+                                  />
+                                )}
+                              </div>
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                {isRenaming ? (
+                                  <RenameInput
+                                    state={rename}
+                                    onCommit={commitRename}
+                                    onCancel={() =>
+                                      setRename({
+                                        active: false,
+                                        path: "",
+                                        name: "",
+                                      })
+                                    }
+                                  />
+                                ) : (
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: 8,
+                                      minWidth: 0,
+                                    }}
+                                  >
+                                    <span
+                                      style={{
+                                        color: isSel
+                                          ? EXP.text
+                                          : entry.is_dir
+                                            ? EXP.yellow
+                                            : EXP.text,
+                                        fontWeight: entry.is_dir ? 600 : 450,
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
+                                        minWidth: 0,
+                                      }}
+                                    >
+                                      {entry.name}
+                                    </span>
+                                    {entry.is_symlink && (
+                                      <span
+                                        style={{
+                                          fontSize: 9,
+                                          color: EXP.muted,
+                                          background:
+                                            "var(--overlay-explorer-chip-bg)",
+                                          borderRadius:
+                                            "var(--overlay-explorer-control-radius)",
+                                          padding: "1px 4px",
+                                          flexShrink: 0,
+                                        }}
+                                      >
+                                        symlink
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                                <div
+                                  style={{
+                                    marginTop: 2,
+                                    fontSize: 10,
+                                    color: EXP.muted2,
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {renderEntryInlineMeta(entry)}
+                                </div>
+                                {renderSearchMetadata(entry)}
+                              </div>
+                            </div>
+                            <div
+                              style={{
+                                flexShrink: 0,
+                                fontSize: 10,
+                                color: EXP.muted,
+                                whiteSpace: "nowrap",
+                                textTransform: "uppercase",
+                                letterSpacing: "0.06em",
+                              }}
+                            >
+                              {getEntryTypeLabel(entry)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <div style={{ height: virtualWindow.bottomSpacer }} />
+                    </div>
+                  )}
+
+                {effectiveExperimentalViewMode === "off" &&
+                  newItem.visible &&
+                  virtualWindow.kind === "list" &&
+                  effectiveViewModeDefinition.presentation === "table" && (
+                    <table
+                      style={{
+                        width: "100%",
+                        borderCollapse: "collapse",
+                        fontSize: 12,
+                      }}
+                    >
+                      <tbody>
+                        <tr
+                          style={{
+                            background:
+                              "var(--overlay-explorer-item-selected-bg)",
+                            borderBottom:
+                              "1px solid var(--overlay-explorer-toolbar-border)",
+                            height: activeRowMetrics?.newItemHeight ?? 42,
+                            boxSizing: "border-box",
+                          }}
+                        >
+                          <td style={{ padding: "4px 12px" }}>
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                              }}
+                            >
+                              <SvgIcon
+                                src={
+                                  newItem.kind === "folder"
+                                    ? getIconSrc(
+                                        {
+                                          name: "folder",
+                                          path: currentPath,
+                                          is_dir: true,
+                                          size: 0,
+                                          modified: 0,
+                                          extension: "",
+                                          is_hidden: false,
+                                          is_symlink: false,
+                                        },
+                                        false,
+                                        {
+                                          rules:
+                                            explorerSettings.folderIconRules,
+                                          defaultIcon:
+                                            explorerSettings.defaultFolderIcon,
+                                        },
+                                        themeIconTheme,
+                                      )
+                                    : resolveFileIconSrc(
+                                        "new-file.txt",
+                                        "txt",
+                                        themeIconTheme,
+                                      )
+                                }
+                                size={activeRowMetrics?.iconSize ?? 16}
+                              />
+                              <input
+                                autoFocus
+                                value={newItemName}
+                                onChange={(e) => setNewItemName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") commitNew();
+                                  if (e.key === "Escape")
+                                    setNewItem({
+                                      visible: false,
+                                      kind: "folder",
+                                    });
+                                }}
+                                onBlur={commitNew}
+                                placeholder={
+                                  newItem.kind === "folder"
+                                    ? "folder name"
+                                    : "notes.md / app.py"
+                                }
+                                style={{
+                                  background:
+                                    "var(--overlay-explorer-input-bg)",
+                                  border:
+                                    "1px solid var(--overlay-explorer-input-border)",
+                                  borderRadius:
+                                    "var(--overlay-explorer-control-radius)",
+                                  color: EXP.text,
+                                  fontSize: 12,
+                                  padding: "2px 6px",
+                                  outline: "none",
+                                  flex: 1,
+                                }}
+                              />
+                            </div>
+                          </td>
+                          <td />
+                          <td />
+                          <td />
+                        </tr>
+                      </tbody>
+                    </table>
+                  )}
+
+                {effectiveExperimentalViewMode === "off" &&
+                  shouldRenderExplorerContent &&
+                  virtualWindow.kind === "list" &&
+                  effectiveViewModeDefinition.presentation === "table" && (
+                    <table
+                      style={{
+                        width: "100%",
+                        borderCollapse: "collapse",
+                        fontSize: 12,
+                        tableLayout: "fixed",
+                      }}
+                    >
+                      <thead>
+                        <tr
+                          style={{
+                            background: "var(--overlay-explorer-toolbar-bg)",
+                            position: "sticky",
+                            top: 0,
+                            zIndex: 2,
+                          }}
+                        >
+                          {[
+                            { key: "name", label: "Name" },
+                            { key: "size", label: "Size" },
+                            { key: "date", label: "Modified" },
+                            { key: "type", label: "Type" },
+                          ].map((column) => (
+                            <th
+                              key={column.key}
+                              style={{
+                                padding: "6px 12px",
+                                textAlign: "left",
+                                color: EXP.muted,
+                                fontWeight: 600,
+                                fontSize: 10,
+                                letterSpacing: "0.06em",
+                                textTransform: "uppercase",
+                                borderBottom:
+                                  "1px solid var(--overlay-explorer-toolbar-border)",
+                              }}
+                            >
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  toggleSort(column.key as ExplorerSortKey)
+                                }
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 6,
+                                  background: "none",
+                                  border: "none",
+                                  padding: 0,
+                                  color:
+                                    explorerSettings.sortBy === column.key
+                                      ? EXP.text
+                                      : EXP.muted,
+                                  cursor: "pointer",
+                                  fontSize: 10,
+                                  fontWeight: 600,
+                                  letterSpacing: "0.06em",
+                                  textTransform: "uppercase",
+                                }}
+                              >
+                                <span>{column.label}</span>
+                                <span
+                                  style={{
+                                    color:
+                                      explorerSettings.sortBy === column.key
+                                        ? accent
+                                        : EXP.muted2,
+                                  }}
+                                >
+                                  {explorerSettings.sortBy === column.key
+                                    ? explorerSettings.sortOrder === "asc"
+                                      ? "↑"
+                                      : "↓"
+                                    : "·"}
+                                </span>
+                              </button>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr style={{ height: virtualWindow.topSpacer }}>
+                          <td
+                            colSpan={4}
+                            style={{ padding: 0, border: "none" }}
+                          />
+                        </tr>
+                        {virtualizedEntries.map((entry) => {
+                          const isSel = selected.has(entry.path);
+                          const isDrop =
+                            dragOver === entry.path && entry.is_dir;
+                          const isRenaming =
+                            rename.active && rename.path === entry.path;
+                          const iconSrc = getExplorerEntryIconSrc(
+                            entry,
+                            isSel,
+                            isDrop,
+                          );
+                          const rowThumbnailStageSize = Math.max(
+                            (activeRowMetrics?.iconSize ?? 16) + 12,
+                            28,
+                          );
+                          const thumbnail = getRenderableEntryThumbnail(
+                            entry,
+                            rowThumbnailStageSize,
+                          );
+                          const isDetailsMode = effectiveViewMode === "details";
+                          return (
+                            <tr
+                              key={entry.path}
+                              draggable
+                              data-entry-path={entry.path}
+                              data-overlay-drag-source="file"
+                              onDragStart={(e) => onDragStart(e, entry)}
+                              onDragEnd={onDragEnd}
+                              onDragOver={
+                                entry.is_dir
+                                  ? (e) => onDragOver(e, entry.path)
+                                  : undefined
+                              }
+                              onDragLeave={(e) => onDragLeave(e, entry.path)}
+                              onDrop={
+                                entry.is_dir
+                                  ? (e) => onDrop(e, entry.path)
+                                  : undefined
+                              }
+                              onClick={(e) => onEntryClick(e, entry)}
+                              onDoubleClick={() => onEntryDoubleClick(entry)}
+                              onContextMenu={(e) => onRightClick(e, entry)}
+                              title={getSearchTooltip(entry)}
+                              style={{
+                                background: isDrop
+                                  ? dropEntrySurface.background
+                                  : isSel
+                                    ? selectedEntrySurface.background
+                                    : idleEntrySurface.background,
+                                cursor: "pointer",
+                                opacity: entry.is_hidden ? 0.5 : 1,
+                                userSelect: "none",
+                                borderBottom:
+                                  "1px solid var(--overlay-explorer-toolbar-border)",
+                                height: virtualWindow.rowHeight,
+                                boxSizing: "border-box",
+                                boxShadow: isDrop
+                                  ? dropEntrySurface.boxShadow
+                                  : isSel
+                                    ? selectedEntrySurface.boxShadow
+                                    : idleEntrySurface.boxShadow,
+                                transform: isDrop
+                                  ? dropEntrySurface.transform
+                                  : isSel
+                                    ? selectedEntrySurface.transform
+                                    : idleEntrySurface.transform,
+                              }}
+                              onMouseEnter={(e) => {
+                                handleEntryPointerEnter(
+                                  entry,
+                                  e.currentTarget as HTMLTableRowElement,
+                                  isSel,
+                                  isDrop,
+                                );
+                              }}
+                              onMouseLeave={(e) => {
+                                handleEntryPointerLeave(
+                                  entry,
+                                  e.currentTarget as HTMLTableRowElement,
+                                  isSel,
+                                  isDrop,
+                                );
+                              }}
+                            >
+                              <td
+                                style={{
+                                  padding: isDetailsMode
+                                    ? "6px 12px"
+                                    : "4px 12px",
+                                  verticalAlign: "top",
+                                  overflow: "hidden",
                                 }}
                               >
                                 <div
                                   style={{
-                                    width: rowThumbnailStageSize,
-                                    height: rowThumbnailStageSize,
-                                    minWidth: rowThumbnailStageSize,
                                     display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    overflow: "hidden",
-                                    borderRadius: thumbnail ? 10 : undefined,
-                                    border: thumbnail
-                                      ? "1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)"
-                                      : undefined,
-                                    background: thumbnail
-                                      ? "color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)"
-                                      : undefined,
-                                    boxShadow: thumbnail
-                                      ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
-                                      : undefined,
-                                    flexShrink: 0,
+                                    alignItems: "flex-start",
+                                    gap: 8,
+                                    minWidth: 0,
                                   }}
                                 >
-                                  {thumbnail ? (
-                                    <ExplorerThumbnailImage
-                                      entryName={entry.name}
-                                      hoverScrubEnabled={
-                                        hoveredVideoThumbnailPath === entry.path
-                                      }
-                                      thumbnail={thumbnail}
-                                    />
-                                  ) : (
-                                    <SvgIcon
-                                      src={iconSrc}
-                                      size={activeRowMetrics?.iconSize ?? 16}
-                                    />
-                                  )}
-                                </div>
-                                <div style={{ minWidth: 0, flex: 1 }}>
-                                  {isRenaming ? (
-                                    <RenameInput
-                                      state={rename}
-                                      onCommit={commitRename}
-                                      onCancel={() =>
-                                        setRename({
-                                          active: false,
-                                          path: "",
-                                          name: "",
-                                        })
-                                      }
-                                    />
-                                  ) : (
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        alignItems: "center",
-                                        gap: 8,
-                                        minWidth: 0,
-                                      }}
-                                    >
-                                      <span
+                                  <div
+                                    style={{
+                                      width: rowThumbnailStageSize,
+                                      height: rowThumbnailStageSize,
+                                      minWidth: rowThumbnailStageSize,
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      overflow: "hidden",
+                                      borderRadius: thumbnail ? 10 : undefined,
+                                      border: thumbnail
+                                        ? "1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)"
+                                        : undefined,
+                                      background: thumbnail
+                                        ? "color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)"
+                                        : undefined,
+                                      boxShadow: thumbnail
+                                        ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
+                                        : undefined,
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    {thumbnail ? (
+                                      <ExplorerThumbnailImage
+                                        entryName={entry.name}
+                                        hoverScrubEnabled={
+                                          hoveredVideoThumbnailPath ===
+                                          entry.path
+                                        }
+                                        thumbnail={thumbnail}
+                                      />
+                                    ) : (
+                                      <SvgIcon
+                                        src={iconSrc}
+                                        size={activeRowMetrics?.iconSize ?? 16}
+                                      />
+                                    )}
+                                  </div>
+                                  <div style={{ minWidth: 0, flex: 1 }}>
+                                    {isRenaming ? (
+                                      <RenameInput
+                                        state={rename}
+                                        onCommit={commitRename}
+                                        onCancel={() =>
+                                          setRename({
+                                            active: false,
+                                            path: "",
+                                            name: "",
+                                          })
+                                        }
+                                      />
+                                    ) : (
+                                      <div
                                         style={{
-                                          color: isSel
-                                            ? EXP.text
-                                            : entry.is_dir
-                                              ? EXP.yellow
-                                              : EXP.text,
-                                          fontWeight: entry.is_dir
-                                            ? 600
-                                            : isDetailsMode
-                                              ? 500
-                                              : 400,
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: 8,
+                                          minWidth: 0,
+                                        }}
+                                      >
+                                        <span
+                                          style={{
+                                            color: isSel
+                                              ? EXP.text
+                                              : entry.is_dir
+                                                ? EXP.yellow
+                                                : EXP.text,
+                                            fontWeight: entry.is_dir
+                                              ? 600
+                                              : isDetailsMode
+                                                ? 500
+                                                : 400,
+                                            overflow: "hidden",
+                                            textOverflow: "ellipsis",
+                                            whiteSpace: "nowrap",
+                                            minWidth: 0,
+                                            flex: 1,
+                                          }}
+                                        >
+                                          {entry.name}
+                                        </span>
+                                        {entry.is_symlink && (
+                                          <span
+                                            style={{
+                                              fontSize: 9,
+                                              color: EXP.muted,
+                                              background:
+                                                "var(--overlay-explorer-chip-bg)",
+                                              borderRadius:
+                                                "var(--overlay-explorer-control-radius)",
+                                              padding: "1px 4px",
+                                              flexShrink: 0,
+                                            }}
+                                          >
+                                            symlink
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+                                    {isDetailsMode && !isRenaming && (
+                                      <div
+                                        style={{
+                                          marginTop: 2,
+                                          fontSize: 10,
+                                          color: EXP.muted2,
                                           overflow: "hidden",
                                           textOverflow: "ellipsis",
                                           whiteSpace: "nowrap",
-                                          minWidth: 0,
-                                          flex: 1,
                                         }}
                                       >
-                                        {entry.name}
-                                      </span>
-                                      {entry.is_symlink && (
-                                        <span
-                                          style={{
-                                            fontSize: 9,
-                                            color: EXP.muted,
-                                            background:
-                                              "var(--overlay-explorer-chip-bg)",
-                                            borderRadius:
-                                              "var(--overlay-explorer-control-radius)",
-                                            padding: "1px 4px",
-                                            flexShrink: 0,
-                                          }}
-                                        >
-                                          symlink
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
-                                  {isDetailsMode && !isRenaming && (
-                                    <div
-                                      style={{
-                                        marginTop: 2,
-                                        fontSize: 10,
-                                        color: EXP.muted2,
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                        whiteSpace: "nowrap",
-                                      }}
-                                    >
-                                      {renderEntryInlineMeta(entry)}
-                                    </div>
-                                  )}
-                                  {renderSearchMetadata(entry)}
+                                        {renderEntryInlineMeta(entry)}
+                                      </div>
+                                    )}
+                                    {renderSearchMetadata(entry)}
+                                  </div>
                                 </div>
-                              </div>
-                            </td>
-                            <td
-                              style={{
-                                padding: isDetailsMode
-                                  ? "6px 12px"
-                                  : "4px 12px",
-                                color: EXP.muted,
-                                fontFamily: "monospace",
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                              }}
-                            >
-                              {getEntryStorageLabel(entry)}
-                            </td>
-                            <td
-                              style={{
-                                padding: isDetailsMode
-                                  ? "6px 12px"
-                                  : "4px 12px",
-                                color: EXP.muted,
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                              }}
-                            >
-                              {formatDate(entry.modified)}
-                            </td>
-                            <td
-                              style={{
-                                padding: isDetailsMode
-                                  ? "6px 12px"
-                                  : "4px 12px",
-                                color: EXP.muted2,
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {getEntryTypeLabel(entry)}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      <tr style={{ height: virtualWindow.bottomSpacer }}>
-                        <td
-                          colSpan={4}
-                          style={{ padding: 0, border: "none" }}
-                        />
-                      </tr>
-                    </tbody>
-                  </table>
-                )}
+                              </td>
+                              <td
+                                style={{
+                                  padding: isDetailsMode
+                                    ? "6px 12px"
+                                    : "4px 12px",
+                                  color: EXP.muted,
+                                  fontFamily: "monospace",
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                }}
+                              >
+                                {getEntryStorageLabel(entry)}
+                              </td>
+                              <td
+                                style={{
+                                  padding: isDetailsMode
+                                    ? "6px 12px"
+                                    : "4px 12px",
+                                  color: EXP.muted,
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                }}
+                              >
+                                {formatDate(entry.modified)}
+                              </td>
+                              <td
+                                style={{
+                                  padding: isDetailsMode
+                                    ? "6px 12px"
+                                    : "4px 12px",
+                                  color: EXP.muted2,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {getEntryTypeLabel(entry)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        <tr style={{ height: virtualWindow.bottomSpacer }}>
+                          <td
+                            colSpan={4}
+                            style={{ padding: 0, border: "none" }}
+                          />
+                        </tr>
+                      </tbody>
+                    </table>
+                  )}
               </div>
             </OverlayScrollArea>
           </div>
 
           {/* Side pane */}
-          {hasPreview && (
+          {previewPanelVisible && (
             <PreviewPanel
               preview={preview}
               width={previewWidth}
@@ -18035,16 +18305,20 @@ export function FileExplorer({
                       size: preview.size,
                       is_dir: false,
                       modified: Date.now(),
-                      extension: getEntryExtension({ name: preview.name, extension: "", is_dir: false }),
+                      extension: getEntryExtension({
+                        name: preview.name,
+                        extension: "",
+                        is_dir: false,
+                      }),
                       is_hidden: false,
                       is_symlink: false,
                     },
-                    mode
+                    mode,
                   );
                 }
               }}
               onClose={() => {
-                void closePreview();
+                void togglePreviewEnabled();
               }}
             />
           )}
