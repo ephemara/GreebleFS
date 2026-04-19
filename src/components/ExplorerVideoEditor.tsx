@@ -1,22 +1,12 @@
 /**
- * ExplorerVideoEditor — pure-frontend video editor for the GreebleFS preview pane.
+ * ExplorerVideoEditor — shell-owned video preview/editor for the GreebleFS preview pane.
  *
- * Architecture: zero Rust/Tauri engine calls. Uses browser <video> + convertFileSrc
- * for instant, reliable playback. All editing is non-destructive CSS/canvas-side.
- *
- * Features:
- *  - Dual-track timeline with draggable trim handles (in/out points)
- *  - Scrubbing playhead
- *  - Frame-accurate step (±1 frame, ±1s)
- *  - Inspector panel: Transform, Color grading, Audio tabs
- *  - Viewer: zoom scroll + drag-to-pan + crop overlay (CSS clip-path)
- *  - WebAudio-based local audio extraction to WAV
- *  - Loop-within-trim-region playback
- *  - All chrome uses GreebleFS theme CSS variables
+ * Playback still rides a browser `<video>` element, but source resolution and preview-proxy
+ * generation go through the typed Rust backend so the shell can fall back to a safer proxy when
+ * the current desktop webview cannot decode the original file directly.
  */
 
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { commands } from '../generated/tauri';
 import {
   useCallback,
   useEffect,
@@ -43,6 +33,11 @@ import {
   VolumeX,
   Loader2,
 } from 'lucide-react';
+import {
+  createExplorerVideoPreviewProxy,
+  resolveExplorerVideoPreviewSource,
+  type ExplorerVideoPreviewSource,
+} from '../runtime/videoEditorBackend';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -268,7 +263,7 @@ export function ExplorerVideoEditor({
   videoName,
   videoSource,
   videoExtension,
-  videoMimeType: _videoMimeType,
+  videoMimeType,
   videoSize,
 }: ExplorerVideoEditorProps) {
   // Resolve fallback static native-file URL (mostly used for audio extraction)
@@ -282,10 +277,15 @@ export function ExplorerVideoEditor({
 
   // ── Proxy resolution state ──
   const [playSrc, setPlaySrc] = useState<string | undefined>(undefined);
+  const [playbackMimeType, setPlaybackMimeType] = useState<string | null>(videoMimeType);
   const [isProxying, setIsProxying] = useState(true);
   const [proxyError, setProxyError] = useState('');
+  const [resolvedSourceKind, setResolvedSourceKind] =
+    useState<ExplorerVideoPreviewSource['sourceKind'] | null>(null);
+  const [hasAttemptedRuntimeProxyFallback, setHasAttemptedRuntimeProxyFallback] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const rafRef = useRef<number>(0);
+  const loadGenerationRef = useRef(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -304,12 +304,26 @@ export function ExplorerVideoEditor({
   const [isExtractingAudio, setIsExtractingAudio] = useState(false);
   const [audioExtractMsg, setAudioExtractMsg] = useState('');
 
+  const applyResolvedPreviewSource = useCallback(
+    (resolvedSource: ExplorerVideoPreviewSource) => {
+      setResolvedSourceKind(resolvedSource.sourceKind);
+      setPlaybackMimeType(resolvedSource.mimeType ?? videoMimeType);
+      setPlaySrc(convertFileSrc(resolvedSource.sourcePath));
+    },
+    [videoMimeType],
+  );
+
   // Reset on file change and resolve source
   useEffect(() => {
     let isMounted = true;
+    const loadGeneration = loadGenerationRef.current + 1;
+    loadGenerationRef.current = loadGeneration;
     setPlaySrc(undefined);
+    setPlaybackMimeType(videoMimeType);
     setIsProxying(true);
     setProxyError('');
+    setResolvedSourceKind(null);
+    setHasAttemptedRuntimeProxyFallback(false);
     setIsPlaying(false);
     setCurrentTime(0);
     setDuration(0);
@@ -322,25 +336,75 @@ export function ExplorerVideoEditor({
 
     (async () => {
       try {
-        const res = await commands.videoResolvePreviewSource(videoPath);
-        if (res.status === 'error') throw new Error(res.error);
-        if (isMounted) {
-          setPlaySrc(convertFileSrc(res.data.sourcePath));
+        const resolvedSource = await resolveExplorerVideoPreviewSource(videoPath);
+        if (isMounted && loadGenerationRef.current === loadGeneration) {
+          applyResolvedPreviewSource(resolvedSource);
         }
       } catch (err: any) {
         // Fallback to native `<video>` src playback if the backend proxy fails
         // so that we don't block natively supported formats (MP4, WebM, etc.)
-        if (isMounted) {
+        if (isMounted && loadGenerationRef.current === loadGeneration) {
           console.warn('[VideoEditor] Backend resolve failed, falling back to direct url:', err);
+          setResolvedSourceKind('direct');
+          setPlaybackMimeType(videoMimeType);
           setPlaySrc(nativeUrl);
         }
       } finally {
-        if (isMounted) setIsProxying(false);
+        if (isMounted && loadGenerationRef.current === loadGeneration) {
+          setIsProxying(false);
+        }
       }
     })();
 
     return () => { isMounted = false; };
-  }, [videoPath, nativeUrl]);
+  }, [applyResolvedPreviewSource, nativeUrl, videoMimeType, videoPath]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !playSrc) {
+      return;
+    }
+    video.load();
+  }, [playSrc, playbackMimeType]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+    video.volume = volume;
+  }, [volume]);
+
+  const attemptRuntimeProxyFallback = useCallback(async () => {
+    if (hasAttemptedRuntimeProxyFallback) {
+      setProxyError('This desktop webview could not play the generated preview proxy either.');
+      return;
+    }
+
+    const loadGeneration = loadGenerationRef.current;
+    setHasAttemptedRuntimeProxyFallback(true);
+    setIsProxying(true);
+    setProxyError('');
+    setIsPlaying(false);
+
+    try {
+      const proxySource = await createExplorerVideoPreviewProxy(videoPath);
+      if (loadGenerationRef.current !== loadGeneration) {
+        return;
+      }
+      applyResolvedPreviewSource(proxySource);
+    } catch (error) {
+      if (loadGenerationRef.current !== loadGeneration) {
+        return;
+      }
+      console.error('[VideoEditor] preview proxy fallback failed', error);
+      setProxyError('Preview proxy generation failed for this file.');
+    } finally {
+      if (loadGenerationRef.current === loadGeneration) {
+        setIsProxying(false);
+      }
+    }
+  }, [applyResolvedPreviewSource, hasAttemptedRuntimeProxyFallback, videoPath]);
 
   // RAF loop for smooth playhead update while playing
   const tickPlayhead = useCallback(() => {
@@ -593,13 +657,19 @@ export function ExplorerVideoEditor({
           >
             <video
               ref={videoRef}
-              src={playSrc}
               preload="metadata"
               playsInline
               muted={isMuted}
               aria-label={`Video preview: ${videoName}`}
               onError={() => {
-                if (playSrc) setProxyError('Video playback failed in player');
+                if (!playSrc) {
+                  return;
+                }
+                if (resolvedSourceKind === 'direct' && !hasAttemptedRuntimeProxyFallback) {
+                  void attemptRuntimeProxyFallback();
+                  return;
+                }
+                setProxyError('Video playback failed in this desktop webview.');
               }}
               onLoadedMetadata={handleLoadedMetadata}
               onEnded={() => {
@@ -616,7 +686,11 @@ export function ExplorerVideoEditor({
                 filter: videoFilter,
                 clipPath: videoClipPath,
               }}
-            />
+            >
+              {playSrc ? (
+                <source src={playSrc} type={playbackMimeType ?? undefined} />
+              ) : null}
+            </video>
             {/* Transform overlay border */}
             {activeTab === 'transform' && (
               <div

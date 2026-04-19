@@ -1,5 +1,25 @@
 # GreebleFS Memory
 
+# 2026-04-19 — Linux Video Preview Proxy Fallback For Explorer MP4 Playback
+
+- The preview-pane video editor could fail on Linux even for `.mp4` files because the shell still renders through an HTML `<video>` element inside the desktop webview, and the backend "fallback" path was transcoding unsupported inputs into another `mp4`/H.264/AAC proxy.
+- Root cause:
+  - `src/components/ExplorerVideoEditor.tsx` relied on `videoResolvePreviewSource(...)` during load, but if the webview rejected "direct" playback at runtime it only surfaced an error; it did not retry with a generated proxy.
+  - `src-tauri/src/video_commands.rs` always emitted preview proxies as `mp4`, which does not help on Linux builds whose WebKit/GStreamer stack lacks the expected MP4 codec support.
+- Durable fix shape:
+  - `src-tauri/src/video_commands.rs` now emits platform-safe preview proxies: Linux gets `webm` preview proxies encoded as VP9 + Opus, while non-Linux builds keep the existing faststart `mp4` H.264 + AAC proxy path.
+  - `src/components/ExplorerVideoEditor.tsx` now routes through `src/runtime/videoEditorBackend.ts`, preserves the resolved source kind/MIME type, and automatically retries with `videoCreatePreviewProxy(...)` if direct playback fails in the webview at runtime.
+  - The preview player now mounts a `<source>` element with the resolved MIME type instead of relying on a bare `src`, which gives the webview a stricter content hint during playback selection.
+  - `src/test/explorerVideoEditor.test.tsx` now locks the runtime fallback contract so a direct-play failure must trigger proxy generation and switch the player over to the generated proxy source.
+- Durable product note:
+  - For inline video preview in this repo, ffprobe-level codec/container checks are not enough by themselves because Linux webview decode support depends on the host runtime stack. Keep the runtime playback-error fallback path, not just the preflight compatibility probe.
+  - Preview proxy format is a webview-compatibility concern, not just a transcoding concern. Do not assume `mp4` is the safest universal fallback for Linux preview surfaces.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerVideoEditor.test.tsx --reporter=dot`
+  - passed: filtered `bunx tsc --noEmit --pretty false 2>&1 | rg "ExplorerVideoEditor|explorerVideoEditor.test|videoEditorBackend" || true`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
+  - note: `cargo test --manifest-path src-tauri/Cargo.toml preview_proxy_output_uses_platform_safe_container_defaults -- --nocapture` is still blocked by unrelated pre-existing test compile drift in `src-tauri/src/fs_commands.rs`, `src-tauri/src/plugin_commands.rs`, and `src-tauri/src/video_engine.rs`
+
 # 2026-04-19 — Dev Telemetry Now Writes Into Repo-Local `.telemetry/`
 
 - `src-tauri/src/telemetry.rs` now resolves the telemetry trace directory differently in dev vs release:

@@ -14,11 +14,13 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration as StdDuration, UNIX_EPOCH};
 use tauri::AppHandle;
 
-const VIDEO_PREVIEW_PROXY_EXTENSION: &str = "mp4";
 const VIDEO_PREVIEW_PROXY_AUDIO_BITRATE: &str = "160k";
-const VIDEO_PREVIEW_PROXY_CRF: u8 = 23;
-const VIDEO_PREVIEW_PROXY_PRESET: &str = "veryfast";
-const VIDEO_PREVIEW_PROXY_MIME_TYPE: &str = "video/mp4";
+#[cfg(not(target_os = "linux"))]
+const VIDEO_PREVIEW_PROXY_MP4_CRF: u8 = 23;
+#[cfg(not(target_os = "linux"))]
+const VIDEO_PREVIEW_PROXY_MP4_PRESET: &str = "veryfast";
+#[cfg(target_os = "linux")]
+const VIDEO_PREVIEW_PROXY_WEBM_CRF: u8 = 31;
 const VIDEO_TRIM_AUDIO_BITRATE: &str = "192k";
 const VIDEO_TRIM_CRF: u8 = 18;
 const VIDEO_TRIM_PRESET: &str = "veryfast";
@@ -89,7 +91,7 @@ pub async fn video_create_preview_proxy(
     Ok(ResolvedVideoPreviewSource {
         source_path: path_to_string(&proxy_path),
         source_kind: VideoPreviewSourceKind::Proxy,
-        mime_type: Some(VIDEO_PREVIEW_PROXY_MIME_TYPE.to_string()),
+        mime_type: Some(video_preview_proxy_mime_type().to_string()),
         generated_from_path: Some(path_to_string(&input)),
     })
 }
@@ -117,7 +119,7 @@ pub async fn video_resolve_preview_source(
     Ok(ResolvedVideoPreviewSource {
         source_path: path_to_string(&proxy_path),
         source_kind: VideoPreviewSourceKind::Proxy,
-        mime_type: Some(VIDEO_PREVIEW_PROXY_MIME_TYPE.to_string()),
+        mime_type: Some(video_preview_proxy_mime_type().to_string()),
         generated_from_path: Some(path_to_string(&input)),
     })
 }
@@ -276,7 +278,8 @@ fn video_preview_proxy_path(app: &AppHandle, input_path: &Path) -> Result<PathBu
     );
 
     Ok(temp_root.join(format!(
-        "{stem}.{digest_prefix}.preview.{VIDEO_PREVIEW_PROXY_EXTENSION}"
+        "{stem}.{digest_prefix}.preview.{}",
+        video_preview_proxy_extension()
     )))
 }
 
@@ -339,23 +342,68 @@ async fn generate_video_preview_proxy(
 }
 
 fn build_preview_proxy_output(proxy_path: &Path, has_audio_track: bool) -> Output {
+    #[cfg(target_os = "linux")]
+    let output = Output::new(path_to_string(proxy_path))
+        .format("webm")
+        .video_codec_opts(
+            CodecOptions::new(Codec::new("libvpx-vp9"))
+                .quality(VIDEO_PREVIEW_PROXY_WEBM_CRF)
+                .pixel_format(PixelFormat::yuv420p())
+                .option("b:v", "0")
+                .option("row-mt", "1")
+                .option("cpu-used", "4"),
+        )
+        .option("deadline", "good");
+
+    #[cfg(not(target_os = "linux"))]
     let output = Output::new(path_to_string(proxy_path))
         .format("mp4")
         .video_codec_opts(
             CodecOptions::new(Codec::new("libx264"))
-                .quality(VIDEO_PREVIEW_PROXY_CRF)
+                .quality(VIDEO_PREVIEW_PROXY_MP4_CRF)
                 .pixel_format(PixelFormat::yuv420p()),
         )
-        .preset(VIDEO_PREVIEW_PROXY_PRESET)
+        .preset(VIDEO_PREVIEW_PROXY_MP4_PRESET)
         .faststart();
 
     if has_audio_track {
-        output.audio_codec_opts(
-            CodecOptions::new(Codec::aac()).bitrate(VIDEO_PREVIEW_PROXY_AUDIO_BITRATE),
-        )
+        #[cfg(target_os = "linux")]
+        {
+            output.audio_codec_opts(
+                CodecOptions::new(Codec::new("libopus"))
+                    .bitrate(VIDEO_PREVIEW_PROXY_AUDIO_BITRATE),
+            )
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            output.audio_codec_opts(
+                CodecOptions::new(Codec::aac()).bitrate(VIDEO_PREVIEW_PROXY_AUDIO_BITRATE),
+            )
+        }
     } else {
         output.no_audio()
     }
+}
+
+#[cfg(target_os = "linux")]
+fn video_preview_proxy_extension() -> &'static str {
+    "webm"
+}
+
+#[cfg(not(target_os = "linux"))]
+fn video_preview_proxy_extension() -> &'static str {
+    "mp4"
+}
+
+#[cfg(target_os = "linux")]
+fn video_preview_proxy_mime_type() -> &'static str {
+    "video/webm"
+}
+
+#[cfg(not(target_os = "linux"))]
+fn video_preview_proxy_mime_type() -> &'static str {
+    "video/mp4"
 }
 
 fn build_trim_export_output(output_path: &Path, has_audio_track: bool) -> Output {
@@ -538,6 +586,7 @@ mod tests {
     use super::{
         build_preview_proxy_output, direct_video_preview_mime_type, generate_video_preview_proxy,
         normalize_trim_export_request, resolve_video_preview_compatibility, run_video_trim_export,
+        video_preview_proxy_extension,
         VideoTrimExportRequest,
     };
     use crate::video_engine::{
@@ -775,18 +824,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn preview_proxy_generation_transcodes_common_container_formats_into_mp4_outputs() {
+    async fn preview_proxy_generation_transcodes_common_container_formats_into_platform_safe_outputs(
+    ) {
         let Some((ffmpeg_binary, ffprobe_binary)) = ensure_video_toolchain_available() else {
             return;
         };
 
         let temp_directory = tempdir().expect("video proxy tempdir");
+        let expected_output_extension = video_preview_proxy_extension();
+        let expected_video_codec = if cfg!(target_os = "linux") {
+            "vp9"
+        } else {
+            "h264"
+        };
+        let expected_audio_codec = if cfg!(target_os = "linux") {
+            "opus"
+        } else {
+            "aac"
+        };
         for extension in ["mov", "mkv", "avi"] {
             let input_path =
                 build_fixture_path(temp_directory.path(), &format!("proxy-source.{extension}"));
             let output_path = build_fixture_path(
                 temp_directory.path(),
-                &format!("proxy-output-{extension}.mp4"),
+                &format!("proxy-output-{extension}.{expected_output_extension}"),
             );
 
             generate_test_video_fixture(&ffmpeg_binary, &input_path, true);
@@ -814,8 +875,8 @@ mod tests {
 
             assert!(codec_types.contains(&"video"), "{}", output_path.display());
             assert!(codec_types.contains(&"audio"), "{}", output_path.display());
-            assert!(codec_names.contains(&"h264"), "{}", output_path.display());
-            assert!(codec_names.contains(&"aac"), "{}", output_path.display());
+            assert!(codec_names.contains(&expected_video_codec), "{}", output_path.display());
+            assert!(codec_names.contains(&expected_audio_codec), "{}", output_path.display());
         }
     }
 
@@ -885,10 +946,13 @@ mod tests {
     }
 
     #[test]
-    fn preview_proxy_output_is_always_written_as_mp4() {
-        let output = build_preview_proxy_output(Path::new("/tmp/proxy.mp4"), true);
+    fn preview_proxy_output_uses_platform_safe_container_defaults() {
+        let output = build_preview_proxy_output(
+            Path::new(&format!("/tmp/proxy.{}", video_preview_proxy_extension())),
+            true,
+        );
         let args = output.build_args();
         assert!(args.contains(&"-f".to_string()));
-        assert!(args.contains(&"mp4".to_string()));
+        assert!(args.contains(&video_preview_proxy_extension().to_string()));
     }
 }
