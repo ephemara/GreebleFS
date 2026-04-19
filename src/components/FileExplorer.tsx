@@ -1059,7 +1059,7 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
 function resolveExplorerDragIntent(
   event: Pick<React.DragEvent, "shiftKey" | "altKey" | "ctrlKey">,
 ): ExplorerDragIntent {
-  return event.shiftKey || event.altKey ? "native-out" : "internal";
+  return event.shiftKey ? "internal" : "native-out";
 }
 
 function fitExplorerDragPreviewLabel(
@@ -8340,9 +8340,10 @@ export function FileExplorer({
         const normalizedPayload = payloadPaths.map(normalizePath);
 
         const isInternalDrag =
-          normalizedInternal.length > 0 &&
+          nativeDragPathsRef.current.length > 0 ||
+          (normalizedInternal.length > 0 &&
           normalizedPayload.length === normalizedInternal.length &&
-          normalizedPayload.every((p: string) => normalizedInternal.includes(p));
+          normalizedPayload.every((p: string) => normalizedInternal.includes(p)));
 
         if (event.payload.type === "enter") {
           // Suppress the "Import Files" banner for internal drags — it's only
@@ -11236,8 +11237,7 @@ export function FileExplorer({
           });
       }
     }
-    e.dataTransfer.effectAllowed =
-      dragIntent === "native-out" ? "copy" : "copyMove";
+    e.dataTransfer.effectAllowed = "copyMove";
   };
 
   const onDragEnd = (e: React.DragEvent<HTMLElement>) => {
