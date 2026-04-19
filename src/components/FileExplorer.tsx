@@ -8102,12 +8102,37 @@ export function FileExplorer({
   const focusExplorerPreview = useCallback(() => {
     previewRef.current = preview;
   }, [preview]);
+  const scrollExplorerEntryIntoView = useCallback((targetPath: string) => {
+    const targetElement = Array.from(
+      mainRef.current?.querySelectorAll<HTMLElement>("[data-entry-path]") ?? [],
+    ).find((element) => element.dataset.entryPath === targetPath);
+    targetElement?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, []);
+  const previewExplorerSelectionTarget = useCallback(
+    (entry: FileEntry) => {
+      if (repositoryPicker?.active || !previewEnabled || isCompactDock) {
+        return;
+      }
+      void previewEntry(entry, getSearchFocusTarget(entry));
+    },
+    [
+      getSearchFocusTarget,
+      isCompactDock,
+      previewEnabled,
+      previewEntry,
+      repositoryPicker?.active,
+    ],
+  );
   const selectAllVisibleEntries = useCallback(() => {
     setSelected(new Set(visibleEntries.map((entry) => entry.path)));
+    const firstVisiblePath = visibleEntries[0]?.path ?? null;
+    lastSelected.current = firstVisiblePath;
+    selectionRangeAnchorPathRef.current = firstVisiblePath;
   }, [visibleEntries]);
   const clearExplorerSelection = useCallback(() => {
     setSelected(new Set());
     lastSelected.current = null;
+    selectionRangeAnchorPathRef.current = null;
   }, []);
 
   const selectVisibleEntryAtIndex = useCallback(
@@ -8124,11 +8149,17 @@ export function FileExplorer({
       if (!extendRange) {
         setSelected(new Set([nextEntry.path]));
         lastSelected.current = nextEntry.path;
+        selectionRangeAnchorPathRef.current = nextEntry.path;
+        scrollExplorerEntryIntoView(nextEntry.path);
+        previewExplorerSelectionTarget(nextEntry);
         return;
       }
 
       const anchorPath =
-        lastSelected.current ?? Array.from(selected)[0] ?? nextEntry.path;
+        selectionRangeAnchorPathRef.current ??
+        lastSelected.current ??
+        Array.from(selected)[0] ??
+        nextEntry.path;
       const anchorIndex = visibleEntries.findIndex(
         (entry) => entry.path === anchorPath,
       );
@@ -8144,9 +8175,18 @@ export function FileExplorer({
             .map((entry) => entry.path),
         ),
       );
-      lastSelected.current = anchorPath;
+      lastSelected.current = nextEntry.path;
+      selectionRangeAnchorPathRef.current =
+        anchorIndex >= 0 ? anchorPath : nextEntry.path;
+      scrollExplorerEntryIntoView(nextEntry.path);
+      previewExplorerSelectionTarget(nextEntry);
     },
-    [selected, visibleEntries],
+    [
+      previewExplorerSelectionTarget,
+      scrollExplorerEntryIntoView,
+      selected,
+      visibleEntries,
+    ],
   );
   const handleBookmarkCreated = useCallback(
     (name: string, path: string) => {
@@ -9834,6 +9874,7 @@ export function FileExplorer({
 
       setSelected(new Set([entry.path]));
       lastSelected.current = entry.path;
+      selectionRangeAnchorPathRef.current = entry.path;
       await previewEntry(entry, getSearchFocusTarget(entry));
     },
     [currentPath, getSearchFocusTarget, navigate, previewEntry],
@@ -10343,19 +10384,23 @@ export function FileExplorer({
       });
       setSelected(new Set([nextPath]));
       lastSelected.current = nextPath;
-
-      const nextElement = Array.from(
-        mainRef.current?.querySelectorAll<HTMLElement>("[data-entry-path]") ??
-          [],
-      ).find((element) => element.dataset.entryPath === nextPath);
-      nextElement?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      selectionRangeAnchorPathRef.current = nextPath;
+      scrollExplorerEntryIntoView(nextPath);
+      const nextEntry =
+        visibleEntries.find((entry) => entry.path === nextPath) ?? null;
+      if (nextEntry) {
+        previewExplorerSelectionTarget(nextEntry);
+      }
     },
     [
       jumpFilter.active,
       jumpFilter.query,
       jumpFilter.resultIndex,
       jumpFilter.resultPaths,
+      previewExplorerSelectionTarget,
       setJumpFilter,
+      scrollExplorerEntryIntoView,
+      visibleEntries,
     ],
   );
 
@@ -11093,7 +11138,11 @@ export function FileExplorer({
     e.stopPropagation();
     // Don't lose multi-selection if right-clicking already-selected item
     setJumpFilter(null);
-    if (!selected.has(entry.path)) setSelected(new Set([entry.path]));
+    if (!selected.has(entry.path)) {
+      setSelected(new Set([entry.path]));
+      lastSelected.current = entry.path;
+      selectionRangeAnchorPathRef.current = entry.path;
+    }
     setCtxMenu({ visible: true, x: e.clientX, y: e.clientY, entry });
   };
 
@@ -11105,21 +11154,26 @@ export function FileExplorer({
     if (repositoryPicker?.active && !repositoryPicker.allowMultiple) {
       setSelected(new Set([entry.path]));
       lastSelected.current = entry.path;
+      selectionRangeAnchorPathRef.current = entry.path;
       return;
     }
     const plainClick = !e.shiftKey && !e.ctrlKey && !e.metaKey;
-    if (e.shiftKey && lastSelected.current) {
+    if (e.shiftKey) {
+      const anchorPath =
+        selectionRangeAnchorPathRef.current ?? lastSelected.current;
       const idx1 = visibleEntries.findIndex(
-        (f) => f.path === lastSelected.current,
+        (f) => f.path === anchorPath,
       );
       const idx2 = visibleEntries.findIndex((f) => f.path === entry.path);
-      if (idx1 >= 0 && idx2 >= 0) {
+      if (anchorPath && idx1 >= 0 && idx2 >= 0) {
         const [lo, hi] = idx1 < idx2 ? [idx1, idx2] : [idx2, idx1];
         setSelected(
           new Set(visibleEntries.slice(lo, hi + 1).map((f) => f.path)),
         );
+        selectionRangeAnchorPathRef.current = anchorPath;
       } else {
         setSelected(new Set([entry.path]));
+        selectionRangeAnchorPathRef.current = entry.path;
       }
     } else if (e.ctrlKey || e.metaKey) {
       setSelected((prev) => {
@@ -11127,8 +11181,10 @@ export function FileExplorer({
         next.has(entry.path) ? next.delete(entry.path) : next.add(entry.path);
         return next;
       });
+      selectionRangeAnchorPathRef.current = entry.path;
     } else {
       setSelected(new Set([entry.path]));
+      selectionRangeAnchorPathRef.current = entry.path;
     }
     lastSelected.current = entry.path;
     if (repositoryPicker?.active) {
@@ -11196,16 +11252,16 @@ export function FileExplorer({
       const selectedEntry =
         visibleEntries.find((en) => selected.has(en.path)) ?? null;
       const currentFocusIndex = (() => {
-        const selectedIndex = visibleEntries.findIndex((entry) =>
-          selected.has(entry.path),
-        );
-        if (selectedIndex >= 0) return selectedIndex;
         if (lastSelected.current) {
           const rememberedIndex = visibleEntries.findIndex(
             (entry) => entry.path === lastSelected.current,
           );
           if (rememberedIndex >= 0) return rememberedIndex;
         }
+        const selectedIndex = visibleEntries.findIndex((entry) =>
+          selected.has(entry.path),
+        );
+        if (selectedIndex >= 0) return selectedIndex;
         return 0;
       })();
 
@@ -11274,6 +11330,7 @@ export function FileExplorer({
         if (targetEntry) {
           setSelected(new Set([targetEntry.path]));
           lastSelected.current = targetEntry.path;
+          selectionRangeAnchorPathRef.current = targetEntry.path;
           void openEntry(targetEntry);
         }
         return;
@@ -11463,10 +11520,48 @@ export function FileExplorer({
         void openAsAdmin(selectedEntry.path);
         return;
       }
-      if (isExplorerFocus && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      const moveSelectionUp = matchesExplorerSelectionNavigationKeybinding(
+        e,
+        keybindings.explorerMoveSelectionUp,
+      );
+      const moveSelectionDown = matchesExplorerSelectionNavigationKeybinding(
+        e,
+        keybindings.explorerMoveSelectionDown,
+      );
+      const moveSelectionLeft = matchesExplorerSelectionNavigationKeybinding(
+        e,
+        keybindings.explorerMoveSelectionLeft,
+      );
+      const moveSelectionRight = matchesExplorerSelectionNavigationKeybinding(
+        e,
+        keybindings.explorerMoveSelectionRight,
+      );
+      if (
+        isExplorerFocus &&
+        (moveSelectionUp ||
+          moveSelectionDown ||
+          moveSelectionLeft ||
+          moveSelectionRight)
+      ) {
         e.preventDefault();
-        const nextIndex =
-          e.key === "ArrowDown" ? currentFocusIndex + 1 : currentFocusIndex - 1;
+        const direction: ExplorerSelectionNavigationDirection = moveSelectionUp
+          ? "up"
+          : moveSelectionDown
+            ? "down"
+            : moveSelectionLeft
+              ? "left"
+              : "right";
+        const nextIndex = resolveExplorerDirectionalSelectionIndex({
+          currentIndex: currentFocusIndex,
+          totalEntries: visibleEntries.length,
+          direction,
+          presentation: effectiveViewModeDefinition.presentation,
+          gridColumnCount:
+            virtualWindow.kind === "grid" ? virtualWindow.columns : 1,
+        });
+        if (nextIndex < 0) {
+          return;
+        }
         selectVisibleEntryAtIndex(nextIndex, e.shiftKey);
         return;
       }
@@ -11549,6 +11644,7 @@ export function FileExplorer({
     beginAddressEdit,
     clearExplorerSelection,
     duplicate,
+    effectiveViewModeDefinition.presentation,
     experimentalDensity,
     experimentalViewMode,
     explorerTheme.preferredExperimentalViewMode,
@@ -11571,6 +11667,7 @@ export function FileExplorer({
     queueClipboard,
     refresh,
     rename.active,
+    selectVisibleEntryAtIndex,
     selectAllVisibleEntries,
     selected,
     selectedEntries,
@@ -11584,6 +11681,8 @@ export function FileExplorer({
     cycleSortKey,
     toggleSortOrder,
     updateShaderPreviewScene,
+    virtualWindow.columns,
+    virtualWindow.kind,
   ]);
 
   // ── Breadcrumbs ──
@@ -17669,6 +17768,7 @@ export function FileExplorer({
                             <div
                               key={entry.path}
                               draggable
+                              data-entry-path={entry.path}
                               data-overlay-drag-source="file"
                               data-overlay-drop-target-path={
                                 entry.is_dir ? entry.path : undefined
@@ -18827,11 +18927,15 @@ export function FileExplorer({
           onSelectPath={(path) => {
             const parentPath = path.replace(/[/\\][^/\\]+$/, "");
             if (parentPath && parentPath !== currentPath) {
-              void navigate(parentPath).finally(() =>
-                setSelected(new Set([path])),
-              );
+              void navigate(parentPath).finally(() => {
+                setSelected(new Set([path]));
+                lastSelected.current = path;
+                selectionRangeAnchorPathRef.current = path;
+              });
             } else {
               setSelected(new Set([path]));
+              lastSelected.current = path;
+              selectionRangeAnchorPathRef.current = path;
             }
           }}
           onRevealPath={(path) => {

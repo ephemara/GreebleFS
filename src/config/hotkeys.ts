@@ -22,6 +22,10 @@ export type HotkeyBindingKey =
   | 'focusExplorerList'
   | 'focusExplorerAddressBar'
   | 'focusExplorerPreview'
+  | 'explorerMoveSelectionUp'
+  | 'explorerMoveSelectionDown'
+  | 'explorerMoveSelectionLeft'
+  | 'explorerMoveSelectionRight'
   | 'togglePreviewTerminal'
   | 'openInTerminal'
   | 'calculateRecursiveSize'
@@ -247,6 +251,34 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     label: 'Focus Explorer Preview',
     description: 'Focus the explorer preview panel.',
     defaultValue: 'Ctrl+2',
+    scope: 'local',
+  },
+  {
+    key: 'explorerMoveSelectionUp',
+    label: 'Explorer Move Selection Up',
+    description: 'Move the current explorer selection upward. Icon layouts follow the visible grid.',
+    defaultValue: 'ArrowUp',
+    scope: 'local',
+  },
+  {
+    key: 'explorerMoveSelectionDown',
+    label: 'Explorer Move Selection Down',
+    description: 'Move the current explorer selection downward. Icon layouts follow the visible grid.',
+    defaultValue: 'ArrowDown',
+    scope: 'local',
+  },
+  {
+    key: 'explorerMoveSelectionLeft',
+    label: 'Explorer Move Selection Left',
+    description: 'Move the current explorer selection left. In icon layouts this follows the row layout.',
+    defaultValue: 'ArrowLeft',
+    scope: 'local',
+  },
+  {
+    key: 'explorerMoveSelectionRight',
+    label: 'Explorer Move Selection Right',
+    description: 'Move the current explorer selection right. In icon layouts this follows the row layout.',
+    defaultValue: 'ArrowRight',
     scope: 'local',
   },
   {

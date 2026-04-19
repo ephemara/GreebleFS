@@ -3398,7 +3398,14 @@ export function SettingsPage({
                     'deleteItem',
                     'duplicateItem',
                     'refreshExplorer',
+                    'goBackDirectory',
+                    'goForwardDirectory',
+                    'goHomeDirectory',
                     'goUpDirectory',
+                    'explorerMoveSelectionUp',
+                    'explorerMoveSelectionDown',
+                    'explorerMoveSelectionLeft',
+                    'explorerMoveSelectionRight',
                     'copyPath',
                     'copySelection',
                     'cutSelection',
@@ -3407,6 +3414,8 @@ export function SettingsPage({
                     'toggleExplorerLayout',
                     'togglePreviewTerminal',
                     'searchExplorer',
+                    'selectAllExplorer',
+                    'clearExplorerSelection',
                   ].includes(definition.key))
                   .map(definition => (
                     <ShortcutField

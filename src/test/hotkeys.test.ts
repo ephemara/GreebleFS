@@ -41,6 +41,10 @@ describe('hotkey config helpers', () => {
     expect(defaults.toggleExplorerSearchScope).toBe('Ctrl+Alt+F');
     expect(defaults.cycleExplorerSortKey).toBe('Ctrl+Alt+S');
     expect(defaults.toggleExplorerSortOrder).toBe('Ctrl+Alt+O');
+    expect(defaults.explorerMoveSelectionUp).toBe('ArrowUp');
+    expect(defaults.explorerMoveSelectionDown).toBe('ArrowDown');
+    expect(defaults.explorerMoveSelectionLeft).toBe('ArrowLeft');
+    expect(defaults.explorerMoveSelectionRight).toBe('ArrowRight');
     expect(defaults.selectAllExplorer).toBe('Ctrl+A');
     expect(defaults.clearExplorerSelection).toBe('Ctrl+Shift+A');
     expect(defaults.openInTerminal).toBe('Ctrl+Enter');

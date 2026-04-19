@@ -2800,6 +2800,274 @@ describe("FileExplorer view modes", () => {
     });
   });
 
+  it("updates the preview while arrow navigation moves through row-based explorer views", async () => {
+    const keyboardEntries = [
+      {
+        name: "alpha.txt",
+        path: `${REPO_ROOT}\\alpha.txt`,
+        is_dir: false,
+        size: 128,
+        modified: 0,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+      {
+        name: "beta.png",
+        path: `${REPO_ROOT}\\beta.png`,
+        is_dir: false,
+        size: 256,
+        modified: 0,
+        extension: "png",
+        is_hidden: false,
+        is_symlink: false,
+      },
+      {
+        name: "gamma.txt",
+        path: `${REPO_ROOT}\\gamma.txt`,
+        is_dir: false,
+        size: 512,
+        modified: 0,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ] as const;
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        const payload = args as { path?: string } | undefined;
+        if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+          return keyboardEntries;
+        }
+        if (command === "fs_read_text_file") {
+          if (payload?.path === keyboardEntries[0].path) {
+            return "alpha keyboard preview";
+          }
+          if (payload?.path === keyboardEntries[2].path) {
+            return "gamma keyboard preview";
+          }
+        }
+        if (
+          command === "fs_read_file_base64" &&
+          payload?.path === keyboardEntries[1].path
+        ) {
+          return "data:image/png;base64,ZmFrZQ==";
+        }
+        return baseInvokeImplementation(command, args as never);
+      },
+    );
+
+    useSettingsStore.getState().updateExplorer({ viewMode: "details" });
+
+    renderExplorer();
+    await screen.findByText("alpha.txt");
+
+    fireEvent.click(screen.getByText("alpha.txt"));
+    await waitFor(() => {
+      expect(screen.getByTestId("monaco-editor")).toHaveTextContent(
+        "alpha keyboard preview",
+      );
+    });
+
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-explorer-image-editor")).toHaveTextContent(
+        "beta.png",
+      );
+    });
+
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    await waitFor(() => {
+      expect(screen.getByTestId("monaco-editor")).toHaveTextContent(
+        "gamma keyboard preview",
+      );
+    });
+  });
+
+  it("uses the icon-grid layout for left-right-up-down explorer navigation", async () => {
+    const clientWidthDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "clientWidth",
+    );
+    const clientHeightDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "clientHeight",
+    );
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+      configurable: true,
+      get() {
+        return 540;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get() {
+        return 900;
+      },
+    });
+
+    const gridEntries = [
+      {
+        name: "a.txt",
+        path: `${REPO_ROOT}\\a.txt`,
+        is_dir: false,
+        size: 128,
+        modified: 0,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+      {
+        name: "b.png",
+        path: `${REPO_ROOT}\\b.png`,
+        is_dir: false,
+        size: 256,
+        modified: 0,
+        extension: "png",
+        is_hidden: false,
+        is_symlink: false,
+      },
+      {
+        name: "c.txt",
+        path: `${REPO_ROOT}\\c.txt`,
+        is_dir: false,
+        size: 384,
+        modified: 0,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+      {
+        name: "d.png",
+        path: `${REPO_ROOT}\\d.png`,
+        is_dir: false,
+        size: 512,
+        modified: 0,
+        extension: "png",
+        is_hidden: false,
+        is_symlink: false,
+      },
+      {
+        name: "e.txt",
+        path: `${REPO_ROOT}\\e.txt`,
+        is_dir: false,
+        size: 640,
+        modified: 0,
+        extension: "txt",
+        is_hidden: false,
+        is_symlink: false,
+      },
+      {
+        name: "f.png",
+        path: `${REPO_ROOT}\\f.png`,
+        is_dir: false,
+        size: 768,
+        modified: 0,
+        extension: "png",
+        is_hidden: false,
+        is_symlink: false,
+      },
+    ] as const;
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        const payload = args as { path?: string } | undefined;
+        if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+          return gridEntries;
+        }
+        if (command === "fs_read_text_file") {
+          if (payload?.path === gridEntries[0].path) {
+            return "preview a";
+          }
+          if (payload?.path === gridEntries[2].path) {
+            return "preview c";
+          }
+          if (payload?.path === gridEntries[4].path) {
+            return "preview e";
+          }
+        }
+        if (
+          command === "fs_read_file_base64" &&
+          typeof payload?.path === "string" &&
+          payload.path.endsWith(".png")
+        ) {
+          return "data:image/png;base64,ZmFrZQ==";
+        }
+        return baseInvokeImplementation(command, args as never);
+      },
+    );
+
+    useSettingsStore.getState().updateExplorer({ viewMode: "icons-l" });
+
+    try {
+      renderExplorer();
+      await screen.findByText("d.png");
+
+      fireEvent.click(screen.getByText("d.png"));
+      await waitFor(() => {
+        expect(screen.getByTestId("mock-explorer-image-editor")).toHaveTextContent(
+          "d.png",
+        );
+      });
+
+      fireEvent.keyDown(window, { key: "ArrowRight" });
+      await waitFor(() => {
+        expect(screen.getByTestId("monaco-editor")).toHaveTextContent(
+          "preview e",
+        );
+      });
+
+      fireEvent.keyDown(window, { key: "ArrowLeft" });
+      await waitFor(() => {
+        expect(screen.getByTestId("mock-explorer-image-editor")).toHaveTextContent(
+          "d.png",
+        );
+      });
+
+      fireEvent.keyDown(window, { key: "ArrowUp" });
+      await waitFor(() => {
+        expect(screen.getByTestId("monaco-editor")).toHaveTextContent(
+          "preview a",
+        );
+      });
+
+      fireEvent.keyDown(window, { key: "ArrowDown" });
+      await waitFor(() => {
+        expect(screen.getByTestId("mock-explorer-image-editor")).toHaveTextContent(
+          "d.png",
+        );
+      });
+    } finally {
+      if (clientWidthDescriptor) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "clientWidth",
+          clientWidthDescriptor,
+        );
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
+      }
+      if (clientHeightDescriptor) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "clientHeight",
+          clientHeightDescriptor,
+        );
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "clientHeight");
+      }
+    }
+  });
+
   it("prompts for a collision policy before pasting over an existing name", async () => {
     const defaultInvoke = vi.mocked(invoke).getMockImplementation();
     if (!defaultInvoke) {
