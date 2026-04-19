@@ -31,12 +31,74 @@ type ExplorerImageEditorProps = {
 
 type ImageEditorSaveState = 'idle' | 'saving' | 'dirty' | 'saved' | 'error';
 
+type ImagePreviewTransform = {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+};
+
+const DEFAULT_IMAGE_PREVIEW_TRANSFORM: ImagePreviewTransform = {
+  scale: 1,
+  offsetX: 0,
+  offsetY: 0,
+};
+
+const IMAGE_PREVIEW_MIN_SCALE = 0.5;
+const IMAGE_PREVIEW_MAX_SCALE = 6;
+const IMAGE_PREVIEW_ZOOM_SENSITIVITY = 0.0015;
+
 const IMAGE_EDITOR_CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
   jpg: 'image/jpeg',
   jpeg: 'image/jpeg',
   png: 'image/png',
   webp: 'image/webp',
 };
+
+function clampValue(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizeImagePreviewTransform(
+  transform: ImagePreviewTransform,
+  viewport: HTMLDivElement | null,
+  image: HTMLImageElement | null,
+): ImagePreviewTransform {
+  const nextScale = Number(
+    clampValue(transform.scale, IMAGE_PREVIEW_MIN_SCALE, IMAGE_PREVIEW_MAX_SCALE).toFixed(2),
+  );
+
+  if (!viewport || !image) {
+    return {
+      scale: nextScale,
+      offsetX: Number(transform.offsetX.toFixed(2)),
+      offsetY: Number(transform.offsetY.toFixed(2)),
+    };
+  }
+
+  const viewportWidth = viewport.clientWidth;
+  const viewportHeight = viewport.clientHeight;
+  const baseWidth = image.clientWidth;
+  const baseHeight = image.clientHeight;
+
+  if (viewportWidth <= 0 || viewportHeight <= 0 || baseWidth <= 0 || baseHeight <= 0) {
+    return {
+      scale: nextScale,
+      offsetX: Number(transform.offsetX.toFixed(2)),
+      offsetY: Number(transform.offsetY.toFixed(2)),
+    };
+  }
+
+  const scaledWidth = baseWidth * nextScale;
+  const scaledHeight = baseHeight * nextScale;
+  const maxOffsetX = Math.max(0, (scaledWidth - viewportWidth) / 2);
+  const maxOffsetY = Math.max(0, (scaledHeight - viewportHeight) / 2);
+
+  return {
+    scale: nextScale,
+    offsetX: Number(clampValue(transform.offsetX, -maxOffsetX, maxOffsetX).toFixed(2)),
+    offsetY: Number(clampValue(transform.offsetY, -maxOffsetY, maxOffsetY).toFixed(2)),
+  };
+}
 
 function getImageExtension(name: string): string {
   return name.trim().split('.').pop()?.toLowerCase() ?? '';
@@ -178,11 +240,17 @@ export function ExplorerImageEditor({
   onSaved,
 }: ExplorerImageEditorProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const previewViewportRef = useRef<HTMLDivElement | null>(null);
+  const previewImageRef = useRef<HTMLImageElement | null>(null);
   const cropperImageRef = useRef<HTMLImageElement | null>(null);
   const cropperRef = useRef<Cropper | null>(null);
   
   const [baseImage, setBaseImage] = useState<HTMLImageElement | null>(null);
   const [filters, setFilters] = useState<ExplorerImageFiltersState>(createDefaultImageFiltersState());
+  const [previewTransform, setPreviewTransform] = useState<ImagePreviewTransform>(
+    DEFAULT_IMAGE_PREVIEW_TRANSFORM,
+  );
+  const [isPreviewDragging, setIsPreviewDragging] = useState(false);
   const [isCropping, setIsCropping] = useState(false);
   const [saveState, setSaveState] = useState<ImageEditorSaveState>('idle');
   const [statusMessage, setStatusMessage] = useState('');
@@ -198,6 +266,8 @@ export function ExplorerImageEditor({
     // Clear state on path change
     setBaseImage(null);
     setFilters(createDefaultImageFiltersState());
+    setPreviewTransform(DEFAULT_IMAGE_PREVIEW_TRANSFORM);
+    setIsPreviewDragging(false);
     setIsCropping(false);
     setSaveState('idle');
     setStatusMessage('');
@@ -205,6 +275,8 @@ export function ExplorerImageEditor({
     const img = new Image();
     img.onload = () => {
       setBaseImage(img);
+      setPreviewTransform(DEFAULT_IMAGE_PREVIEW_TRANSFORM);
+      setIsPreviewDragging(false);
     };
     img.onerror = () => {
       setSaveState('error');
@@ -257,8 +329,14 @@ export function ExplorerImageEditor({
   }, [keybindings, isCropping, isEditableFormat, baseImage, filters]);
 
   // Actions
+  const resetPreviewViewport = () => {
+    setPreviewTransform(DEFAULT_IMAGE_PREVIEW_TRANSFORM);
+    setIsPreviewDragging(false);
+  };
+
   const handleReset = () => {
     setFilters(createDefaultImageFiltersState());
+    resetPreviewViewport();
   };
 
   const saveImage = async () => {
@@ -303,6 +381,7 @@ export function ExplorerImageEditor({
       newImg.onload = () => {
         setBaseImage(newImg);
         setFilters(createDefaultImageFiltersState());
+        resetPreviewViewport();
         URL.revokeObjectURL(objectUrl);
         
         setSaveState('saved');
@@ -364,11 +443,91 @@ export function ExplorerImageEditor({
     const newImg = new Image();
     newImg.onload = () => {
       setBaseImage(newImg);
+      resetPreviewViewport();
       cancelCropping();
       setSaveState('dirty');
       setStatusMessage('Unsaved crop changes');
     };
     newImg.src = croppedCanvas.toDataURL(contentType ?? 'image/png');
+  };
+
+  const handlePreviewWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    if (!baseImage || isCropping) return;
+
+    const viewport = previewViewportRef.current;
+    if (!viewport) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const zoomFactor = Math.exp(-event.deltaY * IMAGE_PREVIEW_ZOOM_SENSITIVITY);
+    const viewportRect = viewport.getBoundingClientRect();
+    const focusX = event.clientX - viewportRect.left - viewportRect.width / 2;
+    const focusY = event.clientY - viewportRect.top - viewportRect.height / 2;
+
+    setPreviewTransform((current) => {
+      const nextScale = Number(
+        clampValue(
+          current.scale * zoomFactor,
+          IMAGE_PREVIEW_MIN_SCALE,
+          IMAGE_PREVIEW_MAX_SCALE,
+        ).toFixed(2),
+      );
+      if (nextScale === current.scale) {
+        return current;
+      }
+
+      const scaleRatio = nextScale / current.scale;
+      return normalizeImagePreviewTransform(
+        {
+          scale: nextScale,
+          offsetX: current.offsetX * scaleRatio + (1 - scaleRatio) * focusX,
+          offsetY: current.offsetY * scaleRatio + (1 - scaleRatio) * focusY,
+        },
+        viewport,
+        previewImageRef.current,
+      );
+    });
+  };
+
+  const handlePreviewMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!baseImage || isCropping || event.button !== 0) return;
+
+    const viewport = previewViewportRef.current;
+    if (!viewport) return;
+
+    event.preventDefault();
+
+    const startTransform = previewTransform;
+    const startClientX = event.clientX;
+    const startClientY = event.clientY;
+
+    setIsPreviewDragging(true);
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      setPreviewTransform(
+        normalizeImagePreviewTransform(
+          {
+            scale: startTransform.scale,
+            offsetX: startTransform.offsetX + (moveEvent.clientX - startClientX),
+            offsetY: startTransform.offsetY + (moveEvent.clientY - startClientY),
+          },
+          viewport,
+          previewImageRef.current,
+        ),
+      );
+    };
+
+    const stopDragging = () => {
+      setIsPreviewDragging(false);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', stopDragging);
+      window.removeEventListener('blur', stopDragging);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', stopDragging);
+    window.addEventListener('blur', stopDragging);
   };
 
   // Status/Preview Tone styling
@@ -411,6 +570,7 @@ export function ExplorerImageEditor({
     <style>{PREMIUM_SLIDER_STYLES}</style>
     <div
       ref={rootRef}
+      data-testid="explorer-image-editor"
       style={{
         width: '100%',
         height: '100%',
@@ -439,29 +599,82 @@ export function ExplorerImageEditor({
           backgroundColor: 'rgba(0,0,0,0.4)',
         }}
       >
-        {!baseImage && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', color: 'var(--overlay-text-muted)' }}>
-            <ImageIcon size={32} style={{ marginBottom: 12, opacity: 0.5 }} />
-            <span style={{ fontSize: 13, fontWeight: 500 }}>Loading image...</span>
-          </div>
-        )}
-
-        {/* GPU-Accelerated Hardware Preview Layer */}
-        {!isCropping && baseImage && (
-          <img
-            src={baseImage.src}
+        {!isCropping && (
+          <div
+            ref={previewViewportRef}
+            data-testid="explorer-image-editor-preview"
+            onWheel={handlePreviewWheel}
+            onMouseDown={handlePreviewMouseDown}
             style={{
-              maxWidth: '100%',
-              maxHeight: '100%',
-              objectFit: 'contain',
-              borderRadius: 4,
-              boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-              filter: buildCSSFilterString(filters),
-              willChange: 'filter',       // Forces dedicated composite layer
-              transform: 'translateZ(0)', // Guards against Safari/WebKit rendering hiccups
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              position: 'relative',
+              overflow: 'hidden',
+              userSelect: 'none',
+              cursor: baseImage ? (isPreviewDragging ? 'grabbing' : 'grab') : 'default',
             }}
-            alt="Hardware Preview"
-          />
+          >
+            {!baseImage && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', color: 'var(--overlay-text-muted)' }}>
+                <ImageIcon size={32} style={{ marginBottom: 12, opacity: 0.5 }} />
+                <span style={{ fontSize: 13, fontWeight: 500 }}>Loading image...</span>
+              </div>
+            )}
+
+            {/* GPU-Accelerated Hardware Preview Layer */}
+            {baseImage && (
+              <img
+                ref={previewImageRef}
+                data-testid="explorer-image-editor-preview-image"
+                src={baseImage.src}
+                draggable={false}
+                onDragStart={(event) => event.preventDefault()}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  objectFit: 'contain',
+                  borderRadius: 4,
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                  filter: buildCSSFilterString(filters),
+                  transform: `translate(${previewTransform.offsetX}px, ${previewTransform.offsetY}px) scale(${previewTransform.scale})`,
+                  transformOrigin: 'center center',
+                  willChange: 'transform, filter',
+                }}
+                alt="Hardware Preview"
+              />
+            )}
+
+            {baseImage && (
+              <div
+                data-testid="explorer-image-editor-preview-zoom"
+                style={{
+                  position: 'absolute',
+                  right: 12,
+                  bottom: 12,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '6px 10px',
+                  borderRadius: 999,
+                  background: 'rgba(10, 14, 24, 0.58)',
+                  border: '1px solid rgba(255, 255, 255, 0.14)',
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.24)',
+                  color: 'var(--overlay-text-primary)',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.03em',
+                  pointerEvents: 'none',
+                  backdropFilter: 'blur(12px)',
+                }}
+              >
+                <span style={{ opacity: 0.72 }}>Preview</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums' }}>{Math.round(previewTransform.scale * 100)}%</span>
+              </div>
+            )}
+          </div>
         )}
 
         {/* Crop Mode */}

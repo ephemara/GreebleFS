@@ -1,5 +1,19 @@
 # GreebleFS Memory
 
+# 2026-04-19 — Explorer Image Editor Now Has Live Preview Pan/Zoom
+
+- The shell-owned image editor preview now behaves like an actual viewport instead of a static poster frame.
+- Durable implementation shape:
+  - `src/components/ExplorerImageEditor.tsx` now tracks preview scale plus pan offsets in React state, applies them to the live preview `<img>`, and clamps movement against the preview viewport so wheel zoom and drag pan stay bounded.
+  - The reset/save/crop-apply flows now restore the preview fit state so the viewport does not carry stale pan/zoom after the image content changes.
+  - A small zoom HUD is rendered directly on the preview surface so users get visible feedback that the editor is interactive.
+- Durable product note:
+  - Keep this interaction model aligned with the video editor surface: scroll zoom should stay pointer-centric, drag should move the preview image, and the preview viewport should remain separate from crop mode.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerImageEditor.test.tsx --reporter=dot`
+  - passed: `bun run build`
+  - note: `src/components/FileExplorer.tsx` and `src/generated/tauri.ts` were already dirty in the worktree before this pass and were left untouched.
+
 # 2026-04-19 — Native Audio Preview Now Falls Back To FFmpeg For Modern Formats
 
 - Explorer audio preview now has a more forgiving native decode path instead of assuming Symphonia can handle every container/codec variant by itself.

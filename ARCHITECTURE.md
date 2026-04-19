@@ -37,7 +37,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/FileExplorer.tsx`
   Main explorer shell, navigation, preview, standard layout modes, experimental explorer runtimes, the embedded preview-pane image/video editor paths, the explorer-local preview split mode that can promote the live preview lane into a pane-styled sibling without creating another workspace pane, and the dock-owned layout contract used when the app switches into overlay mode.
 - `src/components/ExplorerImageEditor.tsx`
-  Shell-owned wrapper for the embedded preview-pane image editor. It provides GreebleFS-native toolbar/status chrome, save/reset wiring, resize adaptation, and the static-preview fallback for unsupported image formats.
+  Shell-owned wrapper for the embedded preview-pane image editor. It provides GreebleFS-native toolbar/status chrome, live scroll-to-zoom and drag-to-pan preview interaction, save/reset wiring that restores the preview fit state, resize adaptation, and the static-preview fallback for unsupported image formats.
 - `src/components/ExplorerVideoEditor.tsx`
   Shell-owned wrapper for the embedded preview-pane video surface. It mounts a real media-element preview that is driven by the Rust video engine/store, resolves direct-safe sources or ffmpeg-generated MP4 proxies through the typed backend, and exposes loop-aware transport plus non-destructive trim export.
 - `src/components/ExplorerAudioWorkbench.tsx`

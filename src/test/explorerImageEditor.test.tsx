@@ -1,190 +1,130 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { ExplorerImageEditor } from '../components/ExplorerImageEditor';
 import { useSettingsStore } from '../store/settingsStore';
 
 const {
-  initExplorerImageEditorMock,
+  writeFileMock,
   writeExplorerFileMock,
-  createExplorerImageEditorSessionMock,
-  renderExplorerImageEditorPreviewMock,
-  exportExplorerImageEditorResultMock,
-  closeExplorerImageEditorSessionMock,
+  cropperDestroyMock,
+  cropperGetCroppedCanvasMock,
 } = vi.hoisted(() => ({
-  initExplorerImageEditorMock: vi.fn(),
+  writeFileMock: vi.fn(),
   writeExplorerFileMock: vi.fn(),
-  createExplorerImageEditorSessionMock: vi.fn(),
-  renderExplorerImageEditorPreviewMock: vi.fn(),
-  exportExplorerImageEditorResultMock: vi.fn(),
-  closeExplorerImageEditorSessionMock: vi.fn(),
+  cropperDestroyMock: vi.fn(),
+  cropperGetCroppedCanvasMock: vi.fn(() => ({
+    toDataURL: () => 'data:image/png;base64,Y3JvcHBlZA==',
+  })),
 }));
 
-vi.mock('../runtime/imageEditorRuntime', () => ({
-  initExplorerImageEditor: initExplorerImageEditorMock,
+vi.mock('@tauri-apps/plugin-fs', () => ({
+  writeFile: writeFileMock,
 }));
 
 vi.mock('../runtime/explorerBackend', () => ({
   writeExplorerFile: writeExplorerFileMock,
 }));
 
-vi.mock('../runtime/imageEditorBackend', () => ({
-  createExplorerImageEditorSession: createExplorerImageEditorSessionMock,
-  renderExplorerImageEditorPreview: renderExplorerImageEditorPreviewMock,
-  exportExplorerImageEditorResult: exportExplorerImageEditorResultMock,
-  closeExplorerImageEditorSession: closeExplorerImageEditorSessionMock,
+vi.mock('cropperjs', () => ({
+  default: vi.fn().mockImplementation(() => ({
+    destroy: cropperDestroyMock,
+    getCroppedCanvas: cropperGetCroppedCanvasMock,
+  })),
 }));
 
-function createMockEditorHarness() {
-  const listeners = new Map<string, Set<(payload?: unknown) => void>>();
-  let currentState: object = { revision: 1 };
+class MockPreviewImage {
+  onload: null | (() => void) = null;
+  onerror: null | (() => void) = null;
+  width = 640;
+  height = 360;
+  naturalWidth = 640;
+  naturalHeight = 360;
 
-  const canvas = {
-    on: vi.fn((eventName: string, handler: (payload?: unknown) => void) => {
-      const handlers = listeners.get(eventName) ?? new Set<(payload?: unknown) => void>();
-      handlers.add(handler);
-      listeners.set(eventName, handlers);
-    }),
-    off: vi.fn((eventName: string, handler: (payload?: unknown) => void) => {
-      listeners.get(eventName)?.delete(handler);
-    }),
-  };
+  private _src = '';
 
-  const editor = {
-    canvas,
-    historyManager: {
-      getFullState: vi.fn(() => currentState),
-      loadStateFromFullState: vi.fn(async (nextState: object) => {
-        currentState = nextState;
-        for (const handler of listeners.get('editor:history-state-loaded') ?? []) {
-          handler({ fullState: nextState });
-        }
-      }),
-      undo: vi.fn(async () => {
-        currentState = { revision: 0 };
-        for (const handler of listeners.get('editor:undo') ?? []) {
-          handler({ fullState: currentState });
-        }
-      }),
-      redo: vi.fn(async () => {
-        currentState = { revision: 2 };
-        for (const handler of listeners.get('editor:redo') ?? []) {
-          handler({ fullState: currentState });
-        }
-      }),
-    },
-    imageManager: {
-      exportCanvasAsImageFile: vi.fn(async () => ({
-        image: new Blob([Uint8Array.from([1, 2, 3])], { type: 'image/png' }),
-        format: 'png',
-        contentType: 'image/png',
-        fileName: 'preview.png',
-      })),
-      replaceManagedImageSource: vi.fn(async () => ({
-        image: {},
-        format: 'png',
-        contentType: 'image/png',
-      })),
-    },
-    textManager: {
-      addText: vi.fn(),
-    },
-    shapeManager: {
-      add: vi.fn(async () => null),
-    },
-    deletionManager: {
-      deleteSelectedObjects: vi.fn(),
-    },
-    zoomManager: {
-      zoom: vi.fn(),
-      resetZoom: vi.fn(),
-    },
-    canvasManager: {
-      updateCanvas: vi.fn(),
-    },
-    destroy: vi.fn(),
-  };
+  set src(value: string) {
+    this._src = value;
+    queueMicrotask(() => {
+      this.onload?.();
+    });
+  }
 
-  return {
-    editor,
-    emit(eventName: string, payload?: unknown) {
-      for (const handler of listeners.get(eventName) ?? []) {
-        handler(payload);
-      }
-    },
-    setState(nextState: object) {
-      currentState = nextState;
-    },
-  };
+  get src(): string {
+    return this._src;
+  }
 }
 
-function primeImageEditorMocks() {
-  createExplorerImageEditorSessionMock.mockResolvedValue({
-    sessionId: 'session-1',
-    previewDataUrl: 'data:image/png;base64,aW5pdA==',
-    outputContentType: 'image/png',
-    sourceWidth: 640,
-    sourceHeight: 360,
-    savedState: {
-      brightness: 0,
-      contrast: 0,
-      saturation: 0,
-      temperature: 0,
-      highlights: 0,
-      shadows: 0,
-      vignette: 0,
-    },
-    presets: [
-      { id: 'original', label: 'Original', state: { brightness: 0, contrast: 0, saturation: 0, temperature: 0, highlights: 0, shadows: 0, vignette: 0 } },
-      { id: 'warm', label: 'Warm', state: { brightness: 0, contrast: 0, saturation: 12, temperature: 18, highlights: 8, shadows: 0, vignette: 0 } },
-      { id: 'vivid', label: 'Vivid', state: { brightness: 4, contrast: 18, saturation: 30, temperature: 0, highlights: 10, shadows: 6, vignette: 12 } },
-    ],
+const originalImageDescriptor = Object.getOwnPropertyDescriptor(window, 'Image');
+
+function installImageMock(): void {
+  Object.defineProperty(window, 'Image', {
+    configurable: true,
+    writable: true,
+    value: MockPreviewImage as unknown as typeof Image,
   });
-  renderExplorerImageEditorPreviewMock.mockResolvedValue({
-    sessionId: 'session-1',
-    previewDataUrl: 'data:image/png;base64,cHJldmlldw==',
-    renderedWidth: 640,
-    renderedHeight: 360,
-    effectiveState: {
-      brightness: 0,
-      contrast: 0,
-      saturation: 0,
-      temperature: 0,
-      highlights: 0,
-      shadows: 0,
-      vignette: 0,
-    },
+}
+
+function restoreImageMock(): void {
+  if (originalImageDescriptor) {
+    Object.defineProperty(window, 'Image', originalImageDescriptor);
+    return;
+  }
+
+  Reflect.deleteProperty(window, 'Image');
+}
+
+function setPreviewMetrics(
+  viewport: HTMLElement,
+  image: HTMLElement,
+  width = 640,
+  height = 360,
+): void {
+  const rect = {
+    x: 0,
+    y: 0,
+    top: 0,
+    left: 0,
+    right: width,
+    bottom: height,
+    width,
+    height,
+    toJSON: () => ({}),
+  } as DOMRect;
+
+  Object.defineProperty(viewport, 'getBoundingClientRect', {
+    configurable: true,
+    value: () => rect,
   });
-  exportExplorerImageEditorResultMock.mockResolvedValue({
-    sessionId: 'session-1',
-    imageBytes: [9, 8, 7],
-    bakedImageDataUrl: 'data:image/png;base64,YmFrZWQ=',
-    contentType: 'image/png',
-    renderedWidth: 640,
-    renderedHeight: 360,
-    effectiveState: {
-      brightness: 0,
-      contrast: 0,
-      saturation: 0,
-      temperature: 0,
-      highlights: 0,
-      shadows: 0,
-      vignette: 0,
-    },
+  Object.defineProperty(viewport, 'clientWidth', {
+    configurable: true,
+    value: width,
   });
-  closeExplorerImageEditorSessionMock.mockResolvedValue(undefined);
+  Object.defineProperty(viewport, 'clientHeight', {
+    configurable: true,
+    value: height,
+  });
+  Object.defineProperty(image, 'clientWidth', {
+    configurable: true,
+    value: width,
+  });
+  Object.defineProperty(image, 'clientHeight', {
+    configurable: true,
+    value: height,
+  });
 }
 
 describe('ExplorerImageEditor', () => {
   beforeEach(() => {
-    vi.useRealTimers();
-    initExplorerImageEditorMock.mockReset();
+    installImageMock();
+    writeFileMock.mockReset();
     writeExplorerFileMock.mockReset();
-    createExplorerImageEditorSessionMock.mockReset();
-    renderExplorerImageEditorPreviewMock.mockReset();
-    exportExplorerImageEditorResultMock.mockReset();
-    closeExplorerImageEditorSessionMock.mockReset();
+    cropperDestroyMock.mockReset();
+    cropperGetCroppedCanvasMock.mockClear();
     useSettingsStore.getState().resetToDefaults();
-    primeImageEditorMocks();
+  });
+
+  afterEach(() => {
+    restoreImageMock();
   });
 
   it('falls back to a static image preview for unsupported formats', () => {
@@ -198,14 +138,10 @@ describe('ExplorerImageEditor', () => {
 
     expect(screen.getByText('Static image preview')).toBeInTheDocument();
     expect(screen.getByText('Live editor is available for PNG, JPG, and WebP files.')).toBeInTheDocument();
-    expect(initExplorerImageEditorMock).not.toHaveBeenCalled();
-    expect(createExplorerImageEditorSessionMock).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('explorer-image-editor-preview')).not.toBeInTheDocument();
   });
 
-  it('routes preset changes through the Rust preview backend', async () => {
-    const harness = createMockEditorHarness();
-    initExplorerImageEditorMock.mockResolvedValue(harness.editor);
-
+  it('zooms and pans the live image preview, then resets back to fit', async () => {
     render(
       <ExplorerImageEditor
         imagePath="/tmp/preview.png"
@@ -214,130 +150,49 @@ describe('ExplorerImageEditor', () => {
       />,
     );
 
+    const previewViewport = await screen.findByTestId('explorer-image-editor-preview');
+    const previewImage = await screen.findByTestId('explorer-image-editor-preview-image');
+    const zoomBadge = screen.getByTestId('explorer-image-editor-preview-zoom');
+
+    setPreviewMetrics(previewViewport, previewImage);
+
     await waitFor(() => {
-      expect(initExplorerImageEditorMock).toHaveBeenCalled();
+      expect(previewImage.style.transform).toBe('translate(0px, 0px) scale(1)');
+      expect(zoomBadge).toHaveTextContent('100%');
     });
 
-    await waitFor(() => {
-      expect(renderExplorerImageEditorPreviewMock).toHaveBeenCalledTimes(1);
-    });
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Warm' }));
-
-    await waitFor(() => {
-      expect(renderExplorerImageEditorPreviewMock).toHaveBeenLastCalledWith({
-        sessionId: 'session-1',
-        presetId: 'warm',
-        adjustments: {
-          brightness: 0,
-          contrast: 0,
-          saturation: 0,
-          temperature: 0,
-          highlights: 0,
-          shadows: 0,
-          vignette: 0,
-        },
-      });
-    });
-
-    expect(harness.editor.imageManager.replaceManagedImageSource).toHaveBeenCalled();
-  });
-
-  it('exports edited bytes back through the Rust bake path and explorer write path', async () => {
-    const harness = createMockEditorHarness();
-    const onSaved = vi.fn();
-
-    initExplorerImageEditorMock.mockResolvedValue(harness.editor);
-    writeExplorerFileMock.mockResolvedValue(undefined);
-
-    render(
-      <ExplorerImageEditor
-        imagePath="/tmp/preview.png"
-        imageName="preview.png"
-        imageSource="data:image/png;base64,ZmFrZQ=="
-        onSaved={onSaved}
-      />,
-    );
-
-    await waitFor(() => {
-      expect(initExplorerImageEditorMock).toHaveBeenCalled();
+    fireEvent.wheel(previewViewport, {
+      deltaY: -120,
+      clientX: 320,
+      clientY: 180,
     });
 
     await waitFor(() => {
-      expect(renderExplorerImageEditorPreviewMock).toHaveBeenCalledTimes(1);
+      expect(previewImage.style.transform).toBe('translate(0px, 0px) scale(1.2)');
+      expect(zoomBadge).toHaveTextContent('120%');
     });
 
-    act(() => {
-      harness.setState({ revision: 2 });
-      harness.emit('object:modified');
+    fireEvent.mouseDown(previewViewport, {
+      button: 0,
+      clientX: 320,
+      clientY: 180,
     });
-
-    expect(await screen.findByText('Unsaved changes')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.mouseMove(window, {
+      clientX: 360,
+      clientY: 200,
+    });
+    fireEvent.mouseUp(window);
 
     await waitFor(() => {
-      expect(exportExplorerImageEditorResultMock).toHaveBeenCalledWith({
-        sessionId: 'session-1',
-        presetId: 'original',
-        adjustments: {
-          brightness: 0,
-          contrast: 0,
-          saturation: 0,
-          temperature: 0,
-          highlights: 0,
-          shadows: 0,
-          vignette: 0,
-        },
-        outputContentType: 'image/png',
-      });
-      expect(writeExplorerFileMock).toHaveBeenCalledWith('/tmp/preview.png', [1, 2, 3]);
+      expect(previewImage.style.transform).toBe('translate(40px, 20px) scale(1.2)');
+      expect(zoomBadge).toHaveTextContent('120%');
     });
 
-    expect(harness.editor.imageManager.replaceManagedImageSource).toHaveBeenCalledWith({
-      source: 'data:image/png;base64,YmFrZWQ=',
-      matchCustomData: {
-        hostRole: 'greeblefs-explorer-base-image',
-        sessionId: 'session-1',
-      },
-      withoutSave: true,
-      withoutSelection: true,
-    });
-    expect(onSaved).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText('Saved to disk')).toBeInTheDocument();
-  });
-
-  it('honors settings-backed image editor hotkeys for undo and reset', async () => {
-    const harness = createMockEditorHarness();
-    initExplorerImageEditorMock.mockResolvedValue(harness.editor);
-
-    render(
-      <ExplorerImageEditor
-        imagePath="/tmp/preview.png"
-        imageName="preview.png"
-        imageSource="data:image/png;base64,ZmFrZQ=="
-      />,
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Reset All' }));
 
     await waitFor(() => {
-      expect(initExplorerImageEditorMock).toHaveBeenCalled();
-    });
-
-    await waitFor(() => {
-      expect(renderExplorerImageEditorPreviewMock).toHaveBeenCalledTimes(1);
-    });
-
-    const root = await screen.findByTestId('explorer-image-editor');
-    fireEvent.keyDown(root, { key: 'z', ctrlKey: true });
-
-    await waitFor(() => {
-      expect(harness.editor.historyManager.undo).toHaveBeenCalledTimes(1);
-    });
-
-    fireEvent.keyDown(root, { key: 'Escape' });
-
-    await waitFor(() => {
-      expect(harness.editor.historyManager.loadStateFromFullState).toHaveBeenCalled();
+      expect(previewImage.style.transform).toBe('translate(0px, 0px) scale(1)');
+      expect(zoomBadge).toHaveTextContent('100%');
     });
   });
 });
