@@ -364,6 +364,7 @@ fn is_audio_extension(extension: &str) -> bool {
         "aac"
             | "aif"
             | "aiff"
+            | "aifc"
             | "alac"
             | "amr"
             | "caf"

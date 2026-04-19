@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -36,6 +37,7 @@ const DEFAULT_MIN_SILENCE_SECONDS: f64 = 0.18;
 const DEFAULT_SILENCE_FLOOR_LINEAR: f64 = 0.0015;
 const DEFAULT_BPM_MIN: f64 = 60.0;
 const DEFAULT_BPM_MAX: f64 = 200.0;
+const DEFAULT_AUDIO_FFMPEG_BINARY: &str = "ffmpeg";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -226,6 +228,30 @@ struct DecodedAudioData {
     channels: usize,
     frames: usize,
     samples: Vec<f32>,
+}
+
+struct TemporaryAudioFile {
+    path: PathBuf,
+}
+
+impl TemporaryAudioFile {
+    fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+}
+
+impl Drop for TemporaryAudioFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+fn resolve_audio_ffmpeg_binary() -> String {
+    std::env::var("FFMPEG_BIN")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_AUDIO_FFMPEG_BINARY.to_string())
 }
 
 impl AudioDeckRuntime {
@@ -766,6 +792,15 @@ fn decode_audio_clip_for_device(
 }
 
 fn decode_audio_file(input_path: &Path) -> Result<DecodedAudioData, String> {
+    match decode_audio_file_with_symphonia(input_path) {
+        Ok(decoded) => Ok(decoded),
+        Err(primary_error) => decode_audio_file_via_ffmpeg(input_path).map_err(|fallback_error| {
+            format!("{primary_error}; ffmpeg fallback failed: {fallback_error}")
+        }),
+    }
+}
+
+fn decode_audio_file_with_symphonia(input_path: &Path) -> Result<DecodedAudioData, String> {
     let file = File::open(input_path).map_err(|error| {
         format!(
             "Failed to open audio file '{}': {error}",
@@ -794,21 +829,6 @@ fn decode_audio_file(input_path: &Path) -> Result<DecodedAudioData, String> {
     let track = select_audio_track(format.as_ref())?;
     let track_id = track.id;
     let codec_params = track.codec_params.clone();
-    let sample_rate_hz = codec_params.sample_rate.ok_or_else(|| {
-        format!(
-            "Audio file '{}' is missing a sample rate.",
-            input_path.display()
-        )
-    })?;
-    let channels = codec_params
-        .channels
-        .map(|channels| channels.count())
-        .ok_or_else(|| {
-            format!(
-                "Audio file '{}' is missing channel metadata.",
-                input_path.display()
-            )
-        })?;
     let mut decoder = get_codecs()
         .make(&codec_params, &DecoderOptions::default())
         .map_err(|error| {
@@ -818,6 +838,8 @@ fn decode_audio_file(input_path: &Path) -> Result<DecodedAudioData, String> {
             )
         })?;
     let mut interleaved_samples = Vec::<f32>::new();
+    let mut sample_rate_hz = codec_params.sample_rate;
+    let mut channels = codec_params.channels.map(|channels| channels.count());
     loop {
         let packet = match format.next_packet() {
             Ok(packet) => packet,
@@ -828,8 +850,11 @@ fn decode_audio_file(input_path: &Path) -> Result<DecodedAudioData, String> {
         }
         match decoder.decode(&packet) {
             Ok(decoded) => {
+                let decoded_spec = decoded.spec();
+                sample_rate_hz.get_or_insert(decoded_spec.rate);
+                channels.get_or_insert(decoded_spec.channels.count());
                 let mut sample_buffer =
-                    SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
+                    SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded_spec);
                 sample_buffer.copy_interleaved_ref(decoded);
                 interleaved_samples.extend_from_slice(sample_buffer.samples());
             }
@@ -843,6 +868,18 @@ fn decode_audio_file(input_path: &Path) -> Result<DecodedAudioData, String> {
             }
         }
     }
+    let sample_rate_hz = sample_rate_hz.ok_or_else(|| {
+        format!(
+            "Audio file '{}' is missing a sample rate.",
+            input_path.display()
+        )
+    })?;
+    let channels = channels.ok_or_else(|| {
+        format!(
+            "Audio file '{}' is missing channel metadata.",
+            input_path.display()
+        )
+    })?;
     let frames = interleaved_samples.len() / channels.max(1);
     Ok(DecodedAudioData {
         sample_rate_hz,
@@ -850,6 +887,35 @@ fn decode_audio_file(input_path: &Path) -> Result<DecodedAudioData, String> {
         frames,
         samples: interleaved_samples,
     })
+}
+
+fn decode_audio_file_via_ffmpeg(input_path: &Path) -> Result<DecodedAudioData, String> {
+    let temp_path = std::env::temp_dir().join(format!(
+        "greeblefs-audio-decode-{}.wav",
+        uuid::Uuid::new_v4()
+    ));
+    let cleanup_guard = TemporaryAudioFile::new(temp_path.clone());
+
+    let output = Command::new(resolve_audio_ffmpeg_binary())
+        .args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
+        .arg(input_path)
+        .args(["-vn", "-sn", "-dn", "-acodec", "pcm_s16le"])
+        .arg(&temp_path)
+        .output()
+        .map_err(|error| {
+            format!(
+                "Failed to launch ffmpeg at '{}': {error}",
+                resolve_audio_ffmpeg_binary()
+            )
+        })?;
+
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+
+    let decoded = decode_audio_file_with_symphonia(&temp_path);
+    drop(cleanup_guard);
+    decoded
 }
 
 fn select_audio_track<'a>(
@@ -1175,6 +1241,8 @@ fn validate_audio_file_path(input_path: &str) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
+    use tempfile::tempdir;
 
     #[test]
     fn detect_silence_regions_finds_head_and_tail_silence() {
@@ -1207,6 +1275,150 @@ mod tests {
 
         let bpm = estimate_bpm(&mono, sample_rate_hz).expect("detect bpm");
         assert!((bpm - 120.0).abs() <= 3.0);
+    }
+
+    fn ensure_audio_toolchain_available() -> Option<String> {
+        let ffmpeg_binary = resolve_audio_ffmpeg_binary();
+        let ffmpeg_ready = Command::new(&ffmpeg_binary)
+            .arg("-version")
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false);
+
+        if ffmpeg_ready {
+            Some(ffmpeg_binary)
+        } else {
+            eprintln!(
+                "Skipping real audio toolchain test because ffmpeg ({ffmpeg_binary}) was unavailable."
+            );
+            None
+        }
+    }
+
+    fn generate_test_audio_fixture(ffmpeg_binary: &str, output_path: &Path) {
+        let extension = output_path
+            .extension()
+            .and_then(|value| value.to_str())
+            .expect("fixture extension")
+            .to_ascii_lowercase();
+
+        let mut command = Command::new(ffmpeg_binary);
+        command.args(["-hide_banner", "-loglevel", "error", "-y"]);
+        command.args([
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=880:sample_rate=48000:duration=1.0",
+            "-ac",
+            "2",
+        ]);
+
+        match extension.as_str() {
+            "wav" | "wave" => {
+                command.args(["-c:a", "pcm_s16le"]);
+            }
+            "aif" | "aiff" | "aifc" => {
+                command.args(["-c:a", "pcm_s16be", "-f", "aiff"]);
+            }
+            "aac" => {
+                command.args(["-c:a", "aac", "-b:a", "128k", "-f", "adts"]);
+            }
+            "alac" => {
+                command.args(["-c:a", "alac", "-f", "caf"]);
+            }
+            "caf" => {
+                command.args(["-c:a", "pcm_s16be", "-f", "caf"]);
+            }
+            "flac" => {
+                command.args(["-c:a", "flac"]);
+            }
+            "m4a" | "m4b" => {
+                command.args(["-c:a", "aac", "-b:a", "128k", "-f", "mp4"]);
+            }
+            "mka" => {
+                command.args(["-c:a", "libopus", "-f", "matroska"]);
+            }
+            "mp3" => {
+                command.args(["-c:a", "libmp3lame", "-q:a", "2"]);
+            }
+            "oga" | "ogg" => {
+                command.args(["-c:a", "libvorbis"]);
+            }
+            "opus" => {
+                command.args(["-c:a", "libopus", "-f", "ogg"]);
+            }
+            "weba" => {
+                command.args(["-c:a", "libopus", "-f", "webm"]);
+            }
+            "wma" => {
+                command.args(["-c:a", "wmav2", "-f", "asf"]);
+            }
+            other => panic!("unsupported audio fixture extension: {other}"),
+        }
+
+        command.arg(output_path);
+        let output = command.output().expect("launch ffmpeg for fixture");
+        if !output.status.success() {
+            panic!(
+                "failed to generate audio fixture '{}': {}",
+                output_path.display(),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    #[test]
+    fn analyze_audio_file_native_supports_common_modern_formats() {
+        let Some(ffmpeg_binary) = ensure_audio_toolchain_available() else {
+            return;
+        };
+
+        let workspace = tempdir().expect("audio fixture tempdir");
+        let fixture_names = [
+            "modern.wav",
+            "modern.AIF",
+            "modern.AIFF",
+            "modern.aifc",
+            "modern.aac",
+            "modern.alac",
+            "modern.caf",
+            "modern.flac",
+            "modern.m4a",
+            "modern.m4b",
+            "modern.mka",
+            "modern.mp3",
+            "modern.oga",
+            "modern.ogg",
+            "modern.opus",
+            "modern.weba",
+            "modern.wma",
+        ];
+
+        for file_name in fixture_names {
+            let fixture_path = workspace.path().join(file_name);
+            generate_test_audio_fixture(&ffmpeg_binary, &fixture_path);
+
+            let analysis = analyze_audio_file_native(&fixture_path).unwrap_or_else(|error| {
+                panic!("expected analysis for {}: {error}", fixture_path.display())
+            });
+
+            assert!(
+                analysis.duration_seconds > 0.5,
+                "{}",
+                fixture_path.display()
+            );
+            assert!(
+                analysis.sample_rate_hz.is_some(),
+                "{}",
+                fixture_path.display()
+            );
+            assert!(analysis.channels.is_some(), "{}", fixture_path.display());
+            assert!(
+                !analysis.waveform_buckets.is_empty(),
+                "{}",
+                fixture_path.display()
+            );
+        }
     }
 }
 
@@ -1578,7 +1790,10 @@ pub fn audio_engine_load_plugin(
     // Store the plugin path on the deck metadata so the frontend knows what is loaded.
     // Full IEditController parameter interrogation via vst-host will run here in a follow-up.
     {
-        let mut meta = shared.deck(request.deck_id).metadata.lock()
+        let mut meta = shared
+            .deck(request.deck_id)
+            .metadata
+            .lock()
             .map_err(|e| format!("lock error: {e}"))?;
         meta.active_plugin_path = Some(request.plugin_path.clone());
     }
@@ -1595,7 +1810,10 @@ pub fn audio_engine_clear_deck_plugin(
 ) -> Result<AudioEngineStateSnapshot, String> {
     let shared = ensure_audio_engine_shared(&app)?;
     {
-        let mut meta = shared.deck(request.deck_id).metadata.lock()
+        let mut meta = shared
+            .deck(request.deck_id)
+            .metadata
+            .lock()
             .map_err(|e| format!("lock error: {e}"))?;
         meta.active_plugin_path = None;
     }

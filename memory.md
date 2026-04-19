@@ -1,5 +1,18 @@
 # GreebleFS Memory
 
+# 2026-04-19 — Native Audio Preview Now Falls Back To FFmpeg For Modern Formats
+
+- Explorer audio preview now has a more forgiving native decode path instead of assuming Symphonia can handle every container/codec variant by itself.
+- Durable implementation shape:
+  - `src-tauri/src/audio_engine.rs` now tries Symphonia first, then falls back to a temporary `ffmpeg`-to-WAV transcode when native probing/decoding fails. That keeps the native deck path alive for formats that are better handled by the host codec toolchain.
+  - `src/config/filePreview.ts` now treats `aifc` as part of the audio-preview family alongside the existing `aif` / `aiff` aliases, and `src-tauri/src/thumbnail_commands.rs` classifies it as audio for generated thumbnails as well.
+  - `src/test/filePreview.test.ts` now locks the new alias routing, and `src-tauri/src/audio_engine.rs` has a fixture-backed smoke test that generates and verifies modern audio formats across `wav`, `aif`, `aiff`, `aifc`, `aac`, `alac`, `caf`, `flac`, `m4a`, `m4b`, `mka`, `mp3`, `oga`, `ogg`, `opus`, `weba`, and `wma`.
+- Durable product note:
+  - Keep the native audio lane Symphonia-first for performance, but do not treat Symphonia as the only decode backend. `ffmpeg` is the safety valve for the preview pane when users drop in a format the Rust decoder cannot open cleanly.
+- Validation:
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml audio_engine::tests::analyze_audio_file_native_supports_common_modern_formats -- --nocapture`
+  - passed: `bunx vitest run src/test/filePreview.test.ts --reporter=dot`
+
 # 2026-04-19 — Host-Aware Cargo Suite Green On Linux
 
 - The repo-wide Rust suite should be run through `node scripts/run-cargo-tests.mjs` on Linux, not raw `cargo test --workspace`, because the workspace includes host-specific crates that are not meant to build everywhere.
