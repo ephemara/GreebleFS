@@ -970,6 +970,8 @@ mod tests {
                 enabled: false,
             },
             error: error.map(ToOwned::to_owned),
+            active_plugin_path: None,
+            vst_parameters: Vec::new(),
         }
     }
 

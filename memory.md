@@ -1,5 +1,55 @@
 # GreebleFS Memory
 
+# 2026-04-19 — Host-Aware Cargo Suite Green On Linux
+
+- The repo-wide Rust suite should be run through `node scripts/run-cargo-tests.mjs` on Linux, not raw `cargo test --workspace`, because the workspace includes host-specific crates that are not meant to build everywhere.
+- Durable runner behavior:
+  - `scripts/run-cargo-tests.mjs` now injects `--test-threads=1` by default unless the caller explicitly passes a test-thread override.
+  - The runner already skips macOS/Windows-only crates on Linux, so the suite stays green without pretending unsupported packages are runnable.
+- Durable backend/test fixes that were needed to get the suite green:
+  - `src-tauri/src/fs_commands.rs` now invalidates the parent directory listing cache when a file path is refreshed externally, so directory listings pick up newly created siblings.
+  - `src-tauri/src/plugin_commands.rs` now normalizes ignored-directory detection across `/` and `\`, skips Unix permission probing for missing backend executables, and has host-specific success tests for Unix shell backends plus Windows cmd backends.
+  - `src-tauri/src/shader_preview_commands.rs` now reflects the inspector contract more honestly in tests by only asserting live preview when a stage/entry point is selected.
+  - `src-tauri/src/fs_commands.rs` test-only direct filesystem helpers were kept so the crate does not hang on the scheduler path during unit tests.
+- Validation:
+  - passed: `node scripts/run-cargo-tests.mjs`
+  - result: 39 packages passed, 3 packages skipped for host mismatch, 0 failed
+
+# 2026-04-19 — Cargo Test Suite Now Defaults To Serial Libtest Execution
+
+- The repo-wide Rust suite had hidden shared-state flakes when `cargo test` ran each crate’s libtest harness in the default parallel mode. The failures showed up in `src-tauri` cache tests even though the targeted tests passed in isolation.
+- Durable runner shape:
+  - `scripts/run-cargo-tests.mjs` now injects `--test-threads=1` by default for each crate’s test binary.
+  - Explicit test-thread overrides still win if the caller passes `--test-threads` or `--test-threads=<n>` after `--`.
+  - The runner still executes crates serially across the workspace list, so the suite now has deterministic package ordering plus deterministic libtest ordering.
+- Durable test-fixture shape:
+  - `src-tauri/src/entry_size_cache.rs` now uses an env-var guard in tests so `OVERLAYTERM_ENTRY_SIZE_DB_PATH` is restored even if a test panics.
+  - `src-tauri/src/fs_commands.rs` now clears fs caches at the start of `external_path_invalidation_refreshes_parent_directory_listing_cache` so the test cannot inherit stale directory-list state from earlier cases.
+- Durable product note:
+  - For this repo’s Rust tests, prefer deterministic serial execution for stateful crates over relying on libtest parallelism. If a crate truly wants parallel tests, make the shared state explicit and opt back in with a thread override.
+- Validation:
+  - passed: targeted `cargo test` runs for `entry_size_cache::tests::persisted_entry_sizes_round_trip`
+  - passed: targeted `cargo test` runs for `fs_commands::tests::external_path_invalidation_refreshes_parent_directory_listing_cache`
+  - passed: targeted `cargo test` runs for `explorer_pro_commands::tests::batch_rename_apply_uses_the_preview_evaluator`
+  - in progress: `node scripts/run-cargo-tests.mjs --workspace root` is executing successfully with the serial harness and progressing through the workspace package list
+
+# 2026-04-19 — Rust Test Suite Modernization For `src-tauri`
+
+- The `src-tauri` test surface was still carrying old `tauri::test::mock_app`-style patterns for logic that does not actually need a runtime handle. That made the suite brittle and kept direct helper tests tied to the Tauri test harness.
+- Durable cleanup shape:
+  - `src-tauri/src/fs_commands.rs` now tests the real internal async helpers directly through local shims instead of fabricating a mock app handle. The test layer now covers list-dir, uncached list-dir, search, search diagnostics, and size measurement without going through the command wrappers.
+  - `src-tauri/src/plugin_commands.rs` now exercises backend resolution and execution through a direct test shim instead of a mocked Tauri app.
+  - `src-tauri/src/video_engine.rs` test fixtures were updated to match the current `AudioDeckState` shape.
+  - `src-tauri/src/explorer_pro_commands.rs` now uses a non-empty rename search in `batch_rename_apply_uses_the_preview_evaluator`, because the old empty search did not actually exercise the preview evaluator path.
+- Durable product note:
+  - For Rust unit tests in this repo, prefer direct helper coverage over Tauri runtime mocks when the code under test is already pure or only needs local state. Keep the runtime harness for integration-style command testing, not for every internal helper.
+  - When a test name says it is verifying preview/apply behavior, make sure the fixture actually hits the preview/apply path. Empty search strings can silently collapse into no-op rename behavior.
+- Validation:
+  - passed: targeted `cargo test` runs for `fs_commands::tests::search_entries_names_only_reuse_cached_index`
+  - passed: targeted `cargo test` runs for `fs_commands::tests::measure_entry_sizes_reports_files_and_nested_directory_totals`
+  - passed: targeted `cargo test` runs for `explorer_pro_commands::tests::batch_rename_apply_uses_the_preview_evaluator`
+  - note: full `cargo test --manifest-path src-tauri/Cargo.toml` is still a heavy suite and needs a long, uninterrupted run to finish cleanly on this machine
+
 # 2026-04-19 — Linux Video Preview Proxy Fallback For Explorer MP4 Playback
 
 - The preview-pane video editor could fail on Linux even for `.mp4` files because the shell still renders through an HTML `<video>` element inside the desktop webview, and the backend "fallback" path was transcoding unsupported inputs into another `mp4`/H.264/AAC proxy.

@@ -7,7 +7,7 @@
 //!
 //! ## Basic playback
 //! ```no_run
-//! use ffplay_rs::FFplayBuilder;
+//! use rust_ffplay::FFplayBuilder;
 //!
 //! # async fn example() -> ffmpeg_common::Result<()> {
 //! // Play a video file
@@ -23,8 +23,8 @@
 //!
 //! ## Advanced usage
 //! ```no_run
-//! use ffplay_rs::{FFplayBuilder, ShowMode};
-//! use ffplay_rs::playback::SyncType;
+//! use rust_ffplay::{FFplayBuilder, ShowMode};
+//! use rust_ffplay::playback::SyncType;
 //! use ffmpeg_common::{Duration, StreamSpecifier};
 //!
 //! # async fn example() -> ffmpeg_common::Result<()> {
@@ -52,7 +52,7 @@
 //!
 //! ## Audio visualization
 //! ```no_run
-//! use ffplay_rs::{FFplayBuilder, ShowMode};
+//! use rust_ffplay::{FFplayBuilder, ShowMode};
 //!
 //! # async fn example() -> ffmpeg_common::Result<()> {
 //! // Play audio with waveform visualization
@@ -311,10 +311,11 @@ mod tests {
     fn test_scenarios() {
         let low_latency = scenarios::stream_low_latency("rtmp://example.com/live");
         let args = low_latency.build_args().unwrap();
-        assert!(args.contains(&"-framedrop".to_string()));
         assert!(args.contains(&"-infbuf".to_string()));
         assert!(args.contains(&"-sync".to_string()));
         assert!(args.contains(&"ext".to_string()));
+        assert!(args.contains(&"-fast".to_string()));
+        assert!(!args.contains(&"-noframedrop".to_string()));
 
         let deinterlaced = scenarios::deinterlaced("interlaced.mp4");
         let args = deinterlaced.build_args().unwrap();

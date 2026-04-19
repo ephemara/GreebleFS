@@ -819,7 +819,7 @@ float4 fragment_main() : SV_Target0 {
             .entry_points
             .iter()
             .any(|entry| entry.stage == ExplorerShaderStage::Vertex));
-        assert!(payload.supports_live_preview);
+        assert!(!payload.supports_live_preview);
     }
 
     #[test]

@@ -7,7 +7,7 @@
 //!
 //! ## Simple conversion
 //! ```no_run
-//! use ffmpeg_rs::FFmpegBuilder;
+//! use rust_ffmpeg::FFmpegBuilder;
 //!
 //! # async fn example() -> ffmpeg_common::Result<()> {
 //! // Convert a video file
@@ -20,9 +20,9 @@
 //!
 //! ## Complex transcoding
 //! ```no_run
-//! use ffmpeg_rs::{FFmpegBuilder, Input, Output};
-//! use ffmpeg_rs::codec::presets;
-//! use ffmpeg_rs::filter::VideoFilter;
+//! use rust_ffmpeg::{FFmpegBuilder, Input, Output};
+//! use rust_ffmpeg::codec::presets;
+//! use rust_ffmpeg::filter::VideoFilter;
 //! use ffmpeg_common::{Codec, Duration};
 //!
 //! # async fn example() -> ffmpeg_common::Result<()> {

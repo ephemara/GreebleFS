@@ -142,6 +142,20 @@ function cargoArgumentsForPackage(packageDefinition, commandLine) {
   }
 
   cargoArguments.push('--target-dir', targetDirForPackage(packageDefinition));
+
+  const cargoTestFlags = [];
+  const hasExplicitThreadOverride = commandLine.passthroughCargoArgs.some(
+    (argument) => argument === '--test-threads' || argument.startsWith('--test-threads='),
+  );
+  if (!hasExplicitThreadOverride) {
+    cargoTestFlags.push('--test-threads=1');
+  }
+
+  if (cargoTestFlags.length > 0 || commandLine.passthroughCargoArgs.length > 0) {
+    cargoArguments.push('--', ...cargoTestFlags, ...commandLine.passthroughCargoArgs);
+    return cargoArguments;
+  }
+
   cargoArguments.push(...commandLine.passthroughCargoArgs);
 
   return cargoArguments;

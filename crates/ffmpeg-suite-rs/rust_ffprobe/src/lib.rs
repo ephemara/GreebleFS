@@ -7,7 +7,7 @@
 //!
 //! ## Basic usage
 //! ```no_run
-//! use ffprobe_rs::FFprobeBuilder;
+//! use rust_ffprobe::FFprobeBuilder;
 //!
 //! # async fn example() -> ffmpeg_common::Result<()> {
 //! // Probe a file for format and stream information
@@ -45,8 +45,8 @@
 //!
 //! ## Advanced usage
 //! ```no_run
-//! use ffprobe_rs::{FFprobeBuilder, OutputFormat};
-//! use ffprobe_rs::format::presets;
+//! use rust_ffprobe::{FFprobeBuilder, OutputFormat};
+//! use rust_ffprobe::format::presets;
 //! use ffmpeg_common::StreamSpecifier;
 //!
 //! # async fn example() -> ffmpeg_common::Result<()> {

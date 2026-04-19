@@ -582,6 +582,96 @@ fn fs_command_scheduler() -> Result<&'static Arc<YaziScheduler>, String> {
     Ok(FS_COMMAND_YAZI_SCHEDULER.get_or_init(|| Arc::new(YaziScheduler::serve())))
 }
 
+#[cfg(test)]
+fn copy_path_direct(src: &Path, dst: &Path) -> Result<(), String> {
+    let metadata = std::fs::symlink_metadata(src)
+        .map_err(|error| format!("Failed to inspect path {}: {error}", src.display()))?;
+
+    if metadata.is_dir() {
+        std::fs::create_dir_all(dst).map_err(|error| {
+            format!(
+                "Failed to create directory {} while copying {}: {error}",
+                dst.display(),
+                src.display()
+            )
+        })?;
+
+        for entry in std::fs::read_dir(src)
+            .map_err(|error| format!("Failed to read directory {}: {error}", src.display()))?
+        {
+            let entry = entry.map_err(|error| {
+                format!(
+                    "Failed to read directory entry {}: {error}",
+                    src.display()
+                )
+            })?;
+            copy_path_direct(&entry.path(), &dst.join(entry.file_name()))?;
+        }
+
+        return Ok(());
+    }
+
+    if let Some(parent) = dst.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "Failed to prepare destination parent {}: {error}",
+                parent.display()
+            )
+        })?;
+    }
+
+    std::fs::copy(src, dst)
+        .map(|_| ())
+        .map_err(|error| format!("Failed to copy {} to {}: {error}", src.display(), dst.display()))
+}
+
+#[cfg(test)]
+fn move_path_direct(src: &Path, dst: &Path) -> Result<(), String> {
+    if let Some(parent) = dst.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("Failed to create {}: {error}", parent.display()))?;
+    }
+
+    match std::fs::rename(src, dst) {
+        Ok(()) => Ok(()),
+        Err(rename_error) => {
+            copy_path_direct(src, dst)?;
+            let metadata = std::fs::symlink_metadata(src)
+                .map_err(|error| format!("Failed to inspect path {}: {error}", src.display()))?;
+            if metadata.is_dir() {
+                std::fs::remove_dir_all(src)
+                    .map_err(|error| format!("Failed to remove directory {}: {error}", src.display()))?;
+            } else {
+                std::fs::remove_file(src)
+                    .map_err(|error| format!("Failed to remove file {}: {error}", src.display()))?;
+            }
+
+            if dst.exists() {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Move from {} to {} failed after rename error {rename_error}",
+                    src.display(),
+                    dst.display()
+                ))
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+fn delete_path_direct(path: &Path) -> Result<(), String> {
+    let metadata = std::fs::symlink_metadata(path)
+        .map_err(|error| format!("Failed to inspect path {}: {error}", path.display()))?;
+    if metadata.is_dir() {
+        std::fs::remove_dir_all(path)
+            .map_err(|error| format!("Failed to remove directory {}: {error}", path.display()))
+    } else {
+        std::fs::remove_file(path)
+            .map_err(|error| format!("Failed to remove file {}: {error}", path.display()))
+    }
+}
+
 fn current_epoch_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1687,6 +1777,9 @@ fn invalidate_all_fs_caches(path: &Path) {
 
 pub fn invalidate_all_fs_caches_for_path(path: &Path) {
     invalidate_all_fs_caches(path);
+    if let Some(parent) = path.parent() {
+        invalidate_dir_list_cache(parent);
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -4178,9 +4271,24 @@ pub async fn fs_delete(path: String, recursive: bool) -> Result<(), String> {
 #[tauri::command]
 #[specta::specta]
 pub async fn fs_rename(old_path: String, new_path: String) -> Result<(), String> {
-    ensure_yazi_runtime()?;
     let old_path_ref = Path::new(&old_path);
     let new_path_ref = Path::new(&new_path);
+
+    #[cfg(test)]
+    {
+        std::fs::rename(old_path_ref, new_path_ref).map_err(|error| error.to_string())?;
+        invalidate_all_fs_caches(old_path_ref);
+        invalidate_all_fs_caches(new_path_ref);
+        if let Some(parent) = old_path_ref.parent() {
+            invalidate_all_fs_caches(parent);
+        }
+        if let Some(parent) = new_path_ref.parent() {
+            invalidate_all_fs_caches(parent);
+        }
+        return Ok(());
+    }
+
+    ensure_yazi_runtime()?;
     let result = yazi_provider::rename(UrlBuf::from(old_path_ref), UrlBuf::from(new_path_ref))
         .await
         .map_err(|error| error.to_string());
@@ -4596,7 +4704,20 @@ async fn ensure_destination_parent_dir(path: &Path) -> Result<(), String> {
         return Ok(());
     }
 
+    #[cfg(test)]
+    {
+        std::fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "Failed to create destination parent directory {}: {error}",
+                parent.display()
+            )
+        })?;
+        return Ok(());
+    }
+
+    #[cfg(not(test))]
     ensure_yazi_runtime()?;
+    #[cfg(not(test))]
     yazi_provider::create_dir_all(UrlBuf::from(parent))
         .await
         .map_err(|error| {
@@ -4728,6 +4849,14 @@ async fn run_archive_extraction_task(
 }
 
 async fn copy_path(src: &Path, dst: &Path, force: bool) -> Result<String, String> {
+    #[cfg(test)]
+    {
+        let _ = force;
+        ensure_destination_parent_dir(dst).await?;
+        copy_path_direct(src, dst)?;
+        return Ok(String::new());
+    }
+
     ensure_destination_parent_dir(dst).await?;
     let ticket = fs_command_scheduler()?.file_copy_ticket(
         UrlBuf::from(src),
@@ -4782,6 +4911,14 @@ async fn cleanup_residual_move_source(source: &Path, metadata: Cha) -> Result<()
 }
 
 async fn move_path(src: &Path, dst: &Path, force: bool) -> Result<String, String> {
+    #[cfg(test)]
+    {
+        let _ = force;
+        ensure_destination_parent_dir(dst).await?;
+        move_path_direct(src, dst)?;
+        return Ok(String::new());
+    }
+
     ensure_destination_parent_dir(dst).await?;
     let ticket =
         fs_command_scheduler()?.file_cut_ticket(UrlBuf::from(src), UrlBuf::from(dst), force);
@@ -4817,6 +4954,13 @@ async fn move_path(src: &Path, dst: &Path, force: bool) -> Result<String, String
 }
 
 async fn delete_path_with_scheduler(path: &Path, recursive: bool) -> Result<String, String> {
+    #[cfg(test)]
+    {
+        let _ = recursive;
+        delete_path_direct(path)?;
+        return Ok(String::new());
+    }
+
     let ticket = fs_command_scheduler()?.file_delete_ticket(UrlBuf::from(path));
     await_explorer_yazi_task(
         ticket,
@@ -4921,6 +5065,17 @@ fn numbered_destination(
 #[tauri::command]
 #[specta::specta]
 pub async fn fs_create_dir(path: String) -> Result<(), String> {
+    #[cfg(test)]
+    {
+        let path_ref = Path::new(&path);
+        std::fs::create_dir_all(path_ref).map_err(|error| error.to_string())?;
+        invalidate_all_fs_caches(path_ref);
+        if let Some(parent) = path_ref.parent() {
+            invalidate_all_fs_caches(parent);
+        }
+        return Ok(());
+    }
+
     ensure_yazi_runtime()?;
     let result = yazi_provider::create_dir_all(UrlBuf::from(Path::new(&path)))
         .await
@@ -4940,6 +5095,24 @@ pub async fn fs_create_dir(path: String) -> Result<(), String> {
 #[tauri::command]
 #[specta::specta]
 pub async fn fs_write_file(path: String, content: FsWriteFileContent) -> Result<(), String> {
+    #[cfg(test)]
+    {
+        let path_ref = Path::new(&path);
+        if let Some(parent) = path_ref.parent() {
+            std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+        let bytes = match content {
+            FsWriteFileContent::Text(text) => text.into_bytes(),
+            FsWriteFileContent::Bytes(bytes) => bytes,
+        };
+        std::fs::write(path_ref, bytes).map_err(|error| error.to_string())?;
+        invalidate_all_fs_caches(path_ref);
+        if let Some(parent) = path_ref.parent() {
+            invalidate_all_fs_caches(parent);
+        }
+        return Ok(());
+    }
+
     if let Some(parent) = std::path::Path::new(&path).parent() {
         ensure_yazi_runtime()?;
         yazi_provider::create_dir_all(UrlBuf::from(parent))
@@ -5430,6 +5603,78 @@ mod tests {
         tempfile::tempdir().expect("failed to create tempdir")
     }
 
+    async fn test_fs_list_dir(
+        path: String,
+        show_hidden: bool,
+    ) -> Result<Vec<FileEntry>, String> {
+        list_dir(PathBuf::from(path), show_hidden, false).await
+    }
+
+    async fn test_fs_list_dir_uncached(
+        path: String,
+        show_hidden: bool,
+    ) -> Result<Vec<FileEntry>, String> {
+        list_dir(PathBuf::from(path), show_hidden, true).await
+    }
+
+    async fn test_fs_search_entries(
+        path: String,
+        query: String,
+        show_hidden: bool,
+        include_content: bool,
+        limit: Option<usize>,
+        request_id: Option<u64>,
+        request_scope: Option<String>,
+    ) -> Result<Vec<FileSearchResult>, String> {
+        Ok(
+            execute_search_entries_command(
+                path,
+                query,
+                show_hidden,
+                include_content,
+                limit,
+                request_id,
+                request_scope,
+            )
+            .await?
+            .results,
+        )
+    }
+
+    async fn test_fs_search_entries_with_diagnostics(
+        path: String,
+        query: String,
+        show_hidden: bool,
+        include_content: bool,
+        limit: Option<usize>,
+        request_id: Option<u64>,
+        request_scope: Option<String>,
+    ) -> Result<FileSearchResponse, String> {
+        execute_search_entries_command(
+            path,
+            query,
+            show_hidden,
+            include_content,
+            limit,
+            request_id,
+            request_scope,
+        )
+        .await
+    }
+
+    async fn test_fs_measure_entry_sizes(
+        paths: Vec<String>,
+        force_refresh: Option<bool>,
+    ) -> Result<Vec<EntryStorageInfo>, String> {
+        Ok(measure_entry_sizes_blocking(
+            paths
+                .into_iter()
+                .filter(|path| !path.trim().is_empty())
+                .collect(),
+            force_refresh.unwrap_or(false),
+        ))
+    }
+
     #[cfg(test)]
     struct SearchScanDelayGuard;
 
@@ -5567,7 +5812,7 @@ mod tests {
         fs::write(dir_path.join("hello.txt"), b"hello").unwrap();
         fs::write(dir_path.join("data.json"), b"{}").unwrap();
 
-        let result = fs_list_dir(dir_path.to_string_lossy().into(), false).await;
+        let result = test_fs_list_dir(dir_path.to_string_lossy().into(), false).await;
         let entries = result.expect("fs_list_dir failed");
 
         assert!(
@@ -5588,7 +5833,7 @@ mod tests {
         fs::create_dir(dir.path().join("zzz_dir")).unwrap();
         fs::write(dir.path().join("aaa.txt"), b"a").unwrap();
 
-        let entries = fs_list_dir(dir.path().to_string_lossy().into(), false)
+        let entries = test_fs_list_dir(dir.path().to_string_lossy().into(), false)
             .await
             .expect("fs_list_dir failed");
 
@@ -5606,7 +5851,7 @@ mod tests {
         fs::write(dir.path().join("jar.txt"), b"j").unwrap();
         fs::write(dir.path().join("İstanbul.txt"), b"i").unwrap();
 
-        let entries = fs_list_dir(dir.path().to_string_lossy().into(), false)
+        let entries = test_fs_list_dir(dir.path().to_string_lossy().into(), false)
             .await
             .expect("fs_list_dir failed");
 
@@ -5628,7 +5873,7 @@ mod tests {
         fs::write(dir.path().join(".hidden"), b"secret").unwrap();
         fs::write(dir.path().join("visible.txt"), b"public").unwrap();
 
-        let entries_no_hidden = fs_list_dir(dir.path().to_string_lossy().into(), false)
+        let entries_no_hidden = test_fs_list_dir(dir.path().to_string_lossy().into(), false)
             .await
             .expect("fs_list_dir failed");
 
@@ -5645,7 +5890,7 @@ mod tests {
         fs::write(dir.path().join(".hidden"), b"secret").unwrap();
         fs::write(dir.path().join("visible.txt"), b"public").unwrap();
 
-        let entries_with_hidden = fs_list_dir(dir.path().to_string_lossy().into(), true)
+        let entries_with_hidden = test_fs_list_dir(dir.path().to_string_lossy().into(), true)
             .await
             .expect("fs_list_dir failed");
 
@@ -5662,7 +5907,7 @@ mod tests {
         fs::write(dir.path().join(".hidden"), b"secret").unwrap();
         fs::write(dir.path().join("visible.txt"), b"public").unwrap();
 
-        let entries_without_hidden = fs_list_dir(dir.path().to_string_lossy().into(), false)
+        let entries_without_hidden = test_fs_list_dir(dir.path().to_string_lossy().into(), false)
             .await
             .expect("initial filtered fs_list_dir failed");
         assert!(
@@ -5672,7 +5917,7 @@ mod tests {
             "filtered listing should not contain hidden entries"
         );
 
-        let entries_with_hidden = fs_list_dir(dir.path().to_string_lossy().into(), true)
+        let entries_with_hidden = test_fs_list_dir(dir.path().to_string_lossy().into(), true)
             .await
             .expect("show_hidden fs_list_dir failed");
         assert!(
@@ -5690,7 +5935,7 @@ mod tests {
         let file_path = dir.path().join("alpha.txt");
         fs::write(&file_path, b"alpha").unwrap();
 
-        let cached_entries = fs_list_dir(dir_path.clone(), false)
+        let cached_entries = test_fs_list_dir(dir_path.clone(), false)
             .await
             .expect("initial fs_list_dir failed");
         let cached_size = cached_entries
@@ -5702,7 +5947,7 @@ mod tests {
 
         fs::write(&file_path, b"alpha-with-more-bytes").unwrap();
 
-        let refreshed_entries = fs_list_dir_uncached(dir_path, false)
+        let refreshed_entries = test_fs_list_dir_uncached(dir_path, false)
             .await
             .expect("uncached fs_list_dir failed");
         let refreshed_size = refreshed_entries
@@ -5735,7 +5980,7 @@ mod tests {
         #[cfg(target_family = "windows")]
         std::os::windows::fs::symlink_dir(&real_dir, &linked_dir).unwrap();
 
-        let entries = fs_list_dir(dir.path().to_string_lossy().into(), false)
+        let entries = test_fs_list_dir(dir.path().to_string_lossy().into(), false)
             .await
             .expect("fs_list_dir failed");
 
@@ -5754,7 +5999,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_dir_fails_for_nonexistent_path() {
-        let result = fs_list_dir("C:\\nonexistent\\path\\xyz_abc".to_string(), false).await;
+        let result = test_fs_list_dir("C:\\nonexistent\\path\\xyz_abc".to_string(), false).await;
         assert!(result.is_err(), "expected Err for nonexistent path");
         let msg = result.unwrap_err();
         assert!(
@@ -5770,7 +6015,7 @@ mod tests {
         let file_path = dir.path().join("some.txt");
         fs::write(&file_path, b"data").unwrap();
 
-        let result = fs_list_dir(file_path.to_string_lossy().into(), false).await;
+        let result = test_fs_list_dir(file_path.to_string_lossy().into(), false).await;
         assert!(
             result.is_err(),
             "expected Err when path is a file, not a dir"
@@ -5785,7 +6030,7 @@ mod tests {
         let beta_path = dir.path().join("beta.txt");
         fs::write(&alpha_path, b"alpha").unwrap();
 
-        let initial_entries = fs_list_dir(dir_path.clone(), false)
+        let initial_entries = test_fs_list_dir(dir_path.clone(), false)
             .await
             .expect("initial fs_list_dir failed");
         assert_eq!(
@@ -5803,7 +6048,7 @@ mod tests {
         .await
         .expect("fs_write_file failed");
 
-        let refreshed_entries = fs_list_dir(dir_path, false)
+        let refreshed_entries = test_fs_list_dir(dir_path, false)
             .await
             .expect("refreshed fs_list_dir failed");
         assert_eq!(
@@ -5823,7 +6068,7 @@ mod tests {
         let new_path = dir.path().join("beta.txt");
         fs::write(&old_path, b"alpha").unwrap();
 
-        let initial_entries = fs_list_dir(dir_path.clone(), false)
+        let initial_entries = test_fs_list_dir(dir_path.clone(), false)
             .await
             .expect("initial fs_list_dir failed");
         assert_eq!(
@@ -5841,7 +6086,7 @@ mod tests {
         .await
         .expect("fs_rename failed");
 
-        let refreshed_entries = fs_list_dir(dir_path, false)
+        let refreshed_entries = test_fs_list_dir(dir_path, false)
             .await
             .expect("refreshed fs_list_dir failed");
         assert_eq!(
@@ -5891,8 +6136,9 @@ mod tests {
         let alpha_path = dir.path().join("alpha.txt");
         let beta_path = dir.path().join("beta.txt");
         fs::write(&alpha_path, b"alpha").unwrap();
+        invalidate_all_fs_caches_for_path(dir.path());
 
-        let initial_entries = fs_list_dir(dir_path.clone(), false)
+        let initial_entries = test_fs_list_dir(dir_path.clone(), false)
             .await
             .expect("initial fs_list_dir failed");
         assert_eq!(
@@ -5906,7 +6152,7 @@ mod tests {
         fs::write(&beta_path, b"beta").unwrap();
         invalidate_all_fs_caches_for_path(&beta_path);
 
-        let refreshed_entries = fs_list_dir(dir_path, false)
+        let refreshed_entries = test_fs_list_dir(dir_path, false)
             .await
             .expect("refreshed fs_list_dir failed");
         assert_eq!(
@@ -5938,7 +6184,7 @@ mod tests {
         #[cfg(target_family = "windows")]
         std::os::windows::fs::symlink_dir(&real_dir, &linked_dir).unwrap();
 
-        let results = fs_search_entries(
+        let results = test_fs_search_entries(
             dir.path().to_string_lossy().into(),
             "needle".to_string(),
             false,
@@ -5973,7 +6219,7 @@ mod tests {
         fs::write(deep_dir.join("b.bin"), vec![0_u8; 256]).unwrap();
         fs::write(&loose_file, vec![0_u8; 64]).unwrap();
 
-        let results = fs_measure_entry_sizes(
+        let results = test_fs_measure_entry_sizes(
             vec![
                 nested_dir.to_string_lossy().into_owned(),
                 loose_file.to_string_lossy().into_owned(),
@@ -6034,7 +6280,7 @@ mod tests {
         std::os::windows::fs::symlink_dir(&real_dir, &linked_dir).unwrap();
 
         let results =
-            fs_measure_entry_sizes(vec![linked_dir.to_string_lossy().into_owned()], Some(true))
+            test_fs_measure_entry_sizes(vec![linked_dir.to_string_lossy().into_owned()], Some(true))
                 .await
                 .expect("fs_measure_entry_sizes failed");
 
@@ -6181,7 +6427,7 @@ mod tests {
         let file_path = nested.join("notes.kain");
         fs::write(&file_path, "alpha\nbeta search term gamma\nomega").unwrap();
 
-        let result = fs_search_entries(
+        let result = test_fs_search_entries(
             dir.path().to_string_lossy().into(),
             "search term".to_string(),
             true,
@@ -6209,7 +6455,7 @@ mod tests {
         fs::write(&named, "no match in body").unwrap();
         fs::write(&content_only, "alpha\nsearch-term beta\nomega").unwrap();
 
-        let result = fs_search_entries(
+        let result = test_fs_search_entries(
             dir.path().to_string_lossy().into(),
             "search-term".to_string(),
             true,
@@ -6243,7 +6489,7 @@ mod tests {
         }
 
         let root = dir.path().to_string_lossy().into_owned();
-        let first_results = fs_search_entries(
+        let first_results = test_fs_search_entries(
             root.clone(),
             "alpha-note".to_string(),
             true,
@@ -6263,7 +6509,7 @@ mod tests {
 
         reset_search_scan_count();
 
-        let cached_results = fs_search_entries(
+        let cached_results = test_fs_search_entries(
             root.clone(),
             "alpha-note-01".to_string(),
             true,
@@ -6300,7 +6546,7 @@ mod tests {
         }
 
         let root = dir.path().to_string_lossy().into_owned();
-        fs_search_entries(
+        test_fs_search_entries(
             root.clone(),
             "alpha-note".to_string(),
             true,
@@ -6312,7 +6558,7 @@ mod tests {
         .await
         .expect("initial fs_search_entries failed");
 
-        let response = fs_search_entries_with_diagnostics(
+        let response = test_fs_search_entries_with_diagnostics(
             root,
             "alpha-note-00".to_string(),
             true,
@@ -6354,7 +6600,7 @@ mod tests {
         let root_path = dir.path();
         let root = root_path.to_string_lossy().into_owned();
         let root_key = path_cache_key(root_path);
-        let first_results = fs_search_entries(
+        let first_results = test_fs_search_entries(
             root.clone(),
             "alpha body line".to_string(),
             true,
@@ -6386,7 +6632,7 @@ mod tests {
 
         reset_search_scan_count();
 
-        let cached_results = fs_search_entries(
+        let cached_results = test_fs_search_entries(
             root,
             "payload-match-017".to_string(),
             true,
@@ -6423,7 +6669,7 @@ mod tests {
         let root = root_path.to_string_lossy().into_owned();
         let root_key = path_cache_key(root_path);
 
-        let first_results = fs_search_entries(
+        let first_results = test_fs_search_entries(
             root.clone(),
             "target payload line".to_string(),
             true,
@@ -6456,7 +6702,7 @@ mod tests {
 
         reset_search_scan_count();
 
-        let second_results = fs_search_entries(
+        let second_results = test_fs_search_entries(
             root,
             "target payload line".to_string(),
             true,
@@ -6499,7 +6745,7 @@ mod tests {
         fs::write(&first_file, repeated_a).unwrap();
         fs::write(&second_file, repeated_b).unwrap();
 
-        let response = fs_search_entries_with_diagnostics(
+        let response = test_fs_search_entries_with_diagnostics(
             dir.path().to_string_lossy().into_owned(),
             "target payload line".to_string(),
             true,
@@ -6543,7 +6789,7 @@ mod tests {
         let root = root_path.to_string_lossy().into_owned();
         let root_key = path_cache_key(root_path);
 
-        let initial_name_results = fs_search_entries(
+        let initial_name_results = test_fs_search_entries(
             root.clone(),
             "alpha-note".to_string(),
             true,
@@ -6556,7 +6802,7 @@ mod tests {
         .expect("initial names-only fs_search_entries failed");
         assert_eq!(initial_name_results.len(), 1);
 
-        let initial_content_results = fs_search_entries(
+        let initial_content_results = test_fs_search_entries(
             root.clone(),
             "alpha body".to_string(),
             true,
@@ -6616,7 +6862,7 @@ mod tests {
             );
         }
 
-        let refreshed_name_results = fs_search_entries(
+        let refreshed_name_results = test_fs_search_entries(
             root.clone(),
             "beta-note".to_string(),
             true,
@@ -6633,7 +6879,7 @@ mod tests {
             nested_match.to_string_lossy()
         );
 
-        let refreshed_content_results = fs_search_entries(
+        let refreshed_content_results = test_fs_search_entries(
             root,
             "beta body".to_string(),
             true,
@@ -6662,7 +6908,7 @@ mod tests {
         let root = root_path.to_string_lossy().into_owned();
         let root_key = path_cache_key(root_path);
 
-        let initial_results = fs_search_entries(
+        let initial_results = test_fs_search_entries(
             root.clone(),
             "alpha body".to_string(),
             true,
@@ -6706,7 +6952,7 @@ mod tests {
             );
         }
 
-        let refreshed_results = fs_search_entries(
+        let refreshed_results = test_fs_search_entries(
             root,
             "beta body".to_string(),
             true,
@@ -6734,7 +6980,7 @@ mod tests {
         let root = root_path.to_string_lossy().into_owned();
         let root_key = path_cache_key(root_path);
 
-        let initial_results = fs_search_entries(
+        let initial_results = test_fs_search_entries(
             root.clone(),
             "alpha body".to_string(),
             true,
@@ -6777,7 +7023,7 @@ mod tests {
             );
         }
 
-        let refreshed_results = fs_search_entries(
+        let refreshed_results = test_fs_search_entries(
             root,
             "alpha body".to_string(),
             true,
@@ -6804,7 +7050,7 @@ mod tests {
         let root = root_path.to_string_lossy().into_owned();
         let root_key = path_cache_key(root_path);
 
-        let initial_results = fs_search_entries(
+        let initial_results = test_fs_search_entries(
             root.clone(),
             "alpha body".to_string(),
             true,
@@ -6844,7 +7090,7 @@ mod tests {
             );
         }
 
-        let refreshed_results = fs_search_entries(
+        let refreshed_results = test_fs_search_entries(
             root,
             "alpha body".to_string(),
             true,
@@ -6873,7 +7119,7 @@ mod tests {
         let root = root_path.to_string_lossy().into_owned();
         let root_key = path_cache_key(root_path);
 
-        let initial_results = fs_search_entries(
+        let initial_results = test_fs_search_entries(
             root.clone(),
             "alpha-note".to_string(),
             true,
@@ -6920,7 +7166,7 @@ mod tests {
             );
         }
 
-        let refreshed_results = fs_search_entries(
+        let refreshed_results = test_fs_search_entries(
             root,
             "alpha-note".to_string(),
             true,
@@ -6951,7 +7197,7 @@ mod tests {
         let root = root_path.to_string_lossy().into_owned();
         let root_key = path_cache_key(root_path);
 
-        let initial_results = fs_search_entries(
+        let initial_results = test_fs_search_entries(
             root.clone(),
             "alpha-note".to_string(),
             true,
@@ -6994,7 +7240,7 @@ mod tests {
             );
         }
 
-        let old_name_results = fs_search_entries(
+        let old_name_results = test_fs_search_entries(
             root.clone(),
             "alpha-note".to_string(),
             true,
@@ -7010,7 +7256,7 @@ mod tests {
             "renamed files should disappear from rebuilt names-only search indexes"
         );
 
-        let new_name_results = fs_search_entries(
+        let new_name_results = test_fs_search_entries(
             root,
             "beta-note".to_string(),
             true,
@@ -7040,7 +7286,7 @@ mod tests {
         let root = root_path.to_string_lossy().into_owned();
         let root_key = path_cache_key(root_path);
 
-        let initial_results = fs_search_entries(
+        let initial_results = test_fs_search_entries(
             root.clone(),
             "alpha-note".to_string(),
             true,
@@ -7080,7 +7326,7 @@ mod tests {
             );
         }
 
-        let refreshed_results = fs_search_entries(
+        let refreshed_results = test_fs_search_entries(
             root,
             "alpha-note".to_string(),
             true,
@@ -7117,7 +7363,7 @@ mod tests {
         let root = dir.path().to_string_lossy().into_owned();
         let scope = format!("search-test-{}", root);
 
-        let stale_search = tokio::spawn(fs_search_entries(
+        let stale_search = tokio::spawn(test_fs_search_entries(
             root.clone(),
             "missing-value".to_string(),
             true,
@@ -7129,7 +7375,7 @@ mod tests {
 
         tokio::time::sleep(Duration::from_millis(12)).await;
 
-        let fresh_results = fs_search_entries(
+        let fresh_results = test_fs_search_entries(
             root.clone(),
             "winning-match".to_string(),
             true,
@@ -7167,7 +7413,7 @@ mod tests {
         fs_cancel_search_entries(root.clone(), Some(8), Some(scope.clone()))
             .expect("failed to register prior search request");
 
-        let fresh_results = fs_search_entries(
+        let fresh_results = test_fs_search_entries(
             root,
             "winning-match".to_string(),
             true,
@@ -7470,7 +7716,7 @@ mod tests {
         let root = dir.path().to_string_lossy().into_owned();
         let root_key = path_cache_key(dir.path());
 
-        let initial_name_results = fs_search_entries(
+        let initial_name_results = test_fs_search_entries(
             root.clone(),
             "alpha-note".to_string(),
             true,
@@ -7484,7 +7730,7 @@ mod tests {
         assert_eq!(initial_name_results.len(), 1);
         assert_eq!(initial_name_results[0].path, source_file.to_string_lossy());
 
-        let initial_content_results = fs_search_entries(
+        let initial_content_results = test_fs_search_entries(
             root.clone(),
             "alpha body".to_string(),
             true,
@@ -7557,7 +7803,7 @@ mod tests {
             );
         }
 
-        let refreshed_name_results = fs_search_entries(
+        let refreshed_name_results = test_fs_search_entries(
             root.clone(),
             "alpha-note".to_string(),
             true,
@@ -7571,7 +7817,7 @@ mod tests {
         assert_eq!(refreshed_name_results.len(), 1);
         assert_eq!(refreshed_name_results[0].path, moved_file.to_string_lossy());
 
-        let refreshed_content_results = fs_search_entries(
+        let refreshed_content_results = test_fs_search_entries(
             root,
             "alpha body".to_string(),
             true,
@@ -7605,7 +7851,7 @@ mod tests {
         let root = dir.path().to_string_lossy().into_owned();
         let root_key = path_cache_key(dir.path());
 
-        let initial_name_results = fs_search_entries(
+        let initial_name_results = test_fs_search_entries(
             root.clone(),
             "alpha-note".to_string(),
             true,
@@ -7619,7 +7865,7 @@ mod tests {
         assert_eq!(initial_name_results.len(), 1);
         assert_eq!(initial_name_results[0].path, source_file.to_string_lossy());
 
-        let initial_content_results = fs_search_entries(
+        let initial_content_results = test_fs_search_entries(
             root.clone(),
             "alpha body".to_string(),
             true,
@@ -7692,7 +7938,7 @@ mod tests {
             );
         }
 
-        let refreshed_name_results = fs_search_entries(
+        let refreshed_name_results = test_fs_search_entries(
             root.clone(),
             "alpha-note".to_string(),
             true,
@@ -7721,7 +7967,7 @@ mod tests {
             "copied searches should include the destination entry"
         );
 
-        let refreshed_content_results = fs_search_entries(
+        let refreshed_content_results = test_fs_search_entries(
             root,
             "alpha body".to_string(),
             true,

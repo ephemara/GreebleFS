@@ -1796,7 +1796,7 @@ mod tests {
 
         let results = fs_batch_rename_apply(FsBatchRenameRecipe {
             source_paths: vec![source.to_string_lossy().to_string()],
-            search: String::new(),
+            search: "alpha".to_string(),
             replacement: "{{parent}}-{{index}}".to_string(),
             prefix: String::new(),
             suffix: String::new(),

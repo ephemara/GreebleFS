@@ -428,6 +428,7 @@ pub fn fs_unwatch_entry_size_root(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
     use tempfile::TempDir;
 
     static TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -440,12 +441,35 @@ mod tests {
         dir.path().join("entry-size-cache.sqlite3")
     }
 
+    struct EnvVarGuard {
+        key: &'static str,
+        previous: Option<OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: &Path) -> Self {
+            let previous = std::env::var_os(key);
+            std::env::set_var(key, value);
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            if let Some(previous) = self.previous.take() {
+                std::env::set_var(self.key, previous);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
+
     #[test]
     fn persisted_entry_sizes_round_trip() {
         let _guard = test_lock().lock().expect("test lock");
         let dir = TempDir::new().expect("temp dir");
         let db_path = test_db_path(&dir);
-        std::env::set_var(ENTRY_SIZE_DB_ENV, &db_path);
+        let _env_guard = EnvVarGuard::set(ENTRY_SIZE_DB_ENV, &db_path);
 
         let entry = PersistedEntrySize {
             path: normalize_cache_path(Path::new("C:\\cache\\assets")),
@@ -466,7 +490,6 @@ mod tests {
         assert!(loaded_entry.is_dir);
         assert!(loaded_entry.is_complete);
 
-        std::env::remove_var(ENTRY_SIZE_DB_ENV);
     }
 
     #[test]
@@ -474,7 +497,7 @@ mod tests {
         let _guard = test_lock().lock().expect("test lock");
         let dir = TempDir::new().expect("temp dir");
         let db_path = test_db_path(&dir);
-        std::env::set_var(ENTRY_SIZE_DB_ENV, &db_path);
+        let _env_guard = EnvVarGuard::set(ENTRY_SIZE_DB_ENV, &db_path);
 
         let root = dir.path().join("root");
         let nested = root.join("nested");
@@ -518,7 +541,6 @@ mod tests {
         let loaded = load_entry_size_cache(&[root, nested, file]).expect("load dirty");
         assert!(loaded.values().all(|entry| entry.dirty));
 
-        std::env::remove_var(ENTRY_SIZE_DB_ENV);
     }
 
     #[test]
@@ -526,7 +548,7 @@ mod tests {
         let _guard = test_lock().lock().expect("test lock");
         let dir = TempDir::new().expect("temp dir");
         let db_path = test_db_path(&dir);
-        std::env::set_var(ENTRY_SIZE_DB_ENV, &db_path);
+        let _env_guard = EnvVarGuard::set(ENTRY_SIZE_DB_ENV, &db_path);
 
         let present_a = dir.path().join("present-a");
         let present_b = dir.path().join("present-b");
@@ -574,6 +596,5 @@ mod tests {
                 .dirty
         );
 
-        std::env::remove_var(ENTRY_SIZE_DB_ENV);
     }
 }

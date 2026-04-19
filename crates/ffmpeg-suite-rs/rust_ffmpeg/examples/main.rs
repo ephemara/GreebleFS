@@ -1,4 +1,4 @@
-use ffmpeg_rs::prelude::*;
+use rust_ffmpeg::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {

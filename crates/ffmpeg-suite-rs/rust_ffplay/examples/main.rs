@@ -1,4 +1,4 @@
-use ffplay_rs::prelude::*;
+use rust_ffplay::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {

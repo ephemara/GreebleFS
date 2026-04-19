@@ -206,7 +206,7 @@ fn run_backend_command(executable: &Path, args: &[String]) -> Result<PluginBacke
 
     #[cfg(unix)]
     if extension != "ps1" && extension != "cmd" && extension != "bat" {
-        ensure_unix_executable_permissions(executable)?;
+        ensure_unix_executable_permissions_if_present(executable)?;
     }
 
     let mut command = if extension == "ps1" {
@@ -324,17 +324,15 @@ fn normalize_ignored_directory_names(ignored_directories: Vec<String>) -> Vec<St
 }
 
 fn path_contains_ignored_directory(path: &Path, ignored_directories: &[String]) -> bool {
-    path.components().any(|component| {
-        let segment = component
-            .as_os_str()
-            .to_string_lossy()
-            .trim()
-            .to_ascii_lowercase();
-        !segment.is_empty()
-            && ignored_directories
-                .iter()
-                .any(|ignored| ignored == &segment)
-    })
+    path.to_string_lossy()
+        .split(['/', '\\'])
+        .any(|segment| {
+            let segment = segment.trim().to_ascii_lowercase();
+            !segment.is_empty()
+                && ignored_directories
+                    .iter()
+                    .any(|ignored| ignored == &segment)
+        })
 }
 
 #[cfg(target_os = "windows")]
@@ -380,12 +378,37 @@ fn ensure_unix_executable_permissions(executable: &Path) -> Result<(), String> {
     })
 }
 
+#[cfg(unix)]
+fn ensure_unix_executable_permissions_if_present(executable: &Path) -> Result<(), String> {
+    if executable.exists() {
+        ensure_unix_executable_permissions(executable)
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(unix))]
+fn ensure_unix_executable_permissions_if_present(_executable: &Path) -> Result<(), String> {
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
     use tempfile::tempdir;
 
+    async fn test_plugin_run_backend(
+        plugins_root: String,
+        plugin_id: String,
+        entry: String,
+        args: Vec<String>,
+    ) -> Result<PluginBackendResult, String> {
+        let backend_entry = resolve_backend_entry(&plugins_root, &plugin_id, &entry)?;
+        run_backend_command(&backend_entry, &args)
+    }
+
+    #[cfg(target_os = "windows")]
     #[tokio::test]
     async fn plugin_run_backend_executes_windows_cmd_backends() {
         let tempdir = tempfile::tempdir().expect("tempdir should be created");
@@ -397,7 +420,7 @@ mod tests {
         fs::write(&script_path, "@echo off\r\nexit /b 0\r\n")
             .expect("backend script should be written");
 
-        let result = plugin_run_backend(
+        let result = test_plugin_run_backend(
             plugins_root.to_string_lossy().to_string(),
             "sample-plugin".to_string(),
             "echo-backend.cmd".to_string(),
@@ -408,6 +431,42 @@ mod tests {
 
         assert_eq!(result.status, 0);
         assert!(result.stdout.trim().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn plugin_run_backend_executes_unix_shell_backends() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+        let plugins_root = tempdir.path();
+        let backend_dir = plugins_root.join("sample-plugin").join("backend");
+        fs::create_dir_all(&backend_dir).expect("backend dir should be created");
+
+        let script_path = backend_dir.join("echo-backend.sh");
+        fs::write(
+            &script_path,
+            "#!/bin/sh\nprintf 'out:%s\\n' \"$1\"\nprintf 'errline\\n' >&2\nexit 7\n",
+        )
+        .expect("backend script should be written");
+        let mut permissions = fs::metadata(&script_path)
+            .expect("script metadata should exist")
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&script_path, permissions).expect("script should be executable");
+
+        let result = test_plugin_run_backend(
+            plugins_root.to_string_lossy().to_string(),
+            "sample-plugin".to_string(),
+            "echo-backend.sh".to_string(),
+            vec!["hello".to_string()],
+        )
+        .await
+        .expect("backend should execute successfully");
+
+        assert_eq!(result.status, 7);
+        assert!(result.stdout.contains("out:hello"));
+        assert!(result.stderr.contains("errline"));
     }
 
     #[tokio::test]
@@ -423,10 +482,10 @@ mod tests {
         )
         .expect("traversal target should exist");
 
-        let error = plugin_run_backend(
+        let error = test_plugin_run_backend(
             plugins_root.to_string_lossy().to_string(),
             "sample-plugin".to_string(),
-            "..\\outside.cmd".to_string(),
+            format!("..{}outside.cmd", std::path::MAIN_SEPARATOR),
             vec![],
         )
         .await
