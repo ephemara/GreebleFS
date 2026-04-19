@@ -990,6 +990,22 @@ async pdfClosePreviewDocument(sessionId: string) : Promise<Result<null, string>>
     else return { status: "error", error: e  as any };
 }
 },
+async shaderPreviewInspect(path: string) : Promise<Result<ExplorerShaderPreviewDocument, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("shader_preview_inspect", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async shaderPreviewCompile(request: ExplorerShaderCompileRequest) : Promise<Result<ExplorerShaderCompileResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("shader_preview_compile", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async videoCreatePreviewProxy(inputPath: string) : Promise<Result<ResolvedVideoPreviewSource, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("video_create_preview_proxy", { inputPath }) };
@@ -1289,6 +1305,14 @@ export type ExplorerLayoutMode = "full" | "dock"
 export type ExplorerPathTagAssignment = { path: string; tagIds: string[]; tagLabels: string[] }
 export type ExplorerSavedSearchRecord = { id: string; name: string; rootPath: string; query: string; includeContent: boolean; tagFilterIds: string[]; createdAt: number; updatedAt: number }
 export type ExplorerSavedSearchSaveRequest = { id: string | null; name: string; rootPath: string; query: string; includeContent: boolean; tagFilterIds: string[] }
+export type ExplorerShaderCompileRequest = { path: string; format: ExplorerShaderFormat; sourceText: string | null; selectedStage: ExplorerShaderStage | null; selectedEntryPoint: string | null }
+export type ExplorerShaderCompileResult = { format: ExplorerShaderFormat; inspectionSource: string; entryPoints: ExplorerShaderEntryPoint[]; selectedStage: ExplorerShaderStage | null; selectedEntryPoint: string | null; diagnostics: ExplorerShaderDiagnostic[]; normalizedWgsl: string | null; supportsLivePreview: boolean; previewAbi: string }
+export type ExplorerShaderDiagnostic = { severity: ExplorerShaderDiagnosticSeverity; message: string; lineNumber: number | null; columnNumber: number | null }
+export type ExplorerShaderDiagnosticSeverity = "error" | "warning" | "info"
+export type ExplorerShaderEntryPoint = { name: string; stage: ExplorerShaderStage; supportsLivePreview: boolean }
+export type ExplorerShaderFormat = "wgsl" | "hlsl" | "spv"
+export type ExplorerShaderPreviewDocument = { path: string; name: string; format: ExplorerShaderFormat; editableSource: string | null; inspectionSource: string; isReadOnly: boolean; selectedStage: ExplorerShaderStage | null; selectedEntryPoint: string | null; entryPoints: ExplorerShaderEntryPoint[]; diagnostics: ExplorerShaderDiagnostic[]; normalizedWgsl: string | null; supportsLivePreview: boolean; previewAbi: string }
+export type ExplorerShaderStage = "vertex" | "fragment" | "compute"
 export type ExplorerTagMutationMode = "add" | "remove" | "replace"
 export type ExplorerTagMutationRequest = { paths: string[]; tagNames: string[]; mode: ExplorerTagMutationMode }
 export type ExplorerTagRecord = { id: string; label: string; color: string | null; pathCount: number }

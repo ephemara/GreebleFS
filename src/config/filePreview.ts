@@ -439,9 +439,13 @@ export function isShaderPreviewExtension(extension: string): boolean {
 export function getShaderPreviewFormat(
   extension: string,
 ): ShaderPreviewFormat | null {
-  return (
-    SHADER_PREVIEW_FORMAT_BY_EXTENSION[normalizeExtension(extension)] ?? null
-  );
+  const normalizedExtension = normalizeExtension(extension);
+  if (!isShaderPreviewExtension(normalizedExtension)) {
+    return null;
+  }
+  return SHADER_PREVIEW_FORMAT_BY_EXTENSION[
+    normalizedExtension as keyof typeof SHADER_PREVIEW_FORMAT_BY_EXTENSION
+  ];
 }
 
 export function isExecutableExtension(extension: string): boolean {

@@ -600,6 +600,8 @@ function ShaderPreviewCanvas({
       path,
       maxWidth: 640,
       maxHeight: 360,
+      includeVideoHoverScrub: false,
+      videoHoverFrameCount: 1,
     })
       .then((thumbnail) => {
         if (cancelled) {

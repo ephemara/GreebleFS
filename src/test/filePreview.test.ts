@@ -6,6 +6,7 @@ import {
   getExplorerAudioExportFormatDefinition,
   getModelPreviewFormat,
   getMonacoLanguage,
+  getShaderPreviewFormat,
   getVideoPreviewMimeType,
   isDirectAudioPreviewExtension,
   isAudioPreviewExtension,
@@ -13,6 +14,7 @@ import {
   isExecutableExtension,
   isImagePreviewExtension,
   isPdfPreviewExtension,
+  isShaderPreviewExtension,
   isSpreadsheetPreviewExtension,
   isVideoPreviewExtension,
 } from "../config/filePreview";
@@ -80,6 +82,20 @@ describe("filePreview config", () => {
     expect(isEditableTextExtension("xlsx", 1024)).toBe(false);
     expect(isEditableTextExtension("csv", 1024)).toBe(false);
     expect(isEditableTextExtension("tsv", 1024)).toBe(false);
+  });
+
+  it("routes shader formats into the shader workbench instead of editable text mode", () => {
+    expect(isShaderPreviewExtension("wgsl")).toBe(true);
+    expect(isShaderPreviewExtension(".hlsl")).toBe(true);
+    expect(isShaderPreviewExtension("spv")).toBe(true);
+    expect(isShaderPreviewExtension("glsl")).toBe(false);
+    expect(getShaderPreviewFormat("wgsl")).toBe("wgsl");
+    expect(getShaderPreviewFormat(".hlsl")).toBe("hlsl");
+    expect(getShaderPreviewFormat("spv")).toBe("spv");
+    expect(getShaderPreviewFormat("glsl")).toBeNull();
+    expect(isEditableTextExtension("wgsl", 1024)).toBe(false);
+    expect(isEditableTextExtension("hlsl", 1024)).toBe(false);
+    expect(isEditableTextExtension("spv", 1024)).toBe(false);
   });
 
   it("maps supported 3d extensions to model formats", () => {

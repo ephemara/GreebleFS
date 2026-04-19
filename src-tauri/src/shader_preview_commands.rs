@@ -97,7 +97,6 @@ pub struct ExplorerShaderCompileResult {
 }
 
 struct ShaderInspectionPayload {
-    format: ExplorerShaderFormat,
     editable_source: Option<String>,
     inspection_source: String,
     entry_points: Vec<ExplorerShaderEntryPoint>,
@@ -504,7 +503,6 @@ fn build_shader_payload(
         && selection.0.is_some()
         && selection.1.is_some();
     ShaderInspectionPayload {
-        format: ExplorerShaderFormat::Wgsl,
         editable_source,
         inspection_source,
         entry_points,

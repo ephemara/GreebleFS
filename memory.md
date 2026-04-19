@@ -1,5 +1,27 @@
 # GreebleFS Memory
 
+## 2026-04-18 — Explorer Shader Workbench For WGSL / HLSL / SPIR-V
+
+- The explorer preview pane now has a dedicated shader workbench lane for `.wgsl`, `.hlsl`, and `.spv` instead of routing those files through generic text/markdown preview paths.
+- Durable implementation shape:
+  - `src/config/filePreview.ts` is now the extension router for shader-workbench file types. It explicitly classifies `wgsl`, `hlsl`, and `spv`, keeps `wgsl` / `hlsl` editable, and excludes all three from the generic editable-text lane so shader files do not silently fall back to Monaco text preview.
+  - `src/components/FileExplorer.tsx` now owns a `preview.type === 'shader'` branch, session-scoped shader selection memory keyed by file path, and shader-specific preview-header chrome that reuses the existing `previewModeToggle` slot for `Preview`, `Edit`, `Sphere`, `Fullscreen`, and dirty-state `Save`.
+  - `src/components/ExplorerShaderWorkbench.tsx` is the shell-owned shader lane. It provides the live WebGPU preview canvas, stage/entrypoint picker, diagnostics strip, debounced compile loop, dirty/save wiring for editable formats, and read-only SPIR-V inspection mode.
+  - `src/runtime/shaderPreviewBackend.ts` is the TS runtime seam for shader inspection/compile work. React should talk to that seam instead of scattering raw shader preview invokes through explorer components.
+  - `src-tauri/src/shader_preview_commands.rs` is the native normalization path. WGSL is parsed and validated with `naga`, HLSL is compiled to SPIR-V with `shaderc` and then normalized back through `naga`, and `.spv` files are reflected and translated through `naga` into inspection WGSL.
+  - Relative HLSL `#include` resolution is now rooted at the shader file directory in the native layer, so preview/compile behavior matches the file’s on-disk location instead of depending on the process working directory.
+  - The workbench now exposes and documents `GreebleFS Shader Preview ABI v1`. Shaders that compile but do not fit the host preview contract stay inside the shader workbench with diagnostics and normalized inspection output; they do not fall back to the generic text lane.
+- Durable product note:
+  - Keep shader normalization and stage/entrypoint truth in Rust. The React workbench should stay a shell-owned authoring/preview surface over typed shader-preview commands, not become a browser-side shader parser or format bridge.
+  - Stage and entrypoint memory is intentionally explorer-session scoped inside `FileExplorer.tsx`. Do not persist those picks into global settings unless the product deliberately decides to make shader-preview presets a user-level feature.
+  - If future work expands shader support beyond WGSL/HLSL/SPIR-V, extend the file-preview classifier and native normalization path together. Do not route new shader types through the generic text editor just because Monaco can display the source.
+- Validation:
+  - passed: `bun x vitest run src/test/filePreview.test.ts src/test/hotkeys.test.ts src/test/settingsStore.test.ts src/test/fileExplorer.viewModes.test.tsx -t "routes shader|remembers shader|hotkey config helpers|default hotkey settings|filePreview config"`
+  - passed: `bun x tsc --noEmit --pretty false`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml`
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - note: targeted `cargo test --manifest-path src-tauri/Cargo.toml shader_preview_commands` is currently blocked by unrelated pre-existing test compile drift in `src-tauri/src/fs_commands.rs`, so the useful backend signal for this pass is the green non-test `cargo check`
+
 ## 2026-04-18 — Preview Pane Terminal + Reverse `cd` Sync
 
 - The explorer preview pane can now host a live embedded terminal without leaving the current file-browser surface.

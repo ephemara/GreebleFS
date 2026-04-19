@@ -261,8 +261,8 @@ export function ExplorerDocxWorkbench(props: ExplorerDocxWorkbenchProps) {
       });
 
       const warnings = result.messages
-        .filter((m) => m.type !== "success")
-        .map((m) => m.message)
+        .filter((m: { type: string; message: string }) => m.type !== "success")
+        .map((m: { type: string; message: string }) => m.message)
         .slice(0, 5);
 
       setStatus({ kind: "ready", html: sanitized, warnings });

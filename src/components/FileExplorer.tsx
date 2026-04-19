@@ -167,6 +167,7 @@ import { OverlayScrollArea } from "./OverlayScrollArea";
 import { AppPromptDialog } from "./AppModal";
 import { ExplorerAudioWorkbench } from "./ExplorerAudioWorkbench";
 import { ExplorerImageEditor } from "./ExplorerImageEditor";
+import { ExplorerShaderWorkbench } from "./ExplorerShaderWorkbench";
 import { ExplorerVideoEditor } from "./ExplorerVideoEditor";
 import { ExplorerArchivePreview } from "./ExplorerArchivePreview";
 import { ExplorerFolderPreview } from "./ExplorerFolderPreview";
@@ -234,6 +235,7 @@ import {
   getAudioPreviewMimeType,
   getModelPreviewFormat,
   getMonacoLanguage,
+  getShaderPreviewFormat,
   getSpreadsheetFileKind,
   getVideoPreviewMimeType,
   isAudioPreviewExtension,
@@ -243,10 +245,12 @@ import {
   isImagePreviewExtension,
   isFontPreviewExtension,
   isPdfPreviewExtension,
+  isShaderPreviewExtension,
   isSqlitePreviewExtension,
   isSpreadsheetPreviewExtension,
   isVideoPreviewExtension,
   type ModelPreviewFormat,
+  type ShaderPreviewFormat,
 } from "../config/filePreview";
 import {
   EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG,
@@ -290,6 +294,13 @@ import {
   type ExplorerPdfPreviewDocument,
   type ExplorerPdfSaveEditsOutput,
 } from "../runtime/pdfPreviewBackend";
+import {
+  inspectExplorerShaderPreviewDocument,
+  type ExplorerShaderPreviewCompileOutput,
+  type ExplorerShaderPreviewDiagnostic,
+  type ExplorerShaderPreviewEntryPoint,
+  type ExplorerShaderPreviewStage,
+} from "../runtime/shaderPreviewBackend";
 import { commands, unwrapTauriResult } from "../runtime/tauriClient";
 import {
   moveExplorerChromeControlInResolvedSurfaces,
@@ -544,6 +555,27 @@ type PreviewState =
       error: string | null;
     }
   | {
+      type: "shader";
+      path: string;
+      name: string;
+      size: number;
+      format: ShaderPreviewFormat;
+      editableSource: string | null;
+      inspectionSource: string;
+      isReadOnly: boolean;
+      selectedScene: "sphere" | "fullscreen";
+      selectedStage: ExplorerShaderPreviewStage | null;
+      selectedEntryPoint: string | null;
+      entryPoints: ExplorerShaderPreviewEntryPoint[];
+      diagnostics: ExplorerShaderPreviewDiagnostic[];
+      normalizedWgsl: string | null;
+      previewAbi: string;
+      supportsLivePreview: boolean;
+      isDirty: boolean;
+      isSaving: boolean;
+      error: string | null;
+    }
+  | {
       type: "model3d";
       path: string;
       format: ModelPreviewFormat;
@@ -578,6 +610,10 @@ type PreviewState =
     };
 type PreviewCloseGuard = () => Promise<boolean>;
 type PreviewSurfaceMode = "content" | "terminal";
+type ExplorerShaderSelectionMemory = {
+  selectedStage: ExplorerShaderPreviewStage | null;
+  selectedEntryPoint: string | null;
+};
 type SpreadsheetWorkbenchStatus = {
   isDirty: boolean;
   isSaving: boolean;
@@ -2674,6 +2710,11 @@ function PreviewPanel({
   onClose,
   onWidthChange,
   onTextChange,
+  onShaderSourceChange,
+  onShaderSelectionChange,
+  onShaderCompileResult,
+  onShaderSceneChange,
+  onShaderSave,
   onRefreshPreviewEntry,
   onPdfDocumentChange,
   onPdfChromeStateChange,
@@ -2705,6 +2746,17 @@ function PreviewPanel({
   onClose: () => void;
   onWidthChange: (width: number) => void;
   onTextChange: (path: string, content: string) => void;
+  onShaderSourceChange: (path: string, content: string) => void;
+  onShaderSelectionChange: (
+    path: string,
+    selection: Partial<ExplorerShaderSelectionMemory>,
+  ) => void;
+  onShaderCompileResult: (
+    path: string,
+    result: ExplorerShaderPreviewCompileOutput,
+  ) => void;
+  onShaderSceneChange: (path: string, scene: "sphere" | "fullscreen") => void;
+  onShaderSave: (path: string) => Promise<void>;
   onRefreshPreviewEntry: () => void | Promise<void>;
   onPdfDocumentChange: (
     path: string,
@@ -2805,6 +2857,7 @@ function PreviewPanel({
 
   const previewTitle = preview.type === "none" ? "Preview" : preview.name;
   const isPdfPreview = preview.type === "pdf";
+  const isShaderPreview = preview.type === "shader";
   const isSpreadsheetPreview = preview.type === "spreadsheet";
   const pdfPageCount = isPdfPreview
     ? (pdfWorkbenchChromeState?.pageCount ?? preview.document.pageCount)
@@ -2822,6 +2875,14 @@ function PreviewPanel({
         : preview.isDirty
           ? "Unsaved"
           : "Saved"
+      : preview.type === "shader"
+        ? preview.error
+          ? "Error"
+          : preview.isSaving
+            ? "Saving?"
+            : preview.isDirty
+              ? "Unsaved"
+              : "Saved"
       : preview.type === "pdf"
         ? pdfWorkbenchChromeState?.isSaving
           ? "Saving?"
@@ -2848,6 +2909,12 @@ function PreviewPanel({
         : preview.isDirty
           ? EXP.red
           : EXP.green
+      : preview.type === "shader"
+        ? preview.isSaving
+          ? EXP.yellow
+          : preview.error || preview.isDirty
+            ? EXP.red
+            : EXP.green
       : preview.type === "pdf"
         ? pdfWorkbenchChromeState?.isSaving
           ? EXP.yellow
@@ -2876,7 +2943,8 @@ function PreviewPanel({
     : "Show preview terminal";
   const supportsRenderedPreview =
     preview.type === "text" && preview.renderKind !== "none";
-  const supportsPreviewModeToggle = supportsRenderedPreview || isPdfPreview;
+  const supportsPreviewModeToggle =
+    supportsRenderedPreview || isPdfPreview || isShaderPreview;
   const previewHeaderRowStyle = useMemo<CSSProperties>(
     () => ({
       display: "flex",
@@ -3102,6 +3170,82 @@ function PreviewPanel({
         isVisible: () =>
           !isPreviewTerminalMode && supportsPreviewModeToggle,
         render: () => {
+          if (preview.type === "shader") {
+            const canSave = !preview.isReadOnly;
+            return (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: 2,
+                  borderRadius: "var(--overlay-explorer-control-radius)",
+                  border: "1px solid var(--overlay-explorer-chip-border)",
+                  background: "var(--overlay-explorer-chip-bg)",
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => onViewModeChange("preview")}
+                  style={previewChipButtonStyle(viewMode === "preview")}
+                >
+                  Preview
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onViewModeChange("edit")}
+                  style={previewChipButtonStyle(viewMode === "edit")}
+                >
+                  Edit
+                </button>
+                <span
+                  aria-hidden="true"
+                  style={{
+                    width: 1,
+                    alignSelf: "stretch",
+                    background: "var(--overlay-explorer-chip-border)",
+                    opacity: 0.6,
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => onShaderSceneChange(preview.path, "sphere")}
+                  style={previewChipButtonStyle(
+                    preview.selectedScene === "sphere",
+                  )}
+                >
+                  Sphere
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onShaderSceneChange(preview.path, "fullscreen")
+                  }
+                  style={previewChipButtonStyle(
+                    preview.selectedScene === "fullscreen",
+                  )}
+                >
+                  Fullscreen
+                </button>
+                {canSave ? (
+                  <button
+                    type="button"
+                    onClick={() => void onShaderSave(preview.path)}
+                    disabled={!preview.isDirty || preview.isSaving}
+                    style={previewChipButtonStyle(
+                      preview.isDirty && !preview.isSaving,
+                      !preview.isDirty || preview.isSaving,
+                    )}
+                  >
+                    <Save size={11} />
+                    Save
+                  </button>
+                ) : null}
+              </div>
+            );
+          }
+
           if (preview.type === "pdf") {
             const pdfIsEditMode = pdfWorkbenchChromeState?.isEditMode ?? false;
             const pdfIsSaving = pdfWorkbenchChromeState?.isSaving ?? false;
@@ -3688,6 +3832,30 @@ function PreviewPanel({
             onRefreshPreviewEntry={onRefreshPreviewEntry}
           />
         )}
+        {preview.type === "shader" && (
+          <ExplorerShaderWorkbench
+            path={preview.path}
+            name={preview.name}
+            format={preview.format}
+            editableSource={preview.editableSource}
+            inspectionSource={preview.inspectionSource}
+            isReadOnly={preview.isReadOnly}
+            normalizedWgsl={preview.normalizedWgsl}
+            diagnostics={preview.diagnostics}
+            entryPoints={preview.entryPoints}
+            selectedScene={preview.selectedScene}
+            selectedStage={preview.selectedStage}
+            selectedEntryPoint={preview.selectedEntryPoint}
+            isDirty={preview.isDirty}
+            isSaving={preview.isSaving}
+            error={preview.error}
+            viewMode={viewMode}
+            onSourceChange={onShaderSourceChange}
+            onSelectionChange={onShaderSelectionChange}
+            onCompileResult={onShaderCompileResult}
+            onRegisterCloseGuard={onRegisterCloseGuard}
+          />
+        )}
         {preview.type === "text" &&
           viewMode === "preview" &&
           supportsRenderedPreview && (
@@ -3821,6 +3989,51 @@ function PreviewPanel({
                 : preview.isDirty
                   ? "Pending auto-save"
                   : "Auto-saved"}
+          </span>
+        </div>
+      )}
+      {previewSurfaceMode === "content" && preview.type === "shader" && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+            padding: "4px 10px",
+            borderTop: "1px solid var(--overlay-explorer-preview-border)",
+            background: "var(--overlay-explorer-preview-header-bg)",
+            fontSize: "var(--overlay-explorer-status-font-size)",
+            color: EXP.muted,
+          }}
+        >
+          <span>
+            {preview.entryPoints.length} entry points · {preview.diagnostics.length} diagnostics
+            {preview.selectedStage && preview.selectedEntryPoint
+              ? ` · ${preview.selectedStage}:${preview.selectedEntryPoint}`
+              : ""}
+          </span>
+          <span
+            style={{
+              color: preview.error
+                ? EXP.red
+                : preview.isSaving
+                  ? EXP.yellow
+                  : preview.isDirty
+                    ? EXP.yellow
+                    : preview.supportsLivePreview
+                      ? EXP.green
+                      : EXP.muted,
+            }}
+          >
+            {preview.error
+              ? "Save failed"
+              : preview.isSaving
+                ? "Saving…"
+                : preview.isDirty
+                  ? "Unsaved edits"
+                  : preview.supportsLivePreview
+                    ? "Preview ABI ready"
+                    : "Inspection only"}
           </span>
         </div>
       )}
@@ -5929,6 +6142,9 @@ export function FileExplorer({
   const previewRef = useRef(preview);
   const previewCloseGuardRef = useRef<PreviewCloseGuard | null>(null);
   const previewSaveTimer = useRef<number | null>(null);
+  const shaderPreviewSelectionMemoryRef = useRef<
+    Map<string, ExplorerShaderSelectionMemory>
+  >(new Map());
   const lastPreviewTerminalShellReportedCwdRef = useRef<string | null>(null);
   const lastPreviewTerminalExplorerAppliedCwdRef =
     useRef<string | null>(null);
@@ -8292,6 +8508,138 @@ export function FileExplorer({
     [queuePreviewSave],
   );
 
+  const persistShaderPreviewSource = useCallback(async (path: string) => {
+    const currentPreview = previewRef.current;
+    if (
+      currentPreview.type !== "shader" ||
+      currentPreview.path !== path ||
+      currentPreview.isReadOnly ||
+      currentPreview.editableSource == null
+    ) {
+      return;
+    }
+
+    const sourceAtSave = currentPreview.editableSource;
+    setPreview((prev) =>
+      prev.type === "shader" && prev.path === path
+        ? { ...prev, isSaving: true, error: null }
+        : prev,
+    );
+
+    try {
+      await writeExplorerFile(path, sourceAtSave);
+      invalidateExplorerResultCaches();
+      setPreview((prev) => {
+        if (
+          prev.type !== "shader" ||
+          prev.path !== path ||
+          prev.editableSource == null
+        ) {
+          return prev;
+        }
+        const isStillSame = prev.editableSource === sourceAtSave;
+        return {
+          ...prev,
+          isSaving: false,
+          isDirty: !isStillSame,
+          error: null,
+        };
+      });
+    } catch (saveError) {
+      setPreview((prev) =>
+        prev.type === "shader" && prev.path === path
+          ? { ...prev, isSaving: false, error: String(saveError) }
+          : prev,
+      );
+      setError(`Save failed for ${currentPreview.name}: ${saveError}`);
+    }
+  }, []);
+
+  const updateShaderPreviewContent = useCallback(
+    (path: string, content: string) => {
+      setPreview((prev) =>
+        prev.type === "shader" && prev.path === path
+          ? {
+              ...prev,
+              editableSource: content,
+              inspectionSource: content,
+              isDirty: true,
+              error: null,
+            }
+          : prev,
+      );
+    },
+    [],
+  );
+
+  const updateShaderPreviewSelection = useCallback(
+    (path: string, selection: Partial<ExplorerShaderSelectionMemory>) => {
+      const currentSelection =
+        shaderPreviewSelectionMemoryRef.current.get(path) ?? {
+          selectedStage: null,
+          selectedEntryPoint: null,
+        };
+      const nextSelection = {
+        selectedStage:
+          selection.selectedStage !== undefined
+            ? selection.selectedStage
+            : currentSelection.selectedStage,
+        selectedEntryPoint:
+          selection.selectedEntryPoint !== undefined
+            ? selection.selectedEntryPoint
+            : currentSelection.selectedEntryPoint,
+      };
+      shaderPreviewSelectionMemoryRef.current.set(path, nextSelection);
+      setPreview((prev) =>
+        prev.type === "shader" && prev.path === path
+          ? {
+              ...prev,
+              selectedStage: nextSelection.selectedStage,
+              selectedEntryPoint: nextSelection.selectedEntryPoint,
+            }
+          : prev,
+      );
+    },
+    [],
+  );
+
+  const updateShaderPreviewCompileResult = useCallback(
+    (path: string, result: ExplorerShaderPreviewCompileOutput) => {
+      const selection = {
+        selectedStage: result.selectedStage,
+        selectedEntryPoint: result.selectedEntryPoint,
+      };
+      shaderPreviewSelectionMemoryRef.current.set(path, selection);
+      setPreview((prev) =>
+        prev.type === "shader" && prev.path === path
+          ? {
+              ...prev,
+              inspectionSource: result.inspectionSource,
+              entryPoints: result.entryPoints,
+              selectedStage: result.selectedStage,
+              selectedEntryPoint: result.selectedEntryPoint,
+              diagnostics: result.diagnostics,
+              normalizedWgsl: result.normalizedWgsl,
+              supportsLivePreview: result.supportsLivePreview,
+              previewAbi: result.previewAbi,
+            }
+          : prev,
+      );
+    },
+    [],
+  );
+
+  const updateShaderPreviewScene = useCallback(
+    (path: string, scene: "sphere" | "fullscreen") => {
+      setPreview((prev) =>
+        prev.type === "shader" && prev.path === path
+          ? { ...prev, selectedScene: scene }
+          : prev,
+      );
+    },
+    [],
+  );
+
   const registerPreviewCloseGuard = useCallback(
     (guard: PreviewCloseGuard | null) => {
       previewCloseGuardRef.current = guard;
@@ -8515,6 +8863,15 @@ export function FileExplorer({
       }
       if (
         currentPreview.type === "pdf" &&
+        currentPreview.path !== entry.path
+      ) {
+        const shouldCloseCurrentPreview = await requestCurrentPreviewClose();
+        if (!shouldCloseCurrentPreview || !isCurrentPreviewRequest()) {
+          return;
+        }
+      }
+      if (
+        currentPreview.type === "shader" &&
         currentPreview.path !== entry.path
       ) {
         const shouldCloseCurrentPreview = await requestCurrentPreviewClose();
@@ -8765,6 +9122,79 @@ export function FileExplorer({
         return;
       }
 
+      if (isShaderPreviewExtension(ext)) {
+        setDocumentViewMode("preview");
+        const rememberedSelection =
+          shaderPreviewSelectionMemoryRef.current.get(entry.path) ?? null;
+        if (isCurrentPreviewRequest()) {
+          setPreviewLoading(true);
+          setPreview({
+            type: "fallback",
+            path: entry.path,
+            name: entry.name,
+            label: "Loading shader workbench…",
+            detail: "Inspecting shader source and preview ABI support…",
+          });
+        }
+
+        try {
+          const document = await inspectExplorerShaderPreviewDocument(entry.path);
+          if (!isCurrentPreviewRequest()) {
+            return;
+          }
+          const selectedStage =
+            rememberedSelection?.selectedStage ?? document.selectedStage;
+          const selectedEntryPoint =
+            rememberedSelection?.selectedEntryPoint ??
+            document.selectedEntryPoint;
+          shaderPreviewSelectionMemoryRef.current.set(entry.path, {
+            selectedStage,
+            selectedEntryPoint,
+          });
+          setPreview({
+            type: "shader",
+            path: entry.path,
+            name: entry.name,
+            size: entry.size,
+            format: getShaderPreviewFormat(ext) ?? document.format,
+            editableSource: document.editableSource,
+            inspectionSource: document.inspectionSource,
+            isReadOnly: document.isReadOnly,
+            selectedScene:
+              currentPreview.type === "shader" &&
+              currentPreview.path === entry.path
+                ? currentPreview.selectedScene
+                : "sphere",
+            selectedStage,
+            selectedEntryPoint,
+            entryPoints: document.entryPoints,
+            diagnostics: document.diagnostics,
+            normalizedWgsl: document.normalizedWgsl,
+            previewAbi: document.previewAbi,
+            supportsLivePreview: document.supportsLivePreview,
+            isDirty: false,
+            isSaving: false,
+            error: null,
+          });
+        } catch (shaderError) {
+          if (!isCurrentPreviewRequest()) {
+            return;
+          }
+          setPreview({
+            type: "fallback",
+            path: entry.path,
+            name: entry.name,
+            label: "Shader preview unavailable",
+            detail: String(shaderError),
+          });
+        } finally {
+          if (isCurrentPreviewRequest()) {
+            setPreviewLoading(false);
+          }
+        }
+        return;
+      }
+
       if (isEditableTextEntry(entry)) {
         const renderKind = getDocumentPreviewKind(entry.path);
         setDocumentViewMode(renderKind === "html" ? "preview" : "edit");
@@ -8877,7 +9307,10 @@ export function FileExplorer({
       const focusTarget = getSearchFocusTarget(entry);
       const canInlinePreview = previewEnabled && !isCompactDock;
 
-      if (canInlinePreview && isEditableTextEntry(entry)) {
+      if (
+        canInlinePreview &&
+        (isEditableTextEntry(entry) || isShaderPreviewExtension(ext))
+      ) {
         await previewEntry(entry, focusTarget);
         return;
       }
@@ -8886,6 +9319,7 @@ export function FileExplorer({
         canInlinePreview &&
         (getModelPreviewFormat(ext) ||
           isImagePreviewExtension(ext) ||
+          isShaderPreviewExtension(ext) ||
           isSpreadsheetPreviewExtension(ext) ||
           isDocxPreviewExtension(ext) ||
           isPdfPreviewExtension(ext) ||
@@ -10378,6 +10812,50 @@ export function FileExplorer({
         return;
       }
 
+      const activeElement = document.activeElement;
+      const isTypingInEmbeddedEditor =
+        activeElement instanceof HTMLInputElement ||
+        activeElement instanceof HTMLTextAreaElement ||
+        activeElement instanceof HTMLSelectElement ||
+        activeElement instanceof HTMLElement
+          ? activeElement.isContentEditable ||
+            activeElement.closest(".monaco-editor") != null
+          : false;
+
+      if (
+        preview.type === "shader" &&
+        matchesKeybinding(e, keybindings.saveFile) &&
+        !preview.isReadOnly &&
+        preview.editableSource != null
+      ) {
+        e.preventDefault();
+        void persistShaderPreviewSource(preview.path);
+        return;
+      }
+      if (
+        preview.type === "shader" &&
+        !isTypingInEmbeddedEditor &&
+        matchesKeybinding(e, keybindings.shaderWorkbenchToggleEditMode)
+      ) {
+        e.preventDefault();
+        setDocumentViewMode((current) =>
+          current === "edit" ? "preview" : "edit",
+        );
+        return;
+      }
+      if (
+        preview.type === "shader" &&
+        !isTypingInEmbeddedEditor &&
+        matchesKeybinding(e, keybindings.shaderWorkbenchToggleScene)
+      ) {
+        e.preventDefault();
+        updateShaderPreviewScene(
+          preview.path,
+          preview.selectedScene === "sphere" ? "fullscreen" : "sphere",
+        );
+        return;
+      }
+
       if (matchesKeybinding(e, keybindings.searchExplorer)) {
         e.preventDefault();
         beginAddressEdit();
@@ -10620,6 +11098,8 @@ export function FileExplorer({
     moveJumpFilterSelection,
     newItem.visible,
     paste,
+    persistShaderPreviewSource,
+    preview,
     previewTerminalWorkingDirectory,
     queueClipboard,
     refresh,
@@ -10636,6 +11116,7 @@ export function FileExplorer({
     togglePreviewTerminal,
     cycleSortKey,
     toggleSortOrder,
+    updateShaderPreviewScene,
   ]);
 
   // ── Breadcrumbs ──
@@ -11118,6 +11599,12 @@ export function FileExplorer({
         : preview.renderKind === "markdown"
           ? "Text preview (markdown)"
           : "Text preview"
+      : preview.type === "shader"
+        ? documentViewMode === "edit"
+          ? "Shader editor"
+          : preview.selectedScene === "fullscreen"
+            ? "Shader preview (fullscreen)"
+            : "Shader preview (sphere)"
       : preview.type === "pdf"
         ? pdfPreviewChromeState?.isEditMode
           ? "PDF editor"
@@ -17496,6 +17983,11 @@ export function FileExplorer({
               previewTerminalNamespace={previewTerminalNamespace}
               onWidthChange={setPreviewWidth}
               onTextChange={updatePreviewTextContent}
+              onShaderSourceChange={updateShaderPreviewContent}
+              onShaderSelectionChange={updateShaderPreviewSelection}
+              onShaderCompileResult={updateShaderPreviewCompileResult}
+              onShaderSceneChange={updateShaderPreviewScene}
+              onShaderSave={persistShaderPreviewSource}
               onRefreshPreviewEntry={refresh}
               onPdfDocumentChange={updatePdfPreviewDocument}
               onPdfChromeStateChange={handlePdfPreviewChromeStateChange}

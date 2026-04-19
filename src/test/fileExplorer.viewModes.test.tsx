@@ -11,7 +11,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 
-const { pdfPreviewMockState, previewTerminalMockState } = vi.hoisted(() => ({
+const { pdfPreviewMockState, previewTerminalMockState, shaderWorkbenchMockState } = vi.hoisted(() => ({
   pdfPreviewMockState: {
     closeGuardResult: true,
   },
@@ -24,6 +24,9 @@ const { pdfPreviewMockState, previewTerminalMockState } = vi.hoisted(() => ({
       workingDirectory?: string | null;
       onReportedWorkingDirectoryChange?: (cwd: string) => void;
     },
+  },
+  shaderWorkbenchMockState: {
+    lastSelectionLabel: "",
   },
 }));
 
@@ -121,6 +124,75 @@ vi.mock("../components/ExplorerPdfWorkbench", () => ({
     ]);
 
     return <div data-testid="mock-explorer-pdf-workbench">{document.name}</div>;
+  },
+}));
+
+vi.mock("../components/ExplorerShaderWorkbench", () => ({
+  ExplorerShaderWorkbench: ({
+    path,
+    name,
+    format,
+    selectedScene,
+    selectedStage,
+    selectedEntryPoint,
+    isDirty,
+    isSaving,
+    isReadOnly,
+    onSelectionChange,
+    onSourceChange,
+  }: {
+    path: string;
+    name: string;
+    format: string;
+    selectedScene: "sphere" | "fullscreen";
+    selectedStage: "vertex" | "fragment" | "compute" | null;
+    selectedEntryPoint: string | null;
+    isDirty: boolean;
+    isSaving: boolean;
+    isReadOnly: boolean;
+    onSelectionChange: (
+      path: string,
+      selection: {
+        selectedStage?: "vertex" | "fragment" | "compute" | null;
+        selectedEntryPoint?: string | null;
+      },
+    ) => void;
+    onSourceChange: (path: string, value: string) => void;
+  }) => {
+    const selectionLabel = `${selectedStage ?? "none"}:${selectedEntryPoint ?? "none"}`;
+    shaderWorkbenchMockState.lastSelectionLabel = selectionLabel;
+    return (
+      <div data-testid="mock-explorer-shader-workbench">
+        <div>{name}</div>
+        <div>{`${format}:${selectedScene}:${selectionLabel}`}</div>
+        <div>{isReadOnly ? "readonly" : isDirty ? "dirty" : isSaving ? "saving" : "clean"}</div>
+        <button
+          type="button"
+          onClick={() =>
+            onSelectionChange(path, {
+              selectedStage: "fragment",
+              selectedEntryPoint: "shade",
+            })
+          }
+        >
+          Select Shader Fragment
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            onSelectionChange(path, {
+              selectedStage: "vertex",
+              selectedEntryPoint: "shade_vs",
+            })
+          }
+        >
+          Select Shader Vertex
+        </button>
+        <button type="button" onClick={() => onSourceChange(path, "// dirty shader edit")}>
+          Dirty Shader
+        </button>
+      </div>
+    );
   },
 }));
 
@@ -267,6 +339,26 @@ const ENTRIES = [
     size: 2048,
     modified: 0,
     extension: "png",
+    is_hidden: false,
+    is_symlink: false,
+  },
+  {
+    name: "aaa_surface.wgsl",
+    path: `${REPO_ROOT}\\aaa_surface.wgsl`,
+    is_dir: false,
+    size: 512,
+    modified: 0,
+    extension: "wgsl",
+    is_hidden: false,
+    is_symlink: false,
+  },
+  {
+    name: "aab_lighting.hlsl",
+    path: `${REPO_ROOT}\\aab_lighting.hlsl`,
+    is_dir: false,
+    size: 1024,
+    modified: 0,
+    extension: "hlsl",
     is_hidden: false,
     is_symlink: false,
   },
@@ -494,6 +586,7 @@ describe("FileExplorer view modes", () => {
     pdfPreviewMockState.closeGuardResult = true;
     previewTerminalMockState.mountCount = 0;
     previewTerminalMockState.lastProps = null;
+    shaderWorkbenchMockState.lastSelectionLabel = "";
     resetOverlayTermStorage(window.localStorage);
     useSettingsStore.getState().resetToDefaults();
     useExplorerStore.getState().resetSession();
@@ -516,6 +609,10 @@ describe("FileExplorer view modes", () => {
                 maxHeight?: number;
                 includeVideoHoverScrub?: boolean | null;
                 videoHoverFrameCount?: number | null;
+                format?: "wgsl" | "hlsl" | "spv";
+                sourceText?: string | null;
+                selectedStage?: "vertex" | "fragment" | "compute" | null;
+                selectedEntryPoint?: string | null;
               };
               targetDir?: string;
               sources?: string[];
@@ -552,6 +649,8 @@ describe("FileExplorer view modes", () => {
               return "<html><body><h1>hello from html preview</h1></body></html>";
             }
             return "hello from preview";
+          case "fs_write_file":
+            return null;
           case "fs_read_file_base64":
             if (payload?.path === `${REPO_ROOT}\\broken.png`) {
               throw new Error("File is too large to preview (> 12 MB)");
@@ -580,11 +679,74 @@ describe("FileExplorer view modes", () => {
             if (payload?.request?.path === `${REPO_ROOT}\\broken.png`) {
               throw new Error("Image is too large to thumbnail (> 64 MB)");
             }
+						return {
+							kind: "image",
+							posterDataUrl: "data:image/png;base64,ZmFrZQ==",
+							hoverFrames: [],
+							hoverFrameDelayMs: null,
+						};
+          case "shader_preview_inspect":
+            if (payload?.path === `${REPO_ROOT}\\aaa_surface.wgsl`) {
+              return {
+                path: `${REPO_ROOT}\\aaa_surface.wgsl`,
+                name: "aaa_surface.wgsl",
+                format: "wgsl",
+                editableSource:
+                  "@vertex fn shade_vs() -> @builtin(position) vec4<f32> { return vec4<f32>(0.0, 0.0, 0.0, 1.0); }",
+                inspectionSource:
+                  "@vertex fn shade_vs() -> @builtin(position) vec4<f32> { return vec4<f32>(0.0, 0.0, 0.0, 1.0); }",
+                isReadOnly: false,
+                selectedStage: "vertex",
+                selectedEntryPoint: "shade_vs",
+                entryPoints: [
+                  { name: "shade_vs", stage: "vertex", supportsLivePreview: true },
+                  { name: "shade", stage: "fragment", supportsLivePreview: true },
+                ],
+                diagnostics: [],
+                normalizedWgsl: "@fragment fn shade() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }",
+                supportsLivePreview: true,
+                previewAbi: "GreebleFS Shader Preview ABI v1",
+              };
+            }
+            if (payload?.path === `${REPO_ROOT}\\aab_lighting.hlsl`) {
+              return {
+                path: `${REPO_ROOT}\\aab_lighting.hlsl`,
+                name: "aab_lighting.hlsl",
+                format: "hlsl",
+                editableSource:
+                  "[shader(\"fragment\")] float4 shade() : SV_Target { return float4(1,1,1,1); }",
+                inspectionSource:
+                  "[shader(\"fragment\")] float4 shade() : SV_Target { return float4(1,1,1,1); }",
+                isReadOnly: false,
+                selectedStage: "fragment",
+                selectedEntryPoint: "shade",
+                entryPoints: [
+                  { name: "shade", stage: "fragment", supportsLivePreview: true },
+                ],
+                diagnostics: [],
+                normalizedWgsl: "@fragment fn shade() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }",
+                supportsLivePreview: true,
+                previewAbi: "GreebleFS Shader Preview ABI v1",
+              };
+            }
+            throw new Error(`Unexpected shader preview inspect path: ${payload?.path}`);
+          case "shader_preview_compile":
             return {
-              kind: "image",
-              posterDataUrl: "data:image/png;base64,ZmFrZQ==",
-              hoverFrames: [],
-              hoverFrameDelayMs: null,
+              format: payload?.request?.format ?? "wgsl",
+              inspectionSource: payload?.request?.sourceText ?? "",
+              entryPoints:
+                payload?.request?.path === `${REPO_ROOT}\\aaa_surface.wgsl`
+                  ? [
+                      { name: "shade_vs", stage: "vertex", supportsLivePreview: true },
+                      { name: "shade", stage: "fragment", supportsLivePreview: true },
+                    ]
+                  : [{ name: "shade", stage: "fragment", supportsLivePreview: true }],
+              selectedStage: payload?.request?.selectedStage ?? "fragment",
+              selectedEntryPoint: payload?.request?.selectedEntryPoint ?? "shade",
+              diagnostics: [],
+              normalizedWgsl: "@fragment fn shade() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }",
+              supportsLivePreview: true,
+              previewAbi: "GreebleFS Shader Preview ABI v1",
             };
           case "explorer_tags_list":
             return EMPTY_TAG_SNAPSHOT;
@@ -1449,6 +1611,84 @@ describe("FileExplorer view modes", () => {
         .mocked(invoke)
         .mock.calls.some(([command]) => command === "fs_read_text_file"),
     ).toBe(false);
+  });
+
+  it("routes shader files into the inline shader workbench and renders shader preview chrome", async () => {
+    renderExplorer();
+    await screen.findByText("aaa_surface.wgsl");
+
+    fireEvent.click(screen.getByText("aaa_surface.wgsl"));
+
+    expect(
+      await screen.findByTestId("mock-explorer-shader-workbench"),
+    ).toHaveTextContent("aaa_surface.wgsl");
+    expect(
+      vi
+        .mocked(invoke)
+        .mock.calls.some(([command]) => command === "shader_preview_inspect"),
+    ).toBe(true);
+
+    const previewModeToggle = getChromeControl("previewModeToggle");
+    expect(previewModeToggle).not.toBeNull();
+    expect(within(previewModeToggle as HTMLElement).getByRole("button", { name: "Preview" })).toBeInTheDocument();
+    expect(within(previewModeToggle as HTMLElement).getByRole("button", { name: "Edit" })).toBeInTheDocument();
+    expect(within(previewModeToggle as HTMLElement).getByRole("button", { name: "Sphere" })).toBeInTheDocument();
+    expect(within(previewModeToggle as HTMLElement).getByRole("button", { name: "Fullscreen" })).toBeInTheDocument();
+    expect(within(previewModeToggle as HTMLElement).getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("remembers shader stage selection per file and enables save only after dirty edits", async () => {
+    renderExplorer();
+    await screen.findByText("aaa_surface.wgsl");
+
+    fireEvent.click(screen.getByText("aaa_surface.wgsl"));
+    const shaderWorkbench = await screen.findByTestId(
+      "mock-explorer-shader-workbench",
+    );
+
+    fireEvent.click(
+      within(shaderWorkbench).getByRole("button", {
+        name: "Select Shader Fragment",
+      }),
+    );
+    await waitFor(() => {
+      expect(shaderWorkbenchMockState.lastSelectionLabel).toBe("fragment:shade");
+    });
+
+    const previewModeToggle = getChromeControl("previewModeToggle") as HTMLElement;
+    const saveButton = within(previewModeToggle).getByRole("button", {
+      name: "Save",
+    });
+    expect(saveButton).toBeDisabled();
+
+    fireEvent.click(
+      within(shaderWorkbench).getByRole("button", { name: "Dirty Shader" }),
+    );
+    await waitFor(() => {
+      expect(saveButton).toBeEnabled();
+    });
+
+    fireEvent.click(saveButton);
+    await waitFor(() => {
+      expect(
+        vi
+          .mocked(invoke)
+          .mock.calls.some(
+            ([command, args]) =>
+              command === "fs_write_file" &&
+              (args as { path?: string } | undefined)?.path ===
+                `${REPO_ROOT}\\aaa_surface.wgsl`,
+          ),
+      ).toBe(true);
+    });
+
+    fireEvent.click(screen.getByText("aab_lighting.hlsl"));
+    await screen.findByText("aab_lighting.hlsl");
+
+    fireEvent.click(screen.getByText("aaa_surface.wgsl"));
+    await waitFor(() => {
+      expect(shaderWorkbenchMockState.lastSelectionLabel).toBe("fragment:shade");
+    });
   });
 
   it("shows folder contents in preview pane when a folder is single-clicked in double-click mode", async () => {
