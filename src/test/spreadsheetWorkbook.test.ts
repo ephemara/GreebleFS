@@ -1,4 +1,4 @@
-import XLSX from "xlsx";
+import * as XLSX from "xlsx";
 import { HyperFormula } from "hyperformula";
 import { describe, expect, it } from "vitest";
 import {

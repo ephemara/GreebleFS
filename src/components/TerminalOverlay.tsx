@@ -2480,7 +2480,10 @@ export function TerminalOverlay({
   const workspaceArea = (
     <div className="flex-1 min-w-0 min-h-0 flex flex-col" style={{ background: theme.bgTerm }}>
       <div className="flex-1 min-h-0 min-w-0 p-3">
-        <div ref={workspaceCanvasRef} className="relative min-h-full min-w-0">
+        <div
+          ref={workspaceCanvasRef}
+          className="relative h-full min-h-0 min-w-0"
+        >
           {tabs.map(tab => {
             const geometry = geometryByTab.get(tab.id);
             if (!geometry) {
@@ -2638,8 +2641,19 @@ export function TerminalOverlay({
   if (embedded) {
     return (
       <div
+        data-testid="terminal-overlay-embedded-root"
         className="flex flex-col overflow-hidden"
-        style={{ flex: 1, background: 'var(--overlay-workbench-terminal-bg)', color: theme.text, fontFamily: uiFont, borderRadius: 'var(--overlay-workbench-panel-radius)' }}
+        style={{
+          flex: 1,
+          width: '100%',
+          height: '100%',
+          minWidth: 0,
+          minHeight: 0,
+          background: 'var(--overlay-workbench-terminal-bg)',
+          color: theme.text,
+          fontFamily: uiFont,
+          borderRadius: 'var(--overlay-workbench-panel-radius)',
+        }}
       >
         <div
           className="flex items-stretch shrink-0 border-b"

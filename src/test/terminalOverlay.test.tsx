@@ -165,6 +165,17 @@ describe('TerminalOverlay', () => {
     });
   }, 20000);
 
+  it('keeps the embedded terminal root pinned to the parent bounds', () => {
+    render(<TerminalOverlay isOpen onClose={() => {}} embedded />);
+
+    expect(screen.getByTestId('terminal-overlay-embedded-root')).toHaveStyle({
+      width: '100%',
+      height: '100%',
+      minWidth: '0',
+      minHeight: '0',
+    });
+  });
+
   it('clears and restarts the active terminal session', async () => {
     const invokeMock = vi.mocked(invoke);
 

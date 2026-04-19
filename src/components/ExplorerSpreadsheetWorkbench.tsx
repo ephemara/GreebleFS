@@ -29,7 +29,7 @@ import {
   type GridSelection,
   type Item,
 } from "@glideapps/glide-data-grid";
-import XLSX from "xlsx";
+import * as XLSX from "xlsx";
 import type { RawCellContent } from "hyperformula";
 import { matchesKeybinding } from "../config/hotkeys";
 import type { SpreadsheetFileKind } from "../config/spreadsheet";

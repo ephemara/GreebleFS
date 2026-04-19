@@ -1,5 +1,20 @@
 # GreebleFS Memory
 
+## 2026-04-18 — Spreadsheet Bootstrap Failure From `xlsx` Default Import
+
+- The shell bootstrap can fail before React mounts if the spreadsheet lane imports `xlsx` as a default binding from the package ESM entry.
+- Root cause:
+  - `src/runtime/spreadsheetWorkbook.ts` sat on the main app import graph.
+  - It used `import XLSX from "xlsx";`, but the installed `xlsx` ESM entry (`node_modules/xlsx/xlsx.mjs`) exposes named exports only and does not export `default`.
+  - That mismatch breaks the `import("./App")` bootstrap path and can surface as a browser syntax error about resolving `default` through star-export entries.
+- Durable fix shape:
+  - Spreadsheet codepaths now use namespace imports (`import * as XLSX from "xlsx";`) in the runtime helper, the explorer spreadsheet workbench, and the spreadsheet runtime test.
+- Durable product note:
+  - Treat `xlsx` as a named-export / namespace-import package in this repo unless the dependency version changes and is reverified. Do not reintroduce default imports in spreadsheet runtime or UI code just because TypeScript accepts them under a looser interop mode.
+- Validation:
+  - passed: `bunx vitest run src/test/spreadsheetWorkbook.test.ts`
+  - passed: `bun run build`
+
 ## 2026-04-18 — Explorer Shader Workbench For WGSL / HLSL / SPIR-V
 
 - The explorer preview pane now has a dedicated shader workbench lane for `.wgsl`, `.hlsl`, and `.spv` instead of routing those files through generic text/markdown preview paths.
