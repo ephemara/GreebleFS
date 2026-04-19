@@ -134,7 +134,8 @@ export function buildConstellationFieldLayout(
   visibleBands.forEach((band, bandIndex) => {
     const slot = resolveClusterSlot(slots, bandIndex, visibleBands.length);
     const visibleEntries = band.entries.slice(0, maxVisibleNodes);
-    const anchorQuota = band.dominant ? 4 : 2;
+    const anchorQuota = visibleBands.length === 1 ? 2 : band.dominant ? 4 : 2;
+    const singleBandNodeScale = visibleBands.length === 1 ? 0.84 : 1;
     const positionedEntries = visibleEntries
       .map((entry, index) => ({
         entry,
@@ -158,9 +159,11 @@ export function buildConstellationFieldLayout(
 
     const centerX = clampNumber(width * slot.x, FIELD_BOUNDS.paddingX, width - FIELD_BOUNDS.paddingX);
     const centerY = clampNumber(height * slot.y, FIELD_BOUNDS.paddingY, height - FIELD_BOUNDS.paddingY);
+    const singleBandSpreadBonus = visibleBands.length === 1 ? 136 : 0;
     const radius = Math.round(
       (band.dominant ? 248 : 210)
       + Math.min(band.entries.length * 4, band.dominant ? 78 : 58)
+      + singleBandSpreadBonus
       + normalizedDensity * 36,
     );
 
@@ -181,7 +184,13 @@ export function buildConstellationFieldLayout(
         bandId: band.id,
         x: centerX,
         y: centerY,
-        size: getConstellationNodeSize(primaryEntry.emphasis, band.dominant, normalizedDensity, 0),
+        size: Math.max(
+          28,
+          Math.round(
+            getConstellationNodeSize(primaryEntry.emphasis, band.dominant, normalizedDensity, 0)
+            * singleBandNodeScale,
+          ),
+        ),
         labelVisible: true,
         emphasis: primaryEntry.emphasis,
       });
@@ -199,7 +208,13 @@ export function buildConstellationFieldLayout(
         y: centerY + Math.sin(anchoredAngle) * anchoredRadius * slot.yScale,
         width,
         height,
-        size: getConstellationNodeSize(positionedEntry.emphasis, band.dominant, normalizedDensity, 1),
+        size: Math.max(
+          28,
+          Math.round(
+            getConstellationNodeSize(positionedEntry.emphasis, band.dominant, normalizedDensity, 1)
+            * singleBandNodeScale,
+          ),
+        ),
         labelVisible: true,
       }));
     });
@@ -218,10 +233,16 @@ export function buildConstellationFieldLayout(
         y: centerY + Math.sin(satelliteAngle) * satelliteRadius * yScale,
         width,
         height,
-        size: getConstellationNodeSize(positionedEntry.emphasis, band.dominant, normalizedDensity, 2),
-        labelVisible: band.dominant
-          ? normalizedDensity >= 0.56 && index < 4
-          : normalizedDensity >= 0.82 && index < 2,
+        size: Math.max(
+          26,
+          Math.round(
+            getConstellationNodeSize(positionedEntry.emphasis, band.dominant, normalizedDensity, 2)
+            * singleBandNodeScale,
+          ),
+        ),
+        labelVisible: visibleBands.length > 1 && (band.dominant
+          ? normalizedDensity >= 0.7 && index < 2
+          : normalizedDensity >= 0.82 && index < 2),
       }));
     });
 

@@ -86,6 +86,37 @@ describe("buildConstellationFieldLayout", () => {
     expect(layout.bands[0]?.hiddenEntryCount).toBe(32);
   });
 
+  it("keeps lone folder maps zoomed out by limiting labeled hubs and widening the spread", () => {
+    const layout = buildConstellationFieldLayout([
+      {
+        id: "folders",
+        label: "Folders",
+        description: "Anchors and destinations stay visually dominant.",
+        dominant: true,
+        entries: Array.from({ length: 19 }, (_, index) =>
+          makeEntry(index, {
+            name: `folder-${index}`,
+            path: `C:\\workspace\\folders\\folder-${index}`,
+            is_dir: true,
+            extension: "",
+          }),
+        ),
+      },
+    ], new Set(), 0.65);
+
+    const [foldersBand] = layout.bands;
+    const anchorNodes = foldersBand?.nodes.filter((node) => node.emphasis === "anchor") ?? [];
+    const labeledSatellites = foldersBand?.nodes.filter(
+      (node) => node.emphasis === "satellite" && node.labelVisible,
+    ) ?? [];
+    const xRange = Math.max(...(foldersBand?.nodes.map((node) => node.x) ?? [0]))
+      - Math.min(...(foldersBand?.nodes.map((node) => node.x) ?? [0]));
+
+    expect(anchorNodes).toHaveLength(2);
+    expect(labeledSatellites).toHaveLength(0);
+    expect(xRange).toBeGreaterThan(620);
+  });
+
   it("keeps selected entries at the center of their cluster and highlights supporting links", () => {
     const selectedEntry = makeEntry(7, {
       name: "picked.txt",
