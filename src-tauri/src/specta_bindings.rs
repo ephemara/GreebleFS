@@ -60,6 +60,10 @@ use crate::screenshot_commands::{
     SavedScreenshot, ScreenshotAnnotatedExportResult, ScreenshotAnnotation, ScreenshotPreview,
     ScreenshotRegion,
 };
+use crate::shader_preview_commands::{
+    ExplorerShaderCompileRequest, ExplorerShaderCompileResult, ExplorerShaderDiagnostic,
+    ExplorerShaderEntryPoint, ExplorerShaderPreviewDocument,
+};
 use crate::sqlite_commands::{SqliteDbInfo, SqliteTableInfo, SqliteTablePreview};
 use crate::terminal::{
     ExternalTerminalRequest, TerminalShellIntegrationRequest, TerminalShellIntegrationState,
@@ -234,6 +238,8 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::pdf_commands::pdf_render_preview_page,
             crate::pdf_commands::pdf_save_preview_edits,
             crate::pdf_commands::pdf_close_preview_document,
+            crate::shader_preview_commands::shader_preview_inspect,
+            crate::shader_preview_commands::shader_preview_compile,
             crate::video_commands::video_create_preview_proxy,
             crate::video_commands::video_export_trim,
             crate::video_commands::video_resolve_preview_source,
@@ -401,6 +407,11 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<PythonRuntimeStatus>()
         .typ::<PythonCommandResult>()
         .typ::<PythonActionResponse>()
+        .typ::<ExplorerShaderPreviewDocument>()
+        .typ::<ExplorerShaderEntryPoint>()
+        .typ::<ExplorerShaderDiagnostic>()
+        .typ::<ExplorerShaderCompileRequest>()
+        .typ::<ExplorerShaderCompileResult>()
         .typ::<SavedScreenshot>()
         .typ::<ScreenshotRegion>()
         .typ::<ScreenshotAnnotation>()

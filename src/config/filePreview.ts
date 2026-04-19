@@ -7,6 +7,7 @@ export { getSpreadsheetFileKind, isSpreadsheetPreviewExtension };
 
 export type ModelPreviewFormat = "fbx" | "glb" | "gltf" | "obj" | "stl";
 export type ExplorerAudioExportFormatId = "mp3" | "wav" | "flac" | "ogg";
+export type ShaderPreviewFormat = "wgsl" | "hlsl" | "spv";
 
 export interface ExplorerAudioExportFormatDefinition {
   id: ExplorerAudioExportFormatId;
@@ -147,7 +148,7 @@ const EDITABLE_TEXT_EXTENSIONS = [
   // Go / Swift / Dart etc.
   "go", "swift", "dart",
   // Shader
-  "glsl", "hlsl", "wgsl", "vert", "frag", "comp", "metal",
+  "glsl", "vert", "frag", "comp", "metal",
   // Data / config
   "json", "jsonc", "json5", "jsonl",
   "toml", "yaml", "yml", "xml", "ini", "cfg", "conf",
@@ -406,6 +407,14 @@ const SQLITE_PREVIEW_EXTENSIONS = [
 ] as const;
 
 const SQLITE_PREVIEW_EXTENSION_SET = new Set<string>(SQLITE_PREVIEW_EXTENSIONS);
+const SHADER_PREVIEW_FORMAT_BY_EXTENSION = {
+  wgsl: "wgsl",
+  hlsl: "hlsl",
+  spv: "spv",
+} as const satisfies Record<string, ShaderPreviewFormat>;
+const SHADER_PREVIEW_EXTENSION_SET = new Set<string>(
+  Object.keys(SHADER_PREVIEW_FORMAT_BY_EXTENSION),
+);
 
 export function isImagePreviewExtension(extension: string): boolean {
   return IMAGE_PREVIEW_EXTENSION_SET.has(normalizeExtension(extension));
@@ -421,6 +430,18 @@ export function isPdfPreviewExtension(extension: string): boolean {
 
 export function isSqlitePreviewExtension(extension: string): boolean {
   return SQLITE_PREVIEW_EXTENSION_SET.has(normalizeExtension(extension));
+}
+
+export function isShaderPreviewExtension(extension: string): boolean {
+  return SHADER_PREVIEW_EXTENSION_SET.has(normalizeExtension(extension));
+}
+
+export function getShaderPreviewFormat(
+  extension: string,
+): ShaderPreviewFormat | null {
+  return (
+    SHADER_PREVIEW_FORMAT_BY_EXTENSION[normalizeExtension(extension)] ?? null
+  );
 }
 
 export function isExecutableExtension(extension: string): boolean {
@@ -497,6 +518,9 @@ export function isEditableTextExtension(
     return false;
   }
   if (isSpreadsheetPreviewExtension(normalizedExtension)) {
+    return false;
+  }
+  if (isShaderPreviewExtension(normalizedExtension)) {
     return false;
   }
   if (isAudioPreviewExtension(normalizedExtension)) {

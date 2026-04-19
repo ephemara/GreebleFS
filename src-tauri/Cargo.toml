@@ -43,6 +43,7 @@ image = "0.25.8"
 imageproc = "0.25.0"
 ab_glyph = "0.2.29"
 fontdb = "0.16.2"
+naga = { version = "29.0.1", features = ["spv-in", "wgsl-in", "wgsl-out"] }
 lopdf = "0.32.0"
 pdfium-auto = "0.3.0"
 pdfium-render = "0.8.37"
@@ -69,6 +70,7 @@ url = "2"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 async-recursion = "1"
+shaderc = "0.10.1"
 overlay-contracts = { path = "../crates/overlay-contracts" }
 yazi-specta = { path = "../crates/yazi-specta" }
 yazi-boot = { path = "../crates/fileexplorer/crates/yazi-boot" }

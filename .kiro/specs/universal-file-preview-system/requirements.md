@@ -73,6 +73,17 @@ The current preview system supports: image, audio, video, font, sqlite, pdf, tex
 15. THE Vector_Previewer SHALL render maps with pan and zoom controls
 16. THE Vector_Previewer SHALL display attribute tables with sortable columns
 
+#### Editing Capabilities
+
+1. THE GeoJSON_Previewer SHALL allow editing feature properties in the attribute table
+2. THE GeoJSON_Previewer SHALL allow adding new features via drawing tools on the map
+3. THE GeoJSON_Previewer SHALL allow deleting features
+4. THE GeoJSON_Previewer SHALL allow modifying geometry via vertex editing on the map
+5. THE GeoJSON_Previewer SHALL save changes back to the .geojson file
+6. THE GeoJSON_Previewer SHALL support undo/redo for geometry and property edits
+7. THE GPX_Previewer SHALL allow editing track names and waypoint metadata
+8. THE GPX_Previewer SHALL allow deleting track points and waypoints
+
 ---
 
 ### Requirement 3: LiDAR and Point Cloud Preview
@@ -243,6 +254,16 @@ The current preview system supports: image, audio, video, font, sqlite, pdf, tex
 10. THE Document_Previewer SHALL support text selection in rendered documents
 11. THE Document_Previewer SHALL display document metadata including author, creation date, and page count
 
+#### Editing Capabilities
+
+1. THE PPTX_Previewer SHALL allow reordering slides via drag and drop
+2. THE PPTX_Previewer SHALL allow deleting slides
+3. THE PPTX_Previewer SHALL allow duplicating slides
+4. THE PPTX_Previewer SHALL save changes back to the .pptx file
+5. THE ODP_Previewer SHALL allow reordering and deleting slides
+6. THE RTF_Previewer SHALL allow text editing with basic formatting (bold, italic, underline)
+7. THE RTF_Previewer SHALL save changes back to the .rtf file
+
 ---
 
 ### Requirement 10: Data Format Preview
@@ -270,6 +291,17 @@ The current preview system supports: image, audio, video, font, sqlite, pdf, tex
 17. WHEN a Jsonnet file (.jsonnet, .libsonnet) is selected, THE Jsonnet_Previewer SHALL display with Monaco syntax highlighting
 18. WHEN a Pkl file (.pkl) is selected, THE Pkl_Previewer SHALL display with Monaco syntax highlighting
 19. THE Data_Previewer SHALL display column statistics for tabular formats when available
+
+#### Editing Capabilities
+
+1. THE Parquet_Previewer SHALL allow editing cell values in the data table
+2. THE Parquet_Previewer SHALL allow adding and deleting rows
+3. THE Parquet_Previewer SHALL export modified data to CSV, JSON, or new Parquet file
+4. THE Arrow_Previewer SHALL allow editing cell values and export to CSV/JSON/Parquet
+5. THE CBOR_Previewer SHALL allow editing the JSON representation and re-encode to CBOR
+6. THE MessagePack_Previewer SHALL allow editing the JSON representation and re-encode to MessagePack
+7. THE Schema_Previewer (proto, fbs, capnp, thrift, graphql, hcl, etc.) SHALL provide full Monaco editor with syntax validation
+8. THE Schema_Previewer SHALL save changes back to the original file
 
 ---
 
@@ -308,6 +340,15 @@ The current preview system supports: image, audio, video, font, sqlite, pdf, tex
 8. THE Molecular_Previewer SHALL provide orbit controls for 3D navigation
 9. THE Molecular_Previewer SHALL support different representation modes (ball-and-stick, space-filling, ribbon)
 
+#### Editing Capabilities
+
+1. THE Molecular_Previewer SHALL allow rotating bonds by selecting and dragging
+2. THE Molecular_Previewer SHALL allow changing representation mode (ball-and-stick, space-filling, ribbon, wireframe)
+3. THE Molecular_Previewer SHALL allow color scheme selection (element, residue, chain, secondary structure)
+4. THE Molecular_Previewer SHALL allow exporting the current view as PNG image
+5. THE Molecular_Previewer SHALL allow exporting to different formats (PDB to MOL, MOL to XYZ, etc.)
+6. THE SDF_Previewer SHALL allow editing the metadata/properties associated with each molecule
+
 ---
 
 ### Requirement 13: Binary and Hex Preview
@@ -323,6 +364,15 @@ The current preview system supports: image, audio, video, font, sqlite, pdf, tex
 5. THE Hex_Previewer SHALL highlight common magic bytes and file signatures
 6. THE Hex_Previewer SHALL limit initial display to 64KB with option to load more
 7. THE Hex_Previewer SHALL display file size and entropy statistics
+
+#### Editing Capabilities
+
+1. THE Hex_Previewer SHALL allow editing individual bytes in hex or ASCII mode
+2. THE Hex_Previewer SHALL support undo/redo for byte edits
+3. THE Hex_Previewer SHALL allow searching for byte sequences (hex or ASCII)
+4. THE Hex_Previewer SHALL allow replacing byte sequences
+5. THE Hex_Previewer SHALL save modified files with a new name or overwrite the original
+6. THE Hex_Previewer SHALL display a diff view showing modified bytes
 
 ---
 
@@ -345,6 +395,17 @@ The current preview system supports: image, audio, video, font, sqlite, pdf, tex
 11. THE Cert_Previewer SHALL display certificate validity warnings for expired or soon-to-expire certificates
 12. THE Cert_Previewer SHALL NOT display or export private key material
 
+#### Editing Capabilities
+
+1. THE Cert_Previewer SHALL allow exporting certificates to PEM or DER format
+2. THE Cert_Previewer SHALL allow exporting the certificate chain as a bundle
+3. THE Cert_Previewer SHALL allow copying certificate details as formatted text
+4. THE Cert_Previewer SHALL allow generating a new self-signed certificate with user-provided parameters
+5. THE Cert_Previewer SHALL allow generating a new CSR from user-provided parameters
+6. THE SSH_Previewer SHALL allow generating new SSH key pairs (ed25519, rsa, ecdsa)
+7. THE SSH_Previewer SHALL allow changing the comment on SSH public keys
+8. THE Cert_Previewer SHALL allow converting between PEM and DER formats
+
 ---
 
 ### Requirement 15: Media Metadata and Subtitle Preview
@@ -362,6 +423,20 @@ The current preview system supports: image, audio, video, font, sqlite, pdf, tex
 7. WHEN a PLS playlist (.pls) is selected, THE PLS_Previewer SHALL display playlist entries with metadata
 8. WHEN a CUE sheet (.cue) is selected, THE CUE_Previewer SHALL display track information
 9. THE Subtitle_Previewer SHALL display subtitle count and total duration when calculable
+
+#### Editing Capabilities
+
+1. THE Subtitle_Previewer SHALL allow editing subtitle text content
+2. THE Subtitle_Previewer SHALL allow adjusting timing (start/end times) via time input or drag handles
+3. THE Subtitle_Previewer SHALL allow adding new subtitle entries
+4. THE Subtitle_Previewer SHALL allow deleting subtitle entries
+5. THE Subtitle_Previewer SHALL allow merging adjacent subtitles
+6. THE Subtitle_Previewer SHALL allow splitting a subtitle into multiple entries
+7. THE Subtitle_Previewer SHALL save changes back to the original file format
+8. THE Subtitle_Previewer SHALL support converting between SRT, VTT, and ASS formats
+9. THE Playlist_Previewer SHALL allow reordering entries via drag and drop
+10. THE Playlist_Previewer SHALL allow adding and removing entries
+11. THE Playlist_Previewer SHALL save changes back to the playlist file
 
 ---
 
@@ -462,7 +537,26 @@ The current preview system supports: image, audio, video, font, sqlite, pdf, tex
 
 ---
 
-### Requirement 22: Implementation Phasing
+### Requirement 22: Interactive Editing Framework
+
+**User Story:** As a user, I want to make quick edits to supported file types, so that I can perform common tweaks without opening specialized applications.
+
+#### Acceptance Criteria
+
+1. THE Editing_Framework SHALL provide a consistent save mechanism across all editable preview types
+2. THE Editing_Framework SHALL display unsaved changes indicator when modifications are pending
+3. THE Editing_Framework SHALL prompt for confirmation before closing with unsaved changes
+4. THE Editing_Framework SHALL support undo/redo for all editing operations
+5. THE Editing_Framework SHALL provide keyboard shortcuts for common operations (save, undo, redo)
+6. THE Editing_Framework SHALL auto-save drafts for recovery in case of crash
+7. THE Editing_Framework SHALL support "Save As" to create a copy with modifications
+8. THE Editing_Framework SHALL validate edits before saving and display errors for invalid modifications
+9. THE Editing_Framework SHALL support non-destructive editing where applicable (images, RAW)
+10. THE Editing_Framework SHALL track edit history for the current session
+
+---
+
+### Requirement 23: Implementation Phasing
 
 **User Story:** As a product manager, I want implementation prioritized by value and complexity, so that the most impactful previews ship first.
 
@@ -507,29 +601,35 @@ The current preview system supports: image, audio, video, font, sqlite, pdf, tex
 |----------|---------|---------|
 | Geospatial | `geotiff` | GeoTIFF parsing |
 | Geospatial | `shapefile` | Shapefile parsing |
-| Geospatial | `leaflet` or `maplibre-gl-js` | Map rendering |
+| Geospatial | `leaflet` or `maplibre-gl-js` | Map rendering with editing |
 | Geospatial | `@turf/turf` | GeoJSON operations |
+| Geospatial | `leaflet-draw` | GeoJSON geometry editing |
 | Geospatial | `openlayers` | Advanced GIS rendering |
-| Notebooks | `@jupyterlab/nbformat` | Notebook parsing |
+| Notebooks | `@jupyterlab/nbformat` | Notebook parsing and editing |
+| Notebooks | `@jupyterlab/cells` | Cell model for editing |
 | Archives | `libarchive.js` | Extended archive support |
 | Images | `utif` | TIFF/GeoTIFF |
 | Images | `exifreader` | EXIF metadata |
 | Images | `jxl.js` | JPEG XL decoding |
 | Images | `heic2any` | HEIC conversion |
+| Images | `@webtoon/psd` | PSD parsing with layer access |
+| Images | `raw-loader` (wasm) | Camera RAW decoding |
 | Documents | `mammoth` | DOCX (existing) |
-| Documents | `pptxgenjs` or `jszip` | PPTX parsing |
+| Documents | `pptxgenjs` or `jszip` | PPTX parsing and editing |
 | Documents | `epub.js` | EPUB rendering |
 | Documents | `djvu.js` | DjVu rendering |
-| Data | `apache-arrow` | Arrow/Parquet |
-| Data | `parquetjs` | Parquet reading |
+| Data | `apache-arrow` | Arrow/Parquet with editing |
+| Data | `parquetjs` | Parquet reading/writing |
 | Data | `cbor-x` | CBOR encoding/decoding |
 | Data | `@msgpack/msgpack` | MessagePack |
 | Bio | `bioinformatics` | Sequence parsing |
 | Molecular | `3dmol` | Molecular visualization |
-| Molecular | `ngl` | Advanced molecular viz |
-| Binary | Custom component | Hex viewer |
-| Certs | `node-forge` or `x509.js` | Certificate parsing |
-| Certs | `sshpk` | SSH key parsing |
+| Molecular | `ngl` | Advanced molecular viz with editing |
+| Binary | Custom component | Hex viewer with editing |
+| Certs | `node-forge` | Certificate parsing and generation |
+| Certs | `sshpk` | SSH key parsing and generation |
+| Editing | `immer` | Immutable state for undo/redo |
+| Editing | `yjs` | Optional CRDT for future collaboration |
 
 ### Rust Crates (Backend)
 
@@ -537,6 +637,7 @@ The current preview system supports: image, audio, video, font, sqlite, pdf, tex
 |----------|-------|---------|
 | Geospatial | `gdal` | GDAL bindings |
 | Geospatial | `geo` | GeoJSON operations |
+| Geospatial | `geojson` | GeoJSON serialization |
 | Geospatial | `las` | LAS/LAZ point clouds |
 | Archives | `zip` | ZIP archives (existing) |
 | Archives | `tar` | TAR archives (existing) |
@@ -545,10 +646,16 @@ The current preview system supports: image, audio, video, font, sqlite, pdf, tex
 | Images | `image` | Image processing (existing) |
 | Images | `rawloader` | Camera RAW |
 | Images | `exr` | OpenEXR |
+| Images | `kamadak-exr` | OpenEXR reading/writing |
 | Data | `arrow` | Apache Arrow |
 | Data | `parquet` | Parquet files |
+| Data | `serde_cbor` | CBOR serialization |
+| Data | `rmp-serde` | MessagePack serialization |
 | Certs | `x509-parser` | X.509 parsing |
+| Certs | `rcgen` | Certificate generation |
 | Certs | `pkcs8` | PKCS#8 keys |
+| Certs | `ssh-key` | SSH key generation |
+| Editing | `uuid` | Session IDs for edit tracking |
 
 ---
 
@@ -559,28 +666,42 @@ The current preview system supports: image, audio, video, font, sqlite, pdf, tex
 1. **GeoJSON Parse/Serialize**: FOR ALL valid GeoJSON objects, parsing then serializing SHALL produce semantically equivalent GeoJSON
 2. **CBOR/JSON Round-Trip**: FOR ALL valid JSON objects, encoding to CBOR then decoding SHALL produce equivalent JSON
 3. **MessagePack/JSON Round-Trip**: FOR ALL valid JSON objects, encoding to MessagePack then decoding SHALL produce equivalent JSON
+4. **Subtitle Format Conversion**: FOR ALL valid SRT files, converting to VTT and back SHALL preserve timing and text content
+5. **Parquet Edit Round-Trip**: FOR ALL Parquet edits, saving and reloading SHALL preserve all data and schema
 
 ### Invariants
 
 1. **Preview Memory Budget**: THE Preview_System SHALL NOT exceed 500MB memory usage for all active previews
 2. **Preview Load Timeout**: THE Preview_System SHALL cancel preview loading after 30 seconds
 3. **File Size Limits**: THE Preview_System SHALL enforce per-category file size limits before attempting full rendering
+4. **Edit History Depth**: THE Editing_Framework SHALL maintain at least 50 undo steps for all editable formats
+5. **Auto-Save Interval**: THE Editing_Framework SHALL auto-save drafts every 60 seconds for files with unsaved changes
 
 ### Idempotence
 
 1. **Preview State Reset**: Closing and reopening the same file SHALL produce identical preview state
 2. **Archive Listing**: Listing archive contents multiple times SHALL produce identical results
+3. **Undo/Redo Cycle**: Performing undo then redo SHALL restore the exact previous state
 
 ### Error Conditions
 
 1. **Corrupted File Handling**: WHEN a corrupted file is encountered, THE Preview_System SHALL display error message without crashing
 2. **Unsupported Format Handling**: WHEN an unsupported format is encountered, THE Preview_System SHALL display fallback preview
 3. **Memory Exhaustion**: WHEN memory limit is reached, THE Preview_System SHALL evict oldest cached preview
+4. **Invalid Edit Detection**: WHEN an edit would produce invalid data, THE Editing_Framework SHALL reject the edit and display an error
+5. **Save Failure Recovery**: WHEN a save operation fails, THE Editing_Framework SHALL preserve the draft and allow retry
 
 ---
 
 ## Out of Scope
 
-- Editing capabilities for any preview type (preview only)
 - Real-time collaboration on previewed documents
--{}
+- Full kernel execution for Jupyter notebooks (editing only, no code execution)
+- RAW file development (non-destructive adjustments on embedded preview only, not full RAW development)
+- Full CAD editing for DWG/DXF files (metadata and 2D preview only)
+- 3D modeling operations for molecular structures (viewing and basic bond rotation only)
+- Private key extraction or display from PKCS#12/KeyStore files
+- Game engine asset creation or complex modification (metadata viewing and text editing only)
+- LiDAR point cloud editing (preview and metadata only - too complex for quick tweaks)
+- Bioinformatics sequence analysis tools (viewing only - specialized tools required for analysis)
+- Geospatial raster editing (metadata viewing only - raster manipulation requires specialized GIS software){}

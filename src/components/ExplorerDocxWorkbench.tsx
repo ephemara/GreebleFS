@@ -237,10 +237,9 @@ export function ExplorerDocxWorkbench(props: ExplorerDocxWorkbenchProps) {
       const b64 = await readExplorerFileBase64(path);
       const buffer = base64ToArrayBuffer(b64);
 
-      // @ts-ignore
-      const mammoth = await import(/* @vite-ignore */ "mammoth/mammoth.browser.min.js") as {
-        convertToHtml: (opts: { arrayBuffer: ArrayBuffer; styleMap?: string[] }) => Promise<{ value: string; messages: Array<{ type: string; message: string }> }>;
-      };
+      // mammoth works as a pre-bundled ESM via Vite
+      const mammothLib = await import("mammoth");
+      const mammoth = (mammothLib as any).default || mammothLib;
 
       const result = await mammoth.convertToHtml({
         arrayBuffer: buffer,

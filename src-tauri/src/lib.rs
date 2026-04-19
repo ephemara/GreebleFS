@@ -13,6 +13,7 @@ pub mod plugin_commands;
 pub mod pdf_commands;
 pub mod python_commands;
 pub mod screenshot_commands;
+pub mod shader_preview_commands;
 pub mod specta_bindings;
 pub mod sqlite_commands;
 pub mod startup_commands;
