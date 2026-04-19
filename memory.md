@@ -1,5 +1,20 @@
 # GreebleFS Memory
 
+# 2026-04-19 — Constellation Mode Rebuilt As A Pannable Command Field
+
+- Constellation mode no longer renders stacked per-band orbit cards with a centered `Orbit Map` explainer panel.
+- Durable implementation shape:
+  - `src/components/explorer/constellationLayout.ts` now builds one larger constellation field layout with distinct semantic-band clusters, bridge/link lines, cluster beacons, and a stable phyllotaxis-style node spread instead of stadium orbit lanes around a protected center safe zone.
+  - `src/components/FileExplorer.tsx` now renders constellation mode as a single drag-to-pan command field with background grid treatment, floating cluster chips, and tighter node cards that only keep persistent labels on anchors/selected nodes so the surface reads cleaner under density.
+  - The old explanatory band copy is no longer rendered inside the constellation surface, and the center explainer card is gone entirely.
+  - `src/test/constellationLayout.test.ts` now locks the new cluster-spread, density-cap, and selected-node-focus layout contract, while `src/test/fileExplorer.viewModes.test.tsx` now asserts the new `Constellation field` surface exists and the `Orbit Map` card text stays absent.
+- Durable product note:
+  - Treat constellation as an interactive spatial browser, not a decorative per-band infographic. Keep future work centered on node clarity, panning/focus behavior, and relationship legibility instead of reintroducing explanatory chrome in the middle of the field.
+- Validation:
+  - passed: `bunx vitest run src/test/constellationLayout.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "activates constellation view without mutating the saved normal layout mode" --reporter=dot`
+  - passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json` check for `constellationLayout`, `FileExplorer.tsx`, and `fileExplorer.viewModes.test.tsx` returned no matching errors
+
 # 2026-04-19 — Explorer Preview Shell Stays Mounted In Idle State
 
 - Explorer preview mode now treats the preview pane as a persistent shell, not a conditional side effect of an active selection.

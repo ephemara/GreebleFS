@@ -192,8 +192,10 @@ import {
 import { ExplorerSideRail } from "./explorer/ExplorerSideRail";
 import { ExplorerChromeSurface } from "./explorer/ExplorerChromeSurface";
 import {
-  buildConstellationOrbitBands,
-  type ConstellationOrbitBand,
+  buildConstellationFieldLayout,
+  type ConstellationFieldBand,
+  type ConstellationFieldLayout,
+  type ConstellationFieldNode,
 } from "./explorer/constellationLayout";
 import { ExplorerTaskStatusBadge } from "./explorer/ExplorerTaskStatusBadge";
 import TerminalOverlay from "./TerminalOverlay";
@@ -6382,7 +6384,17 @@ export function FileExplorer({
   const [savedSearches, setSavedSearches] = useState<ExplorerSavedSearch[]>([]);
   const [activeTagFilterIds, setActiveTagFilterIds] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState<string | null>(null); // path being dragged over
+  const [constellationPan, setConstellationPan] = useState({ x: 0, y: 0 });
+  const [constellationIsPanning, setConstellationIsPanning] = useState(false);
   const dragOverRef = useRef<string | null>(null);
+  const constellationViewportRef = useRef<HTMLDivElement | null>(null);
+  const constellationPanGestureRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
   const [windowDropState, setWindowDropState] = useState<{
     active: boolean;
     count: number;
@@ -11919,15 +11931,15 @@ export function FileExplorer({
         : null,
     [experimentalDensity, themedExperimentalViewMode],
   );
-  const constellationOrbitBands = useMemo(
+  const constellationFieldLayout = useMemo(
     () =>
       effectiveExperimentalViewMode === "constellation"
-        ? buildConstellationOrbitBands(
+        ? buildConstellationFieldLayout(
             experimentalSemanticBands,
             selected,
             experimentalDensity,
           )
-        : [],
+        : null,
     [
       effectiveExperimentalViewMode,
       experimentalDensity,
@@ -11935,6 +11947,134 @@ export function FileExplorer({
       selected,
     ],
   );
+  const clampConstellationPan = useCallback(
+    (
+      nextPan: { x: number; y: number },
+      viewportWidth: number,
+      viewportHeight: number,
+      layout: ConstellationFieldLayout,
+    ) => ({
+      x: Math.min(
+        0,
+        Math.max(viewportWidth - layout.width, nextPan.x),
+      ),
+      y: Math.min(
+        0,
+        Math.max(viewportHeight - layout.height, nextPan.y),
+      ),
+    }),
+    [],
+  );
+  const centerConstellationOnNode = useCallback(
+    (
+      layout: ConstellationFieldLayout,
+      node: ConstellationFieldNode,
+      viewportWidth: number,
+      viewportHeight: number,
+    ) =>
+      clampConstellationPan(
+        {
+          x: (viewportWidth / 2) - node.x,
+          y: (viewportHeight / 2) - node.y,
+        },
+        viewportWidth,
+        viewportHeight,
+        layout,
+      ),
+    [clampConstellationPan],
+  );
+  const getConstellationViewportMetrics = useCallback(() => {
+    const viewport = constellationViewportRef.current;
+    if (!viewport || !constellationFieldLayout) {
+      return null;
+    }
+    const rect = viewport.getBoundingClientRect();
+    return {
+      viewportWidth: rect.width,
+      viewportHeight: rect.height,
+      layout: constellationFieldLayout,
+    };
+  }, [constellationFieldLayout]);
+  const handleConstellationPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0 || !constellationFieldLayout) {
+        return;
+      }
+      if ((event.target as HTMLElement).closest("[data-overlay-constellation-node]")) {
+        return;
+      }
+      event.preventDefault();
+      constellationViewportRef.current?.setPointerCapture?.(event.pointerId);
+      constellationPanGestureRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        originX: constellationPan.x,
+        originY: constellationPan.y,
+      };
+      setConstellationIsPanning(true);
+    },
+    [constellationFieldLayout, constellationPan.x, constellationPan.y],
+  );
+  const handleConstellationPointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const gesture = constellationPanGestureRef.current;
+      const metrics = getConstellationViewportMetrics();
+      if (!gesture || gesture.pointerId !== event.pointerId || !metrics) {
+        return;
+      }
+      setConstellationPan(
+        clampConstellationPan(
+          {
+            x: gesture.originX + (event.clientX - gesture.startX),
+            y: gesture.originY + (event.clientY - gesture.startY),
+          },
+          metrics.viewportWidth,
+          metrics.viewportHeight,
+          metrics.layout,
+        ),
+      );
+    },
+    [clampConstellationPan, getConstellationViewportMetrics],
+  );
+  const endConstellationPanGesture = useCallback(
+    (pointerId: number | null) => {
+      const gesture = constellationPanGestureRef.current;
+      if (pointerId != null && gesture?.pointerId !== pointerId) {
+        return;
+      }
+      constellationPanGestureRef.current = null;
+      setConstellationIsPanning(false);
+    },
+    [],
+  );
+  useLayoutEffect(() => {
+    if (!constellationFieldLayout || constellationPanGestureRef.current) {
+      return;
+    }
+    const viewport = constellationViewportRef.current;
+    const focusNode = constellationFieldLayout.bands
+      .flatMap((band) => band.nodes)
+      .find((node) => selected.has(node.entry.path))
+      ?? constellationFieldLayout.bands.find((band) => band.dominant)?.nodes[0]
+      ?? constellationFieldLayout.bands[0]?.nodes[0]
+      ?? null;
+    if (!viewport || !focusNode) {
+      return;
+    }
+    const rect = viewport.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return;
+    }
+    setConstellationPan(
+      centerConstellationOnNode(
+        constellationFieldLayout,
+        focusNode,
+        rect.width,
+        rect.height,
+      ),
+    );
+  }, [centerConstellationOnNode, constellationFieldLayout, selected]);
   const timelineSurfaceBands = useMemo(
     () =>
       effectiveExperimentalViewMode === "timeline-surface"
@@ -16056,363 +16196,398 @@ export function FileExplorer({
     );
   };
 
-  const renderConstellationOrbitBand = (band: ConstellationOrbitBand) => {
-    const fieldHeight = band.dominant
-      ? Math.round(
-          258 + Math.min(92, band.nodes.length * 7) + experimentalDensity * 40,
-        )
-      : Math.round(
-          220 + Math.min(74, band.nodes.length * 6) + experimentalDensity * 32,
-        );
+  const renderConstellationNode = (
+    band: ConstellationFieldBand,
+    node: ConstellationFieldNode,
+  ) => {
+    const isSel = selected.has(node.entry.path);
+    const isDrop = dragOver === node.entry.path && node.entry.is_dir;
+    const isRenaming = rename.active && rename.path === node.entry.path;
+    const iconSrc = getExplorerEntryIconSrc(node.entry, isSel, isDrop);
+    const showsLabel = node.labelVisible || isSel || isDrop;
+    const highlightBackground = isDrop
+      ? dropEntrySurface.background
+      : isSel
+        ? selectedEntrySurface.background
+        : node.emphasis === "anchor"
+          ? "linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.05))"
+          : "linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))";
+    const restingTransform = isDrop
+      ? dropEntrySurface.transform
+      : isSel
+        ? selectedEntrySurface.transform
+        : idleEntrySurface.transform;
+    const restingBorderColor = isDrop
+      ? dropEntrySurface.borderColor
+      : isSel
+        ? selectedEntrySurface.borderColor
+        : node.emphasis === "anchor"
+          ? `${accent}66`
+          : "rgba(255,255,255,0.12)";
+    const restingBoxShadow = isDrop
+      ? dropEntrySurface.boxShadow
+      : isSel
+        ? selectedEntrySurface.boxShadow
+        : node.emphasis === "anchor"
+          ? `0 16px 36px ${accent}1f`
+          : "0 12px 24px rgba(0,0,0,0.18)";
+
     return (
-      <section key={band.id} style={{ marginBottom: 22 }}>
+      <div
+        key={node.entry.path}
+        draggable
+        data-overlay-constellation-band={band.id}
+        data-overlay-constellation-node={node.entry.path}
+        data-overlay-constellation-emphasis={node.emphasis}
+        data-overlay-drag-source="file"
+        onPointerDown={(event) => event.stopPropagation()}
+        onDragStart={(e) => onDragStart(e, node.entry)}
+        onDragEnd={onDragEnd}
+        onDragOver={
+          node.entry.is_dir
+            ? (e) => onDragOver(e, node.entry.path)
+            : undefined
+        }
+        onDragLeave={(e) => onDragLeave(e, node.entry.path)}
+        onDrop={
+          node.entry.is_dir
+            ? (e) => onDrop(e, node.entry.path)
+            : undefined
+        }
+        onClick={(e) => onEntryClick(e, node.entry)}
+        onDoubleClick={() => onEntryDoubleClick(node.entry)}
+        onContextMenu={(e) => onRightClick(e, node.entry)}
+        title={node.entry.path}
+        style={{
+          position: "absolute",
+          left: node.x,
+          top: node.y,
+          transform: `translate(-50%, -50%) ${restingTransform}`,
+          minWidth: showsLabel ? Math.max(108, node.size + 58) : node.size + 18,
+          maxWidth: showsLabel ? 188 : node.size + 18,
+          minHeight: node.size + 16,
+          borderRadius: showsLabel ? 24 : 999,
+          border: `1px solid ${restingBorderColor}`,
+          background: highlightBackground,
+          boxShadow: restingBoxShadow,
+          color: EXP.text,
+          cursor: "pointer",
+          userSelect: "none",
+          padding: showsLabel ? "10px 12px" : "8px",
+          display: "flex",
+          alignItems: "center",
+          gap: showsLabel ? 10 : 0,
+          transition:
+            "transform 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1), border-color 180ms cubic-bezier(0.22, 1, 0.36, 1)",
+        }}
+        onMouseEnter={(e) => {
+          handleEntryPointerEnter(
+            node.entry,
+            e.currentTarget as HTMLDivElement,
+            isSel,
+            isDrop,
+          );
+          if (!isSel && !isDrop) {
+            e.currentTarget.style.transform = `translate(-50%, -50%) ${hoverEntrySurface.transform}`;
+            e.currentTarget.style.borderColor = node.emphasis === "anchor"
+              ? `${accent}88`
+              : "rgba(255,255,255,0.18)";
+            e.currentTarget.style.boxShadow = node.emphasis === "anchor"
+              ? `0 20px 42px ${accent}2b`
+              : "0 18px 34px rgba(0,0,0,0.22)";
+          }
+        }}
+        onMouseLeave={(e) => {
+          handleEntryPointerLeave(
+            node.entry,
+            e.currentTarget as HTMLDivElement,
+            isSel,
+            isDrop,
+          );
+          if (!isSel && !isDrop) {
+            e.currentTarget.style.transform = `translate(-50%, -50%) ${restingTransform}`;
+            e.currentTarget.style.background = highlightBackground;
+            e.currentTarget.style.borderColor = restingBorderColor;
+            e.currentTarget.style.boxShadow = restingBoxShadow;
+          }
+        }}
+      >
         <div
           style={{
+            width: node.size,
+            height: node.size,
+            minWidth: node.size,
+            borderRadius: 999,
             display: "flex",
-            alignItems: "baseline",
-            justifyContent: "space-between",
-            gap: 12,
-            padding: "0 14px",
-            marginBottom: 10,
+            alignItems: "center",
+            justifyContent: "center",
+            background: node.emphasis === "anchor"
+              ? "rgba(255,255,255,0.11)"
+              : "rgba(255,255,255,0.07)",
+            overflow: "hidden",
+            boxShadow: node.emphasis === "selected"
+              ? `0 0 0 1px ${accent}55`
+              : "none",
           }}
         >
-          <div>
-            <div
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: "0.12em",
-                textTransform: "uppercase",
-                color: band.dominant ? accent : EXP.muted2,
-              }}
-            >
-              {band.label}
-            </div>
-            <div
-              style={{
-                marginTop: 3,
-                fontSize: 11,
-                color: EXP.muted,
-                maxWidth: 460,
-              }}
-            >
-              {band.description}
-            </div>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              color: EXP.muted2,
-              fontSize: 10,
-            }}
-          >
-            <span>{band.entries.length} stars</span>
-            {band.hiddenEntryCount > 0 && (
-              <span style={{ color: accent }}>
-                +{band.hiddenEntryCount} hidden by density
-              </span>
+          {(() => {
+            const thumbnailSrc = getRenderableEntryThumbnailSrc(node.entry, node.size);
+            return thumbnailSrc ? (
+              <img
+                src={thumbnailSrc}
+                alt={`Thumbnail for ${node.entry.name}`}
+                draggable={false}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain",
+                  display: "block",
+                }}
+              />
+            ) : (
+              <SvgIcon src={iconSrc} size={Math.max(14, node.size - 12)} />
+            );
+          })()}
+        </div>
+        {showsLabel && (
+          <div style={{ minWidth: 0, flex: 1 }}>
+            {isRenaming ? (
+              <RenameInput
+                state={rename}
+                onCommit={commitRename}
+                onCancel={() =>
+                  setRename({ active: false, path: "", name: "" })
+                }
+              />
+            ) : (
+              <>
+                <div
+                  style={{
+                    color: isSel
+                      ? EXP.text
+                      : node.entry.is_dir
+                        ? EXP.yellow
+                        : EXP.text,
+                    fontWeight: node.entry.is_dir ? 650 : 560,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {node.entry.name}
+                </div>
+                <div
+                  style={{
+                    marginTop: 3,
+                    fontSize: 10,
+                    color: EXP.muted2,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {getEntryTypeLabel(node.entry)}
+                </div>
+              </>
             )}
           </div>
-        </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderConstellationField = () => {
+    if (!constellationFieldLayout) {
+      return null;
+    }
+
+    const totalVisibleNodes = constellationFieldLayout.bands.reduce(
+      (sum, band) => sum + band.nodes.length,
+      0,
+    );
+    const viewportHeight = Math.round(
+      500 + Math.min(140, totalVisibleNodes * 2.5) + (experimentalDensity * 110),
+    );
+
+    return (
+      <section style={{ marginBottom: 22 }}>
         <div
+          ref={constellationViewportRef}
+          role="group"
+          aria-label="Constellation field"
+          data-overlay-constellation-viewport="true"
+          onPointerDown={handleConstellationPointerDown}
+          onPointerMove={handleConstellationPointerMove}
+          onPointerUp={(event) => endConstellationPanGesture(event.pointerId)}
+          onPointerCancel={(event) => endConstellationPanGesture(event.pointerId)}
+          onLostPointerCapture={() => endConstellationPanGesture(null)}
           style={{
             position: "relative",
-            minHeight: fieldHeight,
+            minHeight: viewportHeight,
             margin: "0 14px",
-            borderRadius: 22,
+            borderRadius: 28,
             border: "1px solid var(--overlay-explorer-toolbar-border)",
             background:
-              "linear-gradient(180deg, color-mix(in srgb, var(--overlay-accent) 10%, transparent), rgba(9, 12, 18, 0.82))",
+              "linear-gradient(180deg, rgba(17, 20, 29, 0.96), rgba(8, 10, 15, 0.98))",
             overflow: "hidden",
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)",
+            boxShadow:
+              "inset 0 1px 0 rgba(255,255,255,0.05), 0 18px 38px rgba(0,0,0,0.18)",
+            cursor: constellationIsPanning ? "grabbing" : "grab",
+            touchAction: "none",
           }}
         >
-          <svg
-            viewBox="0 0 100 100"
-            preserveAspectRatio="none"
+          <div
             style={{
               position: "absolute",
               inset: 0,
-              width: "100%",
-              height: "100%",
+              background:
+                "radial-gradient(circle at 20% 18%, rgba(255,255,255,0.06), transparent 28%), radial-gradient(circle at 78% 24%, rgba(255,255,255,0.05), transparent 24%), radial-gradient(circle at 50% 72%, rgba(255,255,255,0.04), transparent 34%)",
+              opacity: 0.85,
               pointerEvents: "none",
             }}
-          >
-            <defs>
-              <radialGradient id={`explorer-constellation-core-${band.id}`}>
-                <stop offset="0%" stopColor={accent} stopOpacity="0.26" />
-                <stop offset="100%" stopColor={accent} stopOpacity="0" />
-              </radialGradient>
-            </defs>
-            <rect
-              x="0"
-              y="0"
-              width="100"
-              height="100"
-              fill={`url(#explorer-constellation-core-${band.id})`}
-            />
-            {band.nodes.map((node) => (
-              <line
-                key={`line-${node.entry.path}`}
-                x1="50"
-                y1="50"
-                x2={node.x}
-                y2={node.y}
-                stroke={
-                  node.emphasis === "selected"
-                    ? accent
-                    : "rgba(255,255,255,0.18)"
-                }
-                strokeOpacity={node.emphasis === "satellite" ? 0.42 : 0.82}
-                strokeWidth={node.emphasis === "anchor" ? 0.55 : 0.35}
-              />
-            ))}
-            <circle
-              cx="50"
-              cy="50"
-              r="8.5"
-              fill={accent}
-              fillOpacity="0.12"
-              stroke={accent}
-              strokeOpacity="0.44"
-            />
-            <circle cx="50" cy="50" r="2.2" fill={accent} fillOpacity="0.88" />
-          </svg>
+          />
           <div
+            data-overlay-constellation-world="true"
             style={{
               position: "absolute",
-              left: "50%",
-              top: "50%",
-              transform: "translate(-50%, -50%)",
-              width: 184,
-              maxWidth: "calc(100% - 64px)",
-              borderRadius: 18,
-              border: "1px solid var(--overlay-explorer-drag-preview-border)",
-              background: "var(--overlay-explorer-popup-bg)",
-              backdropFilter: explorerBlurEnabled ? "blur(12px)" : "none",
-              WebkitBackdropFilter: explorerBlurEnabled ? "blur(12px)" : "none",
-              padding: "14px 16px",
-              textAlign: "center",
-              boxShadow: "0 16px 34px rgba(0,0,0,0.22)",
-              pointerEvents: "none",
+              left: 0,
+              top: 0,
+              width: constellationFieldLayout.width,
+              height: constellationFieldLayout.height,
+              transform: `translate(${constellationPan.x}px, ${constellationPan.y}px)`,
+              transformOrigin: "top left",
+              transition: constellationIsPanning
+                ? "none"
+                : "transform 260ms cubic-bezier(0.22, 1, 0.36, 1)",
             }}
           >
             <div
               style={{
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: "0.12em",
-                textTransform: "uppercase",
-                color: accent,
+                position: "absolute",
+                inset: 0,
+                pointerEvents: "none",
+                backgroundImage:
+                  "linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px), radial-gradient(circle at center, rgba(255,255,255,0.04), transparent 62%)",
+                backgroundSize: "82px 82px, 82px 82px, 100% 100%",
+                backgroundPosition: "0 0, 0 0, center",
+                maskImage:
+                  "radial-gradient(circle at center, black 58%, transparent 100%)",
+                WebkitMaskImage:
+                  "radial-gradient(circle at center, black 58%, transparent 100%)",
+                opacity: 0.8,
               }}
-            >
-              Orbit Map
-            </div>
-            <div
+            />
+            <svg
+              viewBox={`0 0 ${constellationFieldLayout.width} ${constellationFieldLayout.height}`}
               style={{
-                marginTop: 6,
-                fontSize: 14,
-                fontWeight: 650,
-                color: EXP.text,
+                position: "absolute",
+                inset: 0,
+                width: "100%",
+                height: "100%",
+                pointerEvents: "none",
               }}
             >
-              {band.label}
-            </div>
-            <div
-              style={{
-                marginTop: 5,
-                fontSize: 11,
-                lineHeight: 1.45,
-                color: EXP.muted,
-              }}
-            >
-              {band.description}
-            </div>
-          </div>
-          {band.nodes.map((node) => {
-            const isSel = selected.has(node.entry.path);
-            const isDrop = dragOver === node.entry.path && node.entry.is_dir;
-            const isRenaming = rename.active && rename.path === node.entry.path;
-            const iconSrc = getExplorerEntryIconSrc(node.entry, isSel, isDrop);
-            const highlightBackground =
-              node.emphasis === "anchor"
-                ? "linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.04))"
-                : "var(--overlay-explorer-chip-bg)";
-            return (
+              <defs>
+                <radialGradient id="explorer-constellation-cluster-glow">
+                  <stop offset="0%" stopColor={accent} stopOpacity="0.28" />
+                  <stop offset="68%" stopColor={accent} stopOpacity="0.04" />
+                  <stop offset="100%" stopColor={accent} stopOpacity="0" />
+                </radialGradient>
+              </defs>
+              {constellationFieldLayout.bands.map((band) => (
+                <g key={`cluster-${band.id}`}>
+                  <circle
+                    cx={band.centerX}
+                    cy={band.centerY}
+                    r={Math.max(64, band.radius * (band.dominant ? 0.44 : 0.34))}
+                    fill="url(#explorer-constellation-cluster-glow)"
+                    opacity={band.dominant ? 0.92 : 0.64}
+                  />
+                  <circle
+                    cx={band.centerX}
+                    cy={band.centerY}
+                    r={band.dominant ? 9 : 7}
+                    fill={accent}
+                    fillOpacity={0.46}
+                    stroke={accent}
+                    strokeOpacity={0.68}
+                  />
+                </g>
+              ))}
+              {constellationFieldLayout.connections.map((connection) => (
+                <line
+                  key={connection.id}
+                  x1={connection.fromX}
+                  y1={connection.fromY}
+                  x2={connection.toX}
+                  y2={connection.toY}
+                  stroke={connection.highlighted ? accent : "rgba(255,255,255,0.18)"}
+                  strokeWidth={
+                    connection.strength === "primary"
+                      ? 1.35
+                      : connection.strength === "bridge"
+                        ? 1.1
+                        : 0.8
+                  }
+                  strokeOpacity={
+                    connection.highlighted
+                      ? 0.88
+                      : connection.strength === "secondary"
+                        ? 0.26
+                        : connection.strength === "bridge"
+                          ? 0.34
+                          : 0.52
+                  }
+                />
+              ))}
+            </svg>
+            {constellationFieldLayout.bands.map((band) => (
               <div
-                key={node.entry.path}
-                draggable
-                data-overlay-constellation-band={band.id}
-                data-overlay-constellation-node={node.entry.path}
-                data-overlay-constellation-emphasis={node.emphasis}
-                data-overlay-drag-source="file"
-                onDragStart={(e) => onDragStart(e, node.entry)}
-                onDragEnd={onDragEnd}
-                onDragOver={
-                  node.entry.is_dir
-                    ? (e) => onDragOver(e, node.entry.path)
-                    : undefined
-                }
-                onDragLeave={(e) => onDragLeave(e, node.entry.path)}
-                onDrop={
-                  node.entry.is_dir
-                    ? (e) => onDrop(e, node.entry.path)
-                    : undefined
-                }
-                onClick={(e) => onEntryClick(e, node.entry)}
-                onDoubleClick={() => onEntryDoubleClick(node.entry)}
-                onContextMenu={(e) => onRightClick(e, node.entry)}
-                title={node.entry.path}
+                key={`chip-${band.id}`}
                 style={{
                   position: "absolute",
-                  left: `${node.x}%`,
-                  top: `${node.y}%`,
-                  transform: `translate(-50%, -50%) ${isDrop ? dropEntrySurface.transform : isSel ? selectedEntrySurface.transform : idleEntrySurface.transform}`,
-                  minWidth: node.labelVisible
-                    ? Math.max(88, node.size + 42)
-                    : node.size + 18,
-                  maxWidth: 172,
-                  minHeight: node.size + 14,
-                  borderRadius: 999,
-                  border: `1px solid ${isDrop ? dropEntrySurface.borderColor : isSel ? selectedEntrySurface.borderColor : node.emphasis === "anchor" ? `${accent}55` : "var(--overlay-explorer-chip-border)"}`,
-                  background: isDrop
-                    ? dropEntrySurface.background
-                    : isSel
-                      ? selectedEntrySurface.background
-                      : highlightBackground,
-                  boxShadow: isDrop
-                    ? dropEntrySurface.boxShadow
-                    : isSel
-                      ? selectedEntrySurface.boxShadow
-                      : node.emphasis === "anchor"
-                        ? `0 12px 26px ${accent}18`
-                        : "0 8px 16px rgba(0,0,0,0.14)",
-                  color: EXP.text,
-                  cursor: "pointer",
-                  userSelect: "none",
-                  padding: node.labelVisible ? "8px 12px" : "8px",
-                  display: "flex",
+                  left: band.chipX,
+                  top: band.chipY,
+                  transform: `translate(${band.chipAlign === "right" ? "-100%" : "0"}, -50%)`,
+                  display: "inline-flex",
                   alignItems: "center",
-                  gap: 10,
-                }}
-                onMouseEnter={(e) => {
-                  handleEntryPointerEnter(
-                    node.entry,
-                    e.currentTarget as HTMLDivElement,
-                    isSel,
-                    isDrop,
-                  );
-                  if (!isSel && !isDrop) {
-                    e.currentTarget.style.transform = `translate(-50%, -50%) ${hoverEntrySurface.transform}`;
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  handleEntryPointerLeave(
-                    node.entry,
-                    e.currentTarget as HTMLDivElement,
-                    isSel,
-                    isDrop,
-                  );
-                  if (!isSel && !isDrop) {
-                    e.currentTarget.style.transform = `translate(-50%, -50%) ${idleEntrySurface.transform}`;
-                    e.currentTarget.style.background = highlightBackground;
-                    e.currentTarget.style.borderColor =
-                      node.emphasis === "anchor"
-                        ? `${accent}55`
-                        : "var(--overlay-explorer-chip-border)";
-                    e.currentTarget.style.boxShadow =
-                      node.emphasis === "anchor"
-                        ? `0 12px 26px ${accent}18`
-                        : "0 8px 16px rgba(0,0,0,0.14)";
-                  }
+                  gap: 8,
+                  borderRadius: 999,
+                  border: `1px solid ${band.dominant ? `${accent}44` : "rgba(255,255,255,0.12)"}`,
+                  background: "rgba(12, 15, 22, 0.72)",
+                  backdropFilter: explorerBlurEnabled ? "blur(12px)" : "none",
+                  WebkitBackdropFilter: explorerBlurEnabled ? "blur(12px)" : "none",
+                  padding: "8px 12px",
+                  boxShadow: "0 12px 28px rgba(0,0,0,0.16)",
+                  color: EXP.text,
+                  pointerEvents: "none",
                 }}
               >
-                <div
+                <span
                   style={{
-                    width: node.size,
-                    height: node.size,
-                    minWidth: node.size,
-                    borderRadius: 999,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    background: "rgba(255,255,255,0.06)",
-                    overflow: "hidden",
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    color: band.dominant ? accent : EXP.muted2,
                   }}
                 >
-                  {(() => {
-                    const thumbnailSrc = getRenderableEntryThumbnailSrc(
-                      node.entry,
-                      node.size,
-                    );
-                    return thumbnailSrc ? (
-                      <img
-                        src={thumbnailSrc}
-                        alt={`Thumbnail for ${node.entry.name}`}
-                        draggable={false}
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "contain",
-                          display: "block",
-                        }}
-                      />
-                    ) : (
-                      <SvgIcon
-                        src={iconSrc}
-                        size={Math.max(14, node.size - 12)}
-                      />
-                    );
-                  })()}
-                </div>
-                {node.labelVisible && (
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    {isRenaming ? (
-                      <RenameInput
-                        state={rename}
-                        onCommit={commitRename}
-                        onCancel={() =>
-                          setRename({ active: false, path: "", name: "" })
-                        }
-                      />
-                    ) : (
-                      <>
-                        <div
-                          style={{
-                            color: isSel
-                              ? EXP.text
-                              : node.entry.is_dir
-                                ? EXP.yellow
-                                : EXP.text,
-                            fontWeight: node.entry.is_dir ? 650 : 560,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {node.entry.name}
-                        </div>
-                        <div
-                          style={{
-                            marginTop: 3,
-                            fontSize: 10,
-                            color: EXP.muted2,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {getEntryTypeLabel(node.entry)}
-                        </div>
-                      </>
-                    )}
-                  </div>
+                  {band.label}
+                </span>
+                <span style={{ fontSize: 11, color: EXP.muted }}>
+                  {band.entries.length}
+                </span>
+                {band.hiddenEntryCount > 0 && (
+                  <span style={{ fontSize: 10, color: accent }}>
+                    +{band.hiddenEntryCount}
+                  </span>
                 )}
               </div>
-            );
-          })}
+            ))}
+            {constellationFieldLayout.bands.map((band) =>
+              band.nodes.map((node) => renderConstellationNode(band, node)),
+            )}
+          </div>
         </div>
       </section>
     );
@@ -17157,9 +17332,7 @@ export function FileExplorer({
                   effectiveExperimentalViewMode === "constellation" && (
                     <div style={{ minHeight: 0, padding: "14px 0 24px" }}>
                       {renderExperimentalInlineNewItem(26)}
-                      {constellationOrbitBands.map(
-                        renderConstellationOrbitBand,
-                      )}
+                      {renderConstellationField()}
                     </div>
                   )}
 

@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from "vitest";
 import {
-  buildConstellationOrbitBands,
+  buildConstellationFieldLayout,
   type ConstellationOrbitBandInput,
-} from '../components/explorer/constellationLayout';
-import type { ExplorerFileEntry as FileEntry } from '../runtime/explorerBackend';
+} from "../components/explorer/constellationLayout";
+import type { ExplorerFileEntry as FileEntry } from "../runtime/explorerBackend";
 
 function makeEntry(index: number, overrides: Partial<FileEntry> = {}): FileEntry {
   return {
@@ -12,84 +12,112 @@ function makeEntry(index: number, overrides: Partial<FileEntry> = {}): FileEntry
     is_dir: false,
     size: 1024 + index,
     modified: 1_700_000_000_000 + index,
-    extension: 'txt',
+    extension: "txt",
     is_hidden: false,
     is_symlink: false,
     ...overrides,
   };
 }
 
-describe('buildConstellationOrbitBands', () => {
-  it('spreads dense dominant bands across the full orbit field instead of collapsing to one side', () => {
-    const denseFolders = Array.from({ length: 18 }, (_, index) => makeEntry(index, {
-      name: `app-${index}`,
-      path: `C:\\workspace\\apps\\app-${index}`,
-      is_dir: true,
-      extension: '',
-    }));
-
+describe("buildConstellationFieldLayout", () => {
+  it("spreads semantic bands into distinct command clusters instead of one collapsed lane", () => {
     const bands: ConstellationOrbitBandInput[] = [
       {
-        id: 'folders',
-        label: 'Folders',
-        description: 'Anchors and destinations stay visually dominant.',
+        id: "folders",
+        label: "Folders",
+        description: "Anchors and destinations stay visually dominant.",
         dominant: true,
-        entries: denseFolders,
+        entries: Array.from({ length: 12 }, (_, index) =>
+          makeEntry(index, {
+            name: `folder-${index}`,
+            path: `C:\\workspace\\folders\\folder-${index}`,
+            is_dir: true,
+            extension: "",
+          }),
+        ),
+      },
+      {
+        id: "recent",
+        label: "Recent Activity",
+        description: "Fresh work stays elevated without replacing the folder map.",
+        dominant: false,
+        entries: Array.from({ length: 10 }, (_, index) =>
+          makeEntry(index + 20, {
+            name: `recent-${index}.md`,
+            path: `C:\\workspace\\recent\\recent-${index}.md`,
+          }),
+        ),
       },
     ];
 
-    const [orbitBand] = buildConstellationOrbitBands(bands, new Set(), 1);
-    const xPositions = orbitBand.nodes.map((node) => node.x);
-    const yPositions = orbitBand.nodes.map((node) => node.y);
-    const leftCount = orbitBand.nodes.filter((node) => node.x < 50).length;
-    const rightCount = orbitBand.nodes.filter((node) => node.x > 50).length;
-    const nodesInsideCenterCard = orbitBand.nodes.filter((node) => (
-      node.x > 40
-      && node.x < 60
-      && node.y > 35
-      && node.y < 65
-    ));
+    const layout = buildConstellationFieldLayout(bands, new Set(), 0.9);
+    const [foldersBand, recentBand] = layout.bands;
+    const foldersXRange = Math.max(...foldersBand.nodes.map((node) => node.x))
+      - Math.min(...foldersBand.nodes.map((node) => node.x));
+    const recentXRange = Math.max(...recentBand.nodes.map((node) => node.x))
+      - Math.min(...recentBand.nodes.map((node) => node.x));
 
-    expect(orbitBand.nodes).toHaveLength(18);
-    expect(Math.min(...xPositions)).toBeLessThan(17);
-    expect(Math.max(...xPositions)).toBeGreaterThan(84);
-    expect(Math.max(...yPositions) - Math.min(...yPositions)).toBeGreaterThan(36);
-    expect(Math.abs(leftCount - rightCount)).toBeLessThanOrEqual(2);
-    expect(nodesInsideCenterCard).toHaveLength(0);
+    expect(layout.width).toBeGreaterThan(1500);
+    expect(layout.bands).toHaveLength(2);
+    expect(Math.abs(foldersBand.centerX - recentBand.centerX)).toBeGreaterThan(420);
+    expect(foldersXRange).toBeGreaterThan(200);
+    expect(recentXRange).toBeGreaterThan(220);
+    expect(layout.connections.length).toBeGreaterThan(12);
   });
 
-  it('caps visible nodes by density and reports the hidden remainder', () => {
+  it("caps visible nodes by density and reports the hidden remainder", () => {
     const manyEntries = Array.from({ length: 40 }, (_, index) => makeEntry(index));
-    const [orbitBand] = buildConstellationOrbitBands([
+    const layout = buildConstellationFieldLayout([
       {
-        id: 'everything-else',
-        label: 'Everything Else',
-        description: 'Remaining files preserve the active explorer sort.',
+        id: "everything-else",
+        label: "Everything Else",
+        description: "Remaining files preserve the active explorer sort.",
         dominant: false,
         entries: manyEntries,
       },
     ], new Set(), 0);
 
-    expect(orbitBand.nodes).toHaveLength(6);
-    expect(orbitBand.hiddenEntryCount).toBe(34);
+    expect(layout.bands).toHaveLength(1);
+    expect(layout.bands[0]?.nodes).toHaveLength(8);
+    expect(layout.bands[0]?.hiddenEntryCount).toBe(32);
   });
 
-  it('preserves selected emphasis while distributing entries', () => {
-    const selectedEntry = makeEntry(1, { name: 'picked.txt', path: 'C:\\workspace\\picked.txt' });
-    const [orbitBand] = buildConstellationOrbitBands([
+  it("keeps selected entries at the center of their cluster and highlights supporting links", () => {
+    const selectedEntry = makeEntry(7, {
+      name: "picked.txt",
+      path: "C:\\workspace\\picked.txt",
+    });
+    const layout = buildConstellationFieldLayout([
       {
-        id: 'recent',
-        label: 'Recent Activity',
-        description: 'Fresh work stays elevated without replacing the folder map.',
+        id: "context",
+        label: "Local Context",
+        description: "Selection-adjacent files stay close while you change density.",
         dominant: false,
         entries: [
-          makeEntry(0),
+          makeEntry(1),
           selectedEntry,
-          makeEntry(2, { name: 'folder', path: 'C:\\workspace\\folder', is_dir: true, extension: '' }),
+          makeEntry(2, {
+            name: "folder",
+            path: "C:\\workspace\\folder",
+            is_dir: true,
+            extension: "",
+          }),
+          makeEntry(3),
+          makeEntry(4),
         ],
       },
     ], new Set([selectedEntry.path]), 0.6);
 
-    expect(orbitBand.nodes.find((node) => node.entry.path === selectedEntry.path)?.emphasis).toBe('selected');
+    const [contextBand] = layout.bands;
+    const selectedNode = contextBand?.nodes.find((node) => node.entry.path === selectedEntry.path);
+
+    expect(selectedNode?.emphasis).toBe("selected");
+    expect(selectedNode?.x).toBe(contextBand?.centerX);
+    expect(selectedNode?.y).toBe(contextBand?.centerY);
+    expect(
+      layout.connections.some((connection) =>
+        connection.highlighted && connection.id.includes(selectedEntry.path),
+      ),
+    ).toBe(true);
   });
 });

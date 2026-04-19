@@ -1,4 +1,4 @@
-import type { ExplorerFileEntry as FileEntry } from '../../runtime/explorerBackend';
+import type { ExplorerFileEntry as FileEntry } from "../../runtime/explorerBackend";
 
 export interface ConstellationOrbitBandInput {
   id: string;
@@ -8,249 +8,418 @@ export interface ConstellationOrbitBandInput {
   entries: FileEntry[];
 }
 
-export interface ConstellationOrbitNode {
+export interface ConstellationFieldNode {
   entry: FileEntry;
+  bandId: string;
   x: number;
   y: number;
   size: number;
   labelVisible: boolean;
-  emphasis: 'anchor' | 'selected' | 'satellite';
+  emphasis: "anchor" | "selected" | "satellite";
 }
 
-export interface ConstellationOrbitBand extends ConstellationOrbitBandInput {
-  nodes: ConstellationOrbitNode[];
+export interface ConstellationFieldBand extends ConstellationOrbitBandInput {
+  centerX: number;
+  centerY: number;
+  radius: number;
+  chipX: number;
+  chipY: number;
+  chipAlign: "left" | "right";
+  nodes: ConstellationFieldNode[];
   hiddenEntryCount: number;
+}
+
+export interface ConstellationFieldConnection {
+  id: string;
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+  strength: "bridge" | "primary" | "secondary";
+  highlighted: boolean;
+}
+
+export interface ConstellationFieldLayout {
+  width: number;
+  height: number;
+  bands: ConstellationFieldBand[];
+  connections: ConstellationFieldConnection[];
 }
 
 interface PositionedConstellationEntry {
   entry: FileEntry;
   hash: number;
-  emphasis: ConstellationOrbitNode['emphasis'];
+  emphasis: ConstellationFieldNode["emphasis"];
   sourceIndex: number;
 }
 
-interface ConstellationOrbitLane {
-  width: number;
-  height: number;
-  slotOffset: number;
-  reverseDirection: boolean;
+interface ClusterSlot {
+  x: number;
+  y: number;
+  angleOffset: number;
+  yScale: number;
+  chipBiasX: number;
 }
 
-const CONSTELLATION_FIELD_BOUNDS = Object.freeze({
-  minX: 11,
-  maxX: 89,
-  minY: 12,
-  maxY: 88,
-});
-const CONSTELLATION_CENTER_SAFE_ZONE = Object.freeze({
-  minX: 40,
-  maxX: 60,
-  minY: 35,
-  maxY: 65,
-  padding: 2,
+const FIELD_BOUNDS = Object.freeze({
+  minWidth: 1520,
+  wideWidth: 1720,
+  minHeight: 920,
+  tallHeight: 1080,
+  paddingX: 108,
+  paddingY: 92,
 });
 
-const CONSTELLATION_SLOT_PROGRESS_SEQUENCE = [
-  0.25,
-  0.75,
-  0,
-  0.5,
-  0.125,
-  0.625,
-  0.375,
-  0.875,
-  0.0625,
-  0.5625,
-  0.3125,
-  0.8125,
-  0.1875,
-  0.6875,
-  0.4375,
-  0.9375,
-] as const;
+const EMPHASIS_RANK: Record<ConstellationFieldNode["emphasis"], number> = {
+  selected: 0,
+  anchor: 1,
+  satellite: 2,
+};
 
-export function buildConstellationOrbitBands(
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
+const CLUSTER_SLOTS: Record<number, readonly ClusterSlot[]> = {
+  1: [
+    { x: 0.5, y: 0.5, angleOffset: -Math.PI / 2, yScale: 0.82, chipBiasX: -0.08 },
+  ],
+  2: [
+    { x: 0.34, y: 0.47, angleOffset: -1.1, yScale: 0.84, chipBiasX: -0.5 },
+    { x: 0.72, y: 0.46, angleOffset: 0.55, yScale: 0.86, chipBiasX: 0.44 },
+  ],
+  3: [
+    { x: 0.33, y: 0.44, angleOffset: -1.15, yScale: 0.82, chipBiasX: -0.5 },
+    { x: 0.72, y: 0.33, angleOffset: 0.2, yScale: 0.9, chipBiasX: 0.38 },
+    { x: 0.65, y: 0.73, angleOffset: 1.3, yScale: 0.82, chipBiasX: 0.32 },
+  ],
+  4: [
+    { x: 0.32, y: 0.38, angleOffset: -1.0, yScale: 0.82, chipBiasX: -0.52 },
+    { x: 0.73, y: 0.3, angleOffset: 0.28, yScale: 0.88, chipBiasX: 0.36 },
+    { x: 0.29, y: 0.72, angleOffset: -1.5, yScale: 0.78, chipBiasX: -0.46 },
+    { x: 0.75, y: 0.7, angleOffset: 1.25, yScale: 0.8, chipBiasX: 0.3 },
+  ],
+  5: [
+    { x: 0.34, y: 0.42, angleOffset: -1.0, yScale: 0.82, chipBiasX: -0.5 },
+    { x: 0.73, y: 0.28, angleOffset: 0.15, yScale: 0.88, chipBiasX: 0.32 },
+    { x: 0.26, y: 0.73, angleOffset: -1.65, yScale: 0.78, chipBiasX: -0.44 },
+    { x: 0.74, y: 0.69, angleOffset: 1.25, yScale: 0.8, chipBiasX: 0.3 },
+    { x: 0.52, y: 0.16, angleOffset: -0.4, yScale: 0.92, chipBiasX: -0.08 },
+  ],
+};
+
+export function buildConstellationFieldLayout(
   bands: readonly ConstellationOrbitBandInput[],
   selectedPaths: ReadonlySet<string>,
   density: number,
-): ConstellationOrbitBand[] {
-  const normalizedDensity = Math.min(1, Math.max(0, density));
-  const maxVisibleNodes = Math.max(6, Math.min(24, Math.round(6 + normalizedDensity * 18)));
+): ConstellationFieldLayout {
+  const normalizedDensity = clamp(density, 0, 1);
+  const maxVisibleNodes = clampNumber(Math.round(8 + normalizedDensity * 22), 8, 30);
+  const visibleBands = bands.filter((band) => band.entries.length > 0);
 
-  return bands
-    .filter((band) => band.entries.length > 0)
-    .map((band) => {
-      const visibleEntries = band.entries.slice(0, maxVisibleNodes);
-      const hubBaseSize = band.dominant ? 46 : 42;
-      const nodeBaseSize = band.dominant ? 34 : 30;
-      const positionedEntries = visibleEntries
-        .map((entry, index) => {
-          const emphasis = selectedPaths.has(entry.path)
-            ? 'selected'
-            : entry.is_dir || (band.dominant && index < 3)
-              ? 'anchor'
-              : 'satellite';
-
-          return {
-            entry,
-            hash: hashExplorerString(entry.path),
-            emphasis,
-            sourceIndex: index,
-          } satisfies PositionedConstellationEntry;
-        })
-        .sort((left, right) => (
-          left.hash - right.hash
-          || left.sourceIndex - right.sourceIndex
-          || left.entry.name.localeCompare(right.entry.name, undefined, { sensitivity: 'base', numeric: true })
-        ));
-
-      const orbitLanes = buildConstellationOrbitLanes(positionedEntries.length, normalizedDensity, band.dominant);
-      const laneBuckets = orbitLanes.map(() => [] as PositionedConstellationEntry[]);
-
-      positionedEntries.forEach((positionedEntry, index) => {
-        laneBuckets[index % orbitLanes.length].push(positionedEntry);
-      });
-
-      const nodes = laneBuckets.flatMap((laneEntries, laneIndex) => {
-        const lane = orbitLanes[laneIndex];
-
-        return laneEntries.map((positionedEntry, slotIndex) => {
-          const { x, y } = projectConstellationOrbitPoint(slotIndex, laneEntries.length, lane, positionedEntry.hash);
-          const size = Math.max(
-            26,
-            Math.round(
-              (positionedEntry.emphasis === 'anchor'
-                ? hubBaseSize
-                : positionedEntry.emphasis === 'selected'
-                  ? hubBaseSize - 2
-                  : nodeBaseSize)
-              - normalizedDensity * 8
-              - laneIndex * 2,
-            ),
-          );
-
-          return {
-            entry: positionedEntry.entry,
-            x,
-            y,
-            size,
-            labelVisible: normalizedDensity > 0.28 || positionedEntry.emphasis !== 'satellite' || slotIndex < 3,
-            emphasis: positionedEntry.emphasis,
-          } satisfies ConstellationOrbitNode;
-        });
-      });
-
-      return {
-        ...band,
-        nodes,
-        hiddenEntryCount: Math.max(0, band.entries.length - visibleEntries.length),
-      };
-    });
-}
-
-function buildConstellationOrbitLanes(
-  nodeCount: number,
-  density: number,
-  dominant: boolean,
-): ConstellationOrbitLane[] {
-  const laneCount = Math.max(
-    2,
-    Math.min(
-      5,
-      2
-      + (density >= 0.42 ? 1 : 0)
-      + (nodeCount >= 10 ? 1 : 0)
-      + (nodeCount >= 18 ? 1 : 0),
-    ),
-  );
-
-  const minWidth = dominant ? 40 : 36;
-  const maxWidth = dominant ? 86 : 80;
-  const minHeight = dominant ? 24 : 22;
-  const maxHeight = dominant ? 58 : 52;
-  const widthStep = laneCount <= 1 ? 0 : (maxWidth - minWidth) / (laneCount - 1);
-  const heightStep = laneCount <= 1 ? 0 : (maxHeight - minHeight) / (laneCount - 1);
-
-  return Array.from({ length: laneCount }, (_, laneIndex) => ({
-    width: minWidth + widthStep * laneIndex,
-    height: minHeight + heightStep * laneIndex,
-    slotOffset: laneIndex,
-    reverseDirection: laneIndex % 2 === 1,
-  }));
-}
-
-function projectConstellationOrbitPoint(
-  slotIndex: number,
-  slotCount: number,
-  lane: ConstellationOrbitLane,
-  entryHash: number,
-): { x: number; y: number } {
-  const baseProgress = slotCount <= 0
-    ? 0
-    : getConstellationOrbitSlotProgress(slotIndex + lane.slotOffset);
-  const jitterWindow = Math.min(0.012, 0.06 / Math.max(4, slotCount));
-  const jitter = ((((entryHash >> 3) % 29) / 28) - 0.5) * jitterWindow;
-  const phasedProgress = wrapUnitInterval(baseProgress + jitter);
-  const orbitProgress = lane.reverseDirection
-    ? wrapUnitInterval(1 - phasedProgress)
-    : phasedProgress;
-
-  return projectStadiumOrbitProgress(orbitProgress, lane.width, lane.height);
-}
-
-function getConstellationOrbitSlotProgress(slotIndex: number): number {
-  const presetProgress = CONSTELLATION_SLOT_PROGRESS_SEQUENCE[slotIndex];
-  if (typeof presetProgress === 'number') {
-    return presetProgress;
+  if (visibleBands.length === 0) {
+    return {
+      width: FIELD_BOUNDS.minWidth,
+      height: FIELD_BOUNDS.minHeight,
+      bands: [],
+      connections: [],
+    };
   }
 
-  return wrapUnitInterval(0.25 + (slotIndex * 0.61803398875));
+  const width = visibleBands.length >= 4 ? FIELD_BOUNDS.wideWidth : FIELD_BOUNDS.minWidth;
+  const height = visibleBands.length >= 4 ? FIELD_BOUNDS.tallHeight : FIELD_BOUNDS.minHeight;
+  const slots = CLUSTER_SLOTS[visibleBands.length] ?? CLUSTER_SLOTS[5];
+  const fieldBands: ConstellationFieldBand[] = [];
+  const connections: ConstellationFieldConnection[] = [];
+  let dominantPrimaryNode: ConstellationFieldNode | null = null;
+
+  visibleBands.forEach((band, bandIndex) => {
+    const slot = resolveClusterSlot(slots, bandIndex, visibleBands.length);
+    const visibleEntries = band.entries.slice(0, maxVisibleNodes);
+    const positionedEntries = visibleEntries
+      .map((entry, index) => ({
+        entry,
+        hash: hashExplorerString(entry.path),
+        emphasis: selectedPaths.has(entry.path)
+          ? "selected"
+          : entry.is_dir || (band.dominant && index < 3)
+            ? "anchor"
+            : "satellite",
+        sourceIndex: index,
+      }) satisfies PositionedConstellationEntry)
+      .sort((left, right) => (
+        EMPHASIS_RANK[left.emphasis] - EMPHASIS_RANK[right.emphasis]
+        || left.hash - right.hash
+        || left.sourceIndex - right.sourceIndex
+        || left.entry.name.localeCompare(right.entry.name, undefined, {
+          sensitivity: "base",
+          numeric: true,
+        })
+      ));
+
+    const centerX = clampNumber(width * slot.x, FIELD_BOUNDS.paddingX, width - FIELD_BOUNDS.paddingX);
+    const centerY = clampNumber(height * slot.y, FIELD_BOUNDS.paddingY, height - FIELD_BOUNDS.paddingY);
+    const radius = Math.round(
+      (band.dominant ? 248 : 210)
+      + Math.min(band.entries.length * 4, band.dominant ? 78 : 58)
+      + normalizedDensity * 36,
+    );
+
+    const primaryEntry = positionedEntries.find((entry) => entry.emphasis === "selected")
+      ?? positionedEntries.find((entry) => entry.emphasis === "anchor")
+      ?? positionedEntries[0]
+      ?? null;
+    const coreEntries = primaryEntry
+      ? positionedEntries.filter((entry) => entry.entry.path !== primaryEntry.entry.path)
+      : positionedEntries;
+    const anchoredEntries = coreEntries.filter((entry) => entry.emphasis !== "satellite");
+    const satelliteEntries = coreEntries.filter((entry) => entry.emphasis === "satellite");
+    const nodes: ConstellationFieldNode[] = [];
+
+    if (primaryEntry) {
+      nodes.push({
+        entry: primaryEntry.entry,
+        bandId: band.id,
+        x: centerX,
+        y: centerY,
+        size: getConstellationNodeSize(primaryEntry.emphasis, band.dominant, normalizedDensity, 0),
+        labelVisible: true,
+        emphasis: primaryEntry.emphasis,
+      });
+    }
+
+    anchoredEntries.forEach((positionedEntry, index) => {
+      const anchoredAngle = slot.angleOffset
+        + ((Math.PI * 2) / Math.max(1, anchoredEntries.length)) * index
+        + getHashAngleJitter(positionedEntry.hash, 0.16);
+      const anchoredRadius = radius * (0.28 + ((index % 2) * 0.08));
+      nodes.push(createConstellationFieldNode({
+        bandId: band.id,
+        positionedEntry,
+        x: centerX + Math.cos(anchoredAngle) * anchoredRadius,
+        y: centerY + Math.sin(anchoredAngle) * anchoredRadius * slot.yScale,
+        width,
+        height,
+        size: getConstellationNodeSize(positionedEntry.emphasis, band.dominant, normalizedDensity, 1),
+        labelVisible: true,
+      }));
+    });
+
+    satelliteEntries.forEach((positionedEntry, index) => {
+      const progress = (index + 0.72) / Math.max(1, satelliteEntries.length + 0.72);
+      const satelliteAngle = slot.angleOffset
+        + (index * GOLDEN_ANGLE)
+        + getHashAngleJitter(positionedEntry.hash, 0.22);
+      const satelliteRadius = radius * (0.42 + Math.sqrt(progress) * 0.58);
+      const yScale = slot.yScale * (0.92 + (((positionedEntry.hash >> 3) % 7) * 0.015));
+      nodes.push(createConstellationFieldNode({
+        bandId: band.id,
+        positionedEntry,
+        x: centerX + Math.cos(satelliteAngle) * satelliteRadius,
+        y: centerY + Math.sin(satelliteAngle) * satelliteRadius * yScale,
+        width,
+        height,
+        size: getConstellationNodeSize(positionedEntry.emphasis, band.dominant, normalizedDensity, 2),
+        labelVisible: normalizedDensity >= 0.8 && index < 3,
+      }));
+    });
+
+    const bandPrimaryNode = nodes.find((node) => node.entry.path === primaryEntry?.entry.path) ?? nodes[0] ?? null;
+    const bandCoreNodes = nodes.filter((node) => node.emphasis !== "satellite");
+    const bandSatelliteNodes = nodes.filter((node) => node.emphasis === "satellite");
+
+    if (bandPrimaryNode) {
+      if (band.dominant && !dominantPrimaryNode) {
+        dominantPrimaryNode = bandPrimaryNode;
+      }
+
+      bandCoreNodes
+        .filter((node) => node.entry.path !== bandPrimaryNode.entry.path)
+        .forEach((node) => {
+          connections.push(createConstellationConnection(bandPrimaryNode, node, "primary"));
+        });
+
+      bandSatelliteNodes.forEach((node, index) => {
+        const anchorNode = bandCoreNodes.length > 1
+          ? bandCoreNodes[(index % Math.max(1, bandCoreNodes.length - 1)) + 1] ?? bandPrimaryNode
+          : bandPrimaryNode;
+        connections.push(createConstellationConnection(anchorNode, node, "secondary"));
+        if (normalizedDensity >= 0.46 && index > 0 && index % 2 === 0) {
+          connections.push(createConstellationConnection(bandSatelliteNodes[index - 1], node, "secondary"));
+        }
+      });
+    }
+
+    const chipAlign = slot.chipBiasX > 0 ? "left" : "right";
+    const chipX = clampNumber(
+      centerX + (radius * slot.chipBiasX),
+      FIELD_BOUNDS.paddingX,
+      width - FIELD_BOUNDS.paddingX,
+    );
+    const chipY = clampNumber(
+      centerY - (radius * (band.dominant ? 0.54 : 0.62)),
+      FIELD_BOUNDS.paddingY,
+      height - FIELD_BOUNDS.paddingY,
+    );
+
+    fieldBands.push({
+      ...band,
+      centerX,
+      centerY,
+      radius,
+      chipX,
+      chipY,
+      chipAlign,
+      nodes,
+      hiddenEntryCount: Math.max(0, band.entries.length - visibleEntries.length),
+    });
+  });
+
+  if (!dominantPrimaryNode) {
+    dominantPrimaryNode = fieldBands.find((band) => band.nodes.length > 0)?.nodes[0] ?? null;
+  }
+
+  if (dominantPrimaryNode) {
+    const dominantNode = dominantPrimaryNode;
+    fieldBands.forEach((band) => {
+      const bandPrimaryNode = band.nodes[0] ?? null;
+      if (
+        !bandPrimaryNode
+        || bandPrimaryNode.entry.path === dominantNode.entry.path
+      ) {
+        return;
+      }
+      connections.push(createConstellationConnection(dominantNode, bandPrimaryNode, "bridge"));
+    });
+  }
+
+  return {
+    width,
+    height,
+    bands: fieldBands,
+    connections: dedupeConstellationConnections(connections),
+  };
 }
 
-function projectStadiumOrbitProgress(
-  progress: number,
+function createConstellationFieldNode(input: {
+  bandId: string;
+  positionedEntry: PositionedConstellationEntry;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  size: number;
+  labelVisible: boolean;
+}): ConstellationFieldNode {
+  const clamped = clampConstellationPoint(
+    { x: input.x, y: input.y },
+    input.width,
+    input.height,
+  );
+  return {
+    entry: input.positionedEntry.entry,
+    bandId: input.bandId,
+    x: clamped.x,
+    y: clamped.y,
+    size: input.size,
+    labelVisible: input.labelVisible || input.positionedEntry.emphasis !== "satellite",
+    emphasis: input.positionedEntry.emphasis,
+  };
+}
+
+function createConstellationConnection(
+  from: ConstellationFieldNode,
+  to: ConstellationFieldNode,
+  strength: ConstellationFieldConnection["strength"],
+): ConstellationFieldConnection {
+  return {
+    id: [from.entry.path, to.entry.path].sort().join("::"),
+    fromX: from.x,
+    fromY: from.y,
+    toX: to.x,
+    toY: to.y,
+    strength,
+    highlighted: from.emphasis === "selected" || to.emphasis === "selected",
+  };
+}
+
+function dedupeConstellationConnections(
+  connections: readonly ConstellationFieldConnection[],
+): ConstellationFieldConnection[] {
+  const deduped = new Map<string, ConstellationFieldConnection>();
+  const strengthRank: Record<ConstellationFieldConnection["strength"], number> = {
+    secondary: 0,
+    bridge: 1,
+    primary: 2,
+  };
+
+  connections.forEach((connection) => {
+    const previous = deduped.get(connection.id);
+    if (!previous) {
+      deduped.set(connection.id, connection);
+      return;
+    }
+
+    const previousRank = strengthRank[previous.strength];
+    const nextRank = strengthRank[connection.strength];
+    if (nextRank > previousRank || connection.highlighted) {
+      deduped.set(connection.id, {
+        ...connection,
+        highlighted: previous.highlighted || connection.highlighted,
+      });
+    }
+  });
+
+  return Array.from(deduped.values());
+}
+
+function getConstellationNodeSize(
+  emphasis: ConstellationFieldNode["emphasis"],
+  dominant: boolean,
+  density: number,
+  tier: number,
+): number {
+  const base = emphasis === "selected"
+    ? (dominant ? 64 : 58)
+    : emphasis === "anchor"
+      ? (dominant ? 56 : 50)
+      : 36;
+  const densityPenalty = emphasis === "satellite" ? 8 : 10;
+  const tierPenalty = tier === 0 ? 0 : tier === 1 ? 4 : 2;
+  return Math.max(28, Math.round(base - (density * densityPenalty) - tierPenalty));
+}
+
+function resolveClusterSlot(
+  slots: readonly ClusterSlot[],
+  index: number,
+  bandCount: number,
+): ClusterSlot {
+  const direct = slots[index];
+  if (direct) {
+    return direct;
+  }
+
+  const progress = (index - slots.length + 1) / Math.max(1, bandCount);
+  return {
+    x: clamp(0.5 + Math.cos(progress * Math.PI * 2) * 0.24, 0.24, 0.76),
+    y: clamp(0.5 + Math.sin(progress * Math.PI * 2) * 0.26, 0.2, 0.8),
+    angleOffset: progress * Math.PI * 2,
+    yScale: 0.84,
+    chipBiasX: Math.cos(progress * Math.PI * 2) >= 0 ? 0.3 : -0.3,
+  };
+}
+
+function clampConstellationPoint(
+  point: { x: number; y: number },
   width: number,
   height: number,
 ): { x: number; y: number } {
-  const orbitHeight = Math.max(12, height);
-  const orbitWidth = Math.max(orbitHeight, width);
-  const orbitRadius = orbitHeight / 2;
-  const straightLength = Math.max(0, orbitWidth - orbitHeight);
-  const perimeter = (straightLength * 2) + (orbitRadius * Math.PI * 2);
-  let distance = wrapUnitInterval(progress) * perimeter;
+  return {
+    x: clampNumber(point.x, FIELD_BOUNDS.paddingX, width - FIELD_BOUNDS.paddingX),
+    y: clampNumber(point.y, FIELD_BOUNDS.paddingY, height - FIELD_BOUNDS.paddingY),
+  };
+}
 
-  const centerX = 50;
-  const centerY = 50;
-  const leftArcCenterX = centerX - (straightLength / 2);
-  const rightArcCenterX = centerX + (straightLength / 2);
-  const topY = centerY - orbitRadius;
-  const bottomY = centerY + orbitRadius;
-
-  if (distance <= straightLength) {
-    return clampConstellationPoint({ x: leftArcCenterX + distance, y: topY });
-  }
-
-  distance -= straightLength;
-  const rightArcLength = orbitRadius * Math.PI;
-  if (distance <= rightArcLength) {
-    const angle = (-Math.PI / 2) + (distance / orbitRadius);
-    return clampConstellationPoint({
-      x: rightArcCenterX + Math.cos(angle) * orbitRadius,
-      y: centerY + Math.sin(angle) * orbitRadius,
-    });
-  }
-
-  distance -= rightArcLength;
-  if (distance <= straightLength) {
-    return clampConstellationPoint({ x: rightArcCenterX - distance, y: bottomY });
-  }
-
-  distance -= straightLength;
-  const angle = (Math.PI / 2) + (distance / orbitRadius);
-  return clampConstellationPoint({
-    x: leftArcCenterX + Math.cos(angle) * orbitRadius,
-    y: centerY + Math.sin(angle) * orbitRadius,
-  });
+function getHashAngleJitter(hash: number, amplitude: number): number {
+  return ((((hash >> 5) % 31) / 30) - 0.5) * amplitude;
 }
 
 function hashExplorerString(value: string): number {
@@ -264,43 +433,10 @@ function hashExplorerString(value: string): number {
   return Math.abs(hash);
 }
 
-function clampConstellationPoint(point: { x: number; y: number }): { x: number; y: number } {
-  let x = clamp(point.x, CONSTELLATION_FIELD_BOUNDS.minX, CONSTELLATION_FIELD_BOUNDS.maxX);
-  let y = clamp(point.y, CONSTELLATION_FIELD_BOUNDS.minY, CONSTELLATION_FIELD_BOUNDS.maxY);
-
-  const insideCenterSafeZone = x > CONSTELLATION_CENTER_SAFE_ZONE.minX
-    && x < CONSTELLATION_CENTER_SAFE_ZONE.maxX
-    && y > CONSTELLATION_CENTER_SAFE_ZONE.minY
-    && y < CONSTELLATION_CENTER_SAFE_ZONE.maxY;
-
-  if (insideCenterSafeZone) {
-    const distanceToLeft = Math.abs(x - CONSTELLATION_CENTER_SAFE_ZONE.minX);
-    const distanceToRight = Math.abs(CONSTELLATION_CENTER_SAFE_ZONE.maxX - x);
-    const distanceToTop = Math.abs(y - CONSTELLATION_CENTER_SAFE_ZONE.minY);
-    const distanceToBottom = Math.abs(CONSTELLATION_CENTER_SAFE_ZONE.maxY - y);
-    const nearestEdge = Math.min(distanceToLeft, distanceToRight, distanceToTop, distanceToBottom);
-
-    if (nearestEdge === distanceToLeft) {
-      x = CONSTELLATION_CENTER_SAFE_ZONE.minX - CONSTELLATION_CENTER_SAFE_ZONE.padding;
-    } else if (nearestEdge === distanceToRight) {
-      x = CONSTELLATION_CENTER_SAFE_ZONE.maxX + CONSTELLATION_CENTER_SAFE_ZONE.padding;
-    } else if (nearestEdge === distanceToTop) {
-      y = CONSTELLATION_CENTER_SAFE_ZONE.minY - CONSTELLATION_CENTER_SAFE_ZONE.padding;
-    } else {
-      y = CONSTELLATION_CENTER_SAFE_ZONE.maxY + CONSTELLATION_CENTER_SAFE_ZONE.padding;
-    }
-  }
-
-  return {
-    x: clamp(x, CONSTELLATION_FIELD_BOUNDS.minX, CONSTELLATION_FIELD_BOUNDS.maxX),
-    y: clamp(y, CONSTELLATION_FIELD_BOUNDS.minY, CONSTELLATION_FIELD_BOUNDS.maxY),
-  };
-}
-
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function wrapUnitInterval(value: number): number {
-  return ((value % 1) + 1) % 1;
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }

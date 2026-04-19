@@ -2151,6 +2151,10 @@ describe("FileExplorer view modes", () => {
       }),
     ).toBeTruthy();
     expect(
+      screen.getByRole("group", { name: /constellation field/i }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/orbit map/i)).toBeNull();
+    expect(
       screen.queryByText(
         /cluster files by relationship and navigate the orbit field\./i,
       ),
