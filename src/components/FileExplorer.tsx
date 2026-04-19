@@ -16263,20 +16263,20 @@ export function FileExplorer({
           left: node.x,
           top: node.y,
           transform: `translate(-50%, -50%) ${restingTransform}`,
-          minWidth: showsLabel ? Math.max(108, node.size + 58) : node.size + 18,
-          maxWidth: showsLabel ? 188 : node.size + 18,
-          minHeight: node.size + 16,
-          borderRadius: showsLabel ? 24 : 999,
+          minWidth: showsLabel ? Math.max(92, node.size + 42) : node.size + 16,
+          maxWidth: showsLabel ? 164 : node.size + 16,
+          minHeight: node.size + 14,
+          borderRadius: showsLabel ? 20 : 999,
           border: `1px solid ${restingBorderColor}`,
           background: highlightBackground,
           boxShadow: restingBoxShadow,
           color: EXP.text,
           cursor: "pointer",
           userSelect: "none",
-          padding: showsLabel ? "10px 12px" : "8px",
+          padding: showsLabel ? "8px 10px" : "7px",
           display: "flex",
           alignItems: "center",
-          gap: showsLabel ? 10 : 0,
+          gap: showsLabel ? 8 : 0,
           transition:
             "transform 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1), border-color 180ms cubic-bezier(0.22, 1, 0.36, 1)",
         }}
@@ -16368,7 +16368,8 @@ export function FileExplorer({
                       : node.entry.is_dir
                         ? EXP.yellow
                         : EXP.text,
-                    fontWeight: node.entry.is_dir ? 650 : 560,
+                    fontWeight: node.entry.is_dir ? 620 : 540,
+                    fontSize: 11,
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
@@ -16378,8 +16379,8 @@ export function FileExplorer({
                 </div>
                 <div
                   style={{
-                    marginTop: 3,
-                    fontSize: 10,
+                    marginTop: 2,
+                    fontSize: 9,
                     color: EXP.muted2,
                     overflow: "hidden",
                     textOverflow: "ellipsis",

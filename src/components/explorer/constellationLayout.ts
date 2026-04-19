@@ -134,13 +134,14 @@ export function buildConstellationFieldLayout(
   visibleBands.forEach((band, bandIndex) => {
     const slot = resolveClusterSlot(slots, bandIndex, visibleBands.length);
     const visibleEntries = band.entries.slice(0, maxVisibleNodes);
+    const anchorQuota = band.dominant ? 4 : 2;
     const positionedEntries = visibleEntries
       .map((entry, index) => ({
         entry,
         hash: hashExplorerString(entry.path),
         emphasis: selectedPaths.has(entry.path)
           ? "selected"
-          : entry.is_dir || (band.dominant && index < 3)
+          : index < anchorQuota
             ? "anchor"
             : "satellite",
         sourceIndex: index,
@@ -190,7 +191,7 @@ export function buildConstellationFieldLayout(
       const anchoredAngle = slot.angleOffset
         + ((Math.PI * 2) / Math.max(1, anchoredEntries.length)) * index
         + getHashAngleJitter(positionedEntry.hash, 0.16);
-      const anchoredRadius = radius * (0.28 + ((index % 2) * 0.08));
+      const anchoredRadius = radius * (0.36 + ((index % 2) * 0.1));
       nodes.push(createConstellationFieldNode({
         bandId: band.id,
         positionedEntry,
@@ -218,7 +219,9 @@ export function buildConstellationFieldLayout(
         width,
         height,
         size: getConstellationNodeSize(positionedEntry.emphasis, band.dominant, normalizedDensity, 2),
-        labelVisible: normalizedDensity >= 0.8 && index < 3,
+        labelVisible: band.dominant
+          ? normalizedDensity >= 0.56 && index < 4
+          : normalizedDensity >= 0.82 && index < 2,
       }));
     });
 
@@ -378,13 +381,13 @@ function getConstellationNodeSize(
   tier: number,
 ): number {
   const base = emphasis === "selected"
-    ? (dominant ? 64 : 58)
+    ? (dominant ? 56 : 50)
     : emphasis === "anchor"
-      ? (dominant ? 56 : 50)
-      : 36;
-  const densityPenalty = emphasis === "satellite" ? 8 : 10;
+      ? (dominant ? 46 : 42)
+      : 30;
+  const densityPenalty = emphasis === "satellite" ? 7 : 8;
   const tierPenalty = tier === 0 ? 0 : tier === 1 ? 4 : 2;
-  return Math.max(28, Math.round(base - (density * densityPenalty) - tierPenalty));
+  return Math.max(24, Math.round(base - (density * densityPenalty) - tierPenalty));
 }
 
 function resolveClusterSlot(

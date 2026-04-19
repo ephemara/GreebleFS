@@ -56,12 +56,16 @@ describe("buildConstellationFieldLayout", () => {
       - Math.min(...foldersBand.nodes.map((node) => node.x));
     const recentXRange = Math.max(...recentBand.nodes.map((node) => node.x))
       - Math.min(...recentBand.nodes.map((node) => node.x));
+    const folderAnchorCount = foldersBand.nodes.filter(
+      (node) => node.emphasis === "anchor",
+    ).length;
 
     expect(layout.width).toBeGreaterThan(1500);
     expect(layout.bands).toHaveLength(2);
     expect(Math.abs(foldersBand.centerX - recentBand.centerX)).toBeGreaterThan(420);
     expect(foldersXRange).toBeGreaterThan(200);
     expect(recentXRange).toBeGreaterThan(220);
+    expect(folderAnchorCount).toBeLessThan(foldersBand.nodes.length);
     expect(layout.connections.length).toBeGreaterThan(12);
   });
 

@@ -7,6 +7,7 @@
   - `src/components/explorer/constellationLayout.ts` now builds one larger constellation field layout with distinct semantic-band clusters, bridge/link lines, cluster beacons, and a stable phyllotaxis-style node spread instead of stadium orbit lanes around a protected center safe zone.
   - `src/components/FileExplorer.tsx` now renders constellation mode as a single drag-to-pan command field with background grid treatment, floating cluster chips, and tighter node cards that only keep persistent labels on anchors/selected nodes so the surface reads cleaner under density.
   - The old explanatory band copy is no longer rendered inside the constellation surface, and the center explainer card is gone entirely.
+  - Follow-up tuning tightened dominant-band packing so only a small anchor quota stays in the inner ring; the remaining folders fan out as satellites and the node cards are smaller by default, which prevents single-band folder maps from collapsing into one oversized pile at the center.
   - `src/test/constellationLayout.test.ts` now locks the new cluster-spread, density-cap, and selected-node-focus layout contract, while `src/test/fileExplorer.viewModes.test.tsx` now asserts the new `Constellation field` surface exists and the `Orbit Map` card text stays absent.
 - Durable product note:
   - Treat constellation as an interactive spatial browser, not a decorative per-band infographic. Keep future work centered on node clarity, panning/focus behavior, and relationship legibility instead of reintroducing explanatory chrome in the middle of the field.
