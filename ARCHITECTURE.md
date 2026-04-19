@@ -263,6 +263,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src/config/appContentDirectories.ts` owns that bootstrap and the legacy-home-path detection/migration rules
   - release migrations now also carry old `co.overlayterm.app` app-local directories forward into `co.greeblefs.app`
   - layout auto-probe now prefers `~/.greeblefs/greeblefs.layouts.{json,toml}` before older `.greeble` / `.overlayterm` fallbacks
+- Developer telemetry now follows the dev/release split too:
+  - `bun run tauri dev` writes telemetry sessions into repo-local `.telemetry/` so traces stay in the workspace for agents and developers
+  - installed/release builds continue using Tauri app-log/app-data storage for telemetry
+  - `src-tauri/src/telemetry.rs` owns the path resolution, so frontend code does not need to guess where traces land
 - Production/default behavior is manual refresh:
   - Plugins panel `Refresh`
   - Settings `Refresh Shaders`
@@ -481,6 +485,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `isFreefloatingRef` is now set on real overlay move/resize events so reopened overlay sessions can reuse the last compositor-managed bounds instead of recomputing from a fresh dock anchor every time
 - Do not try to fix Wayland dock centering by adding more `set_position` / `set_outer_position` retries to the normal app window path. The durable fix is the separate layer-shell dock host in `src-tauri/src/wayland_dock.rs`; if dock mode recenters again, inspect host routing in `src/runtime/windowHost.ts` and `App.tsx` before touching generic window geometry.
 - `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings` is green again. Keep `src/generated/tauri.ts` generated-only and route any new explorer task commands through `src/runtime/explorerBackend.ts` instead of introducing ad hoc `invoke` calls in React.
+- Dev telemetry is intentionally repo-local in `tauri dev`; do not look in Tauri app-log directories when debugging local trace output unless you are validating a release build.
 - Built-in shader performance is now split by runtime type:
   - the CSS-heavy built-ins no longer use a React RAF clock; they animate through injected keyframes so shader motion does not force React rerenders every frame
   - canvas-backed shader surfaces are throttled to about 24 FPS and capped to `devicePixelRatio <= 1.25`

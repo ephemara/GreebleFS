@@ -5,11 +5,11 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Instant;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_specta::Event;
 use uuid::Uuid;
 
-const TELEMETRY_DIRECTORY_NAME: &str = "telemetry";
+const TELEMETRY_DIRECTORY_NAME: &str = ".telemetry";
 const TELEMETRY_EXPORTS_DIRECTORY_NAME: &str = "exports";
 const MAX_RECENT_RECORDS: usize = 400;
 const MAX_SESSIONS: usize = 12;
@@ -162,7 +162,9 @@ impl Default for TelemetryManager {
 
 impl TelemetryManager {
     fn ensure_session(inner: &mut TelemetryManagerInner, app: &AppHandle) -> Result<(), String> {
-        if !inner.trace_directory.as_os_str().is_empty() && !inner.current_file_path.as_os_str().is_empty() {
+        if !inner.trace_directory.as_os_str().is_empty()
+            && !inner.current_file_path.as_os_str().is_empty()
+        {
             return Ok(());
         }
 
@@ -203,7 +205,9 @@ impl TelemetryManager {
             "session-{}-{:02}.jsonl",
             inner.session_id, inner.current_file_index
         ));
-        inner.session_file_paths.push(inner.current_file_path.clone());
+        inner
+            .session_file_paths
+            .push(inner.current_file_path.clone());
         Ok(())
     }
 
@@ -311,7 +315,10 @@ impl TelemetryManager {
         Ok(())
     }
 
-    fn export_support_bundle(&self, app: &AppHandle) -> Result<TelemetrySupportBundleResult, String> {
+    fn export_support_bundle(
+        &self,
+        app: &AppHandle,
+    ) -> Result<TelemetrySupportBundleResult, String> {
         let mut inner = self
             .inner
             .lock()
@@ -368,12 +375,47 @@ impl TelemetryManager {
 }
 
 fn telemetry_directory(app: &AppHandle) -> Result<PathBuf, String> {
+    if cfg!(debug_assertions) {
+        return repo_root_directory().map(|repo_root| repo_root.join(TELEMETRY_DIRECTORY_NAME));
+    }
+
     let logs_root = app
         .path()
         .app_log_dir()
         .or_else(|_| app.path().app_data_dir().map(|path| path.join("logs")))
         .map_err(|error| format!("Failed to resolve telemetry directory: {error}"))?;
     Ok(logs_root.join(TELEMETRY_DIRECTORY_NAME))
+}
+
+fn repo_root_directory() -> Result<PathBuf, String> {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .map(PathBuf::from)
+        .ok_or_else(|| "Failed to resolve repository root for telemetry storage".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repo_root_directory_resolves_to_the_repository_root() {
+        let expected_repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("Cargo manifest directory should have a parent")
+            .to_path_buf();
+
+        assert_eq!(
+            repo_root_directory().expect("repo root should resolve"),
+            expected_repo_root
+        );
+        assert_eq!(
+            repo_root_directory()
+                .expect("repo root should resolve")
+                .join(TELEMETRY_DIRECTORY_NAME),
+            expected_repo_root.join(TELEMETRY_DIRECTORY_NAME),
+        );
+    }
 }
 
 fn prune_old_sessions(trace_directory: &PathBuf) {

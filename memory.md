@@ -1,5 +1,16 @@
 # GreebleFS Memory
 
+# 2026-04-19 — Dev Telemetry Now Writes Into Repo-Local `.telemetry/`
+
+- `src-tauri/src/telemetry.rs` now resolves the telemetry trace directory differently in dev vs release:
+  - `bun run tauri dev` stores session JSONL files under repo-local `.telemetry/`
+  - release builds still use the Tauri app-log/app-data path
+- The repo root is derived from `CARGO_MANIFEST_DIR` at runtime, so the dev path stays portable and does not hardcode a machine-specific absolute path.
+- `.gitignore` now excludes `.telemetry/` so the local trace folder stays out of version control while remaining easy to inspect for agents.
+- Validation:
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml`
+  - targeted `cargo test --manifest-path src-tauri/Cargo.toml repo_root_directory_resolves_to_the_repository_root -- --nocapture` is still blocked by unrelated pre-existing compile drift in `src-tauri/src/plugin_commands.rs` and `src-tauri/src/video_engine.rs`
+
 ## 2026-04-18 — Spreadsheet Bootstrap Failure From `xlsx` Default Import
 
 - The shell bootstrap can fail before React mounts if the spreadsheet lane imports `xlsx` as a default binding from the package ESM entry.
