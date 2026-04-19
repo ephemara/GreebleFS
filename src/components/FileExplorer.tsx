@@ -172,6 +172,7 @@ import { ExplorerArchivePreview } from "./ExplorerArchivePreview";
 import { ExplorerFolderPreview } from "./ExplorerFolderPreview";
 import { ExplorerFontPreview } from "./ExplorerFontPreview";
 import { ExplorerSpreadsheetWorkbench } from "./ExplorerSpreadsheetWorkbench";
+import { ExplorerDocxWorkbench } from "./ExplorerDocxWorkbench";
 import {
   ExplorerPdfWorkbench,
   type ExplorerPdfWorkbenchChromeState,
@@ -236,6 +237,7 @@ import {
   getSpreadsheetFileKind,
   getVideoPreviewMimeType,
   isAudioPreviewExtension,
+  isDocxPreviewExtension,
   isEditableTextExtension,
   isExecutableExtension,
   isImagePreviewExtension,
@@ -561,6 +563,13 @@ type PreviewState =
       descriptor: ExplorerArchiveFormatDescriptor;
     }
   | {
+      type: "docx";
+      path: string;
+      name: string;
+      extension: string;
+      size: number;
+    }
+  | {
       type: "fallback";
       path: string;
       name: string;
@@ -869,118 +878,116 @@ function shouldIgnoreExplorerDragLeave(event: React.DragEvent): boolean {
 }
 
 const EXT_TYPE_LABEL: Record<string, string> = {
+  // Rust / Systems
   rs: "Rust",
-  py: "Python",
-  js: "JavaScript",
-  jsx: "JavaScript",
-  ts: "TypeScript",
-  tsx: "TypeScript",
-  cpp: "C++",
-  cc: "C++",
-  cxx: "C++",
-  c: "C",
-  h: "C Header",
-  hpp: "C++ Header",
-  cs: "C#",
-  java: "Java",
-  go: "Go",
-  rb: "Ruby",
+  c: "C", h: "C Header",
+  cpp: "C++", cc: "C++", cxx: "C++", hpp: "C++ Header", hxx: "C++ Header",
+  zig: "Zig", d: "D", nim: "Nim", odin: "Odin", v: "V",
+  // JVM / managed
+  java: "Java", kt: "Kotlin", kts: "Kotlin",
+  cs: "C#", fs: "F#", fsi: "F#", fsx: "F# Script", vb: "VB.NET",
+  scala: "Scala", groovy: "Groovy",
+  clj: "Clojure", cljs: "ClojureScript", cljc: "Clojure",
+  // Scripting
+  py: "Python", pyw: "Python",
+  rb: "Ruby", rbw: "Ruby",
   php: "PHP",
-  swift: "Swift",
-  kt: "Kotlin",
-  dart: "Dart",
-  lua: "Lua",
-  zig: "Zig",
-  html: "HTML",
-  htm: "HTML",
-  css: "CSS",
-  scss: "SCSS",
-  sass: "Sass",
-  less: "Less",
-  json: "JSON",
-  yaml: "YAML",
-  yml: "YAML",
-  toml: "TOML",
-  xml: "XML",
-  ini: "Config",
-  cfg: "Config",
-  md: "Markdown",
-  mdx: "Markdown",
-  txt: "Text",
+  pl: "Perl", pm: "Perl",
+  lua: "Lua", tcl: "Tcl",
+  r: "R",
+  // TypeScript / JavaScript
+  ts: "TypeScript", tsx: "TypeScript", mts: "TypeScript", cts: "TypeScript",
+  js: "JavaScript", jsx: "JavaScript", mjs: "JavaScript", cjs: "JavaScript",
+  // Web
+  vue: "Vue", svelte: "Svelte", astro: "Astro",
+  html: "HTML", htm: "HTML",
+  css: "CSS", scss: "SCSS", sass: "Sass", less: "Less",
+  // Shell
+  sh: "Shell", bash: "Shell", zsh: "Shell", fish: "Shell", ksh: "Shell",
+  ps1: "PowerShell", bat: "Batch", cmd: "Command",
+  // Functional
+  hs: "Haskell", lhs: "Haskell",
+  ml: "OCaml", mli: "OCaml",
+  ex: "Elixir", exs: "Elixir",
+  erl: "Erlang", hrl: "Erlang",
+  elm: "Elm", purs: "PureScript",
+  lisp: "Lisp", el: "Emacs Lisp", scm: "Scheme", rkt: "Racket",
+  f: "Fortran", f90: "Fortran", f95: "Fortran",
+  // Go / Swift / Dart
+  go: "Go", swift: "Swift", dart: "Dart",
+  // Shader
+  glsl: "GLSL", hlsl: "HLSL", wgsl: "WGSL",
+  vert: "Shader", frag: "Shader", comp: "Compute Shader", metal: "Metal",
+  // Data / config
+  json: "JSON", jsonc: "JSON", json5: "JSON5", jsonl: "JSON Lines",
+  toml: "TOML", yaml: "YAML", yml: "YAML",
+  xml: "XML", ini: "Config", cfg: "Config", conf: "Config",
+  env: "Env", properties: "Properties",
+  hcl: "HCL", tf: "Terraform", tfvars: "Terraform",
+  nix: "Nix", dhall: "Dhall", ron: "RON", kdl: "KDL", pkl: "Pkl",
+  graphql: "GraphQL", gql: "GraphQL",
+  proto: "Protobuf", fbs: "FlatBuffers", capnp: "Cap'n Proto",
+  // Docs / markup
+  md: "Markdown", mdx: "MDX", markdown: "Markdown",
+  rst: "reStructuredText", adoc: "AsciiDoc",
+  tex: "LaTeX", latex: "LaTeX",
+  txt: "Text", log: "Log",
+  // DB
+  sql: "SQL", psql: "PostgreSQL", cql: "CQL",
+  db: "Database", sqlite: "SQLite", sqlite3: "SQLite",
+  // PDF
   pdf: "PDF",
-  csv: "CSV",
-  tsv: "TSV",
-  xls: "Spreadsheet",
-  xlsx: "Spreadsheet",
-  xlsm: "Spreadsheet",
-  xlsb: "Spreadsheet",
-  ods: "Spreadsheet",
-  glsl: "GLSL",
-  hlsl: "HLSL",
-  wgsl: "WGSL",
-  vert: "Shader",
-  frag: "Shader",
-  ps1: "PowerShell",
-  sh: "Shell",
-  bash: "Shell",
-  zsh: "Shell",
-  bat: "Batch",
-  cmd: "Command",
-  exe: "Executable",
-  msi: "Installer",
-  dmg: "Disk Image",
-  dll: "Library",
-  so: "Library",
-  dylib: "Library",
-  zip: "Archive",
-  rar: "Archive",
-  "7z": "Archive",
-  tar: "Archive",
-  gz: "Archive",
-  bz2: "Archive",
-  xz: "Archive",
-  jpg: "Image",
-  jpeg: "Image",
-  png: "Image",
-  gif: "Image",
-  webp: "Image",
-  bmp: "Image",
-  ico: "Image",
-  svg: "Vector",
-  tiff: "Image",
-  tif: "Image",
-  avif: "Image",
-  mp4: "Video",
-  mkv: "Video",
-  avi: "Video",
-  mov: "Video",
-  wmv: "Video",
-  flv: "Video",
-  webm: "Video",
-  mp3: "Audio",
-  wav: "Audio",
-  flac: "Audio",
-  ogg: "Audio",
-  m4a: "Audio",
-  aac: "Audio",
-  opus: "Audio",
-  ttf: "Font",
-  otf: "Font",
-  woff: "Font",
-  woff2: "Font",
-  fbx: "3D Model",
-  obj: "3D Model",
-  glb: "3D Model",
-  gltf: "3D Model",
-  uasset: "UE Asset",
-  uproject: "UE Project",
-  sql: "SQL",
-  db: "Database",
-  sqlite: "Database",
-  log: "Log",
+  // Spreadsheet
+  csv: "CSV", tsv: "TSV",
+  xls: "Spreadsheet", xlsx: "Spreadsheet", xlsm: "Spreadsheet",
+  xlsb: "Spreadsheet", ods: "Spreadsheet",
+  // Word processor / rich text
+  docx: "Word Document", doc: "Word Document",
+  rtf: "Rich Text", odt: "OpenDocument Text",
+  pptx: "PowerPoint", ppt: "PowerPoint", odp: "OpenDocument Presentation",
+  epub: "E-Book",
+  // Font
+  ttf: "Font", otf: "Font", woff: "Font", woff2: "Font",
+  // 3D
+  fbx: "3D Model", obj: "3D Model", glb: "3D Model", gltf: "3D Model", stl: "3D Model",
+  uasset: "UE Asset", uproject: "UE Project",
+  // Image
+  jpg: "Image", jpeg: "Image", png: "Image", gif: "Image",
+  webp: "Image", bmp: "Image", ico: "Image",
+  svg: "Vector", tiff: "Image", tif: "Image", avif: "Image",
+  heic: "Image", heif: "Image", jxl: "Image",
+  psd: "Photoshop", ai: "Illustrator", xcf: "GIMP",
+  // Video
+  mp4: "Video", mkv: "Video", avi: "Video", mov: "Video",
+  wmv: "Video", flv: "Video", webm: "Video",
+  // Audio
+  mp3: "Audio", wav: "Audio", flac: "Audio", ogg: "Audio",
+  m4a: "Audio", aac: "Audio", opus: "Audio", aiff: "Audio",
+  // Archive
+  zip: "Archive", rar: "Archive", "7z": "Archive",
+  tar: "Archive", gz: "Archive", bz2: "Archive", xz: "Archive",
+  zst: "Archive", lz4: "Archive",
+  deb: "Debian Package", rpm: "RPM Package",
+  dmg: "Disk Image", iso: "Disk Image",
+  // Binary
+  exe: "Executable", msi: "Installer",
+  dll: "Library", so: "Library", dylib: "Library",
+  // Blockchain / emerging
+  sol: "Solidity", move: "Move", cairo: "Cairo", vyper: "Vyper",
+  // Subtitles
+  srt: "Subtitles", vtt: "WebVTT", ass: "Subtitles", ssa: "Subtitles",
+  // Misc
   lock: "Lockfile",
-  kain: "Kain",
-  ink: "Ink",
+  diff: "Diff", patch: "Patch",
+  pem: "Certificate", crt: "Certificate", cer: "Certificate",
+  pub: "Public Key", asc: "PGP Key",
+  wat: "WebAssembly",
+  jl: "Julia", coffee: "CoffeeScript", cr: "Crystal",
+  // GIS
+  geojson: "GeoJSON", gpx: "GPS Track", kml: "KML", kmz: "KMZ",
+  shp: "Shapefile", prj: "Projection",
+  // Project-specific
+  kain: "Kain", ink: "Ink",
 };
 
 const FILENAME_TYPE_LABEL: Record<string, string> = {
@@ -3671,6 +3678,14 @@ function PreviewPanel({
           <ExplorerSqlitePreview
             dbPath={preview.path}
             dbName={preview.name}
+          />
+        )}
+        {preview.type === "docx" && (
+          <ExplorerDocxWorkbench
+            path={preview.path}
+            name={preview.name}
+            extension={preview.extension}
+            onRefreshPreviewEntry={onRefreshPreviewEntry}
           />
         )}
         {preview.type === "text" &&
@@ -8736,6 +8751,20 @@ export function FileExplorer({
         return;
       }
 
+      if (isDocxPreviewExtension(ext)) {
+        if (isCurrentPreviewRequest()) {
+          setPreview({
+            type: "docx",
+            path: entry.path,
+            name: entry.name,
+            extension: ext,
+            size: entry.size,
+          });
+          setPreviewLoading(false);
+        }
+        return;
+      }
+
       if (isEditableTextEntry(entry)) {
         const renderKind = getDocumentPreviewKind(entry.path);
         setDocumentViewMode(renderKind === "html" ? "preview" : "edit");
@@ -8858,6 +8887,7 @@ export function FileExplorer({
         (getModelPreviewFormat(ext) ||
           isImagePreviewExtension(ext) ||
           isSpreadsheetPreviewExtension(ext) ||
+          isDocxPreviewExtension(ext) ||
           isPdfPreviewExtension(ext) ||
           isAudioPreviewExtension(ext) ||
           isVideoPreviewExtension(ext))

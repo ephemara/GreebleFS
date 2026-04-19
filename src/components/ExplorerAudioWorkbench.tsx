@@ -26,8 +26,6 @@ import {
   analyzeExplorerAudioPreview,
   exportExplorerAudioTransform,
   type ExplorerAudioPreviewAnalysis,
-  type ExplorerAudioBatchInput,
-  type ExplorerAudioBatchOutput,
 } from '../runtime/audioWorkbenchBackend';
 import {
   getExplorerVstDefaultScanPaths,
@@ -355,8 +353,6 @@ export function ExplorerAudioWorkbench({
   const [fadeInSeconds, setFadeInSeconds] = useState(0);
   const [fadeOutSeconds, setFadeOutSeconds] = useState(0);
   const [pitchShiftCents, setPitchShiftCents] = useState(0);
-  const [transformPending, setTransformPending] = useState(false);
-  const [conversionFormat, setConversionFormat] = useState('wav');
   
   // VST Discovery State
   const [discoveredPlugins, setDiscoveredPlugins] = useState<ExplorerVstPluginEntry[]>([]);

@@ -126,49 +126,60 @@ const EXECUTABLE_EXTENSIONS = [
 ] as const;
 
 const EDITABLE_TEXT_EXTENSIONS = [
-  "ts",
-  "tsx",
-  "js",
-  "jsx",
-  "rs",
-  "py",
-  "go",
-  "c",
-  "cpp",
-  "h",
-  "hpp",
-  "cs",
-  "java",
-  "rb",
-  "php",
-  "swift",
-  "kt",
-  "vue",
-  "html",
-  "css",
-  "scss",
-  "json",
-  "toml",
-  "yaml",
-  "yml",
-  "xml",
-  "md",
-  "sh",
-  "ps1",
-  "bat",
-  "lua",
-  "sql",
-  "zig",
-  "env",
-  "dart",
-  "glsl",
-  "wgsl",
-  "hlsl",
-  "ini",
-  "txt",
-  "kain",
-  "ink",
-  "log",
+  // Web / JS ecosystem
+  "ts", "tsx", "js", "jsx", "mjs", "cjs", "vue", "svelte", "astro",
+  "html", "htm", "css", "scss", "sass", "less",
+  // Systems
+  "rs", "c", "cpp", "cc", "cxx", "h", "hpp", "hxx",
+  "zig", "d", "nim", "odin", "v",
+  // JVM / managed
+  "java", "kt", "kts", "cs", "fs", "fsi", "fsx", "vb",
+  "scala", "groovy", "clj", "cljs", "cljc",
+  // Scripting
+  "py", "pyw", "rb", "rbw", "php", "php3", "php4", "php5",
+  "pl", "pm", "t", "lua", "tcl", "r",
+  "sh", "bash", "zsh", "fish", "ksh", "ps1", "bat", "cmd",
+  // Functional
+  "hs", "lhs", "ml", "mli", "mll", "mly",
+  "purs", "elm", "ex", "exs", "erl", "hrl",
+  "lisp", "el", "scm", "rkt",
+  "ml", "ocaml", "f", "f90", "f95", "for",
+  // Go / Swift / Dart etc.
+  "go", "swift", "dart",
+  // Shader
+  "glsl", "hlsl", "wgsl", "vert", "frag", "comp", "metal",
+  // Data / config
+  "json", "jsonc", "json5", "jsonl",
+  "toml", "yaml", "yml", "xml", "ini", "cfg", "conf",
+  "env", "properties", "editorconfig", "gitignore", "gitattributes",
+  "hcl", "tf", "tfvars",
+  "nix", "dhall", "ron", "kdl", "cue", "pkl",
+  "graphql", "gql",
+  "proto", "fbs", "capnp",
+  // Docs / markup
+  "md", "mdx", "markdown", "rst", "adoc", "tex", "latex",
+  "txt", "log", "csv", "tsv",
+  // DB / query
+  "sql", "psql", "cql", "flux",
+  // Blockchain / emerging
+  "sol", "move", "cairo", "vyper",
+  // Infra / cloud
+  "bicep", "dockerfile", "vagrantfile",
+  // Other languages
+  "coffee", "hx", "cr", "raku", "p6", "apl",
+  "hack", "hack",
+  "wat", "wasm_text",
+  "jl",
+  // Project-specific
+  "kain", "ink",
+  // Subtitles / playlists (text)
+  "srt", "vtt", "ass", "ssa", "sub", "m3u", "pls",
+  // Cert / key (text)
+  "pem", "crt", "cer", "pub", "asc",
+  // Game / engine text assets
+  "uss", "pcf",
+  // Misc plain text
+  "diff", "patch",
 ] as const;
 
 export const MODEL_PREVIEW_FORMAT_BY_EXTENSION: Record<
@@ -182,48 +193,190 @@ export const MODEL_PREVIEW_FORMAT_BY_EXTENSION: Record<
   stl: "stl",
 };
 
+// ── DOCX / Office word-processor formats ──────────────────────────────────────
+const DOCX_PREVIEW_EXTENSIONS = [
+  "docx",
+  "doc",
+  "rtf",
+  "odt",
+] as const;
+
+const DOCX_PREVIEW_EXTENSION_SET = new Set<string>(DOCX_PREVIEW_EXTENSIONS);
+
+export function isDocxPreviewExtension(extension: string): boolean {
+  return DOCX_PREVIEW_EXTENSION_SET.has(normalizeExtension(extension));
+}
+
 const MONACO_LANGUAGE_BY_EXTENSION: Record<string, string> = {
+  // TypeScript / JavaScript
   ts: "typescript",
   tsx: "typescript",
+  mts: "typescript",
+  cts: "typescript",
   js: "javascript",
   jsx: "javascript",
-  rs: "rust",
-  py: "python",
-  go: "go",
-  c: "c",
-  cpp: "cpp",
-  h: "cpp",
-  cs: "csharp",
-  java: "java",
-  rb: "ruby",
-  php: "php",
-  swift: "swift",
-  kt: "kotlin",
+  mjs: "javascript",
+  cjs: "javascript",
+  // Web
   vue: "html",
+  svelte: "html",
+  astro: "html",
   html: "html",
+  htm: "html",
   css: "css",
   scss: "scss",
+  sass: "scss",
+  less: "less",
+  // Systems
+  rs: "rust",
+  c: "c",
+  cpp: "cpp",
+  cc: "cpp",
+  cxx: "cpp",
+  h: "cpp",
+  hpp: "cpp",
+  hxx: "cpp",
+  zig: "zig",
+  d: "plaintext",
+  nim: "plaintext",
+  odin: "plaintext",
+  v: "plaintext",
+  // JVM / managed
+  java: "java",
+  kt: "kotlin",
+  kts: "kotlin",
+  cs: "csharp",
+  fs: "fsharp",
+  fsi: "fsharp",
+  fsx: "fsharp",
+  vb: "vb",
+  scala: "scala",
+  groovy: "java",
+  clj: "clojure",
+  cljs: "clojure",
+  cljc: "clojure",
+  // Scripting
+  py: "python",
+  pyw: "python",
+  rb: "ruby",
+  rbw: "ruby",
+  php: "php",
+  pl: "perl",
+  pm: "perl",
+  lua: "lua",
+  tcl: "tcl",
+  r: "r",
+  // Shell
+  sh: "shell",
+  bash: "shell",
+  zsh: "shell",
+  fish: "shell",
+  ksh: "shell",
+  ps1: "powershell",
+  bat: "bat",
+  cmd: "bat",
+  // Functional
+  hs: "haskell",
+  lhs: "haskell",
+  ml: "plaintext",
+  mli: "plaintext",
+  ex: "elixir",
+  exs: "elixir",
+  erl: "erlang",
+  hrl: "erlang",
+  elm: "elm",
+  purs: "plaintext",
+  lisp: "plaintext",
+  el: "plaintext",
+  scm: "plaintext",
+  rkt: "plaintext",
+  f: "plaintext",
+  f90: "plaintext",
+  f95: "plaintext",
+  // Go / Swift / Dart
+  go: "go",
+  swift: "swift",
+  dart: "dart",
+  // Shader
+  glsl: "glsl",
+  hlsl: "hlsl",
+  wgsl: "wgsl",
+  vert: "glsl",
+  frag: "glsl",
+  comp: "glsl",
+  metal: "plaintext",
+  // Data / config
   json: "json",
+  jsonc: "json",
+  json5: "json",
+  jsonl: "json",
   toml: "toml",
   yaml: "yaml",
   yml: "yaml",
   xml: "xml",
-  md: "markdown",
-  sh: "shell",
-  ps1: "powershell",
-  bat: "bat",
-  lua: "lua",
-  sql: "sql",
-  zig: "zig",
   ini: "ini",
+  cfg: "ini",
+  conf: "ini",
   env: "shell",
-  dart: "dart",
-  glsl: "glsl",
-  wgsl: "wgsl",
-  hlsl: "hlsl",
+  properties: "ini",
+  hcl: "hcl",
+  tf: "hcl",
+  tfvars: "hcl",
+  nix: "plaintext",
+  graphql: "graphql",
+  gql: "graphql",
+  proto: "proto",
+  // Docs / markup
+  md: "markdown",
+  mdx: "markdown",
+  markdown: "markdown",
+  rst: "restructuredtext",
+  tex: "latex",
+  latex: "latex",
+  txt: "plaintext",
+  log: "plaintext",
+  // DB / query
+  sql: "sql",
+  psql: "pgsql",
+  cql: "plaintext",
+  flux: "plaintext",
+  // Blockchain / emerging
+  sol: "sol",
+  move: "plaintext",
+  cairo: "plaintext",
+  vyper: "python",
+  // Infra
+  bicep: "bicep",
+  // WebAssembly text
+  wat: "wat",
+  // Julia
+  jl: "julia",
+  // Other
+  coffee: "coffeescript",
+  cr: "plaintext",
+  // Subtitles / playlists
+  srt: "plaintext",
+  vtt: "plaintext",
+  ass: "plaintext",
+  ssa: "plaintext",
+  sub: "plaintext",
+  m3u: "plaintext",
+  pls: "ini",
+  // Certs / keys
+  pem: "plaintext",
+  crt: "plaintext",
+  cer: "plaintext",
+  pub: "plaintext",
+  asc: "plaintext",
+  // Miscellaneous
+  diff: "diff",
+  patch: "diff",
+  // GIS text formats
+  prj: "plaintext",
+  cpg: "plaintext",
+  // Project-specific
   kain: "plaintext",
   ink: "plaintext",
-  log: "plaintext",
 };
 
 const IMAGE_PREVIEW_EXTENSION_SET = new Set<string>(IMAGE_PREVIEW_EXTENSIONS);
@@ -356,6 +509,9 @@ export function isEditableTextExtension(
     return false;
   }
   if (isPdfPreviewExtension(normalizedExtension)) {
+    return false;
+  }
+  if (isDocxPreviewExtension(normalizedExtension)) {
     return false;
   }
   if (getModelPreviewFormat(normalizedExtension)) {
