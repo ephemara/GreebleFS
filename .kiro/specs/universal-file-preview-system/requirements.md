@@ -573,23 +573,39 @@ The current preview system supports: image, audio, video, font, sqlite, pdf, tex
 
 ## Implementation Priority Matrix
 
-| Phase | Category | Complexity | Value | Priority |
-|-------|----------|------------|-------|----------|
-| 1 | Extended Archives | Low | High | P0 |
-| 1 | Hex Viewer | Low | High | P0 |
-| 1 | Camera RAW | Medium | High | P0 |
-| 1 | Additional Images | Low | Medium | P1 |
-| 2 | Office Documents | Medium | High | P1 |
-| 2 | Data Formats | Medium | High | P1 |
-| 2 | Certificates | Medium | Medium | P1 |
-| 2 | Subtitles | Low | Medium | P1 |
-| 3 | Geospatial Raster | High | Medium | P2 |
-| 3 | Geospatial Vector | High | Medium | P2 |
-| 3 | Jupyter Notebooks | Medium | High | P2 |
-| 3 | Molecular Structures | High | Medium | P2 |
-| 4 | LiDAR/Point Cloud | High | Low | P3 |
-| 4 | Bioinformatics | High | Low | P3 |
-| 4 | Game Engine Assets | Medium | Low | P3 |
+| Phase | Category | Preview | Editing | Complexity | Value | Priority |
+|-------|----------|---------|---------|------------|-------|----------|
+| 1 | Extended Archives | ✓ | - | Low | High | P0 |
+| 1 | Hex Viewer | ✓ | ✓ | Low | High | P0 |
+| 1 | Camera RAW | ✓ | ✓ | Medium | High | P0 |
+| 1 | Additional Images | ✓ | - | Low | Medium | P1 |
+| 2 | Office Documents | ✓ | ✓ | Medium | High | P1 |
+| 2 | Data Formats | ✓ | ✓ | Medium | High | P1 |
+| 2 | Certificates | ✓ | ✓ | Medium | Medium | P1 |
+| 2 | Subtitles | ✓ | ✓ | Low | Medium | P1 |
+| 3 | Geospatial Raster | ✓ | - | High | Medium | P2 |
+| 3 | Geospatial Vector | ✓ | ✓ | High | Medium | P2 |
+| 3 | Jupyter Notebooks | ✓ | ✓ | Medium | High | P2 |
+| 3 | Molecular Structures | ✓ | ✓ | High | Medium | P2 |
+| 4 | LiDAR/Point Cloud | ✓ | - | High | Low | P3 |
+| 4 | Bioinformatics | ✓ | - | High | Low | P3 |
+| 4 | Game Engine Assets | ✓ | - | Medium | Low | P3 |
+
+### Editing Implementation Notes
+
+| Format | Editing Type | Library Support | Implementation Effort |
+|--------|--------------|-----------------|----------------------|
+| GeoJSON | Geometry + Properties | leaflet-draw, turf | Medium |
+| Jupyter Notebooks | Cell editing | @jupyterlab/nbformat | Medium |
+| Camera RAW | Non-destructive adjustments | rawloader + custom | Medium |
+| PSD | Layer visibility, export | @webtoon/psd | Low |
+| PPTX | Slide reordering | jszip | Low |
+| Parquet | Cell editing | apache-arrow | Medium |
+| CBOR/MessagePack | JSON editing | cbor-x, msgpack | Low |
+| Subtitles | Timing + text | Custom | Low |
+| Hex | Byte editing | Custom | Low |
+| Certificates | Generation + export | node-forge, rcgen | Medium |
+| Molecular | Bond rotation, export | 3dmol/NGL | Medium |
 
 ---
 

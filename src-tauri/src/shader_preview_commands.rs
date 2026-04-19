@@ -167,7 +167,7 @@ fn inspect_shader_preview_document(path: &str) -> Result<ExplorerShaderPreviewDo
             })?;
             inspect_spirv_shader_source(&input_path, &bytes, None, None)
         }
-    };
+    }?;
 
     Ok(ExplorerShaderPreviewDocument {
         path: path.to_string(),
@@ -518,8 +518,6 @@ fn build_shader_payload(
 
 fn validate_and_write_wgsl(module: &naga::Module) -> Result<String, String> {
     let info = Validator::new(ValidationFlags::all(), Capabilities::all())
-        .subgroup_stages(naga::valid::ShaderStages::all())
-        .subgroup_operations(naga::valid::SubgroupOperationSet::all())
         .validate(module)
         .map_err(|error| error.to_string())?;
     naga::back::wgsl::write_string(module, &info, naga::back::wgsl::WriterFlags::empty())
@@ -530,10 +528,13 @@ fn reflect_module_entry_points(module: &naga::Module) -> Vec<ExplorerShaderEntry
     module
         .entry_points
         .iter()
-        .map(|entry_point| ExplorerShaderEntryPoint {
-            name: entry_point.name.clone(),
-            stage: map_naga_stage(entry_point.stage),
-            supports_live_preview: true,
+        .filter_map(|entry_point| {
+            let stage = map_naga_stage(entry_point.stage)?;
+            Some(ExplorerShaderEntryPoint {
+                name: entry_point.name.clone(),
+                stage,
+                supports_live_preview: true,
+            })
         })
         .collect()
 }
@@ -737,27 +738,33 @@ fn diagnostic_from_message(
     message: String,
 ) -> ExplorerShaderDiagnostic {
     let location_regex = Regex::new(r"(?P<line>\d+):(?P<column>\d+)").ok();
-    let location = location_regex.as_ref().and_then(|regex| regex.captures(&message));
+    let location = location_regex
+        .as_ref()
+        .and_then(|regex| regex.captures(&message))
+        .map(|captures| {
+            (
+                captures
+                    .name("line")
+                    .and_then(|value| value.as_str().parse::<u32>().ok()),
+                captures
+                    .name("column")
+                    .and_then(|value| value.as_str().parse::<u32>().ok()),
+            )
+        });
     ExplorerShaderDiagnostic {
         severity,
         message,
-        line_number: location
-            .as_ref()
-            .and_then(|captures| captures.name("line"))
-            .and_then(|value| value.as_str().parse::<u32>().ok()),
-        column_number: location
-            .as_ref()
-            .and_then(|captures| captures.name("column"))
-            .and_then(|value| value.as_str().parse::<u32>().ok()),
+        line_number: location.as_ref().and_then(|(line, _)| *line),
+        column_number: location.as_ref().and_then(|(_, column)| *column),
     }
 }
 
-fn map_naga_stage(stage: naga::ShaderStage) -> ExplorerShaderStage {
+fn map_naga_stage(stage: naga::ShaderStage) -> Option<ExplorerShaderStage> {
     match stage {
-        naga::ShaderStage::Vertex => ExplorerShaderStage::Vertex,
-        naga::ShaderStage::Fragment => ExplorerShaderStage::Fragment,
-        naga::ShaderStage::Compute => ExplorerShaderStage::Compute,
-        _ => ExplorerShaderStage::Fragment,
+        naga::ShaderStage::Vertex => Some(ExplorerShaderStage::Vertex),
+        naga::ShaderStage::Fragment => Some(ExplorerShaderStage::Fragment),
+        naga::ShaderStage::Compute => Some(ExplorerShaderStage::Compute),
+        _ => None,
     }
 }
 
