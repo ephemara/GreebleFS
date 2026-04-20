@@ -9420,14 +9420,9 @@ export function FileExplorer({
           return;
         }
       }
-      if (currentPreview.type === "pdf" && currentPreview.path !== entry.path) {
-        const shouldCloseCurrentPreview = await requestCurrentPreviewClose();
-        if (!shouldCloseCurrentPreview || !isCurrentPreviewRequest()) {
-          return;
-        }
-      }
       if (
-        currentPreview.type === "shader" &&
+        currentPreview.type !== "none" &&
+        currentPreview.type !== "text" &&
         currentPreview.path !== entry.path
       ) {
         const shouldCloseCurrentPreview = await requestCurrentPreviewClose();
@@ -9435,405 +9430,467 @@ export function FileExplorer({
           return;
         }
       }
+      const resolvedPreview = resolveExplorerPreviewDescriptor(entry, {
+        assetUrlResolver: getPreviewAssetUrl,
+        documentPreviewKindResolver: getDocumentPreviewKind,
+      });
 
-      if (entry.is_dir) {
-        if (isCurrentPreviewRequest()) {
-          setPreview({
-            type: "folder",
-            path: entry.path,
-            name: entry.name,
-          });
-          setPreviewLoading(false);
-        }
-        return;
-      }
-
-      const ext = getEntryExtension(entry);
-      const modelFormat = getModelPreviewFormat(ext);
-
-      if (modelFormat) {
-        if (isCurrentPreviewRequest()) {
-          setPreview({
-            type: "model3d",
-            path: entry.path,
-            format: modelFormat,
-            name: entry.name,
-            size: entry.size,
-          });
-          setPreviewLoading(false);
-        }
-        return;
-      }
-
-      if (isExplorerArchiveEntry(entry)) {
-        if (isCurrentPreviewRequest()) {
-          const descriptor = getExplorerArchiveDescriptor(entry);
-          if (descriptor) {
+      switch (resolvedPreview.kind) {
+        case "folder":
+          if (isCurrentPreviewRequest()) {
+            setPreview({
+              type: "folder",
+              path: entry.path,
+              name: entry.name,
+            });
+            setPreviewLoading(false);
+          }
+          return;
+        case "model3d":
+          if (isCurrentPreviewRequest()) {
+            setPreview({
+              type: "model3d",
+              path: entry.path,
+              format: resolvedPreview.format,
+              name: entry.name,
+              size: entry.size,
+            });
+            setPreviewLoading(false);
+          }
+          return;
+        case "archive":
+          if (isCurrentPreviewRequest()) {
             setPreview({
               type: "archive",
               path: entry.path,
               name: entry.name,
               size: entry.size,
-              descriptor,
+              descriptor: resolvedPreview.descriptor,
             });
             setPreviewLoading(false);
-          } else {
-            setPreview({ type: "none", path: "" });
-            setPreviewLoading(false);
           }
-        }
-        return;
-      }
-
-      if (isAudioPreviewExtension(ext)) {
-        if (isCurrentPreviewRequest()) {
-          setPreview({
-            type: "audio",
-            path: entry.path,
-            name: entry.name,
-            source: getPreviewAssetUrl(entry.path),
-            extension: ext,
-            mimeType: getAudioPreviewMimeType(ext),
-            size: entry.size,
-          });
-          setPreviewLoading(false);
-        }
-        return;
-      }
-
-      if (isVideoPreviewExtension(ext)) {
-        if (isCurrentPreviewRequest()) {
-          setPreview({
-            type: "video",
-            path: entry.path,
-            name: entry.name,
-            source: getPreviewAssetUrl(entry.path),
-            extension: ext,
-            mimeType: getVideoPreviewMimeType(ext),
-            size: entry.size,
-          });
-          setPreviewLoading(false);
-        }
-        return;
-      }
-
-      if (isImagePreviewExtension(ext)) {
-        if (isCurrentPreviewRequest()) {
-          setPreviewLoading(true);
-          setPreview({
-            type: "fallback",
-            path: entry.path,
-            name: entry.name,
-            label: "Loading preview…",
-            detail: "Decoding image…",
-          });
-        }
-        try {
-          const dataUri = await readExplorerFileBase64(entry.path);
-          if (!isCurrentPreviewRequest()) {
-            return;
-          }
-          setPreview({
-            type: "image",
-            path: entry.path,
-            name: entry.name,
-            content: dataUri,
-          });
-        } catch (error) {
-          if (!isCurrentPreviewRequest()) {
-            return;
-          }
-          setPreview({
-            type: "fallback",
-            path: entry.path,
-            name: entry.name,
-            label: "Image preview unavailable",
-            detail: String(error),
-          });
-        } finally {
+          return;
+        case "audio":
           if (isCurrentPreviewRequest()) {
-            setPreviewLoading(false);
-          }
-        }
-        return;
-      }
-
-      if (isFontPreviewExtension(ext)) {
-        if (isCurrentPreviewRequest()) {
-          setPreview({
-            type: "font",
-            path: entry.path,
-            name: entry.name,
-            source: getPreviewAssetUrl(entry.path),
-            extension: ext,
-            size: entry.size,
-          });
-          setPreviewLoading(false);
-        }
-        return;
-      }
-
-      if (isSqlitePreviewExtension(ext)) {
-        if (isCurrentPreviewRequest()) {
-          setPreview({
-            type: "sqlite",
-            path: entry.path,
-            name: entry.name,
-            size: entry.size,
-          });
-          setPreviewLoading(false);
-        }
-        return;
-      }
-
-      if (isPdfPreviewExtension(ext)) {
-        setDocumentViewMode("preview");
-        if (
-          currentPreview.type === "pdf" &&
-          currentPreview.path === entry.path
-        ) {
-          if (isCurrentPreviewRequest()) {
-            setPreview((prev) =>
-              prev.type === "pdf" && prev.path === entry.path
-                ? {
-                    ...prev,
-                    name: entry.name,
-                    size: entry.size,
-                  }
-                : prev,
-            );
+            setPreview({
+              type: "audio",
+              path: entry.path,
+              name: entry.name,
+              source: resolvedPreview.source,
+              extension: resolvedPreview.extension,
+              mimeType: resolvedPreview.mimeType,
+              size: entry.size,
+            });
             setPreviewLoading(false);
           }
           return;
-        }
-
-        if (isCurrentPreviewRequest()) {
-          setPreviewLoading(true);
-          setPreview({
-            type: "fallback",
-            path: entry.path,
-            name: entry.name,
-            label: "Loading PDF…",
-            detail: "Opening PDF preview session…",
-          });
-        }
-
-        try {
-          const document = await openExplorerPdfPreviewDocument(entry.path);
-          if (!isCurrentPreviewRequest()) {
-            return;
-          }
-          setPreview({
-            type: "pdf",
-            path: entry.path,
-            name: entry.name,
-            size: entry.size,
-            document,
-          });
-        } catch (error) {
-          if (!isCurrentPreviewRequest()) {
-            return;
-          }
-          setPreview({
-            type: "fallback",
-            path: entry.path,
-            name: entry.name,
-            label: "PDF preview unavailable",
-            detail: String(error),
-          });
-        } finally {
+        case "video":
           if (isCurrentPreviewRequest()) {
+            setPreview({
+              type: "video",
+              path: entry.path,
+              name: entry.name,
+              source: resolvedPreview.source,
+              extension: resolvedPreview.extension,
+              mimeType: resolvedPreview.mimeType,
+              size: entry.size,
+            });
             setPreviewLoading(false);
           }
-        }
-        return;
-      }
+          return;
+        case "image": {
+          const loadingFallback =
+            buildExplorerPreviewLoadingFallback(resolvedPreview);
+          if (loadingFallback && isCurrentPreviewRequest()) {
+            setPreviewLoading(true);
+            setPreview({
+              type: "fallback",
+              path: entry.path,
+              name: entry.name,
+              label: loadingFallback.label,
+              detail: loadingFallback.detail,
+            });
+          }
 
-      if (isSpreadsheetPreviewExtension(ext)) {
-        if (isCurrentPreviewRequest()) {
-          setPreview({
-            type: "spreadsheet",
-            path: entry.path,
-            name: entry.name,
-            extension: ext,
-            size: entry.size,
-            fileKind: getSpreadsheetFileKind(ext) ?? "workbook",
-          });
-          setPreviewLoading(false);
-        }
-        return;
-      }
-
-      if (isDocxPreviewExtension(ext)) {
-        if (isCurrentPreviewRequest()) {
-          setPreview({
-            type: "docx",
-            path: entry.path,
-            name: entry.name,
-            extension: ext,
-            size: entry.size,
-          });
-          setPreviewLoading(false);
-        }
-        return;
-      }
-
-      if (isShaderPreviewExtension(ext)) {
-        setDocumentViewMode("preview");
-        const rememberedSelection =
-          shaderPreviewSelectionMemoryRef.current.get(entry.path) ?? null;
-        if (isCurrentPreviewRequest()) {
-          setPreviewLoading(true);
-          setPreview({
-            type: "fallback",
-            path: entry.path,
-            name: entry.name,
-            label: "Loading shader workbench…",
-            detail: "Inspecting shader source and preview ABI support…",
-          });
-        }
-
-        try {
-          const document = await inspectExplorerShaderPreviewDocument(
-            entry.path,
+          const previewCacheKey = `${resolvedPreview.kind}:${entry.path}`;
+          const cachedDataUri = readCachedExplorerPreview<string>(
+            previewCacheKey,
           );
-          if (!isCurrentPreviewRequest()) {
+          if (cachedDataUri != null) {
+            if (isCurrentPreviewRequest()) {
+              setPreview({
+                type: "image",
+                path: entry.path,
+                name: entry.name,
+                content: cachedDataUri,
+              });
+              setPreviewLoading(false);
+            }
             return;
           }
-          const selectedStage =
-            rememberedSelection?.selectedStage ?? document.selectedStage;
-          const selectedEntryPoint =
-            rememberedSelection?.selectedEntryPoint ??
-            document.selectedEntryPoint;
-          shaderPreviewSelectionMemoryRef.current.set(entry.path, {
-            selectedStage,
-            selectedEntryPoint,
-          });
-          setPreview({
-            type: "shader",
-            path: entry.path,
-            name: entry.name,
-            size: entry.size,
-            format: getShaderPreviewFormat(ext) ?? document.format,
-            editableSource: document.editableSource,
-            inspectionSource: document.inspectionSource,
-            isReadOnly: document.isReadOnly,
-            selectedScene:
-              currentPreview.type === "shader" &&
-              currentPreview.path === entry.path
-                ? currentPreview.selectedScene
-                : "sphere",
-            selectedStage,
-            selectedEntryPoint,
-            entryPoints: document.entryPoints,
-            diagnostics: document.diagnostics,
-            normalizedWgsl: document.normalizedWgsl,
-            previewAbi: document.previewAbi,
-            supportsLivePreview: document.supportsLivePreview,
-            isDirty: false,
-            isSaving: false,
-            error: null,
-          });
-        } catch (shaderError) {
-          if (!isCurrentPreviewRequest()) {
-            return;
+
+          try {
+            const dataUri = await readExplorerFileBase64(entry.path);
+            storeCachedExplorerPreview({
+              key: previewCacheKey,
+              path: entry.path,
+              value: dataUri,
+              bytes: estimateStringPreviewCacheBytes(dataUri),
+            });
+            if (!isCurrentPreviewRequest()) {
+              return;
+            }
+            setPreview({
+              type: "image",
+              path: entry.path,
+              name: entry.name,
+              content: dataUri,
+            });
+          } catch (error) {
+            if (!isCurrentPreviewRequest()) {
+              return;
+            }
+            const errorFallback = buildExplorerPreviewErrorFallback(
+              resolvedPreview,
+              error,
+            );
+            setPreview({
+              type: "fallback",
+              path: entry.path,
+              name: entry.name,
+              label: errorFallback.label,
+              detail: errorFallback.detail,
+            });
+          } finally {
+            if (isCurrentPreviewRequest()) {
+              setPreviewLoading(false);
+            }
           }
-          setPreview({
-            type: "fallback",
-            path: entry.path,
-            name: entry.name,
-            label: "Shader preview unavailable",
-            detail: String(shaderError),
-          });
-        } finally {
+          return;
+        }
+        case "font":
           if (isCurrentPreviewRequest()) {
+            setPreview({
+              type: "font",
+              path: entry.path,
+              name: entry.name,
+              source: resolvedPreview.source,
+              extension: resolvedPreview.extension,
+              size: entry.size,
+            });
             setPreviewLoading(false);
           }
-        }
-        return;
-      }
-
-      if (isEditableTextEntry(entry)) {
-        const renderKind = getDocumentPreviewKind(entry.path);
-        setDocumentViewMode(renderKind === "html" ? "preview" : "edit");
-        if (
-          currentPreview.type === "text" &&
-          currentPreview.path === entry.path
-        ) {
+          return;
+        case "sqlite":
           if (isCurrentPreviewRequest()) {
-            setPreview((prev) =>
-              prev.type === "text" && prev.path === entry.path
-                ? {
-                    ...prev,
-                    name: entry.name,
-                    language: getMonacoLanguage(ext),
-                    renderKind,
-                    focusTarget,
-                  }
-                : prev,
+            setPreview({
+              type: "sqlite",
+              path: entry.path,
+              name: entry.name,
+              size: entry.size,
+            });
+            setPreviewLoading(false);
+          }
+          return;
+        case "pdf": {
+          setDocumentViewMode("preview");
+          if (
+            currentPreview.type === "pdf" &&
+            currentPreview.path === entry.path
+          ) {
+            if (isCurrentPreviewRequest()) {
+              setPreview((prev) =>
+                prev.type === "pdf" && prev.path === entry.path
+                  ? {
+                      ...prev,
+                      name: entry.name,
+                      size: entry.size,
+                    }
+                  : prev,
+              );
+              setPreviewLoading(false);
+            }
+            return;
+          }
+
+          const loadingFallback =
+            buildExplorerPreviewLoadingFallback(resolvedPreview);
+          if (loadingFallback && isCurrentPreviewRequest()) {
+            setPreviewLoading(true);
+            setPreview({
+              type: "fallback",
+              path: entry.path,
+              name: entry.name,
+              label: loadingFallback.label,
+              detail: loadingFallback.detail,
+            });
+          }
+
+          try {
+            const document = await openExplorerPdfPreviewDocument(entry.path);
+            if (!isCurrentPreviewRequest()) {
+              return;
+            }
+            setPreview({
+              type: "pdf",
+              path: entry.path,
+              name: entry.name,
+              size: entry.size,
+              document,
+            });
+          } catch (error) {
+            if (!isCurrentPreviewRequest()) {
+              return;
+            }
+            const errorFallback = buildExplorerPreviewErrorFallback(
+              resolvedPreview,
+              error,
             );
+            setPreview({
+              type: "fallback",
+              path: entry.path,
+              name: entry.name,
+              label: errorFallback.label,
+              detail: errorFallback.detail,
+            });
+          } finally {
+            if (isCurrentPreviewRequest()) {
+              setPreviewLoading(false);
+            }
+          }
+          return;
+        }
+        case "spreadsheet":
+          if (isCurrentPreviewRequest()) {
+            setPreview({
+              type: "spreadsheet",
+              path: entry.path,
+              name: entry.name,
+              extension: resolvedPreview.extension,
+              size: entry.size,
+              fileKind: resolvedPreview.fileKind,
+            });
+            setPreviewLoading(false);
+          }
+          return;
+        case "docx":
+          if (isCurrentPreviewRequest()) {
+            setPreview({
+              type: "docx",
+              path: entry.path,
+              name: entry.name,
+              extension: resolvedPreview.extension,
+              size: entry.size,
+            });
+            setPreviewLoading(false);
+          }
+          return;
+        case "shader": {
+          setDocumentViewMode("preview");
+          const rememberedSelection =
+            shaderPreviewSelectionMemoryRef.current.get(entry.path) ?? null;
+          const loadingFallback =
+            buildExplorerPreviewLoadingFallback(resolvedPreview);
+          if (loadingFallback && isCurrentPreviewRequest()) {
+            setPreviewLoading(true);
+            setPreview({
+              type: "fallback",
+              path: entry.path,
+              name: entry.name,
+              label: loadingFallback.label,
+              detail: loadingFallback.detail,
+            });
+          }
+
+          try {
+            const document = await inspectExplorerShaderPreviewDocument(
+              entry.path,
+            );
+            if (!isCurrentPreviewRequest()) {
+              return;
+            }
+
+            const restoredDraft =
+              document.editableSource == null
+                ? null
+                : loadExplorerEditDraft(
+                    EXPLORER_SHADER_DRAFT_SCOPE,
+                    entry.path,
+                    explorerStringDraftSerializer,
+                  );
+            const resolvedEditableSource = restoredDraft ?? document.editableSource;
+            const resolvedInspectionSource =
+              restoredDraft ?? document.inspectionSource;
+            const hasRestoredDraft =
+              restoredDraft != null &&
+              restoredDraft !== document.editableSource;
+            const selectedStage =
+              rememberedSelection?.selectedStage ?? document.selectedStage;
+            const selectedEntryPoint =
+              rememberedSelection?.selectedEntryPoint ??
+              document.selectedEntryPoint;
+            shaderPreviewSelectionMemoryRef.current.set(entry.path, {
+              selectedStage,
+              selectedEntryPoint,
+            });
+            setPreview({
+              type: "shader",
+              path: entry.path,
+              name: entry.name,
+              size: entry.size,
+              format: resolvedPreview.format ?? document.format,
+              editableSource: resolvedEditableSource,
+              inspectionSource: resolvedInspectionSource,
+              isReadOnly: document.isReadOnly,
+              selectedScene:
+                currentPreview.type === "shader" &&
+                currentPreview.path === entry.path
+                  ? currentPreview.selectedScene
+                  : "sphere",
+              selectedStage,
+              selectedEntryPoint,
+              entryPoints: document.entryPoints,
+              diagnostics: document.diagnostics,
+              normalizedWgsl: document.normalizedWgsl,
+              previewAbi: document.previewAbi,
+              supportsLivePreview: document.supportsLivePreview,
+              isDirty: hasRestoredDraft,
+              isSaving: false,
+              error: null,
+            });
+          } catch (shaderError) {
+            if (!isCurrentPreviewRequest()) {
+              return;
+            }
+            const errorFallback = buildExplorerPreviewErrorFallback(
+              resolvedPreview,
+              shaderError,
+            );
+            setPreview({
+              type: "fallback",
+              path: entry.path,
+              name: entry.name,
+              label: errorFallback.label,
+              detail: errorFallback.detail,
+            });
+          } finally {
+            if (isCurrentPreviewRequest()) {
+              setPreviewLoading(false);
+            }
+          }
+          return;
+        }
+        case "text": {
+          setDocumentViewMode(
+            resolvedPreview.renderKind === "html" ? "preview" : "edit",
+          );
+          if (
+            currentPreview.type === "text" &&
+            currentPreview.path === entry.path
+          ) {
+            if (isCurrentPreviewRequest()) {
+              setPreview((prev) =>
+                prev.type === "text" && prev.path === entry.path
+                  ? {
+                      ...prev,
+                      name: entry.name,
+                      language: resolvedPreview.language,
+                      renderKind: resolvedPreview.renderKind,
+                      focusTarget,
+                    }
+                  : prev,
+              );
+              setPreviewLoading(false);
+            }
+            return;
+          }
+
+          const loadingFallback =
+            buildExplorerPreviewLoadingFallback(resolvedPreview);
+          if (loadingFallback && isCurrentPreviewRequest()) {
+            setPreviewLoading(true);
+            setPreview({
+              type: "fallback",
+              path: entry.path,
+              name: entry.name,
+              label: loadingFallback.label,
+              detail: loadingFallback.detail,
+            });
+          }
+
+          try {
+            const previewCacheKey = `${resolvedPreview.kind}:${entry.path}`;
+            let content = readCachedExplorerPreview<string>(previewCacheKey);
+            if (content == null) {
+              content = await readExplorerTextFile(entry.path);
+              storeCachedExplorerPreview({
+                key: previewCacheKey,
+                path: entry.path,
+                value: content,
+                bytes: estimateStringPreviewCacheBytes(content),
+              });
+            }
+            if (!isCurrentPreviewRequest()) {
+              return;
+            }
+
+            const restoredDraft = loadExplorerEditDraft(
+              EXPLORER_TEXT_DRAFT_SCOPE,
+              entry.path,
+              explorerStringDraftSerializer,
+            );
+            const resolvedContent = restoredDraft ?? content;
+            const hasRestoredDraft =
+              restoredDraft != null && restoredDraft !== content;
+            setPreview({
+              type: "text",
+              path: entry.path,
+              name: entry.name,
+              content: resolvedContent,
+              language: resolvedPreview.language,
+              renderKind: resolvedPreview.renderKind,
+              focusTarget,
+              isDirty: hasRestoredDraft,
+              isSaving: false,
+              lastSavedAt: hasRestoredDraft ? null : Date.now(),
+              error: null,
+            });
+          } catch (error) {
+            if (!isCurrentPreviewRequest()) {
+              return;
+            }
+            const errorFallback = buildExplorerPreviewErrorFallback(
+              resolvedPreview,
+              error,
+            );
+            setPreview({
+              type: "fallback",
+              path: entry.path,
+              name: entry.name,
+              label: errorFallback.label,
+              detail: errorFallback.detail,
+            });
+          } finally {
+            if (isCurrentPreviewRequest()) {
+              setPreviewLoading(false);
+            }
+          }
+          return;
+        }
+        case "unsupported": {
+          if (isCurrentPreviewRequest()) {
+            const fallback = buildExplorerUnsupportedPreviewFallback();
+            setPreview({
+              type: "fallback",
+              path: entry.path,
+              name: entry.name,
+              label: fallback.label,
+              detail: fallback.detail,
+            });
             setPreviewLoading(false);
           }
           return;
         }
-
-        if (isCurrentPreviewRequest()) {
-          setPreviewLoading(true);
-          setPreview({
-            type: "fallback",
-            path: entry.path,
-            name: entry.name,
-            label: "Loading editor…",
-            detail: "Reading text preview…",
-          });
-        }
-
-        try {
-          const content = await readExplorerTextFile(entry.path);
-          if (!isCurrentPreviewRequest()) {
-            return;
-          }
-          setPreview({
-            type: "text",
-            path: entry.path,
-            name: entry.name,
-            content,
-            language: getMonacoLanguage(ext),
-            renderKind,
-            focusTarget,
-            isDirty: false,
-            isSaving: false,
-            lastSavedAt: Date.now(),
-            error: null,
-          });
-        } catch (error) {
-          if (!isCurrentPreviewRequest()) {
-            return;
-          }
-          setPreview({
-            type: "fallback",
-            path: entry.path,
-            name: entry.name,
-            label: "Text preview unavailable",
-            detail: String(error),
-          });
-        } finally {
-          if (isCurrentPreviewRequest()) {
-            setPreviewLoading(false);
-          }
-        }
-        return;
-      }
-
-      if (isCurrentPreviewRequest()) {
-        setPreview({
-          type: "fallback",
-          path: entry.path,
-          name: entry.name,
-          label: "Preview unavailable",
-          detail: "No inline preview is available for this file type.",
-        });
-        setPreviewLoading(false);
       }
     },
     [
@@ -10151,11 +10208,34 @@ export function FileExplorer({
     const newPath = dir + sep + newName;
     try {
       const shouldResaveRenamedPreview =
-        previewRef.current.type === "text" &&
         previewRef.current.path === oldPath &&
+        previewRef.current.type === "text" &&
         previewRef.current.isDirty;
+      const shouldMoveRenamedTextDraft =
+        previewRef.current.path === oldPath &&
+        previewRef.current.type === "text" &&
+        previewRef.current.isDirty;
+      const shouldMoveRenamedShaderDraft =
+        previewRef.current.path === oldPath &&
+        previewRef.current.type === "shader" &&
+        previewRef.current.isDirty &&
+        previewRef.current.editableSource != null;
       await renameExplorerPath(oldPath, newPath);
       invalidateExplorerResultCaches();
+      if (shouldMoveRenamedTextDraft) {
+        moveExplorerEditDraft(
+          EXPLORER_TEXT_DRAFT_SCOPE,
+          oldPath,
+          newPath,
+        );
+      }
+      if (shouldMoveRenamedShaderDraft) {
+        moveExplorerEditDraft(
+          EXPLORER_SHADER_DRAFT_SCOPE,
+          oldPath,
+          newPath,
+        );
+      }
       if (previewSaveTimer.current) {
         window.clearTimeout(previewSaveTimer.current);
         previewSaveTimer.current = null;
@@ -10163,6 +10243,9 @@ export function FileExplorer({
       setPreview((prev) => {
         if (prev.type === "none" || prev.path !== oldPath) return prev;
         if (prev.type === "text") {
+          return { ...prev, path: newPath, name: newName, error: null };
+        }
+        if (prev.type === "shader") {
           return { ...prev, path: newPath, name: newName, error: null };
         }
         if (prev.type === "image") {
@@ -14811,7 +14894,18 @@ export function FileExplorer({
   }, [repositoryPicker?.active]);
 
   const virtualizedViewportWidth = explorerViewportMetrics.clientWidth;
-  const virtualizedViewportHeight = explorerViewportMetrics.clientHeight;
+  const minimumVirtualizedViewportHeight =
+    effectiveViewModeDefinition.presentation === "grid"
+      ? (isSearchActive
+          ? activeGridMetrics?.searchRowHeight
+          : activeGridMetrics?.rowHeight) ?? EXPLORER_LIST_ROW_HEIGHT
+      : (isSearchActive
+          ? activeRowMetrics?.searchRowHeight
+          : activeRowMetrics?.rowHeight) ?? EXPLORER_LIST_ROW_HEIGHT;
+  const virtualizedViewportHeight = Math.max(
+    explorerViewportMetrics.clientHeight,
+    minimumVirtualizedViewportHeight,
+  );
   const virtualizedScrollTop = Math.max(
     0,
     explorerViewportMetrics.scrollTop -
@@ -15041,6 +15135,14 @@ export function FileExplorer({
             activeElement.closest(".monaco-editor") != null
           : false;
 
+      if (
+        preview.type === "text" &&
+        matchesKeybinding(e, keybindings.saveFile)
+      ) {
+        e.preventDefault();
+        void persistPreviewText(preview.path);
+        return;
+      }
       if (
         preview.type === "shader" &&
         matchesKeybinding(e, keybindings.saveFile) &&
