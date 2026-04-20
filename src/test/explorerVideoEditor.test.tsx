@@ -89,4 +89,32 @@ describe('ExplorerVideoEditor', () => {
       expect(source?.getAttribute('type')).toBe('video/webm');
     });
   });
+
+  it('keeps preview mode focused on playback instead of mounting edit-only controls', async () => {
+    render(
+      <ExplorerVideoEditor
+        videoPath="/tmp/demo.mp4"
+        videoName="demo.mp4"
+        videoSource="asset://localhost//tmp/demo.mp4"
+        videoExtension="mp4"
+        videoMimeType="video/mp4"
+        videoSize={1024}
+        mode="preview"
+      />,
+    );
+
+    const player = (await screen.findByLabelText(
+      /video preview: demo\.mp4/i,
+    )) as HTMLVideoElement;
+
+    await waitFor(() => {
+      const source = player.querySelector('source');
+      expect(source?.getAttribute('src')).toBe('asset://localhost//tmp/demo.mp4');
+    });
+
+    expect(player.controls).toBe(true);
+    expect(screen.queryByText('Inspector')).toBeNull();
+    expect(screen.queryByRole('button', { name: /set in/i })).toBeNull();
+    expect(screen.getByText('Direct playback')).toBeInTheDocument();
+  });
 });

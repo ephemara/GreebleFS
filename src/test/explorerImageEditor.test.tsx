@@ -141,12 +141,13 @@ describe('ExplorerImageEditor', () => {
     expect(screen.queryByTestId('explorer-image-editor-preview')).not.toBeInTheDocument();
   });
 
-  it('zooms and pans the live image preview, then resets back to fit', async () => {
+  it('keeps image preview fullscreen-first in preview mode while preserving pan and zoom', async () => {
     render(
       <ExplorerImageEditor
         imagePath="/tmp/preview.png"
         imageName="preview.png"
         imageSource="data:image/png;base64,ZmFrZQ=="
+        mode="preview"
       />,
     );
 
@@ -188,11 +189,73 @@ describe('ExplorerImageEditor', () => {
       expect(zoomBadge).toHaveTextContent('120%');
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Reset All' }));
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reset All' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Crop Tool' })).not.toBeInTheDocument();
+  });
 
-    await waitFor(() => {
-      expect(previewImage.style.transform).toBe('translate(0px, 0px) scale(1)');
-      expect(zoomBadge).toHaveTextContent('100%');
+  it('falls back to the explorer backend when the tauri fs plugin is unavailable during save', async () => {
+    const originalGetContext = HTMLCanvasElement.prototype.getContext;
+    const originalToBlob = HTMLCanvasElement.prototype.toBlob;
+    const createObjectUrlMock = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:preview');
+    const revokeObjectUrlMock = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+      configurable: true,
+      value: () => ({
+        filter: '',
+        drawImage: vi.fn(),
+      }),
     });
+    Object.defineProperty(HTMLCanvasElement.prototype, 'toBlob', {
+      configurable: true,
+      value: (callback: BlobCallback, type?: string | null) => {
+        callback?.(new Blob([Uint8Array.from([1, 2, 3])], { type: type ?? 'image/png' }));
+      },
+    });
+
+    writeFileMock.mockRejectedValueOnce(new Error('fs.write_file not allowed. Plugin not found'));
+    writeExplorerFileMock.mockResolvedValueOnce(undefined);
+
+    try {
+      render(
+        <ExplorerImageEditor
+          imagePath="/tmp/preview.png"
+          imageName="preview.png"
+          imageSource="data:image/png;base64,ZmFrZQ=="
+          mode="edit"
+        />,
+      );
+
+      await screen.findByTestId('explorer-image-editor-preview-image');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      await waitFor(() => {
+        expect(writeFileMock).toHaveBeenCalledTimes(1);
+        expect(writeExplorerFileMock).toHaveBeenCalledWith('/tmp/preview.png', [1, 2, 3]);
+      });
+    } finally {
+      if (originalGetContext) {
+        Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+          configurable: true,
+          value: originalGetContext,
+        });
+      } else {
+        Reflect.deleteProperty(HTMLCanvasElement.prototype, 'getContext');
+      }
+
+      if (originalToBlob) {
+        Object.defineProperty(HTMLCanvasElement.prototype, 'toBlob', {
+          configurable: true,
+          value: originalToBlob,
+        });
+      } else {
+        Reflect.deleteProperty(HTMLCanvasElement.prototype, 'toBlob');
+      }
+
+      createObjectUrlMock.mockRestore();
+      revokeObjectUrlMock.mockRestore();
+    }
   });
 });

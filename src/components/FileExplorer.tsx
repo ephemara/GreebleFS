@@ -262,6 +262,7 @@ import { resolveExplorerSearchScope } from "./fileExplorerSearchScope";
 import type { DocumentPreviewKind } from "./documentPreview";
 import {
   isAudioPreviewExtension,
+  isEditableImagePreviewExtension,
   isExecutableBinaryExtension,
   isVideoPreviewExtension,
   type ModelPreviewFormat,
@@ -517,7 +518,13 @@ interface TransferConflictDialogState {
 }
 type PreviewState =
   | { type: "none"; path: string }
-  | { type: "image"; path: string; name: string; content: string }
+  | {
+      type: "image";
+      path: string;
+      name: string;
+      extension: string;
+      content: string;
+    }
   | {
       type: "spreadsheet";
       path: string;
@@ -3087,7 +3094,7 @@ function PreviewPanel({
   onClose: () => void;
   onWidthChange: (width: number) => void;
   onTextChange: (path: string, content: string) => void;
-  onTextSave: (path: string) => Promise<void>;
+  onTextSave: (path: string) => Promise<boolean>;
   onShaderSourceChange: (path: string, content: string) => void;
   onShaderSelectionChange: (
     path: string,
@@ -3221,6 +3228,10 @@ function PreviewPanel({
   const isPdfPreview = preview.type === "pdf";
   const isShaderPreview = preview.type === "shader";
   const isSpreadsheetPreview = preview.type === "spreadsheet";
+  const isVideoPreview = preview.type === "video";
+  const isEditableImagePreview =
+    preview.type === "image" &&
+    isEditableImagePreviewExtension(preview.extension);
   const pdfPageCount = isPdfPreview
     ? (pdfWorkbenchChromeState?.pageCount ?? preview.document.pageCount)
     : 0;
@@ -3323,8 +3334,10 @@ function PreviewPanel({
   const supportsPreviewModeToggle =
     supportsRenderedPreview ||
     isScriptTextPreview ||
+    isVideoPreview ||
     isPdfPreview ||
-    isShaderPreview;
+    isShaderPreview ||
+    isEditableImagePreview;
   const previewHeaderRowStyle = useMemo<CSSProperties>(
     () => ({
       display: "flex",
@@ -3546,7 +3559,9 @@ function PreviewPanel({
         id: "previewModeToggle",
         label: "Preview Mode Toggle",
         surfaces: ["previewHeader"],
-        isVisible: () => !isPreviewTerminalMode && supportsPreviewModeToggle,
+        isVisible: () =>
+          (!isPreviewTerminalMode || isScriptTextPreview) &&
+          supportsPreviewModeToggle,
         render: () => {
           if (preview.type === "shader") {
             const canSave = !preview.isReadOnly;
@@ -3620,6 +3635,42 @@ function PreviewPanel({
                     Save
                   </button>
                 ) : null}
+              </div>
+            );
+          }
+
+          if (preview.type === "image" && isEditableImagePreview) {
+            return (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: 2,
+                  borderRadius: "var(--overlay-explorer-control-radius)",
+                  border: "1px solid var(--overlay-explorer-chip-border)",
+                  background: "var(--overlay-explorer-chip-bg)",
+                  flexWrap: "wrap",
+                }}
+              >
+                {(
+                  [
+                    { id: "preview", label: "Preview" },
+                    { id: "edit", label: "Edit" },
+                  ] as const
+                ).map((option) => {
+                  const active = viewMode === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => onViewModeChange(option.id)}
+                      style={previewChipButtonStyle(active)}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
               </div>
             );
           }
@@ -4219,6 +4270,7 @@ function PreviewPanel({
               imagePath={preview.path}
               imageName={preview.name}
               imageSource={preview.content}
+              mode={isEditableImagePreview && viewMode === "edit" ? "edit" : "preview"}
               onSaved={onRefreshPreviewEntry}
             />
           )}
@@ -4239,6 +4291,7 @@ function PreviewPanel({
               videoExtension={preview.extension}
               videoMimeType={preview.mimeType}
               videoSize={preview.size}
+              mode={viewMode}
               onExported={onRefreshPreviewEntry}
             />
           )}
@@ -9772,6 +9825,7 @@ export function FileExplorer({
           }
           return;
         case "video":
+          setDocumentViewMode("preview");
           if (isCurrentPreviewRequest()) {
             setPreview({
               type: "video",
@@ -9786,6 +9840,7 @@ export function FileExplorer({
           }
           return;
         case "image": {
+          setDocumentViewMode("preview");
           const loadingFallback =
             buildExplorerPreviewLoadingFallback(resolvedPreview);
           if (loadingFallback && isCurrentPreviewRequest()) {
@@ -9809,6 +9864,7 @@ export function FileExplorer({
                 type: "image",
                 path: entry.path,
                 name: entry.name,
+                extension: resolvedPreview.extension,
                 content: cachedDataUri,
               });
               setPreviewLoading(false);
@@ -9831,6 +9887,7 @@ export function FileExplorer({
               type: "image",
               path: entry.path,
               name: entry.name,
+              extension: resolvedPreview.extension,
               content: dataUri,
             });
           } catch (error) {
@@ -12344,12 +12401,18 @@ export function FileExplorer({
             ? preview.fileKind === "tabular"
               ? "Tabular spreadsheet"
               : "Spreadsheet workbook"
+            : preview.type === "video"
+              ? documentViewMode === "edit"
+                ? "Video editor"
+                : "Video preview"
             : preview.type === "audio"
               ? "Audio preview"
               : preview.type === "folder"
                 ? "Folder preview"
                 : preview.type === "image"
-                  ? "Image preview"
+                  ? documentViewMode === "edit" && isEditableImagePreviewExtension(preview.extension)
+                    ? "Image editor"
+                    : "Image preview"
                   : preview.type === "model3d"
                     ? "3D preview"
                     : "Preview";

@@ -13,7 +13,6 @@ import {
 } from '../config/filePreview';
 import {
   collectNormalizedBounds,
-  decodeDataUrlToUint8Array,
   normalizeModelForPreview,
 } from './modelPreview.utils';
 import {
@@ -21,7 +20,6 @@ import {
   getPlatformPathSeparator,
   joinPlatformPath,
 } from '../config/platform';
-import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 
 type ModelPreviewProps = {
   entryName: string;
@@ -261,35 +259,31 @@ async function loadSourceObject(
   sourcePath: string,
 ): Promise<THREE.Object3D> {
   const manager = createPreviewLoadingManager(sourcePath);
+  const sourceUrl = convertFileSrc(sourcePath);
   if (format === 'glb') {
     const loader = createGltfLoader(manager);
-    const dataUrl = await commands.fsReadFileBase64(sourcePath).then(unwrapTauriResult);
-    const asset = await parseGltfAsync(loader, decodeDataUrlToUint8Array(dataUrl).buffer, getLoaderResourceRoot(sourcePath));
+    const asset = await loader.loadAsync(sourceUrl);
     return asset.scene ?? asset.scenes[0];
   }
 
   if (format === 'gltf') {
     const loader = createGltfLoader(manager);
-    const content = await commands.fsReadTextFile(sourcePath).then(unwrapTauriResult);
-    const asset = await parseGltfAsync(loader, content, getLoaderResourceRoot(sourcePath));
+    const asset = await loader.loadAsync(sourceUrl);
     return asset.scene ?? asset.scenes[0];
   }
 
   if (format === 'obj') {
     const loader = new OBJLoader(manager);
-    const content = await commands.fsReadTextFile(sourcePath).then(unwrapTauriResult);
-    return loader.parse(content);
+    return loader.loadAsync(sourceUrl);
   }
 
   if (format === 'fbx') {
     const loader = new FBXLoader(manager);
-    const dataUrl = await commands.fsReadFileBase64(sourcePath).then(unwrapTauriResult);
-    return parseFbxAsync(loader, decodeDataUrlToUint8Array(dataUrl).buffer, getLoaderResourceRoot(sourcePath));
+    return loader.loadAsync(sourceUrl);
   }
 
   const loader = new STLLoader(manager);
-  const dataUrl = await commands.fsReadFileBase64(sourcePath).then(unwrapTauriResult);
-  const geometry = loader.parse(decodeDataUrlToUint8Array(dataUrl).buffer);
+  const geometry = await loader.loadAsync(sourceUrl);
   geometry.computeBoundingBox();
   geometry.computeVertexNormals();
   return new THREE.Mesh(
@@ -326,15 +320,6 @@ function createPreviewLoadingManager(sourcePath: string): THREE.LoadingManager {
   });
 
   return manager;
-}
-
-function getLoaderResourceRoot(sourcePath: string): string {
-  const parent = getParentDirectory(sourcePath);
-  if (!parent) {
-    return '';
-  }
-  const normalized = parent.replace(/\\/g, '/').replace(/\/+$/, '');
-  return `${convertFileSrc(normalized)}/`;
 }
 
 function getParentDirectory(path: string): string {
@@ -504,22 +489,6 @@ function applyFallbackMaterials(object: THREE.Object3D) {
     });
     if (!child.geometry.attributes.normal) {
       child.geometry.computeVertexNormals();
-    }
-  });
-}
-
-function parseGltfAsync(loader: GLTFLoader, data: string | ArrayBuffer, resourceRoot: string) {
-  return new Promise<Awaited<ReturnType<GLTFLoader['loadAsync']>>>((resolve, reject) => {
-    loader.parse(data, resourceRoot, resolve, reject);
-  });
-}
-
-function parseFbxAsync(loader: FBXLoader, data: ArrayBuffer, resourceRoot: string) {
-  return new Promise<THREE.Group>((resolve, reject) => {
-    try {
-      resolve(loader.parse(data, resourceRoot));
-    } catch (error) {
-      reject(error);
     }
   });
 }

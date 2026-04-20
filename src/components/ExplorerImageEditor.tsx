@@ -597,8 +597,10 @@ export function ExplorerImageEditor({
           alignItems: 'center',
           justifyContent: 'center',
           padding: 16,
-          minHeight: '40%',
-          borderBottom: '1px solid var(--overlay-explorer-preview-border, rgba(255,255,255,0.1))',
+          minHeight: showEditingChrome ? '40%' : '100%',
+          borderBottom: showEditingChrome
+            ? '1px solid var(--overlay-explorer-preview-border, rgba(255,255,255,0.1))'
+            : 'none',
           backgroundImage: checkerboardCSS,
           backgroundSize: '16px 16px',
           backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px',
@@ -699,130 +701,131 @@ export function ExplorerImageEditor({
         </div>
       </div>
 
-      {/* Bottom Compact Controls */}
-      <div style={{
-        width: '100%',
-        maxHeight: '55%',
-        display: 'flex',
-        flexDirection: 'column',
-        flexShrink: 0,
-        background: 'var(--overlay-explorer-preview-bg, #1f2937)'
-      }}>
-        {/* Sticky Toolbar */}
+      {showEditingChrome && (
         <div style={{
-          padding: '8px 12px',
-          borderBottom: '1px solid var(--overlay-explorer-preview-border, rgba(255,255,255,0.08))',
-          background: 'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))',
+          width: '100%',
+          maxHeight: '55%',
           display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          position: 'sticky',
-          top: 0,
-          zIndex: 20
+          flexDirection: 'column',
+          flexShrink: 0,
+          background: 'var(--overlay-explorer-preview-bg, #1f2937)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button disabled={isCropping || !baseImage} onClick={() => void saveImage()} style={{...buttonStyle('primary'), opacity: (isCropping || !baseImage) ? 0.5 : 1}}>
-              <Save size={13} />
-              Save
-            </button>
-            <button disabled={isCropping} onClick={handleReset} style={{...buttonStyle('default'), opacity: isCropping ? 0.5 : 1}}>
-              <RotateCcw size={13} />
-              Reset All
-            </button>
-            <button disabled={isCropping} onClick={startCropping} style={{...buttonStyle('default'), opacity: isCropping ? 0.5 : 1}}>
-              <Crop size={13} />
-              Crop Tool
-            </button>
-          </div>
-          
-          {statusMessage && (
-            <div style={{
-              fontSize: 10,
-              fontWeight: 700,
-              color: statusTone,
-              padding: '4px 8px',
-              background: 'rgba(0,0,0,0.3)',
-              borderRadius: 4,
-              border: `1px solid ${statusTone}40`
-            }}>
-              {statusMessage}
+          {/* Sticky Toolbar */}
+          <div style={{
+            padding: '8px 12px',
+            borderBottom: '1px solid var(--overlay-explorer-preview-border, rgba(255,255,255,0.08))',
+            background: 'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            position: 'sticky',
+            top: 0,
+            zIndex: 20
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button disabled={isCropping || !baseImage} onClick={() => void saveImage()} style={{...buttonStyle('primary'), opacity: (isCropping || !baseImage) ? 0.5 : 1}}>
+                <Save size={13} />
+                Save
+              </button>
+              <button disabled={isCropping} onClick={handleReset} style={{...buttonStyle('default'), opacity: isCropping ? 0.5 : 1}}>
+                <RotateCcw size={13} />
+                Reset All
+              </button>
+              <button disabled={isCropping} onClick={startCropping} style={{...buttonStyle('default'), opacity: isCropping ? 0.5 : 1}}>
+                <Crop size={13} />
+                Crop Tool
+              </button>
             </div>
-          )}
-        </div>
-
-        {/* Tools Body */}
-        <div style={{ padding: '16px', overflowY: 'auto', flex: 1 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             
-            {/* Standard Filter section (hidden during crop) */}
-            <div style={{ display: isCropping ? 'none' : 'flex', flexDirection: 'column', gap: 12 }}>
+            {statusMessage && (
               <div style={{
                 fontSize: 10,
-                fontWeight: 800,
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                color: 'var(--overlay-text-muted)',
-                paddingBottom: 4,
-                borderBottom: '1px solid rgba(255,255,255,0.08)',
+                fontWeight: 700,
+                color: statusTone,
+                padding: '4px 8px',
+                background: 'rgba(0,0,0,0.3)',
+                borderRadius: 4,
+                border: `1px solid ${statusTone}40`
               }}>
-                Adjustments
+                {statusMessage}
               </div>
+            )}
+          </div>
+
+          {/* Tools Body */}
+          <div style={{ padding: '16px', overflowY: 'auto', flex: 1 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px 24px' }}>
-                {imageEditorFilterDefinitions.map((def) => (
-                  <PremiumSlider 
-                    key={def.key} 
-                    def={def} 
-                    value={filters[def.key]} 
-                    onChange={(val) => setFilters(prev => ({ ...prev, [def.key]: val }))} 
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* Crop section (shown during crop) */}
-            <div style={{ display: isCropping ? 'flex' : 'none', flexDirection: 'column', gap: 12 }}>
-              <div style={{
-                fontSize: 10,
-                fontWeight: 800,
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                color: 'var(--overlay-text-muted)',
-                paddingBottom: 4,
-                borderBottom: '1px solid rgba(255,255,255,0.08)',
-              }}>
-                Crop & Rotate Tools
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button onClick={() => cropperRef.current?.setAspectRatio(NaN)} style={buttonStyle('default')}>Free</button>
-                <button onClick={() => cropperRef.current?.setAspectRatio(1)} style={buttonStyle('default')}>1:1</button>
-                <button onClick={() => cropperRef.current?.setAspectRatio(4/3)} style={buttonStyle('default')}>4:3</button>
-                <button onClick={() => cropperRef.current?.setAspectRatio(16/9)} style={buttonStyle('default')}>16:9</button>
+              {/* Standard Filter section (hidden during crop) */}
+              <div style={{ display: isCropping ? 'none' : 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: 'var(--overlay-text-muted)',
+                  paddingBottom: 4,
+                  borderBottom: '1px solid rgba(255,255,255,0.08)',
+                }}>
+                  Adjustments
+                </div>
                 
-                <div style={{ width: 1, background: 'rgba(255,255,255,0.1)', margin: '0 8px' }} />
-
-                <button onClick={() => cropperRef.current?.rotate(-90)} style={buttonStyle('default')}>
-                  <ArrowUpLeft size={13} /> Left
-                </button>
-                <button onClick={() => cropperRef.current?.rotate(90)} style={buttonStyle('default')}>
-                  <ArrowUpRight size={13} /> Right
-                </button>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px 24px' }}>
+                  {imageEditorFilterDefinitions.map((def) => (
+                    <PremiumSlider 
+                      key={def.key} 
+                      def={def} 
+                      value={filters[def.key]} 
+                      onChange={(val) => setFilters(prev => ({ ...prev, [def.key]: val }))} 
+                    />
+                  ))}
+                </div>
               </div>
 
-              <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-                <button onClick={cancelCropping} style={buttonStyle('danger')}>
-                  <X size={13} /> Cancel
-                </button>
-                <button onClick={applyCropping} style={buttonStyle('primary')}>
-                  <Check size={13} /> Apply Crop
-                </button>
+              {/* Crop section (shown during crop) */}
+              <div style={{ display: isCropping ? 'flex' : 'none', flexDirection: 'column', gap: 12 }}>
+                <div style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: 'var(--overlay-text-muted)',
+                  paddingBottom: 4,
+                  borderBottom: '1px solid rgba(255,255,255,0.08)',
+                }}>
+                  Crop & Rotate Tools
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button onClick={() => cropperRef.current?.setAspectRatio(NaN)} style={buttonStyle('default')}>Free</button>
+                  <button onClick={() => cropperRef.current?.setAspectRatio(1)} style={buttonStyle('default')}>1:1</button>
+                  <button onClick={() => cropperRef.current?.setAspectRatio(4/3)} style={buttonStyle('default')}>4:3</button>
+                  <button onClick={() => cropperRef.current?.setAspectRatio(16/9)} style={buttonStyle('default')}>16:9</button>
+                  
+                  <div style={{ width: 1, background: 'rgba(255,255,255,0.1)', margin: '0 8px' }} />
+
+                  <button onClick={() => cropperRef.current?.rotate(-90)} style={buttonStyle('default')}>
+                    <ArrowUpLeft size={13} /> Left
+                  </button>
+                  <button onClick={() => cropperRef.current?.rotate(90)} style={buttonStyle('default')}>
+                    <ArrowUpRight size={13} /> Right
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+                  <button onClick={cancelCropping} style={buttonStyle('danger')}>
+                    <X size={13} /> Cancel
+                  </button>
+                  <button onClick={applyCropping} style={buttonStyle('primary')}>
+                    <Check size={13} /> Apply Crop
+                  </button>
+                </div>
               </div>
+
             </div>
-
           </div>
         </div>
-      </div>
+      )}
     </div>
     </>
   );

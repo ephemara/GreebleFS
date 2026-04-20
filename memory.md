@@ -1,5 +1,35 @@
 # GreebleFS Memory
 
+# 2026-04-20 - Image Preview Now Opens Fullscreen-First And Save Falls Back To The Explorer Backend
+
+- Editable raster image previews no longer drop users straight into the full adjustment/crop toolbar, and local save no longer hard-fails when the Tauri fs plugin is missing from the host.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now treats editable image previews like an explicit preview/edit lane: selecting an image forces `documentViewMode` back to `preview`, exposes `Preview` / `Edit` controls in the preview header, and passes that mode into `ExplorerImageEditor.tsx`.
+  - `src/components/ExplorerImageEditor.tsx` now supports `mode: "preview" | "edit"`. Preview mode keeps the fullscreen pannable/zoomable image surface and hides edit-only chrome; edit mode restores save/reset/crop/filter controls.
+  - `src/config/filePreview.ts` now exposes shared editable-image helpers so `FileExplorer.tsx` and `ExplorerImageEditor.tsx` agree on which extensions should surface the image editor lane and which MIME/content type each editable raster format should save with.
+  - Image save now degrades gracefully: the editor can still try `@tauri-apps/plugin-fs` for local files, but when that plugin is unavailable it falls back to `writeExplorerFile(...)` through `src/runtime/explorerBackend.ts`, which is already backed by the app's typed native filesystem command surface.
+- Durable product note:
+  - Keep fullscreen browsing and destructive image editing as separate intents. If the image lane grows more tools later, preserve the preview-first entry point so simple browsing/panning is not buried under crop/filter chrome again.
+  - Do not build new explorer save flows around frontend-only plugin registration assumptions. The typed explorer backend is the stable contract when the Tauri host does not explicitly install a matching plugin.
+- Validation:
+  - passed: `npx vitest run src/test/explorerImageEditor.test.tsx src/test/fileExplorer.viewModes.test.tsx --reporter=dot`
+  - passed: filtered `tsc --noEmit -p tsconfig.json` check reported no matching errors for `ExplorerImageEditor.tsx`, `FileExplorer.tsx`, `filePreview.ts`, `explorerImageEditor.test.tsx`, or `fileExplorer.viewModes.test.tsx`
+
+# 2026-04-20 - Video Preview Now Defaults To Playback, Not Edit Chrome
+
+- Explorer video preview no longer drops users straight into the full trim/inspector editor.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now treats video previews like other explicit preview/edit lanes: selecting a video forces `documentViewMode` back to `preview`, exposes the preview-header `Preview` / `Edit` toggle for videos, and passes that mode into `ExplorerVideoEditor.tsx`.
+  - `src/components/ExplorerVideoEditor.tsx` now supports `mode: "preview" | "edit"`. Preview mode shows a playback-first `<video controls>` surface with lightweight source-status footer copy, while edit mode keeps the existing trim timeline, transform/color inspector, and export tooling.
+  - The video surface now tracks readiness separately from `duration === 0`, so loading/error overlays do not misclassify every not-yet-probed file as an unplayable editor session.
+  - Runtime fallback behavior is still intact: direct-source failure in the webview retries through `videoCreatePreviewProxy(...)`, and preview mode still surfaces proxy/direct status in the footer instead of silently burying playback failure state under editing chrome.
+- Durable product note:
+  - Keep video preview and video editing as separate user intents. If future work expands the editor, preserve a clean playback-first entry point so codec/debugging work is not hidden behind trim/crop UI again.
+  - This pass did not replace the underlying webview paint path with a native renderer; if playback is still bad on specific hosts, the next layer to inspect is the direct/proxy source contract and system `ffmpeg` / codec availability, not the old “always open the editor” shell behavior.
+- Validation:
+  - passed: `npx vitest run src/test/explorerVideoEditor.test.tsx src/test/fileExplorer.viewModes.test.tsx -t "falls back to a generated proxy when direct playback fails in the webview|keeps preview mode focused on playback instead of mounting edit-only controls|defaults videos to playback preview and only enters video edit mode when requested"`
+  - passed: filtered TypeScript check reported no matching errors for `ExplorerVideoEditor`, `FileExplorer`, `explorerVideoEditor.test`, or `fileExplorer.viewModes.test`
+
 # 2026-04-20 - First-Class Storage Tab Added
 
 - Added a built-in `storage` panel so the workbench can do WinDirStat-style storage inspection without leaving the app.

@@ -90,6 +90,7 @@ type ExplorerVideoEditorProps = {
   videoExtension: string;
   videoMimeType: string | null;
   videoSize: number;
+  mode?: 'preview' | 'edit';
   onExported?: (outputPath: string) => Promise<void> | void;
 };
 
@@ -265,7 +266,9 @@ export function ExplorerVideoEditor({
   videoExtension,
   videoMimeType,
   videoSize,
+  mode = 'edit',
 }: ExplorerVideoEditorProps) {
+  const isEditMode = mode === 'edit';
   // Resolve fallback static native-file URL (mostly used for audio extraction)
   const nativeUrl = useMemo(() => {
     try {
@@ -289,6 +292,7 @@ export function ExplorerVideoEditor({
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [isPlaybackReady, setIsPlaybackReady] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(1);
 
@@ -327,6 +331,7 @@ export function ExplorerVideoEditor({
     setIsPlaying(false);
     setCurrentTime(0);
     setDuration(0);
+    setIsPlaybackReady(false);
     setTrimStart(0);
     setTrimEnd(0);
     setTransform(DEFAULT_TRANSFORM);
@@ -364,6 +369,7 @@ export function ExplorerVideoEditor({
     if (!video || !playSrc) {
       return;
     }
+    setIsPlaybackReady(false);
     video.load();
   }, [playSrc, playbackMimeType]);
 
@@ -421,7 +427,7 @@ export function ExplorerVideoEditor({
 
   useEffect(() => {
     const vid = videoRef.current;
-    if (!vid) return;
+    if (!vid || !isEditMode) return;
     if (isPlaying) {
       const p = vid.play();
       if (p) {
@@ -438,20 +444,25 @@ export function ExplorerVideoEditor({
       cancelAnimationFrame(rafRef.current);
     }
     return () => cancelAnimationFrame(rafRef.current);
-  }, [isPlaying, tickPlayhead]);
+  }, [isEditMode, isPlaying, tickPlayhead]);
 
   const handleLoadedMetadata = useCallback(() => {
     const vid = videoRef.current;
     if (!vid) return;
-    setDuration(vid.duration);
-    setTrimEnd(vid.duration);
+    const nextDuration =
+      Number.isFinite(vid.duration) && vid.duration > 0 ? vid.duration : 0;
+    setIsPlaybackReady(true);
+    setDuration(nextDuration);
+    setTrimEnd((prev) =>
+      nextDuration > 0 ? (prev > 0 ? Math.min(prev, nextDuration) : nextDuration) : prev,
+    );
   }, []);
 
   // ── Transport controls ──
   const togglePlay = useCallback(() => {
-    if (duration <= 0) return;
+    if (!isPlaybackReady || duration <= 0) return;
     setIsPlaying((prev) => !prev);
-  }, [duration]);
+  }, [duration, isPlaybackReady]);
 
   const stepFrame = useCallback((frames: number) => {
     const vid = videoRef.current;
@@ -513,15 +524,21 @@ export function ExplorerVideoEditor({
   const viewerRef = useRef<HTMLDivElement | null>(null);
 
   const handleViewerWheel = useCallback((e: React.WheelEvent) => {
+    if (!isEditMode) {
+      return;
+    }
     e.preventDefault();
     const speed = 0.18;
     setTransform((prev) => {
       const next = clamp(prev.scaleX - e.deltaY * speed, 10, 500);
       return { ...prev, scaleX: next, scaleY: next };
     });
-  }, []);
+  }, [isEditMode]);
 
   const handleViewerMouseDown = useCallback((e: React.MouseEvent) => {
+    if (!isEditMode) {
+      return;
+    }
     if ((e.target as HTMLElement).closest('.vt-handle')) return;
     e.preventDefault();
     const sx = e.clientX;
@@ -536,7 +553,7 @@ export function ExplorerVideoEditor({
     };
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
-  }, [transform]);
+  }, [isEditMode, transform]);
 
   // ── Audio extraction ──
   const extractAudio = useCallback(async () => {
@@ -599,8 +616,8 @@ export function ExplorerVideoEditor({
     width: '100%',
     height: '100%',
     display: 'grid',
-    gridTemplateColumns: '1fr 220px',
-    gridTemplateRows: 'minmax(0,1fr) auto',
+    gridTemplateColumns: isEditMode ? '1fr 220px' : '1fr',
+    gridTemplateRows: 'minmax(0,1fr)',
     background: 'var(--overlay-explorer-preview-bg)',
     overflow: 'hidden',
     fontFamily: 'var(--overlay-font-family, system-ui)',
@@ -613,7 +630,7 @@ export function ExplorerVideoEditor({
     <div style={root}>
 
       {/* ── LEFT: viewer + timeline ── */}
-      <div style={{ display: 'flex', flexDirection: 'column', gridColumn: 1, gridRow: '1 / 3', minHeight: 0, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gridColumn: 1, gridRow: 1, minHeight: 0, overflow: 'hidden' }}>
 
         {/* Viewer */}
         <div
@@ -628,7 +645,7 @@ export function ExplorerVideoEditor({
             justifyContent: 'center',
             overflow: 'hidden',
             background: 'radial-gradient(circle at 50% 30%, rgba(255,255,255,0.04), transparent 70%), rgba(0,0,0,0.82)',
-            cursor: 'grab',
+            cursor: isEditMode ? 'grab' : 'default',
           }}
         >
           {/* Checkerboard mask (shows crop/transparent areas) */}
@@ -659,6 +676,7 @@ export function ExplorerVideoEditor({
               ref={videoRef}
               preload="metadata"
               playsInline
+              controls={!isEditMode}
               muted={isMuted}
               aria-label={`Video preview: ${videoName}`}
               onError={() => {
@@ -670,10 +688,30 @@ export function ExplorerVideoEditor({
                   return;
                 }
                 setProxyError('Video playback failed in this desktop webview.');
+                setIsPlaybackReady(false);
               }}
+              onCanPlay={() => setIsPlaybackReady(true)}
               onLoadedMetadata={handleLoadedMetadata}
+              onDurationChange={handleLoadedMetadata}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              onTimeUpdate={() => {
+                const vid = videoRef.current;
+                if (!vid) {
+                  return;
+                }
+                setCurrentTime(vid.currentTime);
+              }}
+              onVolumeChange={() => {
+                const vid = videoRef.current;
+                if (!vid) {
+                  return;
+                }
+                setVolume(vid.volume);
+                setIsMuted(vid.muted || vid.volume === 0);
+              }}
               onEnded={() => {
-                if (loopTrim) {
+                if (isEditMode && loopTrim) {
                   seekTo(trimStart);
                 } else {
                   setIsPlaying(false);
@@ -692,7 +730,7 @@ export function ExplorerVideoEditor({
               ) : null}
             </video>
             {/* Transform overlay border */}
-            {activeTab === 'transform' && (
+            {isEditMode && activeTab === 'transform' && (
               <div
                 className="vt-handle"
                 style={{
@@ -710,7 +748,7 @@ export function ExplorerVideoEditor({
           </div>
 
           {/* No-video overlay */}
-          {(!playSrc || duration === 0) && (
+          {(!playSrc || !isPlaybackReady || Boolean(proxyError)) && (
             <div style={{
               position: 'absolute',
               inset: 0,
@@ -737,6 +775,8 @@ export function ExplorerVideoEditor({
           )}
         </div>
 
+        {isEditMode ? (
+          <>
         {/* Transport bar */}
         <div style={{
           height: 46,
@@ -947,18 +987,58 @@ export function ExplorerVideoEditor({
             {videoExtension.toUpperCase()} · {formatSize(videoSize)} · {videoName}
           </div>
         </div>
+          </>
+        ) : (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            padding: '10px 12px',
+            borderTop: '1px solid var(--overlay-explorer-preview-border)',
+            background: 'rgba(255,255,255,0.025)',
+            flexShrink: 0,
+            fontSize: 10,
+          }}>
+            <div style={{
+              color: 'var(--overlay-text-muted)',
+              letterSpacing: '0.04em',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+              {videoExtension.toUpperCase()} · {formatSize(videoSize)} · {videoName}
+            </div>
+            <div style={{
+              flexShrink: 0,
+              color: proxyError
+                ? 'var(--overlay-error, #f87171)'
+                : 'var(--overlay-text-muted)',
+              fontWeight: 600,
+            }}>
+              {isProxying
+                ? 'Resolving playback source…'
+                : proxyError
+                  ? proxyError
+                  : resolvedSourceKind === 'proxy'
+                    ? 'Proxy playback'
+                    : 'Direct playback'}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── RIGHT: Inspector ── */}
-      <div style={{
-        gridColumn: 2,
-        gridRow: '1 / 3',
-        display: 'flex',
-        flexDirection: 'column',
-        borderLeft: '1px solid var(--overlay-explorer-preview-border)',
-        background: 'rgba(0,0,0,0.18)',
-        overflow: 'hidden',
-      }}>
+      {isEditMode ? (
+        <div style={{
+          gridColumn: 2,
+          gridRow: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          borderLeft: '1px solid var(--overlay-explorer-preview-border)',
+          background: 'rgba(0,0,0,0.18)',
+          overflow: 'hidden',
+        }}>
         {/* Inspector header */}
         <div style={{
           padding: '7px 10px 0',
@@ -1116,7 +1196,8 @@ export function ExplorerVideoEditor({
             </div>
           )}
         </div>
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }

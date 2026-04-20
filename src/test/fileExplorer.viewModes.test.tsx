@@ -41,14 +41,31 @@ const {
 }));
 
 vi.mock("../components/ExplorerImageEditor", () => ({
-  ExplorerImageEditor: ({ imageName }: { imageName: string }) => (
-    <div data-testid="mock-explorer-image-editor">{imageName}</div>
+  ExplorerImageEditor: ({
+    imageName,
+    mode = "edit",
+  }: {
+    imageName: string;
+    mode?: "preview" | "edit";
+  }) => (
+    <div
+      data-testid="mock-explorer-image-editor"
+      data-image-mode={mode}
+    >{`${imageName}:${mode}`}</div>
   ),
 }));
 
 vi.mock("../components/ExplorerVideoEditor", () => ({
-  ExplorerVideoEditor: ({ videoName }: { videoName: string }) => (
-    <div data-testid="mock-explorer-video-editor">{videoName}</div>
+  ExplorerVideoEditor: ({
+    videoName,
+    mode = "edit",
+  }: {
+    videoName: string;
+    mode?: "preview" | "edit";
+  }) => (
+    <div data-testid="mock-explorer-video-editor" data-video-mode={mode}>
+      {`${videoName}:${mode}`}
+    </div>
   ),
 }));
 
@@ -1089,7 +1106,9 @@ describe("FileExplorer view modes", () => {
     expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^run$/i })).toBeInTheDocument();
     expect(getChromeControl("previewTerminalToggle")).toBeNull();
-    expect(screen.getByText("hello from preview")).toBeInTheDocument();
+    expect(await screen.findByTestId("monaco-editor")).toHaveTextContent(
+      "hello from preview",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: /^run$/i }));
 
@@ -1896,15 +1915,26 @@ describe("FileExplorer view modes", () => {
     ).toBe(false);
   });
 
-  it("mounts the embedded video editor when selecting a previewable video file", async () => {
+  it("defaults videos to playback preview and only enters video edit mode when requested", async () => {
     renderExplorer();
     await screen.findByText("trailer.mp4");
 
     fireEvent.click(screen.getByText("trailer.mp4"));
 
-    expect(
-      await screen.findByTestId("mock-explorer-video-editor"),
-    ).toHaveTextContent("trailer.mp4");
+    const videoWorkbench = await screen.findByTestId("mock-explorer-video-editor");
+    expect(videoWorkbench).toHaveTextContent("trailer.mp4:preview");
+
+    const previewModeToggle = getChromeControl("previewModeToggle");
+    expect(previewModeToggle).not.toBeNull();
+    fireEvent.click(
+      within(previewModeToggle as HTMLElement).getByRole("button", {
+        name: "Edit",
+      }),
+    );
+
+    expect(await screen.findByTestId("mock-explorer-video-editor")).toHaveTextContent(
+      "trailer.mp4:edit",
+    );
     expect(
       vi
         .mocked(invoke)
@@ -3366,15 +3396,33 @@ describe("FileExplorer view modes", () => {
     });
   });
 
-  it("mounts the embedded image editor when selecting an editable image preview", async () => {
+  it("opens editable image previews in fullscreen preview mode and only enters edit tools on demand", async () => {
     renderExplorer();
     const imageEntry = await screen.findByText("preview.png");
 
     fireEvent.click(imageEntry);
 
-    expect(
-      await screen.findByTestId("mock-explorer-image-editor"),
-    ).toHaveTextContent("preview.png");
+    const imageEditor = await screen.findByTestId("mock-explorer-image-editor");
+    expect(imageEditor).toHaveTextContent("preview.png:preview");
+    expect(imageEditor).toHaveAttribute("data-image-mode", "preview");
+
+    const previewModeToggle = getChromeControl("previewModeToggle");
+    expect(previewModeToggle).not.toBeNull();
+
+    fireEvent.click(
+      within(previewModeToggle as HTMLElement).getByRole("button", {
+        name: "Edit",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-explorer-image-editor")).toHaveTextContent(
+        "preview.png:edit",
+      );
+      expect(
+        screen.getByTestId("mock-explorer-image-editor"),
+      ).toHaveAttribute("data-image-mode", "edit");
+    });
   });
 
   it("starts native drag on plain explorer drags while keeping in-app payloads available", async () => {
@@ -3419,7 +3467,13 @@ describe("FileExplorer view modes", () => {
     expect(screen.getByText(/2 selected/i)).toBeTruthy();
 
     const dataTransfer = createDataTransfer();
-    const dragSource = screen
+    const contentViewport = document.querySelector(
+      '[data-overlay-explorer-plane="content-viewport"]',
+    ) as HTMLElement | null;
+    if (!(contentViewport instanceof HTMLElement)) {
+      throw new Error("Expected explorer content viewport");
+    }
+    const dragSource = within(contentViewport)
       .getByText("preview.png")
       .closest('[data-overlay-drag-source="file"]');
     const folderTarget = screen
