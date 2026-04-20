@@ -332,6 +332,35 @@ describe('TerminalOverlay', () => {
     });
   }, 20000);
 
+  it('injects pending command requests into the active pane once the preview terminal is ready', async () => {
+    const invokeMock = vi.mocked(invoke);
+    const onCommandRequestHandled = vi.fn();
+
+    render(
+      <TerminalOverlay
+        isOpen
+        onClose={() => {}}
+        embedded
+        terminalIdNamespace="preview-pane"
+        pendingCommandRequest={{
+          id: 'script-run-1',
+          command: 'npm run build',
+          run: true,
+        }}
+        onCommandRequestHandled={onCommandRequestHandled}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(invokeMock).toHaveBeenCalledWith('terminal_write', {
+        id: 'preview-pane-0',
+        data: 'npm run build\r',
+      });
+    });
+
+    expect(onCommandRequestHandled).toHaveBeenCalledWith('script-run-1');
+  }, 20000);
+
   it('reports shell integration cwd changes only for the active pane prompt and dedupes repeats', async () => {
     const eventHandlers = new Map<string, (event: { payload: unknown }) => void>();
     vi.mocked(listen).mockImplementation(async (eventName, handler) => {

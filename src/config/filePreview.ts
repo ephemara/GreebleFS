@@ -53,6 +53,13 @@ const IMAGE_PREVIEW_EXTENSIONS = [
   "avif",
 ] as const;
 
+const IMAGE_EDITOR_CONTENT_TYPE_BY_EXTENSION = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+} as const satisfies Record<string, string>;
+
 const AUDIO_PREVIEW_MIME_TYPE_BY_EXTENSION = {
   aac: "audio/aac",
   aif: "audio/aiff",
@@ -450,6 +457,19 @@ const SHADER_PREVIEW_EXTENSION_SET = new Set<string>(
 
 export function isImagePreviewExtension(extension: string): boolean {
   return IMAGE_PREVIEW_EXTENSION_SET.has(normalizeExtension(extension));
+}
+
+export function isEditableImagePreviewExtension(extension: string): boolean {
+  return getImageEditorContentType(extension) !== null;
+}
+
+export function getImageEditorContentType(extension: string): string | null {
+  const normalizedExtension = normalizeExtension(extension);
+  return normalizedExtension in IMAGE_EDITOR_CONTENT_TYPE_BY_EXTENSION
+    ? IMAGE_EDITOR_CONTENT_TYPE_BY_EXTENSION[
+        normalizedExtension as keyof typeof IMAGE_EDITOR_CONTENT_TYPE_BY_EXTENSION
+      ]
+    : null;
 }
 
 export function isFontPreviewExtension(extension: string): boolean {

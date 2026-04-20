@@ -21,11 +21,13 @@ import {
   buildCSSFilterString,
   type ExplorerImageFiltersState,
 } from '../config/imageEditorFilters';
+import { getImageEditorContentType } from '../config/filePreview';
 
 type ExplorerImageEditorProps = {
   imagePath: string;
   imageName: string;
   imageSource: string; // Base64 data URI
+  mode?: 'preview' | 'edit';
   onSaved?: () => Promise<void> | void;
 };
 
@@ -46,13 +48,6 @@ const DEFAULT_IMAGE_PREVIEW_TRANSFORM: ImagePreviewTransform = {
 const IMAGE_PREVIEW_MIN_SCALE = 0.5;
 const IMAGE_PREVIEW_MAX_SCALE = 6;
 const IMAGE_PREVIEW_ZOOM_SENSITIVITY = 0.0015;
-
-const IMAGE_EDITOR_CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  png: 'image/png',
-  webp: 'image/webp',
-};
 
 function clampValue(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -102,10 +97,6 @@ function normalizeImagePreviewTransform(
 
 function getImageExtension(name: string): string {
   return name.trim().split('.').pop()?.toLowerCase() ?? '';
-}
-
-function getImageEditorContentType(name: string): string | null {
-  return IMAGE_EDITOR_CONTENT_TYPE_BY_EXTENSION[getImageExtension(name)] ?? null;
 }
 
 function isEditableKeyboardTarget(target: EventTarget | null): boolean {
@@ -237,6 +228,7 @@ export function ExplorerImageEditor({
   imagePath,
   imageName,
   imageSource,
+  mode = 'edit',
   onSaved,
 }: ExplorerImageEditorProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -255,8 +247,9 @@ export function ExplorerImageEditor({
   const [saveState, setSaveState] = useState<ImageEditorSaveState>('idle');
   const [statusMessage, setStatusMessage] = useState('');
   
-  const contentType = getImageEditorContentType(imageName);
+  const contentType = getImageEditorContentType(getImageExtension(imageName));
   const isEditableFormat = contentType !== null;
+  const showEditingChrome = mode === 'edit' && isEditableFormat;
   const keybindings = useSettingsStore((state) => state.settings.keybindings);
 
   // Initialize Base Image
@@ -305,6 +298,8 @@ export function ExplorerImageEditor({
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (!showEditingChrome) return;
+
       const root = rootRef.current;
       const activeElement = document.activeElement;
       const hasEditorFocus = Boolean(
@@ -326,7 +321,15 @@ export function ExplorerImageEditor({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [keybindings, isCropping, isEditableFormat, baseImage, filters]);
+  }, [keybindings, isCropping, isEditableFormat, baseImage, filters, showEditingChrome]);
+
+  useEffect(() => {
+    if (!showEditingChrome && isCropping) {
+      cropperRef.current?.destroy();
+      cropperRef.current = null;
+      setIsCropping(false);
+    }
+  }, [isCropping, showEditingChrome]);
 
   // Actions
   const resetPreviewViewport = () => {
@@ -340,7 +343,7 @@ export function ExplorerImageEditor({
   };
 
   const saveImage = async () => {
-    if (!contentType || saveState === 'saving' || !baseImage) return;
+    if (!showEditingChrome || !contentType || saveState === 'saving' || !baseImage) return;
 
     setSaveState('saving');
     setStatusMessage('Saving to disk...');
@@ -366,13 +369,16 @@ export function ExplorerImageEditor({
       const arrayBuffer = await blob.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
 
-      // Overwrite the file on disk
-      // We explicitly bypass writeExplorerFile for local paths because converting a
-      // large Uint8Array to number[] causes massive JSON IPC stringification lag/crashes!
+      // Prefer the plugin fast path when the host registered it, but fall back to the
+      // explorer backend so save still works in builds where the fs plugin is absent.
       if (imagePath.startsWith('cloud://')) {
         await writeExplorerFile(imagePath, Array.from(uint8Array));
       } else {
-        await writeFile(imagePath, uint8Array);
+        try {
+          await writeFile(imagePath, uint8Array);
+        } catch {
+          await writeExplorerFile(imagePath, Array.from(uint8Array));
+        }
       }
       
       // Keep changes baked into a new base image, reset filters
@@ -402,7 +408,7 @@ export function ExplorerImageEditor({
   };
 
   const startCropping = () => {
-    if (!baseImage || isCropping) return;
+    if (!showEditingChrome || !baseImage || isCropping) return;
     setIsCropping(true);
 
     // Wait a tick for the cropper container to be un-hidden, then init

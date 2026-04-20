@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildTerminalCdCommand } from '../components/terminalCommandUtils';
+import {
+  buildTerminalCdCommand,
+  buildTerminalScriptRunCommand,
+} from '../components/terminalCommandUtils';
 
 describe('buildTerminalCdCommand', () => {
   it('uses a PowerShell literal path for PowerShell shells', () => {
@@ -37,5 +40,59 @@ describe('buildTerminalCdCommand', () => {
 
   it('returns an empty command when the target path is blank', () => {
     expect(buildTerminalCdCommand('   ', 'bash')).toBe('');
+  });
+});
+
+describe('buildTerminalScriptRunCommand', () => {
+  it('runs batch files directly inside PowerShell terminals', () => {
+    expect(
+      buildTerminalScriptRunCommand({
+        path: "C:\\Dev\\Taloor's Lab\\build.bat",
+        shell: 'pwsh.exe',
+        runner: 'batch',
+      }),
+    ).toBe("& 'C:\\Dev\\Taloor''s Lab\\build.bat'");
+  });
+
+  it('uses call for batch files inside cmd terminals', () => {
+    expect(
+      buildTerminalScriptRunCommand({
+        path: 'C:\\Work\\OverlayTerm\\build.bat',
+        shell: 'cmd.exe',
+        runner: 'batch',
+      }),
+    ).toBe('call "C:\\Work\\OverlayTerm\\build.bat"');
+  });
+
+  it('launches PowerShell scripts from cmd terminals through powershell.exe', () => {
+    expect(
+      buildTerminalScriptRunCommand({
+        path: 'C:\\Work\\OverlayTerm\\build.ps1',
+        shell: 'cmd.exe',
+        runner: 'powershell',
+      }),
+    ).toBe(
+      'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\\Work\\OverlayTerm\\build.ps1"',
+    );
+  });
+
+  it('runs direct executable scripts in unix shells without wrapping an interpreter', () => {
+    expect(
+      buildTerminalScriptRunCommand({
+        path: "/workspace/overlay's/run-tool",
+        shell: '/bin/bash',
+        runner: 'direct',
+      }),
+    ).toBe("'/workspace/overlay'\"'\"'s/run-tool'");
+  });
+
+  it('uses the requested shell interpreter for shell-authored scripts', () => {
+    expect(
+      buildTerminalScriptRunCommand({
+        path: '/workspace/repo/build.zsh',
+        shell: '/bin/bash',
+        runner: 'zsh',
+      }),
+    ).toBe("zsh '/workspace/repo/build.zsh'");
   });
 });

@@ -199,7 +199,9 @@ import {
   type ConstellationFieldNode,
 } from "./explorer/constellationLayout";
 import { ExplorerTaskStatusBadge } from "./explorer/ExplorerTaskStatusBadge";
-import TerminalOverlay from "./TerminalOverlay";
+import TerminalOverlay, {
+  type TerminalOverlayCommandRequest,
+} from "./TerminalOverlay";
 import {
   invalidateExplorerDirectoryResultCaches,
   loadCachedExplorerLocation,
@@ -225,6 +227,10 @@ import {
   buildExplorerUnsupportedPreviewFallback,
   resolveExplorerPreviewDescriptor,
 } from "./explorer/explorerPreviewSystem";
+import {
+  probeExecutableTextScriptPreview,
+  type ExplorerResolvedScriptPreview,
+} from "./explorer/explorerScriptRuntime";
 import {
   removeExplorerBookmarksByPath,
   upsertExplorerBookmark,
@@ -256,7 +262,7 @@ import { resolveExplorerSearchScope } from "./fileExplorerSearchScope";
 import type { DocumentPreviewKind } from "./documentPreview";
 import {
   isAudioPreviewExtension,
-  isExecutableExtension,
+  isExecutableBinaryExtension,
   isVideoPreviewExtension,
   type ModelPreviewFormat,
   type ShaderPreviewFormat,
@@ -275,6 +281,7 @@ import {
   findSearchFocusColumns,
   type EditorSearchFocusTarget,
 } from "./fileExplorerSearchFocus";
+import { buildTerminalScriptRunCommand } from "./terminalCommandUtils";
 import {
   dispatchTerminalCommand,
   resolvePluginCommandTemplate,
@@ -565,6 +572,7 @@ type PreviewState =
       content: string;
       language: string;
       renderKind: DocumentPreviewKind;
+      scriptPreview: ExplorerResolvedScriptPreview | null;
       focusTarget: EditorSearchFocusTarget | null;
       isDirty: boolean;
       isSaving: boolean;
@@ -3030,6 +3038,7 @@ function PreviewPanel({
   presentationMode,
   previewSurfaceMode,
   previewTerminalMounted,
+  previewTerminalCommandRequest,
   previewTerminalWorkingDirectory,
   previewTerminalReportedWorkingDirectory,
   previewTerminalNamespace,
@@ -3049,6 +3058,9 @@ function PreviewPanel({
   onCopyPath,
   onTogglePresentationMode,
   onTogglePreviewTerminal,
+  onRunTextScript,
+  onStopTextScriptRun,
+  onPreviewTerminalCommandHandled,
   onPreviewTerminalReportedWorkingDirectoryChange,
   viewMode,
   onViewModeChange,
@@ -3068,6 +3080,7 @@ function PreviewPanel({
   presentationMode: ExplorerPreviewSplitMode;
   previewSurfaceMode: PreviewSurfaceMode;
   previewTerminalMounted: boolean;
+  previewTerminalCommandRequest: TerminalOverlayCommandRequest | null;
   previewTerminalWorkingDirectory: string | null;
   previewTerminalReportedWorkingDirectory: string | null;
   previewTerminalNamespace: string;
@@ -3098,6 +3111,12 @@ function PreviewPanel({
   onCopyPath: (path: string) => void;
   onTogglePresentationMode: () => void;
   onTogglePreviewTerminal: () => void;
+  onRunTextScript: (
+    path: string,
+    scriptPreview: ExplorerResolvedScriptPreview,
+  ) => Promise<void>;
+  onStopTextScriptRun: () => void;
+  onPreviewTerminalCommandHandled: (requestId: string) => void;
   onPreviewTerminalReportedWorkingDirectoryChange: (cwd: string) => void;
   viewMode: ExplorerDocumentViewMode;
   onViewModeChange: (mode: ExplorerDocumentViewMode) => void;
@@ -3289,8 +3308,12 @@ function PreviewPanel({
   const deferredPreviewTextContent = useDeferredValue(
     preview.type === "text" ? preview.content : "",
   );
+  const isScriptTextPreview =
+    preview.type === "text" && preview.scriptPreview != null;
   const supportsRenderedPreview =
-    preview.type === "text" && preview.renderKind !== "none";
+    preview.type === "text" &&
+    preview.scriptPreview == null &&
+    preview.renderKind !== "none";
   const textPreviewMetrics =
     preview.type === "text"
       ? getExplorerTextPreviewMetrics(deferredPreviewTextContent)
@@ -3298,7 +3321,10 @@ function PreviewPanel({
   const textPreviewShowsEditorCursor =
     preview.type === "text" && (!supportsRenderedPreview || viewMode === "edit");
   const supportsPreviewModeToggle =
-    supportsRenderedPreview || isPdfPreview || isShaderPreview;
+    supportsRenderedPreview ||
+    isScriptTextPreview ||
+    isPdfPreview ||
+    isShaderPreview;
   const previewHeaderRowStyle = useMemo<CSSProperties>(
     () => ({
       display: "flex",
@@ -3599,6 +3625,16 @@ function PreviewPanel({
           }
 
           if (preview.type === "text") {
+            const previewModeOptions = isScriptTextPreview
+              ? ([
+                  { id: "edit", label: "Edit" },
+                  { id: "preview", label: "Run" },
+                ] as const)
+              : ([
+                  { id: "edit", label: "Edit" },
+                  { id: "preview", label: "Preview" },
+                ] as const);
+
             return (
               <div
                 style={{
@@ -3612,18 +3648,31 @@ function PreviewPanel({
                   flexWrap: "wrap",
                 }}
               >
-                {(
-                  [
-                    { id: "edit", label: "Edit" },
-                    { id: "preview", label: "Preview" },
-                  ] as const
-                ).map((option) => {
+                {previewModeOptions.map((option) => {
                   const active = viewMode === option.id;
                   return (
                     <button
                       key={option.id}
                       type="button"
-                      onClick={() => onViewModeChange(option.id)}
+                      onClick={() => {
+                        if (
+                          option.id === "preview" &&
+                          preview.scriptPreview != null
+                        ) {
+                          void onRunTextScript(
+                            preview.path,
+                            preview.scriptPreview,
+                          );
+                          return;
+                        }
+                        onViewModeChange(option.id);
+                        if (
+                          option.id === "edit" &&
+                          preview.scriptPreview != null
+                        ) {
+                          onStopTextScriptRun();
+                        }
+                      }}
                       style={previewChipButtonStyle(active)}
                     >
                       {option.label}
@@ -3918,7 +3967,9 @@ function PreviewPanel({
         label: "Preview Terminal Toggle",
         surfaces: ["previewHeader"],
         isVisible: () =>
-          preview.type !== "none" && Boolean(previewTerminalWorkingDirectory),
+          preview.type !== "none" &&
+          !isScriptTextPreview &&
+          Boolean(previewTerminalWorkingDirectory),
         render: () => (
           <button
             type="button"
@@ -3997,6 +4048,9 @@ function PreviewPanel({
       previewTerminalToggleTitle,
       previewTerminalWorkingDirectory,
       previewTitle,
+      isScriptTextPreview,
+      onRunTextScript,
+      onStopTextScriptRun,
       supportsRenderedPreview,
       supportsPreviewModeToggle,
       viewMode,
@@ -4289,7 +4343,8 @@ function PreviewPanel({
               </Suspense>
             )}
           {preview.type === "text" &&
-            (!supportsRenderedPreview || viewMode === "edit") && (
+            (viewMode === "edit" ||
+              (preview.scriptPreview == null && !supportsRenderedPreview)) && (
               <SearchAwareCodeView
                 path={preview.path}
                 value={preview.content || ""}
@@ -4359,6 +4414,8 @@ function PreviewPanel({
               terminalIdNamespace={previewTerminalNamespace}
               workingDirectory={previewTerminalWorkingDirectory}
               consumeExplorerCwdSync={false}
+              pendingCommandRequest={previewTerminalCommandRequest}
+              onCommandRequestHandled={onPreviewTerminalCommandHandled}
               onReportedWorkingDirectoryChange={
                 onPreviewTerminalReportedWorkingDirectoryChange
               }
@@ -6575,6 +6632,8 @@ export function FileExplorer({
   const [previewSurfaceMode, setPreviewSurfaceMode] =
     useState<PreviewSurfaceMode>("content");
   const [previewTerminalMounted, setPreviewTerminalMounted] = useState(false);
+  const [previewTerminalCommandRequest, setPreviewTerminalCommandRequest] =
+    useState<TerminalOverlayCommandRequest | null>(null);
   const [
     previewTerminalReportedWorkingDirectory,
     setPreviewTerminalReportedWorkingDirectory,
@@ -6669,6 +6728,7 @@ export function FileExplorer({
   >(new Map());
   const lastPreviewTerminalShellReportedCwdRef = useRef<string | null>(null);
   const lastPreviewTerminalExplorerAppliedCwdRef = useRef<string | null>(null);
+  const previewTerminalCommandSequenceRef = useRef(0);
   const searchRequestIdRef = useRef(0);
   const searchFocusRequestIdRef = useRef(0);
   const jumpFilterRequestIdRef = useRef(0);
@@ -6737,9 +6797,12 @@ export function FileExplorer({
     () => `preview-${String(instanceId).replace(/[^a-zA-Z0-9_-]/g, "-")}`,
     [instanceId],
   );
-  const previewTerminalWorkingDirectory = currentPathIsCloud
-    ? null
-    : currentPath;
+  const previewTerminalWorkingDirectory =
+    currentPathIsCloud
+      ? null
+      : preview.type === "text" && preview.scriptPreview != null
+        ? getPathParent(preview.path) ?? currentPath
+        : currentPath;
   const previewPanelVisible =
     !isCompactDock && previewEnabled && !usesWorkspaceCompactChrome;
   const hasPreview = previewPanelVisible && preview.type !== "none";
@@ -9022,7 +9085,9 @@ export function FileExplorer({
 
   const persistPreviewText = useCallback(async (path: string) => {
     const currentPreview = previewRef.current;
-    if (currentPreview.type !== "text" || currentPreview.path !== path) return;
+    if (currentPreview.type !== "text" || currentPreview.path !== path) {
+      return false;
+    }
 
     const contentAtSave = currentPreview.content;
     setPreview((prev) =>
@@ -9049,6 +9114,7 @@ export function FileExplorer({
           error: null,
         };
       });
+      return true;
     } catch (saveError) {
       persistExplorerEditDraft(
         EXPLORER_TEXT_DRAFT_SCOPE,
@@ -9066,6 +9132,7 @@ export function FileExplorer({
           : prev,
       );
       setError(`Save failed for ${currentPreview.name}: ${saveError}`);
+      return false;
     }
   }, []);
 
@@ -9110,7 +9177,15 @@ export function FileExplorer({
       );
       setPreview((prev) =>
         prev.type === "text" && prev.path === path
-          ? { ...prev, content, isDirty: true, error: null }
+          ? {
+              ...prev,
+              content,
+              scriptPreview: prev.scriptPreview
+                ? { ...prev.scriptPreview, content }
+                : null,
+              isDirty: true,
+              error: null,
+            }
           : prev,
       );
       queuePreviewSave(path);
@@ -9307,9 +9382,72 @@ export function FileExplorer({
     },
     [],
   );
+  const queuePreviewTerminalCommand = useCallback(
+    (command: string) => {
+      const trimmedCommand = command.trim();
+      if (!trimmedCommand) {
+        return;
+      }
+
+      previewTerminalCommandSequenceRef.current += 1;
+      setPreviewTerminalCommandRequest({
+        id: `${previewTerminalNamespace}:${previewTerminalCommandSequenceRef.current}`,
+        command: trimmedCommand,
+        run: true,
+      });
+    },
+    [previewTerminalNamespace],
+  );
+  const handlePreviewTerminalCommandHandled = useCallback(
+    (requestId: string) => {
+      setPreviewTerminalCommandRequest((current) =>
+        current?.id === requestId ? null : current,
+      );
+    },
+    [],
+  );
+  const stopPreviewTextScriptRun = useCallback(() => {
+    setDocumentViewMode("edit");
+    setPreviewSurfaceMode("content");
+  }, []);
+  const runPreviewTextScript = useCallback(
+    async (path: string, scriptPreview: ExplorerResolvedScriptPreview) => {
+      const currentPreview = previewRef.current;
+      if (
+        currentPreview.type !== "text" ||
+        currentPreview.path !== path ||
+        currentPreview.scriptPreview == null
+      ) {
+        return;
+      }
+
+      if (currentPreview.isDirty) {
+        const didSave = await persistPreviewText(path);
+        if (!didSave) {
+          return;
+        }
+      }
+
+      const command = buildTerminalScriptRunCommand({
+        path,
+        shell: useSettingsStore.getState().settings.terminal.shell,
+        runner: scriptPreview.runner,
+      });
+      if (!command) {
+        return;
+      }
+
+      setDocumentViewMode("preview");
+      setPreviewTerminalMounted(true);
+      setPreviewSurfaceMode("terminal");
+      queuePreviewTerminalCommand(command);
+    },
+    [persistPreviewText, queuePreviewTerminalCommand],
+  );
   const resetPreviewTerminalState = useCallback(() => {
     setPreviewSurfaceMode("content");
     setPreviewTerminalMounted(false);
+    setPreviewTerminalCommandRequest(null);
     setPreviewTerminalReportedWorkingDirectory(null);
     lastPreviewTerminalShellReportedCwdRef.current = null;
     lastPreviewTerminalExplorerAppliedCwdRef.current = null;
@@ -9522,6 +9660,67 @@ export function FileExplorer({
         assetUrlResolver: getPreviewAssetUrl,
         documentPreviewKindResolver: getDocumentPreviewKind,
       });
+      if (
+        resolvedPreview.kind === "text" ||
+        resolvedPreview.kind === "unsupported"
+      ) {
+        const executableTextScriptProbe =
+          await probeExecutableTextScriptPreview({
+            entry,
+            runtimePlatform,
+            getItemProperties: getExplorerItemProperties,
+            readTextFile: readExplorerTextFile,
+          });
+        if (!isCurrentPreviewRequest()) {
+          return;
+        }
+
+        if (executableTextScriptProbe.kind === "script") {
+          setDocumentViewMode("edit");
+          const restoredDraft = loadExplorerEditDraft(
+            EXPLORER_TEXT_DRAFT_SCOPE,
+            entry.path,
+            explorerStringDraftSerializer,
+          );
+          const resolvedContent =
+            restoredDraft ?? executableTextScriptProbe.preview.content;
+          const hasRestoredDraft =
+            restoredDraft != null &&
+            restoredDraft !== executableTextScriptProbe.preview.content;
+          setPreview({
+            type: "text",
+            path: entry.path,
+            name: entry.name,
+            content: resolvedContent,
+            language: executableTextScriptProbe.preview.language,
+            renderKind: "none",
+            scriptPreview: {
+              ...executableTextScriptProbe.preview,
+              content: resolvedContent,
+            },
+            focusTarget,
+            isDirty: hasRestoredDraft,
+            isSaving: false,
+            lastSavedAt: hasRestoredDraft ? null : Date.now(),
+            error: null,
+          });
+          setPreviewLoading(false);
+          return;
+        }
+
+        if (executableTextScriptProbe.kind === "binary") {
+          const fallback = buildExplorerUnsupportedPreviewFallback();
+          setPreview({
+            type: "fallback",
+            path: entry.path,
+            name: entry.name,
+            label: fallback.label,
+            detail: fallback.detail,
+          });
+          setPreviewLoading(false);
+          return;
+        }
+      }
 
       switch (resolvedPreview.kind) {
         case "folder":
@@ -9868,6 +10067,117 @@ export function FileExplorer({
           }
           return;
         }
+        case "script": {
+          setDocumentViewMode("edit");
+          if (
+            currentPreview.type === "text" &&
+            currentPreview.path === entry.path
+          ) {
+            if (isCurrentPreviewRequest()) {
+              setPreview((prev) =>
+                prev.type === "text" && prev.path === entry.path
+                  ? {
+                      ...prev,
+                      name: entry.name,
+                      language: resolvedPreview.language,
+                      renderKind: "none",
+                      scriptPreview: prev.scriptPreview
+                        ? {
+                            ...prev.scriptPreview,
+                            language: resolvedPreview.language,
+                            runner: resolvedPreview.runner,
+                          }
+                        : {
+                            language: resolvedPreview.language,
+                            runner: resolvedPreview.runner,
+                            content: prev.content,
+                          },
+                      focusTarget,
+                    }
+                  : prev,
+              );
+              setPreviewLoading(false);
+            }
+            return;
+          }
+
+          const loadingFallback =
+            buildExplorerPreviewLoadingFallback(resolvedPreview);
+          if (loadingFallback && isCurrentPreviewRequest()) {
+            setPreviewLoading(true);
+            setPreview({
+              type: "fallback",
+              path: entry.path,
+              name: entry.name,
+              label: loadingFallback.label,
+              detail: loadingFallback.detail,
+            });
+          }
+
+          try {
+            const previewCacheKey = `${resolvedPreview.kind}:${entry.path}`;
+            let content = readCachedExplorerPreview<string>(previewCacheKey);
+            if (content == null) {
+              content = await readExplorerTextFile(entry.path);
+              storeCachedExplorerPreview({
+                key: previewCacheKey,
+                path: entry.path,
+                value: content,
+                bytes: estimateStringPreviewCacheBytes(content),
+              });
+            }
+            if (!isCurrentPreviewRequest()) {
+              return;
+            }
+
+            const restoredDraft = loadExplorerEditDraft(
+              EXPLORER_TEXT_DRAFT_SCOPE,
+              entry.path,
+              explorerStringDraftSerializer,
+            );
+            const resolvedContent = restoredDraft ?? content;
+            const hasRestoredDraft =
+              restoredDraft != null && restoredDraft !== content;
+            setPreview({
+              type: "text",
+              path: entry.path,
+              name: entry.name,
+              content: resolvedContent,
+              language: resolvedPreview.language,
+              renderKind: "none",
+              scriptPreview: {
+                language: resolvedPreview.language,
+                runner: resolvedPreview.runner,
+                content: resolvedContent,
+              },
+              focusTarget,
+              isDirty: hasRestoredDraft,
+              isSaving: false,
+              lastSavedAt: hasRestoredDraft ? null : Date.now(),
+              error: null,
+            });
+          } catch (error) {
+            if (!isCurrentPreviewRequest()) {
+              return;
+            }
+            const errorFallback = buildExplorerPreviewErrorFallback(
+              resolvedPreview,
+              error,
+            );
+            setPreview({
+              type: "fallback",
+              path: entry.path,
+              name: entry.name,
+              label: errorFallback.label,
+              detail: errorFallback.detail,
+            });
+          } finally {
+            if (isCurrentPreviewRequest()) {
+              setPreviewLoading(false);
+            }
+          }
+          return;
+        }
         case "text": {
           setDocumentViewMode(
             resolvedPreview.renderKind === "html" ? "preview" : "edit",
@@ -9884,6 +10194,7 @@ export function FileExplorer({
                       name: entry.name,
                       language: resolvedPreview.language,
                       renderKind: resolvedPreview.renderKind,
+                      scriptPreview: null,
                       focusTarget,
                     }
                   : prev,
@@ -9937,6 +10248,7 @@ export function FileExplorer({
               content: resolvedContent,
               language: resolvedPreview.language,
               renderKind: resolvedPreview.renderKind,
+              scriptPreview: null,
               focusTarget,
               isDirty: hasRestoredDraft,
               isSaving: false,
@@ -9983,6 +10295,7 @@ export function FileExplorer({
     },
     [
       getDocumentPreviewKind,
+      getExplorerItemProperties,
       getPreviewAssetUrl,
       flushPreviewTextSave,
       isCompactDock,
@@ -9991,6 +10304,7 @@ export function FileExplorer({
       previewEnabled,
       readExplorerTextFile,
       requestCurrentPreviewClose,
+      runtimePlatform,
       setDocumentViewMode,
     ],
   );
@@ -10085,12 +10399,12 @@ export function FileExplorer({
       const canInlinePreview = previewEnabled && !isCompactDock;
       const entryExtension = getEntryExtension(entry);
 
-      if (canInlinePreview && !isExecutableExtension(entryExtension)) {
+      if (canInlinePreview && !isExecutableBinaryExtension(entryExtension)) {
         await previewEntry(entry, focusTarget);
         return;
       }
 
-      if (isExecutableExtension(entryExtension)) {
+      if (isExecutableBinaryExtension(entryExtension)) {
         await openExplorerPath(entry.path).catch((e) => setError(String(e)));
         return;
       }
@@ -12007,11 +12321,15 @@ export function FileExplorer({
   const previewPlacement = effectiveShellLayout.previewPlacement;
   const previewModeLabel =
     preview.type === "text"
-      ? documentViewMode === "edit"
-        ? "Text editor"
-        : preview.renderKind === "markdown"
-          ? "Text preview (markdown)"
-          : "Text preview"
+      ? preview.scriptPreview != null
+        ? documentViewMode === "edit"
+          ? "Script editor"
+          : "Script run"
+        : documentViewMode === "edit"
+          ? "Text editor"
+          : preview.renderKind === "markdown"
+            ? "Text preview (markdown)"
+            : "Text preview"
       : preview.type === "shader"
         ? documentViewMode === "edit"
           ? "Shader editor"
@@ -19152,6 +19470,7 @@ export function FileExplorer({
               presentationMode={previewSplitMode}
               previewSurfaceMode={previewSurfaceMode}
               previewTerminalMounted={previewTerminalMounted}
+              previewTerminalCommandRequest={previewTerminalCommandRequest}
               previewTerminalWorkingDirectory={previewTerminalWorkingDirectory}
               previewTerminalReportedWorkingDirectory={
                 previewTerminalReportedWorkingDirectory
@@ -19176,6 +19495,11 @@ export function FileExplorer({
                 )
               }
               onTogglePreviewTerminal={togglePreviewTerminal}
+              onRunTextScript={runPreviewTextScript}
+              onStopTextScriptRun={stopPreviewTextScriptRun}
+              onPreviewTerminalCommandHandled={
+                handlePreviewTerminalCommandHandled
+              }
               onPreviewTerminalReportedWorkingDirectoryChange={
                 handlePreviewTerminalReportedWorkingDirectoryChange
               }

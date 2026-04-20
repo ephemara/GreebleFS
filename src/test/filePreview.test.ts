@@ -4,6 +4,7 @@ import {
   EXPLORER_AUDIO_EXPORT_FORMATS,
   getAudioPreviewMimeType,
   getExplorerAudioExportFormatDefinition,
+  getExecutableScriptRunner,
   getModelPreviewFormat,
   getMonacoLanguage,
   getShaderPreviewFormat,
@@ -11,7 +12,9 @@ import {
   isDirectAudioPreviewExtension,
   isAudioPreviewExtension,
   isEditableTextExtension,
+  isExecutableBinaryExtension,
   isExecutableExtension,
+  isExecutableScriptExtension,
   isImagePreviewExtension,
   isPdfPreviewExtension,
   isShaderPreviewExtension,
@@ -30,6 +33,14 @@ describe("filePreview config", () => {
     expect(isExecutableExtension("exe")).toBe(true);
     expect(isExecutableExtension("ps1")).toBe(true);
     expect(isExecutableExtension("glb")).toBe(false);
+    expect(isExecutableBinaryExtension("exe")).toBe(true);
+    expect(isExecutableBinaryExtension("ps1")).toBe(false);
+    expect(isExecutableScriptExtension("ps1")).toBe(true);
+    expect(isExecutableScriptExtension("command")).toBe(true);
+    expect(getExecutableScriptRunner("bat")).toBe("batch");
+    expect(getExecutableScriptRunner("ps1")).toBe("powershell");
+    expect(getExecutableScriptRunner("zsh")).toBe("zsh");
+    expect(getExecutableScriptRunner("exe")).toBeNull();
   });
 
   it("detects audio preview extensions and maps their mime types", () => {
@@ -129,6 +140,8 @@ describe("filePreview config", () => {
   it("still allows normal source files to open in the editor", () => {
     expect(isEditableTextExtension("ts", 1024)).toBe(true);
     expect(isEditableTextExtension("txt", 1024)).toBe(true);
+    expect(isEditableTextExtension("bat", 1024)).toBe(true);
+    expect(isEditableTextExtension("ps1", 1024)).toBe(true);
     expect(isEditableTextExtension("", 1024)).toBe(true);
   });
 

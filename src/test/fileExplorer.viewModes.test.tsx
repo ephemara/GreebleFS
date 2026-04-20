@@ -25,6 +25,11 @@ const {
     reportedAlphaCwd: "C:\\workspace\\repo\\alpha",
     lastProps: null as null | {
       consumeExplorerCwdSync?: boolean;
+      pendingCommandRequest?: {
+        id: string;
+        command: string;
+        run: boolean;
+      } | null;
       terminalIdNamespace?: string;
       workingDirectory?: string | null;
       onReportedWorkingDirectoryChange?: (cwd: string) => void;
@@ -217,11 +222,17 @@ vi.mock("../components/ExplorerShaderWorkbench", () => ({
 vi.mock("../components/TerminalOverlay", () => ({
   default: ({
     consumeExplorerCwdSync,
+    pendingCommandRequest,
     onReportedWorkingDirectoryChange,
     terminalIdNamespace,
     workingDirectory,
   }: {
     consumeExplorerCwdSync?: boolean;
+    pendingCommandRequest?: {
+      id: string;
+      command: string;
+      run: boolean;
+    } | null;
     onReportedWorkingDirectoryChange?: (cwd: string) => void;
     terminalIdNamespace?: string;
     workingDirectory?: string | null;
@@ -232,6 +243,7 @@ vi.mock("../components/TerminalOverlay", () => ({
 
     previewTerminalMockState.lastProps = {
       consumeExplorerCwdSync,
+      pendingCommandRequest,
       onReportedWorkingDirectoryChange,
       terminalIdNamespace,
       workingDirectory,
@@ -297,6 +309,16 @@ const ENTRIES = [
     size: 128,
     modified: 0,
     extension: "txt",
+    is_hidden: false,
+    is_symlink: false,
+  },
+  {
+    name: "build.bat",
+    path: `${REPO_ROOT}\\build.bat`,
+    is_dir: false,
+    size: 96,
+    modified: 0,
+    extension: "bat",
     is_hidden: false,
     is_symlink: false,
   },
@@ -1054,6 +1076,47 @@ describe("FileExplorer view modes", () => {
 
     expect(getChromeControl("previewModeToggle")).toBeNull();
     expect(getChromeControl("previewSplitToggle")).toBeNull();
+  });
+
+  it("opens executable scripts in an editor-first preview with a run mode backed by the preview terminal", async () => {
+    renderExplorer();
+    await screen.findByText("build.bat");
+
+    fireEvent.click(screen.getByText("build.bat"));
+
+    await screen.findByRole("button", { name: /copy path/i });
+    expect(screen.queryByText(/preview unavailable/i)).toBeNull();
+    expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^run$/i })).toBeInTheDocument();
+    expect(getChromeControl("previewTerminalToggle")).toBeNull();
+    expect(screen.getByText("hello from preview")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^run$/i }));
+
+    await waitFor(() => {
+      expect(getPreviewPane()).toHaveAttribute(
+        "data-overlay-explorer-preview-surface-mode",
+        "terminal",
+      );
+      expect(previewTerminalMockState.lastProps?.pendingCommandRequest).toEqual(
+        expect.objectContaining({
+          id: expect.stringContaining("preview-primary:"),
+          run: true,
+        }),
+      );
+      expect(
+        previewTerminalMockState.lastProps?.pendingCommandRequest?.command,
+      ).toContain("build.bat");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^edit$/i }));
+
+    await waitFor(() => {
+      expect(getPreviewPane()).toHaveAttribute(
+        "data-overlay-explorer-preview-surface-mode",
+        "content",
+      );
+    });
   });
 
   it("only shows the preview split toggle when a preview is active", async () => {
