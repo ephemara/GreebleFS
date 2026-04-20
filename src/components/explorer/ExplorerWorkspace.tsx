@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Clipboard, CopyPlus, Plus, SquareSplitHorizontal, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CopyPlus, MoreHorizontal, Plus, SquareSplitHorizontal, X } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import type { ResolvedOverlayAppearance } from '../../config/appearance';
 import {
@@ -196,7 +196,9 @@ export function ExplorerWorkspace({
   const containerRef = useRef<HTMLDivElement>(null);
   const paneSurfaceRef = useRef<HTMLDivElement>(null);
   const commandSequenceRef = useRef(0);
+  const paneActionsMenuRef = useRef<HTMLDivElement>(null);
   const [linkedNavigationEnabled, setLinkedNavigationEnabled] = useState(false);
+  const [paneActionsMenuOpen, setPaneActionsMenuOpen] = useState(false);
   const [runtimeSnapshotsByInstanceId, setRuntimeSnapshotsByInstanceId] = useState<Record<string, ExplorerWorkspaceRuntimeSnapshot>>({});
   const [navigationRequestsByInstanceId, setNavigationRequestsByInstanceId] = useState<Record<string, ExplorerWorkspaceNavigationRequest>>({});
   const [selectionTransferRequestsByInstanceId, setSelectionTransferRequestsByInstanceId] = useState<Record<string, ExplorerWorkspaceSelectionTransferRequest>>({});
@@ -251,6 +253,8 @@ export function ExplorerWorkspace({
   const activeTab = activeTabByPane[activePane]
     ?? visiblePaneIds.map((paneId) => activeTabByPane[paneId]).find((tab): tab is ExplorerTabSnapshot => Boolean(tab))
     ?? null;
+  const focusedPaneTabs = tabsByPane[activePane];
+  const workspacePaneCount = visiblePaneIds.length as 1 | 2 | 4;
   const commanderTargetPaneId = useMemo(
     () => visiblePaneIds.length === 2 ? getNextVisiblePaneId(visiblePaneIds, activePane) : null,
     [activePane, visiblePaneIds],
@@ -458,12 +462,6 @@ export function ExplorerWorkspace({
     }
     setFocusedPane(nextPaneId);
   }, [activePane, setFocusedPane, visiblePaneIds]);
-  const copyPanePath = useCallback(async (path: string) => {
-    if (!path.trim() || typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
-      return;
-    }
-    await navigator.clipboard.writeText(path);
-  }, []);
   const syncCommanderTargetToActivePane = useCallback(() => {
     if (!commanderTargetTab || !activePanePath.trim()) {
       return;
@@ -556,6 +554,26 @@ export function ExplorerWorkspace({
     linkedNavigationEnabled,
     visiblePaneIds.length,
   ]);
+  useEffect(() => {
+    if (!paneActionsMenuOpen) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (paneActionsMenuRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setPaneActionsMenuOpen(false);
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+    };
+  }, [paneActionsMenuOpen]);
+  useEffect(() => {
+    setPaneActionsMenuOpen(false);
+  }, [activePane, workspace.layoutMode]);
 
   const handleWorkspaceChromeControlMove = useCallback((args: {
     controlId: ExplorerChromeControlId;
@@ -621,7 +639,7 @@ export function ExplorerWorkspace({
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
+    gap: 8,
     minWidth: 0,
     flexWrap: 'wrap',
   }), []);
@@ -631,7 +649,7 @@ export function ExplorerWorkspace({
         return {
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
+          gap: 6,
           flex: 1,
           minWidth: 0,
           overflowX: 'auto',
@@ -651,7 +669,7 @@ export function ExplorerWorkspace({
         return {
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
+          gap: 6,
           minWidth: 0,
           flexWrap: 'wrap',
         };
@@ -664,123 +682,73 @@ export function ExplorerWorkspace({
   }>>(() => [
     {
       id: 'workspacePaneCounts',
-      label: 'Pane Counts',
+      label: 'Pane Switcher',
       surfaces: ['workspaceHeader'],
-      isVisible: () => true,
+      isVisible: () => visiblePaneIds.length > 1,
       render: () => (
-        <>
+        <div aria-label="Workspace panes" role="group" style={paneSwitcherGroupStyle}>
           {visiblePaneIds.map((paneId) => (
-            <span key={paneId} style={paneBadgeStyle(activePane === paneId, theme.accent)}>
-              {getPaneShortLabel(paneId)} {tabsByPane[paneId].length}
-            </span>
+            <button
+              key={paneId}
+              type="button"
+              onClick={() => setFocusedPane(paneId)}
+              title={`Focus ${getExplorerPaneLabel(paneId)}`}
+              style={paneSwitcherButtonStyle(activePane === paneId, theme.accent)}
+            >
+              <span>{getPaneShortLabel(paneId)}</span>
+              {tabsByPane[paneId].length > 1 && (
+                <span style={paneSwitcherCountStyle(activePane === paneId, theme.accent)}>
+                  {tabsByPane[paneId].length}
+                </span>
+              )}
+            </button>
           ))}
-        </>
+        </div>
       ),
-    },
-    {
-      id: 'workspaceMode',
-      label: 'Workspace Mode',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => true,
-      render: () => (
-        <span style={workspaceMetaStyle}>
-          {workspaceLayout.shortLabel} · {getPaneShortLabel(activePane)} active
-        </span>
-      ),
-    },
-    {
-      id: 'workspaceCommanderSummary',
-      label: 'Commander Summary',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => Boolean(commanderSummaryText),
-      render: () => commanderSummaryText ? (
-        <span style={{ ...workspaceMetaStyle, color: theme.accent }}>
-          {commanderSummaryText}
-        </span>
-      ) : null,
     },
     {
       id: 'workspaceTabs',
       label: 'Workspace Tabs',
       surfaces: ['workspaceHeader'],
-      isVisible: () => true,
+      isVisible: () => focusedPaneTabs.length > 0,
       render: () => (
         <>
-          {tabs.map((tab) => {
+          {focusedPaneTabs.map((tab) => {
             const currentPath = runtimeSnapshotsByInstanceId[tab.instanceId]?.currentPath
               ?? sessions[tab.instanceId]?.currentPath
               ?? '';
-            const isActive = activeTabByPane[tab.pane]?.id === tab.id;
-            const moveTargetPaneId = getNextVisiblePaneId(visiblePaneIds, tab.pane);
+            const isActive = activeTab?.id === tab.id;
+            const moveTargetPaneId = getNextVisiblePaneId(visiblePaneIds, activePane);
             return (
               <div
                 key={tab.id}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  minWidth: 0,
-                  padding: '6px 8px 6px 10px',
-                  borderRadius: 999,
-                  border: `1px solid ${isActive ? `${theme.accent}66` : 'var(--overlay-border)'}`,
-                  background: isActive ? `${theme.accent}1b` : 'var(--overlay-explorer-chip-bg)',
-                }}
+                style={workspaceTabChipStyle(isActive, theme.accent)}
               >
                 <button
                   type="button"
                   onClick={() => focusWorkspaceTab(tab.id)}
                   title={currentPath || tab.title || 'Explorer'}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 7,
-                    minWidth: 0,
-                    border: 'none',
-                    background: 'transparent',
-                    color: isActive ? 'var(--overlay-text-primary)' : 'var(--overlay-text-muted)',
-                    cursor: 'pointer',
-                    padding: 0,
-                  }}
+                  style={workspaceTabButtonStyle(isActive)}
                 >
                   <span
                     style={{
-                      width: 7,
-                      height: 7,
+                      width: 6,
+                      height: 6,
                       borderRadius: 999,
-                      background: tab.pane === activePane ? theme.accent : 'rgba(255,255,255,0.45)',
+                      background: isActive ? theme.accent : 'rgba(255,255,255,0.35)',
                       flexShrink: 0,
                     }}
                   />
                   <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 11.5, fontWeight: 600 }}>
                     {getTabDisplayLabel(tab, currentPath)}
                   </span>
-                  <span style={{ fontSize: 9.5, fontWeight: 700, color: isActive ? 'var(--overlay-text-primary)' : 'var(--overlay-text-dim)', opacity: 0.8 }}>
-                    {getPaneShortLabel(tab.pane)}
-                  </span>
-                  {isActive && (
-                    <span style={{ fontSize: 9, fontWeight: 800, color: theme.accent, padding: '2px 5px', borderRadius: 999, border: `1px solid ${theme.accent}55`, background: `${theme.accent}14` }}>
-                      Active
-                    </span>
-                  )}
                 </button>
                 {moveTargetPaneId && (
                   <button
                     type="button"
                     onClick={() => moveWorkspaceTabToPane(tab.id, moveTargetPaneId)}
                     title={`Move tab to ${getExplorerPaneLabel(moveTargetPaneId)}`}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: 20,
-                      height: 20,
-                      borderRadius: 999,
-                      border: 'none',
-                      background: 'transparent',
-                      color: 'var(--overlay-text-dim)',
-                      cursor: 'pointer',
-                      flexShrink: 0,
-                    }}
+                    style={workspaceTabIconButtonStyle}
                   >
                     <SquareSplitHorizontal size={11} />
                   </button>
@@ -790,19 +758,7 @@ export function ExplorerWorkspace({
                     type="button"
                     onClick={() => closeWorkspaceTab(tab.id)}
                     title="Close tab"
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: 20,
-                      height: 20,
-                      borderRadius: 999,
-                      border: 'none',
-                      background: 'transparent',
-                      color: 'var(--overlay-text-dim)',
-                      cursor: 'pointer',
-                      flexShrink: 0,
-                    }}
+                    style={workspaceTabIconButtonStyle}
                   >
                     <X size={11} />
                   </button>
@@ -825,125 +781,238 @@ export function ExplorerWorkspace({
       ),
     },
     {
-      id: 'workspaceDuplicateTab',
-      label: 'Duplicate Tab',
+      id: 'workspacePaneActionsMenu',
+      label: 'Pane Actions Menu',
       surfaces: ['workspaceHeader'],
       isVisible: () => true,
       render: () => (
-        <button type="button" onClick={duplicateActiveTab} title="Duplicate active tab" style={toolbarButtonStyle}>
-          <CopyPlus size={13} />
-        </button>
-      ),
-    },
-    {
-      id: 'workspaceFocusLeft',
-      label: 'Focus Pane 1',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => visiblePaneIds.includes('pane-1') && visiblePaneIds.length > 1,
-      render: () => (
-        <button type="button" onClick={() => setFocusedPane('pane-1')} title="Focus Pane 1" style={paneActionButtonStyle(activePane === 'pane-1', theme.accent)}>
-          P1
-        </button>
-      ),
-    },
-    {
-      id: 'workspaceFocusRight',
-      label: 'Focus Pane 2',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => visiblePaneIds.includes('pane-2') && visiblePaneIds.length > 1,
-      render: () => (
-        <button type="button" onClick={() => setFocusedPane('pane-2')} title="Focus Pane 2" style={paneActionButtonStyle(activePane === 'pane-2', theme.accent)}>
-          P2
-        </button>
-      ),
-    },
-    {
-      id: 'workspaceMoveTab',
-      label: 'Move Active Tab',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => visiblePaneIds.length > 1,
-      render: () => (
-        <button type="button" onClick={moveActiveTabToNextPane} title="Move active tab to the next visible pane" style={paneActionButtonStyle(false, theme.accent)}>
-          Move
-        </button>
-      ),
-    },
-    {
-      id: 'workspaceSyncPath',
-      label: 'Sync Target Pane',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => Boolean(commanderTargetPaneId),
-      render: () => (
-        <button
-          type="button"
-          onClick={syncCommanderTargetToActivePane}
-          disabled={!canUseCommanderActions}
-          title="Sync the target pane to the active pane path"
-          style={paneActionButtonStyle(false, theme.accent, !canUseCommanderActions)}
-        >
-          Sync
-        </button>
-      ),
-    },
-    {
-      id: 'workspaceLinkNavigation',
-      label: 'Link Navigation',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => Boolean(commanderTargetPaneId),
-      render: () => (
-        <button
-          type="button"
-          onClick={() => setLinkedNavigationEnabled((current) => !current)}
-          title={linkedNavigationEnabled ? 'Disable linked navigation' : 'Keep the target pane synced to the active pane'}
-          style={paneActionButtonStyle(linkedNavigationEnabled, theme.accent)}
-        >
-          Link
-        </button>
-      ),
-    },
-    {
-      id: 'workspaceCopyToPane',
-      label: 'Copy Selection To Pane',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => Boolean(commanderTargetPaneId),
-      render: () => (
-        <button
-          type="button"
-          onClick={copySelectionToCommanderTarget}
-          disabled={commanderButtonsDisabled}
-          title="Copy the active selection into the target pane folder"
-          style={paneActionButtonStyle(false, theme.accent, commanderButtonsDisabled)}
-        >
-          Copy
-        </button>
-      ),
-    },
-    {
-      id: 'workspaceMoveToPane',
-      label: 'Move Selection To Pane',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => Boolean(commanderTargetPaneId),
-      render: () => (
-        <button
-          type="button"
-          onClick={moveSelectionToCommanderTarget}
-          disabled={commanderButtonsDisabled}
-          title="Move the active selection into the target pane folder"
-          style={paneActionButtonStyle(false, theme.accent, commanderButtonsDisabled)}
-        >
-          Move
-        </button>
-      ),
-    },
-    {
-      id: 'workspaceSwapPane',
-      label: 'Focus Next Pane',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => visiblePaneIds.length > 1,
-      render: () => (
-        <button type="button" onClick={focusNextPane} title="Switch focus to the next visible pane" style={paneActionButtonStyle(false, theme.accent)}>
-          Next
-        </button>
+        <div ref={paneActionsMenuRef} style={{ position: 'relative' }}>
+          <button
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={paneActionsMenuOpen}
+            aria-label="Workspace pane actions"
+            onClick={() => setPaneActionsMenuOpen((current) => !current)}
+            title="Workspace pane actions"
+            style={toolbarButtonStyle}
+          >
+            <MoreHorizontal size={13} />
+          </button>
+          {paneActionsMenuOpen && (
+            <div role="menu" aria-label="Workspace pane actions" style={workspaceOverflowMenuStyle}>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  duplicateActiveTab();
+                  setPaneActionsMenuOpen(false);
+                }}
+                disabled={!activeTab}
+                style={workspaceOverflowMenuItemStyle(false, !activeTab)}
+              >
+                <CopyPlus size={12} />
+                Duplicate Active Tab
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  closeActiveTab();
+                  setPaneActionsMenuOpen(false);
+                }}
+                disabled={!activeTab || tabs.length <= 1}
+                style={workspaceOverflowMenuItemStyle(false, !activeTab || tabs.length <= 1)}
+              >
+                <X size={12} />
+                Close Active Tab
+              </button>
+              {visiblePaneIds.length > 1 && (
+                <>
+                  <div style={workspaceOverflowDividerStyle} />
+                  <div style={workspaceOverflowLabelStyle}>Pane</div>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      moveActiveTabToNextPane();
+                      setPaneActionsMenuOpen(false);
+                    }}
+                    disabled={!activeTab}
+                    style={workspaceOverflowMenuItemStyle(false, !activeTab)}
+                  >
+                    <SquareSplitHorizontal size={12} />
+                    Move Tab To Next Pane
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      focusNextPane();
+                      setPaneActionsMenuOpen(false);
+                    }}
+                    style={workspaceOverflowMenuItemStyle(false, false)}
+                  >
+                    <span style={workspaceOverflowLeadingGlyphStyle}>→</span>
+                    Focus Next Pane
+                  </button>
+                </>
+              )}
+              {commanderTargetPaneId && (
+                <>
+                  <div style={workspaceOverflowDividerStyle} />
+                  <div style={workspaceOverflowLabelStyle}>Commander</div>
+                  {commanderSummaryText && (
+                    <div style={workspaceOverflowSummaryStyle(theme.accent)}>
+                      {commanderSummaryText}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      syncCommanderTargetToActivePane();
+                      setPaneActionsMenuOpen(false);
+                    }}
+                    disabled={!canUseCommanderActions}
+                    style={workspaceOverflowMenuItemStyle(false, !canUseCommanderActions)}
+                  >
+                    <span style={workspaceOverflowLeadingGlyphStyle}>↺</span>
+                    Sync Target Pane
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={linkedNavigationEnabled}
+                    onClick={() => {
+                      setLinkedNavigationEnabled((current) => !current);
+                      setPaneActionsMenuOpen(false);
+                    }}
+                    style={workspaceOverflowMenuItemStyle(linkedNavigationEnabled, false)}
+                  >
+                    <span style={workspaceOverflowLeadingGlyphStyle}>{linkedNavigationEnabled ? '●' : '○'}</span>
+                    Linked Navigation
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      copySelectionToCommanderTarget();
+                      setPaneActionsMenuOpen(false);
+                    }}
+                    disabled={commanderButtonsDisabled}
+                    style={workspaceOverflowMenuItemStyle(false, commanderButtonsDisabled)}
+                  >
+                    <span style={workspaceOverflowLeadingGlyphStyle}>⎘</span>
+                    Copy Selection To Pane
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      moveSelectionToCommanderTarget();
+                      setPaneActionsMenuOpen(false);
+                    }}
+                    disabled={commanderButtonsDisabled}
+                    style={workspaceOverflowMenuItemStyle(false, commanderButtonsDisabled)}
+                  >
+                    <span style={workspaceOverflowLeadingGlyphStyle}>⇄</span>
+                    Move Selection To Pane
+                  </button>
+                </>
+              )}
+              {(workspaceLayout.supportsColumnSplit || workspaceLayout.supportsRowSplit) && (
+                <>
+                  <div style={workspaceOverflowDividerStyle} />
+                  <div style={workspaceOverflowLabelStyle}>Split</div>
+                  <div style={workspaceOverflowMetaStyle}>
+                    {workspaceLayout.supportsColumnSplit ? `Cols ${columnSplitPercent}%` : 'Cols off'}
+                    {workspaceLayout.supportsRowSplit ? ` · Rows ${rowSplitPercent}%` : ''}
+                  </div>
+                  {workspaceLayout.supportsColumnSplit && (
+                    <>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setWorkspaceColumnSplitRatio(workspace.columnSplitRatio - 0.05);
+                          setPaneActionsMenuOpen(false);
+                        }}
+                        style={workspaceOverflowMenuItemStyle(false, false)}
+                      >
+                        <ChevronLeft size={12} />
+                        Narrow First Column
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setWorkspaceColumnSplitRatio(0.5);
+                          setPaneActionsMenuOpen(false);
+                        }}
+                        style={workspaceOverflowMenuItemStyle(false, false)}
+                      >
+                        <SquareSplitHorizontal size={12} />
+                        Reset Column Split
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setWorkspaceColumnSplitRatio(workspace.columnSplitRatio + 0.05);
+                          setPaneActionsMenuOpen(false);
+                        }}
+                        style={workspaceOverflowMenuItemStyle(false, false)}
+                      >
+                        <ChevronRight size={12} />
+                        Widen First Column
+                      </button>
+                    </>
+                  )}
+                  {workspaceLayout.supportsRowSplit && (
+                    <>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setWorkspaceRowSplitRatio(workspace.rowSplitRatio - 0.05);
+                          setPaneActionsMenuOpen(false);
+                        }}
+                        style={workspaceOverflowMenuItemStyle(false, false)}
+                      >
+                        <span style={workspaceOverflowLeadingGlyphStyle}>↑</span>
+                        Reduce Top Row
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setWorkspaceRowSplitRatio(0.5);
+                          setPaneActionsMenuOpen(false);
+                        }}
+                        style={workspaceOverflowMenuItemStyle(false, false)}
+                      >
+                        <span style={workspaceOverflowLeadingGlyphStyle}>↕</span>
+                        Reset Row Split
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setWorkspaceRowSplitRatio(workspace.rowSplitRatio + 0.05);
+                          setPaneActionsMenuOpen(false);
+                        }}
+                        style={workspaceOverflowMenuItemStyle(false, false)}
+                      >
+                        <span style={workspaceOverflowLeadingGlyphStyle}>↓</span>
+                        Expand Top Row
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
       ),
     },
     {
@@ -988,106 +1057,35 @@ export function ExplorerWorkspace({
         </div>
       ),
     },
-    {
-      id: 'workspaceCloseTab',
-      label: 'Close Active Tab',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => true,
-      render: () => (
-        <button type="button" onClick={closeActiveTab} title="Close active tab" style={toolbarButtonStyle}>
-          <X size={13} />
-        </button>
-      ),
-    },
-    {
-      id: 'workspaceSplitSummary',
-      label: 'Split Summary',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => workspaceLayout.supportsColumnSplit || workspaceLayout.supportsRowSplit,
-      render: () => (
-        <span style={{ ...workspaceMetaStyle, paddingLeft: 4, paddingRight: 2 }}>
-          {workspaceLayout.supportsColumnSplit ? `Cols ${columnSplitPercent}%` : 'Cols off'}
-          {workspaceLayout.supportsRowSplit ? ` · Rows ${rowSplitPercent}%` : ''}
-        </span>
-      ),
-    },
-    {
-      id: 'workspaceSplitNudgeLeft',
-      label: 'Narrow First Column',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => workspaceLayout.supportsColumnSplit,
-      render: () => (
-        <button
-          type="button"
-          onClick={() => setWorkspaceColumnSplitRatio(workspace.columnSplitRatio - 0.05)}
-          title="Narrow the first column"
-          style={toolbarButtonStyle}
-        >
-          <ChevronLeft size={13} />
-        </button>
-      ),
-    },
-    {
-      id: 'workspaceSplitReset',
-      label: 'Reset Column Split',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => workspaceLayout.supportsColumnSplit,
-      render: () => (
-        <button
-          type="button"
-          onClick={() => setWorkspaceColumnSplitRatio(0.5)}
-          title="Reset the column split to 50/50"
-          style={toolbarButtonStyle}
-        >
-          <SquareSplitHorizontal size={13} />
-        </button>
-      ),
-    },
-    {
-      id: 'workspaceSplitNudgeRight',
-      label: 'Widen First Column',
-      surfaces: ['workspaceHeader'],
-      isVisible: () => workspaceLayout.supportsColumnSplit,
-      render: () => (
-        <button
-          type="button"
-          onClick={() => setWorkspaceColumnSplitRatio(workspace.columnSplitRatio + 0.05)}
-          title="Widen the first column"
-          style={toolbarButtonStyle}
-        >
-          <ChevronRight size={13} />
-        </button>
-      ),
-    },
   ], [
     activePane,
-    activePanePath,
     activeTab,
-    activeTabByPane,
     canUseCommanderActions,
     closeActiveTab,
     closeWorkspaceTab,
     columnSplitPercent,
     commanderButtonsDisabled,
-    commanderSelectionCount,
     commanderSummaryText,
     commanderTargetPaneId,
     copySelectionToCommanderTarget,
-    copyPanePath,
     createTabInFocusedPane,
     duplicateActiveTab,
     ensureWorkspaceLayout,
     focusNextPane,
     focusWorkspaceTab,
+    focusedPaneTabs,
     linkedNavigationEnabled,
     moveActiveTabToNextPane,
     moveSelectionToCommanderTarget,
     moveWorkspaceTabToPane,
+    paneActionsMenuOpen,
     rowSplitPercent,
     runtimeSnapshotsByInstanceId,
     sessions,
     setFocusedPane,
+    setPaneActionsMenuOpen,
     setWorkspaceColumnSplitRatio,
+    setWorkspaceRowSplitRatio,
     syncCommanderTargetToActivePane,
     tabs,
     tabsByPane,
@@ -1098,7 +1096,6 @@ export function ExplorerWorkspace({
     workspace.rowSplitRatio,
     workspaceLayout.supportsColumnSplit,
     workspaceLayout.supportsRowSplit,
-    workspaceLayout.shortLabel,
   ]);
   const workspaceChromeControlRegistryById = useMemo(
     () => new Map(workspaceChromeControlRegistry.map((entry) => [entry.id, entry])),
@@ -1125,15 +1122,6 @@ export function ExplorerWorkspace({
 
   const renderPane = useCallback((pane: ExplorerPaneId, tab: ExplorerTabSnapshot | null) => {
     const isActivePane = activePane === pane;
-    const paneLabel = getExplorerPaneLabel(pane);
-    const panePath = tab
-      ? (
-        runtimeSnapshotsByInstanceId[tab.instanceId]?.currentPath
-        ?? sessions[tab.instanceId]?.currentPath
-        ?? ''
-      )
-      : '';
-    const paneTabsCount = tabsByPane[pane].length;
     if (!tab) {
       return (
         <div
@@ -1175,7 +1163,7 @@ export function ExplorerWorkspace({
                 cursor: 'pointer',
               }}
             >
-              Open {paneLabel}
+              Open Explorer
             </button>
           </div>
         </div>
@@ -1199,57 +1187,6 @@ export function ExplorerWorkspace({
         }}
         onMouseDown={() => setFocusedPane(pane)}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--overlay-border)', background: isActivePane ? `color-mix(in srgb, ${theme.accent} 12%, var(--overlay-bg-panel) 88%)` : 'color-mix(in srgb, var(--overlay-bg-panel) 92%, black 8%)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-            <span style={{ fontSize: 10.5, fontWeight: 700, color: isActivePane ? 'var(--overlay-text-primary)' : 'var(--overlay-text-muted)' }}>
-              {paneLabel}
-            </span>
-            <span style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--overlay-text-dim)' }}>
-              {paneTabsCount} tabs
-            </span>
-            {isActivePane && (
-              <span style={{ fontSize: 9, fontWeight: 700, color: theme.accent, padding: '2px 6px', borderRadius: 999, border: `1px solid ${theme.accent}55`, background: `${theme.accent}14` }}>
-                Focused
-              </span>
-            )}
-            <span
-              title={tab.title || panePath}
-              style={{
-                maxWidth: 170,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                fontSize: 10,
-                color: 'var(--overlay-text-dim)',
-                fontWeight: 600,
-              }}
-            >
-              {getTabDisplayLabel(tab, panePath)}
-            </span>
-          </div>
-          <span
-            title="Click to copy path"
-            onClick={() => copyPanePath(panePath)}
-            style={{ fontSize: 10, color: 'var(--overlay-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1, textAlign: 'right', cursor: 'copy' }}
-          >
-            {panePath || 'No path'}
-          </span>
-          {panePath && (
-            <button
-              type="button"
-              onClick={() => copyPanePath(panePath)}
-              title="Copy pane path"
-              style={{
-                ...toolbarButtonStyle,
-                width: 24,
-                height: 24,
-                flexShrink: 0,
-              }}
-            >
-              <Clipboard size={12} />
-            </button>
-          )}
-        </div>
         <FileExplorer
           appearance={appearance}
           chromeControlSurface={chromeControlSurface}
@@ -1258,6 +1195,7 @@ export function ExplorerWorkspace({
           externalSelectionTransferRequest={selectionTransferRequestsByInstanceId[tab.instanceId] ?? null}
           instanceId={tab.instanceId}
           layoutMode={layoutMode}
+          workspacePaneCount={workspacePaneCount}
           onWorkspaceRuntimeSnapshotChange={publishRuntimeSnapshot}
           onWorkspaceSelectionTransferComplete={handleWorkspaceSelectionTransferComplete}
           pluginActions={pluginActions}
@@ -1274,7 +1212,6 @@ export function ExplorerWorkspace({
     activePane,
     appearance,
     chromeControlSurface,
-    copyPanePath,
     createWorkspaceTab,
     getPreferredSourceInstanceId,
     handleWorkspaceSelectionTransferComplete,
@@ -1288,12 +1225,10 @@ export function ExplorerWorkspace({
     publishRuntimeSnapshot,
     refreshRequestsByInstanceId,
     repositoryPicker,
-    runtimeSnapshotsByInstanceId,
     selectionTransferRequestsByInstanceId,
-    sessions,
     setFocusedPane,
-    tabsByPane,
     theme,
+    workspacePaneCount,
   ]);
 
   const startColumnResize = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
@@ -1363,9 +1298,9 @@ export function ExplorerWorkspace({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: 10,
-          minHeight: 40,
-          padding: '8px 10px',
+          gap: 8,
+          minHeight: 36,
+          padding: '6px 10px',
           borderRadius: 14,
           border: '1px solid var(--overlay-border)',
           background: 'color-mix(in srgb, var(--overlay-bg-panel) 88%, black 12%)',
@@ -1434,27 +1369,84 @@ const toolbarButtonStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
-function paneBadgeStyle(active: boolean, accent: string): React.CSSProperties {
+const paneSwitcherGroupStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  minWidth: 0,
+  flexWrap: 'wrap',
+};
+
+function paneSwitcherButtonStyle(active: boolean, accent: string): React.CSSProperties {
   return {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 34,
-    padding: '3px 8px',
+    gap: 6,
+    minWidth: 38,
+    padding: '4px 9px',
     borderRadius: 999,
     border: `1px solid ${active ? `${accent}66` : 'var(--overlay-border)'}`,
     background: active ? `${accent}18` : 'var(--overlay-explorer-chip-bg)',
     color: active ? 'var(--overlay-text-primary)' : 'var(--overlay-text-muted)',
     fontSize: 10,
     fontWeight: 700,
+    cursor: 'pointer',
   };
 }
 
-const workspaceMetaStyle: React.CSSProperties = {
+function paneSwitcherCountStyle(active: boolean, accent: string): React.CSSProperties {
+  return {
+    minWidth: 16,
+    padding: '1px 5px',
+    borderRadius: 999,
+    background: active ? `${accent}24` : 'rgba(255,255,255,0.08)',
+    color: active ? 'var(--overlay-text-primary)' : 'var(--overlay-text-dim)',
+    fontSize: 9,
+    fontWeight: 700,
+    lineHeight: 1.2,
+  };
+}
+
+function workspaceTabChipStyle(active: boolean, accent: string): React.CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    minWidth: 0,
+    padding: '6px 8px 6px 10px',
+    borderRadius: 999,
+    border: `1px solid ${active ? `${accent}66` : 'var(--overlay-border)'}`,
+    background: active ? `${accent}1b` : 'var(--overlay-explorer-chip-bg)',
+  };
+}
+
+function workspaceTabButtonStyle(active: boolean): React.CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 7,
+    minWidth: 0,
+    border: 'none',
+    background: 'transparent',
+    color: active ? 'var(--overlay-text-primary)' : 'var(--overlay-text-muted)',
+    cursor: 'pointer',
+    padding: 0,
+  };
+}
+
+const workspaceTabIconButtonStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 20,
+  height: 20,
+  borderRadius: 999,
+  border: 'none',
+  background: 'transparent',
   color: 'var(--overlay-text-dim)',
-  fontSize: 10.5,
-  fontWeight: 600,
-  whiteSpace: 'nowrap',
+  cursor: 'pointer',
+  flexShrink: 0,
 };
 
 function paneActionButtonStyle(
@@ -1478,6 +1470,83 @@ function paneActionButtonStyle(
     opacity: disabled ? 0.45 : 1,
   };
 }
+
+const workspaceOverflowMenuStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: 'calc(100% + 8px)',
+  right: 0,
+  zIndex: 40,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+  minWidth: 240,
+  padding: 8,
+  borderRadius: 14,
+  border: '1px solid var(--overlay-border)',
+  background: 'color-mix(in srgb, var(--overlay-bg-panel) 94%, black 6%)',
+  boxShadow: '0 20px 40px rgba(0,0,0,0.28)',
+};
+
+function workspaceOverflowMenuItemStyle(active: boolean, disabled: boolean): React.CSSProperties {
+  return {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    width: '100%',
+    minWidth: 0,
+    border: 'none',
+    borderRadius: 10,
+    background: active ? 'var(--overlay-explorer-chip-active-bg)' : 'transparent',
+    color: disabled ? 'var(--overlay-text-dim)' : 'var(--overlay-text-primary)',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    padding: '7px 9px',
+    fontSize: 11,
+    fontWeight: 600,
+    textAlign: 'left',
+    opacity: disabled ? 0.5 : 1,
+  };
+}
+
+const workspaceOverflowDividerStyle: React.CSSProperties = {
+  height: 1,
+  margin: '4px 0 1px',
+  background: 'var(--overlay-border)',
+  opacity: 0.8,
+};
+
+const workspaceOverflowLabelStyle: React.CSSProperties = {
+  padding: '2px 9px 0',
+  fontSize: 9,
+  fontWeight: 700,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase',
+  color: 'var(--overlay-text-dim)',
+};
+
+const workspaceOverflowLeadingGlyphStyle: React.CSSProperties = {
+  width: 12,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  flexShrink: 0,
+};
+
+function workspaceOverflowSummaryStyle(accent: string): React.CSSProperties {
+  return {
+    padding: '2px 9px 4px',
+    fontSize: 10,
+    fontWeight: 600,
+    color: accent,
+  };
+}
+
+const workspaceOverflowMetaStyle: React.CSSProperties = {
+  padding: '2px 9px 4px',
+  fontSize: 10,
+  fontWeight: 600,
+  color: 'var(--overlay-text-dim)',
+  whiteSpace: 'nowrap',
+};
 
 const splitHandleStyle: React.CSSProperties = {
   width: 8,

@@ -135,6 +135,7 @@ describe('ExplorerWorkspace', () => {
     );
 
     expect(screen.getByTestId('file-explorer-primary')).toBeInTheDocument();
+    expect(getRenderedFileExplorerProps(PRIMARY_EXPLORER_INSTANCE_ID).workspacePaneCount).toBe(1);
     const explorerPane = container.querySelector('[data-testid="file-explorer-primary"]')?.parentElement as HTMLDivElement | null;
     expect(explorerPane).not.toBeNull();
     expect(explorerPane?.style.height).toBe('100%');
@@ -173,7 +174,7 @@ describe('ExplorerWorkspace', () => {
       />,
     );
 
-    expect(getWorkspaceControl('workspaceMode')?.getAttribute('data-overlay-explorer-control-zone')).toBe('end');
+    expect(getWorkspaceControl('workspacePaneActionsMenu')?.getAttribute('data-overlay-explorer-control-zone')).toBe('end');
   });
 
   it('routes commander sync, copy, and target refresh through the workspace/file-explorer bridge', async () => {
@@ -218,29 +219,24 @@ describe('ExplorerWorkspace', () => {
       selectedEntries: [],
     });
 
-    await waitFor(() => {
-      expect(getWorkspaceControl('workspaceCommanderSummary')?.textContent).toContain('1 selected -> P2 · destination');
-      expect(screen.queryByText('Sync or transfer into the opposite pane without leaving the keyboard loop.')).not.toBeInTheDocument();
-    });
+    fireEvent.click(getWorkspaceButton('workspacePaneActionsMenu') as HTMLButtonElement);
+    const paneActionsMenu = await screen.findByRole('menu', { name: 'Workspace pane actions' });
+    expect(within(paneActionsMenu).getByText('1 selected -> P2 · destination')).toBeInTheDocument();
 
-    const syncButton = getWorkspaceButton('workspaceSyncPath');
-    const copyButton = getWorkspaceButton('workspaceCopyToPane');
-    const linkButton = getWorkspaceButton('workspaceLinkNavigation');
+    const syncButton = within(paneActionsMenu).getByRole('menuitem', { name: /sync target pane/i });
+    const copyButton = within(paneActionsMenu).getByRole('menuitem', { name: /copy selection to pane/i });
+    expect(syncButton).toBeEnabled();
+    expect(copyButton).toBeEnabled();
 
-    expect(syncButton).not.toBeNull();
-    expect(copyButton).not.toBeNull();
-    expect(linkButton).not.toBeNull();
-    expect(syncButton?.disabled).toBe(false);
-    expect(copyButton?.disabled).toBe(false);
-
-    fireEvent.click(syncButton as HTMLButtonElement);
+    fireEvent.click(syncButton);
     await waitFor(() => {
       expect(getRenderedFileExplorerProps(targetInstanceId as string).externalNavigationRequest).toMatchObject({
         path: '/workspace/source',
       });
     });
 
-    fireEvent.click(copyButton as HTMLButtonElement);
+    fireEvent.click(getWorkspaceButton('workspacePaneActionsMenu') as HTMLButtonElement);
+    fireEvent.click(await screen.findByRole('menuitem', { name: /copy selection to pane/i }));
     await waitFor(() => {
       expect(getRenderedFileExplorerProps(PRIMARY_EXPLORER_INSTANCE_ID).externalSelectionTransferRequest).toMatchObject({
         targetDir: '/workspace/destination',
@@ -260,7 +256,8 @@ describe('ExplorerWorkspace', () => {
       expect(getRenderedFileExplorerProps(targetInstanceId as string).externalRefreshRequest).toBeTruthy();
     });
 
-    fireEvent.click(linkButton as HTMLButtonElement);
+    fireEvent.click(getWorkspaceButton('workspacePaneActionsMenu') as HTMLButtonElement);
+    fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: /linked navigation/i }));
     emitRuntimeSnapshot(PRIMARY_EXPLORER_INSTANCE_ID, {
       currentPath: '/workspace/source/materials',
       currentPathIsCloud: false,
@@ -285,10 +282,59 @@ describe('ExplorerWorkspace', () => {
       selectedEntries: [],
     });
 
+    fireEvent.click(getWorkspaceButton('workspacePaneActionsMenu') as HTMLButtonElement);
+    expect(await screen.findByText('P2 · destination')).toBeInTheDocument();
+  });
+
+  it('switches the shared tab strip with the focused pane and removes pane-header copy', async () => {
+    render(
+      <ExplorerWorkspace
+        theme={{
+          accent: '#8ab4f8',
+          bg: '#0f1115',
+          bgPanel: '#151923',
+          text: '#f4f7fb',
+          border: '#2a2f3a',
+          textMuted: '#9aa4b2',
+        }}
+        onOpenInTerminal={() => undefined}
+        onAddBookmark={() => undefined}
+      />,
+    );
+
+    fireEvent.click(getWorkspaceLayoutButton('2-Up'));
     await waitFor(() => {
-      expect(getWorkspaceControl('workspaceCommanderSummary')?.textContent).toContain('P2 · destination');
-      expect(getWorkspaceControl('workspaceCommanderSummary')?.textContent).not.toContain('No selection');
+      expect(renderedFileExplorerPropsByInstanceId.size).toBe(2);
     });
+
+    useExplorerStore.getState().createWorkspaceTab({
+      pane: 'pane-1',
+      title: 'Alpha Pane',
+      activate: false,
+    });
+    useExplorerStore.getState().createWorkspaceTab({
+      pane: 'pane-2',
+      title: 'Beta Pane',
+      activate: false,
+    });
+
+    await waitFor(() => {
+      expect(getWorkspaceControl('workspaceTabs')?.textContent).toContain('Alpha Pane');
+      expect(getWorkspaceControl('workspaceTabs')?.textContent).not.toContain('Beta Pane');
+    });
+
+    const paneSwitcher = getWorkspaceControl('workspacePaneCounts');
+    expect(paneSwitcher).not.toBeNull();
+    expect(getWorkspaceControl('workspacePaneActionsMenu')).not.toBeNull();
+
+    fireEvent.click(within(paneSwitcher as HTMLElement).getByTitle('Focus Pane 2'));
+    await waitFor(() => {
+      expect(getWorkspaceControl('workspaceTabs')?.textContent).toContain('Beta Pane');
+      expect(getWorkspaceControl('workspaceTabs')?.textContent).not.toContain('Alpha Pane');
+    });
+
+    expect(screen.queryByText(/^Pane 1$/)).toBeNull();
+    expect(screen.queryByText(/^Focused$/)).toBeNull();
   });
 
   it('keeps single-pane mode one click away through direct workspace layout buttons', async () => {
@@ -311,6 +357,7 @@ describe('ExplorerWorkspace', () => {
     await waitFor(() => {
       expect(useExplorerStore.getState().workspace.layoutMode).toBe('split');
       expect(renderedFileExplorerPropsByInstanceId.size).toBe(2);
+      expect(getRenderedFileExplorerProps(PRIMARY_EXPLORER_INSTANCE_ID).workspacePaneCount).toBe(2);
     });
 
     fireEvent.click(getWorkspaceLayoutButton('1-Up'));

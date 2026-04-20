@@ -6192,6 +6192,7 @@ interface FileExplorerProps {
   pluginContextMenuItems?: OverlayPluginContextMenuContribution[];
   layoutMode?: ExplorerLayoutMode;
   instanceId?: ExplorerInstanceId;
+  workspacePaneCount?: 1 | 2 | 4;
   chromeControlSurface?: "toolbar" | "topbar";
   focusAddressBarSignal?: number;
   onWorkspaceRuntimeSnapshotChange?: (
@@ -6261,6 +6262,7 @@ export function FileExplorer({
   pluginContextMenuItems = [],
   layoutMode = "full",
   instanceId = PRIMARY_EXPLORER_INSTANCE_ID,
+  workspacePaneCount = 1,
   chromeControlSurface = "toolbar",
   focusAddressBarSignal = 0,
   onWorkspaceRuntimeSnapshotChange,
@@ -6418,6 +6420,8 @@ export function FileExplorer({
   );
   const isCompactDock = layoutMode === "dock";
   const showsGlobalChromeControls = chromeControlSurface === "topbar";
+  const usesWorkspaceCompactChrome = workspacePaneCount > 1;
+  const usesWorkspaceQuadChrome = workspacePaneCount === 4;
   const explorerTheme = useMemo(
     () => appearance?.explorerTheme ?? resolveExplorerThemeRecipe(appearance),
     [appearance],
@@ -6736,7 +6740,8 @@ export function FileExplorer({
   const previewTerminalWorkingDirectory = currentPathIsCloud
     ? null
     : currentPath;
-  const previewPanelVisible = !isCompactDock && previewEnabled;
+  const previewPanelVisible =
+    !isCompactDock && previewEnabled && !usesWorkspaceCompactChrome;
   const hasPreview = previewPanelVisible && preview.type !== "none";
   const isExperimentalViewEligible =
     !isCompactDock && search.trim().length === 0;
@@ -12040,7 +12045,9 @@ export function FileExplorer({
         : null,
     [gridZoom, themedViewMode],
   );
-  const showToolbarLocationStrips = !isCompactDock;
+  const showToolbarLocationStrips =
+    !isCompactDock && !usesWorkspaceCompactChrome;
+  const showToolbarTextLabels = !isCompactDock && !usesWorkspaceQuadChrome;
 
   const showZoomHud = useCallback(() => {
     setZoomHudVisible(true);
@@ -12322,11 +12329,21 @@ export function FileExplorer({
       explorerTheme.toolbarStyle === "glass";
     const usesInset =
       usesFloatingShell || explorerTheme.toolbarStyle === "minimal";
+    const compactToolbarGap = usesWorkspaceQuadChrome
+      ? 4
+      : usesWorkspaceCompactChrome
+        ? 6
+        : "var(--overlay-explorer-toolbar-gap)";
+    const compactToolbarPadding = usesWorkspaceQuadChrome
+      ? "6px 8px"
+      : usesWorkspaceCompactChrome
+        ? "7px 9px"
+        : "var(--overlay-explorer-toolbar-padding)";
     return {
       display: "flex",
       flexDirection: "column",
-      gap: "var(--overlay-explorer-toolbar-gap)",
-      padding: "var(--overlay-explorer-toolbar-padding)",
+      gap: compactToolbarGap,
+      padding: compactToolbarPadding,
       background:
         explorerTheme.toolbarStyle === "minimal"
           ? "transparent"
@@ -12344,7 +12361,11 @@ export function FileExplorer({
       borderRadius: usesFloatingShell
         ? "var(--overlay-explorer-panel-radius)"
         : 0,
-      margin: usesInset ? "var(--overlay-explorer-chrome-inset)" : 0,
+      margin: usesInset
+        ? usesWorkspaceCompactChrome
+          ? "6px"
+          : "var(--overlay-explorer-chrome-inset)"
+        : 0,
       marginBottom: 0,
       boxShadow: usesFloatingShell
         ? "var(--overlay-explorer-toolbar-shadow)"
@@ -12363,59 +12384,68 @@ export function FileExplorer({
           : "none",
       flexShrink: 0,
     };
-  }, [explorerBlurEnabled, explorerTheme.toolbarStyle]);
+  }, [
+    explorerBlurEnabled,
+    explorerTheme.toolbarStyle,
+    usesWorkspaceCompactChrome,
+    usesWorkspaceQuadChrome,
+  ]);
   const toolbarPrimaryRowStyle = useMemo<CSSProperties>(
     () => ({
       display: "flex",
       alignItems: "center",
-      gap: "var(--overlay-explorer-toolbar-gap)",
+      gap: usesWorkspaceQuadChrome
+        ? 4
+        : usesWorkspaceCompactChrome
+          ? 6
+          : "var(--overlay-explorer-toolbar-gap)",
       flexWrap: "wrap",
       minWidth: 0,
     }),
-    [],
+    [usesWorkspaceCompactChrome, usesWorkspaceQuadChrome],
   );
   const toolbarPrimaryControlsStyle = useMemo<CSSProperties>(
     () => ({
       display: "flex",
       alignItems: "center",
       justifyContent: "flex-end",
-      gap: 6,
+      gap: usesWorkspaceQuadChrome ? 4 : 6,
       flexWrap: "wrap",
       minWidth: 0,
     }),
-    [],
+    [usesWorkspaceQuadChrome],
   );
   const toolbarSecondaryRowStyle = useMemo<CSSProperties>(
     () => ({
       display: "flex",
       alignItems: "center",
-      justifyContent: "space-between",
-      gap: 8,
+      justifyContent: usesWorkspaceCompactChrome ? "flex-start" : "space-between",
+      gap: usesWorkspaceQuadChrome ? 4 : 8,
       flexWrap: "wrap",
       minWidth: 0,
     }),
-    [],
+    [usesWorkspaceCompactChrome, usesWorkspaceQuadChrome],
   );
   const toolbarSecondaryLocationGroupStyle = useMemo<CSSProperties>(
     () => ({
       display: "flex",
       alignItems: "center",
-      gap: 8,
+      gap: usesWorkspaceQuadChrome ? 4 : 8,
       flex: 1,
       flexWrap: "wrap",
       minWidth: 0,
     }),
-    [],
+    [usesWorkspaceQuadChrome],
   );
   const toolbarSecondaryActionGroupStyle = useMemo<CSSProperties>(
     () => ({
       display: "flex",
       alignItems: "center",
-      gap: 6,
+      gap: usesWorkspaceQuadChrome ? 4 : 6,
       flexWrap: "wrap",
       minWidth: 0,
     }),
-    [],
+    [usesWorkspaceQuadChrome],
   );
   const mainColumnStyle = useMemo<CSSProperties>(
     () => ({
@@ -13066,7 +13096,10 @@ export function FileExplorer({
         id: "pinLocation",
         label: "Pin Location",
         surfaces: ["explorerToolbar"],
-        isVisible: () => Boolean(currentPath) && !currentPathIsCloud,
+        isVisible: () =>
+          Boolean(currentPath) &&
+          !currentPathIsCloud &&
+          !usesWorkspaceCompactChrome,
         render: () => (
           <button
             type="button"
@@ -13077,7 +13110,7 @@ export function FileExplorer({
             style={toolbarChipButtonStyle(false)}
           >
             <Star size={11} />
-            <span style={{ display: isCompactDock ? "none" : "inline" }}>
+            <span style={{ display: showToolbarTextLabels ? "inline" : "none" }}>
               Pin
             </span>
           </button>
@@ -13126,7 +13159,7 @@ export function FileExplorer({
             }}
           >
             <span style={{ fontWeight: 700, letterSpacing: "0.02em" }}>Aa</span>
-            <span style={{ display: isCompactDock ? "none" : "inline" }}>
+            <span style={{ display: showToolbarTextLabels ? "inline" : "none" }}>
               Text
             </span>
           </button>
@@ -13136,7 +13169,7 @@ export function FileExplorer({
         id: "saveSearch",
         label: "Save Search",
         surfaces: ["explorerToolbar"],
-        isVisible: () => !currentPathIsCloud,
+        isVisible: () => !currentPathIsCloud && !usesWorkspaceQuadChrome,
         render: () => (
           <button
             type="button"
@@ -13151,7 +13184,7 @@ export function FileExplorer({
             style={toolbarChipButtonStyle(!search.trim())}
           >
             <Save size={11} />
-            <span style={{ display: isCompactDock ? "none" : "inline" }}>
+            <span style={{ display: showToolbarTextLabels ? "inline" : "none" }}>
               Save Search
             </span>
           </button>
@@ -13177,7 +13210,7 @@ export function FileExplorer({
             style={toolbarChipButtonStyle(batchRenameTargets.length === 0)}
           >
             <Edit3 size={11} />
-            <span style={{ display: isCompactDock ? "none" : "inline" }}>
+            <span style={{ display: showToolbarTextLabels ? "inline" : "none" }}>
               Batch Rename
             </span>
           </button>
@@ -13187,7 +13220,7 @@ export function FileExplorer({
         id: "tagSelection",
         label: "Tag Selection",
         surfaces: ["explorerToolbar"],
-        isVisible: () => !currentPathIsCloud,
+        isVisible: () => !currentPathIsCloud && !usesWorkspaceQuadChrome,
         render: () => (
           <button
             type="button"
@@ -13206,7 +13239,7 @@ export function FileExplorer({
             style={toolbarChipButtonStyle(selectedEntries.length === 0)}
           >
             <Tags size={11} />
-            <span style={{ display: isCompactDock ? "none" : "inline" }}>
+            <span style={{ display: showToolbarTextLabels ? "inline" : "none" }}>
               Tag
             </span>
           </button>
@@ -13216,7 +13249,7 @@ export function FileExplorer({
         id: "duplicateScan",
         label: "Find Duplicates",
         surfaces: ["explorerToolbar"],
-        isVisible: () => !currentPathIsCloud,
+        isVisible: () => !currentPathIsCloud && !usesWorkspaceQuadChrome,
         render: () => (
           <button
             type="button"
@@ -13226,7 +13259,7 @@ export function FileExplorer({
             style={toolbarChipButtonStyle(!currentPath)}
           >
             <Sparkles size={11} />
-            <span style={{ display: isCompactDock ? "none" : "inline" }}>
+            <span style={{ display: showToolbarTextLabels ? "inline" : "none" }}>
               Duplicates
             </span>
           </button>
@@ -13245,7 +13278,7 @@ export function FileExplorer({
             style={toolbarChipButtonStyle(!currentPath)}
           >
             <Info size={11} />
-            <span style={{ display: isCompactDock ? "none" : "inline" }}>
+            <span style={{ display: showToolbarTextLabels ? "inline" : "none" }}>
               {propertiesLabel}
             </span>
           </button>
@@ -13264,7 +13297,7 @@ export function FileExplorer({
             style={toolbarChipButtonStyle(false)}
           >
             <Undo2 size={11} />
-            <span style={{ display: isCompactDock ? "none" : "inline" }}>
+            <span style={{ display: showToolbarTextLabels ? "inline" : "none" }}>
               Undo Trash
             </span>
           </button>
@@ -13334,7 +13367,8 @@ export function FileExplorer({
         id: "experimentalModes",
         label: "Experimental Modes",
         surfaces: ["explorerToolbar", "explorerTopbar"],
-        isVisible: (surfaceId) => isGlobalChromeSurfaceActive(surfaceId),
+        isVisible: (surfaceId) =>
+          !usesWorkspaceQuadChrome && isGlobalChromeSurfaceActive(surfaceId),
         render: () => (
           <div
             ref={experimentalMenuAnchorRef}
@@ -13692,7 +13726,8 @@ export function FileExplorer({
         id: "shellLayout",
         label: "Explorer Mode",
         surfaces: ["explorerToolbar", "explorerTopbar"],
-        isVisible: (surfaceId) => isGlobalChromeSurfaceActive(surfaceId),
+        isVisible: (surfaceId) =>
+          !usesWorkspaceQuadChrome && isGlobalChromeSurfaceActive(surfaceId),
         render: () => (
           <div
             ref={modeProfileMenuAnchorRef}
@@ -13916,7 +13951,8 @@ export function FileExplorer({
         id: "viewLayout",
         label: "View Layout",
         surfaces: ["explorerToolbar", "explorerTopbar"],
-        isVisible: (surfaceId) => isGlobalChromeSurfaceActive(surfaceId),
+        isVisible: (surfaceId) =>
+          !usesWorkspaceQuadChrome && isGlobalChromeSurfaceActive(surfaceId),
         render: () => (
           <div
             ref={layoutMenuAnchorRef}
@@ -14180,7 +14216,9 @@ export function FileExplorer({
         id: "togglePreview",
         label: "Toggle Preview",
         surfaces: ["explorerToolbar", "explorerTopbar"],
-        isVisible: (surfaceId) => isGlobalChromeSurfaceActive(surfaceId),
+        isVisible: (surfaceId) =>
+          !usesWorkspaceCompactChrome &&
+          isGlobalChromeSurfaceActive(surfaceId),
         render: () => (
           <button
             type="button"
@@ -14203,7 +14241,7 @@ export function FileExplorer({
             }
           >
             <Eye size={12} />
-            Preview
+            {showToolbarTextLabels ? "Preview" : "P"}
           </button>
         ),
       },
@@ -14651,6 +14689,7 @@ export function FileExplorer({
       showExperimentalMenu,
       showLayoutMenu,
       showToolbarLocationStrips,
+      showToolbarTextLabels,
       showZoomHud,
       startDuplicateFinder,
       submitAddressDraft,
@@ -14671,6 +14710,8 @@ export function FileExplorer({
       preview,
       searchModeLabel,
       sourceEntryCount,
+      usesWorkspaceCompactChrome,
+      usesWorkspaceQuadChrome,
     ],
   );
   const explorerChromeControlRegistryById = useMemo(
@@ -14742,7 +14783,9 @@ export function FileExplorer({
         ?.render(placement) ?? null,
     [explorerChromeControlRegistryById],
   );
-  const shouldRenderStatusBar = explorerTheme.statusBarStyle !== "hidden";
+  const shouldRenderStatusBar =
+    !usesWorkspaceCompactChrome &&
+    explorerTheme.statusBarStyle !== "hidden";
   const statusBarStyle = useMemo<CSSProperties>(
     () => ({
       display: "flex",
@@ -14775,7 +14818,10 @@ export function FileExplorer({
           ? "blur(18px)"
           : "none",
     }),
-    [explorerBlurEnabled, explorerTheme.statusBarStyle],
+    [
+      explorerBlurEnabled,
+      explorerTheme.statusBarStyle,
+    ],
   );
 
   useEffect(
@@ -17638,13 +17684,15 @@ export function FileExplorer({
                     "var(--overlay-explorer-chip-bg)")
                 }
               >
-                Open Sources
+                {usesWorkspaceCompactChrome ? "Sources" : "Open Sources"}
               </button>
-              <span style={{ fontSize: 10, color: EXP.muted2 }}>
-                {effectiveModeProfile.id === "focus"
-                  ? "Focus mode keeps the sources rail tucked away until you reopen it."
-                  : "Sources rail closed."}
-              </span>
+              {!usesWorkspaceCompactChrome && (
+                <span style={{ fontSize: 10, color: EXP.muted2 }}>
+                  {effectiveModeProfile.id === "focus"
+                    ? "Focus mode keeps the sources rail tucked away until you reopen it."
+                    : "Sources rail closed."}
+                </span>
+              )}
             </div>
           )}
           {showsGlobalChromeControls && (

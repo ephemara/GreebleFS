@@ -1,5 +1,34 @@
 # GreebleFS Memory
 
+# 2026-04-19 — Explorer Workspace Chrome Now Uses One Shared Focused-Pane Strip
+
+- The explorer workspace no longer spends vertical space on both a monolithic tab bar and per-pane header chrome.
+- Durable implementation shape:
+  - `src/components/explorer/ExplorerWorkspace.tsx` now keeps one shared `workspaceHeader` strip, scopes `workspaceTabs` to `workspace.focusedPane`, uses compact `P1` / `P2` / `P3` / `P4` pane switcher chips only in multi-pane layouts, and routes duplicate/close/commander/split actions through a single overflow menu instead of permanently rendering every pane action inline.
+  - Pane-local header rows were removed from `ExplorerWorkspace.tsx`; pane identity is now carried by the shared strip plus active-border treatment instead of repeating `Pane 1`, tab counts, and copied path chrome inside every pane.
+  - `src/components/FileExplorer.tsx` now accepts `workspacePaneCount` so explorer instances can enter a denser workspace presentation. In multi-pane layouts it suppresses the side preview surface while preserving preview state, hides the status bar, removes low-value location strips, collapses the closed-sources explainer copy, tightens toolbar spacing, and hides more optional chrome in `4-Up`.
+  - `src/config/explorerChromeLayouts.ts` now exposes `workspacePaneActionsMenu` as a first-class workspace chrome control so theme/layout overrides can still position the new overflow trigger.
+- Durable product note:
+  - Treat explorer workspace tabs as pane-scoped state with a focused-pane presentation, not a global strip of every tab in every pane. If future work adds more pane actions or workspace chrome controls, prefer extending the overflow menu or the compact pane switcher before reintroducing a second row of pane-local labels.
+  - For multi-pane explorer work, prefer density presets over raw scaling. `workspacePaneCount` is now the contract that tells `FileExplorer.tsx` when shared chrome should get out of the way.
+- Validation:
+  - passed: `.\node_modules\.bin\tsc.exe --noEmit --pretty false`
+  - passed: `npx vitest run src/test/ExplorerWorkspace.test.tsx --reporter=dot`
+  - passed: `npx vitest run src/test/fileExplorer.viewModes.test.tsx -t "compacts explorer chrome and suppresses the side preview in multi-pane mode|collapses the closed sources rail helper copy in multi-pane mode|applies the aggressive compact preset in four-pane workspace mode|restores the remembered preview when workspace compaction ends|honors the preview toggle before opening previewable files|shows a friendly empty preview state while preview mode is enabled|only shows the preview split toggle when a preview is active" --reporter=dot`
+
+# 2026-04-19 - Windows Clean Install Script Added
+
+- Added a root-level Windows PowerShell entrypoint at `install.ps1` so the app can be rebuilt and reinstalled from one command on a Windows workstation.
+- Durable implementation shape:
+  - the script builds first, then clears the prior per-user install and managed user-state roots, and only then installs the fresh `greeblefs.exe`
+  - cleanup covers current and legacy `GreebleFS` / `OverlayTerm` roots under `%LOCALAPPDATA%` and `%APPDATA%`, plus current-user Desktop and Start Menu shortcuts
+  - `-UninstallOnly` reuses the same cleanup path without reinstalling
+  - the script depends on Bun and Cargo, matching the repo's primary build tooling instead of introducing a second Windows-only build path
+- Durable product note:
+  - treat `install.ps1` as the canonical Windows clean-install flow. If future release work changes the install root, app identifiers, or managed-state locations, update the script and the docs together so the uninstall path stays honest.
+- Validation:
+  - syntax-checked locally after authoring; the full Windows build/install path was not executed in this pass
+
 # 2026-04-19 — Explorer Preview And Editor Lanes Now Share Automatic Resilience Rules
 
 - The explorer preview shell now treats corruption, unsupported formats, cache pressure, invalid edits, and save failures as shared system behaviors instead of scattered per-file-type branches.

@@ -30,6 +30,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 
 - `src/main.tsx`
   Frontend bootstrap. It now selects the root app by webview label, rendering `App` for the main shell and `src/windows/FileOperationsWindowApp.tsx` for the dedicated `file-operations` popout.
+- `install.sh`
+  Root Linux local-install wrapper. It delegates to `scripts/build-and-install-linux-local-release.sh`, which builds the app and installs a per-user release on Linux.
+- `install.ps1`
+  Root Windows local clean-install/uninstall entrypoint. It builds with Bun and Cargo, removes the previous per-user install and user-state roots on demand, and reinstalls a fresh `greeblefs.exe` plus current-user Start Menu/Desktop shortcuts.
 - `src/App.tsx`
   Overlay window shell, theme/runtime discovery, panel orchestration.
 - `src/panels/panelRegistry.tsx`
@@ -49,7 +53,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/ExplorerShaderWorkbench.tsx`
   Shell-owned wrapper for the embedded shader preview/editor surface. It renders WGSL/HLSL/SPIR-V documents inside the explorer preview pane, owns edit-vs-preview presentation, exposes stage/entrypoint pickers plus scene-mode controls, renders the WebGPU host canvas when available, and falls back to diagnostics plus inspection output when live preview is unsupported.
 - `src/components/explorer/ExplorerWorkspace.tsx`
-  Explorer-local workspace shell that wraps `FileExplorer` instances with explorer tabs, slot-based `1-Up` / `2-Up` / `4-Up` pane layouts, pane focus, and adaptive split sizing. This layer still owns top-level multi-pane explorer topology; the newer preview split stays inside a single `FileExplorer` instance instead of routing through workspace panes.
+  Explorer-local workspace shell that wraps `FileExplorer` instances with explorer tabs, slot-based `1-Up` / `2-Up` / `4-Up` pane layouts, pane focus, adaptive split sizing, and one shared workspace strip that always shows the focused pane's tab set. This layer still owns top-level multi-pane explorer topology; the newer preview split stays inside a single `FileExplorer` instance instead of routing through workspace panes.
 - `src/components/explorer/ExplorerSideRail.tsx`
   Explorer rail, drives, bookmarks, saved searches, and tag-filter browsing.
 - `src/config/appearance.ts`
@@ -308,11 +312,12 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src/store/settingsStore.ts` and `src/store/explorerStore.ts` rehydrate persisted state on `storage` events so the hidden host stays in sync with the active host during mode handoff
 - `src/store/explorerStore.ts` supports named explorer sessions, and the dock now reuses those sessions through its own appearance/layout lane rather than through a separate drawer subsystem.
 - The explorer now has a local workspace shell separate from the global workbench tabs:
-  - `ExplorerWorkspace.tsx` owns explorer tabs and slot-based `single` / `split` / `quad` rendering
+  - `ExplorerWorkspace.tsx` owns explorer tabs, the shared focused-pane workspace strip, and slot-based `single` / `split` / `quad` rendering
   - each tab maps to a distinct `ExplorerInstanceId`, so the existing `FileExplorer` session model still owns path/history/search/preview state
   - `explorerStore.ts` persists the workspace snapshot (`tabs`, pane activity, layout mode, focused pane, column split ratio, row split ratio) alongside the underlying named sessions
   - workspace normalization is collapse-safe: when the UI drops from `quad` to `split` or `single`, tabs from hidden panes are reassigned into visible panes instead of being stranded in invisible left/right slots
   - commander-style cross-pane actions are an explicit bridge, not header-owned filesystem logic: `FileExplorer.tsx` publishes live pane path/selection snapshots upward, and `ExplorerWorkspace.tsx` sends navigation / refresh / selection-transfer requests back down into the active explorer instance
+- `FileExplorer.tsx` now takes `workspacePaneCount` from `ExplorerWorkspace.tsx` so multi-pane layouts can compact toolbar chrome, suppress the explorer status bar, and hide the side preview surface until the workspace returns to `1-Up`.
 - `FileExplorer.tsx` shares directory/search result caches across explorer sessions so alternate surfaces do not duplicate backend reads unless a mutation invalidates the cache.
 - `FileExplorer.tsx` now treats folder navigation as an atomic commit: slow or stale directory loads should not blank the file area or partially switch path state. Keep the previous folder surface mounted until the winning listing is ready, then commit path/history/entries together.
 - `FileExplorer.tsx` now settle-batches viewport enrichment work so visible-entry size measurement and native-icon resolution only launch after a short scroll idle window instead of hammering Tauri on every transient virtualized viewport shift.
@@ -430,6 +435,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `node scripts/run-cargo-tests.mjs`
 - `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
 - `bash ./install.sh`
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`
 - `bash ./install.sh --launch`
 - `bun run release:linux:install`
 
@@ -470,6 +476,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Explorer directory/search caches are intentionally shared at the module level across explorer mounts. Tests or one-off diagnostics harnesses that need isolated backend behavior should call the exported `invalidateExplorerResultCaches()` helper before rendering.
 - Explorer preview routing should extend `src/components/explorer/explorerPreviewSystem.ts`, not add new extension ladders in `FileExplorer.tsx`. That resolver is now the shell contract for “what kind of preview is this?” and for the shared fallback states.
 - Explorer preview drafts and retry messaging should extend `src/components/explorer/explorerEditSession.ts`, not invent per-workbench local-storage keys or save-failure copy. Text, shader, spreadsheet, and PDF lanes now share the same draft-preservation posture.
+- The Windows `install.ps1` helper is intentionally destructive: it clears the current per-user install, managed state roots, and legacy `OverlayTerm` roots before reinstalling. If it fails during cleanup, make sure no `GreebleFS.exe` / `OverlayTerm.exe` process is still running and rerun with `-NoProfile -ExecutionPolicy Bypass`.
 - Unknown small files still intentionally route through the editable-text heuristic in `src/config/filePreview.ts`; larger unknown files fall through to the unsupported fallback. If that heuristic changes, update the preview resolver and the unsupported-preview tests together so “unsupported” stays a deliberate product decision instead of an accident.
 - The side rail local folder tree must use the shared explorer directory cache in `src/components/explorer/explorerDirectoryCache.ts` rather than calling `fs_list_dir` blindly from component-local state. Otherwise the rail and the main explorer will drift on refresh and remount behavior.
 - The side rail local-tree refresh path is sensitive to effect cancellation. Do not make the ancestor-loading effect depend on a callback that closes over `folderChildrenByPath` or on a transient `shouldForceRefresh` boolean that flips during the same refresh pass; use a stable loader plus explicit refresh revision/state refs so forced subtree reloads can finish.

@@ -442,6 +442,7 @@ function renderExplorer(
     appearance?: ReturnType<typeof resolveOverlayAppearance>;
     chromeControlSurface?: "toolbar" | "topbar";
     layoutMode?: "full" | "dock";
+    workspacePaneCount?: 1 | 2 | 4;
   } = {},
 ) {
   const appearance =
@@ -462,6 +463,7 @@ function renderExplorer(
         appearance={appearance}
         chromeControlSurface={options.chromeControlSurface}
         layoutMode={options.layoutMode}
+        workspacePaneCount={options.workspacePaneCount}
         onOpenInTerminal={() => {}}
         onAddBookmark={async () => {}}
       />,
@@ -1068,6 +1070,82 @@ describe("FileExplorer view modes", () => {
       "data-overlay-explorer-preview-split-mode",
       "inline",
     );
+  });
+
+  it("compacts explorer chrome and suppresses the side preview in multi-pane mode", async () => {
+    renderExplorer({ workspacePaneCount: 2 });
+    await screen.findByText("notes.txt");
+
+    expect(queryPreviewPane()).toBeNull();
+    expect(
+      document.querySelector('[data-overlay-explorer-plane="status"]'),
+    ).toBeNull();
+    expect(getChromeControl("togglePreview")).toBeNull();
+  });
+
+  it("collapses the closed sources rail helper copy in multi-pane mode", async () => {
+    useExplorerStore.getState().updateSession({
+      sourcesVisible: false,
+      sourcesRailPinnedOpen: false,
+    });
+
+    renderExplorer({ workspacePaneCount: 2 });
+    await screen.findByText("notes.txt");
+
+    expect(screen.getByRole("button", { name: /open sources rail/i })).toHaveTextContent("Sources");
+    expect(screen.queryByText(/sources rail closed/i)).toBeNull();
+    expect(
+      screen.queryByText(/focus mode keeps the sources rail tucked away/i),
+    ).toBeNull();
+  });
+
+  it("applies the aggressive compact preset in four-pane workspace mode", async () => {
+    renderExplorer({ workspacePaneCount: 4 });
+    await screen.findByText("notes.txt");
+
+    expect(getChromeControl("saveSearch")).toBeNull();
+    expect(getChromeControl("duplicateScan")).toBeNull();
+    expect(getChromeControl("experimentalModes")).toBeNull();
+    expect(getChromeControl("viewLayout")).toBeNull();
+    expect(getChromeControl("togglePreview")).toBeNull();
+  });
+
+  it("restores the remembered preview when workspace compaction ends", async () => {
+    const { appearance, rerender } = renderExplorer();
+    await screen.findByText("notes.txt");
+
+    fireEvent.click(screen.getByText("notes.txt"));
+    await screen.findByRole("button", { name: /copy path/i });
+
+    const sharedProps = {
+      theme: {
+        accent: appearance.theme.palette.accent,
+        bg: appearance.theme.palette.appBackground,
+        bgPanel: appearance.theme.palette.panelBackground,
+        text: appearance.theme.palette.textPrimary,
+        border: appearance.theme.palette.border,
+        textMuted: appearance.theme.palette.textMuted,
+      },
+      appearance,
+      onOpenInTerminal: () => {},
+      onAddBookmark: async () => {},
+    };
+
+    rerender(
+      <FileExplorer
+        {...sharedProps}
+        workspacePaneCount={2}
+      />,
+    );
+    expect(queryPreviewPane()).toBeNull();
+
+    rerender(
+      <FileExplorer
+        {...sharedProps}
+        workspacePaneCount={1}
+      />,
+    );
+    await screen.findByRole("button", { name: /copy path/i });
   });
 
   it("shows an icon-only preview terminal toggle, swaps surfaces, and keeps the terminal session mounted", async () => {

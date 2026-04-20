@@ -35,10 +35,13 @@ GreebleFS is a Tauri desktop workbench that keeps the terminal, file explorer, s
 - Production build: `bun run build` or `npm run build`
 - Linux bundles: `bun run release:linux:bundle`
 - Linux local install: `bun run release:linux:install`
+- Windows local clean install: `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`
+- Windows uninstall only: `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -UninstallOnly`
 
 ## Release Notes
 
 - The shipped app, Tauri bundle identity, Linux installer, and desktop entry now use the `GreebleFS` name.
+- Windows local installs now have a root-level PowerShell entrypoint that rebuilds the app, clears the prior per-user install/state roots, and reinstalls into `%LOCALAPPDATA%\Programs\GreebleFS`.
 - Legacy `OverlayTerm` runtime/import/storage identifiers remain supported for this release candidate where they are part of plugin compatibility or persisted local state.
 
 ## Recommended IDE Setup
