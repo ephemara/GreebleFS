@@ -65,6 +65,10 @@ use crate::shader_preview_commands::{
     ExplorerShaderEntryPoint, ExplorerShaderPreviewDocument,
 };
 use crate::sqlite_commands::{SqliteDbInfo, SqliteTableInfo, SqliteTablePreview};
+use crate::storage_commands::{
+    StorageNodeKind, StoragePathSummary, StorageScanStartResponse, StorageScanStatus,
+    StorageTreeNode,
+};
 use crate::telemetry::{
     TelemetryCaptureMode, TelemetryConfig, TelemetryPayloadMode, TelemetryRecord,
     TelemetryRecordEvent, TelemetrySessionStatus, TelemetrySupportBundleResult,
@@ -255,6 +259,9 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::startup_commands::startup_get_linux_display_backend_status,
             crate::startup_commands::startup_set_launch_at_startup,
             crate::startup_commands::startup_set_linux_display_backend_preference,
+            crate::storage_commands::storage_scan_start,
+            crate::storage_commands::storage_scan_poll,
+            crate::storage_commands::storage_scan_cancel,
             crate::window_commands::tray_set_visible,
             crate::window_commands::window_get_linux_display_server,
             crate::window_commands::window_get_wayland_dock_host_status,
@@ -442,6 +449,11 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<VstScanPath>()
         .typ::<VstScanPathKind>()
         .typ::<VstPluginEntry>()
+        .typ::<StorageNodeKind>()
+        .typ::<StoragePathSummary>()
+        .typ::<StorageScanStartResponse>()
+        .typ::<StorageScanStatus>()
+        .typ::<StorageTreeNode>()
         .typ::<ThemeDensity>()
         .typ::<ThemeChromeStyle>()
         .typ::<ThemeIconStyle>()

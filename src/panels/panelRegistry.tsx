@@ -1,5 +1,5 @@
 import React from 'react';
-import { Terminal as TerminalIcon, FolderOpen, GitBranch, StickyNote, Camera, Puzzle, SlidersHorizontal } from 'lucide-react';
+import { Terminal as TerminalIcon, FolderOpen, GitBranch, StickyNote, Camera, Puzzle, SlidersHorizontal, HardDrive } from 'lucide-react';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import type {
   OverlayPluginCommandContribution,
@@ -39,6 +39,11 @@ const LazyScreenshotsManager = React.lazy(async () => {
 const LazySettingsPage = React.lazy(async () => {
   const module = await import('../components/SettingsPage');
   return { default: module.SettingsPage };
+});
+
+const LazyStoragePanel = React.lazy(async () => {
+  const module = await import('../components/StoragePanel');
+  return { default: module.StoragePanel };
 });
 
 function DeferredPanel({
@@ -238,6 +243,26 @@ export function createBuiltInPanelDefinitions({
           pluginActions={pluginExplorerActions}
           pluginContextMenuItems={pluginContextMenuItems}
         />
+      ),
+    },
+    {
+      id: 'storage',
+      label: 'Storage',
+      kind: 'built-in-panel',
+      icon: <HardDrive size={12} />,
+      description: 'Drive treemap, storage forensics, and destructive cleanup.',
+      defaultOpen: true,
+      keepMounted: true,
+      navigation: {
+        groupId: 'browse',
+        groupLabel: 'Browse',
+        groupOrder: 10,
+        itemOrder: 20,
+      },
+      render: () => (
+        <DeferredPanel>
+          <LazyStoragePanel />
+        </DeferredPanel>
       ),
     },
     {
@@ -443,6 +468,12 @@ export function buildBuiltInCatalog(): PanelCatalogEntry[] {
       id: 'explorer',
       label: 'Explorer',
       description: 'Built-in panel plugin for file browsing.',
+      kind: 'built-in-panel',
+    },
+    {
+      id: 'storage',
+      label: 'Storage',
+      description: 'Built-in panel plugin for storage scanning and cleanup.',
       kind: 'built-in-panel',
     },
     {

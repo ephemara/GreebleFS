@@ -1,5 +1,17 @@
 # GreebleFS Memory
 
+# 2026-04-20 - Desktop Clean Install Launcher Added
+
+- Added a double-clickable Windows desktop batch launcher that wraps `install.ps1` for one-click clean reinstalls.
+- Durable implementation shape:
+  - the launcher is intentionally thin and delegates the real work to the PowerShell installer
+  - double-clicking it rebuilds the app, removes the prior install and state roots, then launches the fresh build
+  - this keeps the desktop workflow simple while preserving the real cleanup logic in one source of truth
+- Durable product note:
+  - keep the desktop launcher and `install.ps1` in sync if the repo root or install contract changes, so the one-click path does not drift from the actual build/install behavior
+- Validation:
+  - launcher file written to the Windows desktop; the full clean-install path was not executed in this pass
+
 # 2026-04-19 — Explorer Workspace Chrome Now Uses One Shared Focused-Pane Strip
 
 - The explorer workspace no longer spends vertical space on both a monolithic tab bar and per-pane header chrome.

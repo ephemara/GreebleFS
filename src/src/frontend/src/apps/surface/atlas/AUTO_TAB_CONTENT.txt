@@ -1,0 +1,77 @@
+                {activeTab === 'AUTO' && (
+                    <div className="space-y-4 animate-in fade-in slide-in-from-right-2">
+                        <div className="text-[9px] font-bold text-purple-500 uppercase tracking-widest flex items-center gap-2">
+                            <Zap size={10} /> Hybrid Auto-Unwrap
+                        </div>
+
+                        <div className="p-3 bg-purple-900/10 border border-purple-900/30 rounded-sm text-[10px] text-purple-200/70 leading-relaxed">
+                            Rizom UV-style intelligent solver. Auto-classifies meshes and routes to LSCM (organic) or Box (hard-surface) for optimal results.
+                        </div>
+
+                        {/* Classification Toggle */}
+                        <div className="flex items-center justify-between p-2 bg-[#111] border border-[#222] rounded-sm">
+                            <span className="text-[9px] font-bold text-gray-400">AUTO-CLASSIFY</span>
+                            <button
+                                onClick={() => setHybridAutoClassify(!hybridAutoClassify)}
+                                className={`w-8 h-4 rounded-full relative transition-colors ${hybridAutoClassify ? 'bg-purple-600' : 'bg-[#333]'}`}
+                            >
+                                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${hybridAutoClassify ? 'left-4.5' : 'left-0.5'}`} />
+                            </button>
+                        </div>
+
+                        {/* Force Mode Override */}
+                        <div className="space-y-2">
+                            <div className="text-[9px] font-bold text-gray-600 uppercase tracking-widest">SOLVER OVERRIDE</div>
+                            <div className="flex gap-1">
+                                <button
+                                    onClick={() => setHybridForceMode('AUTO')}
+                                    className={`flex-1 py-2 text-[9px] font-bold border rounded-sm transition-colors ${hybridForceMode === 'AUTO' ? 'bg-purple-600 text-black border-purple-600' : 'bg-[#111] text-gray-500 border-[#222] hover:border-gray-500'}`}
+                                >
+                                    AUTO
+                                </button>
+                                <button
+                                    onClick={() => setHybridForceMode('LSCM')}
+                                    className={`flex-1 py-2 text-[9px] font-bold border rounded-sm transition-colors ${hybridForceMode === 'LSCM' ? 'bg-purple-600 text-black border-purple-600' : 'bg-[#111] text-gray-500 border-[#222] hover:border-gray-500'}`}
+                                >
+                                    LSCM
+                                </button>
+                                <button
+                                    onClick={() => setHybridForceMode('BOX')}
+                                    className={`flex-1 py-2 text-[9px] font-bold border rounded-sm transition-colors ${hybridForceMode === 'BOX' ? 'bg-purple-600 text-black border-purple-600' : 'bg-[#111] text-gray-500 border-[#222] hover:border-gray-500'}`}
+                                >
+                                    BOX
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Combined Config - Shows sliders for BOTH solvers */}
+                        <div className="space-y-3 pt-3 border-t border-[#1a1a1a]">
+                            <div className="text-[8px] font-bold text-gray-600 uppercase tracking-widest">LSCM SETTINGS</div>
+                            <div className="space-y-1">
+                                <div className="flex justify-between text-[9px] text-gray-500"><span>ITERATIONS</span><span className="text-purple-500">{lscmIterations}</span></div>
+                                <input type="range" min="100" max="10000" step="100" value={lscmIterations}
+                                    onChange={e => setLscmIterations(parseInt(e.target.value))}
+                                    className="w-full h-1 bg-[#222] rounded-full appearance-none accent-purple-500 cursor-pointer" />
+                            </div>
+                        </div>
+
+                        <div className="space-y-3 border-t border-[#1a1a1a] pt-3">
+                            <div className="text-[8px] font-bold text-gray-600 uppercase tracking-widest">BOX SETTINGS</div>
+                            <div className="space-y-1">
+                                <div className="flex justify-between text-[9px] text-gray-500"><span>PADDING</span><span className="text-purple-500">{boxPadding.toFixed(3)}</span></div>
+                                <input type="range" min="0.001" max="0.1" step="0.001" value={boxPadding}
+                                    onChange={e => setBoxPadding(parseFloat(e.target.value))}
+                                    className="w-full h-1 bg-[#222] rounded-full appearance-none accent-purple-500 cursor-pointer" />
+                            </div>
+                        </div>
+
+                        <button
+                            onClick={() => { setProjection('HYBRID_AUTO'); setTimeout(() => onPerformUnwrap('HYBRID_AUTO'), 0); }}
+                            disabled={isProcessing}
+                            className="w-full py-4 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-black text-[10px] font-black tracking-widest rounded-sm flex items-center justify-center gap-2 transition-all shadow-lg mt-4"
+                        >
+                            {isProcessing ? <RefreshCw className="animate-spin" size={12} /> : <Zap size={12} />}
+                            {isProcessing ? 'SOLVING...' : 'RUN HYBRID AUTO'}
+                        </button>
+                    </div>
+                )}

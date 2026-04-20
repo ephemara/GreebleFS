@@ -12,6 +12,10 @@ vi.mock('../components/GitManager', () => ({
   GitManager: () => null,
 }));
 
+vi.mock('../components/StoragePanel', () => ({
+  StoragePanel: () => null,
+}));
+
 vi.mock('../components/NotesManager', () => ({
   NotesManager: () => null,
 }));
@@ -28,7 +32,7 @@ vi.mock('../components/SettingsPage', () => ({
   SettingsPage: () => null,
 }));
 
-import { createBuiltInPanelDefinitions } from '../panels/panelRegistry';
+import { buildBuiltInCatalog, createBuiltInPanelDefinitions } from '../panels/panelRegistry';
 
 describe('createBuiltInPanelDefinitions', () => {
   it('keeps the explorer panel mounted so tab switches do not reset its state', () => {
@@ -94,6 +98,85 @@ describe('createBuiltInPanelDefinitions', () => {
     const explorer = panels.find(panel => panel.id === 'explorer');
 
     expect(explorer?.keepMounted).toBe(true);
+  });
+
+  it('registers storage as a first-class browse panel and keeps it mounted', () => {
+    const panels = createBuiltInPanelDefinitions({
+      appearance: {
+        theme: {
+          palette: {
+            accent: '#44ff88',
+            appBackground: '#0a0a0a',
+            panelBackground: '#101010',
+            textPrimary: '#f5f5f5',
+            border: '#2a2a2a',
+            textMuted: '#9a9a9a',
+          },
+        },
+      } as never,
+      explorerLayoutMode: 'full',
+      explorerRepoPicker: null,
+      isOpen: true,
+      hideOverlay: () => {},
+      pluginCommands: [],
+      pluginExplorerActions: [],
+      pluginContextMenuItems: [],
+      onOpenInFilesystemAquarium: () => {},
+      onOpenInTerminal: () => {},
+      onAddBookmark: async () => {},
+      onRequestRepositoryImport: () => {},
+      pendingRepositoryImports: [],
+      onPendingRepositoryImportsHandled: () => {},
+      themePackages: [],
+      themePackagesDirectory: 'themes',
+      themePackagesLoading: false,
+      themePackagesError: null,
+      themePackagesWarnings: [],
+      onRefreshThemes: async () => {},
+      onOpenThemesFolder: async () => {},
+      shaders: [],
+      shaderDiagnostics: [],
+      shadersDirectory: 'shaders',
+      shadersLoading: false,
+      shadersError: null,
+      onRefreshShaders: async () => {},
+      onOpenShadersFolder: async () => {},
+      animations: [],
+      animationDiagnostics: [],
+      animationsDirectory: 'animations',
+      animationsLoading: false,
+      animationsError: null,
+      onRefreshAnimations: async () => {},
+      onOpenAnimationsFolder: async () => {},
+      wallpapers: [],
+      wallpaperDiagnostics: [],
+      wallpapersDirectory: 'wallpapers',
+      wallpapersLoading: false,
+      wallpapersError: null,
+      onRefreshWallpapers: async () => {},
+      onOpenWallpapersFolder: async () => {},
+      onImportWallpaperFiles: async () => {},
+      onSetWindowMode: async () => {},
+      renderPluginsManager: () => null,
+    });
+
+    const storage = panels.find(panel => panel.id === 'storage');
+
+    expect(storage?.defaultOpen).toBe(true);
+    expect(storage?.keepMounted).toBe(true);
+    expect(storage?.navigation).toMatchObject({
+      groupId: 'browse',
+      itemOrder: 20,
+    });
+  });
+
+  it('includes storage in the built-in panel catalog', () => {
+    const catalog = buildBuiltInCatalog();
+    expect(catalog.find((entry) => entry.id === 'storage')).toMatchObject({
+      id: 'storage',
+      label: 'Storage',
+      kind: 'built-in-panel',
+    });
   });
 
   it('forwards repository picker and source-control handoff props to the explorer and git panels', () => {
