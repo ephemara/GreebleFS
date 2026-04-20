@@ -206,6 +206,28 @@ import {
   storeExplorerCachedLocation,
 } from "./explorer/explorerDirectoryCache";
 import {
+  estimateStringPreviewCacheBytes,
+  invalidateExplorerPreviewCache,
+  readCachedExplorerPreview,
+  storeCachedExplorerPreview,
+} from "./explorer/explorerPreviewCache";
+import {
+  buildExplorerDraftPreservedMessage,
+  clearExplorerEditDraft,
+  createStringExplorerDraftSerializer,
+  loadExplorerEditDraft,
+  moveExplorerEditDraft,
+  persistExplorerEditDraft,
+} from "./explorer/explorerEditSession";
+import {
+  buildExplorerPreviewErrorFallback,
+  buildExplorerPreviewLoadingFallback,
+  buildExplorerUnsupportedPreviewFallback,
+  getExplorerPreviewEntryExtension,
+  isInlineExplorerPreviewDescriptor,
+  resolveExplorerPreviewDescriptor,
+} from "./explorer/explorerPreviewSystem";
+import {
   removeExplorerBookmarksByPath,
   upsertExplorerBookmark,
 } from "./explorer/explorerRailState";
@@ -341,6 +363,9 @@ const EXPLORER_LAYOUT_WHEEL_STEP_DELTA = 80;
 const EXPLORER_ENTRY_SIZE_BATCH_SETTLE_MS = 72;
 const EXPLORER_NATIVE_ICON_BATCH_SETTLE_MS = 96;
 const EXPLORER_IMAGE_TILE_THUMBNAIL_BATCH_SETTLE_MS = 88;
+const EXPLORER_TEXT_DRAFT_SCOPE = "text";
+const EXPLORER_SHADER_DRAFT_SCOPE = "shader";
+const explorerStringDraftSerializer = createStringExplorerDraftSerializer();
 
 type ExplorerDragPreviewContent = {
   primaryLabel: string;
@@ -400,6 +425,7 @@ async function getOrLoadCachedExplorerSearchResults(
 
 export function invalidateExplorerResultCaches(pathPrefix?: string): void {
   invalidateExplorerDirectoryResultCaches(pathPrefix);
+  invalidateExplorerPreviewCache(pathPrefix);
   if (!pathPrefix) {
     explorerSearchResultCache.clear();
     return;
@@ -2982,6 +3008,7 @@ function PreviewPanel({
   onClose,
   onWidthChange,
   onTextChange,
+  onTextSave,
   onShaderSourceChange,
   onShaderSelectionChange,
   onShaderCompileResult,
@@ -3018,6 +3045,7 @@ function PreviewPanel({
   onClose: () => void;
   onWidthChange: (width: number) => void;
   onTextChange: (path: string, content: string) => void;
+  onTextSave: (path: string) => Promise<void>;
   onShaderSourceChange: (path: string, content: string) => void;
   onShaderSelectionChange: (
     path: string,
@@ -3149,6 +3177,8 @@ function PreviewPanel({
     preview.type === "text"
       ? preview.isSaving
         ? "Saving?"
+        : preview.error
+          ? "Error"
         : preview.isDirty
           ? "Unsaved"
           : "Saved"
@@ -3517,6 +3547,54 @@ function PreviewPanel({
                     Save
                   </button>
                 ) : null}
+              </div>
+            );
+          }
+
+          if (preview.type === "text") {
+            return (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: 2,
+                  borderRadius: "var(--overlay-explorer-control-radius)",
+                  border: "1px solid var(--overlay-explorer-chip-border)",
+                  background: "var(--overlay-explorer-chip-bg)",
+                  flexWrap: "wrap",
+                }}
+              >
+                {(
+                  [
+                    { id: "edit", label: "Edit" },
+                    { id: "preview", label: "Preview" },
+                  ] as const
+                ).map((option) => {
+                  const active = viewMode === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => onViewModeChange(option.id)}
+                      style={previewChipButtonStyle(active)}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => void onTextSave(preview.path)}
+                  disabled={!preview.isDirty || preview.isSaving}
+                  style={previewChipButtonStyle(
+                    preview.isDirty && !preview.isSaving,
+                    !preview.isDirty || preview.isSaving,
+                  )}
+                >
+                  <Save size={11} />
+                  Save
+                </button>
               </div>
             );
           }
@@ -8106,23 +8184,10 @@ export function FileExplorer({
     const targetElement = Array.from(
       mainRef.current?.querySelectorAll<HTMLElement>("[data-entry-path]") ?? [],
     ).find((element) => element.dataset.entryPath === targetPath);
-    targetElement?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (typeof targetElement?.scrollIntoView === "function") {
+      targetElement.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
   }, []);
-  const previewExplorerSelectionTarget = useCallback(
-    (entry: FileEntry) => {
-      if (repositoryPicker?.active || !previewEnabled || isCompactDock) {
-        return;
-      }
-      void previewEntry(entry, getSearchFocusTarget(entry));
-    },
-    [
-      getSearchFocusTarget,
-      isCompactDock,
-      previewEnabled,
-      previewEntry,
-      repositoryPicker?.active,
-    ],
-  );
   const selectAllVisibleEntries = useCallback(() => {
     setSelected(new Set(visibleEntries.map((entry) => entry.path)));
     const firstVisiblePath = visibleEntries[0]?.path ?? null;
@@ -8134,60 +8199,6 @@ export function FileExplorer({
     lastSelected.current = null;
     selectionRangeAnchorPathRef.current = null;
   }, []);
-
-  const selectVisibleEntryAtIndex = useCallback(
-    (index: number, extendRange: boolean) => {
-      if (visibleEntries.length === 0) return;
-
-      const clampedIndex = Math.max(
-        0,
-        Math.min(index, visibleEntries.length - 1),
-      );
-      const nextEntry = visibleEntries[clampedIndex];
-      if (!nextEntry) return;
-
-      if (!extendRange) {
-        setSelected(new Set([nextEntry.path]));
-        lastSelected.current = nextEntry.path;
-        selectionRangeAnchorPathRef.current = nextEntry.path;
-        scrollExplorerEntryIntoView(nextEntry.path);
-        previewExplorerSelectionTarget(nextEntry);
-        return;
-      }
-
-      const anchorPath =
-        selectionRangeAnchorPathRef.current ??
-        lastSelected.current ??
-        Array.from(selected)[0] ??
-        nextEntry.path;
-      const anchorIndex = visibleEntries.findIndex(
-        (entry) => entry.path === anchorPath,
-      );
-      const rangeStart =
-        anchorIndex >= 0 ? Math.min(anchorIndex, clampedIndex) : clampedIndex;
-      const rangeEnd =
-        anchorIndex >= 0 ? Math.max(anchorIndex, clampedIndex) : clampedIndex;
-
-      setSelected(
-        new Set(
-          visibleEntries
-            .slice(rangeStart, rangeEnd + 1)
-            .map((entry) => entry.path),
-        ),
-      );
-      lastSelected.current = nextEntry.path;
-      selectionRangeAnchorPathRef.current =
-        anchorIndex >= 0 ? anchorPath : nextEntry.path;
-      scrollExplorerEntryIntoView(nextEntry.path);
-      previewExplorerSelectionTarget(nextEntry);
-    },
-    [
-      previewExplorerSelectionTarget,
-      scrollExplorerEntryIntoView,
-      selected,
-      visibleEntries,
-    ],
-  );
   const handleBookmarkCreated = useCallback(
     (name: string, path: string) => {
       void Promise.resolve(onAddBookmark(name, path)).catch(() => {});
@@ -8949,6 +8960,10 @@ export function FileExplorer({
     try {
       await writeExplorerFile(path, contentAtSave);
       invalidateExplorerResultCaches();
+      clearExplorerEditDraft(
+        EXPLORER_TEXT_DRAFT_SCOPE,
+        path,
+      );
       setPreview((prev) => {
         if (prev.type !== "text" || prev.path !== path) return prev;
         const isStillSame = prev.content === contentAtSave;
@@ -8961,9 +8976,19 @@ export function FileExplorer({
         };
       });
     } catch (saveError) {
+      persistExplorerEditDraft(
+        EXPLORER_TEXT_DRAFT_SCOPE,
+        path,
+        contentAtSave,
+        explorerStringDraftSerializer,
+      );
       setPreview((prev) =>
         prev.type === "text" && prev.path === path
-          ? { ...prev, isSaving: false, error: String(saveError) }
+          ? {
+              ...prev,
+              isSaving: false,
+              error: buildExplorerDraftPreservedMessage(saveError),
+            }
           : prev,
       );
       setError(`Save failed for ${currentPreview.name}: ${saveError}`);
@@ -9003,6 +9028,12 @@ export function FileExplorer({
 
   const updatePreviewTextContent = useCallback(
     (path: string, content: string) => {
+      persistExplorerEditDraft(
+        EXPLORER_TEXT_DRAFT_SCOPE,
+        path,
+        content,
+        explorerStringDraftSerializer,
+      );
       setPreview((prev) =>
         prev.type === "text" && prev.path === path
           ? { ...prev, content, isDirty: true, error: null }
@@ -9034,6 +9065,10 @@ export function FileExplorer({
     try {
       await writeExplorerFile(path, sourceAtSave);
       invalidateExplorerResultCaches();
+      clearExplorerEditDraft(
+        EXPLORER_SHADER_DRAFT_SCOPE,
+        path,
+      );
       setPreview((prev) => {
         if (
           prev.type !== "shader" ||
@@ -9051,9 +9086,19 @@ export function FileExplorer({
         };
       });
     } catch (saveError) {
+      persistExplorerEditDraft(
+        EXPLORER_SHADER_DRAFT_SCOPE,
+        path,
+        sourceAtSave,
+        explorerStringDraftSerializer,
+      );
       setPreview((prev) =>
         prev.type === "shader" && prev.path === path
-          ? { ...prev, isSaving: false, error: String(saveError) }
+          ? {
+              ...prev,
+              isSaving: false,
+              error: buildExplorerDraftPreservedMessage(saveError),
+            }
           : prev,
       );
       setError(`Save failed for ${currentPreview.name}: ${saveError}`);
@@ -9062,6 +9107,12 @@ export function FileExplorer({
 
   const updateShaderPreviewContent = useCallback(
     (path: string, content: string) => {
+      persistExplorerEditDraft(
+        EXPLORER_SHADER_DRAFT_SCOPE,
+        path,
+        content,
+        explorerStringDraftSerializer,
+      );
       setPreview((prev) =>
         prev.type === "shader" && prev.path === path
           ? {
@@ -9790,6 +9841,76 @@ export function FileExplorer({
       isCompactDock,
       previewEnabled,
       requestCurrentPreviewClose,
+    ],
+  );
+
+  const previewExplorerSelectionTarget = useCallback(
+    (entry: FileEntry) => {
+      if (repositoryPicker?.active || !previewEnabled || isCompactDock) {
+        return;
+      }
+      void previewEntry(entry, getSearchFocusTarget(entry));
+    },
+    [
+      getSearchFocusTarget,
+      isCompactDock,
+      previewEnabled,
+      previewEntry,
+      repositoryPicker?.active,
+    ],
+  );
+
+  const selectVisibleEntryAtIndex = useCallback(
+    (index: number, extendRange: boolean) => {
+      if (visibleEntries.length === 0) return;
+
+      const clampedIndex = Math.max(
+        0,
+        Math.min(index, visibleEntries.length - 1),
+      );
+      const nextEntry = visibleEntries[clampedIndex];
+      if (!nextEntry) return;
+
+      if (!extendRange) {
+        setSelected(new Set([nextEntry.path]));
+        lastSelected.current = nextEntry.path;
+        selectionRangeAnchorPathRef.current = nextEntry.path;
+        scrollExplorerEntryIntoView(nextEntry.path);
+        previewExplorerSelectionTarget(nextEntry);
+        return;
+      }
+
+      const anchorPath =
+        selectionRangeAnchorPathRef.current ??
+        lastSelected.current ??
+        Array.from(selected)[0] ??
+        nextEntry.path;
+      const anchorIndex = visibleEntries.findIndex(
+        (entry) => entry.path === anchorPath,
+      );
+      const rangeStart =
+        anchorIndex >= 0 ? Math.min(anchorIndex, clampedIndex) : clampedIndex;
+      const rangeEnd =
+        anchorIndex >= 0 ? Math.max(anchorIndex, clampedIndex) : clampedIndex;
+
+      setSelected(
+        new Set(
+          visibleEntries
+            .slice(rangeStart, rangeEnd + 1)
+            .map((entry) => entry.path),
+        ),
+      );
+      lastSelected.current = nextEntry.path;
+      selectionRangeAnchorPathRef.current =
+        anchorIndex >= 0 ? anchorPath : nextEntry.path;
+      scrollExplorerEntryIntoView(nextEntry.path);
+      previewExplorerSelectionTarget(nextEntry);
+    },
+    [
+      previewExplorerSelectionTarget,
+      scrollExplorerEntryIntoView,
+      selected,
+      visibleEntries,
     ],
   );
 
@@ -11230,460 +11351,6 @@ export function FileExplorer({
     },
     [folderClickMode, openEntry, repositoryPicker?.active],
   );
-
-  // ── Keyboard ──
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => {
-      if (
-        rename.active ||
-        newItem.visible ||
-        addressEditing ||
-        propertiesPanel.visible
-      ) {
-        if (propertiesPanel.visible && e.key === "Escape") {
-          e.preventDefault();
-          setPropertiesPanel(null);
-        }
-        return;
-      }
-      if (isEditableKeyboardTarget(e.target)) return;
-
-      const isExplorerFocus = document.activeElement === mainRef.current;
-      const selectedEntry =
-        visibleEntries.find((en) => selected.has(en.path)) ?? null;
-      const currentFocusIndex = (() => {
-        if (lastSelected.current) {
-          const rememberedIndex = visibleEntries.findIndex(
-            (entry) => entry.path === lastSelected.current,
-          );
-          if (rememberedIndex >= 0) return rememberedIndex;
-        }
-        const selectedIndex = visibleEntries.findIndex((entry) =>
-          selected.has(entry.path),
-        );
-        if (selectedIndex >= 0) return selectedIndex;
-        return 0;
-      })();
-
-      if (
-        matchesKeybinding(e, keybindings.calculateRecursiveSize) &&
-        isExplorerFocus
-      ) {
-        e.preventDefault();
-        void runRecursiveSizeCalculation();
-        return;
-      }
-
-      if (jumpFilter.active && e.key === "Escape") {
-        e.preventDefault();
-        setJumpFilter(null);
-        return;
-      }
-
-      if (isExplorerFocus && isExplorerJumpFilterPrintableKey(e)) {
-        e.preventDefault();
-        updateJumpFilterQuery(
-          appendExplorerJumpFilterCharacter(jumpFilter.query, e.key),
-        );
-        return;
-      }
-
-      if (jumpFilter.active && e.key === "Backspace") {
-        e.preventDefault();
-        const nextQuery = removeExplorerJumpFilterCharacter(jumpFilter.query);
-        if (!nextQuery) {
-          setJumpFilter(null);
-        } else {
-          updateJumpFilterQuery(nextQuery);
-        }
-        return;
-      }
-
-      if (
-        jumpFilter.active &&
-        (e.key === "ArrowDown" ||
-          e.key === "ArrowUp" ||
-          e.key === "ArrowLeft" ||
-          e.key === "ArrowRight")
-      ) {
-        e.preventDefault();
-        moveJumpFilterSelection(
-          e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 1,
-        );
-        return;
-      }
-
-      if (jumpFilter.active && e.key === "Enter") {
-        e.preventDefault();
-        const activeJumpPath =
-          jumpFilter.resultPaths[jumpFilter.resultIndex] ??
-          jumpFilter.resultPaths[0] ??
-          null;
-        const targetEntry =
-          (activeJumpPath
-            ? (visibleEntries.find((entry) => entry.path === activeJumpPath) ??
-              null)
-            : null) ??
-          selectedEntry ??
-          visibleEntries[0] ??
-          null;
-        if (targetEntry) {
-          setSelected(new Set([targetEntry.path]));
-          lastSelected.current = targetEntry.path;
-          selectionRangeAnchorPathRef.current = targetEntry.path;
-          void openEntry(targetEntry);
-        }
-        return;
-      }
-
-      const activeElement = document.activeElement;
-      const isTypingInEmbeddedEditor =
-        activeElement instanceof HTMLInputElement ||
-        activeElement instanceof HTMLTextAreaElement ||
-        activeElement instanceof HTMLSelectElement ||
-        activeElement instanceof HTMLElement
-          ? activeElement.isContentEditable ||
-            activeElement.closest(".monaco-editor") != null
-          : false;
-
-      if (
-        preview.type === "shader" &&
-        matchesKeybinding(e, keybindings.saveFile) &&
-        !preview.isReadOnly &&
-        preview.editableSource != null
-      ) {
-        e.preventDefault();
-        void persistShaderPreviewSource(preview.path);
-        return;
-      }
-      if (
-        preview.type === "shader" &&
-        !isTypingInEmbeddedEditor &&
-        matchesKeybinding(e, keybindings.shaderWorkbenchToggleEditMode)
-      ) {
-        e.preventDefault();
-        setDocumentViewMode((current) =>
-          current === "edit" ? "preview" : "edit",
-        );
-        return;
-      }
-      if (
-        preview.type === "shader" &&
-        !isTypingInEmbeddedEditor &&
-        matchesKeybinding(e, keybindings.shaderWorkbenchToggleScene)
-      ) {
-        e.preventDefault();
-        updateShaderPreviewScene(
-          preview.path,
-          preview.selectedScene === "sphere" ? "fullscreen" : "sphere",
-        );
-        return;
-      }
-
-      if (matchesKeybinding(e, keybindings.searchExplorer)) {
-        e.preventDefault();
-        beginAddressEdit();
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.goUpDirectory) && isExplorerFocus) {
-        e.preventDefault();
-        goUp();
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.refreshExplorer)) {
-        e.preventDefault();
-        refresh();
-        return;
-      }
-      if (
-        matchesKeybinding(e, keybindings.goBackDirectory) &&
-        isExplorerFocus
-      ) {
-        e.preventDefault();
-        goBack();
-        return;
-      }
-      if (
-        matchesKeybinding(e, keybindings.goForwardDirectory) &&
-        isExplorerFocus
-      ) {
-        e.preventDefault();
-        goForward();
-        return;
-      }
-      if (
-        matchesKeybinding(e, keybindings.goHomeDirectory) &&
-        isExplorerFocus
-      ) {
-        e.preventDefault();
-        goHome();
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.renameItem) && selected.size === 1) {
-        e.preventDefault();
-        if (selectedEntry) {
-          setRename({
-            active: true,
-            path: selectedEntry.path,
-            name: selectedEntry.name,
-          });
-        }
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.deleteItem) && selected.size > 0) {
-        e.preventDefault();
-        if (selectedEntries.length > 0) {
-          openTrashDialog(selectedEntries);
-        }
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.newFolder)) {
-        e.preventDefault();
-        openNew("folder");
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.newFile)) {
-        e.preventDefault();
-        openNew("file");
-        return;
-      }
-      if (
-        matchesKeybinding(e, keybindings.duplicateItem) &&
-        selected.size > 0 &&
-        selectedEntry
-      ) {
-        e.preventDefault();
-        void duplicate(selectedEntry);
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.toggleHiddenFiles)) {
-        e.preventDefault();
-        updateExplorerSettings({ showHiddenFiles: !showHidden });
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.toggleExplorerSearchScope)) {
-        e.preventDefault();
-        toggleSearchScope();
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.cycleExplorerSortKey)) {
-        e.preventDefault();
-        cycleSortKey();
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.toggleExplorerSortOrder)) {
-        e.preventDefault();
-        toggleSortOrder();
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.focusExplorerList)) {
-        e.preventDefault();
-        focusExplorerList();
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.focusExplorerAddressBar)) {
-        e.preventDefault();
-        focusExplorerAddressBar();
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.focusExplorerPreview)) {
-        e.preventDefault();
-        focusExplorerPreview();
-        return;
-      }
-      if (
-        matchesKeybinding(e, keybindings.togglePreviewTerminal) &&
-        hasPreview &&
-        previewTerminalWorkingDirectory
-      ) {
-        e.preventDefault();
-        togglePreviewTerminal();
-        return;
-      }
-      if (
-        matchesKeybinding(e, keybindings.openInTerminal) &&
-        selectedEntry?.is_dir
-      ) {
-        e.preventDefault();
-        onOpenInTerminal(selectedEntry.path);
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.revealInExplorer) && selectedEntry) {
-        e.preventDefault();
-        void revealExplorerPath(selectedEntry.path).catch((error) =>
-          setError(String(error)),
-        );
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.openAsAdmin) && selectedEntry) {
-        e.preventDefault();
-        void openAsAdmin(selectedEntry.path);
-        return;
-      }
-      const moveSelectionUp = matchesExplorerSelectionNavigationKeybinding(
-        e,
-        keybindings.explorerMoveSelectionUp,
-      );
-      const moveSelectionDown = matchesExplorerSelectionNavigationKeybinding(
-        e,
-        keybindings.explorerMoveSelectionDown,
-      );
-      const moveSelectionLeft = matchesExplorerSelectionNavigationKeybinding(
-        e,
-        keybindings.explorerMoveSelectionLeft,
-      );
-      const moveSelectionRight = matchesExplorerSelectionNavigationKeybinding(
-        e,
-        keybindings.explorerMoveSelectionRight,
-      );
-      if (
-        isExplorerFocus &&
-        (moveSelectionUp ||
-          moveSelectionDown ||
-          moveSelectionLeft ||
-          moveSelectionRight)
-      ) {
-        e.preventDefault();
-        const direction: ExplorerSelectionNavigationDirection = moveSelectionUp
-          ? "up"
-          : moveSelectionDown
-            ? "down"
-            : moveSelectionLeft
-              ? "left"
-              : "right";
-        const nextIndex = resolveExplorerDirectionalSelectionIndex({
-          currentIndex: currentFocusIndex,
-          totalEntries: visibleEntries.length,
-          direction,
-          presentation: effectiveViewModeDefinition.presentation,
-          gridColumnCount:
-            virtualWindow.kind === "grid" ? virtualWindow.columns : 1,
-        });
-        if (nextIndex < 0) {
-          return;
-        }
-        selectVisibleEntryAtIndex(nextIndex, e.shiftKey);
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.selectAllExplorer)) {
-        e.preventDefault();
-        selectAllVisibleEntries();
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.clearExplorerSelection)) {
-        e.preventDefault();
-        clearExplorerSelection();
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.toggleExplorerLayout)) {
-        e.preventDefault();
-        if (
-          !isCompactDock &&
-          !isSearchActive &&
-          (experimentalViewMode !== "off" ||
-            explorerTheme.preferredExperimentalViewMode != null)
-        ) {
-          const nextDensity = stepAdaptiveSemanticDensity(
-            experimentalDensity,
-            "larger",
-          );
-          if (nextDensity !== experimentalDensity) {
-            updateExplorerSettings({ experimentalDensity: nextDensity });
-            showExperimentalHud();
-          }
-          return;
-        }
-        const nextMode = stepExplorerViewMode(viewMode, "larger");
-        if (nextMode !== viewMode) {
-          updateExplorerSettings({ viewMode: nextMode });
-        }
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "l") {
-        e.preventDefault();
-        beginAddressEdit();
-        return;
-      }
-      if (e.altKey && e.key.toLowerCase() === "d") {
-        e.preventDefault();
-        beginAddressEdit();
-        return;
-      }
-      if (e.key === "Escape") {
-        setClipboard(null);
-        setNewItem({ visible: false, kind: "folder" });
-      }
-      if (matchesKeybinding(e, keybindings.copyPath)) {
-        e.preventDefault();
-        if (selectedEntries.length > 0) {
-          void copyToSysClipboard(
-            selectedEntries.map((entry) => entry.path).join("\n"),
-          );
-        }
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.copySelection)) {
-        e.preventDefault();
-        queueClipboard("copy");
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.cutSelection)) {
-        e.preventDefault();
-        queueClipboard("cut");
-        return;
-      }
-      if (matchesKeybinding(e, keybindings.pasteSelection)) {
-        e.preventDefault();
-        void paste();
-      }
-    };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, [
-    addressEditing,
-    beginAddressEdit,
-    clearExplorerSelection,
-    duplicate,
-    effectiveViewModeDefinition.presentation,
-    experimentalDensity,
-    experimentalViewMode,
-    explorerTheme.preferredExperimentalViewMode,
-    focusExplorerAddressBar,
-    focusExplorerList,
-    focusExplorerPreview,
-    hasPreview,
-    goBack,
-    goForward,
-    goHome,
-    isCompactDock,
-    isSearchActive,
-    keybindings,
-    moveJumpFilterSelection,
-    newItem.visible,
-    paste,
-    persistShaderPreviewSource,
-    preview,
-    previewTerminalWorkingDirectory,
-    queueClipboard,
-    refresh,
-    rename.active,
-    selectVisibleEntryAtIndex,
-    selectAllVisibleEntries,
-    selected,
-    selectedEntries,
-    showExperimentalHud,
-    showHidden,
-    updateExplorerSettings,
-    viewMode,
-    visibleEntries,
-    toggleSearchScope,
-    togglePreviewTerminal,
-    cycleSortKey,
-    toggleSortOrder,
-    updateShaderPreviewScene,
-    virtualWindow.columns,
-    virtualWindow.kind,
-  ]);
 
   // ── Breadcrumbs ──
   const crumbs: { label: string; path: string }[] = locationBreadcrumbs;
@@ -15258,6 +14925,460 @@ export function FileExplorer({
       visibleEntries.slice(virtualWindow.startIndex, virtualWindow.endIndex),
     [virtualWindow.endIndex, virtualWindow.startIndex, visibleEntries],
   );
+
+  // ── Keyboard ──
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (
+        rename.active ||
+        newItem.visible ||
+        addressEditing ||
+        propertiesPanel.visible
+      ) {
+        if (propertiesPanel.visible && e.key === "Escape") {
+          e.preventDefault();
+          setPropertiesPanel(null);
+        }
+        return;
+      }
+      if (isEditableKeyboardTarget(e.target)) return;
+
+      const isExplorerFocus = document.activeElement === mainRef.current;
+      const selectedEntry =
+        visibleEntries.find((en) => selected.has(en.path)) ?? null;
+      const currentFocusIndex = (() => {
+        if (lastSelected.current) {
+          const rememberedIndex = visibleEntries.findIndex(
+            (entry) => entry.path === lastSelected.current,
+          );
+          if (rememberedIndex >= 0) return rememberedIndex;
+        }
+        const selectedIndex = visibleEntries.findIndex((entry) =>
+          selected.has(entry.path),
+        );
+        if (selectedIndex >= 0) return selectedIndex;
+        return 0;
+      })();
+
+      if (
+        matchesKeybinding(e, keybindings.calculateRecursiveSize) &&
+        isExplorerFocus
+      ) {
+        e.preventDefault();
+        void runRecursiveSizeCalculation();
+        return;
+      }
+
+      if (jumpFilter.active && e.key === "Escape") {
+        e.preventDefault();
+        setJumpFilter(null);
+        return;
+      }
+
+      if (isExplorerFocus && isExplorerJumpFilterPrintableKey(e)) {
+        e.preventDefault();
+        updateJumpFilterQuery(
+          appendExplorerJumpFilterCharacter(jumpFilter.query, e.key),
+        );
+        return;
+      }
+
+      if (jumpFilter.active && e.key === "Backspace") {
+        e.preventDefault();
+        const nextQuery = removeExplorerJumpFilterCharacter(jumpFilter.query);
+        if (!nextQuery) {
+          setJumpFilter(null);
+        } else {
+          updateJumpFilterQuery(nextQuery);
+        }
+        return;
+      }
+
+      if (
+        jumpFilter.active &&
+        (e.key === "ArrowDown" ||
+          e.key === "ArrowUp" ||
+          e.key === "ArrowLeft" ||
+          e.key === "ArrowRight")
+      ) {
+        e.preventDefault();
+        moveJumpFilterSelection(
+          e.key === "ArrowUp" || e.key === "ArrowLeft" ? -1 : 1,
+        );
+        return;
+      }
+
+      if (jumpFilter.active && e.key === "Enter") {
+        e.preventDefault();
+        const activeJumpPath =
+          jumpFilter.resultPaths[jumpFilter.resultIndex] ??
+          jumpFilter.resultPaths[0] ??
+          null;
+        const targetEntry =
+          (activeJumpPath
+            ? (visibleEntries.find((entry) => entry.path === activeJumpPath) ??
+              null)
+            : null) ??
+          selectedEntry ??
+          visibleEntries[0] ??
+          null;
+        if (targetEntry) {
+          setSelected(new Set([targetEntry.path]));
+          lastSelected.current = targetEntry.path;
+          selectionRangeAnchorPathRef.current = targetEntry.path;
+          void openEntry(targetEntry);
+        }
+        return;
+      }
+
+      const activeElement = document.activeElement;
+      const isTypingInEmbeddedEditor =
+        activeElement instanceof HTMLInputElement ||
+        activeElement instanceof HTMLTextAreaElement ||
+        activeElement instanceof HTMLSelectElement ||
+        activeElement instanceof HTMLElement
+          ? activeElement.isContentEditable ||
+            activeElement.closest(".monaco-editor") != null
+          : false;
+
+      if (
+        preview.type === "shader" &&
+        matchesKeybinding(e, keybindings.saveFile) &&
+        !preview.isReadOnly &&
+        preview.editableSource != null
+      ) {
+        e.preventDefault();
+        void persistShaderPreviewSource(preview.path);
+        return;
+      }
+      if (
+        preview.type === "shader" &&
+        !isTypingInEmbeddedEditor &&
+        matchesKeybinding(e, keybindings.shaderWorkbenchToggleEditMode)
+      ) {
+        e.preventDefault();
+        setDocumentViewMode((current) =>
+          current === "edit" ? "preview" : "edit",
+        );
+        return;
+      }
+      if (
+        preview.type === "shader" &&
+        !isTypingInEmbeddedEditor &&
+        matchesKeybinding(e, keybindings.shaderWorkbenchToggleScene)
+      ) {
+        e.preventDefault();
+        updateShaderPreviewScene(
+          preview.path,
+          preview.selectedScene === "sphere" ? "fullscreen" : "sphere",
+        );
+        return;
+      }
+
+      if (matchesKeybinding(e, keybindings.searchExplorer)) {
+        e.preventDefault();
+        beginAddressEdit();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.goUpDirectory) && isExplorerFocus) {
+        e.preventDefault();
+        goUp();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.refreshExplorer)) {
+        e.preventDefault();
+        refresh();
+        return;
+      }
+      if (
+        matchesKeybinding(e, keybindings.goBackDirectory) &&
+        isExplorerFocus
+      ) {
+        e.preventDefault();
+        goBack();
+        return;
+      }
+      if (
+        matchesKeybinding(e, keybindings.goForwardDirectory) &&
+        isExplorerFocus
+      ) {
+        e.preventDefault();
+        goForward();
+        return;
+      }
+      if (
+        matchesKeybinding(e, keybindings.goHomeDirectory) &&
+        isExplorerFocus
+      ) {
+        e.preventDefault();
+        goHome();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.renameItem) && selected.size === 1) {
+        e.preventDefault();
+        if (selectedEntry) {
+          setRename({
+            active: true,
+            path: selectedEntry.path,
+            name: selectedEntry.name,
+          });
+        }
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.deleteItem) && selected.size > 0) {
+        e.preventDefault();
+        if (selectedEntries.length > 0) {
+          openTrashDialog(selectedEntries);
+        }
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.newFolder)) {
+        e.preventDefault();
+        openNew("folder");
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.newFile)) {
+        e.preventDefault();
+        openNew("file");
+        return;
+      }
+      if (
+        matchesKeybinding(e, keybindings.duplicateItem) &&
+        selected.size > 0 &&
+        selectedEntry
+      ) {
+        e.preventDefault();
+        void duplicate(selectedEntry);
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.toggleHiddenFiles)) {
+        e.preventDefault();
+        updateExplorerSettings({ showHiddenFiles: !showHidden });
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.toggleExplorerSearchScope)) {
+        e.preventDefault();
+        toggleSearchScope();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.cycleExplorerSortKey)) {
+        e.preventDefault();
+        cycleSortKey();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.toggleExplorerSortOrder)) {
+        e.preventDefault();
+        toggleSortOrder();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.focusExplorerList)) {
+        e.preventDefault();
+        focusExplorerList();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.focusExplorerAddressBar)) {
+        e.preventDefault();
+        focusExplorerAddressBar();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.focusExplorerPreview)) {
+        e.preventDefault();
+        focusExplorerPreview();
+        return;
+      }
+      if (
+        matchesKeybinding(e, keybindings.togglePreviewTerminal) &&
+        hasPreview &&
+        previewTerminalWorkingDirectory
+      ) {
+        e.preventDefault();
+        togglePreviewTerminal();
+        return;
+      }
+      if (
+        matchesKeybinding(e, keybindings.openInTerminal) &&
+        selectedEntry?.is_dir
+      ) {
+        e.preventDefault();
+        onOpenInTerminal(selectedEntry.path);
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.revealInExplorer) && selectedEntry) {
+        e.preventDefault();
+        void revealExplorerPath(selectedEntry.path).catch((error) =>
+          setError(String(error)),
+        );
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.openAsAdmin) && selectedEntry) {
+        e.preventDefault();
+        void openAsAdmin(selectedEntry.path);
+        return;
+      }
+      const moveSelectionUp = matchesExplorerSelectionNavigationKeybinding(
+        e,
+        keybindings.explorerMoveSelectionUp,
+      );
+      const moveSelectionDown = matchesExplorerSelectionNavigationKeybinding(
+        e,
+        keybindings.explorerMoveSelectionDown,
+      );
+      const moveSelectionLeft = matchesExplorerSelectionNavigationKeybinding(
+        e,
+        keybindings.explorerMoveSelectionLeft,
+      );
+      const moveSelectionRight = matchesExplorerSelectionNavigationKeybinding(
+        e,
+        keybindings.explorerMoveSelectionRight,
+      );
+      if (
+        isExplorerFocus &&
+        (moveSelectionUp ||
+          moveSelectionDown ||
+          moveSelectionLeft ||
+          moveSelectionRight)
+      ) {
+        e.preventDefault();
+        const direction: ExplorerSelectionNavigationDirection = moveSelectionUp
+          ? "up"
+          : moveSelectionDown
+            ? "down"
+            : moveSelectionLeft
+              ? "left"
+              : "right";
+        const nextIndex = resolveExplorerDirectionalSelectionIndex({
+          currentIndex: currentFocusIndex,
+          totalEntries: visibleEntries.length,
+          direction,
+          presentation: effectiveViewModeDefinition.presentation,
+          gridColumnCount:
+            virtualWindow.kind === "grid" ? virtualWindow.columns : 1,
+        });
+        if (nextIndex < 0) {
+          return;
+        }
+        selectVisibleEntryAtIndex(nextIndex, e.shiftKey);
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.selectAllExplorer)) {
+        e.preventDefault();
+        selectAllVisibleEntries();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.clearExplorerSelection)) {
+        e.preventDefault();
+        clearExplorerSelection();
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.toggleExplorerLayout)) {
+        e.preventDefault();
+        if (
+          !isCompactDock &&
+          !isSearchActive &&
+          (experimentalViewMode !== "off" ||
+            explorerTheme.preferredExperimentalViewMode != null)
+        ) {
+          const nextDensity = stepAdaptiveSemanticDensity(
+            experimentalDensity,
+            "larger",
+          );
+          if (nextDensity !== experimentalDensity) {
+            updateExplorerSettings({ experimentalDensity: nextDensity });
+            showExperimentalHud();
+          }
+          return;
+        }
+        const nextMode = stepExplorerViewMode(viewMode, "larger");
+        if (nextMode !== viewMode) {
+          updateExplorerSettings({ viewMode: nextMode });
+        }
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "l") {
+        e.preventDefault();
+        beginAddressEdit();
+        return;
+      }
+      if (e.altKey && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        beginAddressEdit();
+        return;
+      }
+      if (e.key === "Escape") {
+        setClipboard(null);
+        setNewItem({ visible: false, kind: "folder" });
+      }
+      if (matchesKeybinding(e, keybindings.copyPath)) {
+        e.preventDefault();
+        if (selectedEntries.length > 0) {
+          void copyToSysClipboard(
+            selectedEntries.map((entry) => entry.path).join("\n"),
+          );
+        }
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.copySelection)) {
+        e.preventDefault();
+        queueClipboard("copy");
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.cutSelection)) {
+        e.preventDefault();
+        queueClipboard("cut");
+        return;
+      }
+      if (matchesKeybinding(e, keybindings.pasteSelection)) {
+        e.preventDefault();
+        void paste();
+      }
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [
+    addressEditing,
+    beginAddressEdit,
+    clearExplorerSelection,
+    duplicate,
+    effectiveViewModeDefinition.presentation,
+    experimentalDensity,
+    experimentalViewMode,
+    explorerTheme.preferredExperimentalViewMode,
+    focusExplorerAddressBar,
+    focusExplorerList,
+    focusExplorerPreview,
+    hasPreview,
+    goBack,
+    goForward,
+    goHome,
+    isCompactDock,
+    isSearchActive,
+    keybindings,
+    moveJumpFilterSelection,
+    newItem.visible,
+    paste,
+    persistShaderPreviewSource,
+    preview,
+    previewTerminalWorkingDirectory,
+    queueClipboard,
+    refresh,
+    rename.active,
+    selectVisibleEntryAtIndex,
+    selectAllVisibleEntries,
+    selected,
+    selectedEntries,
+    showExperimentalHud,
+    showHidden,
+    updateExplorerSettings,
+    viewMode,
+    visibleEntries,
+    toggleSearchScope,
+    togglePreviewTerminal,
+    cycleSortKey,
+    toggleSortOrder,
+    updateShaderPreviewScene,
+    virtualWindow.columns,
+    virtualWindow.kind,
+  ]);
 
   const maxViewportScrollTop = useMemo(
     () =>

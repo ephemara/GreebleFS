@@ -191,6 +191,27 @@ export function parseSpreadsheetInput(value: string): RawCellContent {
   return value;
 }
 
+export function validateSpreadsheetRawCellContent(
+  value: RawCellContent,
+): string | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.startsWith("=") && trimmed.slice(1).trim().length === 0) {
+      return "Formulas must include an expression after =.";
+    }
+  }
+
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    return "Spreadsheet cells cannot contain non-finite numbers.";
+  }
+
+  if (value instanceof Date && Number.isNaN(value.getTime())) {
+    return "Spreadsheet cells cannot contain invalid dates.";
+  }
+
+  return null;
+}
+
 export function exportSpreadsheetWorkbook(
   document: SpreadsheetWorkbookDocument,
   activeSheetName: string,
