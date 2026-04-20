@@ -51,6 +51,7 @@ import {
 } from '../store/explorerTaskStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { ExplorerTaskCenterContent } from '../components/explorer/ExplorerTaskCenterContent';
+import { OverlayScrollArea } from '../components/OverlayScrollArea';
 
 type FileOperationsView = 'tasks' | 'transfer';
 
@@ -730,14 +731,14 @@ export default function FileOperationsWindowApp() {
                         <div style={{ color: palette.danger, fontSize: 12 }}>{listingError}</div>
                       ) : null}
 
-                      <div
+                      <OverlayScrollArea
                         style={{
                           minHeight: 0,
-                          overflowY: 'auto',
                           borderRadius: 14,
                           border: '1px solid var(--overlay-border)',
                           background: 'rgba(0,0,0,0.14)',
                         }}
+                        scrollbarStyle="themed"
                       >
                         {listingLoading ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 14, color: palette.textSecondary, fontSize: 12 }}>
@@ -791,7 +792,7 @@ export default function FileOperationsWindowApp() {
                             ))}
                           </div>
                         )}
-                      </div>
+                      </OverlayScrollArea>
                     </div>
                   </div>
                 </div>
@@ -864,7 +865,11 @@ export default function FileOperationsWindowApp() {
               </ActionButton>
             ) : undefined}
           >
-            <div style={{ minHeight: 0, height: '100%', overflowY: 'auto', paddingRight: 2 }}>
+            <OverlayScrollArea
+              style={{ minHeight: 0, height: '100%' }}
+              viewportStyle={{ paddingRight: 2 }}
+              scrollbarStyle="themed"
+            >
               <ExplorerTaskCenterContent
                 accent={palette.accent}
                 border={palette.border}
@@ -885,7 +890,7 @@ export default function FileOperationsWindowApp() {
                   </div>
                 )}
               />
-            </div>
+            </OverlayScrollArea>
           </SectionCard>
         </main>
       </div>

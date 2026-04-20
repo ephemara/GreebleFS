@@ -258,7 +258,7 @@ export function ExplorerFolderPreview({
         ) : (
           <OverlayScrollArea
             style={{ flex: 1, minHeight: 0 }}
-            viewportClassName="overlay-scroll-area__viewport--explorer-file-list"
+            scrollbarStyle="explorer-file-list"
           >
             {renderEntries.map((entry) => {
               const modifiedLabel = formatModifiedLabel(entry.modified);

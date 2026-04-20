@@ -18235,7 +18235,7 @@ export function FileExplorer({
           >
             <OverlayScrollArea
               style={{ flex: 1, minHeight: 0 }}
-              viewportClassName="overlay-scroll-area__viewport--explorer-file-list"
+              scrollbarStyle="explorer-file-list"
               viewportStyle={{ padding: 0 }}
               viewportRef={explorerViewportRef}
             >

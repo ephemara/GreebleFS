@@ -233,6 +233,9 @@ pub(crate) enum ExplorerTaskRetryContext {
         path: String,
         recursive: bool,
     },
+    DeleteMany {
+        paths: Vec<String>,
+    },
     BatchRename {
         items: Vec<FsBatchRenameItem>,
     },
@@ -978,6 +981,62 @@ fn batch_checksum_task_registration(paths: Vec<String>) -> ExplorerTaskRegistrat
     }
 }
 
+fn batch_delete_task_detail(current: usize, total: usize) -> String {
+    if total == 0 {
+        return "Deleting queued items".to_string();
+    }
+    format!(
+        "Deleted {} of {} queued item{}",
+        current,
+        total,
+        if total == 1 { "" } else { "s" }
+    )
+}
+
+fn batch_delete_task_registration(paths: Vec<String>) -> ExplorerTaskRegistration {
+    ExplorerTaskRegistration {
+        kind: ExplorerTaskKind::Delete,
+        title: format!(
+            "Delete {} queued item{}",
+            paths.len(),
+            if paths.len() == 1 { "" } else { "s" }
+        ),
+        detail: "Deleting queued items".to_string(),
+        source_paths: paths.clone(),
+        destination_path: None,
+        retry_context: Some(ExplorerTaskRetryContext::DeleteMany { paths }),
+        can_undo: false,
+    }
+}
+
+fn normalize_batch_delete_paths(paths: Vec<String>) -> Vec<String> {
+    let mut unique = paths
+        .into_iter()
+        .map(|path| path.trim().to_string())
+        .filter(|path| !path.is_empty())
+        .collect::<Vec<_>>();
+    unique.sort_by(|left, right| {
+        left.len()
+            .cmp(&right.len())
+            .then_with(|| left.to_lowercase().cmp(&right.to_lowercase()))
+    });
+    unique.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
+
+    let mut normalized = Vec::<String>::new();
+    for candidate in unique {
+        let candidate_path = PathBuf::from(&candidate);
+        let is_descendant = normalized.iter().any(|existing| {
+            let existing_path = Path::new(existing);
+            candidate_path != existing_path && candidate_path.starts_with(existing_path)
+        });
+        if !is_descendant {
+            normalized.push(candidate);
+        }
+    }
+
+    normalized
+}
+
 fn calculate_file_checksums(path: &Path) -> Result<FsChecksumEntryInfo, String> {
     let metadata = fs::metadata(path)
         .map_err(|error| format!("Failed to inspect {}: {error}", path.display()))?;
@@ -1212,6 +1271,46 @@ async fn run_checksum_task(
             Err(error)
         }
     }
+}
+
+async fn run_delete_many_task(paths: Vec<String>) -> Result<String, String> {
+    let normalized_paths = normalize_batch_delete_paths(paths);
+    if normalized_paths.is_empty() {
+        return Err("Delete request was empty.".to_string());
+    }
+
+    let total = normalized_paths.len();
+    let task_id = create_manual_explorer_task(batch_delete_task_registration(
+        normalized_paths.clone(),
+    ));
+
+    for (index, path) in normalized_paths.iter().enumerate() {
+        let path_ref = Path::new(path);
+        let metadata = std::fs::symlink_metadata(path_ref)
+            .map_err(|error| format!("Failed to inspect path {}: {error}", path_ref.display()))?;
+        let recursive = metadata.is_dir();
+        ensure_nonrecursive_delete_allowed(path_ref, recursive)?;
+        delete_path_with_scheduler(path_ref, recursive).await?;
+
+        invalidate_all_fs_caches(path_ref);
+        if let Some(parent) = path_ref.parent() {
+            invalidate_all_fs_caches(parent);
+        }
+
+        let _ = update_manual_explorer_task(
+            &task_id,
+            Some(batch_delete_task_detail(index + 1, total)),
+            Some((index + 1) as u64),
+            Some(total as u64),
+        );
+    }
+
+    let _ = complete_manual_explorer_task(
+        &task_id,
+        Some(batch_delete_task_detail(total, total)),
+        None,
+    );
+    Ok(task_id)
 }
 
 pub(crate) fn set_recent_trash_task(task_id: Option<&str>) -> Result<(), String> {
@@ -4299,6 +4398,13 @@ pub async fn fs_delete(path: String, recursive: bool) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+#[specta::specta]
+pub async fn fs_delete_many(paths: Vec<String>) -> Result<(), String> {
+    run_delete_many_task(paths).await?;
+    Ok(())
+}
+
 // ─── fs_rename ────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -4603,6 +4709,7 @@ pub async fn fs_retry_explorer_task(
             ensure_nonrecursive_delete_allowed(path_ref, recursive)?;
             delete_path_with_scheduler(path_ref, recursive).await?
         }
+        ExplorerTaskRetryContext::DeleteMany { paths } => run_delete_many_task(paths).await?,
         ExplorerTaskRetryContext::BatchRename { items } => {
             crate::explorer_pro_commands::run_batch_rename_task(items).await?
         }

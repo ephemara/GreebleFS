@@ -77,6 +77,9 @@ async function bootstrapApp() {
     try {
         await initializeManagedContentDirectories();
         const { default: RootComponent } = await resolveBootstrapComponent();
+        document.documentElement.classList.add('overlay-scrollbar-scope');
+        document.body.classList.add('overlay-scrollbar-scope');
+        document.getElementById('root')?.classList.add('overlay-scrollbar-scope');
 
         ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
           <React.StrictMode>

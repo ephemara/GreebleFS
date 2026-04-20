@@ -60,4 +60,28 @@ describe('OverlayScrollArea', () => {
     expect(viewport.scrollLeft).toBe(20);
     expect(wheelEvent.defaultPrevented).toBe(false);
   });
+
+  it('uses the explicit themed scrollbar contract when requested', () => {
+    const { container } = render(
+      <OverlayScrollArea scrollbarStyle="themed">
+        <div>content</div>
+      </OverlayScrollArea>,
+    );
+
+    const viewport = getViewport(container, 'vertical');
+    expect(viewport.dataset.overlayScrollbarStyle).toBe('themed');
+    expect(viewport.classList.contains('overlay-scroll-area__viewport--scrollbar-themed')).toBe(true);
+  });
+
+  it('maps explorer file-list scrollbar styling through the public prop', () => {
+    const { container } = render(
+      <OverlayScrollArea scrollbarStyle="explorer-file-list">
+        <div>content</div>
+      </OverlayScrollArea>,
+    );
+
+    const viewport = getViewport(container, 'vertical');
+    expect(viewport.dataset.overlayScrollbarStyle).toBe('explorer-file-list');
+    expect(viewport.classList.contains('overlay-scroll-area__viewport--explorer-file-list')).toBe(true);
+  });
 });

@@ -1,4 +1,5 @@
 import {
+  deleteExplorerPaths,
   deleteExplorerPath,
   getExplorerDrives,
   openExplorerPath,
@@ -13,6 +14,7 @@ import {
   type StorageScanStartResponse,
   type StorageScanStatus,
   type StorageTreeNode,
+  type StorageTypeBucketSummary,
 } from '../generated/tauri';
 import { commands, unwrapTauriResult } from './tauriClient';
 
@@ -21,6 +23,7 @@ export type StorageScanSnapshot = StorageScanStatus;
 export type StorageScanEntry = StoragePathSummary;
 export type StorageTreeSnapshotNode = StorageTreeNode;
 export type StorageTreeSnapshotNodeKind = StorageNodeKind;
+export type StorageTypeBucketSnapshot = StorageTypeBucketSummary;
 
 export async function getStorageRoots(): Promise<ExplorerLocalDriveInfo[]> {
   const drives = await getExplorerDrives();
@@ -39,6 +42,13 @@ export async function cancelStorageScan(scanId: string): Promise<void> {
   unwrapTauriResult(await commands.storageScanCancel(scanId));
 }
 
+export async function listStorageDirectory(
+  scanId: string,
+  directoryPath: string,
+): Promise<StorageScanEntry[]> {
+  return unwrapTauriResult(await commands.storageScanListDirectory(scanId, directoryPath));
+}
+
 export async function isStorageProcessElevated(): Promise<boolean> {
   return unwrapTauriResult(await commands.fsIsProcessElevated());
 }
@@ -55,8 +65,16 @@ export async function trashStorageEntry(path: string): Promise<void> {
   await trashExplorerPaths([path]);
 }
 
+export async function trashStorageEntries(paths: string[]): Promise<void> {
+  await trashExplorerPaths(paths);
+}
+
 export async function deleteStorageEntry(path: string, isDirectory: boolean): Promise<void> {
   await deleteExplorerPath(path, isDirectory);
+}
+
+export async function deleteStorageEntries(paths: string[]): Promise<void> {
+  await deleteExplorerPaths(paths);
 }
 
 export type StorageRootInfo = ExplorerLocalDriveInfo;

@@ -735,6 +735,14 @@ export async function deleteExplorerPath(path: string, recursive: boolean): Prom
   unwrapTauriResult(await commands.fsDelete(path, recursive));
 }
 
+export async function deleteExplorerPaths(paths: string[]): Promise<void> {
+  const localPaths = paths.filter((path) => !isCloudExplorerPath(path));
+  if (localPaths.length !== paths.length) {
+    throw new Error('Batch delete is only available for local filesystem items.');
+  }
+  unwrapTauriResult(await commands.fsDeleteMany(localPaths));
+}
+
 export async function trashExplorerPaths(paths: string[]): Promise<ExplorerTrashAction> {
   const localPaths = paths.filter((path) => !isCloudExplorerPath(path));
   if (localPaths.length !== paths.length) {

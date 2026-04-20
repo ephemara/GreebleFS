@@ -40,6 +40,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Built-in panel registration and prop wiring.
 - `src/components/FileExplorer.tsx`
   Main explorer shell, navigation, preview, standard layout modes, experimental explorer runtimes, the embedded preview-pane image/video editor paths, the explorer-local preview split mode that can promote the live preview lane into a pane-styled sibling without creating another workspace pane, and the dock-owned layout contract used when the app switches into overlay mode.
+- `src/components/OverlayScrollArea.tsx`
+  Shared overlay scroll host. It owns the explicit scrollbar contract for shipping-shell panes (`hidden`, `themed`, `explorer-file-list`) so explorer lists, popouts, and workbench/detail surfaces can share themed scroll behavior without per-component scrollbar CSS.
 - `src/components/ExplorerImageEditor.tsx`
   Shell-owned wrapper for the embedded preview-pane image lane. Editable raster files now open in fullscreen preview mode first and only reveal the heavier save/crop/filter chrome when `FileExplorer.tsx` switches the document into explicit `edit` mode. The component still provides GreebleFS-native toolbar/status chrome, live scroll-to-zoom and drag-to-pan preview interaction, save/reset wiring that restores the preview fit state, resize adaptation, and the static-preview fallback for unsupported image formats. Local saves may attempt the Tauri fs plugin path when it is available, but the durable write contract is the typed explorer backend fallback so missing plugin registration does not strand image edits.
 - `src/components/ExplorerVideoEditor.tsx`
@@ -53,9 +55,15 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/components/ExplorerShaderWorkbench.tsx`
   Shell-owned wrapper for the embedded shader preview/editor surface. It renders WGSL/HLSL/SPIR-V documents inside the explorer preview pane, owns edit-vs-preview presentation, exposes stage/entrypoint pickers plus scene-mode controls, renders the WebGPU host canvas when available, and falls back to diagnostics plus inspection output when live preview is unsupported.
 - `src/components/StoragePanel.tsx`
-  First-class storage forensics tab. It owns drive/root picking, elevation messaging, native scan session orchestration, a compact left navigation rail with a scrollable workspace, treemap rendering, largest-entry inspection, and destructive cleanup actions for scanned filesystem paths.
+  First-class storage forensics tab. It now follows the Explorer shell contract more closely: left drive/context rail, dense matrix-first workspace, optional split-map/types/focus modes, preview-pane-style inspector, keyboard navigation, and a visible batch cleanup queue for staged trash/delete actions.
 - `src/components/storage/storageTreemap.ts`
-  Pure treemap layout helper for the storage tab. It turns the condensed native storage tree into deterministic SVG rectangles without mixing layout math into the panel component.
+  Pure treemap layout helper for the storage tab. It turns the condensed native storage tree into deterministic SVG rectangles weighted by allocated bytes without mixing layout math into the panel component.
+- `src/components/storage/storageWorkbench.ts`
+  Pure storage-workbench helpers for matrix row flattening, sort/share math, treemap focus resolution, and queue summary calculations. Keep storage table/tree math here instead of burying it in `StoragePanel.tsx`.
+- `src/config/storageBatchQueues.ts`
+  Data-driven storage batch-queue definitions. The initial `cleanup` queue exposes staged `Trash` and `Delete` actions, but the config shape is intended to support future batch workflows without hardcoding them inside the panel.
+- `src/store/storageStore.ts`
+  Persisted storage-workbench session state. It owns active mode, selected root/path set, expanded tree paths, sort state, preview split mode, focus path, and the staged cleanup queue snapshot.
 - `src/components/explorer/ExplorerWorkspace.tsx`
   Explorer-local workspace shell that wraps `FileExplorer` instances with explorer tabs, slot-based `1-Up` / `2-Up` / `4-Up` pane layouts, pane focus, adaptive split sizing, and one shared workspace strip that always shows the focused pane's tab set. This layer still owns top-level multi-pane explorer topology; the newer preview split stays inside a single `FileExplorer` instance instead of routing through workspace panes.
 - `src/components/explorer/ExplorerSideRail.tsx`
@@ -111,7 +119,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/runtime/pluginPanelRequests.ts`
   Shared plugin-panel handoff bridge for explorer/plugin context flows. It persists the latest request payload and dispatches shell-level open-panel events plus panel-specific update events.
 - `src/runtime/storageBackend.ts`
-  TS bridge for the storage tab. It exposes typed native scan start/poll/cancel calls, filters local storage roots from the explorer drive inventory, and reuses existing explorer open/reveal/trash/delete operations for storage cleanup actions.
+  TS bridge for the storage tab. It exposes typed native scan start/poll/list-directory calls, filters local storage roots from the explorer drive inventory, and reuses existing explorer open/reveal/trash/delete operations plus batch delete wiring for storage cleanup actions.
 - `src/runtime/fileOperationsWindow.ts`
   Shared file-operations popout bridge. It owns the `file-operations` window label, persisted request/completion payloads, cross-window event names, and the helper that creates or focuses the dedicated popout window.
 - `src/runtime/imageEditorRuntime.ts`
@@ -428,7 +436,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Native host and Rust-side integration.
   `src-tauri/src/cloud_commands.rs` is the cloud-drive truth layer for provider credential resolution, OAuth callback handling, account metadata persistence, keychain refresh-token storage, and cloud-backed explorer file operations.
   `src-tauri/src/explorer_pro_commands.rs` is the explorer-pro feature backend for trash/undo, batch rename, duplicate scans, tags, and saved searches.
-  `src-tauri/src/storage_commands.rs` is the storage-tab truth layer for native drive scans. It walks the filesystem on a background thread, tracks progress/cancellation, builds a condensed tree plus largest-entry summaries, and prunes completed scan snapshots when newer scans start.
+  `src-tauri/src/storage_commands.rs` is the storage-tab truth layer for native drive scans. It walks the filesystem on a background thread, tracks progress/cancellation, records logical vs allocated size, aggregates file-type buckets, caches direct child listings for the matrix view, builds a condensed tree plus largest-entry summaries, and prunes completed scan snapshots when newer scans start.
   `src-tauri/src/screenshot_commands.rs` is the screenshot truth layer for monitor capture, cached full-resolution images, native clipboard work, gallery thumbnails, and annotated export compositing.
 
 ## Validation Commands
@@ -437,7 +445,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `npx tsc --noEmit --skipLibCheck --jsx react-jsx --module esnext --target es2022 --moduleResolution bundler --allowSyntheticDefaultImports --types vitest/globals,@testing-library/jest-dom src/vite-env.d.ts src/config/workbenchTheme.ts src/config/explorerTheme.ts src/config/appearance.ts src/components/CommandPalette.tsx src/components/TerminalOverlay.tsx src/components/SettingsPage.tsx src/components/explorer/ExplorerSideRail.tsx src/components/FileExplorer.tsx src/App.tsx src/test/workbenchTheme.test.ts src/test/explorerTheme.test.ts src/test/themePackageExplorerRecipe.test.ts src/test/themePackages.test.ts src/test/explorerSideRail.test.tsx`
 - `bun run test:unit`
 - `bun run test:unit src/test/filePreview.test.ts src/test/hotkeys.test.ts src/test/settingsStore.test.ts src/test/fileExplorer.viewModes.test.tsx`
-- `npx vitest run src/test/panelRegistry.test.tsx src/test/storageTreemap.test.ts --reporter=dot`
+- `npx vitest run src/test/panelRegistry.test.tsx src/test/storageTreemap.test.ts src/test/storageWorkbench.test.ts src/test/storageStore.test.ts --reporter=dot`
 - `bun run test:browser`
 - `bun run build`
 - `node scripts/run-cargo-tests.mjs`

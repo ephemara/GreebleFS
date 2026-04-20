@@ -7,9 +7,12 @@ function createNode(path: string, bytes: number): StorageTreeSnapshotNode {
     path,
     name: path.split(/[\\/]/).pop() ?? path,
     kind: 'file',
-    bytes,
+    logicalBytes: bytes,
+    allocatedBytes: bytes,
+    wasteBytes: 0,
     fileCount: 1,
     directoryCount: 0,
+    extension: 'bin',
     children: [],
   };
 }

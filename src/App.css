@@ -14,6 +14,41 @@ html, body, #root {
   contain: paint;
 }
 
+.overlay-scrollbar-scope {
+  --overlay-scrollbar-size: 11px;
+  --overlay-scrollbar-thumb: color-mix(in srgb, var(--overlay-border-strong) 72%, transparent);
+  --overlay-scrollbar-thumb-hover: color-mix(in srgb, var(--overlay-accent) 46%, var(--overlay-border-strong));
+  --overlay-scrollbar-track: transparent;
+  --overlay-scrollbar-thumb-border-width: 3px;
+}
+
+.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):not(.custom-scrollbar):not(.hide-scrollbar):not(.overlay-scrollbars-none) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--overlay-scrollbar-thumb) var(--overlay-scrollbar-track);
+}
+
+.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):not(.custom-scrollbar):not(.hide-scrollbar):not(.overlay-scrollbars-none)::-webkit-scrollbar {
+  width: var(--overlay-scrollbar-size);
+  height: var(--overlay-scrollbar-size);
+}
+
+.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):not(.custom-scrollbar):not(.hide-scrollbar):not(.overlay-scrollbars-none)::-webkit-scrollbar-track {
+  background: var(--overlay-scrollbar-track);
+}
+
+.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):not(.custom-scrollbar):not(.hide-scrollbar):not(.overlay-scrollbars-none)::-webkit-scrollbar-thumb {
+  background: var(--overlay-scrollbar-thumb);
+  border: var(--overlay-scrollbar-thumb-border-width) solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+.overlay-scrollbar-scope :where(div, section, article, aside, nav, main, ul, ol, textarea, pre):not(.custom-scrollbar):not(.hide-scrollbar):not(.overlay-scrollbars-none):hover::-webkit-scrollbar-thumb {
+  background: var(--overlay-scrollbar-thumb-hover);
+  border: var(--overlay-scrollbar-thumb-border-width) solid transparent;
+  background-clip: padding-box;
+}
+
 /* Shared scroll system for overlay panels */
 .overlay-scroll-area {
   display: flex;
@@ -33,7 +68,12 @@ html, body, #root {
   overscroll-behavior: contain;
 }
 
-.overlay-scroll-area__viewport::-webkit-scrollbar {
+.overlay-scroll-area__viewport--scrollbar-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.overlay-scroll-area__viewport--scrollbar-hidden::-webkit-scrollbar {
   width: 0;
   height: 0;
 }
@@ -52,39 +92,53 @@ html, body, #root {
   overflow: auto;
 }
 
+.overlay-scroll-area__viewport--scrollbar-themed,
 .overlay-scroll-area__viewport--explorer-file-list {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--overlay-border-strong) 72%, transparent) transparent;
+  scrollbar-color: var(--overlay-scrollbar-thumb) var(--overlay-scrollbar-track);
   scrollbar-gutter: stable both-edges;
-  overflow-anchor: none;
-  will-change: transform;
-  backface-visibility: hidden;
 }
 
+.overlay-scroll-area__viewport--scrollbar-themed {
+  scrollbar-gutter: stable;
+}
+
+.overlay-scroll-area__viewport--scrollbar-themed::-webkit-scrollbar,
 .overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
+  width: var(--overlay-scrollbar-size);
+  height: var(--overlay-scrollbar-size);
 }
 
+.overlay-scroll-area__viewport--scrollbar-themed::-webkit-scrollbar-track,
 .overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar-track {
-  background: transparent;
+  background: var(--overlay-scrollbar-track);
 }
 
+.overlay-scroll-area__viewport--scrollbar-themed::-webkit-scrollbar-thumb,
 .overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--overlay-border-strong) 72%, transparent);
-  border: 3px solid transparent;
+  background: var(--overlay-scrollbar-thumb);
+  border: var(--overlay-scrollbar-thumb-border-width) solid transparent;
   border-radius: 999px;
   background-clip: padding-box;
 }
 
+.overlay-scroll-area__viewport--scrollbar-themed:hover::-webkit-scrollbar-thumb,
 .overlay-scroll-area__viewport--explorer-file-list:hover::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--overlay-accent) 46%, var(--overlay-border-strong));
-  border: 3px solid transparent;
+  background: var(--overlay-scrollbar-thumb-hover);
+  border: var(--overlay-scrollbar-thumb-border-width) solid transparent;
   background-clip: padding-box;
 }
 
+.overlay-scroll-area__viewport--scrollbar-themed::-webkit-scrollbar-corner,
 .overlay-scroll-area__viewport--explorer-file-list::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+.overlay-scroll-area__viewport--explorer-file-list {
+  --overlay-scrollbar-size: 12px;
+  overflow-anchor: none;
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
 .overlay-scroll-area__content {

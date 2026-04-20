@@ -1,5 +1,24 @@
 # GreebleFS Memory
 
+# 2026-04-20 - Storage Tab Rebuilt As An Explorer-Native Workbench With Batch Queue
+
+- The storage lane is no longer a card-heavy dashboard. It now behaves like a compact Explorer workbench with a dense matrix-first shell, preview-pane inspector, type analytics, focus mode, and a staged cleanup queue.
+- Durable implementation shape:
+  - `src/components/StoragePanel.tsx` now uses an Explorer-like shell contract: left root/queue rail, center matrix workspace, optional `matrix` / `split-map` / `types` / `focus` modes, and a preview-pane-style inspector that can render as a side pane or inline split via persisted `previewSplitMode`.
+  - The matrix is now the primary navigation surface. It renders files and folders in one hierarchy, supports subtree-percentage bars plus root-share metrics, keeps sticky sortable columns, supports keyboard navigation (`Arrow` movement, `Enter`, `Delete`, `Shift+Delete`), and keeps context-menu/selection behavior aligned with staged queue actions.
+  - `src/components/storage/storageWorkbench.ts` now owns the row/tree math for matrix flattening, subtree/root percentage calculations, treemap focus resolution, and queue summaries so the panel component stays orchestration-focused.
+  - `src/store/storageStore.ts` now persists the storage-session state: active mode, selected root/path set, expanded paths, sort state, preview split mode, focus path, and the staged batch queue snapshot.
+  - `src/config/storageBatchQueues.ts` defines batch queues as data. The first queue is `cleanup`, which currently supports `Trash` and `Delete`, but the queue shape is meant to support additional staged workflows later.
+  - `src/runtime/storageBackend.ts`, `src-tauri/src/storage_commands.rs`, and `src-tauri/src/fs_commands.rs` now expose the richer storage contract: logical vs allocated bytes, waste bytes, file extension/type buckets, direct child directory listing for dense matrix hydration, and batch delete routing through the shared Explorer task infrastructure.
+- Durable product note:
+  - Treat Storage as an Explorer-adjacent workbench, not a one-off analytics screen. Future features should prefer reusing Explorer shell behaviors, preview patterns, scroll treatment, and task plumbing before inventing storage-only chrome.
+  - The batch queue is intentionally explicit. Selection is not the queue. Users select items, then stage them into the queue for batch execution.
+  - The current performance path is still native directory walking, not the planned NTFS MFT/USN fast path. Keep the frontend contract stable so the backend can swap in a faster scan engine later without another panel rewrite.
+- Validation:
+  - passed: `npx vitest run src/test/panelRegistry.test.tsx src/test/storageTreemap.test.ts src/test/storageWorkbench.test.ts src/test/storageStore.test.ts --reporter=dot`
+  - passed: filtered `.\node_modules\.bin\tsc.exe --noEmit --pretty false -p tsconfig.json` check reported no matching errors for the touched storage frontend files
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml storage_scan_ -- --nocapture`
+
 # 2026-04-20 - Image Preview Now Opens Fullscreen-First And Save Falls Back To The Explorer Backend
 
 - Editable raster image previews no longer drop users straight into the full adjustment/crop toolbar, and local save no longer hard-fails when the Tauri fs plugin is missing from the host.
@@ -2356,3 +2375,21 @@
 - Validation:
   - passed: `bunx vitest run src/test/frameTelemetry.test.ts src/test/fileExplorer.viewModes.test.tsx`
   - passed: filtered typecheck grep for touched files via `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "FileExplorer.tsx|DevPerformanceHud.tsx|SettingsPage.tsx|frameTelemetry.test.ts|frameTelemetry.ts|fileExplorer.viewModes.test.tsx" || true`
+
+## 2026-04-20 — Overlay Scrollbar Contract Unification
+
+- Replaced the shipping shell's mixed native-scrollbar behavior with an explicit shared overlay contract:
+  - `src/components/OverlayScrollArea.tsx` now exposes `scrollbarStyle: 'hidden' | 'themed' | 'explorer-file-list'` instead of relying on one-off viewport class wiring.
+  - `src/App.css` now owns shared scrollbar variables plus a root `.overlay-scrollbar-scope` fallback so raw `overflow: auto` surfaces inside the shipping shell pick up themed scrollbar visuals instead of Windows-native scrollbars.
+  - `src/main.tsx` now applies that scope to `html`, `body`, and `#root`, so the main shell and the `file-operations` popout share the same scrollbar baseline.
+- Converted the high-value shipping surfaces onto the shared scroll host:
+  - archive preview, folder preview, and the main explorer file list now use the explicit explorer-file-list scrollbar contract
+  - the file-operations popout, plugin empty state, storage inspector lists, font preview, DOCX workbench, image editor tools lane, SQLite preview, and the explorer task-center popover now use the shared themed scrollbar variant
+  - `ExplorerAudioWorkbench.tsx` no longer ships its own bespoke `::-webkit-scrollbar` styling; it now relies on the shell-owned scrollbar theme like the rest of the app
+- Durable guidance:
+  - new overlay-owned scroll panes should prefer `OverlayScrollArea` with an explicit `scrollbarStyle` instead of raw `overflow: auto`
+  - the root fallback is safety net coverage for legacy/missed panes, not the preferred component API
+- Validation:
+  - passed targeted typecheck via `node_modules/.bin/tsc.exe --noEmit ...` over the touched shell files and new tests
+  - passed `node_modules/.bin/vitest.exe run src/test/overlayScrollArea.test.tsx src/test/explorerArchivePreview.test.tsx`
+  - passed `node_modules/.bin/vitest.exe run src/test/fileExplorer.viewModes.test.tsx -t "uses the dedicated explorer viewport class for visible file-list scrollbars"`

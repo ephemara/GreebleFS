@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import DOMPurify from "dompurify";
 import { readExplorerFileBase64, writeExplorerFile } from "../runtime/explorerBackend";
+import { OverlayScrollArea } from "./OverlayScrollArea";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -387,13 +388,6 @@ export function ExplorerDocxWorkbench(props: ExplorerDocxWorkbenchProps) {
     flexShrink: 0,
   });
 
-  const scrollAreaStyle: CSSProperties = {
-    flex: 1,
-    overflow: "auto",
-    padding: "24px 16px",
-    background: "var(--overlay-bg-panel)",
-  };
-
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -476,7 +470,11 @@ export function ExplorerDocxWorkbench(props: ExplorerDocxWorkbenchProps) {
       </div>
 
       {/* Content area */}
-      <div style={scrollAreaStyle}>
+      <OverlayScrollArea
+        style={{ flex: 1, minHeight: 0, background: "var(--overlay-bg-panel)" }}
+        viewportStyle={{ padding: "24px 16px" }}
+        scrollbarStyle="themed"
+      >
         {status.kind === "loading" && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, minHeight: 200 }}>
             <Loader2 size={28} style={{ color: "var(--overlay-accent)", animation: "spin 1s linear infinite" }} />
@@ -536,7 +534,7 @@ export function ExplorerDocxWorkbench(props: ExplorerDocxWorkbenchProps) {
             )}
           </>
         )}
-      </div>
+      </OverlayScrollArea>
     </div>
   );
 }

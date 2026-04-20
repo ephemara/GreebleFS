@@ -67,7 +67,7 @@ use crate::shader_preview_commands::{
 use crate::sqlite_commands::{SqliteDbInfo, SqliteTableInfo, SqliteTablePreview};
 use crate::storage_commands::{
     StorageNodeKind, StoragePathSummary, StorageScanStartResponse, StorageScanStatus,
-    StorageTreeNode,
+    StorageTreeNode, StorageTypeBucketSummary,
 };
 use crate::telemetry::{
     TelemetryCaptureMode, TelemetryConfig, TelemetryPayloadMode, TelemetryRecord,
@@ -181,6 +181,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::fs_commands::fs_reveal_in_explorer,
             crate::fs_commands::fs_show_item_properties,
             crate::fs_commands::fs_delete,
+            crate::fs_commands::fs_delete_many,
             crate::fs_commands::fs_rename,
             crate::fs_commands::fs_move,
             crate::fs_commands::fs_copy,
@@ -261,6 +262,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::startup_commands::startup_set_linux_display_backend_preference,
             crate::storage_commands::storage_scan_start,
             crate::storage_commands::storage_scan_poll,
+            crate::storage_commands::storage_scan_list_directory,
             crate::storage_commands::storage_scan_cancel,
             crate::window_commands::tray_set_visible,
             crate::window_commands::window_get_linux_display_server,
@@ -454,6 +456,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<StorageScanStartResponse>()
         .typ::<StorageScanStatus>()
         .typ::<StorageTreeNode>()
+        .typ::<StorageTypeBucketSummary>()
         .typ::<ThemeDensity>()
         .typ::<ThemeChromeStyle>()
         .typ::<ThemeIconStyle>()

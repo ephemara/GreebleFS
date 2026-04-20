@@ -15,6 +15,7 @@ import { writeFile } from '@tauri-apps/plugin-fs';
 import { useSettingsStore } from '../store/settingsStore';
 import { matchesKeybinding } from '../config/hotkeys';
 import { writeExplorerFile } from '../runtime/explorerBackend';
+import { OverlayScrollArea } from './OverlayScrollArea';
 import {
   imageEditorFilterDefinitions,
   createDefaultImageFiltersState,
@@ -753,7 +754,11 @@ export function ExplorerImageEditor({
           </div>
 
           {/* Tools Body */}
-          <div style={{ padding: '16px', overflowY: 'auto', flex: 1 }}>
+          <OverlayScrollArea
+            style={{ flex: 1, minHeight: 0 }}
+            viewportStyle={{ padding: '16px' }}
+            scrollbarStyle="themed"
+          >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               
               {/* Standard Filter section (hidden during crop) */}
@@ -823,7 +828,7 @@ export function ExplorerImageEditor({
               </div>
 
             </div>
-          </div>
+          </OverlayScrollArea>
         </div>
       )}
     </div>

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { FolderArchive, FileSearch, ArrowDownToLine, Loader, HardDriveDownload } from "lucide-react";
 import type { ExplorerArchiveFormatDescriptor } from "../config/explorerArchives";
 import { explorerBackendContract, type ExplorerArchiveExtractionMode } from "../runtime/explorerBackend";
+import { OverlayScrollArea } from "./OverlayScrollArea";
 
 export interface ExplorerArchivePreviewProps {
   archivePath: string;
@@ -201,7 +202,10 @@ export function ExplorerArchivePreview({
             </div>
           </div>
         ) : (
-          <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
+          <OverlayScrollArea
+            style={{ flex: 1, minHeight: 0 }}
+            scrollbarStyle="explorer-file-list"
+          >
             {renderContents.map((path, index) => {
               const segments = path.split(/[/\\]/);
               const name = segments.pop() || path;
@@ -238,7 +242,7 @@ export function ExplorerArchivePreview({
                 ... and {contents!.length - displayCount} more items
               </div>
             )}
-          </div>
+          </OverlayScrollArea>
         )}
       </div>
     </div>

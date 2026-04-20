@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { Loader, Type } from "lucide-react";
 import { commands } from "../runtime/tauriClient";
+import { OverlayScrollArea } from "./OverlayScrollArea";
 
 const PANGRAMS = [
   "The quick brown fox jumps over the lazy dog.",
@@ -232,16 +233,16 @@ export function ExplorerFontPreview({
         </div>
       </div>
 
-      <div
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: 24,
+      <OverlayScrollArea
+        style={{ flex: 1, minHeight: 0 }}
+        viewportStyle={{ padding: 24 }}
+        contentStyle={{
           display: "flex",
           flexDirection: "column",
           gap: 32,
           fontFamily: `"${fontFamilyId}", sans-serif`,
         }}
+        scrollbarStyle="themed"
       >
         <div>
           <div style={{ fontFamily: "sans-serif", fontSize: 10, color: "var(--overlay-text-muted)", fontWeight: 700, letterSpacing: "0.06em", marginBottom: 16, textTransform: "uppercase" }}>
@@ -293,7 +294,7 @@ export function ExplorerFontPreview({
             </div>
           </div>
         </div>
-      </div>
+      </OverlayScrollArea>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Database, Table, Loader, ChevronLeft, ChevronRight, AlertCircle } from "lucide-react";
 import { commands, type SqliteDbInfo, type SqliteTablePreview } from "../generated/tauri";
+import { OverlayScrollArea } from "./OverlayScrollArea";
 
 export interface ExplorerSqlitePreviewProps {
   dbPath: string;
@@ -84,7 +85,11 @@ export function ExplorerSqlitePreview({ dbPath, dbName }: ExplorerSqlitePreviewP
          <div style={{ padding: "12px 16px 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--overlay-text-muted)" }}>
            Tables ({info.tables.length})
          </div>
-         <div style={{ flex: 1, overflowY: "auto", padding: "0 8px 16px 8px" }}>
+         <OverlayScrollArea
+           style={{ flex: 1, minHeight: 0 }}
+           viewportStyle={{ padding: "0 8px 16px 8px" }}
+           scrollbarStyle="themed"
+         >
             {info.tables.map(t => (
               <div 
                 key={t.name}
@@ -112,15 +117,20 @@ export function ExplorerSqlitePreview({ dbPath, dbName }: ExplorerSqlitePreviewP
                 No tables found in database.
               </div>
             )}
-         </div>
+         </OverlayScrollArea>
       </div>
 
       {/* Main View - Data Grid */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, position: "relative" }}>
         {activeTable && tableData ? (
           <>
-            <div style={{ flex: 1, overflow: "auto", position: "relative" }}>
-              <table style={{ minWidth: "100%", width: "max-content", borderCollapse: "collapse", fontSize: 13 }}>
+            <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+              <OverlayScrollArea
+                direction="both"
+                style={{ flex: 1, minHeight: 0 }}
+                scrollbarStyle="themed"
+              >
+                <table style={{ minWidth: "100%", width: "max-content", borderCollapse: "collapse", fontSize: 13 }}>
                 <thead style={{ position: "sticky", top: 0, background: "var(--overlay-bg-card)", zIndex: 1, boxShadow: "0 1px 0 var(--overlay-explorer-preview-border)" }}>
                   <tr>
                     {tableData.columns.map((c, i) => (
@@ -148,7 +158,8 @@ export function ExplorerSqlitePreview({ dbPath, dbName }: ExplorerSqlitePreviewP
                     </tr>
                   )}
                 </tbody>
-              </table>
+                </table>
+              </OverlayScrollArea>
             </div>
 
             {loadingData && (

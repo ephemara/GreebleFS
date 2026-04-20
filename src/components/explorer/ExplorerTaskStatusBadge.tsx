@@ -18,6 +18,7 @@ import {
   ExplorerTaskCenterContent,
   getExplorerTaskSummary,
 } from './ExplorerTaskCenterContent';
+import { OverlayScrollArea } from '../OverlayScrollArea';
 
 interface ExplorerTaskStatusBadgeProps {
   accent: string;
@@ -145,8 +146,6 @@ export function ExplorerTaskStatusBadge({
             width: 380,
             maxWidth: 'min(380px, 78vw)',
             maxHeight: 460,
-            overflowY: 'auto',
-            padding: 14,
             borderRadius: 16,
             border: `1px solid ${border}`,
             background: 'rgba(14,18,24,0.96)',
@@ -155,57 +154,63 @@ export function ExplorerTaskStatusBadge({
             zIndex: 40,
           }}
         >
-          <ExplorerTaskCenterContent
-            accent={accent}
-            border={border}
-            danger={danger}
-            muted={muted}
-            tasks={tasks}
-            text={text}
-            headerActions={(
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void openFileOperationsWindow({ view: 'tasks' });
-                    closeExplorerTaskCenter();
-                  }}
-                  style={{
-                    border: `1px solid ${border}`,
-                    background: 'rgba(255,255,255,0.04)',
-                    color: text,
-                    cursor: 'pointer',
-                    borderRadius: 8,
-                    padding: '5px 8px',
-                    fontSize: 10,
-                    fontWeight: 700,
-                    letterSpacing: '0.06em',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  Pop Out
-                </button>
-                <button
-                  type="button"
-                  onClick={closeExplorerTaskCenter}
-                  style={{
-                    border: 'none',
-                    background: 'transparent',
-                    color: muted,
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: 22,
-                    height: 22,
-                  }}
-                  aria-label="Close task center"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            )}
-          />
+          <OverlayScrollArea
+            style={{ maxHeight: 460 }}
+            viewportStyle={{ padding: 14 }}
+            scrollbarStyle="themed"
+          >
+            <ExplorerTaskCenterContent
+              accent={accent}
+              border={border}
+              danger={danger}
+              muted={muted}
+              tasks={tasks}
+              text={text}
+              headerActions={(
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void openFileOperationsWindow({ view: 'tasks' });
+                      closeExplorerTaskCenter();
+                    }}
+                    style={{
+                      border: `1px solid ${border}`,
+                      background: 'rgba(255,255,255,0.04)',
+                      color: text,
+                      cursor: 'pointer',
+                      borderRadius: 8,
+                      padding: '5px 8px',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      letterSpacing: '0.06em',
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    Pop Out
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeExplorerTaskCenter}
+                    style={{
+                      border: 'none',
+                      background: 'transparent',
+                      color: muted,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: 22,
+                      height: 22,
+                    }}
+                    aria-label="Close task center"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
+            />
+          </OverlayScrollArea>
         </div>
       ) : null}
     </div>

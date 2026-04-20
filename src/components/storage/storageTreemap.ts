@@ -22,11 +22,11 @@ interface LayoutRect {
 
 function buildLayoutItems(nodes: StorageTreeSnapshotNode[]): LayoutItem[] {
   return nodes
-    .filter((node) => node.bytes > 0)
-    .sort((left, right) => right.bytes - left.bytes)
+    .filter((node) => node.allocatedBytes > 0)
+    .sort((left, right) => right.allocatedBytes - left.allocatedBytes)
     .map((node) => ({
       node,
-      weight: node.bytes,
+      weight: node.allocatedBytes,
     }));
 }
 

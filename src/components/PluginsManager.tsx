@@ -248,9 +248,13 @@ export function PluginsManager({
 
         <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {!selectedPlugin ? (
-            <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: 16 }}>
+            <OverlayScrollArea
+              style={{ flex: 1, minHeight: 0 }}
+              viewportStyle={{ padding: 16 }}
+              scrollbarStyle="themed"
+            >
               <EmptyPluginsState accent={accent} onOpenFolder={onOpenPluginsFolder} />
-            </div>
+            </OverlayScrollArea>
           ) : (
             <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
               <div style={{ padding: '14px 16px', borderBottom: `1px solid ${BORDER}`, background: PANEL }}>

@@ -1,10 +1,12 @@
 import React, { useCallback, useRef } from 'react';
 
 type OverlayScrollDirection = 'vertical' | 'horizontal' | 'both';
+type OverlayScrollbarStyle = 'hidden' | 'themed' | 'explorer-file-list';
 
 interface OverlayScrollAreaProps {
   children: React.ReactNode;
   direction?: OverlayScrollDirection;
+  scrollbarStyle?: OverlayScrollbarStyle;
   className?: string;
   viewportClassName?: string;
   contentClassName?: string;
@@ -18,6 +20,7 @@ interface OverlayScrollAreaProps {
 export function OverlayScrollArea({
   children,
   direction = 'vertical',
+  scrollbarStyle = 'hidden',
   className,
   viewportClassName,
   contentClassName,
@@ -66,8 +69,10 @@ export function OverlayScrollArea({
         className={joinClassNames(
           'overlay-scroll-area__viewport',
           `overlay-scroll-area__viewport--${direction}`,
+          resolveScrollbarViewportClassName(scrollbarStyle),
           viewportClassName,
         )}
+        data-overlay-scrollbar-style={scrollbarStyle}
         style={{
           display: 'flex',
           flexDirection: 'column',
@@ -94,6 +99,18 @@ export function OverlayScrollArea({
 
 function joinClassNames(...parts: Array<string | undefined>): string {
   return parts.filter(Boolean).join(' ');
+}
+
+function resolveScrollbarViewportClassName(scrollbarStyle: OverlayScrollbarStyle): string {
+  switch (scrollbarStyle) {
+    case 'themed':
+      return 'overlay-scroll-area__viewport--scrollbar-themed';
+    case 'explorer-file-list':
+      return 'overlay-scroll-area__viewport--explorer-file-list';
+    case 'hidden':
+    default:
+      return 'overlay-scroll-area__viewport--scrollbar-hidden';
+  }
 }
 
 function mergeRefs<T>(...refs: Array<React.Ref<T> | undefined>): React.RefCallback<T> {
