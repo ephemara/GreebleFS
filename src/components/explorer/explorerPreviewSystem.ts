@@ -4,6 +4,7 @@ import {
   type ExplorerArchiveFormatDescriptor,
 } from "../../config/explorerArchives";
 import {
+  getExecutableScriptRunner,
   getAudioPreviewMimeType,
   getModelPreviewFormat,
   getMonacoLanguage,
@@ -13,6 +14,7 @@ import {
   isAudioPreviewExtension,
   isDocxPreviewExtension,
   isEditableTextExtension,
+  isExecutableScriptExtension,
   isFontPreviewExtension,
   isImagePreviewExtension,
   isPdfPreviewExtension,
@@ -20,6 +22,7 @@ import {
   isSqlitePreviewExtension,
   isSpreadsheetPreviewExtension,
   isVideoPreviewExtension,
+  type ExplorerExecutableScriptRunner,
   type ModelPreviewFormat,
   type ShaderPreviewFormat,
 } from "../../config/filePreview";
@@ -65,6 +68,12 @@ export type ExplorerResolvedPreviewDescriptor =
       format: ShaderPreviewFormat | null;
     }
   | {
+      kind: "script";
+      extension: string;
+      language: string;
+      runner: ExplorerExecutableScriptRunner;
+    }
+  | {
       kind: "text";
       extension: string;
       language: string;
@@ -108,6 +117,11 @@ const ASYNC_PREVIEW_FALLBACKS = {
     loadingLabel: "Loading shader workbench…",
     loadingDetail: "Inspecting shader source and preview ABI support…",
     errorLabel: "Shader preview unavailable",
+  },
+  script: {
+    loadingLabel: "Loading script editor…",
+    loadingDetail: "Reading executable script…",
+    errorLabel: "Script preview unavailable",
   },
   text: {
     loadingLabel: "Loading editor…",
@@ -217,6 +231,25 @@ const EXPLORER_PREVIEW_DEFINITIONS: readonly ExplorerPreviewDefinition[] = [
             format: getShaderPreviewFormat(extension),
           }
         : null,
+  },
+  {
+    match: (_entry, extension) => {
+      if (!isExecutableScriptExtension(extension)) {
+        return null;
+      }
+
+      const runner = getExecutableScriptRunner(extension);
+      if (!runner) {
+        return null;
+      }
+
+      return {
+        kind: "script",
+        extension,
+        language: getMonacoLanguage(extension),
+        runner,
+      };
+    },
   },
   {
     match: (entry, extension, options) =>

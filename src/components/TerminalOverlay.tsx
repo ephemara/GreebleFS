@@ -351,6 +351,14 @@ interface TerminalOverlayProps {
   workingDirectory?: string | null;
   consumeExplorerCwdSync?: boolean;
   onReportedWorkingDirectoryChange?: (cwd: string) => void;
+  pendingCommandRequest?: TerminalOverlayCommandRequest | null;
+  onCommandRequestHandled?: (requestId: string) => void;
+}
+
+export interface TerminalOverlayCommandRequest {
+  id: string;
+  command: string;
+  run: boolean;
 }
 
 // ─── XTerm registry ───────────────────────────────────────────────────────────
@@ -1326,6 +1334,8 @@ export function TerminalOverlay({
   workingDirectory = null,
   consumeExplorerCwdSync = true,
   onReportedWorkingDirectoryChange,
+  pendingCommandRequest = null,
+  onCommandRequestHandled,
 }: TerminalOverlayProps) {
   const { settings, appearanceSettings, keybindings, updateTerminal } = useSettingsStore(useShallow(state => ({
     settings: state.settings.terminal,
@@ -1411,6 +1421,7 @@ export function TerminalOverlay({
   const lastExplorerQueueCwdSyncKeyRef = useRef<string | null>(null);
   const lastDirectWorkingDirectorySyncKeyRef = useRef<string | null>(null);
   const lastObservedWorkingDirectoryRef = useRef<string | null>(normalizedWorkingDirectory);
+  const lastHandledCommandRequestIdRef = useRef<string | null>(null);
   const promptRestoreTimersRef = useRef<Record<string, number>>({});
   // Keep split-drag geometry off React's pointer-move hot path so mounted xterm
   // panes stay stable while their containing surfaces resize.
@@ -1839,6 +1850,34 @@ export function TerminalOverlay({
     isOpen,
     isPaneReady,
     normalizedWorkingDirectory,
+  ]);
+
+  useEffect(() => {
+    if (
+      !pendingCommandRequest
+      || !isOpen
+      || !activePaneId
+      || !isPaneReady(activePaneId)
+      || lastHandledCommandRequestIdRef.current === pendingCommandRequest.id
+    ) {
+      return;
+    }
+
+    lastHandledCommandRequestIdRef.current = pendingCommandRequest.id;
+    void injectCmd(
+      pendingCommandRequest.command,
+      pendingCommandRequest.run,
+      activePaneId,
+    ).finally(() => {
+      onCommandRequestHandled?.(pendingCommandRequest.id);
+    });
+  }, [
+    activePaneId,
+    injectCmd,
+    isOpen,
+    isPaneReady,
+    onCommandRequestHandled,
+    pendingCommandRequest,
   ]);
 
   useEffect(() => {

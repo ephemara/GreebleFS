@@ -8,6 +8,15 @@ export { getSpreadsheetFileKind, isSpreadsheetPreviewExtension };
 export type ModelPreviewFormat = "fbx" | "glb" | "gltf" | "obj" | "stl";
 export type ExplorerAudioExportFormatId = "mp3" | "wav" | "flac" | "ogg";
 export type ShaderPreviewFormat = "wgsl" | "hlsl" | "spv";
+export type ExplorerExecutableScriptRunner =
+  | "batch"
+  | "powershell"
+  | "sh"
+  | "bash"
+  | "zsh"
+  | "fish"
+  | "ksh"
+  | "direct";
 
 export interface ExplorerAudioExportFormatDefinition {
   id: ExplorerAudioExportFormatId;
@@ -117,13 +126,25 @@ const VIDEO_PREVIEW_MIME_TYPE_BY_EXTENSION = {
   wmv: "video/x-ms-wmv",
 } as const satisfies Record<string, string>;
 
-const EXECUTABLE_EXTENSIONS = [
+const EXECUTABLE_SCRIPT_RUNNER_BY_EXTENSION = {
+  bat: "batch",
+  cmd: "batch",
+  ps1: "powershell",
+  sh: "sh",
+  bash: "bash",
+  zsh: "zsh",
+  fish: "fish",
+  ksh: "ksh",
+  command: "sh",
+} as const satisfies Record<
+  string,
+  Exclude<ExplorerExecutableScriptRunner, "direct">
+>;
+
+const EXECUTABLE_BINARY_EXTENSIONS = [
   "exe",
   "msi",
-  "bat",
-  "cmd",
-  "ps1",
-  "sh",
+  "com",
   "app",
   "dmg",
 ] as const;
@@ -389,7 +410,16 @@ const AUDIO_PREVIEW_EXTENSION_SET = new Set<string>(
 const VIDEO_PREVIEW_EXTENSION_SET = new Set<string>(
   Object.keys(VIDEO_PREVIEW_MIME_TYPE_BY_EXTENSION),
 );
-const EXECUTABLE_EXTENSION_SET = new Set<string>(EXECUTABLE_EXTENSIONS);
+const EXECUTABLE_SCRIPT_EXTENSION_SET = new Set<string>(
+  Object.keys(EXECUTABLE_SCRIPT_RUNNER_BY_EXTENSION),
+);
+const EXECUTABLE_BINARY_EXTENSION_SET = new Set<string>(
+  EXECUTABLE_BINARY_EXTENSIONS,
+);
+const EXECUTABLE_EXTENSION_SET = new Set<string>([
+  ...EXECUTABLE_SCRIPT_EXTENSION_SET,
+  ...EXECUTABLE_BINARY_EXTENSION_SET,
+]);
 const EDITABLE_TEXT_EXTENSION_SET = new Set<string>(EDITABLE_TEXT_EXTENSIONS);
 
 const FONT_PREVIEW_EXTENSIONS = [
@@ -452,6 +482,25 @@ export function getShaderPreviewFormat(
 
 export function isExecutableExtension(extension: string): boolean {
   return EXECUTABLE_EXTENSION_SET.has(normalizeExtension(extension));
+}
+
+export function isExecutableScriptExtension(extension: string): boolean {
+  return EXECUTABLE_SCRIPT_EXTENSION_SET.has(normalizeExtension(extension));
+}
+
+export function isExecutableBinaryExtension(extension: string): boolean {
+  return EXECUTABLE_BINARY_EXTENSION_SET.has(normalizeExtension(extension));
+}
+
+export function getExecutableScriptRunner(
+  extension: string,
+): ExplorerExecutableScriptRunner | null {
+  const normalizedExtension = normalizeExtension(extension);
+  return (
+    EXECUTABLE_SCRIPT_RUNNER_BY_EXTENSION[
+      normalizedExtension as keyof typeof EXECUTABLE_SCRIPT_RUNNER_BY_EXTENSION
+    ] ?? null
+  );
 }
 
 export function isAudioPreviewExtension(extension: string): boolean {
@@ -519,7 +568,7 @@ export function isEditableTextExtension(
   }
   if (
     isImagePreviewExtension(normalizedExtension) ||
-    isExecutableExtension(normalizedExtension)
+    isExecutableBinaryExtension(normalizedExtension)
   ) {
     return false;
   }
