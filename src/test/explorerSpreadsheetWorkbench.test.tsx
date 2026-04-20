@@ -85,7 +85,8 @@ describe("ExplorerSpreadsheetWorkbench", () => {
       />,
     );
 
-    expect(await screen.findByText(/read-only preview/i)).toBeInTheDocument();
+    expect(await screen.findByText("Sheet1 · CSV")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^reload$/i })).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/enter a value or formula/i)).toBeNull();
     expect(screen.queryByRole("button", { name: /^save$/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /new sheet/i })).toBeNull();

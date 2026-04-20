@@ -3406,6 +3406,7 @@ export function SettingsPage({
                     'explorerMoveSelectionDown',
                     'explorerMoveSelectionLeft',
                     'explorerMoveSelectionRight',
+                    'togglePreviewLock',
                     'copyPath',
                     'copySelection',
                     'cutSelection',

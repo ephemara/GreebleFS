@@ -45,6 +45,8 @@ import {
   Eye,
   Info,
   Loader,
+  Pin,
+  PinOff,
   Puzzle,
   Sparkles,
   Waves,
@@ -3043,6 +3045,7 @@ function PreviewPanel({
   width,
   placement,
   presentationMode,
+  previewLocked,
   previewSurfaceMode,
   previewTerminalMounted,
   previewTerminalCommandRequest,
@@ -3064,6 +3067,7 @@ function PreviewPanel({
   onRegisterCloseGuard,
   onCopyPath,
   onTogglePresentationMode,
+  onTogglePreviewLock,
   onTogglePreviewTerminal,
   onRunTextScript,
   onStopTextScriptRun,
@@ -3085,6 +3089,7 @@ function PreviewPanel({
   width: number;
   placement: ExplorerPreviewPlacement;
   presentationMode: ExplorerPreviewSplitMode;
+  previewLocked: boolean;
   previewSurfaceMode: PreviewSurfaceMode;
   previewTerminalMounted: boolean;
   previewTerminalCommandRequest: TerminalOverlayCommandRequest | null;
@@ -3117,6 +3122,7 @@ function PreviewPanel({
   onRegisterCloseGuard?: (guard: PreviewCloseGuard | null) => void;
   onCopyPath: (path: string) => void;
   onTogglePresentationMode: () => void;
+  onTogglePreviewLock: () => void;
   onTogglePreviewTerminal: () => void;
   onRunTextScript: (
     path: string,
@@ -3308,6 +3314,9 @@ function PreviewPanel({
     presentationMode === "pane"
       ? "Show inline preview"
       : "Split preview into pane";
+  const previewLockToggleTitle = previewLocked
+    ? "Unlock preview and resume live selection previews"
+    : "Lock preview to the current item";
   const isPreviewTerminalMode = previewSurfaceMode === "terminal";
   const previewTerminalDisplayPath =
     previewTerminalReportedWorkingDirectory?.trim() ||
@@ -3538,23 +3547,52 @@ function PreviewPanel({
         id: "previewState",
         label: "Preview State",
         surfaces: ["previewHeader"],
-        isVisible: () => !isPreviewTerminalMode && Boolean(previewStateLabel),
-        render: () =>
-          previewStateLabel ? (
-            <span
-              style={{
-                fontSize: 9,
-                fontWeight: 700,
-                color: previewStateColor,
-                padding: "3px 7px",
-                borderRadius: 999,
-                border: "1px solid var(--overlay-explorer-chip-border)",
-                background: "var(--overlay-explorer-chip-bg)",
-              }}
-            >
-              {previewStateLabel}
-            </span>
-          ) : null,
+        isVisible: () => previewLocked || (!isPreviewTerminalMode && Boolean(previewStateLabel)),
+        render: () => (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              flexWrap: "wrap",
+            }}
+          >
+            {previewLocked && (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  fontSize: 9,
+                  fontWeight: 700,
+                  color: EXP.accent,
+                  padding: "3px 7px",
+                  borderRadius: 999,
+                  border: "1px solid var(--overlay-explorer-chip-border)",
+                  background: "var(--overlay-explorer-chip-bg)",
+                }}
+              >
+                <Pin size={9} />
+                Locked
+              </span>
+            )}
+            {!isPreviewTerminalMode && previewStateLabel ? (
+              <span
+                style={{
+                  fontSize: 9,
+                  fontWeight: 700,
+                  color: previewStateColor,
+                  padding: "3px 7px",
+                  borderRadius: 999,
+                  border: "1px solid var(--overlay-explorer-chip-border)",
+                  background: "var(--overlay-explorer-chip-bg)",
+                }}
+              >
+                {previewStateLabel}
+              </span>
+            ) : null}
+          </div>
+        ),
       },
       {
         id: "previewModeToggle",
@@ -3987,6 +4025,38 @@ function PreviewPanel({
         },
       },
       {
+        id: "previewLockToggle",
+        label: "Preview Lock Toggle",
+        surfaces: ["previewHeader"],
+        isVisible: () => preview.type !== "none",
+        render: () => (
+          <button
+            type="button"
+            onClick={onTogglePreviewLock}
+            aria-label={previewLocked ? "Unlock preview" : "Lock preview"}
+            aria-pressed={previewLocked}
+            title={previewLockToggleTitle}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: previewLocked
+                ? "var(--overlay-explorer-chip-active-bg)"
+                : "var(--overlay-explorer-chip-bg)",
+              border: "1px solid var(--overlay-explorer-chip-border)",
+              borderRadius: "var(--overlay-explorer-control-radius)",
+              cursor: "pointer",
+              color: previewLocked ? EXP.text : EXP.muted,
+              width: 28,
+              height: 28,
+              padding: 0,
+            }}
+          >
+            {previewLocked ? <PinOff size={12} /> : <Pin size={12} />}
+          </button>
+        ),
+      },
+      {
         id: "previewCopyPath",
         label: "Preview Copy Path",
         surfaces: ["previewHeader"],
@@ -4115,6 +4185,7 @@ function PreviewPanel({
       onClose,
       onCopyPath,
       onTogglePresentationMode,
+      onTogglePreviewLock,
       onTogglePreviewTerminal,
       onViewModeChange,
       pdfActivePageNumber,
@@ -4129,6 +4200,7 @@ function PreviewPanel({
       preview,
       presentationMode,
       previewSplitToggleTitle,
+      previewLockToggleTitle,
       previewStateColor,
       previewStateLabel,
       previewSurfaceMode,
@@ -4142,6 +4214,7 @@ function PreviewPanel({
       supportsRenderedPreview,
       supportsPreviewModeToggle,
       viewMode,
+      previewLocked,
     ],
   );
   const previewChromeControlRegistryById = useMemo(
@@ -4252,6 +4325,7 @@ function PreviewPanel({
   return (
     <div
       data-overlay-explorer-plane="preview"
+      data-overlay-explorer-preview-locked={previewLocked ? "true" : "false"}
       data-overlay-explorer-preview-split-mode={presentationMode}
       data-overlay-explorer-preview-surface-mode={previewSurfaceMode}
       style={previewShellStyle}
@@ -6551,6 +6625,11 @@ export function FileExplorer({
       state.sessions[instanceId]?.previewEnabled ??
       defaultExplorerSession.previewEnabled,
   );
+  const storedPreviewLocked = useExplorerStore(
+    (state) =>
+      state.sessions[instanceId]?.previewLocked ??
+      defaultExplorerSession.previewLocked,
+  );
   const storedPreviewSplitMode = useExplorerStore(
     (state) =>
       state.sessions[instanceId]?.previewSplitMode ??
@@ -6682,6 +6761,9 @@ export function FileExplorer({
     useState<ExplorerDocumentViewMode>(() => initialSession.documentViewMode);
   const [previewEnabled, setPreviewEnabled] = useState(
     () => initialSession.previewEnabled,
+  );
+  const [previewLocked, setPreviewLocked] = useState(
+    () => initialSession.previewLocked,
   );
   const [previewSplitMode, setPreviewSplitMode] =
     useState<ExplorerPreviewSplitMode>(() => initialSession.previewSplitMode);
@@ -7028,6 +7110,10 @@ export function FileExplorer({
   }, [storedPreviewEnabled]);
 
   useEffect(() => {
+    setPreviewLocked(storedPreviewLocked);
+  }, [storedPreviewLocked]);
+
+  useEffect(() => {
     setPreviewSplitMode(storedPreviewSplitMode);
   }, [storedPreviewSplitMode]);
 
@@ -7211,6 +7297,7 @@ export function FileExplorer({
       sidebarWidth,
       previewWidth,
       previewEnabled,
+      previewLocked,
       previewSplitMode,
       search,
       searchIncludeContent,
@@ -7224,6 +7311,7 @@ export function FileExplorer({
     historyIdx,
     documentViewMode,
     previewEnabled,
+    previewLocked,
     previewSplitMode,
     previewWidth,
     search,
@@ -9544,6 +9632,14 @@ export function FileExplorer({
     lastPreviewTerminalShellReportedCwdRef.current = null;
     lastPreviewTerminalExplorerAppliedCwdRef.current = null;
   }, []);
+  const clearPreviewSurface = useCallback(() => {
+    previewCloseGuardRef.current = null;
+    resetPreviewTerminalState();
+    setPreview({ type: "none", path: "" });
+    setPreviewLoading(false);
+    setPdfPreviewChromeState(null);
+    setPreviewLocked(false);
+  }, [resetPreviewTerminalState]);
   const togglePreviewTerminal = useCallback(() => {
     if (!previewTerminalWorkingDirectory) {
       return;
@@ -9595,16 +9691,9 @@ export function FileExplorer({
     previewLoadRequestIdRef.current += 1;
     previewCloseGuardRef.current = null;
     await flushPreviewTextSave();
-    resetPreviewTerminalState();
-    setPreview({ type: "none", path: "" });
-    setPreviewLoading(false);
-    setPdfPreviewChromeState(null);
+    clearPreviewSurface();
     return true;
-  }, [
-    flushPreviewTextSave,
-    requestCurrentPreviewClose,
-    resetPreviewTerminalState,
-  ]);
+  }, [clearPreviewSurface, flushPreviewTextSave, requestCurrentPreviewClose]);
 
   useEffect(() => {
     if (isCompactDock) {
@@ -9698,6 +9787,13 @@ export function FileExplorer({
     setPreviewEnabled(true);
   }, [closePreview, previewEnabled]);
 
+  const togglePreviewLock = useCallback(() => {
+    if (preview.type === "none") {
+      return;
+    }
+    setPreviewLocked((current) => !current);
+  }, [preview.type]);
+
   const closePreviewPanel = useCallback(async () => {
     previewReopenOnSelectionRef.current = true;
     allowPreviewLoadWhileClosedRef.current = false;
@@ -9711,6 +9807,7 @@ export function FileExplorer({
     async (
       entry: FileEntry,
       focusTarget: EditorSearchFocusTarget | null = null,
+      source: "explicit" | "selection" = "selection",
     ) => {
       const requestId = ++previewLoadRequestIdRef.current;
       const isCurrentPreviewRequest = () =>
@@ -9729,6 +9826,14 @@ export function FileExplorer({
       }
 
       const currentPreview = previewRef.current;
+      const selectionLockedToDifferentEntry =
+        source === "selection" &&
+        previewLocked &&
+        currentPreview.type !== "none" &&
+        currentPreview.path !== entry.path;
+      if (selectionLockedToDifferentEntry) {
+        return;
+      }
       if (
         currentPreview.type === "text" &&
         currentPreview.path !== entry.path
@@ -10403,6 +10508,7 @@ export function FileExplorer({
       requestCurrentPreviewClose,
       runtimePlatform,
       setDocumentViewMode,
+      previewLocked,
     ],
   );
 
@@ -10411,7 +10517,7 @@ export function FileExplorer({
       if (repositoryPicker?.active || !previewEnabled || isCompactDock) {
         return;
       }
-      void previewEntry(entry, getSearchFocusTarget(entry));
+      void previewEntry(entry, getSearchFocusTarget(entry), "selection");
     },
     [
       getSearchFocusTarget,
@@ -10485,7 +10591,7 @@ export function FileExplorer({
       if (isExplorerArchiveEntry(entry)) {
         const canInlinePreview = previewEnabled && !isCompactDock;
         if (canInlinePreview) {
-          await previewEntry(entry, null);
+          await previewEntry(entry, null, "explicit");
         } else {
           await handleArchiveAction(entry, "openCached");
         }
@@ -10497,7 +10603,7 @@ export function FileExplorer({
       const entryExtension = getEntryExtension(entry);
 
       if (canInlinePreview && !isExecutableBinaryExtension(entryExtension)) {
-        await previewEntry(entry, focusTarget);
+        await previewEntry(entry, focusTarget, "explicit");
         return;
       }
 
@@ -10523,7 +10629,7 @@ export function FileExplorer({
     async (entry: FileEntry) => {
       if (entry.is_dir) {
         await navigate(entry.path);
-        await previewEntry(entry, null);
+        await previewEntry(entry, null, "explicit");
         return;
       }
 
@@ -10539,7 +10645,7 @@ export function FileExplorer({
       setSelected(new Set([entry.path]));
       lastSelected.current = entry.path;
       selectionRangeAnchorPathRef.current = entry.path;
-      await previewEntry(entry, getSearchFocusTarget(entry));
+      await previewEntry(entry, getSearchFocusTarget(entry), "explicit");
     },
     [currentPath, getSearchFocusTarget, navigate, previewEntry],
   );
@@ -10636,8 +10742,7 @@ export function FileExplorer({
               if (externalSelectionTransferRequest.operation === "move") {
                 setSelected(new Set());
                 if (sourcePaths.includes(previewRef.current.path)) {
-                  setPreview({ type: "none", path: "" });
-                  setPreviewLoading(false);
+                  clearPreviewSurface();
                 }
               }
               await refresh();
@@ -11164,8 +11269,7 @@ export function FileExplorer({
       await trashExplorerPaths(deleteTargets.map((entry) => entry.path));
       invalidateExplorerResultCaches();
       if (deleteTargets.some((entry) => preview.path === entry.path)) {
-        setPreview({ type: "none", path: "" });
-        setPreviewLoading(false);
+        clearPreviewSurface();
       }
       if (previewSaveTimer.current) {
         window.clearTimeout(previewSaveTimer.current);
@@ -11901,7 +12005,7 @@ export function FileExplorer({
         allowPreviewLoadWhileClosedRef.current = true;
         setPreviewEnabled(true);
       }
-      void previewEntry(entry, getSearchFocusTarget(entry));
+      void previewEntry(entry, getSearchFocusTarget(entry), "selection");
     }
   };
 
@@ -14939,6 +15043,7 @@ export function FileExplorer({
             <span style={{ color: previewEnabled ? accent : EXP.text }}>
               {previewEnabled ? "On" : "Off"}
             </span>
+            {previewLocked && <span style={{ color: EXP.muted2 }}> · Locked</span>}
             {hasPreview && (
               <span
                 style={{ color: EXP.muted2 }}
@@ -15088,6 +15193,7 @@ export function FileExplorer({
       pinnedLocations,
       previewEnabled,
       previewLoading,
+      previewLocked,
       previewModeLabel,
       recentLocations,
       refresh,
@@ -15883,6 +15989,11 @@ export function FileExplorer({
         focusExplorerPreview();
         return;
       }
+      if (matchesKeybinding(e, keybindings.togglePreviewLock) && hasPreview) {
+        e.preventDefault();
+        togglePreviewLock();
+        return;
+      }
       if (
         matchesKeybinding(e, keybindings.togglePreviewTerminal) &&
         hasPreview &&
@@ -16075,6 +16186,7 @@ export function FileExplorer({
     togglePreviewTerminal,
     cycleSortKey,
     toggleSortOrder,
+    togglePreviewLock,
     updateShaderPreviewScene,
     virtualWindow.columns,
     virtualWindow.kind,
@@ -19575,6 +19687,7 @@ export function FileExplorer({
               width={previewWidth}
               placement={previewPlacement}
               presentationMode={previewSplitMode}
+              previewLocked={previewLocked}
               previewSurfaceMode={previewSurfaceMode}
               previewTerminalMounted={previewTerminalMounted}
               previewTerminalCommandRequest={previewTerminalCommandRequest}
@@ -19601,6 +19714,7 @@ export function FileExplorer({
                   current === "pane" ? "inline" : "pane",
                 )
               }
+              onTogglePreviewLock={togglePreviewLock}
               onTogglePreviewTerminal={togglePreviewTerminal}
               onRunTextScript={runPreviewTextScript}
               onStopTextScriptRun={stopPreviewTextScriptRun}

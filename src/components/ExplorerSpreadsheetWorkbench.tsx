@@ -231,14 +231,13 @@ export function ExplorerSpreadsheetWorkbench({
     if (sheetNames.length === 0) {
       return "Sheet";
     }
-    return `${activeSheetName || sheetNames[0] || "Sheet"} · ${activeSheetIndex + 1}/${sheetNames.length}`;
+    const displaySheetName = activeSheetName || sheetNames[0] || "Sheet";
+    if (sheetNames.length === 1) {
+      return displaySheetName;
+    }
+    const displaySheetIndex = activeSheetIndex >= 0 ? activeSheetIndex + 1 : 1;
+    return `${displaySheetName} · ${displaySheetIndex}/${sheetNames.length}`;
   }, [activeSheetIndex, activeSheetName, sheetNames]);
-
-  const activeSheetSummary = useMemo(() => {
-    const populatedColumns = activeSheetDimensions.width;
-    const populatedRows = activeSheetDimensions.height;
-    return `${populatedColumns} col${populatedColumns === 1 ? "" : "s"} · ${populatedRows} row${populatedRows === 1 ? "" : "s"}`;
-  }, [activeSheetDimensions.height, activeSheetDimensions.width]);
 
   const isWorkbookKind = fileKind === "workbook";
   const canAddSheet = isWorkbookKind;
@@ -404,6 +403,21 @@ export function ExplorerSpreadsheetWorkbench({
     }
     return sheetNames[0] ?? "";
   }, [activeSheetName, sheetNames]);
+
+  const activeSheetSubtitle = useMemo(() => {
+    const displaySheetName = currentSheetName || "Sheet";
+    if (isWorkbookKind && sheetNames.length > 1) {
+      const displaySheetIndex = activeSheetIndex >= 0 ? activeSheetIndex + 1 : 1;
+      return `${displaySheetName} · ${displaySheetIndex}/${sheetNames.length} · ${sourceExtension.toUpperCase()}`;
+    }
+    return `${displaySheetName} · ${sourceExtension.toUpperCase()}`;
+  }, [
+    activeSheetIndex,
+    currentSheetName,
+    isWorkbookKind,
+    sheetNames.length,
+    sourceExtension,
+  ]);
 
   const focusFormulaBarSoon = useCallback(() => {
     window.requestAnimationFrame(() => {
@@ -898,18 +912,6 @@ export function ExplorerSpreadsheetWorkbench({
     queueSpreadsheetSave,
   ]);
 
-  const openRenamePrompt = useCallback(() => {
-    if (!isEditMode) {
-      explainSpreadsheetPreviewReadOnly("rename sheets");
-      return;
-    }
-
-    if (!canRenameSheet || !currentSheetName) {
-      return;
-    }
-    setRenamePrompt({ sheetName: currentSheetName, value: currentSheetName });
-  }, [canRenameSheet, currentSheetName, explainSpreadsheetPreviewReadOnly, isEditMode]);
-
   const submitRenamePrompt = useCallback(() => {
     const document = spreadsheetDocumentRef.current;
     if (!document || !renamePrompt) {
@@ -1181,7 +1183,15 @@ export function ExplorerSpreadsheetWorkbench({
     [activeSheetId, focusSpreadsheetGrid, handleFormulaBarCommit, selectedCell.col, selectedCell.row],
   );
 
-  const activeSpreadsheetMessage = operationMessage ?? (isDirty ? "Unsaved changes" : "Saved");
+  const footerStatusText =
+    operationMessage ??
+    (isSaving
+      ? "Saving..."
+      : isDirty
+        ? "Unsaved"
+        : isEditMode
+          ? "Saved"
+          : "Preview");
   const activeSpreadsheetMessageTone =
     operationTone === "error"
       ? "#fca5a5"
@@ -1238,18 +1248,10 @@ export function ExplorerSpreadsheetWorkbench({
             </div>
             <div style={{ minWidth: 0 }}>
               <div style={spreadsheetHeaderTitleStyle}>{name}</div>
-              <div style={spreadsheetHeaderSubtitleStyle}>
-                {activeSheetLabel} · {sourceExtension.toUpperCase()}
-              </div>
+              <div style={spreadsheetHeaderSubtitleStyle}>{activeSheetSubtitle}</div>
             </div>
           </div>
           <div style={spreadsheetToolbarStyle}>
-            <StatusPill tone={isDirty ? "warning" : "success"}>
-              {isSaving ? "Saving..." : isDirty ? "Unsaved" : "Saved"}
-            </StatusPill>
-            <StatusPill tone="muted">
-              {isEditMode ? "Edit mode" : "Read-only preview"}
-            </StatusPill>
             {isEditMode ? (
               <>
                 <button
@@ -1269,33 +1271,6 @@ export function ExplorerSpreadsheetWorkbench({
                   <RefreshCcw size={14} />
                   Reload
                 </button>
-                <button
-                  type="button"
-                  onClick={createNewSheet}
-                  disabled={!canAddSheet}
-                  style={spreadsheetSecondaryButtonStyle(!canAddSheet)}
-                >
-                  <Plus size={14} />
-                  New Sheet
-                </button>
-                <button
-                  type="button"
-                  onClick={openRenamePrompt}
-                  disabled={!canRenameSheet}
-                  style={spreadsheetSecondaryButtonStyle(!canRenameSheet)}
-                >
-                  <Pencil size={14} />
-                  Rename
-                </button>
-                <button
-                  type="button"
-                  onClick={openDeletePrompt}
-                  disabled={!canDeleteSheet}
-                  style={spreadsheetDangerButtonStyle(!canDeleteSheet)}
-                >
-                  <Trash2 size={14} />
-                  {sheetNames.length > 1 ? "Delete Sheet" : "Clear Sheet"}
-                </button>
               </>
             ) : (
               <button
@@ -1307,24 +1282,6 @@ export function ExplorerSpreadsheetWorkbench({
                 Reload
               </button>
             )}
-          </div>
-        </div>
-
-        <div style={spreadsheetOverviewStripStyle}>
-          <div style={spreadsheetMetaRailStyle}>
-            <StatusPill tone="muted">
-              {fileKind === "tabular" ? "Tabular sheet" : "Workbook"}
-            </StatusPill>
-            <StatusPill tone="muted">{activeSheetSummary}</StatusPill>
-            <StatusPill tone="muted">{activeCellLabel}</StatusPill>
-            <StatusPill tone="muted">
-              {sheetNames.length} sheet{sheetNames.length === 1 ? "" : "s"}
-            </StatusPill>
-          </div>
-          <div style={spreadsheetModeHintStyle}>
-            {isEditMode
-              ? "Editing is live. Save writes the current workbook back to disk."
-              : "Preview mode stays read-only. Use Edit to change cells, sheets, or formulas."}
           </div>
         </div>
       </div>
@@ -1400,12 +1357,30 @@ export function ExplorerSpreadsheetWorkbench({
             );
           })}
         </div>
-        <div style={spreadsheetTabHintStyle}>
-          <span>{activeSpreadsheetMessage}</span>
-          <span>
-            {sheetNames.length} sheet{sheetNames.length === 1 ? "" : "s"}
-          </span>
-        </div>
+        {isEditMode && (canAddSheet || canDeleteSheet) ? (
+          <div style={spreadsheetTabActionsStyle}>
+            {canAddSheet ? (
+              <button
+                type="button"
+                onClick={createNewSheet}
+                style={spreadsheetSecondaryButtonStyle(false, true)}
+              >
+                <Plus size={14} />
+                Sheet
+              </button>
+            ) : null}
+            {canDeleteSheet ? (
+              <button
+                type="button"
+                onClick={openDeletePrompt}
+                style={spreadsheetDangerButtonStyle(false, true)}
+              >
+                <Trash2 size={14} />
+                {sheetNames.length > 1 ? "Delete" : "Clear"}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <div style={spreadsheetGridShellStyle}>
@@ -1442,15 +1417,7 @@ export function ExplorerSpreadsheetWorkbench({
           {activeSheetLabel} · {activeCellLabel}
         </span>
         <span style={{ color: activeSpreadsheetMessageTone }}>
-          {isSaving
-            ? "Saving..."
-            : isDirty
-              ? isEditMode
-                ? "Pending save"
-                : "Previewing unsaved changes"
-              : isEditMode
-                ? "Edit ready"
-                : "Preview ready"}
+          {footerStatusText}
         </span>
       </div>
 
@@ -1625,60 +1592,6 @@ function SpreadsheetStatusCard({
   );
 }
 
-function StatusPill({
-  tone,
-  children,
-}: {
-  tone: "success" | "warning" | "muted" | "error";
-  children: ReactNode;
-}) {
-  const colors: Record<"success" | "warning" | "muted" | "error", { fg: string; bg: string; border: string }> = {
-    success: {
-      fg: "#86efac",
-      bg: "rgba(22, 101, 52, 0.22)",
-      border: "rgba(34, 197, 94, 0.3)",
-    },
-    warning: {
-      fg: "#fbbf24",
-      bg: "rgba(180, 83, 9, 0.22)",
-      border: "rgba(245, 158, 11, 0.3)",
-    },
-    muted: {
-      fg: "#cbd5e1",
-      bg: "rgba(71, 85, 105, 0.24)",
-      border: "rgba(148, 163, 184, 0.2)",
-    },
-    error: {
-      fg: "#fca5a5",
-      bg: "rgba(153, 27, 27, 0.24)",
-      border: "rgba(248, 113, 113, 0.3)",
-    },
-  };
-
-  const colorsForTone = colors[tone];
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 6,
-        padding: "6px 10px",
-        borderRadius: 999,
-        border: `1px solid ${colorsForTone.border}`,
-        background: colorsForTone.bg,
-        color: colorsForTone.fg,
-        fontSize: 10,
-        fontWeight: 700,
-        letterSpacing: 0.2,
-        textTransform: "uppercase",
-      }}
-    >
-      {children}
-    </span>
-  );
-}
-
 function createSpreadsheetSelection(cell: SpreadsheetCellAddress): GridSelection {
   return {
     current: {
@@ -1782,7 +1695,10 @@ function spreadsheetPrimaryButtonStyle(disabled = false): CSSProperties {
   };
 }
 
-function spreadsheetSecondaryButtonStyle(disabled = false): CSSProperties {
+function spreadsheetSecondaryButtonStyle(
+  disabled = false,
+  compact = false,
+): CSSProperties {
   return {
     display: "inline-flex",
     alignItems: "center",
@@ -1790,7 +1706,7 @@ function spreadsheetSecondaryButtonStyle(disabled = false): CSSProperties {
     gap: 6,
     border: "1px solid rgba(148, 163, 184, 0.18)",
     borderRadius: 12,
-    padding: "8px 12px",
+    padding: compact ? "7px 10px" : "8px 12px",
     background: "rgba(15, 23, 42, 0.9)",
     color: disabled ? "#94a3b8" : "#e2e8f0",
     fontSize: 11,
@@ -1800,9 +1716,12 @@ function spreadsheetSecondaryButtonStyle(disabled = false): CSSProperties {
   };
 }
 
-function spreadsheetDangerButtonStyle(disabled = false): CSSProperties {
+function spreadsheetDangerButtonStyle(
+  disabled = false,
+  compact = false,
+): CSSProperties {
   return {
-    ...spreadsheetSecondaryButtonStyle(disabled),
+    ...spreadsheetSecondaryButtonStyle(disabled, compact),
     border: "1px solid rgba(248, 113, 113, 0.2)",
     background: disabled ? "rgba(127, 29, 29, 0.22)" : "rgba(127, 29, 29, 0.32)",
     color: disabled ? "#fca5a5" : "#fecaca",
@@ -1876,30 +1795,6 @@ const spreadsheetToolbarStyle: CSSProperties = {
   gap: 8,
   flexWrap: "wrap",
   justifyContent: "flex-end",
-};
-
-const spreadsheetOverviewStripStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "minmax(0, 1fr) auto",
-  gap: 12,
-  alignItems: "center",
-};
-
-const spreadsheetMetaRailStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-  flexWrap: "wrap",
-  minWidth: 0,
-};
-
-const spreadsheetModeHintStyle: CSSProperties = {
-  fontSize: 11,
-  color: "var(--overlay-text-muted)",
-  lineHeight: 1.5,
-  justifySelf: "end",
-  textAlign: "right",
-  maxWidth: 420,
 };
 
 const spreadsheetFormulaBarStyle: CSSProperties = {
@@ -2020,16 +1915,10 @@ const spreadsheetActiveTabDotStyle: CSSProperties = {
   flexShrink: 0,
 };
 
-const spreadsheetTabHintStyle: CSSProperties = {
+const spreadsheetTabActionsStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
-  gap: 12,
-  color: "#94a3b8",
-  fontSize: 10,
-  fontWeight: 700,
-  textTransform: "uppercase",
-  letterSpacing: 0.3,
-  whiteSpace: "nowrap",
+  gap: 8,
   flexShrink: 0,
 };
 

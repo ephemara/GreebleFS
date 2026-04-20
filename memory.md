@@ -1,5 +1,20 @@
 # GreebleFS Memory
 
+# 2026-04-20 - Spreadsheet Preview Now Opens Read-Only First And The Workbench Chrome Was De-Bloated
+
+- Explorer spreadsheets no longer drop straight into an always-edit grid shell, and the spreadsheet workbench no longer renders the earlier pill-heavy top section.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now treats `preview.type === 'spreadsheet'` like the other explicit workbench lanes: selecting a spreadsheet forces `documentViewMode` back to `preview`, the shared preview header now exposes the same `Preview` / `Edit` toggle for spreadsheets, and the spreadsheet preview label reflects preview-vs-editor state instead of a single generic spreadsheet title.
+  - `src/components/ExplorerSpreadsheetWorkbench.tsx` now requires `mode: 'preview' | 'edit'` and keeps the grid read-only in preview mode. Preview mode hides the old edit-only chrome, keeps only a compact title/reload strip plus cell inspector and sheet tabs, and removes the earlier "tabular sheet / rows / cols / edit mode" pill clutter. Edit mode restores save plus sheet-management controls, and `@glideapps/glide-data-grid/dist/index.css` is now imported so tabular sheets actually render instead of falling into the blank-body / "only A1" failure mode.
+  - Spreadsheet keyboard coverage is now settings-backed for the preview/edit split: `src/config/hotkeys.ts`, `src/components/SettingsPage.tsx`, `src/test/hotkeys.test.ts`, and `src/test/settingsStore.test.ts` now include `spreadsheetWorkbenchToggleEditMode` with the same `E` default used by the PDF/shader workbenches.
+  - `src/test/explorerSpreadsheetWorkbench.test.tsx` now locks the read-only preview contract plus multi-cell CSV hydration, and `src/test/fileExplorer.viewModes.test.tsx` now locks the FileExplorer-level preview-to-edit handoff for spreadsheet entries.
+- Durable product note:
+  - Keep spreadsheet preview and spreadsheet editing as distinct intents. Preview mode should stay quiet and document-first; if future work adds more workbook tooling, prefer putting mutations behind edit mode or the sheet strip instead of letting the top bar bloat back into a debug dashboard.
+  - If the spreadsheet grid ever disappears again after package upgrades, check for the mandatory Glide CSS import first before assuming the parser/regression is in workbook hydration.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerSpreadsheetWorkbench.test.tsx src/test/fileExplorer.viewModes.test.tsx src/test/hotkeys.test.ts src/test/settingsStore.test.ts --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+
 # 2026-04-20 - Model Preview Now Reads Native Files Instead Of Browser-Fetching Asset URLs
 
 - The 3D preview lane was fighting the browser because `ModelPreview.tsx` was still handing three.js loaders `asset://` URLs via `loadAsync(...)`. That path was replaced with native file reads and parser entrypoints so local model assets stop depending on browser fetch behavior.

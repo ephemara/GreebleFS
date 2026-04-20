@@ -26,6 +26,7 @@ export type HotkeyBindingKey =
   | 'explorerMoveSelectionDown'
   | 'explorerMoveSelectionLeft'
   | 'explorerMoveSelectionRight'
+  | 'togglePreviewLock'
   | 'togglePreviewTerminal'
   | 'openInTerminal'
   | 'calculateRecursiveSize'
@@ -252,6 +253,13 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     label: 'Focus Explorer Preview',
     description: 'Focus the explorer preview panel.',
     defaultValue: 'Ctrl+2',
+    scope: 'local',
+  },
+  {
+    key: 'togglePreviewLock',
+    label: 'Toggle Preview Lock',
+    description: 'Lock or unlock the active explorer preview so selection changes stop replacing it.',
+    defaultValue: 'Ctrl+Alt+P',
     scope: 'local',
   },
   {

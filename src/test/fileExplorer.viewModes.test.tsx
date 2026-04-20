@@ -677,6 +677,7 @@ describe("FileExplorer view modes", () => {
     pdfPreviewMockState.closeGuardResult = true;
     previewTerminalMockState.mountCount = 0;
     previewTerminalMockState.lastProps = null;
+    spreadsheetWorkbenchMockState.lastMode = "preview";
     shaderWorkbenchMockState.lastSelectionLabel = "";
     vi.mocked(currentWindow.onDragDropEvent).mockClear();
     vi.mocked(currentWindow.scaleFactor).mockClear();
@@ -1656,6 +1657,51 @@ describe("FileExplorer view modes", () => {
       await screen.findByTitle("HTML document preview"),
     ).toBeInTheDocument();
     expect(screen.queryByTestId("monaco-editor")).toBeNull();
+  });
+
+  it("opens spreadsheet previews in preview mode and lets the shared preview header switch to edit", async () => {
+    const spreadsheetEntry = {
+      name: "colors.csv",
+      path: `${REPO_ROOT}\\colors.csv`,
+      is_dir: false,
+      size: 512,
+      modified: 0,
+      extension: "csv",
+      is_hidden: false,
+      is_symlink: false,
+    };
+    const defaultInvoke = vi.mocked(invoke).getMockImplementation();
+    if (!defaultInvoke) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(async (command: string, args?: unknown) => {
+      if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+        return [...ENTRIES, spreadsheetEntry];
+      }
+      return defaultInvoke(command, args as never);
+    });
+
+    renderExplorer();
+    await screen.findByText("colors.csv");
+
+    fireEvent.click(screen.getByText("colors.csv"));
+
+    expect(
+      await screen.findByTestId("mock-explorer-spreadsheet-workbench"),
+    ).toHaveTextContent("colors.csv:preview");
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.documentViewMode).toBe("preview");
+    });
+
+    fireEvent.click(within(getPreviewPane()).getByRole("button", { name: /^edit$/i }));
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.documentViewMode).toBe("edit");
+    });
+    expect(
+      await screen.findByTestId("mock-explorer-spreadsheet-workbench"),
+    ).toHaveTextContent("colors.csv:edit");
   });
 
   it("keeps inline previews closed in dock mode", async () => {
