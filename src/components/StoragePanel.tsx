@@ -53,6 +53,7 @@ import {
   buildStorageMatrixRows,
   createStorageRootSummary,
   getParentPath,
+  normalizeStorageWorkbenchPath,
   resolveTreemapFocusNode,
   sortStorageTypeBuckets,
   summarizeQueueEntries,
@@ -113,17 +114,6 @@ function hashString(value: string): number {
     hash |= 0;
   }
   return Math.abs(hash);
-}
-
-function normalizeWorkbenchPath(path: string): string {
-  const normalizedSlashes = path.replace(/\//g, '\\');
-  if (/^[A-Za-z]:$/.test(normalizedSlashes)) {
-    return `${normalizedSlashes}\\`;
-  }
-  if (/^[A-Za-z]:\\+$/.test(normalizedSlashes)) {
-    return `${normalizedSlashes.slice(0, 2)}\\`;
-  }
-  return normalizedSlashes.replace(/\\+$/, '');
 }
 
 function resolveNodeIcon(entry: StorageScanEntry, expanded = false): ReactNode {
@@ -1341,7 +1331,7 @@ export function StoragePanel() {
   }, [loadRoots]);
 
   const beginScan = useCallback(async (rootPath: string) => {
-    const normalizedRootPath = normalizeWorkbenchPath(rootPath);
+    const normalizedRootPath = normalizeStorageWorkbenchPath(rootPath);
     setPanelError(null);
     setPanelNotice(null);
     setSelectedRootPath(normalizedRootPath);
@@ -1393,7 +1383,7 @@ export function StoragePanel() {
   }, [scanId]);
 
   const loadDirectory = useCallback(async (directoryPath: string) => {
-    const normalizedDirectoryPath = normalizeWorkbenchPath(directoryPath);
+    const normalizedDirectoryPath = normalizeStorageWorkbenchPath(directoryPath);
     if (!scanId || directoryLoadState[normalizedDirectoryPath] === 'loading' || directoryEntriesByPath[normalizedDirectoryPath]) {
       return;
     }

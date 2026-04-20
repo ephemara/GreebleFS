@@ -17,6 +17,26 @@ export interface StorageMatrixRow {
   rootShare: number;
 }
 
+function isWindowsStoragePath(path: string): boolean {
+  return /^[A-Za-z]:/.test(path.trim());
+}
+
+export function normalizeStorageWorkbenchPath(path: string): string {
+  const trimmed = path.trim();
+  if (!trimmed) {
+    return '';
+  }
+  if (/^[A-Za-z]:[\\/]?$/.test(trimmed)) {
+    return `${trimmed.slice(0, 2)}\\`;
+  }
+  if (/^\/+$/.test(trimmed)) {
+    return '/';
+  }
+  return isWindowsStoragePath(trimmed)
+    ? trimmed.replace(/\//g, '\\').replace(/[\\]+$/, '')
+    : trimmed.replace(/[\\/]+$/, '');
+}
+
 export function createStorageRootSummary(
   snapshot: StorageScanSnapshot,
 ): StorageScanEntry {

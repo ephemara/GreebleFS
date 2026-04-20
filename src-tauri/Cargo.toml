@@ -43,6 +43,7 @@ image = "0.25.8"
 imageproc = "0.25.0"
 ab_glyph = "0.2.29"
 fontdb = "0.16.2"
+libc = { workspace = true }
 naga = { version = "29.0.1", features = ["spv-in", "wgsl-in", "wgsl-out"] }
 lopdf = "0.32.0"
 pdfium-auto = "0.3.0"

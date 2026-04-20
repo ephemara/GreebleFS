@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildStorageMatrixRows,
   createStorageRootSummary,
+  normalizeStorageWorkbenchPath,
   summarizeQueueEntries,
 } from '../components/storage/storageWorkbench';
 import type { StorageScanEntry, StorageScanSnapshot } from '../runtime/storageBackend';
@@ -97,5 +98,12 @@ describe('storageWorkbench', () => {
     expect(summary.logicalBytes).toBe(300);
     expect(summary.allocatedBytes).toBe(384);
     expect(summary.wasteBytes).toBe(84);
+  });
+
+  it('normalizes Windows roots without rewriting POSIX paths', () => {
+    expect(normalizeStorageWorkbenchPath('C:')).toBe('C:\\');
+    expect(normalizeStorageWorkbenchPath('C:/Users/alice/')).toBe('C:\\Users\\alice');
+    expect(normalizeStorageWorkbenchPath('/')).toBe('/');
+    expect(normalizeStorageWorkbenchPath('/run/media/alice/Archive/')).toBe('/run/media/alice/Archive');
   });
 });

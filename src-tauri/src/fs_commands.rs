@@ -1280,9 +1280,8 @@ async fn run_delete_many_task(paths: Vec<String>) -> Result<String, String> {
     }
 
     let total = normalized_paths.len();
-    let task_id = create_manual_explorer_task(batch_delete_task_registration(
-        normalized_paths.clone(),
-    ));
+    let task_id =
+        create_manual_explorer_task(batch_delete_task_registration(normalized_paths.clone()));
 
     for (index, path) in normalized_paths.iter().enumerate() {
         let path_ref = Path::new(path);
@@ -1305,11 +1304,8 @@ async fn run_delete_many_task(paths: Vec<String>) -> Result<String, String> {
         );
     }
 
-    let _ = complete_manual_explorer_task(
-        &task_id,
-        Some(batch_delete_task_detail(total, total)),
-        None,
-    );
+    let _ =
+        complete_manual_explorer_task(&task_id, Some(batch_delete_task_detail(total, total)), None);
     Ok(task_id)
 }
 
@@ -2381,24 +2377,19 @@ where
         .to_os_owned()
         .map_err(|error| format!("Failed to resolve Yazi entry path: {error}"))?;
     let provider = Local::regular(&path);
-    let file_type = entry.file_type().await.map_err(|error| {
-        format!(
-            "Failed to inspect entry type '{}': {error}",
-            path.to_string_lossy()
-        )
-    })?;
     let entry_metadata = provider.symlink_metadata().await.map_err(|error| {
         format!(
             "Failed to read entry metadata '{}': {error}",
             path.to_string_lossy()
         )
     })?;
+    let entry_type = ChaType::from(entry_metadata.mode);
     let is_hidden = entry_metadata.is_hidden() || is_hidden_name(&name);
     if is_hidden && !show_hidden {
         return Ok(None);
     }
 
-    let target_metadata = if file_type == ChaType::Link {
+    let target_metadata = if entry_type == ChaType::Link {
         // Broken or unreadable symlink targets should not abort the parent
         // directory listing. Keep the link visible and fall back to the link
         // metadata when the target cannot be resolved.
@@ -2407,8 +2398,8 @@ where
         None
     };
     let metadata = target_metadata.as_ref().unwrap_or(&entry_metadata);
-    let is_symlink = file_type == ChaType::Link;
-    let is_dir = file_type.is_dir() || ChaType::from(metadata.mode).is_dir();
+    let is_symlink = entry_type == ChaType::Link;
+    let is_dir = entry_type.is_dir() || ChaType::from(metadata.mode).is_dir();
 
     Ok(Some(ListedFileEntry {
         sort_name: name.to_lowercase(),
@@ -2471,21 +2462,21 @@ where
     let name = entry.name().to_string_lossy().into_owned();
     let path = entry.path().to_os_owned().ok()?;
     let provider = Local::regular(&path);
-    let file_type = entry.file_type().await.ok()?;
     let entry_metadata = provider.symlink_metadata().await.ok()?;
+    let entry_type = ChaType::from(entry_metadata.mode);
     let is_hidden = entry_metadata.is_hidden() || is_hidden_name(&name);
     if is_hidden && !show_hidden {
         return None;
     }
 
-    let target_metadata = if file_type == ChaType::Link {
+    let target_metadata = if entry_type == ChaType::Link {
         provider.metadata().await.ok()
     } else {
         None
     };
     let metadata = target_metadata.as_ref().unwrap_or(&entry_metadata);
-    let is_symlink = file_type == ChaType::Link;
-    let is_dir = file_type.is_dir() || ChaType::from(metadata.mode).is_dir();
+    let is_symlink = entry_type == ChaType::Link;
+    let is_dir = entry_type.is_dir() || ChaType::from(metadata.mode).is_dir();
     let relative_path = path
         .strip_prefix(root)
         .map(|relative| relative.to_string_lossy().to_string())
@@ -2812,6 +2803,8 @@ pub async fn fs_get_drives() -> Result<Vec<DriveInfo>, String> {
             drives.push(home_drive);
         }
         drives.push(root_drive_info());
+        drives.extend(read_unix_mount_directories("/run/media"));
+        drives.extend(read_nested_unix_mount_directories("/run/media"));
         drives.extend(read_unix_mount_directories("/media"));
         drives.extend(read_unix_mount_directories("/mnt"));
         return Ok(deduplicate_drives(drives));
@@ -2918,7 +2911,19 @@ fn get_windows_drives() -> Result<Vec<DriveInfo>, String> {
     Ok(drives)
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn root_drive_info() -> DriveInfo {
+    let (total_bytes, free_bytes) = unix_drive_capacity(Path::new("/"));
+    DriveInfo {
+        letter: "/".to_string(),
+        label: "Root".to_string(),
+        total_bytes,
+        free_bytes,
+        drive_type: "fixed".to_string(),
+    }
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
 fn root_drive_info() -> DriveInfo {
     DriveInfo {
         letter: "/".to_string(),
@@ -2936,14 +2941,36 @@ fn unix_home_drive_info() -> Option<DriveInfo> {
     if normalized_path.is_empty() {
         return None;
     }
+    let (total_bytes, free_bytes) = unix_drive_capacity(&home_dir);
 
     Some(DriveInfo {
         letter: normalized_path,
         label: "Home".to_string(),
-        total_bytes: 0,
-        free_bytes: 0,
+        total_bytes,
+        free_bytes,
         drive_type: "home".to_string(),
     })
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn unix_drive_capacity(path: &Path) -> (u64, u64) {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let Ok(path_bytes) = CString::new(path.as_os_str().as_bytes()) else {
+        return (0, 0);
+    };
+
+    let mut stats = unsafe { std::mem::zeroed::<libc::statvfs>() };
+    let status = unsafe { libc::statvfs(path_bytes.as_ptr(), &mut stats) };
+    if status != 0 {
+        return (0, 0);
+    }
+
+    let block_size = stats.f_bsize as u64;
+    let total_bytes = (stats.f_blocks as u64).saturating_mul(block_size);
+    let free_bytes = (stats.f_bavail as u64).saturating_mul(block_size);
+    (total_bytes, free_bytes)
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -2965,6 +2992,7 @@ fn read_unix_mount_directories(base_path: &str) -> Vec<DriveInfo> {
 
         let mount_path = entry.path();
         let label = entry.file_name().to_string_lossy().to_string();
+        let (total_bytes, free_bytes) = unix_drive_capacity(&mount_path);
         drives.push(DriveInfo {
             letter: mount_path.to_string_lossy().to_string(),
             label: if label.is_empty() {
@@ -2972,13 +3000,37 @@ fn read_unix_mount_directories(base_path: &str) -> Vec<DriveInfo> {
             } else {
                 label
             },
-            total_bytes: 0,
-            free_bytes: 0,
+            total_bytes,
+            free_bytes,
             drive_type: "mounted".to_string(),
         });
     }
 
     drives.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+    drives
+}
+
+#[cfg(target_os = "linux")]
+fn read_nested_unix_mount_directories(base_path: &str) -> Vec<DriveInfo> {
+    let path = Path::new(base_path);
+    let read_dir = match std::fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut drives = Vec::new();
+    for entry in read_dir.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_dir() {
+            continue;
+        }
+
+        let child_path = entry.path().to_string_lossy().to_string();
+        drives.extend(read_unix_mount_directories(&child_path));
+    }
+
     drives
 }
 
@@ -6170,6 +6222,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn list_dir_keeps_working_when_a_hidden_symlink_target_is_missing() {
+        #[cfg(not(any(target_family = "windows", target_family = "unix")))]
+        {
+            return;
+        }
+
+        let dir = tmp_dir();
+        let real_dir = dir.path().join("real");
+        let broken_link = dir.path().join(".broken-link");
+        let missing_target = dir.path().join("missing-target");
+        fs::create_dir_all(&real_dir).unwrap();
+        fs::write(real_dir.join("payload.txt"), b"hello").unwrap();
+
+        #[cfg(target_family = "unix")]
+        std::os::unix::fs::symlink(&missing_target, &broken_link).unwrap();
+
+        #[cfg(target_family = "windows")]
+        std::os::windows::fs::symlink_dir(&missing_target, &broken_link).unwrap();
+
+        let entries = test_fs_list_dir(dir.path().to_string_lossy().into(), true)
+            .await
+            .expect("fs_list_dir failed");
+
+        let real = entries
+            .iter()
+            .find(|entry| entry.name == "real")
+            .expect("real directory missing from listing");
+        assert!(real.is_dir, "real directory should remain navigable");
+
+        let broken = entries
+            .iter()
+            .find(|entry| entry.name == ".broken-link")
+            .expect("hidden broken symlink missing from listing");
+        assert!(
+            broken.is_symlink,
+            "hidden broken symlink should still be marked"
+        );
+    }
+
+    #[tokio::test]
     async fn list_dir_fails_for_nonexistent_path() {
         let result = test_fs_list_dir("C:\\nonexistent\\path\\xyz_abc".to_string(), false).await;
         assert!(result.is_err(), "expected Err for nonexistent path");
@@ -8333,6 +8425,60 @@ mod tests {
             Path::new(&drive.letter).is_absolute(),
             "home drive path '{}' should be absolute",
             drive.letter
+        );
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn unix_drive_capacity_returns_bytes_for_existing_path() {
+        let temp = tempfile::tempdir().expect("failed to create tempdir");
+        let (total_bytes, free_bytes) = unix_drive_capacity(temp.path());
+        assert!(
+            total_bytes > 0,
+            "expected positive total bytes for tempdir filesystem"
+        );
+        assert!(
+            free_bytes <= total_bytes,
+            "free bytes should not exceed total bytes"
+        );
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn read_unix_mount_directories_populates_capacity_for_existing_directories() {
+        let temp = tempfile::tempdir().expect("failed to create tempdir");
+        fs::create_dir_all(temp.path().join("USB")).expect("failed to create synthetic mount dir");
+
+        let base_path = temp.path().to_string_lossy().to_string();
+        let drives = read_unix_mount_directories(&base_path);
+        let drive = drives
+            .iter()
+            .find(|drive| drive.label == "USB")
+            .expect("expected synthetic mount directory");
+
+        assert!(
+            drive.total_bytes > 0,
+            "expected capacity for unix mount directory entries"
+        );
+        assert!(
+            drive.free_bytes <= drive.total_bytes,
+            "free bytes should not exceed total bytes"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn read_nested_unix_mount_directories_reads_second_level_mounts() {
+        let temp = tempfile::tempdir().expect("failed to create tempdir");
+        fs::create_dir_all(temp.path().join("alice").join("Archive"))
+            .expect("failed to create nested synthetic mount dir");
+
+        let base_path = temp.path().to_string_lossy().to_string();
+        let drives = read_nested_unix_mount_directories(&base_path);
+
+        assert!(
+            drives.iter().any(|drive| drive.label == "Archive"),
+            "expected nested unix mount discovery to include second-level directories"
         );
     }
 

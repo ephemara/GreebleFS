@@ -1,5 +1,21 @@
 # GreebleFS Memory
 
+# 2026-04-20 - Linux Storage Roots Now Preserve POSIX Paths And Report Real Capacity
+
+- The storage workbench had two Unix regressions after the first storage-tab pass: frontend directory lookup normalized every root into Windows-style backslashes, and the native drive enumerator returned `0` for Unix capacity while missing common Linux removable-media mounts under `/run/media`.
+- Durable implementation shape:
+  - `src/components/storage/storageWorkbench.ts` now exports `normalizeStorageWorkbenchPath(...)`, which preserves POSIX separators for `/...` roots while still canonicalizing Windows drive roots and Windows-style child paths.
+  - `src/components/StoragePanel.tsx` now uses that shared normalizer for selected root state and `storage_scan_list_directory(...)` lookups, so Linux/macOS scans request the same `/...` directory keys that the Rust backend stores.
+  - `src-tauri/src/fs_commands.rs` now uses `statvfs` through `libc` for Unix `Root`, `Home`, and mounted-volume capacity, and Linux drive discovery now also scans nested `/run/media/*/*` mount roots in addition to `/media` and `/mnt`.
+- Durable product note:
+  - Do not normalize storage-workbench paths as though every host were Windows. Storage roots and directory-entry lookup keys must stay host-native, or the frontend will ask Rust for directories that were never recorded.
+  - On Linux, removable drives are commonly mounted under `/run/media/$USER/...`; treat that mount root as first-class in drive discovery unless the app later moves to a fuller `/proc/mounts`-based enumeration path.
+- Validation:
+  - passed: `npx vitest run src/test/storageWorkbench.test.ts --reporter=dot`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml unix_ -- --nocapture`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml mount_directories -- --nocapture`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
+
 # 2026-04-20 - Storage Tab Rebuilt As An Explorer-Native Workbench With Batch Queue
 
 - The storage lane is no longer a card-heavy dashboard. It now behaves like a compact Explorer workbench with a dense matrix-first shell, preview-pane inspector, type analytics, focus mode, and a staged cleanup queue.
