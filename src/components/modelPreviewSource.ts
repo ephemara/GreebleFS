@@ -104,7 +104,7 @@ async function inlineGltfExternalResources(
     return content;
   }
 
-  const dataUrlCache = new Map<string, string>();
+  const dataUrlCache = new Map<string, Promise<string>>();
   await Promise.all([
     inlineGltfResourceCollection(gltf.buffers, sourceDirectory, dataUrlCache),
     inlineGltfResourceCollection(gltf.images, sourceDirectory, dataUrlCache),
@@ -116,7 +116,7 @@ async function inlineGltfExternalResources(
 async function inlineGltfResourceCollection(
   entries: GltfResourceCollection,
   sourceDirectory: string,
-  dataUrlCache: Map<string, string>,
+  dataUrlCache: Map<string, Promise<string>>,
 ): Promise<void> {
   if (!entries?.length) {
     return;
@@ -137,7 +137,7 @@ async function inlineGltfResourceCollection(
 async function resolvePreviewDataUrl(
   uri: string,
   sourceDirectory: string,
-  dataUrlCache: Map<string, string>,
+  dataUrlCache: Map<string, Promise<string>>,
 ): Promise<string | null> {
   if (isAbsolutePreviewResourceUrl(uri)) {
     return null;
@@ -154,9 +154,12 @@ async function resolvePreviewDataUrl(
     return cachedDataUrl;
   }
 
-  const dataUrl = await readExplorerFileBase64(resolvedPath);
-  dataUrlCache.set(resolvedPath, dataUrl);
-  return dataUrl;
+  const dataUrlPromise = readExplorerFileBase64(resolvedPath).catch((error) => {
+    dataUrlCache.delete(resolvedPath);
+    throw error;
+  });
+  dataUrlCache.set(resolvedPath, dataUrlPromise);
+  return dataUrlPromise;
 }
 
 function resolvePreviewRelativePath(sourceDirectory: string, relativePath: string): string {
