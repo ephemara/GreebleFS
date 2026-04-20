@@ -567,6 +567,12 @@ export function StoragePanel() {
   const [panelError, setPanelError] = useState<string | null>(null);
   const [panelNotice, setPanelNotice] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<'trash' | 'delete' | null>(null);
+  const [storageRailWidth, setStorageRailWidth] = usePersistentPanelSize(
+    STORAGE_RAIL_WIDTH_KEY,
+    STORAGE_RAIL_WIDTH_DEFAULT,
+    STORAGE_RAIL_WIDTH_MIN,
+    STORAGE_RAIL_WIDTH_MAX,
+  );
 
   const loadRoots = useCallback(async () => {
     setRootsLoading(true);

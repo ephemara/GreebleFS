@@ -4,7 +4,7 @@
 
 - Added a built-in `storage` panel so the workbench can do WinDirStat-style storage inspection without leaving the app.
 - Durable implementation shape:
-  - `src/components/StoragePanel.tsx` is the panel shell. It asks the user which local drive/root to scan, shows an elevation-status banner, starts a native scan, polls live progress, renders a treemap, and exposes open/reveal/rescan/trash/permanent-delete actions on the selected path.
+  - `src/components/StoragePanel.tsx` is the panel shell. It asks the user which local drive/root to scan, shows an elevation-status banner, starts a native scan, polls live progress, renders a treemap, and exposes open/reveal/rescan/trash/permanent-delete actions on the selected path. The shell now uses a compact left navigation rail plus a scrollable workspace so the storage lane feels closer to the other panels instead of a full-width card stack.
   - `src/runtime/storageBackend.ts` is the single TS bridge for this lane. It wraps typed Tauri storage commands and reuses the existing explorer filesystem operations for destructive actions instead of inventing a second delete/trash stack.
   - `src-tauri/src/storage_commands.rs` owns the native scan implementation. It walks the filesystem on a background thread, tracks progress and cancellation, records the largest files/directories, and returns a condensed tree with synthetic `Other` buckets so the frontend can render a useful treemap without trying to mount the full filesystem.
   - `src/components/storage/storageTreemap.ts` keeps the treemap layout math pure and testable outside the panel.
@@ -12,7 +12,7 @@
   - Completed native scan snapshots are pruned from the backend registry when newer scans start, so repeated rescans do not accumulate stale in-memory tree state for the rest of the session.
 - Durable product note:
   - Destructive parity with WinDirStat depends on process elevation. The storage panel intentionally surfaces that state: protected/system paths can only be deleted when GreebleFS itself is running elevated and the OS allows the operation.
-  - The current scan path is native, threaded, and progress-aware, but still uses a direct filesystem walk rather than MFT/USN-journal tricks. If future work needs another major speed jump on NTFS volumes, add it behind `storage_commands.rs` without changing the panel contract.
+  - The current scan path is native, threaded, and progress-aware, but still uses a direct filesystem walk rather than MFT/USN-journal tricks. If future work needs another major speed jump on NTFS volumes, add it behind `storage_commands.rs` without changing the panel contract or the new rail/workspace layout.
 - Validation:
   - passed: `npx vitest run src/test/panelRegistry.test.tsx src/test/storageTreemap.test.ts --reporter=dot`
   - passed: filtered `.\node_modules\.bin\tsc.exe --noEmit --pretty false -p tsconfig.json` produced no errors for `StoragePanel.tsx`, `storageTreemap.ts`, `storageBackend.ts`, `panelRegistry.tsx`, or the touched tests
