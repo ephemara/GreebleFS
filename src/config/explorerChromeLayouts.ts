@@ -53,6 +53,7 @@ export type BuiltInExplorerChromeControlId =
   | 'workspaceLayoutHint'
   | 'workspaceTabs'
   | 'workspaceNewTab'
+  | 'workspacePaneActionsMenu'
   | 'workspaceDuplicateTab'
   | 'workspaceFocusLeft'
   | 'workspaceFocusRight'
@@ -322,50 +323,53 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       workspaceNewTab: {
         workspaceHeader: { zone: 'end', order: 10 },
       },
-      workspaceDuplicateTab: {
+      workspacePaneActionsMenu: {
         workspaceHeader: { zone: 'end', order: 20 },
       },
-      workspaceFocusLeft: {
+      workspaceDuplicateTab: {
         workspaceHeader: { zone: 'end', order: 30 },
       },
-      workspaceFocusRight: {
+      workspaceFocusLeft: {
         workspaceHeader: { zone: 'end', order: 40 },
       },
-      workspaceMoveTab: {
+      workspaceFocusRight: {
         workspaceHeader: { zone: 'end', order: 50 },
       },
-      workspaceSyncPath: {
-        workspaceHeader: { zone: 'end', order: 55 },
-      },
-      workspaceLinkNavigation: {
-        workspaceHeader: { zone: 'end', order: 56 },
-      },
-      workspaceCopyToPane: {
-        workspaceHeader: { zone: 'end', order: 57 },
-      },
-      workspaceMoveToPane: {
-        workspaceHeader: { zone: 'end', order: 58 },
-      },
-      workspaceSwapPane: {
+      workspaceMoveTab: {
         workspaceHeader: { zone: 'end', order: 60 },
       },
-      workspaceSplitToggle: {
+      workspaceSyncPath: {
+        workspaceHeader: { zone: 'end', order: 65 },
+      },
+      workspaceLinkNavigation: {
+        workspaceHeader: { zone: 'end', order: 66 },
+      },
+      workspaceCopyToPane: {
+        workspaceHeader: { zone: 'end', order: 67 },
+      },
+      workspaceMoveToPane: {
+        workspaceHeader: { zone: 'end', order: 68 },
+      },
+      workspaceSwapPane: {
         workspaceHeader: { zone: 'end', order: 70 },
       },
-      workspaceCloseTab: {
+      workspaceSplitToggle: {
         workspaceHeader: { zone: 'end', order: 80 },
       },
+      workspaceCloseTab: {
+        workspaceHeader: { zone: 'end', order: 90 },
+      },
       workspaceSplitSummary: {
-        workspaceHeader: { zone: 'end', order: 90, collapsePriority: 30, overflowEligible: true },
+        workspaceHeader: { zone: 'end', order: 100, collapsePriority: 30, overflowEligible: true },
       },
       workspaceSplitNudgeLeft: {
-        workspaceHeader: { zone: 'end', order: 100 },
-      },
-      workspaceSplitReset: {
         workspaceHeader: { zone: 'end', order: 110 },
       },
-      workspaceSplitNudgeRight: {
+      workspaceSplitReset: {
         workspaceHeader: { zone: 'end', order: 120 },
+      },
+      workspaceSplitNudgeRight: {
+        workspaceHeader: { zone: 'end', order: 130 },
       },
       railIdentity: {
         railHeader: { zone: 'start', order: 10, grow: 1, shrink: 1 },
@@ -540,6 +544,9 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       },
       workspaceNewTab: {
         workspaceHeader: { zone: 'start', order: 20 },
+      },
+      workspacePaneActionsMenu: {
+        workspaceHeader: { zone: 'end', order: 20 },
       },
       workspaceDuplicateTab: {
         workspaceHeader: { zone: 'start', order: 30 },
