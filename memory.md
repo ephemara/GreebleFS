@@ -1,5 +1,18 @@
 # GreebleFS Memory
 
+# 2026-04-20 - Storage Panel Waits For The Active Completed Snapshot Before Loading Directory Rows
+
+- The storage panel could raise `Storage directory listing not found: /home/...` even after the Linux path fix because the frontend was still requesting directory children while the native scan was mid-flight.
+- Durable implementation shape:
+  - `src/components/storage/storageWorkbench.ts` now exposes `isStorageSnapshotReadyForDirectoryLoads(scanId, snapshot)`, which requires a completed snapshot whose `scanId` matches the active panel scan before any directory-entry fetches are attempted.
+  - `src/components/StoragePanel.tsx` now clears stale scan state when a new scan begins and gates `listStorageDirectory(...)` behind that active-snapshot readiness check, so rescan transitions do not reuse the previous completed snapshot and in-progress scans do not request unpublished directory listings.
+  - `src/test/storageWorkbench.test.ts` now locks the readiness rule so mismatched or incomplete snapshots stay in the non-loadable state.
+- Durable product note:
+  - The current storage backend only publishes `directory_entries` once `run_storage_scan(...)` finishes and installs the completed snapshot. Treat directory hydration as a completed-snapshot feature unless the backend later grows explicit streaming/partial directory publication.
+- Validation:
+  - passed: `npx vitest run src/test/storageWorkbench.test.ts --reporter=dot`
+  - passed: filtered `npx tsc --noEmit --pretty false 2>&1 | rg "StoragePanel.tsx|storageWorkbench.ts|storageWorkbench.test.ts" || true`
+
 # 2026-04-20 - Linux Storage Roots Now Preserve POSIX Paths And Report Real Capacity
 
 - The storage workbench had two Unix regressions after the first storage-tab pass: frontend directory lookup normalized every root into Windows-style backslashes, and the native drive enumerator returned `0` for Unix capacity while missing common Linux removable-media mounts under `/run/media`.

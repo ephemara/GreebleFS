@@ -37,6 +37,16 @@ export function normalizeStorageWorkbenchPath(path: string): string {
     : trimmed.replace(/[\\/]+$/, '');
 }
 
+export function isStorageSnapshotReadyForDirectoryLoads(
+  scanId: string | null,
+  snapshot: StorageScanSnapshot | null,
+): boolean {
+  if (!scanId || !snapshot) {
+    return false;
+  }
+  return snapshot.completed && snapshot.scanId === scanId;
+}
+
 export function createStorageRootSummary(
   snapshot: StorageScanSnapshot,
 ): StorageScanEntry {

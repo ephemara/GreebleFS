@@ -53,6 +53,7 @@ import {
   buildStorageMatrixRows,
   createStorageRootSummary,
   getParentPath,
+  isStorageSnapshotReadyForDirectoryLoads,
   normalizeStorageWorkbenchPath,
   resolveTreemapFocusNode,
   sortStorageTypeBuckets,
@@ -1334,6 +1335,8 @@ export function StoragePanel() {
     const normalizedRootPath = normalizeStorageWorkbenchPath(rootPath);
     setPanelError(null);
     setPanelNotice(null);
+    setScanId(null);
+    setScanStatus(null);
     setSelectedRootPath(normalizedRootPath);
     setDirectoryEntriesByPath({});
     setDirectoryLoadState({});
@@ -1382,9 +1385,19 @@ export function StoragePanel() {
     };
   }, [scanId]);
 
+  const directorySnapshotReady = useMemo(
+    () => isStorageSnapshotReadyForDirectoryLoads(scanId, scanStatus),
+    [scanId, scanStatus],
+  );
+
   const loadDirectory = useCallback(async (directoryPath: string) => {
     const normalizedDirectoryPath = normalizeStorageWorkbenchPath(directoryPath);
-    if (!scanId || directoryLoadState[normalizedDirectoryPath] === 'loading' || directoryEntriesByPath[normalizedDirectoryPath]) {
+    if (
+      !scanId
+      || !directorySnapshotReady
+      || directoryLoadState[normalizedDirectoryPath] === 'loading'
+      || directoryEntriesByPath[normalizedDirectoryPath]
+    ) {
       return;
     }
     setDirectoryLoadState((current) => ({ ...current, [normalizedDirectoryPath]: 'loading' }));
@@ -1396,13 +1409,13 @@ export function StoragePanel() {
       setDirectoryLoadState((current) => ({ ...current, [normalizedDirectoryPath]: 'error' }));
       setPanelError(String(error));
     }
-  }, [directoryEntriesByPath, directoryLoadState, scanId]);
+  }, [directoryEntriesByPath, directoryLoadState, directorySnapshotReady, scanId]);
 
   useEffect(() => {
-    if (scanStatus?.completed && scanStatus.rootPath) {
+    if (directorySnapshotReady && scanStatus?.rootPath) {
       void loadDirectory(scanStatus.rootPath);
     }
-  }, [loadDirectory, scanStatus]);
+  }, [directorySnapshotReady, loadDirectory, scanStatus]);
 
   const rootEntry = useMemo(() => scanStatus ? createStorageRootSummary(scanStatus) : null, [scanStatus]);
   const expandedPathSet = useMemo(() => new Set(expandedPaths), [expandedPaths]);
@@ -1507,7 +1520,6 @@ export function StoragePanel() {
     () => queue.itemOrder.map((path) => queue.itemsByPath[path]).filter((item): item is StorageQueuedItem => Boolean(item)),
     [queue.itemOrder, queue.itemsByPath],
   );
-  const queueSummary = useMemo(() => summarizeQueueEntries(queueItems), [queueItems]);
   const queuePathSet = useMemo(() => new Set(queue.itemOrder), [queue.itemOrder]);
   const selectionInQueue = useMemo(
     () => selectedPaths.some((path) => queuePathSet.has(path)),

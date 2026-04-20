@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildStorageMatrixRows,
   createStorageRootSummary,
+  isStorageSnapshotReadyForDirectoryLoads,
   normalizeStorageWorkbenchPath,
   summarizeQueueEntries,
 } from '../components/storage/storageWorkbench';
@@ -105,5 +106,37 @@ describe('storageWorkbench', () => {
     expect(normalizeStorageWorkbenchPath('C:/Users/alice/')).toBe('C:\\Users\\alice');
     expect(normalizeStorageWorkbenchPath('/')).toBe('/');
     expect(normalizeStorageWorkbenchPath('/run/media/alice/Archive/')).toBe('/run/media/alice/Archive');
+  });
+
+  it('only loads directory entries for the active completed scan snapshot', () => {
+    const completedSnapshot: StorageScanSnapshot = {
+      scanId: 'scan-ready',
+      rootPath: '/home/alice',
+      rootName: 'alice',
+      scannedFileCount: 8,
+      scannedDirectoryCount: 3,
+      totalLogicalBytes: 200,
+      totalAllocatedBytes: 200,
+      totalWasteBytes: 0,
+      errorCount: 0,
+      sampleErrors: [],
+      completed: true,
+      cancelled: false,
+      error: null,
+      currentPath: null,
+      elapsedMs: 12,
+      tree: null,
+      largestEntries: [],
+      typeBuckets: [],
+    };
+
+    expect(isStorageSnapshotReadyForDirectoryLoads('scan-ready', completedSnapshot)).toBe(true);
+    expect(isStorageSnapshotReadyForDirectoryLoads('scan-next', completedSnapshot)).toBe(false);
+    expect(isStorageSnapshotReadyForDirectoryLoads('scan-ready', {
+      ...completedSnapshot,
+      completed: false,
+      currentPath: '/home/alice/projects',
+    })).toBe(false);
+    expect(isStorageSnapshotReadyForDirectoryLoads(null, completedSnapshot)).toBe(false);
   });
 });
