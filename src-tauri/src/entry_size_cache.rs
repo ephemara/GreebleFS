@@ -489,7 +489,6 @@ mod tests {
         assert_eq!(loaded_entry.bytes, entry.bytes);
         assert!(loaded_entry.is_dir);
         assert!(loaded_entry.is_complete);
-
     }
 
     #[test]
@@ -540,7 +539,6 @@ mod tests {
         mark_path_and_ancestors_dirty(&file).expect("mark dirty");
         let loaded = load_entry_size_cache(&[root, nested, file]).expect("load dirty");
         assert!(loaded.values().all(|entry| entry.dirty));
-
     }
 
     #[test]
@@ -595,6 +593,5 @@ mod tests {
                 .expect("present b")
                 .dirty
         );
-
     }
 }

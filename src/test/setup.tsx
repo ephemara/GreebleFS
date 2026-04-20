@@ -208,8 +208,10 @@ vi.mock('@tauri-apps/plugin-global-shortcut', () => ({
 
 // Monaco editor — heavy and irrelevant for unit tests
 vi.mock('@monaco-editor/react', () => ({
-  default: ({ value }: { value: string }) => (
-    <pre data-testid="monaco-editor">{value}</pre>
+  default: ({ value, path }: { value: string; path?: string }) => (
+    <pre data-testid="monaco-editor" data-monaco-path={path ?? ''}>
+      {value}
+    </pre>
   ),
 }));
 

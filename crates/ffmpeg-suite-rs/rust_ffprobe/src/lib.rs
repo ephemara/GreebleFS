@@ -25,8 +25,8 @@
 //! for stream in &result.streams {
 //!     match stream.codec_type.as_deref() {
 //!         Some("video") => {
-//!             println!("Video: {}x{}", 
-//!                 stream.width.unwrap_or(0), 
+//!             println!("Video: {}x{}",
+//!                 stream.width.unwrap_or(0),
 //!                 stream.height.unwrap_or(0)
 //!             );
 //!         }
@@ -94,16 +94,13 @@ pub use types::{
 
 // Re-export from common
 pub use ffmpeg_common::{
-    get_version, Capabilities, Duration, Error, LogLevel, MediaPath, Result, StreamSpecifier,
-    StreamType, Version,
+    Capabilities, Duration, Error, LogLevel, MediaPath, Result, StreamSpecifier, StreamType,
+    Version, get_version,
 };
 
 /// Prelude module for convenient imports
 pub mod prelude {
-    pub use crate::{
-        FFprobeBuilder, OutputFormat, ProbeResult, StreamInfo,
-        format::presets,
-    };
+    pub use crate::{FFprobeBuilder, OutputFormat, ProbeResult, StreamInfo, format::presets};
     pub use ffmpeg_common::{Duration, MediaPath, Result, StreamSpecifier, StreamType};
 }
 
@@ -162,21 +159,13 @@ pub mod helpers {
     /// Get video codec
     pub async fn get_video_codec(path: impl Into<MediaPath>) -> Result<Option<String>> {
         let result = probe_streams(path).await?;
-        Ok(result
-            .primary_video_stream()
-            .unwrap()
-            .codec_name
-            .clone())
+        Ok(result.primary_video_stream().unwrap().codec_name.clone())
     }
 
     /// Get audio codec
     pub async fn get_audio_codec(path: impl Into<MediaPath>) -> Result<Option<String>> {
         let result = probe_streams(path).await?;
-        Ok(result
-            .primary_audio_stream()
-            .unwrap()
-            .codec_name
-            .clone())
+        Ok(result.primary_audio_stream().unwrap().codec_name.clone())
     }
 
     /// Check if file has video
@@ -198,12 +187,11 @@ pub mod helpers {
     }
 
     /// Get all metadata tags
-    pub async fn get_metadata(path: impl Into<MediaPath>) -> Result<std::collections::HashMap<String, String>> {
+    pub async fn get_metadata(
+        path: impl Into<MediaPath>,
+    ) -> Result<std::collections::HashMap<String, String>> {
         let result = probe_format(path).await?;
-        Ok(result
-            .format
-            .map(|f| f.tags)
-            .unwrap_or_default())
+        Ok(result.format.map(|f| f.tags).unwrap_or_default())
     }
 
     /// Get stream count
@@ -230,18 +218,15 @@ mod tests {
 
     #[test]
     fn test_output_format_selection() {
-        let builder = FFprobeBuilder::probe("test.mp4")
-            .output_format(OutputFormat::Xml);
+        let builder = FFprobeBuilder::probe("test.mp4").output_format(OutputFormat::Xml);
         let command = builder.command().unwrap();
         assert!(command.contains("-print_format xml"));
     }
 
     #[test]
     fn test_stream_selection() {
-        let builder = FFprobeBuilder::probe_stream(
-            "test.mp4",
-            StreamSpecifier::Type(StreamType::Audio),
-        );
+        let builder =
+            FFprobeBuilder::probe_stream("test.mp4", StreamSpecifier::Type(StreamType::Audio));
         let command = builder.command().unwrap();
         assert!(command.contains("-select_streams a"));
     }

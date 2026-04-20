@@ -1,6 +1,7 @@
 // Copyright 2026 K-Studio. All Rights Reserved.
 // Terminal PTY implementation for ULTACODE
 
+use crate::telemetry::{finish_native_span, start_native_span};
 use portable_pty::{Child, CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -9,7 +10,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
-use crate::telemetry::{finish_native_span, start_native_span};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -951,13 +951,7 @@ pub async fn terminal_spawn(
     }
     let status = if result.is_ok() { "ok" } else { "error" };
     let error = result.as_ref().err().cloned();
-    finish_native_span(
-        &app,
-        span,
-        status,
-        std::collections::BTreeMap::new(),
-        error,
-    );
+    finish_native_span(&app, span, status, std::collections::BTreeMap::new(), error);
     result
 }
 

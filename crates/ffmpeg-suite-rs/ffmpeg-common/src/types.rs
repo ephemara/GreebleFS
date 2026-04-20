@@ -59,20 +59,25 @@ impl Duration {
             return Err(Error::ParseError(format!("Invalid time format: {}", s)));
         }
 
-        let hours: u64 = parts[0].parse()
+        let hours: u64 = parts[0]
+            .parse()
             .map_err(|_| Error::ParseError(format!("Invalid hours: {}", parts[0])))?;
-        let minutes: u64 = parts[1].parse()
+        let minutes: u64 = parts[1]
+            .parse()
             .map_err(|_| Error::ParseError(format!("Invalid minutes: {}", parts[1])))?;
 
         let (seconds, millis) = if parts[2].contains('.') {
             let sec_parts: Vec<&str> = parts[2].split('.').collect();
-            let secs: u64 = sec_parts[0].parse()
+            let secs: u64 = sec_parts[0]
+                .parse()
                 .map_err(|_| Error::ParseError(format!("Invalid seconds: {}", sec_parts[0])))?;
-            let ms: u64 = sec_parts[1].parse()
-                .map_err(|_| Error::ParseError(format!("Invalid milliseconds: {}", sec_parts[1])))?;
+            let ms: u64 = sec_parts[1].parse().map_err(|_| {
+                Error::ParseError(format!("Invalid milliseconds: {}", sec_parts[1]))
+            })?;
             (secs, ms)
         } else {
-            let secs: u64 = parts[2].parse()
+            let secs: u64 = parts[2]
+                .parse()
                 .map_err(|_| Error::ParseError(format!("Invalid seconds: {}", parts[2])))?;
             (secs, 0)
         };
@@ -163,7 +168,8 @@ impl Size {
             .map(|i| s.split_at(i))
             .unwrap_or((s, ""));
 
-        let number: f64 = num_str.parse()
+        let number: f64 = num_str
+            .parse()
             .map_err(|_| Error::ParseError(format!("Invalid number: {}", num_str)))?;
 
         let multiplier = match suffix.to_uppercase().as_str() {
@@ -174,7 +180,12 @@ impl Size {
             "KI" | "KIB" => 1_024.0,
             "MI" | "MIB" => 1_048_576.0,
             "GI" | "GIB" => 1_073_741_824.0,
-            _ => return Err(Error::ParseError(format!("Invalid size suffix: {}", suffix))),
+            _ => {
+                return Err(Error::ParseError(format!(
+                    "Invalid size suffix: {}",
+                    suffix
+                )));
+            }
         };
 
         Ok(Self((number * multiplier) as u64))
@@ -603,14 +614,25 @@ mod tests {
     #[test]
     fn test_duration_parsing() {
         assert_eq!(Duration::from_ffmpeg_format("10").unwrap().as_secs(), 10);
-        assert_eq!(Duration::from_ffmpeg_format("01:30:00").unwrap().as_secs(), 5400);
-        assert_eq!(Duration::from_ffmpeg_format("00:00:30.500").unwrap().as_millis(), 30500);
+        assert_eq!(
+            Duration::from_ffmpeg_format("01:30:00").unwrap().as_secs(),
+            5400
+        );
+        assert_eq!(
+            Duration::from_ffmpeg_format("00:00:30.500")
+                .unwrap()
+                .as_millis(),
+            30500
+        );
     }
 
     #[test]
     fn test_duration_formatting() {
         assert_eq!(Duration::from_secs(90).to_ffmpeg_format(), "00:01:30");
-        assert_eq!(Duration::from_millis(30500).to_ffmpeg_format(), "00:00:30.500");
+        assert_eq!(
+            Duration::from_millis(30500).to_ffmpeg_format(),
+            "00:00:30.500"
+        );
     }
 
     #[test]
@@ -626,7 +648,10 @@ mod tests {
     fn test_stream_specifier() {
         assert_eq!(StreamSpecifier::Index(1).to_string(), "1");
         assert_eq!(StreamSpecifier::Type(StreamType::Audio).to_string(), "a");
-        assert_eq!(StreamSpecifier::TypeIndex(StreamType::Video, 0).to_string(), "v:0");
+        assert_eq!(
+            StreamSpecifier::TypeIndex(StreamType::Video, 0).to_string(),
+            "v:0"
+        );
         assert_eq!(StreamSpecifier::Program(1).to_string(), "p:1");
     }
 

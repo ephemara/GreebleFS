@@ -75,8 +75,8 @@ pub use stream::{StreamDisposition, StreamMap, StreamMetadata, StreamSelection};
 
 // Re-export from common
 pub use ffmpeg_common::{
-    get_version, Capabilities, Codec, Duration, Error, LogLevel, MediaPath, PixelFormat, Progress,
-    Result, SampleFormat, Size, StreamSpecifier, StreamType, Version,
+    Capabilities, Codec, Duration, Error, LogLevel, MediaPath, PixelFormat, Progress, Result,
+    SampleFormat, Size, StreamSpecifier, StreamType, Version, get_version,
 };
 
 /// Prelude module for convenient imports
@@ -127,15 +127,12 @@ mod tests {
     fn test_complex_build() {
         let builder = FFmpegBuilder::new()
             .unwrap()
-            .input(
-                Input::new("input.mp4")
-                    .seek(Duration::from_secs(10))
-            )
+            .input(Input::new("input.mp4").seek(Duration::from_secs(10)))
             .output(
                 Output::new("output.mp4")
                     .video_codec(Codec::h264())
                     .audio_codec(Codec::aac())
-                    .metadata("title", "Test Video")
+                    .metadata("title", "Test Video"),
             )
             .video_filter(VideoFilter::scale(1280, 720))
             .overwrite();
@@ -168,7 +165,7 @@ mod tests {
             .output(
                 Output::new("output.mp4")
                     .video_codec_opts(presets::h264::youtube_1080p())
-                    .audio_codec_opts(presets::audio::aac_high_quality())
+                    .audio_codec_opts(presets::audio::aac_high_quality()),
             );
 
         let args = builder.build_args().unwrap();

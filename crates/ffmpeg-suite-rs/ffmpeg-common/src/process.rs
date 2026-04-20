@@ -93,7 +93,11 @@ pub struct Process {
 impl Process {
     /// Spawn a new process with arguments
     pub async fn spawn(config: ProcessConfig, args: Vec<String>) -> Result<Self> {
-        debug!("Spawning process: {} {:?}", config.executable.display(), args);
+        debug!(
+            "Spawning process: {} {:?}",
+            config.executable.display(),
+            args
+        );
 
         let mut cmd = Command::new(&config.executable);
 
@@ -245,12 +249,16 @@ impl ProcessOutput {
 
     /// Get stdout as string
     pub fn stdout_str(&self) -> Option<String> {
-        self.stdout.as_ref().map(|b| String::from_utf8_lossy(b).into_owned())
+        self.stdout
+            .as_ref()
+            .map(|b| String::from_utf8_lossy(b).into_owned())
     }
 
     /// Get stderr as string
     pub fn stderr_str(&self) -> Option<String> {
-        self.stderr.as_ref().map(|b| String::from_utf8_lossy(b).into_owned())
+        self.stderr
+            .as_ref()
+            .map(|b| String::from_utf8_lossy(b).into_owned())
     }
 
     /// Convert to a Result, treating non-zero exit as error
@@ -330,7 +338,9 @@ impl Progress {
                     }
                     "time" => {
                         // Parse time in HH:MM:SS.MS format
-                        if let Ok(duration) = crate::types::Duration::from_ffmpeg_format(value.trim()) {
+                        if let Ok(duration) =
+                            crate::types::Duration::from_ffmpeg_format(value.trim())
+                        {
                             progress.time = Some(duration.into());
                         }
                     }
@@ -411,11 +421,7 @@ impl CommandBuilder {
 
     /// Add a flag only if the condition is true
     pub fn flag_if(self, flag: impl AsRef<str>, condition: bool) -> Self {
-        if condition {
-            self.flag(flag)
-        } else {
-            self
-        }
+        if condition { self.flag(flag) } else { self }
     }
 
     /// Add raw arguments
@@ -484,7 +490,10 @@ mod tests {
             .arg("output.mp4")
             .build();
 
-        assert_eq!(args, vec!["-y", "-i", "input.mp4", "-ss", "00:00:10", "output.mp4"]);
+        assert_eq!(
+            args,
+            vec!["-y", "-i", "input.mp4", "-ss", "00:00:10", "output.mp4"]
+        );
     }
 
     #[test]

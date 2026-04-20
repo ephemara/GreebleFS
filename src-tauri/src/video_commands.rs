@@ -370,8 +370,7 @@ fn build_preview_proxy_output(proxy_path: &Path, has_audio_track: bool) -> Outpu
         #[cfg(target_os = "linux")]
         {
             output.audio_codec_opts(
-                CodecOptions::new(Codec::new("libopus"))
-                    .bitrate(VIDEO_PREVIEW_PROXY_AUDIO_BITRATE),
+                CodecOptions::new(Codec::new("libopus")).bitrate(VIDEO_PREVIEW_PROXY_AUDIO_BITRATE),
             )
         }
 
@@ -586,8 +585,7 @@ mod tests {
     use super::{
         build_preview_proxy_output, direct_video_preview_mime_type, generate_video_preview_proxy,
         normalize_trim_export_request, resolve_video_preview_compatibility, run_video_trim_export,
-        video_preview_proxy_extension,
-        VideoTrimExportRequest,
+        video_preview_proxy_extension, VideoTrimExportRequest,
     };
     use crate::video_engine::{
         resolve_video_ffmpeg_binary, resolve_video_ffprobe_binary, sanitize_video_runtime_stem,
@@ -875,8 +873,16 @@ mod tests {
 
             assert!(codec_types.contains(&"video"), "{}", output_path.display());
             assert!(codec_types.contains(&"audio"), "{}", output_path.display());
-            assert!(codec_names.contains(&expected_video_codec), "{}", output_path.display());
-            assert!(codec_names.contains(&expected_audio_codec), "{}", output_path.display());
+            assert!(
+                codec_names.contains(&expected_video_codec),
+                "{}",
+                output_path.display()
+            );
+            assert!(
+                codec_names.contains(&expected_audio_codec),
+                "{}",
+                output_path.display()
+            );
         }
     }
 

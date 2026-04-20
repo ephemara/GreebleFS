@@ -1,6 +1,6 @@
 use ffmpeg_common::{
-    process::stream_progress, CommandBuilder, Duration, Error, LogLevel, MediaPath, Process,
-    ProcessConfig, ProcessOutput, Progress, Result, StreamSpecifier,
+    CommandBuilder, Duration, Error, LogLevel, MediaPath, Process, ProcessConfig, ProcessOutput,
+    Progress, Result, StreamSpecifier, process::stream_progress,
 };
 use std::fmt::Debug;
 use std::path::PathBuf;
@@ -394,9 +394,7 @@ impl FFmpegBuilder {
         if let Some(callback) = self.progress_callback {
             if let Some(stderr) = process.stderr() {
                 let stderr = tokio::io::BufReader::new(stderr);
-                tokio::spawn(stream_progress(stderr, move |progress| {
-                    callback(progress)
-                }));
+                tokio::spawn(stream_progress(stderr, move |progress| callback(progress)));
             }
         }
 
@@ -428,11 +426,7 @@ impl FFmpegBuilder {
     /// Get the command that would be executed
     pub fn command(&self) -> Result<String> {
         let args = self.build_args()?;
-        Ok(format!(
-            "{} {}",
-            self.executable.display(),
-            args.join(" ")
-        ))
+        Ok(format!("{} {}", self.executable.display(), args.join(" ")))
     }
 }
 
@@ -455,9 +449,7 @@ impl FFmpegProcess {
         if let Some(callback) = self.progress_callback {
             if let Some(stderr) = self.process.stderr() {
                 let stderr = tokio::io::BufReader::new(stderr);
-                tokio::spawn(stream_progress(stderr, move |progress| {
-                    callback(progress)
-                }));
+                tokio::spawn(stream_progress(stderr, move |progress| callback(progress)));
             }
         }
 
@@ -497,10 +489,7 @@ impl FFmpegBuilder {
     }
 
     /// Extract audio from a video file
-    pub fn extract_audio(
-        input: impl Into<MediaPath>,
-        output: impl Into<MediaPath>,
-    ) -> Self {
+    pub fn extract_audio(input: impl Into<MediaPath>, output: impl Into<MediaPath>) -> Self {
         Self::new()
             .unwrap()
             .input_path(input)
@@ -510,10 +499,7 @@ impl FFmpegBuilder {
     }
 
     /// Extract video without audio
-    pub fn extract_video(
-        input: impl Into<MediaPath>,
-        output: impl Into<MediaPath>,
-    ) -> Self {
+    pub fn extract_video(input: impl Into<MediaPath>, output: impl Into<MediaPath>) -> Self {
         Self::new()
             .unwrap()
             .input_path(input)

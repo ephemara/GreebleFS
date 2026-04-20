@@ -103,8 +103,7 @@ pub mod formats {
     impl Mkv {
         /// Standard MKV
         pub fn standard() -> FormatOptions {
-            FormatOptions::new()
-                .format("matroska")
+            FormatOptions::new().format("matroska")
         }
 
         /// Live streaming MKV
@@ -122,8 +121,7 @@ pub mod formats {
     impl WebM {
         /// Standard WebM
         pub fn standard() -> FormatOptions {
-            FormatOptions::new()
-                .format("webm")
+            FormatOptions::new().format("webm")
         }
 
         /// DASH WebM
@@ -251,23 +249,17 @@ pub mod formats {
     impl ImageSequence {
         /// JPEG sequence
         pub fn jpeg() -> FormatOptions {
-            FormatOptions::new()
-                .format("image2")
-                .option("update", "1")
+            FormatOptions::new().format("image2").option("update", "1")
         }
 
         /// PNG sequence
         pub fn png() -> FormatOptions {
-            FormatOptions::new()
-                .format("image2")
-                .option("update", "1")
+            FormatOptions::new().format("image2").option("update", "1")
         }
 
         /// Animated GIF
         pub fn gif() -> FormatOptions {
-            FormatOptions::new()
-                .format("gif")
-                .option("loop", "0")
+            FormatOptions::new().format("gif").option("loop", "0")
         }
     }
 
@@ -284,14 +276,12 @@ pub mod formats {
 
         /// AAC in ADTS
         pub fn aac() -> FormatOptions {
-            FormatOptions::new()
-                .format("adts")
+            FormatOptions::new().format("adts")
         }
 
         /// FLAC
         pub fn flac() -> FormatOptions {
-            FormatOptions::new()
-                .format("flac")
+            FormatOptions::new().format("flac")
         }
 
         /// OGG
@@ -303,9 +293,7 @@ pub mod formats {
 
         /// WAV
         pub fn wav() -> FormatOptions {
-            FormatOptions::new()
-                .format("wav")
-                .option("rf64", "auto")
+            FormatOptions::new().format("wav").option("rf64", "auto")
         }
     }
 
@@ -315,26 +303,22 @@ pub mod formats {
     impl Raw {
         /// Raw video
         pub fn video() -> FormatOptions {
-            FormatOptions::new()
-                .format("rawvideo")
+            FormatOptions::new().format("rawvideo")
         }
 
         /// Raw audio PCM
         pub fn audio_pcm() -> FormatOptions {
-            FormatOptions::new()
-                .format("s16le")
+            FormatOptions::new().format("s16le")
         }
 
         /// Raw H.264
         pub fn h264() -> FormatOptions {
-            FormatOptions::new()
-                .format("h264")
+            FormatOptions::new().format("h264")
         }
 
         /// Raw H.265
         pub fn h265() -> FormatOptions {
-            FormatOptions::new()
-                .format("hevc")
+            FormatOptions::new().format("hevc")
         }
     }
 
@@ -344,8 +328,7 @@ pub mod formats {
     impl Null {
         /// Null output
         pub fn output() -> FormatOptions {
-            FormatOptions::new()
-                .format("null")
+            FormatOptions::new().format("null")
         }
     }
 }
@@ -424,8 +407,8 @@ pub mod muxer_configs {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::formats::*;
+    use super::*;
 
     #[test]
     fn test_format_options() {

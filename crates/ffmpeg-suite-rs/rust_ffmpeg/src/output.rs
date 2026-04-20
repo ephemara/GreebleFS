@@ -230,7 +230,7 @@ impl Output {
     pub fn for_streaming(self) -> Self {
         self.format("mp4")
             .movflags("frag_keyframe+empty_moov+default_base_moof")
-            .option("g", "52")  // GOP size
+            .option("g", "52") // GOP size
             .option("keyint_min", "25")
     }
 
@@ -377,13 +377,10 @@ impl MultiOutput {
                             .bitrate("5000k")
                             .option("maxrate", "5350k")
                             .option("bufsize", "7500k")
-                            .size(1920, 1080)
+                            .size(1920, 1080),
                     )
-                    .audio_codec_opts(
-                        CodecOptions::new(Codec::aac())
-                            .bitrate("192k")
-                    )
-                    .preset("slow")
+                    .audio_codec_opts(CodecOptions::new(Codec::aac()).bitrate("192k"))
+                    .preset("slow"),
             )
             // 720p
             .add_output(
@@ -393,13 +390,10 @@ impl MultiOutput {
                             .bitrate("2800k")
                             .option("maxrate", "3000k")
                             .option("bufsize", "4200k")
-                            .size(1280, 720)
+                            .size(1280, 720),
                     )
-                    .audio_codec_opts(
-                        CodecOptions::new(Codec::aac())
-                            .bitrate("128k")
-                    )
-                    .preset("slow")
+                    .audio_codec_opts(CodecOptions::new(Codec::aac()).bitrate("128k"))
+                    .preset("slow"),
             )
             // 480p
             .add_output(
@@ -409,13 +403,10 @@ impl MultiOutput {
                             .bitrate("1400k")
                             .option("maxrate", "1500k")
                             .option("bufsize", "2100k")
-                            .size(854, 480)
+                            .size(854, 480),
                     )
-                    .audio_codec_opts(
-                        CodecOptions::new(Codec::aac())
-                            .bitrate("128k")
-                    )
-                    .preset("slow")
+                    .audio_codec_opts(CodecOptions::new(Codec::aac()).bitrate("128k"))
+                    .preset("slow"),
             )
     }
 
@@ -491,10 +482,7 @@ impl ImageSequenceOutput {
         }
 
         if let Some(q) = self.quality {
-            output = output.video_codec_opts(
-                CodecOptions::new(Codec::new("mjpeg"))
-                    .quality(q)
-            );
+            output = output.video_codec_opts(CodecOptions::new(Codec::new("mjpeg")).quality(q));
         }
 
         if let Some(num) = self.start_number {

@@ -1,12 +1,11 @@
 use overlay_contracts::{ShellBlueprintId, ThemeManifest};
 
 pub use overlay_contracts::{
-    ThemeAnimationProfile, ThemeChromeStyle, ThemeCompatibility, ThemeDensity,
-    ThemeDesignToken, ThemeIconPackManifest, ThemeIconPackStyle, ThemeIconStyle,
-    ThemeLayoutPrimitive, ThemeLayoutPrimitiveKind as LayoutPrimitiveKind,
-    ThemeManifest as OverlayThemeManifest, ThemeMotionStyle, ThemeNavigationPattern,
-    ThemeNavigationPatternKind as NavigationPatternKind, ThemePresentation, ThemeRenderStyleKind,
-    ThemeRenderStyleManifest, ThemeTokenKind,
+    ThemeAnimationProfile, ThemeChromeStyle, ThemeCompatibility, ThemeDensity, ThemeDesignToken,
+    ThemeIconPackManifest, ThemeIconPackStyle, ThemeIconStyle, ThemeLayoutPrimitive,
+    ThemeLayoutPrimitiveKind as LayoutPrimitiveKind, ThemeManifest as OverlayThemeManifest,
+    ThemeMotionStyle, ThemeNavigationPattern, ThemeNavigationPatternKind as NavigationPatternKind,
+    ThemePresentation, ThemeRenderStyleKind, ThemeRenderStyleManifest, ThemeTokenKind,
 };
 
 pub type RenderStyleKind = ThemeRenderStyleKind;

@@ -9,8 +9,8 @@ pub mod explorer_pro_commands;
 pub mod fs_commands;
 pub mod image_commands;
 mod linux_graphics;
-pub mod plugin_commands;
 pub mod pdf_commands;
+pub mod plugin_commands;
 pub mod python_commands;
 pub mod screenshot_commands;
 pub mod shader_preview_commands;
@@ -36,8 +36,8 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager,
 };
-use terminal::TerminalManager;
 use telemetry::{finish_native_span, start_native_span, TelemetryManager};
+use terminal::TerminalManager;
 use window_commands::{MAIN_TRAY_ICON_ID, MAIN_WINDOW_LABEL};
 
 fn toggle_overlay(app: &tauri::AppHandle) {

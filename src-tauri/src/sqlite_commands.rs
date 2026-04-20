@@ -29,7 +29,9 @@ pub async fn sqlite_get_info(path: String) -> Result<SqliteDbInfo, String> {
 
         // Query the list of all user tables
         let mut stmt = conn
-            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+            )
             .map_err(|e| e.to_string())?;
 
         let table_names: Vec<String> = stmt
@@ -44,7 +46,9 @@ pub async fn sqlite_get_info(path: String) -> Result<SqliteDbInfo, String> {
             // Safely quote the explicit table name to prevent SQL syntax injection
             let escaped_name = name.replace("\"", "\"\"");
             let count_query = format!("SELECT COUNT(*) FROM \"{}\"", escaped_name);
-            let count: i64 = conn.query_row(&count_query, [], |row| row.get(0)).unwrap_or(0);
+            let count: i64 = conn
+                .query_row(&count_query, [], |row| row.get(0))
+                .unwrap_or(0);
 
             tables.push(SqliteTableInfo {
                 name,

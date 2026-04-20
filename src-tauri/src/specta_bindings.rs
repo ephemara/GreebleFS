@@ -44,13 +44,13 @@ use crate::image_commands::{
 use crate::linux_graphics::{
     LinuxDisplayBackend, LinuxDisplayBackendPreference, LinuxDisplayBackendStatus,
 };
-use crate::plugin_commands::{PluginBackendResult, PluginDirectoryWatchEvent};
 use crate::pdf_commands::{
     PdfColorValue, PdfFormFieldDescriptor, PdfFormFieldKind, PdfFormFieldOptionDescriptor,
     PdfFormValueUpdate, PdfOverlayAnnotation, PdfOverlayAnnotationKind, PdfPageOverlayEdits,
     PdfPageRect, PdfPageRenderFitMode, PdfPageRenderRequest, PdfPageRenderResult, PdfPoint,
     PdfPreviewDocument, PdfPreviewPageDescriptor, PdfSaveEditsRequest, PdfSaveEditsResult,
 };
+use crate::plugin_commands::{PluginBackendResult, PluginDirectoryWatchEvent};
 use crate::python_commands::{
     PythonActionResponse, PythonBoilerplateFiles, PythonCommandResult, PythonExecutionMode,
     PythonExecutionRequest, PythonInterpreterDescriptor, PythonPackageInstallRequest,
@@ -65,13 +65,13 @@ use crate::shader_preview_commands::{
     ExplorerShaderEntryPoint, ExplorerShaderPreviewDocument,
 };
 use crate::sqlite_commands::{SqliteDbInfo, SqliteTableInfo, SqliteTablePreview};
-use crate::terminal::{
-    ExternalTerminalRequest, TerminalShellIntegrationRequest, TerminalShellIntegrationState,
-    TerminalShellIntegrationStateEvent, TerminalShellKind, TerminalWriteRequest,
-};
 use crate::telemetry::{
     TelemetryCaptureMode, TelemetryConfig, TelemetryPayloadMode, TelemetryRecord,
     TelemetryRecordEvent, TelemetrySessionStatus, TelemetrySupportBundleResult,
+};
+use crate::terminal::{
+    ExternalTerminalRequest, TerminalShellIntegrationRequest, TerminalShellIntegrationState,
+    TerminalShellIntegrationStateEvent, TerminalShellKind, TerminalWriteRequest,
 };
 use crate::video_commands::{
     ResolvedVideoPreviewSource, VideoPreviewSourceKind, VideoTrimExportRequest,

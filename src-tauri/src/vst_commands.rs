@@ -1,7 +1,6 @@
 /// vst_commands.rs — VST3 plugin discovery
 /// Implements the Steinberg-standard host scan path spec for Linux, macOS, and Windows.
 /// Reference: https://steinbergmedia.github.io/vst3_dev_portal/pages/Technical+Documentation/Locations+Format/Plugin+Locations.html
-
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::path::PathBuf;
@@ -51,31 +50,63 @@ pub fn platform_default_vst3_paths() -> Vec<VstScanPath> {
         if let Some(home) = dirs::home_dir() {
             push_path(&mut paths, home.join(".vst3"), VstScanPathKind::User);
         }
-        push_path(&mut paths, PathBuf::from("/usr/lib/vst3"), VstScanPathKind::System);
-        push_path(&mut paths, PathBuf::from("/usr/local/lib/vst3"), VstScanPathKind::System);
+        push_path(
+            &mut paths,
+            PathBuf::from("/usr/lib/vst3"),
+            VstScanPathKind::System,
+        );
+        push_path(
+            &mut paths,
+            PathBuf::from("/usr/local/lib/vst3"),
+            VstScanPathKind::System,
+        );
         // Some distros / plugin installers also use:
-        push_path(&mut paths, PathBuf::from("/usr/lib/x86_64-linux-gnu/vst3"), VstScanPathKind::System);
+        push_path(
+            &mut paths,
+            PathBuf::from("/usr/lib/x86_64-linux-gnu/vst3"),
+            VstScanPathKind::System,
+        );
     }
 
     #[cfg(target_os = "macos")]
     {
         if let Some(home) = dirs::home_dir() {
-            push_path(&mut paths, home.join("Library/Audio/Plug-Ins/VST3"), VstScanPathKind::User);
+            push_path(
+                &mut paths,
+                home.join("Library/Audio/Plug-Ins/VST3"),
+                VstScanPathKind::User,
+            );
         }
-        push_path(&mut paths, PathBuf::from("/Library/Audio/Plug-Ins/VST3"), VstScanPathKind::System);
+        push_path(
+            &mut paths,
+            PathBuf::from("/Library/Audio/Plug-Ins/VST3"),
+            VstScanPathKind::System,
+        );
     }
 
     #[cfg(target_os = "windows")]
     {
         // %COMMONPROGRAMFILES%\VST3 — the primary Steinberg Windows location.
         if let Ok(common) = std::env::var("COMMONPROGRAMFILES") {
-            push_path(&mut paths, PathBuf::from(&common).join("VST3"), VstScanPathKind::System);
+            push_path(
+                &mut paths,
+                PathBuf::from(&common).join("VST3"),
+                VstScanPathKind::System,
+            );
         } else {
-            push_path(&mut paths, PathBuf::from("C:\\Program Files\\Common Files\\VST3"), VstScanPathKind::System);
+            push_path(
+                &mut paths,
+                PathBuf::from("C:\\Program Files\\Common Files\\VST3"),
+                VstScanPathKind::System,
+            );
         }
         // %LOCALAPPDATA%\Programs\Common\VST3
         if let Ok(local) = std::env::var("LOCALAPPDATA") {
-            push_path(&mut paths, PathBuf::from(&local).join("Programs\\Common\\VST3"), VstScanPathKind::User);
+            push_path(
+                &mut paths,
+                PathBuf::from(&local).join("Programs\\Common\\VST3"),
+                VstScanPathKind::User,
+            );
         }
     }
 
@@ -109,7 +140,11 @@ fn scan_dir_for_plugins(dir: &PathBuf, out: &mut Vec<VstPluginEntry>) {
 
     for entry in read.flatten() {
         let path = entry.path();
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
 
         if ext == "vst3" {
             let file_stem = path

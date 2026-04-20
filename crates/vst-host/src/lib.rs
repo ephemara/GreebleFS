@@ -1,13 +1,15 @@
 use libloading::{Library, Symbol};
-use vst3::com_scrape_types::ComPtr;
 use log::{error, info, warn};
-use std::ffi::{c_void, CString};
+use std::ffi::{CString, c_void};
 use std::path::Path;
 use std::sync::Arc;
 use vst3::Steinberg::Vst::{
-    IAudioProcessor, IComponent, IEditController, ParameterInfo, IEditControllerTrait
+    IAudioProcessor, IComponent, IEditController, IEditControllerTrait, ParameterInfo,
 };
-use vst3::Steinberg::{IPluginFactory, IPluginFactory2, IPluginFactory3, kResultOk, IPluginFactoryTrait};
+use vst3::Steinberg::{
+    IPluginFactory, IPluginFactory2, IPluginFactory3, IPluginFactoryTrait, kResultOk,
+};
+use vst3::com_scrape_types::ComPtr;
 use vst3::com_scrape_types::Interface;
 
 #[derive(Debug, Clone)]
@@ -50,7 +52,8 @@ impl HeadlessVstHost {
         }
 
         // Convert the raw COM pointer into a ComPtr.
-        let factory = unsafe { ComPtr::from_raw(factory_ptr) }.ok_or("Failed to convert factory to ComPtr")?;
+        let factory = unsafe { ComPtr::from_raw(factory_ptr) }
+            .ok_or("Failed to convert factory to ComPtr")?;
 
         let class_count = unsafe { factory.countClasses() };
         let mut target_cid: Option<vst3::Steinberg::TUID> = None;
@@ -68,7 +71,7 @@ impl HeadlessVstHost {
         let cid = target_cid.ok_or("No Audio Module Class found in VST3 plugin")?;
 
         let mut instance_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
-        
+
         let result = unsafe {
             factory.createInstance(
                 cid.as_ptr(),
@@ -81,21 +84,24 @@ impl HeadlessVstHost {
             return Err("Failed to instantiate VST3 IComponent".to_string());
         }
 
-        let component = unsafe { ComPtr::<IComponent>::from_raw(instance_ptr as *mut IComponent) }.ok_or("Failed to wrap IComponent")?;
+        let component = unsafe { ComPtr::<IComponent>::from_raw(instance_ptr as *mut IComponent) }
+            .ok_or("Failed to wrap IComponent")?;
 
         let edit_controller = component.cast::<IEditController>();
         let audio_processor = component.cast::<IAudioProcessor>();
-        
+
         let mut parameters = Vec::new();
         if let Some(ref controller) = edit_controller {
             let param_count = unsafe { controller.getParameterCount() };
             for i in 0..param_count {
                 let mut info = unsafe { std::mem::zeroed::<vst3::Steinberg::Vst::ParameterInfo>() };
-                if unsafe { controller.getParameterInfo(i, &mut info) } == vst3::Steinberg::kResultOk {
+                if unsafe { controller.getParameterInfo(i, &mut info) }
+                    == vst3::Steinberg::kResultOk
+                {
                     let title = parse_tchar(&info.title);
                     let short_title = parse_tchar(&info.shortTitle);
                     let units = parse_tchar(&info.units);
-                    
+
                     parameters.push(VstParameterDef {
                         id: info.id,
                         title,

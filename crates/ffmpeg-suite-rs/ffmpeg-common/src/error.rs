@@ -67,7 +67,11 @@ impl Error {
     }
 
     /// Create a process failed error
-    pub fn process_failed(message: impl Into<String>, exit_status: Option<ExitStatus>, stderr: Option<String>) -> Self {
+    pub fn process_failed(
+        message: impl Into<String>,
+        exit_status: Option<ExitStatus>,
+        stderr: Option<String>,
+    ) -> Self {
         Error::ProcessFailed {
             message: message.into(),
             exit_status,

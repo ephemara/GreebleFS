@@ -6,7 +6,7 @@ use std::time::Duration;
 use tracing::info;
 
 use crate::format::OutputFormat;
-use crate::parsers::{parse_output, ProbeResult};
+use crate::parsers::{ProbeResult, parse_output};
 use crate::types::{ProbeSection, ReadInterval};
 
 /// FFprobe command builder
@@ -407,11 +407,7 @@ impl FFprobeBuilder {
     /// Get the command that would be executed
     pub fn command(&self) -> Result<String> {
         let args = self.build_args()?;
-        Ok(format!(
-            "{} {}",
-            self.executable.display(),
-            args.join(" ")
-        ))
+        Ok(format!("{} {}", self.executable.display(), args.join(" ")))
     }
 }
 
@@ -434,18 +430,12 @@ impl FFprobeBuilder {
 
     /// Probe only format info
     pub fn probe_format(input: impl Into<MediaPath>) -> Self {
-        Self::new()
-            .unwrap()
-            .input(input)
-            .show_format()
+        Self::new().unwrap().input(input).show_format()
     }
 
     /// Probe only stream info
     pub fn probe_streams(input: impl Into<MediaPath>) -> Self {
-        Self::new()
-            .unwrap()
-            .input(input)
-            .show_streams()
+        Self::new().unwrap().input(input).show_streams()
     }
 
     /// Detailed probe with everything
@@ -502,10 +492,8 @@ mod tests {
 
     #[test]
     fn test_stream_selection() {
-        let builder = FFprobeBuilder::probe_stream(
-            "input.mp4",
-            StreamSpecifier::Type(StreamType::Audio),
-        );
+        let builder =
+            FFprobeBuilder::probe_stream("input.mp4", StreamSpecifier::Type(StreamType::Audio));
 
         let args = builder.build_args().unwrap();
         assert!(args.contains(&"-select_streams".to_string()));

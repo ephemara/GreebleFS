@@ -174,27 +174,21 @@ pub fn inspect_archive(path: &Path) -> Result<Vec<String>, String> {
                 .map(BufReader::new)
                 .map_err(|error| format!("Failed to open archive {}: {error}", path.display()))?,
         ),
-        ArchiveFormat::TarGz => inspect_tar_archive(
-            GzDecoder::new(
-                File::open(path)
-                    .map(BufReader::new)
-                    .map_err(|error| format!("Failed to open archive {}: {error}", path.display()))?,
-            ),
-        ),
-        ArchiveFormat::TarBz2 => inspect_tar_archive(
-            BzDecoder::new(
-                File::open(path)
-                    .map(BufReader::new)
-                    .map_err(|error| format!("Failed to open archive {}: {error}", path.display()))?,
-            ),
-        ),
-        ArchiveFormat::TarXz => inspect_tar_archive(
-            XzDecoder::new(
-                File::open(path)
-                    .map(BufReader::new)
-                    .map_err(|error| format!("Failed to open archive {}: {error}", path.display()))?,
-            ),
-        ),
+        ArchiveFormat::TarGz => inspect_tar_archive(GzDecoder::new(
+            File::open(path)
+                .map(BufReader::new)
+                .map_err(|error| format!("Failed to open archive {}: {error}", path.display()))?,
+        )),
+        ArchiveFormat::TarBz2 => inspect_tar_archive(BzDecoder::new(
+            File::open(path)
+                .map(BufReader::new)
+                .map_err(|error| format!("Failed to open archive {}: {error}", path.display()))?,
+        )),
+        ArchiveFormat::TarXz => inspect_tar_archive(XzDecoder::new(
+            File::open(path)
+                .map(BufReader::new)
+                .map_err(|error| format!("Failed to open archive {}: {error}", path.display()))?,
+        )),
         ArchiveFormat::Gzip => Ok(vec![single_stream_output_name(path, ".gz")]),
         ArchiveFormat::Bzip2 => Ok(vec![single_stream_output_name(path, ".bz2")]),
         ArchiveFormat::Xz => Ok(vec![single_stream_output_name(path, ".xz")]),
@@ -519,9 +513,13 @@ fn inspect_zip_archive(archive_path: &Path) -> Result<Vec<String>, String> {
     let archive_file = File::open(archive_path)
         .map(BufReader::new)
         .map_err(|error| format!("Failed to open archive {}: {error}", archive_path.display()))?;
-    let mut archive = ZipArchive::new(archive_file)
-        .map_err(|error| format!("Failed to read zip archive {}: {error}", archive_path.display()))?;
-    
+    let mut archive = ZipArchive::new(archive_file).map_err(|error| {
+        format!(
+            "Failed to read zip archive {}: {error}",
+            archive_path.display()
+        )
+    })?;
+
     let mut entries = Vec::new();
     for index in 0..archive.len() {
         if let Ok(entry) = archive.by_index(index) {

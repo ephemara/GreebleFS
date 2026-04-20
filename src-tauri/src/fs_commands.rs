@@ -326,7 +326,7 @@ struct CachedSearchNameEntry {
 
 #[derive(Debug, Clone)]
 struct CachedSearchIndex {
-    entries: Vec<CachedSearchNameEntry>,
+    entries: Arc<[CachedSearchNameEntry]>,
     cached_at: Instant,
 }
 
@@ -357,13 +357,14 @@ impl CachedSearchIndexVariants {
 #[derive(Debug, Clone)]
 struct CachedSearchContentEntry {
     name_lower: String,
+    path_lower: String,
     result: FileSearchResult,
     content: Option<Arc<str>>,
 }
 
 #[derive(Debug, Clone)]
 struct CachedSearchContentIndex {
-    entries: Vec<CachedSearchContentEntry>,
+    entries: Arc<[CachedSearchContentEntry]>,
     cached_at: Instant,
 }
 
@@ -600,10 +601,7 @@ fn copy_path_direct(src: &Path, dst: &Path) -> Result<(), String> {
             .map_err(|error| format!("Failed to read directory {}: {error}", src.display()))?
         {
             let entry = entry.map_err(|error| {
-                format!(
-                    "Failed to read directory entry {}: {error}",
-                    src.display()
-                )
+                format!("Failed to read directory entry {}: {error}", src.display())
             })?;
             copy_path_direct(&entry.path(), &dst.join(entry.file_name()))?;
         }
@@ -620,9 +618,13 @@ fn copy_path_direct(src: &Path, dst: &Path) -> Result<(), String> {
         })?;
     }
 
-    std::fs::copy(src, dst)
-        .map(|_| ())
-        .map_err(|error| format!("Failed to copy {} to {}: {error}", src.display(), dst.display()))
+    std::fs::copy(src, dst).map(|_| ()).map_err(|error| {
+        format!(
+            "Failed to copy {} to {}: {error}",
+            src.display(),
+            dst.display()
+        )
+    })
 }
 
 #[cfg(test)]
@@ -639,8 +641,9 @@ fn move_path_direct(src: &Path, dst: &Path) -> Result<(), String> {
             let metadata = std::fs::symlink_metadata(src)
                 .map_err(|error| format!("Failed to inspect path {}: {error}", src.display()))?;
             if metadata.is_dir() {
-                std::fs::remove_dir_all(src)
-                    .map_err(|error| format!("Failed to remove directory {}: {error}", src.display()))?;
+                std::fs::remove_dir_all(src).map_err(|error| {
+                    format!("Failed to remove directory {}: {error}", src.display())
+                })?;
             } else {
                 std::fs::remove_file(src)
                     .map_err(|error| format!("Failed to remove file {}: {error}", src.display()))?;
@@ -2919,11 +2922,11 @@ fn is_hidden_name(name: &str) -> bool {
 
 fn is_searchable_text_file(path: &Path) -> bool {
     const EXTENSIONS: &[&str] = &[
-        "txt", "md", "mdx", "log", "json", "yaml", "yml", "toml", "xml", "ini", "cfg", "csv", "ts", "tsv",
-        "tsx", "js", "jsx", "mjs", "cjs", "rs", "py", "go", "c", "h", "cpp", "hpp", "cc", "cxx",
-        "cs", "java", "kt", "kts", "rb", "php", "swift", "dart", "lua", "zig", "html", "htm",
-        "css", "scss", "sass", "less", "sh", "bash", "zsh", "ps1", "bat", "cmd", "env", "glsl",
-        "hlsl", "wgsl", "sql", "kain", "ink",
+        "txt", "md", "mdx", "log", "json", "yaml", "yml", "toml", "xml", "ini", "cfg", "csv", "ts",
+        "tsv", "tsx", "js", "jsx", "mjs", "cjs", "rs", "py", "go", "c", "h", "cpp", "hpp", "cc",
+        "cxx", "cs", "java", "kt", "kts", "rb", "php", "swift", "dart", "lua", "zig", "html",
+        "htm", "css", "scss", "sass", "less", "sh", "bash", "zsh", "ps1", "bat", "cmd", "env",
+        "glsl", "hlsl", "wgsl", "sql", "kain", "ink",
     ];
 
     let ext = normalized_extension(path);
@@ -3069,6 +3072,22 @@ fn sort_search_results(results: &mut [FileSearchResult]) {
     });
 }
 
+fn sort_cached_name_entries(entries: &mut [CachedSearchNameEntry]) {
+    entries.sort_by(|left, right| {
+        left.path_lower
+            .cmp(&right.path_lower)
+            .then_with(|| left.name_lower.cmp(&right.name_lower))
+    });
+}
+
+fn sort_cached_content_entries(entries: &mut [CachedSearchContentEntry]) {
+    entries.sort_by(|left, right| {
+        left.path_lower
+            .cmp(&right.path_lower)
+            .then_with(|| left.name_lower.cmp(&right.name_lower))
+    });
+}
+
 fn lookup_cached_name_search_results(
     root: &Path,
     query_lower: &str,
@@ -3085,25 +3104,22 @@ fn lookup_cached_name_search_results(
             .lock()
             .expect("search name index cache poisoned");
         prune_expired_search_name_index_cache(&mut cache);
-        cache.get(&key)?.get(show_hidden)?.entries.clone()
+        Arc::clone(&cache.get(&key)?.get(show_hidden)?.entries)
     };
     let indexed_entry_count = cached_entries.len();
+    let mut results = Vec::with_capacity(max_results.min(indexed_entry_count));
 
-    let mut matches = cached_entries
-        .into_iter()
-        .filter(|entry| entry.name_lower.contains(query_lower))
-        .collect::<Vec<_>>();
-    matches.sort_by(|a, b| {
-        a.path_lower
-            .cmp(&b.path_lower)
-            .then_with(|| a.name_lower.cmp(&b.name_lower))
-    });
-    matches.truncate(max_results);
+    for entry in cached_entries.iter() {
+        if !entry.name_lower.contains(query_lower) {
+            continue;
+        }
+        results.push(entry.result.clone());
+        if results.len() >= max_results {
+            break;
+        }
+    }
 
-    Some((
-        matches.into_iter().map(|entry| entry.result).collect(),
-        indexed_entry_count,
-    ))
+    Some((results, indexed_entry_count))
 }
 
 fn store_search_name_index(root: &Path, show_hidden: bool, entries: Vec<CachedSearchNameEntry>) {
@@ -3112,6 +3128,8 @@ fn store_search_name_index(root: &Path, show_hidden: bool, entries: Vec<CachedSe
     }
 
     let key = path_cache_key(root);
+    let mut sorted_entries = entries;
+    sort_cached_name_entries(&mut sorted_entries);
     let mut cache = search_name_index_cache()
         .lock()
         .expect("search name index cache poisoned");
@@ -3119,7 +3137,7 @@ fn store_search_name_index(root: &Path, show_hidden: bool, entries: Vec<CachedSe
     cache.entry(key).or_default().set(
         show_hidden,
         CachedSearchIndex {
-            entries,
+            entries: Arc::<[CachedSearchNameEntry]>::from(sorted_entries),
             cached_at: Instant::now(),
         },
     );
@@ -3146,7 +3164,7 @@ fn lookup_cached_content_search_results(
             .lock()
             .expect("search content index cache poisoned");
         prune_expired_search_content_index_cache(&mut cache);
-        cache.get(&key)?.get(show_hidden)?.entries.clone()
+        Arc::clone(&cache.get(&key)?.get(show_hidden)?.entries)
     };
 
     let mut combined_matches: Vec<FileSearchResult> = Vec::new();
@@ -3192,14 +3210,28 @@ fn lookup_cached_content_search_results(
             FileSearchMatchKind::Content => content_matches.push(result),
             FileSearchMatchKind::Name => name_matches.push(result),
         }
+
+        if combined_matches.len() >= max_results {
+            break;
+        }
     }
 
-    let mut results = Vec::new();
-    results.extend(combined_matches);
-    results.extend(content_matches);
-    results.extend(name_matches);
-    sort_search_results(&mut results);
-    results.truncate(max_results);
+    let mut results = Vec::with_capacity(max_results.min(cached_entries.len()));
+    results.extend(combined_matches.into_iter().take(max_results));
+    if results.len() < max_results {
+        results.extend(
+            content_matches
+                .into_iter()
+                .take(max_results.saturating_sub(results.len())),
+        );
+    }
+    if results.len() < max_results {
+        results.extend(
+            name_matches
+                .into_iter()
+                .take(max_results.saturating_sub(results.len())),
+        );
+    }
     Some((results, cached_entries.len()))
 }
 
@@ -3216,6 +3248,8 @@ fn store_search_content_index(
     }
 
     let key = path_cache_key(root);
+    let mut sorted_entries = entries;
+    sort_cached_content_entries(&mut sorted_entries);
     let mut cache = search_content_index_cache()
         .lock()
         .expect("search content index cache poisoned");
@@ -3223,7 +3257,7 @@ fn store_search_content_index(
     cache.entry(key).or_default().set(
         show_hidden,
         CachedSearchContentIndex {
-            entries,
+            entries: Arc::<[CachedSearchContentEntry]>::from(sorted_entries),
             cached_at: Instant::now(),
         },
     );
@@ -3550,6 +3584,7 @@ async fn search_entries(
             if let Some(entries) = cached_content_entries.as_mut() {
                 entries.push(CachedSearchContentEntry {
                     name_lower: name_lower.clone(),
+                    path_lower: cached_name_result.path.to_ascii_lowercase(),
                     result: cached_name_result.clone(),
                     content: cached_content,
                 });
@@ -5603,10 +5638,7 @@ mod tests {
         tempfile::tempdir().expect("failed to create tempdir")
     }
 
-    async fn test_fs_list_dir(
-        path: String,
-        show_hidden: bool,
-    ) -> Result<Vec<FileEntry>, String> {
+    async fn test_fs_list_dir(path: String, show_hidden: bool) -> Result<Vec<FileEntry>, String> {
         list_dir(PathBuf::from(path), show_hidden, false).await
     }
 
@@ -5626,19 +5658,17 @@ mod tests {
         request_id: Option<u64>,
         request_scope: Option<String>,
     ) -> Result<Vec<FileSearchResult>, String> {
-        Ok(
-            execute_search_entries_command(
-                path,
-                query,
-                show_hidden,
-                include_content,
-                limit,
-                request_id,
-                request_scope,
-            )
-            .await?
-            .results,
+        Ok(execute_search_entries_command(
+            path,
+            query,
+            show_hidden,
+            include_content,
+            limit,
+            request_id,
+            request_scope,
         )
+        .await?
+        .results)
     }
 
     async fn test_fs_search_entries_with_diagnostics(
@@ -6279,10 +6309,12 @@ mod tests {
         #[cfg(target_family = "windows")]
         std::os::windows::fs::symlink_dir(&real_dir, &linked_dir).unwrap();
 
-        let results =
-            test_fs_measure_entry_sizes(vec![linked_dir.to_string_lossy().into_owned()], Some(true))
-                .await
-                .expect("fs_measure_entry_sizes failed");
+        let results = test_fs_measure_entry_sizes(
+            vec![linked_dir.to_string_lossy().into_owned()],
+            Some(true),
+        )
+        .await
+        .expect("fs_measure_entry_sizes failed");
 
         assert_eq!(results.len(), 1);
         assert_eq!(
@@ -6529,6 +6561,85 @@ mod tests {
             search_scan_count(),
             0,
             "warm names-only searches should reuse the cached recursive name index"
+        );
+    }
+
+    #[tokio::test]
+    async fn search_entries_names_only_cache_preserves_sorted_path_order() {
+        let _serial_guard = search_test_serial_lock().await;
+        let _delay_guard = set_search_scan_delay(1);
+        let dir = tmp_dir();
+
+        let c_path = dir.path().join("c-dir");
+        let a_path = dir.path().join("a-dir");
+        let b_path = dir.path().join("b-dir");
+        fs::create_dir_all(&c_path).unwrap();
+        fs::create_dir_all(&a_path).unwrap();
+        fs::create_dir_all(&b_path).unwrap();
+        fs::write(c_path.join("alpha-target.txt"), "payload").unwrap();
+        fs::write(a_path.join("alpha-target.txt"), "payload").unwrap();
+        fs::write(b_path.join("alpha-target.txt"), "payload").unwrap();
+
+        let root = dir.path().to_string_lossy().into_owned();
+        let expected_paths = vec![
+            a_path
+                .join("alpha-target.txt")
+                .to_string_lossy()
+                .into_owned(),
+            b_path
+                .join("alpha-target.txt")
+                .to_string_lossy()
+                .into_owned(),
+            c_path
+                .join("alpha-target.txt")
+                .to_string_lossy()
+                .into_owned(),
+        ];
+
+        let first_results = test_fs_search_entries(
+            root.clone(),
+            "alpha-target".to_string(),
+            true,
+            false,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("initial names-only fs_search_entries failed");
+        assert_eq!(
+            first_results
+                .iter()
+                .map(|entry| entry.path.clone())
+                .collect::<Vec<_>>(),
+            expected_paths
+        );
+
+        reset_search_scan_count();
+
+        let cached_results = test_fs_search_entries(
+            root,
+            "alpha-target".to_string(),
+            true,
+            false,
+            Some(50),
+            None,
+            None,
+        )
+        .await
+        .expect("cached names-only fs_search_entries failed");
+
+        assert_eq!(
+            cached_results
+                .iter()
+                .map(|entry| entry.path.clone())
+                .collect::<Vec<_>>(),
+            expected_paths
+        );
+        assert_eq!(
+            search_scan_count(),
+            0,
+            "warm names-only search should preserve sorted cached ordering without rescanning"
         );
     }
 

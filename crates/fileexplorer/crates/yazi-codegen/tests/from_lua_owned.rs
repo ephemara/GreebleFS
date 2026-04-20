@@ -20,8 +20,8 @@ fn extracts_owned_userdata() {
 		.create_userdata(OwnedToken { name: "watcher".to_owned() })
 		.expect("owned userdata should be created");
 
-	let parsed = OwnedToken::from_lua(Value::UserData(value), &lua)
-		.expect("owned userdata should deserialize");
+	let parsed =
+		OwnedToken::from_lua(Value::UserData(value), &lua).expect("owned userdata should deserialize");
 
 	assert_eq!(parsed, OwnedToken { name: "watcher".to_owned() });
 }

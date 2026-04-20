@@ -1,4 +1,4 @@
-use ffmpeg_common::{CommandBuilder, Duration, MediaPath, PixelFormat, Result, Size, Error};
+use ffmpeg_common::{CommandBuilder, Duration, Error, MediaPath, PixelFormat, Result, Size};
 use std::collections::HashMap;
 use std::time::Duration as StdDuration;
 

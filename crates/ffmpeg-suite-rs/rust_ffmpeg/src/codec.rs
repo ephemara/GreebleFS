@@ -333,7 +333,7 @@ pub mod presets {
         /// YouTube VP9 encoding
         pub fn youtube() -> CodecOptions {
             CodecOptions::new(Codec::vp9())
-                .bitrate("0")  // VBR mode
+                .bitrate("0") // VBR mode
                 .quality(31)
                 .option("deadline", "good")
                 .option("cpu-used", "2")
@@ -407,8 +407,7 @@ pub mod presets {
 
         /// FLAC lossless
         pub fn flac_lossless() -> CodecOptions {
-            CodecOptions::new(Codec::flac())
-                .option("compression_level", "8")
+            CodecOptions::new(Codec::flac()).option("compression_level", "8")
         }
 
         /// MP3 compatible
@@ -488,8 +487,8 @@ pub mod hardware {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::presets::*;
+    use super::*;
 
     #[test]
     fn test_codec_options() {

@@ -150,7 +150,9 @@ fn from_lua_impl(ident: &Ident, generics: &Generics) -> TokenStream2 {
 mod tests {
 	use syn::parse_quote;
 
-	use super::{deserialize_over_impl, deserialize_over1_impl, deserialize_over2_impl, from_lua_impl};
+	use super::{
+		deserialize_over_impl, deserialize_over1_impl, deserialize_over2_impl, from_lua_impl,
+	};
 
 	#[test]
 	fn deserialize_over_wraps_table_parse_with_error_context() {
@@ -208,7 +210,9 @@ mod tests {
 
 		let tokens = from_lua_impl(&input.ident, &input.generics).to_string();
 
-		assert!(tokens.contains("impl < T : Clone > :: mlua :: FromLua for Payload < T > where T : Send"));
+		assert!(
+			tokens.contains("impl < T : Clone > :: mlua :: FromLua for Payload < T > where T : Send")
+		);
 		assert!(tokens.contains(":: mlua :: Value :: UserData (ud) => ud . take :: < Self > ()"));
 		assert!(tokens.contains("to : \"Payload\" . to_owned ()"));
 	}

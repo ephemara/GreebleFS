@@ -1,22 +1,18 @@
+use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::HashMap;
 use std::path::Path;
-use once_cell::sync::Lazy;
 
 use crate::error::{Error, Result};
 
 /// Regular expressions for parsing
-static TIME_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?$").unwrap()
-});
+static TIME_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?$").unwrap());
 
-static BITRATE_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(\d+(?:\.\d+)?)\s*([kmgKMG])?(?:bit|bps|b)?(?:/s)?$").unwrap()
-});
+static BITRATE_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^(\d+(?:\.\d+)?)\s*([kmgKMG])?(?:bit|bps|b)?(?:/s)?$").unwrap());
 
-static RESOLUTION_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^(\d+)[xX](\d+)$").unwrap()
-});
+static RESOLUTION_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(\d+)[xX](\d+)$").unwrap());
 
 /// Parse a bitrate string (e.g., "128k", "5M", "1000")
 /// Parse a bitrate string (e.g., "128k", "5M", "1000")
@@ -24,7 +20,8 @@ pub fn parse_bitrate(s: &str) -> Result<u64> {
     let s = s.trim();
 
     if let Some(captures) = BITRATE_REGEX.captures(s) {
-        let number: f64 = captures[1].parse()
+        let number: f64 = captures[1]
+            .parse()
             .map_err(|_| Error::ParseError(format!("Invalid bitrate number: {}", &captures[1])))?;
 
         // Store the lowercase string in a variable to extend its lifetime.
@@ -36,7 +33,12 @@ pub fn parse_bitrate(s: &str) -> Result<u64> {
             Some("m") => 1_000_000.0,
             Some("g") => 1_000_000_000.0,
             None => 1.0,
-            _ => return Err(Error::ParseError(format!("Invalid bitrate suffix in: {}", s))),
+            _ => {
+                return Err(Error::ParseError(format!(
+                    "Invalid bitrate suffix in: {}",
+                    s
+                )));
+            }
         };
 
         Ok((number * multiplier) as u64)
@@ -50,13 +52,18 @@ pub fn parse_bitrate(s: &str) -> Result<u64> {
 /// Parse a resolution string (e.g., "1920x1080")
 pub fn parse_resolution(s: &str) -> Result<(u32, u32)> {
     if let Some(captures) = RESOLUTION_REGEX.captures(s.trim()) {
-        let width: u32 = captures[1].parse()
+        let width: u32 = captures[1]
+            .parse()
             .map_err(|_| Error::ParseError(format!("Invalid width: {}", &captures[1])))?;
-        let height: u32 = captures[2].parse()
+        let height: u32 = captures[2]
+            .parse()
             .map_err(|_| Error::ParseError(format!("Invalid height: {}", &captures[2])))?;
         Ok((width, height))
     } else {
-        Err(Error::ParseError(format!("Invalid resolution format: {}", s)))
+        Err(Error::ParseError(format!(
+            "Invalid resolution format: {}",
+            s
+        )))
     }
 }
 
@@ -131,13 +138,17 @@ pub fn parse_framerate(s: &str) -> Result<f64> {
 
     // Handle fraction format (e.g., "30000/1001")
     if let Some((num, den)) = s.split_once('/') {
-        let numerator: f64 = num.parse()
+        let numerator: f64 = num
+            .parse()
             .map_err(|_| Error::ParseError(format!("Invalid framerate numerator: {}", num)))?;
-        let denominator: f64 = den.parse()
+        let denominator: f64 = den
+            .parse()
             .map_err(|_| Error::ParseError(format!("Invalid framerate denominator: {}", den)))?;
 
         if denominator == 0.0 {
-            return Err(Error::ParseError("Framerate denominator cannot be zero".to_string()));
+            return Err(Error::ParseError(
+                "Framerate denominator cannot be zero".to_string(),
+            ));
         }
 
         Ok(numerator / denominator)
@@ -216,17 +227,17 @@ pub fn sanitize_filename(name: &str) -> String {
 
 /// Check if a string looks like a URL
 pub fn is_url(s: &str) -> bool {
-    s.starts_with("http://") ||
-        s.starts_with("https://") ||
-        s.starts_with("rtmp://") ||
-        s.starts_with("rtmps://") ||
-        s.starts_with("rtsp://") ||
-        s.starts_with("rtsps://") ||
-        s.starts_with("file://") ||
-        s.starts_with("udp://") ||
-        s.starts_with("tcp://") ||
-        s.starts_with("pipe:") ||
-        s.contains("://")
+    s.starts_with("http://")
+        || s.starts_with("https://")
+        || s.starts_with("rtmp://")
+        || s.starts_with("rtmps://")
+        || s.starts_with("rtsp://")
+        || s.starts_with("rtsps://")
+        || s.starts_with("file://")
+        || s.starts_with("udp://")
+        || s.starts_with("tcp://")
+        || s.starts_with("pipe:")
+        || s.contains("://")
 }
 
 /// Merge two sets of arguments, with later args overriding earlier ones
@@ -236,10 +247,36 @@ pub fn merge_args(base: Vec<String>, overrides: Vec<String>) -> Vec<String> {
 
     // Track which flags take values
     let value_flags: std::collections::HashSet<&str> = [
-        "-i", "-f", "-c", "-codec", "-vf", "-af", "-s", "-r", "-b", "-aspect",
-        "-t", "-ss", "-to", "-fs", "-preset", "-crf", "-qp", "-profile", "-level",
-        "-pix_fmt", "-ar", "-ac", "-ab", "-map", "-metadata", "-filter_complex",
-    ].iter().cloned().collect();
+        "-i",
+        "-f",
+        "-c",
+        "-codec",
+        "-vf",
+        "-af",
+        "-s",
+        "-r",
+        "-b",
+        "-aspect",
+        "-t",
+        "-ss",
+        "-to",
+        "-fs",
+        "-preset",
+        "-crf",
+        "-qp",
+        "-profile",
+        "-level",
+        "-pix_fmt",
+        "-ar",
+        "-ac",
+        "-ab",
+        "-map",
+        "-metadata",
+        "-filter_complex",
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
     // Process overrides
     let mut i = 0;
@@ -298,15 +335,24 @@ mod tests {
     #[test]
     fn test_escape_filter_string() {
         assert_eq!(escape_filter_string("text"), "text");
-        assert_eq!(escape_filter_string("text:with:colons"), "text\\:with\\:colons");
-        assert_eq!(escape_filter_string("text[with]brackets"), "text\\[with\\]brackets");
+        assert_eq!(
+            escape_filter_string("text:with:colons"),
+            "text\\:with\\:colons"
+        );
+        assert_eq!(
+            escape_filter_string("text[with]brackets"),
+            "text\\[with\\]brackets"
+        );
         assert_eq!(escape_filter_string("text='value'"), "text\\=\\'value\\'");
     }
 
     #[test]
     fn test_sanitize_filename() {
         assert_eq!(sanitize_filename("normal_file.mp4"), "normal_file.mp4");
-        assert_eq!(sanitize_filename("file:with*invalid?chars.mp4"), "file_with_invalid_chars.mp4");
+        assert_eq!(
+            sanitize_filename("file:with*invalid?chars.mp4"),
+            "file_with_invalid_chars.mp4"
+        );
         assert_eq!(sanitize_filename("path/to/file.mp4"), "path_to_file.mp4");
     }
 
@@ -321,9 +367,21 @@ mod tests {
 
     #[test]
     fn test_guess_format() {
-        assert_eq!(guess_format_from_extension(Path::new("video.mp4")), Some("mp4"));
-        assert_eq!(guess_format_from_extension(Path::new("audio.mp3")), Some("mp3"));
-        assert_eq!(guess_format_from_extension(Path::new("video.mkv")), Some("matroska"));
-        assert_eq!(guess_format_from_extension(Path::new("image.jpg")), Some("image2"));
+        assert_eq!(
+            guess_format_from_extension(Path::new("video.mp4")),
+            Some("mp4")
+        );
+        assert_eq!(
+            guess_format_from_extension(Path::new("audio.mp3")),
+            Some("mp3")
+        );
+        assert_eq!(
+            guess_format_from_extension(Path::new("video.mkv")),
+            Some("matroska")
+        );
+        assert_eq!(
+            guess_format_from_extension(Path::new("image.jpg")),
+            Some("image2")
+        );
     }
 }

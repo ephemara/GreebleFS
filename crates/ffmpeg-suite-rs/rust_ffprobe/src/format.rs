@@ -178,11 +178,18 @@ impl WriterOptions {
 
         // Common options
         if let Some(ref validation) = self.string_validation {
-            args.push(format!("{}:string_validation={}", prefix, validation.as_str()));
+            args.push(format!(
+                "{}:string_validation={}",
+                prefix,
+                validation.as_str()
+            ));
         }
 
         if let Some(ref replacement) = self.string_validation_replacement {
-            args.push(format!("{}:string_validation_replacement={}", prefix, replacement));
+            args.push(format!(
+                "{}:string_validation_replacement={}",
+                prefix, replacement
+            ));
         }
 
         // Format-specific options
@@ -333,18 +340,13 @@ pub mod presets {
     pub fn flat_shell() -> (OutputFormat, WriterOptions) {
         (
             OutputFormat::Flat,
-            WriterOptions::new()
-                .sep_char('_')
-                .hierarchical(true),
+            WriterOptions::new().sep_char('_').hierarchical(true),
         )
     }
 
     /// INI format for configuration
     pub fn ini_config() -> (OutputFormat, WriterOptions) {
-        (
-            OutputFormat::Ini,
-            WriterOptions::new().hierarchical(true),
-        )
+        (OutputFormat::Ini, WriterOptions::new().hierarchical(true))
     }
 
     /// Compact format for logging
@@ -380,7 +382,10 @@ mod tests {
 
         let args = opts.build_args(OutputFormat::Json);
         assert!(args.iter().any(|arg| arg.contains("compact=1")));
-        assert!(args.iter().any(|arg| arg.contains("string_validation=replace")));
+        assert!(
+            args.iter()
+                .any(|arg| arg.contains("string_validation=replace"))
+        );
     }
 
     #[test]

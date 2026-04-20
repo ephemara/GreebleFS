@@ -16,6 +16,8 @@ import {
   type ExplorerShaderPreviewFormat,
   type ExplorerShaderPreviewStage,
 } from "../runtime/shaderPreviewBackend";
+import { buildExplorerMonacoPreviewOptions } from "../config/explorerMonaco";
+import type { EditorSettings } from "../store/settingsStore";
 
 type ExplorerDocumentViewMode = "preview" | "edit";
 type ShaderWorkbenchScene = "sphere" | "fullscreen";
@@ -37,6 +39,7 @@ type ExplorerShaderWorkbenchProps = {
   isSaving: boolean;
   error: string | null;
   viewMode: ExplorerDocumentViewMode;
+  editorSettings: EditorSettings;
   onSourceChange: (path: string, value: string) => void;
   onSelectionChange: (
     path: string,
@@ -1030,6 +1033,7 @@ export function ExplorerShaderWorkbench({
   isSaving,
   error,
   viewMode,
+  editorSettings,
   onSourceChange,
   onSelectionChange,
   onCompileResult,
@@ -1178,25 +1182,20 @@ export function ExplorerShaderWorkbench({
       {viewMode === "edit" ? (
         editableSource != null ? (
           <Editor
+            path={path}
             height="100%"
             theme="vs-dark"
             language={format === "wgsl" ? "wgsl" : format === "hlsl" ? "hlsl" : "plaintext"}
             value={editableSource}
             onChange={(value) => onSourceChange(path, value ?? "")}
-            options={{
+            saveViewState
+            options={buildExplorerMonacoPreviewOptions({
+              editorSettings,
+              lineCount: editableSource.split(/\r?\n/).length,
               readOnly: false,
-              minimap: { enabled: false },
-              scrollBeyondLastLine: false,
-              fontSize: 12,
-              lineNumbers: "on",
-              wordWrap: "on",
-              padding: { top: 10 },
-              overviewRulerLanes: 0,
-              lineDecorationsWidth: 0,
-              lineNumbersMinChars: 3,
-              folding: true,
-              glyphMargin: false,
-            }}
+              allowFolding: true,
+              topPadding: 10,
+            })}
           />
         ) : (
           <pre style={readonlyCodeShellStyle}>{inspectionSource}</pre>

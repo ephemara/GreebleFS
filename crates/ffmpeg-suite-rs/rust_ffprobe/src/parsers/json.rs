@@ -195,8 +195,14 @@ mod tests {
 
         // Test chapters
         assert_eq!(result.chapters.len(), 2);
-        assert_eq!(result.chapters[0].tags.get("title"), Some(&"Chapter 1".to_string()));
-        assert_eq!(result.chapters[1].tags.get("title"), Some(&"Chapter 2".to_string()));
+        assert_eq!(
+            result.chapters[0].tags.get("title"),
+            Some(&"Chapter 1".to_string())
+        );
+        assert_eq!(
+            result.chapters[1].tags.get("title"),
+            Some(&"Chapter 2".to_string())
+        );
     }
 
     #[test]

@@ -14,7 +14,7 @@ async fn main() -> Result<()> {
             Output::new("output.mp4")
                 .video_codec_opts(presets::h264::youtube_1080p())
                 .audio_codec(Codec::aac())
-                .metadata("title", "My Video")
+                .metadata("title", "My Video"),
         )
         .video_filter(VideoFilter::scale(1920, 1080))
         .on_progress(|p| println!("Progress: {p:?}"))

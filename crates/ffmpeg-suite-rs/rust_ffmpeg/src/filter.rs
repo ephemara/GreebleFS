@@ -1,4 +1,4 @@
-use ffmpeg_common::{utils, Result};
+use ffmpeg_common::{Result, utils};
 use std::fmt;
 
 /// Video filter
@@ -25,16 +25,12 @@ impl VideoFilter {
 
     /// Scale filter
     pub fn scale(width: i32, height: i32) -> Self {
-        Self::new("scale")
-            .param("w", width)
-            .param("h", height)
+        Self::new("scale").param("w", width).param("h", height)
     }
 
     /// Scale with aspect ratio preservation
     pub fn scale_aspect(width: i32) -> Self {
-        Self::new("scale")
-            .param("w", width)
-            .param("h", -1)
+        Self::new("scale").param("w", width).param("h", -1)
     }
 
     /// Crop filter
@@ -109,8 +105,7 @@ impl VideoFilter {
 
     /// Draw text
     pub fn drawtext(text: impl Into<String>) -> Self {
-        Self::new("drawtext")
-            .param("text", utils::escape_filter_string(&text.into()))
+        Self::new("drawtext").param("text", utils::escape_filter_string(&text.into()))
     }
 
     /// Fade in
@@ -146,7 +141,8 @@ impl VideoFilter {
     /// Add brightness adjustment to EQ filter
     pub fn brightness(mut self, value: f64) -> Self {
         if self.name == "eq" {
-            self.params.push(("brightness".to_string(), value.to_string()));
+            self.params
+                .push(("brightness".to_string(), value.to_string()));
         }
         self
     }
@@ -154,7 +150,8 @@ impl VideoFilter {
     /// Add contrast adjustment to EQ filter
     pub fn contrast(mut self, value: f64) -> Self {
         if self.name == "eq" {
-            self.params.push(("contrast".to_string(), value.to_string()));
+            self.params
+                .push(("contrast".to_string(), value.to_string()));
         }
         self
     }
@@ -162,7 +159,8 @@ impl VideoFilter {
     /// Add saturation adjustment to EQ filter
     pub fn saturation(mut self, value: f64) -> Self {
         if self.name == "eq" {
-            self.params.push(("saturation".to_string(), value.to_string()));
+            self.params
+                .push(("saturation".to_string(), value.to_string()));
         }
         self
     }
@@ -178,7 +176,8 @@ impl fmt::Display for VideoFilter {
         write!(f, "{}", self.name)?;
         if !self.params.is_empty() {
             write!(f, "=")?;
-            let params: Vec<String> = self.params
+            let params: Vec<String> = self
+                .params
                 .iter()
                 .map(|(k, v)| format!("{}={}", k, v))
                 .collect();
@@ -319,7 +318,8 @@ impl fmt::Display for AudioFilter {
         write!(f, "{}", self.name)?;
         if !self.params.is_empty() {
             write!(f, "=")?;
-            let params: Vec<String> = self.params
+            let params: Vec<String> = self
+                .params
                 .iter()
                 .map(|(k, v)| format!("{}={}", k, v))
                 .collect();
@@ -457,8 +457,7 @@ pub mod chains {
                 .contrast(1.2)
                 .brightness(-0.05)
                 .saturation(0.8),
-            VideoFilter::new("curves")
-                .param("preset", "vintage"),
+            VideoFilter::new("curves").param("preset", "vintage"),
             VideoFilter::new("vignette"),
         ]
     }
@@ -484,8 +483,7 @@ pub mod chains {
             AudioFilter::anequalizer(100, 100.0, 2.0),
             AudioFilter::anequalizer(1000, 500.0, -1.0),
             AudioFilter::anequalizer(10000, 2000.0, 1.0),
-            AudioFilter::alimiter()
-                .param("limit", -0.5),
+            AudioFilter::alimiter().param("limit", -0.5),
             AudioFilter::loudnorm(),
         ]
     }
@@ -534,8 +532,16 @@ mod tests {
     #[test]
     fn test_filter_graph() {
         let graph = FilterGraph::new()
-            .add_filter("scale=640:480", vec!["[0:v]".to_string()], vec!["[scaled]".to_string()])
-            .add_filter("overlay", vec!["[scaled]".to_string(), "[1:v]".to_string()], vec!["[out]".to_string()]);
+            .add_filter(
+                "scale=640:480",
+                vec!["[0:v]".to_string()],
+                vec!["[scaled]".to_string()],
+            )
+            .add_filter(
+                "overlay",
+                vec!["[scaled]".to_string(), "[1:v]".to_string()],
+                vec!["[out]".to_string()],
+            );
 
         let result = graph.build();
         assert!(result.contains("[0:v]scale=640:480[scaled]"));

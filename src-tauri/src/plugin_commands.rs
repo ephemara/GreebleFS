@@ -1,3 +1,4 @@
+use crate::telemetry::{finish_native_span, start_native_span};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
@@ -6,7 +7,6 @@ use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, State};
-use crate::telemetry::{finish_native_span, start_native_span};
 
 pub const PLUGIN_WATCH_EVENT: &str = "overlay://plugins-changed";
 
@@ -324,15 +324,13 @@ fn normalize_ignored_directory_names(ignored_directories: Vec<String>) -> Vec<St
 }
 
 fn path_contains_ignored_directory(path: &Path, ignored_directories: &[String]) -> bool {
-    path.to_string_lossy()
-        .split(['/', '\\'])
-        .any(|segment| {
-            let segment = segment.trim().to_ascii_lowercase();
-            !segment.is_empty()
-                && ignored_directories
-                    .iter()
-                    .any(|ignored| ignored == &segment)
-        })
+    path.to_string_lossy().split(['/', '\\']).any(|segment| {
+        let segment = segment.trim().to_ascii_lowercase();
+        !segment.is_empty()
+            && ignored_directories
+                .iter()
+                .any(|ignored| ignored == &segment)
+    })
 }
 
 #[cfg(target_os = "windows")]

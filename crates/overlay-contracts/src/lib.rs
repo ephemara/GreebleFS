@@ -543,13 +543,19 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
                     id: "operator-stack".to_string(),
                     name: "Operator Stack".to_string(),
                     kind: ThemeLayoutPrimitiveKind::Stack,
-                    props: BTreeMap::from([("gap".to_string(), ThemeValue::Number(serde_json::Number::from(8)))]),
+                    props: BTreeMap::from([(
+                        "gap".to_string(),
+                        ThemeValue::Number(serde_json::Number::from(8)),
+                    )]),
                 },
                 ThemeLayoutPrimitive {
                     id: "operator-dock".to_string(),
                     name: "Operator Dock".to_string(),
                     kind: ThemeLayoutPrimitiveKind::Dock,
-                    props: BTreeMap::from([("side".to_string(), ThemeValue::String("right".to_string()))]),
+                    props: BTreeMap::from([(
+                        "side".to_string(),
+                        ThemeValue::String("right".to_string()),
+                    )]),
                 },
             ],
             navigation_patterns: vec![ThemeNavigationPattern {
@@ -558,8 +564,14 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
                 kind: ThemeNavigationPatternKind::Tabbed,
                 axis: ThemeNavigationAxis::Horizontal,
                 props: BTreeMap::from([
-                    ("defaultSurface".to_string(), ThemeValue::String("terminal".to_string())),
-                    ("focusRing".to_string(), ThemeValue::String("chrome".to_string())),
+                    (
+                        "defaultSurface".to_string(),
+                        ThemeValue::String("terminal".to_string()),
+                    ),
+                    (
+                        "focusRing".to_string(),
+                        ThemeValue::String("chrome".to_string()),
+                    ),
                 ]),
             }],
             animation_profiles: vec![ThemeAnimationProfile {
@@ -602,7 +614,11 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
             },
             compatibility: ThemeCompatibility {
                 shell_blueprints: vec![ShellBlueprintId::ClassicDock],
-                tags: vec!["light".to_string(), "aqua".to_string(), "chrome".to_string()],
+                tags: vec![
+                    "light".to_string(),
+                    "aqua".to_string(),
+                    "chrome".to_string(),
+                ],
             },
             design_tokens: vec![
                 ThemeDesignToken {
@@ -622,17 +638,17 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
                 id: "aqua-shell".to_string(),
                 name: "Aqua Shell".to_string(),
                 kind: ThemeLayoutPrimitiveKind::Split,
-                    props: BTreeMap::from([(
-                        "primaryRatio".to_string(),
-                        ThemeValue::Number(serde_json::Number::from_f64(0.62).expect("valid ratio")),
-                    )]),
+                props: BTreeMap::from([(
+                    "primaryRatio".to_string(),
+                    ThemeValue::Number(serde_json::Number::from_f64(0.62).expect("valid ratio")),
+                )]),
             }],
             navigation_patterns: vec![ThemeNavigationPattern {
                 id: "aqua-cascade".to_string(),
                 name: "Aqua Cascade".to_string(),
                 kind: ThemeNavigationPatternKind::Spatial,
                 axis: ThemeNavigationAxis::Both,
-                    props: BTreeMap::from([("breadcrumb".to_string(), ThemeValue::Boolean(true))]),
+                props: BTreeMap::from([("breadcrumb".to_string(), ThemeValue::Boolean(true))]),
             }],
             animation_profiles: vec![ThemeAnimationProfile {
                 id: "aqua-sheen".to_string(),
@@ -674,7 +690,11 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
             },
             compatibility: ThemeCompatibility {
                 shell_blueprints: vec![ShellBlueprintId::ClassicDock],
-                tags: vec!["neon".to_string(), "plasma".to_string(), "cyber".to_string()],
+                tags: vec![
+                    "neon".to_string(),
+                    "plasma".to_string(),
+                    "cyber".to_string(),
+                ],
             },
             design_tokens: vec![
                 ThemeDesignToken {
@@ -694,14 +714,20 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
                 id: "plasma-grid".to_string(),
                 name: "Plasma Grid".to_string(),
                 kind: ThemeLayoutPrimitiveKind::Grid,
-                    props: BTreeMap::from([("cellSize".to_string(), ThemeValue::Number(serde_json::Number::from(140)))]),
+                props: BTreeMap::from([(
+                    "cellSize".to_string(),
+                    ThemeValue::Number(serde_json::Number::from(140)),
+                )]),
             }],
             navigation_patterns: vec![ThemeNavigationPattern {
                 id: "plasma-trail".to_string(),
                 name: "Plasma Trail".to_string(),
                 kind: ThemeNavigationPatternKind::Xmb,
                 axis: ThemeNavigationAxis::Horizontal,
-                    props: BTreeMap::from([("categoryDepth".to_string(), ThemeValue::Number(serde_json::Number::from(2)))]),
+                props: BTreeMap::from([(
+                    "categoryDepth".to_string(),
+                    ThemeValue::Number(serde_json::Number::from(2)),
+                )]),
             }],
             animation_profiles: vec![ThemeAnimationProfile {
                 id: "plasma-surge".to_string(),
@@ -743,7 +769,11 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
             },
             compatibility: ThemeCompatibility {
                 shell_blueprints: vec![ShellBlueprintId::RetroDesktop],
-                tags: vec!["vintage".to_string(), "macintosh".to_string(), "crt".to_string()],
+                tags: vec![
+                    "vintage".to_string(),
+                    "macintosh".to_string(),
+                    "crt".to_string(),
+                ],
             },
             design_tokens: vec![
                 ThemeDesignToken {
@@ -763,14 +793,14 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
                 id: "vintage-window".to_string(),
                 name: "Vintage Window".to_string(),
                 kind: ThemeLayoutPrimitiveKind::Freeform,
-                    props: BTreeMap::from([("bezel".to_string(), ThemeValue::Boolean(true))]),
+                props: BTreeMap::from([("bezel".to_string(), ThemeValue::Boolean(true))]),
             }],
             navigation_patterns: vec![ThemeNavigationPattern {
                 id: "vintage-desktop".to_string(),
                 name: "Vintage Desktop".to_string(),
                 kind: ThemeNavigationPatternKind::Hierarchy,
                 axis: ThemeNavigationAxis::Vertical,
-                    props: BTreeMap::from([("menuBar".to_string(), ThemeValue::Boolean(true))]),
+                props: BTreeMap::from([("menuBar".to_string(), ThemeValue::Boolean(true))]),
             }],
             animation_profiles: vec![ThemeAnimationProfile {
                 id: "vintage-power-on".to_string(),
@@ -832,14 +862,17 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
                 id: "vista-glass-shell".to_string(),
                 name: "Vista Glass Shell".to_string(),
                 kind: ThemeLayoutPrimitiveKind::Dock,
-                    props: BTreeMap::from([("chrome".to_string(), ThemeValue::String("frosted".to_string()))]),
+                props: BTreeMap::from([(
+                    "chrome".to_string(),
+                    ThemeValue::String("frosted".to_string()),
+                )]),
             }],
             navigation_patterns: vec![ThemeNavigationPattern {
                 id: "vista-breadcrumbs".to_string(),
                 name: "Vista Breadcrumbs".to_string(),
                 kind: ThemeNavigationPatternKind::Palette,
                 axis: ThemeNavigationAxis::Horizontal,
-                    props: BTreeMap::from([("searchFirst".to_string(), ThemeValue::Boolean(true))]),
+                props: BTreeMap::from([("searchFirst".to_string(), ThemeValue::Boolean(true))]),
             }],
             animation_profiles: vec![ThemeAnimationProfile {
                 id: "vista-bloom".to_string(),
@@ -859,7 +892,9 @@ pub fn built_in_theme_manifests() -> Vec<ThemeManifest> {
                 kind: ThemeRenderStyleKind::VsCodeWorkbench,
                 entry_module: "renderers/vista-glass.tsx".to_string(),
                 supports_live_swap: true,
-                description: Some("Glossy Aero-inspired render style for glass shells.".to_string()),
+                description: Some(
+                    "Glossy Aero-inspired render style for glass shells.".to_string(),
+                ),
             }],
             default_layout_primitive_id: Some("vista-glass-shell".to_string()),
             default_navigation_pattern_id: Some("vista-breadcrumbs".to_string()),
@@ -912,7 +947,10 @@ mod tests {
     #[test]
     fn exposes_all_shipped_theme_manifests() {
         let manifests = built_in_theme_manifests();
-        let ids = manifests.iter().map(|manifest| manifest.id.as_str()).collect::<Vec<_>>();
+        let ids = manifests
+            .iter()
+            .map(|manifest| manifest.id.as_str())
+            .collect::<Vec<_>>();
 
         assert_eq!(
             ids,
@@ -925,14 +963,38 @@ mod tests {
             ]
         );
 
-        let vista = manifests.iter().find(|manifest| manifest.id == "vista-glass").unwrap();
-        let operator = manifests.iter().find(|manifest| manifest.id == "operator").unwrap();
-        assert_eq!(operator.default_layout_primitive_id.as_deref(), Some("operator-stack"));
-        assert_eq!(operator.default_navigation_pattern_id.as_deref(), Some("operator-tabs"));
-        assert_eq!(operator.default_animation_profile_id.as_deref(), Some("default-motion"));
-        assert_eq!(operator.default_icon_pack_id.as_deref(), Some("system-icons"));
-        assert_eq!(vista.default_render_style_id.as_deref(), Some("vista-render"));
-        assert_eq!(vista.render_styles[0].kind, ThemeRenderStyleKind::VsCodeWorkbench);
+        let vista = manifests
+            .iter()
+            .find(|manifest| manifest.id == "vista-glass")
+            .unwrap();
+        let operator = manifests
+            .iter()
+            .find(|manifest| manifest.id == "operator")
+            .unwrap();
+        assert_eq!(
+            operator.default_layout_primitive_id.as_deref(),
+            Some("operator-stack")
+        );
+        assert_eq!(
+            operator.default_navigation_pattern_id.as_deref(),
+            Some("operator-tabs")
+        );
+        assert_eq!(
+            operator.default_animation_profile_id.as_deref(),
+            Some("default-motion")
+        );
+        assert_eq!(
+            operator.default_icon_pack_id.as_deref(),
+            Some("system-icons")
+        );
+        assert_eq!(
+            vista.default_render_style_id.as_deref(),
+            Some("vista-render")
+        );
+        assert_eq!(
+            vista.render_styles[0].kind,
+            ThemeRenderStyleKind::VsCodeWorkbench
+        );
     }
 
     #[test]

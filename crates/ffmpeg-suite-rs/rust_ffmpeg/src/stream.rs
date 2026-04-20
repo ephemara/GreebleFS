@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use ffmpeg_common::{StreamSpecifier, StreamType};
+use std::collections::HashMap;
 use std::fmt;
 
 /// Stream mapping configuration
@@ -311,10 +311,7 @@ pub mod patterns {
 
     /// Map best quality video and audio
     pub fn best_quality() -> Vec<StreamMap> {
-        vec![
-            StreamMap::video_from(0),
-            StreamMap::audio_from(0),
-        ]
+        vec![StreamMap::video_from(0), StreamMap::audio_from(0)]
     }
 
     /// Map all video, select specific audio language
@@ -333,10 +330,7 @@ pub mod patterns {
 
     /// Map multiple audio tracks
     pub fn multi_audio() -> Vec<StreamMap> {
-        vec![
-            StreamMap::video_from(0),
-            StreamMap::audio_from(0),
-        ]
+        vec![StreamMap::video_from(0), StreamMap::audio_from(0)]
     }
 
     /// Map for subtitles extraction
@@ -346,10 +340,7 @@ pub mod patterns {
 
     /// Map everything except subtitles
     pub fn no_subtitles() -> Vec<StreamMap> {
-        vec![
-            StreamMap::video_from(0),
-            StreamMap::audio_from(0),
-        ]
+        vec![StreamMap::video_from(0), StreamMap::audio_from(0)]
     }
 
     /// Map specific streams by index
@@ -398,7 +389,8 @@ impl StreamMetadata {
 
     /// Set handler name
     pub fn handler(mut self, name: impl Into<String>) -> Self {
-        self.metadata.insert("handler_name".to_string(), name.into());
+        self.metadata
+            .insert("handler_name".to_string(), name.into());
         self
     }
 
@@ -441,9 +433,7 @@ mod tests {
 
     #[test]
     fn test_stream_disposition() {
-        let disp = StreamDisposition::new()
-            .set_default()
-            .set_forced();
+        let disp = StreamDisposition::new().set_default().set_forced();
 
         let s = disp.to_string();
         assert!(s.contains("default"));

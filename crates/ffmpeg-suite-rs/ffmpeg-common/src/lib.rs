@@ -54,32 +54,26 @@ impl Version {
         let version_line = lines[0];
         let version_string = if let Some(start) = version_line.find("version ") {
             let version_part = &version_line[start + 8..];
-            version_part.split_whitespace().next().unwrap_or("").to_string()
+            version_part
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_string()
         } else {
             return Err(Error::ParseError("Version line not found".to_string()));
         };
 
         // Extract major.minor.patch
         let parts: Vec<&str> = version_string.split(&['.', '-'][..]).collect();
-        let major = parts.get(0)
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(0);
-        let minor = parts.get(1)
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(0);
-        let patch = parts.get(2)
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(0);
+        let major = parts.get(0).and_then(|s| s.parse().ok()).unwrap_or(0);
+        let minor = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+        let patch = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
 
         // Parse configuration
-        let configuration = lines.iter()
+        let configuration = lines
+            .iter()
             .find(|line| line.starts_with("configuration:"))
-            .map(|line| {
-                line[14..]
-                    .split_whitespace()
-                    .map(String::from)
-                    .collect()
-            })
+            .map(|line| line[14..].split_whitespace().map(String::from).collect())
             .unwrap_or_default();
 
         Ok(Self {
@@ -122,7 +116,8 @@ pub async fn get_version(executable: &str) -> Result<Version> {
         .await?
         .into_result()?;
 
-    let version_output = output.stdout_str()
+    let version_output = output
+        .stdout_str()
         .ok_or_else(|| Error::ParseError("No version output".to_string()))?;
 
     Version::parse(&version_output)

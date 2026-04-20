@@ -17,11 +17,10 @@ where
 
     let opt = Option::<StringOrNumber>::deserialize(deserializer)?;
     match opt {
-        Some(StringOrNumber::String(s)) => {
-            s.parse::<u32>()
-                .map(Some)
-                .map_err(|_| serde::de::Error::custom(format!("Failed to parse string '{s}' as u32")))
-        }
+        Some(StringOrNumber::String(s)) => s
+            .parse::<u32>()
+            .map(Some)
+            .map_err(|_| serde::de::Error::custom(format!("Failed to parse string '{s}' as u32"))),
         Some(StringOrNumber::Number(n)) => Ok(Some(n)),
         None => Ok(None),
     }
@@ -109,7 +108,9 @@ impl ReadInterval {
         if let Some(ref start) = self.start {
             match start {
                 IntervalPosition::Absolute(d) => result.push_str(&d.to_ffmpeg_format()),
-                IntervalPosition::Relative(d) => result.push_str(&format!("+{}", d.to_ffmpeg_format())),
+                IntervalPosition::Relative(d) => {
+                    result.push_str(&format!("+{}", d.to_ffmpeg_format()))
+                }
                 IntervalPosition::Packets(n) => result.push_str(&format!("#{}", n)),
             }
         }
@@ -119,7 +120,9 @@ impl ReadInterval {
         if let Some(ref end) = self.end {
             match end {
                 IntervalPosition::Absolute(d) => result.push_str(&d.to_ffmpeg_format()),
-                IntervalPosition::Relative(d) => result.push_str(&format!("+{}", d.to_ffmpeg_format())),
+                IntervalPosition::Relative(d) => {
+                    result.push_str(&format!("+{}", d.to_ffmpeg_format()))
+                }
                 IntervalPosition::Packets(n) => result.push_str(&format!("#{}", n)),
             }
         }
@@ -431,7 +434,11 @@ pub struct StreamInfo {
     pub max_bit_rate: Option<String>,
 
     /// Bits per raw sample
-    #[serde(skip_serializing_if = "Option::is_none", default, deserialize_with = "deserialize_string_or_number")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        default,
+        deserialize_with = "deserialize_string_or_number"
+    )]
     pub bits_per_raw_sample: Option<u32>,
 
     /// Number of frames
@@ -786,11 +793,7 @@ fn parse_rational(s: &str) -> Option<f64> {
     if parts.len() == 2 {
         let num: f64 = parts[0].parse().ok()?;
         let den: f64 = parts[1].parse().ok()?;
-        if den != 0.0 {
-            Some(num / den)
-        } else {
-            None
-        }
+        if den != 0.0 { Some(num / den) } else { None }
     } else {
         s.parse().ok()
     }
@@ -837,7 +840,9 @@ mod tests {
         assert_eq!(stream.frame_rate(), Some(30.0));
         assert_eq!(stream.bit_rate_bps(), Some(5000000));
 
-        stream.tags.insert("language".to_string(), "eng".to_string());
+        stream
+            .tags
+            .insert("language".to_string(), "eng".to_string());
         assert_eq!(stream.language(), Some("eng"));
     }
 
@@ -849,15 +854,15 @@ mod tests {
         assert_eq!(parse_rational("0/1"), Some(0.0));
         assert_eq!(parse_rational("1/0"), None);
     }
-	
-	#[test]
+
+    #[test]
     fn test_deserialize_bits_per_raw_sample_as_string() {
         let json = r#"{
             "index": 0,
             "codec_type": "video",
             "bits_per_raw_sample": "8"
         }"#;
-        
+
         let stream: StreamInfo = serde_json::from_str(json).expect("Failed to deserialize");
         assert_eq!(stream.bits_per_raw_sample, Some(8));
     }
@@ -869,7 +874,7 @@ mod tests {
             "codec_type": "video",
             "bits_per_raw_sample": 10
         }"#;
-        
+
         let stream: StreamInfo = serde_json::from_str(json).expect("Failed to deserialize");
         assert_eq!(stream.bits_per_raw_sample, Some(10));
     }

@@ -136,33 +136,28 @@ fn inspect_shader_preview_document(path: &str) -> Result<ExplorerShaderPreviewDo
     let payload = match format {
         ExplorerShaderFormat::Wgsl => {
             let source = fs::read_to_string(&input_path).map_err(|error| {
-                format!("Failed to read WGSL source '{}': {error}", input_path.display())
+                format!(
+                    "Failed to read WGSL source '{}': {error}",
+                    input_path.display()
+                )
             })?;
-            inspect_text_shader_source(
-                &input_path,
-                format,
-                &source,
-                None,
-                None,
-                true,
-            )
+            inspect_text_shader_source(&input_path, format, &source, None, None, true)
         }
         ExplorerShaderFormat::Hlsl => {
             let source = fs::read_to_string(&input_path).map_err(|error| {
-                format!("Failed to read HLSL source '{}': {error}", input_path.display())
+                format!(
+                    "Failed to read HLSL source '{}': {error}",
+                    input_path.display()
+                )
             })?;
-            inspect_text_shader_source(
-                &input_path,
-                format,
-                &source,
-                None,
-                None,
-                true,
-            )
+            inspect_text_shader_source(&input_path, format, &source, None, None, true)
         }
         ExplorerShaderFormat::Spv => {
             let bytes = fs::read(&input_path).map_err(|error| {
-                format!("Failed to read SPIR-V source '{}': {error}", input_path.display())
+                format!(
+                    "Failed to read SPIR-V source '{}': {error}",
+                    input_path.display()
+                )
             })?;
             inspect_spirv_shader_source(&input_path, &bytes, None, None)
         }
@@ -220,7 +215,10 @@ fn compile_shader_preview_document(
         }
         ExplorerShaderFormat::Spv => {
             let bytes = fs::read(&input_path).map_err(|error| {
-                format!("Failed to read SPIR-V source '{}': {error}", input_path.display())
+                format!(
+                    "Failed to read SPIR-V source '{}': {error}",
+                    input_path.display()
+                )
             })?;
             inspect_spirv_shader_source(
                 &input_path,
@@ -285,9 +283,8 @@ fn inspect_wgsl_shader_source(
                 requested_stage,
                 requested_entry_point,
             );
-            let normalized = validate_and_write_wgsl(&module).map_err(|error| {
-                format!("WGSL validation failed: {error}")
-            });
+            let normalized = validate_and_write_wgsl(&module)
+                .map_err(|error| format!("WGSL validation failed: {error}"));
 
             match normalized {
                 Ok(normalized_wgsl) => Ok(build_shader_payload(
@@ -369,10 +366,7 @@ fn inspect_hlsl_shader_source(
         ));
     };
 
-    let selected_entry_point = selection
-        .1
-        .clone()
-        .unwrap_or_else(|| "main".to_string());
+    let selected_entry_point = selection.1.clone().unwrap_or_else(|| "main".to_string());
     match compile_hlsl_to_spirv(input_path, source, selected_stage, &selected_entry_point) {
         Ok(words) => {
             let spirv_payload = inspect_spirv_words(
@@ -424,11 +418,8 @@ fn inspect_spirv_shader_source(
     let words = decode_spirv_words(bytes)?;
     let mut payload = inspect_spirv_words(&words, requested_stage, requested_entry_point)?;
     payload.editable_source = None;
-    payload.inspection_source = format_spirv_inspection_source(
-        payload.normalized_wgsl.as_deref(),
-        &words,
-        input_path,
-    );
+    payload.inspection_source =
+        format_spirv_inspection_source(payload.normalized_wgsl.as_deref(), &words, input_path);
     Ok(payload)
 }
 
@@ -499,9 +490,8 @@ fn build_shader_payload(
     diagnostics: Vec<ExplorerShaderDiagnostic>,
     normalized_wgsl: Option<String>,
 ) -> ShaderInspectionPayload {
-    let supports_live_preview = normalized_wgsl.is_some()
-        && selection.0.is_some()
-        && selection.1.is_some();
+    let supports_live_preview =
+        normalized_wgsl.is_some() && selection.0.is_some() && selection.1.is_some();
     ShaderInspectionPayload {
         editable_source,
         inspection_source,
@@ -548,7 +538,12 @@ fn reflect_hlsl_entry_points(source: &str) -> Vec<ExplorerShaderEntryPoint> {
         .captures_iter(source)
         .filter_map(|captures| {
             let name = captures.name("name")?.as_str().to_string();
-            let stage = match captures.name("stage")?.as_str().to_ascii_lowercase().as_str() {
+            let stage = match captures
+                .name("stage")?
+                .as_str()
+                .to_ascii_lowercase()
+                .as_str()
+            {
                 "vertex" => ExplorerShaderStage::Vertex,
                 "pixel" | "fragment" => ExplorerShaderStage::Fragment,
                 "compute" => ExplorerShaderStage::Compute,
@@ -572,7 +567,9 @@ fn resolve_entry_point_selection(
         let normalized_name = entry_point_name.trim();
         if let Some(entry_point) = entry_points.iter().find(|entry| {
             entry.name == normalized_name
-                && requested_stage.map(|stage| stage == entry.stage).unwrap_or(true)
+                && requested_stage
+                    .map(|stage| stage == entry.stage)
+                    .unwrap_or(true)
         }) {
             return (Some(entry_point.stage), Some(entry_point.name.clone()));
         }
@@ -598,10 +595,7 @@ fn resolve_entry_point_selection(
         );
     }
 
-    (
-        requested_stage,
-        requested_entry_point.map(str::to_string),
-    )
+    (requested_stage, requested_entry_point.map(str::to_string))
 }
 
 fn compile_hlsl_to_spirv(
@@ -610,7 +604,8 @@ fn compile_hlsl_to_spirv(
     stage: ExplorerShaderStage,
     entry_point: &str,
 ) -> Result<Vec<u32>, String> {
-    let compiler = Compiler::new().map_err(|error| format!("Failed to initialize shaderc: {error}"))?;
+    let compiler =
+        Compiler::new().map_err(|error| format!("Failed to initialize shaderc: {error}"))?;
     let mut options = CompileOptions::new()
         .map_err(|error| format!("Failed to create shaderc compile options: {error}"))?;
     options.set_source_language(SourceLanguage::HLSL);
@@ -620,14 +615,16 @@ fn compile_hlsl_to_spirv(
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
-    options.set_include_callback(move |requested_source, include_type, requesting_source, _depth| {
-        resolve_shader_include(
-            &include_root,
-            requested_source,
-            include_type,
-            requesting_source,
-        )
-    });
+    options.set_include_callback(
+        move |requested_source, include_type, requesting_source, _depth| {
+            resolve_shader_include(
+                &include_root,
+                requested_source,
+                include_type,
+                requesting_source,
+            )
+        },
+    );
 
     let artifact = compiler
         .compile_into_spirv(
@@ -717,12 +714,17 @@ fn format_spirv_inspection_source(
 ) -> String {
     let mut sections = Vec::new();
     if let Some(wgsl) = normalized_wgsl {
-        sections.push(format!("// Generated WGSL for {}\n\n{}", input_path.display(), wgsl));
+        sections.push(format!(
+            "// Generated WGSL for {}\n\n{}",
+            input_path.display(),
+            wgsl
+        ));
     }
     sections.push(format!(
         "// SPIR-V word dump for {}\n{}",
         input_path.display(),
-        words.iter()
+        words
+            .iter()
             .enumerate()
             .map(|(index, word)| format!("{index:04}: 0x{word:08x}"))
             .collect::<Vec<_>>()
@@ -827,7 +829,9 @@ float4 fragment_main() : SV_Target0 {
         let entry_points = reflect_hlsl_entry_points(SIMPLE_HLSL);
         assert_eq!(entry_points.len(), 2);
         assert!(entry_points.iter().any(|entry| entry.name == "vertex_main"));
-        assert!(entry_points.iter().any(|entry| entry.name == "fragment_main"));
+        assert!(entry_points
+            .iter()
+            .any(|entry| entry.name == "fragment_main"));
     }
 
     #[test]
@@ -873,9 +877,13 @@ float4 fragment_main() : SV_Target0 {
 
     #[test]
     fn supports_live_preview_for_supported_stages() {
-        let payload =
-            inspect_wgsl_shader_source(SIMPLE_WGSL, Some(ExplorerShaderStage::Fragment), Some("fragment_main"), true)
-                .expect("wgsl inspect");
+        let payload = inspect_wgsl_shader_source(
+            SIMPLE_WGSL,
+            Some(ExplorerShaderStage::Fragment),
+            Some("fragment_main"),
+            true,
+        )
+        .expect("wgsl inspect");
         assert!(payload.supports_live_preview);
     }
 
