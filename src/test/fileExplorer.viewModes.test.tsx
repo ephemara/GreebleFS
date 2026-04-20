@@ -2004,6 +2004,9 @@ describe("FileExplorer view modes", () => {
     expect(await screen.findByText("Folder Contents")).toBeInTheDocument();
     expect(await screen.findByText("shots")).toBeInTheDocument();
     expect(await screen.findByText("readme.md")).toBeInTheDocument();
+    expect(getExplorerViewport("readme.md")).toHaveClass(
+      "overlay-scroll-area__viewport--explorer-file-list",
+    );
     expect(
       screen.getByRole("button", { name: /copy path/i }),
     ).toBeInTheDocument();

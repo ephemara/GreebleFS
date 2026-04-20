@@ -188,9 +188,7 @@ fn storage_scan_registry() -> &'static Mutex<HashMap<String, Arc<Mutex<StorageSc
     STORAGE_SCAN_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn prune_completed_storage_scans(
-    registry: &mut HashMap<String, Arc<Mutex<StorageScanProgress>>>,
-) {
+fn prune_completed_storage_scans(registry: &mut HashMap<String, Arc<Mutex<StorageScanProgress>>>) {
     registry.retain(|_, progress| {
         progress
             .lock()
@@ -626,7 +624,8 @@ fn scan_storage_root(
     let mut root_summary: Option<StorageDirectorySummary> = None;
 
     loop {
-        let should_flush = processed_entries_since_flush >= STORAGE_SCAN_PROGRESS_FLUSH_ENTRY_INTERVAL
+        let should_flush = processed_entries_since_flush
+            >= STORAGE_SCAN_PROGRESS_FLUSH_ENTRY_INTERVAL
             || last_flush.elapsed() >= STORAGE_SCAN_PROGRESS_FLUSH_INTERVAL;
         if should_flush {
             let cancelled = flush_storage_scan_progress(
@@ -717,11 +716,7 @@ fn scan_storage_root(
                         file_candidate,
                         STORAGE_SCAN_TOP_FILE_LIMIT,
                     ) {
-                        insert_required_ancestor_paths(
-                            &mut required_directory_paths,
-                            &stack,
-                            None,
-                        );
+                        insert_required_ancestor_paths(&mut required_directory_paths, &stack, None);
                     }
                 }
             }
@@ -730,7 +725,10 @@ fn scan_storage_root(
                 maybe_push_scan_error(
                     &mut sample_errors,
                     &mut error_count,
-                    format!("Failed to read {}: {error}", current_directory.path.display()),
+                    format!(
+                        "Failed to read {}: {error}",
+                        current_directory.path.display()
+                    ),
                 );
             }
             None => {
@@ -952,7 +950,10 @@ mod tests {
         write_test_file(&root.join("root-file.bin"), 32);
         write_test_file(&root.join("Projects").join("alpha.bin"), 96);
         write_test_file(&root.join("Projects").join("nested").join("beta.bin"), 48);
-        write_test_file(&root.join("Windows").join("System32").join("kernel.bin"), 128);
+        write_test_file(
+            &root.join("Windows").join("System32").join("kernel.bin"),
+            128,
+        );
         fs::create_dir_all(root.join("EmptyFolder")).expect("failed to create empty folder");
 
         let progress = create_test_progress(root);

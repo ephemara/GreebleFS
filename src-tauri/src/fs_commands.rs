@@ -2300,12 +2300,10 @@ where
     }
 
     let target_metadata = if file_type == ChaType::Link {
-        Some(provider.metadata().await.map_err(|error| {
-            format!(
-                "Failed to read symlink target metadata '{}': {error}",
-                path.to_string_lossy()
-            )
-        })?)
+        // Broken or unreadable symlink targets should not abort the parent
+        // directory listing. Keep the link visible and fall back to the link
+        // metadata when the target cannot be resolved.
+        provider.metadata().await.ok()
     } else {
         None
     };
@@ -6025,6 +6023,43 @@ mod tests {
             linked.size, 0,
             "directory listings should not hydrate sizes"
         );
+    }
+
+    #[tokio::test]
+    async fn list_dir_keeps_working_when_a_symlink_target_is_missing() {
+        #[cfg(not(any(target_family = "windows", target_family = "unix")))]
+        {
+            return;
+        }
+
+        let dir = tmp_dir();
+        let real_dir = dir.path().join("real");
+        let broken_link = dir.path().join("broken-link");
+        let missing_target = dir.path().join("missing-target");
+        fs::create_dir_all(&real_dir).unwrap();
+        fs::write(real_dir.join("payload.txt"), b"hello").unwrap();
+
+        #[cfg(target_family = "unix")]
+        std::os::unix::fs::symlink(&missing_target, &broken_link).unwrap();
+
+        #[cfg(target_family = "windows")]
+        std::os::windows::fs::symlink_dir(&missing_target, &broken_link).unwrap();
+
+        let entries = test_fs_list_dir(dir.path().to_string_lossy().into(), false)
+            .await
+            .expect("fs_list_dir failed");
+
+        let real = entries
+            .iter()
+            .find(|entry| entry.name == "real")
+            .expect("real directory missing from listing");
+        assert!(real.is_dir, "real directory should remain navigable");
+
+        let broken = entries
+            .iter()
+            .find(|entry| entry.name == "broken-link")
+            .expect("broken symlink missing from listing");
+        assert!(broken.is_symlink, "broken symlink should still be marked");
     }
 
     #[tokio::test]

@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   AlertTriangle,
   ExternalLink,
@@ -26,11 +26,17 @@ import {
   type StorageScanSnapshot,
   type StorageTreeSnapshotNode,
 } from '../runtime/storageBackend';
+import { OverlayScrollArea } from './OverlayScrollArea';
+import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 import { layoutStorageTreemap } from './storage/storageTreemap';
 
 const TREEMAP_WIDTH = 1000;
 const TREEMAP_HEIGHT = 520;
 const POLL_INTERVAL_MS = 450;
+const STORAGE_RAIL_WIDTH_KEY = 'greeblefs-storage-rail-width';
+const STORAGE_RAIL_WIDTH_DEFAULT = 268;
+const STORAGE_RAIL_WIDTH_MIN = 228;
+const STORAGE_RAIL_WIDTH_MAX = 360;
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) {
@@ -142,22 +148,28 @@ function SectionCard({
   subtitle,
   actions,
   children,
+  dense = false,
+  bodyStyle,
 }: {
   title: string;
   subtitle?: string;
   actions?: ReactNode;
   children: ReactNode;
+  dense?: boolean;
+  bodyStyle?: CSSProperties;
 }) {
+  const headerPadding = dense ? '11px 12px 9px' : '16px 18px 14px';
+  const bodyPadding = dense ? 10 : 16;
   return (
     <section
       style={{
         display: 'flex',
         flexDirection: 'column',
         minHeight: 0,
-        borderRadius: 18,
+        borderRadius: dense ? 14 : 18,
         border: '1px solid var(--overlay-border)',
         background: 'color-mix(in srgb, var(--overlay-panel-bg) 95%, rgba(255,255,255,0.03))',
-        boxShadow: '0 28px 72px rgba(0,0,0,0.28)',
+        boxShadow: dense ? '0 12px 26px rgba(0,0,0,0.18)' : '0 28px 72px rgba(0,0,0,0.28)',
         overflow: 'hidden',
       }}
     >
@@ -167,7 +179,7 @@ function SectionCard({
           alignItems: 'flex-start',
           justifyContent: 'space-between',
           gap: 12,
-          padding: '16px 18px 14px',
+          padding: headerPadding,
           borderBottom: '1px solid var(--overlay-border)',
           background: 'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))',
         }}
@@ -192,7 +204,7 @@ function SectionCard({
         </div>
         {actions}
       </div>
-      <div style={{ flex: 1, minHeight: 0, padding: 16 }}>{children}</div>
+      <div style={{ flex: 1, minHeight: 0, padding: bodyPadding, ...bodyStyle }}>{children}</div>
     </section>
   );
 }
@@ -202,11 +214,13 @@ function ActionButton({
   onClick,
   disabled = false,
   tone = 'default',
+  style,
 }: {
   children: ReactNode;
   onClick: () => void;
   disabled?: boolean;
   tone?: 'default' | 'accent' | 'danger';
+  style?: CSSProperties;
 }) {
   const border = tone === 'danger'
     ? 'rgba(255,114,114,0.36)'
@@ -233,18 +247,310 @@ function ActionButton({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 6,
-        borderRadius: 10,
-        padding: '8px 12px',
+        borderRadius: 9,
+        padding: '7px 10px',
         border: `1px solid ${border}`,
         background: disabled ? 'rgba(255,255,255,0.03)' : background,
         color: disabled ? 'var(--overlay-text-muted)' : text,
         cursor: disabled ? 'default' : 'pointer',
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: 700,
+        width: 'fit-content',
+        ...style,
       }}
     >
       {children}
     </button>
+  );
+}
+
+function StorageMetricTile({
+  label,
+  value,
+  detail,
+  highlight = false,
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  highlight?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gap: 4,
+        minWidth: 0,
+        padding: '8px 10px',
+        borderRadius: 12,
+        border: highlight
+          ? '1px solid color-mix(in srgb, var(--overlay-accent) 48%, var(--overlay-border))'
+          : '1px solid var(--overlay-border)',
+        background: highlight
+          ? 'color-mix(in srgb, var(--overlay-accent) 10%, rgba(255,255,255,0.03))'
+          : 'rgba(255,255,255,0.03)',
+      }}
+    >
+      <div style={{ fontSize: 10, color: 'var(--overlay-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
+      <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--overlay-text-primary)' }}>{value}</div>
+      {detail ? <div style={{ fontSize: 10.5, color: 'var(--overlay-text-muted)', lineHeight: 1.35 }}>{detail}</div> : null}
+    </div>
+  );
+}
+
+function StorageDriveCard({
+  root,
+  active,
+  onClick,
+}: {
+  root: StorageRootInfo;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const usedBytes = Math.max(0, root.total_bytes - root.free_bytes);
+  const usedPercent = root.total_bytes > 0 ? (usedBytes / root.total_bytes) * 100 : 0;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: 'grid',
+        gap: 8,
+        padding: 10,
+        borderRadius: 12,
+        border: active
+          ? '1px solid color-mix(in srgb, var(--overlay-accent) 60%, var(--overlay-border))'
+          : '1px solid var(--overlay-border)',
+        background: active
+          ? 'color-mix(in srgb, var(--overlay-accent) 10%, rgba(255,255,255,0.03))'
+          : 'rgba(255,255,255,0.03)',
+        color: 'var(--overlay-text-primary)',
+        cursor: 'pointer',
+        textAlign: 'left',
+      }}
+      >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+        <div
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: 10,
+            display: 'grid',
+            placeItems: 'center',
+            background: 'color-mix(in srgb, var(--overlay-accent) 15%, rgba(255,255,255,0.04))',
+            color: 'var(--overlay-accent)',
+            flexShrink: 0,
+          }}
+        >
+          <HardDrive size={15} />
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {root.label || root.path}
+          </div>
+          <div style={{ marginTop: 2, fontSize: 10, color: 'var(--overlay-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {root.path} · {root.drive_type}
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'grid', gap: 6 }}>
+        <div style={{ width: '100%', height: 7, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+          <div style={{ width: `${Math.max(4, Math.min(100, usedPercent))}%`, height: '100%', background: 'linear-gradient(90deg, color-mix(in srgb, var(--overlay-accent) 76%, #ffffff), color-mix(in srgb, var(--overlay-accent) 42%, #0b0b0b))' }} />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11, color: 'var(--overlay-text-secondary)' }}>
+          <span>{formatBytes(usedBytes)} used</span>
+          <span>{formatBytes(root.free_bytes)} free</span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function StorageRail({
+  railWidth,
+  onRailWidthChange,
+  roots,
+  rootsLoading,
+  rootsError,
+  scanStatus,
+  activeSessionRootPath,
+  activeSessionRootInfo,
+  isElevated,
+  onRefreshRoots,
+  onBeginScan,
+  onCancelScan,
+  onResetSession,
+}: {
+  railWidth: number;
+  onRailWidthChange: (nextSize: number) => void;
+  roots: StorageRootInfo[];
+  rootsLoading: boolean;
+  rootsError: string | null;
+  scanStatus: StorageScanSnapshot | null;
+  activeSessionRootPath: string | null;
+  activeSessionRootInfo: StorageRootInfo | null;
+  isElevated: boolean | null;
+  onRefreshRoots: () => void;
+  onBeginScan: (rootPath: string) => void;
+  onCancelScan: () => void;
+  onResetSession: () => void;
+}) {
+  return (
+    <ResizablePane
+      size={railWidth}
+      minSize={STORAGE_RAIL_WIDTH_MIN}
+      maxSize={STORAGE_RAIL_WIDTH_MAX}
+      onSizeChange={onRailWidthChange}
+      borderColor="color-mix(in srgb, var(--overlay-accent) 35%, var(--overlay-border))"
+      style={{
+        display: 'flex',
+        minHeight: 0,
+        flexDirection: 'column',
+        border: '1px solid var(--overlay-border)',
+        borderRadius: 16,
+        background: 'color-mix(in srgb, var(--overlay-panel-bg) 96%, rgba(255,255,255,0.02))',
+        boxShadow: '0 18px 46px rgba(0,0,0,0.18)',
+        overflow: 'hidden',
+      }}
+    >
+      <div style={{ padding: '10px 12px 9px', borderBottom: '1px solid var(--overlay-border)', background: 'linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--overlay-text-secondary)' }}>
+              Storage
+            </div>
+            <div style={{ marginTop: 4, fontSize: 14, fontWeight: 800, color: 'var(--overlay-text-primary)' }}>
+              Drive Navigator
+            </div>
+            <div style={{ marginTop: 2, fontSize: 11, color: 'var(--overlay-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {activeSessionRootInfo?.label ?? 'Pick a drive to scan'}
+            </div>
+          </div>
+          <ActionButton onClick={onRefreshRoots} disabled={rootsLoading}>
+            <RefreshCw size={13} />
+            Refresh
+          </ActionButton>
+        </div>
+      </div>
+
+      <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 10 }}>
+        <div style={{ display: 'grid', gap: 10 }}>
+          <SectionCard
+            dense
+            title="Roots"
+            subtitle={rootsLoading ? 'Loading available local drives.' : `${roots.length} local roots detected`}
+            bodyStyle={{ padding: 10 }}
+          >
+            {rootsLoading ? (
+              <div style={{ display: 'grid', placeItems: 'center', minHeight: 160, color: 'var(--overlay-text-muted)', fontSize: 12 }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <LoaderCircle size={15} className="spin" />
+                  Loading roots...
+                </span>
+              </div>
+            ) : rootsError ? (
+              <div style={{ display: 'grid', placeItems: 'center', minHeight: 160, color: '#ffb3b3', fontSize: 12, lineHeight: 1.45, textAlign: 'center' }}>
+                <span>{rootsError}</span>
+              </div>
+            ) : roots.length === 0 ? (
+              <div style={{ display: 'grid', placeItems: 'center', minHeight: 160, color: 'var(--overlay-text-muted)', fontSize: 12, lineHeight: 1.45, textAlign: 'center' }}>
+                <span>No local drives were returned by the explorer backend.</span>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: 8 }}>
+                {roots.map((root) => (
+                  <StorageDriveCard
+                    key={root.id}
+                    root={root}
+                    active={root.path === activeSessionRootPath}
+                    onClick={() => onBeginScan(root.path)}
+                  />
+                ))}
+              </div>
+            )}
+          </SectionCard>
+
+          <SectionCard
+            dense
+            title="Session"
+            subtitle={scanStatus ? (scanStatus.completed ? 'Snapshot ready' : 'Native walk in progress') : 'Waiting for a scan'}
+            bodyStyle={{ padding: 10 }}
+          >
+            {scanStatus ? (
+              <div style={{ display: 'grid', gap: 10 }}>
+                <div style={{ display: 'grid', gap: 4 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--overlay-text-primary)' }}>
+                    {scanStatus.rootName}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--overlay-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {scanStatus.rootPath}
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+                  <StorageMetricTile
+                    label="Mode"
+                    value="Native walk"
+                    detail="MFT / USN fast path can slot in later."
+                  />
+                  <StorageMetricTile
+                    label="Access"
+                    value={isElevated ? 'Elevated' : 'Limited'}
+                    detail={isElevated ? 'Protected paths can be removed if the OS allows it.' : 'Run elevated for destructive parity with protected paths.'}
+                    highlight={Boolean(isElevated)}
+                  />
+                </div>
+                <div style={{ display: 'grid', gap: 6, fontSize: 11, color: 'var(--overlay-text-secondary)' }}>
+                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    Current: {scanStatus.currentPath ?? 'Waiting for filesystem response'}
+                  </div>
+                  <div>
+                    {scanStatus.completed
+                      ? `Elapsed ${Math.max(0, Math.round(scanStatus.elapsedMs / 1000))}s`
+                      : 'Scanning natively through the filesystem.'}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {!scanStatus.completed ? (
+                    <ActionButton onClick={onCancelScan}>
+                      <XCircle size={14} />
+                      Cancel
+                    </ActionButton>
+                  ) : null}
+                  <ActionButton onClick={() => { if (activeSessionRootPath) { onBeginScan(activeSessionRootPath); } }}>
+                    <RefreshCw size={14} />
+                    Rescan
+                  </ActionButton>
+                  <ActionButton onClick={onResetSession}>
+                    <FolderSearch size={14} />
+                    Choose root
+                  </ActionButton>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: 10 }}>
+                <div style={{ color: 'var(--overlay-text-secondary)', fontSize: 12.5, lineHeight: 1.5 }}>
+                  Pick a drive from the list to start a native storage scan.
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+                  <StorageMetricTile
+                    label="Mode"
+                    value="Native walk"
+                    detail="MFT / USN fast path can slot into this same panel contract later."
+                  />
+                  <StorageMetricTile
+                    label="Delete"
+                    value={isElevated ? 'Elevated' : 'Limited'}
+                    detail={isElevated ? 'Protected paths can be removed if the OS allows it.' : 'Run elevated for destructive parity with protected paths.'}
+                    highlight={Boolean(isElevated)}
+                  />
+                </div>
+              </div>
+            )}
+          </SectionCard>
+        </div>
+      </OverlayScrollArea>
+    </ResizablePane>
   );
 }
 
@@ -361,6 +667,12 @@ export function StoragePanel() {
     }
     return (selectedNode.bytes / rootNode.bytes) * 100;
   }, [rootNode, selectedNode]);
+  const activeSessionRootPath = scanStatus?.rootPath ?? activeRootPath;
+  const activeSessionRootInfo = useMemo(
+    () => roots.find((root) => root.path === activeSessionRootPath) ?? null,
+    [activeSessionRootPath, roots],
+  );
+  const completedTree = scanStatus?.completed ? scanStatus.tree : null;
 
   const handleRevealSelected = useCallback(async () => {
     if (!selectedNode || selectedNode.kind === 'other') {
@@ -460,62 +772,48 @@ export function StoragePanel() {
         };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minHeight: 0, height: '100%', padding: 16, background: 'var(--overlay-bg-panel)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0, height: '100%', padding: 12, background: 'var(--overlay-bg-panel)', overflow: 'hidden' }}>
       {statusMessage ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 14, border: '1px solid var(--overlay-border)', background: statusMessage.color, color: 'var(--overlay-text-primary)', fontSize: 12 }}>
-          <statusMessage.icon size={16} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', borderRadius: 12, border: '1px solid var(--overlay-border)', background: statusMessage.color, color: 'var(--overlay-text-primary)', fontSize: 11.5, lineHeight: 1.4 }}>
+          <statusMessage.icon size={14} />
           <span>{statusMessage.text}</span>
         </div>
       ) : null}
-      {panelError ? <div style={{ padding: '12px 14px', borderRadius: 14, border: '1px solid rgba(255,120,120,0.35)', background: 'rgba(120,30,30,0.18)', color: '#ffb3b3', fontSize: 12 }}>{panelError}</div> : null}
-      {panelNotice ? <div style={{ padding: '12px 14px', borderRadius: 14, border: '1px solid rgba(111,221,163,0.3)', background: 'rgba(33,86,58,0.2)', color: '#c8f7db', fontSize: 12 }}>{panelNotice}</div> : null}
-      {!scanId ? (
-        <SectionCard
-          title="Choose Root"
-          subtitle="Pick the drive or mount point you want the storage tab to scan."
-          actions={<ActionButton onClick={() => { void loadRoots(); }} disabled={rootsLoading}><RefreshCw size={14} />Refresh</ActionButton>}
-        >
-          {rootsLoading ? (
-            <div style={{ display: 'grid', placeItems: 'center', minHeight: 220, color: 'var(--overlay-text-muted)', fontSize: 13 }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><LoaderCircle size={16} className="spin" />Loading roots...</span>
-            </div>
-          ) : rootsError ? (
-            <div style={{ display: 'grid', placeItems: 'center', minHeight: 220, color: '#ffb3b3', fontSize: 13 }}><span>{rootsError}</span></div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
-              {roots.map((root) => {
-                const usedBytes = Math.max(0, root.total_bytes - root.free_bytes);
-                const usedPercent = root.total_bytes > 0 ? (usedBytes / root.total_bytes) * 100 : 0;
-                return (
-                  <button
-                    key={root.id}
-                    type="button"
-                    onClick={() => { void beginScan(root.path).catch((error) => setPanelError(String(error))); }}
-                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 14, padding: 18, borderRadius: 16, border: '1px solid var(--overlay-border)', background: 'linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))', color: 'var(--overlay-text-primary)', cursor: 'pointer', textAlign: 'left' }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ width: 38, height: 38, borderRadius: 12, display: 'grid', placeItems: 'center', background: 'color-mix(in srgb, var(--overlay-accent) 16%, rgba(255,255,255,0.04))', color: 'var(--overlay-accent)' }}><HardDrive size={18} /></div>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 800 }}>{root.label || root.path}</div>
-                        <div style={{ fontSize: 11, color: 'var(--overlay-text-secondary)' }}>{root.path} · {root.drive_type}</div>
-                      </div>
-                    </div>
-                    <div style={{ display: 'grid', gap: 8 }}>
-                      <div style={{ width: '100%', height: 10, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                        <div style={{ width: `${Math.max(4, Math.min(100, usedPercent))}%`, height: '100%', background: 'linear-gradient(90deg, color-mix(in srgb, var(--overlay-accent) 76%, #ffffff), color-mix(in srgb, var(--overlay-accent) 42%, #0b0b0b))' }} />
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, color: 'var(--overlay-text-secondary)' }}>
-                        <span>{formatBytes(usedBytes)} used</span>
-                        <span>{formatBytes(root.free_bytes)} free</span>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </SectionCard>
-      ) : (
+      {panelError ? <div style={{ padding: '9px 12px', borderRadius: 12, border: '1px solid rgba(255,120,120,0.35)', background: 'rgba(120,30,30,0.18)', color: '#ffb3b3', fontSize: 11.5, lineHeight: 1.4 }}>{panelError}</div> : null}
+      {panelNotice ? <div style={{ padding: '9px 12px', borderRadius: 12, border: '1px solid rgba(111,221,163,0.3)', background: 'rgba(33,86,58,0.2)', color: '#c8f7db', fontSize: 11.5, lineHeight: 1.4 }}>{panelNotice}</div> : null}
+      <div style={{ display: 'flex', flex: 1, minHeight: 0, minWidth: 0, gap: 12, overflow: 'hidden' }}>
+        <StorageRail
+          railWidth={storageRailWidth}
+          onRailWidthChange={setStorageRailWidth}
+          roots={roots}
+          rootsLoading={rootsLoading}
+          rootsError={rootsError}
+          scanStatus={scanStatus}
+          activeSessionRootPath={activeSessionRootPath}
+          activeSessionRootInfo={activeSessionRootInfo}
+          isElevated={isElevated}
+          onRefreshRoots={() => { void loadRoots(); }}
+          onBeginScan={(rootPath) => { void beginScan(rootPath).catch((error) => setPanelError(String(error))); }}
+          onCancelScan={() => { if (scanId) { void cancelStorageScan(scanId); } }}
+          onResetSession={() => { setScanId(null); setScanStatus(null); setSelectedPath(null); setFocusPath(null); setActiveRootPath(null); }}
+        />
+        <OverlayScrollArea style={{ flex: 1, minHeight: 0 }} viewportStyle={{ padding: 0 }} contentStyle={{ paddingRight: 2 }}>
+          <div style={{ display: 'grid', gap: 12, paddingRight: 2, minWidth: 0 }}>
+            {!scanId ? (
+              <SectionCard dense title="Workspace" subtitle="Select a drive from the left rail." bodyStyle={{ padding: 10 }}>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  <div style={{ color: 'var(--overlay-text-secondary)', fontSize: 12.5, lineHeight: 1.5 }}>
+                    Pick a drive from the navigation rail to start a native scan. The workspace will switch into treemap and inspector mode once the snapshot arrives.
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    <ActionButton onClick={() => { void loadRoots(); }} disabled={rootsLoading}>
+                      <RefreshCw size={14} />
+                      Refresh drives
+                    </ActionButton>
+                  </div>
+                </div>
+              </SectionCard>
+            ) : (
         <>
           <SectionCard
             title="Scan Session"
@@ -631,6 +929,9 @@ export function StoragePanel() {
           ) : null}
         </>
       )}
+          </div>
+        </OverlayScrollArea>
+      </div>
     </div>
   );
 }

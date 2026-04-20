@@ -52,6 +52,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Shell-owned wrapper for the embedded spreadsheet preview/editor surface. It renders workbook and tabular spreadsheet sessions with `@glideapps/glide-data-grid`, keeps sheet tabs/formula bar/selection state in React, and delegates workbook truth plus import/export to the typed runtime.
 - `src/components/ExplorerShaderWorkbench.tsx`
   Shell-owned wrapper for the embedded shader preview/editor surface. It renders WGSL/HLSL/SPIR-V documents inside the explorer preview pane, owns edit-vs-preview presentation, exposes stage/entrypoint pickers plus scene-mode controls, renders the WebGPU host canvas when available, and falls back to diagnostics plus inspection output when live preview is unsupported.
+- `src/components/StoragePanel.tsx`
+  First-class storage forensics tab. It owns drive/root picking, elevation messaging, native scan session orchestration, treemap rendering, largest-entry inspection, and destructive cleanup actions for scanned filesystem paths.
+- `src/components/storage/storageTreemap.ts`
+  Pure treemap layout helper for the storage tab. It turns the condensed native storage tree into deterministic SVG rectangles without mixing layout math into the panel component.
 - `src/components/explorer/ExplorerWorkspace.tsx`
   Explorer-local workspace shell that wraps `FileExplorer` instances with explorer tabs, slot-based `1-Up` / `2-Up` / `4-Up` pane layouts, pane focus, adaptive split sizing, and one shared workspace strip that always shows the focused pane's tab set. This layer still owns top-level multi-pane explorer topology; the newer preview split stays inside a single `FileExplorer` instance instead of routing through workspace panes.
 - `src/components/explorer/ExplorerSideRail.tsx`
@@ -106,6 +110,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Imported image/video wallpapers, authored live wallpaper modules, and theme-wallpaper selection helpers.
 - `src/runtime/pluginPanelRequests.ts`
   Shared plugin-panel handoff bridge for explorer/plugin context flows. It persists the latest request payload and dispatches shell-level open-panel events plus panel-specific update events.
+- `src/runtime/storageBackend.ts`
+  TS bridge for the storage tab. It exposes typed native scan start/poll/cancel calls, filters local storage roots from the explorer drive inventory, and reuses existing explorer open/reveal/trash/delete operations for storage cleanup actions.
 - `src/runtime/fileOperationsWindow.ts`
   Shared file-operations popout bridge. It owns the `file-operations` window label, persisted request/completion payloads, cross-window event names, and the helper that creates or focuses the dedicated popout window.
 - `src/runtime/imageEditorRuntime.ts`
@@ -422,6 +428,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Native host and Rust-side integration.
   `src-tauri/src/cloud_commands.rs` is the cloud-drive truth layer for provider credential resolution, OAuth callback handling, account metadata persistence, keychain refresh-token storage, and cloud-backed explorer file operations.
   `src-tauri/src/explorer_pro_commands.rs` is the explorer-pro feature backend for trash/undo, batch rename, duplicate scans, tags, and saved searches.
+  `src-tauri/src/storage_commands.rs` is the storage-tab truth layer for native drive scans. It walks the filesystem on a background thread, tracks progress/cancellation, builds a condensed tree plus largest-entry summaries, and prunes completed scan snapshots when newer scans start.
   `src-tauri/src/screenshot_commands.rs` is the screenshot truth layer for monitor capture, cached full-resolution images, native clipboard work, gallery thumbnails, and annotated export compositing.
 
 ## Validation Commands
@@ -430,10 +437,12 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `npx tsc --noEmit --skipLibCheck --jsx react-jsx --module esnext --target es2022 --moduleResolution bundler --allowSyntheticDefaultImports --types vitest/globals,@testing-library/jest-dom src/vite-env.d.ts src/config/workbenchTheme.ts src/config/explorerTheme.ts src/config/appearance.ts src/components/CommandPalette.tsx src/components/TerminalOverlay.tsx src/components/SettingsPage.tsx src/components/explorer/ExplorerSideRail.tsx src/components/FileExplorer.tsx src/App.tsx src/test/workbenchTheme.test.ts src/test/explorerTheme.test.ts src/test/themePackageExplorerRecipe.test.ts src/test/themePackages.test.ts src/test/explorerSideRail.test.tsx`
 - `bun run test:unit`
 - `bun run test:unit src/test/filePreview.test.ts src/test/hotkeys.test.ts src/test/settingsStore.test.ts src/test/fileExplorer.viewModes.test.tsx`
+- `npx vitest run src/test/panelRegistry.test.tsx src/test/storageTreemap.test.ts --reporter=dot`
 - `bun run test:browser`
 - `bun run build`
 - `node scripts/run-cargo-tests.mjs`
 - `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
+- `cargo test --manifest-path src-tauri/Cargo.toml storage_scan_ -- --nocapture`
 - `bash ./install.sh`
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`
 - `bash ./install.sh --launch`
@@ -448,6 +457,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Dropbox OAuth no longer uses a random localhost callback. The app now expects the Dropbox app console to allow the fixed redirect URI `http://localhost:53682/callback`; if Dropbox sign-in times out, check that exact callback registration before touching the browser-launch code.
 - Repo-wide `npx tsc --noEmit` is currently red on several pre-existing generated-contract and test typing issues unrelated to the workbench/explorer theme system. The narrowed command above now only leaves `src/runtime/useFolderPluginRuntime.ts` as an unrelated pre-existing failure.
 - Repo-wide `bunx tsc --noEmit` is also currently red on pre-existing explorer audio and VST typing issues outside the PDF lane (`src/components/ExplorerAudioWorkbench.tsx`, `src/runtime/vstBackend.ts`). Use targeted Vitest coverage plus `cargo check` when validating PDF work until those unrelated strict-mode failures are cleaned up.
+- Repo-wide `.\node_modules\.bin\tsc.exe --noEmit -p tsconfig.json` is also currently red on the nested `src/src/frontend/**` workspace, which is not part of the main Tauri shell path. When validating work in the main app, filter the compiler output to the touched files instead of treating that secondary frontend tree as a regression in the storage lane.
 - Use `node scripts/run-cargo-tests.mjs` for the Rust suite on Linux. Raw `cargo test --workspace` will try to build macOS and Windows workspace members that are intentionally skipped by the host-aware runner.
 - Explorer rich thumbnails are native and cache-backed. `src-tauri/src/thumbnail_commands.rs` writes generated posters and video hover frames under the app-local `explorer-thumbnails` cache. If thumbnails look stale, inspect cache-key inputs and the app-local cache before trying to patch React rendering.
 - If the video timeline starts asking for an audio file while editing a normal video, inspect `src-tauri/src/video_engine.rs` before touching UI copy. That symptom usually means the video engine failed to link deck `B` to the selected file’s embedded audio track; it is not a real request to import standalone audio.

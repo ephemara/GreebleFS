@@ -4,6 +4,7 @@ import {
   listExplorerDirUncached,
   type ExplorerFileEntry,
 } from "../runtime/explorerBackend";
+import { OverlayScrollArea } from "./OverlayScrollArea";
 
 export interface ExplorerFolderPreviewProps {
   folderPath: string;
@@ -255,7 +256,10 @@ export function ExplorerFolderPreview({
             </div>
           </div>
         ) : (
-          <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
+          <OverlayScrollArea
+            style={{ flex: 1, minHeight: 0 }}
+            viewportClassName="overlay-scroll-area__viewport--explorer-file-list"
+          >
             {renderEntries.map((entry) => {
               const modifiedLabel = formatModifiedLabel(entry.modified);
               const parentLabel = getEntryParentLabel(entry.path);
@@ -402,7 +406,7 @@ export function ExplorerFolderPreview({
                 ... and {entries!.length - FOLDER_PREVIEW_ENTRY_LIMIT} more items
               </div>
             )}
-          </div>
+          </OverlayScrollArea>
         )}
       </div>
     </div>
