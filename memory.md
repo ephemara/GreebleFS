@@ -1,5 +1,20 @@
 # GreebleFS Memory
 
+# 2026-04-20 - Model Preview Now Reads Native Files Instead Of Browser-Fetching Asset URLs
+
+- The 3D preview lane was fighting the browser because `ModelPreview.tsx` was still handing three.js loaders `asset://` URLs via `loadAsync(...)`. That path was replaced with native file reads and parser entrypoints so local model assets stop depending on browser fetch behavior.
+- Durable implementation shape:
+  - `src/components/modelPreviewSource.ts` is now the source-loading seam for model previews. It reads `.glb`, `.gltf`, `.obj`, `.fbx`, and `.stl` through the explorer backend, feeds three.js loaders directly from decoded bytes/text, and never builds `convertFileSrc(...)` URLs for the main model file.
+  - glTF JSON sidecars are inlined before parse: relative `buffers[]` and `images[]` references are resolved through the explorer backend, converted to data URLs, and cached so repeated references do not trigger duplicate reads.
+  - `src/components/ModelPreview.tsx` now focuses on the render/normalize/proxy pipeline only. Source loading is delegated to the helper, which keeps the preview component free of browser-fighting file-IO logic.
+  - `src/test/modelPreviewSource.test.ts` locks the contract: native reads are used for every supported model format, and glTF sidecars are inlined before the loader parses the document.
+- Durable product note:
+  - Keep local model preview off browser fetch paths. If a future preview change wants to load another model format, add a native read/parse path first instead of routing through `asset://` or `loadAsync(...)`.
+  - Self-contained model files are the strongest path. glTF sidecars are now handled, but textured OBJ/FBX sidecars are still limited by the current loader strategy and should be treated as a follow-up if deeper sidecar resolution becomes necessary.
+- Validation:
+  - passed: `npx vitest run src/test/modelPreviewSource.test.ts src/test/modelPreview.utils.test.ts --reporter=dot`
+  - passed: filtered `npx tsc --noEmit --pretty false -p tsconfig.json` check reported no matching errors for `ModelPreview.tsx`, `modelPreviewSource.ts`, `modelPreviewSource.test.ts`, or `modelPreview.utils.ts`
+
 # 2026-04-20 - Storage Panel Waits For The Active Completed Snapshot Before Loading Directory Rows
 
 - The storage panel could raise `Storage directory listing not found: /home/...` even after the Linux path fix because the frontend was still requesting directory children while the native scan was mid-flight.
