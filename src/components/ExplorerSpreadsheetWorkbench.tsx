@@ -35,6 +35,10 @@ import { matchesKeybinding } from "../config/hotkeys";
 import type { SpreadsheetFileKind } from "../config/spreadsheet";
 import { AppConfirmDialog, AppDialogFrame, AppPromptDialog } from "./AppModal";
 import {
+  buildExplorerDraftPreservedMessage,
+  validateExplorerEditDraft,
+} from "./explorer/explorerEditSession";
+import {
   addSpreadsheetSheet,
   buildSpreadsheetWorkbookDocument,
   clearSpreadsheetSheet,
@@ -44,6 +48,7 @@ import {
   parseSpreadsheetInput,
   renameSpreadsheetSheet,
   serializeSpreadsheetCellForClipboard,
+  validateSpreadsheetRawCellContent,
   type SpreadsheetWorkbookDocument,
 } from "../runtime/spreadsheetWorkbook";
 import {
@@ -430,12 +435,36 @@ export function ExplorerSpreadsheetWorkbench({
         return false;
       }
 
-      document.workbook.setCellContents(
-        { sheet: activeSheetId, row: topLeft[1], col: topLeft[0] },
-        values as RawCellContent[][],
-      );
-      markSpreadsheetDirty();
-      return true;
+      for (const row of values) {
+        for (const value of row) {
+          const validation = validateExplorerEditDraft(
+            value,
+            validateSpreadsheetRawCellContent,
+          );
+          if (!validation.accepted) {
+            setOperationMessage(
+              validation.error ?? "Spreadsheet edit rejected.",
+            );
+            setOperationTone("error");
+            return false;
+          }
+        }
+      }
+
+      try {
+        document.workbook.setCellContents(
+          { sheet: activeSheetId, row: topLeft[1], col: topLeft[0] },
+          values as RawCellContent[][],
+        );
+        setOperationMessage(null);
+        setOperationTone("muted");
+        markSpreadsheetDirty();
+        return true;
+      } catch (error) {
+        setOperationMessage(String(error));
+        setOperationTone("error");
+        return false;
+      }
     },
     [activeSheetId, markSpreadsheetDirty],
   );
@@ -446,43 +475,78 @@ export function ExplorerSpreadsheetWorkbench({
         return false;
       }
 
-      if (edits.length === 1) {
-        const edit = edits[0];
-        return applySpreadsheetMatrix([edit.location[0], edit.location[1]], [[
-          convertEditableGridCellToRawContent(edit.value),
-        ]]);
+      const rawEdits = edits.map((edit) => ({
+        location: [edit.location[0], edit.location[1]] as Item,
+        rawValue: convertEditableGridCellToRawContent(edit.value),
+      }));
+
+      for (const edit of rawEdits) {
+        const validation = validateExplorerEditDraft(
+          edit.rawValue,
+          validateSpreadsheetRawCellContent,
+        );
+        if (!validation.accepted) {
+          setOperationMessage(validation.error ?? "Spreadsheet edit rejected.");
+          setOperationTone("error");
+          return false;
+        }
       }
 
-      const minCol = Math.min(...edits.map((edit) => edit.location[0]));
-      const minRow = Math.min(...edits.map((edit) => edit.location[1]));
-      const maxCol = Math.max(...edits.map((edit) => edit.location[0]));
-      const maxRow = Math.max(...edits.map((edit) => edit.location[1]));
+      if (rawEdits.length === 1) {
+        const edit = rawEdits[0];
+        return applySpreadsheetMatrix(edit.location, [[edit.rawValue]]);
+      }
+
+      const minCol = Math.min(...rawEdits.map((edit) => edit.location[0]));
+      const minRow = Math.min(...rawEdits.map((edit) => edit.location[1]));
+      const maxCol = Math.max(...rawEdits.map((edit) => edit.location[0]));
+      const maxRow = Math.max(...rawEdits.map((edit) => edit.location[1]));
       const width = maxCol - minCol + 1;
       const height = maxRow - minRow + 1;
 
-      if (width * height !== edits.length) {
-        let applied = false;
-        for (const edit of edits) {
-          applied = applySpreadsheetMatrix(edit.location, [[
-            convertEditableGridCellToRawContent(edit.value),
-          ]]) || applied;
+      if (width * height !== rawEdits.length) {
+        const document = spreadsheetDocumentRef.current;
+        if (!document || activeSheetId == null) {
+          return false;
         }
-        return applied;
+
+        try {
+          document.workbook.batch(() => {
+            for (const edit of rawEdits) {
+              document.workbook.setCellContents(
+                {
+                  sheet: activeSheetId,
+                  row: edit.location[1],
+                  col: edit.location[0],
+                },
+                [[edit.rawValue]],
+              );
+            }
+          });
+          setOperationMessage(null);
+          setOperationTone("muted");
+          markSpreadsheetDirty();
+          return true;
+        } catch (error) {
+          setOperationMessage(String(error));
+          setOperationTone("error");
+          return false;
+        }
       }
 
       const matrix: RawCellContent[][] = Array.from({ length: height }, () =>
         Array.from({ length: width }, () => null),
       );
 
-      for (const edit of edits) {
+      for (const edit of rawEdits) {
         const rowIndex = edit.location[1] - minRow;
         const colIndex = edit.location[0] - minCol;
-        matrix[rowIndex]![colIndex] = convertEditableGridCellToRawContent(edit.value);
+        matrix[rowIndex]![colIndex] = edit.rawValue;
       }
 
       return applySpreadsheetMatrix([minCol, minRow], matrix);
     },
-    [applySpreadsheetMatrix],
+    [activeSheetId, applySpreadsheetMatrix, markSpreadsheetDirty],
   );
 
   const saveSpreadsheetWorkbook = useCallback(async (): Promise<boolean> => {
@@ -513,7 +577,7 @@ export function ExplorerSpreadsheetWorkbench({
         await onRefreshPreviewEntry?.();
         return true;
       } catch (error) {
-        setOperationMessage("Save failed");
+        setOperationMessage(buildExplorerDraftPreservedMessage(error));
         setOperationTone("error");
         return false;
       } finally {
@@ -645,9 +709,12 @@ export function ExplorerSpreadsheetWorkbench({
       [selectedCell.col, selectedCell.row],
       [[rawValue]],
     );
-    if (applied) {
-      dataEditorRef.current?.focus();
+    if (!applied) {
+      setFormulaBarValue(currentValue);
+      return;
     }
+
+    dataEditorRef.current?.focus();
   }, [activeSheetId, applySpreadsheetMatrix, formulaBarValue, selectedCell.col, selectedCell.row]);
 
   const handleFormulaBarFocusFormula = useCallback(() => {

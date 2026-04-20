@@ -223,7 +223,6 @@ import {
   buildExplorerPreviewErrorFallback,
   buildExplorerPreviewLoadingFallback,
   buildExplorerUnsupportedPreviewFallback,
-  getExplorerPreviewEntryExtension,
   isInlineExplorerPreviewDescriptor,
   resolveExplorerPreviewDescriptor,
 } from "./explorer/explorerPreviewSystem";
@@ -9894,10 +9893,16 @@ export function FileExplorer({
       }
     },
     [
+      getDocumentPreviewKind,
+      getPreviewAssetUrl,
       flushPreviewTextSave,
       isCompactDock,
+      openExplorerPdfPreviewDocument,
+      previewRef,
       previewEnabled,
+      readExplorerTextFile,
       requestCurrentPreviewClose,
+      setDocumentViewMode,
     ],
   );
 
@@ -9988,34 +9993,19 @@ export function FileExplorer({
         return;
       }
 
-      const ext = getEntryExtension(entry);
       const focusTarget = getSearchFocusTarget(entry);
       const canInlinePreview = previewEnabled && !isCompactDock;
+      const resolvedPreview = resolveExplorerPreviewDescriptor(entry, {
+        assetUrlResolver: getPreviewAssetUrl,
+        documentPreviewKindResolver: getDocumentPreviewKind,
+      });
 
-      if (
-        canInlinePreview &&
-        (isEditableTextEntry(entry) || isShaderPreviewExtension(ext))
-      ) {
+      if (canInlinePreview && isInlineExplorerPreviewDescriptor(resolvedPreview)) {
         await previewEntry(entry, focusTarget);
         return;
       }
 
-      if (
-        canInlinePreview &&
-        (getModelPreviewFormat(ext) ||
-          isImagePreviewExtension(ext) ||
-          isShaderPreviewExtension(ext) ||
-          isSpreadsheetPreviewExtension(ext) ||
-          isDocxPreviewExtension(ext) ||
-          isPdfPreviewExtension(ext) ||
-          isAudioPreviewExtension(ext) ||
-          isVideoPreviewExtension(ext))
-      ) {
-        await previewEntry(entry, focusTarget);
-        return;
-      }
-
-      if (isExecutableExtension(ext)) {
+      if (isExecutableExtension(getEntryExtension(entry))) {
         await openExplorerPath(entry.path).catch((e) => setError(String(e)));
         return;
       }
@@ -10023,6 +10013,8 @@ export function FileExplorer({
       await openExplorerPath(entry.path).catch((e) => setError(String(e)));
     },
     [
+      getDocumentPreviewKind,
+      getPreviewAssetUrl,
       getSearchFocusTarget,
       handleArchiveAction,
       isCompactDock,
@@ -14892,8 +14884,10 @@ export function FileExplorer({
       previewWarmupStartedRef.current = false;
     };
   }, [repositoryPicker?.active]);
-
   const virtualizedViewportWidth = explorerViewportMetrics.clientWidth;
+  const measuredVirtualizedViewportHeight = explorerViewportMetrics.clientHeight;
+  const hasMeasuredExplorerViewportHeight =
+    measuredVirtualizedViewportHeight > 0;
   const minimumVirtualizedViewportHeight =
     effectiveViewModeDefinition.presentation === "grid"
       ? (isSearchActive
@@ -14903,7 +14897,7 @@ export function FileExplorer({
           ? activeRowMetrics?.searchRowHeight
           : activeRowMetrics?.rowHeight) ?? EXPLORER_LIST_ROW_HEIGHT;
   const virtualizedViewportHeight = Math.max(
-    explorerViewportMetrics.clientHeight,
+    measuredVirtualizedViewportHeight,
     minimumVirtualizedViewportHeight,
   );
   const virtualizedScrollTop = Math.max(
@@ -14940,6 +14934,21 @@ export function FileExplorer({
         0,
         contentHeight - virtualizedViewportHeight,
       );
+      if (!hasMeasuredExplorerViewportHeight) {
+        return {
+          kind: "grid" as const,
+          columns,
+          rowHeight,
+          contentHeight,
+          maxScrollTop,
+          startRow: 0,
+          endRow: totalRows,
+          startIndex: 0,
+          endIndex: visibleEntries.length,
+          topSpacer: 0,
+          bottomSpacer: 0,
+        };
+      }
       const clampedScrollTop = Math.min(virtualizedScrollTop, maxScrollTop);
       const startRow = Math.max(
         0,
@@ -14978,6 +14987,20 @@ export function FileExplorer({
     const totalRows = visibleEntries.length;
     const contentHeight = totalRows * rowHeight;
     const maxScrollTop = Math.max(0, contentHeight - virtualizedViewportHeight);
+    if (!hasMeasuredExplorerViewportHeight) {
+      return {
+        kind: "list" as const,
+        rowHeight,
+        contentHeight,
+        maxScrollTop,
+        startRow: 0,
+        endRow: totalRows,
+        startIndex: 0,
+        endIndex: visibleEntries.length,
+        topSpacer: 0,
+        bottomSpacer: 0,
+      };
+    }
     const clampedScrollTop = Math.min(virtualizedScrollTop, maxScrollTop);
     const startRow = Math.max(
       0,
@@ -15007,6 +15030,7 @@ export function FileExplorer({
     effectiveViewModeDefinition.presentation,
     activeGridMetrics,
     activeRowMetrics,
+    hasMeasuredExplorerViewportHeight,
     isSearchActive,
     virtualizedScrollTop,
     virtualizedViewportHeight,
@@ -15458,6 +15482,7 @@ export function FileExplorer({
     moveJumpFilterSelection,
     newItem.visible,
     paste,
+    persistPreviewText,
     persistShaderPreviewSource,
     preview,
     previewTerminalWorkingDirectory,
@@ -18982,6 +19007,7 @@ export function FileExplorer({
               previewTerminalNamespace={previewTerminalNamespace}
               onWidthChange={setPreviewWidth}
               onTextChange={updatePreviewTextContent}
+              onTextSave={persistPreviewText}
               onShaderSourceChange={updateShaderPreviewContent}
               onShaderSelectionChange={updateShaderPreviewSelection}
               onShaderCompileResult={updateShaderPreviewCompileResult}
