@@ -136,13 +136,13 @@ fn resolve_native_icon_pixels_with_windows_shell(
             SHGFI_ICON | icon_size,
         )
     };
-    if result == 0 || file_info.hIcon == 0 {
+    if result == 0 || file_info.hIcon == null_mut() {
         return Ok(None);
     }
 
     let hicon = file_info.hIcon;
-    let hdc = unsafe { CreateCompatibleDC(0) };
-    if hdc == 0 {
+    let hdc = unsafe { CreateCompatibleDC(null_mut()) };
+    if hdc == null_mut() {
         unsafe {
             DestroyIcon(hicon);
         }
@@ -159,10 +159,18 @@ fn resolve_native_icon_pixels_with_windows_shell(
     bitmap_info.bmiHeader.biBitCount = 32;
     bitmap_info.bmiHeader.biCompression = BI_RGB;
 
-    let mut pixels_ptr = null_mut();
-    let hbitmap =
-        unsafe { CreateDIBSection(hdc, &bitmap_info, DIB_RGB_COLORS, &mut pixels_ptr, 0, 0) };
-    if hbitmap == 0 || pixels_ptr.is_null() {
+    let mut pixels_ptr: *mut core::ffi::c_void = null_mut();
+    let hbitmap = unsafe {
+        CreateDIBSection(
+            hdc,
+            &bitmap_info,
+            DIB_RGB_COLORS,
+            &mut pixels_ptr,
+            null_mut(),
+            0,
+        )
+    };
+    if hbitmap == null_mut() || pixels_ptr.is_null() {
         unsafe {
             DeleteDC(hdc);
             DestroyIcon(hicon);
@@ -171,7 +179,7 @@ fn resolve_native_icon_pixels_with_windows_shell(
     }
 
     let previous_bitmap = unsafe { SelectObject(hdc, hbitmap as _) };
-    if previous_bitmap == 0 {
+    if previous_bitmap == null_mut() {
         unsafe {
             DeleteObject(hbitmap as _);
             DeleteDC(hdc);
@@ -184,8 +192,19 @@ fn resolve_native_icon_pixels_with_windows_shell(
     unsafe {
         std::ptr::write_bytes(pixels_ptr as *mut u8, 0, byte_len);
     }
-    let draw_result =
-        unsafe { DrawIconEx(hdc, 0, 0, hicon, size as i32, size as i32, 0, 0, DI_NORMAL) };
+    let draw_result = unsafe {
+        DrawIconEx(
+            hdc,
+            0,
+            0,
+            hicon,
+            size as i32,
+            size as i32,
+            0,
+            null_mut(),
+            DI_NORMAL,
+        )
+    };
     let mut pixels = if draw_result == 0 {
         Vec::new()
     } else {

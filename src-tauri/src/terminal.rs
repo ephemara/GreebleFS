@@ -612,7 +612,6 @@ fn applescript_escape(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 fn shell_quote_single(value: &str) -> String {
     format!("'{}'", value.replace('\'', r#"'\"'\"'"#))
 }
