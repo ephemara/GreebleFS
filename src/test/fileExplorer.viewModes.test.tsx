@@ -15,6 +15,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 const {
   pdfPreviewMockState,
   previewTerminalMockState,
+  spreadsheetWorkbenchMockState,
   shaderWorkbenchMockState,
 } = vi.hoisted(() => ({
   pdfPreviewMockState: {
@@ -34,6 +35,9 @@ const {
       workingDirectory?: string | null;
       onReportedWorkingDirectoryChange?: (cwd: string) => void;
     },
+  },
+  spreadsheetWorkbenchMockState: {
+    lastMode: "preview" as "preview" | "edit",
   },
   shaderWorkbenchMockState: {
     lastSelectionLabel: "",
@@ -73,6 +77,23 @@ vi.mock("../components/ExplorerAudioWorkbench", () => ({
   ExplorerAudioWorkbench: ({ audioName }: { audioName: string }) => (
     <div data-testid="mock-explorer-audio-workbench">{audioName}</div>
   ),
+}));
+
+vi.mock("../components/ExplorerSpreadsheetWorkbench", () => ({
+  ExplorerSpreadsheetWorkbench: ({
+    name,
+    mode = "preview",
+  }: {
+    name: string;
+    mode?: "preview" | "edit";
+  }) => {
+    spreadsheetWorkbenchMockState.lastMode = mode;
+    return (
+      <div data-testid="mock-explorer-spreadsheet-workbench" data-spreadsheet-mode={mode}>
+        {`${name}:${mode}`}
+      </div>
+    );
+  },
 }));
 
 vi.mock("../components/ExplorerPdfWorkbench", () => ({

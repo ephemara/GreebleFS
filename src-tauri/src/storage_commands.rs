@@ -485,7 +485,9 @@ fn push_top_directory_candidate(
     false
 }
 
-fn collect_sorted_files(heap: BinaryHeap<Reverse<StorageFileCandidate>>) -> Vec<StorageFileCandidate> {
+fn collect_sorted_files(
+    heap: BinaryHeap<Reverse<StorageFileCandidate>>,
+) -> Vec<StorageFileCandidate> {
     let mut entries = heap
         .into_sorted_vec()
         .into_iter()
@@ -556,19 +558,22 @@ fn update_storage_type_bucket(
     buckets: &mut HashMap<String, StorageTypeBucketAggregate>,
     file_summary: &StoragePathSummary,
 ) {
-    let (bucket_id, bucket_label) =
-        storage_type_bucket_identity(file_summary.extension.as_deref());
-    let bucket = buckets.entry(bucket_id.clone()).or_insert_with(|| StorageTypeBucketAggregate {
-        id: bucket_id,
-        label: bucket_label,
-        file_count: 0,
-        logical_bytes: 0,
-        allocated_bytes: 0,
-        largest_entries: Vec::new(),
-    });
+    let (bucket_id, bucket_label) = storage_type_bucket_identity(file_summary.extension.as_deref());
+    let bucket = buckets
+        .entry(bucket_id.clone())
+        .or_insert_with(|| StorageTypeBucketAggregate {
+            id: bucket_id,
+            label: bucket_label,
+            file_count: 0,
+            logical_bytes: 0,
+            allocated_bytes: 0,
+            largest_entries: Vec::new(),
+        });
 
     bucket.file_count = bucket.file_count.saturating_add(1);
-    bucket.logical_bytes = bucket.logical_bytes.saturating_add(file_summary.logical_bytes);
+    bucket.logical_bytes = bucket
+        .logical_bytes
+        .saturating_add(file_summary.logical_bytes);
     bucket.allocated_bytes = bucket
         .allocated_bytes
         .saturating_add(file_summary.allocated_bytes);
@@ -753,8 +758,14 @@ fn build_storage_snapshot(
                 .then_with(|| left.name.cmp(&right.name))
         });
 
-        let visible_allocated_bytes = children.iter().map(|child| child.allocated_bytes).sum::<u64>();
-        let visible_logical_bytes = children.iter().map(|child| child.logical_bytes).sum::<u64>();
+        let visible_allocated_bytes = children
+            .iter()
+            .map(|child| child.allocated_bytes)
+            .sum::<u64>();
+        let visible_logical_bytes = children
+            .iter()
+            .map(|child| child.logical_bytes)
+            .sum::<u64>();
         let visible_file_count = children.iter().map(|child| child.file_count).sum::<u64>();
         let visible_directory_count = children
             .iter()
@@ -982,8 +993,7 @@ fn scan_storage_root(
                     current_directory.allocated_bytes = current_directory
                         .allocated_bytes
                         .saturating_add(measurement.allocated_bytes);
-                    current_directory.file_count =
-                        current_directory.file_count.saturating_add(1);
+                    current_directory.file_count = current_directory.file_count.saturating_add(1);
 
                     let file_summary = make_storage_path_summary(
                         path.to_string_lossy().to_string(),
@@ -1069,7 +1079,8 @@ fn scan_storage_root(
                 }
 
                 if let Some(parent) = stack.last_mut() {
-                    parent.logical_bytes = parent.logical_bytes.saturating_add(summary.logical_bytes);
+                    parent.logical_bytes =
+                        parent.logical_bytes.saturating_add(summary.logical_bytes);
                     parent.allocated_bytes = parent
                         .allocated_bytes
                         .saturating_add(summary.allocated_bytes);

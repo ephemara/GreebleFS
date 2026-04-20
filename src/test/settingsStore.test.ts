@@ -149,6 +149,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.keybindings.pdfWorkbenchToggleEditMode).toBe('E');
     expect(settings.keybindings.shaderWorkbenchToggleEditMode).toBe('E');
     expect(settings.keybindings.shaderWorkbenchToggleScene).toBe('F');
+    expect(settings.keybindings.spreadsheetWorkbenchToggleEditMode).toBe('E');
     expect(settings.keybindings.spreadsheetWorkbenchPreviousSheet).toBe('Ctrl+PageUp');
     expect(settings.keybindings.spreadsheetWorkbenchNextSheet).toBe('Ctrl+PageDown');
     expect(settings.keybindings.spreadsheetWorkbenchNewSheet).toBe('Shift+F11');

@@ -3337,6 +3337,7 @@ function PreviewPanel({
     isVideoPreview ||
     isPdfPreview ||
     isShaderPreview ||
+    isSpreadsheetPreview ||
     isEditableImagePreview;
   const previewHeaderRowStyle = useMemo<CSSProperties>(
     () => ({
@@ -3640,6 +3641,42 @@ function PreviewPanel({
           }
 
           if (preview.type === "image" && isEditableImagePreview) {
+            return (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: 2,
+                  borderRadius: "var(--overlay-explorer-control-radius)",
+                  border: "1px solid var(--overlay-explorer-chip-border)",
+                  background: "var(--overlay-explorer-chip-bg)",
+                  flexWrap: "wrap",
+                }}
+              >
+                {(
+                  [
+                    { id: "preview", label: "Preview" },
+                    { id: "edit", label: "Edit" },
+                  ] as const
+                ).map((option) => {
+                  const active = viewMode === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => onViewModeChange(option.id)}
+                      style={previewChipButtonStyle(active)}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          }
+
+          if (preview.type === "spreadsheet") {
             return (
               <div
                 style={{
@@ -4336,6 +4373,8 @@ function PreviewPanel({
               name={preview.name}
               sourceExtension={preview.extension}
               fileKind={preview.fileKind}
+              mode={viewMode}
+              onModeChange={onViewModeChange}
               onRefreshPreviewEntry={onRefreshPreviewEntry}
               onRegisterCloseGuard={onRegisterCloseGuard}
               onStatusChange={setSpreadsheetWorkbenchStatus}
@@ -10005,6 +10044,7 @@ export function FileExplorer({
           return;
         }
         case "spreadsheet":
+          setDocumentViewMode("preview");
           if (isCurrentPreviewRequest()) {
             setPreview({
               type: "spreadsheet",
@@ -12398,9 +12438,13 @@ export function FileExplorer({
             ? "PDF editor"
             : "PDF preview"
           : preview.type === "spreadsheet"
-            ? preview.fileKind === "tabular"
-              ? "Tabular spreadsheet"
-              : "Spreadsheet workbook"
+            ? documentViewMode === "edit"
+              ? preview.fileKind === "tabular"
+                ? "Tabular spreadsheet editor"
+                : "Spreadsheet workbook editor"
+              : preview.fileKind === "tabular"
+                ? "Tabular spreadsheet preview"
+                : "Spreadsheet workbook preview"
             : preview.type === "video"
               ? documentViewMode === "edit"
                 ? "Video editor"

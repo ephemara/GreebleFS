@@ -48,6 +48,7 @@ export type HotkeyBindingKey =
   | 'pdfWorkbenchToggleEditMode'
   | 'shaderWorkbenchToggleEditMode'
   | 'shaderWorkbenchToggleScene'
+  | 'spreadsheetWorkbenchToggleEditMode'
   | 'spreadsheetWorkbenchPreviousSheet'
   | 'spreadsheetWorkbenchNextSheet'
   | 'spreadsheetWorkbenchNewSheet'
@@ -433,6 +434,13 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     label: 'Shader Workbench Toggle Scene',
     description: 'Toggle the active shader preview scene between the sphere and fullscreen hosts.',
     defaultValue: 'F',
+    scope: 'local',
+  },
+  {
+    key: 'spreadsheetWorkbenchToggleEditMode',
+    label: 'Spreadsheet Workbench Toggle Edit Mode',
+    description: 'Toggle between preview and edit mode for the explorer spreadsheet workbench.',
+    defaultValue: 'E',
     scope: 'local',
   },
   {

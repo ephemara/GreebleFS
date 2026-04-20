@@ -8,10 +8,14 @@ const {
   readExplorerFileBase64Mock,
   readExplorerTextFileMock,
   writeExplorerFileMock,
+  spreadsheetGridMockState,
 } = vi.hoisted(() => ({
   readExplorerFileBase64Mock: vi.fn(),
   readExplorerTextFileMock: vi.fn(),
   writeExplorerFileMock: vi.fn(),
+  spreadsheetGridMockState: {
+    lastProps: null as null | Record<string, unknown>,
+  },
 }));
 
 vi.mock("@glideapps/glide-data-grid", async () => {
@@ -21,7 +25,8 @@ vi.mock("@glideapps/glide-data-grid", async () => {
     CompactSelection: {
       empty: () => ({ items: [] }),
     },
-    DataEditor: ReactModule.forwardRef((_props: unknown, ref) => {
+    DataEditor: ReactModule.forwardRef((props: Record<string, unknown>, ref) => {
+      spreadsheetGridMockState.lastProps = props;
       ReactModule.useImperativeHandle(
         ref,
         () => ({
@@ -30,7 +35,13 @@ vi.mock("@glideapps/glide-data-grid", async () => {
         [],
       );
 
-      return <div data-testid="mock-spreadsheet-grid" />;
+      return (
+        <div
+          data-testid="mock-spreadsheet-grid"
+          data-edit-on-type={String(Boolean(props.editOnType))}
+          data-has-trailing-row={String(Boolean(props.trailingRowOptions))}
+        />
+      );
     }),
     GridCellKind: {
       Loading: "loading",
@@ -57,9 +68,89 @@ describe("ExplorerSpreadsheetWorkbench", () => {
     readExplorerFileBase64Mock.mockReset();
     readExplorerTextFileMock.mockReset();
     writeExplorerFileMock.mockReset();
-    readExplorerTextFileMock.mockResolvedValue("name,score\nAda,1\n");
+    spreadsheetGridMockState.lastProps = null;
+    readExplorerTextFileMock.mockResolvedValue("name,score\nAda,1\nGrace,2\n");
     readExplorerFileBase64Mock.mockResolvedValue("");
     writeExplorerFileMock.mockResolvedValue(undefined);
+  });
+
+  it("renders csv previews as read-only spreadsheets with the full tabular cell matrix", async () => {
+    render(
+      <ExplorerSpreadsheetWorkbench
+        path="/tmp/scores.csv"
+        name="scores.csv"
+        sourceExtension="csv"
+        fileKind="tabular"
+        mode="preview"
+      />,
+    );
+
+    expect(await screen.findByText(/read-only preview/i)).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/enter a value or formula/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /^save$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /new sheet/i })).toBeNull();
+
+    await waitFor(() => expect(spreadsheetGridMockState.lastProps).not.toBeNull());
+    expect(screen.getByTestId("mock-spreadsheet-grid")).toHaveAttribute(
+      "data-edit-on-type",
+      "false",
+    );
+    expect(screen.getByTestId("mock-spreadsheet-grid")).toHaveAttribute(
+      "data-has-trailing-row",
+      "false",
+    );
+
+    const getCellContent = spreadsheetGridMockState.lastProps?.getCellContent as
+      | ((cell: [number, number]) => { data?: string; displayData?: string; readonly?: boolean })
+      | undefined;
+    if (!getCellContent) {
+      throw new Error("Missing spreadsheet grid content accessor");
+    }
+
+    expect(getCellContent([0, 0])).toMatchObject({
+      data: "name",
+      displayData: "name",
+      readonly: true,
+    });
+    expect(getCellContent([1, 0])).toMatchObject({
+      data: "score",
+      displayData: "score",
+      readonly: true,
+    });
+    expect(getCellContent([0, 1])).toMatchObject({
+      data: "Ada",
+      displayData: "Ada",
+      readonly: true,
+    });
+    expect(getCellContent([1, 2])).toMatchObject({
+      data: "2",
+      displayData: "2",
+      readonly: true,
+    });
+  });
+
+  it("requests edit mode from preview when the spreadsheet edit hotkey fires", async () => {
+    const onModeChange = vi.fn();
+
+    render(
+      <ExplorerSpreadsheetWorkbench
+        path="/tmp/scores.csv"
+        name="scores.csv"
+        sourceExtension="csv"
+        fileKind="tabular"
+        mode="preview"
+        onModeChange={onModeChange}
+      />,
+    );
+
+    await screen.findByTestId("mock-spreadsheet-grid");
+
+    fireEvent.keyDown(screen.getByTestId("mock-spreadsheet-grid"), {
+      key: "e",
+      code: "KeyE",
+    });
+
+    expect(onModeChange).toHaveBeenCalledWith("edit");
   });
 
   it("rejects invalid formula edits and restores the last valid cell value", async () => {
@@ -71,6 +162,7 @@ describe("ExplorerSpreadsheetWorkbench", () => {
         name="scores.csv"
         sourceExtension="csv"
         fileKind="tabular"
+        mode="edit"
       />,
     );
 
@@ -99,6 +191,7 @@ describe("ExplorerSpreadsheetWorkbench", () => {
         name="scores.csv"
         sourceExtension="csv"
         fileKind="tabular"
+        mode="edit"
       />,
     );
 

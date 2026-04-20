@@ -1,12 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { convertFileSrc } from '@tauri-apps/api/core';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
-import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
-import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import {
   MODEL_PREVIEW_PROXY_CONFIG,
   type ModelPreviewFormat,
@@ -15,11 +9,7 @@ import {
   collectNormalizedBounds,
   normalizeModelForPreview,
 } from './modelPreview.utils';
-import {
-  detectClientPlatform,
-  getPlatformPathSeparator,
-  joinPlatformPath,
-} from '../config/platform';
+import { loadModelPreviewObject } from './modelPreviewSource';
 
 type ModelPreviewProps = {
   entryName: string;
@@ -237,7 +227,7 @@ async function loadPreviewObject(args: {
   sourcePath: string;
   sourceBytes: number;
 }): Promise<LoadedPreviewResult> {
-  const rawObject = await loadSourceObject(args.format, args.sourcePath);
+  const rawObject = await loadModelPreviewObject(args.format, args.sourcePath);
   applyFallbackMaterials(rawObject);
   const normalizedObject = normalizeModelForPreview(rawObject, args.format);
   const stats = collectModelGeometryStats(normalizedObject);
@@ -252,82 +242,6 @@ async function loadPreviewObject(args: {
   }
 
   return { object: normalizedObject, proxyNotice: null };
-}
-
-async function loadSourceObject(
-  format: ModelPreviewFormat,
-  sourcePath: string,
-): Promise<THREE.Object3D> {
-  const manager = createPreviewLoadingManager(sourcePath);
-  const sourceUrl = convertFileSrc(sourcePath);
-  if (format === 'glb') {
-    const loader = createGltfLoader(manager);
-    const asset = await loader.loadAsync(sourceUrl);
-    return asset.scene ?? asset.scenes[0];
-  }
-
-  if (format === 'gltf') {
-    const loader = createGltfLoader(manager);
-    const asset = await loader.loadAsync(sourceUrl);
-    return asset.scene ?? asset.scenes[0];
-  }
-
-  if (format === 'obj') {
-    const loader = new OBJLoader(manager);
-    return loader.loadAsync(sourceUrl);
-  }
-
-  if (format === 'fbx') {
-    const loader = new FBXLoader(manager);
-    return loader.loadAsync(sourceUrl);
-  }
-
-  const loader = new STLLoader(manager);
-  const geometry = await loader.loadAsync(sourceUrl);
-  geometry.computeBoundingBox();
-  geometry.computeVertexNormals();
-  return new THREE.Mesh(
-    geometry,
-    new THREE.MeshStandardMaterial({
-      color: '#cbd6e2',
-      roughness: 0.64,
-      metalness: 0.08,
-    }),
-  );
-}
-
-function createGltfLoader(manager: THREE.LoadingManager): GLTFLoader {
-  const loader = new GLTFLoader(manager);
-  loader.setMeshoptDecoder(MeshoptDecoder);
-  return loader;
-}
-
-function createPreviewLoadingManager(sourcePath: string): THREE.LoadingManager {
-  const manager = new THREE.LoadingManager();
-  const platform = detectClientPlatform();
-  const separator = getPlatformPathSeparator(platform);
-  const sourceDirectory = getParentDirectory(sourcePath);
-
-  manager.setURLModifier((requestedUrl) => {
-    if (!requestedUrl || isAbsoluteAssetUrl(requestedUrl) || !sourceDirectory) {
-      return requestedUrl;
-    }
-
-    const [, relativePath = requestedUrl, suffix = ''] = requestedUrl.match(/^([^?#]+)(.*)$/) ?? [];
-    const normalizedRelativePath = relativePath.replace(/[\\/]+/g, separator);
-    const resolvedPath = joinPlatformPath(sourceDirectory, normalizedRelativePath, platform);
-    return `${convertFileSrc(resolvedPath)}${suffix}`;
-  });
-
-  return manager;
-}
-
-function getParentDirectory(path: string): string {
-  return path.replace(/[\\/][^\\/]+$/, '');
-}
-
-function isAbsoluteAssetUrl(url: string): boolean {
-  return /^(?:[a-z][a-z\d+\-.]*:|\/\/)/i.test(url) || /^[a-z]:[\\/]/i.test(url);
 }
 
 function collectModelGeometryStats(object: THREE.Object3D): ModelGeometryStats {
@@ -511,5 +425,5 @@ function formatLoadError(error: unknown): string {
   if (typeof error === 'string' && error.trim()) {
     return error;
   }
-  return 'Embedded GLB assets will work best. Sidecar materials or textures are not fully resolved yet.';
+  return 'Self-contained model files work best. Sidecar materials or textures may still be limited.';
 }

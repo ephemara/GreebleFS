@@ -61,6 +61,7 @@ describe('hotkey config helpers', () => {
     expect(defaults.pdfWorkbenchToggleEditMode).toBe('E');
     expect(defaults.shaderWorkbenchToggleEditMode).toBe('E');
     expect(defaults.shaderWorkbenchToggleScene).toBe('F');
+    expect(defaults.spreadsheetWorkbenchToggleEditMode).toBe('E');
     expect(defaults.spreadsheetWorkbenchPreviousSheet).toBe('Ctrl+PageUp');
     expect(defaults.spreadsheetWorkbenchNextSheet).toBe('Ctrl+PageDown');
     expect(defaults.spreadsheetWorkbenchNewSheet).toBe('Shift+F11');
