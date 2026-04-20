@@ -1,5 +1,75 @@
 # GreebleFS Memory
 
+# 2026-04-19 — Explorer Preview And Editor Lanes Now Share Automatic Resilience Rules
+
+- The explorer preview shell now treats corruption, unsupported formats, cache pressure, invalid edits, and save failures as shared system behaviors instead of scattered per-file-type branches.
+- Durable implementation shape:
+  - `src/components/explorer/explorerPreviewSystem.ts` now owns data-driven preview descriptor resolution plus the shared loading/error/unsupported fallback builders used by `FileExplorer.tsx`. Preview routing is no longer a long per-extension branch inside the shell.
+  - `src/components/FileExplorer.tsx` now routes preview entry opening through that shared resolver, lets non-executable unsupported files land in the preview fallback instead of immediately escaping to external open, and uses a generic preview close-guard path so spreadsheet/PDF/shader lanes can block preview switches without type-specific hardcoding.
+  - `src/components/explorer/explorerPreviewCache.ts` now provides a byte-budgeted preview cache with oldest-entry eviction. Text and image preview payloads use that cache, and explorer cache invalidation now clears preview payloads by path prefix too.
+  - `src/components/explorer/explorerEditSession.ts` now owns persisted draft storage, rename-time draft moves, validator wrappers, and the standard “Draft preserved; use Save to retry.” failure message. Text and shader preview drafts now survive save failures and preview teardown, and text previews now expose an explicit retryable Save action in the preview chrome.
+  - `src/runtime/spreadsheetWorkbook.ts` now exports `validateSpreadsheetRawCellContent(...)`, and `src/components/ExplorerSpreadsheetWorkbench.tsx` rejects invalid cell edits before they mutate workbook truth, restores the formula bar on rejected commits, and preserves the in-memory draft plus retry messaging when save fails.
+  - `src/components/ExplorerPdfWorkbench.tsx` now validates required/selectable form edits from field metadata, rejects invalid dropdown/checkbox edits before they mutate saved form state where practical, validates the full form again before save, and preserves draft state with retry messaging on save failure.
+- Durable product note:
+  - Treat preview resilience as a shell-wide contract. New preview/editor lanes should extend `explorerPreviewSystem.ts`, `explorerPreviewCache.ts`, and `explorerEditSession.ts` first instead of growing one-off fallback, cache, or retry logic inside each workbench.
+  - Unknown small files still intentionally route through the generic text-preview heuristic; unsupported fallback is for entries the resolver cannot safely classify as previewable. Keep that distinction explicit if preview heuristics change.
+- Validation:
+  - passed: `bunx tsc --noEmit --pretty false`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx src/test/explorerPdfWorkbench.test.tsx src/test/explorerSpreadsheetWorkbench.test.tsx src/test/explorerPreviewCache.test.ts --reporter=dot`
+
+# 2026-04-19 — Explorer Hot Paths Now Defer Viewport Background Work And Reuse Sorted Search Cache Snapshots
+
+- Explorer scroll/search hot paths now do less synchronous churn while preserving current UI behavior.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now builds `visibleEntryLookup` / `visibleEntryIndexLookup` once per visible-entry set so keyboard selection, shift-range expansion, jump-filter activation, and hover-scrub validation stop rescanning the full explorer list on each interaction.
+  - Explorer background loaders for entry sizes, native icons, and generated thumbnails now run off a deferred virtualized-entry slice instead of the raw live viewport slice. Fast scroll still updates visible rows immediately, but expensive side effects wait for a calmer viewport snapshot before scheduling backend work.
+  - Text preview metrics now use deferred preview content in `FileExplorer.tsx`, and `src/config/explorerMonaco.ts` computes chars/words/lines in one pass instead of repeated `split()` allocations.
+  - `src-tauri/src/fs_commands.rs` now stores warm recursive search indexes as sorted shared `Arc<[...]>` snapshots. Warm names-only and content-enabled cache hits no longer clone full cache vectors just to sort them again, and names-only cache hits can stop once the requested result count is filled.
+  - `src-tauri/src/fs_commands.rs` now has a regression test that proves warm names-only cache hits preserve sorted path ordering.
+- Durable product note:
+  - Treat explorer viewport rendering and explorer background enrichment as separate lanes. Rendering should respond immediately to scroll/selection, while icons/thumbnails/size probes should tolerate slight deferral to keep pointer and keyboard interactions smooth.
+  - For recursive search caches, prefer “sort once on store, filter many times on hit” over “clone and sort on every lookup.” If future cache work touches directory listings or other warm indexes, keep this pattern in mind.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerMonaco.test.ts --reporter=dot`
+  - passed: filtered `bunx tsc --noEmit --pretty false 2>&1 | rg "src/components/FileExplorer.tsx|src/config/explorerMonaco.ts" || true`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml search_entries_names_only_ -- --nocapture`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml search_entries_content_reuse_cached_index -- --nocapture`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
+
+# 2026-04-19 — Explorer Monaco Preview Now Shows Line/Cursor Status And Uses A Shared Fast Path
+
+- Explorer text previews and shader edit previews now share one settings-backed Monaco configuration instead of each surface hardcoding its own small option bag.
+- Durable implementation shape:
+  - `src/config/explorerMonaco.ts` now owns the preview-editor policy: settings-backed font/cursor/wrap values, dynamic gutter sizing, disabled expensive Monaco extras, large-file-friendly limits, and a shared text-metrics helper for chars/words/lines.
+  - `src/components/FileExplorer.tsx` now routes the Monaco text preview through that shared builder, gives the editor a stable `path` so Monaco can reuse per-file model/view state, and keeps a preview-status strip that shows chars/words/lines plus live `Ln / Col` cursor state when the Monaco surface is active.
+  - `src/components/ExplorerShaderWorkbench.tsx` now uses the same preview Monaco builder for the editable shader lane, so the preview-pane editor behavior stays consistent across plain text and shader authoring.
+  - `src/test/explorerMonaco.test.ts` locks the shared Monaco preview contract, and `src/test/fileExplorer.viewModes.test.tsx` now asserts that the preview status strip surfaces the expected text metrics and initial cursor location.
+- Durable product note:
+  - Treat explorer Monaco usage as a shared preview-surface runtime, not a pile of per-component one-off option literals. If future work adds more preview-pane Monaco surfaces, extend `src/config/explorerMonaco.ts` first so performance and editor behavior stay aligned.
+  - Keep preview-pane Monaco optimized for reading and quick edits: visible line numbers, explicit line/cursor status, saved view state per file path, and expensive IDE-only widgets disabled unless the product deliberately wants them back.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerMonaco.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "shows Monaco text preview metrics and cursor location in the preview status strip|switches text files back to Monaco with a loading fallback while text content resolves" --reporter=dot`
+  - passed: filtered `bunx tsc --noEmit --pretty false` check returned no matching errors for `src/config/explorerMonaco.ts`, `src/components/FileExplorer.tsx`, `src/components/ExplorerShaderWorkbench.tsx`, `src/test/explorerMonaco.test.ts`, and `src/test/setup.tsx`
+
+# 2026-04-19 — Explorer Arrow Navigation Now Drives Immediate Preview Updates
+
+- Explorer keyboard selection now treats directional movement as first-class navigation instead of a partial up/down-only selection helper.
+- Durable implementation shape:
+  - `src/config/hotkeys.ts` now defines settings-backed explorer movement bindings for `explorerMoveSelectionUp`, `explorerMoveSelectionDown`, `explorerMoveSelectionLeft`, and `explorerMoveSelectionRight`, with matching coverage exposed in `src/components/SettingsPage.tsx`.
+  - `src/components/FileExplorer.tsx` now keeps keyboard focus and range-anchor state separate, so repeated `Shift` selection extension grows from the original anchor instead of drifting with the active row.
+  - Explorer keyboard movement now updates the preview immediately for the newly focused file while moving through entries, and it scrolls the newly focused entry into view when that DOM node exists.
+  - Directional movement is now layout-aware: list/table presentations move vertically, while icon/grid presentations use the live grid column count so left/right/up/down follow the actual tile layout.
+  - Preview-panel close behavior now distinguishes between the explicit toolbar preview toggle and the panel close button: the panel close button still hides preview mode, but the next plain explorer selection can reopen preview in the remembered pane mode.
+  - Explorer virtualization now has an unmeasured-viewport fallback that renders the full visible entry window until the scroll area reports real dimensions, and resolved directory navigation commits synchronously so deep-scroll folder navigation does not strand the destination listing.
+- Durable product note:
+  - Treat explorer keyboard traversal as equivalent to pointer traversal for preview refresh. If future work adds more explorer layouts or alternate navigation modes, keep the directional-index resolver and preview refresh path aligned so keyboard users always see the active file immediately.
+  - Keep the toolbar preview toggle as the persistent enable/disable control, but treat the preview-pane close button as a temporary dismissal that can be re-armed by the next plain explorer selection.
+- Validation:
+  - passed: `bunx vitest run src/test/hotkeys.test.ts src/test/settingsStore.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "extends the selection with shift+arrow navigation|updates the preview while arrow navigation moves through row-based explorer views|uses the icon-grid layout for left-right-up-down explorer navigation" --reporter=dot`
+  - note: the full `src/test/fileExplorer.viewModes.test.tsx` file is currently red in this worktree due separate in-flight Monaco preview / fallback-preview changes already present in `src/components/FileExplorer.tsx` and adjacent preview tests.
+
 # 2026-04-19 — Constellation Mode Rebuilt As A Pannable Command Field
 
 - Constellation mode no longer renders stacked per-band orbit cards with a centered `Orbit Map` explainer panel.

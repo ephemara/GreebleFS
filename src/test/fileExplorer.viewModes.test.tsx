@@ -361,6 +361,16 @@ const ENTRIES = [
     is_symlink: false,
   },
   {
+    name: "mystery.bin",
+    path: `${REPO_ROOT}\\mystery.bin`,
+    is_dir: false,
+    size: 3 * 1024 * 1024,
+    modified: 0,
+    extension: "bin",
+    is_hidden: false,
+    is_symlink: false,
+  },
+  {
     name: "aaa_surface.wgsl",
     path: `${REPO_ROOT}\\aaa_surface.wgsl`,
     is_dir: false,
@@ -1413,6 +1423,43 @@ describe("FileExplorer view modes", () => {
     );
   });
 
+  it("shows Monaco text preview metrics and cursor location in the preview status strip", async () => {
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        const payload = args as { path?: string } | undefined;
+        if (
+          command === "fs_read_text_file" &&
+          payload?.path === `${REPO_ROOT}\\notes.txt`
+        ) {
+          return "alpha beta\ngamma";
+        }
+        return baseInvokeImplementation(command, args as never);
+      },
+    );
+
+    renderExplorer();
+    await screen.findByText("notes.txt");
+
+    fireEvent.click(screen.getByText("notes.txt"));
+
+    expect(await screen.findByTestId("monaco-editor")).toHaveTextContent(
+      "alpha beta gamma",
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("text-preview-metrics")).toHaveTextContent(
+        "16 chars · 3 words · 2 lines",
+      );
+    });
+    expect(screen.getByTestId("text-preview-cursor")).toHaveTextContent(
+      "Ln 1, Col 1",
+    );
+  });
+
   it("opens html files in preview mode when a rendered document preview is available", async () => {
     renderExplorer();
     await screen.findByText("index.html");
@@ -1660,6 +1707,36 @@ describe("FileExplorer view modes", () => {
     fireEvent.click(screen.getByText("broken.png"));
     await screen.findByText(/image preview unavailable/i);
     expect(screen.getByText(/file is too large to preview/i)).toBeTruthy();
+  });
+
+  it("shows the unsupported fallback without routing the file through text or image loaders", async () => {
+    renderExplorer();
+    await screen.findByText("mystery.bin");
+
+    vi.mocked(invoke).mockClear();
+    fireEvent.click(screen.getByText("mystery.bin"));
+
+    await screen.findByText(/preview unavailable/i);
+    expect(
+      vi
+        .mocked(invoke)
+        .mock.calls.some(
+          ([command, args]) =>
+            command === "fs_read_text_file" &&
+            (args as { path?: string } | undefined)?.path ===
+              `${REPO_ROOT}\\mystery.bin`,
+        ),
+    ).toBe(false);
+    expect(
+      vi
+        .mocked(invoke)
+        .mock.calls.some(
+          ([command, args]) =>
+            command === "fs_read_file_base64" &&
+            (args as { path?: string } | undefined)?.path ===
+              `${REPO_ROOT}\\mystery.bin`,
+        ),
+    ).toBe(false);
   });
 
   it("mounts the embedded audio workbench for previewable audio files without routing them through text loading", async () => {
@@ -3253,8 +3330,9 @@ describe("FileExplorer view modes", () => {
       expect(vi.mocked(currentWindow.onDragDropEvent).mock.calls.length).toBeGreaterThan(0);
     });
 
+    const dragDropCalls = vi.mocked(currentWindow.onDragDropEvent).mock.calls;
     const nativeDragHandler =
-      vi.mocked(currentWindow.onDragDropEvent).mock.calls.at(-1)?.[0];
+      dragDropCalls[dragDropCalls.length - 1]?.[0];
     if (!nativeDragHandler) {
       throw new Error("Expected native drag-drop listener");
     }

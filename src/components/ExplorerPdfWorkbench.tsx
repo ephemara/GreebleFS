@@ -36,6 +36,10 @@ import {
 } from '../runtime/pdfPreviewBackend';
 import { useSettingsStore } from '../store/settingsStore';
 import { AppDialogFrame, AppPromptDialog } from './AppModal';
+import {
+  buildExplorerDraftPreservedMessage,
+  validateExplorerEditDraft,
+} from './explorer/explorerEditSession';
 
 type ExplorerPdfWorkbenchProps = {
   document: ExplorerPdfPreviewDocument;
@@ -154,6 +158,78 @@ function createInitialPdfFormDrafts(
       },
     ]),
   );
+}
+
+function resolvePdfFormDraft(
+  field: ExplorerPdfFormFieldDescriptor,
+  formValuesByFieldId: Record<string, PdfFormValueDraft>,
+): PdfFormValueDraft {
+  return formValuesByFieldId[field.fieldId] ?? {
+    stringValue: field.stringValue ?? null,
+    boolValue: field.boolValue ?? null,
+    selectedValues:
+      field.selectedValues.length > 0
+        ? [...field.selectedValues]
+        : field.stringValue
+          ? [field.stringValue]
+          : [],
+  };
+}
+
+function getPdfFormFieldLabel(field: ExplorerPdfFormFieldDescriptor): string {
+  return field.fieldName.trim() || field.fieldId;
+}
+
+function validatePdfFormDraft(
+  field: ExplorerPdfFormFieldDescriptor,
+  draft: PdfFormValueDraft,
+  options?: {
+    enforceRequired?: boolean;
+  },
+): string | null {
+  const fieldLabel = getPdfFormFieldLabel(field);
+  const enforceRequired = options?.enforceRequired ?? true;
+
+  if (field.kind === 'dropdown' || field.kind === 'listbox') {
+    const allowedOptionValues = new Set(field.options.map((option) => option.value));
+    const normalizedSelections = draft.selectedValues.filter(
+      (value) => value.trim().length > 0,
+    );
+
+    if (draft.stringValue && !allowedOptionValues.has(draft.stringValue)) {
+      return `${fieldLabel} must use a supported option.`;
+    }
+
+    if (normalizedSelections.some((value) => !allowedOptionValues.has(value))) {
+      return `${fieldLabel} must use a supported option.`;
+    }
+
+    if (enforceRequired && field.required && normalizedSelections.length === 0) {
+      return `${fieldLabel} is required.`;
+    }
+
+    return null;
+  }
+
+  if (
+    enforceRequired &&
+    field.required &&
+    (field.kind === 'checkbox' || field.kind === 'radio') &&
+    draft.boolValue !== true
+  ) {
+    return `${fieldLabel} must be selected.`;
+  }
+
+  if (
+    enforceRequired &&
+    field.required &&
+    (field.kind === 'text' || field.kind === 'multiline') &&
+    !(draft.stringValue ?? '').trim()
+  ) {
+    return `${fieldLabel} is required.`;
+  }
+
+  return null;
 }
 
 function isEditableElement(target: EventTarget | null): boolean {
@@ -424,12 +500,28 @@ export function ExplorerPdfWorkbench({
   }, []);
 
   const commitFormValue = useCallback(
-    (fieldId: string, nextDraft: PdfFormValueDraft) => {
+    (field: ExplorerPdfFormFieldDescriptor, nextDraft: PdfFormValueDraft) => {
+      const validation = validateExplorerEditDraft(nextDraft, (draft) =>
+        validatePdfFormDraft(field, draft, {
+          enforceRequired:
+            field.kind === 'checkbox' ||
+            field.kind === 'radio' ||
+            field.kind === 'dropdown' ||
+            field.kind === 'listbox',
+        }),
+      );
+      if (!validation.accepted) {
+        setError(validation.error ?? 'PDF form edit rejected.');
+        return false;
+      }
+
+      setError(null);
       setFormValuesByFieldId((current) => ({
         ...current,
-        [fieldId]: nextDraft,
+        [field.fieldId]: nextDraft,
       }));
       markDirty();
+      return true;
     },
     [markDirty],
   );
@@ -454,6 +546,17 @@ export function ExplorerPdfWorkbench({
       return false;
     }
 
+    for (const field of pdfDocument.formFields) {
+      const draft = resolvePdfFormDraft(field, formValuesByFieldId);
+      const validation = validateExplorerEditDraft(draft, (candidate) =>
+        validatePdfFormDraft(field, candidate),
+      );
+      if (!validation.accepted) {
+        setError(validation.error ?? 'PDF form edit rejected.');
+        return false;
+      }
+    }
+
     setIsSaving(true);
     setError(null);
 
@@ -461,11 +564,7 @@ export function ExplorerPdfWorkbench({
       const saveResult = await saveExplorerPdfPreviewEdits({
         sessionId: pdfDocument.sessionId,
         formUpdates: pdfDocument.formFields.map((field) => {
-          const draft = formValuesByFieldId[field.fieldId] ?? {
-            stringValue: field.stringValue ?? null,
-            boolValue: field.boolValue ?? null,
-            selectedValues: field.selectedValues,
-          };
+          const draft = resolvePdfFormDraft(field, formValuesByFieldId);
           return {
             fieldId: field.fieldId,
             stringValue: draft.stringValue,
@@ -486,7 +585,7 @@ export function ExplorerPdfWorkbench({
       await onSaved?.(saveResult);
       return true;
     } catch (saveError) {
-      setError(String(saveError));
+      setError(buildExplorerDraftPreservedMessage(saveError));
       return false;
     } finally {
       setIsSaving(false);
@@ -956,11 +1055,7 @@ export function ExplorerPdfWorkbench({
   const renderFormField = useCallback(
     (field: ExplorerPdfFormFieldDescriptor) => {
       const fieldStyle = annotationStyleFromPageRect(field.rect);
-      const currentValue = formValuesByFieldId[field.fieldId] ?? {
-        stringValue: field.stringValue ?? null,
-        boolValue: field.boolValue ?? null,
-        selectedValues: field.selectedValues,
-      };
+      const currentValue = resolvePdfFormDraft(field, formValuesByFieldId);
       const commonStyle: CSSProperties = {
         position: 'absolute',
         ...fieldStyle,
@@ -988,7 +1083,7 @@ export function ExplorerPdfWorkbench({
             disabled={!isEditMode || field.readOnly}
             title={field.fieldName}
             onChange={(event) =>
-              commitFormValue(field.fieldId, {
+              commitFormValue(field, {
                 stringValue:
                   event.target.checked
                     ? field.widgetExportValue ?? field.fieldName
@@ -1036,6 +1131,7 @@ export function ExplorerPdfWorkbench({
                 }
                 return next;
               });
+              setError(null);
               markDirty();
             }}
             style={{ ...commonStyle, cursor: isEditMode ? 'pointer' : 'default' }}
@@ -1052,7 +1148,7 @@ export function ExplorerPdfWorkbench({
             disabled={!isEditMode || field.readOnly}
             title={field.fieldName}
             onChange={(event) =>
-              commitFormValue(field.fieldId, {
+              commitFormValue(field, {
                 stringValue: event.target.value,
                 boolValue: null,
                 selectedValues: event.target.value ? [event.target.value] : [],
@@ -1073,7 +1169,7 @@ export function ExplorerPdfWorkbench({
             disabled={!isEditMode || field.readOnly}
             title={field.fieldName}
             onChange={(event) =>
-              commitFormValue(field.fieldId, {
+              commitFormValue(field, {
                 stringValue: event.target.value,
                 boolValue: null,
                 selectedValues: event.target.value ? [event.target.value] : [],
@@ -1100,7 +1196,7 @@ export function ExplorerPdfWorkbench({
           disabled={!isEditMode || field.readOnly}
           title={field.fieldName}
           onChange={(event) =>
-            commitFormValue(field.fieldId, {
+            commitFormValue(field, {
               stringValue: event.target.value,
               boolValue: null,
               selectedValues: event.target.value ? [event.target.value] : [],

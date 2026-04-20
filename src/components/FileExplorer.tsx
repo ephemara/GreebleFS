@@ -11,6 +11,7 @@
 import React, {
   Suspense,
   startTransition,
+  useDeferredValue,
   useState,
   useEffect,
   useLayoutEffect,
@@ -70,7 +71,6 @@ import {
 import {
   getExplorerArchiveExtractToFolderLabel,
   isExplorerArchiveEntry,
-  getExplorerArchiveDescriptor,
   type ExplorerArchiveFormatDescriptor,
 } from "../config/explorerArchives";
 import type {
@@ -223,7 +223,6 @@ import {
   buildExplorerPreviewErrorFallback,
   buildExplorerPreviewLoadingFallback,
   buildExplorerUnsupportedPreviewFallback,
-  isInlineExplorerPreviewDescriptor,
   resolveExplorerPreviewDescriptor,
 } from "./explorer/explorerPreviewSystem";
 import {
@@ -256,22 +255,8 @@ import {
 import { resolveExplorerSearchScope } from "./fileExplorerSearchScope";
 import type { DocumentPreviewKind } from "./documentPreview";
 import {
-  getAudioPreviewMimeType,
-  getModelPreviewFormat,
-  getMonacoLanguage,
-  getShaderPreviewFormat,
-  getSpreadsheetFileKind,
-  getVideoPreviewMimeType,
   isAudioPreviewExtension,
-  isDocxPreviewExtension,
-  isEditableTextExtension,
   isExecutableExtension,
-  isImagePreviewExtension,
-  isFontPreviewExtension,
-  isPdfPreviewExtension,
-  isShaderPreviewExtension,
-  isSqlitePreviewExtension,
-  isSpreadsheetPreviewExtension,
   isVideoPreviewExtension,
   type ModelPreviewFormat,
   type ShaderPreviewFormat,
@@ -280,6 +265,10 @@ import {
   EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG,
   canRenderExplorerThumbnail,
 } from "../config/explorerThumbnails";
+import {
+  buildExplorerMonacoPreviewOptions,
+  getExplorerTextPreviewMetrics,
+} from "../config/explorerMonaco";
 import {
   clampSearchFocusLine,
   createEditorSearchFocus,
@@ -1772,14 +1761,6 @@ function getNativeIconRequest(entry: FileEntry): OverlayNativeIconRequest {
   };
 }
 
-// ─── Extension sets (for preview logic only) ─────────────────────────────────
-
-function isEditableTextEntry(entry: FileEntry): boolean {
-  if (entry.is_dir) return false;
-  const ext = getEntryExtension(entry);
-  return isEditableTextExtension(ext, entry.size);
-}
-
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -2857,7 +2838,11 @@ interface TimelineSurfaceBand {
 
 const MONACO_FIND_WITH_ARGS_ACTION = "editor.actions.findWithArgs";
 
-type MonacoEditorOptions = MonacoEditorProps["options"];
+type MonacoEditorOptions = NonNullable<MonacoEditorProps["options"]>;
+type EditorCursorPosition = {
+  lineNumber: number;
+  column: number;
+};
 
 function applyEditorSearchFocus(
   editor: any,
@@ -2911,32 +2896,62 @@ function applyEditorSearchFocus(
 }
 
 function SearchAwareCodeView({
+  path,
   value,
   language,
-  readOnly,
   focusTarget,
   onChange,
+  onCursorPositionChange,
   options,
 }: {
+  path: string;
   value: string;
   language: string;
-  readOnly: boolean;
   focusTarget: EditorSearchFocusTarget | null;
   onChange?: (value: string) => void;
+  onCursorPositionChange?: (position: EditorCursorPosition) => void;
   options: MonacoEditorOptions;
 }) {
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
+  const cursorListenerRef = useRef<{ dispose(): void } | null>(null);
+
+  const publishCursorPosition = useCallback(
+    (editor: any) => {
+      const position = editor.getPosition?.();
+      if (!position) {
+        return;
+      }
+      onCursorPositionChange?.({
+        lineNumber: position.lineNumber,
+        column: position.column,
+      });
+    },
+    [onCursorPositionChange],
+  );
 
   const handleMount = useCallback(
     (editor: any, monaco: any) => {
       editorRef.current = editor;
       monacoRef.current = monaco;
+      cursorListenerRef.current?.dispose?.();
+      cursorListenerRef.current =
+        editor.onDidChangeCursorPosition?.((event: { position: EditorCursorPosition }) => {
+          onCursorPositionChange?.({
+            lineNumber: event.position.lineNumber,
+            column: event.position.column,
+          });
+        }) ?? null;
+      publishCursorPosition(editor);
       window.requestAnimationFrame(() => {
-        applyEditorSearchFocus(editor, monaco, focusTarget);
+        window.requestAnimationFrame(() => {
+          editor.layout?.();
+          applyEditorSearchFocus(editor, monaco, focusTarget);
+          publishCursorPosition(editor);
+        });
       });
     },
-    [focusTarget],
+    [focusTarget, onCursorPositionChange, publishCursorPosition],
   );
 
   useEffect(() => {
@@ -2946,29 +2961,43 @@ function SearchAwareCodeView({
 
     const frame = window.requestAnimationFrame(() => {
       applyEditorSearchFocus(editorRef.current, monacoRef.current, focusTarget);
+      publishCursorPosition(editorRef.current);
     });
 
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [focusTarget?.requestId, value]);
+  }, [focusTarget?.requestId, path, publishCursorPosition, value]);
+
+  useEffect(() => {
+    if (!editorRef.current) {
+      return;
+    }
+    publishCursorPosition(editorRef.current);
+  }, [path, publishCursorPosition, value]);
+
+  useEffect(
+    () => () => {
+      cursorListenerRef.current?.dispose?.();
+      cursorListenerRef.current = null;
+    },
+    [],
+  );
 
   return (
     <Suspense fallback={<EditorFallback label="Loading editor…" />}>
       <LazyMonacoEditor
+        path={path}
         height="100%"
         language={language || "plaintext"}
         value={value}
         theme="vs-dark"
         onMount={handleMount}
+        saveViewState
         onChange={
           onChange ? (nextValue) => onChange(nextValue ?? "") : undefined
         }
-        options={{
-          automaticLayout: true,
-          readOnly,
-          ...options,
-        }}
+        options={options}
       />
     </Suspense>
   );
@@ -3029,6 +3058,7 @@ function PreviewPanel({
   chromeOverride,
   chromeEditMode,
   showHiddenFiles,
+  editorSettings,
   onOpenFolderPreviewEntry,
   onExtractArchive,
 }: {
@@ -3077,6 +3107,7 @@ function PreviewPanel({
   chromeOverride?: ExplorerChromeOverrideSnapshot | null;
   chromeEditMode?: ExplorerChromeEditModeState;
   showHiddenFiles: boolean;
+  editorSettings: import("../store/settingsStore").EditorSettings;
   onOpenFolderPreviewEntry: (entry: FileEntry) => void;
   onExtractArchive: (mode: ExplorerArchiveExtractionMode) => void;
 }) {
@@ -3091,6 +3122,10 @@ function PreviewPanel({
   const [spreadsheetWorkbenchStatus, setSpreadsheetWorkbenchStatus] =
     useState<SpreadsheetWorkbenchStatus | null>(null);
   const [pdfPageInputValue, setPdfPageInputValue] = useState("1");
+  const [textPreviewCursor, setTextPreviewCursor] = useState<EditorCursorPosition>({
+    lineNumber: 1,
+    column: 1,
+  });
   const dragHandleSide = placement === "leading" ? "right" : "left";
   const onMouseDown = (e: React.MouseEvent) => {
     dragging.current = true;
@@ -3127,6 +3162,10 @@ function PreviewPanel({
   useEffect(() => {
     setCopiedPath(null);
   }, [preview.path]);
+
+  useEffect(() => {
+    setTextPreviewCursor({ lineNumber: 1, column: 1 });
+  }, [preview.path, preview.type]);
 
   useEffect(() => {
     if (preview.type !== "pdf") {
@@ -3247,8 +3286,17 @@ function PreviewPanel({
   const previewTerminalToggleTitle = isPreviewTerminalMode
     ? "Show file preview"
     : "Show preview terminal";
+  const deferredPreviewTextContent = useDeferredValue(
+    preview.type === "text" ? preview.content : "",
+  );
   const supportsRenderedPreview =
     preview.type === "text" && preview.renderKind !== "none";
+  const textPreviewMetrics =
+    preview.type === "text"
+      ? getExplorerTextPreviewMetrics(deferredPreviewTextContent)
+      : null;
+  const textPreviewShowsEditorCursor =
+    preview.type === "text" && (!supportsRenderedPreview || viewMode === "edit");
   const supportsPreviewModeToggle =
     supportsRenderedPreview || isPdfPreview || isShaderPreview;
   const previewHeaderRowStyle = useMemo<CSSProperties>(
@@ -4218,6 +4266,7 @@ function PreviewPanel({
               isSaving={preview.isSaving}
               error={preview.error}
               viewMode={viewMode}
+              editorSettings={editorSettings}
               onSourceChange={onShaderSourceChange}
               onSelectionChange={onShaderSelectionChange}
               onCompileResult={onShaderCompileResult}
@@ -4242,24 +4291,19 @@ function PreviewPanel({
           {preview.type === "text" &&
             (!supportsRenderedPreview || viewMode === "edit") && (
               <SearchAwareCodeView
+                path={preview.path}
                 value={preview.content || ""}
                 language={preview.language || "plaintext"}
-                readOnly={false}
                 focusTarget={preview.focusTarget}
                 onChange={(value) => onTextChange(preview.path, value)}
-                options={{
-                  minimap: { enabled: false },
-                  scrollBeyondLastLine: false,
-                  fontSize: 12,
-                  lineNumbers: "on",
-                  wordWrap: "on",
-                  padding: { top: 8 },
-                  overviewRulerLanes: 0,
-                  lineDecorationsWidth: 0,
-                  lineNumbersMinChars: 3,
-                  folding: false,
-                  glyphMargin: false,
-                }}
+                onCursorPositionChange={setTextPreviewCursor}
+                options={buildExplorerMonacoPreviewOptions({
+                  editorSettings,
+                  lineCount: textPreviewMetrics?.lineCount ?? 1,
+                  readOnly: false,
+                  allowFolding: false,
+                  topPadding: 8,
+                })}
               />
             )}
           {preview.type === "model3d" && (
@@ -4324,6 +4368,7 @@ function PreviewPanel({
       </div>
       {previewSurfaceMode === "content" && preview.type === "text" && (
         <div
+          data-testid="text-preview-status"
           style={{
             display: "flex",
             alignItems: "center",
@@ -4336,11 +4381,25 @@ function PreviewPanel({
             color: EXP.muted,
           }}
         >
-          <span>
-            {preview.content.length} chars ·{" "}
-            {preview.content.split(/\s+/).filter(Boolean).length} words ·{" "}
-            {preview.content.split("\n").length} lines
-          </span>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <span data-testid="text-preview-metrics">
+              {textPreviewMetrics?.characterCount ?? 0} chars ·{" "}
+              {textPreviewMetrics?.wordCount ?? 0} words ·{" "}
+              {textPreviewMetrics?.lineCount ?? 1} lines
+            </span>
+            {textPreviewShowsEditorCursor && (
+              <span data-testid="text-preview-cursor">
+                Ln {textPreviewCursor.lineNumber}, Col {textPreviewCursor.column}
+              </span>
+            )}
+          </div>
           <span
             style={{
               color: preview.error
@@ -6265,6 +6324,7 @@ export function FileExplorer({
     explorerSettings,
     appearanceSettings,
     systemSettings,
+    editorSettings,
     keybindings,
     clearExplorerChromeLayoutOverride,
     setExplorerChromeLayoutOverride,
@@ -6275,6 +6335,7 @@ export function FileExplorer({
       explorerSettings: state.settings.explorer,
       appearanceSettings: state.settings.appearance,
       systemSettings: state.settings.system,
+      editorSettings: state.settings.editor,
       keybindings: state.settings.keybindings,
       clearExplorerChromeLayoutOverride:
         state.clearExplorerChromeLayoutOverride,
@@ -6592,6 +6653,8 @@ export function FileExplorer({
   const selectionRangeAnchorPathRef = useRef<string | null>(null);
   const previewRef = useRef(preview);
   const previewCloseGuardRef = useRef<PreviewCloseGuard | null>(null);
+  const previewReopenOnSelectionRef = useRef(false);
+  const allowPreviewLoadWhileClosedRef = useRef(false);
   const previewSaveTimer = useRef<number | null>(null);
   const setExplorerDragOverTarget = useCallback((targetPath: string | null) => {
     dragOverRef.current = targetPath;
@@ -7053,27 +7116,23 @@ export function FileExplorer({
         if (!isActiveDirectoryLoadRequest()) {
           return;
         }
-        startTransition(() => {
-          if (isActiveDirectoryLoadRequest()) {
-            pendingNavigationPathRef.current = null;
-            pendingNavigationHistoryRef.current = null;
-            pendingNavigationHistoryIdxRef.current = null;
-            historyRef.current = nextHistory;
-            historyIdxRef.current = nextHistoryIdx;
-            setCurrentPath(normalizedPath);
-            setHistory(nextHistory);
-            setHistoryIdx(nextHistoryIdx);
-            setSelected(new Set());
-            setSearch("");
-            setSearchResults([]);
-            setSearchLoading(false);
-            setEntries(nextListing.entries);
-            setEntrySizeLoadingPaths(new Set());
-            setLocationBreadcrumbs(nextListing.breadcrumbs);
-            setLocationParentPath(nextListing.parentPath);
-            resetExplorerViewport();
-          }
-        });
+        pendingNavigationPathRef.current = null;
+        pendingNavigationHistoryRef.current = null;
+        pendingNavigationHistoryIdxRef.current = null;
+        historyRef.current = nextHistory;
+        historyIdxRef.current = nextHistoryIdx;
+        setCurrentPath(normalizedPath);
+        setHistory(nextHistory);
+        setHistoryIdx(nextHistoryIdx);
+        setSelected(new Set());
+        setSearch("");
+        setSearchResults([]);
+        setSearchLoading(false);
+        setEntries(nextListing.entries);
+        setEntrySizeLoadingPaths(new Set());
+        setLocationBreadcrumbs(nextListing.breadcrumbs);
+        setLocationParentPath(nextListing.parentPath);
+        resetExplorerViewport();
         recordExplorerMetric({
           metricId: "explorer_navigation",
           durationMs: getExplorerPerformanceNow() - startedAt,
@@ -7783,6 +7842,17 @@ export function FileExplorer({
       jumpFilter.query,
       jumpFilter.resultPaths,
     ],
+  );
+  const visibleEntryLookup = useMemo(
+    () => new Map(visibleEntries.map((entry) => [entry.path, entry] as const)),
+    [visibleEntries],
+  );
+  const visibleEntryIndexLookup = useMemo(
+    () =>
+      new Map(
+        visibleEntries.map((entry, index) => [entry.path, index] as const),
+      ),
+    [visibleEntries],
   );
   const sourceEntryCount = isSearchActive
     ? searchResults.length
@@ -9380,6 +9450,8 @@ export function FileExplorer({
   );
 
   const togglePreviewEnabled = useCallback(async () => {
+    previewReopenOnSelectionRef.current = false;
+    allowPreviewLoadWhileClosedRef.current = false;
     if (previewEnabled) {
       const didClose = await closePreview();
       if (didClose) {
@@ -9391,6 +9463,15 @@ export function FileExplorer({
     setPreviewEnabled(true);
   }, [closePreview, previewEnabled]);
 
+  const closePreviewPanel = useCallback(async () => {
+    previewReopenOnSelectionRef.current = true;
+    allowPreviewLoadWhileClosedRef.current = false;
+    const didClose = await closePreview();
+    if (didClose) {
+      setPreviewEnabled(false);
+    }
+  }, [closePreview]);
+
   const previewEntry = useCallback(
     async (
       entry: FileEntry,
@@ -9400,8 +9481,11 @@ export function FileExplorer({
       const isCurrentPreviewRequest = () =>
         isExplorerMountedRef.current &&
         previewLoadRequestIdRef.current === requestId;
+      const allowPreviewLoadWhileClosed =
+        allowPreviewLoadWhileClosedRef.current;
+      allowPreviewLoadWhileClosedRef.current = false;
 
-      if (!previewEnabled || isCompactDock) {
+      if ((!previewEnabled && !allowPreviewLoadWhileClosed) || isCompactDock) {
         if (isCurrentPreviewRequest()) {
           setPreview({ type: "none", path: "" });
           setPreviewLoading(false);
@@ -9947,9 +10031,7 @@ export function FileExplorer({
         lastSelected.current ??
         Array.from(selected)[0] ??
         nextEntry.path;
-      const anchorIndex = visibleEntries.findIndex(
-        (entry) => entry.path === anchorPath,
-      );
+      const anchorIndex = visibleEntryIndexLookup.get(anchorPath) ?? -1;
       const rangeStart =
         anchorIndex >= 0 ? Math.min(anchorIndex, clampedIndex) : clampedIndex;
       const rangeEnd =
@@ -9972,6 +10054,7 @@ export function FileExplorer({
       previewExplorerSelectionTarget,
       scrollExplorerEntryIntoView,
       selected,
+      visibleEntryIndexLookup,
       visibleEntries,
     ],
   );
@@ -9995,17 +10078,14 @@ export function FileExplorer({
 
       const focusTarget = getSearchFocusTarget(entry);
       const canInlinePreview = previewEnabled && !isCompactDock;
-      const resolvedPreview = resolveExplorerPreviewDescriptor(entry, {
-        assetUrlResolver: getPreviewAssetUrl,
-        documentPreviewKindResolver: getDocumentPreviewKind,
-      });
+      const entryExtension = getEntryExtension(entry);
 
-      if (canInlinePreview && isInlineExplorerPreviewDescriptor(resolvedPreview)) {
+      if (canInlinePreview && !isExecutableExtension(entryExtension)) {
         await previewEntry(entry, focusTarget);
         return;
       }
 
-      if (isExecutableExtension(getEntryExtension(entry))) {
+      if (isExecutableExtension(entryExtension)) {
         await openExplorerPath(entry.path).catch((e) => setError(String(e)));
         return;
       }
@@ -10013,8 +10093,6 @@ export function FileExplorer({
       await openExplorerPath(entry.path).catch((e) => setError(String(e)));
     },
     [
-      getDocumentPreviewKind,
-      getPreviewAssetUrl,
       getSearchFocusTarget,
       handleArchiveAction,
       isCompactDock,
@@ -10582,8 +10660,7 @@ export function FileExplorer({
       lastSelected.current = nextPath;
       selectionRangeAnchorPathRef.current = nextPath;
       scrollExplorerEntryIntoView(nextPath);
-      const nextEntry =
-        visibleEntries.find((entry) => entry.path === nextPath) ?? null;
+      const nextEntry = visibleEntryLookup.get(nextPath) ?? null;
       if (nextEntry) {
         previewExplorerSelectionTarget(nextEntry);
       }
@@ -10596,7 +10673,7 @@ export function FileExplorer({
       previewExplorerSelectionTarget,
       setJumpFilter,
       scrollExplorerEntryIntoView,
-      visibleEntries,
+      visibleEntryLookup,
     ],
   );
 
@@ -11354,13 +11431,18 @@ export function FileExplorer({
       return;
     }
     const plainClick = !e.shiftKey && !e.ctrlKey && !e.metaKey;
+    const shouldAutoReopenPreview =
+      plainClick &&
+      !previewEnabled &&
+      previewReopenOnSelectionRef.current &&
+      !isCompactDock;
     if (e.shiftKey) {
       const anchorPath =
         selectionRangeAnchorPathRef.current ?? lastSelected.current;
-      const idx1 = visibleEntries.findIndex(
-        (f) => f.path === anchorPath,
-      );
-      const idx2 = visibleEntries.findIndex((f) => f.path === entry.path);
+      const idx1 = anchorPath
+        ? (visibleEntryIndexLookup.get(anchorPath) ?? -1)
+        : -1;
+      const idx2 = visibleEntryIndexLookup.get(entry.path) ?? -1;
       if (anchorPath && idx1 >= 0 && idx2 >= 0) {
         const [lo, hi] = idx1 < idx2 ? [idx1, idx2] : [idx2, idx1];
         setSelected(
@@ -11397,7 +11479,12 @@ export function FileExplorer({
       void openEntry(entry);
       return;
     }
-    if (previewEnabled && !isCompactDock && plainClick) {
+    if ((previewEnabled || shouldAutoReopenPreview) && !isCompactDock) {
+      if (shouldAutoReopenPreview) {
+        previewReopenOnSelectionRef.current = false;
+        allowPreviewLoadWhileClosedRef.current = true;
+        setPreviewEnabled(true);
+      }
       void previewEntry(entry, getSearchFocusTarget(entry));
     }
   };
@@ -15043,6 +15130,7 @@ export function FileExplorer({
       visibleEntries.slice(virtualWindow.startIndex, virtualWindow.endIndex),
     [virtualWindow.endIndex, virtualWindow.startIndex, visibleEntries],
   );
+  const deferredVirtualizedEntries = useDeferredValue(virtualizedEntries);
 
   // ── Keyboard ──
   useEffect(() => {
@@ -15063,18 +15151,31 @@ export function FileExplorer({
 
       const isExplorerFocus = document.activeElement === mainRef.current;
       const selectedEntry =
-        visibleEntries.find((en) => selected.has(en.path)) ?? null;
+        (lastSelected.current
+          ? (visibleEntryLookup.get(lastSelected.current) ?? null)
+          : null) ??
+        (() => {
+          for (const path of selected) {
+            const entry = visibleEntryLookup.get(path);
+            if (entry) {
+              return entry;
+            }
+          }
+          return null;
+        })();
       const currentFocusIndex = (() => {
         if (lastSelected.current) {
-          const rememberedIndex = visibleEntries.findIndex(
-            (entry) => entry.path === lastSelected.current,
+          const rememberedIndex = visibleEntryIndexLookup.get(
+            lastSelected.current,
           );
-          if (rememberedIndex >= 0) return rememberedIndex;
+          if (rememberedIndex != null) return rememberedIndex;
         }
-        const selectedIndex = visibleEntries.findIndex((entry) =>
-          selected.has(entry.path),
-        );
-        if (selectedIndex >= 0) return selectedIndex;
+        for (const path of selected) {
+          const selectedIndex = visibleEntryIndexLookup.get(path);
+          if (selectedIndex != null) {
+            return selectedIndex;
+          }
+        }
         return 0;
       })();
 
@@ -15134,8 +15235,7 @@ export function FileExplorer({
           null;
         const targetEntry =
           (activeJumpPath
-            ? (visibleEntries.find((entry) => entry.path === activeJumpPath) ??
-              null)
+            ? (visibleEntryLookup.get(activeJumpPath) ?? null)
             : null) ??
           selectedEntry ??
           visibleEntries[0] ??
@@ -15496,6 +15596,8 @@ export function FileExplorer({
     showExperimentalHud,
     showHidden,
     updateExplorerSettings,
+    visibleEntryIndexLookup,
+    visibleEntryLookup,
     viewMode,
     visibleEntries,
     toggleSearchScope,
@@ -15569,12 +15671,12 @@ export function FileExplorer({
   ]);
 
   useEffect(() => {
-    if (loading || virtualizedEntries.length === 0) {
+    if (loading || deferredVirtualizedEntries.length === 0) {
       return;
     }
 
     const shouldMeasureDirectories = !isSearchActive;
-    const pendingFiles = virtualizedEntries
+    const pendingFiles = deferredVirtualizedEntries
       .filter(
         (entry) =>
           !entry.is_dir &&
@@ -15583,7 +15685,7 @@ export function FileExplorer({
       )
       .slice(0, 8);
     const pendingDirectories = shouldMeasureDirectories
-      ? virtualizedEntries
+      ? deferredVirtualizedEntries
           .filter(
             (entry) =>
               entry.is_dir &&
@@ -15695,15 +15797,19 @@ export function FileExplorer({
     isSearchActive,
     loading,
     recordExplorerMetric,
-    virtualizedEntries,
+    deferredVirtualizedEntries,
   ]);
 
   useEffect(() => {
-    if (!useNativeOsIcons || loading || virtualizedEntries.length === 0) {
+    if (
+      !useNativeOsIcons ||
+      loading ||
+      deferredVirtualizedEntries.length === 0
+    ) {
       return;
     }
 
-    const pendingEntries = virtualizedEntries
+    const pendingEntries = deferredVirtualizedEntries
       .filter((entry) => !shouldUseManagedIconSrc(entry))
       .map((entry) => ({
         entry,
@@ -15828,7 +15934,7 @@ export function FileExplorer({
     recordExplorerMetric,
     shouldUseManagedIconSrc,
     useNativeOsIcons,
-    virtualizedEntries,
+    deferredVirtualizedEntries,
   ]);
 
   useEffect(() => {
@@ -15839,12 +15945,12 @@ export function FileExplorer({
         ? (activeGridMetrics?.iconStageSize ?? 0)
         : Math.max((activeRowMetrics?.iconSize ?? 16) + 12, 28)) <
         EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.minStagePx ||
-      virtualizedEntries.length === 0
+      deferredVirtualizedEntries.length === 0
     ) {
       return;
     }
 
-    const pendingEntries = virtualizedEntries
+    const pendingEntries = deferredVirtualizedEntries
       .filter(
         (entry) =>
           canRenderEntryThumbnail(entry) &&
@@ -15924,7 +16030,7 @@ export function FileExplorer({
     loading,
     readExplorerEntryThumbnail,
     virtualWindow.kind,
-    virtualizedEntries,
+    deferredVirtualizedEntries,
   ]);
 
   useEffect(() => {
@@ -15938,9 +16044,7 @@ export function FileExplorer({
       return;
     }
 
-    const hoveredEntry = visibleEntries.find(
-      (entry) => entry.path === hoveredVideoThumbnailPath,
-    );
+    const hoveredEntry = visibleEntryLookup.get(hoveredVideoThumbnailPath);
     if (
       !hoveredEntry ||
       !isVideoPreviewExtension(getEntryExtension(hoveredEntry))
@@ -16017,7 +16121,7 @@ export function FileExplorer({
     hoveredVideoThumbnailPath,
     readExplorerEntryThumbnail,
     videoHoverThumbnailLoadingPaths,
-    visibleEntries,
+    visibleEntryLookup,
   ]);
 
   useEffect(() => {
@@ -16029,7 +16133,7 @@ export function FileExplorer({
       !explorerThumbnailSettings.enabled ||
       !explorerThumbnailSettings.includeVideo ||
       !explorerThumbnailSettings.enableVideoHoverScrub ||
-      !visibleEntries.some((entry) => entry.path === hoveredVideoThumbnailPath)
+      !visibleEntryLookup.has(hoveredVideoThumbnailPath)
     ) {
       setHoveredVideoThumbnailPath(null);
     }
@@ -16039,7 +16143,7 @@ export function FileExplorer({
     explorerThumbnailSettings.enabled,
     explorerThumbnailSettings.includeVideo,
     hoveredVideoThumbnailPath,
-    visibleEntries,
+    visibleEntryLookup,
   ]);
 
   const renderSearchMetadata = (entry: FileEntry) => {
@@ -19035,6 +19139,7 @@ export function FileExplorer({
               chromeOverride={explorerChromeOverride}
               chromeEditMode={explorerChromeEditMode}
               showHiddenFiles={showHidden}
+              editorSettings={editorSettings}
               onOpenFolderPreviewEntry={openFolderPreviewEntry}
               onExtractArchive={(mode) => {
                 if (preview.type === "archive") {
@@ -19058,7 +19163,7 @@ export function FileExplorer({
                 }
               }}
               onClose={() => {
-                void togglePreviewEnabled();
+                void closePreviewPanel();
               }}
             />
           )}
