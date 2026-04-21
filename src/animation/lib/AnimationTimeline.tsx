@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pause, Play, Square } from 'lucide-react';
+import { Pause, Play, Square } from '@/components/AppIcons';
 import { useAnimation } from './useAnimation';
 
 interface Keyframe {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   ChevronLeft,
@@ -13,7 +13,22 @@ import {
   type SqliteTableInfo,
   type SqliteTablePreview,
 } from "../generated/tauri";
-import { OverlayScrollArea } from "./OverlayScrollArea";
+import {
+  ExplorerTablePreviewActionButton,
+  ExplorerTablePreviewCenteredStatus,
+  ExplorerTablePreviewCollectionButton,
+  ExplorerTablePreviewCollectionStrip,
+  ExplorerTablePreviewDatasetHeader,
+  ExplorerTablePreviewGrid,
+  ExplorerTablePreviewIdentityHeader,
+  ExplorerTablePreviewSurface,
+  resolveExplorerTablePreviewLayout,
+  useExplorerTablePreviewLayout,
+  type ExplorerTablePreviewCell,
+  type ExplorerTablePreviewColumn,
+  type ExplorerTablePreviewMetric,
+  type ExplorerTablePreviewRow,
+} from "./explorer/ExplorerTablePreviewSurface";
 
 export interface ExplorerSqlitePreviewProps {
   dbPath: string;
@@ -21,7 +36,6 @@ export interface ExplorerSqlitePreviewProps {
 }
 
 const PAGE_SIZE = 100;
-const COMPACT_LAYOUT_BREAKPOINT_PX = 760;
 
 const integerFormatter = new Intl.NumberFormat();
 
@@ -43,70 +57,10 @@ function formatVisibleRangeLabel(
   return `Rows ${formatInteger(start)}-${formatInteger(end)}`;
 }
 
-function renderMetricPill(label: string, value: string) {
-  return (
-    <div
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 5,
-        padding: "3px 7px",
-        borderRadius: 999,
-        background: "var(--overlay-explorer-chip-bg)",
-        border: "1px solid var(--overlay-explorer-preview-border)",
-        minWidth: 0,
-      }}
-    >
-      <span
-        style={{
-          fontSize: 9,
-          fontWeight: 700,
-          letterSpacing: "0.05em",
-          textTransform: "uppercase",
-          color: "var(--overlay-text-muted)",
-        }}
-      >
-        {label}
-      </span>
-      <span
-        style={{
-          fontSize: 10,
-          color: "var(--overlay-text-primary)",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function renderCenteredStatus(
-  content: ReactNode,
-  textColor = "var(--overlay-text-dim)",
-) {
-  return (
-    <div
-      style={{
-        flex: 1,
-        minHeight: 0,
-        display: "grid",
-        placeItems: "center",
-        padding: 24,
-        color: textColor,
-      }}
-    >
-      {content}
-    </div>
-  );
-}
-
 export function resolveSqlitePreviewLayout(
   containerWidth: number | null,
 ): "compact" | "wide" {
-  return containerWidth == null || containerWidth < COMPACT_LAYOUT_BREAKPOINT_PX
-    ? "compact"
-    : "wide";
+  return resolveExplorerTablePreviewLayout(containerWidth);
 }
 
 export function ExplorerSqlitePreview({
@@ -122,43 +76,6 @@ export function ExplorerSqlitePreview({
   const [tableQueryError, setTableQueryError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [loadingData, setLoadingData] = useState(false);
-  const [containerWidth, setContainerWidth] = useState<number | null>(null);
-
-  useEffect(() => {
-    const element = containerRef.current;
-    if (!element) {
-      return;
-    }
-
-    const updateWidth = (nextWidth: number) => {
-      setContainerWidth((currentWidth) => {
-        if (
-          currentWidth != null &&
-          Number.isFinite(nextWidth) &&
-          Math.abs(currentWidth - nextWidth) < 1
-        ) {
-          return currentWidth;
-        }
-        return nextWidth;
-      });
-    };
-
-    updateWidth(element.getBoundingClientRect().width);
-
-    const ResizeObserverConstructor = globalThis.ResizeObserver;
-    if (typeof ResizeObserverConstructor !== "function") {
-      return;
-    }
-
-    const observer = new ResizeObserverConstructor((entries) => {
-      const nextWidth =
-        entries[0]?.contentRect.width ?? element.getBoundingClientRect().width;
-      updateWidth(nextWidth);
-    });
-    observer.observe(element);
-
-    return () => observer.disconnect();
-  }, []);
 
   useEffect(() => {
     let isActive = true;
@@ -226,7 +143,7 @@ export function ExplorerSqlitePreview({
     };
   }, [activeTable, dbPath, page]);
 
-  const layoutMode = resolveSqlitePreviewLayout(containerWidth);
+  const layoutMode = useExplorerTablePreviewLayout(containerRef);
   const isCompactLayout = layoutMode === "compact";
 
   const activeTableInfo = useMemo<SqliteTableInfo | null>(
@@ -244,6 +161,81 @@ export function ExplorerSqlitePreview({
   const hasPreviousPage = currentPage > 0;
   const hasNextPage = currentPage + 1 < totalPages;
 
+  const identityMetrics = useMemo<ExplorerTablePreviewMetric[]>(
+    () => [
+      { label: "Tables", value: formatInteger(info?.tables.length ?? 0) },
+      { label: "Page Size", value: formatInteger(PAGE_SIZE) },
+      ...(activeTableInfo
+        ? [
+            {
+              label: "Active Rows",
+              value: formatInteger(activeTableInfo.row_count),
+            },
+          ]
+        : []),
+    ],
+    [activeTableInfo, info?.tables.length],
+  );
+
+  const activeTableMetrics = useMemo<ExplorerTablePreviewMetric[]>(
+    () => [
+      { label: "Columns", value: formatInteger(tableData?.columns.length ?? 0) },
+      { label: "Rows", value: formatInteger(totalRows) },
+      { label: "Page", value: `${currentPage + 1} / ${totalPages}` },
+    ],
+    [currentPage, tableData?.columns.length, totalPages, totalRows],
+  );
+
+  const tableColumns = useMemo<ExplorerTablePreviewColumn[]>(
+    () =>
+      (tableData?.columns ?? []).map((columnName) => ({
+        id: columnName,
+        label: columnName,
+        title: columnName,
+        minWidth: isCompactLayout ? 132 : 152,
+        maxWidth: isCompactLayout ? 220 : 280,
+      })),
+    [isCompactLayout, tableData?.columns],
+  );
+
+  const tableRows = useMemo<ExplorerTablePreviewRow[]>(
+    () =>
+      (tableData?.rows ?? []).map((row, rowIndex) => ({
+        id: `${currentPage}-${rowIndex}`,
+        cells: row.map((cell, cellIndex) => {
+          const isNullCell = cell === "NULL";
+          const isBlobCell = cell.startsWith("<Blob:");
+
+          return {
+            key: `${rowIndex}-${cellIndex}`,
+            title: cell,
+            tone: isNullCell ? "muted" : isBlobCell ? "secondary" : "default",
+            content: isNullCell ? (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "2px 6px",
+                  borderRadius: 999,
+                  background: "var(--overlay-explorer-chip-bg)",
+                  border: "1px solid var(--overlay-explorer-preview-border)",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                }}
+              >
+                NULL
+              </span>
+            ) : (
+              cell
+            ),
+          } satisfies ExplorerTablePreviewCell;
+        }),
+      })),
+    [currentPage, tableData?.rows],
+  );
+
   const handleSelectTable = (tableName: string) => {
     setActiveTable(tableName);
     setPage(0);
@@ -253,144 +245,57 @@ export function ExplorerSqlitePreview({
 
   if (error) {
     return (
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          display: "grid",
-          placeItems: "center",
-          background: "var(--overlay-explorer-preview-bg)",
-          color: "var(--overlay-danger)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 12,
-            textAlign: "center",
-            maxWidth: 320,
-          }}
-        >
-          <AlertCircle size={32} />
-          <div style={{ fontWeight: 600 }}>Failed to read database</div>
-          <div style={{ fontSize: 12, color: "var(--overlay-text-dim)" }}>
-            {error}
+      <ExplorerTablePreviewSurface>
+        <ExplorerTablePreviewCenteredStatus textColor="var(--overlay-danger)">
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 12,
+              textAlign: "center",
+              maxWidth: 320,
+            }}
+          >
+            <AlertCircle size={32} />
+            <div style={{ fontWeight: 600 }}>Failed to read database</div>
+            <div style={{ fontSize: 12, color: "var(--overlay-text-dim)" }}>
+              {error}
+            </div>
           </div>
-        </div>
-      </div>
+        </ExplorerTablePreviewCenteredStatus>
+      </ExplorerTablePreviewSurface>
     );
   }
 
   if (!info) {
     return (
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          display: "grid",
-          placeItems: "center",
-          background: "var(--overlay-explorer-preview-bg)",
-        }}
-      >
-        <Loader
-          aria-label="Loading SQLite preview"
-          size={20}
-          style={{
-            animation: "spin 1s linear infinite",
-            color: "var(--overlay-text-muted)",
-          }}
-        />
-      </div>
+      <ExplorerTablePreviewSurface>
+        <ExplorerTablePreviewCenteredStatus>
+          <Loader
+            aria-label="Loading SQLite preview"
+            size={20}
+            style={{
+              animation: "spin 1s linear infinite",
+              color: "var(--overlay-text-muted)",
+            }}
+          />
+        </ExplorerTablePreviewCenteredStatus>
+      </ExplorerTablePreviewSurface>
     );
   }
 
   return (
-    <div
-      ref={containerRef}
-      data-sqlite-layout={layoutMode}
-      style={{
-        width: "100%",
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        background: "var(--overlay-explorer-preview-bg)",
-        overflow: "hidden",
-        color: "var(--overlay-text-primary)",
-      }}
+    <ExplorerTablePreviewSurface
+      containerRef={containerRef}
+      layoutMode={layoutMode}
     >
-      <div
-        style={{
-          padding: "10px 12px",
-          borderBottom: "1px solid var(--overlay-explorer-preview-border)",
-          background: "var(--overlay-bg-card)",
-          display: "flex",
-          alignItems: "flex-start",
-          gap: 10,
-        }}
-      >
-        <div
-          style={{
-            width: 30,
-            height: 30,
-            borderRadius: 8,
-            background: "var(--overlay-explorer-chip-bg)",
-            color: "var(--overlay-accent)",
-            display: "grid",
-            placeItems: "center",
-            flexShrink: 0,
-          }}
-        >
-          <Database size={16} />
-        </div>
-        <div style={{ minWidth: 0, display: "grid", gap: 6, flex: 1 }}>
-          <div style={{ display: "grid", gap: 4 }}>
-            <div
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-              title={dbName}
-            >
-              {dbName}
-            </div>
-            <div
-              style={{
-                fontSize: 9.5,
-                color: "var(--overlay-text-muted)",
-                fontFamily: "var(--overlay-font-mono, monospace)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-              title={dbPath}
-            >
-              {dbPath}
-            </div>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 8,
-            }}
-          >
-            {renderMetricPill("Tables", formatInteger(info.tables.length))}
-            {renderMetricPill("Page Size", formatInteger(PAGE_SIZE))}
-            {activeTableInfo
-              ? renderMetricPill(
-                  "Active Rows",
-                  formatInteger(activeTableInfo.row_count),
-                )
-              : null}
-          </div>
-        </div>
-      </div>
-
+      <ExplorerTablePreviewIdentityHeader
+        icon={<Database size={16} />}
+        title={<span title={dbName}>{dbName}</span>}
+        subtitle={<span title={dbPath}>{dbPath}</span>}
+        metrics={identityMetrics}
+      />
       <div
         style={{
           flex: 1,
@@ -410,7 +315,7 @@ export function ExplorerSqlitePreview({
           }}
         >
           {info.tables.length === 0 ? (
-            renderCenteredStatus(
+            <ExplorerTablePreviewCenteredStatus>
               <div
                 style={{
                   display: "grid",
@@ -425,129 +330,34 @@ export function ExplorerSqlitePreview({
                 <div style={{ fontSize: 12 }}>
                   SQLite system tables are hidden in this preview.
                 </div>
-              </div>,
-            )
-          ) : (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-                padding: "8px 12px 10px",
-                borderBottom:
-                  "1px solid var(--overlay-explorer-preview-border)",
-                background: "var(--overlay-bg-panel)",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 12,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 9.5,
-                    fontWeight: 700,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    color: "var(--overlay-text-muted)",
-                  }}
-                >
-                  Tables
-                </div>
-                <div style={{ fontSize: 10, color: "var(--overlay-text-dim)" }}>
-                  {formatInteger(info.tables.length)} total
-                </div>
               </div>
+            </ExplorerTablePreviewCenteredStatus>
+          ) : (
+            <ExplorerTablePreviewCollectionStrip
+              label="Tables"
+              meta={`${formatInteger(info.tables.length)} total`}
+            >
+              {info.tables.map((table) => {
+                const isActive = table.name === activeTable;
 
-              <OverlayScrollArea
-                direction="horizontal"
-                style={{ flex: "0 0 auto" }}
-                viewportStyle={{ paddingBottom: 2 }}
-                contentStyle={{
-                  display: "flex",
-                  alignItems: "stretch",
-                  gap: 8,
-                  minWidth: "max-content",
-                  paddingRight: 8,
-                }}
-                scrollbarStyle="themed"
-              >
-                {info.tables.map((table) => {
-                  const isActive = table.name === activeTable;
-
-                  return (
-                    <button
-                      key={table.name}
-                      type="button"
-                      onClick={() => handleSelectTable(table.name)}
-                      style={{
-                        flex: "0 0 auto",
-                        minWidth: isCompactLayout ? 152 : 176,
-                        maxWidth: isCompactLayout ? 196 : 228,
-                        border:
-                          "1px solid var(--overlay-explorer-preview-border)",
-                        borderRadius: 999,
-                        padding: "8px 10px",
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        textAlign: "left",
-                        background: isActive
-                          ? "var(--overlay-selection-bg)"
-                          : "var(--overlay-explorer-chip-bg)",
-                        color: isActive
-                          ? "var(--overlay-text-primary)"
-                          : "var(--overlay-text-secondary)",
-                        boxShadow: isActive
-                          ? "inset 0 0 0 1px var(--overlay-explorer-preview-border)"
-                          : "none",
-                      }}
-                      title={`${table.name} · ${formatInteger(table.row_count)} rows`}
-                    >
-                      <Table
-                        size={13}
-                        style={{
-                          flexShrink: 0,
-                          opacity: isActive ? 1 : 0.65,
-                        }}
-                      />
-                      <span
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 600,
-                          minWidth: 0,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          flex: 1,
-                        }}
-                      >
-                        {table.name}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 10,
-                          color: "var(--overlay-text-dim)",
-                          whiteSpace: "nowrap",
-                          flexShrink: 0,
-                        }}
-                      >
-                        {formatInteger(table.row_count)}
-                      </span>
-                    </button>
-                  );
-                })}
-              </OverlayScrollArea>
-            </div>
+                return (
+                  <ExplorerTablePreviewCollectionButton
+                    key={table.name}
+                    active={isActive}
+                    icon={<Table size={13} />}
+                    label={table.name}
+                    detail={formatInteger(table.row_count)}
+                    title={`${table.name} · ${formatInteger(table.row_count)} rows`}
+                    layoutMode={layoutMode}
+                    onClick={() => handleSelectTable(table.name)}
+                  />
+                );
+              })}
+            </ExplorerTablePreviewCollectionStrip>
           )}
 
           {!activeTable ? (
-            renderCenteredStatus(
+            <ExplorerTablePreviewCenteredStatus>
               <div
                 style={{
                   display: "grid",
@@ -562,168 +372,58 @@ export function ExplorerSqlitePreview({
                 <div style={{ fontSize: 12 }}>
                   Pick a user table to inspect its columns and rows.
                 </div>
-              </div>,
-            )
+              </div>
+            </ExplorerTablePreviewCenteredStatus>
           ) : (
             <>
-              <div
-                style={{
-                  padding: "10px 12px",
-                  borderBottom:
-                    "1px solid var(--overlay-explorer-preview-border)",
-                  background: "var(--overlay-bg-card)",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 8,
-                }}
-              >
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: isCompactLayout
-                      ? "minmax(0, 1fr)"
-                      : "minmax(0, 1fr) auto",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 12,
-                  }}
-                >
-                  <div style={{ minWidth: 0, display: "grid", gap: 6 }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        minWidth: 0,
-                      }}
-                    >
-                      <Table
-                        size={16}
-                        style={{
-                          flexShrink: 0,
-                          color: "var(--overlay-accent)",
-                        }}
-                      />
-                      <div
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 600,
-                          minWidth: 0,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                        title={activeTable}
-                      >
-                        {activeTable}
-                      </div>
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      {renderMetricPill(
-                        "Columns",
-                        formatInteger(tableData?.columns.length ?? 0),
-                      )}
-                      {renderMetricPill("Rows", formatInteger(totalRows))}
-                      {renderMetricPill(
-                        "Page",
-                        `${currentPage + 1} / ${totalPages}`,
-                      )}
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      flexWrap: isCompactLayout ? "wrap" : "nowrap",
-                    }}
-                  >
-                    <button
-                      type="button"
-                      aria-label="Previous SQLite page"
+              <ExplorerTablePreviewDatasetHeader
+                icon={<Table size={16} />}
+                title={<span title={activeTable}>{activeTable}</span>}
+                metrics={activeTableMetrics}
+                layoutMode={layoutMode}
+                actions={
+                  <>
+                    <ExplorerTablePreviewActionButton
+                      ariaLabel="Previous SQLite page"
                       disabled={!hasPreviousPage}
                       onClick={() =>
                         setPage((current) => Math.max(0, current - 1))
                       }
-                      style={{
-                        padding: "6px 9px",
-                        borderRadius: 8,
-                        background: "transparent",
-                        border:
-                          "1px solid var(--overlay-explorer-preview-border)",
-                        cursor: hasPreviousPage ? "pointer" : "not-allowed",
-                        opacity: hasPreviousPage ? 1 : 0.45,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 4,
-                        color: "var(--overlay-text-primary)",
-                        outline: "none",
-                        whiteSpace: "nowrap",
-                      }}
                     >
                       <ChevronLeft size={16} />
                       Prev
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="Next SQLite page"
+                    </ExplorerTablePreviewActionButton>
+                    <ExplorerTablePreviewActionButton
+                      ariaLabel="Next SQLite page"
                       disabled={!hasNextPage}
                       onClick={() => setPage((current) => current + 1)}
-                      style={{
-                        padding: "6px 9px",
-                        borderRadius: 8,
-                        background: "transparent",
-                        border:
-                          "1px solid var(--overlay-explorer-preview-border)",
-                        cursor: hasNextPage ? "pointer" : "not-allowed",
-                        opacity: hasNextPage ? 1 : 0.45,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 4,
-                        color: "var(--overlay-text-primary)",
-                        outline: "none",
-                        whiteSpace: "nowrap",
-                      }}
                     >
                       Next
                       <ChevronRight size={16} />
-                    </button>
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    flexWrap: isCompactLayout ? "wrap" : "nowrap",
-                    fontSize: 11,
-                    color: "var(--overlay-text-dim)",
-                  }}
-                >
-                  <span style={{ whiteSpace: "nowrap" }}>
-                    {formatVisibleRangeLabel(
-                      currentPage,
-                      rowsOnPage,
-                      totalRows,
-                    )}
-                    {totalRows > 0 ? ` of ${formatInteger(totalRows)}` : ""}
-                  </span>
-                  <span
-                    style={{
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    Horizontal scroll keeps wide datasets compact.
-                  </span>
-                </div>
-              </div>
+                    </ExplorerTablePreviewActionButton>
+                  </>
+                }
+                footer={
+                  <>
+                    <span style={{ whiteSpace: "nowrap" }}>
+                      {formatVisibleRangeLabel(currentPage, rowsOnPage, totalRows)}
+                      {totalRows > 0 ? ` of ${formatInteger(totalRows)}` : ""}
+                    </span>
+                    <span
+                      style={{
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Horizontal scroll keeps wide datasets compact.
+                    </span>
+                  </>
+                }
+              />
 
               {tableQueryError ? (
-                renderCenteredStatus(
+                <ExplorerTablePreviewCenteredStatus textColor="var(--overlay-danger)">
                   <div
                     style={{
                       display: "grid",
@@ -751,11 +451,10 @@ export function ExplorerSqlitePreview({
                     >
                       {tableQueryError}
                     </div>
-                  </div>,
-                  "var(--overlay-danger)",
-                )
+                  </div>
+                </ExplorerTablePreviewCenteredStatus>
               ) : !tableData ? (
-                renderCenteredStatus(
+                <ExplorerTablePreviewCenteredStatus>
                   <div
                     role="status"
                     aria-label="Loading SQLite table"
@@ -773,189 +472,40 @@ export function ExplorerSqlitePreview({
                       }}
                     />
                     <div style={{ fontSize: 12 }}>Loading table preview…</div>
-                  </div>,
-                )
+                  </div>
+                </ExplorerTablePreviewCenteredStatus>
               ) : (
-                <div
-                  style={{
-                    flex: 1,
-                    minHeight: 0,
-                    minWidth: 0,
-                    position: "relative",
-                  }}
-                >
-                  <OverlayScrollArea
-                    direction="both"
-                    style={{ flex: 1, minHeight: 0 }}
-                    scrollbarStyle="themed"
-                  >
-                    <table
-                      style={{
-                        minWidth: "100%",
-                        width: "max-content",
-                        borderCollapse: "separate",
-                        borderSpacing: 0,
-                        fontSize: 12.5,
-                        lineHeight: 1.45,
-                      }}
-                    >
-                      <thead
+                <ExplorerTablePreviewGrid
+                  columns={tableColumns}
+                  rows={tableRows}
+                  emptyState="This table is empty."
+                  overlay={
+                    loadingData ? (
+                      <div
                         style={{
-                          position: "sticky",
-                          top: 0,
-                          zIndex: 1,
                           background: "var(--overlay-bg-card)",
-                          boxShadow:
-                            "0 1px 0 var(--overlay-explorer-preview-border)",
+                          border: "1px solid var(--overlay-explorer-preview-border)",
+                          padding: 8,
+                          borderRadius: 999,
+                          boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
                         }}
                       >
-                        <tr>
-                          {tableData.columns.map((columnName) => (
-                            <th
-                              key={columnName}
-                              title={columnName}
-                              style={{
-                                textAlign: "left",
-                                padding: "10px 12px",
-                                fontWeight: 700,
-                                color: "var(--overlay-text-secondary)",
-                                borderRight:
-                                  "1px solid var(--overlay-explorer-preview-border)",
-                                borderBottom:
-                                  "1px solid var(--overlay-explorer-preview-border)",
-                                verticalAlign: "bottom",
-                                minWidth: isCompactLayout ? 132 : 152,
-                                maxWidth: isCompactLayout ? 220 : 280,
-                                background: "var(--overlay-bg-card)",
-                              }}
-                            >
-                              <div
-                                style={{
-                                  whiteSpace: "normal",
-                                  wordBreak: "break-word",
-                                }}
-                              >
-                                {columnName}
-                              </div>
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {tableData.rows.length > 0 ? (
-                          tableData.rows.map((row, rowIndex) => (
-                            <tr
-                              key={`${currentPage}-${rowIndex}`}
-                              style={{
-                                background:
-                                  rowIndex % 2 === 0
-                                    ? "transparent"
-                                    : "rgba(255,255,255,0.018)",
-                              }}
-                            >
-                              {row.map((cell, cellIndex) => {
-                                const isNullCell = cell === "NULL";
-                                const isBlobCell = cell.startsWith("<Blob:");
-
-                                return (
-                                  <td
-                                    key={`${rowIndex}-${cellIndex}`}
-                                    title={cell}
-                                    style={{
-                                      padding: "10px 12px",
-                                      color: isNullCell
-                                        ? "var(--overlay-text-dim)"
-                                        : isBlobCell
-                                          ? "var(--overlay-text-secondary)"
-                                          : "var(--overlay-text-primary)",
-                                      borderRight:
-                                        "1px solid var(--overlay-explorer-preview-border)",
-                                      borderBottom:
-                                        "1px solid var(--overlay-explorer-preview-border)",
-                                      verticalAlign: "top",
-                                      minWidth: isCompactLayout ? 132 : 152,
-                                      maxWidth: isCompactLayout ? 220 : 320,
-                                      whiteSpace: "pre-wrap",
-                                      wordBreak: "break-word",
-                                    }}
-                                  >
-                                    {isNullCell ? (
-                                      <span
-                                        style={{
-                                          display: "inline-flex",
-                                          alignItems: "center",
-                                          padding: "2px 6px",
-                                          borderRadius: 999,
-                                          background:
-                                            "var(--overlay-explorer-chip-bg)",
-                                          border:
-                                            "1px solid var(--overlay-explorer-preview-border)",
-                                          fontSize: 10,
-                                          fontWeight: 700,
-                                          letterSpacing: "0.04em",
-                                          textTransform: "uppercase",
-                                        }}
-                                      >
-                                        NULL
-                                      </span>
-                                    ) : (
-                                      cell
-                                    )}
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td
-                              colSpan={tableData.columns.length || 1}
-                              style={{
-                                padding: 32,
-                                textAlign: "center",
-                                color: "var(--overlay-text-muted)",
-                                borderBottom:
-                                  "1px solid var(--overlay-explorer-preview-border)",
-                              }}
-                            >
-                              This table is empty.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </OverlayScrollArea>
-
-                  {loadingData ? (
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: 12,
-                        right: 12,
-                        background: "var(--overlay-bg-card)",
-                        border:
-                          "1px solid var(--overlay-explorer-preview-border)",
-                        padding: 8,
-                        borderRadius: 999,
-                        boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
-                        pointerEvents: "none",
-                      }}
-                    >
-                      <Loader
-                        size={14}
-                        style={{
-                          animation: "spin 1s linear infinite",
-                          color: "var(--overlay-text-muted)",
-                        }}
-                      />
-                    </div>
-                  ) : null}
-                </div>
+                        <Loader
+                          size={14}
+                          style={{
+                            animation: "spin 1s linear infinite",
+                            color: "var(--overlay-text-muted)",
+                          }}
+                        />
+                      </div>
+                    ) : null
+                  }
+                />
               )}
             </>
           )}
         </div>
       </div>
-    </div>
+    </ExplorerTablePreviewSurface>
   );
 }

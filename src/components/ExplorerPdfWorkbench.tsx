@@ -8,7 +8,7 @@ import {
   Save,
   Square,
   Signature,
-} from 'lucide-react';
+} from '@/components/AppIcons';
 import {
   useCallback,
   useEffect,

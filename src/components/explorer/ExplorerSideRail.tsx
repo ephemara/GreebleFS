@@ -14,7 +14,7 @@ import {
   Tag,
   Undo2,
   X,
-} from 'lucide-react';
+} from '@/components/AppIcons';
 import { OverlayScrollArea } from '../OverlayScrollArea';
 import { useExplorerStore } from '../../store/explorerStore';
 import { ExplorerChromeSurface } from './ExplorerChromeSurface';

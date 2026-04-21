@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CornerDownLeft, Search } from 'lucide-react';
+import { CornerDownLeft, Search } from '@/components/AppIcons';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import { OverlayScrollArea } from './OverlayScrollArea';
 

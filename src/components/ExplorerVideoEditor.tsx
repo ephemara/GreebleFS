@@ -32,7 +32,7 @@ import {
   Volume2,
   VolumeX,
   Loader2,
-} from 'lucide-react';
+} from '@/components/AppIcons';
 import {
   createExplorerVideoPreviewProxy,
   resolveExplorerVideoPreviewSource,

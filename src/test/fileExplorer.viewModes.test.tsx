@@ -45,6 +45,10 @@ const {
   },
 }));
 
+vi.mock("@/components/AppIcons", async () =>
+  vi.importActual<typeof import("lucide-react")>("lucide-react"),
+);
+
 vi.mock("../components/ExplorerImageEditor", () => ({
   ExplorerImageEditor: ({
     imageName,

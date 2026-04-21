@@ -5,6 +5,7 @@ import { exists, mkdir, rename } from '@tauri-apps/plugin-fs';
 export type ManagedContentDirectoryId =
   | 'plugins'
   | 'themes'
+  | 'iconThemes'
   | 'shaders'
   | 'animations'
   | 'wallpapers'
@@ -14,6 +15,7 @@ export type ManagedContentDirectoryId =
 const LEGACY_RELATIVE_DIRECTORY_NAMES: Record<ManagedContentDirectoryId, string> = {
   plugins: 'plugins',
   themes: 'themes',
+  iconThemes: 'icon-themes',
   shaders: 'shaders',
   animations: 'animations',
   wallpapers: 'wallpapers',
@@ -24,6 +26,7 @@ const LEGACY_RELATIVE_DIRECTORY_NAMES: Record<ManagedContentDirectoryId, string>
 const RELEASE_DIRECTORY_NAMES: Record<ManagedContentDirectoryId, string> = {
   plugins: 'plugins',
   themes: 'themes',
+  iconThemes: 'icon-themes',
   shaders: 'shaders',
   animations: 'animations',
   wallpapers: 'wallpapers',
@@ -45,6 +48,7 @@ function readDirectoryOverride(id: ManagedContentDirectoryId): string | null {
   const env = import.meta.env as {
     VITE_GREEBLEFS_PLUGINS_DIR?: string;
     VITE_GREEBLEFS_THEMES_DIR?: string;
+    VITE_GREEBLEFS_ICON_THEMES_DIR?: string;
     VITE_GREEBLEFS_SHADERS_DIR?: string;
     VITE_GREEBLEFS_ANIMATIONS_DIR?: string;
     VITE_GREEBLEFS_WALLPAPERS_DIR?: string;
@@ -52,6 +56,7 @@ function readDirectoryOverride(id: ManagedContentDirectoryId): string | null {
     VITE_GREEBLEFS_SCREENSHOTS_DIR?: string;
     VITE_OVERLAYTERM_PLUGINS_DIR?: string;
     VITE_OVERLAYTERM_THEMES_DIR?: string;
+    VITE_OVERLAYTERM_ICON_THEMES_DIR?: string;
     VITE_OVERLAYTERM_SHADERS_DIR?: string;
     VITE_OVERLAYTERM_ANIMATIONS_DIR?: string;
     VITE_OVERLAYTERM_WALLPAPERS_DIR?: string;
@@ -65,6 +70,8 @@ function readDirectoryOverride(id: ManagedContentDirectoryId): string | null {
         return env.VITE_GREEBLEFS_PLUGINS_DIR ?? env.VITE_OVERLAYTERM_PLUGINS_DIR;
       case 'themes':
         return env.VITE_GREEBLEFS_THEMES_DIR ?? env.VITE_OVERLAYTERM_THEMES_DIR;
+      case 'iconThemes':
+        return env.VITE_GREEBLEFS_ICON_THEMES_DIR ?? env.VITE_OVERLAYTERM_ICON_THEMES_DIR;
       case 'shaders':
         return env.VITE_GREEBLEFS_SHADERS_DIR ?? env.VITE_OVERLAYTERM_SHADERS_DIR;
       case 'animations':
@@ -101,6 +108,7 @@ async function buildReleaseManagedDirectoryMap(): Promise<Record<ManagedContentD
   return {
     plugins: await join(root, RELEASE_DIRECTORY_NAMES.plugins),
     themes: await join(root, RELEASE_DIRECTORY_NAMES.themes),
+    iconThemes: await join(root, RELEASE_DIRECTORY_NAMES.iconThemes),
     shaders: await join(root, RELEASE_DIRECTORY_NAMES.shaders),
     animations: await join(root, RELEASE_DIRECTORY_NAMES.animations),
     wallpapers: await join(root, RELEASE_DIRECTORY_NAMES.wallpapers),
@@ -115,6 +123,7 @@ async function buildLegacyHomeDirectoryMap(): Promise<Record<ManagedContentDirec
   return {
     plugins: await join(root, LEGACY_RELATIVE_DIRECTORY_NAMES.plugins),
     themes: await join(root, LEGACY_RELATIVE_DIRECTORY_NAMES.themes),
+    iconThemes: await join(root, LEGACY_RELATIVE_DIRECTORY_NAMES.iconThemes),
     shaders: await join(root, LEGACY_RELATIVE_DIRECTORY_NAMES.shaders),
     animations: await join(root, LEGACY_RELATIVE_DIRECTORY_NAMES.animations),
     wallpapers: await join(root, LEGACY_RELATIVE_DIRECTORY_NAMES.wallpapers),
@@ -148,6 +157,7 @@ async function buildLegacyReleaseDirectoryMap(): Promise<Partial<Record<ManagedC
   return {
     plugins: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.plugins),
     themes: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.themes),
+    iconThemes: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.iconThemes),
     shaders: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.shaders),
     animations: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.animations),
     wallpapers: await join(legacyRoot, RELEASE_DIRECTORY_NAMES.wallpapers),

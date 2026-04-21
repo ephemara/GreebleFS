@@ -4,7 +4,7 @@ import {
   Check,
   LoaderCircle,
   XCircle,
-} from 'lucide-react';
+} from '@/components/AppIcons';
 import {
   getExplorerTaskProgressPercent,
   getExplorerTaskStatusLabel,

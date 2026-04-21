@@ -1,6 +1,6 @@
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import type { EditorProps } from '@monaco-editor/react';
-import { AlertTriangle, ChevronDown, ChevronUp, Download, FolderGit2, GitBranch, GitCommit, Plus, RefreshCw, Rocket, Search, Upload, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronUp, Download, FolderGit2, GitBranch, GitCommit, Plus, RefreshCw, Rocket, Search, Upload, X } from '@/components/AppIcons';
 import { multiplyColorAlpha, type ResolvedOverlayAppearance } from '../config/appearance';
 import { recordExplorerPerformanceSample } from '../config/performanceTelemetry';
 import { OverlayScrollArea } from './OverlayScrollArea';

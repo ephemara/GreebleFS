@@ -60,7 +60,7 @@ import {
   Tags,
   Undo2,
   AlertTriangle,
-} from "lucide-react";
+} from "@/components/AppIcons";
 import type { ResolvedOverlayAppearance } from "../config/appearance";
 import {
   BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS,

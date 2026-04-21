@@ -44,7 +44,7 @@ import {
   SplitSquareHorizontal,
   SplitSquareVertical,
   SquarePlus,
-} from 'lucide-react';
+} from '@/components/AppIcons';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Terminal as XTerm } from '@xterm/xterm';

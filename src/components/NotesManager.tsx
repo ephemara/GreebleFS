@@ -4,7 +4,7 @@ import {
   Plus, Trash2, Pin, PinOff, Search, X, Check,
   Clock, Tag, Star, StarOff, Copy,
   ArrowUpDown,
-} from 'lucide-react';
+} from '@/components/AppIcons';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import {
   getManagedNoteCategoryDirectory,

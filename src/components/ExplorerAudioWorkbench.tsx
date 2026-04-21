@@ -15,7 +15,7 @@ import {
   AudioLines,
   Pause,
   Play,
-} from 'lucide-react';
+} from '@/components/AppIcons';
 import { matchesKeybinding } from '../config/hotkeys';
 import {
   DEFAULT_EXPLORER_AUDIO_EXPORT_FORMAT_ID,

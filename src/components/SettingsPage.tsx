@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, Camera, FolderOpen, GitBranch, HardDrive, Image, LayoutGrid, MonitorPlay, Music, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Type, VolumeX } from 'lucide-react';
+import { ArrowDown, ArrowUp, Camera, FolderOpen, GitBranch, HardDrive, Image, LayoutGrid, MonitorPlay, Music, Palette, Plus, Puzzle, RefreshCw, RotateCcw, Search, Settings2, SlidersHorizontal, Sparkles, TerminalSquare, Trash2, Type, VolumeX } from '@/components/AppIcons';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useShallow } from 'zustand/react/shallow';
 import type { LoadedOverlayAnimation } from './animationRuntime';
@@ -67,7 +67,7 @@ import {
   sortExplorerContextMenuItems,
   withExplorerContextMenuItemEnabled,
 } from '../config/explorerContextMenu';
-import { getBuiltInIconTheme } from '../config/iconTheme';
+import { getBuiltInIconTheme, resolveFileIconSrc } from '../config/iconTheme';
 import { animationSystemConfig, resolvePreferredAnimationId } from '../config/animations';
 import {
   getOverlayWallpaperFitModeLabel,
@@ -83,6 +83,7 @@ import {
   type LoadedLayoutManifest,
 } from '../config/layoutProfiles';
 import type { LoadedOverlayThemePackage } from '../config/themePackages';
+import type { LoadedIconThemePackage } from '../config/iconThemePackages';
 import { pluginSystemConfig } from '../config/plugins';
 import {
   getOverlayShaderSurfaceLabel,
@@ -689,6 +690,7 @@ const DEFAULT_LOADED_LAYOUT_MANIFEST: LoadedLayoutManifest = {
 type SettingsSectionKey =
   | 'overview'
   | 'appearance'
+  | 'icons'
   | 'wallpapers'
   | 'shaders'
   | 'animations'
@@ -852,8 +854,15 @@ export function SettingsPage({
   themePackagesLoading,
   themePackagesError,
   themePackagesWarnings,
+  iconThemePackages,
+  iconThemePackagesDirectory,
+  iconThemePackagesLoading,
+  iconThemePackagesError,
+  iconThemePackagesWarnings,
   onRefreshThemes,
   onOpenThemesFolder,
+  onRefreshIconThemes,
+  onOpenIconThemesFolder,
   shaders,
   shaderDiagnostics,
   shadersDirectory,
@@ -886,8 +895,15 @@ export function SettingsPage({
   themePackagesLoading: boolean;
   themePackagesError: string | null;
   themePackagesWarnings: string[];
+  iconThemePackages: LoadedIconThemePackage[];
+  iconThemePackagesDirectory: string;
+  iconThemePackagesLoading: boolean;
+  iconThemePackagesError: string | null;
+  iconThemePackagesWarnings: string[];
   onRefreshThemes: () => Promise<void>;
   onOpenThemesFolder: () => Promise<void>;
+  onRefreshIconThemes: () => Promise<void>;
+  onOpenIconThemesFolder: () => Promise<void>;
   shaders: LoadedOverlayShader[];
   shaderDiagnostics: LoadedOverlayShader[];
   shadersDirectory: string;
@@ -1055,6 +1071,16 @@ export function SettingsPage({
   const themePackageLookup = useMemo(
     () => new Map(themePackages.map(pkg => [pkg.id, pkg] as const)),
     [themePackages],
+  );
+  const iconThemePackageLookup = useMemo(
+    () => new Map(iconThemePackages.map(pkg => [pkg.id, pkg] as const)),
+    [iconThemePackages],
+  );
+  const activeIconThemePackage = useMemo(
+    () => settings.appearance.activeIconThemeId
+      ? (iconThemePackageLookup.get(settings.appearance.activeIconThemeId) ?? null)
+      : null,
+    [iconThemePackageLookup, settings.appearance.activeIconThemeId],
   );
   const availableShaders = useMemo(
     () => shaders.filter(shader => !shader.error),
@@ -1255,6 +1281,9 @@ export function SettingsPage({
   const applyDockThemeSelection = useCallback((themeId: string) => {
     applyDockThemeSelectionWithDefaults(themeId);
   }, [applyDockThemeSelectionWithDefaults]);
+  const applyIconThemeSelection = useCallback((iconThemeId: string | null) => {
+    updateAppearance({ activeIconThemeId: iconThemeId });
+  }, [updateAppearance]);
   const toggleContextMenuItemEnabled = useCallback((itemId: string, enabled: boolean) => {
     const item = contextMenuCatalog.find(entry => entry.id === itemId);
     if (!item) {
@@ -1533,6 +1562,9 @@ export function SettingsPage({
   const accent = effectiveTheme.palette.accent;
   const workbench = appearance.workbenchTheme;
   const themeIconTheme = editableTheme.assets?.iconTheme ?? getBuiltInIconTheme();
+  const iconThemeSelectionSummary = activeIconThemePackage
+    ? `${activeIconThemePackage.name} · ${activeIconThemePackage.capabilitySummary.iconDefinitions} glyphs · ${activeIconThemePackage.capabilitySummary.uiIcons} UI overrides`
+    : `Follow Theme Default · ${themeIconTheme.name}`;
   const activeLayoutProfile = useMemo(
     () => resolveLayoutProfile(layoutManifestState.manifest, settings.layout.activeProfileId),
     [layoutManifestState.manifest, settings.layout.activeProfileId],
@@ -1670,6 +1702,12 @@ export function SettingsPage({
       description: 'Package theme manifests, assets, and icon sets here.',
     },
     {
+      id: 'icon-themes',
+      label: 'Icon Themes',
+      path: iconThemePackagesDirectory,
+      description: 'Drop VS Code-style icon-theme manifests here for explorer and shell icon swaps.',
+    },
+    {
       id: 'shaders',
       label: 'Shaders',
       path: shadersDirectory,
@@ -1695,6 +1733,7 @@ export function SettingsPage({
     },
   ], [
     animationsDirectory,
+    iconThemePackagesDirectory,
     settings.screenshots.saveDirectory,
     shadersDirectory,
     themePackagesDirectory,
@@ -1712,6 +1751,12 @@ export function SettingsPage({
       title: 'Wallpapers',
       summary: 'Theme-integrated image, video, and live wallpaper layering.',
       action: () => setActiveSection('wallpapers'),
+    },
+    {
+      id: 'icons',
+      title: 'Icons',
+      summary: 'VS Code-style icon packs for explorer files, folders, and shell chrome.',
+      action: () => setActiveSection('icons'),
     },
     {
       id: 'layouts',
@@ -1979,9 +2024,17 @@ export function SettingsPage({
       key: 'appearance',
       label: 'Appearance',
       subtitle: 'Theme, opacity, panel transparency, blur, and zoom.',
-      summary: `${effectiveTheme.name} · ${settings.appearance.useNativeOsIcons ? 'Theme + OS Fallback' : 'Theme Icons'} · ${formatOverlayVisualControlValue('opacity', settings.appearance.appOpacity)} OP · ${formatOverlayVisualControlValue('panelTransparency', settings.appearance.panelTransparency)} PT · ${formatOverlayVisualControlValue('zoom', settings.appearance.appZoom)} ZM · ${formatOverlayVisualControlValue('blurStrength', settings.appearance.appBlurStrength)} BL`,
+      summary: `${effectiveTheme.name} · ${formatOverlayVisualControlValue('opacity', settings.appearance.appOpacity)} OP · ${formatOverlayVisualControlValue('panelTransparency', settings.appearance.panelTransparency)} PT · ${formatOverlayVisualControlValue('zoom', settings.appearance.appZoom)} ZM · ${formatOverlayVisualControlValue('blurStrength', settings.appearance.appBlurStrength)} BL`,
       detail: 'Tune the shell look and feel, from engine-driven recipes and palette tokens to blur, transparency, and UI typography.',
       icon: <Palette size={14} />,
+    },
+    {
+      key: 'icons',
+      label: 'Icons',
+      subtitle: 'VS Code-style icon packs for explorer files, folders, and shell chrome.',
+      summary: iconThemeSelectionSummary,
+      detail: 'Choose a dedicated icon theme independently from the active shell theme, keep folder rules in one place, and decide when OS-native icons should still fill gaps.',
+      icon: <Image size={14} />,
     },
     {
       key: 'wallpapers',
@@ -2018,9 +2071,9 @@ export function SettingsPage({
     {
       key: 'explorer',
       label: 'Explorer',
-      subtitle: 'Startup path, file visibility, and folder rules.',
+      subtitle: 'Startup path, file visibility, layout, and thumbnail behavior.',
       summary: `${getExplorerViewModeDefinition(settings.explorer.viewMode).label} · ${settings.explorer.folderClickMode === 'single' ? 'Single-click folders' : 'Double-click folders'} · ${settings.explorer.thumbnails.enabled ? 'Rich thumbnails' : 'Icons only'}`,
-      detail: 'Shape the file browser around your machine, including content-browser layout modes, folder activation behavior, and icon rules.',
+      detail: 'Shape the file browser around your machine, including content-browser layout modes, folder activation behavior, and thumbnail policy without mixing in icon-pack management.',
       icon: <FolderOpen size={14} />,
     },
     {
@@ -2500,20 +2553,6 @@ export function SettingsPage({
                 </div>
               </div>
 
-              <label className="flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
-                <div>
-                  <div className="font-semibold uppercase tracking-[0.12em] opacity-60">OS Icon Fallback</div>
-                  <p className="mt-1 text-[11px] opacity-40">
-                    Keep theme icons primary for mapped file types and semantic folders, and use {platformLabel}&apos;s native icons only when the active icon theme has no specific match.
-                  </p>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={settings.appearance.useNativeOsIcons}
-                  onChange={event => updateAppearance({ useNativeOsIcons: event.target.checked })}
-                />
-              </label>
-
               <div className="grid grid-cols-2 gap-2">
                 <ColorToken label="Accent" value={editableTheme.palette.accent} onChange={value => updateThemePalette({ accent: value, accentSoft: `${value}22` })} />
                 <ColorToken label="App Background" value={editableTheme.palette.appBackground} onChange={value => updateThemePalette({ appBackground: value, shellBackgroundSolid: value })} />
@@ -2577,6 +2616,333 @@ export function SettingsPage({
               </label>
             </div>
           </section>
+            )}
+
+            {activeSection === 'icons' && (
+              <section className="rounded border p-4" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                <SectionTitle
+                  icon={<Image size={12} />}
+                  title="Icon Themes"
+                  subtitle="VS Code-style icon packs for explorer file icons, semantic folders, and stock shell glyphs."
+                />
+
+                <div className="mt-4 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Pack Directory</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          Drop `icon-theme.json` manifests into the icon-themes root. Packs can override file/folder mappings plus stock UI glyph slots without touching thumbnail generation.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => void onRefreshIconThemes()}
+                          className="inline-flex items-center gap-2 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                          style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                        >
+                          <RefreshCw size={11} />
+                          Refresh
+                        </button>
+                        <button
+                          onClick={() => void onOpenIconThemesFolder()}
+                          className="inline-flex items-center gap-2 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                          style={{ border: `1px solid ${accent}55`, background: `${accent}18`, color: text }}
+                        >
+                          <FolderOpen size={11} />
+                          Open Folder
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px]">
+                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
+                        Active: {activeIconThemePackage?.name ?? 'Follow Theme Default'}
+                      </span>
+                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+                        Catalog: {iconThemePackages.length} packs
+                      </span>
+                      <span className="rounded border px-2 py-1 font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}>
+                        Root: {iconThemePackagesDirectory}
+                      </span>
+                    </div>
+
+                    {iconThemePackagesLoading ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px] opacity-55" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                        Scanning icon themes...
+                      </div>
+                    ) : null}
+                    {iconThemePackagesError ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${effectiveTheme.palette.danger}55`, background: `${effectiveTheme.palette.danger}14`, color: text }}>
+                        {iconThemePackagesError}
+                      </div>
+                    ) : null}
+                    {iconThemePackagesWarnings.length > 0 ? (
+                      <div className="mt-3 rounded border px-3 py-2 text-[11px]" style={{ borderColor: `${effectiveTheme.palette.warning}55`, background: `${effectiveTheme.palette.warning}14`, color: text }}>
+                        {iconThemePackagesWarnings[0]}
+                      </div>
+                    ) : null}
+
+                    <div className="mt-4 grid grid-cols-1 gap-2 lg:grid-cols-2">
+                      <button
+                        onClick={() => applyIconThemeSelection(null)}
+                        className="rounded px-3 py-3 text-left transition-colors"
+                        style={{
+                          border: `1px solid ${settings.appearance.activeIconThemeId == null ? accent : border}`,
+                          background: settings.appearance.activeIconThemeId == null ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                          color: text,
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-semibold">Follow Theme Default</span>
+                          <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: settings.appearance.activeIconThemeId == null ? accent : muted }}>
+                            {themeIconTheme.name}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[11px] opacity-45">
+                          The active shell theme continues to provide its default icon theme. Switching the shell theme also switches the icons.
+                        </p>
+                      </button>
+
+                      {iconThemePackages.map(iconThemePackage => {
+                        const active = settings.appearance.activeIconThemeId === iconThemePackage.id;
+                        return (
+                          <button
+                            key={iconThemePackage.id}
+                            onClick={() => applyIconThemeSelection(iconThemePackage.id)}
+                            className="rounded px-3 py-3 text-left transition-colors"
+                            style={{
+                              border: `1px solid ${active ? accent : border}`,
+                              background: active ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                              color: text,
+                            }}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-semibold">{iconThemePackage.name}</span>
+                              <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: active ? accent : muted }}>
+                                {iconThemePackage.sourceKind === 'built-in' ? 'Built-In' : 'Pack'}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-[11px] opacity-45">
+                              {iconThemePackage.description || 'Dedicated icon pack for explorer assets and shell UI slots.'}
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              <ThemeBadge label={`${iconThemePackage.capabilitySummary.iconDefinitions} glyphs`} active={active} />
+                              <ThemeBadge label={`${iconThemePackage.capabilitySummary.uiIcons} UI`} active={active} />
+                              <ThemeBadge label={`${iconThemePackage.capabilitySummary.fileExtensions} ext`} active={active} />
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Live Preview</div>
+                    <p className="mt-1 text-[11px] opacity-40">
+                      Explorer files and stock shell glyphs swap immediately. Thumbnail generation remains separate and only wins when the explorer decides a thumbnail should render.
+                    </p>
+
+                    <div className="mt-3 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Explorer</div>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        {[
+                          { id: 'folder', label: 'Folder', src: getNamedFolderIconSrc(settings.explorer.defaultFolderIcon, false, themeIconTheme) },
+                          { id: 'folder-open', label: 'Folder Open', src: getNamedFolderIconSrc(settings.explorer.defaultFolderIcon, true, themeIconTheme) ?? getNamedFolderIconSrc(settings.explorer.defaultFolderIcon, false, themeIconTheme) },
+                          { id: 'typescript', label: 'main.ts', src: resolveFileIconSrc('main.ts', 'ts', themeIconTheme) },
+                          { id: 'json', label: 'theme.json', src: resolveFileIconSrc('theme.json', 'json', themeIconTheme) },
+                          { id: 'markdown', label: 'README.md', src: resolveFileIconSrc('README.md', 'md', themeIconTheme) },
+                          { id: 'shader', label: 'shell.wgsl', src: resolveFileIconSrc('shell.wgsl', 'wgsl', themeIconTheme) },
+                        ].map(preview => (
+                          <div key={preview.id} className="flex items-center gap-2 rounded border px-2 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                            <img src={preview.src} width={20} height={20} style={{ objectFit: 'contain', flexShrink: 0 }} draggable={false} />
+                            <span className="truncate text-[10px]" style={{ color: text }}>{preview.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shell UI</div>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        {[
+                          { id: 'explorer', label: 'Explorer', icon: <FolderOpen size={15} /> },
+                          { id: 'search', label: 'Search', icon: <Search size={15} /> },
+                          { id: 'terminal', label: 'Terminal', icon: <TerminalSquare size={15} /> },
+                          { id: 'settings', label: 'Settings', icon: <Settings2 size={15} /> },
+                          { id: 'refresh', label: 'Refresh', icon: <RefreshCw size={15} /> },
+                          { id: 'layout', label: 'Layouts', icon: <LayoutGrid size={15} /> },
+                          { id: 'git', label: 'Git', icon: <GitBranch size={15} /> },
+                          { id: 'capture', label: 'Capture', icon: <Camera size={15} /> },
+                          { id: 'plugins', label: 'Plugins', icon: <Puzzle size={15} /> },
+                          { id: 'wallpaper', label: 'Wallpapers', icon: <MonitorPlay size={15} /> },
+                        ].map(preview => (
+                          <div key={preview.id} className="flex items-center gap-2 rounded border px-2 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: text }}>
+                            <span style={{ display: 'flex', color: accent }}>{preview.icon}</span>
+                            <span className="truncate text-[10px]">{preview.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <label className="mt-3 flex items-center justify-between rounded border px-3 py-2 text-[11px]" style={{ borderColor: border }}>
+                      <div>
+                        <div className="font-semibold uppercase tracking-[0.12em] opacity-60">OS Icon Fallback</div>
+                        <p className="mt-1 text-[11px] opacity-40">
+                          Keep icon themes primary for explorer files and semantic folders, then let {platformLabel}&apos;s native icon service fill holes when the active pack has no direct match.
+                        </p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.appearance.useNativeOsIcons}
+                        onChange={event => updateAppearance({ useNativeOsIcons: event.target.checked })}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Folder Icon Authoring</div>
+                      <p className="mt-1 text-[11px] opacity-40">
+                        Curated coding-folder rules land first. Anything that misses falls back to the default folder icon from the active icon theme.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => updateExplorer({ folderIconRules: createDefaultFolderIconRules() })}
+                      className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                      style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
+                    >
+                      Restore Rules
+                    </button>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-[140px_minmax(0,1fr)]">
+                    <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Default Fallback</label>
+                    <div className="flex items-center gap-3 rounded border px-3 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)' }}>
+                      <img
+                        src={getNamedFolderIconSrc(settings.explorer.defaultFolderIcon, false, themeIconTheme)}
+                        width={22}
+                        height={22}
+                        style={{ objectFit: 'contain', flexShrink: 0 }}
+                        draggable={false}
+                      />
+                      <select
+                        value={settings.explorer.defaultFolderIcon}
+                        onChange={event => updateExplorer({ defaultFolderIcon: event.target.value as FolderIconValue })}
+                        className="w-full bg-transparent text-[11px] outline-none"
+                        style={{ color: text }}
+                      >
+                        {FOLDER_ICON_OPTIONS.map(option => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 space-y-2">
+                    {settings.explorer.folderIconRules.map(rule => (
+                      <div key={rule.id} className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                        <div className="grid grid-cols-1 gap-2 xl:grid-cols-[120px_minmax(0,1.1fr)_minmax(0,0.9fr)_36px]">
+                          <div className="flex items-center gap-2 rounded border px-2 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)' }}>
+                            <img
+                              src={getNamedFolderIconSrc(rule.icon, false, themeIconTheme)}
+                              width={18}
+                              height={18}
+                              style={{ objectFit: 'contain', flexShrink: 0 }}
+                              draggable={false}
+                            />
+                            <input
+                              value={rule.label}
+                              onChange={event => updateFolderRule(rule.id, { label: event.target.value })}
+                              className="w-full bg-transparent text-[11px] outline-none"
+                              style={{ color: text }}
+                            />
+                          </div>
+                          <input
+                            value={stringifyMatchers(rule.matchers)}
+                            onChange={event => updateFolderRule(rule.id, { matchers: parseMatcherInput(event.target.value) })}
+                            placeholder="src, source, source_code"
+                            className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                            style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text, fontFamily: appearance.fonts.mono }}
+                          />
+                          <select
+                            value={rule.icon}
+                            onChange={event => updateFolderRule(rule.id, { icon: event.target.value as FolderIconValue })}
+                            className="w-full rounded border px-3 py-2 text-[11px] outline-none"
+                            style={{ borderColor: border, background: panelBackground, color: text }}
+                          >
+                            {FOLDER_ICON_OPTIONS.map(option => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={() => removeFolderRule(rule.id)}
+                            className="flex items-center justify-center rounded border"
+                            title="Remove Rule"
+                            style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-2">
+                    <button
+                      onClick={addFolderRule}
+                      className="inline-flex items-center gap-2 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
+                      style={{ background: `${accent}18`, color: text, border: `1px solid ${accent}55` }}
+                    >
+                      <Plus size={11} />
+                      Add Rule
+                    </button>
+                    <span className="text-[10px] opacity-40">
+                      Matchers are normalized, so `src-tauri`, `src tauri`, and `src_tauri` resolve the same way.
+                    </span>
+                  </div>
+
+                  <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
+                    <label className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
+                      <Search size={11} />
+                      Icon Catalog
+                    </label>
+                    <input
+                      value={folderIconSearch}
+                      onChange={event => setFolderIconSearch(event.target.value)}
+                      placeholder="Filter icon names"
+                      className="mt-2 w-full rounded border px-3 py-2 text-[11px] outline-none"
+                      style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
+                    />
+                    <OverlayScrollArea style={{ marginTop: 12, maxHeight: 220 }} viewportStyle={{ paddingRight: 4 }}>
+                      <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+                        {filteredFolderIconOptions.map(option => (
+                          <button
+                            key={option.value}
+                            onClick={() => updateExplorer({ defaultFolderIcon: option.value })}
+                            className="flex items-center gap-2 rounded border px-2 py-2 text-left text-[10px]"
+                            style={{
+                              borderColor: settings.explorer.defaultFolderIcon === option.value ? accent : border,
+                              background: settings.explorer.defaultFolderIcon === option.value ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                              color: text,
+                            }}
+                            title="Set as default fallback"
+                          >
+                            <img src={option.closedSrc} width={18} height={18} style={{ objectFit: 'contain', flexShrink: 0 }} draggable={false} />
+                            <span className="truncate">{option.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </OverlayScrollArea>
+                  </div>
+                </div>
+              </section>
             )}
 
             {activeSection === 'wallpapers' && (
@@ -4629,148 +4995,6 @@ export function SettingsPage({
                       </div>
                     );
                   })}
-                </div>
-              </div>
-
-              <div className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.025)' }}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Folder Icon Authoring</div>
-                    <p className="mt-1 text-[11px] opacity-40">
-                      Curated coding-folder rules land first. Anything that misses falls back to the default folder icon.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => updateExplorer({ folderIconRules: createDefaultFolderIconRules() })}
-                    className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
-                    style={{ border: `1px solid ${border}`, background: 'rgba(255,255,255,0.04)', color: text }}
-                  >
-                    Restore Rules
-                  </button>
-                </div>
-
-                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-[140px_minmax(0,1fr)]">
-                  <label className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">Default Fallback</label>
-                  <div className="flex items-center gap-3 rounded border px-3 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)' }}>
-                    <img
-                      src={getNamedFolderIconSrc(settings.explorer.defaultFolderIcon, false, themeIconTheme)}
-                      width={22}
-                      height={22}
-                      style={{ objectFit: 'contain', flexShrink: 0 }}
-                      draggable={false}
-                    />
-                    <select
-                      value={settings.explorer.defaultFolderIcon}
-                      onChange={event => updateExplorer({ defaultFolderIcon: event.target.value as FolderIconValue })}
-                      className="w-full bg-transparent text-[11px] outline-none"
-                      style={{ color: text }}
-                    >
-                      {FOLDER_ICON_OPTIONS.map(option => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="mt-3 space-y-2">
-                  {settings.explorer.folderIconRules.map(rule => (
-                    <div key={rule.id} className="rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
-                      <div className="grid grid-cols-1 gap-2 xl:grid-cols-[120px_minmax(0,1.1fr)_minmax(0,0.9fr)_36px]">
-                        <div className="flex items-center gap-2 rounded border px-2 py-2" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)' }}>
-                          <img
-                            src={getNamedFolderIconSrc(rule.icon, false, themeIconTheme)}
-                            width={18}
-                            height={18}
-                            style={{ objectFit: 'contain', flexShrink: 0 }}
-                            draggable={false}
-                          />
-                          <input
-                            value={rule.label}
-                            onChange={event => updateFolderRule(rule.id, { label: event.target.value })}
-                            className="w-full bg-transparent text-[11px] outline-none"
-                            style={{ color: text }}
-                          />
-                        </div>
-                        <input
-                          value={stringifyMatchers(rule.matchers)}
-                          onChange={event => updateFolderRule(rule.id, { matchers: parseMatcherInput(event.target.value) })}
-                          placeholder="src, source, source_code"
-                          className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                          style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text, fontFamily: appearance.fonts.mono }}
-                        />
-                        <select
-                          value={rule.icon}
-                          onChange={event => updateFolderRule(rule.id, { icon: event.target.value as FolderIconValue })}
-                          className="w-full rounded border px-3 py-2 text-[11px] outline-none"
-                          style={{ borderColor: border, background: panelBackground, color: text }}
-                        >
-                          {FOLDER_ICON_OPTIONS.map(option => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={() => removeFolderRule(rule.id)}
-                          className="flex items-center justify-center rounded border"
-                          title="Remove Rule"
-                          style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: muted }}
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-3 flex items-center gap-2">
-                  <button
-                    onClick={addFolderRule}
-                    className="inline-flex items-center gap-2 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
-                    style={{ background: `${accent}18`, color: text, border: `1px solid ${accent}55` }}
-                  >
-                    <Plus size={11} />
-                    Add Rule
-                  </button>
-                  <span className="text-[10px] opacity-40">
-                    Matchers are normalized, so `src-tauri`, `src tauri`, and `src_tauri` resolve the same way.
-                  </span>
-                </div>
-
-                <div className="mt-4 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.02)' }}>
-                  <label className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] opacity-50">
-                    <Search size={11} />
-                    Icon Catalog
-                  </label>
-                  <input
-                    value={folderIconSearch}
-                    onChange={event => setFolderIconSearch(event.target.value)}
-                    placeholder="Filter icon names"
-                    className="mt-2 w-full rounded border px-3 py-2 text-[11px] outline-none"
-                    style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
-                  />
-                  <OverlayScrollArea style={{ marginTop: 12, maxHeight: 220 }} viewportStyle={{ paddingRight: 4 }}>
-                  <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-                      {filteredFolderIconOptions.map(option => (
-                        <button
-                          key={option.value}
-                          onClick={() => updateExplorer({ defaultFolderIcon: option.value })}
-                          className="flex items-center gap-2 rounded border px-2 py-2 text-left text-[10px]"
-                        style={{
-                          borderColor: settings.explorer.defaultFolderIcon === option.value ? accent : border,
-                          background: settings.explorer.defaultFolderIcon === option.value ? `${accent}14` : 'rgba(255,255,255,0.03)',
-                          color: text,
-                        }}
-                        title="Set as default fallback"
-                      >
-                        <img src={option.closedSrc} width={18} height={18} style={{ objectFit: 'contain', flexShrink: 0 }} draggable={false} />
-                        <span className="truncate">{option.label}</span>
-                      </button>
-                      ))}
-                    </div>
-                  </OverlayScrollArea>
                 </div>
               </div>
 

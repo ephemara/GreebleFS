@@ -1,5 +1,5 @@
 import Editor from "@monaco-editor/react";
-import { AlertTriangle, Cpu, Eye, Layers3, Loader2 } from "lucide-react";
+import { AlertTriangle, Cpu, Eye, Layers3, Loader2 } from "@/components/AppIcons";
 import {
   useEffect,
   useMemo,

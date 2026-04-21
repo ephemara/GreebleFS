@@ -10,7 +10,7 @@ import {
   ImageIcon,
   X,
   Check,
-} from 'lucide-react';
+} from '@/components/AppIcons';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import { useSettingsStore } from '../store/settingsStore';
 import { matchesKeybinding } from '../config/hotkeys';

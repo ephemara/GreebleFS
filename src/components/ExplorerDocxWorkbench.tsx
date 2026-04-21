@@ -21,7 +21,7 @@ import {
   RefreshCcw,
   Save,
   Eye,
-} from "lucide-react";
+} from "@/components/AppIcons";
 import DOMPurify from "dompurify";
 import { readExplorerFileBase64, writeExplorerFile } from "../runtime/explorerBackend";
 import { OverlayScrollArea } from "./OverlayScrollArea";

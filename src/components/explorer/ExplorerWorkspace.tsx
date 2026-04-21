@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, CopyPlus, MoreHorizontal, Plus, SquareSplitHorizontal, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CopyPlus, MoreHorizontal, Plus, SquareSplitHorizontal, X } from '@/components/AppIcons';
 import { useShallow } from 'zustand/react/shallow';
 import type { ResolvedOverlayAppearance } from '../../config/appearance';
 import {

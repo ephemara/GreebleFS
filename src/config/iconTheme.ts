@@ -5,6 +5,7 @@ export interface OverlayIconDefinition {
 }
 
 export interface OverlayIconThemeManifest {
+  id?: string;
   name?: string;
   version?: number;
   description?: string;
@@ -16,9 +17,11 @@ export interface OverlayIconThemeManifest {
   fileNames?: Record<string, string>;
   folderNames?: Record<string, string>;
   folderNamesExpanded?: Record<string, string>;
+  uiIcons?: Record<string, string>;
 }
 
 export interface OverlayResolvedIconTheme {
+  id: string;
   name: string;
   version: number;
   description?: string;
@@ -30,6 +33,7 @@ export interface OverlayResolvedIconTheme {
   fileNames: Record<string, string>;
   folderNames: Record<string, string>;
   folderNamesExpanded: Record<string, string>;
+  uiIcons: Record<string, string>;
 }
 
 export interface OverlayFileIconResolution {
@@ -39,7 +43,7 @@ export interface OverlayFileIconResolution {
 
 const ICON_BASE = '/icons/';
 
-function normalizeIconId(value: string): string {
+export function normalizeIconId(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_');
 }
 
@@ -52,6 +56,40 @@ function normalizeMatcherMap(source: Record<string, string> | undefined): Record
     Object.entries(source)
       .filter(([key, value]) => key.trim().length > 0 && value.trim().length > 0)
       .map(([key, value]) => [key.trim().toLowerCase(), normalizeIconId(value)]),
+  );
+}
+
+function normalizeUiIconReference(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  if (/^lucide:/i.test(trimmed)) {
+    const iconName = trimmed.slice('lucide:'.length).trim();
+    return iconName ? `lucide:${iconName}` : '';
+  }
+
+  return normalizeIconId(trimmed);
+}
+
+function normalizeUiIconMap(source: Record<string, string> | undefined): Record<string, string> {
+  if (!source) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(source)
+      .map(([slotId, iconReference]) => {
+        const normalizedSlotId = normalizeIconId(slotId);
+        const normalizedReference = normalizeUiIconReference(iconReference);
+        if (!normalizedSlotId || !normalizedReference) {
+          return null;
+        }
+
+        return [normalizedSlotId, normalizedReference] as const;
+      })
+      .filter((entry): entry is readonly [string, string] => Boolean(entry)),
   );
 }
 
@@ -82,6 +120,7 @@ function normalizeThemeManifest(
   resolvePath: (iconPath: string) => string,
 ): OverlayResolvedIconTheme {
   return {
+    id: normalizeIconId(source.id || source.name || 'greeblefs_icon_theme'),
     name: source.name?.trim() || 'GreebleFS Icon Theme',
     version: typeof source.version === 'number' ? source.version : 1,
     description: source.description?.trim() || undefined,
@@ -93,6 +132,7 @@ function normalizeThemeManifest(
     fileNames: normalizeMatcherMap(source.fileNames),
     folderNames: normalizeMatcherMap(source.folderNames),
     folderNamesExpanded: normalizeMatcherMap(source.folderNamesExpanded),
+    uiIcons: normalizeUiIconMap(source.uiIcons),
   };
 }
 
@@ -142,6 +182,7 @@ export function mergeResolvedIconThemes(
   return {
     ...baseTheme,
     ...overrideTheme,
+    id: overrideTheme.id || baseTheme.id,
     name: overrideTheme.name || baseTheme.name,
     version: overrideTheme.version || baseTheme.version,
     description: overrideTheme.description ?? baseTheme.description,
@@ -168,12 +209,24 @@ export function mergeResolvedIconThemes(
       ...baseTheme.folderNamesExpanded,
       ...overrideTheme.folderNamesExpanded,
     },
+    uiIcons: {
+      ...baseTheme.uiIcons,
+      ...overrideTheme.uiIcons,
+    },
   };
 }
 
 export function resolveIconSrc(iconId: string, iconTheme?: OverlayResolvedIconTheme): string | undefined {
   const theme = iconTheme ?? BUILT_IN_ICON_THEME;
   return theme.iconDefinitions[normalizeIconId(iconId)];
+}
+
+export function resolveUiIconReference(
+  slotId: string,
+  iconTheme?: OverlayResolvedIconTheme,
+): string | undefined {
+  const theme = iconTheme ?? BUILT_IN_ICON_THEME;
+  return theme.uiIcons[normalizeIconId(slotId)];
 }
 
 export function resolveFileIconId(

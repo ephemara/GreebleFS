@@ -1,5 +1,22 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Spreadsheet Preview Now Shares The SQLite Table Surface
+
+- Spreadsheet preview no longer looks like a separate one-off workbench from the SQLite lane. Read-only spreadsheet preview now uses the same themed table-surface language as SQLite, while spreadsheet edit mode keeps the richer grid/formula/sheet tooling.
+- Durable implementation shape:
+  - Added `src/components/explorer/ExplorerTablePreviewSurface.tsx` as the shared shell for table-shaped preview lanes. It owns the responsive compact/wide breakpoint, identity header, metric pills, selector strip, dataset header, action buttons, centered fallback states, and the HTML table surface used by both SQLite and spreadsheet preview.
+  - `src/components/ExplorerSqlitePreview.tsx` now composes that shared surface instead of carrying its own private table-preview chrome. The SQLite lane keeps the same pagination/query behavior, but its shell is now the reusable standard instead of a one-off implementation.
+  - `src/components/ExplorerSpreadsheetWorkbench.tsx` now splits preview and edit more cleanly. Preview mode renders a read-only sheet snapshot through the shared table surface with sheet selectors, workbook/file metrics, and capped row/column previews for large sheets; edit mode still mounts `@glideapps/glide-data-grid`, the formula bar, sheet create/rename/delete actions, save flow, and close-guard behavior.
+  - The spreadsheet grid theme now leans on overlay CSS variables instead of hardcoded blue-only values, so edit mode remains distinct without detaching from the active shell theme.
+  - `src/test/explorerSpreadsheetWorkbench.test.tsx`, `src/test/explorerSqlitePreview.test.tsx`, and the spreadsheet-specific `src/test/fileExplorer.viewModes.test.tsx` path now lock the shared preview contract. `fileExplorer.viewModes.test.tsx` also mocks `@/components/AppIcons` back to `lucide-react` so preview tests are not blocked by the new icon wrapper layer.
+- Durable product note:
+  - Treat SQLite as the baseline visual language for simple table-shaped previews. If future lanes preview CSV-like, database-like, or matrix-like content, start from `ExplorerTablePreviewSurface.tsx` instead of inventing new table chrome inside the lane component.
+  - Keep spreadsheet preview and spreadsheet editing separate intents. Preview should stay calm, themed, and table-forward; edit mode is where the heavier spreadsheet-native interaction model belongs.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerSpreadsheetWorkbench.test.tsx src/test/explorerSqlitePreview.test.tsx --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "opens spreadsheet previews in preview mode and lets the shared preview header switch to edit" --reporter=dot`
+  - passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "ExplorerSpreadsheetWorkbench|ExplorerSqlitePreview|ExplorerTablePreviewSurface|fileExplorer.viewModes.test.tsx"`
+
 # 2026-04-21 - Explorer Properties Checksums Now Survive Tab Remounts
 
 - Explorer properties checksum autoload no longer trips the `getRootForUpdatedFiber` runtime path when a `FileExplorer` instance is replaced during tab/workspace swaps.

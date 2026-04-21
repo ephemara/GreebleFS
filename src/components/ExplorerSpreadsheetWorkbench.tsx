@@ -40,6 +40,21 @@ import {
   validateExplorerEditDraft,
 } from "./explorer/explorerEditSession";
 import {
+  ExplorerTablePreviewActionButton,
+  ExplorerTablePreviewCenteredStatus,
+  ExplorerTablePreviewCollectionButton,
+  ExplorerTablePreviewCollectionStrip,
+  ExplorerTablePreviewDatasetHeader,
+  ExplorerTablePreviewGrid,
+  ExplorerTablePreviewIdentityHeader,
+  ExplorerTablePreviewSurface,
+  useExplorerTablePreviewLayout,
+  type ExplorerTablePreviewCell,
+  type ExplorerTablePreviewColumn,
+  type ExplorerTablePreviewMetric,
+  type ExplorerTablePreviewRow,
+} from "./explorer/ExplorerTablePreviewSurface";
+import {
   addSpreadsheetSheet,
   buildSpreadsheetWorkbookDocument,
   clearSpreadsheetSheet,
@@ -103,39 +118,41 @@ const SPREADSHEET_COLUMN_WIDTH = 124;
 const SPREADSHEET_HEADER_HEIGHT = 30;
 const SPREADSHEET_ROW_HEIGHT = 28;
 const SPREADSHEET_FORMULA_BAR_HEIGHT = 38;
+const SPREADSHEET_PREVIEW_MAX_COLUMNS = 40;
+const SPREADSHEET_PREVIEW_MAX_ROWS = 160;
 const SPREADSHEET_GRID_THEME: Partial<import("@glideapps/glide-data-grid").Theme> = {
-  accentColor: "#60a5fa",
-  accentFg: "#020617",
-  accentLight: "#3b82f6",
-  bgBubble: "#111827",
-  bgBubbleSelected: "#1d4ed8",
-  bgCell: "rgba(15, 23, 42, 0.96)",
-  bgCellMedium: "rgba(15, 23, 42, 0.90)",
-  bgHeader: "rgba(15, 23, 42, 0.96)",
-  bgHeaderHasFocus: "rgba(17, 24, 39, 0.98)",
-  bgHeaderHovered: "rgba(30, 41, 59, 0.98)",
-  bgIconHeader: "#cbd5e1",
-  borderColor: "rgba(148, 163, 184, 0.16)",
+  accentColor: "var(--overlay-accent)",
+  accentFg: "var(--overlay-bg-card)",
+  accentLight: "color-mix(in srgb, var(--overlay-accent) 28%, transparent)",
+  bgBubble: "var(--overlay-bg-panel)",
+  bgBubbleSelected: "var(--overlay-selection-bg)",
+  bgCell: "var(--overlay-explorer-preview-bg)",
+  bgCellMedium: "var(--overlay-bg-panel)",
+  bgHeader: "var(--overlay-bg-card)",
+  bgHeaderHasFocus: "var(--overlay-bg-card)",
+  bgHeaderHovered: "var(--overlay-explorer-chip-bg)",
+  bgIconHeader: "var(--overlay-text-muted)",
+  borderColor: "var(--overlay-explorer-preview-border)",
   cellHorizontalPadding: 8,
   cellVerticalPadding: 5,
-  drilldownBorder: "rgba(148, 163, 184, 0.2)",
+  drilldownBorder: "var(--overlay-explorer-preview-border)",
   editorFontSize: "12px",
-  fgIconHeader: "#e2e8f0",
-  fontFamily: "Inter, system-ui, sans-serif",
-  headerBottomBorderColor: "rgba(148, 163, 184, 0.18)",
-  headerFontStyle: "600 11px Inter, system-ui, sans-serif",
+  fgIconHeader: "var(--overlay-text-secondary)",
+  fontFamily: "var(--overlay-font-family, system-ui)",
+  headerBottomBorderColor: "var(--overlay-explorer-preview-border)",
+  headerFontStyle: "600 11px var(--overlay-font-family, system-ui)",
   headerIconSize: 14,
-  linkColor: "#93c5fd",
+  linkColor: "var(--overlay-accent)",
   lineHeight: 1.4,
-  markerFontStyle: "600 11px Inter, system-ui, sans-serif",
+  markerFontStyle: "600 11px var(--overlay-font-family, system-ui)",
   roundingRadius: 8,
-  textBubble: "#e2e8f0",
-  textDark: "#f8fafc",
-  textGroupHeader: "#cbd5e1",
-  textHeader: "#e2e8f0",
-  textHeaderSelected: "#f8fafc",
-  textLight: "#f8fafc",
-  textMedium: "#cbd5e1",
+  textBubble: "var(--overlay-text-primary)",
+  textDark: "var(--overlay-text-primary)",
+  textGroupHeader: "var(--overlay-text-secondary)",
+  textHeader: "var(--overlay-text-secondary)",
+  textHeaderSelected: "var(--overlay-text-primary)",
+  textLight: "var(--overlay-text-primary)",
+  textMedium: "var(--overlay-text-secondary)",
 };
 
 export function ExplorerSpreadsheetWorkbench({
@@ -152,6 +169,7 @@ export function ExplorerSpreadsheetWorkbench({
   const keybindings = useSettingsStore((state) => state.settings.keybindings);
   const dataEditorRef = useRef<DataEditorRef | null>(null);
   const formulaInputRef = useRef<HTMLInputElement>(null);
+  const previewSurfaceRef = useRef<HTMLDivElement | null>(null);
   const spreadsheetDocumentRef = useRef<SpreadsheetWorkbookDocument | null>(null);
   const loadSequenceRef = useRef(0);
   const revisionRef = useRef(0);
@@ -191,6 +209,7 @@ export function ExplorerSpreadsheetWorkbench({
     "muted",
   );
   const isEditMode = mode === "edit";
+  const previewLayoutMode = useExplorerTablePreviewLayout(previewSurfaceRef);
 
   const currentWorkbook = spreadsheetDocument?.workbook ?? null;
   const sheetNames = useMemo(
@@ -418,6 +437,100 @@ export function ExplorerSpreadsheetWorkbench({
     sheetNames.length,
     sourceExtension,
   ]);
+
+  const spreadsheetPreviewIdentityMetrics = useMemo<ExplorerTablePreviewMetric[]>(
+    () => [
+      { label: "Sheets", value: String(sheetNames.length) },
+      { label: "Kind", value: isWorkbookKind ? "Workbook" : "Tabular" },
+      { label: "Format", value: sourceExtension.toUpperCase() },
+    ],
+    [isWorkbookKind, sheetNames.length, sourceExtension],
+  );
+
+  const spreadsheetPreviewSnapshot = useMemo(() => {
+    if (!spreadsheetDocument || activeSheetId == null) {
+      return null;
+    }
+
+    return buildSpreadsheetPreviewSnapshot({
+      document: spreadsheetDocument,
+      sheetId: activeSheetId,
+      layoutMode: previewLayoutMode,
+      maxColumns: SPREADSHEET_PREVIEW_MAX_COLUMNS,
+      maxRows: SPREADSHEET_PREVIEW_MAX_ROWS,
+    });
+  }, [activeSheetId, previewLayoutMode, spreadsheetDocument, workbookVersion]);
+
+  const spreadsheetPreviewMetrics = useMemo<ExplorerTablePreviewMetric[]>(
+    () =>
+      spreadsheetPreviewSnapshot
+        ? [
+            {
+              label: "Columns",
+              value: formatSpreadsheetPreviewMetric(
+                spreadsheetPreviewSnapshot.visibleColumnCount,
+                spreadsheetPreviewSnapshot.totalColumnCount,
+                spreadsheetPreviewSnapshot.columnsTruncated,
+              ),
+            },
+            {
+              label: "Rows",
+              value: formatSpreadsheetPreviewMetric(
+                spreadsheetPreviewSnapshot.visibleRowCount,
+                spreadsheetPreviewSnapshot.totalRowCount,
+                spreadsheetPreviewSnapshot.rowsTruncated,
+              ),
+            },
+            {
+              label: "Displayed",
+              value: `${spreadsheetPreviewSnapshot.visibleRowCount}x${spreadsheetPreviewSnapshot.visibleColumnCount}`,
+            },
+          ]
+        : [],
+    [spreadsheetPreviewSnapshot],
+  );
+
+  const spreadsheetPreviewFooter = useMemo(() => {
+    if (!spreadsheetPreviewSnapshot) {
+      return null;
+    }
+
+    const previewFootnotes: ReactNode[] = [];
+    previewFootnotes.push(
+      <span key="rows" style={{ whiteSpace: "nowrap" }}>
+        {formatSpreadsheetPreviewRangeLabel(
+          "Rows",
+          spreadsheetPreviewSnapshot.visibleRowCount,
+          spreadsheetPreviewSnapshot.totalRowCount,
+        )}
+      </span>,
+    );
+    previewFootnotes.push(
+      <span key="columns" style={{ whiteSpace: "nowrap" }}>
+        {formatSpreadsheetPreviewRangeLabel(
+          "Cols",
+          spreadsheetPreviewSnapshot.visibleColumnCount,
+          spreadsheetPreviewSnapshot.totalColumnCount,
+        )}
+      </span>,
+    );
+    previewFootnotes.push(
+      <span
+        key="hint"
+        style={{
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {spreadsheetPreviewSnapshot.rowsTruncated ||
+        spreadsheetPreviewSnapshot.columnsTruncated
+          ? "Preview caps large sheets. Switch to Edit for the full grid."
+          : "Read-only preview. Switch to Edit to change cells."}
+      </span>,
+    );
+    return previewFootnotes;
+  }, [spreadsheetPreviewSnapshot]);
 
   const focusFormulaBarSoon = useCallback(() => {
     window.requestAnimationFrame(() => {
@@ -1194,50 +1307,173 @@ export function ExplorerSpreadsheetWorkbench({
           : "Preview");
   const activeSpreadsheetMessageTone =
     operationTone === "error"
-      ? "#fca5a5"
+      ? "var(--overlay-danger)"
       : operationTone === "warning"
-        ? "#fbbf24"
+        ? "var(--overlay-warning)"
         : isSaving
-          ? "#f59e0b"
+          ? "var(--overlay-warning)"
           : isDirty
-            ? "#f97316"
-            : "#34d399";
+            ? "var(--overlay-warning)"
+            : "var(--overlay-success)";
 
   if (isLoading) {
     return (
-      <SpreadsheetShellFrame>
-        <SpreadsheetStatusCard
-          icon={<Loader2 size={18} />}
-          title={`Opening ${name}`}
-          detail={`Loading ${sourceExtension.toUpperCase()} spreadsheet preview...`}
-        />
-      </SpreadsheetShellFrame>
+      <div
+        onKeyDownCapture={handleKeyDownCapture}
+        style={spreadsheetWorkbenchFocusShellStyle}
+        tabIndex={0}
+      >
+        <ExplorerTablePreviewSurface>
+          <ExplorerTablePreviewCenteredStatus>
+            <div
+              style={{
+                display: "grid",
+                gap: 12,
+                justifyItems: "center",
+                textAlign: "center",
+                maxWidth: 320,
+              }}
+            >
+              <Loader2
+                size={20}
+                style={{ animation: "spin 1s linear infinite" }}
+              />
+              <div style={{ fontSize: 13, fontWeight: 600 }}>
+                Opening {name}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--overlay-text-dim)" }}>
+                Loading {sourceExtension.toUpperCase()} spreadsheet preview...
+              </div>
+            </div>
+          </ExplorerTablePreviewCenteredStatus>
+        </ExplorerTablePreviewSurface>
+      </div>
     );
   }
 
   if (loadError || !spreadsheetDocument) {
     return (
-      <SpreadsheetShellFrame>
-        <SpreadsheetStatusCard
-          icon={<AlertTriangle size={18} />}
-          title="Spreadsheet preview unavailable"
-          detail={loadError ?? "Unable to build a spreadsheet session for this file."}
-          actions={
-            <>
-        <button type="button" onClick={handleReload} style={spreadsheetSecondaryButtonStyle()}>
+      <div
+        onKeyDownCapture={handleKeyDownCapture}
+        style={spreadsheetWorkbenchFocusShellStyle}
+        tabIndex={0}
+      >
+        <ExplorerTablePreviewSurface>
+          <ExplorerTablePreviewCenteredStatus textColor="var(--overlay-danger)">
+            <div
+              style={{
+                display: "grid",
+                gap: 12,
+                justifyItems: "center",
+                textAlign: "center",
+                maxWidth: 360,
+              }}
+            >
+              <AlertTriangle size={20} />
+              <div style={{ fontSize: 13, fontWeight: 600 }}>
+                Spreadsheet preview unavailable
+              </div>
+              <div style={{ fontSize: 12, color: "var(--overlay-text-dim)" }}>
+                {loadError ?? "Unable to build a spreadsheet session for this file."}
+              </div>
+              <ExplorerTablePreviewActionButton onClick={handleReload}>
                 <RefreshCcw size={14} />
                 Retry
-              </button>
+              </ExplorerTablePreviewActionButton>
+            </div>
+          </ExplorerTablePreviewCenteredStatus>
+        </ExplorerTablePreviewSurface>
+      </div>
+    );
+  }
+
+  if (!isEditMode) {
+    return (
+      <div
+        data-testid="spreadsheet-preview-shell"
+        onKeyDownCapture={handleKeyDownCapture}
+        style={spreadsheetWorkbenchFocusShellStyle}
+        tabIndex={0}
+      >
+        <ExplorerTablePreviewSurface
+          containerRef={previewSurfaceRef}
+          layoutMode={previewLayoutMode}
+        >
+          <ExplorerTablePreviewIdentityHeader
+            icon={<Table2 size={16} />}
+            title={<span title={name}>{name}</span>}
+            subtitle={<span title={path}>{path}</span>}
+            metrics={spreadsheetPreviewIdentityMetrics}
+          />
+          {sheetNames.length > 0 ? (
+            <ExplorerTablePreviewCollectionStrip
+              label="Sheets"
+              meta={`${sheetNames.length} total`}
+            >
+              {sheetNames.map((sheetName) => (
+                <ExplorerTablePreviewCollectionButton
+                  key={sheetName}
+                  active={sheetName === activeSheetName}
+                  icon={<Table2 size={13} />}
+                  label={sheetName}
+                  layoutMode={previewLayoutMode}
+                  onClick={() => {
+                    activeSheetNameRef.current = sheetName;
+                    setActiveSheetName(sheetName);
+                  }}
+                />
+              ))}
+            </ExplorerTablePreviewCollectionStrip>
+          ) : null}
+          {!spreadsheetPreviewSnapshot ? (
+            <ExplorerTablePreviewCenteredStatus>
+              <div
+                style={{
+                  display: "grid",
+                  gap: 8,
+                  textAlign: "center",
+                  maxWidth: 260,
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 600 }}>
+                  No sheet preview available
+                </div>
+                <div style={{ fontSize: 12 }}>
+                  Select a sheet or switch to Edit to inspect the full workbook.
+                </div>
+              </div>
+            </ExplorerTablePreviewCenteredStatus>
+          ) : (
+            <>
+              <ExplorerTablePreviewDatasetHeader
+                icon={<Table2 size={16} />}
+                title={<span title={currentSheetName}>{currentSheetName || "Sheet"}</span>}
+                metrics={spreadsheetPreviewMetrics}
+                layoutMode={previewLayoutMode}
+                actions={
+                  <ExplorerTablePreviewActionButton onClick={handleReload}>
+                    <RefreshCcw size={14} />
+                    Reload
+                  </ExplorerTablePreviewActionButton>
+                }
+                footer={spreadsheetPreviewFooter}
+              />
+              <ExplorerTablePreviewGrid
+                columns={spreadsheetPreviewSnapshot.columns}
+                rows={spreadsheetPreviewSnapshot.rows}
+                emptyState="This sheet is empty."
+              />
             </>
-          }
-        />
-      </SpreadsheetShellFrame>
+          )}
+        </ExplorerTablePreviewSurface>
+      </div>
     );
   }
 
   return (
     <div
       onKeyDownCapture={handleKeyDownCapture}
+      tabIndex={0}
       style={spreadsheetShellStyle}
     >
       <div style={spreadsheetHeaderStyle()}>
@@ -1252,36 +1488,23 @@ export function ExplorerSpreadsheetWorkbench({
             </div>
           </div>
           <div style={spreadsheetToolbarStyle}>
-            {isEditMode ? (
-              <>
-                <button
-                  type="button"
-                  onClick={handleSaveClick}
-                  disabled={!isDirty || isSaving}
-                  style={spreadsheetPrimaryButtonStyle(!isDirty || isSaving)}
-                >
-                  <Save size={14} />
-                  Save
-                </button>
-                <button
-                  type="button"
-                  onClick={handleReload}
-                  style={spreadsheetSecondaryButtonStyle()}
-                >
-                  <RefreshCcw size={14} />
-                  Reload
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={handleReload}
-                style={spreadsheetSecondaryButtonStyle()}
-              >
-                <RefreshCcw size={14} />
-                Reload
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={handleSaveClick}
+              disabled={!isDirty || isSaving}
+              style={spreadsheetPrimaryButtonStyle(!isDirty || isSaving)}
+            >
+              <Save size={14} />
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={handleReload}
+              style={spreadsheetSecondaryButtonStyle()}
+            >
+              <RefreshCcw size={14} />
+              Reload
+            </button>
           </div>
         </div>
       </div>
@@ -1290,27 +1513,18 @@ export function ExplorerSpreadsheetWorkbench({
         <div style={spreadsheetCellLabelStyle}>{activeCellLabel}</div>
         <div style={spreadsheetFormulaInputWrapStyle}>
           <span style={spreadsheetFormulaPrefixStyle}>fx</span>
-          {isEditMode ? (
-            <input
-              ref={formulaInputRef}
-              value={formulaBarValue}
-              onChange={(event) => setFormulaBarValue(event.target.value)}
-              onBlur={() => {
-                void handleFormulaBarCommit();
-              }}
-              onKeyDown={handleFormulaBarKeyDown}
-              placeholder="Enter a value or formula"
-              spellCheck={false}
-              style={spreadsheetFormulaInputStyle}
-            />
-          ) : (
-            <div
-              title={formulaBarValue || "Cell is empty"}
-              style={spreadsheetInspectorValueStyle}
-            >
-              {formulaBarValue || "Cell is empty"}
-            </div>
-          )}
+          <input
+            ref={formulaInputRef}
+            value={formulaBarValue}
+            onChange={(event) => setFormulaBarValue(event.target.value)}
+            onBlur={() => {
+              void handleFormulaBarCommit();
+            }}
+            onKeyDown={handleFormulaBarKeyDown}
+            placeholder="Enter a value or formula"
+            spellCheck={false}
+            style={spreadsheetFormulaInputStyle}
+          />
         </div>
       </div>
 
@@ -1357,7 +1571,7 @@ export function ExplorerSpreadsheetWorkbench({
             );
           })}
         </div>
-        {isEditMode && (canAddSheet || canDeleteSheet) ? (
+        {canAddSheet || canDeleteSheet ? (
           <div style={spreadsheetTabActionsStyle}>
             {canAddSheet ? (
               <button
@@ -1393,21 +1607,21 @@ export function ExplorerSpreadsheetWorkbench({
             rows={viewRowCount}
             getCellContent={getCellContent}
             getCellsForSelection={true}
-            onCellsEdited={isEditMode ? handleCellEdit : undefined}
-            onDelete={isEditMode ? handleDelete : undefined}
-            onPaste={isEditMode ? handlePaste : undefined}
+            onCellsEdited={handleCellEdit}
+            onDelete={handleDelete}
+            onPaste={handlePaste}
             onGridSelectionChange={handleSelectionChange}
             gridSelection={gridSelection}
             rowMarkers="number"
             copyHeaders={false}
-            editOnType={isEditMode}
+            editOnType
             rowHeight={SPREADSHEET_ROW_HEIGHT}
             headerHeight={SPREADSHEET_HEADER_HEIGHT}
             minColumnWidth={72}
             maxColumnWidth={240}
             theme={SPREADSHEET_GRID_THEME}
-            trailingRowOptions={isEditMode ? { sticky: true, hint: "New row" } : undefined}
-            allowedFillDirections={isEditMode ? "orthogonal" : undefined}
+            trailingRowOptions={{ sticky: true, hint: "New row" }}
+            allowedFillDirections="orthogonal"
           />
         </div>
       </div>
@@ -1513,82 +1727,134 @@ export function ExplorerSpreadsheetWorkbench({
   );
 }
 
-function SpreadsheetShellFrame({ children }: { children: ReactNode }) {
-  return (
-    <div
-      style={{
-        display: "grid",
-        placeItems: "center",
-        minHeight: "100%",
-        height: "100%",
-        background:
-          "linear-gradient(180deg, rgba(10, 15, 29, 0.96), rgba(5, 9, 20, 0.98))",
-        color: "var(--overlay-text-primary)",
-        fontFamily: "var(--overlay-font-family, system-ui)",
-      }}
-    >
-      {children}
-    </div>
+type SpreadsheetPreviewSnapshot = {
+  columns: ExplorerTablePreviewColumn[];
+  rows: ExplorerTablePreviewRow[];
+  totalColumnCount: number;
+  totalRowCount: number;
+  visibleColumnCount: number;
+  visibleRowCount: number;
+  columnsTruncated: boolean;
+  rowsTruncated: boolean;
+};
+
+function buildSpreadsheetPreviewSnapshot({
+  document,
+  sheetId,
+  layoutMode,
+  maxColumns,
+  maxRows,
+}: {
+  document: SpreadsheetWorkbookDocument;
+  sheetId: number;
+  layoutMode: "compact" | "wide";
+  maxColumns: number;
+  maxRows: number;
+}): SpreadsheetPreviewSnapshot {
+  const dimensions = document.workbook.getSheetDimensions(sheetId);
+  const totalColumnCount = Math.max(0, dimensions.width);
+  const totalRowCount = Math.max(0, dimensions.height);
+  const visibleColumnCount = Math.min(totalColumnCount, maxColumns);
+  const visibleRowCount = Math.min(totalRowCount, maxRows);
+
+  const columns: ExplorerTablePreviewColumn[] = [
+    {
+      id: "__spreadsheet-row-number",
+      label: "#",
+      align: "right",
+      minWidth: 64,
+      maxWidth: 80,
+    },
+    ...Array.from({ length: visibleColumnCount }, (_, columnIndex) => ({
+      id: `spreadsheet-preview-col-${columnIndex}`,
+      label: getSpreadsheetColumnLabel(columnIndex),
+      title: getSpreadsheetColumnLabel(columnIndex),
+      align: "left" as const,
+      minWidth: layoutMode === "compact" ? 132 : 152,
+      maxWidth: layoutMode === "compact" ? 220 : 280,
+    })),
+  ];
+
+  const rows: ExplorerTablePreviewRow[] = Array.from(
+    { length: visibleRowCount },
+    (_, rowIndex) => ({
+      id: `spreadsheet-preview-row-${rowIndex}`,
+      cells: [
+        {
+          key: `spreadsheet-preview-row-label-${rowIndex}`,
+          content: String(rowIndex + 1),
+          title: `Row ${rowIndex + 1}`,
+          align: "right",
+          tone: "secondary",
+        },
+        ...Array.from({ length: visibleColumnCount }, (_, columnIndex) => {
+          const address = { sheet: sheetId, row: rowIndex, col: columnIndex };
+          const value = document.workbook.getCellValue(address);
+          const detailedType = document.workbook.getCellValueDetailedType(address);
+          const displayValue = formatSpreadsheetCellDisplay(value, detailedType);
+          const cellLabel = `${getSpreadsheetColumnLabel(columnIndex)}${rowIndex + 1}`;
+
+          return {
+            key: `spreadsheet-preview-cell-${rowIndex}-${columnIndex}`,
+            content: displayValue,
+            title: displayValue || `${cellLabel} is empty`,
+            align: typeof value === "number" ? "right" : "left",
+            tone: isSpreadsheetErrorValue(value)
+              ? "danger"
+              : displayValue
+                ? "default"
+                : "muted",
+          } satisfies ExplorerTablePreviewCell;
+        }),
+      ],
+    }),
   );
+
+  return {
+    columns,
+    rows,
+    totalColumnCount,
+    totalRowCount,
+    visibleColumnCount,
+    visibleRowCount,
+    columnsTruncated: visibleColumnCount < totalColumnCount,
+    rowsTruncated: visibleRowCount < totalRowCount,
+  };
 }
 
-function SpreadsheetStatusCard({
-  icon,
-  title,
-  detail,
-  actions,
-}: {
-  icon: ReactNode;
-  title: string;
-  detail: string;
-  actions?: ReactNode;
-}) {
-  return (
-    <div
-      style={{
-        width: "min(560px, calc(100vw - 48px))",
-        borderRadius: 22,
-        border: "1px solid rgba(148, 163, 184, 0.18)",
-        background:
-          "linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(7, 12, 24, 0.98))",
-        boxShadow: "0 28px 80px rgba(0,0,0,0.35)",
-        padding: 20,
-        color: "var(--overlay-text-primary)",
-        display: "grid",
-        gap: 14,
-        fontFamily: "var(--overlay-font-family, system-ui)",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div
-          style={{
-            width: 38,
-            height: 38,
-            borderRadius: 12,
-            display: "grid",
-            placeItems: "center",
-            background: "rgba(59, 130, 246, 0.14)",
-            color: "#93c5fd",
-            flexShrink: 0,
-          }}
-        >
-          {icon}
-        </div>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>{title}</div>
-          <div
-            style={{
-              fontSize: 12,
-              lineHeight: 1.6,
-              color: "var(--overlay-text-muted)",
-            }}
-          >
-            {detail}
-          </div>
-        </div>
-      </div>
-      {actions ? <div style={{ display: "flex", gap: 8 }}>{actions}</div> : null}
-    </div>
+function formatSpreadsheetPreviewMetric(
+  visibleCount: number,
+  totalCount: number,
+  truncated: boolean,
+): string {
+  if (totalCount <= 0) {
+    return "0";
+  }
+
+  return truncated ? `${visibleCount} / ${totalCount}` : String(totalCount);
+}
+
+function formatSpreadsheetPreviewRangeLabel(
+  label: string,
+  visibleCount: number,
+  totalCount: number,
+): string {
+  if (totalCount <= 0 || visibleCount <= 0) {
+    return `${label} 0-0`;
+  }
+
+  return `${label} 1-${visibleCount}${visibleCount < totalCount ? ` of ${totalCount}` : ""}`;
+}
+
+function isSpreadsheetErrorValue(
+  value: unknown,
+): value is { value: string; type: string; message?: string } {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "value" in value &&
+      "type" in value &&
+      typeof (value as { value?: unknown }).value === "string",
   );
 }
 
@@ -1663,13 +1929,19 @@ function convertEditableGridCellToRawContent(cell: EditableGridCell): RawCellCon
   }
 }
 
+const spreadsheetWorkbenchFocusShellStyle: CSSProperties = {
+  display: "flex",
+  minHeight: 0,
+  height: "100%",
+  outline: "none",
+};
+
 const spreadsheetShellStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
   minHeight: 0,
   height: "100%",
-  background:
-    "linear-gradient(180deg, rgba(10, 15, 29, 0.96), rgba(5, 9, 20, 0.98))",
+  background: "var(--overlay-explorer-preview-bg)",
   color: "var(--overlay-text-primary)",
   fontFamily: "var(--overlay-font-family, system-ui)",
 };
@@ -1684,14 +1956,14 @@ function spreadsheetPrimaryButtonStyle(disabled = false): CSSProperties {
     borderRadius: 12,
     padding: "8px 12px",
     background: disabled
-      ? "rgba(59, 130, 246, 0.16)"
-      : "linear-gradient(135deg, rgba(96, 165, 250, 0.98), rgba(37, 99, 235, 0.94))",
-    color: disabled ? "#bfdbfe" : "#eff6ff",
+      ? "color-mix(in srgb, var(--overlay-accent) 18%, transparent)"
+      : "var(--overlay-accent)",
+    color: "var(--overlay-accent-contrast, var(--overlay-bg-card))",
     fontSize: 11,
     fontWeight: 700,
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.55 : 1,
-    boxShadow: disabled ? "none" : "0 12px 24px rgba(37, 99, 235, 0.24)",
+    boxShadow: disabled ? "none" : "0 10px 24px rgba(0,0,0,0.18)",
   };
 }
 
@@ -1704,11 +1976,11 @@ function spreadsheetSecondaryButtonStyle(
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    border: "1px solid rgba(148, 163, 184, 0.18)",
+    border: "1px solid var(--overlay-explorer-preview-border)",
     borderRadius: 12,
     padding: compact ? "7px 10px" : "8px 12px",
-    background: "rgba(15, 23, 42, 0.9)",
-    color: disabled ? "#94a3b8" : "#e2e8f0",
+    background: "var(--overlay-bg-card)",
+    color: disabled ? "var(--overlay-text-muted)" : "var(--overlay-text-secondary)",
     fontSize: 11,
     fontWeight: 700,
     cursor: disabled ? "not-allowed" : "pointer",
@@ -1722,9 +1994,11 @@ function spreadsheetDangerButtonStyle(
 ): CSSProperties {
   return {
     ...spreadsheetSecondaryButtonStyle(disabled, compact),
-    border: "1px solid rgba(248, 113, 113, 0.2)",
-    background: disabled ? "rgba(127, 29, 29, 0.22)" : "rgba(127, 29, 29, 0.32)",
-    color: disabled ? "#fca5a5" : "#fecaca",
+    border: "1px solid color-mix(in srgb, var(--overlay-danger) 36%, transparent)",
+    background: disabled
+      ? "color-mix(in srgb, var(--overlay-danger) 10%, transparent)"
+      : "color-mix(in srgb, var(--overlay-danger) 16%, transparent)",
+    color: "var(--overlay-danger)",
   };
 }
 
@@ -1735,9 +2009,8 @@ function spreadsheetHeaderStyle(): CSSProperties {
     alignItems: "stretch",
     gap: 12,
     padding: "14px 16px 12px",
-    borderBottom: "1px solid rgba(148, 163, 184, 0.1)",
-    background:
-      "linear-gradient(180deg, rgba(18, 26, 46, 0.94), rgba(11, 18, 33, 0.88))",
+    borderBottom: "1px solid var(--overlay-explorer-preview-border)",
+    background: "var(--overlay-bg-card)",
     flexShrink: 0,
   };
 }
@@ -1764,17 +2037,15 @@ const spreadsheetHeaderIconWrapStyle: CSSProperties = {
   display: "grid",
   placeItems: "center",
   flexShrink: 0,
-  background:
-    "linear-gradient(180deg, rgba(59, 130, 246, 0.2), rgba(37, 99, 235, 0.12))",
-  border: "1px solid rgba(96, 165, 250, 0.18)",
-  color: "#bfdbfe",
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08)",
+  background: "var(--overlay-explorer-chip-bg)",
+  border: "1px solid var(--overlay-explorer-preview-border)",
+  color: "var(--overlay-accent)",
 };
 
 const spreadsheetHeaderTitleStyle: CSSProperties = {
   fontSize: 15,
   fontWeight: 700,
-  color: "#f8fafc",
+  color: "var(--overlay-text-primary)",
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
@@ -1782,7 +2053,7 @@ const spreadsheetHeaderTitleStyle: CSSProperties = {
 
 const spreadsheetHeaderSubtitleStyle: CSSProperties = {
   fontSize: 11,
-  color: "#94a3b8",
+  color: "var(--overlay-text-muted)",
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
@@ -1803,8 +2074,8 @@ const spreadsheetFormulaBarStyle: CSSProperties = {
   gap: 10,
   alignItems: "center",
   padding: "10px 16px",
-  borderBottom: "1px solid rgba(148, 163, 184, 0.08)",
-  background: "rgba(6, 11, 22, 0.82)",
+  borderBottom: "1px solid var(--overlay-explorer-preview-border)",
+  background: "var(--overlay-bg-panel)",
   flexShrink: 0,
 };
 
@@ -1816,9 +2087,9 @@ const spreadsheetCellLabelStyle: CSSProperties = {
   height: 30,
   padding: "0 10px",
   borderRadius: 10,
-  border: "1px solid rgba(148, 163, 184, 0.18)",
-  background: "rgba(15, 23, 42, 0.9)",
-  color: "#cbd5e1",
+  border: "1px solid var(--overlay-explorer-preview-border)",
+  background: "var(--overlay-explorer-chip-bg)",
+  color: "var(--overlay-text-secondary)",
   fontSize: 11,
   fontWeight: 700,
   fontVariantNumeric: "tabular-nums",
@@ -1833,12 +2104,12 @@ const spreadsheetFormulaInputWrapStyle: CSSProperties = {
   height: SPREADSHEET_FORMULA_BAR_HEIGHT,
   padding: "0 12px",
   borderRadius: 12,
-  border: "1px solid rgba(148, 163, 184, 0.18)",
-  background: "rgba(15, 23, 42, 0.9)",
+  border: "1px solid var(--overlay-explorer-preview-border)",
+  background: "var(--overlay-bg-card)",
 };
 
 const spreadsheetFormulaPrefixStyle: CSSProperties = {
-  color: "#60a5fa",
+  color: "var(--overlay-accent)",
   fontSize: 11,
   fontWeight: 800,
   letterSpacing: 0.2,
@@ -1850,21 +2121,10 @@ const spreadsheetFormulaInputStyle: CSSProperties = {
   border: "none",
   outline: "none",
   background: "transparent",
-  color: "#f8fafc",
+  color: "var(--overlay-text-primary)",
   fontSize: 12,
   fontFamily: "var(--overlay-font-mono, monospace)",
   minWidth: 0,
-};
-
-const spreadsheetInspectorValueStyle: CSSProperties = {
-  width: "100%",
-  minWidth: 0,
-  color: "#f8fafc",
-  fontSize: 12,
-  fontFamily: "var(--overlay-font-mono, monospace)",
-  overflow: "hidden",
-  textOverflow: "ellipsis",
-  whiteSpace: "nowrap",
 };
 
 const spreadsheetTabBarStyle: CSSProperties = {
@@ -1873,8 +2133,8 @@ const spreadsheetTabBarStyle: CSSProperties = {
   justifyContent: "space-between",
   gap: 12,
   padding: "10px 14px",
-  borderBottom: "1px solid rgba(148, 163, 184, 0.12)",
-  background: "rgba(15, 23, 42, 0.8)",
+  borderBottom: "1px solid var(--overlay-explorer-preview-border)",
+  background: "var(--overlay-bg-panel)",
   flexShrink: 0,
 };
 
@@ -1893,9 +2153,13 @@ function spreadsheetTabButtonStyle(active: boolean): CSSProperties {
     alignItems: "center",
     gap: 8,
     borderRadius: 12,
-    border: active ? "1px solid rgba(96, 165, 250, 0.42)" : "1px solid rgba(148, 163, 184, 0.16)",
-    background: active ? "rgba(30, 41, 59, 0.96)" : "rgba(15, 23, 42, 0.78)",
-    color: active ? "#f8fafc" : "#cbd5e1",
+    border: active
+      ? "1px solid color-mix(in srgb, var(--overlay-accent) 42%, transparent)"
+      : "1px solid var(--overlay-explorer-preview-border)",
+    background: active
+      ? "color-mix(in srgb, var(--overlay-selection-bg) 72%, var(--overlay-bg-card))"
+      : "var(--overlay-bg-card)",
+    color: active ? "var(--overlay-text-primary)" : "var(--overlay-text-secondary)",
     padding: "8px 12px",
     fontSize: 11,
     fontWeight: 700,
@@ -1903,7 +2167,7 @@ function spreadsheetTabButtonStyle(active: boolean): CSSProperties {
     whiteSpace: "nowrap",
     maxWidth: 220,
     flexShrink: 0,
-    boxShadow: active ? "0 10px 24px rgba(15, 23, 42, 0.28)" : "none",
+    boxShadow: active ? "0 10px 24px rgba(0,0,0,0.16)" : "none",
   };
 }
 
@@ -1911,7 +2175,7 @@ const spreadsheetActiveTabDotStyle: CSSProperties = {
   width: 7,
   height: 7,
   borderRadius: 999,
-  background: "#60a5fa",
+  background: "var(--overlay-accent)",
   flexShrink: 0,
 };
 
@@ -1927,7 +2191,7 @@ const spreadsheetGridShellStyle: CSSProperties = {
   minHeight: 0,
   minWidth: 0,
   background:
-    "radial-gradient(circle at top, rgba(96, 165, 250, 0.08), transparent 55%), rgba(4, 8, 18, 0.94)",
+    "radial-gradient(circle at top, color-mix(in srgb, var(--overlay-accent) 10%, transparent), transparent 55%), var(--overlay-explorer-preview-bg)",
   padding: 14,
 };
 
@@ -1940,12 +2204,12 @@ function spreadsheetGridViewportStyle(isEditMode: boolean): CSSProperties {
     overflow: "hidden",
     borderRadius: 20,
     border: isEditMode
-      ? "1px solid rgba(96, 165, 250, 0.18)"
-      : "1px solid rgba(148, 163, 184, 0.14)",
-    background: "rgba(4, 8, 18, 0.96)",
+      ? "1px solid color-mix(in srgb, var(--overlay-accent) 20%, transparent)"
+      : "1px solid var(--overlay-explorer-preview-border)",
+    background: "var(--overlay-explorer-preview-bg)",
     boxShadow: isEditMode
-      ? "0 24px 48px rgba(2, 6, 23, 0.34)"
-      : "0 18px 38px rgba(2, 6, 23, 0.28)",
+      ? "0 24px 48px rgba(0,0,0,0.24)"
+      : "0 18px 38px rgba(0,0,0,0.18)",
   };
 }
 
@@ -1955,9 +2219,9 @@ const spreadsheetFooterStyle: CSSProperties = {
   justifyContent: "space-between",
   gap: 12,
   padding: "8px 16px",
-  borderTop: "1px solid rgba(148, 163, 184, 0.08)",
-  background: "rgba(11, 18, 33, 0.9)",
-  color: "#94a3b8",
+  borderTop: "1px solid var(--overlay-explorer-preview-border)",
+  background: "var(--overlay-bg-panel)",
+  color: "var(--overlay-text-muted)",
   fontSize: 11,
   fontWeight: 700,
   flexShrink: 0,

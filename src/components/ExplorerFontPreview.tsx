@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { Loader, Type } from "lucide-react";
+import { Loader, Type } from "@/components/AppIcons";
 import { commands } from "../runtime/tauriClient";
 import { OverlayScrollArea } from "./OverlayScrollArea";
 

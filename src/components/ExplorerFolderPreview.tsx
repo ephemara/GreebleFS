@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { File, Folder, FolderOpen, Loader } from "lucide-react";
+import { File, Folder, FolderOpen, Loader } from "@/components/AppIcons";
 import {
   listExplorerDirUncached,
   type ExplorerFileEntry,

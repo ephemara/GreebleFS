@@ -159,6 +159,7 @@ export interface AppearanceSettings {
   activeThemeId: string;
   dockThemeMode: DockThemeMode;
   activeDockThemeId: string | null;
+  activeIconThemeId: string | null;
   customThemes: OverlayThemeDefinition[];
   activeWallpaperId?: string | null;
   wallpaperFitMode: OverlayWallpaperFitMode;
@@ -570,6 +571,11 @@ function normalizeAppearanceSettings(
       : merged.activeDockThemeId === null
         ? null
         : base.activeDockThemeId ?? null,
+    activeIconThemeId: typeof merged.activeIconThemeId === 'string'
+      ? merged.activeIconThemeId.trim() || null
+      : merged.activeIconThemeId === null
+        ? null
+        : base.activeIconThemeId ?? null,
     activeWallpaperId: typeof merged.activeWallpaperId === 'string'
       ? merged.activeWallpaperId.trim() || null
       : merged.activeWallpaperId === null
@@ -737,6 +743,7 @@ export const defaultSettings: Settings = {
     activeThemeId: DEFAULT_PILOT_DARK_THEME_ID,
     dockThemeMode: 'follow-app',
     activeDockThemeId: null,
+    activeIconThemeId: null,
     customThemes: [],
     activeWallpaperId: null,
     wallpaperFitMode: 'cover',

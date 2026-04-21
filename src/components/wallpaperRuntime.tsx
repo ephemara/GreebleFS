@@ -4,7 +4,7 @@ import * as TauriCore from '@tauri-apps/api/core';
 import * as TauriEvent from '@tauri-apps/api/event';
 import * as TauriWindow from '@tauri-apps/api/window';
 import * as TauriFs from '@tauri-apps/plugin-fs';
-import * as LucideReact from 'lucide-react';
+import * as LucideReact from '@/components/AppIcons';
 import * as THREE from 'three';
 import type { OverlayThemeDefinition } from '../config/appearance';
 import {

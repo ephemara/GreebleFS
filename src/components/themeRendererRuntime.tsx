@@ -1,5 +1,5 @@
 import React from 'react';
-import * as LucideReact from 'lucide-react';
+import * as LucideReact from '@/components/AppIcons';
 import * as THREE from 'three';
 
 import type { OverlayThemeDefinition, ResolvedOverlayAppearance } from '../config/appearance';

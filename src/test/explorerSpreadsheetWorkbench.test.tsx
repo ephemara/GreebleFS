@@ -85,49 +85,19 @@ describe("ExplorerSpreadsheetWorkbench", () => {
       />,
     );
 
-    expect(await screen.findByText("Sheet1 · CSV")).toBeInTheDocument();
+    expect(await screen.findByTestId("spreadsheet-preview-shell")).toBeInTheDocument();
+    expect(screen.getByText("scores.csv")).toBeInTheDocument();
+    expect(screen.getByText("/tmp/scores.csv")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sheet1" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^reload$/i })).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/enter a value or formula/i)).toBeNull();
     expect(screen.queryByRole("button", { name: /^save$/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /new sheet/i })).toBeNull();
-
-    await waitFor(() => expect(spreadsheetGridMockState.lastProps).not.toBeNull());
-    expect(screen.getByTestId("mock-spreadsheet-grid")).toHaveAttribute(
-      "data-edit-on-type",
-      "false",
-    );
-    expect(screen.getByTestId("mock-spreadsheet-grid")).toHaveAttribute(
-      "data-has-trailing-row",
-      "false",
-    );
-
-    const getCellContent = spreadsheetGridMockState.lastProps?.getCellContent as
-      | ((cell: [number, number]) => { data?: string; displayData?: string; readonly?: boolean })
-      | undefined;
-    if (!getCellContent) {
-      throw new Error("Missing spreadsheet grid content accessor");
-    }
-
-    expect(getCellContent([0, 0])).toMatchObject({
-      data: "name",
-      displayData: "name",
-      readonly: true,
-    });
-    expect(getCellContent([1, 0])).toMatchObject({
-      data: "score",
-      displayData: "score",
-      readonly: true,
-    });
-    expect(getCellContent([0, 1])).toMatchObject({
-      data: "Ada",
-      displayData: "Ada",
-      readonly: true,
-    });
-    expect(getCellContent([1, 2])).toMatchObject({
-      data: "2",
-      displayData: "2",
-      readonly: true,
-    });
+    expect(spreadsheetGridMockState.lastProps).toBeNull();
+    expect(screen.getByText("name")).toBeInTheDocument();
+    expect(screen.getByText("score")).toBeInTheDocument();
+    expect(screen.getByText("Ada")).toBeInTheDocument();
+    expect(screen.getByTitle("2")).toBeInTheDocument();
   });
 
   it("requests edit mode from preview when the spreadsheet edit hotkey fires", async () => {
@@ -144,9 +114,9 @@ describe("ExplorerSpreadsheetWorkbench", () => {
       />,
     );
 
-    await screen.findByTestId("mock-spreadsheet-grid");
+    const previewShell = await screen.findByTestId("spreadsheet-preview-shell");
 
-    fireEvent.keyDown(screen.getByTestId("mock-spreadsheet-grid"), {
+    fireEvent.keyDown(previewShell, {
       key: "e",
       code: "KeyE",
     });

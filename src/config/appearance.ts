@@ -24,7 +24,11 @@ import {
 } from '../runtime/themeEngineBackend';
 import type { LoadedOverlayThemeRenderer } from '../components/themeRendererRuntime';
 import type { OverlayShellBlueprintId } from './shellBlueprints';
-import { mergeResolvedIconThemes, type OverlayResolvedIconTheme } from './iconTheme';
+import {
+  getBuiltInIconTheme,
+  mergeResolvedIconThemes,
+  type OverlayResolvedIconTheme,
+} from './iconTheme';
 import { clampOverlayVisualControlValue } from './overlayWindow';
 import {
   DEFAULT_PILOT_DARK_THEME_ID,
@@ -187,6 +191,7 @@ export interface OverlayAppearanceSelection {
   dockThemeMode?: 'follow-app' | 'override';
   customThemes?: OverlayThemeDefinition[];
   packageThemes?: OverlayThemeDefinition[];
+  selectedIconTheme?: OverlayResolvedIconTheme | null;
   uiFontFamily?: string;
   monoFontFamily?: string;
   panelTransparency?: number;
@@ -1234,21 +1239,42 @@ function createResolvedCssVars(args: {
 function resolveAppearanceChannel(args: {
   baseTheme: OverlayThemeDefinition;
   themes: OverlayThemeDefinition[];
+  selectedIconTheme?: OverlayResolvedIconTheme | null;
   uiFontFamily?: string;
   monoFontFamily?: string;
   panelTransparency: number;
 }): ResolvedOverlayAppearanceChannel {
-  const { baseTheme, themes, uiFontFamily, monoFontFamily, panelTransparency } = args;
-  const fonts = {
-    ui: uiFontFamily?.trim() || baseTheme.fonts?.ui || defaultUiFont,
-    mono: monoFontFamily?.trim() || baseTheme.fonts?.mono || defaultMonoFont,
+  const {
+    baseTheme,
+    themes,
+    selectedIconTheme,
+    uiFontFamily,
+    monoFontFamily,
+    panelTransparency,
+  } = args;
+  const resolvedIconTheme = selectedIconTheme
+    ? mergeResolvedIconThemes(getBuiltInIconTheme(), selectedIconTheme)
+    : (baseTheme.assets?.iconTheme
+        ? mergeResolvedIconThemes(getBuiltInIconTheme(), baseTheme.assets.iconTheme)
+        : getBuiltInIconTheme());
+  const themedBaseTheme: OverlayThemeDefinition = {
+    ...baseTheme,
+    assets: {
+      ...(baseTheme.assets ?? {}),
+      iconTheme: resolvedIconTheme,
+      iconEntries: resolvedIconTheme.iconDefinitions,
+    },
   };
-  const theme = applyPanelTransparency(baseTheme, panelTransparency);
-  const workbenchTheme = resolveWorkbenchThemeRecipe(baseTheme);
+  const fonts = {
+    ui: uiFontFamily?.trim() || themedBaseTheme.fonts?.ui || defaultUiFont,
+    mono: monoFontFamily?.trim() || themedBaseTheme.fonts?.mono || defaultMonoFont,
+  };
+  const theme = applyPanelTransparency(themedBaseTheme, panelTransparency);
+  const workbenchTheme = resolveWorkbenchThemeRecipe(themedBaseTheme);
   const explorerTheme = resolveExplorerThemeRecipe({
     mode: 'windowed',
     theme,
-    baseTheme,
+    baseTheme: themedBaseTheme,
     themes,
     fonts,
     workbenchTheme,
@@ -1261,7 +1287,7 @@ function resolveAppearanceChannel(args: {
 
   return {
     theme,
-    baseTheme,
+    baseTheme: themedBaseTheme,
     fonts,
     workbenchTheme,
     explorerTheme,
@@ -1395,6 +1421,7 @@ export function resolveOverlayAppearance(selection?: OverlayAppearanceSelection)
   const app = resolveAppearanceChannel({
     baseTheme: appBaseTheme,
     themes,
+    selectedIconTheme: selection?.selectedIconTheme,
     uiFontFamily: selection?.uiFontFamily,
     monoFontFamily: selection?.monoFontFamily,
     panelTransparency,
@@ -1402,6 +1429,7 @@ export function resolveOverlayAppearance(selection?: OverlayAppearanceSelection)
   const dock = resolveAppearanceChannel({
     baseTheme: dockBaseTheme,
     themes,
+    selectedIconTheme: selection?.selectedIconTheme,
     uiFontFamily: selection?.uiFontFamily,
     monoFontFamily: selection?.monoFontFamily,
     panelTransparency,

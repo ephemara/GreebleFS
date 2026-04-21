@@ -28,7 +28,7 @@ import {
   ShieldCheck,
   Trash2,
   X,
-} from 'lucide-react';
+} from '@/components/AppIcons';
 import {
   deleteStorageEntries,
   deleteStorageEntry,

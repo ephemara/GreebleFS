@@ -8,11 +8,12 @@ import {
   Copy,
   ExternalLink,
   FolderPlus,
+  IconThemeProvider,
   LoaderCircle,
   MoveRight,
   RefreshCw,
   X,
-} from 'lucide-react';
+} from '@/components/AppIcons';
 import { useShallow } from 'zustand/react/shallow';
 import {
   ensureFontFamilyLoaded,
@@ -21,6 +22,10 @@ import {
   type ResolvedOverlayAppearance,
 } from '../config/appearance';
 import { detectClientPlatform } from '../config/platform';
+import {
+  loadIconThemePackages,
+  type LoadedIconThemePackage,
+} from '../config/iconThemePackages';
 import {
   loadThemePackages,
   type LoadedOverlayThemePackage,
@@ -194,6 +199,7 @@ export default function FileOperationsWindowApp() {
     typeof window === 'undefined' ? 980 : window.innerWidth
   ));
   const [themePackages, setThemePackages] = useState<LoadedOverlayThemePackage[]>([]);
+  const [iconThemePackages, setIconThemePackages] = useState<LoadedIconThemePackage[]>([]);
   const [themePackagesError, setThemePackagesError] = useState<string | null>(null);
   const [request, setRequest] = useState<FileOperationsWindowRequest | null>(() => readFileOperationsWindowRequest());
   const [activeView, setActiveView] = useState<FileOperationsView>(() => (
@@ -265,6 +271,27 @@ export default function FileOperationsWindowApp() {
   useEffect(() => {
     let cancelled = false;
 
+    loadIconThemePackages()
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        setIconThemePackages(result.packages);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setIconThemePackages([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
     Promise.all([
       getExplorerHomeDir().catch(() => ''),
       getExplorerDrives().catch((): ExplorerDriveInfo[] => []),
@@ -291,24 +318,33 @@ export default function FileOperationsWindowApp() {
     () => [...themePackages, ...pluginThemePackages],
     [pluginThemePackages, themePackages],
   );
+  const selectedIconTheme = useMemo(
+    () => appearanceSettings.activeIconThemeId
+      ? (iconThemePackages.find(iconThemePackage => iconThemePackage.id === appearanceSettings.activeIconThemeId)?.iconTheme ?? null)
+      : null,
+    [appearanceSettings.activeIconThemeId, iconThemePackages],
+  );
   const resolvedAppearance = useMemo<ResolvedOverlayAppearance>(() => resolveOverlayAppearance({
     activeThemeId: appearanceSettings.activeThemeId,
     activeDockThemeId: appearanceSettings.activeDockThemeId,
     dockThemeMode: appearanceSettings.dockThemeMode,
     customThemes: appearanceSettings.customThemes,
     packageThemes: combinedThemePackages.map((pkg) => pkg.theme),
+    selectedIconTheme,
     uiFontFamily: appearanceSettings.uiFontFamily,
     monoFontFamily: terminalSettings.fontFamily,
     panelTransparency: appearanceSettings.panelTransparency,
     windowMode: 'windowed',
   }), [
     appearanceSettings.activeDockThemeId,
+    appearanceSettings.activeIconThemeId,
     appearanceSettings.activeThemeId,
     appearanceSettings.customThemes,
     appearanceSettings.dockThemeMode,
     appearanceSettings.panelTransparency,
     appearanceSettings.uiFontFamily,
     combinedThemePackages,
+    selectedIconTheme,
     terminalSettings.fontFamily,
   ]);
 
@@ -492,23 +528,24 @@ export default function FileOperationsWindowApp() {
   const splitLayout = activeView === 'transfer' && transferRequest && viewportWidth > 920;
 
   return (
-    <div
-      className="overlay-window-host w-full h-full overflow-hidden"
-      style={{
-        ...(resolvedAppearance.cssVars as CSSProperties),
-        minHeight: '100vh',
-        background: `radial-gradient(circle at top right, ${palette.accentSoft}22, transparent 34%), linear-gradient(180deg, ${palette.appBackgroundAlt}, ${palette.appBackground})`,
-        color: palette.textPrimary,
-        fontFamily: resolvedAppearance.fonts.ui,
-      }}
-    >
+    <IconThemeProvider iconTheme={resolvedAppearance.theme.assets?.iconTheme}>
       <div
+        className="overlay-window-host w-full h-full overflow-hidden"
         style={{
+          ...(resolvedAppearance.cssVars as CSSProperties),
           minHeight: '100vh',
-          display: 'grid',
-          gridTemplateRows: 'auto minmax(0, 1fr)',
+          background: `radial-gradient(circle at top right, ${palette.accentSoft}22, transparent 34%), linear-gradient(180deg, ${palette.appBackgroundAlt}, ${palette.appBackground})`,
+          color: palette.textPrimary,
+          fontFamily: resolvedAppearance.fonts.ui,
         }}
       >
+        <div
+          style={{
+            minHeight: '100vh',
+            display: 'grid',
+            gridTemplateRows: 'auto minmax(0, 1fr)',
+          }}
+        >
         <header
           style={{
             display: 'flex',
@@ -894,6 +931,7 @@ export default function FileOperationsWindowApp() {
           </SectionCard>
         </main>
       </div>
-    </div>
+      </div>
+    </IconThemeProvider>
   );
 }

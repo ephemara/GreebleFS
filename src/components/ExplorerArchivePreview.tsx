@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FolderArchive, FileSearch, ArrowDownToLine, Loader, HardDriveDownload } from "lucide-react";
+import { FolderArchive, FileSearch, ArrowDownToLine, Loader, HardDriveDownload } from "@/components/AppIcons";
 import type { ExplorerArchiveFormatDescriptor } from "../config/explorerArchives";
 import { explorerBackendContract, type ExplorerArchiveExtractionMode } from "../runtime/explorerBackend";
 import { OverlayScrollArea } from "./OverlayScrollArea";

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Blocks, FolderOpen, LoaderCircle, Puzzle, RefreshCw, TriangleAlert } from 'lucide-react';
+import { Blocks, FolderOpen, LoaderCircle, Puzzle, RefreshCw, TriangleAlert } from '@/components/AppIcons';
 import { pluginSystemConfig } from '../config/plugins';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import { useSettingsStore } from '../store/settingsStore';

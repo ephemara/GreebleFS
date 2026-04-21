@@ -25,7 +25,7 @@ import {
   Type,
   RotateCcw,
   Trash2,
-} from 'lucide-react';
+} from '@/components/AppIcons';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 import { useSettingsStore } from '../store/settingsStore';
 import { screenshotFeatureConfig } from '../config/screenshots';

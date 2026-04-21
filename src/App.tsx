@@ -79,18 +79,24 @@ import {
   Check,
   ChevronDown,
   Droplet,
+  IconThemeProvider,
   LayoutGrid,
   Search,
   Settings2,
   Terminal as TerminalIcon,
   X,
-} from 'lucide-react';
+} from '@/components/AppIcons';
 import {
   ensureFontFamilyLoaded,
   resolveOverlayAppearance,
   setOverlayPluginFonts,
   type ResolvedOverlayAppearance,
 } from './config/appearance';
+import {
+  iconThemeSystemConfig,
+  loadIconThemePackages as discoverIconThemePackages,
+  type LoadedIconThemePackage,
+} from './config/iconThemePackages';
 import { loadThemePackages as discoverThemePackages, themeSystemConfig, type LoadedOverlayThemePackage } from './config/themePackages';
 import { dispatchTerminalCommand } from './config/pluginContributions';
 import { formatHotkeyLabel, matchesKeybinding, matchesWheelHotkey } from './config/hotkeys';
@@ -486,6 +492,7 @@ function App() {
   const shaderSignatureRef = useRef('');
   const wallpaperSignatureRef = useRef('');
   const themePackagesSignatureRef = useRef('');
+  const iconThemePackagesSignatureRef = useRef('');
   const authoredAnimationsRefreshInFlightRef = useRef(false);
   const authoredAnimationsRefreshQueuedRef = useRef(false);
   const authoredShadersRefreshInFlightRef = useRef(false);
@@ -494,6 +501,8 @@ function App() {
   const authoredWallpapersRefreshQueuedRef = useRef(false);
   const themePackagesRefreshInFlightRef = useRef(false);
   const themePackagesRefreshQueuedRef = useRef(false);
+  const iconThemePackagesRefreshInFlightRef = useRef(false);
+  const iconThemePackagesRefreshQueuedRef = useRef(false);
   const frameTelemetryContextRef = useRef<{
     activePanelId: string | null;
     openPanelCount: number;
@@ -514,6 +523,10 @@ function App() {
   const [themePackagesLoading, setThemePackagesLoading] = useState(true);
   const [themePackagesError, setThemePackagesError] = useState<string | null>(null);
   const [themePackagesWarnings, setThemePackagesWarnings] = useState<string[]>([]);
+  const [iconThemePackages, setIconThemePackages] = useState<LoadedIconThemePackage[]>([]);
+  const [iconThemePackagesLoading, setIconThemePackagesLoading] = useState(true);
+  const [iconThemePackagesError, setIconThemePackagesError] = useState<string | null>(null);
+  const [iconThemePackagesWarnings, setIconThemePackagesWarnings] = useState<string[]>([]);
   const [themeRendererRuntimeError, setThemeRendererRuntimeError] = useState<string | null>(null);
   const [repositoryPickerRequestId, setRepositoryPickerRequestId] = useState(0);
   const [isRepositoryPickerActive, setIsRepositoryPickerActive] = useState(false);
@@ -583,6 +596,14 @@ function App() {
     () => [...themePackages, ...pluginThemePackages],
     [pluginThemePackages, themePackages],
   );
+  const selectedIconTheme = useMemo(() => {
+    const activeIconThemeId = appearance.activeIconThemeId?.trim();
+    if (!activeIconThemeId) {
+      return null;
+    }
+
+    return iconThemePackages.find(iconThemePackage => iconThemePackage.id === activeIconThemeId)?.iconTheme ?? null;
+  }, [appearance.activeIconThemeId, iconThemePackages]);
   const resolvedPackageThemes = useMemo(
     () => combinedThemePackages.map(pkg => pkg.theme),
     [combinedThemePackages],
@@ -597,6 +618,7 @@ function App() {
       dockThemeMode: appearance.dockThemeMode,
       customThemes: appearance.customThemes,
       packageThemes: resolvedPackageThemes,
+      selectedIconTheme,
       uiFontFamily: appearance.uiFontFamily,
       monoFontFamily: settings.fontFamily,
       panelTransparency: appearance.panelTransparency,
@@ -609,6 +631,7 @@ function App() {
       appearance.dockThemeMode,
       appearance.panelTransparency,
       appearance.uiFontFamily,
+      selectedIconTheme,
       resolvedPackageThemes,
       settings.fontFamily,
       windowMode,
@@ -2476,6 +2499,67 @@ function App() {
     await addDirectoryBookmark({ id: crypto.randomUUID(), name, value: path });
   }, [addDirectoryBookmark]);
 
+  const refreshIconThemePackages = useCallback(async (force = false) => {
+    if (!isTauri()) {
+      const result = await discoverIconThemePackages();
+      setIconThemePackages(result.packages);
+      setIconThemePackagesError(null);
+      setIconThemePackagesWarnings([]);
+      setIconThemePackagesLoading(false);
+      return;
+    }
+
+    if (force) {
+      iconThemePackagesRefreshQueuedRef.current = true;
+    }
+    if (iconThemePackagesRefreshInFlightRef.current) {
+      iconThemePackagesRefreshQueuedRef.current = true;
+      return;
+    }
+
+    iconThemePackagesRefreshInFlightRef.current = true;
+    try {
+      do {
+        const nextForce = force || iconThemePackagesRefreshQueuedRef.current;
+        iconThemePackagesRefreshQueuedRef.current = false;
+        force = false;
+
+        if (nextForce) {
+          iconThemePackagesSignatureRef.current = '';
+        }
+
+        setIconThemePackagesLoading(prev => prev && !nextForce);
+        try {
+          await ensureDir(iconThemeSystemConfig.iconThemesDirectory);
+          const listed = await listExplorerDir(iconThemeSystemConfig.iconThemesDirectory, false);
+          const nextSignature = listed
+            .map(entry => `${entry.path}:${entry.modified}`)
+            .sort()
+            .join('|');
+
+          if (!nextForce && nextSignature === iconThemePackagesSignatureRef.current) {
+            setIconThemePackagesLoading(false);
+            continue;
+          }
+
+          iconThemePackagesSignatureRef.current = nextSignature;
+          const result = await discoverIconThemePackages();
+          setIconThemePackages(result.packages);
+          setIconThemePackagesError(result.sourceError);
+          setIconThemePackagesWarnings(result.warnings);
+        } catch (error) {
+          setIconThemePackages([]);
+          setIconThemePackagesError(String(error));
+          setIconThemePackagesWarnings([]);
+        } finally {
+          setIconThemePackagesLoading(false);
+        }
+      } while (iconThemePackagesRefreshQueuedRef.current);
+    } finally {
+      iconThemePackagesRefreshInFlightRef.current = false;
+    }
+  }, []);
+
   const refreshThemePackages = useCallback(async (force = false) => {
     if (!isTauri()) {
       setThemePackages([]);
@@ -2540,6 +2624,15 @@ function App() {
     } finally {
       themePackagesRefreshInFlightRef.current = false;
     }
+  }, []);
+
+  const openIconThemesFolder = useCallback(async () => {
+    if (!isTauri()) {
+      return;
+    }
+
+    await ensureDir(iconThemeSystemConfig.iconThemesDirectory);
+    await openExplorerPath(iconThemeSystemConfig.iconThemesDirectory);
   }, []);
 
   const openThemesFolder = useCallback(async () => {
@@ -2840,6 +2933,21 @@ function App() {
   }, [isOverlayVisible, liveReloadEnabled, refreshAuthoredWallpapers]);
 
   useEffect(() => {
+    void refreshIconThemePackages(true);
+  }, [refreshIconThemePackages]);
+
+  useEffect(() => {
+    if (!isOverlayVisible || !liveReloadEnabled || !iconThemeSystemConfig.runtimeAssetPollingEnabled) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void refreshIconThemePackages();
+    }, iconThemeSystemConfig.scanIntervalMs);
+
+    return () => window.clearInterval(interval);
+  }, [isOverlayVisible, liveReloadEnabled, refreshIconThemePackages]);
+
+  useEffect(() => {
     void refreshThemePackages(true);
   }, [refreshThemePackages]);
 
@@ -2885,8 +2993,15 @@ function App() {
         themePackagesLoading,
         themePackagesError,
         themePackagesWarnings,
+        iconThemePackages,
+        iconThemePackagesDirectory: iconThemeSystemConfig.iconThemesDirectory,
+        iconThemePackagesLoading,
+        iconThemePackagesError,
+        iconThemePackagesWarnings,
         onRefreshThemes: refreshThemePackages,
         onOpenThemesFolder: openThemesFolder,
+        onRefreshIconThemes: () => refreshIconThemePackages(true),
+        onOpenIconThemesFolder: openIconThemesFolder,
         shaders: availableShaders,
         shaderDiagnostics: [...authoredShaders, ...pluginContributedShaders].filter(shader => Boolean(shader.error)),
         shadersDirectory: shaderSystemConfig.shadersDirectory,
@@ -2963,8 +3078,10 @@ function App() {
       openShadersFolder,
       openPluginsFolder,
       openWallpapersFolder,
+      openIconThemesFolder,
       openThemesFolder,
       pendingRepositoryImports,
+      refreshIconThemePackages,
       refreshThemePackages,
       refreshAuthoredAnimations,
       refreshAuthoredWallpapers,
@@ -2974,8 +3091,12 @@ function App() {
       repositoryPickerRequestId,
       resolvedAppearance,
       combinedThemePackages,
+      iconThemePackages,
       importWallpaperFiles,
       explorerPanelLayoutMode,
+      iconThemePackagesError,
+      iconThemePackagesLoading,
+      iconThemePackagesWarnings,
       themePackagesError,
       themePackagesLoading,
       themePackagesWarnings,
@@ -4244,17 +4365,18 @@ function App() {
   const devHudEnabled = (Boolean(import.meta.env.DEV) || systemSettings.developerMode)
     && systemSettings.devTelemetryHudVisible;
   return (
-    <div
-      className="overlay-window-host w-full h-full overflow-hidden"
-      style={{
-        ...(resolvedAppearance.cssVars as CSSProperties),
-        position: 'relative',
-        backgroundColor: 'transparent',
-      }}
-      onDragStart={handleDragStart}
-      onDragEndCapture={handleDragEndCapture}
-      onDropCapture={handleDropCapture}
-    >
+    <IconThemeProvider iconTheme={resolvedAppearance.theme.assets?.iconTheme}>
+      <div
+        className="overlay-window-host w-full h-full overflow-hidden"
+        style={{
+          ...(resolvedAppearance.cssVars as CSSProperties),
+          position: 'relative',
+          backgroundColor: 'transparent',
+        }}
+        onDragStart={handleDragStart}
+        onDragEndCapture={handleDragEndCapture}
+        onDropCapture={handleDropCapture}
+      >
       <div
         style={{
           position: 'absolute',
@@ -4343,7 +4465,8 @@ function App() {
         shortcutLabel={formatHotkeyLabel(keybindings.commandPalette)}
         onClose={handleCloseCommandPalette}
       />
-    </div>
+      </div>
+    </IconThemeProvider>
   );
 }
 

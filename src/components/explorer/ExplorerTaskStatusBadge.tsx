@@ -5,7 +5,7 @@ import {
   FolderOpen,
   LoaderCircle,
   X,
-} from 'lucide-react';
+} from '@/components/AppIcons';
 import type { ExplorerTaskSnapshot } from '../../runtime/explorerBackend';
 import { openFileOperationsWindow } from '../../runtime/fileOperationsWindow';
 import {
