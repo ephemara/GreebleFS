@@ -421,7 +421,7 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
         explorerStatusBar: { zone: 'start', order: 40, shrink: 1, collapsePriority: 20, overflowEligible: true },
       },
       statusViewToggles: {
-        explorerStatusBar: { zone: 'end', order: 5 },
+        explorerStatusBar: { zone: 'end', order: 10 },
       },
       statusPreviewSummary: {
         explorerStatusBar: { zone: 'center', order: 10, shrink: 1, collapsePriority: 30, overflowEligible: true },
@@ -433,7 +433,7 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
         explorerStatusBar: { zone: 'center', order: 30, grow: 1, shrink: 1, collapsePriority: 10, overflowEligible: true },
       },
       statusTaskBadge: {
-        explorerStatusBar: { zone: 'end', order: 10 },
+        explorerStatusBar: { zone: 'end', order: 5 },
       },
       statusClipboardQueue: {
         explorerStatusBar: { zone: 'end', order: 20, shrink: 1, collapsePriority: 10, overflowEligible: true },
@@ -646,7 +646,7 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
         explorerStatusBar: { zone: 'center', order: 10, shrink: 1, collapsePriority: 20, overflowEligible: true },
       },
       statusViewToggles: {
-        explorerStatusBar: { zone: 'end', order: 5 },
+        explorerStatusBar: { zone: 'end', order: 10 },
       },
       statusPreviewSummary: {
         explorerStatusBar: { zone: 'center', order: 20, shrink: 1, collapsePriority: 30, overflowEligible: true },
@@ -658,7 +658,7 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
         explorerStatusBar: { zone: 'center', order: 40, grow: 1, shrink: 1, collapsePriority: 10, overflowEligible: true },
       },
       statusTaskBadge: {
-        explorerStatusBar: { zone: 'end', order: 10 },
+        explorerStatusBar: { zone: 'end', order: 5 },
       },
       statusClipboardQueue: {
         explorerStatusBar: { zone: 'end', order: 20, shrink: 1, collapsePriority: 10, overflowEligible: true },

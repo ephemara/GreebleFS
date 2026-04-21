@@ -1,5 +1,20 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Explorer Bottom Bar Now Hosts The Full View-Switch Strip
+
+- The explorer no longer traps its experimental view surfaces behind a top-toolbar `Labs` launcher. The bottom status bar is now the primary quick-switch host for explorer view states.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now renders a data-driven footer view switcher immediately to the right of the task badge. The host currently exposes six icon buttons: icon view, list view, standard explorer chain, adaptive semantic grid, constellation view, and timeline surface.
+  - The old top-toolbar `experimentalModes` control is now retired from the visible chrome path, while the existing experimental density HUD was reattached to the new footer switcher so Ctrl/Cmd+wheel and footer activation still surface density feedback.
+  - Standard quick-view buttons now explicitly clear experimental mode when they jump back to icon/list layouts, while experimental buttons preserve the saved normal `viewMode` beneath the experimental surface so users can bounce back without losing their underlying standard layout choice.
+  - `src/config/explorerChromeLayouts.ts` now places `statusTaskBadge` before `statusViewToggles` in the status-bar end zone, making the task button the left anchor for the expanding footer view host.
+- Durable product note:
+  - Treat the status-bar view switcher as the growth lane for power-user explorer surfaces. If more explorer-specific view states arrive, add them to the same data-driven host instead of reintroducing another top-level mode launcher.
+  - Existing keyboard coverage still applies here: `toggleExplorerLayout` plus Ctrl/Cmd+wheel remain the settings-backed rapid-switch path, so the footer refactor did not require a second shortcut system.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx src/test/explorerChromeLayouts.test.ts --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+
 # 2026-04-21 - Managed Python Sidecar And Embedded PyO3 Lane
 
 - GreebleFS now has a first-class Python integration path that is meant to be reused across explorer, workbench, and automation features instead of spawning ad hoc scripts from random modules.

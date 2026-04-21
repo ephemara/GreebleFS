@@ -18,6 +18,7 @@ const toolbarDefinitions: ExplorerChromeControlDefinition[] = [
   { id: 'previewClose', label: 'Preview Close', surfaces: ['previewHeader'] },
   { id: 'statusItemCount', label: 'Status Item Count', surfaces: ['explorerStatusBar'] },
   { id: 'statusTaskBadge', label: 'Status Task Badge', surfaces: ['explorerStatusBar'] },
+  { id: 'statusViewToggles', label: 'Status View Toggles', surfaces: ['explorerStatusBar'] },
 ];
 
 describe('explorer chrome layout resolver', () => {
@@ -106,7 +107,10 @@ describe('explorer chrome layout resolver', () => {
     expect(previewHeader.rows[0]?.zones.find((zone) => zone.id === 'start')?.controls.map((control) => control.controlId)).toContain('previewIdentity');
     expect(previewHeader.rows[0]?.zones.find((zone) => zone.id === 'end')?.controls.map((control) => control.controlId)).toContain('previewClose');
     expect(statusBar.rows[0]?.zones.find((zone) => zone.id === 'start')?.controls.map((control) => control.controlId)).toContain('statusItemCount');
-    expect(statusBar.rows[0]?.zones.find((zone) => zone.id === 'end')?.controls.map((control) => control.controlId)).toContain('statusTaskBadge');
+    expect(statusBar.rows[0]?.zones.find((zone) => zone.id === 'end')?.controls.map((control) => control.controlId)).toEqual([
+      'statusTaskBadge',
+      'statusViewToggles',
+    ]);
   });
 
   it('rebuilds override snapshots when a control moves across chrome surfaces', () => {

@@ -2656,10 +2656,10 @@ function ExplorerExperimentalGlyph({
   const fill = active ? `${accent}1f` : "rgba(255,255,255,0.05)";
 
   if (mode === "adaptive-semantic-grid") {
-    return (
-      <span
-        style={{
-          width: 14,
+  return (
+    <span
+      style={{
+        width: 14,
           height: 14,
           display: "grid",
           gridTemplateColumns: "repeat(2, 1fr)",
@@ -2785,10 +2785,10 @@ function ExplorerExperimentalGlyph({
             transform: "rotate(-26deg)",
             transformOrigin: "left center",
           }}
-        />
-      </span>
-    );
-  }
+      />
+    </span>
+  );
+}
 
   if (mode === "timeline-surface") {
     return (
@@ -6889,7 +6889,6 @@ export function FileExplorer({
   });
   const [showModeProfileMenu, setShowModeProfileMenu] = useState(false);
   const [showLayoutMenu, setShowLayoutMenu] = useState(false);
-  const [showExperimentalMenu, setShowExperimentalMenu] = useState(false);
   const [rename, setRename] = useState<RenameState>({
     active: false,
     path: "",
@@ -7057,7 +7056,6 @@ export function FileExplorer({
   const explorerViewportScrollTopRef = useRef(0);
   const modeProfileMenuAnchorRef = useRef<HTMLDivElement>(null);
   const layoutMenuAnchorRef = useRef<HTMLDivElement>(null);
-  const experimentalMenuAnchorRef = useRef<HTMLDivElement>(null);
   const layoutWheelDeltaAccumulatorRef = useRef(0);
   const previewWarmupStartedRef = useRef(false);
   const previewWarmupTimerRef = useRef<number | null>(null);
@@ -7260,7 +7258,7 @@ export function FileExplorer({
   }, [preview.path, preview.type]);
 
   useEffect(() => {
-    if (!showModeProfileMenu && !showLayoutMenu && !showExperimentalMenu) {
+    if (!showModeProfileMenu && !showLayoutMenu) {
       return undefined;
     }
 
@@ -7271,17 +7269,13 @@ export function FileExplorer({
       if (layoutMenuAnchorRef.current?.contains(event.target as Node)) {
         return;
       }
-      if (experimentalMenuAnchorRef.current?.contains(event.target as Node)) {
-        return;
-      }
       setShowModeProfileMenu(false);
       setShowLayoutMenu(false);
-      setShowExperimentalMenu(false);
     };
 
     window.addEventListener("mousedown", handlePointerDown);
     return () => window.removeEventListener("mousedown", handlePointerDown);
-  }, [showExperimentalMenu, showLayoutMenu, showModeProfileMenu]);
+  }, [showLayoutMenu, showModeProfileMenu]);
 
   const flushPendingExplorerMetrics = useCallback(
     (runtimePolicyMetadata: RuntimeCachePolicyTelemetryMetadata) => {
@@ -8121,6 +8115,7 @@ export function FileExplorer({
   );
 
   const isSearchActive = search.trim().length > 0;
+  const explorerThumbnailRenderContext = isSearchActive ? "search" : "browse";
   const toggleSort = useCallback(
     (nextSortBy: ExplorerSortKey) => {
       const nextSortOrder =
@@ -8968,9 +8963,15 @@ export function FileExplorer({
         getEntryExtension(entry),
         entry.size,
         explorerThumbnailSettings,
+        explorerThumbnailRenderContext,
       );
     },
-    [currentPathIsCloud, explorerThumbnailSettings, isCloudExplorerPath],
+    [
+      currentPathIsCloud,
+      explorerThumbnailRenderContext,
+      explorerThumbnailSettings,
+      isCloudExplorerPath,
+    ],
   );
 
   const getRenderableEntryThumbnail = useCallback(
@@ -8978,12 +8979,15 @@ export function FileExplorer({
       entry: FileEntry,
       minimumStageSize: number,
     ): ExplorerEntryThumbnailData | null => {
-      if (minimumStageSize < EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.minStagePx) {
+      if (
+        minimumStageSize < EXPLORER_ENTRY_THUMBNAIL_BATCH_CONFIG.minStagePx ||
+        !canRenderEntryThumbnail(entry)
+      ) {
         return null;
       }
       return entryThumbnailMap[entry.path] ?? null;
     },
-    [entryThumbnailMap],
+    [canRenderEntryThumbnail, entryThumbnailMap],
   );
 
   const queueClipboard = useCallback(
@@ -12735,6 +12739,92 @@ export function FileExplorer({
   const showToolbarLocationStrips =
     !isCompactDock && !usesWorkspaceCompactChrome;
   const showToolbarTextLabels = !isCompactDock && !usesWorkspaceQuadChrome;
+  const explorerFooterViewSwitcherButtons = useMemo(() => {
+      const iconViewActive =
+        themedExperimentalViewMode === "off" &&
+        selectedViewModeDefinition.presentation === "grid";
+      const listViewActive =
+        themedExperimentalViewMode === "off" && themedViewMode === "list";
+      const standardExplorerActive =
+        themedExperimentalViewMode === "off" &&
+        !iconViewActive &&
+        !listViewActive;
+
+      return [
+        {
+          id: "icon-view",
+          ariaLabel: "Switch explorer to icon view",
+          title: "Icon view",
+          active: iconViewActive,
+          onClick: () =>
+            updateExplorerSettings({
+              experimentalViewMode: "off",
+              viewMode: "icons-l",
+              gridZoom: getExplorerGridZoomAnchor("icons-l"),
+            }),
+          icon: <LayoutGrid size={13} />,
+        },
+        {
+          id: "list-view",
+          ariaLabel: "Switch explorer to list view",
+          title: "List view",
+          active: listViewActive,
+          onClick: () =>
+            updateExplorerSettings({
+              experimentalViewMode: "off",
+              viewMode: "list",
+            }),
+          icon: <List size={13} />,
+        },
+        {
+          id: "standard-explorer",
+          ariaLabel: "Use standard explorer layout chain",
+          title: "Standard explorer",
+          active: standardExplorerActive,
+          onClick: () =>
+            updateExplorerSettings({
+              experimentalViewMode: "off",
+            }),
+          icon: (
+            <ExplorerShellLayoutGlyph
+              layout={effectiveShellLayout}
+              accent={accent}
+              active={standardExplorerActive}
+            />
+          ),
+        },
+        ...explorerExperimentalModes.map((mode) => {
+          const active = themedExperimentalViewMode === mode.id;
+          return {
+            id: mode.id,
+            ariaLabel: `Switch explorer to ${mode.label}`,
+            title: mode.label,
+            active,
+            onClick: () => {
+              updateExplorerSettings({
+                experimentalViewMode: mode.id,
+              });
+              showExperimentalHud();
+            },
+            icon: (
+              <ExplorerExperimentalGlyph
+                accent={accent}
+                active={active}
+                mode={mode.id}
+              />
+            ),
+          };
+        }),
+      ];
+    }, [
+      accent,
+      effectiveShellLayout,
+      selectedViewModeDefinition.presentation,
+      showExperimentalHud,
+      themedExperimentalViewMode,
+      themedViewMode,
+      updateExplorerSettings,
+    ]);
 
   const showZoomHud = useCallback(() => {
     setZoomHudVisible(true);
@@ -14054,360 +14144,8 @@ export function FileExplorer({
         id: "experimentalModes",
         label: "Experimental Modes",
         surfaces: ["explorerToolbar", "explorerTopbar"],
-        isVisible: (surfaceId) =>
-          !usesWorkspaceQuadChrome && isGlobalChromeSurfaceActive(surfaceId),
-        render: () => (
-          <div
-            ref={experimentalMenuAnchorRef}
-            style={{ position: "relative" }}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button
-              type="button"
-              aria-label={`Experimental view modes: ${selectedExperimentalModeDefinition?.label ?? "Off"}`}
-              aria-haspopup="menu"
-              aria-expanded={showExperimentalMenu}
-              onClick={() => {
-                setShowModeProfileMenu(false);
-                setShowLayoutMenu(false);
-                setShowExperimentalMenu((current) => !current);
-              }}
-              title={
-                selectedExperimentalModeDefinition?.label ??
-                "Experimental view modes"
-              }
-              style={{
-                ...toolbarToggleButtonStyle(showExperimentalMenu),
-                color: showExperimentalMenu ? EXP.text : EXP.muted,
-              }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.background =
-                  "var(--overlay-explorer-chip-active-bg)")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.background = showExperimentalMenu
-                  ? "var(--overlay-explorer-chip-active-bg)"
-                  : "var(--overlay-explorer-chip-bg)")
-              }
-            >
-              <ExplorerExperimentalGlyph
-                accent={accent}
-                active={
-                  showExperimentalMenu || themedExperimentalViewMode !== "off"
-                }
-                mode={selectedExperimentalModeDefinition?.id ?? "all"}
-              />
-              <span
-                style={{
-                  display: "flex",
-                  alignItems: "baseline",
-                  gap: 6,
-                  minWidth: 0,
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    letterSpacing: "0.08em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {selectedExperimentalModeDefinition?.shortLabel ?? "Labs"}
-                </span>
-                {experimentalDensityPercent != null && (
-                  <span
-                    style={{
-                      fontSize: 9,
-                      fontWeight: 700,
-                      color: showExperimentalMenu ? EXP.text : EXP.muted2,
-                    }}
-                  >
-                    {experimentalDensityPercent}%
-                  </span>
-                )}
-              </span>
-            </button>
-            {experimentalHudVisible &&
-              selectedExperimentalModeDefinition &&
-              experimentalDensityPercent != null && (
-                <div
-                  style={{
-                    position: "absolute",
-                    top: "calc(100% + 8px)",
-                    right: 0,
-                    zIndex: 45,
-                    minWidth: 168,
-                    padding: "8px 10px",
-                    borderRadius: 10,
-                    border: `1px solid ${accent}55`,
-                    background: "var(--overlay-explorer-popup-bg)",
-                    boxShadow: "var(--overlay-explorer-popup-shadow)",
-                    backdropFilter: explorerBlurEnabled ? "blur(10px)" : "none",
-                    WebkitBackdropFilter: explorerBlurEnabled
-                      ? "blur(10px)"
-                      : "none",
-                    pointerEvents: "none",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 10,
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        letterSpacing: "0.08em",
-                        textTransform: "uppercase",
-                        color: EXP.text,
-                      }}
-                    >
-                      {experimentalDensityDescriptor?.shortLabel ??
-                        selectedExperimentalModeDefinition.shortLabel}
-                    </span>
-                    <span
-                      style={{ fontSize: 10, fontWeight: 700, color: accent }}
-                    >
-                      {experimentalDensityPercent}%
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 8,
-                      height: 5,
-                      borderRadius: 999,
-                      background: "var(--overlay-explorer-popup-item-hover-bg)",
-                      overflow: "hidden",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: `${experimentalDensityPercent}%`,
-                        height: "100%",
-                        borderRadius: 999,
-                        background: `linear-gradient(90deg, ${accent}99, ${accent})`,
-                        transition: "width 0.14s ease",
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-            {showExperimentalMenu && (
-              <div
-                role="menu"
-                aria-label="Explorer experimental modes menu"
-                style={{
-                  position: "absolute",
-                  top: "calc(100% + 8px)",
-                  right: 0,
-                  zIndex: 40,
-                  minWidth: 280,
-                  borderRadius: "var(--overlay-explorer-panel-radius)",
-                  border: "1px solid var(--overlay-explorer-toolbar-border)",
-                  background: "var(--overlay-explorer-toolbar-bg)",
-                  boxShadow: "var(--overlay-explorer-popup-shadow-lg)",
-                  padding: 8,
-                }}
-              >
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 2 }}
-                >
-                  <button
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={themedExperimentalViewMode === "off"}
-                    onClick={() => {
-                      updateExplorerSettings({ experimentalViewMode: "off" });
-                      setShowExperimentalMenu(false);
-                    }}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "18px minmax(0, 1fr)",
-                      gap: 10,
-                      alignItems: "start",
-                      width: "100%",
-                      border: "none",
-                      borderRadius: 8,
-                      padding: "8px 10px",
-                      background:
-                        themedExperimentalViewMode === "off"
-                          ? "var(--overlay-explorer-chip-active-bg)"
-                          : "transparent",
-                      color: EXP.text,
-                      cursor: "pointer",
-                      textAlign: "left",
-                    }}
-                  >
-                    <span
-                      style={{
-                        display: "flex",
-                        justifyContent: "center",
-                        paddingTop: 1,
-                      }}
-                    >
-                      <Puzzle
-                        size={14}
-                        style={{
-                          color:
-                            themedExperimentalViewMode === "off"
-                              ? accent
-                              : EXP.muted,
-                        }}
-                      />
-                    </span>
-                    <span>
-                      <span
-                        style={{
-                          display: "block",
-                          fontSize: 12,
-                          fontWeight: 600,
-                        }}
-                      >
-                        Standard Explorer
-                      </span>
-                      <span
-                        style={{
-                          display: "block",
-                          marginTop: 2,
-                          fontSize: 10,
-                          color: EXP.muted2,
-                          lineHeight: 1.35,
-                        }}
-                      >
-                        Keep using the normal explorer layout chain.
-                      </span>
-                    </span>
-                  </button>
-                  {explorerExperimentalModes.map((mode) => {
-                    const active = themedExperimentalViewMode === mode.id;
-                    const disabled = !mode.available;
-                    return (
-                      <button
-                        key={mode.id}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={active}
-                        disabled={disabled}
-                        onClick={() => {
-                          if (disabled) {
-                            return;
-                          }
-                          updateExplorerSettings({
-                            experimentalViewMode: mode.id,
-                          });
-                          showExperimentalHud();
-                          setShowExperimentalMenu(false);
-                        }}
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "18px minmax(0, 1fr)",
-                          gap: 10,
-                          alignItems: "start",
-                          width: "100%",
-                          border: "none",
-                          borderRadius: 8,
-                          padding: "8px 10px",
-                          background: active
-                            ? "var(--overlay-explorer-chip-active-bg)"
-                            : "transparent",
-                          color: disabled ? EXP.muted2 : EXP.text,
-                          cursor: disabled ? "not-allowed" : "pointer",
-                          textAlign: "left",
-                          opacity: disabled ? 0.7 : 1,
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!active && !disabled) {
-                            e.currentTarget.style.background =
-                              "var(--overlay-explorer-chip-bg)";
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!active && !disabled) {
-                            e.currentTarget.style.background = "transparent";
-                          }
-                        }}
-                      >
-                        <span
-                          style={{
-                            display: "flex",
-                            justifyContent: "center",
-                            paddingTop: 1,
-                          }}
-                        >
-                          <ExplorerExperimentalGlyph
-                            accent={accent}
-                            active={active}
-                            mode={mode.id}
-                          />
-                        </span>
-                        <span style={{ minWidth: 0 }}>
-                          <span
-                            style={{
-                              display: "block",
-                              fontSize: 12,
-                              fontWeight: 600,
-                            }}
-                          >
-                            {mode.label}
-                            {!mode.available && (
-                              <span
-                                style={{
-                                  marginLeft: 6,
-                                  fontSize: 10,
-                                  color: EXP.muted2,
-                                }}
-                              >
-                                Coming soon
-                              </span>
-                            )}
-                          </span>
-                          <span
-                            style={{
-                              display: "block",
-                              marginTop: 2,
-                              fontSize: 10,
-                              color: EXP.muted2,
-                              lineHeight: 1.35,
-                            }}
-                          >
-                            {mode.description}
-                          </span>
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div
-                  style={{
-                    marginTop: 8,
-                    paddingTop: 8,
-                    borderTop:
-                      "1px solid var(--overlay-explorer-toolbar-border)",
-                    fontSize: 10,
-                    color: EXP.muted2,
-                  }}
-                >
-                  Experimental layouts keep Ctrl/Cmd + wheel inside a
-                  mode-specific detail scale.
-                </div>
-                {themedExperimentalViewMode !== "off" &&
-                  effectiveExperimentalViewMode === "off" && (
-                    <div
-                      style={{ marginTop: 6, fontSize: 10, color: EXP.muted2 }}
-                    >
-                      Temporarily falling back to the normal explorer while
-                      search is active or the dock is compact.
-                    </div>
-                  )}
-              </div>
-            )}
-          </div>
-        ),
+        isVisible: () => false,
+        render: () => null,
       },
       {
         id: "shellLayout",
@@ -14427,7 +14165,6 @@ export function FileExplorer({
               aria-haspopup="menu"
               aria-expanded={showModeProfileMenu}
               onClick={() => {
-                setShowExperimentalMenu(false);
                 setShowLayoutMenu(false);
                 setShowModeProfileMenu((current) => !current);
               }}
@@ -14653,7 +14390,6 @@ export function FileExplorer({
               aria-expanded={showLayoutMenu}
               onClick={() => {
                 setShowModeProfileMenu(false);
-                setShowExperimentalMenu(false);
                 setShowLayoutMenu((current) => !current);
               }}
               title={`Explorer layout: ${selectedViewModeDefinition.label}`}
@@ -15139,23 +14875,30 @@ export function FileExplorer({
         surfaces: ["explorerStatusBar"],
         isVisible: () => !isCompactDock,
         render: () => {
-          const iconViewActive =
-            selectedViewModeDefinition.presentation === "grid";
-          const listViewActive = themedViewMode === "list";
+          const footerViewSwitcherHostStyle: CSSProperties = {
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            padding: 3,
+            borderRadius: 999,
+            border: "1px solid var(--overlay-explorer-chip-border)",
+            background: "rgba(255,255,255,0.03)",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
+          };
 
-          const buildStatusViewButtonStyle = (
+          const buildFooterViewSwitcherButtonStyle = (
             active: boolean,
           ): CSSProperties => ({
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
-            width: 24,
-            height: 24,
-            borderRadius: 7,
-            border: `1px solid ${active ? accent : "var(--overlay-explorer-chip-border)"}`,
+            width: 26,
+            height: 26,
+            borderRadius: 8,
+            border: `1px solid ${active ? `${accent}66` : "transparent"}`,
             background: active
               ? "var(--overlay-explorer-chip-active-bg)"
-              : "var(--overlay-explorer-chip-bg)",
+              : "transparent",
             color: active ? EXP.text : EXP.muted,
             cursor: "pointer",
             transition:
@@ -15163,29 +14906,103 @@ export function FileExplorer({
           });
 
           return (
-            <div
-              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-            >
-              <button
-                type="button"
-                aria-label="Switch explorer to icon view"
-                aria-pressed={iconViewActive}
-                title="Icon view"
-                onClick={() => updateExplorerSettings({ viewMode: "icons-l" })}
-                style={buildStatusViewButtonStyle(iconViewActive)}
+            <div style={{ position: "relative" }}>
+              {experimentalHudVisible &&
+                selectedExperimentalModeDefinition &&
+                experimentalDensityPercent != null && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      right: 0,
+                      bottom: "calc(100% + 8px)",
+                      zIndex: 45,
+                      minWidth: 168,
+                      padding: "8px 10px",
+                      borderRadius: 10,
+                      border: `1px solid ${accent}55`,
+                      background: "var(--overlay-explorer-popup-bg)",
+                      boxShadow: "var(--overlay-explorer-popup-shadow)",
+                      backdropFilter: explorerBlurEnabled
+                        ? "blur(10px)"
+                        : "none",
+                      WebkitBackdropFilter: explorerBlurEnabled
+                        ? "blur(10px)"
+                        : "none",
+                      pointerEvents: "none",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 10,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          letterSpacing: "0.08em",
+                          textTransform: "uppercase",
+                          color: EXP.text,
+                        }}
+                      >
+                        {experimentalDensityDescriptor?.shortLabel ??
+                          selectedExperimentalModeDefinition.shortLabel}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: accent,
+                        }}
+                      >
+                        {experimentalDensityPercent}%
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 8,
+                        height: 5,
+                        borderRadius: 999,
+                        background:
+                          "var(--overlay-explorer-popup-item-hover-bg)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${experimentalDensityPercent}%`,
+                          height: "100%",
+                          borderRadius: 999,
+                          background: `linear-gradient(90deg, ${accent}99, ${accent})`,
+                          transition: "width 0.14s ease",
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+              <div
+                role="group"
+                aria-label="Explorer footer view switcher"
+                style={footerViewSwitcherHostStyle}
               >
-                <LayoutGrid size={13} />
-              </button>
-              <button
-                type="button"
-                aria-label="Switch explorer to list view"
-                aria-pressed={listViewActive}
-                title="List view"
-                onClick={() => updateExplorerSettings({ viewMode: "list" })}
-                style={buildStatusViewButtonStyle(listViewActive)}
-              >
-                <List size={13} />
-              </button>
+                {explorerFooterViewSwitcherButtons.map((button) => (
+                  <button
+                    key={button.id}
+                    type="button"
+                    aria-label={button.ariaLabel}
+                    aria-pressed={button.active}
+                    title={button.title}
+                    onClick={button.onClick}
+                    data-overlay-explorer-view-switch={button.id}
+                    style={buildFooterViewSwitcherButtonStyle(button.active)}
+                  >
+                    {button.icon}
+                  </button>
+                ))}
+              </div>
             </div>
           );
         },
@@ -15218,7 +15035,7 @@ export function FileExplorer({
         render: () =>
           selectedExperimentalModeDefinition ? (
             <span>
-              Labs:{" "}
+              Experimental:{" "}
               <span style={{ color: EXP.text }}>
                 {selectedExperimentalModeDefinition.label}
               </span>
@@ -15333,6 +15150,7 @@ export function FileExplorer({
       effectiveChromeLayoutId,
       effectiveModeProfile,
       effectiveShellLayout,
+      explorerFooterViewSwitcherButtons,
       focusExplorerAddressBar,
       goBack,
       goForward,
@@ -15370,12 +15188,10 @@ export function FileExplorer({
       setBatchRename,
       setSaveSearchState,
       setSearchIncludeContent,
-      setShowExperimentalMenu,
       setShowLayoutMenu,
       setShowModeProfileMenu,
       showExperimentalHud,
       showModeProfileMenu,
-      showExperimentalMenu,
       showLayoutMenu,
       showToolbarLocationStrips,
       showToolbarTextLabels,
@@ -16699,6 +16515,7 @@ export function FileExplorer({
   useEffect(() => {
     if (
       loading ||
+      isSearchActive ||
       currentPathIsCloud ||
       (virtualWindow.kind === "grid"
         ? (activeGridMetrics?.iconStageSize ?? 0)
@@ -16786,6 +16603,7 @@ export function FileExplorer({
     currentPathIsCloud,
     entryThumbnailLoadingPaths,
     entryThumbnailMap,
+    isSearchActive,
     loading,
     readExplorerEntryThumbnail,
     virtualWindow.kind,
@@ -16795,6 +16613,7 @@ export function FileExplorer({
   useEffect(() => {
     if (
       !hoveredVideoThumbnailPath ||
+      isSearchActive ||
       currentPathIsCloud ||
       !explorerThumbnailSettings.enabled ||
       !explorerThumbnailSettings.includeVideo ||
@@ -16878,6 +16697,7 @@ export function FileExplorer({
     explorerThumbnailSettings.includeVideo,
     explorerThumbnailSettings.videoHoverScrubFrameCount,
     hoveredVideoThumbnailPath,
+    isSearchActive,
     readExplorerEntryThumbnail,
     videoHoverThumbnailLoadingPaths,
     visibleEntryLookup,
@@ -16888,6 +16708,7 @@ export function FileExplorer({
       return;
     }
     if (
+      isSearchActive ||
       currentPathIsCloud ||
       !explorerThumbnailSettings.enabled ||
       !explorerThumbnailSettings.includeVideo ||
@@ -16902,6 +16723,7 @@ export function FileExplorer({
     explorerThumbnailSettings.enabled,
     explorerThumbnailSettings.includeVideo,
     hoveredVideoThumbnailPath,
+    isSearchActive,
     visibleEntryLookup,
   ]);
 

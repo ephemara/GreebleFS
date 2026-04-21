@@ -1,5 +1,5 @@
 import React from 'react';
-import { Terminal as TerminalIcon, FolderOpen, GitBranch, StickyNote, Camera, Puzzle, SlidersHorizontal, HardDrive } from '@/components/AppIcons';
+import { Terminal as TerminalIcon, FolderOpen, GitBranch, StickyNote, Camera, Puzzle, HardDrive, Settings2, ThemedPanelIcon } from '@/components/AppIcons';
 import type { ResolvedOverlayAppearance } from '../config/appearance';
 import type {
   OverlayPluginCommandContribution,
@@ -238,7 +238,7 @@ export function createBuiltInPanelDefinitions({
       id: 'explorer',
       label: 'Explorer',
       kind: 'built-in-panel',
-      icon: <FolderOpen size={12} />,
+      icon: <ThemedPanelIcon panelId="explorer" fallbackSlotId="folder_open" fallbackIcon={FolderOpen} size={12} />,
       description: 'File browser and asset navigation.',
       defaultOpen: true,
       keepMounted: true,
@@ -267,7 +267,7 @@ export function createBuiltInPanelDefinitions({
       id: 'storage',
       label: 'Storage',
       kind: 'built-in-panel',
-      icon: <HardDrive size={12} />,
+      icon: <ThemedPanelIcon panelId="storage" fallbackSlotId="hard_drive" fallbackIcon={HardDrive} size={12} />,
       description: 'Drive treemap, storage forensics, and destructive cleanup.',
       defaultOpen: true,
       keepMounted: true,
@@ -287,7 +287,7 @@ export function createBuiltInPanelDefinitions({
       id: 'terminal',
       label: 'Terminal',
       kind: 'built-in-panel',
-      icon: <TerminalIcon size={12} />,
+      icon: <ThemedPanelIcon panelId="terminal" fallbackSlotId="terminal_square" fallbackIcon={TerminalIcon} size={12} />,
       description: 'Primary command workspace.',
       defaultOpen: true,
       keepMounted: true,
@@ -311,7 +311,7 @@ export function createBuiltInPanelDefinitions({
       id: 'git',
       label: 'Source',
       kind: 'built-in-panel',
-      icon: <GitBranch size={12} />,
+      icon: <ThemedPanelIcon panelId="git" fallbackSlotId="git_branch" fallbackIcon={GitBranch} size={12} />,
       description: 'Git tools and diff management.',
       defaultOpen: true,
       navigation: {
@@ -335,7 +335,7 @@ export function createBuiltInPanelDefinitions({
       id: 'notes',
       label: 'Notes',
       kind: 'built-in-panel',
-      icon: <StickyNote size={12} />,
+      icon: <ThemedPanelIcon panelId="notes" fallbackSlotId="sticky_note" fallbackIcon={StickyNote} size={12} />,
       description: 'Scratchpads and structured notes.',
       defaultOpen: true,
       navigation: {
@@ -354,7 +354,7 @@ export function createBuiltInPanelDefinitions({
       id: 'screenshots',
       label: 'Screenshots',
       kind: 'built-in-panel',
-      icon: <Camera size={12} />,
+      icon: <ThemedPanelIcon panelId="screenshots" fallbackSlotId="camera" fallbackIcon={Camera} size={12} />,
       description: 'Built-in example plugin for capture and clipboard workflows.',
       defaultOpen: true,
       navigation: {
@@ -373,7 +373,7 @@ export function createBuiltInPanelDefinitions({
       id: 'settings',
       label: 'Settings',
       kind: 'built-in-panel',
-      icon: <SlidersHorizontal size={12} />,
+      icon: <ThemedPanelIcon panelId="settings" fallbackSlotId="settings2" fallbackIcon={Settings2} size={12} />,
       description: 'Application-wide appearance, terminal, and explorer settings.',
       defaultOpen: false,
       navigation: {
@@ -433,7 +433,7 @@ export function createBuiltInPanelDefinitions({
       id: 'plugins',
       label: 'Plugins',
       kind: 'built-in-panel',
-      icon: <Puzzle size={12} />,
+      icon: <ThemedPanelIcon panelId="plugins" fallbackSlotId="puzzle" fallbackIcon={Puzzle} size={12} />,
       description: 'Plugin browser and drop-in loader workspace.',
       defaultOpen: true,
       navigation: {
@@ -460,7 +460,7 @@ export function createFolderPluginPanelDefinitions({
     id: plugin.id,
     label: plugin.name,
     kind: 'folder-plugin',
-    icon: <Puzzle size={12} />,
+    icon: <ThemedPanelIcon panelId={plugin.id} fallbackSlotId="puzzle" fallbackIcon={Puzzle} size={12} />,
     description: plugin.description ?? `Folder plugin loaded from ${plugin.filePath}.`,
     defaultOpen: plugin.defaultOpen,
     keepMounted: plugin.keepMounted,

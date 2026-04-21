@@ -2786,6 +2786,94 @@ describe("FileExplorer view modes", () => {
     }
   });
 
+  it("keeps active search results icon-only and skips generated thumbnail reads", async () => {
+    const searchResult = {
+      name: "needle.ts",
+      path: `${REPO_ROOT}\\alpha\\needle.ts`,
+      is_dir: false,
+      size: 160,
+      modified: 0,
+      extension: "ts",
+      is_hidden: false,
+      is_symlink: false,
+      relative_path: "alpha\\needle.ts",
+      match_kind: "content" as const,
+      snippet: "const needle = true;",
+      line_number: 17,
+    };
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+          return [ENTRIES[0]];
+        }
+        if (command === "fs_search_entries_with_diagnostics") {
+          return {
+            results: [searchResult],
+            diagnostics: {
+              executionStrategy: "live_scan",
+              contentCacheStatus: "not_requested",
+              scannedEntryCount: 1,
+              indexedEntryCount: 0,
+              contentCacheStoredFileCount: 0,
+              contentCacheStoredByteCount: 0,
+              truncatedByScanBudget: false,
+            },
+          };
+        }
+        return baseInvokeImplementation(command, args as never);
+      },
+    );
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 140));
+    });
+
+    expect(
+      vi.mocked(invoke).mock.calls.some(
+        ([command]) => command === "fs_read_entry_thumbnail",
+      ),
+    ).toBe(false);
+
+    vi.mocked(invoke).mockClear();
+
+    fireEvent.keyDown(window, { key: "l", ctrlKey: true });
+    const omnibox = await screen.findByPlaceholderText(/Search or enter path/i);
+    fireEvent.change(omnibox, { target: { value: "needle" } });
+    fireEvent.keyDown(omnibox, { key: "Enter" });
+
+    await screen.findByText("needle.ts");
+    await screen.findByText("alpha\\needle.ts");
+    await screen.findByText("Content match");
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 180));
+    });
+
+    expect(
+      vi.mocked(invoke).mock.calls.some(
+        ([command]) => command === "fs_search_entries_with_diagnostics",
+      ),
+    ).toBe(true);
+    expect(
+      vi.mocked(invoke).mock.calls.some(
+        ([command]) => command === "fs_read_entry_thumbnail",
+      ),
+    ).toBe(false);
+    expect(
+      vi.mocked(invoke).mock.calls.some(
+        ([command]) => command === "fs_read_image_thumbnail",
+      ),
+    ).toBe(false);
+  });
+
   it("overlays themed file-type badges on generated code thumbnails in icon layouts", async () => {
     const clientWidthDescriptor = Object.getOwnPropertyDescriptor(
       HTMLElement.prototype,
@@ -2847,26 +2935,47 @@ describe("FileExplorer view modes", () => {
     }
   });
 
-  it("renders a dedicated experimental modes button and menu next to the standard layout control", async () => {
+  it("renders the footer view switcher with standard and experimental view buttons", async () => {
     renderExplorer();
     await screen.findByText("alpha");
 
-    fireEvent.click(
-      screen.getByRole("button", { name: /experimental view modes:/i }),
-    );
+    const switcher = screen.getByRole("group", {
+      name: /explorer footer view switcher/i,
+    });
 
     expect(
-      screen.getByRole("menu", { name: /explorer experimental modes menu/i }),
+      screen.queryByRole("button", { name: /experimental view modes:/i }),
+    ).toBeNull();
+    expect(
+      within(switcher).getByRole("button", {
+        name: /switch explorer to icon view/i,
+      }),
     ).toBeTruthy();
     expect(
-      screen.getByRole("menuitemradio", { name: /adaptive semantic grid/i }),
+      within(switcher).getByRole("button", {
+        name: /switch explorer to list view/i,
+      }),
     ).toBeTruthy();
     expect(
-      screen.getByRole("menuitemradio", { name: /constellation view/i }),
-    ).not.toBeDisabled();
+      within(switcher).getByRole("button", {
+        name: /use standard explorer layout chain/i,
+      }),
+    ).toBeTruthy();
     expect(
-      screen.getByRole("menuitemradio", { name: /timeline surface/i }),
-    ).not.toBeDisabled();
+      within(switcher).getByRole("button", {
+        name: /switch explorer to adaptive semantic grid/i,
+      }),
+    ).toBeTruthy();
+    expect(
+      within(switcher).getByRole("button", {
+        name: /switch explorer to constellation view/i,
+      }),
+    ).toBeTruthy();
+    expect(
+      within(switcher).getByRole("button", {
+        name: /switch explorer to timeline surface/i,
+      }),
+    ).toBeTruthy();
   });
 
   it("activates adaptive semantic grid without mutating the saved normal layout mode", async () => {
@@ -2876,10 +2985,9 @@ describe("FileExplorer view modes", () => {
     await screen.findByText("alpha");
 
     fireEvent.click(
-      screen.getByRole("button", { name: /experimental view modes:/i }),
-    );
-    fireEvent.click(
-      screen.getByRole("menuitemradio", { name: /adaptive semantic grid/i }),
+      screen.getByRole("button", {
+        name: /switch explorer to adaptive semantic grid/i,
+      }),
     );
 
     expect(
@@ -2890,9 +2998,9 @@ describe("FileExplorer view modes", () => {
     );
     expect(
       screen.getByRole("button", {
-        name: /experimental view modes: adaptive semantic grid/i,
+        name: /switch explorer to adaptive semantic grid/i,
       }),
-    ).toBeTruthy();
+    ).toHaveAttribute("aria-pressed", "true");
     expect(
       screen.queryByText(
         /larger semantic tiles that favor browsing and recognition\./i,
@@ -2907,10 +3015,9 @@ describe("FileExplorer view modes", () => {
     await screen.findByText("alpha");
 
     fireEvent.click(
-      screen.getByRole("button", { name: /experimental view modes:/i }),
-    );
-    fireEvent.click(
-      screen.getByRole("menuitemradio", { name: /constellation view/i }),
+      screen.getByRole("button", {
+        name: /switch explorer to constellation view/i,
+      }),
     );
 
     expect(
@@ -2921,9 +3028,9 @@ describe("FileExplorer view modes", () => {
     );
     expect(
       screen.getByRole("button", {
-        name: /experimental view modes: constellation view/i,
+        name: /switch explorer to constellation view/i,
       }),
-    ).toBeTruthy();
+    ).toHaveAttribute("aria-pressed", "true");
     expect(
       screen.getByRole("group", { name: /constellation field/i }),
     ).toBeTruthy();
@@ -2942,10 +3049,9 @@ describe("FileExplorer view modes", () => {
     await screen.findByText("alpha");
 
     fireEvent.click(
-      screen.getByRole("button", { name: /experimental view modes:/i }),
-    );
-    fireEvent.click(
-      screen.getByRole("menuitemradio", { name: /timeline surface/i }),
+      screen.getByRole("button", {
+        name: /switch explorer to timeline surface/i,
+      }),
     );
 
     expect(
@@ -2956,15 +3062,40 @@ describe("FileExplorer view modes", () => {
     );
     expect(
       screen.getByRole("button", {
-        name: /experimental view modes: timeline surface/i,
+        name: /switch explorer to timeline surface/i,
       }),
-    ).toBeTruthy();
+    ).toHaveAttribute("aria-pressed", "true");
     expect(
       screen.queryByText(
         /browse folders and files as time-banded activity surfaces\./i,
       ),
     ).toBeNull();
     expect(screen.getAllByText(/undated/i).length).toBeGreaterThan(0);
+  });
+
+  it("returns to the standard explorer chain from the footer view switcher without mutating the saved normal layout mode", async () => {
+    useSettingsStore.getState().updateExplorer({
+      viewMode: "columns",
+      experimentalViewMode: "constellation",
+    });
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /use standard explorer layout chain/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(
+        useSettingsStore.getState().settings.explorer.experimentalViewMode,
+      ).toBe("off");
+      expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
+        "columns",
+      );
+    });
   });
 
   it("scales the explorer grid with ctrl-wheel without changing app zoom", async () => {
@@ -3042,7 +3173,10 @@ describe("FileExplorer view modes", () => {
   });
 
   it("switches between icon and list view from footer toggles", async () => {
-    useSettingsStore.getState().updateExplorer({ viewMode: "details" });
+    useSettingsStore.getState().updateExplorer({
+      viewMode: "details",
+      experimentalViewMode: "timeline-surface",
+    });
 
     renderExplorer();
     await screen.findByText("alpha");
@@ -3051,6 +3185,9 @@ describe("FileExplorer view modes", () => {
       screen.getByRole("button", { name: /switch explorer to icon view/i }),
     );
     await waitFor(() => {
+      expect(
+        useSettingsStore.getState().settings.explorer.experimentalViewMode,
+      ).toBe("off");
       expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
         "icons-l",
       );
@@ -3060,6 +3197,9 @@ describe("FileExplorer view modes", () => {
       screen.getByRole("button", { name: /switch explorer to list view/i }),
     );
     await waitFor(() => {
+      expect(
+        useSettingsStore.getState().settings.explorer.experimentalViewMode,
+      ).toBe("off");
       expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
         "list",
       );
