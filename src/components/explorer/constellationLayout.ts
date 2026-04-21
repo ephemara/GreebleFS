@@ -1,4 +1,14 @@
+import {
+  CONSTELLATION_CONNECTION_DENSITY_BOUNDS,
+  CONSTELLATION_MIN_EDGE_SCORE_BY_LENS,
+  type ConstellationLensId,
+} from "../../config/constellationGraph";
 import type { ExplorerFileEntry as FileEntry } from "../../runtime/explorerBackend";
+import type {
+  ConstellationEdgeReason,
+  ConstellationGraph,
+  ConstellationGraphEdge,
+} from "./constellationGraph";
 
 export interface ConstellationOrbitBandInput {
   id: string;
@@ -31,12 +41,19 @@ export interface ConstellationFieldBand extends ConstellationOrbitBandInput {
 
 export interface ConstellationFieldConnection {
   id: string;
+  edgeId: string;
+  fromPath: string;
+  toPath: string;
   fromX: number;
   fromY: number;
   toX: number;
   toY: number;
   strength: "bridge" | "primary" | "secondary";
   highlighted: boolean;
+  dimmed: boolean;
+  route: boolean;
+  activeLensScore: number;
+  reasons: ConstellationEdgeReason[];
 }
 
 export interface ConstellationFieldLayout {
@@ -44,6 +61,15 @@ export interface ConstellationFieldLayout {
   height: number;
   bands: ConstellationFieldBand[];
   connections: ConstellationFieldConnection[];
+}
+
+export interface ConstellationFieldLayoutOptions {
+  graph?: ConstellationGraph | null;
+  activeLens?: ConstellationLensId;
+  pinnedPaths?: ReadonlySet<string>;
+  routeAnchorPath?: string | null;
+  routeTargetPaths?: ReadonlySet<string>;
+  routeEdgeIds?: ReadonlySet<string>;
 }
 
 interface PositionedConstellationEntry {
@@ -110,10 +136,12 @@ export function buildConstellationFieldLayout(
   bands: readonly ConstellationOrbitBandInput[],
   selectedPaths: ReadonlySet<string>,
   density: number,
+  options?: ConstellationFieldLayoutOptions,
 ): ConstellationFieldLayout {
   const normalizedDensity = clamp(density, 0, 1);
   const maxVisibleNodes = clampNumber(Math.round(8 + normalizedDensity * 22), 8, 30);
   const visibleBands = bands.filter((band) => band.entries.length > 0);
+  const pinnedPaths = options?.pinnedPaths ?? new Set<string>();
 
   if (visibleBands.length === 0) {
     return {
@@ -142,7 +170,7 @@ export function buildConstellationFieldLayout(
         hash: hashExplorerString(entry.path),
         emphasis: selectedPaths.has(entry.path)
           ? "selected"
-          : index < anchorQuota
+          : pinnedPaths.has(entry.path) || index < anchorQuota
             ? "anchor"
             : "satellite",
         sourceIndex: index,
@@ -315,11 +343,24 @@ export function buildConstellationFieldLayout(
     });
   }
 
+  const resolvedConnections = options?.graph
+    ? buildConstellationGraphConnections({
+      bands: fieldBands,
+      graph: options.graph,
+      activeLens: options.activeLens ?? "workflow",
+      density: normalizedDensity,
+      routeAnchorPath: options.routeAnchorPath ?? null,
+      routeTargetPaths: options.routeTargetPaths ?? new Set<string>(),
+      routeEdgeIds: options.routeEdgeIds ?? new Set<string>(),
+      selectedPaths,
+    })
+    : dedupeConstellationConnections(connections);
+
   return {
     width,
     height,
     bands: fieldBands,
-    connections: dedupeConstellationConnections(connections),
+    connections: resolvedConnections,
   };
 }
 
@@ -356,12 +397,19 @@ function createConstellationConnection(
 ): ConstellationFieldConnection {
   return {
     id: [from.entry.path, to.entry.path].sort().join("::"),
+    edgeId: [from.entry.path, to.entry.path].sort().join("::"),
+    fromPath: from.entry.path,
+    toPath: to.entry.path,
     fromX: from.x,
     fromY: from.y,
     toX: to.x,
     toY: to.y,
     strength,
     highlighted: from.emphasis === "selected" || to.emphasis === "selected",
+    dimmed: false,
+    route: false,
+    activeLensScore: strength === "primary" ? 1 : strength === "bridge" ? 0.82 : 0.48,
+    reasons: [],
   };
 }
 
@@ -388,6 +436,10 @@ function dedupeConstellationConnections(
       deduped.set(connection.id, {
         ...connection,
         highlighted: previous.highlighted || connection.highlighted,
+        dimmed: previous.dimmed && connection.dimmed,
+        route: previous.route || connection.route,
+        activeLensScore: Math.max(previous.activeLensScore, connection.activeLensScore),
+        reasons: previous.reasons.length > 0 ? previous.reasons : connection.reasons,
       });
     }
   });
@@ -409,6 +461,135 @@ function getConstellationNodeSize(
   const densityPenalty = emphasis === "satellite" ? 7 : 8;
   const tierPenalty = tier === 0 ? 0 : tier === 1 ? 4 : 2;
   return Math.max(24, Math.round(base - (density * densityPenalty) - tierPenalty));
+}
+
+function buildConstellationGraphConnections(args: {
+  bands: readonly ConstellationFieldBand[];
+  graph: ConstellationGraph;
+  activeLens: ConstellationLensId;
+  density: number;
+  routeAnchorPath: string | null;
+  routeTargetPaths: ReadonlySet<string>;
+  routeEdgeIds: ReadonlySet<string>;
+  selectedPaths: ReadonlySet<string>;
+}): ConstellationFieldConnection[] {
+  const nodeLookup = new Map<string, ConstellationFieldNode>();
+  for (const band of args.bands) {
+    for (const node of band.nodes) {
+      nodeLookup.set(node.entry.path, node);
+    }
+  }
+
+  const perNodeLimit = clampNumber(
+    Math.round(
+      CONSTELLATION_CONNECTION_DENSITY_BOUNDS.minPerNode + (args.density * 4),
+    ),
+    CONSTELLATION_CONNECTION_DENSITY_BOUNDS.minPerNode,
+    CONSTELLATION_CONNECTION_DENSITY_BOUNDS.maxPerNode,
+  );
+  const totalLimit = clampNumber(
+    Math.round(
+      CONSTELLATION_CONNECTION_DENSITY_BOUNDS.minTotal + (args.density * 20),
+    ),
+    CONSTELLATION_CONNECTION_DENSITY_BOUNDS.minTotal,
+    CONSTELLATION_CONNECTION_DENSITY_BOUNDS.maxTotal,
+  );
+  const minimumScore = CONSTELLATION_MIN_EDGE_SCORE_BY_LENS[args.activeLens];
+  const nodeConnectionCount = new Map<string, number>();
+  const candidateEdges = args.graph.edges
+    .filter((edge) => (
+      nodeLookup.has(edge.fromPath) &&
+      nodeLookup.has(edge.toPath) &&
+      (
+        edge.scoreByLens[args.activeLens] >= minimumScore ||
+        args.routeEdgeIds.has(edge.id)
+      )
+    ))
+    .sort((left, right) => (
+      Number(args.routeEdgeIds.has(right.id)) - Number(args.routeEdgeIds.has(left.id)) ||
+      Number(args.selectedPaths.has(right.fromPath) || args.selectedPaths.has(right.toPath))
+        - Number(args.selectedPaths.has(left.fromPath) || args.selectedPaths.has(left.toPath)) ||
+      right.scoreByLens[args.activeLens] - left.scoreByLens[args.activeLens]
+    ));
+  const connections: ConstellationFieldConnection[] = [];
+
+  for (const edge of candidateEdges) {
+    const fromNode = nodeLookup.get(edge.fromPath);
+    const toNode = nodeLookup.get(edge.toPath);
+    if (!fromNode || !toNode) {
+      continue;
+    }
+
+    const route = args.routeEdgeIds.has(edge.id);
+    const fromCount = nodeConnectionCount.get(edge.fromPath) ?? 0;
+    const toCount = nodeConnectionCount.get(edge.toPath) ?? 0;
+    if (!route && connections.length >= totalLimit) {
+      continue;
+    }
+    if (!route && fromCount >= perNodeLimit && toCount >= perNodeLimit) {
+      continue;
+    }
+
+    connections.push(createConstellationGraphConnection({
+      fromNode,
+      toNode,
+      edge,
+      activeLens: args.activeLens,
+      dimmed: args.routeTargetPaths.size > 0 && !route,
+      route,
+      highlighted:
+        route ||
+        args.selectedPaths.has(edge.fromPath) ||
+        args.selectedPaths.has(edge.toPath) ||
+        edge.fromPath === args.routeAnchorPath ||
+        edge.toPath === args.routeAnchorPath,
+    }));
+    nodeConnectionCount.set(edge.fromPath, fromCount + 1);
+    nodeConnectionCount.set(edge.toPath, toCount + 1);
+  }
+
+  return connections;
+}
+
+function createConstellationGraphConnection(args: {
+  fromNode: ConstellationFieldNode;
+  toNode: ConstellationFieldNode;
+  edge: ConstellationGraphEdge;
+  activeLens: ConstellationLensId;
+  highlighted: boolean;
+  dimmed: boolean;
+  route: boolean;
+}): ConstellationFieldConnection {
+  const lensScore = args.edge.scoreByLens[args.activeLens];
+  return {
+    id: args.edge.id,
+    edgeId: args.edge.id,
+    fromPath: args.fromNode.entry.path,
+    toPath: args.toNode.entry.path,
+    fromX: args.fromNode.x,
+    fromY: args.fromNode.y,
+    toX: args.toNode.x,
+    toY: args.toNode.y,
+    strength: getConstellationConnectionStrength(lensScore, args.route),
+    highlighted: args.highlighted,
+    dimmed: args.dimmed,
+    route: args.route,
+    activeLensScore: lensScore,
+    reasons: [...args.edge.reasons],
+  };
+}
+
+function getConstellationConnectionStrength(
+  score: number,
+  route: boolean,
+): ConstellationFieldConnection["strength"] {
+  if (route || score >= 1.2) {
+    return "primary";
+  }
+  if (score >= 0.78) {
+    return "bridge";
+  }
+  return "secondary";
 }
 
 function resolveClusterSlot(

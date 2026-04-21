@@ -32,6 +32,10 @@ import {
   type ExplorerChromeSurfaceId,
 } from '../config/explorerChromeLayouts';
 import {
+  normalizeExplorerSearchMode,
+  type ExplorerSearchModeValue,
+} from '../config/semanticSearch';
+import {
   CONSTELLATION_DEFAULT_LENS,
   normalizeConstellationLensId,
   type ConstellationLensId,
@@ -94,7 +98,7 @@ export interface ExplorerSessionSnapshot {
   previewSplitMode: 'inline' | 'pane';
   shellLayoutId: ExplorerShellLayoutId;
   search: string;
-  searchIncludeContent: boolean;
+  searchMode: ExplorerSearchModeValue;
   documentViewMode: ExplorerDocumentViewMode;
   sourcesVisible: boolean;
   constellation: ExplorerConstellationSessionSnapshot;
@@ -184,7 +188,7 @@ export const defaultExplorerSession: ExplorerSessionSnapshot = {
   previewSplitMode: 'inline',
   shellLayoutId: 'balanced',
   search: '',
-  searchIncludeContent: true,
+  searchMode: 'content',
   documentViewMode: 'edit',
   sourcesVisible: true,
   constellation: {
@@ -328,6 +332,13 @@ export function normalizeExplorerSessionSnapshot(value: unknown): ExplorerSessio
   const legacySourcesVisible = typeof source?.sourcesRailPinnedOpen === 'boolean'
     ? source.sourcesRailPinnedOpen || legacyLayout.defaultSourcesVisible
     : legacyLayout.defaultSourcesVisible;
+  const rawConstellation = asRecord(source?.constellation);
+  const pinnedPaths = Array.isArray(rawConstellation?.pinnedPaths)
+    ? rawConstellation.pinnedPaths
+      .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+      .map((entry) => entry.trim())
+      .filter((entry, index, collection) => collection.indexOf(entry) === index)
+    : [...defaultExplorerSession.constellation.pinnedPaths];
   return {
     currentPath: typeof source?.currentPath === 'string' ? source.currentPath : '',
     history,
@@ -343,11 +354,23 @@ export function normalizeExplorerSessionSnapshot(value: unknown): ExplorerSessio
     previewSplitMode: source?.previewSplitMode === 'pane' ? 'pane' : 'inline',
     shellLayoutId: normalizedShellLayoutId,
     search: typeof source?.search === 'string' ? source.search : '',
-    searchIncludeContent: typeof source?.searchIncludeContent === 'boolean' ? source.searchIncludeContent : true,
+    searchMode: normalizeExplorerSearchMode(
+      source?.searchMode,
+      typeof source?.searchIncludeContent === 'boolean'
+        ? source.searchIncludeContent
+        : defaultExplorerSession.searchMode === 'content',
+    ),
     documentViewMode: source?.documentViewMode === 'preview' ? 'preview' : 'edit',
     sourcesVisible: typeof source?.sourcesVisible === 'boolean'
       ? source.sourcesVisible
       : legacySourcesVisible,
+    constellation: {
+      activeLens: normalizeConstellationLensId(rawConstellation?.activeLens),
+      routeModeEnabled: typeof rawConstellation?.routeModeEnabled === 'boolean'
+        ? rawConstellation.routeModeEnabled
+        : defaultExplorerSession.constellation.routeModeEnabled,
+      pinnedPaths,
+    },
   };
 }
 

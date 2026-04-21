@@ -1189,7 +1189,7 @@ describe("FileExplorer view modes", () => {
       getChromeControl("toggleSources")?.getAttribute(
         "data-overlay-explorer-control-zone",
       ),
-    ).toBe("secondaryStart");
+    ).toBe("primaryStart");
   });
 
   it("can render global controls on the explorer topbar surface", async () => {
@@ -1402,7 +1402,7 @@ describe("FileExplorer view modes", () => {
     expect(getChromeControl("togglePreview")).toBeNull();
   });
 
-  it("collapses the closed sources rail helper copy in multi-pane mode", async () => {
+  it("keeps the sources rail toggle compact in multi-pane mode", async () => {
     useExplorerStore.getState().updateSession({
       sourcesVisible: false,
     });
@@ -1412,7 +1412,7 @@ describe("FileExplorer view modes", () => {
 
     expect(
       screen.getByRole("button", { name: /open sources panel/i }),
-    ).toHaveTextContent("Sources");
+    ).toBeInTheDocument();
     expect(screen.queryByText(/sources rail closed/i)).toBeNull();
     expect(
       screen.queryByText(/focus mode keeps the sources rail tucked away/i),

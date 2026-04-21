@@ -33,6 +33,7 @@ export type ExplorerBuiltInContextMenuActionId =
   | 'extract-here'
   | 'extract-new-folder'
   | 'duplicate'
+  | 'find-similar'
   | 'rename'
   | 'add-tags'
   | 'remove-tags'
@@ -367,6 +368,18 @@ export const BUILT_IN_EXPLORER_CONTEXT_MENU_ITEMS: ExplorerBuiltInContextMenuCat
     source: 'built-in',
     iconName: 'CopyPlus',
     execution: { kind: 'built-in', actionId: 'duplicate' },
+  },
+  {
+    id: 'built-in.find-similar',
+    title: 'Find Similar',
+    description: 'Run semantic similarity search for the selected local text/code file.',
+    contexts: ['entry'],
+    appliesTo: 'file',
+    group: 'library',
+    defaultOrder: 145,
+    source: 'built-in',
+    iconName: 'Sparkles',
+    execution: { kind: 'built-in', actionId: 'find-similar' },
   },
   {
     id: 'built-in.rename',

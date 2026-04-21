@@ -31,6 +31,7 @@ import {
   ArrowUp,
   Search,
   RefreshCw,
+  RotateCcw,
   X,
   Star,
   StarOff,
@@ -44,6 +45,7 @@ import {
   Shield,
   Eye,
   Info,
+  FolderTree,
   Loader,
   Pin,
   PinOff,
@@ -110,6 +112,11 @@ import {
   resolveExplorerModeProfileChromeLayoutId,
   type ExplorerModeProfileDefinition,
 } from "../config/explorerModeProfiles";
+import {
+  getConstellationLensDefinition,
+  stepConstellationLens,
+  type ConstellationLensId,
+} from "../config/constellationGraph";
 import { getFolderIconSrc, resolveFolderIcon } from "../config/folderIcons";
 import {
   getBuiltInIconTheme,
@@ -206,8 +213,20 @@ import {
 import {
   buildConstellationFieldLayout,
   type ConstellationFieldBand,
+  type ConstellationFieldConnection,
   type ConstellationFieldNode,
 } from "./explorer/constellationLayout";
+import {
+  buildConstellationGraph,
+  buildConstellationLensBands,
+  createConstellationGraphAdjacencyLookup,
+  createConstellationGraphEdgeLookup,
+  findConstellationEdgeBetween,
+  getConstellationEdgeReasonsForLens,
+  resolveConstellationNodeExplanation,
+  resolveConstellationRouteState,
+  type ConstellationEdgeReason,
+} from "./explorer/constellationGraph";
 import {
   CONSTELLATION_CAMERA_ZOOM_RANGE,
   clampConstellationCameraPan,
@@ -327,6 +346,10 @@ import {
   type ExplorerArchiveExtractionMode,
   type ExplorerItemProperties,
   type ExplorerSavedSearch,
+  type ExplorerSearchModeValue,
+  type ExplorerSemanticIndexSummaryValue,
+  type ExplorerSemanticSearchDiagnosticsValue,
+  type ExplorerSemanticSearchResultValue,
   type ExplorerTagMetadataSnapshot,
   queueExplorerTerminalDirectorySync,
 } from "../runtime/explorerBackend";
@@ -343,6 +366,7 @@ import {
   type ExplorerShaderPreviewEntryPoint,
   type ExplorerShaderPreviewStage,
 } from "../runtime/shaderPreviewBackend";
+import { createPythonRuntimeConfig } from "../config/python";
 import { commands, unwrapTauriResult } from "../runtime/tauriClient";
 import {
   moveExplorerChromeControlInResolvedSurfaces,
@@ -356,6 +380,12 @@ import {
   type ExplorerChromeSurfaceId,
   type ExplorerChromeZoneId,
 } from "../config/explorerChromeLayouts";
+import {
+  cycleExplorerSearchMode,
+  explorerSearchModeDescriptions,
+  explorerSearchModeLabels,
+  isSemanticSearchTextLikeExtension,
+} from "../config/semanticSearch";
 
 const LazyModelPreview = React.lazy(() =>
   import("./ModelPreview").then((module) => ({ default: module.ModelPreview })),
@@ -396,8 +426,25 @@ type ExplorerDragPreviewContent = {
 let transparentExplorerDragImage: HTMLCanvasElement | null = null;
 let explorerDragPreviewCanvas: HTMLCanvasElement | null = null;
 
+type ExplorerNormalizedSearchResult = {
+  name: string;
+  path: string;
+  relative_path: string;
+  is_dir: boolean;
+  size: number;
+  modified: number;
+  extension: string;
+  is_hidden: boolean;
+  is_symlink: boolean;
+  match_kind: FileSearchResult["match_kind"] | null;
+  snippet: string;
+  line_number: number | null;
+  search_mode: ExplorerSearchModeValue;
+  semantic_score: number | null;
+};
+
 type ExplorerSearchCacheEntry = {
-  results: FileSearchResult[];
+  results: ExplorerNormalizedSearchResult[];
   diagnostics: Awaited<
     ReturnType<ExplorerBackendContract["searchEntriesWithDiagnostics"]>
   >["diagnostics"];
@@ -412,14 +459,46 @@ function getExplorerSearchCacheKey(args: {
   path: string;
   query: string;
   showHidden: boolean;
-  includeContent: boolean;
+  searchMode: Extract<ExplorerSearchModeValue, "name" | "content">;
 }): string {
   return [
     args.path,
     args.query.trim().toLowerCase(),
     args.showHidden ? "hidden" : "visible",
-    args.includeContent ? "content" : "names",
+    args.searchMode,
   ].join("::");
+}
+
+function normalizeTextSearchResult(
+  result: FileSearchResult,
+  searchMode: Extract<ExplorerSearchModeValue, "name" | "content">,
+): ExplorerNormalizedSearchResult {
+  return {
+    ...result,
+    search_mode: searchMode,
+    semantic_score: null,
+  };
+}
+
+function normalizeSemanticSearchResult(
+  result: ExplorerSemanticSearchResultValue,
+): ExplorerNormalizedSearchResult {
+  return {
+    name: result.name,
+    path: result.path,
+    relative_path: result.relativePath,
+    is_dir: result.isDir,
+    size: result.size,
+    modified: result.modified,
+    extension: result.extension,
+    is_hidden: result.isHidden,
+    is_symlink: result.isSymlink,
+    match_kind: result.matchKind,
+    snippet: result.snippet,
+    line_number: result.lineNumber,
+    search_mode: "semantic",
+    semantic_score: result.semanticScore,
+  };
 }
 
 async function getOrLoadCachedExplorerSearchResults(
@@ -701,6 +780,19 @@ interface ExplorerChromeEditModeState {
     targetZoneId: ExplorerChromeZoneId;
     targetIndex: number;
   }) => void;
+}
+
+interface ConstellationHoverState {
+  kind: "edge" | "node";
+  edgeId: string | null;
+  nodePath: string | null;
+  viewportX: number;
+  viewportY: number;
+  title: string;
+  subtitle: string | null;
+  reasons: ConstellationEdgeReason[];
+  neighborhoodPaths: string[];
+  neighborhoodEdgeIds: string[];
 }
 
 // ─── Palette ─────────────────────────────────────────────────────────────────
@@ -3840,14 +3932,14 @@ function PreviewPanel({
                 }}
               >
                 {renderPreviewWorkflowToggle({
-                  onPreviewAction:
-                    preview.scriptPreview != null
-                      ? () =>
-                          void onRunTextScript(
-                            preview.path,
-                            preview.scriptPreview,
-                          )
-                      : undefined,
+                  onPreviewAction: (() => {
+                    const scriptPreview = preview.scriptPreview;
+                    if (scriptPreview == null) {
+                      return undefined;
+                    }
+                    return () =>
+                      void onRunTextScript(preview.path, scriptPreview);
+                  })(),
                   onEditAction:
                     preview.scriptPreview != null
                       ? onStopTextScriptRun
@@ -6665,9 +6757,11 @@ export function FileExplorer({
     showPathProperties: showExplorerPathProperties,
     listSavedSearches: listExplorerSavedSearches,
     deleteSavedSearch: deleteExplorerSavedSearch,
+    getSemanticIndexSummary: getExplorerSemanticIndexSummary,
     listTags: listExplorerTags,
     planItemTransfer: planExplorerItemTransfer,
     searchEntriesWithDiagnostics: searchExplorerEntriesWithDiagnostics,
+    searchSemantic: searchExplorerSemantic,
     saveSavedSearch: saveExplorerSavedSearch,
     setTagsForPaths: setExplorerTagsForPaths,
     supportsNativeDragOut,
@@ -6676,6 +6770,8 @@ export function FileExplorer({
     startDuplicateScan: startExplorerDuplicateScan,
     pollDuplicateScan: pollExplorerDuplicateScan,
     previewBatchRename: previewExplorerBatchRename,
+    buildSemanticIndex: buildExplorerSemanticIndex,
+    findSemanticSimilar: findSimilarExplorerSemantic,
     trashPaths: trashExplorerPaths,
     transferItems: transferExplorerItems,
     unwatchEntrySizeRoot: unwatchExplorerEntrySizeRoot,
@@ -6686,6 +6782,7 @@ export function FileExplorer({
   const {
     explorerSettings,
     appearanceSettings,
+    pythonSettings,
     systemSettings,
     editorSettings,
     keybindings,
@@ -6697,6 +6794,7 @@ export function FileExplorer({
     useShallow((state) => ({
       explorerSettings: state.settings.explorer,
       appearanceSettings: state.settings.appearance,
+      pythonSettings: state.settings.python,
       systemSettings: state.settings.system,
       editorSettings: state.settings.editor,
       keybindings: state.settings.keybindings,
@@ -6706,6 +6804,10 @@ export function FileExplorer({
       setExplorerModeProfileOverride: state.setExplorerModeProfileOverride,
       updateExplorerSettings: state.updateExplorer,
     })),
+  );
+  const pythonRuntimeConfig = useMemo(
+    () => createPythonRuntimeConfig(pythonSettings),
+    [pythonSettings],
   );
   const {
     chromeEditSession,
@@ -6883,7 +6985,9 @@ export function FileExplorer({
     string | null
   >(null);
   const previewLoadRequestIdRef = useRef(0);
-  const [searchResults, setSearchResults] = useState<FileSearchResult[]>([]);
+  const [searchResults, setSearchResults] = useState<
+    ExplorerNormalizedSearchResult[]
+  >([]);
   const [drives, setDrives] = useState<DriveInfo[]>([]);
   const [drivesLoading, setDrivesLoading] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -6891,9 +6995,16 @@ export function FileExplorer({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState(() => initialSession.search);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [searchIncludeContent, setSearchIncludeContent] = useState(
-    () => initialSession.searchIncludeContent,
+  const [searchMode, setSearchMode] = useState<ExplorerSearchModeValue>(
+    () => initialSession.searchMode,
   );
+  const [semanticIndexSummary, setSemanticIndexSummary] =
+    useState<ExplorerSemanticIndexSummaryValue | null>(null);
+  const [semanticSearchDiagnostics, setSemanticSearchDiagnostics] =
+    useState<ExplorerSemanticSearchDiagnosticsValue | null>(null);
+  const [semanticSearchSourcePath, setSemanticSearchSourcePath] = useState<
+    string | null
+  >(null);
   const [documentViewMode, setDocumentViewMode] =
     useState<ExplorerDocumentViewMode>(() => initialSession.documentViewMode);
   const [activePreviewWorkflowTabId, setActivePreviewWorkflowTabId] =
@@ -6909,6 +7020,13 @@ export function FileExplorer({
   const [sourcesVisible, setSourcesVisible] = useState(
     () => initialSession.sourcesVisible,
   );
+  const [constellationActiveLens, setConstellationActiveLens] =
+    useState<ConstellationLensId>(() => initialSession.constellation.activeLens);
+  const [constellationRouteModeEnabled, setConstellationRouteModeEnabled] =
+    useState(() => initialSession.constellation.routeModeEnabled);
+  const [constellationPinnedPaths, setConstellationPinnedPaths] = useState<
+    string[]
+  >(() => [...initialSession.constellation.pinnedPaths]);
 
   useEffect(() => {
     if (
@@ -7019,6 +7137,8 @@ export function FileExplorer({
       zoom: CONSTELLATION_CAMERA_ZOOM_RANGE.default,
     });
   const [constellationIsPanning, setConstellationIsPanning] = useState(false);
+  const [constellationHoverState, setConstellationHoverState] =
+    useState<ConstellationHoverState | null>(null);
   const dragOverRef = useRef<string | null>(null);
   const constellationViewportRef = useRef<HTMLDivElement | null>(null);
   const constellationPanGestureRef = useRef<{
@@ -7298,6 +7418,28 @@ export function FileExplorer({
   }, [listExplorerSavedSearches]);
 
   useEffect(() => {
+    if (!currentPath || currentPathIsCloud) {
+      setSemanticIndexSummary(null);
+      return;
+    }
+    let disposed = false;
+    void getExplorerSemanticIndexSummary(currentPath)
+      .then((summary) => {
+        if (!disposed) {
+          setSemanticIndexSummary(summary);
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          setSemanticIndexSummary(null);
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [currentPath, currentPathIsCloud, getExplorerSemanticIndexSummary]);
+
+  useEffect(() => {
     if (currentPathIsCloud) {
       setTagMetadata({ tags: [], assignments: [] });
       return;
@@ -7337,6 +7479,13 @@ export function FileExplorer({
   useEffect(() => {
     setPreviewSplitMode(storedPreviewSplitMode);
   }, [storedPreviewSplitMode]);
+
+  useEffect(() => {
+    if (searchMode !== "semantic") {
+      setSemanticSearchSourcePath(null);
+      setSemanticSearchDiagnostics(null);
+    }
+  }, [searchMode]);
 
   useEffect(() => {
     setSidebarWidth((current) =>
@@ -7520,11 +7669,19 @@ export function FileExplorer({
       previewLocked,
       previewSplitMode,
       search,
-      searchIncludeContent,
+      searchMode,
       documentViewMode,
       sourcesVisible,
+      constellation: {
+        activeLens: constellationActiveLens,
+        routeModeEnabled: constellationRouteModeEnabled,
+        pinnedPaths: constellationPinnedPaths,
+      },
     });
   }, [
+    constellationActiveLens,
+    constellationPinnedPaths,
+    constellationRouteModeEnabled,
     currentPath,
     history,
     historyIdx,
@@ -7534,7 +7691,7 @@ export function FileExplorer({
     previewSplitMode,
     previewWidth,
     search,
-    searchIncludeContent,
+    searchMode,
     sidebarWidth,
     sourcesVisible,
     instanceId,
@@ -7593,6 +7750,8 @@ export function FileExplorer({
         setSelected(new Set());
         setSearch("");
         setSearchResults([]);
+        setSemanticSearchSourcePath(null);
+        setSemanticSearchDiagnostics(null);
         setSearchLoading(false);
         setEntries(nextListing.entries);
         setEntrySizeLoadingPaths(new Set());
@@ -7785,13 +7944,20 @@ export function FileExplorer({
         isExplorerMountedRef.current &&
         searchRequestIdRef.current === requestId;
       const trimmed = query.trim();
-      if (!trimmed || !currentPath) {
+      const hasSemanticSimilarityTarget =
+        searchMode === "semantic" &&
+        typeof semanticSearchSourcePath === "string" &&
+        semanticSearchSourcePath.trim().length > 0;
+      const requiresQueryText =
+        searchMode !== "semantic" || !hasSemanticSimilarityTarget;
+      if ((!trimmed && requiresQueryText) || !currentPath) {
         if (!isExplorerMountedRef.current) {
           return;
         }
         startTransition(() => {
           setSearchResults([]);
         });
+        setSemanticSearchDiagnostics(null);
         setSearchLoading(false);
         return;
       }
@@ -7813,49 +7979,99 @@ export function FileExplorer({
       }
       setSearchLoading(true);
       const startedAt = getExplorerPerformanceNow();
-      const searchCacheKey = getExplorerSearchCacheKey({
-        path: currentPath,
-        query: trimmed,
-        showHidden,
-        includeContent: searchIncludeContent,
-      });
       try {
-        const response = await getOrLoadCachedExplorerSearchResults(
-          searchCacheKey,
-          async () => {
-            const nextResponse = await searchExplorerEntriesWithDiagnostics({
-              path: currentPath,
-              query: trimmed,
-              showHidden,
-              includeContent: searchIncludeContent,
-              limit: 250,
-              requestId,
-              requestScope: explorerSearchScope,
+        if (searchMode === "semantic") {
+          const response = hasSemanticSimilarityTarget
+            ? await findSimilarExplorerSemantic({
+                config: pythonRuntimeConfig,
+                rootPath: currentPath,
+                targetPath: semanticSearchSourcePath,
+                limit: 250,
+                routingMode: systemSettings.accelerationRoutingMode,
+              })
+            : await searchExplorerSemantic({
+                config: pythonRuntimeConfig,
+                rootPath: currentPath,
+                query: trimmed,
+                limit: 250,
+                routingMode: systemSettings.accelerationRoutingMode,
+              });
+          const results = response.results.map(normalizeSemanticSearchResult);
+          if (isActiveSearchRequest()) {
+            startTransition(() => {
+              if (isActiveSearchRequest()) {
+                setSearchResults(results);
+              }
             });
-            return {
-              results: nextResponse.results,
-              diagnostics: nextResponse.diagnostics,
-            };
-          },
-        );
-        const results = response.results;
-        if (isActiveSearchRequest()) {
-          startTransition(() => {
-            if (isActiveSearchRequest()) {
-              setSearchResults(results);
-            }
+            setSemanticSearchDiagnostics(response.diagnostics);
+            recordExplorerMetric({
+              metricId: "explorer_search",
+              durationMs: getExplorerPerformanceNow() - startedAt,
+              metadata: {
+                includeContent: false,
+                queryLength: trimmed.length,
+                resultCount: results.length,
+                success: true,
+                semanticSearch: true,
+                semanticQueryKind: response.diagnostics.queryKind,
+                semanticBackendKind: response.diagnostics.backendKind,
+                semanticProviderKind: response.diagnostics.providerKind,
+                semanticIndexedFileCount:
+                  response.diagnostics.indexedFileCount,
+                semanticIndexedChunkCount:
+                  response.diagnostics.indexedChunkCount,
+                semanticStaleIndex: response.diagnostics.staleIndex,
+                semanticForcedCpu: response.diagnostics.forceCpu,
+              },
+            });
+          }
+        } else {
+          const textSearchMode = searchMode;
+          const searchCacheKey = getExplorerSearchCacheKey({
+            path: currentPath,
+            query: trimmed,
+            showHidden,
+            searchMode: textSearchMode,
           });
-          recordExplorerMetric({
-            metricId: "explorer_search",
-            durationMs: getExplorerPerformanceNow() - startedAt,
-            metadata: {
-              includeContent: searchIncludeContent,
-              queryLength: trimmed.length,
-              resultCount: results.length,
-              success: true,
-              ...getExplorerSearchTelemetryMetadata(response.diagnostics),
+          const response = await getOrLoadCachedExplorerSearchResults(
+            searchCacheKey,
+            async () => {
+              const nextResponse = await searchExplorerEntriesWithDiagnostics({
+                path: currentPath,
+                query: trimmed,
+                showHidden,
+                includeContent: textSearchMode === "content",
+                limit: 250,
+                requestId,
+                requestScope: explorerSearchScope,
+              });
+              return {
+                results: nextResponse.results.map((result) =>
+                  normalizeTextSearchResult(result, textSearchMode),
+                ),
+                diagnostics: nextResponse.diagnostics,
+              };
             },
-          });
+          );
+          if (isActiveSearchRequest()) {
+            startTransition(() => {
+              if (isActiveSearchRequest()) {
+                setSearchResults(response.results);
+              }
+            });
+            setSemanticSearchDiagnostics(null);
+            recordExplorerMetric({
+              metricId: "explorer_search",
+              durationMs: getExplorerPerformanceNow() - startedAt,
+              metadata: {
+                includeContent: textSearchMode === "content",
+                queryLength: trimmed.length,
+                resultCount: response.results.length,
+                success: true,
+                ...getExplorerSearchTelemetryMetadata(response.diagnostics),
+              },
+            });
+          }
         }
       } catch (searchError) {
         if (isActiveSearchRequest()) {
@@ -7864,15 +8080,17 @@ export function FileExplorer({
               setSearchResults([]);
             }
           });
+          setSemanticSearchDiagnostics(null);
           setError(`Search failed: ${searchError}`);
           recordExplorerMetric({
             metricId: "explorer_search",
             durationMs: getExplorerPerformanceNow() - startedAt,
             metadata: {
-              includeContent: searchIncludeContent,
+              includeContent: searchMode === "content",
               queryLength: trimmed.length,
               resultCount: 0,
               success: false,
+              semanticSearch: searchMode === "semantic",
             },
           });
         }
@@ -7885,10 +8103,15 @@ export function FileExplorer({
     [
       currentPath,
       explorerSearchScope,
+      findSimilarExplorerSemantic,
+      pythonRuntimeConfig,
       recordExplorerMetric,
-      searchIncludeContent,
+      searchMode,
+      searchExplorerSemantic,
+      semanticSearchSourcePath,
       showHidden,
       supportsSearch,
+      systemSettings.accelerationRoutingMode,
     ],
   );
 
@@ -7987,7 +8210,10 @@ export function FileExplorer({
     }
     if (
       isActiveDirectoryLoadRequest() &&
-      search.trim() &&
+      (search.trim() ||
+        (searchMode === "semantic" &&
+          typeof semanticSearchSourcePath === "string" &&
+          semanticSearchSourcePath.trim().length > 0)) &&
       supportsSearch(refreshPath)
     ) {
       const requestId = ++searchRequestIdRef.current;
@@ -7998,7 +8224,9 @@ export function FileExplorer({
     entries,
     listExplorerLocationUncached,
     search,
+    searchMode,
     searchResults,
+    semanticSearchSourcePath,
     showHidden,
     runSearch,
     supportsSearch,
@@ -8109,7 +8337,11 @@ export function FileExplorer({
 
   useEffect(() => {
     const trimmed = search.trim();
-    if (!trimmed) {
+    const hasSemanticSimilarityTarget =
+      searchMode === "semantic" &&
+      typeof semanticSearchSourcePath === "string" &&
+      semanticSearchSourcePath.trim().length > 0;
+    if (!trimmed && !hasSemanticSimilarityTarget) {
       const requestId = ++searchRequestIdRef.current;
       if (currentPath) {
         void cancelExplorerSearchEntries({
@@ -8119,6 +8351,7 @@ export function FileExplorer({
         }).catch(() => {});
       }
       setSearchResults([]);
+      setSemanticSearchDiagnostics(null);
       setSearchLoading(false);
       return;
     }
@@ -8130,7 +8363,7 @@ export function FileExplorer({
     }
 
     const requestId = ++searchRequestIdRef.current;
-    if (currentPath) {
+    if (currentPath && searchMode !== "semantic") {
       void cancelExplorerSearchEntries({
         path: currentPath,
         requestId,
@@ -8140,7 +8373,7 @@ export function FileExplorer({
     setSearchResults([]);
     setSearchLoading(true);
     const timer = window.setTimeout(() => {
-      void runSearch(trimmed, requestId);
+      void runSearch(searchMode === "semantic" ? search : trimmed, requestId);
     }, 220);
 
     return () => {
@@ -8149,7 +8382,15 @@ export function FileExplorer({
         setSearchLoading(false);
       }
     };
-  }, [currentPath, explorerSearchScope, search, runSearch, supportsSearch]);
+  }, [
+    currentPath,
+    explorerSearchScope,
+    search,
+    searchMode,
+    semanticSearchSourcePath,
+    runSearch,
+    supportsSearch,
+  ]);
 
   const goBack = useCallback(() => {
     if (historyIdx > 0) {
@@ -8199,6 +8440,8 @@ export function FileExplorer({
     setSearch("");
     setSearchResults([]);
     setSearchLoading(false);
+    setSemanticSearchSourcePath(null);
+    setSemanticSearchDiagnostics(null);
   }, []);
 
   const submitAddressDraft = useCallback(
@@ -8234,7 +8477,11 @@ export function FileExplorer({
     [currentPath, navigate, runtimePlatform, search, supportsSearch],
   );
 
-  const isSearchActive = search.trim().length > 0;
+  const isSearchActive =
+    search.trim().length > 0 ||
+    (searchMode === "semantic" &&
+      typeof semanticSearchSourcePath === "string" &&
+      semanticSearchSourcePath.trim().length > 0);
   const explorerThumbnailRenderContext = isSearchActive ? "search" : "browse";
   const toggleSort = useCallback(
     (nextSortBy: ExplorerSortKey) => {
@@ -8325,15 +8572,33 @@ export function FileExplorer({
     ? searchResults.length
     : entries.length;
   const filteredEntryCount = visibleEntries.length;
+  const bookmarkPathSet = useMemo(
+    () =>
+      new Set(
+        explorerRail.nodes
+          .filter(
+            (
+              node,
+            ): node is (typeof explorerRail.nodes)[number] & {
+              kind: "bookmark";
+              path: string;
+            } => node.kind === "bookmark",
+          )
+          .map((node) => node.path),
+      ),
+    [explorerRail.nodes],
+  );
+  const constellationPinnedPathSet = useMemo(
+    () => new Set(constellationPinnedPaths),
+    [constellationPinnedPaths],
+  );
   const experimentalSemanticBands = useMemo(
     () =>
       isExperimentalViewEligible &&
       (experimentalViewMode === "adaptive-semantic-grid" ||
         (experimentalViewMode === "off" &&
-          (explorerTheme.preferredExperimentalViewMode ===
-            "adaptive-semantic-grid" ||
-            explorerTheme.preferredExperimentalViewMode === "constellation")) ||
-        experimentalViewMode === "constellation")
+          explorerTheme.preferredExperimentalViewMode ===
+            "adaptive-semantic-grid"))
         ? buildAdaptiveSemanticBands(
             visibleEntries,
             selected,
@@ -8353,26 +8618,167 @@ export function FileExplorer({
       visibleEntries,
     ],
   );
-  const bookmarkPathSet = useMemo(
+  const constellationGraph = useMemo(
     () =>
-      new Set(
-        explorerRail.nodes
-          .filter(
-            (
-              node,
-            ): node is (typeof explorerRail.nodes)[number] & {
-              kind: "bookmark";
-              path: string;
-            } => node.kind === "bookmark",
-          )
-          .map((node) => node.path),
-      ),
-    [explorerRail.nodes],
+      buildConstellationGraph({
+        entries: visibleEntries,
+        selectedPaths: selected,
+        pinnedPaths: constellationPinnedPathSet,
+        bookmarkPaths: bookmarkPathSet,
+        pathTagIds: pathTagIdsByPath,
+      }),
+    [
+      bookmarkPathSet,
+      constellationPinnedPathSet,
+      pathTagIdsByPath,
+      selected,
+      visibleEntries,
+    ],
   );
+  const constellationLensBands = useMemo(
+    () =>
+      buildConstellationLensBands({
+        entries: visibleEntries,
+        selectedPaths: selected,
+        pinnedPaths: constellationPinnedPathSet,
+        bookmarkPaths: bookmarkPathSet,
+        pathTagIds: pathTagIdsByPath,
+        currentPath,
+        activeLens: constellationActiveLens,
+        sortBy: explorerSettings.sortBy,
+        sortOrder: explorerSettings.sortOrder,
+      }),
+    [
+      bookmarkPathSet,
+      constellationActiveLens,
+      constellationPinnedPathSet,
+      currentPath,
+      explorerSettings.sortBy,
+      explorerSettings.sortOrder,
+      pathTagIdsByPath,
+      selected,
+      visibleEntries,
+    ],
+  );
+  const constellationDominantPath = useMemo(
+    () =>
+      constellationLensBands.find((band) => band.dominant)?.entries[0]?.path ??
+      constellationLensBands[0]?.entries[0]?.path ??
+      null,
+    [constellationLensBands],
+  );
+  const constellationRouteState = useMemo(
+    () =>
+      constellationRouteModeEnabled
+        ? resolveConstellationRouteState({
+            graph: constellationGraph,
+            activeLens: constellationActiveLens,
+            selectedPaths: selected,
+            pinnedPaths: constellationPinnedPathSet,
+            bookmarkPaths: bookmarkPathSet,
+            visibleEntryOrder: visibleEntries,
+            dominantPath: constellationDominantPath,
+          })
+        : {
+            anchorPath: null,
+            targetPaths: [],
+            edgeIds: [],
+          },
+    [
+      bookmarkPathSet,
+      constellationActiveLens,
+      constellationDominantPath,
+      constellationGraph,
+      constellationPinnedPathSet,
+      constellationRouteModeEnabled,
+      selected,
+      visibleEntries,
+    ],
+  );
+  const constellationRouteTargetSet = useMemo(
+    () => new Set(constellationRouteState.targetPaths),
+    [constellationRouteState.targetPaths],
+  );
+  const constellationRouteEdgeSet = useMemo(
+    () => new Set(constellationRouteState.edgeIds),
+    [constellationRouteState.edgeIds],
+  );
+  const constellationEdgeLookup = useMemo(
+    () => createConstellationGraphEdgeLookup(constellationGraph.edges),
+    [constellationGraph.edges],
+  );
+  const constellationAdjacencyLookup = useMemo(
+    () => createConstellationGraphAdjacencyLookup(constellationGraph.edges),
+    [constellationGraph.edges],
+  );
+  const constellationLensDefinition = useMemo(
+    () => getConstellationLensDefinition(constellationActiveLens),
+    [constellationActiveLens],
+  );
+  const constellationVisiblePinnedCount = useMemo(
+    () =>
+      visibleEntries.reduce(
+        (count, entry) =>
+          count + (constellationPinnedPathSet.has(entry.path) ? 1 : 0),
+        0,
+      ),
+    [constellationPinnedPathSet, visibleEntries],
+  );
+  void constellationVisiblePinnedCount;
   const selectedEntries = useMemo(
     () => visibleEntries.filter((entry) => selected.has(entry.path)),
     [visibleEntries, selected],
   );
+  const semanticSelectionCandidate = useMemo(() => {
+    if (currentPathIsCloud || selectedEntries.length !== 1) {
+      return null;
+    }
+    const candidate = selectedEntries[0];
+    if (candidate.is_dir) {
+      return null;
+    }
+    return isSemanticSearchTextLikeExtension(candidate.extension)
+      ? candidate
+      : null;
+  }, [currentPathIsCloud, selectedEntries]);
+  const constellationSelectionIsFullyPinned = useMemo(
+    () =>
+      selectedEntries.length > 0 &&
+      selectedEntries.every((entry) => constellationPinnedPathSet.has(entry.path)),
+    [constellationPinnedPathSet, selectedEntries],
+  );
+  void constellationSelectionIsFullyPinned;
+  const cycleActiveConstellationLens = useCallback(() => {
+    setConstellationActiveLens((current) => stepConstellationLens(current));
+  }, []);
+  const toggleActiveConstellationRouteMode = useCallback(() => {
+    setConstellationRouteModeEnabled((current) => !current);
+  }, []);
+  const toggleConstellationSelectionPinState = useCallback(() => {
+    if (selectedEntries.length === 0) {
+      return;
+    }
+    setConstellationPinnedPaths((current) => {
+      const currentSet = new Set(current);
+      const shouldUnpinSelection = selectedEntries.every((entry) =>
+        currentSet.has(entry.path),
+      );
+      if (shouldUnpinSelection) {
+        return current.filter(
+          (path) => !selectedEntries.some((entry) => entry.path === path),
+        );
+      }
+
+      const nextPaths = [...current];
+      selectedEntries.forEach((entry) => {
+        if (!currentSet.has(entry.path)) {
+          currentSet.add(entry.path);
+          nextPaths.push(entry.path);
+        }
+      });
+      return nextPaths;
+    });
+  }, [selectedEntries]);
   useEffect(() => {
     if (!onWorkspaceRuntimeSnapshotChange) {
       return;
@@ -8760,7 +9166,7 @@ export function FileExplorer({
       .catch(() => {});
   }, [navigate]);
   const toggleSearchScope = useCallback(() => {
-    setSearchIncludeContent((value) => !value);
+    setSearchMode((currentMode) => cycleExplorerSearchMode(currentMode));
   }, []);
   const cycleSortKey = useCallback(() => {
     const order: ExplorerSortKey[] = ["name", "size", "date", "type"];
@@ -9538,7 +9944,7 @@ export function FileExplorer({
         return null;
       }
 
-      const searchEntry = entry as FileSearchResult;
+      const searchEntry = entry as ExplorerNormalizedSearchResult;
       const nextRequestId = searchFocusRequestIdRef.current + 1;
       const target = createEditorSearchFocus(nextRequestId, search.trim(), {
         line_number: searchEntry.line_number ?? null,
@@ -11346,7 +11752,7 @@ export function FileExplorer({
         name,
         rootPath: currentPath,
         query: search.trim(),
-        includeContent: searchIncludeContent,
+        searchMode,
         tagFilterIds: activeTagFilterIds,
       });
       setSavedSearches((current) => {
@@ -11366,7 +11772,7 @@ export function FileExplorer({
     saveExplorerSavedSearch,
     saveSearchState.name,
     search,
-    searchIncludeContent,
+    searchMode,
   ]);
 
   const applySavedSearch = useCallback(
@@ -11375,11 +11781,64 @@ export function FileExplorer({
         await navigate(savedSearch.rootPath);
       }
       setSearch(savedSearch.query);
-      setSearchIncludeContent(savedSearch.includeContent);
+      setSearchMode(savedSearch.searchMode);
+      setSemanticSearchSourcePath(null);
+      setSemanticSearchDiagnostics(null);
       setActiveTagFilterIds(savedSearch.tagFilterIds);
     },
     [currentPath, navigate],
   );
+
+  const refreshSemanticIndexSummary = useCallback(() => {
+    if (!currentPath || currentPathIsCloud) {
+      setSemanticIndexSummary(null);
+      return;
+    }
+    void getExplorerSemanticIndexSummary(currentPath)
+      .then((summary) => {
+        setSemanticIndexSummary(summary);
+      })
+      .catch(() => {
+        setSemanticIndexSummary(null);
+      });
+  }, [currentPath, currentPathIsCloud, getExplorerSemanticIndexSummary]);
+
+  const requestSemanticIndexBuild = useCallback(
+    async (mode: "build" | "rebuild" | "clear") => {
+      if (!currentPath || currentPathIsCloud) {
+        return;
+      }
+      try {
+        await buildExplorerSemanticIndex({
+          config: pythonRuntimeConfig,
+          rootPath: currentPath,
+          mode,
+          routingMode: systemSettings.accelerationRoutingMode,
+        });
+        window.setTimeout(() => {
+          refreshSemanticIndexSummary();
+        }, mode === "clear" ? 200 : 1200);
+      } catch (semanticIndexError) {
+        setError(String(semanticIndexError));
+      }
+    },
+    [
+      buildExplorerSemanticIndex,
+      currentPath,
+      currentPathIsCloud,
+      pythonRuntimeConfig,
+      refreshSemanticIndexSummary,
+      systemSettings.accelerationRoutingMode,
+    ],
+  );
+
+  const triggerFindSimilarForPath = useCallback((path: string) => {
+    setSearchMode("semantic");
+    setSearch("");
+    setSearchResults([]);
+    setSemanticSearchDiagnostics(null);
+    setSemanticSearchSourcePath(path);
+  }, []);
 
   const updateJumpFilterQuery = useCallback(
     (nextQuery: string) => {
@@ -11894,6 +12353,18 @@ export function FileExplorer({
                   action: () => duplicate(entry),
                 },
               ];
+            case "find-similar":
+              return !currentPathIsCloud &&
+                !entry.is_dir &&
+                isSemanticSearchTextLikeExtension(entry.extension)
+                ? [
+                    {
+                      ...sharedItem,
+                      label: "Find Similar",
+                      action: () => triggerFindSimilarForPath(entry.path),
+                    },
+                  ]
+                : [];
             case "rename":
               return [
                 {
@@ -12851,9 +13322,23 @@ export function FileExplorer({
                     : preview.type === "model3d"
                       ? "3D preview"
                       : "Preview";
-  const searchModeLabel = searchIncludeContent
-    ? "Recursive search + text"
-    : "Recursive search (names only)";
+  const searchModeLabel = explorerSearchModeLabels[searchMode];
+  const semanticIndexStatusLabel = useMemo(() => {
+    if (!semanticIndexSummary || currentPathIsCloud) {
+      return "Semantic index unavailable";
+    }
+    if (!semanticIndexSummary.indexed) {
+      return "Semantic index not built";
+    }
+    const backendLabel = [
+      semanticIndexSummary.backendKind,
+      semanticIndexSummary.providerKind,
+    ]
+      .filter(Boolean)
+      .join(" / ");
+    const staleLabel = semanticIndexSummary.stale ? " · stale" : "";
+    return `${semanticIndexSummary.fileCount} files · ${semanticIndexSummary.chunkCount} chunks${backendLabel ? ` · ${backendLabel}` : ""}${staleLabel}`;
+  }, [currentPathIsCloud, semanticIndexSummary]);
   const gridZoomPercent = useMemo(
     () =>
       isExplorerGridMode(themedViewMode)
@@ -12953,15 +13438,29 @@ export function FileExplorer({
     () =>
       effectiveExperimentalViewMode === "constellation"
         ? buildConstellationFieldLayout(
-            experimentalSemanticBands,
+            constellationLensBands,
             selected,
             experimentalDensity,
+            {
+              graph: constellationGraph,
+              activeLens: constellationActiveLens,
+              pinnedPaths: constellationPinnedPathSet,
+              routeAnchorPath: constellationRouteState.anchorPath,
+              routeTargetPaths: constellationRouteTargetSet,
+              routeEdgeIds: constellationRouteEdgeSet,
+            },
           )
         : null,
     [
+      constellationActiveLens,
       effectiveExperimentalViewMode,
       experimentalDensity,
-      experimentalSemanticBands,
+      constellationGraph,
+      constellationLensBands,
+      constellationPinnedPathSet,
+      constellationRouteEdgeSet,
+      constellationRouteState.anchorPath,
+      constellationRouteTargetSet,
       selected,
     ],
   );
@@ -12970,6 +13469,13 @@ export function FileExplorer({
       return null;
     }
     return (
+      (constellationRouteState.anchorPath
+        ? constellationFieldLayout.bands
+            .flatMap((band) => band.nodes)
+            .find(
+              (node) => node.entry.path === constellationRouteState.anchorPath,
+            )
+        : null) ??
       constellationFieldLayout.bands
         .flatMap((band) => band.nodes)
         .find((node) => selected.has(node.entry.path)) ??
@@ -12977,7 +13483,7 @@ export function FileExplorer({
       constellationFieldLayout.bands[0]?.nodes[0] ??
       null
     );
-  }, [constellationFieldLayout, selected]);
+  }, [constellationFieldLayout, constellationRouteState.anchorPath, selected]);
   const getConstellationViewportMetrics = useCallback(() => {
     const viewport = constellationViewportRef.current;
     if (!viewport || !constellationFieldLayout) {
@@ -13052,6 +13558,9 @@ export function FileExplorer({
       getConstellationViewportMetrics,
     ],
   );
+  const clearConstellationHover = useCallback(() => {
+    setConstellationHoverState((current) => (current ? null : current));
+  }, []);
   const handleConstellationPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0 || !constellationFieldLayout) {
@@ -13064,6 +13573,7 @@ export function FileExplorer({
       ) {
         return;
       }
+      clearConstellationHover();
       constellationPanGestureRef.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
@@ -13077,7 +13587,12 @@ export function FileExplorer({
         moved: false,
       };
     },
-    [constellationCamera.x, constellationCamera.y, constellationFieldLayout],
+    [
+      clearConstellationHover,
+      constellationCamera.x,
+      constellationCamera.y,
+      constellationFieldLayout,
+    ],
   );
   const handleConstellationPointerMove = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
@@ -13252,6 +13767,158 @@ export function FileExplorer({
     },
     [recenterConstellationCamera],
   );
+  const constellationRouteActive =
+    constellationRouteModeEnabled &&
+    constellationRouteState.anchorPath != null &&
+    constellationRouteState.targetPaths.length > 0;
+  const constellationHoverPathSet = useMemo(
+    () => new Set(constellationHoverState?.neighborhoodPaths ?? []),
+    [constellationHoverState],
+  );
+  const constellationHoverEdgeSet = useMemo(
+    () => new Set(constellationHoverState?.neighborhoodEdgeIds ?? []),
+    [constellationHoverState],
+  );
+  const getConstellationViewportHoverPoint = useCallback(
+    (clientX: number, clientY: number) => {
+      const rect = constellationViewportRef.current?.getBoundingClientRect();
+      if (!rect) {
+        return {
+          x: 24,
+          y: 24,
+        };
+      }
+      return {
+        x: Math.max(18, Math.min(rect.width - 18, clientX - rect.left)),
+        y: Math.max(18, Math.min(rect.height - 18, clientY - rect.top)),
+      };
+    },
+    [],
+  );
+  const handleConstellationEdgeHover = useCallback(
+    (
+      connection: ConstellationFieldConnection,
+      event: React.MouseEvent<SVGLineElement>,
+    ) => {
+      const edge =
+        constellationEdgeLookup.get(connection.edgeId) ??
+        findConstellationEdgeBetween(
+          constellationEdgeLookup,
+          connection.fromPath,
+          connection.toPath,
+        );
+      if (!edge) {
+        clearConstellationHover();
+        return;
+      }
+      const fromEntry =
+        visibleEntryLookup.get(connection.fromPath) ??
+        constellationGraph.nodes.find((node) => node.entry.path === connection.fromPath)
+          ?.entry ??
+        null;
+      const toEntry =
+        visibleEntryLookup.get(connection.toPath) ??
+        constellationGraph.nodes.find((node) => node.entry.path === connection.toPath)
+          ?.entry ??
+        null;
+      const point = getConstellationViewportHoverPoint(
+        event.clientX,
+        event.clientY,
+      );
+      setConstellationHoverState({
+        kind: "edge",
+        edgeId: connection.edgeId,
+        nodePath: null,
+        viewportX: point.x,
+        viewportY: point.y,
+        title: `${fromEntry?.name ?? connection.fromPath} -> ${toEntry?.name ?? connection.toPath}`,
+        subtitle: constellationLensDefinition.label,
+        reasons: getConstellationEdgeReasonsForLens(edge, constellationActiveLens),
+        neighborhoodPaths: [connection.fromPath, connection.toPath],
+        neighborhoodEdgeIds: [connection.edgeId],
+      });
+    },
+    [
+      clearConstellationHover,
+      constellationActiveLens,
+      constellationEdgeLookup,
+      constellationGraph.nodes,
+      constellationLensDefinition.label,
+      getConstellationViewportHoverPoint,
+      visibleEntryLookup,
+    ],
+  );
+  const handleConstellationNodeHover = useCallback(
+    (
+      node: ConstellationFieldNode,
+      event: React.MouseEvent<HTMLDivElement>,
+    ) => {
+      const explanation = resolveConstellationNodeExplanation({
+        nodePath: node.entry.path,
+        graph: constellationGraph,
+        activeLens: constellationActiveLens,
+        routeAnchorPath: constellationRouteState.anchorPath,
+      });
+      const point = getConstellationViewportHoverPoint(
+        event.clientX,
+        event.clientY,
+      );
+      const localEdges = constellationAdjacencyLookup.get(node.entry.path) ?? [];
+      const neighborhoodPaths = new Set<string>([node.entry.path]);
+      localEdges.forEach((edge) => {
+        neighborhoodPaths.add(edge.fromPath);
+        neighborhoodPaths.add(edge.toPath);
+      });
+      const connectedName = explanation.connectedPath
+        ? (
+            visibleEntryLookup.get(explanation.connectedPath)?.name ??
+            explanation.connectedPath
+          )
+        : null;
+      setConstellationHoverState({
+        kind: "node",
+        edgeId: explanation.edge?.id ?? null,
+        nodePath: node.entry.path,
+        viewportX: point.x,
+        viewportY: point.y,
+        title: node.entry.name,
+        subtitle: connectedName
+          ? `Linked to ${connectedName}`
+          : `No strong ${constellationLensDefinition.label.toLowerCase()} links`,
+        reasons: explanation.reasons,
+        neighborhoodPaths: [...neighborhoodPaths],
+        neighborhoodEdgeIds: localEdges.map((edge) => edge.id),
+      });
+    },
+    [
+      constellationActiveLens,
+      constellationAdjacencyLookup,
+      constellationGraph,
+      constellationLensDefinition.label,
+      constellationRouteState.anchorPath,
+      getConstellationViewportHoverPoint,
+      visibleEntryLookup,
+    ],
+  );
+  useEffect(() => {
+    if (effectiveExperimentalViewMode !== "constellation") {
+      clearConstellationHover();
+    }
+  }, [clearConstellationHover, effectiveExperimentalViewMode]);
+  useEffect(() => {
+    setConstellationHoverState((current) => {
+      if (!current) {
+        return current;
+      }
+      if (current.edgeId && !constellationEdgeLookup.has(current.edgeId)) {
+        return null;
+      }
+      if (current.nodePath && !visibleEntryLookup.has(current.nodePath)) {
+        return null;
+      }
+      return current;
+    });
+  }, [constellationEdgeLookup, visibleEntryLookup]);
   const timelineSurfaceBands = useMemo(
     () =>
       effectiveExperimentalViewMode === "timeline-surface"
@@ -14215,7 +14882,7 @@ export function FileExplorer({
       },
       {
         id: "toggleSearchContent",
-        label: "Toggle Search Content",
+        label: "Cycle Search Mode",
         surfaces: ["explorerToolbar"],
         isVisible: () => true,
         render: () => (
@@ -14223,19 +14890,19 @@ export function FileExplorer({
             type="button"
             onClick={() => {
               if (!currentPathIsCloud) {
-                setSearchIncludeContent((v) => !v);
+                setSearchMode((currentMode) =>
+                  cycleExplorerSearchMode(currentMode),
+                );
               }
             }}
             title={
               currentPathIsCloud
                 ? "Cloud search is not available yet"
-                : searchIncludeContent
-                  ? "Include file text in search (on)"
-                  : "Include file text in search (off)"
+                : `${searchModeLabel}: ${explorerSearchModeDescriptions[searchMode]}`
             }
             style={{
               ...toolbarToggleButtonStyle(
-                searchIncludeContent,
+                searchMode !== "name",
                 currentPathIsCloud,
               ),
               gap: 4,
@@ -14249,17 +14916,94 @@ export function FileExplorer({
             }}
             onMouseLeave={(e) => {
               if (!currentPathIsCloud) {
-                e.currentTarget.style.background = searchIncludeContent
+                e.currentTarget.style.background = searchMode !== "name"
                   ? "var(--overlay-explorer-chip-active-bg)"
                   : "var(--overlay-explorer-chip-bg)";
               }
             }}
           >
-            <span style={{ fontWeight: 700, letterSpacing: "0.02em" }}>Aa</span>
+            <span style={{ fontWeight: 700, letterSpacing: "0.02em" }}>
+              {searchMode === "semantic"
+                ? "AI"
+                : searchMode === "content"
+                  ? "TXT"
+                  : "NM"}
+            </span>
             <span
               style={{ display: showToolbarTextLabels ? "inline" : "none" }}
             >
-              Text
+              {searchModeLabel}
+            </span>
+          </button>
+        ),
+      },
+      {
+        id: "semanticIndexBuild",
+        label: "Build Semantic Index",
+        surfaces: ["explorerToolbar"],
+        isVisible: () => !currentPathIsCloud && !usesWorkspaceCompactChrome,
+        render: () => (
+          <button
+            type="button"
+            onClick={() => void requestSemanticIndexBuild("build")}
+            title={`${semanticIndexStatusLabel}. Build the semantic index for this root.`}
+            style={toolbarChipButtonStyle(
+              Boolean(semanticIndexSummary?.indexed),
+            )}
+          >
+            <span style={{ fontWeight: 700 }}>IDX</span>
+            <span
+              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+            >
+              Build
+            </span>
+          </button>
+        ),
+      },
+      {
+        id: "semanticIndexRebuild",
+        label: "Rebuild Semantic Index",
+        surfaces: ["explorerToolbar"],
+        isVisible: () =>
+          !currentPathIsCloud &&
+          !usesWorkspaceCompactChrome &&
+          Boolean(semanticIndexSummary?.indexed),
+        render: () => (
+          <button
+            type="button"
+            onClick={() => void requestSemanticIndexBuild("rebuild")}
+            title={`${semanticIndexStatusLabel}. Rebuild the semantic index for this root.`}
+            style={toolbarChipButtonStyle(false)}
+          >
+            <RotateCcw size={11} />
+            <span
+              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+            >
+              Rebuild
+            </span>
+          </button>
+        ),
+      },
+      {
+        id: "semanticIndexClear",
+        label: "Clear Semantic Index",
+        surfaces: ["explorerToolbar"],
+        isVisible: () =>
+          !currentPathIsCloud &&
+          !usesWorkspaceCompactChrome &&
+          Boolean(semanticIndexSummary?.indexed),
+        render: () => (
+          <button
+            type="button"
+            onClick={() => void requestSemanticIndexBuild("clear")}
+            title={`${semanticIndexStatusLabel}. Remove the semantic index for this root.`}
+            style={toolbarChipButtonStyle(false)}
+          >
+            <Trash2 size={11} />
+            <span
+              style={{ display: showToolbarTextLabels ? "inline" : "none" }}
+            >
+              Clear AI
             </span>
           </button>
         ),
@@ -14422,14 +15166,27 @@ export function FileExplorer({
         render: () => (
           <button
             type="button"
+            data-overlay-explorer-panel-opener="sources"
             aria-pressed={shouldRenderRail}
+            aria-label={
+              shouldRenderRail ? "Hide sources panel" : "Open sources panel"
+            }
             onClick={toggleSourcesPanel}
             title={
               shouldRenderRail
                 ? "Hide the sources panel"
-                : "Show the sources panel"
+                : "Open the sources panel"
             }
-            style={toolbarToggleButtonStyle(shouldRenderRail)}
+            style={{
+              ...toolbarIconButtonStyle(false),
+              background: shouldRenderRail
+                ? "var(--overlay-explorer-chip-active-bg)"
+                : "var(--overlay-explorer-chip-bg)",
+              border: `1px solid ${shouldRenderRail ? "var(--overlay-explorer-chip-active-border)" : "var(--overlay-explorer-chip-border)"}`,
+              color: shouldRenderRail
+                ? "var(--overlay-explorer-chip-active-text)"
+                : EXP.muted,
+            }}
             onMouseEnter={(e) =>
               (e.currentTarget.style.background =
                 "var(--overlay-explorer-chip-active-bg)")
@@ -14440,7 +15197,7 @@ export function FileExplorer({
                 : "var(--overlay-explorer-chip-bg)")
             }
           >
-            Sources
+            <FolderTree size={14} />
           </button>
         ),
       },
@@ -15368,17 +16125,28 @@ export function FileExplorer({
         id: "statusSearchSummary",
         label: "Status Search Summary",
         surfaces: ["explorerStatusBar"],
-        isVisible: () => Boolean(search),
+        isVisible: () => isSearchActive,
         render: () =>
-          search ? (
+          isSearchActive ? (
             <span>
               {searchModeLabel}:{" "}
-              <span style={{ color: EXP.text }}>&quot;{search}&quot;</span>
+              <span style={{ color: EXP.text }}>
+                {search.trim()
+                  ? `“${search.trim()}”`
+                  : semanticSearchSourcePath
+                    ? `similar to ${getPathLeaf(semanticSearchSourcePath)}`
+                    : "semantic query"}
+              </span>
               <span style={{ color: EXP.muted2 }}>
                 {searchLoading
                   ? " · searching…"
                   : ` · ${filteredEntryCount} result${filteredEntryCount === 1 ? "" : "s"}`}
               </span>
+              {searchMode === "semantic" && semanticSearchDiagnostics && (
+                <span style={{ color: EXP.muted2 }}>
+                  {` · ${semanticSearchDiagnostics.backendKind} / ${semanticSearchDiagnostics.providerKind}`}
+                </span>
+              )}
               {activeTagFilterIds.length > 0 &&
                 sourceEntryCount !== filteredEntryCount && (
                   <span
@@ -15482,11 +16250,17 @@ export function FileExplorer({
       previewModeLabel,
       recentLocations,
       refresh,
+      requestSemanticIndexBuild,
       resetExplorerChromeCustomization,
       saveExplorerChromeCustomization,
       search,
-      searchIncludeContent,
+      searchMode,
       searchLoading,
+      semanticIndexStatusLabel,
+      semanticIndexSummary,
+      semanticSearchDiagnostics,
+      semanticSearchSourcePath,
+      semanticSelectionCandidate,
       selected.size,
       selectedEntries,
       selectedExperimentalModeDefinition,
@@ -15495,7 +16269,7 @@ export function FileExplorer({
       setAddressEditing,
       setBatchRename,
       setSaveSearchState,
-      setSearchIncludeContent,
+      setSearchMode,
       setShowLayoutMenu,
       setShowModeProfileMenu,
       showExperimentalHud,
@@ -15506,6 +16280,7 @@ export function FileExplorer({
       showZoomHud,
       startDuplicateFinder,
       submitAddressDraft,
+      triggerFindSimilarForPath,
       toggleSourcesPanel,
       shouldRenderRail,
       togglePreviewEnabled,
@@ -16415,6 +17190,30 @@ export function FileExplorer({
         }
         return;
       }
+      if (
+        effectiveExperimentalViewMode === "constellation" &&
+        matchesKeybinding(e, keybindings.cycleConstellationLens)
+      ) {
+        e.preventDefault();
+        cycleActiveConstellationLens();
+        return;
+      }
+      if (
+        effectiveExperimentalViewMode === "constellation" &&
+        matchesKeybinding(e, keybindings.toggleConstellationRouteMode)
+      ) {
+        e.preventDefault();
+        toggleActiveConstellationRouteMode();
+        return;
+      }
+      if (
+        effectiveExperimentalViewMode === "constellation" &&
+        matchesKeybinding(e, keybindings.toggleConstellationPinSelection)
+      ) {
+        e.preventDefault();
+        toggleConstellationSelectionPinState();
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "l") {
         e.preventDefault();
         beginAddressEdit();
@@ -16459,10 +17258,12 @@ export function FileExplorer({
     addressEditing,
     beginAddressEdit,
     clearExplorerSelection,
+    cycleActiveConstellationLens,
     duplicate,
     effectiveViewModeDefinition.presentation,
     experimentalDensity,
     experimentalViewMode,
+    effectiveExperimentalViewMode,
     explorerTheme.preferredExperimentalViewMode,
     focusExplorerAddressBar,
     focusExplorerList,
@@ -16483,6 +17284,8 @@ export function FileExplorer({
     previewTerminalWorkingDirectory,
     queueClipboard,
     refresh,
+    toggleActiveConstellationRouteMode,
+    toggleConstellationSelectionPinState,
     rename.active,
     selectVisibleEntryAtIndex,
     selectAllVisibleEntries,
@@ -17064,13 +17867,15 @@ export function FileExplorer({
 
   const renderSearchMetadata = (entry: FileEntry) => {
     if (!isSearchActive) return null;
-    const searchEntry = entry as FileSearchResult;
+    const searchEntry = entry as ExplorerNormalizedSearchResult;
     const matchLabel =
-      searchEntry.match_kind === "name_and_content"
-        ? "Name + content"
-        : searchEntry.match_kind === "content"
-          ? "Content match"
-          : "Name match";
+      searchEntry.search_mode === "semantic"
+        ? "Semantic match"
+        : searchEntry.match_kind === "name_and_content"
+          ? "Name + content"
+          : searchEntry.match_kind === "content"
+            ? "Content match"
+            : "Name match";
 
     return (
       <div
@@ -17098,6 +17903,18 @@ export function FileExplorer({
         <div
           style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}
         >
+          {searchEntry.semantic_score != null && (
+            <span
+              style={{
+                fontSize: 9,
+                color: accent,
+                fontFamily: "monospace",
+                flexShrink: 0,
+              }}
+            >
+              {(searchEntry.semantic_score * 100).toFixed(1)}%
+            </span>
+          )}
           {searchEntry.line_number != null && (
             <span
               style={{
@@ -17145,10 +17962,13 @@ export function FileExplorer({
 
   const getSearchTooltip = (entry: FileEntry) => {
     if (!isSearchActive) return undefined;
-    const searchEntry = entry as FileSearchResult;
+    const searchEntry = entry as ExplorerNormalizedSearchResult;
     const parts = [searchEntry.relative_path || searchEntry.path];
     if (searchEntry.line_number != null) {
       parts.push(`Line ${searchEntry.line_number}`);
+    }
+    if (searchEntry.semantic_score != null) {
+      parts.push(`Semantic ${(searchEntry.semantic_score * 100).toFixed(1)}%`);
     }
     if (searchEntry.snippet) {
       parts.push(searchEntry.snippet);
@@ -17681,13 +18501,31 @@ export function FileExplorer({
   ) => {
     const isSel = selected.has(node.entry.path);
     const isDrop = dragOver === node.entry.path && node.entry.is_dir;
+    const isPinned = constellationPinnedPathSet.has(node.entry.path);
+    const isRouteAnchor = constellationRouteState.anchorPath === node.entry.path;
+    const isRouteTarget = constellationRouteTargetSet.has(node.entry.path);
+    const dimForHover =
+      constellationHoverPathSet.size > 0 &&
+      !constellationHoverPathSet.has(node.entry.path);
+    const dimForRoute =
+      constellationRouteActive &&
+      !isRouteAnchor &&
+      !isRouteTarget &&
+      !isSel;
     const isRenaming = rename.active && rename.path === node.entry.path;
     const iconSrc = getExplorerEntryIconSrc(node.entry, isSel, isDrop);
-    const showsLabel = node.labelVisible || isSel || isDrop;
+    const showsLabel =
+      node.labelVisible || isSel || isDrop || isPinned || isRouteTarget || isRouteAnchor;
     const highlightBackground = isDrop
       ? dropEntrySurface.background
       : isSel
         ? selectedEntrySurface.background
+        : isRouteAnchor
+          ? `linear-gradient(180deg, ${accent}2d, rgba(255,255,255,0.08))`
+          : isRouteTarget
+            ? `linear-gradient(180deg, ${accent}1f, rgba(255,255,255,0.06))`
+            : isPinned
+              ? "linear-gradient(180deg, rgba(255,255,255,0.11), rgba(255,255,255,0.05))"
         : node.emphasis === "anchor"
           ? "linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.05))"
           : "linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03))";
@@ -17695,11 +18533,17 @@ export function FileExplorer({
       ? dropEntrySurface.transform
       : isSel
         ? selectedEntrySurface.transform
+        : isRouteAnchor
+          ? "translateY(-3px)"
+          : isRouteTarget
+            ? "translateY(-2px)"
         : idleEntrySurface.transform;
     const restingBorderColor = isDrop
       ? dropEntrySurface.borderColor
       : isSel
         ? selectedEntrySurface.borderColor
+        : isRouteAnchor || isRouteTarget || isPinned
+          ? `${accent}7a`
         : node.emphasis === "anchor"
           ? `${accent}66`
           : "rgba(255,255,255,0.12)";
@@ -17707,6 +18551,12 @@ export function FileExplorer({
       ? dropEntrySurface.boxShadow
       : isSel
         ? selectedEntrySurface.boxShadow
+        : isRouteAnchor
+          ? `0 22px 46px ${accent}30`
+          : isRouteTarget
+            ? `0 18px 36px ${accent}24`
+            : isPinned
+              ? `0 14px 30px ${accent}1e`
         : node.emphasis === "anchor"
           ? `0 16px 36px ${accent}1f`
           : "0 12px 24px rgba(0,0,0,0.18)";
@@ -17718,6 +18568,10 @@ export function FileExplorer({
         data-overlay-constellation-band={band.id}
         data-overlay-constellation-node={node.entry.path}
         data-overlay-constellation-emphasis={node.emphasis}
+        data-overlay-constellation-pinned={isPinned ? "true" : "false"}
+        data-overlay-constellation-route={
+          isRouteAnchor ? "anchor" : isRouteTarget ? "target" : "false"
+        }
         data-overlay-drag-source="file"
         data-overlay-drop-target-path={
           node.entry.is_dir ? node.entry.path : undefined
@@ -17768,8 +18622,9 @@ export function FileExplorer({
           display: "flex",
           alignItems: "center",
           gap: showsLabel ? 8 : 0,
+          opacity: dimForHover ? 0.34 : dimForRoute ? 0.58 : 1,
           transition:
-            "transform 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1), border-color 180ms cubic-bezier(0.22, 1, 0.36, 1)",
+            "transform 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1), border-color 180ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms cubic-bezier(0.22, 1, 0.36, 1)",
         }}
         onMouseEnter={(e) => {
           handleEntryPointerEnter(
@@ -17778,17 +18633,31 @@ export function FileExplorer({
             isSel,
             isDrop,
           );
+          handleConstellationNodeHover(
+            node,
+            e as React.MouseEvent<HTMLDivElement>,
+          );
           if (!isSel && !isDrop) {
             e.currentTarget.style.transform = `translate(-50%, -50%) ${hoverEntrySurface.transform}`;
             e.currentTarget.style.borderColor =
-              node.emphasis === "anchor"
+              isRouteAnchor || isRouteTarget || isPinned
+                ? `${accent}92`
+                : node.emphasis === "anchor"
                 ? `${accent}88`
                 : "rgba(255,255,255,0.18)";
             e.currentTarget.style.boxShadow =
-              node.emphasis === "anchor"
+              isRouteAnchor || isRouteTarget
+                ? `0 24px 48px ${accent}34`
+                : node.emphasis === "anchor"
                 ? `0 20px 42px ${accent}2b`
                 : "0 18px 34px rgba(0,0,0,0.22)";
           }
+        }}
+        onMouseMove={(e) => {
+          handleConstellationNodeHover(
+            node,
+            e as React.MouseEvent<HTMLDivElement>,
+          );
         }}
         onMouseLeave={(e) => {
           handleEntryPointerLeave(
@@ -17797,6 +18666,7 @@ export function FileExplorer({
             isSel,
             isDrop,
           );
+          clearConstellationHover();
           if (!isSel && !isDrop) {
             e.currentTarget.style.transform = `translate(-50%, -50%) ${restingTransform}`;
             e.currentTarget.style.background = highlightBackground;
@@ -17881,7 +18751,13 @@ export function FileExplorer({
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {getEntryTypeLabel(node.entry)}
+                  {isRouteAnchor
+                    ? "Route Anchor"
+                    : isRouteTarget
+                      ? "Next Move"
+                      : isPinned
+                        ? "Pinned"
+                        : getEntryTypeLabel(node.entry)}
                 </div>
               </>
             )}
@@ -17910,8 +18786,39 @@ export function FileExplorer({
       WebkitBackdropFilter: explorerBlurEnabled ? "blur(16px)" : "none",
       boxShadow: "0 18px 42px rgba(0,0,0,0.22)",
       color: EXP.text,
-      pointerEvents: "none",
+      pointerEvents: "auto",
     };
+    const lensButtonStyle = (active: boolean): CSSProperties => ({
+      borderRadius: 999,
+      border: `1px solid ${active ? `${accent}88` : "rgba(255,255,255,0.12)"}`,
+      background: active ? `${accent}1f` : "rgba(255,255,255,0.04)",
+      color: active ? EXP.text : EXP.muted,
+      fontSize: 10,
+      fontWeight: 700,
+      letterSpacing: "0.12em",
+      textTransform: "uppercase",
+      padding: "6px 9px",
+      lineHeight: 1,
+      cursor: "pointer",
+    });
+    const actionButtonStyle = (
+      active: boolean,
+      disabled = false,
+    ): CSSProperties => ({
+      borderRadius: 999,
+      border: `1px solid ${active ? `${accent}78` : "rgba(255,255,255,0.12)"}`,
+      background: active ? `${accent}1f` : "rgba(255,255,255,0.04)",
+      color: disabled ? EXP.muted2 : active ? EXP.text : EXP.muted,
+      fontSize: 11,
+      fontWeight: 600,
+      padding: "6px 10px",
+      lineHeight: 1,
+      cursor: disabled ? "not-allowed" : "pointer",
+      opacity: disabled ? 0.55 : 1,
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6,
+    });
 
     return (
       <section
@@ -17957,47 +18864,117 @@ export function FileExplorer({
               position: "absolute",
               inset: "18px 20px auto auto",
               zIndex: 3,
-              pointerEvents: "none",
+              pointerEvents: "auto",
             }}
           >
             <div
               style={{
                 ...hudCardStyle,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "flex-end",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "flex-end",
                 gap: 10,
-                padding: "8px 12px",
-                maxWidth: "min(520px, calc(100vw - 120px))",
-                flexWrap: "wrap",
+                padding: "10px 12px",
+                maxWidth: "min(720px, calc(100vw - 120px))",
               }}
             >
-              <span
+              <div
                 style={{
-                  fontSize: 10,
-                  letterSpacing: "0.14em",
-                  textTransform: "uppercase",
-                  color: EXP.muted2,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                  gap: 10,
+                  flexWrap: "wrap",
                 }}
               >
-                Camera
-              </span>
-              <span style={{ fontSize: 13, fontWeight: 700 }}>
-                {zoomPercent}%
-              </span>
-              <span style={{ fontSize: 11, color: EXP.muted2 }}>•</span>
-              <span style={{ fontSize: 12, color: EXP.muted2 }}>Density</span>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>
-                {densityLabel}
-              </span>
-              <span style={{ fontSize: 11, color: EXP.muted2 }}>•</span>
-              <span style={{ fontSize: 12, color: EXP.muted }}>
-                {constellationFieldLayout.bands.length} bands
-              </span>
-              <span style={{ fontSize: 11, color: EXP.muted2 }}>•</span>
-              <span style={{ fontSize: 12, color: EXP.muted }}>
-                {totalVisibleNodes} visible
-              </span>
+                <span
+                  style={{
+                    fontSize: 10,
+                    letterSpacing: "0.14em",
+                    textTransform: "uppercase",
+                    color: EXP.muted2,
+                  }}
+                >
+                  {constellationLensDefinition.label}
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>
+                  {zoomPercent}%
+                </span>
+                <span style={{ fontSize: 11, color: EXP.muted2 }}>•</span>
+                <span style={{ fontSize: 12, color: EXP.muted2 }}>Density</span>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>
+                  {densityLabel}
+                </span>
+                <span style={{ fontSize: 11, color: EXP.muted2 }}>•</span>
+                <span style={{ fontSize: 12, color: EXP.muted }}>
+                  {constellationFieldLayout.bands.length} bands
+                </span>
+                <span style={{ fontSize: 11, color: EXP.muted2 }}>•</span>
+                <span style={{ fontSize: 12, color: EXP.muted }}>
+                  {totalVisibleNodes} visible
+                </span>
+                <span style={{ fontSize: 11, color: EXP.muted2 }}>•</span>
+                <span style={{ fontSize: 12, color: EXP.muted }}>
+                  Pins {constellationVisiblePinnedCount}/{constellationPinnedPaths.length}
+                </span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                {constellationLensDefinitions.map((definition) => (
+                  <button
+                    key={definition.id}
+                    type="button"
+                    title={definition.description}
+                    aria-pressed={constellationActiveLens === definition.id}
+                    onClick={() => setConstellationActiveLens(definition.id)}
+                    style={lensButtonStyle(
+                      constellationActiveLens === definition.id,
+                    )}
+                  >
+                    {definition.shortLabel}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  aria-pressed={constellationRouteModeEnabled}
+                  onClick={toggleActiveConstellationRouteMode}
+                  style={actionButtonStyle(constellationRouteModeEnabled)}
+                >
+                  {constellationRouteActive ? "Route On" : "Route"}
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedEntries.length === 0}
+                  onClick={toggleConstellationSelectionPinState}
+                  style={actionButtonStyle(
+                    constellationSelectionIsFullyPinned,
+                    selectedEntries.length === 0,
+                  )}
+                  title={
+                    selectedEntries.length === 0
+                      ? "Select files or folders to pin them into the workset."
+                      : constellationSelectionIsFullyPinned
+                        ? "Remove the current selection from the Constellation workset."
+                        : "Pin the current selection into the Constellation workset."
+                  }
+                >
+                  {constellationSelectionIsFullyPinned ? (
+                    <PinOff size={11} />
+                  ) : (
+                    <Pin size={11} />
+                  )}
+                  {selectedEntries.length > 0
+                    ? `${constellationSelectionIsFullyPinned ? "Unpin" : "Pin"} ${selectedEntries.length}`
+                    : "Pin Sel"}
+                </button>
+              </div>
             </div>
           </div>
           {newItem.visible && (
@@ -18061,7 +19038,7 @@ export function FileExplorer({
                 inset: 0,
                 width: "100%",
                 height: "100%",
-                pointerEvents: "none",
+                pointerEvents: "auto",
               }}
             >
               <defs>
@@ -18095,34 +19072,184 @@ export function FileExplorer({
                 </g>
               ))}
               {constellationFieldLayout.connections.map((connection) => (
-                <line
-                  key={connection.id}
-                  x1={connection.fromX}
-                  y1={connection.fromY}
-                  x2={connection.toX}
-                  y2={connection.toY}
-                  stroke={
-                    connection.highlighted ? accent : "rgba(255,255,255,0.18)"
-                  }
-                  strokeWidth={
-                    connection.strength === "primary"
-                      ? 1.35
-                      : connection.strength === "bridge"
-                        ? 1.1
-                        : 0.8
-                  }
-                  strokeOpacity={
-                    connection.highlighted
-                      ? 0.88
-                      : connection.strength === "secondary"
-                        ? 0.26
-                        : connection.strength === "bridge"
-                          ? 0.34
-                          : 0.52
-                  }
-                />
+                (() => {
+                  const hovered =
+                    constellationHoverState?.edgeId === connection.edgeId;
+                  const dimForHover =
+                    constellationHoverEdgeSet.size > 0 &&
+                    !constellationHoverEdgeSet.has(connection.edgeId);
+                  const dimForRoute =
+                    constellationRouteActive && !connection.route;
+                  return (
+                    <line
+                      key={connection.id}
+                      data-overlay-constellation-edge={connection.edgeId}
+                      x1={connection.fromX}
+                      y1={connection.fromY}
+                      x2={connection.toX}
+                      y2={connection.toY}
+                      stroke={
+                        connection.route || hovered || connection.highlighted
+                          ? accent
+                          : "rgba(255,255,255,0.18)"
+                      }
+                      strokeWidth={
+                        connection.route
+                          ? 1.75
+                          : connection.strength === "primary"
+                            ? 1.35
+                            : connection.strength === "bridge"
+                              ? 1.1
+                              : 0.8
+                      }
+                      strokeOpacity={
+                        dimForHover
+                          ? 0.08
+                          : connection.route
+                            ? 0.94
+                            : hovered
+                              ? 0.9
+                              : dimForRoute
+                                ? 0.12
+                                : connection.highlighted
+                                  ? 0.78
+                                  : connection.strength === "secondary"
+                                    ? 0.26
+                                    : connection.strength === "bridge"
+                                      ? 0.34
+                                      : 0.52
+                      }
+                      strokeLinecap="round"
+                      style={{ cursor: "pointer", pointerEvents: "stroke" }}
+                      onMouseEnter={(event) =>
+                        handleConstellationEdgeHover(
+                          connection,
+                          event as React.MouseEvent<SVGLineElement>,
+                        )}
+                      onMouseMove={(event) =>
+                        handleConstellationEdgeHover(
+                          connection,
+                          event as React.MouseEvent<SVGLineElement>,
+                        )}
+                      onMouseLeave={clearConstellationHover}
+                    />
+                  );
+                })()
               ))}
             </svg>
+            {constellationHoverState && (
+              <div
+                data-overlay-constellation-ui="true"
+                style={{
+                  position: "absolute",
+                  left: constellationHoverState.viewportX,
+                  top: constellationHoverState.viewportY,
+                  transform: "translate(14px, -50%)",
+                  zIndex: 5,
+                  maxWidth: 300,
+                  pointerEvents: "none",
+                }}
+              >
+                <div
+                  style={{
+                    borderRadius: 18,
+                    border: "1px solid rgba(255,255,255,0.14)",
+                    background: "rgba(8, 11, 18, 0.9)",
+                    backdropFilter: explorerBlurEnabled ? "blur(16px)" : "none",
+                    WebkitBackdropFilter: explorerBlurEnabled
+                      ? "blur(16px)"
+                      : "none",
+                    boxShadow: "0 20px 40px rgba(0,0,0,0.24)",
+                    padding: "12px 14px",
+                    color: EXP.text,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      letterSpacing: "0.12em",
+                      textTransform: "uppercase",
+                      color: EXP.muted2,
+                    }}
+                  >
+                    {constellationHoverState.kind === "edge" ? "Edge Reason" : "Node Context"}
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 6,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: EXP.text,
+                    }}
+                  >
+                    {constellationHoverState.title}
+                  </div>
+                  {constellationHoverState.subtitle && (
+                    <div
+                      style={{
+                        marginTop: 3,
+                        fontSize: 11,
+                        color: EXP.muted,
+                      }}
+                    >
+                      {constellationHoverState.subtitle}
+                    </div>
+                  )}
+                  <div
+                    style={{
+                      marginTop: 9,
+                      display: "grid",
+                      gap: 6,
+                    }}
+                  >
+                    {constellationHoverState.reasons.length > 0 ? (
+                      constellationHoverState.reasons.map((reason) => (
+                        <div
+                          key={`${constellationHoverState.title}-${reason.kind}`}
+                          style={{
+                            borderRadius: 12,
+                            border: "1px solid rgba(255,255,255,0.08)",
+                            background: "rgba(255,255,255,0.03)",
+                            padding: "8px 10px",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 600,
+                              color: EXP.text,
+                            }}
+                          >
+                            {reason.label}
+                          </div>
+                          <div
+                            style={{
+                              marginTop: 2,
+                              fontSize: 10,
+                              color: EXP.muted,
+                              lineHeight: 1.45,
+                            }}
+                          >
+                            {reason.detail}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: EXP.muted,
+                          lineHeight: 1.45,
+                        }}
+                      >
+                        No strong {constellationLensDefinition.label.toLowerCase()} link is active for this node yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
             {constellationFieldLayout.bands.map((band) => (
               <div
                 key={`chip-${band.id}`}
@@ -18145,6 +19272,15 @@ export function FileExplorer({
                   boxShadow: "0 12px 28px rgba(0,0,0,0.16)",
                   color: EXP.text,
                   pointerEvents: "none",
+                  opacity:
+                    constellationRouteActive &&
+                    !band.nodes.some(
+                      (node) =>
+                        node.entry.path === constellationRouteState.anchorPath ||
+                        constellationRouteTargetSet.has(node.entry.path),
+                    )
+                      ? 0.55
+                      : 1,
                 }}
               >
                 <span
@@ -18530,35 +19666,6 @@ export function FileExplorer({
           data-overlay-explorer-plane="toolbar"
           style={toolbarContainerStyle}
         >
-          {!shouldRenderRail && (
-            <div
-              data-overlay-explorer-panel-opener="sources"
-              style={toolbarPrimaryRowStyle}
-            >
-              <button
-                type="button"
-                aria-label="Open sources panel"
-                onClick={openSourcesPanel}
-                title="Open the sources panel"
-                style={toolbarToggleButtonStyle(false)}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.background =
-                    "var(--overlay-explorer-chip-active-bg)")
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.background =
-                    "var(--overlay-explorer-chip-bg)")
-                }
-              >
-                {usesWorkspaceCompactChrome ? "Sources" : "Open Sources"}
-              </button>
-              {!usesWorkspaceCompactChrome && (
-                <span style={{ fontSize: 10, color: EXP.muted2 }}>
-                  Sources panel closed.
-                </span>
-              )}
-            </div>
-          )}
           {showsGlobalChromeControls && (
             <ExplorerChromeSurface
               surface={explorerTopbarSurface}
@@ -18886,9 +19993,11 @@ export function FileExplorer({
                       <span>
                         No results for "{search.trim()}"<br />
                         <span style={{ color: EXP.muted2, fontSize: 11 }}>
-                          {searchIncludeContent
-                            ? "Recursive text search is on."
-                            : "Names-only search is on."}
+                          {searchMode === "semantic"
+                            ? "Semantic search is on."
+                            : searchMode === "content"
+                              ? "Recursive text search is on."
+                              : "Names-only search is on."}
                         </span>
                       </span>
                     ) : (

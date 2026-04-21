@@ -36,8 +36,9 @@ describe('explorer chrome layout resolver', () => {
     const primaryEnd = surface.rows[0]?.zones.find((zone) => zone.id === 'primaryEnd');
 
     expect(primaryStart?.controls.map((control) => control.controlId)).toContain('navigateBack');
+    expect(primaryStart?.controls.map((control) => control.controlId)).toContain('toggleSources');
     expect(primaryCenter?.controls.map((control) => control.controlId)).toContain('addressBar');
-    expect(primaryEnd?.controls.map((control) => control.controlId)).toContain('toggleSources');
+    expect(primaryEnd?.controls.map((control) => control.controlId)).not.toContain('toggleSources');
   });
 
   it('supports alternate built-in layouts without changing the component registry', () => {
@@ -48,12 +49,12 @@ describe('explorer chrome layout resolver', () => {
       isControlVisible: () => true,
     });
 
+    const primaryStart = surface.rows[0]?.zones.find((zone) => zone.id === 'primaryStart');
     const primaryEnd = surface.rows[0]?.zones.find((zone) => zone.id === 'primaryEnd');
-    const secondaryStart = surface.rows[1]?.zones.find((zone) => zone.id === 'secondaryStart');
     const secondaryEnd = surface.rows[1]?.zones.find((zone) => zone.id === 'secondaryEnd');
 
     expect(primaryEnd?.controls.map((control) => control.controlId)).toContain('refresh');
-    expect(secondaryStart?.controls.map((control) => control.controlId)).toContain('toggleSources');
+    expect(primaryStart?.controls.map((control) => control.controlId)).toContain('toggleSources');
     expect(secondaryEnd?.controls.map((control) => control.controlId)).toContain('experimentalModes');
   });
 

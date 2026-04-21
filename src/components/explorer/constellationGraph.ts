@@ -411,7 +411,7 @@ function buildStructureBands(
 
 function buildTimeBands(
   nodeMetadata: readonly NodeMetadata[],
-  input: ConstellationBandBuildInput,
+  _input: ConstellationBandBuildInput,
 ): ConstellationLensBand[] {
   const buckets = new Map<ConstellationRecencyBucketId, FileEntry[]>();
   for (const node of nodeMetadata) {

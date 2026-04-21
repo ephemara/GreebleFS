@@ -30,6 +30,9 @@ export type BuiltInExplorerChromeControlId =
   | 'selectionSizeSummary'
   | 'pinLocation'
   | 'toggleSearchContent'
+  | 'semanticIndexBuild'
+  | 'semanticIndexRebuild'
+  | 'semanticIndexClear'
   | 'saveSearch'
   | 'batchRename'
   | 'openPropertiesPanel'
@@ -252,6 +255,15 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       toggleSearchContent: {
         explorerToolbar: { zone: 'secondaryEnd', order: 20 },
       },
+      semanticIndexBuild: {
+        explorerToolbar: { zone: 'secondaryEnd', order: 25 },
+      },
+      semanticIndexRebuild: {
+        explorerToolbar: { zone: 'secondaryEnd', order: 27 },
+      },
+      semanticIndexClear: {
+        explorerToolbar: { zone: 'secondaryEnd', order: 29 },
+      },
       saveSearch: {
         explorerToolbar: { zone: 'secondaryEnd', order: 30 },
       },
@@ -268,8 +280,8 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
         explorerToolbar: { zone: 'secondaryEnd', order: 70 },
       },
       toggleSources: {
-        explorerToolbar: { zone: 'primaryEnd', order: 10 },
-        explorerTopbar: { zone: 'start', order: 10 },
+        explorerToolbar: { zone: 'primaryStart', order: 5 },
+        explorerTopbar: { zone: 'start', order: 5 },
       },
       focusAddressBar: {
         explorerToolbar: { zone: 'primaryEnd', order: 20 },
@@ -477,6 +489,15 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
       toggleSearchContent: {
         explorerToolbar: { zone: 'primaryEnd', order: 40 },
       },
+      semanticIndexBuild: {
+        explorerToolbar: { zone: 'primaryEnd', order: 45 },
+      },
+      semanticIndexRebuild: {
+        explorerToolbar: { zone: 'secondaryEnd', order: 5 },
+      },
+      semanticIndexClear: {
+        explorerToolbar: { zone: 'secondaryEnd', order: 8 },
+      },
       saveSearch: {
         explorerToolbar: { zone: 'secondaryEnd', order: 10 },
       },
@@ -493,8 +514,8 @@ const builtInExplorerChromeLayouts: Record<BuiltInExplorerChromeLayoutId, Explor
         explorerToolbar: { zone: 'secondaryEnd', order: 50 },
       },
       toggleSources: {
-        explorerToolbar: { zone: 'secondaryStart', order: 30 },
-        explorerTopbar: { zone: 'start', order: 10 },
+        explorerToolbar: { zone: 'primaryStart', order: 5 },
+        explorerTopbar: { zone: 'start', order: 5 },
       },
       focusAddressBar: {
         explorerToolbar: { zone: 'secondaryStart', order: 40 },

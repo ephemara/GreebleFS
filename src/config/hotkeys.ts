@@ -40,6 +40,9 @@ export type HotkeyBindingKey =
   | 'pasteSelection'
   | 'toggleHiddenFiles'
   | 'toggleExplorerLayout'
+  | 'cycleConstellationLens'
+  | 'toggleConstellationRouteMode'
+  | 'toggleConstellationPinSelection'
   | 'selectAllExplorer'
   | 'clearExplorerSelection'
   | 'searchExplorer'
@@ -381,6 +384,27 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     label: 'Toggle Explorer Layout',
     description: 'Step through the explorer content-browser layouts.',
     defaultValue: 'Ctrl+Shift+L',
+    scope: 'local',
+  },
+  {
+    key: 'cycleConstellationLens',
+    label: 'Cycle Constellation Lens',
+    description: 'Step through the active Constellation relationship lens while the canvas is focused.',
+    defaultValue: 'L',
+    scope: 'local',
+  },
+  {
+    key: 'toggleConstellationRouteMode',
+    label: 'Toggle Constellation Route',
+    description: 'Highlight the top likely next moves from the active Constellation anchor.',
+    defaultValue: 'R',
+    scope: 'local',
+  },
+  {
+    key: 'toggleConstellationPinSelection',
+    label: 'Toggle Constellation Workset Pin',
+    description: 'Pin or unpin the current explorer selection inside the active Constellation workset.',
+    defaultValue: 'P',
     scope: 'local',
   },
   {
