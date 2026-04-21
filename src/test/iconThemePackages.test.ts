@@ -6,6 +6,9 @@ import { loadIconThemePackagesFromDirectoryEntries } from '../config/iconThemePa
 
 const zenManifestPath = resolve(process.cwd(), 'icon-themes/Zen/icon-theme.json');
 const zenManifestText = readFileSync(zenManifestPath, 'utf8');
+const appIconsSourcePath = resolve(process.cwd(), 'src/components/AppIcons.tsx');
+const appIconsSourceText = readFileSync(appIconsSourcePath, 'utf8');
+const appIconSlots = [...appIconsSourceText.matchAll(/createThemedIcon\('([^']+)'/g)].map(match => match[1]);
 
 describe('icon theme package loader', () => {
   it('loads the Zen icon pack as a first-class managed icon theme package', async () => {
@@ -45,22 +48,15 @@ describe('icon theme package loader', () => {
     expect(zenPackage?.iconTheme.fileNames['cmakelists.txt']).toBe('cmake');
     expect(zenPackage?.iconTheme.folderNames['src-tauri']).toBe('folder_src');
     expect(zenPackage?.capabilitySummary.uiIcons).toBeGreaterThanOrEqual(130);
-    expect(zenPackage?.iconTheme.uiIcons.camera).toBe('camera');
-    expect(zenPackage?.iconTheme.uiIcons.copy).toBe('copy');
-    expect(zenPackage?.iconTheme.uiIcons.folder_tree).toBe('folder_tree');
-    expect(zenPackage?.iconTheme.uiIcons.hard_drive).toBe('hard_drive');
+    for (const slot of appIconSlots) {
+      expect(zenPackage?.iconTheme.uiIcons[slot]).toBe(slot);
+    }
     expect(zenPackage?.iconTheme.uiIcons.panel_storage).toBe('panel_storage');
     expect(zenPackage?.iconTheme.uiIcons.panel_drawable_canvas).toBe('panel_drawable_canvas');
-    expect(zenPackage?.iconTheme.uiIcons.panel_sketchfab).toBe('model3d');
-    expect(zenPackage?.iconTheme.uiIcons.plus).toBe('plus');
-    expect(zenPackage?.iconTheme.uiIcons.puzzle).toBe('puzzle');
-    expect(zenPackage?.iconTheme.uiIcons.search).toBe('search');
-    expect(zenPackage?.iconTheme.uiIcons.settings2).toBe('settings2');
-    expect(zenPackage?.iconTheme.uiIcons.sliders_horizontal).toBe('sliders_horizontal');
-    expect(zenPackage?.iconTheme.uiIcons.sticky_note).toBe('sticky_note');
-    expect(zenPackage?.iconTheme.uiIcons.terminal).toBe('shell');
+    expect(zenPackage?.iconTheme.uiIcons.panel_sketchfab).toBe('panel_sketchfab');
     expect(zenPackage?.iconTheme.iconDefinitions.panel_storage).toBe('data:image/svg+xml;base64,PHN2Zy8+');
     expect(zenPackage?.iconTheme.iconDefinitions.folder_tree).toBe('data:image/svg+xml;base64,PHN2Zy8+');
+    expect(zenPackage?.iconTheme.iconDefinitions.panel_sketchfab).toBe('data:image/svg+xml;base64,PHN2Zy8+');
     expect(zenPackage?.iconTheme.iconDefinitions.typescript).toBe('data:image/svg+xml;base64,PHN2Zy8+');
   });
 });

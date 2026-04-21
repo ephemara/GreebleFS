@@ -1,5 +1,15 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Zen App-Chrome Coverage Is Now One Slot Per SVG
+
+- The Zen icon pack stopped being a partial example with shared UI aliases. It is now the gold reference for fully tweakable app chrome.
+- Durable implementation shape:
+  - `packages/UI/scripts/generate_greeblefs_zen_ui_icons.py` now self-maps every `src/components/AppIcons.tsx` slot to its own `ui/<slot>.svg`, which means the top-bar, explorer toolbar, preview controls, and other shell chrome all have dedicated authored assets instead of aliasing back to older generic ids.
+  - The same generator now also emits a dedicated `panel_sketchfab.svg` so the plugin tab row is covered without relying on a model fallback.
+  - `src/test/iconThemePackages.test.ts` now checks the whole `AppIcons.tsx` slot surface against the Zen manifest, which makes alias regressions visible immediately.
+- Durable product note:
+  - If a future UI icon slot is added, it should get three things in the same pass: the `AppIcons.tsx` export, a Zen SVG from the generator, and a test expectation proving the slot self-maps.
+
 # 2026-04-21 - Zen Now Covers The App-Chrome Slot Surface, Not Just Explorer Files
 
 - The Zen icon pack is now the reference example for the full app icon contract, not only explorer file/folder glyphs.

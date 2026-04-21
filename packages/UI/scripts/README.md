@@ -32,6 +32,7 @@ python scripts/generate_showcase.py
 ### GreebleFS Icon Theme Coverage
 - `generate_greeblefs_zen_ui_icons.py` - Expands the current `src/components/AppIcons.tsx` slot list into the repo-local `icon-themes/Zen/ui/` coverage pack and updates `icon-themes/Zen/icon-theme.json` to match.
 - This is the reference generator for app chrome. If you add a new app-wide icon slot, rerun this script so the Zen example shows the SVG a theme author is expected to provide.
+- The current Zen contract is intentionally one-to-one: app slots should map to same-name SVG ids instead of aliasing back to older generic assets.
 
 ## 💡 Creating Your Own Scripts
 

@@ -46,7 +46,6 @@ PALETTE = [
 
 DEDICATED_APP_SLOTS = {
     "camera",
-    "folder_tree",
     "hard_drive",
     "puzzle",
     "settings2",
@@ -797,6 +796,18 @@ def system_symbol(kind: str, accent: str, accent2: str) -> list[str]:
     return [rect(8, 8, 16, 16, accent, opacity=0.12, stroke=accent, rx=4)]
 
 
+def panel_sketchfab_symbol(accent: str, accent2: str) -> list[str]:
+    return [
+        polygon("16,6 24,11 16,16 8,11", accent, opacity=0.18, stroke=accent, stroke_width=2.0),
+        polygon("8,11 16,16 16,26 8,21", accent2, opacity=0.15, stroke=accent2, stroke_width=2.0),
+        polygon("24,11 16,16 16,26 24,21", accent, opacity=0.14, stroke=accent, stroke_width=2.0),
+        line(8, 11, 16, 16, accent2),
+        line(24, 11, 16, 16, accent2),
+        line(16, 16, 16, 26, accent2),
+        circle(16, 16, 1.6, accent2),
+    ]
+
+
 def classify_slot(slot: str) -> str:
     if slot in ARROW_SLOTS:
         return slot
@@ -848,6 +859,13 @@ def render_icon(slot: str) -> str:
     return svg_wrap(frame(accent, accent2))
 
 
+def render_panel_icon(slot: str) -> str:
+    accent, accent2 = slot_colors(slot)
+    if slot == "panel_sketchfab":
+        return svg_wrap(panel_sketchfab_symbol(accent, accent2))
+    return render_icon(slot)
+
+
 def ensure_file(path: Path, content: str) -> bool:
     path.parent.mkdir(parents=True, exist_ok=True)
     current = path.read_text(encoding="utf-8") if path.exists() else None
@@ -867,11 +885,7 @@ def main() -> None:
     added_manifest_entries: list[str] = []
 
     for slot in slots:
-        if slot in DEDICATED_APP_SLOTS:
-            if ui_icons.get(slot) != slot:
-                ui_icons[slot] = slot
-                added_manifest_entries.append(f"uiIcons.{slot}")
-        elif slot not in ui_icons:
+        if ui_icons.get(slot) != slot:
             ui_icons[slot] = slot
             added_manifest_entries.append(f"uiIcons.{slot}")
 
@@ -894,11 +908,18 @@ def main() -> None:
         "panel_chronorift": "panel_chronorift",
         "panel_filesystem_aquarium": "panel_filesystem_aquarium",
         "panel_vibe_capsule": "panel_vibe_capsule",
+        "panel_sketchfab": "panel_sketchfab",
     }
     for slot, icon_id in panel_overrides.items():
         if ui_icons.get(slot) != icon_id:
             ui_icons[slot] = icon_id
             added_manifest_entries.append(f"uiIcons.{slot}")
+        if slot == "panel_sketchfab":
+            icon_definitions[slot] = f"ui/{slot}.svg"
+            svg_path = ZEN_UI_DIR / f"{slot}.svg"
+            svg = render_panel_icon(slot)
+            if ensure_file(svg_path, svg):
+                generated.append(str(svg_path.relative_to(ZEN_THEME_DIR)))
 
     write_manifest(manifest)
 
