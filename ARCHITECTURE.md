@@ -109,6 +109,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Small runtime probe for terminal WebGL support. It first tries a strict `webgl2` context, then retries without the major-performance-caveat gate if needed, and still rejects software renderers so `auto` mode does not opt into a slow or fallback-backed GPU path.
 - `src/components/ScreenshotsManager.tsx`
   Screenshot capture/editor/library surface. It owns monitor preview orchestration, selection editing, annotation authoring, and gallery actions, but annotated export is now delegated to Rust instead of being rasterized in the browser.
+- `src/components/GitManager.tsx`
+  Source-control panel surface. It owns the repo rail, working-tree staging/diff actions, ship controls, and the top-level `Changes | History` split, while delegating reusable Git history/branch loading to the runtime seam instead of growing more inline git-command parsing in the component.
 - `src/components/pluginRuntime.tsx`
   Packaged frontend plugin runtime loader. It owns the allowlisted module graph for frontend plugins, including package-local relative imports and the host-provided `overlayterm-plugin` bridge helpers.
 - `src/components/animationRuntime.tsx`
@@ -121,6 +123,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Browser-worker orchestration layer for frontend CPU-heavy tasks. It owns worker-lane lifecycle, per-lane telemetry, fallback-to-main-thread behavior, and the shared request/response bridge used by runtime module compilation.
 - `src/runtime/tauriClient.ts` and `src/runtime/explorerBackend.ts`
   Typed frontend bridge for native explorer/media commands. Large 3D preview reads now use raw-byte preview transport commands (`fs_read_preview_bytes` / `cloud_read_preview_bytes`) that return `Uint8Array` payloads instead of base64 strings.
+- `src/runtime/gitPanelBackend.ts`
+  Shared Git-panel runtime seam. It wraps the existing `git_exec` command for repo-overview loading, local-branch metadata, upstream ahead/behind counts, commit-history parsing, changed-file parsing, and commit patch loading so Git React surfaces do not each reinvent their own git-log parsers.
 - `src/components/DevPerformanceHud.tsx`
   Fixed dev-only diagnostics HUD rendered by `App.tsx` whenever the frontend runs in `import.meta.env.DEV` or explicit developer mode. It shows live frame, navigation, CLS, INP, long-task, memory, and frontend worker telemetry for local development, and its visibility now rides a persisted system flag plus a local shell hotkey instead of being permanently forced on in dev sessions.
 - `src/components/wallpaperRuntime.tsx`

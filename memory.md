@@ -1,5 +1,20 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Git Manager Now Has A Real History Lane And Branch Metadata
+
+- The Git panel is no longer only a working-tree staging view. It now has a first-class `Changes | History` split inspired by the Xplorer reference, while still staying inside GreebleFS-owned seams.
+- Durable implementation shape:
+  - `src/runtime/gitPanelBackend.ts` is now the Git panel's shared TS runtime seam for repo-overview loading, local branch metadata, upstream ahead/behind counts, commit-log parsing, commit-file parsing, and commit patch loading. If future Git UI grows, extend this bridge instead of scattering more raw git parsing inside React.
+  - `src/components/GitManager.tsx` now uses that runtime seam to enrich repo state with `upstreamName`, `aheadCount`, `behindCount`, and the local branch list. The header now exposes branch switching plus a dedicated `Fetch` action in addition to `Pull` / `Push`.
+  - `src/components/GitHistoryPanel.tsx` is the new history surface. It adds a searchable grouped commit timeline, `Current Branch` vs `All Branches` history scope, changed-file browsing per commit, and inline per-file patch preview for historical commits.
+  - The existing working-tree staging flow stayed intact: Stage/Commit/Quick Ship/file-level diff actions remain in the `Changes` tab, while historical inspection moved into the dedicated history lane.
+- Durable product note:
+  - Treat Git history as part of the Git manager contract now, not as a future addon. If new Git features are added, prefer splitting them by intent: working-tree mutation in `Changes`, repository archaeology in `History`, and shared metadata in `gitPanelBackend.ts`.
+  - Branch metadata is now part of repo state. Future branch features should build on the existing branch list/upstream/ahead-behind shape instead of inventing another partial branch loader.
+- Validation:
+  - passed: `bunx vitest run src/test/gitPanelBackend.test.ts src/test/gitManager.utils.test.ts src/test/gitManager.behavior.test.tsx src/test/gitManager.history.test.tsx src/test/sourceRepositoryImportFlow.integration.test.tsx --reporter=dot`
+  - passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "gitPanelBackend|GitHistoryPanel|gitManager.history|gitPanelBackend.test" || true`
+
 # 2026-04-21 - Shared Preview Header Mode Order Is Now Canonical
 
 - The shared Explorer preview header no longer lets editable lanes drift between `Edit | Preview` and `Preview | Edit`. The canonical left-to-right contract is now the non-edit mode first, edit second.

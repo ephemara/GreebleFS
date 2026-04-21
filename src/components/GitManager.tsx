@@ -3,27 +3,21 @@ import type { EditorProps } from '@monaco-editor/react';
 import { AlertTriangle, ChevronDown, ChevronUp, Download, FolderGit2, GitBranch, GitCommit, Plus, RefreshCw, Rocket, Search, Upload, X } from '@/components/AppIcons';
 import { multiplyColorAlpha, type ResolvedOverlayAppearance } from '../config/appearance';
 import { recordExplorerPerformanceSample } from '../config/performanceTelemetry';
+import {
+  type GitPanelRepositoryState,
+  loadGitPanelRepositoryState,
+} from '../runtime/gitPanelBackend';
 import { OverlayScrollArea } from './OverlayScrollArea';
 import { AppConfirmDialog, AppPromptDialog } from './AppModal';
+import { GitHistoryPanel } from './GitHistoryPanel';
 import { ResizablePane, usePersistentPanelSize } from './ResizablePane';
 import { useSettingsStore } from '../store/settingsStore';
 import { commands, unwrapTauriResult } from '../runtime/tauriClient';
 import {
   type GitFileStatus,
-  mergeGitStatusWithStats,
-  parseGitNumstat,
   parseGitStatus,
   summarizeGitFiles,
 } from './gitManager.utils';
-
-interface RepoState {
-  path: string;
-  name: string;
-  branch: string;
-  status: GitFileStatus[];
-  lastCommit: string;
-  loadedAt: number;
-}
 
 interface RepoBadgeState {
   changeCount: number;
@@ -62,6 +56,7 @@ interface GitManagerConfirmationState {
 }
 
 type ChangeFilter = 'all' | 'staged' | 'unstaged' | 'untracked';
+type GitManagerMainTab = 'changes' | 'history';
 
 const FALLBACK = {
   bg: 'var(--overlay-bg-shell)',
@@ -126,7 +121,7 @@ export function GitManager({
 
   const [repos, setRepos] = useState<string[]>([]);
   const [selectedRepo, setSelectedRepo] = useState<string | null>(null);
-  const [repoState, setRepoState] = useState<RepoState | null>(null);
+  const [repoState, setRepoState] = useState<GitPanelRepositoryState | null>(null);
   const [repoBadges, setRepoBadges] = useState<Record<string, RepoBadgeState>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -141,6 +136,7 @@ export function GitManager({
     visible: false,
     path: '',
   });
+  const [mainTab, setMainTab] = useState<GitManagerMainTab>('changes');
   const [confirmationDialog, setConfirmationDialog] = useState<GitManagerConfirmationState>({
     visible: false,
     title: '',
@@ -261,28 +257,14 @@ export function GitManager({
       setLoading(true);
       setError(null);
       try {
-        const [branch, lastCommit, statusText, unstagedStats, stagedStats] = await Promise.all([
-          safeGit(path, ['rev-parse', '--abbrev-ref', 'HEAD'], 'unknown'),
-          safeGit(path, ['log', '-1', '--pretty=format:%h - %s (%cr)'], 'No commits yet'),
-          runGit(path, ['status', '--porcelain']),
-          safeGit(path, ['diff', '--numstat', '--no-ext-diff'], ''),
-          safeGit(path, ['diff', '--cached', '--numstat', '--no-ext-diff'], ''),
-        ]);
-        const status = mergeGitStatusWithStats(parseGitStatus(statusText), parseGitNumstat(unstagedStats), parseGitNumstat(stagedStats));
+        const nextRepoState = await loadGitPanelRepositoryState(path, runGit, safeGit);
 
-        setRepoState({
-          path,
-          name: path.split(/[/\\]/).pop() || path,
-          branch: branch.trim() || 'unknown',
-          status,
-          lastCommit: lastCommit.trim() || 'No commits yet',
-          loadedAt: Date.now(),
-        });
-        setRepoBadges(current => ({ ...current, [path]: buildRepoBadgeState(status) }));
+        setRepoState(nextRepoState);
+        setRepoBadges(current => ({ ...current, [path]: buildRepoBadgeState(nextRepoState.status) }));
         recordGitMetric('git_repo_state_load', performance.now() - startedAt, {
           repoPathLength: path.length,
-          statusCount: status.length,
-          hadBranch: branch.trim() ? true : false,
+          statusCount: nextRepoState.status.length,
+          hadBranch: nextRepoState.branch.trim() ? true : false,
         });
       } catch (loadError) {
         setError(String(loadError));
@@ -530,6 +512,9 @@ export function GitManager({
           ? 'Stage selected files, use Stage All, or Quick Ship to include working-tree changes in a commit.'
           : null
     : null;
+  const branchSelectOptions = repoState?.branches ?? [];
+  const canSwitchBranches = branchSelectOptions.length > 1
+    && branchSelectOptions.some(branch => branch.name === repoState?.branch);
 
   const runRepoAction = useCallback(async (action: () => Promise<void>) => {
     setLoading(true);
@@ -698,6 +683,11 @@ export function GitManager({
     setDiffView(null);
   }, [repos]);
 
+  const handleFetch = useCallback(async () => {
+    if (!selectedRepo) return;
+    await runRepoAction(() => runGit(selectedRepo, ['fetch', '--prune']).then(() => undefined));
+  }, [runGit, runRepoAction, selectedRepo]);
+
   const handlePull = useCallback(async () => {
     if (!selectedRepo) return;
     await runRepoAction(() => runGit(selectedRepo, ['pull']).then(() => undefined));
@@ -707,6 +697,18 @@ export function GitManager({
     if (!selectedRepo) return;
     await runRepoAction(() => runGit(selectedRepo, ['push']).then(() => undefined));
   }, [runGit, runRepoAction, selectedRepo]);
+
+  const handleSwitchBranch = useCallback(async (nextBranchName: string) => {
+    if (!selectedRepo || !nextBranchName || repoState?.branch === nextBranchName) {
+      return;
+    }
+
+    await runRepoAction(async () => {
+      await runGit(selectedRepo, ['checkout', nextBranchName]);
+      setSelectedFilePath(null);
+      setDiffView(null);
+    });
+  }, [repoState?.branch, runGit, runRepoAction, selectedRepo]);
 
   const handleStageAll = useCallback(async () => {
     if (!selectedRepo) return;
@@ -1158,6 +1160,21 @@ export function GitManager({
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <div style={{ fontSize: 14, fontWeight: 700 }}>{repoState.name}</div>
                     <span style={pillStyle(alpha(palette.accent, 0.14), palette.accent)}><GitBranch size={11} />{repoState.branch}</span>
+                    {repoState.upstreamName ? (
+                      <span style={pillStyle(alpha(palette.panel, 0.9), palette.muted)}>
+                        {repoState.upstreamName}
+                      </span>
+                    ) : null}
+                    {repoState.aheadCount > 0 ? (
+                      <span style={pillStyle(alpha(palette.green, 0.12), palette.green)}>
+                        ↑{repoState.aheadCount} ahead
+                      </span>
+                    ) : null}
+                    {repoState.behindCount > 0 ? (
+                      <span style={pillStyle(alpha(palette.red, 0.12), palette.red)}>
+                        ↓{repoState.behindCount} behind
+                      </span>
+                    ) : null}
                     {summary && <span style={pillStyle(alpha(palette.panel, 0.9), palette.muted)}>{summary.totalFiles} changed</span>}
                     {summary && summary.stagedFiles > 0 ? <span style={pillStyle(alpha(palette.green, 0.10), palette.green)}>{summary.stagedFiles} staged</span> : null}
                     {summary && summary.unstagedFiles > 0 ? <span style={pillStyle(alpha(palette.yellow, 0.12), palette.yellow)}>{summary.unstagedFiles} working</span> : null}
@@ -1172,8 +1189,50 @@ export function GitManager({
                     <span>{repoState.lastCommit}</span>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {canSwitchBranches ? (
+                    <label
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        minHeight: 28,
+                        padding: '0 8px',
+                        borderRadius: 8,
+                        border: `1px solid ${palette.border}`,
+                        background: alpha(palette.bg, 0.46),
+                        color: palette.text,
+                      }}
+                    >
+                      <GitBranch size={12} style={{ color: palette.muted }} />
+                      <span style={{ fontSize: 10, fontWeight: 700, color: palette.muted }}>Branch</span>
+                      <select
+                        aria-label="Git branch"
+                        value={repoState.branch}
+                        disabled={loading}
+                        onChange={event => { void handleSwitchBranch(event.target.value); }}
+                        style={{
+                          minWidth: 150,
+                          border: 'none',
+                          background: 'transparent',
+                          color: palette.text,
+                          fontSize: 10.5,
+                          fontWeight: 700,
+                          outline: 'none',
+                          cursor: loading ? 'default' : 'pointer',
+                        }}
+                      >
+                        {branchSelectOptions.map(branch => (
+                          <option key={branch.name} value={branch.name}>
+                            {branch.name}
+                            {branch.upstreamName ? ` • ${branch.upstreamName}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : null}
                   <button onClick={() => void refreshRepo()} disabled={loading} style={toolbarButtonStyle(palette)}><RefreshCw size={13} className={loading ? 'animate-spin' : ''} />Refresh</button>
+                  <button onClick={() => void handleFetch()} disabled={loading} style={toolbarButtonStyle(palette)}><Download size={13} />Fetch</button>
                   <button onClick={() => void handlePull()} disabled={loading} style={toolbarButtonStyle(palette)}><Download size={13} />Pull</button>
                   <button onClick={() => void handlePush()} disabled={loading} style={toolbarButtonStyle(palette)}><Upload size={13} />Push</button>
                 </div>
@@ -1181,268 +1240,314 @@ export function GitManager({
             </div>
 
             <div style={{ padding: '7px 12px', borderBottom: `1px solid ${palette.border}`, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: alpha(palette.panel, 0.72) }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 220, flex: '1 1 220px', maxWidth: 400, padding: '5px 9px', borderRadius: 8, border: `1px solid ${palette.border}`, background: alpha(palette.bg, 0.5) }}>
-                <Search size={12} style={{ color: palette.muted }} />
-                <input value={changeQuery} onChange={event => setChangeQuery(event.target.value)} placeholder="Search changed files" style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', color: palette.text, fontSize: 10.5 }} />
-              </div>
-              {(Object.keys(FILTERS) as ChangeFilter[]).map(filter => (
-                <button key={filter} onClick={() => setChangeFilter(filter)} style={{ ...pillStyle(filter === changeFilter ? alpha(palette.accent, 0.16) : alpha(palette.panel, 0.84), filter === changeFilter ? palette.accent : palette.muted), border: `1px solid ${filter === changeFilter ? alpha(palette.accent, 0.5) : palette.border}`, cursor: 'pointer' }}>{FILTERS[filter]}</button>
-              ))}
-              <div style={{ flex: 1 }} />
-              <textarea value={commitMsg} onChange={event => setCommitMsg(event.target.value)} placeholder="Commit message for Quick Ship" className="hide-scrollbar" style={{ height: 28, minWidth: 220, maxWidth: 400, flex: '1 1 220px', resize: 'none', borderRadius: 8, border: `1px solid ${palette.border}`, background: alpha(palette.bg, 0.5), color: palette.text, padding: '6px 9px', fontSize: 10.5, outline: 'none' }} />
               <button
-                onClick={() => void handleStageAll()}
-                disabled={loading || !canStageAllChanges}
-                title={hasConflictedFiles ? 'Resolve conflicted files before staging everything.' : undefined}
-                style={toolbarButtonStyle(palette)}
-              >
-                Stage All
-              </button>
-              <button
-                onClick={() => void handleCommit()}
-                disabled={loading || !commitMsg.trim() || !canCommitStagedChanges}
-                title={hasConflictedFiles ? 'Resolve conflicted files before committing.' : !hasStagedChanges ? 'Commit only includes staged files.' : undefined}
-                style={{ ...toolbarButtonStyle(palette), background: palette.accent, borderColor: palette.accent, color: '#fff' }}
-              >
-                Commit
-              </button>
-              <button
-                onClick={() => void handleQuickShip()}
-                disabled={loading || !canQuickShipChanges}
-                title={hasConflictedFiles ? 'Resolve conflicted files before Quick Ship.' : 'Stage all, commit, and push in one step'}
+                type="button"
+                onClick={() => setMainTab('changes')}
                 style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  minHeight: 30,
-                  padding: '0 12px 0 10px',
-                  borderRadius: 999,
-                  border: `1px solid ${alpha(palette.green, 0.45)}`,
-                  background: `linear-gradient(180deg, ${alpha(palette.green, 0.20)}, ${alpha(palette.green, 0.10)})`,
-                  color: palette.text,
+                  ...pillStyle(mainTab === 'changes' ? alpha(palette.accent, 0.16) : alpha(palette.panel, 0.84), mainTab === 'changes' ? palette.accent : palette.muted),
+                  border: `1px solid ${mainTab === 'changes' ? alpha(palette.accent, 0.5) : palette.border}`,
                   cursor: 'pointer',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  boxShadow: `inset 0 0 0 1px ${alpha(palette.green, 0.10)}`,
                 }}
               >
-                <span style={{
-                  width: 18,
-                  height: 18,
-                  borderRadius: 999,
-                  display: 'grid',
-                  placeItems: 'center',
-                  background: alpha(palette.green, 0.18),
-                  color: palette.green,
-                  flexShrink: 0,
-                }}>
-                  <Rocket size={11} />
-                </span>
-                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1 }}>
-                  <span>Quick Ship</span>
-                  <span style={{ fontSize: 9, color: palette.muted, fontWeight: 600, letterSpacing: '0.04em' }}>Stage • Commit • Push</span>
-                </span>
+                Changes
               </button>
-              {sourceActionHint ? (
-                <div style={{ flexBasis: '100%', fontSize: 10, color: hasConflictedFiles ? palette.red : palette.muted }}>
-                  {sourceActionHint}
-                </div>
-              ) : null}
-            </div>
-
-            {error && <div style={{ padding: '7px 14px', borderBottom: `1px solid ${palette.border}`, fontSize: 11, color: palette.red, background: alpha(palette.red, 0.10) }}>{error}</div>}
-
-            <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
-              <ResizablePane
-                size={changeListWidth}
-                minSize={260}
-                maxSize={720}
-                onSizeChange={setChangeListWidth}
-                borderColor={alpha(palette.accent, 0.28)}
-                style={{ minHeight: 0, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${palette.border}`, background: palette.card }}
+              <button
+                type="button"
+                onClick={() => setMainTab('history')}
+                style={{
+                  ...pillStyle(mainTab === 'history' ? alpha(palette.accent, 0.16) : alpha(palette.panel, 0.84), mainTab === 'history' ? palette.accent : palette.muted),
+                  border: `1px solid ${mainTab === 'history' ? alpha(palette.accent, 0.5) : palette.border}`,
+                  cursor: 'pointer',
+                }}
               >
-                <div style={{ display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr) 56px 56px', gap: 8, padding: '7px 12px', borderBottom: `1px solid ${palette.border}`, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: palette.muted }}>
-                  <span>Status</span><span>File</span><span style={{ textAlign: 'right' }}>+</span><span style={{ textAlign: 'right' }}>-</span>
-                </div>
-                <OverlayScrollArea
-                  style={{ flex: 1, minHeight: 0 }}
-                  viewportRef={changeListViewportRef}
-                  onViewportScroll={event => setChangeListScrollTop(event.currentTarget.scrollTop)}
-                >
-                  {filteredFiles.length === 0 ? (
-                    <div style={{ padding: 14, color: palette.muted, fontSize: 11 }}>{repoState.status.length === 0 ? 'Working tree is clean.' : 'No files match the current filter.'}</div>
-                  ) : (
-                    <>
-                      <div style={{ height: changeListVirtualWindow.topSpacer }} />
-                      {virtualizedFilteredFiles.map(file => (
-                        <button key={`${file.statusText}-${file.file}`} onClick={() => setSelectedFilePath(file.file)} style={{ width: '100%', height: CHANGE_LIST_ROW_HEIGHT, display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr) 56px 56px', gap: 8, alignItems: 'center', padding: '7px 12px', border: 'none', borderBottom: `1px solid ${alpha(palette.border, 0.7)}`, background: selectedFilePath === file.file ? alpha(palette.accent, 0.14) : 'transparent', color: palette.text, cursor: 'pointer', textAlign: 'left', boxSizing: 'border-box' }}>
-                          <span style={{ ...pillStyle(alpha(statusColor(file, palette), 0.14), statusColor(file, palette)), justifyContent: 'center' }}>{statusLabel(file)}</span>
-                          <span style={{ minWidth: 0 }}>
-                            <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: monoFont }}>{file.file}</span>
-                            {file.originalFile && <span style={{ display: 'block', marginTop: 2, fontSize: 9.5, color: palette.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: monoFont }}>{file.originalFile}</span>}
-                          </span>
-                          <span style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: palette.green }}>+{file.additions}</span>
-                          <span style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: palette.red }}>-{file.deletions}</span>
-                        </button>
-                      ))}
-                      <div style={{ height: changeListVirtualWindow.bottomSpacer }} />
-                    </>
-                  )}
-                </OverlayScrollArea>
-              </ResizablePane>
-
-              <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', background: palette.bg }}>
-                <div style={{ padding: '8px 12px', borderBottom: `1px solid ${palette.border}`, fontSize: 11, color: palette.muted, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                  <div style={{ minWidth: 0, flex: '1 1 320px' }}>
-                    <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {selectedFile ? `${selectedFile.file} • ${statusLabel(selectedFile)} • +${selectedFile.additions} / -${selectedFile.deletions}` : 'Select a changed file to inspect the diff.'}
-                    </span>
-                    {selectedFile ? (
-                      <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span style={pillStyle(alpha(statusColor(selectedFile, palette), 0.14), statusColor(selectedFile, palette))}>
-                          {statusLabel(selectedFile)}
-                        </span>
-                        {selectedFile.isStaged ? (
-                          <span style={pillStyle(alpha(palette.green, 0.14), palette.green)}>Staged</span>
-                        ) : null}
-                        {selectedFile.hasUnstagedChanges ? (
-                          <span style={pillStyle(alpha(palette.yellow, 0.16), palette.yellow)}>Working Tree</span>
-                        ) : null}
-                        {selectedFile.isUntracked ? (
-                          <span style={pillStyle(alpha(palette.yellow, 0.12), palette.muted)}>Untracked</span>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
-                    {selectedFile ? (
-                      <>
-                        {canResolveSelectedConflict ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleResolveSelectedConflict('ours')}
-                            disabled={loading}
-                            title="Resolve this conflict with git's --ours version and stage the result."
-                            style={{ ...toolbarButtonStyle(palette), background: alpha(palette.accent, 0.12), borderColor: alpha(palette.accent, 0.4), color: palette.accent }}
-                          >
-                            Use Ours
-                          </button>
-                        ) : null}
-                        {canResolveSelectedConflict ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleResolveSelectedConflict('theirs')}
-                            disabled={loading}
-                            title="Resolve this conflict with git's --theirs version and stage the result."
-                            style={{ ...toolbarButtonStyle(palette), background: alpha(palette.yellow, 0.12), borderColor: alpha(palette.yellow, 0.4), color: palette.yellow }}
-                          >
-                            Use Theirs
-                          </button>
-                        ) : null}
-                        {canStageSelectedFile ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleStageSelectedFile()}
-                            disabled={loading}
-                            title={selectedFile.kind === 'conflicted' ? 'Stage the current file contents to mark this conflict as resolved.' : undefined}
-                            style={{ ...toolbarButtonStyle(palette), background: alpha(palette.green, 0.12), borderColor: alpha(palette.green, 0.42), color: palette.green }}
-                          >
-                            {stageSelectedFileLabel}
-                          </button>
-                        ) : null}
-                        {canUnstageSelectedFile ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleUnstageSelectedFile()}
-                            disabled={loading}
-                            style={toolbarButtonStyle(palette)}
-                          >
-                            Unstage
-                          </button>
-                        ) : null}
-                        {canDiscardSelectedFile ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleDiscardSelectedFile()}
-                            disabled={loading}
-                            title={selectedFile.isStaged && selectedFile.hasUnstagedChanges ? 'Discard only working tree changes and keep staged changes in the index.' : 'Discard the selected file changes.'}
-                            style={{ ...toolbarButtonStyle(palette), background: alpha(palette.red, 0.10), borderColor: alpha(palette.red, 0.32), color: palette.red }}
-                          >
-                            {discardSelectedFileLabel}
-                          </button>
-                        ) : null}
-                      </>
-                    ) : null}
-                    {selectedFile && diffView && diffView.hunkLines.length > 0 ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                        <span style={{ fontSize: 10, color: palette.muted }}>
-                          Hunk {activeHunkIndex + 1} / {diffView.hunkLines.length}
-                        </span>
-                        <button type="button" onClick={() => jumpToDiffHunk(activeHunkIndex - 1)} style={iconButtonStyle(palette)} title="Previous change">
-                          <ChevronUp size={11} />
-                        </button>
-                        <button type="button" onClick={() => jumpToDiffHunk(activeHunkIndex + 1)} style={iconButtonStyle(palette)} title="Next change">
-                          <ChevronDown size={11} />
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-                <div
-                  ref={node => { diffContainerRef.current = node; }}
-                  style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}
-                >
-                  {selectedFile ? (
-                    diffLoading ? (
-                      <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: palette.muted, fontSize: 11 }}>Loading diff…</div>
-                    ) : (
-                      <React.Suspense fallback={<div style={{ height: '100%', display: 'grid', placeItems: 'center', color: palette.muted, fontSize: 11 }}>Loading diff editor…</div>}>
-                        <LazyMonacoEditor
-                          height="100%"
-                          onMount={(editor, monaco) => {
-                            diffEditorRef.current = editor;
-                            diffMonacoRef.current = monaco;
-                            // Two-frame delay: first frame settles the flex layout,
-                            // second ensures Monaco measures the real post-zoom size.
-                            window.requestAnimationFrame(() => {
-                              window.requestAnimationFrame(() => {
-                                editor.layout?.();
-                              });
-                            });
-                          }}
-                          value={diffView?.content ?? ''}
-                          language="plaintext"
-                          theme="vs-dark"
-                          options={{
-                            automaticLayout: true,
-                            readOnly: true,
-                            minimap: { enabled: false },
-                            fontFamily: monoFont,
-                            fontSize: 11.5,
-                            lineNumbers: 'on',
-                            glyphMargin: false,
-                            folding: false,
-                            overviewRulerLanes: 2,
-                            lineDecorationsWidth: 12,
-                            scrollBeyondLastLine: false,
-                            wordWrap: 'on',
-                            scrollbar: {
-                              vertical: 'visible',
-                              horizontal: 'visible',
-                              verticalScrollbarSize: 10,
-                              horizontalScrollbarSize: 10,
-                              alwaysConsumeMouseWheel: false,
-                            },
-                          }}
-                        />
-                      </React.Suspense>
-                    )
-                  ) : (
-                    <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: palette.muted, fontSize: 12 }}>Pick a file from the change list.</div>
-                  )}
-                </div>
-              </div>
+                History
+              </button>
+              <div style={{ flex: 1 }} />
+              <span style={{ fontSize: 10, color: palette.muted }}>
+                {mainTab === 'changes'
+                  ? 'Working tree, staging, and ship actions.'
+                  : 'Timeline view with grouped commits and per-file patches.'}
+              </span>
             </div>
+
+            {mainTab === 'changes' ? (
+              <>
+                <div style={{ padding: '7px 12px', borderBottom: `1px solid ${palette.border}`, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: alpha(palette.panel, 0.72) }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 220, flex: '1 1 220px', maxWidth: 400, padding: '5px 9px', borderRadius: 8, border: `1px solid ${palette.border}`, background: alpha(palette.bg, 0.5) }}>
+                    <Search size={12} style={{ color: palette.muted }} />
+                    <input value={changeQuery} onChange={event => setChangeQuery(event.target.value)} placeholder="Search changed files" style={{ width: '100%', border: 'none', background: 'transparent', outline: 'none', color: palette.text, fontSize: 10.5 }} />
+                  </div>
+                  {(Object.keys(FILTERS) as ChangeFilter[]).map(filter => (
+                    <button key={filter} onClick={() => setChangeFilter(filter)} style={{ ...pillStyle(filter === changeFilter ? alpha(palette.accent, 0.16) : alpha(palette.panel, 0.84), filter === changeFilter ? palette.accent : palette.muted), border: `1px solid ${filter === changeFilter ? alpha(palette.accent, 0.5) : palette.border}`, cursor: 'pointer' }}>{FILTERS[filter]}</button>
+                  ))}
+                  <div style={{ flex: 1 }} />
+                  <textarea value={commitMsg} onChange={event => setCommitMsg(event.target.value)} placeholder="Commit message for Quick Ship" className="hide-scrollbar" style={{ height: 28, minWidth: 220, maxWidth: 400, flex: '1 1 220px', resize: 'none', borderRadius: 8, border: `1px solid ${palette.border}`, background: alpha(palette.bg, 0.5), color: palette.text, padding: '6px 9px', fontSize: 10.5, outline: 'none' }} />
+                  <button
+                    onClick={() => void handleStageAll()}
+                    disabled={loading || !canStageAllChanges}
+                    title={hasConflictedFiles ? 'Resolve conflicted files before staging everything.' : undefined}
+                    style={toolbarButtonStyle(palette)}
+                  >
+                    Stage All
+                  </button>
+                  <button
+                    onClick={() => void handleCommit()}
+                    disabled={loading || !commitMsg.trim() || !canCommitStagedChanges}
+                    title={hasConflictedFiles ? 'Resolve conflicted files before committing.' : !hasStagedChanges ? 'Commit only includes staged files.' : undefined}
+                    style={{ ...toolbarButtonStyle(palette), background: palette.accent, borderColor: palette.accent, color: '#fff' }}
+                  >
+                    Commit
+                  </button>
+                  <button
+                    onClick={() => void handleQuickShip()}
+                    disabled={loading || !canQuickShipChanges}
+                    title={hasConflictedFiles ? 'Resolve conflicted files before Quick Ship.' : 'Stage all, commit, and push in one step'}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      minHeight: 30,
+                      padding: '0 12px 0 10px',
+                      borderRadius: 999,
+                      border: `1px solid ${alpha(palette.green, 0.45)}`,
+                      background: `linear-gradient(180deg, ${alpha(palette.green, 0.20)}, ${alpha(palette.green, 0.10)})`,
+                      color: palette.text,
+                      cursor: 'pointer',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      boxShadow: `inset 0 0 0 1px ${alpha(palette.green, 0.10)}`,
+                    }}
+                  >
+                    <span style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: 999,
+                      display: 'grid',
+                      placeItems: 'center',
+                      background: alpha(palette.green, 0.18),
+                      color: palette.green,
+                      flexShrink: 0,
+                    }}>
+                      <Rocket size={11} />
+                    </span>
+                    <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1 }}>
+                      <span>Quick Ship</span>
+                      <span style={{ fontSize: 9, color: palette.muted, fontWeight: 600, letterSpacing: '0.04em' }}>Stage • Commit • Push</span>
+                    </span>
+                  </button>
+                  {sourceActionHint ? (
+                    <div style={{ flexBasis: '100%', fontSize: 10, color: hasConflictedFiles ? palette.red : palette.muted }}>
+                      {sourceActionHint}
+                    </div>
+                  ) : null}
+                </div>
+
+                {error && <div style={{ padding: '7px 14px', borderBottom: `1px solid ${palette.border}`, fontSize: 11, color: palette.red, background: alpha(palette.red, 0.10) }}>{error}</div>}
+
+                <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
+                  <ResizablePane
+                    size={changeListWidth}
+                    minSize={260}
+                    maxSize={720}
+                    onSizeChange={setChangeListWidth}
+                    borderColor={alpha(palette.accent, 0.28)}
+                    style={{ minHeight: 0, display: 'flex', flexDirection: 'column', borderRight: `1px solid ${palette.border}`, background: palette.card }}
+                  >
+                    <div style={{ display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr) 56px 56px', gap: 8, padding: '7px 12px', borderBottom: `1px solid ${palette.border}`, fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase', color: palette.muted }}>
+                      <span>Status</span><span>File</span><span style={{ textAlign: 'right' }}>+</span><span style={{ textAlign: 'right' }}>-</span>
+                    </div>
+                    <OverlayScrollArea
+                      style={{ flex: 1, minHeight: 0 }}
+                      viewportRef={changeListViewportRef}
+                      onViewportScroll={event => setChangeListScrollTop(event.currentTarget.scrollTop)}
+                    >
+                      {filteredFiles.length === 0 ? (
+                        <div style={{ padding: 14, color: palette.muted, fontSize: 11 }}>{repoState.status.length === 0 ? 'Working tree is clean.' : 'No files match the current filter.'}</div>
+                      ) : (
+                        <>
+                          <div style={{ height: changeListVirtualWindow.topSpacer }} />
+                          {virtualizedFilteredFiles.map(file => (
+                            <button key={`${file.statusText}-${file.file}`} onClick={() => setSelectedFilePath(file.file)} style={{ width: '100%', height: CHANGE_LIST_ROW_HEIGHT, display: 'grid', gridTemplateColumns: '64px minmax(0, 1fr) 56px 56px', gap: 8, alignItems: 'center', padding: '7px 12px', border: 'none', borderBottom: `1px solid ${alpha(palette.border, 0.7)}`, background: selectedFilePath === file.file ? alpha(palette.accent, 0.14) : 'transparent', color: palette.text, cursor: 'pointer', textAlign: 'left', boxSizing: 'border-box' }}>
+                              <span style={{ ...pillStyle(alpha(statusColor(file, palette), 0.14), statusColor(file, palette)), justifyContent: 'center' }}>{statusLabel(file)}</span>
+                              <span style={{ minWidth: 0 }}>
+                                <span style={{ display: 'block', fontSize: 10.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: monoFont }}>{file.file}</span>
+                                {file.originalFile && <span style={{ display: 'block', marginTop: 2, fontSize: 9.5, color: palette.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: monoFont }}>{file.originalFile}</span>}
+                              </span>
+                              <span style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: palette.green }}>+{file.additions}</span>
+                              <span style={{ textAlign: 'right', fontSize: 10.5, fontWeight: 700, color: palette.red }}>-{file.deletions}</span>
+                            </button>
+                          ))}
+                          <div style={{ height: changeListVirtualWindow.bottomSpacer }} />
+                        </>
+                      )}
+                    </OverlayScrollArea>
+                  </ResizablePane>
+
+                  <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', background: palette.bg }}>
+                    <div style={{ padding: '8px 12px', borderBottom: `1px solid ${palette.border}`, fontSize: 11, color: palette.muted, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                      <div style={{ minWidth: 0, flex: '1 1 320px' }}>
+                        <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {selectedFile ? `${selectedFile.file} • ${statusLabel(selectedFile)} • +${selectedFile.additions} / -${selectedFile.deletions}` : 'Select a changed file to inspect the diff.'}
+                        </span>
+                        {selectedFile ? (
+                          <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span style={pillStyle(alpha(statusColor(selectedFile, palette), 0.14), statusColor(selectedFile, palette))}>
+                              {statusLabel(selectedFile)}
+                            </span>
+                            {selectedFile.isStaged ? (
+                              <span style={pillStyle(alpha(palette.green, 0.14), palette.green)}>Staged</span>
+                            ) : null}
+                            {selectedFile.hasUnstagedChanges ? (
+                              <span style={pillStyle(alpha(palette.yellow, 0.16), palette.yellow)}>Working Tree</span>
+                            ) : null}
+                            {selectedFile.isUntracked ? (
+                              <span style={pillStyle(alpha(palette.yellow, 0.12), palette.muted)}>Untracked</span>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+                        {selectedFile ? (
+                          <>
+                            {canResolveSelectedConflict ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleResolveSelectedConflict('ours')}
+                                disabled={loading}
+                                title="Resolve this conflict with git's --ours version and stage the result."
+                                style={{ ...toolbarButtonStyle(palette), background: alpha(palette.accent, 0.12), borderColor: alpha(palette.accent, 0.4), color: palette.accent }}
+                              >
+                                Use Ours
+                              </button>
+                            ) : null}
+                            {canResolveSelectedConflict ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleResolveSelectedConflict('theirs')}
+                                disabled={loading}
+                                title="Resolve this conflict with git's --theirs version and stage the result."
+                                style={{ ...toolbarButtonStyle(palette), background: alpha(palette.yellow, 0.12), borderColor: alpha(palette.yellow, 0.4), color: palette.yellow }}
+                              >
+                                Use Theirs
+                              </button>
+                            ) : null}
+                            {canStageSelectedFile ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleStageSelectedFile()}
+                                disabled={loading}
+                                title={selectedFile.kind === 'conflicted' ? 'Stage the current file contents to mark this conflict as resolved.' : undefined}
+                                style={{ ...toolbarButtonStyle(palette), background: alpha(palette.green, 0.12), borderColor: alpha(palette.green, 0.42), color: palette.green }}
+                              >
+                                {stageSelectedFileLabel}
+                              </button>
+                            ) : null}
+                            {canUnstageSelectedFile ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleUnstageSelectedFile()}
+                                disabled={loading}
+                                style={toolbarButtonStyle(palette)}
+                              >
+                                Unstage
+                              </button>
+                            ) : null}
+                            {canDiscardSelectedFile ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleDiscardSelectedFile()}
+                                disabled={loading}
+                                title={selectedFile.isStaged && selectedFile.hasUnstagedChanges ? 'Discard only working tree changes and keep staged changes in the index.' : 'Discard the selected file changes.'}
+                                style={{ ...toolbarButtonStyle(palette), background: alpha(palette.red, 0.10), borderColor: alpha(palette.red, 0.32), color: palette.red }}
+                              >
+                                {discardSelectedFileLabel}
+                              </button>
+                            ) : null}
+                          </>
+                        ) : null}
+                        {selectedFile && diffView && diffView.hunkLines.length > 0 ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                            <span style={{ fontSize: 10, color: palette.muted }}>
+                              Hunk {activeHunkIndex + 1} / {diffView.hunkLines.length}
+                            </span>
+                            <button type="button" onClick={() => jumpToDiffHunk(activeHunkIndex - 1)} style={iconButtonStyle(palette)} title="Previous change">
+                              <ChevronUp size={11} />
+                            </button>
+                            <button type="button" onClick={() => jumpToDiffHunk(activeHunkIndex + 1)} style={iconButtonStyle(palette)} title="Next change">
+                              <ChevronDown size={11} />
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div
+                      ref={node => { diffContainerRef.current = node; }}
+                      style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}
+                    >
+                      {selectedFile ? (
+                        diffLoading ? (
+                          <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: palette.muted, fontSize: 11 }}>Loading diff…</div>
+                        ) : (
+                          <React.Suspense fallback={<div style={{ height: '100%', display: 'grid', placeItems: 'center', color: palette.muted, fontSize: 11 }}>Loading diff editor…</div>}>
+                            <LazyMonacoEditor
+                              height="100%"
+                              onMount={(editor, monaco) => {
+                                diffEditorRef.current = editor;
+                                diffMonacoRef.current = monaco;
+                                // Two-frame delay: first frame settles the flex layout,
+                                // second ensures Monaco measures the real post-zoom size.
+                                window.requestAnimationFrame(() => {
+                                  window.requestAnimationFrame(() => {
+                                    editor.layout?.();
+                                  });
+                                });
+                              }}
+                              value={diffView?.content ?? ''}
+                              language="plaintext"
+                              theme="vs-dark"
+                              options={{
+                                automaticLayout: true,
+                                readOnly: true,
+                                minimap: { enabled: false },
+                                fontFamily: monoFont,
+                                fontSize: 11.5,
+                                lineNumbers: 'on',
+                                glyphMargin: false,
+                                folding: false,
+                                overviewRulerLanes: 2,
+                                lineDecorationsWidth: 12,
+                                scrollBeyondLastLine: false,
+                                wordWrap: 'on',
+                                scrollbar: {
+                                  vertical: 'visible',
+                                  horizontal: 'visible',
+                                  verticalScrollbarSize: 10,
+                                  horizontalScrollbarSize: 10,
+                                  alwaysConsumeMouseWheel: false,
+                                },
+                              }}
+                            />
+                          </React.Suspense>
+                        )
+                      ) : (
+                        <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: palette.muted, fontSize: 12 }}>Pick a file from the change list.</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                {error && <div style={{ padding: '7px 14px', borderBottom: `1px solid ${palette.border}`, fontSize: 11, color: palette.red, background: alpha(palette.red, 0.10) }}>{error}</div>}
+                <GitHistoryPanel
+                  palette={palette}
+                  monoFont={monoFont}
+                  repoPath={repoState.path}
+                  branchName={repoState.branch}
+                  safeGit={safeGit}
+                />
+              </>
+            )}
           </>
         )}
       </div>
