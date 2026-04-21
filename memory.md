@@ -2515,3 +2515,19 @@
   - passed targeted typecheck via `node_modules/.bin/tsc.exe --noEmit ...` over the touched shell files and new tests
   - passed `node_modules/.bin/vitest.exe run src/test/overlayScrollArea.test.tsx src/test/explorerArchivePreview.test.tsx`
   - passed `node_modules/.bin/vitest.exe run src/test/fileExplorer.viewModes.test.tsx -t "uses the dedicated explorer viewport class for visible file-list scrollbars"`
+
+## 2026-04-20 — SQLite Preview Responsive Repack + Real Pagination
+
+- Reworked the explorer SQLite preview so it behaves like a narrow preview-pane workbench instead of a squeezed full-page database viewer.
+- Durable implementation shape:
+  - `src/components/ExplorerSqlitePreview.tsx` now measures its own pane width and switches between a compact stacked layout and a wider split layout, so narrow preview panes stop burning horizontal space on a fixed left rail.
+  - The table picker is now denser and more informative in both modes: table cards show row counts plus rough page counts, and the active table state is clearer.
+  - The active table header now owns the paging chrome and status summary instead of burying pagination in a footer strip that competes with the small preview viewport.
+  - Row pagination now keys off the selected table's known `row_count` from `sqlite_get_info`, so `Next` stays available for large tables even when the current page is full and the UI is constrained.
+  - SQLite cells now wrap instead of forcing single-line truncation everywhere, which preserves more data in a sidebar-width preview without requiring as much horizontal scrolling.
+  - Query failures now render an explicit in-pane error state instead of only logging to the console.
+- Durable product note:
+  - Treat the SQLite lane as preview-pane UI first. If future work adds schema inspection, filtering, or sorting, preserve the compact stacked mode and keep the data grid optimized for constrained width before adding desktop-database-tool chrome.
+- Validation:
+  - passed `bunx vitest run src/test/explorerSqlitePreview.test.tsx`
+  - passed filtered typecheck via `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "ExplorerSqlitePreview|explorerSqlitePreview.test" || true`
