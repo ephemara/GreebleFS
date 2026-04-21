@@ -117,6 +117,7 @@ import {
   resolveFileIcon,
   resolveFileIconSrc,
   resolveIconSrc,
+  type OverlayResolvedIconTheme,
 } from "../config/iconTheme";
 import type { ExplorerLayoutMode } from "../config/layoutProfiles";
 import {
@@ -358,6 +359,10 @@ const EXPLORER_LIST_SEARCH_ROW_HEIGHT = 72;
 const EXPLORER_LIST_OVERSCAN = 8;
 const EXPLORER_GRID_OVERSCAN_ROWS = 2;
 const EXPLORER_LAYOUT_WHEEL_STEP_DELTA = 80;
+const EXPLORER_THUMBNAIL_TYPE_BADGE_MIN_STAGE_PX = 36;
+const EXPLORER_THUMBNAIL_TYPE_BADGE_KINDS = new Set<
+  ExplorerEntryThumbnailData["kind"]
+>(["code", "shader"]);
 const EXPLORER_ENTRY_SIZE_BATCH_SETTLE_MS = 72;
 const EXPLORER_NATIVE_ICON_BATCH_SETTLE_MS = 96;
 const EXPLORER_IMAGE_TILE_THUMBNAIL_BATCH_SETTLE_MS = 88;
@@ -4919,6 +4924,107 @@ const ExplorerThumbnailImage = React.memo(function ExplorerThumbnailImage({
   );
 });
 
+function getExplorerThumbnailTypeBadgeMetrics(stageSize: number) {
+  const shellSize = Math.max(16, Math.min(28, Math.round(stageSize * 0.3)));
+  const iconSize = Math.max(
+    10,
+    Math.min(18, shellSize - Math.max(4, Math.round(shellSize * 0.32))),
+  );
+  const inset = Math.max(3, Math.round(stageSize * 0.06));
+  return { shellSize, iconSize, inset };
+}
+
+const ExplorerEntryThumbnailStageContent = React.memo(
+  function ExplorerEntryThumbnailStageContent({
+    entry,
+    fallbackIconSize,
+    fallbackIconSrc,
+    hoverScrubEnabled,
+    iconTheme = getBuiltInIconTheme(),
+    stageSize,
+    thumbnail,
+  }: {
+    entry: FileEntry;
+    fallbackIconSize: number;
+    fallbackIconSrc: string;
+    hoverScrubEnabled: boolean;
+    iconTheme?: OverlayResolvedIconTheme;
+    stageSize: number;
+    thumbnail: ExplorerEntryThumbnailData | null;
+  }) {
+    if (!thumbnail) {
+      return <SvgIcon src={fallbackIconSrc} size={fallbackIconSize} />;
+    }
+
+    const shouldShowTypeBadge =
+      stageSize >= EXPLORER_THUMBNAIL_TYPE_BADGE_MIN_STAGE_PX &&
+      EXPLORER_THUMBNAIL_TYPE_BADGE_KINDS.has(thumbnail.kind);
+    const typeBadgeSrc = shouldShowTypeBadge
+      ? resolveFileIconSrc(entry.name, getEntryExtension(entry), iconTheme)
+      : null;
+    const badgeMetrics = getExplorerThumbnailTypeBadgeMetrics(stageSize);
+
+    return (
+      <div
+        style={{
+          position: "relative",
+          width: "100%",
+          height: "100%",
+        }}
+      >
+        <ExplorerThumbnailImage
+          entryName={entry.name}
+          hoverScrubEnabled={hoverScrubEnabled}
+          thumbnail={thumbnail}
+        />
+        {typeBadgeSrc ? (
+          <div
+            data-overlay-explorer-thumbnail-badge="true"
+            data-overlay-explorer-thumbnail-badge-kind={thumbnail.kind}
+            style={{
+              position: "absolute",
+              right: badgeMetrics.inset,
+              bottom: badgeMetrics.inset,
+              width: badgeMetrics.shellSize,
+              height: badgeMetrics.shellSize,
+              borderRadius: Math.max(
+                6,
+                Math.round(badgeMetrics.shellSize * 0.34),
+              ),
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              border:
+                "1px solid color-mix(in srgb, white 14%, transparent)",
+              background:
+                "color-mix(in srgb, var(--overlay-bg-shell-solid) 92%, black)",
+              boxShadow:
+                "0 6px 18px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.08)",
+              pointerEvents: "none",
+            }}
+          >
+            <img
+              src={typeBadgeSrc}
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+              style={{
+                width: badgeMetrics.iconSize,
+                height: badgeMetrics.iconSize,
+                objectFit: "contain",
+                display: "block",
+              }}
+              onError={(event) => {
+                event.currentTarget.style.opacity = "0";
+              }}
+            />
+          </div>
+        ) : null}
+      </div>
+    );
+  },
+);
+
 // ─── Trash confirm ────────────────────────────────────────────────────────────
 
 function TrashDialog({
@@ -8818,13 +8924,6 @@ export function FileExplorer({
       return entryThumbnailMap[entry.path] ?? null;
     },
     [entryThumbnailMap],
-  );
-
-  const getRenderableEntryThumbnailSrc = useCallback(
-    (entry: FileEntry, minimumStageSize: number): string | null =>
-      getRenderableEntryThumbnail(entry, minimumStageSize)?.posterDataUrl ??
-      null,
-    [getRenderableEntryThumbnail],
   );
 
   const queueClipboard = useCallback(
@@ -16863,8 +16962,8 @@ export function FileExplorer({
     const tableThumbnailStageSize = densityStop.table
       ? Math.max(densityStop.table.iconSize + 10, 28)
       : 0;
-    const tableThumbnailSrc = densityStop.table
-      ? getRenderableEntryThumbnailSrc(entry, tableThumbnailStageSize)
+    const tableThumbnail = densityStop.table
+      ? getRenderableEntryThumbnail(entry, tableThumbnailStageSize)
       : null;
 
     if (densityStop.presentation === "table" && densityStop.table) {
@@ -16950,33 +17049,27 @@ export function FileExplorer({
                 justifyContent: "center",
                 flexShrink: 0,
                 overflow: "hidden",
-                borderRadius: tableThumbnailSrc ? 10 : undefined,
-                border: tableThumbnailSrc
+                borderRadius: tableThumbnail ? 10 : undefined,
+                border: tableThumbnail
                   ? "1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)"
                   : undefined,
-                background: tableThumbnailSrc
+                background: tableThumbnail
                   ? "color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)"
                   : undefined,
-                boxShadow: tableThumbnailSrc
+                boxShadow: tableThumbnail
                   ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
                   : undefined,
               }}
             >
-              {tableThumbnailSrc ? (
-                <img
-                  src={tableThumbnailSrc}
-                  alt={`Thumbnail for ${entry.name}`}
-                  draggable={false}
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "contain",
-                    display: "block",
-                  }}
-                />
-              ) : (
-                <SvgIcon src={iconSrc} size={densityStop.table.iconSize} />
-              )}
+              <ExplorerEntryThumbnailStageContent
+                entry={entry}
+                fallbackIconSize={densityStop.table.iconSize}
+                fallbackIconSrc={iconSrc}
+                hoverScrubEnabled={hoveredVideoThumbnailPath === entry.path}
+                iconTheme={themeIconTheme}
+                stageSize={tableThumbnailStageSize}
+                thumbnail={tableThumbnail}
+              />
             </div>
             <div style={{ minWidth: 0, flex: 1 }}>
               {isRenaming ? (
@@ -17075,7 +17168,7 @@ export function FileExplorer({
     );
     const iconSize = Math.round(densityStop.grid.iconSize * dominantScale);
     const isCards = densityStop.presentation === "cards";
-    const gridThumbnailSrc = getRenderableEntryThumbnailSrc(
+    const gridThumbnail = getRenderableEntryThumbnail(
       entry,
       iconStageSize,
     );
@@ -17153,34 +17246,28 @@ export function FileExplorer({
             alignItems: "center",
             justifyContent: "center",
             borderRadius: isCards ? 16 : 12,
-            background: gridThumbnailSrc
+            background: gridThumbnail
               ? "color-mix(in srgb, var(--overlay-bg-panel) 86%, transparent)"
               : "rgba(255,255,255,0.04)",
             flexShrink: 0,
             overflow: "hidden",
-            border: gridThumbnailSrc
+            border: gridThumbnail
               ? "1px solid color-mix(in srgb, var(--overlay-border-strong) 42%, transparent)"
               : undefined,
-            boxShadow: gridThumbnailSrc
+            boxShadow: gridThumbnail
               ? "inset 0 1px 0 color-mix(in srgb, white 8%, transparent)"
               : undefined,
           }}
         >
-          {gridThumbnailSrc ? (
-            <img
-              src={gridThumbnailSrc}
-              alt={`Thumbnail for ${entry.name}`}
-              draggable={false}
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "contain",
-                display: "block",
-              }}
-            />
-          ) : (
-            <SvgIcon src={iconSrc} size={iconSize} />
-          )}
+          <ExplorerEntryThumbnailStageContent
+            entry={entry}
+            fallbackIconSize={iconSize}
+            fallbackIconSrc={iconSrc}
+            hoverScrubEnabled={hoveredVideoThumbnailPath === entry.path}
+            iconTheme={themeIconTheme}
+            stageSize={iconStageSize}
+            thumbnail={gridThumbnail}
+          />
         </div>
         <div
           style={{
@@ -17591,21 +17678,17 @@ export function FileExplorer({
           }}
         >
           {(() => {
-            const thumbnailSrc = getRenderableEntryThumbnailSrc(node.entry, node.size);
-            return thumbnailSrc ? (
-              <img
-                src={thumbnailSrc}
-                alt={`Thumbnail for ${node.entry.name}`}
-                draggable={false}
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "contain",
-                  display: "block",
-                }}
+            const thumbnail = getRenderableEntryThumbnail(node.entry, node.size);
+            return (
+              <ExplorerEntryThumbnailStageContent
+                entry={node.entry}
+                fallbackIconSize={Math.max(14, node.size - 12)}
+                fallbackIconSrc={iconSrc}
+                hoverScrubEnabled={hoveredVideoThumbnailPath === node.entry.path}
+                iconTheme={themeIconTheme}
+                stageSize={node.size}
+                thumbnail={thumbnail}
               />
-            ) : (
-              <SvgIcon src={iconSrc} size={Math.max(14, node.size - 12)} />
             );
           })()}
         </div>
@@ -17859,7 +17942,7 @@ export function FileExplorer({
     const isDrop = dragOver === entry.path && entry.is_dir;
     const isRenaming = rename.active && rename.path === entry.path;
     const iconSrc = getExplorerEntryIconSrc(entry, isSel, isDrop);
-    const thumbnailSrc = getRenderableEntryThumbnailSrc(entry, 42);
+    const thumbnail = getRenderableEntryThumbnail(entry, 42);
     return (
       <div
         key={entry.path}
@@ -17932,21 +18015,15 @@ export function FileExplorer({
             overflow: "hidden",
           }}
         >
-          {thumbnailSrc ? (
-            <img
-              src={thumbnailSrc}
-              alt={`Thumbnail for ${entry.name}`}
-              draggable={false}
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "contain",
-                display: "block",
-              }}
-            />
-          ) : (
-            <SvgIcon src={iconSrc} size={24} />
-          )}
+          <ExplorerEntryThumbnailStageContent
+            entry={entry}
+            fallbackIconSize={24}
+            fallbackIconSrc={iconSrc}
+            hoverScrubEnabled={hoveredVideoThumbnailPath === entry.path}
+            iconTheme={themeIconTheme}
+            stageSize={42}
+            thumbnail={thumbnail}
+          />
         </div>
         <div style={{ minWidth: 0 }}>
           {isRenaming ? (
@@ -18832,20 +18909,17 @@ export function FileExplorer({
                                     "width 0.18s cubic-bezier(0.22, 1, 0.36, 1), height 0.18s cubic-bezier(0.22, 1, 0.36, 1)",
                                 }}
                               >
-                                {thumbnail ? (
-                                  <ExplorerThumbnailImage
-                                    entryName={entry.name}
-                                    hoverScrubEnabled={
-                                      hoveredVideoThumbnailPath === entry.path
-                                    }
-                                    thumbnail={thumbnail}
-                                  />
-                                ) : (
-                                  <SvgIcon
-                                    src={iconSrc}
-                                    size={activeGridMetrics.iconSize}
-                                  />
-                                )}
+                                <ExplorerEntryThumbnailStageContent
+                                  entry={entry}
+                                  fallbackIconSize={activeGridMetrics.iconSize}
+                                  fallbackIconSrc={iconSrc}
+                                  hoverScrubEnabled={
+                                    hoveredVideoThumbnailPath === entry.path
+                                  }
+                                  iconTheme={themeIconTheme}
+                                  stageSize={activeGridMetrics.iconStageSize}
+                                  thumbnail={thumbnail}
+                                />
                               </div>
                               {isRenaming ? (
                                 <RenameInput
@@ -19123,20 +19197,19 @@ export function FileExplorer({
                                   flexShrink: 0,
                                 }}
                               >
-                                {thumbnail ? (
-                                  <ExplorerThumbnailImage
-                                    entryName={entry.name}
-                                    hoverScrubEnabled={
-                                      hoveredVideoThumbnailPath === entry.path
-                                    }
-                                    thumbnail={thumbnail}
-                                  />
-                                ) : (
-                                  <SvgIcon
-                                    src={iconSrc}
-                                    size={activeRowMetrics?.iconSize ?? 16}
-                                  />
-                                )}
+                                <ExplorerEntryThumbnailStageContent
+                                  entry={entry}
+                                  fallbackIconSize={
+                                    activeRowMetrics?.iconSize ?? 16
+                                  }
+                                  fallbackIconSrc={iconSrc}
+                                  hoverScrubEnabled={
+                                    hoveredVideoThumbnailPath === entry.path
+                                  }
+                                  iconTheme={themeIconTheme}
+                                  stageSize={rowThumbnailStageSize}
+                                  thumbnail={thumbnail}
+                                />
                               </div>
                               <div style={{ minWidth: 0, flex: 1 }}>
                                 {isRenaming ? (
@@ -19548,21 +19621,20 @@ export function FileExplorer({
                                       flexShrink: 0,
                                     }}
                                   >
-                                    {thumbnail ? (
-                                      <ExplorerThumbnailImage
-                                        entryName={entry.name}
-                                        hoverScrubEnabled={
-                                          hoveredVideoThumbnailPath ===
-                                          entry.path
-                                        }
-                                        thumbnail={thumbnail}
-                                      />
-                                    ) : (
-                                      <SvgIcon
-                                        src={iconSrc}
-                                        size={activeRowMetrics?.iconSize ?? 16}
-                                      />
-                                    )}
+                                    <ExplorerEntryThumbnailStageContent
+                                      entry={entry}
+                                      fallbackIconSize={
+                                        activeRowMetrics?.iconSize ?? 16
+                                      }
+                                      fallbackIconSrc={iconSrc}
+                                      hoverScrubEnabled={
+                                        hoveredVideoThumbnailPath ===
+                                        entry.path
+                                      }
+                                      iconTheme={themeIconTheme}
+                                      stageSize={rowThumbnailStageSize}
+                                      thumbnail={thumbnail}
+                                    />
                                   </div>
                                   <div style={{ minWidth: 0, flex: 1 }}>
                                     {isRenaming ? (

@@ -325,6 +325,10 @@ import {
   normalizeThemeDefinition,
   resolveOverlayAppearance,
 } from "../config/appearance";
+import {
+  getBuiltInIconTheme,
+  resolveFileIconSrc,
+} from "../config/iconTheme";
 import { createDefaultExplorerRailSnapshot } from "../components/explorer/explorerRailState";
 import {
   EXPLORER_LEGACY_BOOKMARKS_KEY,
@@ -459,6 +463,35 @@ const ENTRIES = [
     is_symlink: false,
   },
 ] as const;
+
+function getMockEntryThumbnailKind(
+  path: string | undefined,
+): "image" | "code" | "shader" | "audio" | "video" {
+  const extension = path?.split(".").pop()?.toLowerCase();
+  switch (extension) {
+    case "png":
+      return "image";
+    case "mp3":
+      return "audio";
+    case "mp4":
+      return "video";
+    case "wgsl":
+    case "hlsl":
+    case "spv":
+      return "shader";
+    default:
+      return "code";
+  }
+}
+
+function createMockEntryThumbnail(path: string | undefined) {
+  return {
+    kind: getMockEntryThumbnailKind(path),
+    posterDataUrl: "data:image/png;base64,ZmFrZQ==",
+    hoverFrames: [],
+    hoverFrameDelayMs: null,
+  };
+}
 
 function createDataTransfer() {
   const store = new Map<string, string>();
@@ -687,6 +720,32 @@ function getEntryIconSrc(entryName: string): string {
   return icon.getAttribute("src") ?? "";
 }
 
+function getEntryThumbnailBadgeSrc(entryName: string): string {
+  const entryLabel = screen
+    .getAllByText(entryName)
+    .find((candidate) =>
+      candidate.closest('[data-overlay-explorer-plane="file-area"]'),
+    );
+  if (!entryLabel) {
+    throw new Error(`Explorer label not found for ${entryName}`);
+  }
+  const entryRow = entryLabel.closest(
+    'tr, [draggable="true"]',
+  ) as HTMLElement | null;
+  if (!entryRow) {
+    throw new Error(`Explorer row not found for ${entryName}`);
+  }
+
+  const badgeIcon = entryRow.querySelector(
+    '[data-overlay-explorer-thumbnail-badge="true"] img',
+  );
+  if (!(badgeIcon instanceof HTMLImageElement)) {
+    throw new Error(`Explorer thumbnail badge not found for ${entryName}`);
+  }
+
+  return badgeIcon.getAttribute("src") ?? "";
+}
+
 describe("FileExplorer view modes", () => {
   beforeEach(() => {
     const currentWindow = getCurrentWindow();
@@ -789,12 +848,7 @@ describe("FileExplorer view modes", () => {
             if (payload?.request?.path === `${REPO_ROOT}\\broken.png`) {
               throw new Error("Image is too large to thumbnail (> 64 MB)");
             }
-            return {
-              kind: "image",
-              posterDataUrl: "data:image/png;base64,ZmFrZQ==",
-              hoverFrames: [],
-              hoverFrameDelayMs: null,
-            };
+            return createMockEntryThumbnail(payload?.request?.path);
           case "shader_preview_inspect":
             if (payload?.path === `${REPO_ROOT}\\aaa_surface.wgsl`) {
               return {
@@ -1909,12 +1963,7 @@ describe("FileExplorer view modes", () => {
           case "fs_read_image_thumbnail":
             return "data:image/png;base64,ZmFrZQ==";
           case "fs_read_entry_thumbnail":
-            return {
-              kind: "image",
-              posterDataUrl: "data:image/png;base64,ZmFrZQ==",
-              hoverFrames: [],
-              hoverFrameDelayMs: null,
-            };
+            return createMockEntryThumbnail(payload?.request?.path);
           case "fs_measure_entry_sizes":
             return (payload?.paths ?? []).map((path) => ({
               path,
@@ -2499,6 +2548,67 @@ describe("FileExplorer view modes", () => {
           },
         },
       );
+    } finally {
+      if (clientWidthDescriptor) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "clientWidth",
+          clientWidthDescriptor,
+        );
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
+      }
+      if (clientHeightDescriptor) {
+        Object.defineProperty(
+          HTMLElement.prototype,
+          "clientHeight",
+          clientHeightDescriptor,
+        );
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "clientHeight");
+      }
+    }
+  });
+
+  it("overlays themed file-type badges on generated code thumbnails in icon layouts", async () => {
+    const clientWidthDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "clientWidth",
+    );
+    const clientHeightDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "clientHeight",
+    );
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", {
+      configurable: true,
+      get() {
+        return 1280;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+      configurable: true,
+      get() {
+        return 900;
+      },
+    });
+    useSettingsStore.getState().updateExplorer({ viewMode: "icons-l" });
+
+    try {
+      const { appearance } = renderExplorer();
+      const iconTheme =
+        appearance.theme.assets?.iconTheme ?? getBuiltInIconTheme();
+
+      await screen.findByAltText("Thumbnail for notes.txt");
+      await screen.findByAltText("Thumbnail for build.bat");
+
+      await waitFor(() => {
+        expect(getEntryThumbnailBadgeSrc("notes.txt")).toBe(
+          resolveFileIconSrc("notes.txt", "txt", iconTheme),
+        );
+        expect(getEntryThumbnailBadgeSrc("build.bat")).toBe(
+          resolveFileIconSrc("build.bat", "bat", iconTheme),
+        );
+      });
     } finally {
       if (clientWidthDescriptor) {
         Object.defineProperty(
