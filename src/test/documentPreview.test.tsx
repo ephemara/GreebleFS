@@ -21,6 +21,45 @@ describe('documentPreview', () => {
     expect(html).not.toContain('<script>');
   });
 
+  it('uses explorer theme tokens for markdown preview surfaces', () => {
+    const { container } = render(
+      <TextDocumentPreview
+        kind="markdown"
+        content={`# Ship Notes
+
+Inline \`code\`
+
+\`\`\`ts
+const value = 1;
+\`\`\`
+
+| Name | Value |
+| --- | --- |
+| Accent | Blue |`}
+      />,
+    );
+
+    const root = screen.getByTestId('document-preview-root');
+    const article = screen.getByTestId('document-preview-article');
+    const styleTag = container.querySelector('style');
+
+    expect(root).toHaveAttribute('data-document-preview-kind', 'markdown');
+    expect(root.style.background).toBe('var(--overlay-explorer-preview-bg)');
+    expect(article.style.color).toBe('var(--overlay-text-primary)');
+    expect(styleTag?.textContent).toContain(
+      'background: var(--overlay-bg-panel-alt, var(--overlay-bg-panel));',
+    );
+    expect(styleTag?.textContent).toContain(
+      'background: var(--overlay-bg-panel);',
+    );
+    expect(styleTag?.textContent).toContain(
+      'border: 1px solid var(--overlay-border);',
+    );
+    expect(styleTag?.textContent).not.toContain('#171a22');
+    expect(styleTag?.textContent).not.toContain('rgba(8, 12, 18, 0.9)');
+    expect(styleTag?.textContent).not.toContain('rgba(255,255,255,0.06)');
+  });
+
   it('builds sandboxed html preview documents with a local asset base', () => {
     const srcDoc = renderHtmlDocumentPreviewSrcDoc(
       `<html><head><style>body { color: red; }</style><script>alert(1)</script></head><body><h1>Hello</h1><img src="./poster.png" onerror="alert(1)" /><button onclick="alert(2)">Click</button></body></html>`,

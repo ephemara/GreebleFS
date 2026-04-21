@@ -1863,6 +1863,71 @@ describe("FileExplorer view modes", () => {
     );
   });
 
+  it("opens markdown files in rendered preview mode with themed document surfaces", async () => {
+    const markdownEntry = {
+      name: "ship-notes.md",
+      path: `${REPO_ROOT}\\ship-notes.md`,
+      is_dir: false,
+      size: 512,
+      modified: 0,
+      extension: "md",
+      is_hidden: false,
+      is_symlink: false,
+    };
+    const baseInvokeImplementation = vi.mocked(invoke).getMockImplementation();
+    if (!baseInvokeImplementation) {
+      throw new Error("Missing default invoke mock implementation");
+    }
+
+    vi.mocked(invoke).mockImplementation(
+      async (command: string, args?: unknown) => {
+        const payload = args as { path?: string } | undefined;
+        if (command === "fs_list_dir" || command === "fs_list_dir_uncached") {
+          return [...ENTRIES, markdownEntry];
+        }
+        if (
+          command === "fs_read_text_file" &&
+          payload?.path === markdownEntry.path
+        ) {
+          return `# Ship Notes
+
+Inline \`code\`
+
+\`\`\`ts
+const value = 1;
+\`\`\``;
+        }
+        return baseInvokeImplementation(command, args as never);
+      },
+    );
+
+    renderExplorer();
+    await screen.findByText("ship-notes.md");
+
+    fireEvent.click(screen.getByText("ship-notes.md"));
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.documentViewMode).toBe(
+        "preview",
+      );
+    });
+    const markdownPreviewRoot = await screen.findByTestId(
+      "document-preview-root",
+    );
+    expect(markdownPreviewRoot).toHaveAttribute(
+      "data-document-preview-kind",
+      "markdown",
+    );
+    expect(markdownPreviewRoot.style.background).toBe(
+      "var(--overlay-explorer-preview-bg)",
+    );
+    expect(await screen.findByTestId("document-preview-article")).toHaveTextContent(
+      "Ship Notes",
+    );
+    expectChromeControlButtonOrder("previewModeToggle", ["Preview", "Edit"]);
+    expect(screen.queryByTestId("monaco-editor")).toBeNull();
+  });
+
   it("opens html files in preview mode when a rendered document preview is available", async () => {
     renderExplorer();
     await screen.findByText("index.html");

@@ -10556,7 +10556,7 @@ export function FileExplorer({
         }
         case "text": {
           setDocumentViewMode(
-            resolvedPreview.renderKind === "html" ? "preview" : "edit",
+            resolvedPreview.renderKind !== "none" ? "preview" : "edit",
           );
           if (
             currentPreview.type === "text" &&

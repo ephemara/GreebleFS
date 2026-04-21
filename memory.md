@@ -1,5 +1,19 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Markdown Preview Now Uses Explorer Theme Surfaces
+
+- Markdown preview no longer ships with a lane-local hardcoded dark background. The rendered document surface now follows the active explorer/theme tokens, so the current light shell gets the white or near-white preview users expect while dark themes remain dark instead of being forced onto one fixed paper mode.
+- Durable implementation shape:
+  - `src/components/documentPreview.tsx` now routes markdown preview backgrounds, code blocks, tables, borders, and link chrome through existing overlay/explorer CSS variables instead of fixed dark hex and RGBA fills.
+  - The shared HTML preview wrapper in the same component now uses the explorer preview background token too, but the iframe body stays isolated and white so arbitrary HTML documents remain sandboxed instead of being host-themed.
+  - `src/components/FileExplorer.tsx` now sends any text preview with a real rendered `renderKind` into `preview` mode, not just `html`. That fixes the older mismatch where `.html` opened as a rendered preview but `.md` still dropped into Monaco edit mode.
+  - `src/test/documentPreview.test.tsx` and `src/test/fileExplorer.viewModes.test.tsx` now lock both sides of the contract: markdown preview surfaces use theme vars, and selecting a markdown file in Explorer opens the rendered preview lane with the shared preview header chrome intact.
+- Durable product note:
+  - Treat markdown/html document preview like the other modern preview lanes: the shell owns the surrounding preview surface and theme tokens, while the document renderer only owns safe content rendering. Do not reintroduce lane-local hardcoded backgrounds in `documentPreview.tsx`.
+- Validation:
+  - passed: `bunx vitest run src/test/documentPreview.test.tsx src/test/fileExplorer.viewModes.test.tsx --reporter=dot`
+  - repo-wide / filtered TypeScript check is still blocked by a pre-existing `src/components/FileExplorer.tsx` script-preview type error unrelated to this markdown change
+
 # 2026-04-21 - Cross-Provider Acceleration Control Plane For CUDA / AI / Native GPU Routing
 
 - GreebleFS now has a reusable acceleration-control seam above the native `wgpu` runtime. The point is to stop future CUDA, AI indexing, inference, similarity, media, or file-operation offload work from inventing ad hoc provider checks in random panels or commands.
