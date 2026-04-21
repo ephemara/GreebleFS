@@ -1,5 +1,18 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Shared Preview Header Mode Order Is Now Canonical
+
+- The shared Explorer preview header no longer lets editable lanes drift between `Edit | Preview` and `Preview | Edit`. The canonical left-to-right contract is now the non-edit mode first, edit second.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now defines shared mode-toggle option constants for the preview header instead of repeating lane-local arrays. Standard editable lanes use `Preview | Edit`; executable text previews use `Run | Edit`, which preserves the same non-edit-first pattern.
+  - Audio and video preview lanes inherit that contract through the shared fallback toggle group, while text/image/spreadsheet/shader reuse the same canonical option definitions.
+  - `src/test/fileExplorer.viewModes.test.tsx` now includes a reusable button-order assertion and locks the order across script, HTML, spreadsheet, audio, video, shader, PDF, and editable image preview lanes.
+- Durable product note:
+  - Treat preview-header mode order as shell contract, not lane flavor. If a preview surface supports an edit mode, the leftmost mode button must represent the non-edit state and the next one must be `Edit`.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx --reporter=dot`
+  - passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "FileExplorer.tsx|fileExplorer.viewModes.test.tsx" || true`
+
 # 2026-04-21 - SQLite Preview Is Now Searchable, Streamed, And Grid-First
 
 - SQLite preview in the explorer pane no longer behaves like a mini paginated database app with duplicated file metadata chrome. The pane is now table-first: compact horizontal table chips, one active-table control bar, then the data grid.

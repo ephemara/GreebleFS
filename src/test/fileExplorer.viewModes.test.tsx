@@ -583,6 +583,36 @@ function getChromeControl(controlId: string) {
   ) as HTMLElement | null;
 }
 
+function getChromeControlButtonLabels(controlId: string): string[] {
+  const control = getChromeControl(controlId);
+  if (!control) {
+    throw new Error(`${controlId} control not found`);
+  }
+  return within(control)
+    .getAllByRole("button")
+    .map((button) => button.textContent?.replace(/\s+/g, " ").trim() ?? "");
+}
+
+function expectChromeControlButtonOrder(
+  controlId: string,
+  orderedLabels: readonly string[],
+) {
+  const labels = getChromeControlButtonLabels(controlId);
+  let previousIndex = -1;
+  for (const label of orderedLabels) {
+    const nextIndex = labels.indexOf(label);
+    expect(
+      nextIndex,
+      `Expected ${controlId} to contain ${label}. Buttons: ${labels.join(" | ")}`,
+    ).toBeGreaterThan(-1);
+    expect(
+      nextIndex,
+      `Expected ${controlId} order ${orderedLabels.join(" -> ")}. Buttons: ${labels.join(" | ")}`,
+    ).toBeGreaterThan(previousIndex);
+    previousIndex = nextIndex;
+  }
+}
+
 function getExplorerViewport(anchorText: string) {
   const anchor = screen.getByText(anchorText);
   const viewport = anchor.closest(".overlay-scroll-area__content")
@@ -1215,6 +1245,7 @@ describe("FileExplorer view modes", () => {
     expect(screen.queryByText(/preview unavailable/i)).toBeNull();
     expect(screen.getByRole("button", { name: /^edit$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^run$/i })).toBeInTheDocument();
+    expectChromeControlButtonOrder("previewModeToggle", ["Run", "Edit"]);
     expect(getChromeControl("previewTerminalToggle")).toBeNull();
     expect(await screen.findByTestId("monaco-editor")).toHaveTextContent(
       "hello from preview",
@@ -1827,6 +1858,7 @@ describe("FileExplorer view modes", () => {
     expect(
       await screen.findByTitle("HTML document preview"),
     ).toBeInTheDocument();
+    expectChromeControlButtonOrder("previewModeToggle", ["Preview", "Edit"]);
     expect(screen.queryByTestId("monaco-editor")).toBeNull();
   });
 
@@ -1864,6 +1896,7 @@ describe("FileExplorer view modes", () => {
     await waitFor(() => {
       expect(useExplorerStore.getState().session.documentViewMode).toBe("preview");
     });
+    expectChromeControlButtonOrder("previewModeToggle", ["Preview", "Edit"]);
 
     fireEvent.click(within(getPreviewPane()).getByRole("button", { name: /^edit$/i }));
 
@@ -2289,6 +2322,7 @@ describe("FileExplorer view modes", () => {
     );
     const previewModeToggle = getChromeControl("previewModeToggle");
     expect(previewModeToggle).not.toBeNull();
+    expectChromeControlButtonOrder("previewModeToggle", ["Preview", "Edit"]);
     fireEvent.click(
       within(previewModeToggle as HTMLElement).getByRole("button", {
         name: "Edit",
@@ -2347,6 +2381,7 @@ describe("FileExplorer view modes", () => {
 
     const previewModeToggle = getChromeControl("previewModeToggle");
     expect(previewModeToggle).not.toBeNull();
+    expectChromeControlButtonOrder("previewModeToggle", ["Preview", "Edit"]);
     fireEvent.click(
       within(previewModeToggle as HTMLElement).getByRole("button", {
         name: "Edit",
@@ -2380,6 +2415,7 @@ describe("FileExplorer view modes", () => {
 
     const previewModeToggle = getChromeControl("previewModeToggle");
     expect(previewModeToggle).not.toBeNull();
+    expectChromeControlButtonOrder("previewModeToggle", ["Preview", "Edit"]);
     expect(
       within(previewModeToggle as HTMLElement).getByRole("button", {
         name: "Preview",
@@ -2677,6 +2713,7 @@ describe("FileExplorer view modes", () => {
     expect(
       await screen.findByRole("button", { name: /^fit p$/i }),
     ).toBeInTheDocument();
+    expectChromeControlButtonOrder("previewModeToggle", ["Preview", "Edit"]);
     await waitFor(() => {
       expect(useExplorerStore.getState().session.documentViewMode).toBe("edit");
     });
@@ -3890,6 +3927,7 @@ describe("FileExplorer view modes", () => {
 
     const previewModeToggle = getChromeControl("previewModeToggle");
     expect(previewModeToggle).not.toBeNull();
+    expectChromeControlButtonOrder("previewModeToggle", ["Preview", "Edit"]);
 
     fireEvent.click(
       within(previewModeToggle as HTMLElement).getByRole("button", {

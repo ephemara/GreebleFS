@@ -3046,6 +3046,22 @@ function EditorFallback({ label }: { label: string }) {
   );
 }
 
+const EXPLORER_PREVIEW_MODE_TOGGLE_OPTIONS = [
+  { id: "preview", label: "Preview" },
+  { id: "edit", label: "Edit" },
+] as const satisfies ReadonlyArray<{
+  id: ExplorerDocumentViewMode;
+  label: string;
+}>;
+
+const EXPLORER_SCRIPT_RUN_MODE_TOGGLE_OPTIONS = [
+  { id: "preview", label: "Run" },
+  { id: "edit", label: "Edit" },
+] as const satisfies ReadonlyArray<{
+  id: ExplorerDocumentViewMode;
+  label: string;
+}>;
+
 // ─── Resizable Preview Panel ──────────────────────────────────────────────────
 
 function PreviewPanel({
@@ -3704,12 +3720,7 @@ function PreviewPanel({
                   flexWrap: "wrap",
                 }}
               >
-                {(
-                  [
-                    { id: "preview", label: "Preview" },
-                    { id: "edit", label: "Edit" },
-                  ] as const
-                ).map((option) => {
+                {EXPLORER_PREVIEW_MODE_TOGGLE_OPTIONS.map((option) => {
                   const active = viewMode === option.id;
                   return (
                     <button
@@ -3740,12 +3751,7 @@ function PreviewPanel({
                   flexWrap: "wrap",
                 }}
               >
-                {(
-                  [
-                    { id: "preview", label: "Preview" },
-                    { id: "edit", label: "Edit" },
-                  ] as const
-                ).map((option) => {
+                {EXPLORER_PREVIEW_MODE_TOGGLE_OPTIONS.map((option) => {
                   const active = viewMode === option.id;
                   return (
                     <button
@@ -3764,14 +3770,8 @@ function PreviewPanel({
 
           if (preview.type === "text") {
             const previewModeOptions = isScriptTextPreview
-              ? ([
-                  { id: "edit", label: "Edit" },
-                  { id: "preview", label: "Run" },
-                ] as const)
-              : ([
-                  { id: "edit", label: "Edit" },
-                  { id: "preview", label: "Preview" },
-                ] as const);
+              ? EXPLORER_SCRIPT_RUN_MODE_TOGGLE_OPTIONS
+              : EXPLORER_PREVIEW_MODE_TOGGLE_OPTIONS;
 
             return (
               <div
@@ -4014,12 +4014,7 @@ function PreviewPanel({
                 background: "var(--overlay-explorer-chip-bg)",
               }}
             >
-              {(
-                [
-                  { id: "edit", label: "Edit" },
-                  { id: "preview", label: "Preview" },
-                ] as const
-              ).map((option) => {
+              {EXPLORER_PREVIEW_MODE_TOGGLE_OPTIONS.map((option) => {
                 const active = viewMode === option.id;
                 return (
                   <button
