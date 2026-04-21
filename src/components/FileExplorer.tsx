@@ -199,6 +199,11 @@ import {
 import { ExplorerSideRail } from "./explorer/ExplorerSideRail";
 import { ExplorerChromeSurface } from "./explorer/ExplorerChromeSurface";
 import {
+  buildExplorerPreviewWorkflowTabs,
+  resolveExplorerPreviewWorkflowActiveTab,
+  type ExplorerPreviewWildcardWorkflowTab,
+} from "./explorer/explorerPreviewWorkflowTabs";
+import {
   buildConstellationFieldLayout,
   type ConstellationFieldBand,
   type ConstellationFieldNode,
@@ -3056,22 +3061,6 @@ function EditorFallback({ label }: { label: string }) {
   );
 }
 
-const EXPLORER_PREVIEW_MODE_TOGGLE_OPTIONS = [
-  { id: "preview", label: "Preview" },
-  { id: "edit", label: "Edit" },
-] as const satisfies ReadonlyArray<{
-  id: ExplorerDocumentViewMode;
-  label: string;
-}>;
-
-const EXPLORER_SCRIPT_RUN_MODE_TOGGLE_OPTIONS = [
-  { id: "preview", label: "Run" },
-  { id: "edit", label: "Edit" },
-] as const satisfies ReadonlyArray<{
-  id: ExplorerDocumentViewMode;
-  label: string;
-}>;
-
 // ─── Resizable Preview Panel ──────────────────────────────────────────────────
 
 function PreviewPanel({
@@ -3109,6 +3098,8 @@ function PreviewPanel({
   onPreviewTerminalReportedWorkingDirectoryChange,
   viewMode,
   onViewModeChange,
+  activeWorkflowTabId,
+  onWorkflowTabChange,
   explorerTheme,
   blurEnabled,
   chromeLayoutId,
@@ -3168,6 +3159,8 @@ function PreviewPanel({
   onPreviewTerminalReportedWorkingDirectoryChange: (cwd: string) => void;
   viewMode: ExplorerDocumentViewMode;
   onViewModeChange: (mode: ExplorerDocumentViewMode) => void;
+  activeWorkflowTabId: string | null;
+  onWorkflowTabChange: (tabId: string) => void;
   explorerTheme: ResolvedExplorerThemeRecipe;
   blurEnabled: boolean;
   chromeLayoutId: ExplorerChromeLayoutId;
@@ -3189,6 +3182,9 @@ function PreviewPanel({
     useState<ExplorerPdfWorkbenchChromeState | null>(null);
   const [spreadsheetWorkbenchStatus, setSpreadsheetWorkbenchStatus] =
     useState<SpreadsheetWorkbenchStatus | null>(null);
+  const [wildcardWorkflowTabs, setWildcardWorkflowTabs] = useState<
+    ExplorerPreviewWildcardWorkflowTab[]
+  >([]);
   const [pdfPageInputValue, setPdfPageInputValue] = useState("1");
   const [textPreviewCursor, setTextPreviewCursor] = useState<EditorCursorPosition>({
     lineNumber: 1,
@@ -3265,6 +3261,18 @@ function PreviewPanel({
   useEffect(() => {
     setSpreadsheetWorkbenchStatus(null);
   }, [preview.path, preview.type]);
+
+  useEffect(() => {
+    setWildcardWorkflowTabs([]);
+    onWorkflowTabChange(viewMode);
+  }, [onWorkflowTabChange, preview.path, preview.type]);
+
+  const handleWildcardWorkflowTabsChange = useCallback(
+    (tabs: ExplorerPreviewWildcardWorkflowTab[] | null) => {
+      setWildcardWorkflowTabs(tabs ?? []);
+    },
+    [],
+  );
 
   const previewTitle = preview.type === "none" ? "Preview" : preview.name;
   const isPdfPreview = preview.type === "pdf";
@@ -3385,7 +3393,30 @@ function PreviewPanel({
     isPdfPreview ||
     isShaderPreview ||
     isSpreadsheetPreview ||
-    isEditableImagePreview;
+    isEditableImagePreview ||
+    wildcardWorkflowTabs.length > 0;
+  const previewWorkflowTabs = useMemo(
+    () =>
+      buildExplorerPreviewWorkflowTabs({
+        previewLabel: isScriptTextPreview ? "Run" : "Preview",
+        wildcardTabs: wildcardWorkflowTabs,
+      }),
+    [isScriptTextPreview, wildcardWorkflowTabs],
+  );
+  const activePreviewWorkflowTab = useMemo(
+    () =>
+      resolveExplorerPreviewWorkflowActiveTab(
+        previewWorkflowTabs,
+        activeWorkflowTabId,
+      ),
+    [activeWorkflowTabId, previewWorkflowTabs],
+  );
+
+  useEffect(() => {
+    if (activeWorkflowTabId !== activePreviewWorkflowTab.id) {
+      onWorkflowTabChange(activePreviewWorkflowTab.id);
+    }
+  }, [activePreviewWorkflowTab.id, activeWorkflowTabId, onWorkflowTabChange]);
   const previewHeaderRowStyle = useMemo<CSSProperties>(
     () => ({
       display: "flex",
@@ -3431,6 +3462,58 @@ function PreviewPanel({
       outline: "none",
     }),
     [],
+  );
+  const renderPreviewWorkflowToggle = useCallback(
+    (
+      options?: {
+        onPreviewAction?: () => void;
+        onEditAction?: () => void;
+      },
+    ) => (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+          padding: 2,
+          borderRadius: "var(--overlay-explorer-control-radius)",
+          border: "1px solid var(--overlay-explorer-chip-border)",
+          background: "var(--overlay-explorer-chip-bg)",
+          flexWrap: "wrap",
+        }}
+      >
+        {previewWorkflowTabs.map((tab) => {
+          const active = activePreviewWorkflowTab.id === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => {
+                onViewModeChange(tab.baseMode);
+                onWorkflowTabChange(tab.id);
+                if (tab.id === "preview") {
+                  options?.onPreviewAction?.();
+                  return;
+                }
+                if (tab.id === "edit") {
+                  options?.onEditAction?.();
+                }
+              }}
+              style={previewChipButtonStyle(active)}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+    ),
+    [
+      activePreviewWorkflowTab.id,
+      onViewModeChange,
+      onWorkflowTabChange,
+      previewChipButtonStyle,
+      previewWorkflowTabs,
+    ],
   );
   const commitPdfPageInput = useCallback(() => {
     if (!isPdfPreview || !pdfWorkbenchController) {
@@ -3648,60 +3731,107 @@ function PreviewPanel({
                   display: "flex",
                   alignItems: "center",
                   gap: 4,
-                  padding: 2,
-                  borderRadius: "var(--overlay-explorer-control-radius)",
-                  border: "1px solid var(--overlay-explorer-chip-border)",
-                  background: "var(--overlay-explorer-chip-bg)",
                   flexWrap: "wrap",
                 }}
               >
-                <button
-                  type="button"
-                  onClick={() => onViewModeChange("preview")}
-                  style={previewChipButtonStyle(viewMode === "preview")}
-                >
-                  Preview
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onViewModeChange("edit")}
-                  style={previewChipButtonStyle(viewMode === "edit")}
-                >
-                  Edit
-                </button>
-                <span
-                  aria-hidden="true"
+                {renderPreviewWorkflowToggle()}
+                <div
                   style={{
-                    width: 1,
-                    alignSelf: "stretch",
-                    background: "var(--overlay-explorer-chip-border)",
-                    opacity: 0.6,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    padding: 2,
+                    borderRadius: "var(--overlay-explorer-control-radius)",
+                    border: "1px solid var(--overlay-explorer-chip-border)",
+                    background: "var(--overlay-explorer-chip-bg)",
+                    flexWrap: "wrap",
                   }}
-                />
-                <button
-                  type="button"
-                  onClick={() => onShaderSceneChange(preview.path, "sphere")}
-                  style={previewChipButtonStyle(
-                    preview.selectedScene === "sphere",
-                  )}
                 >
-                  Sphere
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    onShaderSceneChange(preview.path, "fullscreen")
-                  }
-                  style={previewChipButtonStyle(
-                    preview.selectedScene === "fullscreen",
-                  )}
-                >
-                  Fullscreen
-                </button>
-                {canSave ? (
                   <button
                     type="button"
-                    onClick={() => void onShaderSave(preview.path)}
+                    onClick={() => onShaderSceneChange(preview.path, "sphere")}
+                    style={previewChipButtonStyle(
+                      preview.selectedScene === "sphere",
+                    )}
+                  >
+                    Sphere
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onShaderSceneChange(preview.path, "fullscreen")
+                    }
+                    style={previewChipButtonStyle(
+                      preview.selectedScene === "fullscreen",
+                    )}
+                  >
+                    Fullscreen
+                  </button>
+                  {canSave ? (
+                    <button
+                      type="button"
+                      onClick={() => void onShaderSave(preview.path)}
+                      disabled={!preview.isDirty || preview.isSaving}
+                      style={previewChipButtonStyle(
+                        preview.isDirty && !preview.isSaving,
+                        !preview.isDirty || preview.isSaving,
+                      )}
+                    >
+                      <Save size={11} />
+                      Save
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            );
+          }
+
+          if (preview.type === "image" && isEditableImagePreview) {
+            return renderPreviewWorkflowToggle();
+          }
+
+          if (preview.type === "spreadsheet") {
+            return renderPreviewWorkflowToggle();
+          }
+
+          if (preview.type === "text") {
+            return (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  flexWrap: "wrap",
+                }}
+              >
+                {renderPreviewWorkflowToggle({
+                  onPreviewAction:
+                    preview.scriptPreview != null
+                      ? () =>
+                          void onRunTextScript(
+                            preview.path,
+                            preview.scriptPreview,
+                          )
+                      : undefined,
+                  onEditAction:
+                    preview.scriptPreview != null
+                      ? onStopTextScriptRun
+                      : undefined,
+                })}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    padding: 2,
+                    borderRadius: "var(--overlay-explorer-control-radius)",
+                    border: "1px solid var(--overlay-explorer-chip-border)",
+                    background: "var(--overlay-explorer-chip-bg)",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => void onTextSave(preview.path)}
                     disabled={!preview.isDirty || preview.isSaving}
                     style={previewChipButtonStyle(
                       preview.isDirty && !preview.isSaving,
@@ -3711,134 +3841,7 @@ function PreviewPanel({
                     <Save size={11} />
                     Save
                   </button>
-                ) : null}
-              </div>
-            );
-          }
-
-          if (preview.type === "image" && isEditableImagePreview) {
-            return (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 4,
-                  padding: 2,
-                  borderRadius: "var(--overlay-explorer-control-radius)",
-                  border: "1px solid var(--overlay-explorer-chip-border)",
-                  background: "var(--overlay-explorer-chip-bg)",
-                  flexWrap: "wrap",
-                }}
-              >
-                {EXPLORER_PREVIEW_MODE_TOGGLE_OPTIONS.map((option) => {
-                  const active = viewMode === option.id;
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => onViewModeChange(option.id)}
-                      style={previewChipButtonStyle(active)}
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
-            );
-          }
-
-          if (preview.type === "spreadsheet") {
-            return (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 4,
-                  padding: 2,
-                  borderRadius: "var(--overlay-explorer-control-radius)",
-                  border: "1px solid var(--overlay-explorer-chip-border)",
-                  background: "var(--overlay-explorer-chip-bg)",
-                  flexWrap: "wrap",
-                }}
-              >
-                {EXPLORER_PREVIEW_MODE_TOGGLE_OPTIONS.map((option) => {
-                  const active = viewMode === option.id;
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => onViewModeChange(option.id)}
-                      style={previewChipButtonStyle(active)}
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
-            );
-          }
-
-          if (preview.type === "text") {
-            const previewModeOptions = isScriptTextPreview
-              ? EXPLORER_SCRIPT_RUN_MODE_TOGGLE_OPTIONS
-              : EXPLORER_PREVIEW_MODE_TOGGLE_OPTIONS;
-
-            return (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 4,
-                  padding: 2,
-                  borderRadius: "var(--overlay-explorer-control-radius)",
-                  border: "1px solid var(--overlay-explorer-chip-border)",
-                  background: "var(--overlay-explorer-chip-bg)",
-                  flexWrap: "wrap",
-                }}
-              >
-                {previewModeOptions.map((option) => {
-                  const active = viewMode === option.id;
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => {
-                        if (
-                          option.id === "preview" &&
-                          preview.scriptPreview != null
-                        ) {
-                          void onRunTextScript(
-                            preview.path,
-                            preview.scriptPreview,
-                          );
-                          return;
-                        }
-                        onViewModeChange(option.id);
-                        if (
-                          option.id === "edit" &&
-                          preview.scriptPreview != null
-                        ) {
-                          onStopTextScriptRun();
-                        }
-                      }}
-                      style={previewChipButtonStyle(active)}
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
-                <button
-                  type="button"
-                  onClick={() => void onTextSave(preview.path)}
-                  disabled={!preview.isDirty || preview.isSaving}
-                  style={previewChipButtonStyle(
-                    preview.isDirty && !preview.isSaving,
-                    !preview.isDirty || preview.isSaving,
-                  )}
-                >
-                  <Save size={11} />
-                  Save
-                </button>
+                </div>
               </div>
             );
           }
@@ -4012,33 +4015,7 @@ function PreviewPanel({
             );
           }
 
-          return (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-                padding: 2,
-                borderRadius: "var(--overlay-explorer-control-radius)",
-                border: "1px solid var(--overlay-explorer-chip-border)",
-                background: "var(--overlay-explorer-chip-bg)",
-              }}
-            >
-              {EXPLORER_PREVIEW_MODE_TOGGLE_OPTIONS.map((option) => {
-                const active = viewMode === option.id;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => onViewModeChange(option.id)}
-                    style={previewChipButtonStyle(active)}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-          );
+          return renderPreviewWorkflowToggle();
         },
       },
       {
@@ -4409,6 +4386,8 @@ function PreviewPanel({
               audioExtension={preview.extension}
               audioSize={preview.size}
               mode={viewMode}
+              workflowTabId={activePreviewWorkflowTab.id}
+              onRegisterWorkflowTabs={handleWildcardWorkflowTabsChange}
               onExported={onRefreshPreviewEntry}
             />
           )}
@@ -6876,6 +6855,8 @@ export function FileExplorer({
   );
   const [documentViewMode, setDocumentViewMode] =
     useState<ExplorerDocumentViewMode>(() => initialSession.documentViewMode);
+  const [activePreviewWorkflowTabId, setActivePreviewWorkflowTabId] =
+    useState<string>(() => initialSession.documentViewMode);
   const [previewEnabled, setPreviewEnabled] = useState(
     () => initialSession.previewEnabled,
   );
@@ -6887,6 +6868,15 @@ export function FileExplorer({
   const [sourcesVisible, setSourcesVisible] = useState(
     () => initialSession.sourcesVisible,
   );
+
+  useEffect(() => {
+    if (
+      activePreviewWorkflowTabId === "preview" ||
+      activePreviewWorkflowTabId === "edit"
+    ) {
+      setActivePreviewWorkflowTabId(documentViewMode);
+    }
+  }, [activePreviewWorkflowTabId, documentViewMode]);
   const [preview, setPreview] = useState<PreviewState>({
     type: "none",
     path: "",
@@ -12742,9 +12732,11 @@ export function FileExplorer({
                 ? "Video editor"
                 : "Video preview"
             : preview.type === "audio"
-              ? documentViewMode === "edit"
-                ? "Audio editor"
-                : "Audio preview"
+              ? activePreviewWorkflowTabId === "vst"
+                ? "Audio VST"
+                : documentViewMode === "edit"
+                  ? "Audio editor"
+                  : "Audio preview"
               : preview.type === "folder"
                 ? "Folder preview"
                 : preview.type === "image"
@@ -15933,9 +15925,11 @@ export function FileExplorer({
         matchesKeybinding(e, keybindings.audioWorkbenchToggleEditMode)
       ) {
         e.preventDefault();
-        setDocumentViewMode((current) =>
-          current === "edit" ? "preview" : "edit",
-        );
+        setDocumentViewMode((current) => {
+          const nextMode = current === "edit" ? "preview" : "edit";
+          setActivePreviewWorkflowTabId(nextMode);
+          return nextMode;
+        });
         return;
       }
 
@@ -19971,6 +19965,8 @@ export function FileExplorer({
               }
               viewMode={documentViewMode}
               onViewModeChange={setDocumentViewMode}
+              activeWorkflowTabId={activePreviewWorkflowTabId}
+              onWorkflowTabChange={setActivePreviewWorkflowTabId}
               explorerTheme={explorerTheme}
               blurEnabled={explorerBlurEnabled}
               chromeLayoutId={effectiveChromeLayoutId}

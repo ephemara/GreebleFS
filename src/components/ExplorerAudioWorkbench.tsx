@@ -2,6 +2,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import {
   forwardRef,
   memo,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
@@ -32,6 +33,7 @@ import {
   scanExplorerVstPlugins,
   type ExplorerVstPluginEntry,
 } from '../runtime/vstBackend';
+import type { ExplorerPreviewWildcardWorkflowTab } from './explorer/explorerPreviewWorkflowTabs';
 import {
   getAudioDeckState,
   loadSelectionIntoAudioDeck,
@@ -49,6 +51,13 @@ import {
 } from '../store/audioEngineStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { AppConfirmDialog, AppPromptDialog } from './AppModal';
+import {
+  createExplorerVstEditorSession,
+  destroyExplorerVstEditorSession,
+  focusExplorerVstEditorSession,
+  syncExplorerVstEditorSessionRect,
+  type ExplorerVstEditorSessionState,
+} from '../runtime/audioVstEditorBackend';
 
 type ExplorerAudioWorkbenchProps = {
   audioPath: string;
@@ -56,6 +65,10 @@ type ExplorerAudioWorkbenchProps = {
   audioExtension: string;
   audioSize: number;
   mode?: 'preview' | 'edit';
+  workflowTabId?: string;
+  onRegisterWorkflowTabs?: (
+    tabs: ExplorerPreviewWildcardWorkflowTab[] | null,
+  ) => void;
   onExported?: (outputPath: string) => Promise<void> | void;
 };
 
@@ -66,6 +79,13 @@ type TimelineDragMode = 'playhead' | 'selectionStart' | 'selectionEnd' | 'fadeIn
 const MINIMUM_SELECTION_SECONDS = 0.05;
 const FADE_KEYBOARD_STEP_SECONDS = 0.1;
 const FINE_TRIM_NUDGE_SECONDS = 0.01;
+const AUDIO_WILDCARD_WORKFLOW_TABS: ExplorerPreviewWildcardWorkflowTab[] = [
+  {
+    id: 'vst',
+    label: 'VST',
+    baseMode: 'edit',
+  },
+];
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -149,13 +169,40 @@ function toolbarButtonStyle(emphasis: 'default' | 'primary' | 'danger' | 'ghost'
     border: '1px solid transparent',
     cursor: 'pointer',
     fontSize: 11,
-    fontWeight: 500,
+    fontWeight: 600,
+    color: 'var(--overlay-text-primary)',
   };
 
-  if (emphasis === 'primary') return { ...base, background: '#2563eb', color: '#fff' };
-  if (emphasis === 'danger') return { ...base, background: '#dc2626', color: '#fff' };
-  if (emphasis === 'ghost') return { ...base, background: 'transparent', color: 'rgba(255,255,255,0.7)' };
-  return { ...base, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.9)' };
+  if (emphasis === 'primary') {
+    return {
+      ...base,
+      background: 'var(--overlay-explorer-chip-active-bg)',
+      border: '1px solid var(--overlay-explorer-chip-active-border)',
+      color: 'var(--overlay-explorer-chip-active-text)',
+    };
+  }
+  if (emphasis === 'danger') {
+    return {
+      ...base,
+      background: 'color-mix(in srgb, #c0392b 20%, var(--overlay-explorer-chip-bg) 80%)',
+      border: '1px solid color-mix(in srgb, #c0392b 52%, var(--overlay-explorer-chip-border) 48%)',
+      color: 'var(--overlay-text-primary)',
+    };
+  }
+  if (emphasis === 'ghost') {
+    return {
+      ...base,
+      background: 'transparent',
+      border: '1px solid transparent',
+      color: 'var(--overlay-text-muted)',
+    };
+  }
+  return {
+    ...base,
+    background: 'var(--overlay-explorer-chip-bg)',
+    border: '1px solid var(--overlay-explorer-chip-border)',
+    color: 'var(--overlay-text-primary)',
+  };
 }
 
 type AudioWorkbenchPlayheadMarkerHandle = {
@@ -184,7 +231,7 @@ const AudioWorkbenchWaveformBars = memo(function AudioWorkbenchWaveformBars({
   isAnalyzing,
 }: AudioWorkbenchWaveformBarsProps) {
   if (waveformBuckets.length === 0) {
-    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>{isAnalyzing ? 'Analyzing...' : 'Waveform unavailable'}</div>;
+    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', color: 'var(--overlay-text-muted)', fontSize: 12 }}>{isAnalyzing ? 'Analyzing...' : 'Waveform unavailable'}</div>;
   }
   return (
     <div style={{ display: 'flex', alignItems: 'flex-end', width: '100%', height: '100%', gap: 0 }}>
@@ -194,7 +241,9 @@ const AudioWorkbenchWaveformBars = memo(function AudioWorkbenchWaveformBars({
           style={{
             flex: 1,
             height: `${Math.max(2, bucket.peakLevel * 100)}%`,
-            background: bucket.rmsLevel > 0.05 ? '#60a5fa' : '#3b82f6',
+            background: bucket.rmsLevel > 0.05
+              ? 'var(--overlay-explorer-chip-active-border)'
+              : 'color-mix(in srgb, var(--overlay-accent) 66%, transparent)',
             opacity: bucket.rmsLevel > 0.05 ? 1 : 0.6,
             minWidth: 1,
           }}
@@ -216,7 +265,7 @@ const AudioWorkbenchSpectralBars = memo(function AudioWorkbenchSpectralBars({
           style={{
             flex: 1,
             height: `${Math.max(4, band * 100)}%`,
-            background: '#eab308',
+            background: 'color-mix(in srgb, var(--overlay-accent) 54%, #f4d03f 46%)',
             minWidth: 1,
           }}
         />
@@ -323,7 +372,7 @@ const AudioWorkbenchPlayheadMarker = memo(
             style={{
               width: 1,
               height: '100%',
-              background: '#ef4444',
+              background: 'var(--overlay-accent)',
             }}
           />
         </div>
@@ -338,17 +387,23 @@ export function ExplorerAudioWorkbench({
   audioExtension,
   audioSize,
   mode = 'edit',
+  workflowTabId,
+  onRegisterWorkflowTabs,
   onExported,
 }: ExplorerAudioWorkbenchProps) {
   useAudioEngineFeed();
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   const timelineRef = useRef<HTMLDivElement | null>(null);
+  const vstHostSurfaceRef = useRef<HTMLDivElement | null>(null);
   const snapshot = useAudioEngineSnapshot();
   const settings = useSettingsStore((state) => state.settings);
   const keybindings = settings.keybindings;
   const activeDeckId = 'a' as const;
-  const isEditMode = mode === 'edit';
+  const activeWorkflowTabId = workflowTabId ?? mode;
+  const isPreviewMode = activeWorkflowTabId === 'preview';
+  const isEditMode = activeWorkflowTabId === 'edit';
+  const isVstMode = activeWorkflowTabId === 'vst';
 
   const [analysis, setAnalysis] = useState<ExplorerAudioPreviewAnalysis | null>(null);
   const [selectionStart, setSelectionStart] = useState(0);
@@ -360,9 +415,18 @@ export function ExplorerAudioWorkbench({
   // VST Discovery State
   const [discoveredPlugins, setDiscoveredPlugins] = useState<ExplorerVstPluginEntry[]>([]);
   const [isScanningVst, setIsScanningVst] = useState(false);
+  const [vstEditorSession, setVstEditorSession] =
+    useState<ExplorerVstEditorSessionState | null>(null);
+
+  useEffect(() => {
+    onRegisterWorkflowTabs?.(AUDIO_WILDCARD_WORKFLOW_TABS);
+    return () => {
+      onRegisterWorkflowTabs?.(null);
+    };
+  }, [onRegisterWorkflowTabs]);
   
   useEffect(() => {
-    if (!isEditMode) {
+    if (!isVstMode) {
       setIsScanningVst(false);
       return undefined;
     }
@@ -386,7 +450,7 @@ export function ExplorerAudioWorkbench({
     };
     runScan();
     return () => { active = false; };
-  }, [isEditMode, settings.audio?.vst3AdditionalFolders]);
+  }, [isVstMode, settings.audio?.vst3AdditionalFolders]);
 
   const [generateSpectrogram, setGenerateSpectrogram] = useState(true);
   const [convertFormat, setConvertFormat] = useState<'mp3' | 'wav' | 'flac' | 'ogg'>(
@@ -600,6 +664,111 @@ export function ExplorerAudioWorkbench({
   const previewTransportStatus = workbenchError || previewDeck.error || snapshot.engineError
     ? workbenchError ?? previewDeck.error ?? snapshot.engineError
     : workbenchStatus;
+
+  const rescanVstPlugins = useCallback(async () => {
+    setIsScanningVst(true);
+    try {
+      const defaults = await getExplorerVstDefaultScanPaths();
+      const validDefaults = defaults.filter((path) => path.exists).map((path) => path.path);
+      const plugins = await scanExplorerVstPlugins([
+        ...validDefaults,
+        ...(settings.audio?.vst3AdditionalFolders ?? []),
+      ]);
+      setDiscoveredPlugins(plugins);
+      setWorkbenchStatus(`Scanned ${plugins.length} VST3 plugins.`);
+    } finally {
+      setIsScanningVst(false);
+    }
+  }, [settings.audio?.vst3AdditionalFolders]);
+
+  const loadDeckPlugin = useCallback(
+    async (pluginPath: string) => {
+      await loadAudioDeckPlugin(previewDeck.deckId, pluginPath);
+      setWorkbenchStatus(`Plugin loaded: ${pluginPath.split(/[/\\]/).pop()}`);
+    },
+    [previewDeck.deckId],
+  );
+
+  useEffect(() => {
+    if (!isVstMode || !previewDeck.activePluginPath) {
+      if (vstEditorSession?.sessionId) {
+        void destroyExplorerVstEditorSession(vstEditorSession.sessionId);
+      }
+      setVstEditorSession(null);
+      return;
+    }
+
+    let disposed = false;
+    let sessionId: string | null = null;
+    const hostElement = vstHostSurfaceRef.current;
+
+    const syncRect = async () => {
+      if (!hostElement || !sessionId) {
+        return;
+      }
+      const rect = hostElement.getBoundingClientRect();
+      const nextSession = await syncExplorerVstEditorSessionRect({
+        sessionId,
+        rect: {
+          x: rect.left,
+          y: rect.top,
+          width: rect.width,
+          height: rect.height,
+          scaleFactor: window.devicePixelRatio || 1,
+        },
+      });
+      if (!disposed) {
+        setVstEditorSession(nextSession);
+      }
+    };
+
+    void (async () => {
+      try {
+        const session = await createExplorerVstEditorSession({
+          deckId: previewDeck.deckId,
+          pluginPath: previewDeck.activePluginPath,
+        });
+        if (disposed) {
+          await destroyExplorerVstEditorSession(session.sessionId);
+          return;
+        }
+        sessionId = session.sessionId;
+        setVstEditorSession(session);
+        await syncRect();
+      } catch (error) {
+        if (!disposed) {
+          setWorkbenchError(error instanceof Error ? error.message : String(error));
+        }
+      }
+    })();
+
+    if (!hostElement || typeof ResizeObserver === 'undefined') {
+      return () => {
+        disposed = true;
+        if (sessionId) {
+          void destroyExplorerVstEditorSession(sessionId);
+        }
+      };
+    }
+
+    const observer = new ResizeObserver(() => {
+      void syncRect();
+    });
+    observer.observe(hostElement);
+
+    return () => {
+      disposed = true;
+      observer.disconnect();
+      if (sessionId) {
+        void destroyExplorerVstEditorSession(sessionId);
+      }
+    };
+  }, [
+    isVstMode,
+    previewDeck.activePluginPath,
+    previewDeck.deckId,
+    vstEditorSession?.sessionId,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -1040,6 +1209,86 @@ export function ExplorerAudioWorkbench({
             setExportMessage(error instanceof Error ? error.message : String(error));
     }
   }
+
+  const rootSurfaceStyle: CSSProperties = {
+    width: '100%',
+    height: '100%',
+    overflow: 'auto',
+    color: 'var(--overlay-text-primary)',
+    background:
+      'radial-gradient(circle at top left, color-mix(in srgb, var(--overlay-accent) 12%, transparent), transparent 34%), var(--overlay-explorer-preview-bg)',
+  };
+  const contentShellStyle: CSSProperties = {
+    padding: 12,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+    minHeight: '100%',
+  };
+  const cardStyle: CSSProperties = {
+    border: '1px solid var(--overlay-explorer-preview-border)',
+    borderRadius: 'calc(var(--overlay-explorer-control-radius, 10px) + 4px)',
+    background:
+      'linear-gradient(180deg, color-mix(in srgb, var(--overlay-explorer-preview-bg) 88%, white 12%), var(--overlay-explorer-preview-bg))',
+    boxShadow: '0 10px 26px rgba(0, 0, 0, 0.14)',
+  };
+  const panelStyle: CSSProperties = {
+    ...cardStyle,
+    padding: 12,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+  };
+  const formControlStyle: CSSProperties = {
+    appearance: 'none',
+    width: '100%',
+    borderRadius: 'var(--overlay-explorer-control-radius, 8px)',
+    border: '1px solid var(--overlay-explorer-chip-border)',
+    background: 'var(--overlay-explorer-chip-bg)',
+    color: 'var(--overlay-text-primary)',
+    padding: '7px 9px',
+    fontSize: 11,
+    outline: 'none',
+  };
+  const sectionHeaderStyle: CSSProperties = {
+    fontSize: 11,
+    fontWeight: 700,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: 'var(--overlay-text-muted)',
+  };
+  const formLabelStyle: CSSProperties = {
+    display: 'block',
+    marginBottom: 4,
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: 'var(--overlay-text-muted)',
+  };
+  const statusChipStyle: CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '7px 10px',
+    borderRadius: 999,
+    border: '1px solid var(--overlay-explorer-chip-border)',
+    background: 'var(--overlay-explorer-chip-bg)',
+    fontSize: 11,
+  };
+  const summaryCardStyle: CSSProperties = {
+    padding: '12px 14px',
+    borderRadius: 'calc(var(--overlay-explorer-control-radius, 10px) + 4px)',
+    background: 'var(--overlay-explorer-chip-bg)',
+    border: '1px solid var(--overlay-explorer-chip-border)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 4,
+  };
+  const activeStatusMessage =
+    workbenchError || previewDeck.error || snapshot.engineError
+      ? workbenchError ?? previewDeck.error ?? snapshot.engineError
+      : previewTransportStatus;
 
   return (
     <>
