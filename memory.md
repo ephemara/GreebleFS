@@ -1,5 +1,18 @@
 # GreebleFS Memory
 
+# 2026-04-20 - Storage Workbench Scroll Containers Now Stay Constrained After Directory Expansion
+
+- The storage panel no longer lets its matrix/types/focus surfaces grow the whole center column and shove the workbench strip out of view when a directory selection hydrates more rows.
+- Durable implementation shape:
+  - `src/components/StoragePanel.tsx` now treats the storage shell like a constrained workbench viewport from the root down: the panel root uses `auto + minmax(0, 1fr)` rows, the body row and mode viewport both clip overflow, the inspector column now explicitly fills its slot, and the matrix/treemap/types surfaces claim `height: 100%` so their own scroll hosts take the overflow instead of the outer panel.
+  - Added stable `data-testid` hooks for the storage root/body/workspace/mode viewport/inspector layout wrappers so the scroll-contract regression can be locked without relying on brittle DOM traversal.
+  - `src/test/storagePanel.layout.test.tsx` now walks the real user path that was breaking the panel: scan a root, hydrate the matrix, click into a folder, and assert the workbench shell remains constrained while the storage viewport and inspector keep their overflow boundaries.
+- Durable product note:
+  - Treat the storage workbench like Explorer: every parent wrapper above an `OverlayScrollArea` needs an explicit `minmax(0, 1fr)` or equivalent constrained height contract, or the table/tree will start growing the whole pane again and the workbench strip will appear to “disappear” under expansion.
+- Validation:
+  - passed: `bunx vitest run src/test/storagePanel.layout.test.tsx src/test/storageWorkbench.test.ts src/test/storageStore.test.ts --reporter=dot`
+  - passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "StoragePanel.tsx|storagePanel.layout.test.tsx|storageWorkbench.test.ts|storageStore.test.ts" || true`
+
 # 2026-04-20 - Model Preview Now Uses Native Raw-Byte Transport And Blob-Backed Sidecars
 
 - The 3D preview lane no longer routes model files through the old base64/text preview commands that capped local binaries at 12 MB and text models at 10 MB. Model preview now uses a dedicated native raw-byte preview transport for local and cloud-backed reads.

@@ -244,6 +244,7 @@ function SurfaceCard({
       style={{
         display: 'flex',
         flexDirection: 'column',
+        minWidth: 0,
         minHeight: 0,
         borderRadius: 14,
         border: '1px solid var(--overlay-border)',
@@ -755,7 +756,11 @@ function StorageMatrixTable({
   };
 
   return (
-    <SurfaceCard title="Matrix" subtitle="Dense hierarchy with directories and files in one sorted field.">
+    <SurfaceCard
+      title="Matrix"
+      subtitle="Dense hierarchy with directories and files in one sorted field."
+      style={{ flex: 1, minHeight: 0, minWidth: 0, height: '100%' }}
+    >
       <div style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', minHeight: 0 }}>
         <div
           style={{
@@ -895,7 +900,11 @@ function StorageTreemapSurface({
   rectEntries: Array<{ entry: StorageScanEntry; x: number; y: number; width: number; height: number }>;
 }) {
   return (
-    <SurfaceCard title="Treemap" subtitle={focusEntry ? focusEntry.path : 'Select a path to focus the map.'}>
+    <SurfaceCard
+      title="Treemap"
+      subtitle={focusEntry ? focusEntry.path : 'Select a path to focus the map.'}
+      style={{ flex: 1, minHeight: 0, minWidth: 0, height: '100%' }}
+    >
       <div style={{ padding: 12 }}>
         <svg
           viewBox={`0 0 ${TREEMAP_WIDTH} ${TREEMAP_HEIGHT}`}
@@ -964,7 +973,7 @@ function StorageTypesSurface({
   const totalAllocatedBytes = buckets.reduce((sum, bucket) => sum + bucket.allocatedBytes, 0);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 300px) minmax(0, 1fr)', gap: 12, minHeight: 0 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 300px) minmax(0, 1fr)', gap: 12, minHeight: 0, minWidth: 0, height: '100%', flex: 1, overflow: 'hidden' }}>
       <SurfaceCard title="Types" subtitle="File-type dominance across the scanned root.">
         <OverlayScrollArea style={{ minHeight: 0 }} scrollbarStyle="explorer-file-list" viewportStyle={{ padding: 10 }}>
           <div style={{ display: 'grid', gap: 8 }}>
@@ -1076,7 +1085,10 @@ function StorageInspectorPane({
   const aggregateLogical = selectedEntries.reduce((sum, entry) => sum + entry.logicalBytes, 0);
 
   return (
-    <div style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 12, minHeight: 0 }}>
+    <div
+      data-testid="storage-inspector-layout"
+      style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 12, minHeight: 0, minWidth: 0, height: '100%', overflow: 'hidden' }}
+    >
       <SurfaceCard
         title="Inspector"
         subtitle={selectedEntry ? selectedEntry.path : 'Select a path to inspect.'}
@@ -1809,7 +1821,7 @@ export function StoragePanel() {
 
     if (mode === 'split-map') {
       return (
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.25fr) minmax(320px, 0.95fr)', gap: 12, minHeight: 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.25fr) minmax(320px, 0.95fr)', gap: 12, minHeight: 0, minWidth: 0, height: '100%', flex: 1, overflow: 'hidden' }}>
           {matrixSurface}
           {treemapSurface}
         </div>
@@ -1818,7 +1830,7 @@ export function StoragePanel() {
 
     if (mode === 'focus') {
       return (
-        <div style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 12, minHeight: 0 }}>
+        <div style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 12, minHeight: 0, minWidth: 0, height: '100%', flex: 1, overflow: 'hidden' }}>
           <SurfaceCard
             title="Focus Lane"
             subtitle={focusRootEntry ? `${focusRootEntry.path} · ${formatBytes(focusRootEntry.allocatedBytes)} allocated` : 'Select a directory or file to focus a subtree.'}
@@ -1873,12 +1885,14 @@ export function StoragePanel() {
   const selectionAllocatedBytes = selectedEntries.reduce((sum, entry) => sum + entry.allocatedBytes, 0);
   const mainWorkspace = (
     <div
+      data-testid="storage-main-workspace"
       style={{
         display: 'grid',
         gridTemplateRows: 'auto minmax(0, 1fr)',
         gap: 10,
         minHeight: 0,
         minWidth: 0,
+        overflow: 'hidden',
       }}
     >
       <SurfaceCard
@@ -1941,7 +1955,12 @@ export function StoragePanel() {
           ) : null}
         </div>
       </SurfaceCard>
-      <div style={{ minHeight: 0 }}>{renderModeWorkspace(activeMode)}</div>
+      <div
+        data-testid="storage-mode-viewport"
+        style={{ display: 'flex', minHeight: 0, minWidth: 0, overflow: 'hidden' }}
+      >
+        {renderModeWorkspace(activeMode)}
+      </div>
     </div>
   );
   const inspectorPane = (
@@ -1961,9 +1980,15 @@ export function StoragePanel() {
   );
 
   return (
-    <div style={{ display: 'grid', gap: 12, minHeight: 0, minWidth: 0, height: '100%' }}>
+    <div
+      data-testid="storage-panel-root"
+      style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 12, minHeight: 0, minWidth: 0, height: '100%', overflow: 'hidden' }}
+    >
       <StorageStatusBanner error={panelError} isElevated={isElevated} notice={panelNotice} />
-      <div style={{ display: 'flex', gap: 12, minHeight: 0, minWidth: 0 }}>
+      <div
+        data-testid="storage-panel-body"
+        style={{ display: 'flex', gap: 12, minHeight: 0, minWidth: 0, overflow: 'hidden' }}
+      >
         <ResizablePane
           size={storageRailWidth}
           minSize={STORAGE_RAIL_WIDTH_MIN}
@@ -2009,7 +2034,7 @@ export function StoragePanel() {
             : { display: 'grid', gridTemplateRows: 'minmax(0, 1fr) minmax(260px, 34vh)', gap: 10, minHeight: 0, minWidth: 0, flex: 1, overflow: 'hidden' }}
         >
           {mainWorkspace}
-          <div style={{ minHeight: 0 }}>
+          <div style={{ minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
             {inspectorPane}
           </div>
         </div>
