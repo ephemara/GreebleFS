@@ -7,7 +7,7 @@ import {
   Save,
   Table2,
   Trash2,
-} from "lucide-react";
+} from "@/components/AppIcons";
 import {
   useCallback,
   useEffect,

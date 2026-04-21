@@ -188,11 +188,13 @@ describe('SettingsPage behavior', () => {
     await user.click(screen.getByRole('button', { name: /^Single Click/i }));
     expect(useSettingsStore.getState().settings.explorer.folderClickMode).toBe('single');
 
+    await user.click(findSectionButton('Icons'));
     await user.click(screen.getByRole('button', { name: 'Restore Rules' }));
     expect(useSettingsStore.getState().settings.explorer.folderIconRules).toHaveLength(
       createDefaultFolderIconRules().length,
     );
 
+    await user.click(findSectionButton('Explorer'));
     await user.click(screen.getByRole('button', { name: 'Seed Platform Bookmarks' }));
 
     await waitFor(() => {

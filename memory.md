@@ -2597,3 +2597,18 @@
 - Validation:
   - passed `bunx vitest run src/test/explorerSqlitePreview.test.tsx`
   - passed filtered typecheck via `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "ExplorerSqlitePreview|explorerSqlitePreview.test" || true`
+
+## 2026-04-21 — Icon Themes Became A First-Class Shell System
+
+- Icon theming is no longer buried inside Explorer-only folder-icon controls. The shell now treats icon packs as a dedicated managed content system parallel to themes, shaders, animations, and wallpapers.
+- Durable implementation shape:
+  - Dedicated icon-theme packages now live under `icon-themes/` and load through `src/config/iconThemePackages.ts`. Packs can ship `icon-theme.json` or `manifest.json` and override explorer file/folder mappings plus shell-wide UI icon slots.
+  - `src/config/iconTheme.ts` now resolves both explorer icon mappings and UI icon-slot references, and `src/config/appearance.ts` injects the selected icon pack into the resolved app and dock appearance channels. This keeps icon swaps immediate in both the main shell and `src/windows/FileOperationsWindowApp.tsx`.
+  - `src/components/AppIcons.tsx` is now the shell-wide icon compatibility layer. App chrome should import icons from there instead of `lucide-react` directly so UI glyphs can follow the active icon pack. The critical runtime lesson: Lucide exports forward-ref components, so the wrapper must render `<FallbackIcon {...props} />` / `<OverrideIcon {...props} />` as JSX instead of calling them like plain functions.
+  - `src/components/SettingsPage.tsx` now has a dedicated `Icons` section that owns icon-theme selection, icon-theme root management, UI/explorer previews, the native OS icon fallback toggle, and folder icon rule authoring. The Explorer section should stay focused on navigation/view/thumbnail behavior rather than icon-pack management.
+  - Thumbnail generation remains independent. Explorer thumbnails still route through `src/config/explorerThumbnails.ts` and the existing preview/thumbnail systems; icon themes only affect file/folder glyph selection and UI chrome icons.
+- Durable product note:
+  - Treat icon packs like first-class shell identity, not a decorative explorer tweak. Any new stock shell icon imports should go through `AppIcons.tsx`, and any new icon-pack authoring surface should live under the dedicated icon-theme system rather than being stapled onto Explorer settings.
+- Validation:
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+  - passed: `bunx vitest run src/test/settingsStore.test.ts src/test/appearance.test.ts src/test/settingsPage.behavior.test.tsx src/test/settingsPage.shaders.test.tsx src/test/panelRegistry.test.tsx --reporter=dot`

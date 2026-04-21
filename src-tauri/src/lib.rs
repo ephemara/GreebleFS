@@ -7,6 +7,7 @@ pub mod domain_commands;
 pub mod entry_size_cache;
 pub mod explorer_pro_commands;
 pub mod fs_commands;
+pub mod gpu_runtime;
 pub mod image_commands;
 mod linux_graphics;
 pub mod pdf_commands;
@@ -132,9 +133,12 @@ pub fn run() {
         .setup(move |app| {
             builder.mount_events(app);
             initialize_fs_command_events(app.handle().clone());
+            let gpu_runtime = gpu_runtime::GpuRuntimeManager::new(app.handle().clone());
+            gpu_runtime::set_global_gpu_runtime(gpu_runtime.clone());
             app.manage(TerminalManager::new());
             app.manage(CloudRuntimeState::default());
             app.manage(AudioEngineManager::default());
+            app.manage(gpu_runtime);
             app.manage(image_commands::ImageEditorManager::default());
             app.manage(pdf_commands::PdfPreviewManager::default());
             app.manage(video_engine::VideoEngineManager::default());

@@ -25,6 +25,7 @@ use tauri::{AppHandle, Manager};
 use tauri_specta::Event;
 
 use crate::audio_commands::{AudioPreviewAnalysis, AudioSilenceRegion, AudioWaveformBucket};
+use crate::gpu_runtime::GpuRuntimeManager;
 
 const AUDIO_ENGINE_EVENT_INTERVAL_MS: u64 = 50;
 const LOOP_CROSSFADE_FRAMES: usize = 128;
@@ -737,11 +738,33 @@ fn start_audio_engine_event_emitter(shared: Arc<AudioEngineSharedState>) {
 }
 
 pub fn analyze_audio_file_native(input_path: &Path) -> Result<AudioPreviewAnalysis, String> {
+    analyze_audio_file_with_runtime(input_path, None)
+}
+
+pub fn analyze_audio_file_with_runtime(
+    input_path: &Path,
+    gpu_runtime: Option<&GpuRuntimeManager>,
+) -> Result<AudioPreviewAnalysis, String> {
     let decoded = decode_audio_file(input_path)?;
-    let (peak_level, rms_level, waveform_buckets) =
-        analyze_decoded_waveform(&decoded.samples, DEFAULT_ANALYSIS_WAVEFORM_BUCKET_COUNT);
-    let spectral_bands = compute_spectral_bands(&decoded, 24);
     let mono = mix_to_mono(&decoded.samples, decoded.channels);
+    let (peak_level, rms_level) = compute_peak_and_rms(&decoded.samples);
+    let waveform_buckets = gpu_runtime
+        .and_then(|runtime| {
+            runtime
+                .reduce_audio_waveform(&mono, DEFAULT_ANALYSIS_WAVEFORM_BUCKET_COUNT)
+                .ok()
+        })
+        .unwrap_or_else(|| {
+            analyze_decoded_waveform(&decoded.samples, DEFAULT_ANALYSIS_WAVEFORM_BUCKET_COUNT).2
+        });
+    let spectral_fft_samples = prepare_fft_analysis_samples(&mono);
+    let spectral_bands = gpu_runtime
+        .and_then(|runtime| {
+            runtime
+                .reduce_audio_spectral_bands(&spectral_fft_samples, 24)
+                .ok()
+        })
+        .unwrap_or_else(|| compute_spectral_bands(&decoded, 24));
     let silence_regions = detect_silence_regions(&mono, decoded.sample_rate_hz, peak_level);
     let estimated_bpm = estimate_bpm(&mono, decoded.sample_rate_hz);
     Ok(AudioPreviewAnalysis {
@@ -764,6 +787,14 @@ pub fn analyze_audio_file_native(input_path: &Path) -> Result<AudioPreviewAnalys
         estimated_bpm,
         silence_regions,
     })
+}
+
+pub fn decode_audio_preview_mono_samples(input_path: &Path) -> Result<(Vec<f32>, u32), String> {
+    let decoded = decode_audio_file(input_path)?;
+    Ok((
+        mix_to_mono(&decoded.samples, decoded.channels),
+        decoded.sample_rate_hz,
+    ))
 }
 
 fn decode_audio_clip_for_device(
@@ -1019,6 +1050,34 @@ fn analyze_decoded_waveform(
         });
     }
     (peak_level, rms_level, buckets)
+}
+
+fn compute_peak_and_rms(samples: &[f32]) -> (f64, f64) {
+    if samples.is_empty() {
+        return (0.0, 0.0);
+    }
+
+    let peak_level = samples
+        .iter()
+        .fold(0.0f64, |peak, sample| peak.max(sample.abs() as f64));
+    let rms_level = ((samples
+        .iter()
+        .map(|sample| {
+            let value = *sample as f64;
+            value * value
+        })
+        .sum::<f64>())
+        / samples.len() as f64)
+        .sqrt();
+    (peak_level, rms_level)
+}
+
+fn prepare_fft_analysis_samples(mono: &[f32]) -> Vec<f32> {
+    let fft_size = mono.len().min(4096).next_power_of_two().max(256);
+    let mut output = vec![0.0f32; fft_size];
+    let copy_len = mono.len().min(fft_size);
+    output[..copy_len].copy_from_slice(&mono[..copy_len]);
+    output
 }
 
 fn compute_spectral_bands(decoded: &DecodedAudioData, band_count: usize) -> Vec<f64> {

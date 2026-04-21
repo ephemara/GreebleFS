@@ -129,13 +129,23 @@ pub async fn fs_read_entry_thumbnail(
 ) -> Result<ExplorerEntryThumbnail, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let normalized = normalize_thumbnail_request(request)?;
-        build_entry_thumbnail(&app, &normalized)
+        build_entry_thumbnail(&app, crate::gpu_runtime::global_gpu_runtime(), &normalized)
     })
     .await
     .map_err(|error| format!("Thumbnail generation task failed to join: {error}"))?
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn build_image_thumbnail_data_url(
+    path: &Path,
+    max_width: u32,
+    max_height: u32,
+) -> Result<String, String> {
+    build_image_thumbnail_data_url_with_runtime(None, path, max_width, max_height)
+}
+
+pub(crate) fn build_image_thumbnail_data_url_with_runtime(
+    gpu_runtime: Option<&crate::gpu_runtime::GpuRuntimeManager>,
     path: &Path,
     max_width: u32,
     max_height: u32,
@@ -162,20 +172,30 @@ pub(crate) fn build_image_thumbnail_data_url(
     }
 
     let image = read_image_file_as_rgba(path)?;
-    let thumbnail = resize_image_to_fit(&image, max_width, max_height);
+    let thumbnail = if let Some(gpu_runtime) = gpu_runtime {
+        let (target_width, target_height) =
+            resolve_image_fit_dimensions(image.width(), image.height(), max_width, max_height);
+        gpu_runtime
+            .render_image_thumbnail(&image, target_width, target_height)
+            .unwrap_or_else(|_| resize_image_to_fit(&image, max_width, max_height))
+    } else {
+        resize_image_to_fit(&image, max_width, max_height)
+    };
     let png = encode_rgba_image_as_png(&thumbnail)?;
     Ok(png_bytes_to_data_url(&png))
 }
 
 fn build_entry_thumbnail(
     app: &AppHandle,
+    gpu_runtime: Option<&crate::gpu_runtime::GpuRuntimeManager>,
     request: &NormalizedThumbnailRequest,
 ) -> Result<ExplorerEntryThumbnail, String> {
     let kind = classify_thumbnail_kind(&request.input_path)?;
     match kind {
         ThumbnailRenderKind::Image => Ok(ExplorerEntryThumbnail {
             kind: ExplorerThumbnailKind::Image,
-            poster_data_url: build_image_thumbnail_data_url(
+            poster_data_url: build_image_thumbnail_data_url_with_runtime(
+                gpu_runtime,
                 &request.input_path,
                 request.max_width,
                 request.max_height,
@@ -230,7 +250,8 @@ fn build_entry_thumbnail(
                 request.max_height,
                 "audio-v2",
                 || {
-                    render_audio_thumbnail_png(
+                    render_audio_thumbnail_png_with_runtime(
+                        gpu_runtime,
                         &request.input_path,
                         request.max_width,
                         request.max_height,
@@ -479,16 +500,32 @@ fn read_image_file_as_rgba(path: &Path) -> Result<RgbaImage, String> {
 }
 
 fn resize_image_to_fit(image: &RgbaImage, max_width: u32, max_height: u32) -> RgbaImage {
-    if image.width() <= max_width && image.height() <= max_height {
+    let (width, height) =
+        resolve_image_fit_dimensions(image.width(), image.height(), max_width, max_height);
+    if width == image.width() && height == image.height() {
         return image.clone();
     }
-    let scale = f32::min(
-        max_width as f32 / image.width() as f32,
-        max_height as f32 / image.height() as f32,
-    );
-    let width = ((image.width() as f32) * scale).round().max(1.0) as u32;
-    let height = ((image.height() as f32) * scale).round().max(1.0) as u32;
     resize(image, width, height, FilterType::Lanczos3)
+}
+
+fn resolve_image_fit_dimensions(
+    image_width: u32,
+    image_height: u32,
+    max_width: u32,
+    max_height: u32,
+) -> (u32, u32) {
+    if image_width <= max_width && image_height <= max_height {
+        return (image_width.max(1), image_height.max(1));
+    }
+
+    let scale = f32::min(
+        max_width as f32 / image_width as f32,
+        max_height as f32 / image_height as f32,
+    );
+    (
+        ((image_width as f32) * scale).round().max(1.0) as u32,
+        ((image_height as f32) * scale).round().max(1.0) as u32,
+    )
 }
 
 fn encode_rgba_image_as_png(image: &RgbaImage) -> Result<Vec<u8>, String> {
@@ -1165,6 +1202,27 @@ fn render_audio_thumbnail_png(
         Rgba([255, 255, 255, 30]),
     );
     encode_rgba_image_as_png(&image)
+}
+
+fn render_audio_thumbnail_png_with_runtime(
+    gpu_runtime: Option<&crate::gpu_runtime::GpuRuntimeManager>,
+    input_path: &Path,
+    max_width: u32,
+    max_height: u32,
+) -> Result<Vec<u8>, String> {
+    if let Some(gpu_runtime) = gpu_runtime {
+        if let Ok((mono_samples, _sample_rate_hz)) =
+            crate::audio_engine::decode_audio_preview_mono_samples(input_path)
+        {
+            if let Ok(image) =
+                gpu_runtime.render_audio_thumbnail(&mono_samples, max_width, max_height)
+            {
+                return encode_rgba_image_as_png(&image);
+            }
+        }
+    }
+
+    render_audio_thumbnail_png(input_path, max_width, max_height)
 }
 
 fn build_video_thumbnail(

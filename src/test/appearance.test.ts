@@ -13,6 +13,7 @@ import {
   upsertCustomTheme,
   type OverlayThemeDefinition,
 } from '../config/appearance';
+import { getBuiltInIconTheme } from '../config/iconTheme';
 
 describe('appearance config helpers', () => {
   it('normalizes partial themes against the pilot fallback shape', () => {
@@ -278,6 +279,33 @@ describe('appearance config helpers', () => {
     expect(resolved.theme.compatibility?.tags).toEqual(['glass', 'cinematic']);
     expect(resolved.themes.some(theme => theme.id === 'vista-glass')).toBe(true);
     expect(getThemeSourceLabel(resolved.theme)).toBe('Package');
+  });
+
+  it('merges the selected icon theme into the resolved shell appearance immediately', () => {
+    const selectedIconTheme = {
+      ...getBuiltInIconTheme(),
+      id: 'operator-blueprint',
+      name: 'Operator Blueprint',
+      fileExtensions: {
+        ...getBuiltInIconTheme().fileExtensions,
+        txt: 'markdown',
+      },
+      uiIcons: {
+        ...getBuiltInIconTheme().uiIcons,
+        search: 'lucide:Camera',
+      },
+    };
+
+    const resolved = resolveOverlayAppearance({
+      activeThemeId: 'pilot-dark',
+      selectedIconTheme,
+    });
+
+    expect(resolved.theme.assets?.iconTheme?.id).toBe('operator-blueprint');
+    expect(resolved.theme.assets?.iconTheme?.fileExtensions.txt).toBe('markdown');
+    expect(resolved.theme.assets?.iconTheme?.uiIcons.search).toBe('lucide:Camera');
+    expect(resolved.app.theme.assets?.iconTheme?.id).toBe('operator-blueprint');
+    expect(resolved.dock.theme.assets?.iconTheme?.id).toBe('operator-blueprint');
   });
 
   it('recomputes identical appearance values for repeated equivalent theme selections', () => {

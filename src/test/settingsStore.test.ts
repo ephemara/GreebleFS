@@ -84,6 +84,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.appearance.activeThemeId).toBe('pilot-dark');
     expect(settings.appearance.dockThemeMode).toBe('follow-app');
     expect(settings.appearance.activeDockThemeId).toBeNull();
+    expect(settings.appearance.activeIconThemeId).toBeNull();
     expect(settings.appearance.activeWallpaperId).toBeNull();
     expect(settings.appearance.wallpaperFitMode).toBe('cover');
     expect(settings.appearance.wallpaperOpacity).toBe(1);
@@ -115,6 +116,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.system.launchAtStartup).toBe(false);
     expect(settings.system.hideAppInTray).toBe(true);
     expect(settings.system.showInTaskbar).toBe(true);
+    expect(settings.system.gpuTierMode).toBe('auto');
     expect(settings.system.devTelemetryHudVisible).toBe(true);
     expect(settings.system.sourceTraceModeEnabled).toBe(false);
     expect(settings.system.developerTelemetryEnabled).toBe(false);
@@ -258,6 +260,18 @@ describe('useSettingsStore.updateTerminal()', () => {
     expect(settings.terminal.showSidebar).toBe(false);
     expect(settings.terminal.fontSize).toBe(13);
     expect(settings.terminal.windowMode).toBe('windowed');
+  });
+});
+
+describe('mergeSettingsWithDefaults()', () => {
+  it('normalizes invalid gpu tier imports back to auto', () => {
+    const merged = mergeSettingsWithDefaults({
+      system: {
+        gpuTierMode: 'warp-speed' as never,
+      },
+    });
+
+    expect(merged.system.gpuTierMode).toBe('auto');
   });
 });
 
@@ -552,6 +566,15 @@ describe('useSettingsStore.updateAppearance()', () => {
     expect(appearance.activeDockThemeId).toBe('dock-burnished');
   });
 
+  it('stores icon theme selection independently and normalizes blank clears back to null', () => {
+    const store = useSettingsStore.getState();
+    store.updateAppearance({ activeIconThemeId: ' operator-blueprint ' });
+    expect(useSettingsStore.getState().settings.appearance.activeIconThemeId).toBe('operator-blueprint');
+
+    store.updateAppearance({ activeIconThemeId: '   ' });
+    expect(useSettingsStore.getState().settings.appearance.activeIconThemeId).toBeNull();
+  });
+
   it('allows clearing motion overrides back to theme-managed defaults', () => {
     const store = useSettingsStore.getState();
     store.updateAppearance({
@@ -801,6 +824,7 @@ describe('mergeSettingsWithDefaults()', () => {
     expect(merged.appearance.activeThemeId).toBe('dracula');
     expect(merged.appearance.dockThemeMode).toBe(defaultSettings.appearance.dockThemeMode);
     expect(merged.appearance.activeDockThemeId).toBe(defaultSettings.appearance.activeDockThemeId);
+    expect(merged.appearance.activeIconThemeId).toBe(defaultSettings.appearance.activeIconThemeId);
     expect(merged.appearance.activeShaderId).toBeNull();
     expect(merged.appearance.uiFontFamily).toBe('Geist, Inter, system-ui, sans-serif');
     expect(merged.appearance.appZoom).toBe(1.1);
@@ -842,6 +866,22 @@ describe('mergeSettingsWithDefaults()', () => {
 
     expect(merged.appearance.appOpenAnimation).toBeNull();
     expect(merged.appearance.appCloseAnimation).toBeNull();
+  });
+
+  it('normalizes icon theme ids by trimming whitespace and collapsing blank values to null', () => {
+    const trimmed = mergeSettingsWithDefaults({
+      appearance: {
+        activeIconThemeId: ' operator-blueprint ',
+      } as typeof defaultSettings.appearance,
+    });
+    const blank = mergeSettingsWithDefaults({
+      appearance: {
+        activeIconThemeId: '   ',
+      } as typeof defaultSettings.appearance,
+    });
+
+    expect(trimmed.appearance.activeIconThemeId).toBe('operator-blueprint');
+    expect(blank.appearance.activeIconThemeId).toBeNull();
   });
 
   it('normalizes unsupported explorer folder click modes back to the default', () => {

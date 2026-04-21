@@ -6,7 +6,7 @@ import {
   Database,
   Loader,
   Table,
-} from "lucide-react";
+} from "@/components/AppIcons";
 import {
   commands,
   type SqliteDbInfo,

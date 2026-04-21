@@ -243,12 +243,31 @@ impl ImageEditorManager {
         let session = self.get_session(&request.session_id)?;
         let effective_state =
             compose_effective_adjustment_state(request.preset_id, request.adjustments);
-        let preview_source = resize_image_to_fit(
-            &session.original_image,
+        let (preview_width, preview_height) = resolve_image_fit_dimensions(
+            session.original_image.width(),
+            session.original_image.height(),
             IMAGE_EDITOR_PREVIEW_MAX_DIMENSION,
             IMAGE_EDITOR_PREVIEW_MAX_DIMENSION,
         );
-        let rendered_image = apply_image_adjustments(&preview_source, &effective_state);
+        let rendered_image = crate::gpu_runtime::global_gpu_runtime()
+            .and_then(|gpu_runtime| {
+                gpu_runtime
+                    .render_image_preview(
+                        &session.original_image,
+                        preview_width,
+                        preview_height,
+                        effective_state,
+                    )
+                    .ok()
+            })
+            .unwrap_or_else(|| {
+                let preview_source = resize_image_to_fit(
+                    &session.original_image,
+                    IMAGE_EDITOR_PREVIEW_MAX_DIMENSION,
+                    IMAGE_EDITOR_PREVIEW_MAX_DIMENSION,
+                );
+                apply_image_adjustments(&preview_source, &effective_state)
+            });
         let preview_data_url =
             png_bytes_to_data_url(&encode_image_bytes(&rendered_image, "image/png")?);
 
@@ -518,16 +537,32 @@ fn read_image_file_as_rgba(path: &Path) -> Result<RgbaImage, String> {
 }
 
 fn resize_image_to_fit(image: &RgbaImage, max_width: u32, max_height: u32) -> RgbaImage {
-    if image.width() <= max_width && image.height() <= max_height {
+    let (width, height) =
+        resolve_image_fit_dimensions(image.width(), image.height(), max_width, max_height);
+    if width == image.width() && height == image.height() {
         return image.clone();
     }
-    let scale = f32::min(
-        max_width as f32 / image.width() as f32,
-        max_height as f32 / image.height() as f32,
-    );
-    let width = ((image.width() as f32) * scale).round().max(1.0) as u32;
-    let height = ((image.height() as f32) * scale).round().max(1.0) as u32;
     resize(image, width, height, FilterType::Lanczos3)
+}
+
+fn resolve_image_fit_dimensions(
+    image_width: u32,
+    image_height: u32,
+    max_width: u32,
+    max_height: u32,
+) -> (u32, u32) {
+    if image_width <= max_width && image_height <= max_height {
+        return (image_width.max(1), image_height.max(1));
+    }
+
+    let scale = f32::min(
+        max_width as f32 / image_width as f32,
+        max_height as f32 / image_height as f32,
+    );
+    (
+        ((image_width as f32) * scale).round().max(1.0) as u32,
+        ((image_height as f32) * scale).round().max(1.0) as u32,
+    )
 }
 
 fn encode_image_bytes(image: &RgbaImage, content_type: &str) -> Result<Vec<u8>, String> {

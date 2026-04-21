@@ -39,12 +39,14 @@ window-vibrancy = "0.6"
 dirs = "6.0.0"
 arboard = "3.6.1"
 base64 = "0.22.1"
+bytemuck = { version = "1.24.0", features = ["derive"] }
 image = "0.25.8"
 imageproc = "0.25.0"
 ab_glyph = "0.2.29"
 fontdb = "0.16.2"
 libc = { workspace = true }
 naga = { version = "29.0.1", features = ["spv-in", "wgsl-in", "wgsl-out"] }
+pollster = "0.4.0"
 lopdf = "0.32.0"
 pdfium-auto = "0.3.0"
 pdfium-render = "0.8.37"
@@ -89,6 +91,7 @@ rustfft = "6.4.1"
 symphonia = { version = "0.5.5", features = ["all", "opt-simd"] }
 rust_ffmpeg = { path = "../crates/ffmpeg-suite-rs/rust_ffmpeg" }
 rust_ffprobe = { path = "../crates/ffmpeg-suite-rs/rust_ffprobe" }
+wgpu = "26"
 
 [dev-dependencies]
 tokio  = { version = "1", features = ["full"] }

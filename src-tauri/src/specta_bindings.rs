@@ -36,6 +36,10 @@ use crate::fs_commands::{
     FsJumpFilterMatch, FsJumpFilterRequest, FsPermissionInfo, FsRuntimeCachePolicy,
     FsWriteFileContent,
 };
+use crate::gpu_runtime::{
+    GpuEffectiveTier, GpuFallbackReason, GpuRuntimeConfiguration, GpuRuntimeStatusEvent,
+    GpuRuntimeStatusSnapshot, GpuRuntimeWorkloadId, GpuRuntimeWorkloadStatus, GpuTierMode,
+};
 use crate::image_commands::{
     ImageAdjustmentState, ImageEditorExportRequest, ImageEditorExportResult,
     ImageEditorPreviewRequest, ImageEditorPreviewResult, ImageEditorSessionBootstrap,
@@ -71,7 +75,7 @@ use crate::storage_commands::{
 };
 use crate::telemetry::{
     TelemetryCaptureMode, TelemetryConfig, TelemetryPayloadMode, TelemetryRecord,
-    TelemetryRecordEvent, TelemetrySessionStatus, TelemetrySupportBundleResult,
+    TelemetrySessionStatus, TelemetrySupportBundleResult,
 };
 use crate::terminal::{
     ExternalTerminalRequest, TerminalShellIntegrationRequest, TerminalShellIntegrationState,
@@ -239,6 +243,8 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::image_commands::image_editor_render_preview,
             crate::image_commands::image_editor_export,
             crate::image_commands::image_editor_close_session,
+            crate::gpu_runtime::gpu_runtime_configure,
+            crate::gpu_runtime::gpu_runtime_get_status,
             crate::pdf_commands::pdf_open_preview_document,
             crate::pdf_commands::pdf_render_preview_page,
             crate::pdf_commands::pdf_save_preview_edits,
@@ -286,6 +292,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::audio_engine::AudioEngineStateEvent,
             crate::video_engine::VideoEngineStateEvent,
             crate::terminal::TerminalShellIntegrationStateEvent,
+            crate::gpu_runtime::GpuRuntimeStatusEvent,
             crate::telemetry::TelemetryRecordEvent
         ])
         .typ::<ShellBlueprint>()
@@ -356,6 +363,14 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<ImageEditorPreviewResult>()
         .typ::<ImageEditorExportRequest>()
         .typ::<ImageEditorExportResult>()
+        .typ::<GpuTierMode>()
+        .typ::<GpuEffectiveTier>()
+        .typ::<GpuFallbackReason>()
+        .typ::<GpuRuntimeWorkloadId>()
+        .typ::<GpuRuntimeConfiguration>()
+        .typ::<GpuRuntimeWorkloadStatus>()
+        .typ::<GpuRuntimeStatusSnapshot>()
+        .typ::<GpuRuntimeStatusEvent>()
         .typ::<PdfPreviewDocument>()
         .typ::<PdfPreviewPageDescriptor>()
         .typ::<PdfPageRenderFitMode>()

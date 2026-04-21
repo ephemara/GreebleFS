@@ -180,6 +180,7 @@ import {
   type OverlayWindowAnchor,
   type TerminalWindowMode,
 } from './store/settingsStore';
+import { useGpuRuntimeFeed } from './store/gpuRuntimeStore';
 import { useTerminalStore } from './store/terminalStore';
 
 const FRAME_PROBE_OUTPUT_PATH = (() => {
@@ -570,6 +571,7 @@ function App() {
     updateLayout: state.updateLayout,
     updateSystem: state.updateSystem,
   })));
+  useGpuRuntimeFeed(systemSettings.gpuTierMode);
   const {
     initStore: initTerminalStore,
     addDirectoryBookmark,

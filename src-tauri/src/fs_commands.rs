@@ -5503,7 +5503,8 @@ pub async fn fs_read_image_thumbnail(
     max_width: u32,
     max_height: u32,
 ) -> Result<String, String> {
-    crate::thumbnail_commands::build_image_thumbnail_data_url(
+    crate::thumbnail_commands::build_image_thumbnail_data_url_with_runtime(
+        crate::gpu_runtime::global_gpu_runtime(),
         std::path::Path::new(&path),
         max_width,
         max_height,

@@ -1,4 +1,6 @@
-use crate::audio_engine::analyze_audio_file_native;
+use crate::audio_engine::{
+    analyze_audio_file_native, analyze_audio_file_with_runtime, decode_audio_preview_mono_samples,
+};
 use crate::fs_commands::{
     cancel_manual_explorer_task, complete_manual_explorer_task,
     create_manual_explorer_task_with_id, fail_manual_explorer_task,
@@ -6,16 +8,15 @@ use crate::fs_commands::{
     ExplorerTaskCancelContext, ExplorerTaskKind, ExplorerTaskRegistration,
     ExplorerTaskRetryContext,
 };
+use image::{DynamicImage, ImageFormat};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::thread;
-use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 const DEFAULT_FFMPEG_BINARY: &str = "ffmpeg";
 
@@ -211,7 +212,7 @@ fn spawn_ffmpeg_and_wait(
         command.creation_flags(CREATE_NO_WINDOW);
     }
 
-    let mut child = command.spawn().map_err(|error| {
+    let child = command.spawn().map_err(|error| {
         format!(
             "Failed to launch ffmpeg at '{}': {error}",
             resolve_ffmpeg_binary()
@@ -427,27 +428,6 @@ fn build_audio_transform_registration(
     }
 }
 
-fn build_audio_batch_registration(
-    request: &AudioBatchProcessRequest,
-    inputs: &[PathBuf],
-) -> ExplorerTaskRegistration {
-    let title = match request.mode {
-        AudioBatchProcessMode::Convert => "Batch Convert Audio",
-        AudioBatchProcessMode::Normalize => "Batch Normalize Audio",
-    };
-    ExplorerTaskRegistration {
-        kind: ExplorerTaskKind::AudioBatchProcess,
-        title: title.to_string(),
-        detail: format!("Processing {} audio item(s)", inputs.len()),
-        source_paths: inputs.iter().map(|path| path_to_string(path)).collect(),
-        destination_path: request.output_directory.clone(),
-        retry_context: Some(ExplorerTaskRetryContext::AudioBatchProcess {
-            request: request.clone(),
-        }),
-        can_undo: false,
-    }
-}
-
 fn register_audio_runtime(task_id: &str) -> Result<Arc<AudioTaskRuntime>, String> {
     let runtime = Arc::new(AudioTaskRuntime {
         cancelled: AtomicBool::new(false),
@@ -483,7 +463,7 @@ pub fn cancel_audio_task(task_id: &str) -> Result<(), String> {
 }
 
 fn execute_audio_transform(
-    app: &AppHandle,
+    _app: &AppHandle,
     task_id: &str,
     request: NormalizedAudioTransformRequest,
 ) -> Result<AudioTransformResult, String> {
@@ -646,17 +626,34 @@ fn execute_audio_transform(
             let path = request
                 .final_output_path
                 .with_extension(format!("{}.spectrogram.png", request.output_format));
-            let mut spectrogram = ffmpeg_command();
-            spectrogram.args(["-hide_banner", "-loglevel", "error", "-y"]);
-            spectrogram.args(["-i", &path_to_string(&request.final_output_path)]);
-            spectrogram.args(["-lavfi", "showspectrumpic=s=1024x256"]);
-            spectrogram.arg(&path);
-            let spectrogram_output = spawn_ffmpeg_and_wait(Some(&task_runtime), spectrogram)?;
-            if !spectrogram_output.status.success() {
-                let message = String::from_utf8_lossy(&spectrogram_output.stderr)
-                    .trim()
-                    .to_string();
-                return Err(format!("Spectrogram export failed: {message}"));
+            let gpu_spectrogram =
+                crate::gpu_runtime::global_gpu_runtime().and_then(|gpu_runtime| {
+                    decode_audio_preview_mono_samples(&request.final_output_path)
+                        .ok()
+                        .and_then(|(mono_samples, _sample_rate_hz)| {
+                            gpu_runtime
+                                .render_audio_spectrogram(&mono_samples, 1024, 256)
+                                .ok()
+                        })
+                });
+
+            if let Some(spectrogram_image) = gpu_spectrogram {
+                DynamicImage::ImageRgba8(spectrogram_image)
+                    .save_with_format(&path, ImageFormat::Png)
+                    .map_err(|error| format!("Spectrogram export failed: {error}"))?;
+            } else {
+                let mut spectrogram = ffmpeg_command();
+                spectrogram.args(["-hide_banner", "-loglevel", "error", "-y"]);
+                spectrogram.args(["-i", &path_to_string(&request.final_output_path)]);
+                spectrogram.args(["-lavfi", "showspectrumpic=s=1024x256"]);
+                spectrogram.arg(&path);
+                let spectrogram_output = spawn_ffmpeg_and_wait(Some(&task_runtime), spectrogram)?;
+                if !spectrogram_output.status.success() {
+                    let message = String::from_utf8_lossy(&spectrogram_output.stderr)
+                        .trim()
+                        .to_string();
+                    return Err(format!("Spectrogram export failed: {message}"));
+                }
             }
             Some(path_to_string(&path))
         } else {
@@ -711,9 +708,9 @@ fn execute_audio_transform(
 }
 
 fn execute_audio_batch_process(
-    app: &AppHandle,
-    task_id: &str,
-    request: AudioBatchProcessRequest,
+    _app: &AppHandle,
+    _task_id: &str,
+    _request: AudioBatchProcessRequest,
 ) -> Result<AudioBatchProcessResult, String> {
     // Currently throwing err instead of re-implementing batch logic
     // Just minimal support to not break rust signatures while shifting to ffmpeg
@@ -732,7 +729,7 @@ pub async fn audio_analyze_preview(input_path: String) -> Result<AudioPreviewAna
         if !input.exists() || !input.is_file() {
             return Err(format!("Input audio does not exist: {}", input.display()));
         }
-        analyze_audio_file_native(&input)
+        analyze_audio_file_with_runtime(&input, crate::gpu_runtime::global_gpu_runtime())
     })
     .await
     .map_err(|error| format!("Audio preview analysis task failed to join: {error}"))?

@@ -30,6 +30,10 @@ import {
   type ExternalTerminalProfile,
 } from '../config/platform';
 import {
+  getGpuTierModeLabel,
+  gpuRuntimeTierOptions,
+} from '../config/gpuRuntime';
+import {
   beginCloudAuth,
   clearCloudProviderConfiguration,
   disconnectCloudAccount,
@@ -121,6 +125,7 @@ import type {
   OverlayPluginExplorerActionContribution,
 } from '../config/pluginContributions';
 import { useSettingsStore, resolveSystemPresentationState, type TerminalWindowMode } from '../store/settingsStore';
+import { useGpuRuntimeStore } from '../store/gpuRuntimeStore';
 import { useTerminalStore } from '../store/terminalStore';
 import {
   commands,
@@ -971,6 +976,19 @@ export function SettingsPage({
     () => resolveSystemPresentationState(settings.system),
     [settings.system],
   );
+  const {
+    snapshot: gpuRuntimeSnapshot,
+    hydrationState: gpuRuntimeHydrationState,
+    hydrationError: gpuRuntimeHydrationError,
+    subscriptionState: gpuRuntimeSubscriptionState,
+    subscriptionError: gpuRuntimeSubscriptionError,
+  } = useGpuRuntimeStore(useShallow(state => ({
+    snapshot: state.snapshot,
+    hydrationState: state.hydrationState,
+    hydrationError: state.hydrationError,
+    subscriptionState: state.subscriptionState,
+    subscriptionError: state.subscriptionError,
+  })));
   const { directoryBookmarks, addDirectoryBookmark } = useTerminalStore(useShallow(state => ({
     directoryBookmarks: state.directoryBookmarks,
     addDirectoryBookmark: state.addDirectoryBookmark,
@@ -1044,6 +1062,42 @@ export function SettingsPage({
     linuxDisplayBackendSyncError,
     linuxDisplayBackendSyncPending,
     platform,
+  ]);
+  const gpuRuntimeDiagnosticsSummary = useMemo(() => {
+    const adapterLabel = gpuRuntimeSnapshot.adapterName ?? 'not detected';
+    const backendLabel = gpuRuntimeSnapshot.backendName ?? 'n/a';
+    const adapterTypeLabel = gpuRuntimeSnapshot.adapterType ?? 'unknown';
+    const queueLabel = `${gpuRuntimeSnapshot.queueDepth} queued`;
+    const computeLabel = gpuRuntimeSnapshot.computeAvailable ? 'compute ready' : 'compute unavailable';
+    const rendererLabel = gpuRuntimeSnapshot.softwareRenderer ? 'software renderer' : 'hardware renderer';
+    return `${adapterLabel} · ${adapterTypeLabel} · ${backendLabel} · ${rendererLabel} · ${computeLabel} · ${queueLabel}`;
+  }, [gpuRuntimeSnapshot]);
+  const gpuRuntimeFeedStatus = useMemo(() => {
+    if (gpuRuntimeHydrationState === 'loading' || gpuRuntimeSubscriptionState === 'loading') {
+      return 'Refreshing native GPU runtime diagnostics...';
+    }
+
+    if (gpuRuntimeHydrationError) {
+      return `GPU runtime hydration failed: ${gpuRuntimeHydrationError}`;
+    }
+
+    if (gpuRuntimeSubscriptionError) {
+      return `GPU runtime event subscription failed: ${gpuRuntimeSubscriptionError}`;
+    }
+
+    if (gpuRuntimeSnapshot.runtimeError) {
+      return `Runtime note: ${gpuRuntimeSnapshot.runtimeError}`;
+    }
+
+    return `Configured ${getGpuTierModeLabel(settings.system.gpuTierMode)} · effective ${getGpuTierModeLabel(gpuRuntimeSnapshot.effectiveTier)}.`;
+  }, [
+    gpuRuntimeHydrationError,
+    gpuRuntimeHydrationState,
+    gpuRuntimeSnapshot.effectiveTier,
+    gpuRuntimeSnapshot.runtimeError,
+    gpuRuntimeSubscriptionError,
+    gpuRuntimeSubscriptionState,
+    settings.system.gpuTierMode,
   ]);
   const wallpaperFileInputRef = useRef<HTMLInputElement | null>(null);
   const contextMenuCatalog = useMemo(
@@ -4373,6 +4427,74 @@ export function SettingsPage({
                   onChange={event => setShowInTaskbar(event.target.checked)}
                 />
               </label>
+              <div className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-semibold uppercase tracking-[0.12em] opacity-60">GPU Runtime</div>
+                    <p className="mt-1 text-[11px] opacity-40">
+                      Controls the native `wgpu` offload lane used for image thumbnails, image preview rendering, and audio analysis/spectrogram work. `Safe` forces CPU fallback.
+                    </p>
+                  </div>
+                  <span
+                    className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                    style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}
+                  >
+                    {getGpuTierModeLabel(gpuRuntimeSnapshot.effectiveTier)}
+                  </span>
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-4">
+                  {gpuRuntimeTierOptions.map(option => {
+                    const active = settings.system.gpuTierMode === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => updateSystem({ gpuTierMode: option.id })}
+                        className="rounded px-3 py-3 text-left transition-colors"
+                        style={{
+                          border: `1px solid ${active ? accent : border}`,
+                          background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                          color: text,
+                        }}
+                      >
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
+                          {option.label}
+                        </div>
+                        <p className="mt-2 text-[11px] leading-4 opacity-65">
+                          {option.description}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div
+                  className="mt-3 rounded border px-3 py-2 text-[11px]"
+                  style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: text }}
+                >
+                  {gpuRuntimeDiagnosticsSummary}
+                </div>
+                <div
+                  className="mt-2 rounded border px-3 py-2 text-[11px]"
+                  style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: muted }}
+                >
+                  {gpuRuntimeFeedStatus}
+                </div>
+                {gpuRuntimeSnapshot.workloads.length > 0 ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {gpuRuntimeSnapshot.workloads.map(workload => (
+                      <span
+                        key={workload.workloadId}
+                        className="rounded border px-2 py-1 text-[10px] uppercase tracking-[0.12em]"
+                        style={{ borderColor: border, background: 'rgba(255,255,255,0.03)', color: text }}
+                      >
+                        {workload.label} · {workload.ready ? 'GPU ready' : 'CPU fallback'} · exec {workload.executions} · fallback {workload.fallbackCount}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
               <label className="flex items-center justify-between rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
                 <div>
                   <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Developer Mode</div>

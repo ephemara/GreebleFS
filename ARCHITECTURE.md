@@ -93,6 +93,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Built-in and external layout manifest normalization for shell blueprints, pinned panels, control docks, and top/bottom chrome behavior.
 - `src/config/themePackages.ts`
   Theme package discovery and manifest loading from `themes/`.
+- `src/config/iconTheme.ts` and `src/config/iconThemePackages.ts`
+  VS Code-style icon-theme manifest resolution plus managed `icon-themes/` package discovery for explorer file/folder mappings and shell-wide UI icon overrides.
 - `src/config/themeCatalogCuration.ts`
   Host-owned curation metadata for packaged themes. It defines the official pilot suite, legacy/lab tiers, archive tiers, and stable sort/badge metadata used by Settings and loader consumers.
 - `src/config/wallpapers.ts`
@@ -111,6 +113,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Packaged frontend plugin runtime loader. It owns the allowlisted module graph for frontend plugins, including package-local relative imports and the host-provided `overlayterm-plugin` bridge helpers.
 - `src/components/animationRuntime.tsx`
   Authored shell-motion runtime loader. It normalizes built-in and folder-authored animation modules, renders shell overlay layers with failure isolation, and now exposes the sanitized `src/animation/` MoGraph toolkit through the `overlayterm-animation` runtime import so authored shell motion can reuse host-owned cloners, fields, particle/fluid helpers, subtle motion wrappers, and timeline utilities without importing app internals directly.
+- `src/components/AppIcons.tsx`
+  Shell-wide icon compatibility layer. App chrome should import icons from here instead of `lucide-react` directly so manifest-driven UI icon packs can swap explorer and stock shell glyphs immediately without touching thumbnail generation.
 - `src/runtime/moduleRuntime.ts`
   Shared runtime-authored module bridge. It compiles authored TS/TSX module graphs for plugins, theme renderers, wallpapers, shaders, and animations, and now routes serializable compile work through the frontend worker host before falling back to the main thread.
 - `src/runtime/workerHost.ts`
@@ -169,6 +173,12 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 ## Theme / Workbench Architecture
 
 - Overlay themes still own the global palette, effects, fonts, icon theme, visuals, and shader/motion defaults.
+- Icon theming is now a first-class managed subsystem instead of an explorer-only concern:
+  - `src/config/iconTheme.ts` resolves the canonical built-in icon map, folder/file matchers, UI icon slots, and merge rules for theme-default or user-selected icon packs
+  - `src/config/iconThemePackages.ts` discovers dedicated `icon-themes/` packages whose `icon-theme.json` / `manifest.json` files can override explorer file/folder ids plus shell UI icon slots
+  - `src/components/AppIcons.tsx` is the only supported app-chrome icon import surface; direct `lucide-react` imports bypass the icon-theme system
+  - `src/store/settingsStore.ts` persists `settings.appearance.activeIconThemeId`, while `src/config/appearance.ts` injects the selected icon pack into both the app and dock appearance channels so icon swaps land immediately in the main shell and the `file-operations` popout
+  - `SettingsPage.tsx` owns icon-pack selection and folder-icon authoring in the dedicated `Icons` section; the Explorer section should no longer grow icon-pack management UI
 - `src/config/pilotThemeContract.ts` is the source of truth for the boring default shell:
   - `pilot-dark` and `pilot-light` are the canonical built-in defaults
   - all built-in themes inherit the same pilot workbench, explorer, and dock recipe baseline unless they explicitly override it
@@ -287,8 +297,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - worker lanes must always keep a safe fallback path so test mode, unsupported environments, or worker boot failures do not break plugin/theme/shader loading
   - `DevPerformanceHud.tsx` now surfaces worker activity, fallback count, error count, and last-task duration so frontend threading changes are observable during local performance work
 - Managed content roots now split by runtime mode:
-  - `tauri dev` keeps repo-relative `plugins/`, `themes/`, `shaders/`, `animations/`, `wallpapers/`, and `notes/` so authoring stays in the workspace
-  - installed/release builds resolve those directories under Tauri `AppLocalData` instead of creating top-level `$HOME/plugins`, `$HOME/themes`, `$HOME/shaders`, `$HOME/animations`, `$HOME/wallpapers`, `$HOME/notes`, or `$HOME/Screenshots`
+  - `tauri dev` keeps repo-relative `plugins/`, `themes/`, `icon-themes/`, `shaders/`, `animations/`, `wallpapers/`, and `notes/` so authoring stays in the workspace
+  - installed/release builds resolve those directories under Tauri `AppLocalData` instead of creating top-level `$HOME/plugins`, `$HOME/themes`, `$HOME/icon-themes`, `$HOME/shaders`, `$HOME/animations`, `$HOME/wallpapers`, `$HOME/notes`, or `$HOME/Screenshots`
   - `src/config/appContentDirectories.ts` owns that bootstrap and the legacy-home-path detection/migration rules
   - release migrations now also carry old `co.overlayterm.app` app-local directories forward into `co.greeblefs.app`
   - layout auto-probe now prefers `~/.greeblefs/greeblefs.layouts.{json,toml}` before older `.greeble` / `.overlayterm` fallbacks
