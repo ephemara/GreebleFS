@@ -112,6 +112,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Shared runtime-authored module bridge. It compiles authored TS/TSX module graphs for plugins, theme renderers, wallpapers, shaders, and animations, and now routes serializable compile work through the frontend worker host before falling back to the main thread.
 - `src/runtime/workerHost.ts`
   Browser-worker orchestration layer for frontend CPU-heavy tasks. It owns worker-lane lifecycle, per-lane telemetry, fallback-to-main-thread behavior, and the shared request/response bridge used by runtime module compilation.
+- `src/runtime/tauriClient.ts` and `src/runtime/explorerBackend.ts`
+  Typed frontend bridge for native explorer/media commands. Large 3D preview reads now use raw-byte preview transport commands (`fs_read_preview_bytes` / `cloud_read_preview_bytes`) that return `Uint8Array` payloads instead of base64 strings.
 - `src/components/DevPerformanceHud.tsx`
   Fixed dev-only diagnostics HUD rendered by `App.tsx` whenever the frontend runs in `import.meta.env.DEV` or explicit developer mode. It shows live frame, navigation, CLS, INP, long-task, memory, and frontend worker telemetry for local development, and its visibility now rides a persisted system flag plus a local shell hotkey instead of being permanently forced on in dev sessions.
 - `src/components/wallpaperRuntime.tsx`
@@ -145,7 +147,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `src/config/explorerArchives.ts`
   Data-driven archive registry for the explorer. It is the TS-side source of truth for which local archive suffixes should route through native extraction/opening and how archive folder labels are derived.
 - `src/config/filePreview.ts`
-  Data-driven preview/edit gate for explorer media, text, spreadsheet, and shader surfaces. It centralizes preview MIME mapping, direct-playback allowlists, spreadsheet exclusions, and the explicit shader-workbench extension routing that keeps `wgsl` / `hlsl` / `spv` out of the generic plain-text editor.
+  Data-driven preview/edit gate for explorer media, text, spreadsheet, and shader surfaces. It centralizes preview MIME mapping, direct-playback allowlists, spreadsheet exclusions, the explicit shader-workbench extension routing that keeps `wgsl` / `hlsl` / `spv` out of the generic plain-text editor, and the 3D preview source/proxy ceilings that now allow modern-size model reads before proxy fallback engages.
 - `src/config/spreadsheet.ts`
   Data-driven spreadsheet extension router and file-kind helper shared by the preview shell, save/export path, and search routing.
 - `src/config/explorerThumbnails.ts`

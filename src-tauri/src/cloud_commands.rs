@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Manager, State};
+use tauri::{ipc::Response, AppHandle, Manager, State};
 use url::Url;
 use uuid::Uuid;
 
@@ -32,6 +32,7 @@ const CLOUD_KEYRING_SERVICE: &str = "co.overlayterm.app.cloud";
 const CLOUD_PROVIDER_KEYRING_SERVICE: &str = "co.overlayterm.app.cloud.providers";
 const CLOUD_TEXT_PREVIEW_MAX_BYTES: usize = 10 * 1024 * 1024;
 const CLOUD_BASE64_PREVIEW_MAX_BYTES: usize = 12 * 1024 * 1024;
+const CLOUD_PREVIEW_BYTES_MAX_BYTES: usize = 256 * 1024 * 1024;
 const DROPBOX_OAUTH_CALLBACK_PORT: u16 = 53_682;
 const DROPBOX_OAUTH_CALLBACK_URI: &str = "http://localhost:53682/callback";
 
@@ -719,6 +720,37 @@ pub async fn cloud_read_file_base64(
         mime,
         URL_SAFE_NO_PAD.encode(payload.bytes)
     ))
+}
+
+#[tauri::command]
+pub async fn cloud_read_preview_bytes(
+    app: AppHandle,
+    path: String,
+    max_bytes: Option<u64>,
+) -> Result<Response, String> {
+    let state = app.state::<CloudRuntimeState>();
+    let payload = download_cloud_file(&app, &state, &path).await?;
+    let allowed_bytes = resolve_cloud_preview_byte_limit(max_bytes);
+    if payload.bytes.len() as u64 > allowed_bytes {
+        return Err(format!(
+            "Cloud file is too large for native preview transport (> {}).",
+            format_cloud_preview_byte_limit(allowed_bytes)
+        ));
+    }
+
+    Ok(Response::new(payload.bytes))
+}
+
+fn resolve_cloud_preview_byte_limit(requested_bytes: Option<u64>) -> u64 {
+    requested_bytes
+        .unwrap_or(CLOUD_PREVIEW_BYTES_MAX_BYTES as u64)
+        .max(1)
+        .min(CLOUD_PREVIEW_BYTES_MAX_BYTES as u64)
+}
+
+fn format_cloud_preview_byte_limit(limit_bytes: u64) -> String {
+    let limit_mebibytes = limit_bytes.div_ceil(1024 * 1024);
+    format!("{limit_mebibytes} MB")
 }
 
 #[tauri::command]

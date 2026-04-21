@@ -1,23 +1,25 @@
-import { describe, expect, it } from 'vitest';
-import * as THREE from 'three';
-import { decodeDataUrlToUint8Array, getModelPreviewRotation, normalizeModelForPreview, collectNormalizedBounds } from '../components/modelPreview.utils';
+import { describe, expect, it } from "vitest";
+import * as THREE from "three";
+import {
+  getModelPreviewRotation,
+  normalizeModelForPreview,
+  collectNormalizedBounds,
+} from "../components/modelPreview.utils";
 
-describe('modelPreview utils', () => {
-  it('decodes base64 data urls into binary data', () => {
-    const bytes = decodeDataUrlToUint8Array('data:application/octet-stream;base64,AQID');
-    expect(Array.from(bytes)).toEqual([1, 2, 3]);
+describe("modelPreview utils", () => {
+  it("applies format-specific rotation for fbx assets", () => {
+    expect(getModelPreviewRotation("fbx").x).toBeCloseTo(-Math.PI / 2);
+    expect(getModelPreviewRotation("glb").x).toBe(0);
   });
 
-  it('applies format-specific rotation for fbx assets', () => {
-    expect(getModelPreviewRotation('fbx').x).toBeCloseTo(-Math.PI / 2);
-    expect(getModelPreviewRotation('glb').x).toBe(0);
-  });
-
-  it('normalizes models to be centered and grounded in the preview space', () => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 4, 6), new THREE.MeshStandardMaterial());
+  it("normalizes models to be centered and grounded in the preview space", () => {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(2, 4, 6),
+      new THREE.MeshStandardMaterial(),
+    );
     mesh.position.set(10, 8, -5);
 
-    const normalized = normalizeModelForPreview(mesh, 'glb');
+    const normalized = normalizeModelForPreview(mesh, "glb");
     const bounds = collectNormalizedBounds(normalized);
     const center = bounds.getCenter(new THREE.Vector3());
     const size = bounds.getSize(new THREE.Vector3());

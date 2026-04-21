@@ -1,32 +1,32 @@
-import { invoke } from '@tauri-apps/api/core';
-import * as tauriBindings from '../generated/tauri';
-import type { Result } from '../generated/tauri';
+import { invoke } from "@tauri-apps/api/core";
+import * as tauriBindings from "../generated/tauri";
+import type { Result } from "../generated/tauri";
 import {
   finishTelemetrySpan,
   recordFrontendTelemetry,
   startTelemetrySpan,
   summarizeTelemetryValue,
   type TelemetryMetadata,
-} from './telemetry';
+} from "./telemetry";
 
 export type {
   LinuxDisplayBackendPreference,
   LinuxDisplayBackendStatus,
-} from '../generated/tauri';
+} from "../generated/tauri";
 
 export interface WaylandDockHostStatus {
   enabled: boolean;
   windowLabel: string | null;
 }
 
-export type WaylandDockAnchor = 'top' | 'bottom';
+export type WaylandDockAnchor = "top" | "bottom";
 
 const TELEMETRY_COMMANDS = new Set([
-  'telemetryConfigure',
-  'telemetryGetStatus',
-  'telemetryGetRecentRecords',
-  'telemetryExportSupportBundle',
-  'telemetryClearSessions',
+  "telemetryConfigure",
+  "telemetryGetStatus",
+  "telemetryGetRecentRecords",
+  "telemetryExportSupportBundle",
+  "telemetryClearSessions",
 ]);
 
 function summarizeArgs(args: unknown[]): TelemetryMetadata {
@@ -52,23 +52,23 @@ function wrapCommand<TArgs extends unknown[], TResult>(
   return async (...args: TArgs): Promise<TResult> => {
     const span = startTelemetrySpan({
       name,
-      layer: 'tauri-bridge',
-      kind: 'command',
+      layer: "tauri-bridge",
+      kind: "command",
       metadata: summarizeArgs(args),
     });
 
     try {
       const result = await fn(...args);
       finishTelemetrySpan(span, {
-        status: 'ok',
+        status: "ok",
         metadata: {
-          result: summarizeTelemetryValue(result, 'result'),
+          result: summarizeTelemetryValue(result, "result"),
         },
       });
       return result;
     } catch (error) {
       finishTelemetrySpan(span, {
-        status: 'error',
+        status: "error",
         error,
       });
       throw error;
@@ -76,26 +76,34 @@ function wrapCommand<TArgs extends unknown[], TResult>(
   };
 }
 
-function wrapEvents<TEvents extends Record<string, { listen: (listener: (event: { payload: unknown }) => void) => Promise<() => void> }>>(
-  source: TEvents,
-): TEvents {
+function wrapEvents<
+  TEvents extends Record<
+    string,
+    {
+      listen: (
+        listener: (event: { payload: unknown }) => void,
+      ) => Promise<() => void>;
+    }
+  >,
+>(source: TEvents): TEvents {
   return Object.fromEntries(
     Object.entries(source).map(([name, eventApi]) => [
       name,
       {
         ...eventApi,
-        listen: async (listener: (event: { payload: unknown }) => void) => eventApi.listen((event: { payload: unknown }) => {
-          recordFrontendTelemetry({
-            layer: 'tauri-bridge',
-            kind: 'event',
-            name,
-            status: 'ok',
-            metadata: {
-              payload: summarizeTelemetryValue(event.payload, 'payload'),
-            },
-          });
-          listener(event);
-        }),
+        listen: async (listener: (event: { payload: unknown }) => void) =>
+          eventApi.listen((event: { payload: unknown }) => {
+            recordFrontendTelemetry({
+              layer: "tauri-bridge",
+              kind: "event",
+              name,
+              status: "ok",
+              metadata: {
+                payload: summarizeTelemetryValue(event.payload, "payload"),
+              },
+            });
+            listener(event);
+          }),
       },
     ]),
   ) as TEvents;
@@ -103,36 +111,41 @@ function wrapEvents<TEvents extends Record<string, { listen: (listener: (event: 
 
 const baseCommands = {
   ...tauriBindings.commands,
-  windowGetWaylandDockHostStatus: () => invoke<WaylandDockHostStatus>('window_get_wayland_dock_host_status'),
+  windowGetWaylandDockHostStatus: () =>
+    invoke<WaylandDockHostStatus>("window_get_wayland_dock_host_status"),
   windowApplyWaylandDockLayout: (
     anchor: WaylandDockAnchor,
     monitorName: string | null,
     width: number,
     height: number,
-  ) => invoke<Result<null, string>>('window_apply_wayland_dock_layout', {
-    anchor,
-    monitorName,
-    width,
-    height,
-  }),
+  ) =>
+    invoke<Result<null, string>>("window_apply_wayland_dock_layout", {
+      anchor,
+      monitorName,
+      width,
+      height,
+    }),
   fsReadPreviewBytes: (path: string, maxBytes: number) =>
-    invoke<ArrayBuffer>('fs_read_preview_bytes', { path, maxBytes }).then(
+    invoke<ArrayBuffer>("fs_read_preview_bytes", { path, maxBytes }).then(
       (buffer) => new Uint8Array(buffer),
     ),
   cloudReadPreviewBytes: (path: string, maxBytes: number) =>
-    invoke<ArrayBuffer>('cloud_read_preview_bytes', { path, maxBytes }).then(
+    invoke<ArrayBuffer>("cloud_read_preview_bytes", { path, maxBytes }).then(
       (buffer) => new Uint8Array(buffer),
     ),
 };
 
 export const commands = Object.fromEntries(
-  Object.entries(baseCommands).map(([name, fn]) => [name, wrapCommand(name, fn as (...args: unknown[]) => Promise<unknown>)]),
+  Object.entries(baseCommands).map(([name, fn]) => [
+    name,
+    wrapCommand(name, fn as (...args: unknown[]) => Promise<unknown>),
+  ]),
 ) as typeof baseCommands;
 
 export const events = wrapEvents(tauriBindings.events);
 
 export function unwrapTauriResult<T>(result: Result<T, string>): T {
-  if (result.status === 'ok') {
+  if (result.status === "ok") {
     return result.data;
   }
 

@@ -41,6 +41,63 @@ use telemetry::{finish_native_span, start_native_span, TelemetryManager};
 use terminal::TerminalManager;
 use window_commands::{MAIN_TRAY_ICON_ID, MAIN_WINDOW_LABEL};
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PreviewBytesInvokeArgs {
+    path: String,
+    max_bytes: Option<u64>,
+}
+
+fn parse_preview_bytes_invoke_args(
+    message: &tauri::ipc::InvokeMessage<tauri::Wry>,
+) -> Result<PreviewBytesInvokeArgs, String> {
+    match message.payload() {
+        tauri::ipc::InvokeBody::Json(payload) => serde_json::from_value(payload.clone())
+            .map_err(|error| format!("Invalid preview transport payload: {error}")),
+        tauri::ipc::InvokeBody::Raw(_) => {
+            Err("Preview transport expects JSON arguments.".to_string())
+        }
+    }
+}
+
+fn raw_preview_invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
+    let command = invoke.message.command().to_string();
+    let args = match parse_preview_bytes_invoke_args(&invoke.message) {
+        Ok(args) => args,
+        Err(error) => {
+            invoke.resolver.reject(error);
+            return true;
+        }
+    };
+
+    match command.as_str() {
+        "fs_read_preview_bytes" => {
+            let resolver = invoke.resolver;
+            tauri::async_runtime::spawn(async move {
+                resolver.respond(
+                    fs_commands::fs_read_preview_bytes(args.path, args.max_bytes)
+                        .await
+                        .map_err(Into::into),
+                );
+            });
+            true
+        }
+        "cloud_read_preview_bytes" => {
+            let resolver = invoke.resolver;
+            let app = invoke.message.webview().app_handle().clone();
+            tauri::async_runtime::spawn(async move {
+                resolver.respond(
+                    cloud_commands::cloud_read_preview_bytes(app, args.path, args.max_bytes)
+                        .await
+                        .map_err(Into::into),
+                );
+            });
+            true
+        }
+        _ => false,
+    }
+}
+
 fn toggle_overlay(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         let _ = win.emit("overlay://toggle-request", ());
@@ -52,7 +109,14 @@ pub fn run() {
     linux_graphics::apply_linux_graphics_startup_configuration();
 
     let builder = specta_bindings::app_specta_builder();
-    let invoke_handler = builder.invoke_handler();
+    let specta_invoke_handler = builder.invoke_handler();
+    let invoke_handler = move |invoke: tauri::ipc::Invoke<tauri::Wry>| match invoke
+        .message
+        .command()
+    {
+        "fs_read_preview_bytes" | "cloud_read_preview_bytes" => raw_preview_invoke_handler(invoke),
+        _ => specta_invoke_handler(invoke),
+    };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(

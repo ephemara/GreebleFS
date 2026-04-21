@@ -22,7 +22,7 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tauri::AppHandle;
+use tauri::{ipc::Response, AppHandle};
 use tauri_specta::Event;
 use uuid::Uuid;
 use yazi_fs::{
@@ -5424,6 +5424,7 @@ pub async fn git_exec(repo_path: String, args: Vec<String>) -> Result<String, St
 // Returns the file as a data-URI so the frontend can render it without
 // needing the asset:// protocol (which requires allow-listed paths).
 const FS_READ_FILE_BASE64_MAX_BYTES: u64 = 12 * 1024 * 1024;
+const FS_READ_PREVIEW_BYTES_MAX_BYTES: u64 = 256 * 1024 * 1024;
 #[tauri::command]
 #[specta::specta]
 pub async fn fs_read_file_base64(path: String) -> Result<String, String> {
@@ -5463,6 +5464,36 @@ pub async fn fs_read_file_base64(path: String) -> Result<String, String> {
     // Use a simple base64 encoder (no external crate needed — stdlib in Rust is fine)
     let b64 = base64_encode(&buf);
     Ok(format!("data:{};base64,{}", mime, b64))
+}
+
+#[tauri::command]
+pub async fn fs_read_preview_bytes(
+    path: String,
+    max_bytes: Option<u64>,
+) -> Result<Response, String> {
+    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+    let allowed_bytes = resolve_preview_byte_limit(max_bytes, FS_READ_PREVIEW_BYTES_MAX_BYTES);
+    if meta.len() > allowed_bytes {
+        return Err(format!(
+            "File is too large for native preview transport (> {})",
+            format_preview_byte_limit(allowed_bytes)
+        ));
+    }
+
+    let bytes = tokio::fs::read(&path).await.map_err(|e| e.to_string())?;
+    Ok(Response::new(bytes))
+}
+
+fn resolve_preview_byte_limit(requested_bytes: Option<u64>, hard_limit_bytes: u64) -> u64 {
+    requested_bytes
+        .unwrap_or(hard_limit_bytes)
+        .max(1)
+        .min(hard_limit_bytes)
+}
+
+fn format_preview_byte_limit(limit_bytes: u64) -> String {
+    let limit_mebibytes = limit_bytes.div_ceil(1024 * 1024);
+    format!("{limit_mebibytes} MB")
 }
 
 #[tauri::command]
@@ -8506,6 +8537,38 @@ mod tests {
         let result = fs_read_file_base64(file_path.to_string_lossy().into()).await;
         let error = result.expect_err("oversized preview should be rejected");
         assert!(error.contains("> 12 MB"), "unexpected error: {error}");
+    }
+
+    #[tokio::test]
+    async fn fs_read_preview_bytes_returns_raw_bytes_for_small_file() {
+        let dir = tmp_dir();
+        let file_path = dir.path().join("preview.glb");
+        fs::write(&file_path, [1u8, 2, 3, 4]).unwrap();
+
+        let response = fs_read_preview_bytes(file_path.to_string_lossy().into(), Some(1024))
+            .await
+            .expect("native preview bytes should succeed");
+        let body = tauri::ipc::IpcResponse::body(response).expect("response body");
+        match body {
+            tauri::ipc::InvokeResponseBody::Raw(bytes) => assert_eq!(bytes, vec![1u8, 2, 3, 4]),
+            _ => panic!("expected raw byte response"),
+        }
+    }
+
+    #[tokio::test]
+    async fn fs_read_preview_bytes_rejects_requested_limit() {
+        let dir = tmp_dir();
+        let file_path = dir.path().join("huge-preview.glb");
+        fs::write(&file_path, vec![0u8; 32]).unwrap();
+
+        let error = match fs_read_preview_bytes(file_path.to_string_lossy().into(), Some(8)).await {
+            Ok(_) => panic!("preview transport should enforce requested limit"),
+            Err(error) => error,
+        };
+        assert!(
+            error.contains("native preview transport"),
+            "unexpected error: {error}"
+        );
     }
 
     #[tokio::test]

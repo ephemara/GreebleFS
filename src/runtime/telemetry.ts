@@ -1,28 +1,33 @@
-import { invoke } from '@tauri-apps/api/core';
-import { useSettingsStore } from '../store/settingsStore';
+import { invoke } from "@tauri-apps/api/core";
+import { useSettingsStore } from "../store/settingsStore";
 
 export type TelemetryLayer =
-  | 'ui'
-  | 'runtime'
-  | 'tauri-bridge'
-  | 'rust'
-  | 'worker'
-  | 'plugin'
-  | 'renderer'
-  | 'startup';
+  | "ui"
+  | "runtime"
+  | "tauri-bridge"
+  | "rust"
+  | "worker"
+  | "plugin"
+  | "renderer"
+  | "startup";
 
 export type TelemetryKind =
-  | 'action'
-  | 'command'
-  | 'event'
-  | 'metric'
-  | 'error'
-  | 'lifecycle'
-  | 'span-start'
-  | 'span-end';
+  | "action"
+  | "command"
+  | "event"
+  | "metric"
+  | "error"
+  | "lifecycle"
+  | "span-start"
+  | "span-end";
 
-export type TelemetryStatus = 'ok' | 'error' | 'cancelled' | 'started';
-export type TelemetryMetadataValue = string | number | boolean | null | undefined;
+export type TelemetryStatus = "ok" | "error" | "cancelled" | "started";
+export type TelemetryMetadataValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined;
 export type TelemetryMetadata = Record<string, TelemetryMetadataValue>;
 
 export interface FrontendTelemetryErrorRecord {
@@ -60,7 +65,7 @@ export interface FrontendTelemetrySpan {
 const TRACE_ID = createTelemetryId();
 const MAX_METADATA_VALUE_LENGTH = 240;
 const MAX_PENDING_RECORDS = 250;
-const FRONTEND_BATCH_COMMAND = 'telemetry_record_frontend_batch';
+const FRONTEND_BATCH_COMMAND = "telemetry_record_frontend_batch";
 const SOURCE_TRACE_STACK_LINE_LIMIT = 6;
 
 let pendingRecords: FrontendTelemetryRecord[] = [];
@@ -68,7 +73,8 @@ let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let browserObserversInstalled = false;
 
 function getPerformanceNow(): number {
-  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+  return typeof performance !== "undefined" &&
+    typeof performance.now === "function"
     ? performance.now()
     : Date.now();
 }
@@ -84,16 +90,23 @@ function telemetryEnabled(): boolean {
 
 function sourceTraceEnabled(): boolean {
   const system = useSettingsStore.getState().settings.system;
-  const sourceTraceAllowed = Boolean(import.meta.env.DEV) || system.developerMode;
+  const sourceTraceAllowed =
+    Boolean(import.meta.env.DEV) || system.developerMode;
   return sourceTraceAllowed && system.sourceTraceModeEnabled;
 }
 
 function includePayloadMetadata(): boolean {
-  return useSettingsStore.getState().settings.system.developerTelemetryPayloadMode === 'metadata+small-payloads';
+  return (
+    useSettingsStore.getState().settings.system
+      .developerTelemetryPayloadMode === "metadata+small-payloads"
+  );
 }
 
 function createTelemetryId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
     return crypto.randomUUID();
   }
 
@@ -102,10 +115,10 @@ function createTelemetryId(): string {
 
 function summarizeMetadataValue(value: TelemetryMetadataValue): string {
   if (value == null) {
-    return 'null';
+    return "null";
   }
 
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     return value.length > MAX_METADATA_VALUE_LENGTH
       ? `${value.slice(0, MAX_METADATA_VALUE_LENGTH)}…`
       : value;
@@ -114,7 +127,9 @@ function summarizeMetadataValue(value: TelemetryMetadataValue): string {
   return String(value);
 }
 
-function normalizeMetadata(metadata: TelemetryMetadata = {}): Record<string, string> {
+function normalizeMetadata(
+  metadata: TelemetryMetadata = {},
+): Record<string, string> {
   return Object.fromEntries(
     Object.entries(metadata)
       .filter(([key, value]) => key.trim().length > 0 && value !== undefined)
@@ -151,10 +166,10 @@ function collectSourceTraceMetadata(): TelemetryMetadata {
   }
 
   const stackLines = rawStack
-    .split('\n')
+    .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
-    .filter((line) => !line.includes('/runtime/telemetry.ts'))
+    .filter((line) => !line.includes("/runtime/telemetry.ts"))
     .slice(0, SOURCE_TRACE_STACK_LINE_LIMIT);
   if (stackLines.length === 0) {
     return {};
@@ -162,7 +177,7 @@ function collectSourceTraceMetadata(): TelemetryMetadata {
 
   return {
     sourceTraceTopFrame: stackLines[0] ?? null,
-    sourceTraceStack: stackLines.join(' | '),
+    sourceTraceStack: stackLines.join(" | "),
   };
 }
 
@@ -203,18 +218,18 @@ async function flushTelemetryQueue(): Promise<void> {
 }
 
 export function installFrontendTelemetryObservers(): void {
-  if (browserObserversInstalled || typeof window === 'undefined') {
+  if (browserObserversInstalled || typeof window === "undefined") {
     return;
   }
 
   browserObserversInstalled = true;
 
-  window.addEventListener('error', (event) => {
+  window.addEventListener("error", (event) => {
     recordFrontendTelemetry({
-      layer: 'ui',
-      kind: 'error',
-      name: 'window.error',
-      status: 'error',
+      layer: "ui",
+      kind: "error",
+      name: "window.error",
+      status: "error",
       metadata: {
         filename: event.filename,
         lineno: event.lineno,
@@ -224,12 +239,12 @@ export function installFrontendTelemetryObservers(): void {
     });
   });
 
-  window.addEventListener('unhandledrejection', (event) => {
+  window.addEventListener("unhandledrejection", (event) => {
     recordFrontendTelemetry({
-      layer: 'runtime',
-      kind: 'error',
-      name: 'window.unhandledrejection',
-      status: 'error',
+      layer: "runtime",
+      kind: "error",
+      name: "window.unhandledrejection",
+      status: "error",
       metadata: {},
       error: event.reason,
     });
@@ -249,7 +264,7 @@ export function startTelemetrySpan(input: {
     parentSpanId: input.parentSpanId ?? null,
     name: input.name,
     layer: input.layer,
-    kind: input.kind ?? 'action',
+    kind: input.kind ?? "action",
     startedAt: getPerformanceNow(),
     metadata: {
       ...collectSourceTraceMetadata(),
@@ -262,9 +277,9 @@ export function startTelemetrySpan(input: {
     spanId: span.spanId,
     parentSpanId: span.parentSpanId,
     layer: span.layer,
-    kind: 'span-start',
+    kind: "span-start",
     name: span.name,
-    status: 'started',
+    status: "started",
     startedAt: span.startedAt,
     metadata: span.metadata,
   });
@@ -275,7 +290,7 @@ export function startTelemetrySpan(input: {
 export function finishTelemetrySpan(
   span: FrontendTelemetrySpan,
   input: {
-    status: Exclude<TelemetryStatus, 'started'>;
+    status: Exclude<TelemetryStatus, "started">;
     metadata?: TelemetryMetadata;
     error?: unknown;
   },
@@ -286,7 +301,7 @@ export function finishTelemetrySpan(
     spanId: span.spanId,
     parentSpanId: span.parentSpanId,
     layer: span.layer,
-    kind: 'span-end',
+    kind: "span-end",
     name: span.name,
     status: input.status,
     startedAt: span.startedAt,
@@ -323,10 +338,16 @@ export function recordFrontendTelemetry(input: {
     ...(input.metadata ?? {}),
   });
   const shouldDropPayload =
-    !includePayloadMetadata()
-    && Object.keys(metadata).some((key) => key.includes('payload') || key.includes('args'));
+    !includePayloadMetadata() &&
+    Object.keys(metadata).some(
+      (key) => key.includes("payload") || key.includes("args"),
+    );
   const normalizedMetadata = shouldDropPayload
-    ? Object.fromEntries(Object.entries(metadata).filter(([key]) => !key.includes('payload') && !key.includes('args')))
+    ? Object.fromEntries(
+        Object.entries(metadata).filter(
+          ([key]) => !key.includes("payload") && !key.includes("args"),
+        ),
+      )
     : metadata;
 
   queueRecord({
@@ -340,18 +361,25 @@ export function recordFrontendTelemetry(input: {
     layer: input.layer,
     kind: input.kind,
     name: input.name,
-    status: input.status ?? 'ok',
+    status: input.status ?? "ok",
     metadata: normalizedMetadata,
     error: normalizeError(input.error),
   });
 }
 
-export function summarizeTelemetryValue(value: unknown, label: string): TelemetryMetadataValue {
+export function summarizeTelemetryValue(
+  value: unknown,
+  label: string,
+): TelemetryMetadataValue {
   if (value == null) {
     return null;
   }
 
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
     return value;
   }
 
@@ -367,8 +395,10 @@ export function summarizeTelemetryValue(value: unknown, label: string): Telemetr
     return `${label}<typed-array:${value.byteLength}>`;
   }
 
-  if (typeof value === 'object') {
-    return `${label}{${Object.keys(value as Record<string, unknown>).slice(0, 4).join(',')}}`;
+  if (typeof value === "object") {
+    return `${label}{${Object.keys(value as Record<string, unknown>)
+      .slice(0, 4)
+      .join(",")}}`;
   }
 
   return String(value);

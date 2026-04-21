@@ -1,10 +1,12 @@
-import * as THREE from 'three';
-import type { ModelPreviewFormat } from '../config/filePreview';
+import * as THREE from "three";
+import type { ModelPreviewFormat } from "../config/filePreview";
 
 const TARGET_MODEL_SIZE = 2.4;
 
-export function getModelPreviewRotation(format: ModelPreviewFormat): THREE.Euler {
-  if (format === 'fbx' || format === 'obj' || format === 'stl') {
+export function getModelPreviewRotation(
+  format: ModelPreviewFormat,
+): THREE.Euler {
+  if (format === "fbx" || format === "obj" || format === "stl") {
     return new THREE.Euler(-Math.PI / 2, 0, 0);
   }
   return new THREE.Euler(0, 0, 0);
@@ -17,7 +19,7 @@ export function normalizeModelForPreview(
 ): THREE.Group {
   const root = new THREE.Group();
   const wrapper = new THREE.Group();
-  wrapper.name = `${object.name || 'model'}-normalized`;
+  wrapper.name = `${object.name || "model"}-normalized`;
   wrapper.rotation.copy(getModelPreviewRotation(format));
   wrapper.add(object);
   root.add(wrapper);
@@ -29,7 +31,12 @@ export function normalizeModelForPreview(
   }
 
   const initialSize = initialBounds.getSize(new THREE.Vector3());
-  const maxDimension = Math.max(initialSize.x, initialSize.y, initialSize.z, 0.001);
+  const maxDimension = Math.max(
+    initialSize.x,
+    initialSize.y,
+    initialSize.z,
+    0.001,
+  );
   const scale = targetSize / maxDimension;
   wrapper.scale.setScalar(scale);
   wrapper.updateWorldMatrix(true, true);
@@ -52,5 +59,5 @@ export function collectNormalizedBounds(object: THREE.Object3D): THREE.Box3 {
 }
 
 export function parseDiffuseTexturePath(path: string): string {
-  return path.replace(/\\/g, '/');
+  return path.replace(/\\/g, "/");
 }

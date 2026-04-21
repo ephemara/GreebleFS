@@ -1,5 +1,22 @@
 # GreebleFS Memory
 
+# 2026-04-20 - Model Preview Now Uses Native Raw-Byte Transport And Blob-Backed Sidecars
+
+- The 3D preview lane no longer routes model files through the old base64/text preview commands that capped local binaries at 12 MB and text models at 10 MB. Model preview now uses a dedicated native raw-byte preview transport for local and cloud-backed reads.
+- Durable implementation shape:
+  - `src-tauri/src/fs_commands.rs` now exposes `fs_read_preview_bytes`, and `src-tauri/src/cloud_commands.rs` now exposes `cloud_read_preview_bytes`. Both commands clamp requested preview reads against a hard native limit and return raw bytes through `tauri::ipc::Response` instead of JSON arrays or base64 strings.
+  - `src/runtime/tauriClient.ts` and `src/runtime/explorerBackend.ts` now surface those commands as `Uint8Array` reads, so preview consumers can stay typed while bypassing JSON/base64 inflation.
+  - `src/components/modelPreviewSource.ts` now loads every supported 3D source format from raw bytes. `.glb`, `.fbx`, and `.stl` parse directly from `ArrayBuffer`; `.obj` and `.gltf` decode from bytes locally; glTF sidecars now become `blob:` URLs instead of giant inlined data URIs.
+  - `src/runtime/telemetry.ts` now summarizes `ArrayBuffer` and typed-array payloads by byte length so native preview transport results do not explode telemetry metadata.
+  - `src/config/filePreview.ts` now treats the 3D lane like a modern preview surface instead of a legacy fallback: raw source reads and proxy thresholds were raised to 128 MB root/sidecar reads, 2M vertices, 4M triangles, and 192 meshes before proxy fallback engages.
+- Durable product note:
+  - Keep large binary preview paths on raw IPC responses or other binary-native transports. Do not regress model preview back to base64 or giant JSON byte arrays just because those are easier to wire.
+  - glTF sidecars are no longer the bottleneck they were on April 20, 2026. If a future follow-up adds deeper OBJ/FBX material sidecar support, preserve the blob-backed resource strategy instead of reintroducing data-URI inflation.
+- Validation:
+  - passed: `npx vitest run src/test/modelPreviewSource.test.ts src/test/modelPreview.utils.test.ts src/test/telemetry.test.ts --reporter=dot`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml fs_read_preview_bytes --lib`
+  - passed: filtered `npx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "modelPreview|telemetry|tauriClient|explorerBackend|cloud_read_preview|fs_read_preview" || true`
+
 # 2026-04-20 - Audio Preview Now Opens As A Clean Player Before The Heavy Editor
 
 - Explorer audio files no longer drop straight into the dense trim/export/plugin workbench. They now open in a cleaner playback-first preview surface, and the heavier audio editing tools only appear after an explicit switch into edit mode.
