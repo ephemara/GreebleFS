@@ -24,6 +24,21 @@
       "label": "ML Core",
       "description": "CPU-friendly baseline for NumPy, ONNX, ONNX Runtime, and Torch workflows.",
       "packages": ["numpy", "pillow", "onnx", "onnxruntime", "torch"]
+    },
+    {
+      "id": "cuda-ai-indexing",
+      "label": "CUDA AI Indexing",
+      "description": "Torch CUDA, GPU ONNX Runtime, and embedding/indexing helpers for local AI search and inference.",
+      "packages": [
+        "numpy",
+        "pillow",
+        "torch",
+        "onnx",
+        "onnxruntime-gpu",
+        "sentence-transformers",
+        "transformers",
+        "tokenizers"
+      ]
     }
   ],
   "actions": [
@@ -37,6 +52,12 @@
       "id": "ml.probe",
       "label": "ML Probe",
       "description": "Checks ONNX, ONNX Runtime, Torch, and CUDA availability inside the sidecar.",
+      "payloadExampleJson": "{}"
+    },
+    {
+      "id": "acceleration.cuda_probe",
+      "label": "CUDA Acceleration Probe",
+      "description": "Returns structured CUDA, Torch, ONNX Runtime, and AI-package readiness for the acceleration pipeline.",
       "payloadExampleJson": "{}"
     },
     {

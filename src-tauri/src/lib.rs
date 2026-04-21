@@ -1,3 +1,4 @@
+pub mod acceleration_runtime;
 pub mod archive_ops;
 pub mod audio_commands;
 pub mod audio_engine;

@@ -1,5 +1,28 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Cross-Provider Acceleration Control Plane For CUDA / AI / Native GPU Routing
+
+- GreebleFS now has a reusable acceleration-control seam above the native `wgpu` runtime. The point is to stop future CUDA, AI indexing, inference, similarity, media, or file-operation offload work from inventing ad hoc provider checks in random panels or commands.
+- Durable implementation shape:
+  - `src-tauri/src/acceleration_runtime.rs` is the new host-side control plane. It reads the existing `GpuRuntimeManager` snapshot, inspects Python-sidecar availability, optionally calls the managed sidecar action `acceleration.cuda_probe`, and returns a typed provider catalog plus workload routing snapshot through Specta.
+  - The control plane intentionally separates provider kinds from workloads. Current provider kinds are `cpu`, native `wgpu`, and `cudaPython`; current workload ids are `thumbnails`, `mediaPipelines`, `highVolumePreviews`, `aiIndexing`, `localInference`, `similaritySearch`, `directStorage`, and `fileHashing`.
+  - `src-python/greeblefs-python-sidecar.json` now advertises the `acceleration.cuda_probe` action and a `cuda-ai-indexing` preset for the managed runtime. That preset is the current install baseline for Torch / ONNX / embedding-style local AI work instead of forcing each future feature to list packages separately.
+  - `src-python/greeblefs_sidecar/actions.py` now owns the first CUDA/AI probe. It reports Python version, platform, `CUDA_VISIBLE_DEVICES`, PyTorch CUDA visibility/device details, ONNX Runtime provider availability, and optional module presence for packages commonly needed by local indexing/search pipelines.
+  - `src/config/accelerationRuntime.ts` is the TS-side routing catalog. It owns routing mode labels (`auto`, `preferNative`, `preferCuda`, `cpuOnly`), workload metadata, provider lookup helpers, and the canonical “which provider should handle this workload?” resolution logic.
+  - `src/runtime/accelerationRuntimeBackend.ts` and `src/store/accelerationRuntimeStore.ts` are the only TS entry points for hydrating or observing that acceleration snapshot. `src/App.tsx` now hydrates the feed on boot, and `src/components/SettingsPage.tsx` exposes a dedicated `Acceleration Pipeline` section with routing controls, provider cards, workload-resolution preview, and a manual `Probe CUDA / AI` action.
+  - `src/store/settingsStore.ts` now persists `settings.system.accelerationRoutingMode`, so future CUDA-first features can follow a shared user preference instead of each feature adding its own provider toggle.
+- Durable product note:
+  - Keep the layers distinct. `src-tauri/src/gpu_runtime/` is still the execution/runtime lane for native `wgpu` workloads. `src-tauri/src/acceleration_runtime.rs` is the control plane that decides which provider family is even available for a given class of work.
+  - If a future feature wants NVIDIA acceleration, start by asking whether it fits an existing workload id and provider-routing rule. Extend the workload catalog or provider probe first; do not bury new CUDA branching inside one panel or command.
+  - `preferCuda` is intentionally non-destructive. If the Python sidecar is absent, its CUDA probe action is unavailable, or CUDA libraries are not actually ready, the system still resolves back to native `wgpu` or CPU instead of failing the whole feature surface.
+- Validation:
+  - passed: `python3 -m py_compile src-python/greeblefs_sidecar/*.py`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml provider_statuses_mark_python_cuda_ready_when_probe_reports_cuda --quiet`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+  - passed: `bunx vitest run src/test/pythonConfig.test.ts src/test/pythonRuntimeBackend.test.ts src/test/accelerationRuntimeConfig.test.ts src/test/accelerationRuntimeStore.test.ts --reporter=dot`
+
 # 2026-04-21 - Constellation View Now Uses A Real Full-Canvas Camera
 
 - Constellation view no longer behaves like a decorative section inside the explorer scroll column. It now claims the full explorer canvas and uses its own camera model for zoom/pan, which makes the mode feel like a dedicated workspace instead of an inline experiment.

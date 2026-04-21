@@ -1,5 +1,11 @@
 use std::{fs, path::PathBuf};
 
+use crate::acceleration_runtime::{
+    AccelerationProviderKind, AccelerationProviderStatus, AccelerationRoutingMode,
+    AccelerationRuntimeRequest, AccelerationRuntimeStatusSnapshot, AccelerationWorkloadId,
+    PythonAccelerationOnnxRuntimeProbe, PythonAccelerationOptionalModuleProbe,
+    PythonAccelerationProbe, PythonAccelerationTorchProbe, PythonCudaDeviceInfo,
+};
 use crate::archive_ops::{
     FsArchiveExtractionMode, FsArchiveExtractionRequest, FsArchiveExtractionResult,
 };
@@ -246,6 +252,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::python_sidecar::python_stop_sidecar,
             crate::python_sidecar::python_sidecar_call,
             crate::python_pyo3::python_execute_embedded,
+            crate::acceleration_runtime::acceleration_runtime_get_status,
             crate::plugin_commands::plugin_run_backend,
             crate::plugin_commands::plugin_watch_directory,
             crate::plugin_commands::plugin_unwatch_directory,
@@ -450,6 +457,17 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
         .typ::<PythonSidecarStartResponse>()
         .typ::<PythonSidecarActionRequest>()
         .typ::<PythonSidecarActionResponse>()
+        .typ::<AccelerationRoutingMode>()
+        .typ::<AccelerationProviderKind>()
+        .typ::<AccelerationWorkloadId>()
+        .typ::<AccelerationRuntimeRequest>()
+        .typ::<AccelerationProviderStatus>()
+        .typ::<PythonCudaDeviceInfo>()
+        .typ::<PythonAccelerationTorchProbe>()
+        .typ::<PythonAccelerationOnnxRuntimeProbe>()
+        .typ::<PythonAccelerationOptionalModuleProbe>()
+        .typ::<PythonAccelerationProbe>()
+        .typ::<AccelerationRuntimeStatusSnapshot>()
         .typ::<PythonEmbeddedSnippetRequest>()
         .typ::<PythonEmbeddedSnippetResponse>()
         .typ::<ExplorerShaderPreviewDocument>()

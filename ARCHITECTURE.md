@@ -154,6 +154,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   SheetJS + HyperFormula bridge for spreadsheet import/export, clipboard serialization, sheet mutation, and workbook/tabular save paths.
 - `src/runtime/pythonRuntimeBackend.ts`
   Typed frontend seam for the managed Python runtime, persistent sidecar lifecycle, manifest-backed sidecar actions, and embedded `pyo3` execution. New React surfaces should call this layer instead of invoking Python Tauri commands directly.
+- `src/config/accelerationRuntime.ts`
+  Data-driven acceleration routing catalog for the cross-provider compute lane. It defines the shell-facing routing modes, workload ids, provider labels, and resolution helpers used to decide whether a workload should prefer CPU, native `wgpu`, or the Python-sidecar CUDA path.
+- `src/runtime/accelerationRuntimeBackend.ts`
+  Typed TS bridge for the acceleration control plane. It is the only frontend entry point for loading the provider snapshot that composes native GPU status plus Python-sidecar CUDA/AI capability probing.
 - `src/components/explorer/explorerPreviewSystem.ts`
   Data-driven explorer preview descriptor resolver. It centralizes preview-kind classification, inline-preview routing, and the shared loading/error/unsupported fallback copy that `FileExplorer.tsx` uses instead of per-extension JSX branches.
 - `src/components/explorer/explorerPreviewCache.ts`
@@ -182,6 +186,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Persisted layout/profile settings, wallpaper/shader/animation overrides, icon-theme selection, app-vs-dock theme selection, the native `windowMode` presentation toggle, the native GPU tier override, and machine-level developer-mode behavior.
 - `src/store/gpuRuntimeStore.ts`
   Shell-side source of truth for the native GPU runtime snapshot, hydration, event subscription, effective tier, and workload fallback telemetry surfaced in Settings.
+- `src/store/accelerationRuntimeStore.ts`
+  Shell-side source of truth for the cross-provider acceleration snapshot, hydration state, and routing-mode-aware provider availability surfaced in Settings. Future CUDA/AI/media-search surfaces should hydrate this store instead of inventing their own provider probe loop.
 - `src/store/videoEngineStore.ts`
   Shell-side source of truth for the native video engine snapshot, hydration, event subscription, and transport helper wrappers used by `ExplorerVideoEditor.tsx`.
 
@@ -396,6 +402,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - `src-tauri/src/gpu_runtime/` owns the native `wgpu` offload subsystem: one long-lived device/queue, adapter capability probing, `safe` / `integrated` / `discrete` tier resolution, an internal workload registry, WGSL kernel loading, queue/fallback telemetry, and CPU-safe fallback semantics
   - the v1 GPU workloads are intentionally narrow and host-owned: image thumbnails, image editor preview rendering, audio waveform reduction, audio spectral-band reduction, and audio spectrogram rasterization
   - `src/runtime/gpuRuntimeBackend.ts` + `src/store/gpuRuntimeStore.ts` are the only TS entry points for configuring or observing that native GPU runtime; React surfaces should not start their own ad hoc native GPU control flows
+  - `src-tauri/src/acceleration_runtime.rs` is the higher-level acceleration control plane. It composes the native `wgpu` runtime snapshot with Python-sidecar CUDA/AI probing, publishes provider/workload availability through Specta, and owns routing-mode-aware status for future media, indexing, inference, similarity, and file-operation offload work.
+  - `src/runtime/accelerationRuntimeBackend.ts` + `src/store/accelerationRuntimeStore.ts` + `src/config/accelerationRuntime.ts` are the only TS entry points for deciding which provider should own a cross-provider workload. React surfaces should not hardcode their own “CUDA vs native vs CPU” decision trees.
   - `src-tauri/src/audio_commands.rs` now owns offline-only audio analysis/export/batch work plus vendored SoX runtime extraction and explorer task cancellation/retry hooks
   - the audio lane is intentionally split:
     - native playback and deck transport live in Rust without the webview media stack
@@ -477,6 +485,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   `src-tauri/src/explorer_pro_commands.rs` is the explorer-pro feature backend for trash/undo, batch rename, duplicate scans, tags, and saved searches.
   `src-tauri/src/python_commands.rs` is the managed-runtime truth layer for interpreter discovery, virtualenv bootstrap, package installation, and direct Python execution.
   `src-tauri/src/python_sidecar.rs` owns the persistent managed sidecar lifecycle, workspace sync, stdio protocol, typed sidecar call/start/stop commands, and the backend-facing typed helper API (`action_ids`, decoded JSON helpers) for other Rust modules.
+  `src-tauri/src/acceleration_runtime.rs` owns the cross-provider acceleration snapshot surfaced to the shell. It reads the native GPU runtime, optionally probes the Python sidecar for CUDA/Torch/ONNX capability, and turns those signals into a reusable provider catalog for future workload routing.
   `src-tauri/src/python_pyo3.rs` owns the embedded `pyo3` seam for lightweight in-process Python helpers that do not need the long-lived sidecar, including decoded JSON helper functions for backend callers.
   `src-tauri/src/storage_commands.rs` is the storage-tab truth layer for native drive scans. It walks the filesystem on a background thread, tracks progress/cancellation, records logical vs allocated size, aggregates file-type buckets, caches direct child listings for the matrix view, builds a condensed tree plus largest-entry summaries, and prunes completed scan snapshots when newer scans start.
   `src-tauri/src/screenshot_commands.rs` is the screenshot truth layer for monitor capture, cached full-resolution images, native clipboard work, gallery thumbnails, and annotated export compositing.
@@ -519,6 +528,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Built-in theme switches should go through `settingsStore.applyThemeSelection()` or the Settings theme catalog flow, not a direct `updateAppearance({ activeThemeId })` call. The direct path now skips pilot baseline resets for dock mode, layout profile, explorer presentation, wallpaper/shader overrides, and related default-shell behavior.
 - JSDOM-backed Vitest runs currently fail in this workspace because `html-encoding-sniffer` requires an ESM dependency through a CommonJS path. Node-environment tests still work, so keep pure logic/package-loader tests runnable there until the dependency issue is fixed.
 - Python sidecar actions are manifest-driven. Add the Python handler in `src-python/greeblefs_sidecar/actions.py`, register it in `src-python/greeblefs-python-sidecar.json`, and then consume it through `src/runtime/pythonRuntimeBackend.ts` or the Rust sidecar helpers instead of inventing one-off script launch paths.
+- Cross-provider CUDA/AI routing is now control-plane-driven. If a new feature wants NVIDIA acceleration, add or reuse a workload id in `src/config/accelerationRuntime.ts` and extend `src-tauri/src/acceleration_runtime.rs` or the native GPU runtime instead of hardcoding provider selection inside a panel or backend command.
+- `preferCuda` is a routing preference, not a guarantee. The shell will still fall back to native `wgpu` or CPU when the managed Python sidecar is not running, the CUDA probe action is unavailable, or CUDA/Torch/ONNX are not actually ready on the machine.
 - The managed runtime still seeds its boilerplate package under `overlayterm_runtime` for compatibility. Do not rename that folder casually; it needs an explicit migration if we ever remove the legacy name from persisted runtimes.
 - `bun run test:browser` currently launches a headed Playwright Chromium session in this workspace. Without an X server it fails before any tests run; use `xvfb-run` or a headless browser config if you need browser validation locally.
 - `plugins/**/dist/**` is versioned source for packaged frontend plugins in this repo. Do not treat those directories like app-build output or let a blanket `dist/` ignore swallow shipped plugin entries.

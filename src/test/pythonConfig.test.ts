@@ -61,9 +61,11 @@ describe('python config helpers', () => {
 
   it('loads package presets and action catalog from the sidecar manifest', () => {
     expect(pythonQuickPackagePresets.map(preset => preset.id)).toContain('ml-core');
+    expect(pythonQuickPackagePresets.map(preset => preset.id)).toContain('cuda-ai-indexing');
     expect(pythonSidecarActionCatalog.map(action => action.id)).toEqual([
       'runtime.summary',
       'ml.probe',
+      'acceleration.cuda_probe',
       'files.scan_directory',
       'files.hash_paths',
     ]);

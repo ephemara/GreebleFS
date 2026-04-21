@@ -34,6 +34,13 @@ import {
   gpuRuntimeTierOptions,
 } from '../config/gpuRuntime';
 import {
+  accelerationRoutingModeOptions,
+  accelerationWorkloadCatalog,
+  getAccelerationRoutingModeLabel,
+  resolveAccelerationProviderForWorkload,
+} from '../config/accelerationRuntime';
+import { createPythonRuntimeConfig } from '../config/python';
+import {
   beginCloudAuth,
   clearCloudProviderConfiguration,
   disconnectCloudAccount,
@@ -125,6 +132,10 @@ import type {
   OverlayPluginExplorerActionContribution,
 } from '../config/pluginContributions';
 import { useSettingsStore, resolveSystemPresentationState, type TerminalWindowMode } from '../store/settingsStore';
+import {
+  refreshAccelerationRuntimeStatus,
+  useAccelerationRuntimeStore,
+} from '../store/accelerationRuntimeStore';
 import { useGpuRuntimeStore } from '../store/gpuRuntimeStore';
 import { useTerminalStore } from '../store/terminalStore';
 import {
@@ -1062,6 +1073,15 @@ export function SettingsPage({
     subscriptionState: state.subscriptionState,
     subscriptionError: state.subscriptionError,
   })));
+  const {
+    snapshot: accelerationRuntimeSnapshot,
+    hydrationState: accelerationRuntimeHydrationState,
+    hydrationError: accelerationRuntimeHydrationError,
+  } = useAccelerationRuntimeStore(useShallow(state => ({
+    snapshot: state.snapshot,
+    hydrationState: state.hydrationState,
+    hydrationError: state.hydrationError,
+  })));
   const { directoryBookmarks, addDirectoryBookmark } = useTerminalStore(useShallow(state => ({
     directoryBookmarks: state.directoryBookmarks,
     addDirectoryBookmark: state.addDirectoryBookmark,
@@ -1082,6 +1102,9 @@ export function SettingsPage({
   const [telemetryStatusError, setTelemetryStatusError] = useState<string | null>(null);
   const [telemetryNotice, setTelemetryNotice] = useState<string | null>(null);
   const [telemetryActionPending, setTelemetryActionPending] = useState<'export' | 'clear' | null>(null);
+  const [accelerationProbePending, setAccelerationProbePending] = useState(false);
+  const [accelerationProbeNotice, setAccelerationProbeNotice] = useState<string | null>(null);
+  const [accelerationProbeError, setAccelerationProbeError] = useState<string | null>(null);
   const [overviewNotice, setOverviewNotice] = useState<string | null>(null);
   const [overviewError, setOverviewError] = useState<string | null>(null);
   const [cloudSnapshot, setCloudSnapshot] = useState<ExplorerCloudAccountsSnapshot>(EMPTY_CLOUD_ACCOUNTS_SNAPSHOT);
@@ -1171,6 +1194,85 @@ export function SettingsPage({
     gpuRuntimeSubscriptionError,
     gpuRuntimeSubscriptionState,
     settings.system.gpuTierMode,
+  ]);
+  const accelerationProviderSummary = useMemo(() => {
+    const readyProviders = accelerationRuntimeSnapshot.providers.filter(provider => provider.ready);
+    if (readyProviders.length === 0) {
+      return 'No accelerator providers are currently ready; CPU fallback remains active.';
+    }
+
+    return readyProviders
+      .map(provider => `${provider.label} ready`)
+      .join(' · ');
+  }, [accelerationRuntimeSnapshot.providers]);
+  const accelerationPipelineStatus = useMemo(() => {
+    if (accelerationRuntimeHydrationState === 'loading') {
+      return 'Refreshing acceleration pipeline diagnostics...';
+    }
+
+    if (accelerationRuntimeHydrationError) {
+      return `Acceleration runtime hydration failed: ${accelerationRuntimeHydrationError}`;
+    }
+
+    if (accelerationProbeError) {
+      return `CUDA/AI probe failed: ${accelerationProbeError}`;
+    }
+
+    if (accelerationProbeNotice) {
+      return accelerationProbeNotice;
+    }
+
+    if (accelerationRuntimeSnapshot.pythonProbeError) {
+      return `Python probe note: ${accelerationRuntimeSnapshot.pythonProbeError}`;
+    }
+
+    return `Routing ${getAccelerationRoutingModeLabel(settings.system.accelerationRoutingMode)} · ${accelerationProviderSummary}`;
+  }, [
+    accelerationProviderSummary,
+    accelerationProbeError,
+    accelerationProbeNotice,
+    accelerationRuntimeHydrationError,
+    accelerationRuntimeHydrationState,
+    accelerationRuntimeSnapshot.pythonProbeError,
+    settings.system.accelerationRoutingMode,
+  ]);
+  const accelerationWorkloadRoutes = useMemo(() => (
+    accelerationWorkloadCatalog.map(definition => ({
+      definition,
+      resolution: resolveAccelerationProviderForWorkload(
+        accelerationRuntimeSnapshot,
+        definition.id,
+        settings.system.accelerationRoutingMode,
+      ),
+    }))
+  ), [
+    accelerationRuntimeSnapshot,
+    settings.system.accelerationRoutingMode,
+  ]);
+  const handleProbeAccelerationPipeline = useCallback(async () => {
+    setAccelerationProbePending(true);
+    setAccelerationProbeNotice(null);
+    setAccelerationProbeError(null);
+    try {
+      const snapshot = await refreshAccelerationRuntimeStatus({
+        config: createPythonRuntimeConfig(settings.python),
+        routingMode: settings.system.accelerationRoutingMode,
+        startSidecarIfNeeded: true,
+      });
+      const readyProviders = snapshot.providers.filter(provider => provider.ready);
+      setAccelerationProbeNotice(
+        readyProviders.length > 0
+          ? `Probe complete · ${readyProviders.map(provider => provider.label).join(', ')} ready.`
+          : 'Probe complete · no accelerator provider reported ready, CPU fallback remains active.',
+      );
+    } catch (error) {
+      setAccelerationProbeError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAccelerationProbePending(false);
+    }
+  }, [
+    settings.python,
+    settings.system.accelerationRoutingMode,
   ]);
   const wallpaperFileInputRef = useRef<HTMLInputElement | null>(null);
   const contextMenuCatalog = useMemo(
@@ -4680,6 +4782,162 @@ export function SettingsPage({
                         {workload.label} · {workload.ready ? 'GPU ready' : 'CPU fallback'} · exec {workload.executions} · fallback {workload.fallbackCount}
                       </span>
                     ))}
+                  </div>
+                ) : null}
+              </div>
+              <div className="rounded border px-3 py-3 text-[11px]" style={{ borderColor: border }}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-semibold uppercase tracking-[0.12em] opacity-60">Acceleration Pipeline</div>
+                    <p className="mt-1 text-[11px] opacity-40">
+                      Cross-provider routing for CPU fallback, the native `wgpu` lane, and the Python-sidecar CUDA/AI lane. Future thumbnail, media, indexing, inference, and similarity features should resolve through this contract.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleProbeAccelerationPipeline()}
+                    disabled={accelerationProbePending}
+                    className="rounded border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors"
+                    style={{
+                      borderColor: accelerationProbePending ? border : accent,
+                      background: accelerationProbePending ? 'rgba(255,255,255,0.03)' : `${accent}14`,
+                      color: text,
+                      opacity: accelerationProbePending ? 0.7 : 1,
+                    }}
+                  >
+                    {accelerationProbePending ? 'Probing…' : 'Probe CUDA / AI'}
+                  </button>
+                </div>
+
+                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-4">
+                  {accelerationRoutingModeOptions.map(option => {
+                    const active = settings.system.accelerationRoutingMode === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => updateSystem({ accelerationRoutingMode: option.id })}
+                        className="rounded px-3 py-3 text-left transition-colors"
+                        style={{
+                          border: `1px solid ${active ? accent : border}`,
+                          background: active ? `${accent}14` : 'rgba(255,255,255,0.03)',
+                          color: text,
+                        }}
+                      >
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
+                          {option.label}
+                        </div>
+                        <p className="mt-2 text-[11px] leading-4 opacity-65">
+                          {option.description}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div
+                  className="mt-3 rounded border px-3 py-2 text-[11px]"
+                  style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: text }}
+                >
+                  {accelerationProviderSummary}
+                </div>
+                <div
+                  className="mt-2 rounded border px-3 py-2 text-[11px]"
+                  style={{ borderColor: border, background: 'rgba(255,255,255,0.025)', color: muted }}
+                >
+                  {accelerationPipelineStatus}
+                </div>
+
+                {accelerationRuntimeSnapshot.providers.length > 0 ? (
+                  <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+                    {accelerationRuntimeSnapshot.providers.map(provider => (
+                      <div
+                        key={provider.providerKind}
+                        className="rounded border px-3 py-3"
+                        style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: text }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
+                            {provider.label}
+                          </div>
+                          <span className="opacity-55">
+                            {provider.ready ? 'Ready' : provider.available ? 'Detected' : 'Unavailable'}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-[11px] leading-4 opacity-70">
+                          {provider.detail}
+                        </p>
+                        {provider.supportedWorkloadIds.length > 0 ? (
+                          <div className="mt-2 text-[10px] uppercase tracking-[0.12em] opacity-50">
+                            {provider.supportedWorkloadIds.join(' · ')}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                  {accelerationWorkloadRoutes.map(route => (
+                    <div
+                      key={route.definition.id}
+                      className="rounded border px-3 py-3"
+                      style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: text }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em]">
+                          {route.definition.label}
+                        </div>
+                        <span className="opacity-55">
+                          {route.resolution.provider?.label ?? route.resolution.providerKind}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-[11px] leading-4 opacity-65">
+                        {route.definition.description}
+                      </p>
+                      <div className="mt-2 text-[10px] uppercase tracking-[0.12em] opacity-50">
+                        {route.resolution.ready
+                          ? 'provider ready'
+                          : route.resolution.available
+                            ? 'provider detected'
+                            : 'cpu fallback'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {accelerationRuntimeSnapshot.pythonProbe ? (
+                  <div
+                    className="mt-3 rounded border px-3 py-3 text-[11px]"
+                    style={{ borderColor: border, background: 'rgba(255,255,255,0.02)', color: text }}
+                  >
+                    <div className="font-semibold uppercase tracking-[0.12em] opacity-60">
+                      Python CUDA Probe
+                    </div>
+                    <p className="mt-2 opacity-70">
+                      {accelerationRuntimeSnapshot.pythonProbe.platform} · Python {accelerationRuntimeSnapshot.pythonProbe.pythonVersion}
+                      {accelerationRuntimeSnapshot.pythonProbe.cudaVisibleDevices
+                        ? ` · CUDA_VISIBLE_DEVICES=${accelerationRuntimeSnapshot.pythonProbe.cudaVisibleDevices}`
+                        : ''}
+                    </p>
+                    {accelerationRuntimeSnapshot.pythonProbe.torch.devices.length > 0 ? (
+                      <p className="mt-2 opacity-65">
+                        Torch devices: {accelerationRuntimeSnapshot.pythonProbe.torch.devices.map(device => device.name).join(', ')}
+                      </p>
+                    ) : null}
+                    {accelerationRuntimeSnapshot.pythonProbe.optionalModules.length > 0 ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {accelerationRuntimeSnapshot.pythonProbe.optionalModules.map(module => (
+                          <span
+                            key={module.id}
+                            className="rounded border px-2 py-1 text-[10px] uppercase tracking-[0.12em]"
+                            style={{ borderColor: border, background: 'rgba(255,255,255,0.03)', color: text }}
+                          >
+                            {module.id} · {module.imported ? 'ready' : module.installed ? 'installed' : 'missing'}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
               </div>

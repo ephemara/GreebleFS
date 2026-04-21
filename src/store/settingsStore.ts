@@ -65,6 +65,10 @@ import {
   overlayWindowGeometry,
 } from '../config/overlayWindow';
 import { normalizeGpuTierMode, type GpuTierMode } from '../config/gpuRuntime';
+import {
+  normalizeAccelerationRoutingMode,
+  type AccelerationRoutingMode,
+} from '../config/accelerationRuntime';
 import { shaderSystemConfig, type ShaderPerformanceMode } from '../config/shaders';
 import {
   normalizeOverlayWallpaperFitMode,
@@ -192,6 +196,7 @@ export interface SystemSettings {
   hideAppInTray: boolean;
   showInTaskbar: boolean;
   gpuTierMode: GpuTierMode;
+  accelerationRoutingMode: AccelerationRoutingMode;
   developerMode: boolean;
   devTelemetryHudVisible: boolean;
   sourceTraceModeEnabled: boolean;
@@ -496,6 +501,7 @@ export function normalizeSystemSettings(
     hideAppInTray: merged.hideAppInTray !== false,
     showInTaskbar: Boolean(merged.showInTaskbar),
     gpuTierMode: normalizeGpuTierMode(merged.gpuTierMode),
+    accelerationRoutingMode: normalizeAccelerationRoutingMode(merged.accelerationRoutingMode),
     developerMode: Boolean(merged.developerMode),
     devTelemetryHudVisible: merged.devTelemetryHudVisible !== false,
     sourceTraceModeEnabled: Boolean(merged.sourceTraceModeEnabled),
@@ -777,6 +783,7 @@ export const defaultSettings: Settings = {
     hideAppInTray: true,
     showInTaskbar: true,
     gpuTierMode: 'auto',
+    accelerationRoutingMode: 'auto',
     developerMode: false,
     devTelemetryHudVisible: true,
     sourceTraceModeEnabled: false,

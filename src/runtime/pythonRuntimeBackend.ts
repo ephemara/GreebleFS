@@ -87,6 +87,46 @@ export interface PythonSidecarMlProbe {
   cudaVisibleDevices?: string | null;
 }
 
+export interface PythonSidecarCudaDeviceInfo {
+  index: number;
+  name: string;
+  capability?: string | null;
+  totalMemoryBytes?: number | null;
+}
+
+export interface PythonSidecarCudaAccelerationProbe {
+  pythonVersion: string;
+  platform: string;
+  cudaVisibleDevices?: string | null;
+  cudaHome?: string | null;
+  cudaPath?: string | null;
+  torch: {
+    installed: boolean;
+    imported?: boolean | null;
+    importError?: string | null;
+    version?: string | null;
+    cudaAvailable?: boolean | null;
+    cudaVersion?: string | null;
+    cudnnAvailable?: boolean | null;
+    deviceCount?: number | null;
+    devices: PythonSidecarCudaDeviceInfo[];
+  };
+  onnxruntime: {
+    installed: boolean;
+    imported?: boolean | null;
+    importError?: string | null;
+    availableProviders?: string[] | null;
+    providerError?: string | null;
+  };
+  optionalModules: Array<{
+    id: string;
+    installed: boolean;
+    imported?: boolean | null;
+    importError?: string | null;
+    version?: string | null;
+  }>;
+}
+
 export interface PythonSidecarDirectoryScanEntry {
   name: string;
   path: string;
@@ -243,6 +283,11 @@ export const getPythonRuntimeSummary =
 export const probePythonMlRuntime =
   createPythonSidecarActionRunner<Record<string, never>, PythonSidecarMlProbe>(
     'ml.probe',
+  );
+
+export const probePythonCudaAcceleration =
+  createPythonSidecarActionRunner<Record<string, never>, PythonSidecarCudaAccelerationProbe>(
+    'acceleration.cuda_probe',
   );
 
 export const scanDirectoryWithPython =

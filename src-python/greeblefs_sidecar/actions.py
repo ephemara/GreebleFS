@@ -65,6 +65,30 @@ def _safe_import(module_name: str) -> tuple[bool, str | None, Any | None]:
         return False, str(error), None
 
 
+def _module_version(module: Any) -> str | None:
+    return getattr(module, "__version__", None)
+
+
+def _optional_module_probe(module_name: str) -> dict[str, Any]:
+    installed = _module_installed(module_name)
+    result: dict[str, Any] = {
+        "id": module_name,
+        "installed": installed,
+        "imported": None,
+        "importError": None,
+        "version": None,
+    }
+    if not installed:
+        return result
+
+    imported, error, module = _safe_import(module_name)
+    result["imported"] = imported
+    result["importError"] = error
+    if imported and module is not None:
+        result["version"] = _module_version(module)
+    return result
+
+
 @python_action("runtime.summary")
 def runtime_summary_action(payload: Any, context: PythonActionContext) -> dict[str, Any]:
     _ = payload
@@ -122,6 +146,111 @@ def ml_probe_action(payload: Any, context: PythonActionContext) -> dict[str, Any
         "onnxruntime": onnxruntime_info,
         "torch": torch_info,
         "cudaVisibleDevices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+    }
+
+
+@python_action("acceleration.cuda_probe")
+def acceleration_cuda_probe_action(payload: Any, context: PythonActionContext) -> dict[str, Any]:
+    _ = payload
+    _ = context
+
+    torch_info: dict[str, Any] = {
+        "installed": _module_installed("torch"),
+        "imported": None,
+        "importError": None,
+        "version": None,
+        "cudaAvailable": None,
+        "cudaVersion": None,
+        "cudnnAvailable": None,
+        "deviceCount": None,
+        "devices": [],
+    }
+    if torch_info["installed"]:
+        imported, error, module = _safe_import("torch")
+        torch_info["imported"] = imported
+        torch_info["importError"] = error
+        if imported and module is not None:
+            torch_info["version"] = _module_version(module)
+            cuda = getattr(module, "cuda", None)
+            if cuda is not None:
+                cuda_available = bool(cuda.is_available())
+                torch_info["cudaAvailable"] = cuda_available
+                torch_info["cudaVersion"] = getattr(getattr(module, "version", None), "cuda", None)
+                backends = getattr(module, "backends", None)
+                cudnn = getattr(backends, "cudnn", None) if backends is not None else None
+                torch_info["cudnnAvailable"] = bool(cudnn and cudnn.is_available())
+
+                if cuda_available:
+                    try:
+                        device_count = int(cuda.device_count())
+                    except Exception as device_count_error:  # pragma: no cover - runtime-specific
+                        device_count = 0
+                        torch_info["importError"] = (
+                            f"{torch_info['importError'] or ''} device_count failed: {device_count_error}"
+                        ).strip()
+
+                    torch_info["deviceCount"] = device_count
+                    devices: list[dict[str, Any]] = []
+                    for index in range(device_count):
+                        try:
+                            capability = cuda.get_device_capability(index)
+                            capability_label = ".".join(str(part) for part in capability)
+                        except Exception:  # pragma: no cover - runtime-specific
+                            capability_label = None
+                        try:
+                            props = cuda.get_device_properties(index)
+                            total_memory = int(getattr(props, "total_memory", 0) or 0)
+                        except Exception:  # pragma: no cover - runtime-specific
+                            total_memory = None
+                        try:
+                            name = str(cuda.get_device_name(index))
+                        except Exception:  # pragma: no cover - runtime-specific
+                            name = f"cuda:{index}"
+                        devices.append(
+                            {
+                                "index": index,
+                                "name": name,
+                                "capability": capability_label,
+                                "totalMemoryBytes": total_memory,
+                            }
+                        )
+                    torch_info["devices"] = devices
+
+    onnxruntime_info: dict[str, Any] = {
+        "installed": _module_installed("onnxruntime"),
+        "imported": None,
+        "importError": None,
+        "availableProviders": None,
+        "providerError": None,
+    }
+    if onnxruntime_info["installed"]:
+        imported, error, module = _safe_import("onnxruntime")
+        onnxruntime_info["imported"] = imported
+        onnxruntime_info["importError"] = error
+        if imported and module is not None:
+            try:
+                onnxruntime_info["availableProviders"] = list(module.get_available_providers())
+            except Exception as provider_error:  # pragma: no cover - runtime-specific
+                onnxruntime_info["providerError"] = str(provider_error)
+
+    optional_modules = [
+        _optional_module_probe("numpy"),
+        _optional_module_probe("PIL"),
+        _optional_module_probe("sentence_transformers"),
+        _optional_module_probe("transformers"),
+        _optional_module_probe("tokenizers"),
+        _optional_module_probe("faiss"),
+    ]
+
+    return {
+        "pythonVersion": sys.version.split()[0],
+        "platform": platform.platform(),
+        "cudaVisibleDevices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+        "cudaHome": os.environ.get("CUDA_HOME"),
+        "cudaPath": os.environ.get("CUDA_PATH"),
+        "torch": torch_info,
+        "onnxruntime": onnxruntime_info,
+        "optionalModules": optional_modules,
     }
 
 

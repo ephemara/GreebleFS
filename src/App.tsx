@@ -173,6 +173,7 @@ import {
   clearCompletedExplorerTasks,
   retryFailedExplorerTasks,
 } from './store/explorerTaskStore';
+import { createPythonRuntimeConfig } from './config/python';
 import {
   useSettingsStore,
   resolveSystemPresentationState,
@@ -180,6 +181,7 @@ import {
   type OverlayWindowAnchor,
   type TerminalWindowMode,
 } from './store/settingsStore';
+import { useAccelerationRuntimeFeed } from './store/accelerationRuntimeStore';
 import { useGpuRuntimeFeed } from './store/gpuRuntimeStore';
 import { useTerminalStore } from './store/terminalStore';
 
@@ -555,6 +557,7 @@ function App() {
     appearance,
     keybindings,
     layoutSettings,
+    pythonSettings,
     systemSettings,
     updateTerminal,
     updateAppearance,
@@ -565,6 +568,7 @@ function App() {
     appearance: state.settings.appearance,
     keybindings: state.settings.keybindings,
     layoutSettings: state.settings.layout,
+    pythonSettings: state.settings.python,
     systemSettings: state.settings.system,
     updateTerminal: state.updateTerminal,
     updateAppearance: state.updateAppearance,
@@ -572,6 +576,11 @@ function App() {
     updateSystem: state.updateSystem,
   })));
   useGpuRuntimeFeed(systemSettings.gpuTierMode);
+  useAccelerationRuntimeFeed({
+    config: createPythonRuntimeConfig(pythonSettings),
+    routingMode: systemSettings.accelerationRoutingMode,
+    startSidecarIfNeeded: false,
+  });
   const {
     initStore: initTerminalStore,
     addDirectoryBookmark,

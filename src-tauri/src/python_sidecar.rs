@@ -104,6 +104,7 @@ pub struct PythonSidecarActionResponse {
 }
 
 pub mod action_ids {
+    pub const ACCELERATION_CUDA_PROBE: &str = "acceleration.cuda_probe";
     pub const RUNTIME_SUMMARY: &str = "runtime.summary";
     pub const ML_PROBE: &str = "ml.probe";
     pub const FILES_SCAN_DIRECTORY: &str = "files.scan_directory";
@@ -171,7 +172,9 @@ struct PythonSidecarHandshakePayload {
     available_actions: Vec<String>,
 }
 
-fn encode_sidecar_payload_json<T: serde::Serialize>(payload: Option<&T>) -> Result<Option<String>, String> {
+fn encode_sidecar_payload_json<T: serde::Serialize>(
+    payload: Option<&T>,
+) -> Result<Option<String>, String> {
     payload
         .map(|value| {
             serde_json::to_string(value)
@@ -180,7 +183,9 @@ fn encode_sidecar_payload_json<T: serde::Serialize>(payload: Option<&T>) -> Resu
         .transpose()
 }
 
-fn decode_sidecar_result_json<TResult: DeserializeOwned>(result_json: &str) -> Result<TResult, String> {
+fn decode_sidecar_result_json<TResult: DeserializeOwned>(
+    result_json: &str,
+) -> Result<TResult, String> {
     serde_json::from_str(result_json)
         .map_err(|error| format!("Failed to decode Python sidecar result JSON: {error}"))
 }
@@ -342,7 +347,10 @@ fn should_skip_workspace_entry(path: &Path) -> bool {
     })
 }
 
-fn build_sidecar_paths(paths: &RuntimePaths, manifest: &PythonSidecarWorkspaceManifest) -> PythonSidecarPaths {
+fn build_sidecar_paths(
+    paths: &RuntimePaths,
+    manifest: &PythonSidecarWorkspaceManifest,
+) -> PythonSidecarPaths {
     let workspace_root = paths.root_dir.join(PYTHON_SIDECAR_WORKSPACE_DIR_NAME);
     PythonSidecarPaths {
         manifest_path: workspace_root.join(PYTHON_SIDECAR_MANIFEST_FILENAME),
@@ -353,7 +361,8 @@ fn build_sidecar_paths(paths: &RuntimePaths, manifest: &PythonSidecarWorkspaceMa
 }
 
 fn read_manifest_from_text(text: &str) -> Result<PythonSidecarWorkspaceManifest, String> {
-    serde_json::from_str(text).map_err(|error| format!("Failed to parse Python sidecar manifest: {error}"))
+    serde_json::from_str(text)
+        .map_err(|error| format!("Failed to parse Python sidecar manifest: {error}"))
 }
 
 fn load_sidecar_manifest() -> Result<PythonSidecarWorkspaceManifest, String> {
@@ -500,7 +509,9 @@ fn copy_filesystem_workspace(source_root: &Path, target_root: &Path) -> Result<(
     recurse(source_root, source_root, target_root)
 }
 
-fn sync_python_workspace(paths: &RuntimePaths) -> Result<(PythonSidecarWorkspaceManifest, PythonSidecarPaths), String> {
+fn sync_python_workspace(
+    paths: &RuntimePaths,
+) -> Result<(PythonSidecarWorkspaceManifest, PythonSidecarPaths), String> {
     let manifest = load_sidecar_manifest()?;
     let sidecar_paths = build_sidecar_paths(paths, &manifest);
 
@@ -534,7 +545,11 @@ fn prepend_python_workspace_to_environment(
     workspace_root: &Path,
 ) -> HashMap<String, String> {
     let mut environment = pythonpath_environment(paths, None);
-    let separator = if cfg!(target_os = "windows") { ";" } else { ":" };
+    let separator = if cfg!(target_os = "windows") {
+        ";"
+    } else {
+        ":"
+    };
     let workspace_root_string = path_to_string(workspace_root);
     let current_pythonpath = environment.get("PYTHONPATH").cloned().unwrap_or_default();
     let pythonpath = if current_pythonpath.trim().is_empty() {
@@ -593,7 +608,8 @@ fn spawn_sidecar_session(
         command.creation_flags(CREATE_NO_WINDOW);
     }
 
-    for (key, value) in prepend_python_workspace_to_environment(paths, &sidecar_paths.workspace_root)
+    for (key, value) in
+        prepend_python_workspace_to_environment(paths, &sidecar_paths.workspace_root)
     {
         command.env(key, value);
     }
@@ -684,7 +700,11 @@ fn sidecar_status_from_parts(
         module_name: manifest.module_name.clone(),
         entry_module: manifest.entry_module.clone(),
         transport: manifest.transport.clone(),
-        action_ids: manifest.actions.iter().map(|action| action.id.clone()).collect(),
+        action_ids: manifest
+            .actions
+            .iter()
+            .map(|action| action.id.clone())
+            .collect(),
         last_error,
     }
 }
@@ -790,14 +810,7 @@ fn start_sidecar_impl(
         manager.set_last_error(None)?;
         return Ok(PythonSidecarStartResponse {
             runtime_status,
-            sidecar: sidecar_status_from_parts(
-                &paths,
-                &manifest,
-                &sidecar_paths,
-                true,
-                pid,
-                None,
-            ),
+            sidecar: sidecar_status_from_parts(&paths, &manifest, &sidecar_paths, true, pid, None),
         });
     }
 
@@ -928,9 +941,7 @@ fn call_sidecar_impl(
         ),
         request_id: response.request_id,
         action_id,
-        result_json: response
-            .result_json
-            .unwrap_or_else(|| "null".to_string()),
+        result_json: response.result_json.unwrap_or_else(|| "null".to_string()),
     })
 }
 
@@ -1004,11 +1015,15 @@ mod tests {
         let sidecar_paths = build_sidecar_paths(&runtime_paths, &manifest);
         assert_eq!(
             sidecar_paths.workspace_root,
-            runtime_paths.root_dir.join(PYTHON_SIDECAR_WORKSPACE_DIR_NAME)
+            runtime_paths
+                .root_dir
+                .join(PYTHON_SIDECAR_WORKSPACE_DIR_NAME)
         );
         assert_eq!(
             sidecar_paths.manifest_path,
-            sidecar_paths.workspace_root.join(PYTHON_SIDECAR_MANIFEST_FILENAME)
+            sidecar_paths
+                .workspace_root
+                .join(PYTHON_SIDECAR_MANIFEST_FILENAME)
         );
         assert_eq!(
             sidecar_paths.log_path,
@@ -1019,7 +1034,8 @@ mod tests {
     #[test]
     fn sidecar_result_json_decodes_into_typed_payload() {
         let decoded: serde_json::Value =
-            decode_sidecar_result_json("{\"status\":\"ok\",\"count\":3}").expect("json should decode");
+            decode_sidecar_result_json("{\"status\":\"ok\",\"count\":3}")
+                .expect("json should decode");
 
         assert_eq!(decoded["status"], "ok");
         assert_eq!(decoded["count"], 3);

@@ -21,6 +21,7 @@ import {
   createPythonSidecarActionRunner,
   executeEmbeddedPython,
   managedPythonSidecarPackagePresets,
+  probePythonCudaAcceleration,
 } from '../runtime/pythonRuntimeBackend';
 
 const DEFAULT_RUNTIME_STATUS = {
@@ -134,5 +135,41 @@ describe('pythonRuntimeBackend', () => {
 
   it('surfaces manifest-backed package presets for React callers', () => {
     expect(managedPythonSidecarPackagePresets.map(preset => preset.id)).toContain('ml-core');
+  });
+
+  it('exposes the structured CUDA acceleration probe helper', async () => {
+    vi.mocked(commands.pythonSidecarCall).mockResolvedValue({
+      status: 'ok',
+      data: {
+        runtimeStatus: DEFAULT_RUNTIME_STATUS,
+        sidecar: DEFAULT_SIDECAR_STATUS,
+        requestId: 'sidecar-2',
+        actionId: 'acceleration.cuda_probe',
+        resultJson: JSON.stringify({
+          pythonVersion: '3.11.9',
+          platform: 'Linux',
+          torch: {
+            installed: true,
+            imported: true,
+            cudaAvailable: true,
+            devices: [{ index: 0, name: 'RTX', capability: '8.9', totalMemoryBytes: 1 }],
+          },
+          onnxruntime: {
+            installed: true,
+            imported: true,
+            availableProviders: ['CUDAExecutionProvider'],
+          },
+          optionalModules: [],
+        }),
+      },
+    });
+
+    const response = await probePythonCudaAcceleration();
+
+    expect(response.result.torch.cudaAvailable).toBe(true);
+    expect(response.result.onnxruntime.availableProviders).toEqual(['CUDAExecutionProvider']);
+    expect(commands.pythonSidecarCall).toHaveBeenCalledWith(expect.objectContaining({
+      actionId: 'acceleration.cuda_probe',
+    }));
   });
 });
