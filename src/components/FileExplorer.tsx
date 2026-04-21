@@ -201,7 +201,6 @@ import { ExplorerChromeSurface } from "./explorer/ExplorerChromeSurface";
 import {
   buildConstellationFieldLayout,
   type ConstellationFieldBand,
-  type ConstellationFieldLayout,
   type ConstellationFieldNode,
 } from "./explorer/constellationLayout";
 import {
@@ -12768,6 +12767,7 @@ export function FileExplorer({
   const showToolbarLocationStrips =
     !isCompactDock && !usesWorkspaceCompactChrome;
   const showToolbarTextLabels = !isCompactDock && !usesWorkspaceQuadChrome;
+  const usesConstellationCanvas = effectiveExperimentalViewMode === "constellation";
   const explorerFooterViewSwitcherButtons = useMemo(() => {
       const iconViewActive =
         themedExperimentalViewMode === "off" &&
@@ -12867,101 +12867,177 @@ export function FileExplorer({
       selected,
     ],
   );
-  const clampConstellationPan = useCallback(
-    (
-      nextPan: { x: number; y: number },
-      viewportWidth: number,
-      viewportHeight: number,
-      layout: ConstellationFieldLayout,
-    ) => ({
-      x: Math.min(
-        0,
-        Math.max(viewportWidth - layout.width, nextPan.x),
-      ),
-      y: Math.min(
-        0,
-        Math.max(viewportHeight - layout.height, nextPan.y),
-      ),
-    }),
-    [],
-  );
-  const centerConstellationOnNode = useCallback(
-    (
-      layout: ConstellationFieldLayout,
-      node: ConstellationFieldNode,
-      viewportWidth: number,
-      viewportHeight: number,
-    ) =>
-      clampConstellationPan(
-        {
-          x: (viewportWidth / 2) - node.x,
-          y: (viewportHeight / 2) - node.y,
-        },
-        viewportWidth,
-        viewportHeight,
-        layout,
-      ),
-    [clampConstellationPan],
-  );
+  const constellationFocusNode = useMemo(() => {
+    if (!constellationFieldLayout) {
+      return null;
+    }
+    return constellationFieldLayout.bands
+      .flatMap((band) => band.nodes)
+      .find((node) => selected.has(node.entry.path))
+      ?? constellationFieldLayout.bands.find((band) => band.dominant)?.nodes[0]
+      ?? constellationFieldLayout.bands[0]?.nodes[0]
+      ?? null;
+  }, [constellationFieldLayout, selected]);
   const getConstellationViewportMetrics = useCallback(() => {
     const viewport = constellationViewportRef.current;
     if (!viewport || !constellationFieldLayout) {
       return null;
     }
     const rect = viewport.getBoundingClientRect();
+    const viewportWidth =
+      viewport.clientWidth
+      || rect.width
+      || Math.min(constellationFieldLayout.width, 1280);
+    const viewportHeight =
+      viewport.clientHeight
+      || rect.height
+      || Math.min(constellationFieldLayout.height, 720);
+    if (viewportWidth <= 0 || viewportHeight <= 0) {
+      return null;
+    }
     return {
-      viewportWidth: rect.width,
-      viewportHeight: rect.height,
-      layout: constellationFieldLayout,
-    };
+      viewportWidth,
+      viewportHeight,
+    } satisfies ConstellationViewportMetrics;
   }, [constellationFieldLayout]);
+  const getConstellationPreferredZoom = useCallback(
+    (metrics: ConstellationViewportMetrics) => {
+      if (!constellationFieldLayout) {
+        return CONSTELLATION_CAMERA_ZOOM_RANGE.default;
+      }
+      const fitZoom = getConstellationFitZoom(constellationFieldLayout, metrics);
+      return Math.max(
+        fitZoom,
+        Math.min(
+          CONSTELLATION_CAMERA_ZOOM_RANGE.max,
+          0.58 + (experimentalDensity * 0.28),
+        ),
+      );
+    },
+    [constellationFieldLayout, experimentalDensity],
+  );
+  const recenterConstellationCamera = useCallback(
+    (mode: "fit" | "focus" = "focus") => {
+      if (!constellationFieldLayout) {
+        return;
+      }
+      const metrics = getConstellationViewportMetrics();
+      if (!metrics) {
+        return;
+      }
+      const nextCamera =
+        mode === "fit" || !constellationFocusNode
+          ? createConstellationFitCamera(constellationFieldLayout, metrics)
+          : centerConstellationCameraOnNode(
+              constellationFieldLayout,
+              constellationFocusNode,
+              metrics,
+              getConstellationPreferredZoom(metrics),
+            );
+      setConstellationCamera((current) =>
+        current.x === nextCamera.x
+        && current.y === nextCamera.y
+        && Math.abs(current.zoom - nextCamera.zoom) < 0.0001
+          ? current
+          : nextCamera,
+      );
+    },
+    [
+      constellationFieldLayout,
+      constellationFocusNode,
+      getConstellationPreferredZoom,
+      getConstellationViewportMetrics,
+    ],
+  );
   const handleConstellationPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0 || !constellationFieldLayout) {
         return;
       }
-      if ((event.target as HTMLElement).closest("[data-overlay-constellation-node]")) {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (
+        isEditableKeyboardTarget(target)
+        || target?.closest('[data-overlay-constellation-ui="true"]')
+      ) {
         return;
       }
-      event.preventDefault();
-      constellationViewportRef.current?.setPointerCapture?.(event.pointerId);
       constellationPanGestureRef.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
-        originX: constellationPan.x,
-        originY: constellationPan.y,
+        originX: constellationCamera.x,
+        originY: constellationCamera.y,
+        targetNodePath:
+          target?.closest("[data-overlay-constellation-node]")
+            ?.getAttribute("data-overlay-constellation-node") ?? null,
+        moved: false,
       };
-      setConstellationIsPanning(true);
     },
-    [constellationFieldLayout, constellationPan.x, constellationPan.y],
+    [constellationCamera.x, constellationCamera.y, constellationFieldLayout],
   );
   const handleConstellationPointerMove = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       const gesture = constellationPanGestureRef.current;
       const metrics = getConstellationViewportMetrics();
-      if (!gesture || gesture.pointerId !== event.pointerId || !metrics) {
+      if (
+        !gesture
+        || gesture.pointerId !== event.pointerId
+        || !metrics
+        || !constellationFieldLayout
+      ) {
         return;
       }
-      setConstellationPan(
-        clampConstellationPan(
+      const deltaX = event.clientX - gesture.startX;
+      const deltaY = event.clientY - gesture.startY;
+      if (!gesture.moved) {
+        if (Math.hypot(deltaX, deltaY) < 4) {
+          return;
+        }
+        gesture.moved = true;
+        constellationCameraUserOwnedRef.current = true;
+        constellationViewportRef.current?.setPointerCapture?.(event.pointerId);
+        setConstellationIsPanning(true);
+      }
+      event.preventDefault();
+      setConstellationCamera((current) => {
+        const nextPan = clampConstellationCameraPan(
           {
-            x: gesture.originX + (event.clientX - gesture.startX),
-            y: gesture.originY + (event.clientY - gesture.startY),
+            x: gesture.originX + deltaX,
+            y: gesture.originY + deltaY,
           },
-          metrics.viewportWidth,
-          metrics.viewportHeight,
-          metrics.layout,
-        ),
-      );
+          metrics,
+          constellationFieldLayout,
+          current.zoom,
+        );
+        return nextPan.x === current.x && nextPan.y === current.y
+          ? current
+          : {
+              ...current,
+              ...nextPan,
+            };
+      });
     },
-    [clampConstellationPan, getConstellationViewportMetrics],
+    [constellationFieldLayout, getConstellationViewportMetrics],
   );
   const endConstellationPanGesture = useCallback(
     (pointerId: number | null) => {
       const gesture = constellationPanGestureRef.current;
       if (pointerId != null && gesture?.pointerId !== pointerId) {
         return;
+      }
+      if (
+        gesture?.moved
+        && gesture.targetNodePath
+        && constellationSuppressClickPathRef.current !== gesture.targetNodePath
+      ) {
+        constellationSuppressClickPathRef.current = gesture.targetNodePath;
+      }
+      if (
+        gesture?.pointerId != null
+        && pointerId != null
+        && constellationViewportRef.current?.hasPointerCapture?.(gesture.pointerId)
+      ) {
+        constellationViewportRef.current.releasePointerCapture(gesture.pointerId);
       }
       constellationPanGestureRef.current = null;
       setConstellationIsPanning(false);
@@ -12972,29 +13048,105 @@ export function FileExplorer({
     if (!constellationFieldLayout || constellationPanGestureRef.current) {
       return;
     }
-    const viewport = constellationViewportRef.current;
-    const focusNode = constellationFieldLayout.bands
-      .flatMap((band) => band.nodes)
-      .find((node) => selected.has(node.entry.path))
-      ?? constellationFieldLayout.bands.find((band) => band.dominant)?.nodes[0]
-      ?? constellationFieldLayout.bands[0]?.nodes[0]
-      ?? null;
-    if (!viewport || !focusNode) {
+    const sceneKey = `${currentPath}::${effectiveExperimentalViewMode}`;
+    if (constellationSceneKeyRef.current !== sceneKey) {
+      constellationSceneKeyRef.current = sceneKey;
+      constellationCameraUserOwnedRef.current = false;
+      constellationSuppressClickPathRef.current = null;
+    }
+
+    const metrics = getConstellationViewportMetrics();
+    if (!metrics) {
       return;
     }
-    const rect = viewport.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) {
+    if (!constellationCameraUserOwnedRef.current) {
+      recenterConstellationCamera("focus");
       return;
     }
-    setConstellationPan(
-      centerConstellationOnNode(
+
+    setConstellationCamera((current) => {
+      const nextPan = clampConstellationCameraPan(
+        current,
+        metrics,
         constellationFieldLayout,
-        focusNode,
-        rect.width,
-        rect.height,
-      ),
-    );
-  }, [centerConstellationOnNode, constellationFieldLayout, selected]);
+        current.zoom,
+      );
+      return nextPan.x === current.x && nextPan.y === current.y
+        ? current
+        : {
+            ...current,
+            ...nextPan,
+          };
+    });
+  }, [
+    constellationFieldLayout,
+    currentPath,
+    effectiveExperimentalViewMode,
+    getConstellationViewportMetrics,
+    recenterConstellationCamera,
+    selected,
+  ]);
+  const handleConstellationWheel = useCallback(
+    (event: React.WheelEvent<HTMLDivElement>) => {
+      if (
+        !constellationFieldLayout
+        || event.ctrlKey
+        || event.metaKey
+        || Math.abs(event.deltaY) <= Math.abs(event.deltaX)
+        || Math.abs(event.deltaY) < 2
+      ) {
+        return;
+      }
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (
+        isEditableKeyboardTarget(target)
+        || target?.closest('[data-overlay-constellation-ui="true"]')
+      ) {
+        return;
+      }
+      const metrics = getConstellationViewportMetrics();
+      if (!metrics) {
+        return;
+      }
+      event.preventDefault();
+      constellationCameraUserOwnedRef.current = true;
+      const rect = event.currentTarget.getBoundingClientRect();
+      const focalPoint = {
+        x: rect.width > 0 ? event.clientX - rect.left : metrics.viewportWidth / 2,
+        y: rect.height > 0
+          ? event.clientY - rect.top
+          : metrics.viewportHeight / 2,
+      };
+      setConstellationCamera((current) => {
+        const nextZoom = getConstellationWheelZoom(current.zoom, event.deltaY);
+        if (Math.abs(nextZoom - current.zoom) < 0.0001) {
+          return current;
+        }
+        return zoomConstellationCameraAtViewportPoint(
+          current,
+          nextZoom,
+          focalPoint,
+          metrics,
+          constellationFieldLayout,
+        );
+      });
+    },
+    [constellationFieldLayout, getConstellationViewportMetrics],
+  );
+  const handleConstellationViewportDoubleClick = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (
+        target?.closest("[data-overlay-constellation-node]")
+        || target?.closest('[data-overlay-constellation-ui="true"]')
+      ) {
+        return;
+      }
+      constellationCameraUserOwnedRef.current = false;
+      recenterConstellationCamera("fit");
+    },
+    [recenterConstellationCamera],
+  );
   const timelineSurfaceBands = useMemo(
     () =>
       effectiveExperimentalViewMode === "timeline-surface"
@@ -17494,8 +17646,13 @@ export function FileExplorer({
         data-overlay-drop-target-path={
           node.entry.is_dir ? node.entry.path : undefined
         }
-        onPointerDown={(event) => event.stopPropagation()}
-        onDragStart={(e) => onDragStart(e, node.entry)}
+        onDragStart={(e) => {
+          if (constellationPanGestureRef.current?.moved) {
+            e.preventDefault();
+            return;
+          }
+          onDragStart(e, node.entry);
+        }}
         onDragEnd={onDragEnd}
         onDragOver={
           node.entry.is_dir
@@ -17508,7 +17665,15 @@ export function FileExplorer({
             ? (e) => onDrop(e, node.entry.path)
             : undefined
         }
-        onClick={(e) => onEntryClick(e, node.entry)}
+        onClick={(e) => {
+          if (constellationSuppressClickPathRef.current === node.entry.path) {
+            constellationSuppressClickPathRef.current = null;
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+          onEntryClick(e, node.entry);
+        }}
         onDoubleClick={() => onEntryDoubleClick(node.entry)}
         onContextMenu={(e) => onRightClick(e, node.entry)}
         title={node.entry.path}
@@ -17656,44 +17821,117 @@ export function FileExplorer({
       (sum, band) => sum + band.nodes.length,
       0,
     );
-    const viewportHeight = Math.round(
-      500 + Math.min(140, totalVisibleNodes * 2.5) + (experimentalDensity * 110),
-    );
+    const zoomPercent = Math.round(constellationCamera.zoom * 100);
+    const densityLabel = experimentalDensityDescriptor?.label ?? "Orbit";
+    const hudCardStyle: CSSProperties = {
+      borderRadius: 999,
+      border: "1px solid rgba(255,255,255,0.12)",
+      background: "rgba(7, 10, 16, 0.68)",
+      backdropFilter: explorerBlurEnabled ? "blur(16px)" : "none",
+      WebkitBackdropFilter: explorerBlurEnabled ? "blur(16px)" : "none",
+      boxShadow: "0 18px 42px rgba(0,0,0,0.22)",
+      color: EXP.text,
+      pointerEvents: "none",
+    };
 
     return (
-      <section style={{ marginBottom: 22 }}>
+      <section style={{ minHeight: "100%", height: "100%", position: "relative" }}>
         <div
           ref={constellationViewportRef}
           role="group"
           aria-label="Constellation field"
+          aria-roledescription="zoomable constellation canvas"
           data-overlay-constellation-viewport="true"
+          data-overlay-constellation-zoom={String(zoomPercent)}
           onPointerDown={handleConstellationPointerDown}
           onPointerMove={handleConstellationPointerMove}
           onPointerUp={(event) => endConstellationPanGesture(event.pointerId)}
           onPointerCancel={(event) => endConstellationPanGesture(event.pointerId)}
           onLostPointerCapture={() => endConstellationPanGesture(null)}
+          onWheel={handleConstellationWheel}
+          onDoubleClick={handleConstellationViewportDoubleClick}
           style={{
             position: "relative",
-            minHeight: viewportHeight,
-            margin: "0 14px",
-            borderRadius: 28,
-            border: "1px solid var(--overlay-explorer-toolbar-border)",
+            width: "100%",
+            minHeight: "100%",
+            height: "100%",
+            borderRadius: previewSplitIsPane ? 28 : 0,
+            border: previewSplitIsPane
+              ? "1px solid var(--overlay-explorer-toolbar-border)"
+              : "none",
             background:
-              "linear-gradient(180deg, rgba(17, 20, 29, 0.96), rgba(8, 10, 15, 0.98))",
+              "radial-gradient(circle at 18% 22%, rgba(90, 130, 255, 0.16), transparent 24%), radial-gradient(circle at 78% 18%, rgba(255,255,255,0.09), transparent 18%), radial-gradient(circle at 54% 72%, rgba(95, 195, 255, 0.12), transparent 26%), linear-gradient(180deg, rgba(10, 13, 21, 0.98), rgba(5, 7, 12, 1))",
             overflow: "hidden",
             boxShadow:
-              "inset 0 1px 0 rgba(255,255,255,0.05), 0 18px 38px rgba(0,0,0,0.18)",
+              "inset 0 1px 0 rgba(255,255,255,0.05), inset 0 0 0 1px rgba(255,255,255,0.02), 0 18px 38px rgba(0,0,0,0.18)",
             cursor: constellationIsPanning ? "grabbing" : "grab",
             touchAction: "none",
           }}
         >
           <div
+            data-overlay-constellation-ui="true"
+            style={{
+              position: "absolute",
+              inset: "18px 20px auto auto",
+              zIndex: 3,
+              pointerEvents: "none",
+            }}
+          >
+            <div
+              style={{
+                ...hudCardStyle,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "flex-end",
+                gap: 10,
+                padding: "8px 12px",
+                maxWidth: "min(520px, calc(100vw - 120px))",
+                flexWrap: "wrap",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 10,
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
+                  color: EXP.muted2,
+                }}
+              >
+                Camera
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 700 }}>{zoomPercent}%</span>
+              <span style={{ fontSize: 11, color: EXP.muted2 }}>•</span>
+              <span style={{ fontSize: 12, color: EXP.muted2 }}>Density</span>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>{densityLabel}</span>
+              <span style={{ fontSize: 11, color: EXP.muted2 }}>•</span>
+              <span style={{ fontSize: 12, color: EXP.muted }}>
+                {constellationFieldLayout.bands.length} bands
+              </span>
+              <span style={{ fontSize: 11, color: EXP.muted2 }}>•</span>
+              <span style={{ fontSize: 12, color: EXP.muted }}>
+                {totalVisibleNodes} visible
+              </span>
+            </div>
+          </div>
+          {newItem.visible && (
+            <div
+              data-overlay-constellation-ui="true"
+              style={{
+                position: "absolute",
+                inset: "18px 18px auto 18px",
+                zIndex: 4,
+              }}
+            >
+              {renderExperimentalInlineNewItem(26)}
+            </div>
+          )}
+          <div
             style={{
               position: "absolute",
               inset: 0,
               background:
-                "radial-gradient(circle at 20% 18%, rgba(255,255,255,0.06), transparent 28%), radial-gradient(circle at 78% 24%, rgba(255,255,255,0.05), transparent 24%), radial-gradient(circle at 50% 72%, rgba(255,255,255,0.04), transparent 34%)",
-              opacity: 0.85,
+                "radial-gradient(circle at 20% 18%, rgba(255,255,255,0.07), transparent 28%), radial-gradient(circle at 78% 24%, rgba(255,255,255,0.05), transparent 24%), radial-gradient(circle at 50% 72%, rgba(255,255,255,0.04), transparent 34%)",
+              opacity: 0.92,
               pointerEvents: "none",
             }}
           />
@@ -17705,11 +17943,12 @@ export function FileExplorer({
               top: 0,
               width: constellationFieldLayout.width,
               height: constellationFieldLayout.height,
-              transform: `translate(${constellationPan.x}px, ${constellationPan.y}px)`,
+              transform: `translate3d(${constellationCamera.x}px, ${constellationCamera.y}px, 0) scale(${constellationCamera.zoom})`,
               transformOrigin: "top left",
               transition: constellationIsPanning
                 ? "none"
-                : "transform 260ms cubic-bezier(0.22, 1, 0.36, 1)",
+                : "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)",
+              willChange: "transform",
             }}
           >
             <div
@@ -17718,7 +17957,7 @@ export function FileExplorer({
                 inset: 0,
                 pointerEvents: "none",
                 backgroundImage:
-                  "linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px), radial-gradient(circle at center, rgba(255,255,255,0.04), transparent 62%)",
+                  "linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px), radial-gradient(circle at center, rgba(255,255,255,0.05), transparent 62%)",
                 backgroundSize: "82px 82px, 82px 82px, 100% 100%",
                 backgroundPosition: "0 0, 0 0, center",
                 maskImage:
@@ -18386,7 +18625,18 @@ export function FileExplorer({
             <OverlayScrollArea
               style={{ flex: 1, minHeight: 0 }}
               scrollbarStyle="explorer-file-list"
-              viewportStyle={{ padding: 0 }}
+              viewportStyle={{
+                padding: 0,
+                ...(usesConstellationCanvas ? { overflow: "hidden" } : {}),
+              }}
+              contentStyle={
+                usesConstellationCanvas
+                  ? {
+                      flex: "1 1 auto",
+                      minHeight: "100%",
+                    }
+                  : undefined
+              }
               viewportRef={explorerViewportRef}
             >
               <div
@@ -18397,6 +18647,7 @@ export function FileExplorer({
                 aria-busy={loading ? true : undefined}
                 style={{
                   minHeight: "100%",
+                  ...(usesConstellationCanvas ? { height: "100%" } : {}),
                   outline: "none",
                   background: "var(--overlay-explorer-content-bg)",
                   position: "relative",
@@ -18569,8 +18820,13 @@ export function FileExplorer({
 
                 {shouldRenderExplorerContent &&
                   effectiveExperimentalViewMode === "constellation" && (
-                    <div style={{ minHeight: 0, padding: "14px 0 24px" }}>
-                      {renderExperimentalInlineNewItem(26)}
+                    <div
+                      style={{
+                        minHeight: "100%",
+                        height: "100%",
+                        position: "relative",
+                      }}
+                    >
                       {renderConstellationField()}
                     </div>
                   )}

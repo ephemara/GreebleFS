@@ -1,5 +1,22 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Constellation View Now Uses A Real Full-Canvas Camera
+
+- Constellation view no longer behaves like a decorative section inside the explorer scroll column. It now claims the full explorer canvas and uses its own camera model for zoom/pan, which makes the mode feel like a dedicated workspace instead of an inline experiment.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now treats Constellation as an immersive canvas mode. The explorer scroll viewport switches to a constrained full-height content contract while Constellation is active, so the outer file list no longer becomes the primary scroll surface behind the graph.
+  - Constellation camera math now routes through the explorer-local helper `src/components/explorer/constellationCamera.ts`. That helper owns fit-zoom, zoom clamping, cursor-anchored wheel zoom, centered pan clamping, and node-centering helpers instead of burying geometry rules inside the main explorer component.
+  - Plain wheel input over the Constellation field now zooms the field camera, while the existing Ctrl/Cmd+wheel explorer-density path still works inside Constellation. This preserves the power-user density control without forcing users to scroll the whole explorer page just to inspect the map.
+  - Drag-to-pan now uses a thresholded pointer gesture with click suppression, so a pan gesture no longer misfires as a node click after movement. The mode also keeps user-owned camera state until the scene changes, instead of constantly snapping back to a selected node after interaction.
+  - The earlier explanatory overlay card was intentionally removed after review. The only persistent Constellation chrome is now a compact top-right telemetry chip for essential camera/density/map state, which keeps the surface legible without narrating the feature every time it is used.
+  - Double-clicking empty Constellation space now reframes the full map, which gives users a recovery path after deep zoom/pan without adding another permanent button bar.
+- Durable product note:
+  - Treat Constellation like a camera-driven explorer surface, not a list variant. If future work touches this mode, prefer compact ambient telemetry and direct manipulation over explanatory overlay cards or extra page chrome.
+  - The field-level wheel handler is intentionally scoped to the Constellation viewport only. Do not broaden it to the full explorer shell or normal row/grid views will regress.
+- Validation:
+  - passed: `bunx vitest run src/test/constellationCamera.test.ts src/test/constellationLayout.test.ts src/test/fileExplorer.viewModes.test.tsx --reporter=dot`
+  - touched-path typecheck remains clean; repo-wide `bunx tsc --noEmit --pretty false -p tsconfig.json` is still blocked by unrelated pre-existing `SettingsPage.tsx` implicit-`any` errors plus acceleration-runtime generated-binding drift
+
 # 2026-04-21 - Settings Rail Now Prioritizes Core Config And Uses Themed Select Surfaces
 
 - The settings rail no longer opens with visual garnish ahead of machine and workflow controls. Core configuration now sits at the top, and the form controls that still depended on native select chrome no longer flash white-on-white against dark themes.

@@ -731,6 +731,25 @@ function dispatchLayoutWheelOnFileArea(deltaY: number) {
   );
 }
 
+function dispatchConstellationWheel(
+  deltaY: number,
+  options: Partial<WheelEventInit> = {},
+) {
+  const field = screen.getByRole("group", {
+    name: /constellation field/i,
+  });
+  const wheelEvent = createEvent.wheel(field, {
+    bubbles: true,
+    cancelable: true,
+    clientX: 320,
+    clientY: 220,
+    deltaY,
+    ...options,
+  });
+  fireEvent(field, wheelEvent);
+  return wheelEvent;
+}
+
 function getEntryIconSrc(entryName: string): string {
   const entryLabel = screen
     .getAllByText(entryName)
@@ -3742,6 +3761,62 @@ describe("FileExplorer view modes", () => {
       expect(useSettingsStore.getState().settings.explorer.viewMode).toBe(
         "details",
       );
+    });
+  });
+
+  it("uses plain wheel to zoom the constellation field instead of falling back to page scroll", async () => {
+    useSettingsStore.getState().updateExplorer({
+      experimentalViewMode: "constellation",
+      experimentalDensity: 0.5,
+      viewMode: "details",
+    });
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    const field = screen.getByRole("group", {
+      name: /constellation field/i,
+    });
+    const initialZoom = Number(
+      field.getAttribute("data-overlay-constellation-zoom"),
+    );
+
+    dispatchConstellationWheel(-120);
+
+    await waitFor(() => {
+      expect(
+        Number(field.getAttribute("data-overlay-constellation-zoom")),
+      ).toBeGreaterThan(initialZoom);
+      expect(
+        useSettingsStore.getState().settings.explorer.experimentalDensity,
+      ).toBe(0.5);
+      expect(
+        useSettingsStore.getState().settings.explorer.experimentalViewMode,
+      ).toBe("constellation");
+    });
+  });
+
+  it("keeps ctrl-wheel density stepping alive inside the constellation field", async () => {
+    useSettingsStore.getState().updateExplorer({
+      experimentalViewMode: "constellation",
+      experimentalDensity: 0.32,
+      viewMode: "details",
+    });
+
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    const field = screen.getByRole("group", {
+      name: /constellation field/i,
+    });
+
+    dispatchConstellationWheel(-120, { ctrlKey: true });
+
+    await waitFor(() => {
+      expect(
+        useSettingsStore.getState().settings.explorer.experimentalDensity,
+      ).toBeGreaterThan(0.32);
+      expect(field.getAttribute("data-overlay-constellation-zoom")).not.toBeNull();
     });
   });
 
