@@ -268,7 +268,7 @@ describe('mergeSettingsWithDefaults()', () => {
     const merged = mergeSettingsWithDefaults({
       system: {
         gpuTierMode: 'warp-speed' as never,
-      },
+      } as unknown as typeof defaultSettings.system,
     });
 
     expect(merged.system.gpuTierMode).toBe('auto');

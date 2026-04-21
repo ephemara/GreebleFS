@@ -2640,9 +2640,10 @@
   - Thumbnail generation remains independent. Explorer thumbnails still route through `src/config/explorerThumbnails.ts` and the existing preview/thumbnail systems; icon themes only affect file/folder glyph selection and UI chrome icons.
 - Durable product note:
   - Treat icon packs like first-class shell identity, not a decorative explorer tweak. Any new stock shell icon imports should go through `AppIcons.tsx`, and any new icon-pack authoring surface should live under the dedicated icon-theme system rather than being stapled onto Explorer settings.
+  - `icon-themes/Zen/icon-theme.json` is now the reference authored pack. Its manifest was built by intersecting the local SVG ids with the canonical matcher tables, then layering a few GreebleFS-specific folder aliases and shell UI slot overrides on top. Future icon packs should usually start from that same “canonical matcher intersection + targeted local additions” recipe instead of hand-authoring every extension map from scratch.
 - Validation:
   - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
-  - passed: `bunx vitest run src/test/settingsStore.test.ts src/test/appearance.test.ts src/test/settingsPage.behavior.test.tsx src/test/settingsPage.shaders.test.tsx src/test/panelRegistry.test.tsx --reporter=dot`
+  - passed: `bunx vitest run src/test/iconThemePackages.test.ts src/test/settingsStore.test.ts src/test/appearance.test.ts src/test/settingsPage.behavior.test.tsx src/test/settingsPage.shaders.test.tsx src/test/panelRegistry.test.tsx src/test/explorerSpreadsheetWorkbench.test.tsx src/test/explorerSqlitePreview.test.tsx --reporter=dot`
 
 ## 2026-04-21 — Native GPU Runtime V1 Landed
 
