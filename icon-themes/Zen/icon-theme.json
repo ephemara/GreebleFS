@@ -37,6 +37,7 @@
     "folder_docs": "folder_docs.svg",
     "folder_docs_open": "folder_docs_open.svg",
     "folder_open": "folder_open.svg",
+    "folder_tree": "lucide:FolderTree",
     "folder_src": "folder_src.svg",
     "folder_src_open": "folder_src_open.svg",
     "folder_test": "folder_test.svg",

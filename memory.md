@@ -1,5 +1,22 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Sources Rail Toggle Is Now A Compact Icon Slot
+
+- The explorer no longer wastes a whole helper row just to reopen the sources rail. The closed-rail affordance is now a compact icon button in the shared chrome strip, and the old `Open Sources` row has been removed.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now renders `toggleSources` as a compact `FolderTree` icon button with an accessible open/close label instead of the previous text chip plus duplicate helper row.
+  - `src/config/explorerChromeLayouts.ts` moved `toggleSources` to the leading `primaryStart` slot in the built-in toolbar layouts so it behaves like a nav control rather than a secondary action.
+  - `src/config/canonicalIconTheme.json` now exposes a minimal `uiIcons.folder_tree` slot, and `icon-themes/Zen/icon-theme.json` mirrors that slot so authored packs can restyle the control through the normal icon-theme path.
+  - `src/test/fileExplorer.viewModes.test.tsx`, `src/test/explorerChromeLayouts.test.ts`, and `src/test/iconThemePackages.test.ts` now lock the compact toggle placement and the new icon-slot contract.
+- Durable product note:
+  - Keep the sources rail toggle compact and icon-driven. Do not reintroduce a separate open-sources helper row unless the shell explicitly needs a second affordance for a different interaction.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerChromeLayouts.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/iconThemePackages.test.ts --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "toggles the sources panel from the explorer hotkey" --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "can render global controls on the explorer topbar surface" --reporter=dot`
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx -t "keeps the sources rail toggle compact in multi-pane mode" --reporter=dot`
+
 # 2026-04-21 - Timeline Surface Now Splits Fresh Activity Into Hour Bands
 
 - Timeline Surface no longer jumps straight from same-day work into broad daily/week buckets at max granularity. The densest timeline stop now isolates newest activity into explicit hour bands so recent edits read like a real time surface instead of a generic "today" pile.

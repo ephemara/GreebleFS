@@ -46,6 +46,7 @@ describe('icon theme package loader', () => {
     expect(zenPackage?.iconTheme.folderNames['src-tauri']).toBe('folder_src');
     expect(zenPackage?.iconTheme.uiIcons.hard_drive).toBe('panel_storage');
     expect(zenPackage?.iconTheme.uiIcons.panel_storage).toBe('panel_storage');
+    expect(zenPackage?.iconTheme.uiIcons.folder_tree).toBe('lucide:FolderTree');
     expect(zenPackage?.iconTheme.uiIcons.panel_drawable_canvas).toBe('panel_drawable_canvas');
     expect(zenPackage?.iconTheme.uiIcons.panel_sketchfab).toBe('model3d');
     expect(zenPackage?.iconTheme.uiIcons.terminal).toBe('shell');

@@ -113,6 +113,7 @@ import {
   type ExplorerModeProfileDefinition,
 } from "../config/explorerModeProfiles";
 import {
+  constellationLensDefinitions,
   getConstellationLensDefinition,
   stepConstellationLens,
   type ConstellationLensId,
@@ -17042,9 +17043,17 @@ export function FileExplorer({
         updateExplorerSettings({ showHiddenFiles: !showHidden });
         return;
       }
-      if (matchesKeybinding(e, keybindings.toggleExplorerSearchScope)) {
+      if (matchesKeybinding(e, keybindings.cycleExplorerSearchMode)) {
         e.preventDefault();
         toggleSearchScope();
+        return;
+      }
+      if (
+        matchesKeybinding(e, keybindings.findSimilarSelection) &&
+        semanticSelectionCandidate
+      ) {
+        e.preventDefault();
+        triggerFindSimilarForPath(semanticSelectionCandidate.path);
         return;
       }
       if (matchesKeybinding(e, keybindings.cycleExplorerSortKey)) {

@@ -447,5 +447,8 @@
     "web": "folder_public_open",
     "worker": "folder_api_open",
     "workers": "folder_api_open"
+  },
+  "uiIcons": {
+    "folder_tree": "lucide:FolderTree"
   }
 }
