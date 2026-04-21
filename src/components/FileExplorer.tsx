@@ -106,7 +106,6 @@ import {
 } from "../config/explorerTheme";
 import {
   explorerModeProfiles,
-  getExplorerModeProfileDefinition,
   resolveEffectiveExplorerModeProfile,
   resolveExplorerModeProfileChromeLayoutId,
   type ExplorerModeProfileDefinition,
@@ -2588,11 +2587,11 @@ function ExplorerShellLayoutGlyph({
         width: 14,
         height: 14,
         display: "grid",
-        gridTemplateColumns: layout.showRail ? "4px 1fr" : "1fr",
+        gridTemplateColumns: layout.defaultSourcesVisible ? "4px 1fr" : "1fr",
         gap: 2,
       }}
     >
-      {layout.showRail && (
+      {layout.defaultSourcesVisible && (
         <span
           style={{
             borderRadius: 2,
@@ -6724,11 +6723,6 @@ export function FileExplorer({
       state.sessions[instanceId]?.sourcesVisible ??
       defaultExplorerSession.sourcesVisible,
   );
-  const storedSourcesRailPinnedOpen = useExplorerStore(
-    (state) =>
-      state.sessions[instanceId]?.sourcesRailPinnedOpen ??
-      defaultExplorerSession.sourcesRailPinnedOpen,
-  );
   const storedPreviewEnabled = useExplorerStore(
     (state) =>
       state.sessions[instanceId]?.previewEnabled ??
@@ -6878,9 +6872,6 @@ export function FileExplorer({
     useState<ExplorerPreviewSplitMode>(() => initialSession.previewSplitMode);
   const [sourcesVisible, setSourcesVisible] = useState(
     () => initialSession.sourcesVisible,
-  );
-  const [sourcesRailPinnedOpen, setSourcesRailPinnedOpen] = useState(
-    () => initialSession.sourcesRailPinnedOpen,
   );
   const [preview, setPreview] = useState<PreviewState>({
     type: "none",
@@ -7211,10 +7202,6 @@ export function FileExplorer({
   }, [storedSourcesVisible]);
 
   useEffect(() => {
-    setSourcesRailPinnedOpen(storedSourcesRailPinnedOpen);
-  }, [storedSourcesRailPinnedOpen]);
-
-  useEffect(() => {
     setPreviewEnabled(storedPreviewEnabled);
   }, [storedPreviewEnabled]);
 
@@ -7412,7 +7399,6 @@ export function FileExplorer({
       searchIncludeContent,
       documentViewMode,
       sourcesVisible,
-      sourcesRailPinnedOpen,
     });
   }, [
     currentPath,
@@ -7427,7 +7413,6 @@ export function FileExplorer({
     searchIncludeContent,
     sidebarWidth,
     sourcesVisible,
-    sourcesRailPinnedOpen,
     instanceId,
     updateExplorerSessionForInstance,
   ]);
@@ -9861,8 +9846,6 @@ export function FileExplorer({
       setExplorerModeProfileOverride(explorerChromeThemeId, nextModeProfile.id);
       setSidebarWidth(suggestedWidths.sidebarWidth);
       setPreviewWidth(suggestedWidths.previewWidth);
-      setSourcesVisible(nextLayout.showRail);
-      setSourcesRailPinnedOpen(false);
       setShowModeProfileMenu(false);
     },
     [
@@ -12602,26 +12585,20 @@ export function FileExplorer({
     effectiveViewModeDefinition.presentation === "grid"
       ? (activeGridMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT)
       : (activeRowMetrics?.newItemHeight ?? EXPLORER_LIST_ROW_HEIGHT);
-  const shouldRenderRail =
-    sourcesVisible && (effectiveShellLayout.showRail || sourcesRailPinnedOpen);
-  const openSourcesRail = useCallback(() => {
+  const shouldRenderRail = sourcesVisible;
+  const openSourcesPanel = useCallback(() => {
     setSourcesVisible(true);
-    setSourcesRailPinnedOpen(!effectiveShellLayout.showRail);
-  }, [effectiveShellLayout.showRail]);
-  const closeSourcesRail = useCallback(() => {
-    setSourcesVisible(false);
-    setSourcesRailPinnedOpen(false);
   }, []);
-  const toggleSourcesRail = useCallback(() => {
+  const closeSourcesPanel = useCallback(() => {
+    setSourcesVisible(false);
+  }, []);
+  const toggleSourcesPanel = useCallback(() => {
     if (shouldRenderRail) {
-      closeSourcesRail();
+      closeSourcesPanel();
       return;
     }
-    openSourcesRail();
-  }, [closeSourcesRail, openSourcesRail, shouldRenderRail]);
-  const enterFocusedSourcesMode = useCallback(() => {
-    applyModeProfilePreset(getExplorerModeProfileDefinition("focus"));
-  }, [applyModeProfilePreset]);
+    openSourcesPanel();
+  }, [closeSourcesPanel, openSourcesPanel, shouldRenderRail]);
   const previewSplitIsPane = previewPanelVisible && previewSplitMode === "pane";
   const previewPlacement = effectiveShellLayout.previewPlacement;
   const previewModeLabel =
@@ -13947,11 +13924,11 @@ export function FileExplorer({
           <button
             type="button"
             aria-pressed={shouldRenderRail}
-            onClick={toggleSourcesRail}
+            onClick={toggleSourcesPanel}
             title={
               shouldRenderRail
-                ? "Hide explorer sources"
-                : "Show explorer sources"
+                ? "Hide the sources panel"
+                : "Show the sources panel"
             }
             style={toolbarToggleButtonStyle(shouldRenderRail)}
             onMouseEnter={(e) =>
@@ -15332,7 +15309,7 @@ export function FileExplorer({
       submitAddressDraft,
       themedExperimentalViewMode,
       themedViewMode,
-      toggleSourcesRail,
+      toggleSourcesPanel,
       shouldRenderRail,
       togglePreviewEnabled,
       undoTrash,
@@ -16107,6 +16084,11 @@ export function FileExplorer({
         focusExplorerPreview();
         return;
       }
+      if (matchesKeybinding(e, keybindings.toggleExplorerSources)) {
+        e.preventDefault();
+        toggleSourcesPanel();
+        return;
+      }
       if (matchesKeybinding(e, keybindings.togglePreviewLock) && hasPreview) {
         e.preventDefault();
         togglePreviewLock();
@@ -16300,6 +16282,7 @@ export function FileExplorer({
     visibleEntryLookup,
     viewMode,
     visibleEntries,
+    toggleSourcesPanel,
     toggleSearchScope,
     togglePreviewTerminal,
     cycleSortKey,
@@ -18276,8 +18259,7 @@ export function FileExplorer({
               onClearTagFilters={() => setActiveTagFilterIds([])}
               onBookmarkCreated={handleBookmarkCreated}
               resolveDroppedSources={resolveDroppedBookmarkSources}
-              focusModeActive={effectiveModeProfile.id === "focus"}
-              onEnterFocusMode={enterFocusedSourcesMode}
+              onCloseSources={closeSourcesPanel}
               chromeLayoutId={effectiveChromeLayoutId}
               chromeOverride={explorerChromeOverride}
               chromeEditMode={explorerChromeEditMode}
@@ -18300,13 +18282,9 @@ export function FileExplorer({
             >
               <button
                 type="button"
-                aria-label="Open sources rail"
-                onClick={openSourcesRail}
-                title={
-                  effectiveModeProfile.id === "focus"
-                    ? "Reopen the sources rail without leaving focus mode"
-                    : "Open the sources rail"
-                }
+                aria-label="Open sources panel"
+                onClick={openSourcesPanel}
+                title="Open the sources panel"
                 style={toolbarToggleButtonStyle(false)}
                 onMouseEnter={(e) =>
                   (e.currentTarget.style.background =
@@ -18321,9 +18299,7 @@ export function FileExplorer({
               </button>
               {!usesWorkspaceCompactChrome && (
                 <span style={{ fontSize: 10, color: EXP.muted2 }}>
-                  {effectiveModeProfile.id === "focus"
-                    ? "Focus mode keeps the sources rail tucked away until you reopen it."
-                    : "Sources rail closed."}
+                  Sources panel closed.
                 </span>
               )}
             </div>

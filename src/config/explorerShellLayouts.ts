@@ -6,7 +6,7 @@ export interface ExplorerShellLayoutDefinition {
   label: string;
   shortLabel: string;
   description: string;
-  showRail: boolean;
+  defaultSourcesVisible: boolean;
   previewPlacement: ExplorerPreviewPlacement;
   railWidthMultiplier: number;
   previewWidthMultiplier: number;
@@ -38,7 +38,7 @@ export const explorerShellLayouts: readonly ExplorerShellLayoutDefinition[] = [
     label: 'Balanced',
     shortLabel: 'Balanced',
     description: 'Keep navigation, content, and preview in an even split.',
-    showRail: true,
+    defaultSourcesVisible: true,
     previewPlacement: 'trailing',
     railWidthMultiplier: 1,
     previewWidthMultiplier: 1,
@@ -48,7 +48,7 @@ export const explorerShellLayouts: readonly ExplorerShellLayoutDefinition[] = [
     label: 'Navigator',
     shortLabel: 'Navigator',
     description: 'Give the rail more weight and keep the preview compact.',
-    showRail: true,
+    defaultSourcesVisible: true,
     previewPlacement: 'trailing',
     railWidthMultiplier: 1.18,
     previewWidthMultiplier: 0.86,
@@ -58,7 +58,7 @@ export const explorerShellLayouts: readonly ExplorerShellLayoutDefinition[] = [
     label: 'Focus',
     shortLabel: 'Focus',
     description: 'Hide the rail for a content-first browser view.',
-    showRail: false,
+    defaultSourcesVisible: false,
     previewPlacement: 'trailing',
     railWidthMultiplier: 0.84,
     previewWidthMultiplier: 0.9,
@@ -68,7 +68,7 @@ export const explorerShellLayouts: readonly ExplorerShellLayoutDefinition[] = [
     label: 'Inspector',
     shortLabel: 'Inspector',
     description: 'Pull the preview pane forward and make it much larger.',
-    showRail: true,
+    defaultSourcesVisible: true,
     previewPlacement: 'leading',
     railWidthMultiplier: 0.92,
     previewWidthMultiplier: 1.28,

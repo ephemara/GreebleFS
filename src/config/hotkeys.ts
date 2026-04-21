@@ -22,6 +22,7 @@ export type HotkeyBindingKey =
   | 'focusExplorerList'
   | 'focusExplorerAddressBar'
   | 'focusExplorerPreview'
+  | 'toggleExplorerSources'
   | 'explorerMoveSelectionUp'
   | 'explorerMoveSelectionDown'
   | 'explorerMoveSelectionLeft'
@@ -254,6 +255,13 @@ export const hotkeyBindingDefinitions: HotkeyBindingDefinition[] = [
     label: 'Focus Explorer Preview',
     description: 'Focus the explorer preview panel.',
     defaultValue: 'Ctrl+2',
+    scope: 'local',
+  },
+  {
+    key: 'toggleExplorerSources',
+    label: 'Toggle Sources Panel',
+    description: 'Show or hide the explorer sources panel.',
+    defaultValue: 'Ctrl+B',
     scope: 'local',
   },
   {

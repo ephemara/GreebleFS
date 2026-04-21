@@ -35,7 +35,7 @@ import {
 export const EXPLORER_STATE_STORAGE_KEY = 'overlayterm-explorer-state-v3';
 export const EXPLORER_STATE_BACKUP_KEY = 'overlayterm-explorer-state-v3.backup';
 export const EXPLORER_LEGACY_BOOKMARKS_KEY = 'fs-bookmarks-v2';
-export const EXPLORER_STATE_VERSION = 6;
+export const EXPLORER_STATE_VERSION = 7;
 export const PRIMARY_EXPLORER_INSTANCE_ID = 'primary';
 export const PRIMARY_EXPLORER_TAB_ID = 'tab-primary';
 const EXPLORER_PERSIST_DEBOUNCE_MS = (() => {
@@ -92,7 +92,6 @@ export interface ExplorerSessionSnapshot {
   searchIncludeContent: boolean;
   documentViewMode: ExplorerDocumentViewMode;
   sourcesVisible: boolean;
-  sourcesRailPinnedOpen: boolean;
 }
 
 export type ExplorerPreviewSplitMode = ExplorerSessionSnapshot['previewSplitMode'];
@@ -176,7 +175,6 @@ export const defaultExplorerSession: ExplorerSessionSnapshot = {
   searchIncludeContent: true,
   documentViewMode: 'edit',
   sourcesVisible: true,
-  sourcesRailPinnedOpen: false,
 };
 
 const defaultExplorerPersistenceNotice: ExplorerPersistenceNotice = {
@@ -304,6 +302,11 @@ export function normalizeExplorerSessionSnapshot(value: unknown): ExplorerSessio
   const historyIdxValue = typeof source?.historyIdx === 'number' && Number.isFinite(source.historyIdx)
     ? Math.trunc(source.historyIdx)
     : -1;
+  const normalizedShellLayoutId = getExplorerShellLayoutDefinition(source?.shellLayoutId).id;
+  const legacyLayout = getExplorerShellLayoutDefinition(normalizedShellLayoutId);
+  const legacySourcesVisible = typeof source?.sourcesRailPinnedOpen === 'boolean'
+    ? source.sourcesRailPinnedOpen || legacyLayout.defaultSourcesVisible
+    : legacyLayout.defaultSourcesVisible;
   return {
     currentPath: typeof source?.currentPath === 'string' ? source.currentPath : '',
     history,
@@ -317,16 +320,13 @@ export function normalizeExplorerSessionSnapshot(value: unknown): ExplorerSessio
       ? source.previewLocked
       : defaultExplorerSession.previewLocked,
     previewSplitMode: source?.previewSplitMode === 'pane' ? 'pane' : 'inline',
-    shellLayoutId: getExplorerShellLayoutDefinition(source?.shellLayoutId).id,
+    shellLayoutId: normalizedShellLayoutId,
     search: typeof source?.search === 'string' ? source.search : '',
     searchIncludeContent: typeof source?.searchIncludeContent === 'boolean' ? source.searchIncludeContent : true,
     documentViewMode: source?.documentViewMode === 'preview' ? 'preview' : 'edit',
     sourcesVisible: typeof source?.sourcesVisible === 'boolean'
       ? source.sourcesVisible
-      : defaultExplorerSession.sourcesVisible,
-    sourcesRailPinnedOpen: typeof source?.sourcesRailPinnedOpen === 'boolean'
-      ? source.sourcesRailPinnedOpen
-      : defaultExplorerSession.sourcesRailPinnedOpen,
+      : legacySourcesVisible,
   };
 }
 

@@ -12,7 +12,7 @@ const toolbarDefinitions: ExplorerChromeControlDefinition[] = [
   { id: 'experimentalModes', label: 'Experimental Modes', surfaces: ['explorerToolbar', 'explorerTopbar'] },
   { id: 'refresh', label: 'Refresh', surfaces: ['explorerToolbar'] },
   { id: 'railIdentity', label: 'Rail Identity', surfaces: ['railHeader'] },
-  { id: 'railFocusModeToggle', label: 'Rail Focus Mode Toggle', surfaces: ['railHeader'] },
+  { id: 'railClose', label: 'Rail Close', surfaces: ['railHeader'] },
   { id: 'railManageToggle', label: 'Rail Manage Toggle', surfaces: ['railHeader'] },
   { id: 'previewIdentity', label: 'Preview Identity', surfaces: ['previewHeader'] },
   { id: 'previewClose', label: 'Preview Close', surfaces: ['previewHeader'] },
@@ -101,7 +101,7 @@ describe('explorer chrome layout resolver', () => {
     });
 
     expect(railHeader.rows[0]?.zones.find((zone) => zone.id === 'start')?.controls.map((control) => control.controlId)).toContain('railIdentity');
-    expect(railHeader.rows[0]?.zones.find((zone) => zone.id === 'end')?.controls.map((control) => control.controlId)).toContain('railFocusModeToggle');
+    expect(railHeader.rows[0]?.zones.find((zone) => zone.id === 'end')?.controls.map((control) => control.controlId)).toContain('railClose');
     expect(railHeader.rows[0]?.zones.find((zone) => zone.id === 'end')?.controls.map((control) => control.controlId)).toContain('railManageToggle');
     expect(previewHeader.rows[0]?.zones.find((zone) => zone.id === 'start')?.controls.map((control) => control.controlId)).toContain('previewIdentity');
     expect(previewHeader.rows[0]?.zones.find((zone) => zone.id === 'end')?.controls.map((control) => control.controlId)).toContain('previewClose');

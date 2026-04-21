@@ -141,6 +141,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.keybindings.explorerMoveSelectionDown).toBe('ArrowDown');
     expect(settings.keybindings.explorerMoveSelectionLeft).toBe('ArrowLeft');
     expect(settings.keybindings.explorerMoveSelectionRight).toBe('ArrowRight');
+    expect(settings.keybindings.toggleExplorerSources).toBe('Ctrl+B');
     expect(settings.keybindings.togglePreviewLock).toBe('Ctrl+Alt+P');
     expect(settings.keybindings.togglePreviewTerminal).toBe('Ctrl+Alt+T');
     expect(settings.keybindings.pdfWorkbenchPreviousPage).toBe('PageUp');

@@ -130,8 +130,8 @@ describe('ExplorerSideRail', () => {
     expect(screen.getByLabelText(/remove bookmark node/i)).toBeInTheDocument();
   }, 20000);
 
-  it('exposes a focus action in the rail header when the explorer supplies one', () => {
-    const onEnterFocusMode = vi.fn();
+  it('exposes a close action in the rail header when the explorer supplies one', () => {
+    const onCloseSources = vi.fn();
 
     render(
       <ExplorerSideRail
@@ -144,17 +144,16 @@ describe('ExplorerSideRail', () => {
         drivesLoading={false}
         showHiddenFiles={false}
         isCompactDock={false}
-        focusModeActive={false}
         onNavigate={vi.fn()}
         onGoHome={vi.fn()}
-        onEnterFocusMode={onEnterFocusMode}
+        onCloseSources={onCloseSources}
         onBookmarkCreated={vi.fn()}
         resolveDroppedSources={() => []}
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Focus' }));
-    expect(onEnterFocusMode).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(onCloseSources).toHaveBeenCalledTimes(1);
   });
 
   it('defaults to manual expansion and lets the header toggle turn on auto-follow', () => {

@@ -83,13 +83,12 @@ interface ExplorerSideRailProps {
   activeTagFilterIds?: string[];
   onNavigate: (path: string) => void;
   onGoHome: () => void;
-  focusModeActive?: boolean;
   onOpenSavedSearch?: (savedSearch: ExplorerSavedSearch) => void;
   onDeleteSavedSearch?: (savedSearchId: string) => void;
   onToggleTagFilter?: (tagId: string) => void;
   onClearTagFilters?: () => void;
   onBookmarkCreated: (name: string, path: string) => void;
-  onEnterFocusMode?: () => void;
+  onCloseSources?: () => void;
   resolveDroppedSources: (paths: string[]) => ExplorerBookmarkImportSource[];
   localTreeRefreshRevision?: number;
   chromeLayoutId: ExplorerChromeLayoutId;
@@ -167,13 +166,12 @@ export function ExplorerSideRail({
   drivesLoading,
   showHiddenFiles,
   isCompactDock,
-  focusModeActive = false,
   savedSearches = [],
   availableTags = [],
   activeTagFilterIds = [],
   onNavigate,
   onGoHome,
-  onEnterFocusMode,
+  onCloseSources,
   onOpenSavedSearch,
   onDeleteSavedSearch,
   onToggleTagFilter,
@@ -586,21 +584,18 @@ export function ExplorerSideRail({
       ),
     },
     {
-      id: 'railFocusModeToggle',
-      label: 'Rail Focus Mode Toggle',
+      id: 'railClose',
+      label: 'Rail Close',
       surfaces: ['railHeader'],
-      isVisible: () => typeof onEnterFocusMode === 'function',
+      isVisible: () => typeof onCloseSources === 'function',
       render: () => (
         <button
           type="button"
-          aria-pressed={focusModeActive}
-          onClick={() => onEnterFocusMode?.()}
-          title={focusModeActive
-            ? 'Close the sources rail again while keeping focus mode active'
-            : 'Enter focus mode and close the sources rail'}
-          style={manageToggleButtonStyle(accent, focusModeActive)}
+          onClick={() => onCloseSources?.()}
+          title="Close the sources panel"
+          style={manageToggleButtonStyle(accent, false)}
         >
-          Focus
+          Close
         </button>
       ),
     },
@@ -633,11 +628,10 @@ export function ExplorerSideRail({
     accent,
     bookmarkCount,
     brandLabel,
-    focusModeActive,
     isManageMode,
     locationLabel,
     locationTitle,
-    onEnterFocusMode,
+    onCloseSources,
     normalizedBrandLabel,
     showBrandLabel,
     showSupportingMeta,

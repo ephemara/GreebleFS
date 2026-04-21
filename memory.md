@@ -1,5 +1,22 @@
 # GreebleFS Memory
 
+# 2026-04-20 - Explorer Sources Panel No Longer Piggybacks On Focus Mode
+
+- Explorer no longer uses mode changes as the way to close or reopen the Sources rail. `Focus` remains an Explorer mode preset, but Sources visibility is now an explicit panel toggle.
+- Durable implementation shape:
+  - `src/components/FileExplorer.tsx` now treats Sources like a real Explorer panel with one visibility truth: `session.sourcesVisible`. The toolbar `Sources` button, collapsed opener, and local `Ctrl+B` hotkey all route through the same open/close/toggle helpers, and `applyModeProfilePreset(...)` no longer mutates Sources visibility when users switch between `Balanced`, `Navigator`, `Focus`, or `Inspector`.
+  - `src/components/explorer/ExplorerSideRail.tsx` replaced the old rail-header `Focus` action with an explicit `Close` action. The rail no longer asks the shell to enter focus mode just to hide itself.
+  - `src/store/explorerStore.ts` removed `sourcesRailPinnedOpen` from `ExplorerSessionSnapshot`. Hydration still tolerates old persisted payloads that contain that field, derives a safe `sourcesVisible` value for legacy data, and re-persists the new session shape without the removed field.
+  - `src/config/explorerShellLayouts.ts` now models rail visibility as advisory layout metadata (`defaultSourcesVisible`) instead of authoritative UI state. Layout presets still describe their default shell silhouette, but live Sources visibility is owned by the session toggle state.
+  - `src/config/hotkeys.ts` and `src/components/SettingsPage.tsx` now expose `toggleExplorerSources` with default `Ctrl+B`, so Sources visibility is settings-backed and keyboard reachable.
+- Durable product note:
+  - Treat Explorer modes and Explorer panels as separate systems. Mode presets may still affect chrome density, preview placement, and width suggestions, but they should not silently open or close user panels.
+  - If future Explorer work adds more optional surfaces, prefer the same explicit panel-toggle model instead of coupling them to mode names like `Focus` or `Inspector`.
+- Validation:
+  - passed: `bunx vitest run src/test/fileExplorer.viewModes.test.tsx src/test/hotkeys.test.ts src/test/settingsStore.test.ts src/test/explorerStore.test.ts src/test/explorerChromeLayouts.test.ts src/test/explorerSideRail.test.tsx src/test/ExplorerWorkspace.test.tsx --reporter=dot`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+  - passed: `bunx vitest run src/test/explorerStore.test.ts src/test/fileExplorer.viewModes.test.tsx --reporter=dot`
+
 # 2026-04-20 - Storage Workbench Scroll Containers Now Stay Constrained After Directory Expansion
 
 - The storage panel no longer lets its matrix/types/focus surfaces grow the whole center column and shove the workbench strip out of view when a directory selection hydrates more rows.

@@ -3,6 +3,7 @@ import {
   EXPLORER_LEGACY_BOOKMARKS_KEY,
   EXPLORER_STATE_BACKUP_KEY,
   EXPLORER_STATE_STORAGE_KEY,
+  EXPLORER_STATE_VERSION,
   PRIMARY_EXPLORER_TAB_ID,
   PRIMARY_EXPLORER_INSTANCE_ID,
   defaultExplorerWorkspace,
@@ -140,6 +141,54 @@ describe('explorerStore persistence', () => {
       search: 'materials',
       sourcesVisible: false,
     });
+  });
+
+  it('hydrates legacy sources rail state and re-persists without the removed field', () => {
+    const legacyFocusSession = {
+      ...defaultExplorerSession,
+      shellLayoutId: 'focus',
+      sourcesVisible: true,
+      sourcesRailPinnedOpen: true,
+    };
+
+    persistExplorerState({
+      version: 6,
+      session: legacyFocusSession as typeof defaultExplorerSession,
+      sessions: {
+        [PRIMARY_EXPLORER_INSTANCE_ID]: legacyFocusSession as typeof defaultExplorerSession,
+      },
+      workspace: defaultExplorerWorkspace,
+      rail: createDefaultExplorerRailSnapshot(),
+    }, window.localStorage);
+
+    const hydrated = loadExplorerPersistedState(window.localStorage);
+    expect(hydrated.session.sourcesVisible).toBe(true);
+    expect(
+      Object.prototype.hasOwnProperty.call(
+        hydrated.session as unknown as Record<string, unknown>,
+        'sourcesRailPinnedOpen',
+      ),
+    ).toBe(false);
+
+    persistExplorerState({
+      version: EXPLORER_STATE_VERSION,
+      session: hydrated.session,
+      sessions: hydrated.sessions,
+      workspace: hydrated.workspace,
+      rail: hydrated.rail,
+    }, window.localStorage);
+
+    const reparsed = JSON.parse(
+      window.localStorage.getItem(EXPLORER_STATE_STORAGE_KEY) ?? '{}',
+    ) as {
+      session?: Record<string, unknown>;
+      sessions?: Record<string, Record<string, unknown>>;
+    };
+
+    expect(reparsed.session?.sourcesRailPinnedOpen).toBeUndefined();
+    expect(
+      reparsed.sessions?.[PRIMARY_EXPLORER_INSTANCE_ID]?.sourcesRailPinnedOpen,
+    ).toBeUndefined();
   });
 
   it('creates, focuses, and closes explorer workspace tabs across panes', () => {

@@ -1005,7 +1005,7 @@ describe("FileExplorer view modes", () => {
     );
   });
 
-  it("lets the user switch explorer modes from the toolbar without mutating the live session shell preset", async () => {
+  it("lets the user switch explorer modes from the toolbar without mutating the live session shell preset or sources visibility", async () => {
     renderExplorer();
     await screen.findByText("alpha");
 
@@ -1022,46 +1022,58 @@ describe("FileExplorer view modes", () => {
       expect(useExplorerStore.getState().session.shellLayoutId).toBe(
         "balanced",
       );
-      expect(screen.queryByRole("button", { name: /manage/i })).toBeNull();
+      expect(useExplorerStore.getState().session.sourcesVisible).toBe(true);
+      expect(screen.getByRole("button", { name: /manage/i })).toBeInTheDocument();
+      expect(getChromeControl("railClose")).not.toBeNull();
       expect(
-        screen.getByRole("button", { name: /open sources rail/i }),
-      ).toBeInTheDocument();
+        screen.queryByRole("button", { name: /open sources panel/i }),
+      ).toBeNull();
     });
   });
 
-  it("can close the sources rail into focus mode and reopen it without leaving that mode", async () => {
+  it("can close the sources rail in inspector mode and reopen it without leaving that mode", async () => {
     renderExplorer();
     await screen.findByText("alpha");
 
-    fireEvent.click(screen.getByRole("button", { name: "Focus" }));
+    fireEvent.click(screen.getByRole("button", { name: /explorer mode:/i }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /inspector/i }));
 
     await waitFor(() => {
       expect(
         useSettingsStore.getState().settings.explorer
           .modeProfileOverridesByThemeId.operator,
-      ).toBe("focus");
+      ).toBe("inspector");
+      expect(useExplorerStore.getState().session.sourcesVisible).toBe(true);
+      expect(screen.getByRole("button", { name: /manage/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(within(getChromeControl("railClose") as HTMLElement).getByRole("button"));
+
+    await waitFor(() => {
+      expect(
+        useSettingsStore.getState().settings.explorer
+          .modeProfileOverridesByThemeId.operator,
+      ).toBe("inspector");
       expect(useExplorerStore.getState().session.sourcesVisible).toBe(false);
-      expect(useExplorerStore.getState().session.sourcesRailPinnedOpen).toBe(
-        false,
-      );
       expect(screen.queryByRole("button", { name: /manage/i })).toBeNull();
       expect(
-        screen.getByRole("button", { name: /open sources rail/i }),
+        screen.getByRole("button", { name: /open sources panel/i }),
       ).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /open sources rail/i }));
+    fireEvent.click(screen.getByRole("button", { name: /open sources panel/i }));
 
     await waitFor(() => {
+      expect(
+        useSettingsStore.getState().settings.explorer
+          .modeProfileOverridesByThemeId.operator,
+      ).toBe("inspector");
       expect(useExplorerStore.getState().session.sourcesVisible).toBe(true);
-      expect(useExplorerStore.getState().session.sourcesRailPinnedOpen).toBe(
-        true,
-      );
       expect(
         screen.getByRole("button", { name: /manage/i }),
       ).toBeInTheDocument();
       expect(
-        screen.queryByRole("button", { name: /open sources rail/i }),
+        screen.queryByRole("button", { name: /open sources panel/i }),
       ).toBeNull();
     });
   });
@@ -1302,13 +1314,12 @@ describe("FileExplorer view modes", () => {
   it("collapses the closed sources rail helper copy in multi-pane mode", async () => {
     useExplorerStore.getState().updateSession({
       sourcesVisible: false,
-      sourcesRailPinnedOpen: false,
     });
 
     renderExplorer({ workspacePaneCount: 2 });
     await screen.findByText("notes.txt");
 
-    expect(screen.getByRole("button", { name: /open sources rail/i })).toHaveTextContent("Sources");
+    expect(screen.getByRole("button", { name: /open sources panel/i })).toHaveTextContent("Sources");
     expect(screen.queryByText(/sources rail closed/i)).toBeNull();
     expect(
       screen.queryByText(/focus mode keeps the sources rail tucked away/i),
@@ -1456,6 +1467,26 @@ describe("FileExplorer view modes", () => {
     await waitFor(() => {
       expect(useExplorerStore.getState().session.previewLocked).toBe(false);
       expect(getPreviewLockButton()).toHaveAttribute("aria-pressed", "false");
+    });
+  });
+
+  it("toggles the sources panel from the explorer hotkey", async () => {
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.sourcesVisible).toBe(false);
+      expect(screen.getByRole("button", { name: /open sources panel/i })).toBeInTheDocument();
+    });
+
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+
+    await waitFor(() => {
+      expect(useExplorerStore.getState().session.sourcesVisible).toBe(true);
+      expect(screen.queryByRole("button", { name: /open sources panel/i })).toBeNull();
+      expect(screen.getByRole("button", { name: /manage/i })).toBeInTheDocument();
     });
   });
 
