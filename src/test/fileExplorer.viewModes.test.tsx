@@ -3020,6 +3020,35 @@ describe("FileExplorer view modes", () => {
     ).toBeNull();
   });
 
+  it("restores adaptive semantic entries to their semantic resting surface after hover", async () => {
+    renderExplorer();
+    await screen.findByText("alpha");
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /switch explorer to adaptive semantic grid/i,
+      }),
+    );
+
+    const notesEntry = screen
+      .getByText("notes.txt")
+      .closest('[data-overlay-drag-source="file"]') as HTMLElement | null;
+
+    expect(notesEntry).toBeTruthy();
+
+    const initialBackground = notesEntry!.style.background;
+    const initialTransform = notesEntry!.style.transform;
+
+    fireEvent.mouseEnter(notesEntry!);
+    fireEvent.mouseLeave(notesEntry!);
+
+    expect(notesEntry!.style.background).toBe(initialBackground);
+    expect(notesEntry!.style.borderColor).toBe(
+      "var(--overlay-explorer-chip-border)",
+    );
+    expect(notesEntry!.style.transform).toBe(initialTransform);
+  });
+
   it("activates constellation view without mutating the saved normal layout mode", async () => {
     useSettingsStore.getState().updateExplorer({ viewMode: "details" });
 

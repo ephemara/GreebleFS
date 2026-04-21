@@ -13045,9 +13045,10 @@ export function FileExplorer({
       target: HTMLElement,
       isSelected: boolean,
       isDropTarget: boolean,
+      restingSurface: ExplorerEntrySurfaceState = idleEntrySurface,
     ) => {
       if (!isSelected && !isDropTarget) {
-        applyExplorerEntrySurface(target, idleEntrySurface);
+        applyExplorerEntrySurface(target, restingSurface);
       }
       if (hoveredVideoThumbnailPath === entry.path) {
         setHoveredVideoThumbnailPath(null);
@@ -16849,6 +16850,17 @@ export function FileExplorer({
     const tableThumbnail = densityStop.table
       ? getRenderableEntryThumbnail(entry, tableThumbnailStageSize)
       : null;
+    const semanticTableBaseSurface: ExplorerEntrySurfaceState = {
+      background: "var(--overlay-explorer-chip-bg)",
+      borderColor: "var(--overlay-explorer-chip-border)",
+      boxShadow: "none",
+      transform: "translateY(0)",
+    };
+    const semanticTableRestingSurface = isDrop
+      ? dropEntrySurface
+      : isSel
+        ? selectedEntrySurface
+        : semanticTableBaseSurface;
 
     if (densityStop.presentation === "table" && densityStop.table) {
       return (
@@ -16879,25 +16891,13 @@ export function FileExplorer({
             padding: densityStop.table.showRichMeta ? "8px 14px" : "6px 14px",
             borderBottom: "1px solid var(--overlay-explorer-toolbar-border)",
             borderRadius: 10,
-            background: isDrop
-              ? dropEntrySurface.background
-              : isSel
-                ? selectedEntrySurface.background
-                : "var(--overlay-explorer-chip-bg)",
-            border: `1px solid ${isDrop ? dropEntrySurface.borderColor : isSel ? selectedEntrySurface.borderColor : "var(--overlay-explorer-chip-border)"}`,
+            background: semanticTableRestingSurface.background,
+            border: `1px solid ${semanticTableRestingSurface.borderColor}`,
             cursor: "pointer",
             boxSizing: "border-box",
             userSelect: "none",
-            boxShadow: isDrop
-              ? dropEntrySurface.boxShadow
-              : isSel
-                ? selectedEntrySurface.boxShadow
-                : "none",
-            transform: isDrop
-              ? dropEntrySurface.transform
-              : isSel
-                ? selectedEntrySurface.transform
-                : "translateY(0)",
+            boxShadow: semanticTableRestingSurface.boxShadow,
+            transform: semanticTableRestingSurface.transform,
           }}
           onMouseEnter={(e) => {
             handleEntryPointerEnter(
@@ -16913,6 +16913,7 @@ export function FileExplorer({
               e.currentTarget as HTMLDivElement,
               isSel,
               isDrop,
+              semanticTableBaseSurface,
             );
           }}
         >
@@ -17056,6 +17057,20 @@ export function FileExplorer({
       entry,
       iconStageSize,
     );
+    const semanticGridBaseSurface: ExplorerEntrySurfaceState = {
+      background:
+        options.dominant && entry.is_dir
+          ? "linear-gradient(180deg, color-mix(in srgb, white 10%, transparent), color-mix(in srgb, white 4%, transparent))"
+          : "var(--overlay-explorer-chip-bg)",
+      borderColor: "var(--overlay-explorer-chip-border)",
+      boxShadow: "none",
+      transform: "translateY(0)",
+    };
+    const semanticGridRestingSurface = isDrop
+      ? dropEntrySurface
+      : isSel
+        ? selectedEntrySurface
+        : semanticGridBaseSurface;
 
     return (
       <div
@@ -17075,14 +17090,8 @@ export function FileExplorer({
         style={{
           minHeight,
           borderRadius: isCards ? 18 : 14,
-          border: `1px solid ${isDrop ? dropEntrySurface.borderColor : isSel ? selectedEntrySurface.borderColor : "var(--overlay-explorer-chip-border)"}`,
-          background: isDrop
-            ? dropEntrySurface.background
-            : isSel
-              ? selectedEntrySurface.background
-              : options.dominant && entry.is_dir
-                ? "linear-gradient(180deg, color-mix(in srgb, white 10%, transparent), color-mix(in srgb, white 4%, transparent))"
-                : "var(--overlay-explorer-chip-bg)",
+          border: `1px solid ${semanticGridRestingSurface.borderColor}`,
+          background: semanticGridRestingSurface.background,
           padding: isCards ? "14px" : iconSize <= 30 ? "10px 8px" : "12px 10px",
           display: "flex",
           flexDirection: isCards ? "row" : "column",
@@ -17093,16 +17102,8 @@ export function FileExplorer({
           overflow: "hidden",
           userSelect: "none",
           boxSizing: "border-box",
-          boxShadow: isDrop
-            ? dropEntrySurface.boxShadow
-            : isSel
-              ? selectedEntrySurface.boxShadow
-              : "none",
-          transform: isDrop
-            ? dropEntrySurface.transform
-            : isSel
-              ? selectedEntrySurface.transform
-              : "translateY(0)",
+          boxShadow: semanticGridRestingSurface.boxShadow,
+          transform: semanticGridRestingSurface.transform,
         }}
         onMouseEnter={(e) => {
           handleEntryPointerEnter(
@@ -17118,6 +17119,7 @@ export function FileExplorer({
             e.currentTarget as HTMLDivElement,
             isSel,
             isDrop,
+            semanticGridBaseSurface,
           );
         }}
       >
@@ -17827,6 +17829,17 @@ export function FileExplorer({
     const isRenaming = rename.active && rename.path === entry.path;
     const iconSrc = getExplorerEntryIconSrc(entry, isSel, isDrop);
     const thumbnail = getRenderableEntryThumbnail(entry, 42);
+    const timelineBaseSurface: ExplorerEntrySurfaceState = {
+      background: "var(--overlay-explorer-chip-bg)",
+      borderColor: "var(--overlay-explorer-chip-border)",
+      boxShadow: "0 10px 24px rgba(0,0,0,0.12)",
+      transform: "translateY(0)",
+    };
+    const timelineRestingSurface = isDrop
+      ? dropEntrySurface
+      : isSel
+        ? selectedEntrySurface
+        : timelineBaseSurface;
     return (
       <div
         key={entry.path}
@@ -17844,17 +17857,9 @@ export function FileExplorer({
         title={entry.path}
         style={{
           borderRadius: 18,
-          border: `1px solid ${isDrop ? dropEntrySurface.borderColor : isSel ? selectedEntrySurface.borderColor : "var(--overlay-explorer-chip-border)"}`,
-          background: isDrop
-            ? dropEntrySurface.background
-            : isSel
-              ? selectedEntrySurface.background
-              : "var(--overlay-explorer-chip-bg)",
-          boxShadow: isDrop
-            ? dropEntrySurface.boxShadow
-            : isSel
-              ? selectedEntrySurface.boxShadow
-              : "0 10px 24px rgba(0,0,0,0.12)",
+          border: `1px solid ${timelineRestingSurface.borderColor}`,
+          background: timelineRestingSurface.background,
+          boxShadow: timelineRestingSurface.boxShadow,
           padding: "12px 14px",
           display: "grid",
           gridTemplateColumns: "auto minmax(0, 1fr)",
@@ -17862,6 +17867,7 @@ export function FileExplorer({
           cursor: "pointer",
           userSelect: "none",
           minHeight: 92,
+          transform: timelineRestingSurface.transform,
         }}
         onMouseEnter={(e) => {
           handleEntryPointerEnter(
@@ -17877,14 +17883,8 @@ export function FileExplorer({
             e.currentTarget as HTMLDivElement,
             isSel,
             isDrop,
+            timelineBaseSurface,
           );
-          if (!isSel && !isDrop) {
-            e.currentTarget.style.background =
-              "var(--overlay-explorer-chip-bg)";
-            e.currentTarget.style.borderColor =
-              "var(--overlay-explorer-chip-border)";
-            e.currentTarget.style.boxShadow = "0 10px 24px rgba(0,0,0,0.12)";
-          }
         }}
       >
         <div
