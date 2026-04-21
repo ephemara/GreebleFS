@@ -21,6 +21,60 @@ export const overlayShaderSurfaces = [
 
 export type OverlayShaderSurfaceId = typeof overlayShaderSurfaces[number]['id'];
 
+export type ShaderPerformanceMode = 'performance' | 'balanced' | 'quality';
+
+export interface ShaderPerformanceProfile {
+  id: ShaderPerformanceMode;
+  label: string;
+  description: string;
+  shellUsesThemeDefault: boolean;
+  previewPixelRatioCap: number;
+  previewFrameRate: number;
+  previewDefaultScene: 'sphere' | 'fullscreen';
+  previewSphereSegments: number;
+  previewSphereRings: number;
+}
+
+export const shaderPerformanceProfiles = [
+  {
+    id: 'performance',
+    label: 'Performance',
+    description: 'Disable automatic theme shader assignment and keep the preview host on the lowest-cost path.',
+    shellUsesThemeDefault: false,
+    previewPixelRatioCap: 1,
+    previewFrameRate: 24,
+    previewDefaultScene: 'fullscreen',
+    previewSphereSegments: 16,
+    previewSphereRings: 10,
+  },
+  {
+    id: 'balanced',
+    label: 'Balanced',
+    description: 'Follow the theme default shader while keeping the preview host capped and restrained.',
+    shellUsesThemeDefault: true,
+    previewPixelRatioCap: 1.25,
+    previewFrameRate: 24,
+    previewDefaultScene: 'fullscreen',
+    previewSphereSegments: 24,
+    previewSphereRings: 14,
+  },
+  {
+    id: 'quality',
+    label: 'Quality',
+    description: 'Follow the theme default shader and spend more budget on the live preview host.',
+    shellUsesThemeDefault: true,
+    previewPixelRatioCap: 2,
+    previewFrameRate: 60,
+    previewDefaultScene: 'sphere',
+    previewSphereSegments: 32,
+    previewSphereRings: 18,
+  },
+] as const satisfies readonly ShaderPerformanceProfile[];
+
+const shaderPerformanceProfileMap = new Map<ShaderPerformanceMode, ShaderPerformanceProfile>(
+  shaderPerformanceProfiles.map(profile => [profile.id, profile]),
+);
+
 export function resolveShadersDirectory(): string {
   return getManagedContentDirectory('shaders');
 }
@@ -34,6 +88,7 @@ export const shaderSystemConfig = {
   runtimeAssetPollingEnabled: resolveRuntimeAssetPollingEnabled(),
   scanIntervalMs: 2000,
   fallbackShaderId: 'none',
+  defaultPerformanceMode: 'performance' as ShaderPerformanceMode,
 };
 
 export type FrontendShaderExtension =
@@ -57,17 +112,26 @@ export function getShaderEnabledSurfaceIds(shader: {
     .map(surface => surface.id);
 }
 
+export function getShaderPerformanceProfile(
+  mode?: ShaderPerformanceMode | null,
+): ShaderPerformanceProfile {
+  return shaderPerformanceProfileMap.get(mode ?? shaderSystemConfig.defaultPerformanceMode)
+    ?? shaderPerformanceProfiles[0];
+}
+
 export function resolvePreferredShaderId(args: {
   availableShaderIds: Iterable<string>;
   userOverrideId?: string | null;
   themeDefaultShaderId?: string | null;
   fallbackShaderId?: string;
+  performanceMode?: ShaderPerformanceMode | null;
 }): string {
   const available = new Set(Array.from(args.availableShaderIds));
   const fallbackId = args.fallbackShaderId ?? shaderSystemConfig.fallbackShaderId;
+  const performanceProfile = getShaderPerformanceProfile(args.performanceMode);
   const preferredIds = [
     args.userOverrideId,
-    args.themeDefaultShaderId,
+    performanceProfile.shellUsesThemeDefault ? args.themeDefaultShaderId : null,
     fallbackId,
   ];
 

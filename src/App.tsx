@@ -797,8 +797,9 @@ function App() {
       userOverrideId: appearance.activeShaderId,
       themeDefaultShaderId: resolvedAppearance.baseTheme.defaultShaderId,
       fallbackShaderId: shaderSystemConfig.fallbackShaderId,
+      performanceMode: appearance.shaderPerformanceMode,
     }),
-    [appearance.activeShaderId, availableShadersById, resolvedAppearance.baseTheme.defaultShaderId],
+    [appearance.activeShaderId, appearance.shaderPerformanceMode, availableShadersById, resolvedAppearance.baseTheme.defaultShaderId],
   );
   const activeShader = availableShadersById.get(resolvedShaderId)
     ?? availableShadersById.get(shaderSystemConfig.fallbackShaderId)

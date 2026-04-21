@@ -17,6 +17,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   - event namespaces and drag payload keys prefixed with `overlayterm`
   - older `OVERLAYTERM_*` and `VITE_OVERLAYTERM_*` environment overrides as fallbacks
   - legacy layout/config discovery paths where migration is safe
+  
 
 ## Stack
 
@@ -525,9 +526,10 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Do not try to fix Wayland dock centering by adding more `set_position` / `set_outer_position` retries to the normal app window path. The durable fix is the separate layer-shell dock host in `src-tauri/src/wayland_dock.rs`; if dock mode recenters again, inspect host routing in `src/runtime/windowHost.ts` and `App.tsx` before touching generic window geometry.
 - `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings` is green again. Keep `src/generated/tauri.ts` generated-only and route any new explorer task commands through `src/runtime/explorerBackend.ts` instead of introducing ad hoc `invoke` calls in React.
 - Dev telemetry is intentionally repo-local in `tauri dev`; do not look in Tauri app-log directories when debugging local trace output unless you are validating a release build.
-- Built-in shader performance is now split by runtime type:
+- Built-in shader performance is now split by runtime type and a persisted shader-performance mode:
+  - `settings.appearance.shaderPerformanceMode` defaults to `performance`, which keeps automatic theme shader assignment off until the user explicitly opts into `balanced` or `quality`
   - the CSS-heavy built-ins no longer use a React RAF clock; they animate through injected keyframes so shader motion does not force React rerenders every frame
-  - canvas-backed shader surfaces are throttled to about 24 FPS and capped to `devicePixelRatio <= 1.25`
+  - canvas-backed shader surfaces are throttled to about 24 FPS in performance/balanced mode and capped to a profile-driven `devicePixelRatio`, with new preview opens preferring the fullscreen scene unless the user asks for the higher-fidelity sphere path
   - if overlay performance still feels bad after this pass, inspect shell `backdrop-filter` blur and wallpaper/shader/animation layer stacking before adding more shader complexity
 - Explorer smoothness now favors cheaper composition over JS-driven motion:
   - `FileExplorer.tsx` no longer uses Framer Motion in the main explorer path for grid/icon/layout transitions
@@ -539,3 +541,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Theme package manifests can now carry app-wide shell structure via `theme.workbench` and explorer-specific structure via `theme.explorer`; prefer those over ad hoc `cssVars` whenever a behavior or metric deserves a named contract.
 - If a theme needs a default wallpaper, put the asset in `theme.assets.backgroundUrl`. Reserve `theme.effects.backgroundImage` for overlay gradients/effects so theme wallpaper assets and shader layers can stack cleanly instead of duplicating the same image twice.
 - If a custom theme renderer owns a launcher, chrome band, content frame, or wallpaper treatment, declare it through `surfaceOwnership`. Do not rely on `host.renderChromeBar()` to magically cooperate with a fully custom launcher layout.
+
+
+## /GreebleFS/packages folder
+- The packages folder is a blend of both reference code and vendored code.. There are two key reference folders in it which are /packages/spacedrive and /packages/xplorer - feel free to use these whenever possible for refefence code delegating to anything and how file explorers work. There is a plethora of amazing reference code to base off new features and optimizations here.
+
+- Another huge addition of reference code added and my own code was the /packages/KOS folder ---  Since this is my own code feel free to yoink any file or system out of this folder if needed, it is a massive DCC suite spanning across 16 applications and over 400 rust files of raw 3D fire power. Everything from svt texturing, to gpu sculpting, to buffer pools, PBR MATERIAL generation, procedural assets, simulations, IO for 3D models, IPC systems etc. Key folders are /crates and /src-frontend in this directory to get a good idea for it. You have full permission to copy and paste folders and files from it into GreebleFS for borrowing. You don`t even have to ask to use them.

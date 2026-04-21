@@ -147,6 +147,10 @@ import {
   type RuntimePlatform,
 } from "../config/platform";
 import { pluginSystemConfig } from "../config/plugins";
+import {
+  getShaderPerformanceProfile,
+  type ShaderPerformanceMode,
+} from "../config/shaders";
 import { requestPluginPanelOpen } from "../runtime/pluginPanelRequests";
 import {
   listenToFileOperationsTransferCompleted,
@@ -3086,6 +3090,7 @@ function PreviewPanel({
   chromeEditMode,
   showHiddenFiles,
   editorSettings,
+  shaderPerformanceMode,
   onOpenFolderPreviewEntry,
   onExtractArchive,
 }: {
@@ -3144,6 +3149,7 @@ function PreviewPanel({
   chromeEditMode?: ExplorerChromeEditModeState;
   showHiddenFiles: boolean;
   editorSettings: import("../store/settingsStore").EditorSettings;
+  shaderPerformanceMode: ShaderPerformanceMode;
   onOpenFolderPreviewEntry: (entry: FileEntry) => void;
   onExtractArchive: (mode: ExplorerArchiveExtractionMode) => void;
 }) {
@@ -4494,6 +4500,7 @@ function PreviewPanel({
               error={preview.error}
               viewMode={viewMode}
               editorSettings={editorSettings}
+              shaderPerformanceMode={shaderPerformanceMode}
               onSourceChange={onShaderSourceChange}
               onSelectionChange={onShaderSelectionChange}
               onCompileResult={onShaderCompileResult}
@@ -6772,6 +6779,8 @@ export function FileExplorer({
     appearance?.theme.assets?.iconTheme ?? getBuiltInIconTheme();
   const useNativeOsIcons = appearanceSettings.useNativeOsIcons;
   const explorerBlurEnabled = appearanceSettings.appBlur !== false;
+  const shaderPerformanceMode = appearanceSettings.shaderPerformanceMode;
+  const shaderPerformanceProfile = getShaderPerformanceProfile(shaderPerformanceMode);
   const showHidden = explorerSettings.showHiddenFiles;
   const explorerThumbnailSettings = explorerSettings.thumbnails;
   const viewMode = explorerSettings.viewMode;
@@ -10320,7 +10329,7 @@ export function FileExplorer({
                 currentPreview.type === "shader" &&
                 currentPreview.path === entry.path
                   ? currentPreview.selectedScene
-                  : "sphere",
+                  : shaderPerformanceProfile.previewDefaultScene,
               selectedStage,
               selectedEntryPoint,
               entryPoints: document.entryPoints,
@@ -19800,6 +19809,7 @@ export function FileExplorer({
               chromeEditMode={explorerChromeEditMode}
               showHiddenFiles={showHidden}
               editorSettings={editorSettings}
+              shaderPerformanceMode={shaderPerformanceMode}
               onOpenFolderPreviewEntry={openFolderPreviewEntry}
               onExtractArchive={(mode) => {
                 if (preview.type === "archive") {

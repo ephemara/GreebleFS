@@ -3,7 +3,7 @@ import { resolveOverlayAppearance } from '../config/appearance';
 import { resolvePreferredShaderId } from '../config/shaders';
 
 describe('shader system precedence', () => {
-  it('resolves the theme default shader when there is no user override', () => {
+  it('resolves the theme default shader when performance mode allows it', () => {
     const appearance = resolveOverlayAppearance({ activeThemeId: 'operator' });
 
     expect(appearance.baseTheme.defaultShaderId).toBe('nebula-flow');
@@ -11,7 +11,17 @@ describe('shader system precedence', () => {
       availableShaderIds: ['none', 'nebula-flow', 'prism-wave'],
       themeDefaultShaderId: appearance.baseTheme.defaultShaderId,
       userOverrideId: null,
+      performanceMode: 'balanced',
     })).toBe('nebula-flow');
+  });
+
+  it('falls back to none in performance mode when there is no explicit override', () => {
+    expect(resolvePreferredShaderId({
+      availableShaderIds: ['none', 'nebula-flow', 'prism-wave'],
+      themeDefaultShaderId: 'nebula-flow',
+      userOverrideId: null,
+      performanceMode: 'performance',
+    })).toBe('none');
   });
 
   it('prefers the global override over the theme default', () => {

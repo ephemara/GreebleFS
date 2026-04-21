@@ -87,7 +87,9 @@ import { pluginSystemConfig } from '../config/plugins';
 import {
   getOverlayShaderSurfaceLabel,
   getShaderEnabledSurfaceIds,
+  getShaderPerformanceProfile,
   resolvePreferredShaderId,
+  shaderPerformanceProfiles,
 } from '../config/shaders';
 import {
   clampOverlayAnimationDuration,
@@ -1090,6 +1092,11 @@ export function SettingsPage({
     () => availableShaders.map(shader => shader.id),
     [availableShaders],
   );
+  const shaderPerformanceMode = settings.appearance.shaderPerformanceMode;
+  const shaderPerformanceProfile = useMemo(
+    () => getShaderPerformanceProfile(shaderPerformanceMode),
+    [shaderPerformanceMode],
+  );
   const appAppearance = appearance.app;
   const dockAppearance = appearance.dock;
   const blurEnabled = settings.appearance.appBlur !== false;
@@ -1105,8 +1112,9 @@ export function SettingsPage({
       availableShaderIds,
       userOverrideId: settings.appearance.activeShaderId,
       themeDefaultShaderId: appAppearance.baseTheme.defaultShaderId,
+      performanceMode: shaderPerformanceMode,
     }),
-    [appAppearance.baseTheme.defaultShaderId, availableShaderIds, settings.appearance.activeShaderId],
+    [appAppearance.baseTheme.defaultShaderId, availableShaderIds, shaderPerformanceMode, settings.appearance.activeShaderId],
   );
   const effectiveShader = useMemo(
     () => availableShaders.find(shader => shader.id === effectiveShaderId) ?? null,
@@ -1169,9 +1177,9 @@ export function SettingsPage({
   );
   const shaderSelectionSummary = settings.appearance.activeShaderId
     ? 'Settings Override'
-    : appAppearance.baseTheme.defaultShaderId
-      ? 'Theme Default'
-      : 'Fallback';
+    : shaderPerformanceProfile.shellUsesThemeDefault
+      ? (appAppearance.baseTheme.defaultShaderId ? 'Theme Default' : 'Fallback')
+      : `${shaderPerformanceProfile.label} Mode`;
   const effectiveOpenAnimationId = useMemo(
     () => resolvePreferredAnimationId({
       availableAnimationIds: availableOpenAnimationIds,
@@ -1987,8 +1995,8 @@ export function SettingsPage({
       key: 'shaders',
       label: 'Shaders',
       subtitle: 'Shell-wide shader profiles for background, chrome, and rails.',
-      summary: `${availableShaders.length} profiles${shaderFailures.length > 0 ? ` · ${shaderFailures.length} errors` : ''}`,
-      detail: 'Assign live shader profiles, inspect surface coverage, and manage the dedicated shader authoring folder apart from animations.',
+      summary: `${availableShaders.length} profiles · ${shaderPerformanceProfile.label}${shaderFailures.length > 0 ? ` · ${shaderFailures.length} errors` : ''}`,
+      detail: `Default mode is ${shaderPerformanceProfile.label.toLowerCase()}, which keeps automatic theme shaders off until you explicitly choose a profile and keeps the live preview budgeted.`,
       icon: <Sparkles size={14} />,
     },
     {
@@ -2888,12 +2896,55 @@ export function SettingsPage({
                   <div>
                     <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shader Catalog</div>
                     <p className="mt-1 text-[11px] opacity-40">
-                      Shader authoring lives in its own catalog now. Use this page to browse built-ins plus folder-authored profiles, inspect load failures, and choose whether the shell follows the theme default or a user override.
+                      Shader authoring lives in its own catalog now. Use this page to browse built-ins plus folder-authored profiles, inspect load failures, and choose whether the shell stays in performance mode, follows the theme default, or uses a user override.
                     </p>
                   </div>
                   <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: border, background: 'rgba(255,255,255,0.04)', color: text }}>
                     Shader
                   </span>
+                </div>
+
+                <div className="mt-3 rounded border p-3" style={{ borderColor: border, background: 'rgba(255,255,255,0.03)' }}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Shader Performance Mode</div>
+                      <p className="mt-1 text-[11px] opacity-40">
+                        Performance is the default. Balanced restores theme shader defaults with a capped preview budget. Quality spends more on the preview host when you want fidelity over throughput.
+                      </p>
+                    </div>
+                    <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: accent, background: `${accent}14`, color: accent }}>
+                      {shaderPerformanceProfile.label}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+                    {shaderPerformanceProfiles.map(profile => {
+                      const active = profile.id === shaderPerformanceMode;
+                      return (
+                        <button
+                          key={profile.id}
+                          type="button"
+                          onClick={() => updateAppearance({ shaderPerformanceMode: profile.id })}
+                          className="rounded px-3 py-2 text-left transition-colors"
+                          style={{
+                            border: `1px solid ${active ? accent : border}`,
+                            background: active ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                            color: text,
+                          }}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-semibold">{profile.label}</span>
+                            {active ? (
+                              <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: accent }}>
+                                Active
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="mt-1 text-[11px] opacity-45">{profile.description}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px]">
@@ -2958,7 +3009,7 @@ export function SettingsPage({
                     <div>
                       <div className="text-[10px] font-semibold uppercase tracking-[0.14em] opacity-60">Live Assignment</div>
                       <p className="mt-1 text-[11px] opacity-40">
-                        A user override wins over the active theme. Clearing the override hands control back to the theme default, and unresolved IDs collapse safely to <code>none</code>.
+                        A user override wins over the active theme. Clearing the override hands control back to the theme default when performance mode allows it, and unresolved IDs collapse safely to <code>none</code>.
                       </p>
                     </div>
                     <span className="rounded border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ borderColor: accent, background: `${accent}14`, color: accent }}>
@@ -2969,24 +3020,26 @@ export function SettingsPage({
                   <div className="mt-3 grid grid-cols-1 gap-2">
                     <button
                       type="button"
-                      onClick={() => updateAppearance({ activeShaderId: null })}
+                      onClick={() => updateAppearance({ activeShaderId: null, shaderPerformanceMode: 'balanced' })}
                       className="rounded px-3 py-2 text-left transition-colors"
+                      aria-pressed={settings.appearance.activeShaderId == null && shaderPerformanceProfile.shellUsesThemeDefault && Boolean(editableTheme.defaultShaderId)}
                       style={{
-                        border: `1px solid ${settings.appearance.activeShaderId == null ? accent : border}`,
-                        background: settings.appearance.activeShaderId == null ? `${accent}16` : 'rgba(255,255,255,0.03)',
+                        border: `1px solid ${settings.appearance.activeShaderId == null && shaderPerformanceProfile.shellUsesThemeDefault && Boolean(editableTheme.defaultShaderId) ? accent : border}`,
+                        background: settings.appearance.activeShaderId == null && shaderPerformanceProfile.shellUsesThemeDefault && Boolean(editableTheme.defaultShaderId) ? `${accent}16` : 'rgba(255,255,255,0.03)',
                         color: text,
                       }}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[11px] font-semibold">Follow Theme Default</span>
-                        <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: settings.appearance.activeShaderId == null ? accent : muted }}>
+                        <span className="text-[9px] uppercase tracking-[0.14em]" style={{ color: settings.appearance.activeShaderId == null && shaderPerformanceProfile.shellUsesThemeDefault && Boolean(editableTheme.defaultShaderId) ? accent : muted }}>
                           {editableTheme.defaultShaderId ?? 'none'}
                         </span>
                       </div>
                       <p className="mt-1 text-[11px] opacity-45">
                         {editableTheme.defaultShaderId
                           ? `Active theme ${editableTheme.name} defaults to ${editableTheme.defaultShaderId}.`
-                          : `Active theme ${editableTheme.name} does not define a shader, so the shell falls back to none.`}
+                          : `Active theme ${editableTheme.name} does not define a shader, so the shell falls back to none.`
+                        }{!shaderPerformanceProfile.shellUsesThemeDefault ? ' Performance mode keeps the theme default suspended until you switch to Balanced or Quality.' : ''}
                       </p>
                     </button>
 

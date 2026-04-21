@@ -64,6 +64,7 @@ import {
   overlayVisualControls,
   overlayWindowGeometry,
 } from '../config/overlayWindow';
+import { shaderSystemConfig, type ShaderPerformanceMode } from '../config/shaders';
 import {
   normalizeOverlayWallpaperFitMode,
   type OverlayWallpaperFitMode,
@@ -164,6 +165,7 @@ export interface AppearanceSettings {
   wallpaperOpacity: number;
   wallpaperMuted: boolean;
   activeShaderId?: string | null;
+  shaderPerformanceMode: ShaderPerformanceMode;
   shaderControlValues: Record<string, Record<string, number>>;
   uiFontFamily: string;
   useNativeOsIcons: boolean;
@@ -308,6 +310,12 @@ export function normalizeDeveloperTelemetryCaptureMode(value: unknown): Develope
 
 export function normalizeDeveloperTelemetryPayloadMode(value: unknown): DeveloperTelemetryPayloadMode {
   return value === 'metadata-only' ? value : 'metadata+small-payloads';
+}
+
+function normalizeShaderPerformanceMode(value: unknown): ShaderPerformanceMode {
+  return value === 'balanced' || value === 'quality'
+    ? value
+    : shaderSystemConfig.defaultPerformanceMode;
 }
 
 function normalizeTelemetryFileSizeMb(value: unknown, fallback: number): number {
@@ -575,6 +583,7 @@ function normalizeAppearanceSettings(
       : merged.activeShaderId === null
         ? null
         : base.activeShaderId ?? null,
+    shaderPerformanceMode: normalizeShaderPerformanceMode(merged.shaderPerformanceMode ?? base.shaderPerformanceMode),
     shaderControlValues: normalizeShaderControlValuesMap(merged.shaderControlValues ?? base.shaderControlValues),
     appOpacity: clampOverlayVisualControlValue('opacity', merged.appOpacity),
     panelTransparency: clampOverlayVisualControlValue('panelTransparency', merged.panelTransparency),
@@ -734,6 +743,7 @@ export const defaultSettings: Settings = {
     wallpaperOpacity: overlayVisualControls.opacity.defaultValue,
     wallpaperMuted: true,
     activeShaderId: null,
+    shaderPerformanceMode: shaderSystemConfig.defaultPerformanceMode,
     shaderControlValues: {},
     uiFontFamily: DEFAULT_PILOT_UI_FONT_FAMILY,
     useNativeOsIcons: false,

@@ -89,6 +89,7 @@ describe('useSettingsStore — initial state', () => {
     expect(settings.appearance.wallpaperOpacity).toBe(1);
     expect(settings.appearance.wallpaperMuted).toBe(true);
     expect(settings.appearance.activeShaderId).toBeNull();
+    expect(settings.appearance.shaderPerformanceMode).toBe('performance');
     expect(settings.appearance.shaderControlValues).toEqual({});
     expect(settings.appearance.uiFontFamily).toBe('system-ui, sans-serif');
     expect(settings.appearance.useNativeOsIcons).toBe(false);

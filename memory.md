@@ -1,5 +1,22 @@
 # GreebleFS Memory
 
+# 2026-04-20 - Shader Default Now Starts In Performance Mode
+
+- Shell shader assignment now has a persisted `shaderPerformanceMode` setting in `src/store/settingsStore.ts` and `src/config/shaders.ts`.
+- Durable implementation shape:
+  - `src/config/shaders.ts` now defines `performance`, `balanced`, and `quality` shader profiles. `performance` is the default, skips automatic theme shader assignment, and lowers the live preview budget; `balanced` restores theme defaults with a capped preview; `quality` keeps theme defaults and spends more on the preview host.
+  - `src/App.tsx` and `src/components/SettingsPage.tsx` now resolve the active shell shader through the performance profile instead of always honoring the theme default.
+  - `src/components/SettingsPage.tsx` now exposes a shader-performance selector in the Shaders section, and the "Follow Theme Default" action switches back to `balanced` so it actually re-enables theme defaults.
+  - `src/components/FileExplorer.tsx` now opens new shader previews in the profile’s default scene instead of always choosing the sphere, and forwards the performance mode into the workbench.
+  - `src/components/ExplorerShaderWorkbench.tsx` now caps WebGPU preview DPR/frame rate through the profile, uses lower-detail sphere meshes for non-quality modes, and avoids per-frame React state churn while the live preview runs.
+- Durable product note:
+  - The slow path was the preview/composition budget, not shader math that needed to move into Rust. Keep the shader-performance mode as a user-facing quality/perf dial rather than hiding it in backend plumbing.
+- Validation:
+  - passed: `bunx vitest run src/test/shaderSystem.test.ts src/test/settingsStore.test.ts src/test/settingsPage.shaders.test.tsx`
+  - passed: `bunx tsc -p tsconfig.json --noEmit`
+- Follow-up still recommended:
+  - if users still report shell sluggishness after switching to performance mode, inspect blur/backdrop-filter and other composition layers before adding more shader logic
+
 # 2026-04-20 - Explorer Sources Panel No Longer Piggybacks On Focus Mode
 
 - Explorer no longer uses mode changes as the way to close or reopen the Sources rail. `Focus` remains an Explorer mode preset, but Sources visibility is now an explicit panel toggle.

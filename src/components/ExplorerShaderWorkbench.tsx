@@ -17,6 +17,10 @@ import {
   type ExplorerShaderPreviewStage,
 } from "../runtime/shaderPreviewBackend";
 import { buildExplorerMonacoPreviewOptions } from "../config/explorerMonaco";
+import {
+  getShaderPerformanceProfile,
+  type ShaderPerformanceMode,
+} from "../config/shaders";
 import type { EditorSettings } from "../store/settingsStore";
 
 type ExplorerDocumentViewMode = "preview" | "edit";
@@ -40,6 +44,7 @@ type ExplorerShaderWorkbenchProps = {
   error: string | null;
   viewMode: ExplorerDocumentViewMode;
   editorSettings: EditorSettings;
+  shaderPerformanceMode: ShaderPerformanceMode;
   onSourceChange: (path: string, value: string) => void;
   onSelectionChange: (
     path: string,
@@ -580,12 +585,14 @@ function ShaderPreviewCanvas({
   selectedStage,
   selectedEntryPoint,
   selectedScene,
+  shaderPerformanceMode,
 }: {
   path: string;
   normalizedWgsl: string | null;
   selectedStage: ExplorerShaderPreviewStage | null;
   selectedEntryPoint: string | null;
   selectedScene: ShaderWorkbenchScene;
+  shaderPerformanceMode: ShaderPerformanceMode;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<ShaderPreviewCanvasStatus>({
@@ -595,6 +602,7 @@ function ShaderPreviewCanvas({
   const [fallbackPosterDataUrl, setFallbackPosterDataUrl] = useState<string | null>(
     null,
   );
+  const previewProfile = getShaderPerformanceProfile(shaderPerformanceMode);
 
   useEffect(() => {
     let cancelled = false;
@@ -622,6 +630,7 @@ function ShaderPreviewCanvas({
   useEffect(() => {
     let cancelled = false;
     let frameHandle = 0;
+    let lastRenderedTimestamp = 0;
     const canvas = canvasRef.current;
 
     async function run() {
@@ -663,7 +672,10 @@ function ShaderPreviewCanvas({
           return;
         }
 
-        const pixelRatio = Math.max(window.devicePixelRatio || 1, 1);
+        const pixelRatio = Math.max(
+          1,
+          Math.min(window.devicePixelRatio || 1, previewProfile.previewPixelRatioCap),
+        );
         const width = Math.max(1, Math.floor(canvas.clientWidth * pixelRatio));
         const height = Math.max(1, Math.floor(canvas.clientHeight * pixelRatio));
         canvas.width = width;
@@ -682,7 +694,12 @@ function ShaderPreviewCanvas({
         });
 
         const mesh =
-          selectedScene === "sphere" ? createSphereMesh() : createPlaneMesh();
+          selectedScene === "sphere"
+            ? createSphereMesh(
+                previewProfile.previewSphereSegments,
+                previewProfile.previewSphereRings,
+              )
+            : createPlaneMesh();
         const vertexBuffer = device.createBuffer({
           size: mesh.vertices.byteLength,
           usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
@@ -848,10 +865,25 @@ function ShaderPreviewCanvas({
           });
         }
 
+        const targetFrameMs = 1000 / Math.max(previewProfile.previewFrameRate, 1);
+        setStatus({
+          mode: "ready",
+          message:
+            selectedStage === "compute"
+              ? "Compute preview rendered through the storage-texture host."
+              : "Live WebGPU preview is active.",
+        });
+
         const renderFrame = (timestamp: number) => {
           if (cancelled || !renderPipeline) {
             return;
           }
+
+          if (lastRenderedTimestamp !== 0 && timestamp - lastRenderedTimestamp < targetFrameMs) {
+            frameHandle = window.requestAnimationFrame(renderFrame);
+            return;
+          }
+          lastRenderedTimestamp = timestamp;
 
           const uniformState = createPreviewUniformState(
             width / Math.max(height, 1),
@@ -896,13 +928,6 @@ function ShaderPreviewCanvas({
           renderPass.end();
 
           device.queue.submit([encoder.finish()]);
-          setStatus({
-            mode: "ready",
-            message:
-              selectedStage === "compute"
-                ? "Compute preview rendered through the storage-texture host."
-                : "Live WebGPU preview is active.",
-          });
           frameHandle = window.requestAnimationFrame(renderFrame);
         };
 
@@ -925,7 +950,7 @@ function ShaderPreviewCanvas({
         window.cancelAnimationFrame(frameHandle);
       }
     };
-  }, [normalizedWgsl, selectedEntryPoint, selectedScene, selectedStage]);
+  }, [normalizedWgsl, selectedEntryPoint, selectedScene, selectedStage, shaderPerformanceMode]);
 
   return (
     <div style={previewCanvasShellStyle}>
@@ -1034,6 +1059,7 @@ export function ExplorerShaderWorkbench({
   error,
   viewMode,
   editorSettings,
+  shaderPerformanceMode,
   onSourceChange,
   onSelectionChange,
   onCompileResult,
@@ -1208,6 +1234,7 @@ export function ExplorerShaderWorkbench({
             selectedStage={selectedStage}
             selectedEntryPoint={selectedEntryPoint}
             selectedScene={selectedScene}
+            shaderPerformanceMode={shaderPerformanceMode}
           />
           <ShaderDiagnosticsList
             diagnostics={diagnostics}
