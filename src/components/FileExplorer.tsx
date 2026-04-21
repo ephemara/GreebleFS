@@ -204,6 +204,17 @@ import {
   type ConstellationFieldLayout,
   type ConstellationFieldNode,
 } from "./explorer/constellationLayout";
+import {
+  CONSTELLATION_CAMERA_ZOOM_RANGE,
+  clampConstellationCameraPan,
+  centerConstellationCameraOnNode,
+  createConstellationFitCamera,
+  getConstellationFitZoom,
+  getConstellationWheelZoom,
+  zoomConstellationCameraAtViewportPoint,
+  type ConstellationCameraState,
+  type ConstellationViewportMetrics,
+} from "./explorer/constellationCamera";
 import { ExplorerTaskStatusBadge } from "./explorer/ExplorerTaskStatusBadge";
 import TerminalOverlay, {
   type TerminalOverlayCommandRequest,
@@ -6971,7 +6982,12 @@ export function FileExplorer({
   const [savedSearches, setSavedSearches] = useState<ExplorerSavedSearch[]>([]);
   const [activeTagFilterIds, setActiveTagFilterIds] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState<string | null>(null); // path being dragged over
-  const [constellationPan, setConstellationPan] = useState({ x: 0, y: 0 });
+  const [constellationCamera, setConstellationCamera] =
+    useState<ConstellationCameraState>({
+      x: 0,
+      y: 0,
+      zoom: CONSTELLATION_CAMERA_ZOOM_RANGE.default,
+    });
   const [constellationIsPanning, setConstellationIsPanning] = useState(false);
   const dragOverRef = useRef<string | null>(null);
   const constellationViewportRef = useRef<HTMLDivElement | null>(null);
@@ -6981,7 +6997,12 @@ export function FileExplorer({
     startY: number;
     originX: number;
     originY: number;
+    targetNodePath: string | null;
+    moved: boolean;
   } | null>(null);
+  const constellationSuppressClickPathRef = useRef<string | null>(null);
+  const constellationCameraUserOwnedRef = useRef(false);
+  const constellationSceneKeyRef = useRef<string | null>(null);
   const [windowDropState, setWindowDropState] = useState<{
     active: boolean;
     count: number;
