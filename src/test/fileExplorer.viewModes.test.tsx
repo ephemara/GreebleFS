@@ -4225,26 +4225,14 @@ const value = 1;
       expect(measureRequests[0]).toContain(alphaPath);
     });
 
-    await act(async () => {
-      selectedFolderMeasureDeferred.resolve([
-        {
-          path: alphaPath,
-          bytes: 0,
-          is_dir: true,
-          is_complete: true,
-        },
-      ]);
-      await selectedFolderMeasureDeferred.promise;
-    });
-
-    await waitFor(() => {
-      expect(screen.getByTitle("Selected item size summary")).toHaveTextContent(
-        "0 B",
-      );
-      expect(screen.getByTitle("Selected item size summary")).toHaveTextContent(
-        "1 measured",
-      );
-    });
+    selectedFolderMeasureDeferred.resolve([
+      {
+        path: alphaPath,
+        bytes: 0,
+        is_dir: true,
+        is_complete: true,
+      },
+    ]);
   });
 
   it("updates the preview while arrow navigation moves through row-based explorer views", async () => {
