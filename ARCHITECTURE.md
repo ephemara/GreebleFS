@@ -205,9 +205,11 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Icon theming is now a first-class managed subsystem instead of an explorer-only concern:
   - `src/config/iconTheme.ts` resolves the canonical built-in icon map, folder/file matchers, UI icon slots, and merge rules for theme-default or user-selected icon packs
   - `src/config/iconThemePackages.ts` discovers dedicated `icon-themes/` packages whose `icon-theme.json` / `manifest.json` files can override explorer file/folder ids plus shell UI icon slots
-  - Top-bar and nav-tab panel icons now resolve through reserved `uiIcons.panel_<normalized-panel-id>` slots first, then fall back to generic UI slots like `hard_drive`, `sticky_note`, `camera`, `puzzle`, or `shell`
+  - Top-bar and nav-tab panel icons now resolve through reserved `uiIcons.panel_<normalized-panel-id>` slots first, then fall back to generic UI slots like `folder_tree`, `hard_drive`, `sticky_note`, `camera`, `puzzle`, or `shell`
   - `icon-themes/Zen/` is the first full repo-local example pack; use it as the reference shape for authored icon themes
     - Zen now demonstrates both built-in panel slots like `panel_storage` / `panel_notes` / `panel_screenshots` and folder-plugin panel slots like `panel_drawable_canvas` / `panel_chronorift` / `panel_sketchfab`
+    - `icon-themes/Zen/ui/` is the app-chrome coverage layer for the package; it now includes explicit SVGs for shell slots like `folder_tree`, `camera`, `hard_drive`, `puzzle`, `settings2`, `sliders_horizontal`, and `sticky_note`
+    - `packages/UI/scripts/generate_greeblefs_zen_ui_icons.py` is the reproducible coverage generator. Add new `AppIcons.tsx` slots there, rerun the script, and commit the generated `Zen/ui/*.svg` plus manifest updates so future packs see the exact SVG surface they need to implement
   - `src/components/AppIcons.tsx` is the only supported app-chrome icon import surface; direct `lucide-react` imports bypass the icon-theme system
   - `src/store/settingsStore.ts` persists `settings.appearance.activeIconThemeId`, while `src/config/appearance.ts` injects the selected icon pack into both the app and dock appearance channels so icon swaps land immediately in the main shell and the `file-operations` popout
   - `SettingsPage.tsx` owns icon-pack selection and folder-icon authoring in the dedicated `Icons` section; the Explorer section should no longer grow icon-pack management UI

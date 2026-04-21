@@ -1,5 +1,15 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Zen Now Covers The App-Chrome Slot Surface, Not Just Explorer Files
+
+- The Zen icon pack is now the reference example for the full app icon contract, not only explorer file/folder glyphs.
+- Durable implementation shape:
+  - `src/components/AppIcons.tsx` remains the slot registry for app chrome. New shell glyphs should be added there first, then materialized into authored packs.
+  - `packages/UI/scripts/generate_greeblefs_zen_ui_icons.py` is the repo-visible coverage generator. It reads the AppIcons slot list, emits `icon-themes/Zen/ui/*.svg`, and rewrites `icon-themes/Zen/icon-theme.json` so app slots like `camera`, `folder_tree`, `hard_drive`, `puzzle`, `settings2`, `sliders_horizontal`, and `sticky_note` are all first-class theme targets.
+  - The sources toggle in the top bar is now covered by a real Zen SVG instead of a Lucide fallback, so the example pack demonstrates how to theme the top-bar rail controls as well as panel tabs.
+- Durable product note:
+  - Treat Zen as the gold example for authored icon packs. Future icon-slot work should update the slot registry, rerun the generator, and keep the generated pack committed so new themes can copy the exact manifest surface.
+
 # 2026-04-21 - 3D Model Thumbnails Are Now Cached GPU Posters
 
 - Explorer grid thumbnails now render `.fbx`, `.glb`, `.gltf`, `.obj`, and `.stl` as GPU-generated poster images instead of leaving them on file icons.

@@ -8,7 +8,7 @@ import {
   type ReactNode,
   type UIEventHandler,
 } from "react";
-import { AlertCircle, Loader, Search, Table } from "lucide-react";
+import { AlertCircle, Loader, Search, Table } from '@/components/AppIcons';
 import type { SqliteDbInfo, SqliteTableInfo } from "../generated/tauri";
 import { commands, type SqliteSortDirection } from "../runtime/tauriClient";
 import { OverlayScrollArea } from "./OverlayScrollArea";
