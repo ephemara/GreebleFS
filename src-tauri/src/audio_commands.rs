@@ -1,5 +1,5 @@
 use crate::audio_engine::{
-    analyze_audio_file_native, analyze_audio_file_with_runtime, decode_audio_preview_mono_samples,
+    analyze_audio_file_native, analyze_audio_preview_for_app, decode_audio_preview_mono_samples,
 };
 use crate::fs_commands::{
     cancel_manual_explorer_task, complete_manual_explorer_task,
@@ -719,7 +719,10 @@ fn execute_audio_batch_process(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn audio_analyze_preview(input_path: String) -> Result<AudioPreviewAnalysis, String> {
+pub async fn audio_analyze_preview(
+    app: AppHandle,
+    input_path: String,
+) -> Result<AudioPreviewAnalysis, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let trimmed = input_path.trim();
         if trimmed.is_empty() {
@@ -729,7 +732,7 @@ pub async fn audio_analyze_preview(input_path: String) -> Result<AudioPreviewAna
         if !input.exists() || !input.is_file() {
             return Err(format!("Input audio does not exist: {}", input.display()));
         }
-        analyze_audio_file_with_runtime(&input, crate::gpu_runtime::global_gpu_runtime())
+        analyze_audio_preview_for_app(&app, &input, crate::gpu_runtime::global_gpu_runtime())
     })
     .await
     .map_err(|error| format!("Audio preview analysis task failed to join: {error}"))?

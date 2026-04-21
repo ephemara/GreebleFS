@@ -454,10 +454,12 @@ export function ExplorerAudioWorkbench({
 
     void (async () => {
       try {
-        const [nextAnalysis] = await Promise.all([
-          analyzeExplorerAudioPreview(audioPath),
-          loadSelectionIntoAudioDeck(activeDeckId, audioPath),
-        ]);
+        await loadSelectionIntoAudioDeck(activeDeckId, audioPath);
+        if (cancelled) {
+          return;
+        }
+        setWorkbenchStatus('Audio loaded. Building waveform and frequency preview…');
+        const nextAnalysis = await analyzeExplorerAudioPreview(audioPath);
         if (cancelled) {
           return;
         }

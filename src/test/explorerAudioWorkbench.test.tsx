@@ -290,6 +290,25 @@ describe('ExplorerAudioWorkbench', () => {
     });
   });
 
+  it('loads the native deck before requesting preview analysis', async () => {
+    render(
+      <ExplorerAudioWorkbench
+        audioPath='/tmp/anthem.mp3'
+        audioName='anthem.mp3'
+        audioExtension='mp3'
+        audioSize={6 * 1024 * 1024}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(analyzeExplorerAudioPreviewMock).toHaveBeenCalledWith('/tmp/anthem.mp3');
+    });
+
+    expect(loadSelectionIntoAudioDeckMock.mock.invocationCallOrder[0]).toBeLessThan(
+      analyzeExplorerAudioPreviewMock.mock.invocationCallOrder[0],
+    );
+  });
+
   it('keeps preview mode focused on the clean player and skips edit-only chrome', async () => {
     render(
       <ExplorerAudioWorkbench

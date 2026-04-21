@@ -741,52 +741,49 @@ pub fn analyze_audio_file_native(input_path: &Path) -> Result<AudioPreviewAnalys
     analyze_audio_file_with_runtime(input_path, None)
 }
 
+fn analyze_audio_preview_with_runtime(
+    input_path: &Path,
+    gpu_runtime: Option<&GpuRuntimeManager>,
+    shared: Option<&AudioEngineSharedState>,
+) -> Result<AudioPreviewAnalysis, String> {
+    if let Some(shared) = shared {
+        if let Some(clip) = find_loaded_clip_for_path(shared, input_path) {
+            return analyze_audio_samples_with_runtime(
+                input_path,
+                clip.sample_rate_hz,
+                clip.channels,
+                &clip.samples,
+                "Native deck cache",
+                gpu_runtime,
+            );
+        }
+    }
+
+    analyze_audio_file_with_runtime(input_path, gpu_runtime)
+}
+
+pub(crate) fn analyze_audio_preview_for_app(
+    app: &AppHandle,
+    input_path: &Path,
+    gpu_runtime: Option<&GpuRuntimeManager>,
+) -> Result<AudioPreviewAnalysis, String> {
+    let shared = existing_audio_engine_shared(app);
+    analyze_audio_preview_with_runtime(input_path, gpu_runtime, shared.as_deref())
+}
+
 pub fn analyze_audio_file_with_runtime(
     input_path: &Path,
     gpu_runtime: Option<&GpuRuntimeManager>,
 ) -> Result<AudioPreviewAnalysis, String> {
     let decoded = decode_audio_file(input_path)?;
-    let mono = mix_to_mono(&decoded.samples, decoded.channels);
-    let (peak_level, rms_level) = compute_peak_and_rms(&decoded.samples);
-    let waveform_buckets = gpu_runtime
-        .and_then(|runtime| {
-            runtime
-                .reduce_audio_waveform(&mono, DEFAULT_ANALYSIS_WAVEFORM_BUCKET_COUNT)
-                .ok()
-        })
-        .unwrap_or_else(|| {
-            analyze_decoded_waveform(&decoded.samples, DEFAULT_ANALYSIS_WAVEFORM_BUCKET_COUNT).2
-        });
-    let spectral_fft_samples = prepare_fft_analysis_samples(&mono);
-    let spectral_bands = gpu_runtime
-        .and_then(|runtime| {
-            runtime
-                .reduce_audio_spectral_bands(&spectral_fft_samples, 24)
-                .ok()
-        })
-        .unwrap_or_else(|| compute_spectral_bands(&decoded, 24));
-    let silence_regions = detect_silence_regions(&mono, decoded.sample_rate_hz, peak_level);
-    let estimated_bpm = estimate_bpm(&mono, decoded.sample_rate_hz);
-    Ok(AudioPreviewAnalysis {
-        input_path: input_path.to_string_lossy().to_string(),
-        duration_seconds: decoded.duration_seconds(),
-        sample_rate_hz: Some(decoded.sample_rate_hz),
-        channels: Some(decoded.channels as u32),
-        encoding: Some("Decoded via Symphonia".to_string()),
-        bits_per_sample: Some(32),
-        container_type: input_path
-            .extension()
-            .and_then(|value| value.to_str())
-            .map(|value| value.to_ascii_lowercase()),
-        peak_level,
-        rms_level,
-        loudness_db: decibels_from_linear(rms_level),
-        headroom_db: headroom_from_peak(peak_level),
-        waveform_buckets,
-        spectral_bands,
-        estimated_bpm,
-        silence_regions,
-    })
+    analyze_audio_samples_with_runtime(
+        input_path,
+        decoded.sample_rate_hz,
+        decoded.channels,
+        &decoded.samples,
+        "Decoded via Symphonia",
+        gpu_runtime,
+    )
 }
 
 pub fn decode_audio_preview_mono_samples(input_path: &Path) -> Result<(Vec<f32>, u32), String> {
@@ -1080,11 +1077,11 @@ fn prepare_fft_analysis_samples(mono: &[f32]) -> Vec<f32> {
     output
 }
 
-fn compute_spectral_bands(decoded: &DecodedAudioData, band_count: usize) -> Vec<f64> {
-    if decoded.samples.is_empty() || decoded.channels == 0 || band_count == 0 {
+fn compute_spectral_bands_from_mono(mono: &[f32], band_count: usize) -> Vec<f64> {
+    if mono.is_empty() || band_count == 0 {
         return Vec::new();
     }
-    let mono = mix_to_mono(&decoded.samples, decoded.channels);
+
     let fft_size = mono.len().min(4096).next_power_of_two().max(256);
     let mut planner = FftPlanner::<f32>::new();
     let fft = planner.plan_fft_forward(fft_size);
@@ -1114,6 +1111,75 @@ fn compute_spectral_bands(decoded: &DecodedAudioData, band_count: usize) -> Vec<
         bands.iter_mut().for_each(|value| *value /= max_value);
     }
     bands
+}
+
+fn analyze_audio_samples_with_runtime(
+    input_path: &Path,
+    sample_rate_hz: u32,
+    channels: usize,
+    samples: &[f32],
+    encoding_label: &str,
+    gpu_runtime: Option<&GpuRuntimeManager>,
+) -> Result<AudioPreviewAnalysis, String> {
+    let normalized_channels = channels.max(1);
+    let mono = mix_to_mono(samples, normalized_channels);
+    let (peak_level, rms_level) = compute_peak_and_rms(samples);
+    let waveform_buckets = gpu_runtime
+        .and_then(|runtime| {
+            runtime
+                .reduce_audio_waveform(&mono, DEFAULT_ANALYSIS_WAVEFORM_BUCKET_COUNT)
+                .ok()
+        })
+        .unwrap_or_else(|| {
+            analyze_decoded_waveform(samples, DEFAULT_ANALYSIS_WAVEFORM_BUCKET_COUNT).2
+        });
+    let spectral_fft_samples = prepare_fft_analysis_samples(&mono);
+    let spectral_bands = gpu_runtime
+        .and_then(|runtime| {
+            runtime
+                .reduce_audio_spectral_bands(&spectral_fft_samples, 24)
+                .ok()
+        })
+        .unwrap_or_else(|| compute_spectral_bands_from_mono(&mono, 24));
+    let silence_regions = detect_silence_regions(&mono, sample_rate_hz, peak_level);
+    let estimated_bpm = estimate_bpm(&mono, sample_rate_hz);
+    let duration_seconds = if sample_rate_hz == 0 || channels == 0 {
+        0.0
+    } else {
+        (samples.len() / channels) as f64 / sample_rate_hz as f64
+    };
+
+    Ok(AudioPreviewAnalysis {
+        input_path: input_path.to_string_lossy().to_string(),
+        duration_seconds,
+        sample_rate_hz: Some(sample_rate_hz),
+        channels: Some(channels as u32),
+        encoding: Some(encoding_label.to_string()),
+        bits_per_sample: Some(32),
+        container_type: input_path
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(|value| value.to_ascii_lowercase()),
+        peak_level,
+        rms_level,
+        loudness_db: decibels_from_linear(rms_level),
+        headroom_db: headroom_from_peak(peak_level),
+        waveform_buckets,
+        spectral_bands,
+        estimated_bpm,
+        silence_regions,
+    })
+}
+
+fn find_loaded_clip_for_path(
+    shared: &AudioEngineSharedState,
+    input_path: &Path,
+) -> Option<Arc<AudioClip>> {
+    let target_path = input_path.to_string_lossy();
+    shared.decks.iter().find_map(|deck| {
+        let clip = deck.clip.load_full()?;
+        (clip.path == target_path.as_ref()).then_some(clip)
+    })
 }
 
 fn detect_silence_regions(
@@ -1276,15 +1342,6 @@ fn headroom_from_peak(peak_level: f64) -> Option<f64> {
     Some(-20.0 * peak_level.log10())
 }
 
-impl DecodedAudioData {
-    fn duration_seconds(&self) -> f64 {
-        if self.sample_rate_hz == 0 {
-            return 0.0;
-        }
-        self.frames as f64 / self.sample_rate_hz as f64
-    }
-}
-
 fn validate_audio_file_path(input_path: &str) -> Result<PathBuf, String> {
     let trimmed = input_path.trim();
     if trimmed.is_empty() {
@@ -1334,6 +1391,28 @@ mod tests {
 
         let bpm = estimate_bpm(&mono, sample_rate_hz).expect("detect bpm");
         assert!((bpm - 120.0).abs() <= 3.0);
+    }
+
+    #[test]
+    fn analyze_audio_samples_with_runtime_supports_cached_clip_samples() {
+        let sample_rate_hz = 48_000u32;
+        let duration_seconds = 2usize;
+        let mono = vec![0.25f32; sample_rate_hz as usize * duration_seconds];
+
+        let analysis = analyze_audio_samples_with_runtime(
+            Path::new("/tmp/cached-preview.wav"),
+            sample_rate_hz,
+            1,
+            &mono,
+            "Native deck cache",
+            None,
+        )
+        .expect("analysis from cached clip");
+
+        assert!(analysis.duration_seconds >= 1.9);
+        assert_eq!(analysis.sample_rate_hz, Some(sample_rate_hz));
+        assert!(!analysis.waveform_buckets.is_empty());
+        assert_eq!(analysis.encoding.as_deref(), Some("Native deck cache"));
     }
 
     fn ensure_audio_toolchain_available() -> Option<String> {
