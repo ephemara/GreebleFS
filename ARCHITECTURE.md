@@ -24,6 +24,7 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - Frontend: React 19 + TypeScript + Vite
 - State: Zustand
 - Desktop host: Tauri 2 + Rust
+- Python runtime: managed virtualenv + persistent stdio JSON sidecar + embedded `pyo3` helpers
 - Visual system: CSS variables, theme packages, icon themes, shaders, animations
 - Tests: Vitest unit/browser, Rust tests
 
@@ -117,6 +118,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Authored shell-motion runtime loader. It normalizes built-in and folder-authored animation modules, renders shell overlay layers with failure isolation, and now exposes the sanitized `src/animation/` MoGraph toolkit through the `overlayterm-animation` runtime import so authored shell motion can reuse host-owned cloners, fields, particle/fluid helpers, subtle motion wrappers, and timeline utilities without importing app internals directly.
 - `src/components/AppIcons.tsx`
   Shell-wide icon compatibility layer. App chrome should import icons from here instead of `lucide-react` directly so manifest-driven UI icon packs can swap explorer and stock shell glyphs immediately without touching thumbnail generation.
+- `src/config/python.ts`
+  Data-driven Python runtime config, example presets, sidecar action catalog, and package presets. The `src-python/greeblefs-python-sidecar.json` manifest is the source of truth for the sidecar action list and quick-install package presets exposed to React.
 - `src/runtime/moduleRuntime.ts`
   Shared runtime-authored module bridge. It compiles authored TS/TSX module graphs for plugins, theme renderers, wallpapers, shaders, and animations, and now routes serializable compile work through the frontend worker host before falling back to the main thread.
 - `src/runtime/workerHost.ts`
@@ -149,6 +152,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   TS bridge for explorer shader preview inspection and compile work. It owns typed shader inspect/compile calls so `FileExplorer.tsx` and `ExplorerShaderWorkbench.tsx` do not scatter raw shader-preview invokes or local format normalization logic.
 - `src/runtime/spreadsheetWorkbook.ts`
   SheetJS + HyperFormula bridge for spreadsheet import/export, clipboard serialization, sheet mutation, and workbook/tabular save paths.
+- `src/runtime/pythonRuntimeBackend.ts`
+  Typed frontend seam for the managed Python runtime, persistent sidecar lifecycle, manifest-backed sidecar actions, and embedded `pyo3` execution. New React surfaces should call this layer instead of invoking Python Tauri commands directly.
 - `src/components/explorer/explorerPreviewSystem.ts`
   Data-driven explorer preview descriptor resolver. It centralizes preview-kind classification, inline-preview routing, and the shared loading/error/unsupported fallback copy that `FileExplorer.tsx` uses instead of per-extension JSX branches.
 - `src/components/explorer/explorerPreviewCache.ts`
@@ -458,6 +463,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Authored animation modules.
 - `wallpapers/`
   Imported wallpaper media and authored live wallpaper modules.
+- `src-python/`
+  Repo-owned Python workspace for the managed sidecar. It contains the sidecar manifest, the Python package that serves JSON-line actions over stdio, and the durable guide for adding new Python-backed capabilities.
 - `notes/`
   Managed notes/todos/bugs/prompts content root in development. Release builds move the same root under Tauri `AppLocalData`.
 - `shaders/`
@@ -466,6 +473,9 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
   Native host and Rust-side integration.
   `src-tauri/src/cloud_commands.rs` is the cloud-drive truth layer for provider credential resolution, OAuth callback handling, account metadata persistence, keychain refresh-token storage, and cloud-backed explorer file operations.
   `src-tauri/src/explorer_pro_commands.rs` is the explorer-pro feature backend for trash/undo, batch rename, duplicate scans, tags, and saved searches.
+  `src-tauri/src/python_commands.rs` is the managed-runtime truth layer for interpreter discovery, virtualenv bootstrap, package installation, and direct Python execution.
+  `src-tauri/src/python_sidecar.rs` owns the persistent managed sidecar lifecycle, workspace sync, stdio protocol, and typed sidecar call/start/stop commands.
+  `src-tauri/src/python_pyo3.rs` owns the embedded `pyo3` seam for lightweight in-process Python helpers that do not need the long-lived sidecar.
   `src-tauri/src/storage_commands.rs` is the storage-tab truth layer for native drive scans. It walks the filesystem on a background thread, tracks progress/cancellation, records logical vs allocated size, aggregates file-type buckets, caches direct child listings for the matrix view, builds a condensed tree plus largest-entry summaries, and prunes completed scan snapshots when newer scans start.
   `src-tauri/src/screenshot_commands.rs` is the screenshot truth layer for monitor capture, cached full-resolution images, native clipboard work, gallery thumbnails, and annotated export compositing.
 
@@ -478,9 +488,12 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - `npx vitest run src/test/panelRegistry.test.tsx src/test/storageTreemap.test.ts src/test/storageWorkbench.test.ts src/test/storageStore.test.ts --reporter=dot`
 - `bun run test:browser`
 - `bun run build`
+- `python3 -m py_compile src-python/greeblefs_sidecar/*.py`
 - `node scripts/run-cargo-tests.mjs`
 - `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
+- `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
 - `cargo test --manifest-path src-tauri/Cargo.toml storage_scan_ -- --nocapture`
+- `bunx vitest run src/test/pythonConfig.test.ts src/test/pythonRuntimeBackend.test.ts src/test/terminalOverlay.test.tsx -t "Python" --reporter=dot`
 - `bash ./install.sh`
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`
 - `bash ./install.sh --launch`
@@ -503,6 +516,8 @@ GreebleFS is a Tauri desktop workbench centered on a highly themeable file explo
 - A current narrowed file-operations/explorer typecheck also still trips an unrelated screenshot typing issue in `src/components/ScreenshotsManager.tsx`: `SelectionHandle` includes `"move"` but the resize-handle consumer only accepts edge handles. Treat that as pre-existing unless the task is on screenshot selection editing.
 - Built-in theme switches should go through `settingsStore.applyThemeSelection()` or the Settings theme catalog flow, not a direct `updateAppearance({ activeThemeId })` call. The direct path now skips pilot baseline resets for dock mode, layout profile, explorer presentation, wallpaper/shader overrides, and related default-shell behavior.
 - JSDOM-backed Vitest runs currently fail in this workspace because `html-encoding-sniffer` requires an ESM dependency through a CommonJS path. Node-environment tests still work, so keep pure logic/package-loader tests runnable there until the dependency issue is fixed.
+- Python sidecar actions are manifest-driven. Add the Python handler in `src-python/greeblefs_sidecar/actions.py`, register it in `src-python/greeblefs-python-sidecar.json`, and then consume it through `src/runtime/pythonRuntimeBackend.ts` or the Rust sidecar helpers instead of inventing one-off script launch paths.
+- The managed runtime still seeds its boilerplate package under `overlayterm_runtime` for compatibility. Do not rename that folder casually; it needs an explicit migration if we ever remove the legacy name from persisted runtimes.
 - `bun run test:browser` currently launches a headed Playwright Chromium session in this workspace. Without an X server it fails before any tests run; use `xvfb-run` or a headless browser config if you need browser validation locally.
 - `plugins/**/dist/**` is versioned source for packaged frontend plugins in this repo. Do not treat those directories like app-build output or let a blanket `dist/` ignore swallow shipped plugin entries.
 - Packaged frontend plugins are no longer single-file only. `src/components/pluginRuntime.tsx` now executes a package-local module graph, so plugin entries may import sibling helpers with relative paths, but those imports must remain inside the plugin root and still cannot pull arbitrary npm dependencies.

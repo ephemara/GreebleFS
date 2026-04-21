@@ -4,6 +4,8 @@ import {
   createPythonRuntimeConfig,
   formatCommandOutput,
   parseMultilineValues,
+  pythonQuickPackagePresets,
+  pythonSidecarActionCatalog,
 } from '../config/python';
 
 describe('python config helpers', () => {
@@ -55,5 +57,15 @@ describe('python config helpers', () => {
       'cmd.exe',
       'windows',
     )).toBe('"C:\\Python Runtime\\env\\Scripts\\python.exe"');
+  });
+
+  it('loads package presets and action catalog from the sidecar manifest', () => {
+    expect(pythonQuickPackagePresets.map(preset => preset.id)).toContain('ml-core');
+    expect(pythonSidecarActionCatalog.map(action => action.id)).toEqual([
+      'runtime.summary',
+      'ml.probe',
+      'files.scan_directory',
+      'files.hash_paths',
+    ]);
   });
 });

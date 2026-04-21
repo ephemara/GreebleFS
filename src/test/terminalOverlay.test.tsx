@@ -487,7 +487,10 @@ describe('TerminalOverlay', () => {
     await userEvent.click(await screen.findByTitle('Python'));
 
     expect(await screen.findByText('Managed Runtime')).toBeInTheDocument();
+    expect(screen.getByText('Managed Sidecar')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start Sidecar' })).toBeInTheDocument();
     expect(screen.getByText('Quick Runs')).toBeInTheDocument();
+    expect(screen.getByText('Sidecar Actions')).toBeInTheDocument();
   }, 20000);
 
   it('launches the managed Python REPL into the active terminal tab', async () => {

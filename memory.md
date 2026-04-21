@@ -1,5 +1,29 @@
 # GreebleFS Memory
 
+# 2026-04-21 - Managed Python Sidecar And Embedded PyO3 Lane
+
+- GreebleFS now has a first-class Python integration path that is meant to be reused across explorer, workbench, and automation features instead of spawning ad hoc scripts from random modules.
+- Durable implementation shape:
+  - `src-python/` is the repo-owned Python workspace. `src-python/greeblefs-python-sidecar.json` is the manifest source of truth for sidecar metadata, quick-install package presets, and the action catalog future frontend/backend callers should consume.
+  - `src-python/greeblefs_sidecar/` is the persistent stdio JSON-line sidecar package. Built-in actions currently cover runtime summary, ML/runtime probing, directory scanning, and hash calculation, but the intended workflow is to keep extending this action registry instead of scattering one-off Python entrypoints.
+  - `src-tauri/src/python_commands.rs` owns managed interpreter discovery, virtualenv bootstrap, package installation, and direct command/script/module execution.
+  - `src-tauri/src/python_sidecar.rs` owns syncing `src-python` into the managed runtime, starting/stopping the long-lived sidecar, logging stderr to the managed runtime logs directory, validating the manifest/handshake, and exposing typed start/status/call commands through Specta.
+  - `src-tauri/src/python_pyo3.rs` is the lightweight in-process Python lane. Use it for small pure-Python transforms that are cheaper to run inside Rust than through the full sidecar.
+  - `src/runtime/pythonRuntimeBackend.ts` is the frontend seam. React surfaces should call this layer for runtime bootstrap, package install, sidecar lifecycle, manifest-backed action runners, and embedded Python helpers instead of wiring raw Tauri command strings into components.
+  - `src/components/TerminalOverlay.tsx` is the current operator surface for the feature. It exposes managed-runtime status, sidecar lifecycle buttons, and a few built-in sidecar actions so the system can be exercised without adding another bespoke UI first.
+- Durable product note:
+  - Default to the Python sidecar for filesystem-heavy work, ML/ONNX/Torch/CUDA-adjacent work, or features that need third-party Python packages.
+  - Default to `pyo3` only for small synchronous helpers that do not need sidecar state, a managed venv package set, or heavyweight imports.
+  - Keep the sidecar manifest data-driven. New quick presets or actions should start in `src-python/greeblefs-python-sidecar.json`, then flow outward into TS/Rust consumers.
+  - The managed runtime still seeds its compatibility boilerplate package directory as `overlayterm_runtime`; treat that as a migration concern, not a casual rename.
+- Validation:
+  - passed: `python3 -m py_compile src-python/greeblefs_sidecar/*.py`
+  - passed: `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: direct sidecar stdio smoke against `python3 -m greeblefs_sidecar`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml embedded_python_executes_json_returning_callable -- --nocapture`
+  - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`
+
 # 2026-04-21 - Git Manager Now Has A Real History Lane And Branch Metadata
 
 - The Git panel is no longer only a working-tree staging view. It now has a first-class `Changes | History` split inspired by the Xplorer reference, while still staying inside GreebleFS-owned seams.
