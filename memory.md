@@ -1,5 +1,23 @@
 # GreebleFS Memory
 
+# 2026-04-21 - SQLite Preview Is Now Searchable, Streamed, And Grid-First
+
+- SQLite preview in the explorer pane no longer behaves like a mini paginated database app with duplicated file metadata chrome. The pane is now table-first: compact horizontal table chips, one active-table control bar, then the data grid.
+- Durable implementation shape:
+  - `src/components/ExplorerSqlitePreview.tsx` dropped the redundant top identity banner and now keeps only the power-user controls that materially help inspection inside a narrow preview pane: table switcher, in-table search, row-density mode (`Dense` / `Table` / `Wrap`), clickable column sorting, and streamed row loading.
+  - Pagination chrome is gone from the SQLite lane. Instead, the grid pulls rows through a `Load More` action plus near-bottom auto-streaming, so large tables keep the preview-pane silhouette and do not waste vertical space on page controls.
+  - `src-tauri/src/sqlite_commands.rs` now exposes `sqlite_query_table_window` and the typed `SqliteTableQueryRequest` / `SqliteTableQueryResult` contract. The backend handles case-insensitive row search across visible columns, validated sortable columns/directions, primary-key fallback ordering when no sort is selected, filtered row counts, and the next stream offset.
+  - `src/generated/tauri.ts` now includes the SQLite window-query contract, and `src/runtime/tauriClient.ts` should keep consuming the generated bridge instead of carrying a second hand-written SQLite command wrapper.
+  - `src/test/explorerSqlitePreview.test.tsx` now locks the new behavior instead of the old page model: it covers streamed row loading, search reset when switching tables, sort cycling, and the preview-width layout helper.
+- Durable product note:
+  - Treat SQLite preview like a fast inspection surface, not a full query IDE. Keep the grid dominant, keep chrome sparse, and preserve the preview-pane constraint.
+  - If future work adds more SQLite power features, prefer compact controls that operate on the active table rather than adding another metadata header or card stack above the grid.
+- Validation:
+  - passed: `bunx vitest run src/test/explorerSqlitePreview.test.tsx --reporter=dot`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml sqlite_commands -- --nocapture`
+  - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: filtered `bunx tsc --noEmit --pretty false -p tsconfig.json 2>&1 | rg "ExplorerSqlitePreview|explorerSqlitePreview|tauriClient|src/generated/tauri.ts" || true`
+
 # 2026-04-21 - Spreadsheet Preview Now Shares The SQLite Table Surface
 
 - Spreadsheet preview no longer looks like a separate one-off workbench from the SQLite lane. Read-only spreadsheet preview now uses the same themed table-surface language as SQLite, while spreadsheet edit mode keeps the richer grid/formula/sheet tooling.

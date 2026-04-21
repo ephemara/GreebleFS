@@ -12,6 +12,9 @@ import {
 export type {
   LinuxDisplayBackendPreference,
   LinuxDisplayBackendStatus,
+  SqliteSortDirection,
+  SqliteTableQueryRequest,
+  SqliteTableQueryResult,
 } from "../generated/tauri";
 
 export interface WaylandDockHostStatus {

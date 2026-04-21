@@ -149,6 +149,7 @@ pub fn app_specta_builder() -> Builder<tauri::Wry> {
             crate::cloud_commands::cloud_transfer_items,
             crate::sqlite_commands::sqlite_get_info,
             crate::sqlite_commands::sqlite_query_table,
+            crate::sqlite_commands::sqlite_query_table_window,
             crate::fs_commands::fs_list_dir,
             crate::fs_commands::fs_get_drives,
             crate::fs_commands::fs_measure_entry_sizes,
