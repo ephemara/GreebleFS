@@ -55,12 +55,51 @@ Backend code should prefer:
 1. `python_sidecar` for filesystem-heavy, ML-heavy, or dependency-heavy work.
 2. `python_pyo3` for tiny pure-Python transforms where spinning up the sidecar would be unnecessary.
 
+Rust callers now have typed helpers and built-in action ids, so they do not need to hand-roll JSON request structs:
+
+```rust
+use crate::python_sidecar::{self, action_ids};
+
+let scan = python_sidecar::call_sidecar_action_json::<serde_json::Value, serde_json::Value>(
+    &app,
+    None,
+    action_ids::FILES_SCAN_DIRECTORY,
+    Some(serde_json::json!({
+        "root": ".",
+        "limit": 64,
+        "includeHidden": false
+    })),
+    None,
+    None,
+    Some(true),
+)?;
+
+let entries = scan.result["entries"]
+    .as_array()
+    .map(|value| value.len())
+    .unwrap_or(0);
+```
+
+For tiny helpers that should stay in-process:
+
+```rust
+use crate::python_pyo3;
+
+let summary = python_pyo3::execute_embedded_python_json::<serde_json::Value, serde_json::Value>(
+    "def main(payload): return {'count': len(payload['paths'])}",
+    None,
+    Some(serde_json::json!({
+        "paths": ["/tmp/a.txt", "/tmp/b.txt"]
+    })),
+)?;
+```
+
 ## Adding A New Sidecar Action
 
 1. Create a new function under `greeblefs_sidecar/actions.py`.
 2. Register it with `@python_action("your.action_id")`.
 3. Add the action entry to `greeblefs-python-sidecar.json`.
-4. Call it from React with `createPythonSidecarActionRunner(...)` or from Rust with `python_sidecar_call`.
+4. Call it from React with `createPythonSidecarActionRunner(...)` or from Rust with `call_sidecar_action_json(...)`.
 
 The action handler receives:
 

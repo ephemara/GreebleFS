@@ -7,8 +7,8 @@
   - `src-python/` is the repo-owned Python workspace. `src-python/greeblefs-python-sidecar.json` is the manifest source of truth for sidecar metadata, quick-install package presets, and the action catalog future frontend/backend callers should consume.
   - `src-python/greeblefs_sidecar/` is the persistent stdio JSON-line sidecar package. Built-in actions currently cover runtime summary, ML/runtime probing, directory scanning, and hash calculation, but the intended workflow is to keep extending this action registry instead of scattering one-off Python entrypoints.
   - `src-tauri/src/python_commands.rs` owns managed interpreter discovery, virtualenv bootstrap, package installation, and direct command/script/module execution.
-  - `src-tauri/src/python_sidecar.rs` owns syncing `src-python` into the managed runtime, starting/stopping the long-lived sidecar, logging stderr to the managed runtime logs directory, validating the manifest/handshake, and exposing typed start/status/call commands through Specta.
-  - `src-tauri/src/python_pyo3.rs` is the lightweight in-process Python lane. Use it for small pure-Python transforms that are cheaper to run inside Rust than through the full sidecar.
+  - `src-tauri/src/python_sidecar.rs` owns syncing `src-python` into the managed runtime, starting/stopping the long-lived sidecar, logging stderr to the managed runtime logs directory, validating the manifest/handshake, exposing typed start/status/call commands through Specta, and now exposing backend-facing typed helper APIs plus built-in action ids for other Rust modules.
+  - `src-tauri/src/python_pyo3.rs` is the lightweight in-process Python lane. Use it for small pure-Python transforms that are cheaper to run inside Rust than through the full sidecar, and prefer its decoded JSON helper when the caller wants typed payload/result handling instead of raw strings.
   - `src/runtime/pythonRuntimeBackend.ts` is the frontend seam. React surfaces should call this layer for runtime bootstrap, package install, sidecar lifecycle, manifest-backed action runners, and embedded Python helpers instead of wiring raw Tauri command strings into components.
   - `src/components/TerminalOverlay.tsx` is the current operator surface for the feature. It exposes managed-runtime status, sidecar lifecycle buttons, and a few built-in sidecar actions so the system can be exercised without adding another bespoke UI first.
 - Durable product note:
@@ -20,6 +20,7 @@
   - passed: `python3 -m py_compile src-python/greeblefs_sidecar/*.py`
   - passed: `cargo check --manifest-path src-tauri/Cargo.toml --quiet`
   - passed: `cargo run --manifest-path src-tauri/Cargo.toml --bin export-bindings`
+  - passed: `cargo test --manifest-path src-tauri/Cargo.toml python_ -- --nocapture`
   - passed: direct sidecar stdio smoke against `python3 -m greeblefs_sidecar`
   - passed: `cargo test --manifest-path src-tauri/Cargo.toml embedded_python_executes_json_returning_callable -- --nocapture`
   - passed: `bunx tsc --noEmit --pretty false -p tsconfig.json`

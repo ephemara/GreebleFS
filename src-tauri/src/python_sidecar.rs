@@ -6,6 +6,7 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
 
 use include_dir::{include_dir, Dir, DirEntry};
+use serde::de::DeserializeOwned;
 use tauri::{AppHandle, Manager};
 
 use crate::python_commands::{
@@ -102,6 +103,19 @@ pub struct PythonSidecarActionResponse {
     pub result_json: String,
 }
 
+pub mod action_ids {
+    pub const RUNTIME_SUMMARY: &str = "runtime.summary";
+    pub const ML_PROBE: &str = "ml.probe";
+    pub const FILES_SCAN_DIRECTORY: &str = "files.scan_directory";
+    pub const FILES_HASH_PATHS: &str = "files.hash_paths";
+}
+
+#[derive(Debug, Clone)]
+pub struct PythonSidecarDecodedActionResponse<TResult> {
+    pub raw: PythonSidecarActionResponse,
+    pub result: TResult,
+}
+
 #[derive(Default)]
 pub struct PythonSidecarManager {
     session: Mutex<Option<PythonSidecarSession>>,
@@ -155,6 +169,83 @@ struct PythonSidecarHandshakePayload {
     entry_module: String,
     transport: String,
     available_actions: Vec<String>,
+}
+
+fn encode_sidecar_payload_json<T: serde::Serialize>(payload: Option<&T>) -> Result<Option<String>, String> {
+    payload
+        .map(|value| {
+            serde_json::to_string(value)
+                .map_err(|error| format!("Failed to serialize Python sidecar payload: {error}"))
+        })
+        .transpose()
+}
+
+fn decode_sidecar_result_json<TResult: DeserializeOwned>(result_json: &str) -> Result<TResult, String> {
+    serde_json::from_str(result_json)
+        .map_err(|error| format!("Failed to decode Python sidecar result JSON: {error}"))
+}
+
+pub fn get_sidecar_status(
+    app: &AppHandle,
+    config: Option<PythonRuntimeConfig>,
+) -> Result<PythonSidecarStatus, String> {
+    get_sidecar_status_impl(app, config)
+}
+
+pub fn start_sidecar(
+    app: &AppHandle,
+    config: Option<PythonRuntimeConfig>,
+) -> Result<PythonSidecarStartResponse, String> {
+    start_sidecar_impl(app, config)
+}
+
+pub fn stop_sidecar(
+    app: &AppHandle,
+    config: Option<PythonRuntimeConfig>,
+) -> Result<PythonSidecarStatus, String> {
+    stop_sidecar_impl(app, config)
+}
+
+pub fn call_sidecar_action(
+    app: &AppHandle,
+    request: PythonSidecarActionRequest,
+) -> Result<PythonSidecarActionResponse, String> {
+    call_sidecar_impl(app, request)
+}
+
+pub fn decode_sidecar_action_result<TResult: DeserializeOwned>(
+    response: &PythonSidecarActionResponse,
+) -> Result<TResult, String> {
+    decode_sidecar_result_json(&response.result_json)
+}
+
+pub fn call_sidecar_action_json<TPayload, TResult>(
+    app: &AppHandle,
+    config: Option<PythonRuntimeConfig>,
+    action_id: impl Into<String>,
+    payload: Option<TPayload>,
+    working_directory: Option<String>,
+    environment: Option<HashMap<String, String>>,
+    start_if_needed: Option<bool>,
+) -> Result<PythonSidecarDecodedActionResponse<TResult>, String>
+where
+    TPayload: serde::Serialize,
+    TResult: DeserializeOwned,
+{
+    let raw = call_sidecar_impl(
+        app,
+        PythonSidecarActionRequest {
+            config,
+            action_id: action_id.into(),
+            payload_json: encode_sidecar_payload_json(payload.as_ref())?,
+            working_directory,
+            environment,
+            start_if_needed,
+        },
+    )?;
+    let result = decode_sidecar_action_result(&raw)?;
+
+    Ok(PythonSidecarDecodedActionResponse { raw, result })
 }
 
 impl PythonSidecarManager {
@@ -896,7 +987,14 @@ mod tests {
         let manifest = load_sidecar_manifest().expect("manifest should parse");
         assert_eq!(manifest.id, "greeblefs-python-sidecar");
         assert_eq!(manifest.module_name, "greeblefs_sidecar");
-        assert!(manifest.actions.iter().any(|action| action.id == "ml.probe"));
+        assert!(manifest
+            .actions
+            .iter()
+            .any(|action| action.id == action_ids::ML_PROBE));
+        assert!(manifest
+            .actions
+            .iter()
+            .any(|action| action.id == action_ids::RUNTIME_SUMMARY));
     }
 
     #[test]
@@ -916,5 +1014,14 @@ mod tests {
             sidecar_paths.log_path,
             runtime_paths.logs_dir.join(PYTHON_SIDECAR_LOG_FILENAME)
         );
+    }
+
+    #[test]
+    fn sidecar_result_json_decodes_into_typed_payload() {
+        let decoded: serde_json::Value =
+            decode_sidecar_result_json("{\"status\":\"ok\",\"count\":3}").expect("json should decode");
+
+        assert_eq!(decoded["status"], "ok");
+        assert_eq!(decoded["count"], 3);
     }
 }
